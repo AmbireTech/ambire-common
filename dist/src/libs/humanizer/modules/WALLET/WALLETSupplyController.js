@@ -1,16 +1,26 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WALLETSupplyControllerMapping = void 0;
-const tslib_1 = require("tslib");
-const ethers_1 = require("ethers");
-const WALLETSupplyController_json_1 = tslib_1.__importDefault(require("../../../../../contracts/compiled/WALLETSupplyController.json"));
+const viem_1 = require("viem");
 const utils_1 = require("../../utils");
+const claimAbi = (0, viem_1.parseAbi)([
+    'function claim(uint256 totalRewardInTree, bytes32[] proof, uint256 toBurnBps, address stakingPool)'
+]);
+const claimWithRootUpdateAbi = (0, viem_1.parseAbi)([
+    'function claimWithRootUpdate(uint256 totalRewardInTree, bytes32[] proof, uint256 toBurnBps, address stakingPool, bytes32 newRoot, bytes signature)'
+]);
+const mintVestingAbi = (0, viem_1.parseAbi)([
+    'function mintVesting(address recipient, uint256 end, uint256 amountPerSecond)'
+]);
+const claimSelector = (0, viem_1.toFunctionSelector)(claimAbi[0]);
+const claimWithRootUpdateSelector = (0, viem_1.toFunctionSelector)(claimWithRootUpdateAbi[0]);
+const mintVestingSelector = (0, viem_1.toFunctionSelector)(mintVestingAbi[0]);
 const WALLETSupplyControllerMapping = () => {
-    const iface = new ethers_1.Interface(WALLETSupplyController_json_1.default);
     return {
-        [iface.getFunction('claim')?.selector]: (call) => {
-            const { toBurnBps, stakingPool } = iface.parseTransaction(call).args;
-            const burnPercentage = toBurnBps.toString() / 100;
+        [claimSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: claimAbi, data: call.data });
+            const [, , toBurnBps, stakingPool] = args;
+            const burnPercentage = Number(toBurnBps) / 100;
             return burnPercentage > 0
                 ? [
                     (0, utils_1.getAction)('Claim rewards'),
@@ -20,9 +30,10 @@ const WALLETSupplyControllerMapping = () => {
                 ]
                 : [(0, utils_1.getAction)('Claim rewards'), (0, utils_1.getLabel)('in'), (0, utils_1.getToken)(stakingPool, 0n)];
         },
-        [iface.getFunction('claimWithRootUpdate')?.selector]: (call) => {
-            const { toBurnBps, stakingPool } = iface.parseTransaction(call).args;
-            const burnPercentage = toBurnBps.toString() / 100;
+        [claimWithRootUpdateSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: claimWithRootUpdateAbi, data: call.data });
+            const [, , toBurnBps, stakingPool] = args;
+            const burnPercentage = Number(toBurnBps) / 100;
             return burnPercentage > 0
                 ? [
                     (0, utils_1.getAction)('Claim rewards'),
@@ -32,7 +43,7 @@ const WALLETSupplyControllerMapping = () => {
                 ]
                 : [(0, utils_1.getAction)('Claim rewards'), (0, utils_1.getLabel)('in'), (0, utils_1.getToken)(stakingPool, 0n)];
         },
-        [iface.getFunction('mintVesting')?.selector]: () => {
+        [mintVestingSelector]: () => {
             return [(0, utils_1.getAction)('Claim vested tokens')];
         }
     };

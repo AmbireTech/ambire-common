@@ -1,5 +1,6 @@
 import { Dapp } from '../../interfaces/dapp';
 import { Hex } from '../../interfaces/hex';
+import type { CowSwapOrderStruct } from '../../interfaces/swapAndBridge';
 export declare enum AccountOpStatus {
     Pending = "pending",
     BroadcastedButNotConfirmed = "broadcasted-but-not-confirmed",
@@ -32,5 +33,17 @@ export interface Call {
     dapp?: Dapp;
     dappPromiseId?: string;
     activeRouteId?: string;
+    /**
+     * Added for transfer requests, to keep track of the domain that was used to
+     * resolve the recipient address. We store this address after the txn is confirmed
+     * and then use it to warn the user if the ENS resolves to a different address in the future.
+     */
+    recipientDomain?: string;
+    /**
+     * Added for CoW Swap pre-sign calls built by the wallet's swap. The calldata holds only the
+     * order ID (a hash of the order), so the order is kept here for the humanizer, which shows it
+     * only if it hashes to that same order ID.
+     */
+    cowSwapOrder?: CowSwapOrderStruct;
 }
 //# sourceMappingURL=types.d.ts.map

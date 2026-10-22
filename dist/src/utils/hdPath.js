@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getHDPathIndices = exports.getHdPathWithoutRoot = exports.getParentHdPathFromTemplate = exports.getHdPathFromTemplate = void 0;
+exports.getDerivableHdPathTemplates = exports.getHdPathTemplateRelativeToOrigin = exports.getHDPathIndices = exports.getHdPathWithoutRoot = exports.getParentHdPathFromTemplate = exports.getHdPathFromTemplate = void 0;
+const derivation_1 = require("../consts/derivation");
 const getHdPathFromTemplate = (hdPathTemplate, index) => {
     return hdPathTemplate.replace('<account>', index.toString());
 };
@@ -46,4 +47,27 @@ const getHDPathIndices = (hdPathTemplate, insertIdx = 0) => {
     return indices;
 };
 exports.getHDPathIndices = getHDPathIndices;
+/**
+ * The part of an HD path template that is relative to `originPath` - the path an
+ * extended public key was exported from. Returns null when the template does not
+ * branch off the origin (e.g. a hardened account index), meaning that extended
+ * public key cannot derive it.
+ */
+const getHdPathTemplateRelativeToOrigin = (originPath, hdPathTemplate) => {
+    const originLevels = originPath.split('/');
+    const templateLevels = hdPathTemplate.split('/');
+    if (templateLevels.length <= originLevels.length)
+        return null;
+    if (originLevels.some((level, i) => level !== templateLevels[i]))
+        return null;
+    return templateLevels.slice(originLevels.length).join('/');
+};
+exports.getHdPathTemplateRelativeToOrigin = getHdPathTemplateRelativeToOrigin;
+/**
+ * Which of the offered derivation paths an extended public key exported from
+ * `originPath` can browse. Wallets that hand over a single extended public key
+ * (QR, NFC) are limited to these.
+ */
+const getDerivableHdPathTemplates = (originPath) => derivation_1.DERIVATION_OPTIONS.map(({ value }) => value).filter((template) => !!(0, exports.getHdPathTemplateRelativeToOrigin)(originPath, template));
+exports.getDerivableHdPathTemplates = getDerivableHdPathTemplates;
 //# sourceMappingURL=hdPath.js.map

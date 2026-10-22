@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../../../../src/libs/humanizer/modules/CowSwap/index.ts"],"names":[],"mappings":";;;AAAA,4EAA2C;AAE3C,kBAAe,uBAAa,CAAA","sourcesContent":["import CowSwapModule from './cowSwapModule'\n\nexport default CowSwapModule\n"]}

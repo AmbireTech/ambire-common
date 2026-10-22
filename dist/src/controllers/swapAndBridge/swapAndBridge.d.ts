@@ -1,17 +1,24 @@
+import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall';
+import { SwapAndBridgeFormStatus } from '../../libs/swapAndBridge/constants';
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout';
 import { IAccountsController } from '../../interfaces/account';
 import { IActivityController } from '../../interfaces/activity';
+import { IContractInfoController } from '../../interfaces/contractInfo';
 import { IDappsController } from '../../interfaces/dapp';
+import { IErc7730Controller } from '../../interfaces/erc7730';
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter';
+import { IFeatureFlagsController } from '../../interfaces/featureFlags';
+import { Fetch } from '../../interfaces/fetch';
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore';
 import { INetworksController, Network } from '../../interfaces/network';
 import { IPhishingController } from '../../interfaces/phishing';
+import { Platform } from '../../interfaces/platform';
 import { IPortfolioController } from '../../interfaces/portfolio';
 import { IProvidersController } from '../../interfaces/provider';
 import { ISelectedAccountController } from '../../interfaces/selectedAccount';
 import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp';
 import { IStorageController } from '../../interfaces/storage';
-import { CachedTokenListKey, FromToken, ISwapAndBridgeController, SwapAndBridgeActiveRoute, SwapAndBridgeQuote, SwapAndBridgeRoute, SwapAndBridgeSendTxRequest, SwapAndBridgeToToken, SwapProvider } from '../../interfaces/swapAndBridge';
+import { CachedTokenListKey, FromToken, ISwapAndBridgeController, SwapAndBridgeActiveRoute, SwapAndBridgeQuote, SwapAndBridgeRoute, SwapAndBridgeSendTxRequest, SwapAndBridgeToToken, SwapProviderExecutor, SwapProviderInfo, ToTokenMarketDataByToken } from '../../interfaces/swapAndBridge';
 import { IUiController } from '../../interfaces/ui';
 import { UserRequest } from '../../interfaces/userRequest';
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp';
@@ -19,25 +26,18 @@ import { TokenResult } from '../../libs/portfolio';
 import { Validation } from '../../services/validations/validate';
 import EventEmitter from '../eventEmitter/eventEmitter';
 import { OnBroadcastFailed, OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/signAccountOp';
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference';
+import type { FeeExemptionReason } from '../../libs/swapAndBridge/fee';
 type SwapAndBridgeErrorType = {
     id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed';
     title: string;
     text?: string;
     level: 'error' | 'warning';
 };
-export declare enum SwapAndBridgeFormStatus {
-    Empty = "empty",
-    Invalid = "invalid",
-    FetchingRoutes = "fetching-routes",
-    NoRoutesFound = "no-routes-found",
-    InvalidRouteSelected = "invalid-route-selected",
-    ReadyToEstimate = "ready-to-estimate",
-    ReadyToSubmit = "ready-to-submit",
-    Proceeded = "proceeded"
-}
 declare const STATUS_WRAPPED_METHODS: {
     readonly addToTokenByAddress: "INITIAL";
 };
+export declare const sortSwapAndBridgeRoutes: (r1: SwapAndBridgeRoute, r2: SwapAndBridgeRoute, outputTokenPriceUSD?: number | null) => 0 | 1 | -1;
 type SignAccountOpControllerMethods = {
     [K in keyof SignAccountOpController as SignAccountOpController[K] extends (...args: any) => any ? K : never]: SignAccountOpController[K];
 };
@@ -72,6 +72,7 @@ export declare class SwapAndBridgeController extends EventEmitter implements ISw
     toTokenSearchTerm: string;
     toTokenSearchResults: SwapAndBridgeToToken[];
     quote: SwapAndBridgeQuote | null;
+    feePercent: number;
     quoteRoutesStatuses: {
         [key: string]: {
             status: string;
@@ -81,12 +82,14 @@ export declare class SwapAndBridgeController extends EventEmitter implements ISw
     isTokenListLoading: boolean;
     errors: SwapAndBridgeErrorType[];
     routePriority: 'output' | 'time';
+    disabledSwapProviderIds: string[];
     hasProceeded: boolean;
     get updateQuoteInterval(): RecurringTimeout;
     get updateActiveRoutesInterval(): RecurringTimeout;
-    constructor({ eventEmitterRegistry, callRelayer, accounts, keystore, portfolio, externalSignerControllers, providers, selectedAccount, networks, activity, storage, phishing, dapps, portfolioUpdate, relayerUrl, isCurrentSignAccountOpThrowingAnEstimationError, getUserRequests, getVisibleUserRequests, swapProvider, onBroadcastSuccess, onBroadcastFailed, ui }: {
+    constructor({ eventEmitterRegistry, callRelayer, fetch, accounts, keystore, portfolio, externalSignerControllers, providers, selectedAccount, networks, activity, storage, signAccountOpPreference, featureFlags, platform, phishing, dapps, erc7730, contractInfo, portfolioUpdate, relayerUrl, isCurrentSignAccountOpThrowingAnEstimationError, getUserRequests, getVisibleUserRequests, swapProvider, onBroadcastSuccess, onBroadcastFailed, ui }: {
         eventEmitterRegistry?: IEventEmitterRegistryController;
-        callRelayer: Function;
+        callRelayer: BindedRelayerCall;
+        fetch: Fetch;
         accounts: IAccountsController;
         keystore: IKeystoreController;
         portfolio: IPortfolioController;
@@ -96,14 +99,19 @@ export declare class SwapAndBridgeController extends EventEmitter implements ISw
         networks: INetworksController;
         activity: IActivityController;
         storage: IStorageController;
+        signAccountOpPreference: SignAccountOpPreferenceController;
+        featureFlags: IFeatureFlagsController;
+        platform: Platform;
         phishing: IPhishingController;
         dapps: IDappsController;
+        erc7730: IErc7730Controller;
+        contractInfo: IContractInfoController;
         relayerUrl: string;
         portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void;
         isCurrentSignAccountOpThrowingAnEstimationError?: Function;
         getUserRequests: () => UserRequest[];
         getVisibleUserRequests: () => UserRequest[];
-        swapProvider: SwapProvider;
+        swapProvider: SwapProviderExecutor;
         onBroadcastSuccess: OnBroadcastSuccess;
         onBroadcastFailed: OnBroadcastFailed;
         ui: IUiController;
@@ -116,12 +124,19 @@ export declare class SwapAndBridgeController extends EventEmitter implements ISw
      * quote and the current form state.
      */
     get signAccountOpController(): ISignAccountOpController;
+    /**
+     * Whether the swap is being signed or broadcast right now, e.g. waiting for a hardware wallet.
+     * Reads the private controller on purpose, as the public getter may return null for it.
+     */
+    get isSignAndBroadcastInProgress(): boolean;
     get formStatus(): SwapAndBridgeFormStatus;
     get validateFromAmount(): Validation;
     get activeRoutesInProgress(): SwapAndBridgeActiveRoute[];
     get activeRoutes(): SwapAndBridgeActiveRoute[];
     set activeRoutes(value: SwapAndBridgeActiveRoute[]);
     get shouldEnableRoutesSelection(): boolean;
+    /** Why the currently selected operation is exempt from the Swap & Bridge fee. */
+    get feeExemptionReason(): FeeExemptionReason | undefined;
     initForm(sessionId: string, params?: {
         preselectedFromToken?: Pick<TokenResult, 'address' | 'chainId'>;
         preselectedToToken?: Pick<TokenResult, 'address' | 'chainId'>;
@@ -129,6 +144,19 @@ export declare class SwapAndBridgeController extends EventEmitter implements ISw
         activeRouteIdToDelete?: SwapAndBridgeSendTxRequest['activeRouteId'];
     }): Promise<void>;
     get isHealthy(): boolean;
+    /** Returns serializable metadata for all available swap providers. */
+    get swapProviders(): SwapProviderInfo[];
+    /** Returns a copy of the provider ids the user has switched off. */
+    getDisabledSwapProviderIds(): string[];
+    /** Enables or disables a provider for future route and supported-chain discovery. */
+    setSwapProviderEnabled(providerId: string, isEnabled: boolean): Promise<void>;
+    /** Restricts routes to CoW Swap or restores all available swap providers. */
+    setMevProtectionEnabled(isEnabled: boolean): Promise<void>;
+    /**
+     * Replaces the providers the user has switched off (used by app data sync). Ids of
+     * providers this product does not offer are dropped.
+     */
+    setDisabledSwapProviderIds(disabledSwapProviderIds: string[]): Promise<void>;
     get supportedChainIds(): Network['chainId'][];
     static getToTokenListKey(fromChainId: number | null, toChainId: number | null): CachedTokenListKey | null;
     unloadScreen(sessionId: string, forceUnload?: boolean): void;
@@ -143,10 +171,16 @@ export declare class SwapAndBridgeController extends EventEmitter implements ISw
         toChainId?: bigint | number;
         toSelectedTokenAddr?: SwapAndBridgeToToken['address'] | null;
         routePriority?: 'output' | 'time';
+        activeRouteIdToDelete?: SwapAndBridgeSendTxRequest['activeRouteId'];
     }, updateProps?: {
         emitUpdate?: boolean;
         updateQuote?: boolean;
         shouldIncrementFromAmountUpdateCounter?: boolean;
+        /**
+         * Set it when the user changes the "to" token or network from the UI, so a "to" token
+         * preselected from outside Swap & Bridge stops being restored on "from" network changes.
+         */
+        isToSelectionByUser?: boolean;
     }): Promise<void>;
     resetForm(shouldEmit?: boolean): void;
     reset(shouldEmit?: boolean): void;
@@ -157,12 +191,24 @@ export declare class SwapAndBridgeController extends EventEmitter implements ISw
     }): Promise<void>;
     updateToTokenList(shouldReset: boolean, addressToSelect?: string): Promise<void>;
     /**
+     * The market data of the currently visible "to" tokens only, because the whole
+     * `#toTokenMarketData` is far too large to be sent to the UI on every update.
+     * Records that went stale are reported as loading - they are hidden until the
+     * refresh triggered alongside this list completes, so that the UI never displays
+     * an outdated exchange list.
+     */
+    get toTokenMarketData(): ToTokenMarketDataByToken;
+    /**
      * Returns the short list of tokens for the "to" token list, because the full
      * list (stored in #toTokenList) could be HUGE, causing the controller to be
      * HUGE as well, that leads to performance problems.
      */
     get toTokenShortList(): SwapAndBridgeToToken[];
     get updateToTokenListStatus(): "INITIAL" | "LOADING";
+    /** Providers that haven't returned their tokens for the current "to" list yet. */
+    get toTokenListLoadingProviderNames(): string[];
+    /** Whether a requested "to" token (e.g. a trending one) is waiting for its list. */
+    get isToTokenSelectionPending(): boolean;
     addToTokenByAddress: (address: string) => Promise<void>;
     searchToToken(searchTerm: string): Promise<void>;
     switchFromAndToTokens(): Promise<void>;
@@ -177,7 +223,7 @@ export declare class SwapAndBridgeController extends EventEmitter implements ISw
     }) | (SwapAndBridgeErrorType & {
         success: false;
     })) | null>;
-    recordBridgeActivity(txnId: string, activeRoute: SwapAndBridgeActiveRoute, status: 'completed' | 'refunded'): Promise<void>;
+    recordIntentActivity(txnId: string, activeRoute: SwapAndBridgeActiveRoute, status: 'completed' | 'refunded'): Promise<void>;
     checkForActiveRoutesStatusUpdate(): Promise<void>;
     selectRoute(route: SwapAndBridgeRoute, opts?: {
         isManualSelection?: boolean;
@@ -189,6 +235,10 @@ export declare class SwapAndBridgeController extends EventEmitter implements ISw
     }): void;
     updateActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId'], activeRoute?: Partial<SwapAndBridgeActiveRoute>, forceUpdateRoute?: boolean): void;
     removeActiveRoute(activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId'], shouldEmitUpdate?: boolean): void;
+    /**
+     * Removes failed active routes and hides the failed txn banner
+     */
+    removeFailedRouteAndHideBanner(activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']): Promise<void>;
     /**
      * Find the next route in line and try to re-estimate with it
      */
@@ -226,7 +276,10 @@ export declare class SwapAndBridgeController extends EventEmitter implements ISw
     cancelSignReq(): void;
     toJSON(): this & {
         toTokenShortList: SwapAndBridgeToToken[];
+        toTokenMarketData: ToTokenMarketDataByToken;
         updateToTokenListStatus: "INITIAL" | "LOADING";
+        toTokenListLoadingProviderNames: string[];
+        isToTokenSelectionPending: boolean;
         maxFromAmount: string;
         validateFromAmount: Validation;
         isFormEmpty: boolean;
@@ -235,7 +288,9 @@ export declare class SwapAndBridgeController extends EventEmitter implements ISw
         activeRoutes: SwapAndBridgeActiveRoute[];
         isHealthy: boolean;
         shouldEnableRoutesSelection: boolean;
+        feeExemptionReason: FeeExemptionReason;
         supportedChainIds: bigint[];
+        swapProviders: SwapProviderInfo[];
         swapSignErrors: SignAccountOpError[];
         signAccountOpController: ISignAccountOpController;
         banners: import("../../interfaces/banner").Banner[];

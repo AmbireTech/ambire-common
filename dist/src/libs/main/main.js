@@ -6,21 +6,16 @@ exports.ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST';
  * Whether to simulate account ops if the request window is closed or the current
  * request is different.
  */
-const getShouldSimulateInTheBackground = (currentReq, callUserRequests) => {
+const getShouldSimulateInTheBackground = (currentReq) => {
     // simulations should get persisted for all non-Safe accounts
     if (!currentReq.signAccountOp.account.safeCreation)
         return true;
-    // check if there are other requests with a conflicting nonce to this one.
-    // If there are, do not simulate this in the background
-    const currentReqNonce = currentReq.signAccountOp.accountOp.safeTx
-        ? currentReq.signAccountOp.accountOp.safeTx.nonce
-        : currentReq.signAccountOp.accountOp.nonce;
-    const conflictingNonceUserRequests = callUserRequests.filter((r) => {
-        r.id !== currentReq.id &&
-            r.signAccountOp.accountOp.chainId === currentReq.signAccountOp.accountOp.chainId &&
-            r.signAccountOp.accountOp.safeTx?.nonce === currentReqNonce;
-    });
-    return !conflictingNonceUserRequests.length;
+    // A Safe request that is being broadcast is no longer waiting in the queue, so its
+    // simulation should stay on the dashboard until the transaction is confirmed
+    if (currentReq.signAccountOp.broadcastStatus === 'LOADING')
+        return true;
+    // we are simulating on the dashboard only pending Safe requests
+    return (currentReq.signAccountOp.accountOp.signed || []).length === 0;
 };
 exports.getShouldSimulateInTheBackground = getShouldSimulateInTheBackground;
 //# sourceMappingURL=main.js.map

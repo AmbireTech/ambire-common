@@ -1,14 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ContinuousUpdatesController = void 0;
+exports.ContinuousUpdatesController = exports.MAX_TRENDING_TOKENS_FAILED_RETRIES = void 0;
 const tslib_1 = require("tslib");
 const recurringTimeout_1 = require("../../classes/recurringTimeout/recurringTimeout");
 const intervals_1 = require("../../consts/intervals");
+const accountOp_1 = require("../../libs/accountOp/accountOp");
 const types_1 = require("../../libs/accountOp/types");
 const networks_1 = require("../../libs/networks/networks");
 const safe_1 = require("../../libs/safe/safe");
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 /* eslint-disable @typescript-eslint/no-floating-promises */
+/** How many consecutive failed trending tokens fetches are retried at the fast failed-retry
+cadence before falling back to the normal one, so a long API outage isn't retried every minute. */
+exports.MAX_TRENDING_TOKENS_FAILED_RETRIES = 5;
 class ContinuousUpdatesController extends eventEmitter_1.default {
     #main;
     #updatePortfolioInterval;
@@ -18,6 +22,13 @@ class ContinuousUpdatesController extends eventEmitter_1.default {
     #accountsOpsStatusesInterval;
     get accountsOpsStatusesInterval() {
         return this.#accountsOpsStatusesInterval;
+    }
+    restartAccountsOpsStatusesInterval({ runImmediately = false } = {}) {
+        const allBroadcastedButNotConfirmed = Object.values(this.#main.activity.broadcastedButNotConfirmed).flat();
+        this.#accountsOpsStatusesInterval.restart({
+            timeout: this.#getAccountsOpsStatusesRefreshInterval(allBroadcastedButNotConfirmed),
+            runImmediately
+        });
     }
     #accountStateLatestInterval;
     get accountStateLatestInterval() {
@@ -30,6 +41,11 @@ class ContinuousUpdatesController extends eventEmitter_1.default {
     #accountStateRetriesByNetwork = {};
     #safeGlobalTxnInterval;
     #safeGlobalMessageInterval;
+    #updateTrendingTokensInterval;
+    get updateTrendingTokensInterval() {
+        return this.#updateTrendingTokensInterval;
+    }
+    #trendingTokensFailedRetries = 0;
     // Holds the initial load promise, so that one can wait until it completes
     initialLoadPromise;
     constructor({ eventEmitterRegistry, main }) {
@@ -78,6 +94,26 @@ class ContinuousUpdatesController extends eventEmitter_1.default {
         this.#fastAccountStateReFetchTimeout = new recurringTimeout_1.RecurringTimeout(this.#fastAccountStateReFetch.bind(this), 8000, this.emitError.bind(this), 'fastAccountStateReFetchTimeout');
         this.#safeGlobalTxnInterval = new recurringTimeout_1.RecurringTimeout(this.#resolveConfirmedSafeTxns.bind(this), 10000, this.emitError.bind(this), 'safeGlobalTxnInterval');
         this.#safeGlobalMessageInterval = new recurringTimeout_1.RecurringTimeout(this.#resolveConfirmedSafeMessages.bind(this), 11000, this.emitError.bind(this), 'resolveConfirmedSafeMessages');
+        // Trending tokens poll frequently only while the extension is active and back off to a long
+        // cadence otherwise. On becoming active we refresh immediately, but the freshness guard in
+        // #updateTrendingTokens skips the fetch when the last update is still recent.
+        this.#updateTrendingTokensInterval = new recurringTimeout_1.RecurringTimeout(this.#updateTrendingTokens.bind(this), intervals_1.TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL, this.emitError.bind(this), 'updateTrendingTokensInterval');
+        this.#main.ui.uiEvent.on('addView', () => {
+            const isAlreadyActive = this.#updateTrendingTokensInterval.currentTimeout === intervals_1.TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL;
+            if (this.#main.ui.views.length === 1 && !isAlreadyActive) {
+                this.#updateTrendingTokensInterval.restart({
+                    timeout: intervals_1.TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
+                    runImmediately: true
+                });
+            }
+        });
+        this.#main.ui.uiEvent.on('removeView', () => {
+            if (!this.#main.ui.views.length) {
+                this.#updateTrendingTokensInterval.restart({
+                    timeout: intervals_1.TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
+                });
+            }
+        });
         this.#main.swapAndBridge.onUpdate(() => {
             if (this.#main.swapAndBridge.signAccountOpController?.broadcastStatus === 'SUCCESS') {
                 this.#accountStateLatestInterval.restart();
@@ -106,7 +142,9 @@ class ContinuousUpdatesController extends eventEmitter_1.default {
         this.#main.activity.onUpdate(() => {
             const allBroadcastedButNotConfirmed = Object.values(this.#main.activity.broadcastedButNotConfirmed).flat();
             if (allBroadcastedButNotConfirmed.length) {
-                this.#accountsOpsStatusesInterval.start();
+                this.#accountsOpsStatusesInterval.start({
+                    timeout: this.#getAccountsOpsStatusesRefreshInterval(allBroadcastedButNotConfirmed)
+                });
             }
             else {
                 this.#accountsOpsStatusesInterval.stop();
@@ -121,6 +159,7 @@ class ContinuousUpdatesController extends eventEmitter_1.default {
         this.#accountStateLatestInterval.start();
         this.#safeGlobalTxnInterval.start();
         this.#safeGlobalMessageInterval.start();
+        this.#updateTrendingTokensInterval.start({ runImmediately: true });
     }
     async #updatePortfolio() {
         await this.initialLoadPromise;
@@ -129,15 +168,78 @@ class ContinuousUpdatesController extends eventEmitter_1.default {
             maxDataAgeMsUnused: 60 * 60 * 1000
         });
     }
-    async #updateAccountsOpsStatuses() {
+    async #updateTrendingTokens() {
         await this.initialLoadPromise;
-        await this.#main.updateAccountsOpsStatuses();
+        await this.#main.dapps.initialLoadPromise;
+        // Skip if the last successful update is still fresh — prevents redundant requests when the
+        // background reloads multiple times within a short period (e.g. service worker wake-ups) and
+        // makes "refresh on becoming active" a no-op unless the data is older than the current cadence.
+        const updatedAt = this.#main.dapps.trendingTokensUpdatedAt;
+        const timeSinceLastUpdate = updatedAt ? Date.now() - updatedAt : null;
+        if (updatedAt &&
+            timeSinceLastUpdate !== null &&
+            timeSinceLastUpdate < this.#updateTrendingTokensInterval.currentTimeout) {
+            return;
+        }
+        try {
+            await this.#main.dapps.updateTrendingTokens();
+            this.#trendingTokensFailedRetries = 0;
+            // Recover the normal cadence after a previously failed fetch bumped it down.
+            if (this.#updateTrendingTokensInterval.currentTimeout === intervals_1.TRENDING_TOKENS_FAILED_UPDATE_INTERVAL) {
+                this.#updateTrendingTokensInterval.updateTimeout({
+                    timeout: this.#getTrendingTokensNormalInterval()
+                });
+            }
+        }
+        catch (err) {
+            this.#trendingTokensFailedRetries += 1;
+            const hasExhaustedRetries = this.#trendingTokensFailedRetries >= exports.MAX_TRENDING_TOKENS_FAILED_RETRIES;
+            // Back off to the fast failed-retry cadence, but give up on it once the retries are
+            // exhausted (the API is likely down for a while), then rethrow so RecurringTimeout's
+            // onError handler reports it (with level 'silent', i.e. no user-facing toast).
+            this.#updateTrendingTokensInterval.updateTimeout({
+                timeout: hasExhaustedRetries
+                    ? this.#getTrendingTokensNormalInterval()
+                    : intervals_1.TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
+            });
+            throw err;
+        }
+    }
+    #getTrendingTokensNormalInterval() {
+        return this.#main.ui.views.length
+            ? intervals_1.TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL
+            : intervals_1.TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL;
+    }
+    async #updateAccountsOpsStatuses() {
+        try {
+            await this.initialLoadPromise;
+            await this.#main.updateAccountsOpsStatuses();
+        }
+        finally {
+            this.#accountsOpsStatusesInterval.updateTimeout({
+                timeout: Math.min(this.#accountsOpsStatusesInterval.currentTimeout + 1000, intervals_1.ACTIVITY_REFRESH_INTERVAL)
+            });
+        }
+    }
+    #getAccountsOpsStatusesRefreshInterval(accountOps) {
+        return accountOps.reduce((refreshInterval, accountOp) => {
+            const networkRefreshInterval = this.#main.networks.networks.find(({ chainId }) => chainId === accountOp.chainId)?.refreshInterval;
+            if (!networkRefreshInterval ||
+                !Number.isFinite(networkRefreshInterval) ||
+                networkRefreshInterval <= 0) {
+                return refreshInterval;
+            }
+            return Math.min(refreshInterval, networkRefreshInterval);
+        }, intervals_1.ACTIVITY_REFRESH_INTERVAL);
     }
     async #updateAccountStateLatest() {
         await this.initialLoadPromise;
         await this.#main.accounts.accountStateInitialLoadPromise;
         if (!this.#main.accounts.accounts.length)
             return; // no accounts imported yet
+        // A Privacy Pools account has no address, so it has no account state
+        if (this.#main.selectedAccount.selectedType === 'privacyPools')
+            return;
         if (!this.#main.selectedAccount.account) {
             console.error('No selected account to latest state');
             return;
@@ -161,6 +263,9 @@ class ContinuousUpdatesController extends eventEmitter_1.default {
     async #updateAccountStatePending() {
         await this.initialLoadPromise;
         await this.#main.accounts.accountStateInitialLoadPromise;
+        // A Privacy Pools account has no address, so it has no account state
+        if (this.#main.selectedAccount.selectedType === 'privacyPools')
+            return;
         if (!this.#main.selectedAccount.account) {
             console.error('No selected account to update pending state');
             return;
@@ -235,30 +340,40 @@ class ContinuousUpdatesController extends eventEmitter_1.default {
         // do not make Safe requests if the extension is locked
         if (!this.#main.keystore.isUnlocked)
             return;
-        const pendingSafeTxns = this.#main.requests.userRequests
-            .filter((r) => r.meta.accountAddr === this.#main.selectedAccount.account?.addr &&
-            r.kind === 'calls' &&
-            !!r.signAccountOp.account.safeCreation &&
-            r.signAccountOp.accountOp.txnId &&
-            r.signAccountOp.accountOp.signed?.length)
-            .map((r) => {
-            const accountOp = r.signAccountOp.accountOp;
-            return {
-                chainId: accountOp.chainId,
-                safeTxnHash: accountOp.txnId
-            };
-        });
-        if (!pendingSafeTxns.length)
+        const safeAddr = this.#main.selectedAccount.account.addr;
+        if (!safeAddr)
             return;
-        const confirmed = await this.#main.safe.fetchExecuted(pendingSafeTxns).catch((e) => {
-            console.log('failed to retrieve executed Safe txns');
+        // Ask each chain only for the transactions that can still resolve a request we
+        // are waiting on, which is everything from the smallest pending nonce upwards
+        const minNonceByChainId = new Map();
+        this.#main.requests.userRequests.forEach((r) => {
+            if (r.meta.accountAddr !== safeAddr ||
+                r.kind !== 'calls' ||
+                !r.signAccountOp.account.safeCreation ||
+                !r.signAccountOp.accountOp.txnId ||
+                !r.signAccountOp.accountOp.signed?.length)
+                return;
+            const { accountOp } = r.signAccountOp;
+            // A request with no nonce cannot narrow the range, so fetch the chain in full
+            const nonce = (0, accountOp_1.getAccountOpNonce)(accountOp) ?? 0n;
+            const currentMin = minNonceByChainId.get(accountOp.chainId);
+            if (currentMin === undefined || nonce < currentMin)
+                minNonceByChainId.set(accountOp.chainId, nonce);
+        });
+        if (!minNonceByChainId.size)
+            return;
+        const chains = [...minNonceByChainId].map(([chainId, minNonce]) => ({
+            chainId,
+            minNonce: Number(minNonce)
+        }));
+        const confirmed = await this.#main.safe.fetchExecuted(safeAddr, chains).catch((e) => {
+            console.log('failed to retrieve executed Safe txns', e);
             return [];
         });
         if (!confirmed.length)
             return;
         // resolve each request
-        for (let i = 0; i < confirmed.length; i++) {
-            const oneConfirmed = confirmed[i];
+        for (const oneConfirmed of confirmed) {
             const userR = this.#main.requests.userRequests.find((r) => r.kind === 'calls' &&
                 !!r.signAccountOp.account.safeCreation &&
                 oneConfirmed.safeTxnHash === r.signAccountOp.accountOp.txnId);

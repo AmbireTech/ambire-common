@@ -1,13 +1,24 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const ethers_1 = require("ethers");
-const abis_1 = require("../../const/abis");
+const viem_1 = require("viem");
 const utils_1 = require("../../utils");
-const iface = new ethers_1.Interface(abis_1.Across);
-const AcrossModule = (accOp, calls) => {
+const depositV3Abi = (0, viem_1.parseAbi)([
+    'function depositV3(address depositor,address recipient,address inputToken,address outputToken,uint256 inputAmount,uint256 outputAmount,uint256 destinationChainId,address exclusiveRelayer,uint32 quoteTimestamp,uint32 fillDeadline,uint32 exclusivityDeadline,bytes calldata message) payable'
+]);
+const depositAbi = (0, viem_1.parseAbi)([
+    'function deposit(address recipient,address originToken,uint256 amount,uint256 destinationChainId,int64 relayerFeePct,uint32 quoteTimestamp,bytes memory message,uint256 maxCount) payable'
+]);
+const depositWithSpokePoolAbi = (0, viem_1.parseAbi)([
+    'function deposit(address spokePool,address recipient,address originToken,uint256 amount,uint256 destinationChainId,int64 relayerFeePct,uint32 quoteTimestamp,bytes message,uint256 maxCount) payable'
+]);
+const depositV3Selector = (0, viem_1.toFunctionSelector)(depositV3Abi[0]);
+const depositSelector = (0, viem_1.toFunctionSelector)(depositAbi[0]);
+const depositWithSpokePoolSelector = (0, viem_1.toFunctionSelector)(depositWithSpokePoolAbi[0]);
+const AcrossModule = (accOp, call) => {
     const matcher = {
-        [iface.getFunction('depositV3(address depositor,address recipient,address inputToken,address outputToken,uint256 inputAmount,uint256 outputAmount,uint256 destinationChainId,address exclusiveRelayer,uint32 quoteTimestamp,uint32 fillDeadline,uint32 exclusivityDeadline,bytes calldata message)')?.selector]: (call) => {
-            const { recipient, inputToken, outputToken, inputAmount, outputAmount, destinationChainId, fillDeadline } = iface.parseTransaction(call).args;
+        [depositV3Selector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: depositV3Abi, data: call.data });
+            const [, recipient, inputToken, outputToken, inputAmount, outputAmount, destinationChainId, , , fillDeadline] = args;
             return [
                 (0, utils_1.getAction)('Bridge'),
                 (0, utils_1.getToken)(inputToken, inputAmount),
@@ -19,8 +30,9 @@ const AcrossModule = (accOp, calls) => {
                 ...(0, utils_1.getRecipientText)(accOp.accountAddr, recipient)
             ];
         },
-        [iface.getFunction('deposit(address recipient,address originToken,uint256 amount,uint256 destinationChainId,int64 relayerFeePct,uint32 quoteTimestamp,bytes memory message,uint256 maxCount)')?.selector]: (call) => {
-            const { recipient, originToken, amount, destinationChainId } = iface.parseTransaction(call).args;
+        [depositSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: depositAbi, data: call.data });
+            const [recipient, originToken, amount, destinationChainId] = args;
             return [
                 (0, utils_1.getAction)('Bridge'),
                 (0, utils_1.getToken)(originToken, amount),
@@ -29,8 +41,9 @@ const AcrossModule = (accOp, calls) => {
                 ...(0, utils_1.getRecipientText)(accOp.accountAddr, recipient)
             ];
         },
-        [iface.getFunction('function deposit(address spokePool,address recipient, address originToken, uint256 amount, uint256 destinationChainId, int64 relayerFeePct, uint32 quoteTimestamp,bytes message, uint256 maxCount) payable')?.selector]: (call) => {
-            const { recipient, originToken, amount, destinationChainId } = iface.parseTransaction(call).args;
+        [depositWithSpokePoolSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: depositWithSpokePoolAbi, data: call.data });
+            const [, recipient, originToken, amount, destinationChainId] = args;
             return [
                 (0, utils_1.getAction)('Bridge'),
                 (0, utils_1.getToken)(originToken, amount),
@@ -40,12 +53,10 @@ const AcrossModule = (accOp, calls) => {
             ];
         }
     };
-    const newCalls = calls.map((call) => {
-        if (call.fullVisualization || !matcher[call.data.slice(0, 10)])
-            return call;
-        return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) };
-    });
-    return newCalls;
+    const selector = call.data.slice(0, 10);
+    if (call.fullVisualization || !(0, utils_1.isHexCall)(call) || !matcher[selector])
+        return call;
+    return { ...call, fullVisualization: matcher[selector](call) };
 };
 exports.default = AcrossModule;
 //# sourceMappingURL=index.js.map

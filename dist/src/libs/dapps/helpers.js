@@ -1,30 +1,101 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.modifyDappPropsIfNeeded = exports.sortDapps = exports.formatDappName = exports.getDomainFromUrl = exports.getDappIdFromUrl = void 0;
+exports.modifyDappPropsIfNeeded = exports.sortDapps = exports.formatDappName = exports.getDomainFromUrl = exports.getDappIconFromUrl = exports.getDappIdFromUrl = exports.getNormalizedHostnameFromUrl = exports.normalizeHostname = void 0;
+exports.isSigningAuthPlatform = isSigningAuthPlatform;
+exports.getUnauthenticatedDapps = getUnauthenticatedDapps;
+exports.getAccountsForDapp = getAccountsForDapp;
+exports.isAccountAllowedForDapp = isAccountAllowedForDapp;
 exports.getDappNameFromId = getDappNameFromId;
 exports.unifyDefiLlamaDappUrl = unifyDefiLlamaDappUrl;
+exports.normalizeDappConnection = normalizeDappConnection;
+exports.normalizeTrendingTokens = normalizeTrendingTokens;
 const tldts_1 = require("tldts");
 const dapps_1 = require("../../consts/dapps/dapps");
+/**
+ * Strips the trailing dot(s) a hostname may carry when written in fully-qualified form
+ * ("app.example.com."). DNS, TLS and the browser resolve such a host to the exact same site as the
+ * dotted-free form, but the WHATWG URL parser keeps the dot, so the resulting string matches none
+ * of the canonical forms the wallet compares against - the phishing blacklist, the suspicious
+ * hosting list and the stored dApp records. Left unnormalized, appending a single dot is enough to
+ * turn a known-malicious dApp into an unknown one.
+ */
+const normalizeHostname = (hostname) => {
+    let end = hostname.length;
+    while (end > 0 && hostname[end - 1] === '.')
+        end -= 1;
+    return hostname.slice(0, end);
+};
+exports.normalizeHostname = normalizeHostname;
+/**
+ * Removes every leading "www." label ("www.www.example.com" -> "example.com"), since no legitimate
+ * domain starts with one and a stacked prefix would otherwise sidestep the dApp id and the
+ * phishing list lookups.
+ */
+const stripLeadingWww = (hostname) => {
+    let start = 0;
+    while (hostname.startsWith('www.', start))
+        start += 4;
+    return hostname.slice(start);
+};
+/**
+ * The dApp's canonical hostname, or `null` when the url is not parsable.
+ *
+ * Normalization deliberately starts from `new URL().hostname` - the parser already lowercases the
+ * host and converts internationalized ones to punycode, which is the form the phishing blacklist
+ * and the stored dApp records use. `tldts.getHostname()` also drops the trailing dot, but returns
+ * the unicode form of internationalized hostnames, so using it here would silently change the
+ * identity of every non-ASCII dApp.
+ */
+const getNormalizedHostnameFromUrl = (url) => {
+    try {
+        return normalizeHostname(new URL(url).hostname);
+    }
+    catch {
+        return null;
+    }
+};
+exports.getNormalizedHostnameFromUrl = getNormalizedHostnameFromUrl;
 const getDappIdFromUrl = (url) => {
     if (!url || url === 'internal')
         return 'internal';
     const predefinedDapp = dapps_1.predefinedDapps.find((d) => d.url === url);
     if (predefinedDapp)
         return predefinedDapp.id;
-    try {
-        const { hostname } = new URL(url);
-        return hostname.startsWith('www.') ? hostname.slice(4) : hostname;
-    }
-    catch {
+    const hostname = getNormalizedHostnameFromUrl(url);
+    if (hostname === null)
         return url;
-    }
+    return stripLeadingWww(hostname);
 };
 exports.getDappIdFromUrl = getDappIdFromUrl;
+// Safe messages co-signed from another device carry only the dapp name and url
+// (no live session, so no icon). Recover the icon from the dapp catalog by url.
+const getDappIconFromUrl = (url, dapps) => {
+    if (!url)
+        return '';
+    const id = getDappIdFromUrl(url);
+    return dapps.find((d) => d.id === id)?.icon || '';
+};
+exports.getDappIconFromUrl = getDappIconFromUrl;
+// Indexed once instead of scanning the predefined list on every call. This runs per dapp
+// while the catalog is being derived, which is on every update of the dapps controller.
+const predefinedDappIdByUrl = new Map(dapps_1.predefinedDapps.map((d) => [d.url, d.id]));
+/**
+ * Resolved domains, kept because `getDomain` walks a public-suffix trie and the catalog
+ * is re-derived per dapp on every update of the dapps controller. The result depends only
+ * on the url, so a cached entry can never go stale, and the keys are bounded by the dapps
+ * the app has seen.
+ */
+const domainByUrl = new Map();
 const getDomainFromUrl = (url) => {
-    const predefinedDapp = dapps_1.predefinedDapps.find((d) => d.url === url);
-    if (predefinedDapp)
-        return predefinedDapp.id;
-    return (0, tldts_1.getDomain)(url);
+    const predefinedDappId = predefinedDappIdByUrl.get(url);
+    if (predefinedDappId)
+        return predefinedDappId;
+    const cached = domainByUrl.get(url);
+    if (cached !== undefined)
+        return cached;
+    const domain = (0, tldts_1.getDomain)(url);
+    domainByUrl.set(url, domain);
+    return domain;
 };
 exports.getDomainFromUrl = getDomainFromUrl;
 const formatDappName = (name) => {
@@ -107,5 +178,90 @@ function unifyDefiLlamaDappUrl(url) {
     catch {
         return url; // If it's not a valid URL, return as-is
     }
+}
+/** Whether signing requests can ask for the password/biometrics confirmation - mobile only. */
+function isSigningAuthPlatform(platform) {
+    return platform === 'mobile-android' || platform === 'mobile-ios';
+}
+/**
+ * Which of these stored dapps the user has not yet confirmed their password/biometrics to sign
+ * for, deduplicated and in the order they came in. A dapp the catalog does not know (`undefined`)
+ * is skipped: there is nowhere to remember the confirmation, so asking would repeat on every request.
+ */
+function getUnauthenticatedDapps(dapps) {
+    const unauthenticatedDapps = [];
+    dapps.forEach((dapp) => {
+        if (!dapp || dapp.signingAuthenticated)
+            return;
+        if (unauthenticatedDapps.some(({ id }) => id === dapp.id))
+            return;
+        unauthenticatedDapps.push({ id: dapp.id, name: dapp.name });
+    });
+    return unauthenticatedDapps;
+}
+/**
+ * Returns the list of all accounts that should be returned to a dapp based on the dapp's
+ * account preferences.
+ */
+function getAccountsForDapp(preferences, extensionSelectedAccountAddr) {
+    // Always prioritize the extension-selected account if it's in the dapp's allowed accounts, or if no account is currently selected in the dapp
+    if (preferences?.enabled) {
+        const selectedAccount = preferences.accounts.includes(extensionSelectedAccountAddr || '')
+            ? extensionSelectedAccountAddr || preferences.selectedAccount
+            : preferences.selectedAccount;
+        const otherAccounts = preferences.accounts.filter((acc) => acc !== selectedAccount);
+        return [selectedAccount, ...otherAccounts];
+    }
+    return extensionSelectedAccountAddr ? [extensionSelectedAccountAddr] : [];
+}
+/**
+ * Whether a dapp may send requests for the account. A dapp the user connected to only some
+ * accounts may use only those. Any other dapp follows the selected account, so it may ask for
+ * any account in the wallet.
+ */
+function isAccountAllowedForDapp(preferences, accountAddr) {
+    if (!preferences?.enabled)
+        return true;
+    const normalizedAddr = accountAddr.toLowerCase();
+    return preferences.accounts.some((account) => account.toLowerCase() === normalizedAddr);
+}
+// Reconcile a dapp to the per-source connection invariant: `connectedSources` is the source of
+// truth and `isConnected` is always derived from it. Records written before per-source support
+// (or by a code path that updated only one of the two fields) can drift; this collapses them back.
+function normalizeDappConnection(dapp) {
+    const connectedSources = Array.isArray(dapp.connectedSources)
+        ? dapp.connectedSources
+        : (dapp.isConnected ? ['injected'] : []);
+    return { ...dapp, connectedSources, isConnected: connectedSources.length > 0 };
+}
+// Maps the raw cena trending response to the UI-ready shape kept in state.
+// Items without a usable id or price are dropped — they can't be keyed or displayed meaningfully.
+function normalizeTrendingTokens(raw) {
+    return raw
+        .filter((token) => !!token?.id && typeof token.usd === 'number')
+        .map((token) => {
+        const platformId = token.asset_platform_id ?? null;
+        const address = token.contract_address ?? (platformId ? token.platforms?.[platformId] : undefined) ?? null;
+        const decimals = (platformId ? token.decimals?.[platformId] : undefined) ?? null;
+        return {
+            id: token.id,
+            name: token.name,
+            symbol: token.symbol,
+            icon: token.image?.large || token.image?.small || token.image?.thumb || '',
+            priceUSD: token.usd ?? 0,
+            priceChange24hUSD: typeof token.usd_24h_change === 'number' ? token.usd_24h_change : null,
+            marketCapRank: token.market_cap_rank ?? null,
+            description: token.description?.en ?? null,
+            address,
+            platformId,
+            decimals,
+            marketCapUSD: token.usd_market_cap ?? null,
+            totalVolumeUSD: token.usd_24h_vol ?? null,
+            fullyDilutedValuationUSD: token.usd_fully_diluted_valuation ?? null,
+            totalSupply: token.total_supply ?? null,
+            website: token.homepage?.find((url) => !!url) ?? null,
+            exchangeIds: (token.exchanges ?? []).filter((id) => !!id)
+        };
+    });
 }
 //# sourceMappingURL=helpers.js.map

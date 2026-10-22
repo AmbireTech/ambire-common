@@ -6,6 +6,7 @@ const ethers_1 = require("ethers");
 const balanceChanges_1 = require("../../libs/accountOp/balanceChanges");
 const networks_1 = require("../../libs/networks/networks");
 const portfolio_1 = require("../../libs/portfolio");
+const shareValue_1 = require("../../libs/walletStaking/shareValue");
 const provider_1 = require("../../services/provider");
 const debugTransaction_1 = require("../../utils/debugTransaction");
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
@@ -13,6 +14,7 @@ const STATUS_WRAPPED_METHODS = {
     toggleBatching: 'INITIAL'
 };
 const RANDOM_ADDRESS = '0x0000000000000000000000000000000000000001';
+const batchMaxSize = 24576;
 /**
  * The ProvidersController manages RPC providers, enabling the extension to communicate with the blockchain.
  * Each network requires an initialized JsonRpcProvider, and the provider must be reinitialized whenever network.selectedRpcUrl changes.
@@ -21,18 +23,21 @@ class ProvidersController extends eventEmitter_1.default {
     #storage;
     #getNetworks;
     #sendUiMessage;
+    #featureFlags;
     #providers = {};
     #providersProxy;
+    #providerInitPromises = {};
     #scheduledResolveAssetInfoActions = {};
     // Holds the initial load promise, so that one can wait until it completes
     initialLoadPromise;
     isBatchingEnabled = true;
     statuses = STATUS_WRAPPED_METHODS;
-    constructor({ storage, getNetworks, sendUiMessage, eventEmitterRegistry }) {
+    constructor({ storage, getNetworks, sendUiMessage, eventEmitterRegistry, featureFlags }) {
         super(eventEmitterRegistry);
         this.#storage = storage;
         this.#getNetworks = getNetworks;
         this.#sendUiMessage = sendUiMessage;
+        this.#featureFlags = featureFlags;
         /**
          * Proxy over the providers map that:
          * - Lazily initializes a provider when a chainId is accessed
@@ -55,7 +60,7 @@ class ProvidersController extends eventEmitter_1.default {
                     const chainId = BigInt(prop.toString());
                     const network = getNetworks().find((n) => n.chainId === chainId);
                     if (network)
-                        this.#autoInitProvider(chainId);
+                        void this.#autoInitProvider(chainId);
                 }
                 catch (error) {
                     console.error(`Failed to auto set provider for chainId: ${prop.toString()}`, error);
@@ -92,44 +97,86 @@ class ProvidersController extends eventEmitter_1.default {
     }
     async init({ networks }) {
         await this.initialLoadPromise;
-        networks.forEach((n) => this.setProvider(n));
+        await Promise.all(networks.map((n) => this.setProvider(n)));
         this.emitUpdate();
     }
-    #autoInitProvider(chainId, rpcUrl) {
+    async #autoInitProvider(chainId, rpcUrl) {
         const network = this.#getNetworks().find((n) => n.chainId === chainId);
         if (network) {
-            this.setProvider(network);
+            await this.setProvider(network);
         }
         else if (rpcUrl) {
             this.#providers[chainId.toString()] = (0, provider_1.getRpcProvider)([rpcUrl], chainId, rpcUrl);
         }
         this.emitUpdate();
     }
-    setProvider(network, opts) {
+    async setProvider(network, opts) {
         const { forceUpdate = false } = opts || {};
         const stringChainId = network.chainId.toString();
         const provider = this.#providers[stringChainId];
-        const isRpcUrlChanged = provider?._getConnection().url !== network.selectedRpcUrl;
-        if (!provider || isRpcUrlChanged || forceUpdate) {
+        const providerConnectionUrl = (0, provider_1.getProviderConnectionUrl)(network);
+        const isRpcUrlChanged = provider?._getConnection().url !== providerConnectionUrl;
+        if (provider && !isRpcUrlChanged && !forceUpdate)
+            return;
+        const initPromise = this.#providerInitPromises[stringChainId];
+        if (initPromise) {
+            await initPromise.promise.catch(() => { });
+            const initializedProvider = this.#providers[stringChainId];
+            if (initializedProvider &&
+                initializedProvider._getConnection().url === providerConnectionUrl &&
+                !forceUpdate) {
+                return;
+            }
+        }
+        const nextInitPromise = (async () => {
             const oldRPC = this.#providers[stringChainId];
+            const batchMaxCount = this.isBatchingEnabled
+                ? (0, networks_1.getProviderBatchMaxCount)(network, network.selectedRpcUrl)
+                : 1;
+            let nextProvider;
             try {
                 if (oldRPC)
                     oldRPC.destroy();
+                delete this.#providers[stringChainId];
             }
             catch (error) {
                 if (error?.message !== 'provider destroyed; cancelled request') {
                     this.emitError({ error, message: error.message, level: 'silent', sendCrashReport: true });
                 }
             }
-            const batchMaxCount = this.isBatchingEnabled
-                ? (0, networks_1.getProviderBatchMaxCount)(network, network.selectedRpcUrl)
-                : 1;
-            this.#providers[stringChainId] = (0, provider_1.getRpcProvider)(network.rpcUrls, network.chainId, network.selectedRpcUrl, {
-                batchMaxCount,
-                batchMaxSize: network.rpcNoStateOverride ? 24576 : undefined
-            });
+            try {
+                nextProvider = (0, provider_1.getRpcProvider)(network.rpcUrls, network.chainId, network.selectedRpcUrl, {
+                    batchMaxCount,
+                    batchMaxSize: network.rpcNoStateOverride ? batchMaxSize : undefined
+                });
+            }
+            catch (error) {
+                this.emitError({
+                    error,
+                    message: `Failed to initialize provider for ${network.name}`,
+                    level: 'major',
+                    sendCrashReport: true
+                });
+                nextProvider = (0, provider_1.getRpcProvider)(network.rpcUrls, network.chainId, network.selectedRpcUrl, {
+                    batchMaxCount,
+                    batchMaxSize: network.rpcNoStateOverride ? batchMaxSize : undefined
+                });
+            }
+            this.#providers[stringChainId] = nextProvider;
             this.#providers[stringChainId].isWorking = true;
             this.#providers[stringChainId].batchMaxCount = batchMaxCount;
+        })();
+        this.#providerInitPromises[stringChainId] = {
+            connectionUrl: providerConnectionUrl,
+            promise: nextInitPromise
+        };
+        try {
+            await nextInitPromise;
+        }
+        finally {
+            if (this.#providerInitPromises[stringChainId]?.promise === nextInitPromise) {
+                delete this.#providerInitPromises[stringChainId];
+            }
         }
     }
     updateProviderIsWorking(chainId, isWorking) {
@@ -152,7 +199,7 @@ class ProvidersController extends eventEmitter_1.default {
         return this.withStatus('toggleBatching', async () => {
             this.isBatchingEnabled = !this.isBatchingEnabled;
             await this.#storage.set('isBatchingEnabled', this.isBatchingEnabled);
-            this.#getNetworks().forEach((n) => this.setProvider(n, { forceUpdate: true }));
+            await Promise.all(this.#getNetworks().map((n) => this.setProvider(n, { forceUpdate: true })));
             this.emitUpdate();
         });
     }
@@ -163,7 +210,7 @@ class ProvidersController extends eventEmitter_1.default {
             : 1;
         const provider = (0, provider_1.getRpcProvider)([rpcUrl], chainId, rpcUrl, {
             batchMaxCount,
-            batchMaxSize: network?.rpcNoStateOverride ? 24576 : undefined
+            batchMaxSize: network?.rpcNoStateOverride ? batchMaxSize : undefined
         });
         provider.isWorking = true;
         provider.batchMaxCount = batchMaxCount;
@@ -235,7 +282,6 @@ class ProvidersController extends eventEmitter_1.default {
         }
         const provider = this.providers[network.chainId.toString()];
         const contract = new ethers_1.Contract(address, [abi], provider);
-        let error = undefined;
         if (typeof contract[method] !== 'function') {
             this.emitError({
                 error: new Error('callContractAndSendResToUi: not a valid Contract method'),
@@ -248,13 +294,48 @@ class ProvidersController extends eventEmitter_1.default {
                 error: `${method.toString()} is not a valid Contract method`
             });
         }
-        const result = await contract[method].apply(contract, args);
-        this.#sendUiMessage({
-            requestId,
-            ok: !!result,
-            res: result ?? undefined,
-            error: error?.message ?? undefined
-        });
+        try {
+            const result = await contract[method](...args);
+            this.#sendUiMessage({
+                requestId,
+                ok: true,
+                res: result ?? undefined
+            });
+        }
+        catch (error) {
+            this.emitError({ error, message: error.message, level: 'silent' });
+            this.#sendUiMessage({
+                requestId,
+                ok: false,
+                error: error.message
+            });
+        }
+    }
+    async getXWalletShareValueAndSendResToUi(requestId) {
+        const provider = this.providers[shareValue_1.WALLET_STAKING_CHAIN_ID.toString()];
+        if (!provider) {
+            const error = new Error('The Ethereum provider is unavailable.');
+            this.emitError({ error, message: error.message, level: 'silent' });
+            return this.#sendUiMessage({ requestId, ok: false, error: error.message });
+        }
+        try {
+            const { shareValue, refreshError } = await shareValue_1.xWalletShareValueCache.get(provider);
+            if (refreshError) {
+                this.emitError({
+                    error: refreshError,
+                    message: 'Unable to refresh the WALLET staking conversion rate.',
+                    level: 'silent'
+                });
+            }
+            this.#sendUiMessage({ requestId, ok: true, res: shareValue });
+        }
+        catch (error) {
+            const shareValueError = error instanceof Error
+                ? error
+                : new Error('Unable to load the WALLET staking conversion rate.');
+            this.emitError({ error: shareValueError, message: shareValueError.message, level: 'silent' });
+            this.#sendUiMessage({ requestId, ok: false, error: shareValueError.message });
+        }
     }
     /**
      * Use this to communicate balanche changes for a transaction
@@ -278,7 +359,7 @@ class ProvidersController extends eventEmitter_1.default {
             });
         }
         try {
-            const portfolio = new portfolio_1.Portfolio(fetch, provider, network);
+            const portfolio = new portfolio_1.Portfolio(fetch, provider, network, undefined, undefined, () => this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false);
             // create a wrapper function so that we could pass it correctly
             // to the required type for getAccountOpBalanceChanges.
             // the final goal is just calling portfolio.getTokensByAddresses
@@ -308,7 +389,7 @@ class ProvidersController extends eventEmitter_1.default {
     }
     async #executeBatchedFetch(network) {
         const allAddresses = Array.from(new Set(this.#scheduledResolveAssetInfoActions[network.chainId.toString()]?.data.map((i) => i.address))) || [];
-        const portfolio = new portfolio_1.Portfolio(fetch, this.providers[network.chainId.toString()], network);
+        const portfolio = new portfolio_1.Portfolio(fetch, this.providers[network.chainId.toString()], network, undefined, undefined, () => this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false);
         const options = {
             disableAutoDiscovery: true,
             additionalErc20Hints: allAddresses,

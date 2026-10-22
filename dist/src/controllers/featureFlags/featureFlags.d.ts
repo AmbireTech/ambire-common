@@ -16,6 +16,7 @@ export declare class FeatureFlagsController extends EventEmitter implements IFea
     /** Syntactic sugar for checking if a feature flag is enabled */
     isFeatureEnabled(flag: keyof FeatureFlags): boolean;
     setFeatureFlag(flag: keyof typeof defaultFeatureFlags, value: boolean): Promise<void>;
+    setFeatureFlags(flags: Partial<FeatureFlags>): Promise<void>;
     get flags(): FeatureFlags;
     toJSON(): this & {
         flags: FeatureFlags;

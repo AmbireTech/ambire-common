@@ -1,7 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SCROLL_CHAIN_ID = exports.ARBITRUM_CHAIN_ID = exports.networks = void 0;
+exports.ETHEREUM_CHAIN_ID = exports.CITREA_CHAIN_ID = exports.SCROLL_CHAIN_ID = exports.ARBITRUM_CHAIN_ID = exports.networks = exports.INVICTUS_RPC_URL_IDENTIFIER = void 0;
 const bundlers_1 = require("./bundlers");
+exports.INVICTUS_RPC_URL_IDENTIFIER = 'invictus.ambire.com';
 const networks = [
     {
         name: 'Ethereum',
@@ -40,7 +41,7 @@ const networks = [
             enabled: false,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            bundlers: [bundlers_1.PIMLICO],
             defaultBundler: bundlers_1.PIMLICO
         },
         isSAEnabled: true,
@@ -50,7 +51,7 @@ const networks = [
         nativeAssetId: 'matic-network',
         hasSingleton: true,
         features: [],
-        feeOptions: { is1559: false, feeIncrease: 10n },
+        feeOptions: { is1559: false },
         predefined: true,
         wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
         oldNativeAssetSymbols: ['MATIC'],
@@ -70,8 +71,8 @@ const networks = [
             enabled: true,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
-            defaultBundler: bundlers_1.BICONOMY,
+            bundlers: [bundlers_1.PIMLICO],
+            defaultBundler: bundlers_1.PIMLICO,
             increasePreVerGas: 5
         },
         isSAEnabled: true,
@@ -135,7 +136,7 @@ const networks = [
             enabled: true,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            bundlers: [bundlers_1.PIMLICO],
             defaultBundler: bundlers_1.PIMLICO
         },
         isSAEnabled: true,
@@ -166,7 +167,7 @@ const networks = [
             enabled: true,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            bundlers: [bundlers_1.PIMLICO],
             defaultBundler: bundlers_1.PIMLICO,
             increasePreVerGas: 5
         },
@@ -227,7 +228,7 @@ const networks = [
             enabled: false,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            bundlers: [bundlers_1.PIMLICO],
             defaultBundler: bundlers_1.PIMLICO
         },
         isSAEnabled: true,
@@ -277,4 +278,6 @@ const networks = [
 exports.networks = networks;
 exports.ARBITRUM_CHAIN_ID = 42161n;
 exports.SCROLL_CHAIN_ID = 534352n;
+exports.CITREA_CHAIN_ID = 4114n;
+exports.ETHEREUM_CHAIN_ID = 1n;
 //# sourceMappingURL=networks.js.map

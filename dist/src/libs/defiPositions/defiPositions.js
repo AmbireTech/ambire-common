@@ -1,9 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updatePositionsByProviderAssetPrices = exports.getUniqueMergedPositions = exports.getShouldBypassServerSideCache = exports.getNewDefiState = exports.getHasNonceChangedSinceLastUpdate = exports.getFormattedApiPositions = exports.getCustomProviderPositions = exports.getCanSkipUpdate = exports.getAssetValue = exports.getAllAssetsAsHints = exports.getAccountNetworksWithPositions = exports.enhancePortfolioTokensWithDefiPositions = exports.getIsExternalApiDefiPositionsCallSuccessful = void 0;
+exports.updatePositionsByProviderAssetPrices = exports.mergeDefiUpdateModes = exports.getUniqueMergedPositions = exports.getNewDefiState = exports.getHasNonceChangedSinceLastUpdate = exports.getFormattedApiPositions = exports.getDefiUpdateMode = exports.getCustomProviderPositions = exports.getAssetValue = exports.getAllAssetsAsHints = exports.getAccountNetworksWithPositions = exports.enhancePortfolioTokensWithDefiPositions = exports.DefiUpdateMode = exports.getIsExternalApiDefiPositionsCallSuccessful = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const viem_1 = require("viem");
+const amount_1 = require("../transfer/amount");
 const formatters_1 = require("../../utils/numbers/formatters");
 const shortenAddress_1 = tslib_1.__importDefault(require("../../utils/shortenAddress"));
 const defiPrices_1 = require("./defiPrices");
@@ -28,7 +29,7 @@ exports.getIsExternalApiDefiPositionsCallSuccessful = getIsExternalApiDefiPositi
  * Returns the old positions if the call fails. Some positions, like that of Uniswap V3,
  * are merged with the data from Cena/Debank.
  */
-const getCustomProviderPositions = async (addr, provider, network, fetch, previousPositions, debankNetworkPositionsByProvider, isDebankCallSuccessful) => {
+const getCustomProviderPositions = async (addr, provider, network, fetch, previousPositions, debankNetworkPositionsByProvider, isDebankCallSuccessful, shouldFetchTokenPrices = true) => {
     if (network.disabled)
         return {
             positionsByProvider: [],
@@ -55,7 +56,7 @@ const getCustomProviderPositions = async (addr, provider, network, fetch, previo
                 return null;
             })
         ])).filter(Boolean);
-        if (newPositions.length) {
+        if (newPositions.length && shouldFetchTokenPrices) {
             try {
                 newPositions =
                     (await (0, defiPrices_1.updatePositionsByProviderAssetPrices)(fetch, newPositions, network.platformId)) ||
@@ -193,12 +194,12 @@ const getFormattedApiPositions = (result) => {
                         let amount = asset.amount;
                         if (isCustomAppChain) {
                             // Amount should be formatted with decimals and turned to bigint after that
-                            amount = (0, ethers_1.parseUnits)(String(amount), asset.decimals);
+                            amount = (0, ethers_1.parseUnits)(String((0, amount_1.getSanitizedAmount)(String(amount), asset.decimals)), asset.decimals);
                             // In else because app assets don't have addresses and we don't want to set them as zero addresses
                         }
                         else {
                             // Debank returns zero addresses like `0x00` as `ethereum/base` which breaks our logic
-                            asset.address = (0, viem_1.isHex)(asset.address) ? (0, ethers_1.getAddress)(asset.address) : ethers_1.ZeroAddress;
+                            asset.address = (0, viem_1.isHex)(asset.address) ? (0, viem_1.getAddress)(asset.address) : ethers_1.ZeroAddress;
                         }
                         return {
                             ...asset,
@@ -208,7 +209,7 @@ const getFormattedApiPositions = (result) => {
                                 ? {
                                     ...asset.protocolAsset,
                                     address: (0, viem_1.isHex)(asset.protocolAsset.address)
-                                        ? (0, ethers_1.getAddress)(asset.protocolAsset.address)
+                                        ? (0, viem_1.getAddress)(asset.protocolAsset.address)
                                         : ethers_1.ZeroAddress
                                 }
                                 : undefined
@@ -226,6 +227,66 @@ const getFormattedApiPositions = (result) => {
 };
 exports.getFormattedApiPositions = getFormattedApiPositions;
 /**
+ * Groups the portfolio tokens by their lowercased address, keeping the original
+ * order within each group, so that looking a token up by address doesn't
+ * require a scan of the whole list.
+ */
+const groupTokensByLowercasedAddress = (portfolioTokens) => {
+    const tokensByAddress = new Map();
+    portfolioTokens.forEach((token) => {
+        const address = token.address.toLowerCase();
+        const sameAddressTokens = tokensByAddress.get(address);
+        if (sameAddressTokens)
+            sameAddressTokens.push(token);
+        else
+            tokensByAddress.set(address, [token]);
+    });
+    return tokensByAddress;
+};
+/**
+ * Finds the portfolio token that a DeFi position asset refers to by its address.
+ * An exact address match wins over a case-insensitive one, and rewards and gas
+ * tank tokens are never a protocol asset. Returns undefined if the portfolio
+ * holds no such token.
+ */
+const findTokenByProtocolAssetAddress = (tokensByAddress, protocolAssetAddress) => tokensByAddress
+    .get(protocolAssetAddress.toLowerCase())
+    ?.find((token) => token.address === protocolAssetAddress ||
+    (!token.flags.rewardsType && !token.flags.onGasTank));
+/**
+ * Finds the portfolio token that a DeFi position asset with no protocol asset
+ * refers to. Nothing but the symbol links the two, so a match is accepted only
+ * when both also hold nearly the same value, otherwise two unrelated tokens
+ * sharing a symbol would be treated as one. Returns undefined when there is no
+ * confident match.
+ *
+ * This scans every token and prices each candidate, so only reach for it when
+ * there is no address to match on.
+ */
+const findTokenBySimilarSymbolAndValue = (portfolioTokens, asset) => {
+    const assetValue = asset.value;
+    // If the token or asset don't have a value we MUST! not compare them
+    // by value as that would lead to false positives
+    if (!assetValue)
+        return undefined;
+    const assetSymbol = asset.symbol.toLowerCase();
+    return portfolioTokens.find((token) => {
+        if (token.flags.rewardsType || token.flags.onGasTank)
+            return false;
+        const symbol = token.symbol.toLowerCase();
+        // The portfolio token should contain the asset symbol, but be a different token
+        if (symbol === assetSymbol || !symbol.includes(assetSymbol))
+            return false;
+        const priceUSD = token.priceIn.find(({ baseCurrency }) => baseCurrency.toLowerCase() === 'usd')?.price;
+        if (!priceUSD)
+            return false;
+        const tokenBalanceUSD = Number((0, formatters_1.safeTokenAmountAndNumberMultiplication)(BigInt(token.amountPostSimulation || token.amount), token.decimals, priceUSD));
+        if (!tokenBalanceUSD)
+            return false;
+        return (0, helpers_1.isTokenPriceWithinHalfPercent)(tokenBalanceUSD, assetValue);
+    });
+};
+/**
  * Enhances the portfolio tokens with Defi position data.
  * Examples:
  * - Marks tokens that are part of a DeFi position with the position ID.
@@ -242,6 +303,7 @@ const enhancePortfolioTokensWithDefiPositions = (portfolioTokens, defiPositionsS
     try {
         const defiAssetsMap = new Map();
         const notYetHandledTokensToAdd = [];
+        const tokensByAddress = groupTokensByLowercasedAddress(portfolioTokens);
         defiPositionsState.positionsByProvider.forEach((posByProvider) => {
             // Skip app providers
             const posChainId = posByProvider.chainId;
@@ -259,35 +321,9 @@ const enhancePortfolioTokensWithDefiPositions = (portfolioTokens, defiPositionsS
                     }
                     pos.assets.forEach((asset) => {
                         const protocolAsset = asset.protocolAsset || null;
-                        const tokenCorrespondingToProtocolAsset = portfolioTokens.find((t) => {
-                            const isSameAddress = t.address === protocolAsset?.address;
-                            if (isSameAddress)
-                                return true;
-                            const priceUSD = t.priceIn.find(({ baseCurrency }) => baseCurrency.toLowerCase() === 'usd')?.price;
-                            const tokenBalanceUSD = priceUSD
-                                ? Number((0, formatters_1.safeTokenAmountAndNumberMultiplication)(BigInt(t.amountPostSimulation || t.amount), t.decimals, priceUSD))
-                                : undefined;
-                            if (protocolAsset?.address) {
-                                return (!t.flags.rewardsType &&
-                                    !t.flags.onGasTank &&
-                                    t.address.toLowerCase() === protocolAsset.address.toLowerCase());
-                            }
-                            // If the token or asset don't have a value we MUST! not compare them
-                            // by value as that would lead to false positives
-                            if (!tokenBalanceUSD || !asset.value)
-                                return false;
-                            // If there is no protocol asset we have to fallback to finding the token
-                            // by symbol and chainId. In that case we must ensure that the value of the two
-                            // assets is similar
-                            return (!t.flags.rewardsType &&
-                                !t.flags.onGasTank &&
-                                // the portfolio token should contain the original asset symbol
-                                t.symbol.toLowerCase().includes(asset.symbol.toLowerCase()) &&
-                                // but should be a different token symbol
-                                t.symbol.toLowerCase() !== asset.symbol.toLowerCase() &&
-                                // and prices should have no more than 0.5% diff
-                                (0, helpers_1.isTokenPriceWithinHalfPercent)(tokenBalanceUSD || 0, asset.value || 0));
-                        });
+                        const tokenCorrespondingToProtocolAsset = protocolAsset?.address
+                            ? findTokenByProtocolAssetAddress(tokensByAddress, protocolAsset.address)
+                            : findTokenBySimilarSymbolAndValue(portfolioTokens, asset);
                         if (tokenCorrespondingToProtocolAsset) {
                             defiAssetsMap.set(tokenCorrespondingToProtocolAsset.address.toLowerCase(), {
                                 assetType: asset.type,
@@ -375,29 +411,69 @@ const getHasNonceChangedSinceLastUpdate = (previousState, nonceId) => {
 };
 exports.getHasNonceChangedSinceLastUpdate = getHasNonceChangedSinceLastUpdate;
 /**
- * Whether the portfolio defi positions data should be updated
+ * Describes how fresh the DeFi positions data should be when fetched, based on various factors such as:
+ * - Whether the user explicitly requested a refresh (isManualUpdate)
+ * - Whether there has been a nonce change since the last update, indicating on-chain activity
+ * - Whether there is a scheduled update coming soon (hasScheduledUpdate)
+ * - The age of the currently cached data (maxDataAgeMs)
  */
-const getCanSkipUpdate = (previousState, hasNonceChangedSinceLastUpdate, maxDataAgeMs = 60000) => {
-    if (!previousState || !previousState.lastSuccessfulUpdate)
-        return false;
-    // Always update if the nonce has changed
-    if (hasNonceChangedSinceLastUpdate)
-        return false;
-    return Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs;
+var DefiUpdateMode;
+(function (DefiUpdateMode) {
+    /** Serve cached data regardless of its age */
+    DefiUpdateMode["Cache"] = "cache";
+    /** Serve cached data if it is fresh enough, otherwise refetch */
+    DefiUpdateMode["Default"] = "default";
+    /** Bypass the server-side cache and refetch fresh data (was: `update=true`) */
+    DefiUpdateMode["Force"] = "force";
+})(DefiUpdateMode || (exports.DefiUpdateMode = DefiUpdateMode = {}));
+const DEFI_UPDATE_MODE_RANK = {
+    [DefiUpdateMode.Cache]: 0,
+    [DefiUpdateMode.Default]: 1,
+    [DefiUpdateMode.Force]: 2
 };
-exports.getCanSkipUpdate = getCanSkipUpdate;
-const getShouldBypassServerSideCache = (previousState, isManualUpdate, hasKeys, sessionIds, hasNonceChangedSinceLastUpdate) => {
-    // Always bypass cache if the nonce has changed
-    if (hasNonceChangedSinceLastUpdate)
-        return true;
-    const hasForceApiUpdatePrerequisites = isManualUpdate && sessionIds.length && hasKeys;
-    if (!hasForceApiUpdatePrerequisites)
-        return false;
-    // Bypass the server-side cache if the last force update was more than 30s ago
-    const HALF_MINUTE_MS = 30000;
-    return Date.now() - (previousState?.lastForceApiUpdate || 0) >= HALF_MINUTE_MS;
+// The server-side defi cache has a per-account cooldown; we only force a bypass once per window.
+const FORCE_API_UPDATE_COOLDOWN_MS = 30000;
+const getDefiUpdateMode = (params) => {
+    const { previousState, bypassServerSideCache, isManualUpdate, hasKeys, sessionIds, hasNonceChangedSinceLastUpdate, hasScheduledUpdate, maxDataAgeMs } = params;
+    // An explicit override always bypasses the server-side cache.
+    if (bypassServerSideCache)
+        return DefiUpdateMode.Force;
+    // There is a scheduled update coming soon that will update defi positions
+    const shouldDeferToScheduledUpdate = hasScheduledUpdate && !isManualUpdate;
+    // A nonce change means on-chain state changed, so refetch fresh.
+    if (hasNonceChangedSinceLastUpdate && !shouldDeferToScheduledUpdate)
+        return DefiUpdateMode.Force;
+    // Manual update with additional conditions
+    const isThrottledManualForceDue = isManualUpdate &&
+        !!sessionIds.length &&
+        hasKeys &&
+        Date.now() - (previousState?.lastForceApiUpdate || 0) >= FORCE_API_UPDATE_COOLDOWN_MS;
+    if (isThrottledManualForceDue)
+        return DefiUpdateMode.Force;
+    // If there isn't a successful update yet do a default update
+    // Example: extension boot
+    if (!previousState || !previousState.lastSuccessfulUpdate || isManualUpdate)
+        return DefiUpdateMode.Default;
+    // In this case we don't care about defi positions so the age of the data doesn't matter, we can serve stale data from cache
+    // Example: background update
+    if (maxDataAgeMs < 0)
+        return DefiUpdateMode.Cache;
+    // If a specific maxDataAgeMs is set, then we rely on it instead of the default server-side cache age.
+    if (Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs)
+        return DefiUpdateMode.Cache;
+    return DefiUpdateMode.Default;
 };
-exports.getShouldBypassServerSideCache = getShouldBypassServerSideCache;
+exports.getDefiUpdateMode = getDefiUpdateMode;
+/**
+ * Combines the modes of several batched requests into one (most aggressive mode wins because the request is shared)
+ */
+const mergeDefiUpdateModes = (modes) => {
+    const definedModes = modes.filter((mode) => !!mode);
+    if (!definedModes.length)
+        return DefiUpdateMode.Default;
+    return definedModes.reduce((strongest, mode) => DEFI_UPDATE_MODE_RANK[mode] > DEFI_UPDATE_MODE_RANK[strongest] ? mode : strongest);
+};
+exports.mergeDefiUpdateModes = mergeDefiUpdateModes;
 /**
  * Returns the networks where the account has positions with certainty.
  * Certainty - there are no errors and the rpc is working.

@@ -1,0 +1,1 @@
+{"version":3,"file":"colibri.d.ts","sourceRoot":"","sources":["../../../../src/libs/networks/colibri.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,OAAO,EAAE,MAAM,0BAA0B,CAAA;AAElD,eAAO,MAAM,+BAA+B,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,EAAE,CAYpE,CAAA;AAED,eAAO,MAAM,0BAA0B,GAAI,SAAS,OAAO,CAAC,SAAS,CAAC,YAErE,CAAA;AAED,eAAO,MAAM,2BAA2B,GAAI,SAAS,OAAO,CAAC,SAAS,CAAC,aAItE,CAAA"}

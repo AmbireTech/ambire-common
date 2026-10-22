@@ -1,11 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AutoLoginController = exports.AUTO_LOGIN_DURATION_OPTIONS = exports.STATUS_WRAPPED_METHODS = void 0;
+exports.AutoLoginController = exports.STATUS_WRAPPED_METHODS = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const tldts_1 = require("tldts");
 const viem_1 = require("viem");
 const siwe_1 = require("@signinwithethereum/siwe");
+const autoLogin_1 = require("../../consts/autoLogin");
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const signMessage_1 = require("../signMessage/signMessage");
 exports.STATUS_WRAPPED_METHODS = {
@@ -14,29 +15,26 @@ exports.STATUS_WRAPPED_METHODS = {
 };
 // Taken from viem's parseSiweMessage.ts
 const prefixRegex = /^(?:(?<scheme>[a-zA-Z][a-zA-Z0-9+-.]*):\/\/)?(?<domain>[a-zA-Z0-9+-.]*(?::[0-9]{1,5})?) (?:wants you to sign in with your Ethereum account:\n)(?<address>0x[a-fA-F0-9]{40})\n\n(?:(?<statement>.*)\n\n)?/;
+// Normalizes a SIWE domain/host authority (host, optionally with a port) for comparison.
+// tldts.getHostname() lowercases and validates the hostname (also handles localhost/IPs,
+// unlike tldts.getDomain() which returns null for those), but it always strips the port,
+// so the port is normalized and compared separately to preserve origin security boundaries.
+const normalizeSiweAuthority = (hostAndPort) => {
+    const [host, port] = hostAndPort.split(':');
+    if (!host)
+        return null;
+    const normalizedHostname = (0, tldts_1.getHostname)(host);
+    if (!normalizedHostname)
+        return null;
+    const hostnameWithoutWww = normalizedHostname.startsWith('www.')
+        ? normalizedHostname.slice(4)
+        : normalizedHostname;
+    return port ? `${hostnameWithoutWww}:${port}` : hostnameWithoutWww;
+};
 /**
  * A list of default policies for popular apps
  */
 const DEFAULT_POLICIES = [];
-const DEFAULT_AUTO_LOGIN_DURATION_OPTION = {
-    label: '30 days',
-    value: 30 * 24 * 60 * 60 * 1000
-};
-// Implemented here to ensure consistency between the controller and the UI
-// Also, in the future when the duration setting becomes exposed to the UI we
-// will need to validate the input from the UI, so these will be useful
-exports.AUTO_LOGIN_DURATION_OPTIONS = [
-    { label: '24 hours', value: 24 * 60 * 60 * 1000 },
-    {
-        label: '7 days',
-        value: 7 * 24 * 60 * 60 * 1000
-    },
-    {
-        label: '14 days',
-        value: 14 * 24 * 60 * 60 * 1000
-    },
-    DEFAULT_AUTO_LOGIN_DURATION_OPTION
-];
 /**
  * The controller handles SIWE-like messages and provides auto-login functionality.
  * It creates and manages auto-login policies based on signed SIWE messages, and
@@ -49,7 +47,7 @@ class AutoLoginController extends eventEmitter_1.default {
     #storage;
     settings = {
         enabled: true,
-        duration: DEFAULT_AUTO_LOGIN_DURATION_OPTION.value
+        duration: autoLogin_1.DEFAULT_AUTO_LOGIN_DURATION_OPTION.value
     };
     #signMessage;
     #policiesByAccount = {};
@@ -108,7 +106,14 @@ class AutoLoginController extends eventEmitter_1.default {
             const parsedSiweMessage = new siwe_1.SiweMessage(messageString);
             if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length)
                 return null;
-            if ((0, tldts_1.getDomain)(parsedSiweMessage.domain) !== (0, tldts_1.getDomain)(requestHostname))
+            // ERC-4361 requires comparing the SIWE domain against the full request
+            // authority (host + port), not the registrable domain, otherwise sibling
+            // subdomains (e.g. evil.example.com vs app.example.com) would pass as a match.
+            const normalizedSiweDomain = normalizeSiweAuthority(parsedSiweMessage.domain);
+            const normalizedRequestAuthority = normalizeSiweAuthority(requestHostname);
+            if (!normalizedSiweDomain ||
+                !normalizedRequestAuthority ||
+                normalizedSiweDomain !== normalizedRequestAuthority)
                 return {
                     parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
                     status: 'domain-mismatch'

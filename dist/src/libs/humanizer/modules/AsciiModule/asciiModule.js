@@ -17,32 +17,29 @@ function tryGetMEssageAsText(msg) {
     }
     return null;
 }
-const asciiModule = (accountOp, currentIrCalls) => {
-    const newCalls = currentIrCalls.map((call) => {
-        if (!call.data || call.data === '0x')
-            return call;
-        if (call.fullVisualization)
-            return call;
-        // assuming that if there are only 4 bytes it is probably just contract method call
-        // and further logic is irrelevant
-        if (call.data.length === '0x12345678'.length)
-            return call;
-        let messageAsText = tryGetMEssageAsText(call.data);
-        if (!messageAsText)
-            return call;
-        return {
-            ...call,
-            fullVisualization: call.to
-                ? [
-                    (0, utils_1.getAction)('Send this message'),
-                    (0, utils_1.getLabel)('to'),
-                    (0, utils_1.getAddressVisualization)(call.to),
-                    (0, utils_1.getText)(messageAsText)
-                ]
-                : [(0, utils_1.getAction)('Send this message'), (0, utils_1.getText)(messageAsText)]
-        };
-    });
-    return newCalls;
+const asciiModule = (accountOp, call) => {
+    if (!call.data || call.data === '0x')
+        return call;
+    if (call.fullVisualization)
+        return call;
+    // assuming that if there are only 4 bytes it is probably just contract method call
+    // and further logic is irrelevant
+    if (call.data.length === '0x12345678'.length)
+        return call;
+    let messageAsText = tryGetMEssageAsText(call.data);
+    if (!messageAsText)
+        return call;
+    return {
+        ...call,
+        fullVisualization: call.to
+            ? [
+                (0, utils_1.getAction)('Send this message'),
+                (0, utils_1.getLabel)('to'),
+                (0, utils_1.getAddressVisualization)(call.to),
+                (0, utils_1.getText)(messageAsText)
+            ]
+            : [(0, utils_1.getAction)('Send this message'), (0, utils_1.getText)(messageAsText)]
+    };
 };
 exports.asciiModule = asciiModule;
 //# sourceMappingURL=asciiModule.js.map

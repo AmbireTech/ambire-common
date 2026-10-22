@@ -12,6 +12,10 @@ const normalizeLedgerMessage = (error) => {
         // Generic error returned by the Ledger transport (@ledgerhq/hw-transport)
         error.toLowerCase().includes('access denied'))
         return 'Cannot connect to your Ledger device. Please make sure it is connected.';
+    // Android USB: user rejected the "Allow access to USB device?" system dialog
+    // (thrown by @ledgerhq/react-native-hid).
+    if (error.toLowerCase().includes('permission denied by user'))
+        return 'USB access to your Ledger was denied. Please allow Ambire to access the device when prompted, then try again.';
     if (error.includes('unlock-device'))
         return 'Please unlock your Ledger device first.';
     if (error.includes('confirm-open-app'))
@@ -19,7 +23,11 @@ const normalizeLedgerMessage = (error) => {
     if (error.includes('5515') ||
         error.includes('6b0c') ||
         error.includes('650f') ||
-        error.includes('6511')) {
+        error.includes('6511') ||
+        // Ethereum app not open (device on the dashboard); the app-specific APDU is
+        // rejected by BOLOS as unknown.
+        error.includes('6d02') ||
+        error.toLowerCase().includes('unknown_apdu')) {
         return 'Cannot connect to your Ledger device. Please make sure it is unlocked and running the Ethereum app.';
     }
     if (error.includes('DeviceDisconnectedWhileSendingError'))

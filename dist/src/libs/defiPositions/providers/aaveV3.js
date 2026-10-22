@@ -1,15 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.AAVE_STATIC_CALL_TIMEOUT_MS = void 0;
 exports.getAAVEPositions = getAAVEPositions;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const DeFiAAVEPosition_json_1 = tslib_1.__importDefault(require("../../../../contracts/compiled/DeFiAAVEPosition.json"));
 const uuid_1 = require("../../../utils/uuid");
+const with_timeout_1 = require("../../../utils/with-timeout");
 const deployless_1 = require("../../deployless/deployless");
 const defiAddresses_1 = require("../defiAddresses");
 const helpers_1 = require("../helpers");
 const types_1 = require("../types");
 const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER = 115792089237316195423570985008687907853269984665640564039457584007913129639935n;
+exports.AAVE_STATIC_CALL_TIMEOUT_MS = 15 * 1000;
 async function getAAVEPositions(userAddr, provider, network) {
     const { chainId } = network;
     if (chainId && !defiAddresses_1.AAVE_V3[chainId.toString()])
@@ -18,7 +21,11 @@ async function getAAVEPositions(userAddr, provider, network) {
     const poolContract = new ethers_1.Contract(poolAddr, ['function getReservesCount() view returns (uint256)'], provider);
     const deploylessDeFiPositionsGetter = (0, deployless_1.fromDescriptor)(provider, DeFiAAVEPosition_json_1.default, network.rpcNoStateOverride // Why?
     );
-    const reservesLength = await poolContract.getFunction('getReservesCount').staticCall();
+    // Raw ethers staticCall has no timeout; without this, a hung RPC can pin DeFi/portfolio updates.
+    const reservesLength = await (0, with_timeout_1.withTimeout)(() => poolContract.getFunction('getReservesCount').staticCall(), {
+        timeoutMs: exports.AAVE_STATIC_CALL_TIMEOUT_MS,
+        message: `Fetching AAVE positions on ${network.name} took too long`
+    });
     const PAGE_SIZE = 15;
     const numberOfPages = Math.ceil(Number(reservesLength) / PAGE_SIZE);
     const promises = [];

@@ -1,6 +1,15 @@
 import { PositionsByProvider } from '../libs/defiPositions/types';
 import { CollectionResult as CollectionResultInterface, NetworkSimulatedAccountOp, NetworkState, PortfolioKeyResult, PortfolioNetworkResult, ProjectedRewardsStats, TokenResult as TokenResultInterface } from '../libs/portfolio/interfaces';
+import { Account } from './account';
 import { ControllerInterface } from './controller';
+/** What to select: a regular account, or a Privacy Pools account in its place. Null signs out. */
+export type AccountSelection = {
+    account: Account;
+} | {
+    privacyPoolsSeedId: string;
+} | null;
+/** The kind of the selected account, or null when none is selected (signed out). */
+export type SelectedAccountType = 'regular' | 'privacyPools' | null;
 export type ISelectedAccountController = ControllerInterface<InstanceType<typeof import('../controllers/selectedAccount/selectedAccount').SelectedAccountController>>;
 /** A stripped version of the portfolio state that will be used in the UI */
 export type SelectedAccountPortfolioState = {
@@ -13,6 +22,13 @@ export type SelectedAccountPortfolioState = {
 export type SelectedAccountPortfolioTokenResult = TokenResultInterface & {
     latestAmount?: bigint;
     pendingAmount?: bigint;
+};
+export type SelectedAccountPortfolioVerification = {
+    provider: 'colibri';
+    status: 'loading' | 'success' | 'warning' | 'stale';
+    blockDiff?: number;
+    verifiedChains: string[];
+    failedChains: string[];
 };
 export interface SelectedAccountPortfolio {
     tokens: SelectedAccountPortfolioTokenResult[];
@@ -42,7 +58,15 @@ export interface SelectedAccountPortfolio {
     defiPositions: PositionsByProvider[];
     networkSimulatedAccountOp: NetworkSimulatedAccountOp;
     portfolioState: SelectedAccountPortfolioState;
-    projectedRewardsStats: ProjectedRewardsStats | null;
+    walletStaking?: PortfolioNetworkResult['walletStaking'];
+    verification: SelectedAccountPortfolioVerification | null;
+    /**
+     * @deprecated The wallet no longer calculates the projected rewards stats, so this is
+     * never set. Kept only for type compatibility.
+     */
+    projectedRewardsStats?: ProjectedRewardsStats | null;
+    /** The account's invite key for the Ambire Mobile app, if the relayer has one for it. */
+    mobileInviteKey?: string;
 }
 export type SelectedAccountBalanceByAccount = {
     [accountId: string]: number;

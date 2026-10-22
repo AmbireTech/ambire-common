@@ -3,7 +3,7 @@ export declare class EventEmitterRegistryController {
     #private;
     constructor(onUpdate: () => void);
     get size(): number;
-    get(id: string): EventEmitter;
+    get(id: string): EventEmitter<string>;
     values(): EventEmitter[];
     entries(): [string, EventEmitter][];
     set(id: string, ctrl: EventEmitter): void;

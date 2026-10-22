@@ -36,7 +36,7 @@ export declare class SocketAPI implements SwapProvider {
         address: string;
         chainId: number;
     }): Promise<SwapAndBridgeToToken | null>;
-    quote({ fromAsset, toAsset, fromChainId, fromTokenAddress, toChainId, toTokenAddress, fromAmount, userAddress, isWrapOrUnwrap, accountNativeBalance, nativeSymbol }: ProviderQuoteParams): Promise<SwapAndBridgeQuote>;
+    quote({ fromAsset, toAsset, fromChainId, fromTokenAddress, toChainId, toTokenAddress, fromAmount, userAddress, isWrapOrUnwrap, accountNativeBalance, nativeSymbol, feePercent }: ProviderQuoteParams): Promise<SwapAndBridgeQuote>;
     startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest>;
     getRouteStatus({ txHash }: {
         txHash: string;

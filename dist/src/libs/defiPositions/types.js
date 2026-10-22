@@ -9,6 +9,9 @@ var AssetType;
     AssetType[AssetType["Collateral"] = 1] = "Collateral";
     AssetType[AssetType["Borrow"] = 2] = "Borrow";
     AssetType[AssetType["Reward"] = 3] = "Reward";
+    AssetType[AssetType["Margin"] = 4] = "Margin";
+    AssetType[AssetType["Perpetual"] = 5] = "Perpetual";
+    AssetType[AssetType["Prediction"] = 6] = "Prediction";
 })(AssetType || (exports.AssetType = AssetType = {}));
 var DeFiPositionsError;
 (function (DeFiPositionsError) {

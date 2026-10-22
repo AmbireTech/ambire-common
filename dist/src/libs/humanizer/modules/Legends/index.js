@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const ethers_1 = require("ethers");
-const Legends_1 = require("../../const/abis/Legends");
+const viem_1 = require("viem");
 const utils_1 = require("../../utils");
 const ONCHAIN_TXNS_LEGENDS_ADDRESS = '0x1415926535897932384626433832795028841971';
 const OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES = [
@@ -11,8 +10,28 @@ const OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES = [
     '0xb850AcfBC7720873242D27A38E4AE987f914Ef5B',
     '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272'
 ];
-const iface = new ethers_1.Interface(Legends_1.Legends);
-const legendsModule = (accOp, calls) => {
+// legacy mint function
+const mintLegacyAbi = (0, viem_1.parseAbi)(['function mint(uint256)']);
+const mintAbi = (0, viem_1.parseAbi)(['function mint(uint characterType, uint season)']);
+const getDailyRewardAbi = (0, viem_1.parseAbi)(['function getDailyReward()']);
+const spinWheelAbi = (0, viem_1.parseAbi)(['function spinWheel(uint256 random)']);
+const linkAndAcceptInviteAbi = (0, viem_1.parseAbi)([
+    'function linkAndAcceptInvite(address INVITEE_V2_ACCOUNT, address INVITEE_EOA_OR_V1, address INVITER_V2, bytes signature)'
+]);
+const inviteAbi = (0, viem_1.parseAbi)(['function invite(address)']);
+const claimXpFromFeedbackAbi = (0, viem_1.parseAbi)(['function claimXpFromFeedback(string)']);
+const claimBitrefillCodeAbi = (0, viem_1.parseAbi)(['function claimBitrefillCode()']);
+const revealMascotLetterAbi = (0, viem_1.parseAbi)(['function revealMascotLetter()']);
+const mintLegacySelector = (0, viem_1.toFunctionSelector)(mintLegacyAbi[0]);
+const mintSelector = (0, viem_1.toFunctionSelector)(mintAbi[0]);
+const getDailyRewardSelector = (0, viem_1.toFunctionSelector)(getDailyRewardAbi[0]);
+const spinWheelSelector = (0, viem_1.toFunctionSelector)(spinWheelAbi[0]);
+const linkAndAcceptInviteSelector = (0, viem_1.toFunctionSelector)(linkAndAcceptInviteAbi[0]);
+const inviteSelector = (0, viem_1.toFunctionSelector)(inviteAbi[0]);
+const claimXpFromFeedbackSelector = (0, viem_1.toFunctionSelector)(claimXpFromFeedbackAbi[0]);
+const claimBitrefillCodeSelector = (0, viem_1.toFunctionSelector)(claimBitrefillCodeAbi[0]);
+const revealMascotLetterSelector = (0, viem_1.toFunctionSelector)(revealMascotLetterAbi[0]);
+const legendsModule = (accOp, call) => {
     const characterTypes = {
         '0': [
             'https://relayer.ambire.com/legends/nft-image/avatar/unknown.png',
@@ -34,31 +53,34 @@ const legendsModule = (accOp, calls) => {
     };
     const matcher = {
         // legacy mint function
-        [iface.getFunction('mint(uint256)')?.selector]: (call) => {
-            const [heroType] = iface.parseTransaction(call).args;
+        [mintLegacySelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: mintLegacyAbi, data: call.data });
+            const [heroType] = args;
             return [
                 (0, utils_1.getAction)('Pick character'),
-                (0, utils_1.getImage)(characterTypes[0][heroType] || characterTypes[0][0]),
+                (0, utils_1.getImage)((characterTypes[0] ?? [])[Number(heroType)] || (characterTypes[0] ?? [])[0] || ''),
                 (0, utils_1.getLabel)('for Ambire Rewards')
             ];
         },
-        [iface.getFunction('mint(uint characterType, uint season)')?.selector]: (call) => {
-            const [heroType, season] = iface.parseTransaction(call).args;
+        [mintSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: mintAbi, data: call.data });
+            const [heroType, season] = args;
             return [
                 (0, utils_1.getAction)('Pick character'),
-                (0, utils_1.getImage)(characterTypes[season][heroType] || characterTypes[0][0]),
+                (0, utils_1.getImage)((characterTypes[Number(season)] ?? [])[Number(heroType)] ||
+                    (characterTypes[0] ?? [])[0] ||
+                    ''),
                 (0, utils_1.getLabel)(`for Ambire Rewards season ${season}`)
             ];
         },
-        [iface.getFunction('getDailyReward')?.selector]: () => [
-            (0, utils_1.getAction)('Unlock the treasure chest')
-        ],
-        [iface.getFunction('spinWheel')?.selector]: () => {
+        [getDailyRewardSelector]: () => [(0, utils_1.getAction)('Unlock the treasure chest')],
+        [spinWheelSelector]: () => {
             return [(0, utils_1.getAction)('Unlock the wheel of fortune')];
         },
-        [iface.getFunction('linkAndAcceptInvite')?.selector]: (call) => {
-            const [inviteeV2Account, inviteeEoaOrV1, inviter] = iface.parseTransaction(call).args;
-            const acceptInvitationVisualizationPrefix = inviter !== ethers_1.ZeroAddress
+        [linkAndAcceptInviteSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: linkAndAcceptInviteAbi, data: call.data });
+            const [inviteeV2Account, inviteeEoaOrV1, inviter] = args;
+            const acceptInvitationVisualizationPrefix = inviter !== viem_1.zeroAddress
                 ? [
                     (0, utils_1.getAction)('Accept invitation'),
                     (0, utils_1.getLabel)('from'),
@@ -74,29 +96,30 @@ const legendsModule = (accOp, calls) => {
                 (0, utils_1.getAddressVisualization)(inviteeV2Account)
             ];
         },
-        [iface.getFunction('invite')?.selector]: (call) => {
-            const [invitee] = iface.parseTransaction(call).args;
+        [inviteSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: inviteAbi, data: call.data });
+            const [invitee] = args;
             return [(0, utils_1.getAction)('Invite'), (0, utils_1.getAddressVisualization)(invitee), (0, utils_1.getLabel)('to Ambire Rewards')];
         },
-        [iface.getFunction('claimXpFromFeedback')?.selector]: () => {
+        [claimXpFromFeedbackSelector]: () => {
             return [(0, utils_1.getAction)('Claim XP'), (0, utils_1.getLabel)('from'), (0, utils_1.getLabel)('feedback form', true)];
         },
-        [iface.getFunction('claimBitrefillCode')?.selector]: () => {
+        [claimBitrefillCodeSelector]: () => {
             return [(0, utils_1.getAction)('Claim'), (0, utils_1.getLabel)('cashback code for'), (0, utils_1.getLabel)('Bitrefill', true)];
         },
-        [iface.getFunction('revealMascotLetter')?.selector]: () => {
+        [revealMascotLetterSelector]: () => {
             return [(0, utils_1.getAction)('Reveal'), (0, utils_1.getLabel)('a letter from'), (0, utils_1.getLabel)('SHI_T_', true)];
         }
     };
-    const newCalls = calls.map((call) => {
-        if ((call.to &&
-            (0, ethers_1.isAddress)(call.to) &&
-            ![ONCHAIN_TXNS_LEGENDS_ADDRESS, ...OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES].includes((0, ethers_1.getAddress)(call.to))) ||
-            !matcher[call.data.slice(0, 10)])
-            return call;
-        return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) };
-    });
-    return newCalls;
+    if ((call.to &&
+        (0, viem_1.isAddress)(call.to) &&
+        ![ONCHAIN_TXNS_LEGENDS_ADDRESS, ...OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES].includes((0, viem_1.getAddress)(call.to))) ||
+        !(0, utils_1.isHexCall)(call))
+        return call;
+    const match = matcher[call.data.slice(0, 10)];
+    if (!match)
+        return call;
+    return { ...call, fullVisualization: match(call) };
 };
 exports.default = legendsModule;
 //# sourceMappingURL=index.js.map

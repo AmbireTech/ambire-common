@@ -1,5 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getCallsWithTxnIds = getCallsWithTxnIds;
+exports.submittedAccountOpToAccountOp = submittedAccountOpToAccountOp;
+exports.getSubmittedAccountOpNonce = getSubmittedAccountOpNonce;
 exports.isIdentifiedByTxn = isIdentifiedByTxn;
 exports.isIdentifiedByUserOpHash = isIdentifiedByUserOpHash;
 exports.isIdentifiedByRelayer = isIdentifiedByRelayer;
@@ -14,9 +17,71 @@ exports.getAccountOpRecipients = getAccountOpRecipients;
 exports.checkIsRecipientOfAccountOp = checkIsRecipientOfAccountOp;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
+const viem_1 = require("viem");
 const getBundler_1 = require("../../services/bundlers/getBundler");
 const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
 const types_1 = require("./types");
+/**
+ * Adds to each call of a batch broadcast as one txn per call (`MultipleTxns`) the hash
+ * of its txn. Calls without a txn were not sent (e.g. rejected on the hardware wallet
+ * midway through the batch), so they are marked as rejected.
+ */
+function getCallsWithTxnIds(submittedAccountOp) {
+    const txnIds = submittedAccountOp.identifiedBy.identifier.split('-');
+    return submittedAccountOp.calls.map((oneCall, i) => {
+        const localCall = { ...oneCall };
+        // if there's no tx id, we set it to Rejected and continue.
+        // it means broadcast has failed
+        if (!(i in txnIds)) {
+            localCall.status = types_1.AccountOpStatus.Rejected;
+            return localCall;
+        }
+        localCall.txnId = txnIds[i];
+        localCall.status = types_1.AccountOpStatus.BroadcastedButNotConfirmed;
+        return localCall;
+    });
+}
+/**
+ * Rebuilds a full `AccountOp` from a `SubmittedAccountOpLike` - e.g. to re-run `humanizeAccountOp`
+ * against a past activity item, which only carries the looser `SubmittedAccountOpLike` shape.
+ * Fields absent from `SubmittedAccountOpLike` (because they were optional on
+ * `SubmittedAccountOpActionFields`, or never persisted) fall back to `AccountOp`'s own defaults.
+ */
+function submittedAccountOpToAccountOp(submittedAccountOp) {
+    return {
+        id: submittedAccountOp.id,
+        accountAddr: submittedAccountOp.accountAddr,
+        chainId: submittedAccountOp.chainId,
+        signingKeyAddr: submittedAccountOp.signingKeyAddr ?? null,
+        signingKeyType: submittedAccountOp.signingKeyType ?? null,
+        nonce: submittedAccountOp.nonce ?? null,
+        eoaNonce: submittedAccountOp.eoaNonce,
+        calls: submittedAccountOp.calls,
+        feeCall: submittedAccountOp.feeCall,
+        activatorCall: submittedAccountOp.activatorCall,
+        gasLimit: submittedAccountOp.gasLimit ?? null,
+        signature: submittedAccountOp.signature ?? null,
+        gasFeePayment: submittedAccountOp.gasFeePayment,
+        txnId: submittedAccountOp.txnId,
+        status: submittedAccountOp.status,
+        asUserOperation: submittedAccountOp.asUserOperation,
+        signers: submittedAccountOp.signers,
+        signed: submittedAccountOp.signed,
+        safeTx: submittedAccountOp.safeTx,
+        meta: submittedAccountOp.meta,
+        flags: submittedAccountOp.flags
+    };
+}
+/**
+ * Returns the account-level nonce to store in Activity. Safe transactions broadcast through a
+ * bundler have an unrelated, random UserOperation nonce, which remains available on
+ * `accountOp.asUserOperation.nonce` and must not replace the Safe transaction nonce.
+ */
+function getSubmittedAccountOpNonce(accountOpNonce, broadcastNonce, isSafeAccount) {
+    if (isSafeAccount && accountOpNonce !== null)
+        return accountOpNonce;
+    return BigInt(broadcastNonce);
+}
 function isIdentifiedByTxn(identifiedBy) {
     return identifiedBy && identifiedBy.type === 'Transaction';
 }
@@ -221,43 +286,82 @@ opReference, status, receipt) {
     opReference.status = status;
     return opReference;
 }
-const transferIface = new ethers_1.Interface(['function transfer(address,uint256)']);
+// `transferFrom(address,address,uint256)` is shared by ERC20 and ERC721, so one entry covers both
+const transferAbi = (0, viem_1.parseAbi)(['function transfer(address to, uint256 amountOrTokenId)']);
+const transferFromAbi = (0, viem_1.parseAbi)([
+    'function transferFrom(address from, address to, uint256 amountOrTokenId)'
+]);
+const safeTransferFromAbi = (0, viem_1.parseAbi)([
+    'function safeTransferFrom(address from, address to, uint256 tokenId)'
+]);
+const safeTransferFromWithDataAbi = (0, viem_1.parseAbi)([
+    'function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)'
+]);
 /**
- * Returns all addresses that the SubmittedAccountOp has calls sent to.
+ * Which decoded argument holds the recipient, per function that moves funds to someone else.
+ * Everything not listed here is a contract interaction rather than a send.
+ */
+const RECIPIENT_ARG_INDEX_BY_SELECTOR = {
+    [(0, viem_1.toFunctionSelector)(transferAbi[0])]: { abi: transferAbi, index: 0, args: 2 },
+    [(0, viem_1.toFunctionSelector)(transferFromAbi[0])]: { abi: transferFromAbi, index: 1, args: 3 },
+    [(0, viem_1.toFunctionSelector)(safeTransferFromAbi[0])]: { abi: safeTransferFromAbi, index: 1, args: 3 },
+    [(0, viem_1.toFunctionSelector)(safeTransferFromWithDataAbi[0])]: {
+        abi: safeTransferFromWithDataAbi,
+        index: 1,
+        args: 3
+    }
+};
+const getRecipientFromCall = (call) => {
+    const data = (call.data || '0x');
+    // A plain value transfer - the call target is the recipient
+    if (data === '0x')
+        return call.value > 0n && call.to ? call.to : null;
+    const decoder = RECIPIENT_ARG_INDEX_BY_SELECTOR[data.slice(0, 10)];
+    if (!decoder)
+        return null;
+    try {
+        // Some tokens send shorter calldata than the ABI expects, the same way the humanizer pads it
+        const expectedLength = 2 + 8 + decoder.args * 64;
+        const { args } = (0, viem_1.decodeFunctionData)({
+            abi: decoder.abi,
+            data: data.padEnd(expectedLength, '0')
+        });
+        return args[decoder.index] || null;
+    }
+    catch {
+        // Not actually the function the selector suggests, so there is no recipient to read
+        return null;
+    }
+};
+/**
+ * Returns the addresses an account op sends funds to - native transfers plus ERC20/ERC721
+ * `transfer`, `transferFrom` and both `safeTransferFrom` overloads - checksummed, deduplicated
+ * and in call order. Contract interactions are left out: calling a contract is not sending to it.
  *
- * @param whitelist Optional list of addresses to filter the results.
+ * @param whitelist Optional list of addresses to filter the results (case-insensitive).
  */
 function getAccountOpRecipients(op, whitelist) {
-    const sentTo = new Set();
+    const domainByRecipient = new Map();
     const lowercaseWhitelist = whitelist?.map((addr) => addr.toLowerCase());
     op.calls.forEach((call) => {
-        // 1) Direct call.to match
-        if (call.to && (0, ethers_1.isAddress)(call.to)) {
-            if (!lowercaseWhitelist || lowercaseWhitelist.includes(call.to.toLowerCase())) {
-                sentTo.add(call.to);
-            }
-        }
-        // 2) If this is an ERC-20 transfer(address,uint256), decode the recipient from call.data
-        const data = call.data;
-        if (!data || typeof data !== 'string' || data.length < 10)
+        const recipient = getRecipientFromCall(call);
+        if (!recipient)
             return;
-        const selector = transferIface.getFunction('transfer')?.selector;
-        if (selector && data.startsWith(selector)) {
-            try {
-                const decoded = transferIface.decodeFunctionData('transfer', data);
-                const recipient = decoded[0];
-                if ((0, ethers_1.isAddress)(recipient)) {
-                    if (lowercaseWhitelist && !lowercaseWhitelist.includes(recipient.toLowerCase()))
-                        return;
-                    sentTo.add(recipient);
-                }
-            }
-            catch {
-                // ignore decode errors and continue
-            }
+        let address;
+        try {
+            address = (0, ethers_1.getAddress)(recipient);
         }
+        catch {
+            // A malformed address can never have been sent to, so it is not a recipient
+            return;
+        }
+        if (lowercaseWhitelist && !lowercaseWhitelist.includes(address.toLowerCase()))
+            return;
+        const domain = call.recipientDomain?.toLowerCase()?.trim();
+        if (domain || !domainByRecipient.has(address))
+            domainByRecipient.set(address, domain || undefined);
     });
-    return Array.from(sentTo);
+    return Array.from(domainByRecipient, ([address, domain]) => ({ address, domain }));
 }
 /**
  * Checks if the SubmittedAccountOp has a call that was sent to the specified address.

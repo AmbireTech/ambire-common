@@ -4,7 +4,7 @@ exports.ScamFilter = void 0;
 const ethers_1 = require("ethers");
 const coingecko_1 = require("../../consts/coingecko");
 const fetch_1 = require("../../utils/fetch");
-const pagination_1 = require("../portfolio/pagination");
+const paginate_1 = require("../../utils/paginate");
 const CENA_API_URL = 'https://cena.ambire.com';
 const BATCH_LIMIT = 40;
 const DEFAULT_TIMEOUT = 4500;
@@ -15,10 +15,12 @@ class ScamFilter {
     #fetch;
     #network;
     #timeout;
-    constructor({ fetch, network, timeout = DEFAULT_TIMEOUT }) {
+    #isTokenPricesEnabled;
+    constructor({ fetch, network, timeout = DEFAULT_TIMEOUT, isTokenPricesEnabled = () => true }) {
         this.#fetch = fetch;
         this.#network = network;
         this.#timeout = timeout;
+        this.#isTokenPricesEnabled = isTokenPricesEnabled;
     }
     async #fetchCenaPriceResponse(url) {
         const response = await (0, fetch_1.fetchWithTimeout)(this.#fetch, url, {}, this.#timeout);
@@ -35,9 +37,9 @@ class ScamFilter {
         if (!this.#network.platformId || !tokenAddresses.length)
             return new Set();
         const pricedAddresses = new Set();
-        const pages = (0, pagination_1.paginate)(dedup(tokenAddresses), BATCH_LIMIT);
+        const pages = (0, paginate_1.paginate)(dedup(tokenAddresses), BATCH_LIMIT);
         await Promise.all(pages.map(async (page) => {
-            const url = `${CENA_API_URL}/api/v3/simple/token_price/${this.#network.platformId}?contract_addresses=${page.join('%2C')}&vs_currencies=${BASE_CURRENCY}`;
+            const url = `${CENA_API_URL}/api/v3/simple/token_price/${this.#network.platformId}?contract_addresses=${page.join(',')}&vs_currencies=${BASE_CURRENCY}`;
             try {
                 const body = await this.#fetchCenaPriceResponse(url);
                 page.forEach((address) => {
@@ -55,9 +57,9 @@ class ScamFilter {
         if (!geckoIds.length)
             return new Set();
         const pricedGeckoIds = new Set();
-        const pages = (0, pagination_1.paginate)(dedup(geckoIds), BATCH_LIMIT);
+        const pages = (0, paginate_1.paginate)(dedup(geckoIds), BATCH_LIMIT);
         await Promise.all(pages.map(async (page) => {
-            const url = `${CENA_API_URL}/api/v3/simple/price?ids=${page.join('%2C')}&vs_currencies=${BASE_CURRENCY}`;
+            const url = `${CENA_API_URL}/api/v3/simple/price?ids=${page.join(',')}&vs_currencies=${BASE_CURRENCY}`;
             try {
                 const body = await this.#fetchCenaPriceResponse(url);
                 page.forEach((geckoId) => {
@@ -72,6 +74,8 @@ class ScamFilter {
         return pricedGeckoIds;
     }
     async filterTokensWithoutAPrice(tokenAddresses) {
+        if (!this.#isTokenPricesEnabled())
+            return tokenAddresses;
         const tokenPriceChecks = tokenAddresses.reduce((acc, originalAddress) => {
             try {
                 const normalizedAddress = (0, ethers_1.getAddress)(originalAddress);

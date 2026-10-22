@@ -5,7 +5,6 @@ import { SafeTx } from '../../interfaces/safe';
 import { AccountOp } from '../accountOp/accountOp';
 import { BundlerStateOverride, FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces';
 import { TokenResult } from '../portfolio';
-import { UserOperation } from '../userOperation/types';
 import { BaseAccount } from './BaseAccount';
 export declare class Safe extends BaseAccount {
     /**
@@ -29,19 +28,32 @@ export declare class Safe extends BaseAccount {
      * Add 5k additional gas for nonce > 0
      */
     NONCE_GAS: bigint;
+    /**
+     * A one time gas addition if the txn is an userOp.
+     * This accounts for the missing signature validation data as we're
+     * doing a state override during estimation and replacing the original
+     * Safe code with one that allows all signatures to pass
+     */
+    BUNDLER_OVERHEAD: bigint;
     getEstimationCriticalError(estimation: FullEstimation): Error | null;
     supportsBundlerEstimation(): boolean;
     isSponsorable(): boolean;
-    getAvailableFeeOptions(estimation: FullEstimationSummary, feePaymentOptions: FeePaymentOption[]): FeePaymentOption[];
+    canUseErc4337(): boolean;
+    getAvailableFeeOptions(estimation: FullEstimationSummary, feePaymentOptions: FeePaymentOption[], op: AccountOp): FeePaymentOption[];
     getGasUsed(estimation: FullEstimationSummary | Error, options: {
         feeToken: TokenResult;
         op: AccountOp;
     }): bigint;
-    getBroadcastOption(): string;
+    getBroadcastOption(feeOption: FeePaymentOption): string;
     canUseReceivingNativeForFee(): boolean;
     getBroadcastCalldata(accountOp: AccountOp): Hex;
-    getBundlerStateOverride(userOp: UserOperation): BundlerStateOverride | undefined;
-    shouldSignDeployAuth(broadcastOption: string): boolean;
+    /**
+     * We override the state to an ambire smart account so we could
+     * successfully do a bundler estimation. Safe accounts don't have
+     * the 4337 module attached so they revert
+     */
+    getBundlerStateOverride(): BundlerStateOverride | undefined;
+    shouldSignDeployAuth(): boolean;
     getAtomicStatus(): 'unsupported' | 'supported' | 'ready';
     getNonceId(): string;
     canBroadcastByItself(): boolean;
@@ -54,6 +66,7 @@ export declare class Safe extends BaseAccount {
     canBroadcastByOtherEOA(): boolean;
     /**
      * Final commitment Safe data can differ according to the Safe v.
+     * The version is chain specific, so it's taken from the account state.
      * We encapsulate the logic here
      */
     getTxnTypedData(safeTx: SafeTx): {

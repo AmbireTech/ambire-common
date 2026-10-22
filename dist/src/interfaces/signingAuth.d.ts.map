@@ -1,0 +1,1 @@
+{"version":3,"file":"signingAuth.d.ts","sourceRoot":"","sources":["../../../src/interfaces/signingAuth.ts"],"names":[],"mappings":"AAAA,2EAA2E;AAC3E,MAAM,WAAW,mBAAmB;IAClC,EAAE,EAAE,MAAM,CAAA;IACV,IAAI,EAAE,MAAM,CAAA;CACb;AAED;;;GAGG;AACH,MAAM,WAAW,sBAAsB;IACrC,uFAAuF;IACvF,mBAAmB,EAAE,MAAM,EAAE,CAAA;IAC7B,oBAAoB,EAAE,mBAAmB,EAAE,CAAA;CAC5C"}

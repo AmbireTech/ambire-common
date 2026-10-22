@@ -22,6 +22,14 @@ const hasAmbireDelegation = (code) => {
     }
     return hasCode;
 };
+/**
+ * The singleton an undeployed Safe will be deployed with. Incomplete Safe creation
+ * data stores '0x' placeholders, so fall back to the zero address to keep the call encodable
+ */
+const getSafeSingletonParam = (account) => {
+    const singleton = account.safeCreation?.singleton;
+    return singleton && (0, ethers_1.isAddress)(singleton) ? singleton : ethers_1.ZeroAddress;
+};
 async function getAccountState(provider, network, accounts, keys, blockTag = 'latest') {
     const deploylessAccountState = (0, deployless_1.fromDescriptor)(provider, AmbireAccountState_json_1.default, !network.rpcNoStateOverride);
     const args = accounts.map((account) => {
@@ -35,7 +43,8 @@ async function getAccountState(provider, network, accounts, keys, blockTag = 'la
                 ? ['0x0000000000000000000000000000000000000000', '0x']
                 : (0, account_1.getAccountDeployParams)(account)),
             deploy_1.ERC_4337_ENTRYPOINT,
-            !!account.safeCreation
+            !!account.safeCreation,
+            getSafeSingletonParam(account)
         ];
     });
     async function getEOAsNonce(eoaAccounts) {
@@ -109,6 +118,7 @@ async function getAccountState(provider, network, accounts, keys, blockTag = 'la
             delegatedContract,
             delegatedContractName,
             threshold: Number(accResult.threshold),
+            safeVersion: accResult.safeVersion || null,
             updatedAt: Date.now()
         };
     });

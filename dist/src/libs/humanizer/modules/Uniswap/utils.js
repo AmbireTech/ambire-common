@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.uniReduce = exports.joinWithAndLabel = exports.getUniRecipientText = void 0;
 exports.parsePath = parsePath;
-const ethers_1 = require("ethers");
+const viem_1 = require("viem");
 const networks_1 = require("../../../../consts/networks");
 const utils_1 = require("../../utils");
 const WRAPPED_NATIVE_TOKEN_ADDRESSES = new Set(networks_1.networks.map((network) => network.wrappedAddr?.toLowerCase()).filter(Boolean));
@@ -17,7 +17,7 @@ function parsePath(pathBytes) {
     }
     return path;
 }
-const getUniRecipientText = (accAddr, recAddr) => ['0x0000000000000000000000000000000000000001', ethers_1.ZeroAddress].includes(recAddr)
+const getUniRecipientText = (accAddr, recAddr) => ['0x0000000000000000000000000000000000000001', viem_1.zeroAddress].includes(recAddr)
     ? []
     : (0, utils_1.getRecipientText)(accAddr, recAddr);
 exports.getUniRecipientText = getUniRecipientText;
@@ -82,7 +82,7 @@ const uniReduce = (_calls) => {
                 isWrap(callJ) &&
                 WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callI[1].address?.toLowerCase()) &&
                 (callJ[1].value === callI[1].value || callI[1].value === 0n)) {
-                callI[1].address = ethers_1.ZeroAddress;
+                callI[1].address = viem_1.zeroAddress;
                 calls.splice(j, 1);
             }
             // looks for unwrap after the swap
@@ -92,7 +92,7 @@ const uniReduce = (_calls) => {
                 isSwap(callI) &&
                 isUnwrap(callJ) &&
                 (callJ[1].value === callI[3].value || callI[3].value === 0n)) {
-                callI[3].address = ethers_1.ZeroAddress;
+                callI[3].address = viem_1.zeroAddress;
                 if (callI[3].value === 0n && callJ[1].value)
                     callI[3].value = callJ[1].value;
                 calls.splice(j, 1);
@@ -117,12 +117,12 @@ const uniReduce = (_calls) => {
                 isSwap(callJ) &&
                 callI[3].address === callJ[3].address &&
                 getDeadlineValue(callI) === getDeadlineValue(callJ) &&
-                ((callI[1].address === ethers_1.ZeroAddress &&
+                ((callI[1].address === viem_1.zeroAddress &&
                     WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callJ[1].address?.toLowerCase())) ||
-                    (callJ[1].address === ethers_1.ZeroAddress &&
+                    (callJ[1].address === viem_1.zeroAddress &&
                         WRAPPED_NATIVE_TOKEN_ADDRESSES.has(callI[1].address?.toLowerCase())))) {
-                if (callI[1].address !== ethers_1.ZeroAddress) {
-                    callI[1].address = ethers_1.ZeroAddress;
+                if (callI[1].address !== viem_1.zeroAddress) {
+                    callI[1].address = viem_1.zeroAddress;
                 }
                 calls.splice(j, 1);
             }
@@ -134,7 +134,7 @@ const uniReduce = (_calls) => {
                 isSwap(callJ) &&
                 callI[3].address === callJ[1].address) {
                 callI[3].value = callJ[3].value;
-                callI[3].address = callJ[3]?.address;
+                callI[3].address = callJ[3].address;
                 calls.splice(j, 1);
             }
             // looks for fee payment to subtract

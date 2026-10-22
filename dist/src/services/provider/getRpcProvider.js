@@ -1,11 +1,12 @@
 "use strict";
 // @ts-nocheck
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getViemClientForProvider = exports.getRpcProvider = void 0;
+exports.getViemClientForProvider = exports.getRpcProvider = exports.getProviderConnectionUrl = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const viem_1 = require("viem");
 const getRootDomain_1 = tslib_1.__importDefault(require("../../utils/getRootDomain"));
+const fetchJsonRpcProvider_1 = require("./fetchJsonRpcProvider");
 const RPC_BATCH_CONFIG = {
     'drpc.org': 3, // batch of more than 3 requests are not allowed on free tier (response 500 with internal code 31)
     '1rpc.io': 3, // batch of more than 3 requests are not allowed on free tier (response 500 with internal code 31)
@@ -42,12 +43,16 @@ const getRpcProvider = (rpcUrls, chainId, selectedRpcUrl, options) => {
     if (chainId) {
         const staticNetwork = ethers_1.Network.from(Number(chainId));
         if (staticNetwork) {
-            return new ethers_1.JsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork, ...providerOptions });
+            return new fetchJsonRpcProvider_1.FetchJsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork, ...providerOptions });
         }
     }
-    return new ethers_1.JsonRpcProvider(rpcUrl, undefined, providerOptions);
+    return new fetchJsonRpcProvider_1.FetchJsonRpcProvider(rpcUrl, undefined, providerOptions);
 };
 exports.getRpcProvider = getRpcProvider;
+const getProviderConnectionUrl = (network) => {
+    return network.selectedRpcUrl;
+};
+exports.getProviderConnectionUrl = getProviderConnectionUrl;
 const getViemClientForProvider = (provider) => {
     const cached = viemClientByProvider.get(provider);
     if (cached)

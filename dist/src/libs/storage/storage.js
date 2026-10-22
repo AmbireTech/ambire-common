@@ -4,7 +4,11 @@ exports.migrateCustomTokens = exports.migrateHiddenTokens = exports.getShouldMig
 exports.migrateNetworkPreferencesToNetworks = migrateNetworkPreferencesToNetworks;
 const networks_1 = require("../../consts/networks");
 const networks_2 = require("../networks/networks");
-const getShouldMigrateKeystoreSeedsWithoutHdPath = (keystoreSeeds) => !!keystoreSeeds?.length && keystoreSeeds.every((seed) => typeof seed === 'string');
+/**
+ * Whether any of the seeds is still stored in the legacy (plain string) shape, from before the
+ * HD path template got stored along with the seed (v4.33.0).
+ */
+const getShouldMigrateKeystoreSeedsWithoutHdPath = (keystoreSeeds) => !!keystoreSeeds?.some((seed) => typeof seed === 'string');
 exports.getShouldMigrateKeystoreSeedsWithoutHdPath = getShouldMigrateKeystoreSeedsWithoutHdPath;
 const getShouldMigrateKeyMetaNullToKeyMetaCreatedAt = (keystoreKeys) => keystoreKeys.some((key) => {
     const internalKeyWithoutMeta = key.type === 'internal' && !key.meta;

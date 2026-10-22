@@ -24,12 +24,14 @@ function isUnderstandableName(name) {
 class ContractNamesController extends eventEmitter_1.default {
     #debounceTime;
     #fetch;
+    #featureFlags;
     #lastTimeScheduledFetch = 0;
     #contractNames = {};
     #contractsPendingToBeFetched = [];
-    constructor({ eventEmitterRegistry, fetch, debounceTime = 100 }) {
+    constructor({ eventEmitterRegistry, fetch, featureFlags, debounceTime = 100 }) {
         super(eventEmitterRegistry);
         this.#fetch = fetch;
+        this.#featureFlags = featureFlags;
         this.#debounceTime = debounceTime;
     }
     get contractNames() {
@@ -46,9 +48,19 @@ class ContractNamesController extends eventEmitter_1.default {
         return this.#contractsPendingToBeFetched;
     }
     async #batchFetchNames() {
+        await this.#featureFlags?.initialLoadPromise;
         // using a second variable to avoid race conditions in `contractsPendingToBeFetched`
         const contractsToFetch = this.#contractsPendingToBeFetched;
         this.#contractsPendingToBeFetched = [];
+        if (this.#featureFlags?.isFeatureEnabled('apiForFunctionSelectors') === false) {
+            contractsToFetch.forEach(({ address }) => {
+                const contractName = this.#contractNames[address];
+                if (contractName)
+                    contractName.isLoading = false;
+            });
+            this.emitUpdate();
+            return;
+        }
         this.emitUpdate();
         const url = `https://cena.ambire.com/api/v3/contracts/multiple?addresses=${contractsToFetch.map(({ address }) => address)}&chainIds=${contractsToFetch.map(({ chainId }) => chainId)}`;
         let failed = false;
@@ -138,6 +150,8 @@ class ContractNamesController extends eventEmitter_1.default {
         return false;
     }
     getName(_address, chainId) {
+        if (this.#featureFlags?.isFeatureEnabled('apiForFunctionSelectors') === false)
+            return;
         if (!(0, ethers_1.isAddress)(_address))
             return this.emitError({
                 message: 'Non address passed to ContractNamesController.getName',

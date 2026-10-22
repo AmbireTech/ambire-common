@@ -3,7 +3,7 @@ import { EIP7702Auth } from '../../consts/7702';
 import { BUNDLER } from '../../consts/bundlers';
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account';
 import { AccountOp } from '../accountOp/accountOp';
-import { PackedUserOperation, UserOperation, UserOperationEventData } from './types';
+import { PackableUserOperation, PackedUserOperation, UserOperation, UserOperationEventData } from './types';
 export declare function calculateCallDataCost(callData: string): bigint;
 export declare function getPaymasterSpoof(): string;
 export declare function getActivatorCall(addr: AccountId): {
@@ -44,6 +44,7 @@ export declare function getCleanUserOp(userOp: UserOperation): {
  * @returns hex string
  */
 export declare function getOneTimeNonce(userOperation: UserOperation): string;
+export declare function getUserOpCalldata(account: Account, op: AccountOp, state: AccountOnchainState): string;
 export declare function getUserOperation({ account, accountState, accountOp, bundler, entryPointSig, eip7702Auth, hasPendingUserOp }: {
     account: Account;
     accountState: AccountOnchainState;
@@ -54,7 +55,7 @@ export declare function getUserOperation({ account, accountState, accountOp, bun
     hasPendingUserOp?: boolean;
 }): UserOperation;
 export declare const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = "ENTRY_POINT_AUTHORIZATION_REQUEST_ID";
-export declare function getPackedUserOp(userOp: UserOperation): PackedUserOperation;
+export declare function getPackedUserOp(userOp: PackableUserOperation): PackedUserOperation;
 export declare function getUserOpHash(userOp: UserOperation, chainId: bigint): string;
 export declare const parseLogs: (logs: readonly Log[], userOpHash: string, userOpsLength?: number) => UserOperationEventData | null;
 /**

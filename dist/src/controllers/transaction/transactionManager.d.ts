@@ -13,7 +13,7 @@ export declare class TransactionManagerController extends EventEmitter implement
     private handleFormUpdate;
     private getPublicClient;
     toJSON(): this & {
-        transactionType: "error" | "transfer" | "swapAndBridge" | "swap" | "intent";
+        transactionType: "error" | "transfer" | "intent" | "swap" | "swapAndBridge";
         formState: TransactionFormState & {
             name: string;
             supportedChainIds: bigint[];

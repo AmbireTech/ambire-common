@@ -4,10 +4,11 @@ type ScamFilterOptions = {
     fetch: Fetch;
     network: Network;
     timeout?: number;
+    isTokenPricesEnabled?: () => boolean;
 };
 export declare class ScamFilter {
     #private;
-    constructor({ fetch, network, timeout }: ScamFilterOptions);
+    constructor({ fetch, network, timeout, isTokenPricesEnabled }: ScamFilterOptions);
     filterTokensWithoutAPrice(tokenAddresses: string[]): Promise<string[]>;
 }
 export {};

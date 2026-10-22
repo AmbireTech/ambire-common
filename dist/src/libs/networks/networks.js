@@ -3,10 +3,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getSupportedNetworks = exports.getAccountNotSupportedReason = exports.getAccountNetworks = exports.networkChainIdToHex = exports.getNetworksUpdatedWithRelayerNetworks = exports.getNetworksWithFailedRPC = exports.relayerAdditionalNetworks = void 0;
 exports.is4337Enabled = is4337Enabled;
 exports.getProviderBatchMaxCount = getProviderBatchMaxCount;
+exports.getStateOverrideSupport = getStateOverrideSupport;
+exports.getLoadingNetworkInfo = getLoadingNetworkInfo;
+exports.isNetworkInfoPending = isNetworkInfoPending;
 exports.getNetworkInfo = getNetworkInfo;
 exports.getFeaturesByNetworkProperties = getFeaturesByNetworkProperties;
+exports.getLoadingFeatures = getLoadingFeatures;
 exports.getFeatures = getFeatures;
 exports.hasRelayerSupport = hasRelayerSupport;
+exports.sanityCheckImportantNetworkProperties = sanityCheckImportantNetworkProperties;
 exports.getValidNetworks = getValidNetworks;
 const ethers_1 = require("ethers");
 const account_1 = require("../account/account");
@@ -15,6 +20,9 @@ const networks_1 = require("../../consts/networks");
 const bundler_1 = require("../../services/bundlers/bundler");
 const networks_2 = require("../../utils/networks");
 const simulateDeployCall_1 = require("../deployless/simulateDeployCall");
+const STATE_OVERRIDE_TEST_ADDRESS = '0x0000000000000000000000000000000000696969';
+const STATE_OVERRIDE_TEST_CODE_RETURNING_ONE = '0x600160005260206000f3';
+const STATE_OVERRIDE_TEST_RESULT = (0, ethers_1.toBeHex)(1, 32);
 // bnb, gnosis, fantom, metis
 exports.relayerAdditionalNetworks = [
     {
@@ -88,17 +96,25 @@ function getProviderBatchMaxCount(network, rpcUrl) {
     const suggestedRpcBatchCount = network.suggestedRpcBatchCount ?? 1;
     return hasUserChangedRpc ? 1 : suggestedRpcBatchCount;
 }
+async function getStateOverrideSupport(provider) {
+    try {
+        const result = await provider.send('eth_call', [
+            { to: STATE_OVERRIDE_TEST_ADDRESS, data: '0x' },
+            'latest',
+            { [STATE_OVERRIDE_TEST_ADDRESS]: { code: STATE_OVERRIDE_TEST_CODE_RETURNING_ONE } }
+        ]);
+        return result === STATE_OVERRIDE_TEST_RESULT;
+    }
+    catch {
+        return false;
+    }
+}
 /**
- * Fetches detailed network information from an RPC provider.
- * Used when adding a new network, updating network info, or when the RPC provider is changed,
- * And once every 24 hours for custom networks.
- *
- * - Checks smart account (SA) support, singleton contract, and state override capabilities.
- * - Determines if the network supports ERC-4337 and Account Abstraction.
- * - Fetches additional metadata from external sources (e.g., CoinGecko).
+ * The network info shape before any RPC probe has resolved. Every field is
+ * 'LOADING' except the chain id.
  */
-async function getNetworkInfo(fetch, chainId, provider, callback, network) {
-    let networkInfo = {
+function getLoadingNetworkInfo(chainId) {
+    return {
         chainId,
         isSAEnabled: 'LOADING',
         hasSingleton: 'LOADING',
@@ -111,10 +127,26 @@ async function getNetworkInfo(fetch, chainId, provider, callback, network) {
         nativeAssetId: 'LOADING',
         flagged: 'LOADING'
     };
+}
+/**
+ * True while any of the probes behind the network info is still running.
+ */
+function isNetworkInfoPending(info) {
+    return !info || Object.values(info).some((prop) => prop === 'LOADING');
+}
+/**
+ * Fetches a network's capabilities from an RPC provider - smart account support, ERC-4337,
+ * fee options and price metadata.
+ *
+ * Streams progress through `callback`.
+ */
+async function getNetworkInfo(fetch, chainId, provider, callback, network) {
+    let networkInfo = getLoadingNetworkInfo(chainId);
     callback(networkInfo);
+    let timeoutId;
     const timeout = (time = 30000) => {
         return new Promise((resolve) => {
-            setTimeout(resolve, time, 'timeout reached');
+            timeoutId = setTimeout(resolve, time, 'timeout reached');
         });
     };
     let flagged = false;
@@ -124,78 +156,81 @@ async function getNetworkInfo(fetch, chainId, provider, callback, network) {
         }
         return returnData;
     };
-    const info = await Promise.race([
-        Promise.all([
-            (async () => {
-                const responses = await Promise.all([
-                    retryRequest(() => provider.getCode(deploy_1.SINGLETON)),
-                    retryRequest(() => provider.getCode(deploy_1.AMBIRE_ACCOUNT_FACTORY)),
-                    retryRequest(() => (0, simulateDeployCall_1.getSASupport)(provider)),
-                    bundler_1.Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
-                    // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
-                ]).catch((e) => raiseFlagged(e, ['0x', '0x', { addressMatches: false, supportsStateOverride: false }]));
-                const [singletonCode, factoryCode, saSupport, hasBundlerSupport] = responses;
-                const areContractsDeployed = factoryCode !== '0x';
-                // const has4337 = entryPointCode !== '0x' && hasBundler
-                // Ambire support is as follows:
-                // - either the addresses match after simulation, that's perfect
-                // - or we can't do the simulation with this RPC but we have the factory
-                // deployed on the network
-                const supportsAmbire = saSupport.addressMatches || (!saSupport.supportsStateOverride && areContractsDeployed);
-                networkInfo = {
-                    ...networkInfo,
-                    hasSingleton: singletonCode !== '0x',
-                    isSAEnabled: supportsAmbire && singletonCode !== '0x',
-                    areContractsDeployed,
-                    rpcNoStateOverride: network && network.rpcNoStateOverride === true
-                        ? true
-                        : !saSupport.supportsStateOverride,
-                    erc4337: {
-                        enabled: is4337Enabled(hasBundlerSupport, network),
-                        hasPaymaster: network ? network.erc4337.hasPaymaster : false,
-                        hasBundlerSupport
+    let info;
+    try {
+        info = await Promise.race([
+            Promise.all([
+                (async () => {
+                    const responses = await Promise.all([
+                        retryRequest(() => provider.getCode(deploy_1.SINGLETON)),
+                        retryRequest(() => provider.getCode(deploy_1.AMBIRE_ACCOUNT_FACTORY)),
+                        retryRequest(() => (0, simulateDeployCall_1.getSASupport)(provider)),
+                        retryRequest(() => getStateOverrideSupport(provider)),
+                        bundler_1.Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
+                        // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
+                    ]).catch((e) => raiseFlagged(e, ['0x', '0x', { addressMatches: false }, false, false]));
+                    const [singletonCode, factoryCode, saSupport, supportsStateOverride, hasBundlerSupport] = responses;
+                    const areContractsDeployed = factoryCode !== '0x';
+                    // const has4337 = entryPointCode !== '0x' && hasBundler
+                    // Ambire support is as follows:
+                    // - either the addresses match after simulation, that's perfect
+                    // - or we can't do the simulation with this RPC but we have the factory
+                    // deployed on the network
+                    const supportsAmbire = saSupport.addressMatches || (!supportsStateOverride && areContractsDeployed);
+                    networkInfo = {
+                        ...networkInfo,
+                        hasSingleton: singletonCode !== '0x',
+                        isSAEnabled: supportsAmbire && singletonCode !== '0x',
+                        areContractsDeployed,
+                        rpcNoStateOverride: !supportsStateOverride,
+                        erc4337: {
+                            enabled: is4337Enabled(hasBundlerSupport, network),
+                            hasPaymaster: network ? network.erc4337.hasPaymaster : false,
+                            hasBundlerSupport
+                        }
+                    };
+                    callback(networkInfo);
+                })(),
+                (async () => {
+                    const oracleCode = await retryRequest(() => provider.getCode(deploy_1.OPTIMISTIC_ORACLE)).catch((e) => raiseFlagged(e, '0x'));
+                    const isOptimistic = oracleCode !== '0x';
+                    networkInfo = { ...networkInfo, isOptimistic };
+                })(),
+                (async () => {
+                    const block = await retryRequest(() => provider.getBlock('latest')).catch((e) => raiseFlagged(e, null));
+                    const feeOptions = { is1559: block?.baseFeePerGas !== null };
+                    networkInfo = { ...networkInfo, feeOptions };
+                })(),
+                (async () => {
+                    // Keep the old value if the request fails
+                    let platformId = network?.platformId || '';
+                    let nativeAssetId = network?.nativeAssetId || '';
+                    try {
+                        const coingeckoRequest = await fetch(`https://cena.ambire.com/api/v3/platform/${Number(chainId)}`);
+                        const coingeckoInfo = await coingeckoRequest.json();
+                        if (!coingeckoInfo.error) {
+                            // Coingecko info found
+                            platformId = coingeckoInfo.platformId;
+                            nativeAssetId = coingeckoInfo.nativeAssetId;
+                        }
                     }
-                };
-                callback(networkInfo);
-            })(),
-            (async () => {
-                const oracleCode = await retryRequest(() => provider.getCode(deploy_1.OPTIMISTIC_ORACLE)).catch((e) => raiseFlagged(e, '0x'));
-                const isOptimistic = oracleCode !== '0x';
-                networkInfo = { ...networkInfo, isOptimistic };
-                callback(networkInfo);
-            })(),
-            (async () => {
-                const block = await retryRequest(() => provider.getBlock('latest')).catch((e) => raiseFlagged(e, null));
-                const feeOptions = { is1559: block?.baseFeePerGas !== null };
-                networkInfo = { ...networkInfo, feeOptions };
-                callback(networkInfo);
-            })(),
-            (async () => {
-                // Keep the old value if the request fails
-                let platformId = network?.platformId || '';
-                let nativeAssetId = network?.nativeAssetId || '';
-                try {
-                    const coingeckoRequest = await fetch(`https://cena.ambire.com/api/v3/platform/${Number(chainId)}`);
-                    const coingeckoInfo = await coingeckoRequest.json();
-                    if (!coingeckoInfo.error) {
-                        // Coingecko info found
-                        platformId = coingeckoInfo.platformId;
-                        nativeAssetId = coingeckoInfo.nativeAssetId;
+                    catch (e) {
+                        console.error('Error fetching coingecko info', e);
                     }
-                }
-                catch (e) {
-                    console.error('Error fetching coingecko info', e);
-                }
-                networkInfo = {
-                    ...networkInfo,
-                    platformId,
-                    nativeAssetId
-                };
-                callback(networkInfo);
-            })()
-        ]),
-        timeout()
-    ]);
+                    networkInfo = {
+                        ...networkInfo,
+                        platformId,
+                        nativeAssetId
+                    };
+                    callback(networkInfo);
+                })()
+            ]),
+            timeout()
+        ]);
+    }
+    finally {
+        clearTimeout(timeoutId);
+    }
     networkInfo = { ...networkInfo, flagged: flagged || info === 'timeout reached' };
     callback(networkInfo);
 }
@@ -312,6 +347,13 @@ function getFeaturesByNetworkProperties(networkInfo, network) {
     }
     return features;
 }
+/** The feature list to render while a network's info is still being fetched. */
+function getLoadingFeatures() {
+    return getFeaturesByNetworkProperties(undefined, undefined).map((feature) => ({
+        ...feature,
+        level: 'loading'
+    }));
+}
 // call this if you have only the rpcUrls and chainId
 // this method makes an RPC request, calculates the network info and returns the features
 function getFeatures(networkInfo, network) {
@@ -421,6 +463,7 @@ const getNetworksUpdatedWithRelayerNetworks = (currentNetworks, relayerNetworks)
                 rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
                 suggestedRpcUrl: relayerNetwork.suggestedRpcUrl,
                 suggestedRpcBatchCount: relayerNetwork.suggestedRpcBatchCount,
+                refreshInterval: relayerNetwork.refreshInterval,
                 iconUrls: relayerNetwork.iconUrls,
                 predefined: relayerNetwork.predefined
             };
@@ -458,7 +501,8 @@ const networkChainIdToHex = (chainId) => {
         // to match the format expected by dApps (e.g., "0xa" instead of "0x0a")
         return (0, ethers_1.toBeHex)(chainId).replace(/^0x0/, '0x');
     }
-    catch (error) {
+    catch (e) {
+        console.log('failed to do toBeHex(chainId).replace()', e);
         return `0x${chainId.toString(16)}`;
     }
 };
@@ -505,7 +549,7 @@ const getAccountNotSupportedReason = (acc) => {
     return 'Safe account is not activated on this network';
 };
 exports.getAccountNotSupportedReason = getAccountNotSupportedReason;
-const getSupportedNetworks = (networks, accountStates, acc, additionalCheck) => {
+const getSupportedNetworks = (networks, accountStates, acc, additionalCheck, allowUndeployedSafeOnChainId) => {
     if (!acc)
         return [];
     let checkedNetworks = networks;
@@ -554,7 +598,8 @@ const getSupportedNetworks = (networks, accountStates, acc, additionalCheck) => 
         return checkedNetworks;
     return checkedNetworks.map((n) => {
         const networkAccState = accountStates[acc.addr]?.[n.chainId.toString()];
-        if (!networkAccState || networkAccState.isDeployed)
+        const isSafeSupportedOnNetwork = !networkAccState || networkAccState.isDeployed || n.chainId === allowUndeployedSafeOnChainId;
+        if (isSafeSupportedOnNetwork)
             return { ...n };
         return {
             ...n,

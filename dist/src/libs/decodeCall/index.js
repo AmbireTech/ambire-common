@@ -1,8 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.CALLDATA_SELECTOR_HEX_LENGTH = void 0;
 exports.decodeCall = decodeCall;
+exports.decodeCallDataRecursively = decodeCallDataRecursively;
+exports.withDecodedCalls = withDecodedCalls;
 const ethers_1 = require("ethers");
 const viem_1 = require("viem");
+const richJson_1 = require("../richJson/richJson");
+/** Length of the 0x prefixed function selector at the start of call data. */
+exports.CALLDATA_SELECTOR_HEX_LENGTH = 10;
+const ADDRESS_HEX_LENGTH = 42;
 /**
  *
  * @param type string of the type of the solidity function argument, should be tuple
@@ -90,9 +97,8 @@ function decodeCall(data, foundSignatures) {
             const result = {
                 diffInBytes,
                 signature,
-                selector: data.slice(0, 10),
-                args: argsToReturn,
-                data
+                selector: data.slice(0, exports.CALLDATA_SELECTOR_HEX_LENGTH),
+                args: argsToReturn
             };
             if (!diffInBytes)
                 return result;
@@ -119,5 +125,73 @@ function decodeCall(data, foundSignatures) {
     if (resultWithDiff.diff && data.startsWith('0x00000000'))
         return null;
     return resultWithDiff.decoded;
+}
+function decodeNestedArg(arg, getSignatures, lookedUpSelectors) {
+    if (typeof arg.val === 'string' &&
+        (0, viem_1.isHex)(arg.val) &&
+        arg.val.length >= exports.CALLDATA_SELECTOR_HEX_LENGTH &&
+        arg.val.length !== ADDRESS_HEX_LENGTH)
+        return {
+            key: arg.key,
+            val: decodeCallDataWithNesting(arg.val, getSignatures, lookedUpSelectors) || arg.val
+        };
+    if (Array.isArray(arg.val))
+        return {
+            key: arg.key,
+            val: arg.val.map((nestedArg) => decodeNestedArg(nestedArg, getSignatures, lookedUpSelectors))
+        };
+    return arg;
+}
+function decodeCallDataWithNesting(data, getSignatures, lookedUpSelectors) {
+    if (!(0, viem_1.isHex)(data) || data.length < exports.CALLDATA_SELECTOR_HEX_LENGTH)
+        return null;
+    const selector = data.slice(0, exports.CALLDATA_SELECTOR_HEX_LENGTH);
+    lookedUpSelectors.add(selector);
+    const signatures = getSignatures(selector);
+    if (!signatures.length)
+        return null;
+    const decoded = decodeCall(data, signatures);
+    if (!decoded)
+        return null;
+    return {
+        ...decoded,
+        args: decoded.args.map((arg) => decodeNestedArg(arg, getSignatures, lookedUpSelectors))
+    };
+}
+/**
+ * Decodes call data with the signatures known for its selector, then keeps decoding every
+ * argument that is call data itself. `getSignatures` gives the known signatures of a selector,
+ * or an empty list. Nothing is fetched, so the result also lists every selector that was looked
+ * up, letting the caller fetch the unknown ones and decode again.
+ */
+function decodeCallDataRecursively(data, getSignatures) {
+    const lookedUpSelectors = new Set();
+    const decodedCall = decodeCallDataWithNesting(data, getSignatures, lookedUpSelectors);
+    return { decodedCall, selectors: [...lookedUpSelectors] };
+}
+/**
+ * Returns the calls with `decodedCall` set from `getDecodedCall`, which is asked once per
+ * distinct call data and gives null when the data can't be decoded. A call that isn't decoded
+ * gets `isDecodingCall` when `isDecoding` says its signatures are still on the way. Calls that
+ * come out the same are kept as they are, and so is the whole array when none of them changed,
+ * so a caller that re-renders on a reference change only does so when the decoding actually
+ * changed.
+ */
+function withDecodedCalls(calls, getDecodedCall, isDecoding) {
+    const decodedCallsByData = new Map();
+    let hasChanged = false;
+    const callsWithDecodedData = calls.map((call) => {
+        if (!decodedCallsByData.has(call.data)) {
+            decodedCallsByData.set(call.data, getDecodedCall(call.data) || undefined);
+        }
+        const decodedCall = decodedCallsByData.get(call.data);
+        const isDecodingCall = !decodedCall && isDecoding(call.data) ? true : undefined;
+        if ((0, richJson_1.stringify)(call.decodedCall) === (0, richJson_1.stringify)(decodedCall) &&
+            call.isDecodingCall === isDecodingCall)
+            return call;
+        hasChanged = true;
+        return { ...call, decodedCall, isDecodingCall };
+    });
+    return hasChanged ? callsWithDecodedData : calls;
 }
 //# sourceMappingURL=index.js.map

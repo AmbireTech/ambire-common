@@ -1,133 +1,106 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-/* eslint-disable @typescript-eslint/no-unused-vars */
-const ethers_1 = require("ethers");
-const Bundler3_1 = require("../../const/abis/Bundler3");
-const GeneralAdapter1_1 = require("../../const/abis/GeneralAdapter1");
+const viem_1 = require("viem");
 const utils_1 = require("../../utils");
-const iface = new ethers_1.Interface(Bundler3_1.Bundler3);
-const generalAdapterInterface = new ethers_1.Interface(GeneralAdapter1_1.GeneralAdapter1);
-const getWarnings = (accAddr, onBehalf) => {
-    return onBehalf.toLowerCase() !== accAddr.toLowerCase()
-        ? [
-            (0, utils_1.getWarning)(`Differnt action address detected! Owner is ${accAddr}, while action address is ${onBehalf}`, 'Morpho_diff_addr')
-        ]
-        : [];
-};
+const generalAdapter_1 = require("./generalAdapter");
+const multicallAbi = [
+    {
+        type: 'function',
+        name: 'multicall',
+        inputs: [
+            {
+                name: 'bundle',
+                type: 'tuple[]',
+                internalType: 'tuple[]',
+                components: [
+                    { name: 'to', type: 'address', internalType: 'address' },
+                    { name: 'data', type: 'bytes', internalType: 'bytes' },
+                    { name: 'value', type: 'uint256', internalType: 'uint256' },
+                    { name: 'skipRevert', type: 'bool', internalType: 'bool' },
+                    { name: 'callbackHash', type: 'bytes32', internalType: 'bytes32' }
+                ]
+            }
+        ],
+        outputs: [],
+        stateMutability: 'payable'
+    }
+];
+const morphoSupplyCollateralSelector = (0, viem_1.toFunctionSelector)(generalAdapter_1.morphoSupplyCollateralAbi[0]);
+const morphoBorrowSelector = (0, viem_1.toFunctionSelector)(generalAdapter_1.morphoBorrowAbi[0]);
+const morphoRepaySelector = (0, viem_1.toFunctionSelector)(generalAdapter_1.morphoRepayAbi[0]);
+const morphoWithdrawCollateralSelector = (0, viem_1.toFunctionSelector)(generalAdapter_1.morphoWithdrawCollateralAbi[0]);
+const morphoFlashLoanSelector = (0, viem_1.toFunctionSelector)(generalAdapter_1.morphoFlashLoanAbi[0]);
+const erc4626MintSelector = (0, viem_1.toFunctionSelector)(generalAdapter_1.erc4626MintAbi[0]);
+const erc4626DepositSelector = (0, viem_1.toFunctionSelector)(generalAdapter_1.erc4626DepositAbi[0]);
+const erc4626WithdrawSelector = (0, viem_1.toFunctionSelector)(generalAdapter_1.erc4626WithdrawAbi[0]);
+const erc4626RedeemSelector = (0, viem_1.toFunctionSelector)(generalAdapter_1.erc4626RedeemAbi[0]);
+const multicallSelector = (0, viem_1.toFunctionSelector)(multicallAbi[0]);
 const decodeGeneralAdapter = (accAddr, bundle) => {
     const matcher = {
         // the below commented out humanizations are legit multicall humanizations
         // but they don't bring any value to the user other than confusion
         //
-        // [generalAdapterInterface.getFunction('erc20TransferFrom')?.selector!]: (
-        //   call: IrCall
-        // ): IrCall | undefined => {
-        //   const { token, receiver, amount } = generalAdapterInterface.parseTransaction(call)!.args
-        //   const fullVisualization = [
-        //     getBreak(),
-        //     getAction('Transfer'),
-        //     getToken(token, amount),
-        //     getLabel('To'),
-        //     getAddressVisualization(receiver)
-        //   ]
-        //   return { ...call, fullVisualization }
-        // },
-        // [generalAdapterInterface.getFunction('erc20Transfer')?.selector!]: (
-        //   call: IrCall
-        // ): IrCall | undefined => {
-        //   const { token, receiver, amount } = generalAdapterInterface.parseTransaction(call)!.args
-        //   const fullVisualization = [
-        //     getBreak(),
-        //     getAction('Transfer'),
-        //     getToken(token, amount),
-        //     getLabel('To'),
-        //     getAddressVisualization(receiver)
-        //   ]
-        //   return { ...call, fullVisualization }
-        // },
-        // [generalAdapterInterface.getFunction('nativeTransfer')?.selector!]: (
-        //   call: IrCall
-        // ): IrCall | undefined => {
-        //   const { receiver, amount } = generalAdapterInterface.parseTransaction(call)!.args
-        //   const fullVisualization = [
-        //     getBreak(),
-        //     getAction('Transfer'),
-        //     getToken(ZeroAddress, amount),
-        //     getLabel('To'),
-        //     getAddressVisualization(receiver)
-        //   ]
-        //   return { ...call, fullVisualization }
-        // },
-        // [generalAdapterInterface.getFunction('wrapNative')?.selector!]: (
-        //   call: IrCall
-        // ): IrCall | undefined => {
-        //   const { amount } = generalAdapterInterface.parseTransaction(call)!.args
-        //   const fullVisualization = [getBreak(), ...getWrapping(ZeroAddress, amount)]
-        //   return { ...call, fullVisualization }
-        // },
-        // [generalAdapterInterface.getFunction('unwrapNative')?.selector!]: (
-        //   call: IrCall
-        // ): IrCall | undefined => {
-        //   const { amount } = generalAdapterInterface.parseTransaction(call)!.args
-        //   const fullVisualization = [getBreak(), ...getUnwrapping(ZeroAddress, amount)]
-        //   return { ...call, fullVisualization }
-        // },
-        // [generalAdapterInterface.getFunction('permit2TransferFrom')?.selector!]: (
-        //     call: IrCall
-        //   ): IrCall | undefined => {
-        //     const { token, receiver, amount } = generalAdapterInterface.parseTransaction(call)!.args
-        //     const fullVisualization = [
-        //       getBreak(),
-        //       getAction('Transfer'),
-        //       getToken(token, amount),
-        //       getLabel('To'),
-        //       getAddressVisualization(receiver)
-        //     ]
-        //     return { ...call, fullVisualization }
-        //   },
-        [generalAdapterInterface.getFunction('morphoSupplyCollateral')?.selector]: (call) => {
-            const { marketParams, assets, onBehalf, data } = generalAdapterInterface.parseTransaction(call).args;
-            const collateral = marketParams[1];
-            const collateralAmount = assets;
-            const fullVisualization = [
-                (0, utils_1.getBreak)(),
-                (0, utils_1.getAction)('Supply'),
-                (0, utils_1.getToken)(collateral, collateralAmount)
-            ];
-            return { ...call, fullVisualization, warnings: getWarnings(accAddr, onBehalf) };
+        // [toFunctionSelector(erc20TransferFromAbi[0])]: ...
+        // [toFunctionSelector(erc20TransferAbi[0])]: ...
+        // [toFunctionSelector(nativeTransferAbi[0])]: ...
+        // [toFunctionSelector(wrapNativeAbi[0])]: ...
+        // [toFunctionSelector(unwrapNativeAbi[0])]: ...
+        // [toFunctionSelector(permit2TransferFromAbi[0])]: ...
+        [morphoSupplyCollateralSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({
+                abi: generalAdapter_1.morphoSupplyCollateralAbi,
+                data: call.data
+            });
+            const [marketParams, assets, onBehalf] = args;
+            const collateral = marketParams.collateralToken;
+            const fullVisualization = [(0, utils_1.getBreak)(), (0, utils_1.getAction)('Supply'), (0, utils_1.getToken)(collateral, assets)];
+            return { ...call, fullVisualization, warnings: (0, generalAdapter_1.getWarnings)(accAddr, onBehalf) };
         },
-        [generalAdapterInterface.getFunction('morphoBorrow')?.selector]: (call) => {
-            const { marketParams, assets, shares, minSharePriceE27, receiver } = generalAdapterInterface.parseTransaction(call).args;
-            const loanToken = marketParams[0];
-            const loanAmount = assets;
+        [morphoBorrowSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({
+                abi: generalAdapter_1.morphoBorrowAbi,
+                data: (0, utils_1.padCallData)(call.data, 9)
+            });
+            const [marketParams, assets, , , receiver] = args;
+            const loanToken = marketParams.loanToken;
             const fullVisualization = [
                 (0, utils_1.getBreak)(),
                 (0, utils_1.getAction)('Take'),
-                (0, utils_1.getToken)(loanToken, loanAmount),
+                (0, utils_1.getToken)(loanToken, assets),
                 (0, utils_1.getLabel)('loan')
             ];
-            return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) };
+            return { ...call, fullVisualization, warnings: (0, generalAdapter_1.getWarnings)(accAddr, receiver) };
         },
-        [generalAdapterInterface.getFunction('morphoRepay')?.selector]: (call) => {
-            const { marketParams, assets, shares, minSharePriceE27, onBehalf, data } = generalAdapterInterface.parseTransaction(call).args;
-            const loanToken = marketParams[0];
-            const loanAmount = assets;
-            const fullVisualization = [(0, utils_1.getBreak)(), (0, utils_1.getAction)('Repay'), (0, utils_1.getToken)(loanToken, loanAmount)];
-            return { ...call, fullVisualization, warnings: getWarnings(accAddr, onBehalf) };
+        [morphoRepaySelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({
+                abi: generalAdapter_1.morphoRepayAbi,
+                data: call.data
+            });
+            const [marketParams, assets, , , onBehalf] = args;
+            const loanToken = marketParams.loanToken;
+            const fullVisualization = [(0, utils_1.getBreak)(), (0, utils_1.getAction)('Repay'), (0, utils_1.getToken)(loanToken, assets)];
+            return { ...call, fullVisualization, warnings: (0, generalAdapter_1.getWarnings)(accAddr, onBehalf) };
         },
-        [generalAdapterInterface.getFunction('morphoWithdrawCollateral')?.selector]: (call) => {
-            const { marketParams, assets, receiver } = generalAdapterInterface.parseTransaction(call).args;
-            const collateralToken = marketParams[1];
-            const amount = assets;
+        [morphoWithdrawCollateralSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({
+                abi: generalAdapter_1.morphoWithdrawCollateralAbi,
+                data: (0, utils_1.padCallData)(call.data, 7)
+            });
+            const [marketParams, assets, receiver] = args;
+            const collateralToken = marketParams.collateralToken;
             const fullVisualization = [
                 (0, utils_1.getBreak)(),
                 (0, utils_1.getAction)('Withdraw'),
-                (0, utils_1.getToken)(collateralToken, amount)
+                (0, utils_1.getToken)(collateralToken, assets)
             ];
-            return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) };
+            return { ...call, fullVisualization, warnings: (0, generalAdapter_1.getWarnings)(accAddr, receiver) };
         },
-        [generalAdapterInterface.getFunction('morphoFlashLoan')?.selector]: (call) => {
-            const { token, assets, data } = generalAdapterInterface.parseTransaction(call).args;
+        [morphoFlashLoanSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({
+                abi: generalAdapter_1.morphoFlashLoanAbi,
+                data: call.data
+            });
+            const [token, assets] = args;
             const fullVisualization = [
                 (0, utils_1.getBreak)(),
                 (0, utils_1.getAction)('Execute flash loan for'),
@@ -135,41 +108,57 @@ const decodeGeneralAdapter = (accAddr, bundle) => {
             ];
             return { ...call, fullVisualization };
         },
-        [generalAdapterInterface.getFunction('erc4626Mint')?.selector]: (call) => {
-            const { vault, assets, maxSharePriceE27, receiver } = generalAdapterInterface.parseTransaction(call).args;
+        [erc4626MintSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({
+                abi: generalAdapter_1.erc4626MintAbi,
+                data: (0, utils_1.padCallData)(call.data, 4)
+            });
+            const [vault, , , receiver] = args;
             const fullVisualization = [
                 (0, utils_1.getBreak)(),
                 (0, utils_1.getAction)('Supply to vault'),
                 (0, utils_1.getAddressVisualization)(vault)
             ];
-            return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) };
+            return { ...call, fullVisualization, warnings: (0, generalAdapter_1.getWarnings)(accAddr, receiver) };
         },
-        [generalAdapterInterface.getFunction('erc4626Deposit')?.selector]: (call) => {
-            const { vault, assets, maxSharePriceE27, receiver } = generalAdapterInterface.parseTransaction(call).args;
+        [erc4626DepositSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({
+                abi: generalAdapter_1.erc4626DepositAbi,
+                data: (0, utils_1.padCallData)(call.data, 4)
+            });
+            const [vault, , , receiver] = args;
             const fullVisualization = [
                 (0, utils_1.getBreak)(),
                 (0, utils_1.getAction)('Mint from vault'),
                 (0, utils_1.getAddressVisualization)(vault)
             ];
-            return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) };
+            return { ...call, fullVisualization, warnings: (0, generalAdapter_1.getWarnings)(accAddr, receiver) };
         },
-        [generalAdapterInterface.getFunction('erc4626Withdraw')?.selector]: (call) => {
-            const { vault, assets, maxSharePriceE27, receiver, owner } = generalAdapterInterface.parseTransaction(call).args;
+        [erc4626WithdrawSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({
+                abi: generalAdapter_1.erc4626WithdrawAbi,
+                data: (0, utils_1.padCallData)(call.data, 5)
+            });
+            const [vault, , , receiver] = args;
             const fullVisualization = [
                 (0, utils_1.getBreak)(),
                 (0, utils_1.getAction)('Withdraw from vault'),
                 (0, utils_1.getAddressVisualization)(vault)
             ];
-            return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) };
+            return { ...call, fullVisualization, warnings: (0, generalAdapter_1.getWarnings)(accAddr, receiver) };
         },
-        [generalAdapterInterface.getFunction('erc4626Redeem')?.selector]: (call) => {
-            const { vault, assets, maxSharePriceE27, receiver, owner } = generalAdapterInterface.parseTransaction(call).args;
+        [erc4626RedeemSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({
+                abi: generalAdapter_1.erc4626RedeemAbi,
+                data: (0, utils_1.padCallData)(call.data, 5)
+            });
+            const [vault, , , receiver] = args;
             const fullVisualization = [
                 (0, utils_1.getBreak)(),
                 (0, utils_1.getAction)('Withdraw from vault'),
                 (0, utils_1.getAddressVisualization)(vault)
             ];
-            return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) };
+            return { ...call, fullVisualization, warnings: (0, generalAdapter_1.getWarnings)(accAddr, receiver) };
         }
     };
     return bundle.map((call) => {
@@ -182,14 +171,17 @@ const decodeGeneralAdapter = (accAddr, bundle) => {
         return newCall;
     });
 };
-const Bundler3Module = (accOp, calls) => {
+const Bundler3Module = (accOp, call) => {
     const matcher = {
-        [iface.getFunction('multicall')?.selector]: (call) => {
+        [multicallSelector]: (call) => {
             if (!call.to)
                 return;
             if (call.value)
                 return;
-            const { bundle } = iface.parseTransaction(call).args;
+            if (!(0, utils_1.isHexCall)(call))
+                return;
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: multicallAbi, data: call.data });
+            const [bundle] = args;
             const decodedBundle = decodeGeneralAdapter(accOp.accountAddr, bundle);
             const bundleVisualization = decodedBundle.map((c) => c.fullVisualization || []).flat();
             if (bundleVisualization.length)
@@ -200,16 +192,13 @@ const Bundler3Module = (accOp, calls) => {
             };
         }
     };
-    const newCalls = calls.map((call) => {
-        const match = matcher[call.data.slice(0, 10)];
-        if (call.fullVisualization || !match)
-            return call;
-        const newCall = match(call);
-        if (!newCall)
-            return call;
-        return newCall;
-    });
-    return newCalls;
+    const match = matcher[call.data.slice(0, 10)];
+    if (call.fullVisualization || !match)
+        return call;
+    const newCall = match(call);
+    if (!newCall)
+        return call;
+    return newCall;
 };
 exports.default = Bundler3Module;
 //# sourceMappingURL=index.js.map

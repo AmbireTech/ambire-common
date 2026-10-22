@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.WETH = exports.ERC721 = exports.ERC20 = void 0;
+exports.ERC721 = exports.ERC20 = void 0;
 exports.ERC20 = [
     'function name() view returns (string)',
     'function approve(address _spender, uint256 _value) returns (bool)',
@@ -52,18 +52,5 @@ exports.ERC721 = [
     'function transferFrom(address from, address to, uint256 tokenId)',
     'function transferOwnership(address newOwner)',
     'function withdraw()'
-];
-exports.WETH = [
-    'function name() view returns (string)',
-    'function approve(address guy, uint256 wad) returns (bool)',
-    'function totalSupply() view returns (uint256)',
-    'function transferFrom(address src, address dst, uint256 wad) returns (bool)',
-    'function withdraw(uint256 wad)',
-    'function decimals() view returns (uint8)',
-    'function balanceOf(address) view returns (uint256)',
-    'function symbol() view returns (string)',
-    'function transfer(address dst, uint256 wad) returns (bool)',
-    'function deposit() payable',
-    'function allowance(address, address) view returns (uint256)'
 ];
 //# sourceMappingURL=Tokens.js.map

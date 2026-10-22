@@ -13,7 +13,7 @@ export type Action = {
     };
 };
 export type SelectedAccountBalanceError = {
-    id: `custom-rpcs-down-${string}` | 'rpcs-down' | 'portfolio-critical' | 'loading-too-long' | 'defi-critical' | 'defi-prices' | `${string}-defi-positions-error` | keyof typeof PORTFOLIO_LIB_ERROR_NAMES;
+    id: `custom-rpcs-down-${string}` | 'rpcs-down' | 'portfolio-critical' | 'portfolio-stale-block' | `stale-block-${string}` | 'loading-too-long' | 'defi-critical' | 'defi-apps' | 'defi-prices' | `${string}-defi-positions-error` | keyof typeof PORTFOLIO_LIB_ERROR_NAMES;
     networkNames: string[];
     type: 'error' | 'warning';
     title: string;
@@ -21,6 +21,11 @@ export type SelectedAccountBalanceError = {
     actions?: Action[];
 };
 export declare const addRPCError: (errors: SelectedAccountBalanceError[], chainId: string, networks: Network[]) => SelectedAccountBalanceError[];
+/**
+ * Tells the user that the network data we are getting is behind, so the displayed balances
+ * are the last ones we could trust. Offers switching the RPC when there is another one.
+ */
+export declare const addStaleBlockError: (errors: SelectedAccountBalanceError[], network: Network) => SelectedAccountBalanceError[];
 export declare const addPortfolioError: (errors: SelectedAccountBalanceError[], networkName: string, newError: keyof typeof PORTFOLIO_LIB_ERROR_NAMES | "portfolio-critical" | "loading-too-long") => SelectedAccountBalanceError[];
 /**
  * Cases:
@@ -41,6 +46,11 @@ export declare const getNetworksWithErrors: ({ networks, selectedAccountPortfoli
     shouldShowPartialResult: boolean;
     networksWithAssets: AccountAssetsState;
 }) => SelectedAccountBalanceError[];
+/**
+ * The DeFi apps (`defiApps`) live outside of the per-network state, so they are missed by the
+ * network loops above. Their failure silently lowers the total balance, hence the dedicated check.
+ */
+export declare const getDefiAppsErrors: (portfolioState: SelectedAccountPortfolioState) => SelectedAccountBalanceError[];
 export declare const getNetworksWithDeFiPositionsErrorErrors: ({ networks, portfolioState, providers, networksWithPositions }: {
     networks: Network[];
     portfolioState: SelectedAccountPortfolioState;

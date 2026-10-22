@@ -3,13 +3,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TransferController = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
+const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
 const addresses_1 = require("../../consts/addresses");
+const privacyPools_1 = require("../../consts/privacyPools");
+const ui_1 = require("../../interfaces/ui");
 const getBaseAccount_1 = require("../../libs/account/getBaseAccount");
 const types_1 = require("../../libs/defiPositions/types");
 const erc7677_1 = require("../../libs/erc7677/erc7677");
 const utils_1 = require("../../libs/humanizer/utils");
 const helpers_1 = require("../../libs/portfolio/helpers");
 const amount_1 = require("../../libs/transfer/amount");
+const fieldAmounts_1 = require("../../libs/transfer/fieldAmounts");
 const userRequest_1 = require("../../libs/transfer/userRequest");
 const validations_1 = require("../../services/validations");
 const accounts_1 = require("../../utils/accounts");
@@ -18,8 +22,6 @@ const formatters_1 = require("../../utils/numbers/formatters");
 const uuid_1 = require("../../utils/uuid");
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const signAccountOp_1 = require("../signAccountOp/signAccountOp");
-const CONVERSION_PRECISION = 16;
-const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION);
 const DEFAULT_ADDRESS_STATE = {
     fieldValue: '',
     resolvedAddress: '',
@@ -43,6 +45,9 @@ const isTransfer = (route) => {
 class TransferController extends eventEmitter_1.default {
     #callRelayer;
     #storage;
+    #signAccountOpPreference;
+    #featureFlags;
+    #platform;
     #networks;
     #addressBook;
     #selectedToken = null;
@@ -69,8 +74,21 @@ class TransferController extends eventEmitter_1.default {
     isRecipientHumanizerKnownTokenOrSmartContract = false;
     isRecipientAddressViewOnly = false;
     isTopUp = false;
+    /**
+     * Seed id of the Privacy Pools account to deposit into, instead of an address. Exclusive with
+     * `addressState`: setting either clears the other. Limits the tokens to what the pools accept.
+     */
+    privacyPoolsRecipient = null;
+    /** Whether the deposit calls are being built. The first build per account syncs its network. */
+    isPreparingPrivacyPoolsDeposit = false;
+    /** Why the deposit cannot be prepared, in words for the user. */
+    privacyPoolsDepositError = null;
+    /** Lets a newer deposit preparation discard the result of an older, slower one. */
+    #privacyPoolsDepositPreparationId = 0;
+    #privacyPools;
     #shouldSkipTransactionQueuedModal = false;
     #isMaxAmountSelected = false;
+    #wasAmountAdjustedForFee = false;
     #maxFeeReservation = null;
     #accounts;
     #keystore;
@@ -79,12 +97,19 @@ class TransferController extends eventEmitter_1.default {
     #providers;
     #phishing;
     #dapps;
+    #erc7730;
+    #contractInfo;
     #relayerUrl;
     isRecipientAddressFirstTimeSend = false;
     lastSentToRecipientAt = null;
     // Set only for first-time sends when the recipient matches a known address
     // by both prefix and suffix, which may indicate address poisoning.
     addressPoisoningMatch = null;
+    /**
+     * Set when the recipient is a domain (ENS/Namoshi) the user has sent to before, but it now resolves
+     * to a DIFFERENT address than last time (possible expiry/snipe).
+     */
+    recipientDomainAddressChange = null;
     signAccountOpController = null;
     latestBroadcastedAccountOp = null;
     latestBroadcastedToken = null;
@@ -99,10 +124,12 @@ class TransferController extends eventEmitter_1.default {
         const views = this.#ui.views.filter((view) => isTransfer(view.currentRoute));
         return views.length >= 1;
     }
-    constructor(callRelayer, storage, humanizerInfo, selectedAccount, networks, addressBook, accounts, keystore, portfolio, activity, externalSignerControllers, providers, phishing, dapps, relayerUrl, onBroadcastSuccess, ui, eventEmitterRegistry) {
+    constructor(callRelayer, storage, signAccountOpPreference, featureFlags, humanizerInfo, selectedAccount, networks, addressBook, accounts, keystore, portfolio, activity, externalSignerControllers, providers, phishing, dapps, relayerUrl, onBroadcastSuccess, ui, erc7730, contractInfo, platform, privacyPools, eventEmitterRegistry) {
         super(eventEmitterRegistry);
         this.#callRelayer = callRelayer;
         this.#storage = storage;
+        this.#signAccountOpPreference = signAccountOpPreference;
+        this.#featureFlags = featureFlags;
         this.#humanizerInfo = humanizerInfo;
         this.#selectedAccount = selectedAccount;
         this.#networks = networks;
@@ -115,9 +142,13 @@ class TransferController extends eventEmitter_1.default {
         this.#providers = providers;
         this.#phishing = phishing;
         this.#dapps = dapps;
+        this.#erc7730 = erc7730;
+        this.#privacyPools = privacyPools;
+        this.#contractInfo = contractInfo;
         this.#relayerUrl = relayerUrl;
         this.#onBroadcastSuccess = onBroadcastSuccess;
         this.#ui = ui;
+        this.#platform = platform;
         this.#initialLoadPromise = this.#load().finally(() => {
             this.#initialLoadPromise = undefined;
         });
@@ -149,6 +180,19 @@ class TransferController extends eventEmitter_1.default {
             }
             this.propagateUpdate(forceEmit);
         });
+        // isRecipientAddressBlacklisted reads the phishing list, which loads from storage and refreshes
+        // in the background, so the UI has to be told when the answer may have changed
+        this.#phishing.onUpdate((forceEmit) => {
+            if (!this.#currentTransferSessionId || !(0, ethers_1.isAddress)(this.recipientAddress))
+                return;
+            this.propagateUpdate(forceEmit);
+        }, 'transfer-recipient-phishing-check');
+        // Re-validates the amount once the entrypoint's deposit limits are read
+        this.#privacyPools?.onUpdate((forceEmit) => {
+            if (!this.#currentTransferSessionId || !this.privacyPoolsRecipient)
+                return;
+            this.propagateUpdate(forceEmit);
+        }, 'transfer-privacy-pools-recipient');
         this.emitUpdate();
     }
     #enterTransfer(view) {
@@ -158,7 +202,7 @@ class TransferController extends eventEmitter_1.default {
         const isFormInitialized = this.hasPersistedState && this.areDefaultsSet;
         const isSameMode = this.isTopUp === nextIsTopUp;
         const hasNoSearchParams = Object.keys(searchParams || {}).length === 0;
-        const shouldKeepExistingForm = isFormInitialized && isSameMode && hasNoSearchParams;
+        const shouldKeepExistingForm = isFormInitialized && isSameMode && hasNoSearchParams && !(0, ui_1.isSidePanelView)(view);
         if (shouldKeepExistingForm) {
             if (!this.areDefaultsSet) {
                 this.areDefaultsSet = true;
@@ -187,12 +231,22 @@ class TransferController extends eventEmitter_1.default {
         return this.#currentTransferSessionId;
     }
     #setTokens() {
-        const tokens = this.#selectedAccount.portfolio.tokens
-            .filter((token) => {
+        // Indexed once rather than scanned inside the filter below, which runs for every
+        // token the account holds - a large portfolio runs to thousands of them.
+        const networkByChainId = new Map(this.#networks.networks.map((n) => [n.chainId, n]));
+        const tokens = this.#selectedAccount.portfolio.tokens.filter((token) => {
             const hasAmount = Number((0, helpers_1.getTokenAmount)(token)) > 0;
             const isVisible = !token.flags.isHidden;
+            if (this.privacyPoolsRecipient) {
+                return (hasAmount &&
+                    isVisible &&
+                    !token.flags.onGasTank &&
+                    !token.flags.rewardsType &&
+                    token.flags.defiTokenType !== types_1.AssetType.Borrow &&
+                    this.#isPrivacyPoolsDepositToken(token));
+            }
             if (this.isTopUp) {
-                const tokenNetwork = this.#networks.networks.find((network) => network.chainId === token.chainId);
+                const tokenNetwork = networkByChainId.get(token.chainId);
                 return (hasAmount &&
                     isVisible &&
                     tokenNetwork?.hasRelayer &&
@@ -204,13 +258,8 @@ class TransferController extends eventEmitter_1.default {
                 !token.flags.onGasTank &&
                 !token.flags.rewardsType &&
                 token.flags.defiTokenType !== types_1.AssetType.Borrow);
-        })
-            .sort((a, b) => {
-            const tokenAinUSD = (0, helpers_1.getTokenBalanceInUSD)(a);
-            const tokenBinUSD = (0, helpers_1.getTokenBalanceInUSD)(b);
-            return tokenBinUSD - tokenAinUSD;
         });
-        this.#tokens = tokens;
+        this.#tokens = (0, helpers_1.sortTokensByBalanceInUSD)(tokens);
         if (this.selectedToken) {
             this.selectedToken =
                 this.#tokens.find((t) => t.address === this.selectedToken?.address &&
@@ -219,6 +268,11 @@ class TransferController extends eventEmitter_1.default {
                     this.#tokens[0] ||
                     null;
         }
+    }
+    /** Whether a Privacy Pools account can receive this token, and send it out again. */
+    #isPrivacyPoolsDepositToken(token) {
+        return (!!this.#privacyPools?.supportedChainIds.includes(token.chainId.toString()) &&
+            !!(0, privacyPools_1.getPrivacyPoolsDepositAsset)(token.chainId, token.address));
     }
     #setDefaultSelectedToken(tokenData) {
         if (!this.#tokens.length)
@@ -271,6 +325,7 @@ class TransferController extends eventEmitter_1.default {
         if (!token || Number((0, helpers_1.getTokenAmount)(token)) === 0) {
             this.#selectedToken = null;
             this.#isMaxAmountSelected = false;
+            this.#wasAmountAdjustedForFee = false;
             this.#resetMaxFeeReservation();
             this.#setAmountAndNotifyUI('');
             this.#setAmountInFiatAndNotifyUI('');
@@ -282,6 +337,7 @@ class TransferController extends eventEmitter_1.default {
         if (prevSelectedToken?.address !== token?.address ||
             prevSelectedToken?.chainId !== token?.chainId) {
             this.#isMaxAmountSelected = false;
+            this.#wasAmountAdjustedForFee = false;
             this.#resetMaxFeeReservation();
             if (!token.priceIn.length)
                 this.amountFieldMode = 'token';
@@ -315,11 +371,13 @@ class TransferController extends eventEmitter_1.default {
     }
     resetForm(shouldDestroyAccountOp = true) {
         this.#isMaxAmountSelected = false;
+        this.#wasAmountAdjustedForFee = false;
         this.amount = '';
         this.amountInFiat = '';
         this.amountFieldMode = 'token';
         this.addressState = { ...DEFAULT_ADDRESS_STATE };
         this.#onRecipientAddressChange();
+        this.#clearPrivacyPoolsRecipient();
         // This MUST be incremented and not reset to zero, because the UI relies on
         // the change of this value. If the value was 0 and is reset to 0, the UI
         // would not detect a change.
@@ -352,20 +410,49 @@ class TransferController extends eventEmitter_1.default {
     get validationFormMsgs() {
         if (!this.isInitialized)
             return DEFAULT_VALIDATION_FORM_MSGS;
-        const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS;
-        if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
+        // A copy, so a failed validation doesn't leak into the shared defaults (e.g. an "Insufficient
+        // amount." error showing up later for an account with no tokens to select)
+        const validationFormMsgsNew = { ...DEFAULT_VALIDATION_FORM_MSGS };
+        if (this.privacyPoolsRecipient) {
+            // No address to check: the recipient is one of the wallet's own accounts
+            validationFormMsgsNew.recipientAddress = { severity: 'success', message: '' };
+        }
+        else if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
             // if the recipientAcc is an account in the extension
             // & the account state is not fetched for it, fetch it
             // so that we could validate the account properly
             // example: Safe accounts may not be deployed on certain networks
             const recipientAcc = this.#accounts.accounts.find((a) => a.addr === this.recipientAddress);
-            validationFormMsgsNew.recipientAddress = (0, validations_1.validateSendTransferAddress)(this.recipientAddress, this.#selectedAccount.account.addr, this.isRecipientAddressUnknownAgreed, this.isRecipientAddressUnknown, this.isRecipientHumanizerKnownTokenOrSmartContract, !!this.addressState.resolvedAddress, this.addressState.isDomainResolving, this.#networks.networks, this.#accounts.accountStates, recipientAcc, this.selectedToken?.chainId, this.isRecipientAddressFirstTimeSend, this.lastSentToRecipientAt, this.addressPoisoningMatch);
+            validationFormMsgsNew.recipientAddress = (0, validations_1.validateSendTransferAddress)(this.recipientAddress, this.#selectedAccount.account.addr, this.isRecipientAddressUnknownAgreed, this.isRecipientAddressUnknown, this.isRecipientHumanizerKnownTokenOrSmartContract, this.addressState.isDomainResolving, this.#networks.networks, this.#accounts.accountStates, recipientAcc, this.selectedToken?.chainId, this.isRecipientAddressFirstTimeSend, this.lastSentToRecipientAt, this.addressPoisoningMatch, this.recipientDomainAddressChange, this.isRecipientAddressBlacklisted, this.isRecipientAddressViewOnly);
         }
         // Validate the amount
         if (this.selectedToken) {
             validationFormMsgsNew.amount = (0, validations_1.validateSendTransferAmount)(this.amount, this.selectedToken);
         }
+        const privacyPoolsAmountError = validationFormMsgsNew.amount.severity === 'success' && this.#getPrivacyPoolsAmountError();
+        if (privacyPoolsAmountError) {
+            validationFormMsgsNew.amount = { severity: 'error', message: privacyPoolsAmountError };
+        }
         return validationFormMsgsNew;
+    }
+    /**
+     * Checks the amount against the configured maximum and the entrypoint's minimum (once read).
+     * Null when it passes or the transfer is not to a Privacy Pools account.
+     */
+    #getPrivacyPoolsAmountError() {
+        const token = this.selectedToken;
+        if (!this.privacyPoolsRecipient || !token)
+            return null;
+        const asset = (0, privacyPools_1.getPrivacyPoolsDepositAsset)(token.chainId, token.address);
+        if (!asset)
+            return 'This token cannot be sent to a Privacy Pools account.';
+        const amount = (0, ethers_1.parseUnits)((0, formatters_1.getSafeAmountFromFieldValue)(this.amount, token.decimals) || '0', token.decimals);
+        if (amount > asset.maxDeposit)
+            return `A Privacy Pools account accepts at most ${(0, ethers_1.formatUnits)(asset.maxDeposit, asset.decimals)} ${asset.symbol} at a time.`;
+        const config = this.#privacyPools?.depositAssetConfigs[`${token.chainId}:${token.address.toLowerCase()}`];
+        if (config && amount < config.minimumDepositAmount)
+            return `A Privacy Pools account accepts at least ${(0, ethers_1.formatUnits)(config.minimumDepositAmount, asset.decimals)} ${asset.symbol} at a time.`;
+        return null;
     }
     get isFormValid() {
         if (!this.isInitialized)
@@ -376,6 +463,9 @@ class TransferController extends eventEmitter_1.default {
                 (0, validations_1.validateSendTransferAmount)(this.amount, this.selectedToken).severity === 'success');
         }
         const areFormFieldsValid = this.validationFormMsgs.amount.severity === 'success';
+        // No address to resolve; the amount check covers the pools' limits
+        if (this.privacyPoolsRecipient)
+            return !!this.selectedToken && areFormFieldsValid;
         return areFormFieldsValid && !this.addressState.isDomainResolving;
     }
     get isInitialized() {
@@ -386,7 +476,16 @@ class TransferController extends eventEmitter_1.default {
     get recipientAddress() {
         return (0, domains_1.getAddressFromAddressState)(this.addressState);
     }
-    async update({ humanizerInfo, selectedToken, amount, shouldSetMaxAmount, addressState, isRecipientAddressUnknownAgreed, amountFieldMode }) {
+    /**
+     * Whether the recipient is in the locally stored phishing list. The list is kept up to date by
+     * the PhishingController, so the lookup needs no network request.
+     */
+    get isRecipientAddressBlacklisted() {
+        if (!(0, ethers_1.isAddress)(this.recipientAddress))
+            return false;
+        return this.#phishing.getAddressBlacklistedStatus(this.recipientAddress) === 'BLACKLISTED';
+    }
+    async update({ humanizerInfo, selectedToken, amount, shouldSetMaxAmount, addressState, isRecipientAddressUnknownAgreed, amountFieldMode, privacyPoolsRecipient }) {
         if (humanizerInfo) {
             this.#humanizerInfo = humanizerInfo;
         }
@@ -406,23 +505,37 @@ class TransferController extends eventEmitter_1.default {
         // If we do a regular check the value won't update if it's '' or '0'
         if (typeof amount === 'string') {
             this.#isMaxAmountSelected = false;
+            this.#wasAmountAdjustedForFee = false;
             this.#resetMaxFeeReservation();
             this.#setAmount(amount);
         }
         if (shouldSetMaxAmount) {
+            const maxAmountAfterFeeReservation = this.#getMaxAmountAfterFeeReservation();
+            if (!Number(maxAmountAfterFeeReservation))
+                return;
             this.#isMaxAmountSelected = true;
+            this.#wasAmountAdjustedForFee = maxAmountAfterFeeReservation !== this.maxAmount;
             this.#resetMaxFeeReservation();
-            this.amountFieldMode = 'token';
-            this.#setTokenAmount(this.#getMaxAmountAfterFeeReservation(), true);
+            // Keeps the field in whichever mode the user picked - the max is still set from the exact
+            // token balance, so fiat mode doesn't round it and leave dust behind.
+            this.#setTokenAmount(maxAmountAfterFeeReservation, true);
         }
+        if (privacyPoolsRecipient !== undefined)
+            this.#setPrivacyPoolsRecipient(privacyPoolsRecipient);
         if (addressState) {
             this.addressState = {
                 ...this.addressState,
                 ...addressState
             };
+            // Typing an address means sending to it instead
+            if (this.addressState.fieldValue)
+                this.#setPrivacyPoolsRecipient(null);
             if (this.isInitialized) {
                 this.#onRecipientAddressChange();
             }
+        }
+        if (this.privacyPoolsRecipient && (selectedToken || privacyPoolsRecipient)) {
+            this.#loadPrivacyPoolsDepositLimits();
         }
         // We can do a regular check here, because the property defines if it should be updated
         // and not the actual value
@@ -432,6 +545,50 @@ class TransferController extends eventEmitter_1.default {
         await this.#updateRecipientHistoryAndPoisoning();
         await this.syncSignAccountOp();
         this.emitUpdate();
+    }
+    /**
+     * Switches between sending to a Privacy Pools account and to an address. Drops the account op
+     * either way, as the calls and the tokens to choose from differ.
+     */
+    #setPrivacyPoolsRecipient(seedId) {
+        if (this.privacyPoolsRecipient === seedId)
+            return;
+        this.privacyPoolsRecipient = seedId;
+        this.privacyPoolsDepositError = null;
+        this.isPreparingPrivacyPoolsDeposit = false;
+        this.#privacyPoolsDepositPreparationId += 1;
+        if (seedId) {
+            this.addressState = { ...DEFAULT_ADDRESS_STATE };
+            this.#onRecipientAddressChange();
+            // The address field may still hold the text typed to find the account; make the UI clear it
+            this.programmaticUpdateCounter += 1;
+        }
+        this.destroySignAccountOp();
+        this.#setTokens();
+        if (!this.selectedToken)
+            this.#setDefaultSelectedToken();
+    }
+    #clearPrivacyPoolsRecipient() {
+        this.privacyPoolsRecipient = null;
+        this.privacyPoolsDepositError = null;
+        this.isPreparingPrivacyPoolsDeposit = false;
+        this.#privacyPoolsDepositPreparationId += 1;
+    }
+    /** Loads the entrypoint's deposit limits for the selected token. */
+    #loadPrivacyPoolsDepositLimits() {
+        const token = this.selectedToken;
+        if (!this.#privacyPools || !token || !(0, privacyPools_1.getPrivacyPoolsDepositAsset)(token.chainId, token.address))
+            return;
+        this.#privacyPools
+            .loadDepositAssetConfig(token.chainId.toString(), token.address)
+            .catch((error) => {
+            // Not fatal: preparing the deposit checks the same limits
+            this.emitError({
+                level: 'silent',
+                message: 'Could not read what Privacy Pools accepts for this token.',
+                error: error instanceof Error ? error : new Error('transfer: deposit limits read failed')
+            });
+        });
     }
     checkIsRecipientAddressUnknown() {
         if (!(0, ethers_1.isAddress)(this.recipientAddress)) {
@@ -466,6 +623,7 @@ class TransferController extends eventEmitter_1.default {
             this.isRecipientAddressFirstTimeSend = false;
             this.lastSentToRecipientAt = null;
             this.addressPoisoningMatch = null;
+            this.recipientDomainAddressChange = null;
             this.isRecipientAddressViewOnly = false;
             return;
         }
@@ -492,44 +650,16 @@ class TransferController extends eventEmitter_1.default {
             // emit updates in this method
             this.programmaticUpdateCounter += 1;
         }
-        if (!fieldValue) {
-            this.amount = '';
-            this.amountInFiat = '';
-            return;
-        }
-        const tokenPrice = this.selectedToken?.priceIn.find((p) => p.baseCurrency === HARD_CODED_CURRENCY)?.price;
-        if (!tokenPrice) {
-            this.amount = fieldValue;
-            this.amountInFiat = '';
-            return;
-        }
-        if (this.amountFieldMode === 'fiat' && typeof this.selectedToken?.decimals === 'number') {
-            this.amountInFiat = fieldValue;
-            // Get the number of decimals
-            const amountInFiatDecimals = 10;
-            const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(tokenPrice);
-            // Convert the numbers to big int
-            const sanitizedFiat = (0, amount_1.getSanitizedAmount)(fieldValue, amountInFiatDecimals);
-            const amountInFiatBigInt = sanitizedFiat
-                ? (0, ethers_1.parseUnits)(sanitizedFiat, amountInFiatDecimals)
-                : 0n;
-            this.amount = (0, ethers_1.formatUnits)((amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt, 
-            // Shift the decimal point by the number of decimals in the token price
-            amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals);
-            return;
-        }
-        if (this.amountFieldMode === 'token') {
-            this.amount = fieldValue;
-            if (!this.selectedToken)
-                return;
-            const formattedAmount = (0, ethers_1.parseUnits)((0, formatters_1.getSafeAmountFromFieldValue)(fieldValue, this.selectedToken.decimals), this.selectedToken.decimals);
-            if (!formattedAmount)
-                return;
-            const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(tokenPrice);
-            this.amountInFiat = (0, ethers_1.formatUnits)(formattedAmount * tokenPriceBigInt, 
-            // Shift the decimal point by the number of decimals in the token price
-            this.selectedToken.decimals + tokenPriceDecimals);
-        }
+        const { amount, amountInFiat } = (0, fieldAmounts_1.getAmountsFromFieldValue)({
+            fieldValue,
+            fieldMode: this.amountFieldMode,
+            price: this.selectedToken?.priceIn.find((p) => p.baseCurrency === HARD_CODED_CURRENCY)?.price ??
+                null,
+            // Unused without a token, as there is no price then
+            decimals: this.selectedToken?.decimals ?? 0
+        });
+        this.amount = amount;
+        this.amountInFiat = amountInFiat;
     }
     #setTokenAmount(amount, isProgrammaticUpdate = false) {
         const amountFieldMode = this.amountFieldMode;
@@ -621,8 +751,10 @@ class TransferController extends eventEmitter_1.default {
         const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment;
         const fee = shouldReserveFee ? gasFeePayment?.amount || 0n : 0n;
         const reservedFee = shouldReserveFee && this.#isMaxAmountSelected ? this.#getMaxReservedFeeAmount(fee) : fee;
-        if (!shouldReserveFee)
+        if (!shouldReserveFee) {
+            this.#wasAmountAdjustedForFee = false;
             this.#resetMaxFeeReservation();
+        }
         const currentAmount = this.amount
             ? (0, ethers_1.parseUnits)((0, formatters_1.getSafeAmountFromFieldValue)(this.amount, this.selectedToken.decimals), this.selectedToken.decimals)
             : 0n;
@@ -634,37 +766,40 @@ class TransferController extends eventEmitter_1.default {
             shouldReserveFee,
             isMaxAmountSelected: this.#isMaxAmountSelected
         });
-        if (currentAmount === desiredAmount)
+        if (desiredAmount === 0n || currentAmount === desiredAmount)
             return false;
-        this.#setTokenAmount(desiredAmount === 0n ? '0' : (0, ethers_1.formatUnits)(desiredAmount, this.selectedToken.decimals), true);
+        this.#wasAmountAdjustedForFee = shouldReserveFee;
+        this.#setTokenAmount((0, ethers_1.formatUnits)(desiredAmount, this.selectedToken.decimals), true);
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.syncSignAccountOp();
         this.propagateUpdate(forceEmit);
         return true;
     }
-    /**
-     * When doing a MAX transfer or a close to MAX transfer out,
-     * if the selected fee token is the same as the transfer token,
-     * we automatically adjust the transfer amount so the user
-     * can successfully broadcast. For that, we put an additional
-     * warning telling him why this is happening
-     */
-    get amountAdjustmentWarning() {
-        if (!this.amount || !this.selectedToken || !this.#shouldReserveFeeFromTransferredToken()) {
+    /** Information needed by the UI when the transfer amount was reduced to leave funds for the fee. */
+    get amountAdjustmentInfo() {
+        if (!this.amount ||
+            !this.selectedToken ||
+            !this.#wasAmountAdjustedForFee ||
+            !this.#shouldReserveFeeFromTransferredToken()) {
             return null;
         }
-        const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment;
-        if (!gasFeePayment)
-            return null;
         const currentAmount = (0, ethers_1.parseUnits)((0, formatters_1.getSafeAmountFromFieldValue)(this.amount, this.selectedToken.decimals), this.selectedToken.decimals);
-        const totalTokenAmount = (0, helpers_1.getTokenAmount)(this.selectedToken);
-        if (currentAmount > 0n && currentAmount + gasFeePayment.amount >= totalTokenAmount) {
-            return {
-                severity: 'warning',
-                message: 'Amount adjusted to cover blockchain fees'
-            };
-        }
-        return null;
+        const feeAmount = (0, helpers_1.getTokenAmount)(this.selectedToken) - currentAmount;
+        if (feeAmount <= 0n)
+            return null;
+        return {
+            feeAmount: (0, ethers_1.formatUnits)(feeAmount, this.selectedToken.decimals),
+            tokenSymbol: this.selectedToken.symbol
+        };
+    }
+    /** Kept for clients that still render the previous validation-style adjustment message. */
+    get amountAdjustmentWarning() {
+        if (!this.amountAdjustmentInfo)
+            return null;
+        return {
+            severity: 'warning',
+            message: 'Amount adjusted to cover network fees'
+        };
     }
     async #updateRecipientHistoryAndPoisoning() {
         // Check if the address has been used previously for transactions
@@ -678,17 +813,44 @@ class TransferController extends eventEmitter_1.default {
             addressPoisoningMatch = result.addressPoisoningMatch;
         }
         this.isRecipientAddressFirstTimeSend =
-            !found && this.recipientAddress.toLowerCase() !== addresses_1.FEE_COLLECTOR.toLowerCase();
+            !found &&
+                !this.privacyPoolsRecipient &&
+                this.recipientAddress.toLowerCase() !== addresses_1.FEE_COLLECTOR.toLowerCase();
         this.lastSentToRecipientAt = lastTransactionDate;
         this.addressPoisoningMatch = this.isRecipientAddressFirstTimeSend ? addressPoisoningMatch : null;
+        this.#updateRecipientDomainAddressChange();
+    }
+    /**
+     * When the recipient was entered as a domain (ENS/Namoshi) the user has sent to before, warn if it
+     * now resolves to a different address than last time — the name may have expired and been re-pointed.
+     */
+    #updateRecipientDomainAddressChange() {
+        const { resolvedAddressType, resolvedAddress, fieldValue } = this.addressState;
+        // Don't warn if the user is sending to the address directly
+        if (!resolvedAddressType || !(0, ethers_1.isAddress)(resolvedAddress) || (0, ethers_1.isAddress)(fieldValue)) {
+            this.recipientDomainAddressChange = null;
+            return;
+        }
+        const previousAddress = this.#activity.getSentToDomainAddress(fieldValue);
+        this.recipientDomainAddressChange =
+            previousAddress && previousAddress.toLowerCase() !== resolvedAddress.toLowerCase()
+                ? { previousAddress }
+                : null;
     }
     get hasPersistedState() {
-        return !!(this.amount || this.amountInFiat || this.addressState.fieldValue);
+        return !!(this.amount ||
+            this.amountInFiat ||
+            this.addressState.fieldValue ||
+            this.privacyPoolsRecipient);
     }
     async syncSignAccountOp() {
         // shouldn't happen ever
         if (!this.#selectedAccount.account)
             return;
+        if (this.privacyPoolsRecipient) {
+            await this.#syncPrivacyPoolsDeposit();
+            return;
+        }
         const recipientAddress = this.isTopUp
             ? addresses_1.FEE_COLLECTOR
             : (0, domains_1.getAddressFromAddressState)(this.addressState);
@@ -702,7 +864,8 @@ class TransferController extends eventEmitter_1.default {
             amount: (0, formatters_1.getSafeAmountFromFieldValue)(this.amount, this.selectedToken?.decimals),
             selectedToken: this.#selectedToken,
             recipientAddress,
-            amountInFiat: amountInFiatBigInt
+            amountInFiat: amountInFiatBigInt,
+            recipientDomain: (0, domains_1.getDomainFromAddressState)(this.addressState)
         });
         if (!userRequestParams) {
             this.emitError({
@@ -727,6 +890,70 @@ class TransferController extends eventEmitter_1.default {
         }
         await this.#initSignAccOp(userRequestParams.calls, userRequestParams.meta.topUpAmount);
     }
+    /** Builds the deposit calls into a Privacy Pools account. May first sync its network (slow). */
+    async buildPrivacyPoolsDepositCalls({ seedId, selectedToken, amount }) {
+        if (!this.#privacyPools || !this.#selectedAccount.account)
+            throw new EmittableError_1.default({
+                message: 'Sending to a Privacy Pools account is not available here.',
+                level: 'expected',
+                error: new Error('transfer: no Privacy Pools controller or selected account')
+            });
+        return this.#privacyPools.buildDepositCalls({
+            seedId,
+            accountAddr: this.#selectedAccount.account.addr,
+            chainId: selectedToken.chainId.toString(),
+            tokenAddress: selectedToken.address,
+            amount: (0, ethers_1.parseUnits)(amount, selectedToken.decimals)
+        });
+    }
+    async #syncPrivacyPoolsDeposit() {
+        const seedId = this.privacyPoolsRecipient;
+        const token = this.#selectedToken;
+        if (!seedId || !token || !this.amount || !this.isFormValid)
+            return;
+        this.#privacyPoolsDepositPreparationId += 1;
+        const preparationId = this.#privacyPoolsDepositPreparationId;
+        const isCurrent = () => preparationId === this.#privacyPoolsDepositPreparationId;
+        this.isPreparingPrivacyPoolsDeposit = true;
+        this.privacyPoolsDepositError = null;
+        this.emitUpdate();
+        let calls;
+        try {
+            calls = await this.buildPrivacyPoolsDepositCalls({
+                seedId,
+                selectedToken: token,
+                amount: (0, formatters_1.getSafeAmountFromFieldValue)(this.amount, token.decimals)
+            });
+        }
+        catch (error) {
+            if (!isCurrent())
+                return;
+            this.isPreparingPrivacyPoolsDeposit = false;
+            // Shown in the form, not as a toast, which would pop up again on every keystroke
+            this.privacyPoolsDepositError =
+                error instanceof EmittableError_1.default
+                    ? error.message
+                    : 'Could not prepare the transfer to this Privacy Pools account. Please try again.';
+            if (!(error instanceof EmittableError_1.default))
+                this.emitError({
+                    level: 'silent',
+                    message: this.privacyPoolsDepositError,
+                    error: error instanceof Error ? error : new Error('transfer: deposit preparation failed')
+                });
+            this.emitUpdate();
+            return;
+        }
+        if (!isCurrent())
+            return;
+        this.isPreparingPrivacyPoolsDeposit = false;
+        if (this.signAccountOpController) {
+            this.signAccountOpController.update({ accountOpData: { calls } });
+            this.emitUpdate();
+            return;
+        }
+        await this.#initSignAccOp(calls);
+        this.emitUpdate();
+    }
     async #initSignAccOp(calls, topUpAmount) {
         if (!this.#selectedAccount.account || this.signAccountOpController)
             return;
@@ -745,7 +972,7 @@ class TransferController extends eventEmitter_1.default {
             });
             return;
         }
-        const baseAcc = (0, getBaseAccount_1.getBaseAccount)(this.#selectedAccount.account, accountState, network);
+        const baseAcc = (0, getBaseAccount_1.getBaseAccount)(this.#selectedAccount.account, accountState, network, this.#featureFlags.isFeatureEnabled('erc4337'), this.#featureFlags.isFeatureEnabled('eip7702'));
         const accountOp = {
             id: (0, uuid_1.generateUuid)(),
             accountAddr: this.#selectedAccount.account.addr,
@@ -764,6 +991,7 @@ class TransferController extends eventEmitter_1.default {
             }
         };
         await this.#updateRecipientHistoryAndPoisoning();
+        await this.#signAccountOpPreference.initialLoadPromise;
         this.signAccountOpController = new signAccountOp_1.SignAccountOpController({
             type: 'one-click-transfer',
             callRelayer: this.#callRelayer,
@@ -771,6 +999,9 @@ class TransferController extends eventEmitter_1.default {
             networks: this.#networks,
             keystore: this.#keystore,
             portfolio: this.#portfolio,
+            featureFlags: this.#featureFlags,
+            platform: this.#platform,
+            signAccountOpPreference: this.#signAccountOpPreference,
             externalSignerControllers: this.#externalSignerControllers,
             activity: this.#activity,
             account: this.#selectedAccount.account,
@@ -778,6 +1009,8 @@ class TransferController extends eventEmitter_1.default {
             provider,
             phishing: this.#phishing,
             dapps: this.#dapps,
+            erc7730: this.#erc7730,
+            contractInfo: this.#contractInfo,
             fromRequestId: (0, utils_1.randomId)(), // the account op and the request are fabricated,
             accountOp,
             shouldSimulate: false,
@@ -843,6 +1076,7 @@ class TransferController extends eventEmitter_1.default {
         const { isNavigateOut = false } = opts || {};
         // Always reset the session id
         this.#currentTransferSessionId = null;
+        // Popup keeps in-progress forms when closed; side panel should start fresh on reopen.
         if (this.hasPersistedState && !isNavigateOut && viewType === 'popup')
             return;
         this.reset({ destroyAccountOp: true });
@@ -879,6 +1113,8 @@ class TransferController extends eventEmitter_1.default {
             shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal,
             hasPersistedState: this.hasPersistedState,
             isRecipientAddressViewOnly: this.isRecipientAddressViewOnly,
+            isRecipientAddressBlacklisted: this.isRecipientAddressBlacklisted,
+            amountAdjustmentInfo: this.amountAdjustmentInfo,
             amountAdjustmentWarning: this.amountAdjustmentWarning
         };
     }

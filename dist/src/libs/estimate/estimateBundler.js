@@ -4,10 +4,8 @@ exports.fetchBundlerGasPrice = fetchBundlerGasPrice;
 exports.bundlerEstimate = bundlerEstimate;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
-const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
 const paymaster_1 = require("../../services/paymaster");
 const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
-const accountOp_1 = require("../accountOp/accountOp");
 const errorHumanizer_1 = require("../errorHumanizer");
 const fetchEntryPointNonce_1 = require("../userOperation/fetchEntryPointNonce");
 const userOperation_1 = require("../userOperation/userOperation");
@@ -101,12 +99,11 @@ async function bundlerEstimate(baseAcc, accountState, op, network, feeTokens, pr
     // set the callData
     if (userOp.activatorCall)
         localOp.activatorCall = userOp.activatorCall;
-    const ambireAccount = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
     userOp.signature = (0, estimateHelpers_1.getSigForCalculations)();
-    userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [(0, accountOp_1.getSignableCalls)(localOp)]);
+    userOp.callData = (0, userOperation_1.getUserOpCalldata)(account, op, accountState);
     const paymaster = await paymaster_1.paymasterFactory.create(op, userOp, account, network, provider);
     localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens);
-    userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [(0, accountOp_1.getSignableCalls)(localOp)]);
+    userOp.callData = (0, userOperation_1.getUserOpCalldata)(account, localOp, accountState);
     const feeCallType = paymaster.getFeeCallType(feeTokens);
     if (paymaster.isUsable()) {
         const paymasterEstimationData = paymaster.getEstimationData();
@@ -125,7 +122,7 @@ async function bundlerEstimate(baseAcc, accountState, op, network, feeTokens, pr
         // if no errors, return the results and get on with life
         if (!(estimations.estimation instanceof Error)) {
             const gasData = estimations.estimation;
-            paymaster.upgrade(gasData, latestGasPrice);
+            await paymaster.upgrade(gasData, latestGasPrice, userOp);
             return {
                 preVerificationGas: gasData.preVerificationGas,
                 verificationGasLimit: gasData.verificationGasLimit,
@@ -140,7 +137,9 @@ async function bundlerEstimate(baseAcc, accountState, op, network, feeTokens, pr
         }
         // try again if the error is 4337_INVALID_NONCE and network is not ETH
         if (estimations.nonFatalErrors.length &&
-            estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')) {
+            estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE') &&
+            // this does not apply for safe accounts
+            !account.safeCreation) {
             flags.has4337NonceDiscrepancy = true;
             // wait a bit to allow the state to sync
             await (0, wait_1.default)(2000);

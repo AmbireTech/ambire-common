@@ -9,6 +9,19 @@ function getSessionId({ tabId, windowId, dappId }) {
     }
     return `${tabId}-${dappId}`;
 }
+// `about:blank`, `about:srcdoc` and other opaque documents parse fine but have the string
+// origin "null", which is not a domain we can check anything against.
+function getOriginFromUrl(url) {
+    if (!url)
+        return undefined;
+    try {
+        const { origin } = new URL(url);
+        return origin === 'null' ? undefined : origin;
+    }
+    catch {
+        return undefined;
+    }
+}
 // Each instance of a Session represents an active connection between a dApp and the wallet.
 // For more details on how to use it, refer to the DappsController.
 class Session {
@@ -22,6 +35,12 @@ class Session {
     origin;
     tabId;
     windowId;
+    frameId;
+    /**
+    @state {string} topFrameOrigin = the origin of the tab's top-level document. Equal to `origin`
+    when the dApp is the top frame itself, and different when it is embedded in an iframe.
+     */
+    topFrameOrigin;
     name = '';
     icon = '';
     messenger;
@@ -42,8 +61,15 @@ class Session {
         // page the user has navigated to during an async operation.
         this.messenger.send(this.isAmbireNext ? 'broadcast-next' : 'broadcast', { event, data, origin: this.origin }, { tabId: this.tabId });
     }
-    constructor({ tabId, windowId, url, wcTopic } = {}) {
+    constructor({ tabId, windowId, url, wcTopic, frameId, topFrameUrl } = {}) {
         if (url) {
+            // SECURITY: `origin` must stay exactly what the browser/WebView reports, trailing dot and
+            // all - it is later compared byte-for-byte against the page's own read-only `location.origin`
+            // before a response or broadcast is delivered to it (see the mobile WebView's origin gate).
+            // A live, unmodified page cannot be "canonicalized" - only our copy of its origin could be -
+            // so normalizing it here would make that comparison fail for a legitimate page and silently
+            // drop data meant for it. `id` (below) is the canonicalized identity that every phishing and
+            // permission check resolves against; do not canonicalize `origin` to "fix" that too.
             this.origin = new URL(url).origin;
         }
         else {
@@ -53,6 +79,7 @@ class Session {
         this.tabId = tabId || Date.now();
         this.windowId = windowId;
         this.wcTopic = wcTopic;
+        this.updateFrameContext({ frameId, topFrameUrl });
         // Track requestIds per providerId, since we inject an EthereumProvider into all frames for the same session
         this.lastHandledRequestIds = new Proxy({}, {
             get: (target, prop) => {
@@ -63,6 +90,21 @@ class Session {
                 return target[prop];
             }
         });
+    }
+    /**
+     * Refreshes where the dApp sits in the tab's frame tree. Called on every incoming request, so
+     * the context is always the browser's current answer instead of a remembered one - a session
+     * object outlives navigations, and a stale top frame would produce a wrong verdict.
+     *
+     * A platform that cannot report frame context omits `frameId` entirely and leaves the previous
+     * values untouched (e.g. a WalletConnect request must not wipe the context of an injected
+     * session). When `frameId` is present, `topFrameUrl` is trusted as-is, including when absent.
+     */
+    updateFrameContext({ frameId, topFrameUrl }) {
+        if (frameId === undefined)
+            return;
+        this.frameId = frameId;
+        this.topFrameOrigin = getOriginFromUrl(topFrameUrl);
     }
     setMessenger(messenger, isAmbireNext) {
         this.messenger = messenger;

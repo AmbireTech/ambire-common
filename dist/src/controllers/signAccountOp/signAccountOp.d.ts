@@ -1,20 +1,27 @@
+import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall';
 import EmittableError from '../../classes/EmittableError';
 import ExternalSignerError from '../../classes/ExternalSignerError';
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account';
 import { IActivityController } from '../../interfaces/activity';
+import { IContractInfoController } from '../../interfaces/contractInfo';
 import { IDappsController } from '../../interfaces/dapp';
+import { IErc7730Controller } from '../../interfaces/erc7730';
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter';
+import { IFeatureFlagsController } from '../../interfaces/featureFlags';
 import { Hex } from '../../interfaces/hex';
 import { ExternalKey, ExternalSignerControllers, IKeystoreController, InternalKey, Key } from '../../interfaces/keystore';
 import { INetworksController, Network } from '../../interfaces/network';
 import { IPhishingController } from '../../interfaces/phishing';
+import { Platform } from '../../interfaces/platform';
 import { IPortfolioController } from '../../interfaces/portfolio';
 import { RPCProvider } from '../../interfaces/provider';
-import { HardwareWalletSigningRequest, ISignAccountOpController, SignAccountOpBanner, SignAccountOpError, TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp';
+import { FeeSpeed, HardwareWalletSigningRequest, ISignAccountOpController, noStateUpdateStatuses, SafeFeePayerLinks, SignAccountOpBanner, SignAccountOpError, SigningStatus, TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp';
+import { SigningAuthRequirement } from '../../interfaces/signingAuth';
 import { UserRequest } from '../../interfaces/userRequest';
 import { BaseAccount } from '../../libs/account/BaseAccount';
 import { AccountOp } from '../../libs/accountOp/accountOp';
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp';
+import { Call } from '../../libs/accountOp/types';
 import { Sponsor } from '../../libs/erc7677/types';
 import { FeePaymentOption } from '../../libs/estimate/interfaces';
 import { IrCall } from '../../libs/humanizer/interfaces';
@@ -22,51 +29,27 @@ import { TokenResult } from '../../libs/portfolio';
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher';
 import { GasSpeeds } from '../../services/bundlers/types';
 import { EstimationController } from '../estimation/estimation';
-import EventEmitter from '../eventEmitter/eventEmitter';
 import { GasPriceController } from '../gasPrice/gasPrice';
+import HumanizationController from '../humanization/humanization';
 import { SignAccountOpType } from './helper';
-export declare enum SigningStatus {
-    EstimationError = "estimation-error",
-    UnableToSign = "unable-to-sign",
-    ReadyToSign = "ready-to-sign",
-    /**
-     * Used to prevent state updates while the user is resolving warnings, connecting a hardware wallet, etc.
-     * Signing is allowed in this state, but the state of the controller should not change.
-     */
-    UpdatesPaused = "updates-paused",
-    InProgress = "in-progress",
-    WaitingForPaymaster = "waiting-for-paymaster-response",
-    Done = "done",
-    Queued = "queued"
-}
-export type Status = {
-    type: SigningStatus;
-};
-export declare enum FeeSpeed {
-    Slow = "slow",
-    Medium = "medium",
-    Fast = "fast",
-    Ape = "ape"
-}
-export type SpeedCalc = {
-    type: FeeSpeed;
-    amount: bigint;
-    simulatedGasLimit: bigint;
-    amountFormatted: string;
-    amountUsd: string;
-    gasPrice: bigint;
-    disabled: boolean;
-    maxPriorityFeePerGas?: bigint;
-};
-export declare const noStateUpdateStatuses: SigningStatus[];
+import { SignAccountOpFeeTokenPreference, SignAccountOpPreferenceController } from './signAccountOpPreference';
+import { SpeedUp } from './speedUp';
+import type { SpeedCalc, Status } from '../../interfaces/signAccountOp';
+export { FeeSpeed, noStateUpdateStatuses, SigningStatus };
+export type { SpeedCalc, Status };
+/** After this many reestimates the loop gives up and stops refetching. */
+export declare const MAX_REESTIMATES = 20;
 export type SignAccountOpUpdateProps = {
     gasPrices?: GasSpeeds;
+    rpcGasPrices?: GasSpeeds;
     customGasPrices?: GasSpeeds;
     customGasLimit?: bigint;
     feeToken?: TokenResult;
+    pendingFeeTokenPreference?: TokenResult | null;
     paidBy?: string;
     paidByKeyType?: Key['type'];
     speed?: FeeSpeed;
+    shouldPersistSpeed?: boolean;
     signingKeyAddr?: Key['addr'];
     signingKeyType?: InternalKey['type'] | ExternalKey['type'];
     signedTransactionsCount?: number | null;
@@ -81,13 +64,32 @@ export type OnboardingSuccessProps = {
 };
 export type OnBroadcastSuccess = (props: OnboardingSuccessProps) => Promise<void>;
 export type OnBroadcastFailed = (accountOp: AccountOp) => void;
-export declare class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
+/**
+ * Called when only the first txns of a batch broadcast one by one went out,
+ * e.g. the approval of a swap was sent but the swap itself was rejected on the device.
+ * Receives the sent part, so it can be recorded and tracked until confirmed.
+ */
+export type OnPartialBroadcast = (sentAccountOp: SubmittedAccountOp) => Promise<void>;
+export declare class SignAccountOpController extends HumanizationController implements ISignAccountOpController {
     #private;
     account: Account;
     baseAccount: BaseAccount;
     fromRequestId: UserRequest['id'];
     hasSafeApiFailed: boolean;
+    isRefetchingAccountState: boolean;
+    /**
+     * The gas prices used for broadcasting. With the `rpcWithBundlerFallback` strategy
+     * (see BaseAccount.getGasPriceFetchStrategy), these come from the bundler estimation
+     * and are used for bundler broadcasts only. While there's no bundler estimation,
+     * they're the gasPrice controller ones
+     */
     gasPrices?: GasSpeeds;
+    /**
+     * The gas prices for broadcasts outside the bundler with the `rpcWithBundlerFallback`
+     * strategy (see BaseAccount.getGasPriceFetchStrategy). These are the RPC gas prices,
+     * or the bundler ones if the RPC has failed and the bundler fallback has succeeded
+     */
+    rpcGasPrices?: GasSpeeds;
     hasCustomGasPrices: boolean;
     customGasLimit?: bigint;
     feeSpeeds: {
@@ -99,6 +101,8 @@ export declare class SignAccountOpController extends EventEmitter implements ISi
      * be refactored away someday
      */
     feeTokenResult: TokenResult | null;
+    feeTokenPreference: SignAccountOpFeeTokenPreference;
+    pendingFeeTokenPreference: SignAccountOpFeeTokenPreference | null;
     selectedFeeSpeed: FeeSpeed | null;
     /**
      * The selected payment option for txn broadcasting.
@@ -106,22 +110,45 @@ export declare class SignAccountOpController extends EventEmitter implements ISi
      * gas tank, or payment by another EOA
      */
     selectedOption: FeePaymentOption | undefined;
+    /**
+     * Safes only, null for other accounts. Paying the fee from an EOA publicly links it to the
+     * Safe, unless it's an owner (listed in the Safe itself) or already paid for the Safe before.
+     * Lowercased addresses; `linked` excludes the owners.
+     */
+    safeFeePayerLinks: SafeFeePayerLinks | null;
     status: Status | null;
     broadcastStatus: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR';
     signedAccountOp: AccountOp | null;
     replacementFeeLow: boolean;
+    gasFeeChangedConfirmationRequired: boolean;
+    previousFee: SpeedCalc | null;
     warnings: Warning[];
     isSponsored: boolean;
     sponsor: Sponsor | undefined;
     bundlerSwitcher: BundlerSwitcher;
     signedTransactionsCount: number | null;
     hardwareWalletSigningRequest: HardwareWalletSigningRequest | null;
+    safeEip712Data: unknown | null;
     traceCallDiscoveryStatus: TraceCallDiscoveryStatus;
     gasUsed: bigint;
     provider: RPCProvider;
     estimation: EstimationController;
-    humanization: IrCall[];
+    /**
+     * The humanized calls, with the unlimited approval warnings of apps in the default Ambire
+     * catalog taken out. Humanizer modules cannot read the catalog, so they report every unlimited
+     * approval, and the ones from an app we already trust are dropped here.
+     *
+     * The catalog is fetched, so it often arrives after the calls were humanized. Deciding this on
+     * read, rather than baking it into the humanization, means a catalog that lands late needs no
+     * new humanization: the dapps update this controller already listens to emits, the UI reads
+     * again, and the answer is right whether an app joins the catalog or leaves it.
+     *
+     * Returns the stored array itself when nothing was dropped, so the calls on screen keep their
+     * identity while a new humanization is running.
+     */
+    get humanization(): IrCall[];
     humanizationId: number | null;
+    isHumanizing: boolean;
     gasPrice: GasPriceController;
     shouldSignAuth: {
         type: 'V2Deploy' | '7702';
@@ -130,14 +157,20 @@ export declare class SignAccountOpController extends EventEmitter implements ISi
     signPromise: Promise<void> | undefined;
     broadcastPromise: Promise<void> | undefined;
     signAndBroadcastPromise: Promise<void> | undefined;
-    constructor({ eventEmitterRegistry, type, callRelayer, accounts, networks, keystore, portfolio, externalSignerControllers, account, network, activity, dapps, provider, phishing, fromRequestId, accountOp, shouldSimulate, onUpdateAfterTraceCallSuccess, onBroadcastSuccess, onBroadcastFailed }: {
+    private traceCallTimeoutId;
+    constructor({ eventEmitterRegistry, type, callRelayer, erc7730, contractInfo, accounts, networks, keystore, portfolio, featureFlags, platform, signAccountOpPreference, externalSignerControllers, account, network, activity, dapps, provider, phishing, fromRequestId, accountOp, shouldSimulate, onUpdateAfterTraceCallSuccess, onBroadcastSuccess, onBroadcastFailed, onPartialBroadcast, speedUp }: {
         eventEmitterRegistry?: IEventEmitterRegistryController;
         type?: SignAccountOpType;
-        callRelayer: Function;
+        callRelayer: BindedRelayerCall;
+        erc7730: IErc7730Controller;
+        contractInfo: IContractInfoController;
         accounts: IAccountsController;
         networks: INetworksController;
         keystore: IKeystoreController;
         portfolio: IPortfolioController;
+        featureFlags: IFeatureFlagsController;
+        platform: Platform;
+        signAccountOpPreference: SignAccountOpPreferenceController;
         externalSignerControllers: ExternalSignerControllers;
         account: Account;
         network: Network;
@@ -151,19 +184,41 @@ export declare class SignAccountOpController extends EventEmitter implements ISi
         onUpdateAfterTraceCallSuccess?: () => Promise<void>;
         onBroadcastSuccess: OnBroadcastSuccess;
         onBroadcastFailed?: OnBroadcastFailed;
+        onPartialBroadcast?: OnPartialBroadcast;
+        /** Pass only when speeding up a pending transaction */
+        speedUp?: SpeedUp;
     });
     get safetyChecksLoading(): boolean;
     get accountOp(): Readonly<AccountOp>;
     get isSpeedUpTransaction(): boolean;
+    /**
+     * Why this account op needs the password/biometrics confirmation, or `null` when it does not.
+     * Read live for the dapps, whose stored flag can change while the request is on screen.
+     * Mobile only. A Safe needs it only when its hot owners can meet the threshold on their own.
+     */
+    get signingAuthRequirement(): SigningAuthRequirement | null;
+    setSafeNonce(nonce: bigint): void;
+    refetchAccountState(): Promise<void>;
     humanize(): void;
     learnTokens(): void;
     get isInitialized(): boolean;
+    /**
+     * Safes only: no payer is selected because the only default left would publicly link a new
+     * EOA to the Safe, so the user has to choose one before executing.
+     */
+    get isSafeFeePayerChoiceRequired(): boolean;
+    /**
+     * Whether the selected fee payer would publicly link a new EOA to this Safe.
+     * The Safe paying by itself (e.g. through the gas tank) links nothing.
+     */
+    get isFeePayerNotLinkedToSafe(): boolean;
     hasSpeeds(identifier: string): number;
     get errors(): SignAccountOpError[];
     get readyToSign(): boolean;
     calculateWarnings(): void;
     retry(method: 'simulate' | 'estimate'): Promise<void>;
-    update({ gasPrices, customGasPrices, customGasLimit, feeToken, paidBy, speed, signingKeyAddr, signingKeyType, signedTransactionsCount, hasNewEstimation, paidByKeyType, accountOpData }: SignAccountOpUpdateProps): void;
+    enableErc4337AndReestimate(): Promise<void>;
+    update({ gasPrices, rpcGasPrices, customGasPrices, customGasLimit, feeToken, pendingFeeTokenPreference, paidBy, speed, shouldPersistSpeed, signingKeyAddr, signingKeyType, signedTransactionsCount, hasNewEstimation, paidByKeyType, accountOpData }: SignAccountOpUpdateProps): void;
     updateStatus(forceStatusChange?: SigningStatus, replacementFeeLow?: boolean): void;
     destroy(): void;
     /**
@@ -182,6 +237,7 @@ export declare class SignAccountOpController extends EventEmitter implements ISi
      */
     resume(): void;
     resetStatus(): void;
+    private traceCall;
     get feeToken(): string | null;
     get accountKeyStoreKeys(): Key[];
     get feePayerKeyStoreKeys(): Key[];
@@ -203,17 +259,36 @@ export declare class SignAccountOpController extends EventEmitter implements ISi
     canUpdate(): boolean;
     setDiscoveryStatus(status: TraceCallDiscoveryStatus): void;
     /**
-     * Unbrick mechanism.
-     * Use this only when you are sure there's no way to continue, or
-     * a promise waiting to resolve that might change the state
+     * Dismisses the soft "Gas fee updated" confirmation without retrying the
+     * broadcast (e.g. when the user cancels the modal). The controller stays in
+     * ReadyToSign so the user can still adjust and submit again manually.
      */
+    dismissGasFeeChangedConfirmation(): void;
     cancelSignReq(): void;
+    /**
+     * Winds a broadcast up. The calls that went out are done with, so only the ones left
+     * unsigned stay on the op and the controller goes back to where it was before
+     * signing, ready for them. Its status has to be put back first: while it is signing,
+     * every update to the op is frozen and the calls would not go in.
+     *
+     * Returns the calls still waiting to be signed, so the caller can tell whether the
+     * request is finished with or has to stay.
+     */
+    cleanupAfterBroadcast(sentCallIds: Call['id'][]): Call[];
     get type(): SignAccountOpType;
     get delegatedContract(): Hex | null;
     get banners(): SignAccountOpBanner[];
     get canAccountBroadcastByItself(): boolean;
+    /**
+     * The gas prices used by the selected fee option. They differ from gasPrices
+     * only with the `rpcWithBundlerFallback` strategy
+     * (see BaseAccount.getGasPriceFetchStrategy)
+     */
+    get selectedOptionGasPrices(): GasSpeeds | undefined;
     get canSetCustomGasPrices(): boolean;
     get canSetCustomGas(): boolean;
+    get isErc4337Enabled(): boolean;
+    get canEnableErc4337(): boolean;
     get threshold(): number;
     get canBroadcast(): boolean;
     toJSON(): this & {
@@ -224,6 +299,12 @@ export declare class SignAccountOpController extends EventEmitter implements ISi
         accountKeyStoreKeys: Key[];
         feePayerKeyStoreKeys: Key[];
         feeToken: string;
+        feeTokenPreference: {
+            [chainId: string]: string;
+        };
+        pendingFeeTokenPreference: {
+            [chainId: string]: string;
+        };
         speedOptions: string[];
         selectedOption: FeePaymentOption;
         account: Account;
@@ -231,17 +312,27 @@ export declare class SignAccountOpController extends EventEmitter implements ISi
         gasSavedUSD: number;
         delegatedContract: `0x${string}`;
         accountOp: Readonly<AccountOp>;
+        humanization: IrCall[];
         isSignInProgress: boolean;
         isBroadcastInProgress: boolean;
         isSignAndBroadcastInProgress: boolean;
         banners: SignAccountOpBanner[];
         canAccountBroadcastByItself: boolean;
+        selectedOptionGasPrices: GasSpeeds;
         canSetCustomGasPrices: boolean;
         canSetCustomGas: boolean;
+        isErc4337Enabled: boolean;
+        canEnableErc4337: boolean;
         threshold: number;
         canBroadcast: boolean;
+        isFeePayerNotLinkedToSafe: boolean;
+        isSafeFeePayerChoiceRequired: boolean;
         hasSafeApiFailed: boolean;
         hardwareWalletSigningRequest: HardwareWalletSigningRequest;
+        safeEip712Data: unknown;
+        gasFeeChangedConfirmationRequired: boolean;
+        previousFee: SpeedCalc;
+        signingAuthRequirement: SigningAuthRequirement;
         name: string;
         emittedErrors: ErrorRef[];
     };

@@ -1,0 +1,1 @@
+{"version":3,"file":"feePayersHistory.d.ts","sourceRoot":"","sources":["../../../../src/libs/activity/feePayersHistory.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,gBAAgB,EAAE,MAAM,kCAAkC,CAAA;AAGnE;;;;;GAKG;AACH,wBAAgB,cAAc,CAC5B,OAAO,EAAE,gBAAgB,EACzB,SAAS,EAAE,MAAM,EACjB,OAAO,EAAE,MAAM,EACf,MAAM,EAAE,MAAM,GAAG,SAAS,EAC1B,SAAS,EAAE,MAAM,GAChB,OAAO,CAcT"}

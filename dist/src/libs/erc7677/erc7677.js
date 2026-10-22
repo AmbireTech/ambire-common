@@ -1,20 +1,28 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.AMBIRE_NETWORK_WIDE_SPONSORSHIP_POLICY = exports.AMBIRE_SWAP_POLICY = void 0;
 exports.getPaymasterService = getPaymasterService;
+exports.getAmbireSponsorshipUrl = getAmbireSponsorshipUrl;
 exports.getAmbirePaymasterService = getAmbirePaymasterService;
 exports.getPaymasterStubData = getPaymasterStubData;
 exports.getPaymasterData = getPaymasterData;
 const ethers_1 = require("ethers");
+const uuid_1 = require("../../utils/uuid");
 const deploy_1 = require("../../consts/deploy");
 const provider_1 = require("../../services/provider");
 const userOperation_1 = require("../userOperation/userOperation");
+exports.AMBIRE_SWAP_POLICY = 'ambireSwapSponsorship';
+/**
+ * Currently, only the Gnosis chain is sponsored unconditionally
+ */
+exports.AMBIRE_NETWORK_WIDE_SPONSORSHIP_POLICY = 'ambireGnosisSponsorship';
 function getPaymasterService(chainId, capabilities) {
     if (!capabilities || !capabilities.paymasterService)
         return undefined;
     // this means it's v2
     if ('url' in capabilities.paymasterService) {
         const paymasterService = capabilities.paymasterService;
-        paymasterService.id = new Date().getTime();
+        paymasterService.id = (0, uuid_1.generateUuid)();
         return paymasterService;
     }
     // hex may come with a leading zero or not. Prepare for both
@@ -25,15 +33,21 @@ function getPaymasterService(chainId, capabilities) {
     if (!foundChainId)
         return undefined;
     const paymasterService = capabilities.paymasterService[foundChainId];
-    paymasterService.id = new Date().getTime();
+    paymasterService.id = (0, uuid_1.generateUuid)();
     return paymasterService;
+}
+function getAmbireSponsorshipUrl(relayerUrl) {
+    return `${relayerUrl}/v2/sponsorship`;
 }
 function getAmbirePaymasterService(baseAcc, relayerUrl) {
     if (!baseAcc.isSponsorable())
         return undefined;
     return {
-        url: `${relayerUrl}/v2/sponsorship`,
-        id: new Date().getTime()
+        url: getAmbireSponsorshipUrl(relayerUrl),
+        id: (0, uuid_1.generateUuid)(),
+        context: {
+            policyId: exports.AMBIRE_NETWORK_WIDE_SPONSORSHIP_POLICY
+        }
     };
 }
 function getPaymasterStubData(service, userOp, network) {

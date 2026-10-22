@@ -2,6 +2,7 @@ import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation';
 import { Account, AccountOnPage, AccountWithNetworkMeta, IAccountsController, SelectedAccountForImport } from '../../interfaces/account';
 import { IAccountPickerController } from '../../interfaces/accountPicker';
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter';
+import { IFeatureFlagsController } from '../../interfaces/featureFlags';
 import { Fetch } from '../../interfaces/fetch';
 import { KeyIterator } from '../../interfaces/keyIterator';
 import { ExternalSignerControllers, IKeystoreController, ReadyToAddKeys } from '../../interfaces/keystore';
@@ -43,12 +44,13 @@ export declare class AccountPickerController extends EventEmitter implements IAc
     addAccountsStatus: 'LOADING' | 'SUCCESS' | 'INITIAL';
     selectNextAccountStatus: 'LOADING' | 'SUCCESS' | 'INITIAL';
     accountsLoading: boolean;
+    smartAccountsLoading: boolean;
     linkedAccountsLoading: boolean;
     linkedAccountsError: string;
     networksWithAccountStateError: bigint[];
     addAccountsPromise?: Promise<void>;
     findAndSetLinkedAccountsPromise?: Promise<void>;
-    constructor({ eventEmitterRegistry, accounts, keystore, networks, providers, externalSignerControllers, relayerUrl, fetch, onAddAccountsSuccessCallback }: {
+    constructor({ eventEmitterRegistry, accounts, keystore, networks, providers, externalSignerControllers, relayerUrl, fetch, featureFlags, sendUiMessage, onAddAccountsSuccessCallback }: {
         eventEmitterRegistry?: IEventEmitterRegistryController;
         accounts: IAccountsController;
         keystore: IKeystoreController;
@@ -57,6 +59,8 @@ export declare class AccountPickerController extends EventEmitter implements IAc
         externalSignerControllers: ExternalSignerControllers;
         relayerUrl: string;
         fetch: Fetch;
+        featureFlags?: IFeatureFlagsController;
+        sendUiMessage: (params: {}) => void;
         onAddAccountsSuccessCallback: () => Promise<void>;
     });
     get accountsOnPage(): AccountOnPage[];
@@ -74,8 +78,9 @@ export declare class AccountPickerController extends EventEmitter implements IAc
         shouldAddNextAccountAutomatically?: boolean;
     }): void;
     init(): Promise<void>;
-    get type(): "internal" | "trezor" | "ledger" | "lattice" | "qr";
+    get type(): "internal" | "trezor" | "onekey" | "ledger" | "lattice" | "qr" | "nfc" | "pq1";
     get subType(): "seed" | "private-key" | "hw";
+    get derivableHdPathTemplates(): HD_PATH_TEMPLATE_TYPE[];
     reset(resetInitParams?: boolean): Promise<void>;
     destroy(): void;
     resetAccountsSelection(): void;
@@ -112,19 +117,21 @@ export declare class AccountPickerController extends EventEmitter implements IAc
      * triggered, which uses the `readyToAdd...` properties to further set
      * the newly added accounts data (like preferences, keys and others)
      */
-    addAccounts(accounts?: SelectedAccountForImport[]): Promise<void>;
+    addAccounts(accounts?: SelectedAccountForImport[], requestId?: string): Promise<void>;
     selectNextAccount(): Promise<void>;
     createAndAddEmailAccount(selectedAccount: SelectedAccountForImport): Promise<void>;
     addExistingEmailAccounts(accounts: Account[]): Promise<void>;
     removeNetworkData(chainId: bigint): void;
     findAndSetLinkedAccounts(): Promise<void>;
+    enableAmbireSmartAccountsAndRescan(): Promise<void>;
     toJSON(): this & {
         accountsOnPage: AccountOnPage[];
         allKeysOnPage: string[];
         selectedAccounts: SelectedAccountForImport[];
         addedAccountsFromCurrentSession: Account[];
-        type: "internal" | "trezor" | "ledger" | "lattice" | "qr";
+        type: "internal" | "trezor" | "onekey" | "ledger" | "lattice" | "qr" | "nfc" | "pq1";
         subType: "seed" | "private-key" | "hw";
+        derivableHdPathTemplates: HD_PATH_TEMPLATE_TYPE[];
         name: string;
         emittedErrors: import("../../interfaces/eventEmitter").ErrorRef[];
     };

@@ -16,7 +16,7 @@ export declare const getIsExternalApiDefiPositionsCallSuccessful: (discoveryResp
  * Returns the old positions if the call fails. Some positions, like that of Uniswap V3,
  * are merged with the data from Cena/Debank.
  */
-declare const getCustomProviderPositions: (addr: string, provider: RPCProvider, network: Network, fetch: Function, previousPositions: PositionsByProvider[], debankNetworkPositionsByProvider: PositionsByProvider[] | undefined, isDebankCallSuccessful: boolean) => Promise<{
+declare const getCustomProviderPositions: (addr: string, provider: RPCProvider, network: Network, fetch: Function, previousPositions: PositionsByProvider[], debankNetworkPositionsByProvider: PositionsByProvider[] | undefined, isDebankCallSuccessful: boolean, shouldFetchTokenPrices?: boolean) => Promise<{
     positionsByProvider: PositionsByProvider[];
     providerErrors: ProviderError[];
     error?: DeFiPositionsError | null;
@@ -65,14 +65,38 @@ declare const getFormattedApiPositions: (result: Omit<PositionsByProvider, "sour
 declare const enhancePortfolioTokensWithDefiPositions: (portfolioTokens: TokenResult[], defiPositionsState: PortfolioNetworkResult["defiPositions"] | undefined) => TokenResult[];
 declare const getHasNonceChangedSinceLastUpdate: (previousState: PortfolioNetworkResult["defiPositions"] | undefined, nonceId: string | undefined) => boolean;
 /**
- * Whether the portfolio defi positions data should be updated
+ * Describes how fresh the DeFi positions data should be when fetched, based on various factors such as:
+ * - Whether the user explicitly requested a refresh (isManualUpdate)
+ * - Whether there has been a nonce change since the last update, indicating on-chain activity
+ * - Whether there is a scheduled update coming soon (hasScheduledUpdate)
+ * - The age of the currently cached data (maxDataAgeMs)
  */
-declare const getCanSkipUpdate: (previousState: PortfolioNetworkResult["defiPositions"] | undefined, hasNonceChangedSinceLastUpdate: boolean, maxDataAgeMs?: number) => boolean;
-declare const getShouldBypassServerSideCache: (previousState: PortfolioNetworkResult["defiPositions"] | undefined, isManualUpdate: boolean, hasKeys: boolean, sessionIds: string[], hasNonceChangedSinceLastUpdate: boolean) => boolean;
+export declare enum DefiUpdateMode {
+    /** Serve cached data regardless of its age */
+    Cache = "cache",
+    /** Serve cached data if it is fresh enough, otherwise refetch */
+    Default = "default",
+    /** Bypass the server-side cache and refetch fresh data (was: `update=true`) */
+    Force = "force"
+}
+declare const getDefiUpdateMode: (params: {
+    previousState: PortfolioNetworkResult["defiPositions"] | undefined;
+    bypassServerSideCache: boolean;
+    isManualUpdate: boolean;
+    hasKeys: boolean;
+    sessionIds: string[];
+    hasNonceChangedSinceLastUpdate: boolean;
+    hasScheduledUpdate: boolean;
+    maxDataAgeMs: number;
+}) => DefiUpdateMode;
+/**
+ * Combines the modes of several batched requests into one (most aggressive mode wins because the request is shared)
+ */
+declare const mergeDefiUpdateModes: (modes: (DefiUpdateMode | undefined)[]) => DefiUpdateMode;
 /**
  * Returns the networks where the account has positions with certainty.
  * Certainty - there are no errors and the rpc is working.
  */
 declare const getAccountNetworksWithPositions: (accountId: AccountId, accountState: AccountState, oldNetworksWithPositionsByAccounts: NetworksWithPositionsByAccounts, providers: RPCProviders) => NetworksWithPositions;
-export { enhancePortfolioTokensWithDefiPositions, getAccountNetworksWithPositions, getAllAssetsAsHints, getAssetValue, getCanSkipUpdate, getCustomProviderPositions, getFormattedApiPositions, getHasNonceChangedSinceLastUpdate, getNewDefiState, getShouldBypassServerSideCache, getUniqueMergedPositions, updatePositionsByProviderAssetPrices };
+export { enhancePortfolioTokensWithDefiPositions, getAccountNetworksWithPositions, getAllAssetsAsHints, getAssetValue, getCustomProviderPositions, getDefiUpdateMode, getFormattedApiPositions, getHasNonceChangedSinceLastUpdate, getNewDefiState, getUniqueMergedPositions, mergeDefiUpdateModes, updatePositionsByProviderAssetPrices };
 //# sourceMappingURL=defiPositions.d.ts.map

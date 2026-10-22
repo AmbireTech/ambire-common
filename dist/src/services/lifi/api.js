@@ -2,10 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LiFiAPI = void 0;
 const tslib_1 = require("tslib");
-const constants_1 = require("../squid/constants");
+const networks_1 = require("../../consts/networks");
 const SwapAndBridgeProviderApiError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeProviderApiError"));
 const swapAndBridge_1 = require("../../libs/swapAndBridge/swapAndBridge");
-const constants_2 = require("../socket/constants");
+const fee_1 = require("../../libs/swapAndBridge/fee");
+const constants_1 = require("../socket/constants");
 const helpers_1 = require("./helpers");
 const normalizeLiFiTokenToSwapAndBridgeToToken = (token, toChainId) => {
     const { name, address, decimals, symbol, logoURI: icon } = token;
@@ -71,7 +72,7 @@ const normalizeLiFiStepToSwapAndBridgeUserTx = (parentStep) => parentStep.includ
     },
     minAmountOut: step.estimate.toAmountMin
 }));
-const normalizeLiFiRouteToSwapAndBridgeRoute = (route, userAddress, accountNativeBalance, nativeSymbol, withConvenienceFee) => {
+const normalizeLiFiRouteToSwapAndBridgeRoute = (route, userAddress, accountNativeBalance, nativeSymbol, withConvenienceFee, feeExemptionReason) => {
     // search for a feeCost that is not included in the quote
     // if there is one, check if the user has enough to pay for it
     // if he doesn't, mark the route as disabled
@@ -104,6 +105,7 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (route, userAddress, accountNativ
         steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
         inputValueInUsd: +route.fromAmountUSD,
         outputValueInUsd: +route.toAmountUSD,
+        outputValueAfterGasInUsd: route.gasCostUSD === undefined ? undefined : +route.toAmountUSD - +route.gasCostUSD,
         serviceTime: route.steps[0]?.estimate.executionDuration || 0,
         rawRoute: route,
         sender: route.fromAddress,
@@ -111,7 +113,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (route, userAddress, accountNativ
         disabled,
         disabledReason,
         serviceFee,
-        withConvenienceFee
+        withConvenienceFee,
+        feeExemptionReason
     };
 };
 const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (parentStep, routeId) => {
@@ -123,7 +126,7 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (parentStep, routeId) => {
     }
     return {
         activeRouteId: routeId,
-        approvalData: parentStep.action.fromToken.address === constants_2.ZERO_ADDRESS
+        approvalData: parentStep.action.fromToken.address === constants_1.ZERO_ADDRESS
             ? null // No approval needed fo native tokens
             : {
                 allowanceTarget: parentStep.estimate.approvalAddress,
@@ -142,6 +145,7 @@ class LiFiAPI {
     id = 'lifi';
     name = 'LiFi';
     #fetch;
+    #featureFlags;
     #baseUrl = 'https://li.quest/v1';
     #headers;
     #requestTimeoutMs = 15000;
@@ -157,8 +161,9 @@ class LiFiAPI {
      * limit), so we only use it as a backup
      */
     #apiKeyActivatedTimestamp;
-    constructor({ fetch, apiKey }) {
+    constructor({ fetch, apiKey, featureFlags }) {
         this.#fetch = fetch;
+        this.#featureFlags = featureFlags;
         this.#headers = {
             Accept: 'application/json',
             'Content-Type': 'application/json'
@@ -196,7 +201,7 @@ class LiFiAPI {
     }
     /** disable explicitly citrea for lifi */
     areChainsSupported({ fromChainId, toChainId }) {
-        return fromChainId !== constants_1.CITREA_CHAIN_ID && toChainId !== constants_1.CITREA_CHAIN_ID;
+        return fromChainId !== Number(networks_1.CITREA_CHAIN_ID) && toChainId !== Number(networks_1.CITREA_CHAIN_ID);
     }
     /**
      * Processes LiFi API responses and throws custom errors for various failures
@@ -282,7 +287,8 @@ class LiFiAPI {
         const sortedTokens = await (0, swapAndBridge_1.attemptToSortTokensByMarketCap)({
             fetch: this.#fetch,
             chainId: toChainId,
-            tokens
+            tokens,
+            featureFlags: this.#featureFlags
         });
         const withCustomTokens = (0, swapAndBridge_1.addCustomTokensIfNeeded)({ chainId: toChainId, tokens: sortedTokens });
         return (0, swapAndBridge_1.sortNativeTokenFirst)(withCustomTokens);
@@ -301,7 +307,7 @@ class LiFiAPI {
             return null;
         return normalizeLiFiTokenToSwapAndBridgeToToken(response, chainId);
     }
-    async quote({ fromAsset, fromChainId, fromTokenAddress, toAsset, toChainId, toTokenAddress, fromAmount, userAddress, sort, isWrapOrUnwrap, accountNativeBalance, nativeSymbol }) {
+    async quote({ fromAsset, fromChainId, fromTokenAddress, toAsset, toChainId, toTokenAddress, fromAmount, userAddress, sort, isWrapOrUnwrap, accountNativeBalance, nativeSymbol, feePercent }) {
         if (!fromAsset)
             throw new SwapAndBridgeProviderApiError_1.default('Quote requested, but missing required params. Error details: <from token details are missing>');
         if (!toAsset)
@@ -323,7 +329,7 @@ class LiFiAPI {
                 allowDestinationCall: 'false',
                 allowSwitchChain: 'false',
                 // LiFi fee is from 0 to 1, so normalize it by dividing by 100
-                fee: (constants_2.FEE_PERCENT / 100).toString(),
+                fee: (feePercent / 100).toString(),
                 // How this works:
                 // When this strategy is applied, we give all tool 900ms (minWaitTimeMs) to return a result.
                 // If we received 5 or more (startingExpectedResults) results during this time we return those and don’t wait for other tools.
@@ -350,7 +356,11 @@ class LiFiAPI {
                 }
             }
         };
-        const shouldRemoveConvenienceFee = isWrapOrUnwrap || (0, swapAndBridge_1.isNoFeeToken)(fromChainId, fromTokenAddress);
+        const feeExemptionReason = (0, fee_1.getFeeExemptionReason)({
+            isWrapOrUnwrap,
+            isFeeExemptToken: (0, swapAndBridge_1.isNoFeeToken)(fromChainId, fromTokenAddress)
+        });
+        const shouldRemoveConvenienceFee = feePercent === 0 || !!feeExemptionReason;
         if (shouldRemoveConvenienceFee)
             delete body.options.fee;
         const url = `${this.#baseUrl}/advanced/routes`;
@@ -367,7 +377,7 @@ class LiFiAPI {
             fromChainId,
             toAsset,
             toChainId,
-            routes: response.routes.map((r) => normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress, accountNativeBalance, nativeSymbol, !shouldRemoveConvenienceFee)),
+            routes: response.routes.map((r) => normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress, accountNativeBalance, nativeSymbol, !shouldRemoveConvenienceFee, feeExemptionReason)),
             // selecting a route is a controller's responsiilibty, not the API's
             selectedRoute: undefined,
             selectedRouteSteps: []

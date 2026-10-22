@@ -1,25 +1,55 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const ethers_1 = require("ethers");
-const _1Inch_1 = require("../../const/abis/1Inch");
+const viem_1 = require("viem");
 const utils_1 = require("../../utils");
-const iface = new ethers_1.Interface(_1Inch_1.OneInch);
-const OneInchModule = (accOp, calls) => {
+const cancelOrderAbi = (0, viem_1.parseAbi)(['function cancelOrder(uint256 makerTraits, bytes32 orderHash)']);
+const unoswap2Abi = (0, viem_1.parseAbi)([
+    'function unoswap2(uint256 token, uint256 amount, uint256 minReturn, uint256 dex, uint256 dex2)'
+]);
+const swapAbi = (0, viem_1.parseAbi)([
+    'function swap(address executor, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags) desc, bytes data) payable returns (uint256, uint256)'
+]);
+const ethUnoswapAbi = (0, viem_1.parseAbi)(['function ethUnoswap(uint256, uint256) payable returns (uint256)']);
+const unoswapAbi = (0, viem_1.parseAbi)([
+    'function unoswap(uint256 token,uint256 amount,uint256 minReturn,uint256 dex) returns (uint256)'
+]);
+const unoswapToAbi = (0, viem_1.parseAbi)([
+    'function unoswapTo(uint256 to,uint256 token,uint256 amount,uint256 minReturn,uint256 dex) returns (uint256)'
+]);
+const unoswap3Abi = (0, viem_1.parseAbi)([
+    'function unoswap3(uint256 token,uint256 amount,uint256 minReturn,uint256 dex,uint256 dex2,uint256 dex3) returns (uint256)'
+]);
+const swapWithPermitAbi = (0, viem_1.parseAbi)([
+    'function swap(address executor, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags) desc, bytes permit, bytes data) payable returns (uint256 returnAmount, uint256 spentAmount)'
+]);
+const cancelOrderSelector = (0, viem_1.toFunctionSelector)(cancelOrderAbi[0]);
+const unoswap2Selector = (0, viem_1.toFunctionSelector)(unoswap2Abi[0]);
+const swapSelector = (0, viem_1.toFunctionSelector)(swapAbi[0]);
+const ethUnoswapSelector = (0, viem_1.toFunctionSelector)(ethUnoswapAbi[0]);
+const unoswapSelector = (0, viem_1.toFunctionSelector)(unoswapAbi[0]);
+const unoswapToSelector = (0, viem_1.toFunctionSelector)(unoswapToAbi[0]);
+const unoswap3Selector = (0, viem_1.toFunctionSelector)(unoswap3Abi[0]);
+const swapWithPermitSelector = (0, viem_1.toFunctionSelector)(swapWithPermitAbi[0]);
+const OneInchModule = (accOp, call) => {
     const matcher = {
-        [iface.getFunction('cancelOrder(uint256 makerTraits, bytes32 orderHash)')?.selector]: (call) => {
-            const { orderHash } = iface.parseTransaction(call).args;
+        [cancelOrderSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: cancelOrderAbi, data: call.data });
+            const [, orderHash] = args;
             return [
                 (0, utils_1.getAction)('Cancel order'),
                 (0, utils_1.getLabel)(`with order hash ${orderHash.slice(0, 5)}...${orderHash.slice(63, 66)}`)
             ];
         },
-        [iface.getFunction('unoswap2(uint256 token, uint256 amount, uint256 minReturn, uint256 dex, uint256 dex2)')?.selector]: (call) => {
-            const { token: tokenArg, amount } = iface.parseTransaction(call).args;
+        [unoswap2Selector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: unoswap2Abi, data: call.data });
+            const [tokenArg, amount] = args;
             const token = (0, utils_1.uintToAddress)(tokenArg);
             return [(0, utils_1.getAction)('Swap'), (0, utils_1.getToken)((0, utils_1.eToNative)(token), amount)];
         },
-        [iface.getFunction('swap(address executor,tuple(address srcToken,address dstToken,address srcReceiver,address dstReceiver,uint256 amount,uint256 minReturnAmount,uint256 flags) desc,bytes data)')?.selector]: (call) => {
-            const { desc: { srcToken, dstToken, dstReceiver, amount, minReturnAmount } } = iface.parseTransaction(call).args;
+        [swapSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: swapAbi, data: call.data });
+            const [, desc] = args;
+            const { srcToken, dstToken, dstReceiver, amount, minReturnAmount } = desc;
             return [
                 (0, utils_1.getAction)('Swap'),
                 (0, utils_1.getToken)((0, utils_1.eToNative)(srcToken), amount),
@@ -28,27 +58,31 @@ const OneInchModule = (accOp, calls) => {
                 ...(0, utils_1.getRecipientText)(accOp.accountAddr, dstReceiver)
             ];
         },
-        [iface.getFunction('ethUnoswap(uint256, uint256)')?.selector]: (call) => {
-            return [(0, utils_1.getAction)('Swap'), (0, utils_1.getToken)(ethers_1.ZeroAddress, call.value)];
+        [ethUnoswapSelector]: (call) => {
+            return [(0, utils_1.getAction)('Swap'), (0, utils_1.getToken)(viem_1.zeroAddress, call.value)];
         },
-        [iface.getFunction('unoswap(uint256 token,uint256 amount,uint256 minReturn,uint256 dex)')
-            ?.selector]: (call) => {
-            const { token: tokenArg, amount } = iface.parseTransaction(call).args;
+        [unoswapSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: unoswapAbi, data: call.data });
+            const [tokenArg, amount] = args;
             const token = (0, utils_1.uintToAddress)(tokenArg);
             return [(0, utils_1.getAction)('Swap'), (0, utils_1.getToken)((0, utils_1.eToNative)(token), amount)];
         },
-        [iface.getFunction('unoswapTo(uint256 to,uint256 token,uint256 amount,uint256 minReturn,uint256 dex)')?.selector]: (call) => {
-            const { token: tokenArg, amount } = iface.parseTransaction(call).args;
+        [unoswapToSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: unoswapToAbi, data: call.data });
+            const [, tokenArg, amount] = args;
             const token = (0, utils_1.uintToAddress)(tokenArg);
             return [(0, utils_1.getAction)('Swap'), (0, utils_1.getToken)((0, utils_1.eToNative)(token), amount)];
         },
-        [iface.getFunction('unoswap3(uint256 token,uint256 amount,uint256 minReturn,uint256 dex,uint256 dex2,uint256 dex3)')?.selector]: (call) => {
-            const { token: tokenArg, amount } = iface.parseTransaction(call).args;
+        [unoswap3Selector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: unoswap3Abi, data: call.data });
+            const [tokenArg, amount] = args;
             const token = (0, utils_1.uintToAddress)(tokenArg);
             return [(0, utils_1.getAction)('Swap'), (0, utils_1.getToken)((0, utils_1.eToNative)(token), amount)];
         },
-        [iface.getFunction('swap(address executor, tuple(address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags) desc, bytes permit, bytes data) payable returns (uint256 returnAmount, uint256 spentAmount)')?.selector]: (call) => {
-            const { executor, desc: { srcToken, dstToken, srcReceiver, dstReceiver, amount, minReturnAmount, flags }, permit, data } = iface.parseTransaction(call).args;
+        [swapWithPermitSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: swapWithPermitAbi, data: call.data });
+            const [, desc] = args;
+            const { srcToken, dstToken, dstReceiver, amount, minReturnAmount } = desc;
             return [
                 (0, utils_1.getAction)('Swap'),
                 (0, utils_1.getToken)(srcToken, amount),
@@ -58,12 +92,10 @@ const OneInchModule = (accOp, calls) => {
             ];
         }
     };
-    const newCalls = calls.map((call) => {
-        if (call.fullVisualization || !matcher[call.data.slice(0, 10)])
-            return call;
-        return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) };
-    });
-    return newCalls;
+    const match = matcher[call.data.slice(0, 10)];
+    if (call.fullVisualization || !(0, utils_1.isHexCall)(call) || !match)
+        return call;
+    return { ...call, fullVisualization: match(call) };
 };
 exports.default = OneInchModule;
 //# sourceMappingURL=index.js.map

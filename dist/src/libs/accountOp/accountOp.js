@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.areAccountOpsEqual = void 0;
+exports.areAccountOpsEqual = exports.getAccountOpNonce = void 0;
+exports.isSafeRejectionCall = isSafeRejectionCall;
 exports.toSingletonCall = toSingletonCall;
 exports.callToTuple = callToTuple;
 exports.canBroadcast = canBroadcast;
@@ -11,6 +12,40 @@ exports.haveCallsChanged = haveCallsChanged;
 exports.haveAccountOpsChanged = haveAccountOpsChanged;
 const ethers_1 = require("ethers");
 const deploy_1 = require("../../consts/deploy");
+const getAccountOpNonce = (accountOp) => {
+    const nonce = accountOp.safeTx?.nonce ?? accountOp.nonce;
+    return nonce === null || typeof nonce === 'undefined' ? null : BigInt(nonce);
+};
+exports.getAccountOpNonce = getAccountOpNonce;
+/**
+ * A Safe "on-chain rejection" is a transaction that only exists to occupy a pending Safe
+ * nonce, replacing whatever real transaction was queued at it. Safe (the protocol) has no
+ * dedicated rejection type - it's just a no-op call: a single call with no value and no data,
+ * sent either to the zero address or to the Safe itself, executed as a regular call (not a
+ * delegate call).
+ *
+ * This is the source of truth for that check, sharable by anything that has the raw call data
+ * (a fetched Safe transaction, a built `AccountOp`, etc.) without needing a full `AccountOp`.
+ *
+ * @param calls the calls of the transaction, e.g. `accountOp.calls`
+ * @param accountAddr the Safe account the transaction belongs to
+ * @param operation the Safe `operation` value of the transaction (0 = Call, 1 = DelegateCall);
+ * pass the `operation` from the fetched Safe transaction, or omit it for a transaction built
+ * locally, which is always a plain Call
+ */
+function isSafeRejectionCall(calls, accountAddr, operation = 0) {
+    if (calls.length !== 1)
+        return false;
+    if (!calls[0])
+        return false;
+    const [call] = calls;
+    return (operation === 0 &&
+        !!call.to &&
+        (call.to.toLowerCase() === ethers_1.ZeroAddress ||
+            call.to.toLowerCase() === accountAddr.toLowerCase()) &&
+        call.value === 0n &&
+        call.data === '0x');
+}
 /**
  * If we want to deploy a contract, the to field of Call will actually
  * be empty (undefined). In order to simulate it in a transaction or

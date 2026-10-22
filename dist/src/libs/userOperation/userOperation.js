@@ -6,6 +6,7 @@ exports.getPaymasterSpoof = getPaymasterSpoof;
 exports.getActivatorCall = getActivatorCall;
 exports.getCleanUserOp = getCleanUserOp;
 exports.getOneTimeNonce = getOneTimeNonce;
+exports.getUserOpCalldata = getUserOpCalldata;
 exports.getUserOperation = getUserOperation;
 exports.getPackedUserOp = getPackedUserOp;
 exports.getUserOpHash = getUserOpHash;
@@ -17,6 +18,7 @@ const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts
 const deploy_1 = require("../../consts/deploy");
 const signatures_1 = require("../../consts/signatures");
 const accountOp_1 = require("../accountOp/accountOp");
+const helpers_1 = require("../safe/helpers");
 function calculateCallDataCost(callData) {
     if (callData === '0x')
         return 0n;
@@ -91,7 +93,42 @@ function getOneTimeNonce(userOperation) {
         ])
     ])).substring(18)}${(0, ethers_1.toBeHex)(0, 8).substring(2)}`;
 }
+function getUserOpCalldata(account, op, state) {
+    const ambireAccount = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
+    // executeBySender on SAFE_SENDER + inner call to the safe
+    if (account.safeCreation) {
+        // rotations
+        // the fee call should not be a part of the safe txn as it will revert
+        // it should be a part of the SAFE_SIGNER commitment though
+        const localOp = { ...op };
+        localOp.feeCall = undefined;
+        const calls = [(0, helpers_1.getSafeBroadcastTxn)(localOp, state), op.feeCall ?? undefined].filter((x) => !!x);
+        return ambireAccount.encodeFunctionData('executeBySender', [calls]);
+    }
+    return ambireAccount.encodeFunctionData('executeBySender', [(0, accountOp_1.getSignableCalls)(op)]);
+}
+/**
+ * Safe user operations are sent by the SAFE_SENDER.
+ * Also, they always use an unique nonce to prevent race conditions
+ * between safe users in Ambire
+ */
+function getSafeUserOperation(bundler) {
+    return {
+        sender: deploy_1.SAFE_SENDER,
+        nonce: (0, ethers_1.concat)([(0, ethers_1.randomBytes)(24), (0, ethers_1.toBeHex)(0, 8)]), // 1 / 10 ^ −52 collision chance,
+        callData: '0x',
+        callGasLimit: (0, ethers_1.toBeHex)(0),
+        verificationGasLimit: (0, ethers_1.toBeHex)(0),
+        preVerificationGas: (0, ethers_1.toBeHex)(0),
+        maxFeePerGas: (0, ethers_1.toBeHex)(0),
+        maxPriorityFeePerGas: (0, ethers_1.toBeHex)(0),
+        signature: '0x',
+        bundler
+    };
+}
 function getUserOperation({ account, accountState, accountOp, bundler, entryPointSig, eip7702Auth, hasPendingUserOp }) {
+    if (account.safeCreation)
+        return getSafeUserOperation(bundler);
     const uniqueNonce = (0, ethers_1.concat)([(0, ethers_1.randomBytes)(24), (0, ethers_1.toBeHex)(0, 8)]); // 1 / 10 ^ −52 collision chance
     const nonce = hasPendingUserOp ? uniqueNonce : (0, ethers_1.toBeHex)(accountState.erc4337Nonce);
     const userOp = {

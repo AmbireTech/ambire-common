@@ -1,13 +1,21 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const ethers_1 = require("ethers");
-const abis_1 = require("../../const/abis");
+const viem_1 = require("viem");
 const utils_1 = require("../../utils");
-const iface = new ethers_1.Interface(abis_1.KyberSwap);
-const KyberModule = (accOp, calls) => {
+const swapAbi = (0, viem_1.parseAbi)([
+    'function swap((address callTarget,address approveTarget,bytes targetData,(address srcToken,address dstToken,address[] srcReceivers,uint256[] srcAmounts,address[] feeReceivers,uint256[] feeAmounts,address dstReceiver,uint256 amount,uint256 minReturnAmount,uint256 flags,bytes permit) desc,bytes clientData) execution) payable returns (uint256,uint256)'
+]);
+const swapSimpleModeAbi = (0, viem_1.parseAbi)([
+    'function swapSimpleMode(address caller,(address srcToken,address dstToken,address[] srcReceivers,uint256[] srcAmounts,address[] feeReceivers,uint256[] feeAmounts,address dstReceiver,uint256 amount,uint256 minReturnAmount,uint256 flags,bytes permit) desc,bytes executorData,bytes clientData) returns (uint256,uint256)'
+]);
+const swapSelector = (0, viem_1.toFunctionSelector)(swapAbi[0]);
+const swapSimpleModeSelector = (0, viem_1.toFunctionSelector)(swapSimpleModeAbi[0]);
+const KyberModule = (accOp, call) => {
     const matcher = {
-        [iface.getFunction('swap(tuple(address callTarget,address approveTarget,bytes targetData,tuple(address srcToken,address dstToken,address[] srcReceivers,uint256[] srcAmounts,address[] feeReceivers,uint256[] feeAmounts,address dstReceiver,uint256 amount,uint256 minReturnAmount,uint256 flags,bytes permit) desc,bytes clientData) execution)')?.selector]: (call) => {
-            const { execution: { desc: { srcToken, dstToken, amount, minReturnAmount } } } = iface.parseTransaction(call).args;
+        [swapSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: swapAbi, data: call.data });
+            const [execution] = args;
+            const { srcToken, dstToken, amount, minReturnAmount } = execution.desc;
             return [
                 (0, utils_1.getAction)('Swap'),
                 (0, utils_1.getToken)((0, utils_1.eToNative)(srcToken), amount),
@@ -15,8 +23,10 @@ const KyberModule = (accOp, calls) => {
                 (0, utils_1.getToken)((0, utils_1.eToNative)(dstToken), minReturnAmount)
             ];
         },
-        [iface.getFunction('swapSimpleMode(address caller, tuple(address srcToken,address dstToken,address[] srcReceivers,uint256[] srcAmounts,address[] feeReceivers,uint256[] feeAmounts,address dstReceiver,uint256 amount,uint256 minReturnAmount,uint256 flags,bytes permit) desc,bytes executorData,bytes clientData)')?.selector]: (call) => {
-            const { desc: { srcToken, dstToken, amount, minReturnAmount } } = iface.parseTransaction(call).args;
+        [swapSimpleModeSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: swapSimpleModeAbi, data: call.data });
+            const [, desc] = args;
+            const { srcToken, dstToken, amount, minReturnAmount } = desc;
             return [
                 (0, utils_1.getAction)('Swap'),
                 (0, utils_1.getToken)((0, utils_1.eToNative)(srcToken), amount),
@@ -25,12 +35,10 @@ const KyberModule = (accOp, calls) => {
             ];
         }
     };
-    const newCalls = calls.map((call) => {
-        if (call.fullVisualization || !matcher[call.data.slice(0, 10)])
-            return call;
-        return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) };
-    });
-    return newCalls;
+    const match = matcher[call.data.slice(0, 10)];
+    if (call.fullVisualization || !(0, utils_1.isHexCall)(call) || !match)
+        return call;
+    return { ...call, fullVisualization: match(call) };
 };
 exports.default = KyberModule;
 //# sourceMappingURL=index.js.map

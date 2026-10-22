@@ -14,10 +14,6 @@ export declare const STATUS_WRAPPED_METHODS: {
     readonly revokePolicy: "INITIAL";
     readonly revokeAllPoliciesForDomain: "INITIAL";
 };
-export declare const AUTO_LOGIN_DURATION_OPTIONS: {
-    label: string;
-    value: number;
-}[];
 /**
  * The controller handles SIWE-like messages and provides auto-login functionality.
  * It creates and manages auto-login policies based on signed SIWE messages, and

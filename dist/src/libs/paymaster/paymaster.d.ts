@@ -50,7 +50,7 @@ export declare class Paymaster extends AbstractPaymaster {
      * from the bundler so we could calculate the txn fee. If the swap fee is
      * bigger than the txn fee, we upgrade the paymaster to SwapSponsorship.
      */
-    upgrade(bundlerEstimateResult: BundlerEstimateResult, gasPrices: GasSpeeds): void;
+    upgrade(bundlerEstimateResult: BundlerEstimateResult, gasPrices: GasSpeeds, userOp: UserOperation): Promise<void>;
 }
 export {};
 //# sourceMappingURL=paymaster.d.ts.map

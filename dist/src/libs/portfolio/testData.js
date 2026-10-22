@@ -20,8 +20,8 @@ const GAS_TANK_STATE = {
                 availableAmount: 5n * 10n ** 6n,
                 decimals: 6,
                 chainId: 1n,
-                priceIn: [{ baseCurrency: 'usd', price: 1 }],
                 marketDataIn: [],
+                priceIn: [{ baseCurrency: 'usd', price: 1 }],
                 flags: { onGasTank: true, rewardsType: null, isFeeToken: true, canTopUpGasTank: false }
             }
         ],
@@ -36,7 +36,7 @@ const PORTFOLIO_STATE = {
         lastSuccessfulUpdate: 1753192920665,
         accountOps: [
             {
-                id: 'op-1',
+                id: '0x',
                 accountAddr: '0x',
                 chainId: 1n,
                 signingKeyAddr: '0x',
@@ -53,11 +53,14 @@ const PORTFOLIO_STATE = {
                 hasHints: true,
                 lastUpdate: 1753192918712
             },
-            // priceCache: new Map(),
+            tokenDataCache: new Map(),
+            collectionErrors: [],
             toBeLearned: {
                 erc20s: [],
                 erc721s: {}
             },
+            fetchedTokenMetadata: [],
+            fetchedCollectionMetadata: [],
             updateStarted: 1753192918299,
             discoveryTime: 415,
             oracleCallTime: 364,
@@ -77,8 +80,8 @@ const PORTFOLIO_STATE = {
                         isFeeToken: true,
                         isCustom: false
                     },
-                    priceIn: [{ baseCurrency: 'usd', price: 3000 }],
-                    marketDataIn: []
+                    marketDataIn: [],
+                    priceIn: [{ baseCurrency: 'usd', price: 3000 }]
                 },
                 {
                     amount: 0n,
@@ -94,8 +97,8 @@ const PORTFOLIO_STATE = {
                         isCustom: false,
                         canTopUpGasTank: false
                     },
-                    priceIn: [{ baseCurrency: 'usd', price: 4.5 }],
-                    marketDataIn: []
+                    marketDataIn: [],
+                    priceIn: [{ baseCurrency: 'usd', price: 4.5 }]
                 },
                 {
                     amount: 50000n,
@@ -111,8 +114,8 @@ const PORTFOLIO_STATE = {
                         isFeeToken: true,
                         isCustom: false
                     },
-                    priceIn: [{ baseCurrency: 'usd', price: 1 }],
-                    marketDataIn: []
+                    marketDataIn: [],
+                    priceIn: [{ baseCurrency: 'usd', price: 1 }]
                 },
                 // Defi tokens
                 {
@@ -131,8 +134,8 @@ const PORTFOLIO_STATE = {
                         defiTokenType: types_1.AssetType.Collateral,
                         defiPositionId: '51ee679b-3fc4-4736-9a30-661175777122'
                     },
-                    priceIn: [{ baseCurrency: 'usd', price: 310 }],
-                    marketDataIn: []
+                    marketDataIn: [],
+                    priceIn: [{ baseCurrency: 'usd', price: 310 }]
                 },
                 {
                     address: '0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7',
@@ -150,8 +153,8 @@ const PORTFOLIO_STATE = {
                         defiTokenType: types_1.AssetType.Collateral,
                         defiPositionId: '50901a6f-5c4b-4447-98d8-1eed1b7db67a'
                     },
-                    priceIn: [{ baseCurrency: 'usd', price: 100 }],
-                    marketDataIn: []
+                    marketDataIn: [],
+                    priceIn: [{ baseCurrency: 'usd', price: 100 }]
                 },
                 // Removed on purpose so it can be added when enhancing with defi positions
                 // {
@@ -170,7 +173,8 @@ const PORTFOLIO_STATE = {
                 //     defiTokenType: AssetType.Collateral,
                 //     defiPositionId: '50901a6f-5c4b-4447-98d8-1eed1b7db67a'
                 //   },
-                //   priceIn: [{ baseCurrency: 'usd', price: 100 }]
+                //
+                // marketDataIn: [],   priceIn: [{ baseCurrency: 'usd', price: 100 }]
                 // },
                 {
                     address: '0x38e59ADE183BbEb94583d44213c8f3297e9933e9',
@@ -188,8 +192,8 @@ const PORTFOLIO_STATE = {
                         defiTokenType: types_1.AssetType.Borrow,
                         defiPositionId: '50901a6f-5c4b-4447-98d8-1eed1b7db67a'
                     },
-                    priceIn: [],
-                    marketDataIn: []
+                    marketDataIn: [],
+                    priceIn: []
                 },
                 {
                     address: '0x03D01595769333174036832e18fA2f17C74f8161',
@@ -207,8 +211,8 @@ const PORTFOLIO_STATE = {
                         defiTokenType: types_1.AssetType.Borrow,
                         defiPositionId: '50901a6f-5c4b-4447-98d8-1eed1b7db67a'
                     },
-                    priceIn: [],
-                    marketDataIn: []
+                    marketDataIn: [],
+                    priceIn: []
                 }
             ],
             feeTokens: [],
@@ -224,13 +228,12 @@ const PORTFOLIO_STATE = {
                     decimals: 1,
                     collectibles: [],
                     address: '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272',
-                    priceIn: [],
-                    marketDataIn: []
+                    marketDataIn: [],
+                    priceIn: []
                 }
             ],
             defiPositions: {
                 providerErrors: [],
-                // isLoading: false,
                 positionsByProvider: [
                     {
                         providerName: 'LIDO',
@@ -415,8 +418,7 @@ const PORTFOLIO_STATE = {
                         positionInUSD: 18985.66497510702
                     }
                 ],
-                nonceId: 'nonce-1',
-                // updatedAt: 1753258959994
+                nonceId: 'nonce-1'
             },
             total: { usd: 260 }
         }
@@ -434,11 +436,12 @@ const PORTFOLIO_STATE = {
             updateStarted: 1753192918299,
             discoveryTime: 415,
             oracleCallTime: 364,
-            // priceCache: new Map(),
             toBeLearned: {
                 erc20s: [],
                 erc721s: {}
             },
+            fetchedTokenMetadata: [],
+            fetchedCollectionMetadata: [],
             priceUpdateTime: 1585,
             tokens: [
                 {
@@ -455,20 +458,20 @@ const PORTFOLIO_STATE = {
                         isFeeToken: true,
                         isCustom: false
                     },
-                    priceIn: [{ baseCurrency: 'usd', price: 10 }],
-                    marketDataIn: []
+                    marketDataIn: [],
+                    priceIn: [{ baseCurrency: 'usd', price: 10 }]
                 }
             ],
+            tokenDataCache: new Map(),
             feeTokens: [],
             blockNumber: 22975182,
             tokenErrors: [],
             collections: [],
+            collectionErrors: [],
             total: { usd: 10 },
             defiPositions: {
                 providerErrors: [],
-                // isLoading: false,
-                positionsByProvider: [],
-                // updatedAt: 1753258959994
+                positionsByProvider: []
             }
         }
     },

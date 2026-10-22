@@ -1,5 +1,6 @@
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter';
 import { Fetch } from '../../interfaces/fetch';
+import { IFeatureFlagsController } from '../../interfaces/featureFlags';
 import { AddNetworkRequestParams, ChainId, INetworksController, Network, NetworkInfo, NetworkInfoLoading } from '../../interfaces/network';
 import { RPCProvider } from '../../interfaces/provider';
 import { IStorageController } from '../../interfaces/storage';
@@ -22,8 +23,9 @@ export declare class NetworksController extends EventEmitter implements INetwork
         rpcUrl: string;
         info?: NetworkInfoLoading<NetworkInfo>;
     } | null;
+    areNetworksFetchingFromRelayer: boolean;
     initialLoadPromise?: Promise<void>;
-    constructor({ eventEmitterRegistry, defaultNetworksMode, storage, fetch, relayerUrl, useTempProvider, onAddOrUpdateNetworks, onReady }: {
+    constructor({ eventEmitterRegistry, defaultNetworksMode, storage, fetch, relayerUrl, useTempProvider, onAddOrUpdateNetworks, onReady, featureFlags }: {
         eventEmitterRegistry?: IEventEmitterRegistryController;
         defaultNetworksMode?: 'mainnet' | 'testnet';
         storage: IStorageController;
@@ -33,8 +35,9 @@ export declare class NetworksController extends EventEmitter implements INetwork
             rpcUrl: string;
             chainId: bigint;
         }, callback: (provider: RPCProvider) => Promise<void>) => Promise<void>;
-        onAddOrUpdateNetworks: (networks: Network[]) => void;
+        onAddOrUpdateNetworks: (networks: Network[]) => void | Promise<void>;
         onReady: () => Promise<void>;
+        featureFlags?: IFeatureFlagsController;
     });
     get isInitialized(): boolean;
     get allNetworks(): Network[];
@@ -81,6 +84,11 @@ export declare class NetworksController extends EventEmitter implements INetwork
     addNetwork(network: AddNetworkRequestParams): Promise<void>;
     updateNetwork(network: Partial<Network>, chainId: ChainId): Promise<void>;
     updateNetworks(network: Partial<Network>, chainIds: ChainId[]): Promise<void>;
+    /**
+     * Bulk-adds networks coming from another device. A network whose chainId is already
+     * here gets overridden, the rest of the networks stay untouched.
+     */
+    mergeNetworks(networks: Network[]): Promise<void>;
     /**
      * @deprecated - users can no longer remove networks from the UI
      */

@@ -1,5 +1,6 @@
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter';
-export default class EventEmitter {
+import { DebugLogOptions } from '../../libs/debugLogger/debugLogger';
+export default class EventEmitter<DebugFlow extends string = string> {
     #private;
     id: string;
     statuses: Statuses<string>;
@@ -28,7 +29,19 @@ export default class EventEmitter {
      * normal batching may skip intermediate states and only emit the first and last ones.
      */
     forceEmitUpdate(): Promise<void>;
-    protected emitUpdate(): void;
+    /**
+     * Emits an update to all subscribers.
+     *
+     * Pass `throttleMs` for high-frequency background updates (e.g. portfolio
+     * ticks) that don't need to reach the UI on every single change. The first
+     * emit fires immediately, while further throttled emits within the
+     * window are coalesced into a single trailing emit that carries the latest
+     * state. A plain `emitUpdate()` or `forceEmitUpdate()` in the meantime flushes
+     * the pending update instantly, so user interactions are never delayed.
+     */
+    protected emitUpdate(options?: {
+        throttleMs?: number;
+    }): void;
     /**
      * Propagates updates from a child controller to its parent in a parent -> child setup,
      * ensuring child state updates reach the application without being lost due to batching.
@@ -56,6 +69,11 @@ export default class EventEmitter {
      *     and the controller updates its own state), use `emitUpdate()` or `forceEmitUpdate()`.
      */
     protected propagateUpdate(forceEmit?: boolean): void;
+    /** True when this controller's debug logging is toggled on. */
+    get isDebugLogEnabled(): boolean;
+    /** Per-controller gated debug log. No-op unless this controller's namespace is
+     *  toggled on via DebugController. */
+    protected debugLog(flow: DebugFlow, message: string, payload?: unknown | (() => unknown), options?: DebugLogOptions): void;
     protected emitError(error: ErrorRef): void;
     protected withStatus(callName: string, fn: Function, allowConcurrentActions?: boolean, errorLevel?: ErrorRef['level']): Promise<void>;
     onUpdate(cb: (forceUpdate?: boolean) => void, id?: string): () => void;

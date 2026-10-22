@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MainController = void 0;
 const tslib_1 = require("tslib");
-/* eslint-disable @typescript-eslint/brace-style */
 const eth_rpc_errors_1 = require("eth-rpc-errors");
 const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
 const deploy_1 = require("../../consts/deploy");
@@ -13,14 +12,17 @@ const accountPicker_1 = require("../accountPicker/accountPicker");
 const accounts_1 = require("../accounts/accounts");
 const activity_1 = require("../activity/activity");
 const addressBook_1 = require("../addressBook/addressBook");
+const appDataSync_1 = require("../appDataSync/appDataSync");
 const autoLogin_1 = require("../autoLogin/autoLogin");
 const banner_1 = require("../banner/banner");
 const continuousUpdates_1 = require("../continuousUpdates/continuousUpdates");
 const contractInfo_1 = require("../contractInfo/contractInfo");
 const contractNames_1 = require("../contractNames/contractNames");
 const dapps_1 = require("../dapps/dapps");
+const debug_1 = require("../debug/debug");
 const domains_1 = require("../domains/domains");
 const emailVault_1 = require("../emailVault/emailVault");
+const erc7730_1 = require("../erc7730/erc7730");
 const types_1 = require("../estimation/types");
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const featureFlags_1 = require("../featureFlags/featureFlags");
@@ -29,10 +31,12 @@ const keystore_1 = require("../keystore/keystore");
 const networks_1 = require("../networks/networks");
 const phishing_1 = require("../phishing/phishing");
 const portfolio_1 = require("../portfolio/portfolio");
+const privacyPools_1 = require("../privacyPools/privacyPools");
 const providers_1 = require("../providers/providers");
 const requests_1 = require("../requests/requests");
 const safe_1 = require("../safe/safe");
 const selectedAccount_1 = require("../selectedAccount/selectedAccount");
+const signAccountOpPreference_1 = require("../signAccountOp/signAccountOpPreference");
 const signMessage_1 = require("../signMessage/signMessage");
 const storage_1 = require("../storage/storage");
 const survey_1 = require("../survey/survey");
@@ -41,8 +45,11 @@ const transactionManager_1 = require("../transaction/transactionManager");
 const transfer_1 = require("../transfer/transfer");
 const transfersScanner_1 = require("../transfersScanner/transfersScanner");
 const ui_1 = require("../ui/ui");
+const verification_1 = require("../verification/verification");
+const walletToken_1 = require("../walletToken/walletToken");
 const main_1 = require("../../interfaces/main");
 const signMessage_2 = require("../../interfaces/signMessage");
+const ui_2 = require("../../interfaces/ui");
 const account_1 = require("../../libs/account/account");
 const submittedAccountOp_1 = require("../../libs/accountOp/submittedAccountOp");
 const types_2 = require("../../libs/accountOp/types");
@@ -51,12 +58,14 @@ const keys_1 = require("../../libs/keys/keys");
 const relayerCall_1 = require("../../libs/relayerCall/relayerCall");
 const safe_2 = require("../../libs/safe/safe");
 const selectedAccount_2 = require("../../libs/selectedAccount/selectedAccount");
-const api_1 = require("../../services/lifi/api");
+const api_1 = require("../../services/cowswap/api");
+const api_2 = require("../../services/lifi/api");
 const paymaster_1 = require("../../services/paymaster");
-const api_2 = require("../../services/socket/api");
-const api_3 = require("../../services/squid/api");
+const api_3 = require("../../services/socketv3/api");
 const swapProviderParallelExecutor_1 = require("../../services/swapIntegrators/swapProviderParallelExecutor");
+const api_4 = require("../../services/uniswap/api");
 const hdPath_1 = require("../../utils/hdPath");
+const uuid_1 = require("../../utils/uuid");
 const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
 class MainController extends eventEmitter_1.default {
     #storageAPI;
@@ -74,11 +83,14 @@ class MainController extends eventEmitter_1.default {
     #externalSignerControllers = {};
     // sub-controllers
     storage;
+    signAccountOpPreference;
     featureFlags;
+    debug;
     invite;
     keystore;
     networks;
     providers;
+    verification;
     accountPicker;
     portfolio;
     dapps;
@@ -93,30 +105,41 @@ class MainController extends eventEmitter_1.default {
     transferScanner;
     addressBook;
     domains;
+    erc7730;
     contractNames;
     contractInfo;
+    walletToken;
     autoLogin;
     accounts;
     selectedAccount;
+    privacyPools;
     requests;
     banner;
     survey;
+    appDataSync;
     accountOpsToBeConfirmed = {};
     lastUpdate = new Date();
     isOffline = false;
     statuses = main_1.STATUS_WRAPPED_METHODS;
     ui;
     #continuousUpdates;
+    #fetchSafeTxnsPromise;
     safe;
     get continuousUpdates() {
         return this.#continuousUpdates;
     }
-    constructor({ eventEmitterRegistry, appVersion, platform, storageAPI, fetch, relayerUrl, velcroUrl, liFiApiKey, bungeeApiKey, squidIntegratorId, featureFlags, keystoreSigners, externalSignerControllers, uiManager }) {
+    constructor({ eventEmitterRegistry, appVersion, platform, storageAPI, fetch, relayerUrl, velcroUrl, liFiApiKey, cowSwapApiKey, bungeeApiKey, uniswapApiKey, featureFlags, keystoreSigners, externalSignerControllers, uiManager, privacyPoolsCircuitsBaseUrl, privacyPoolsProverFactory, idb }) {
         super(eventEmitterRegistry);
         this.#storageAPI = storageAPI;
         this.#appVersion = appVersion;
         this.fetch = fetch;
         this.storage = new storage_1.StorageController(this.#storageAPI, eventEmitterRegistry);
+        // Constructed early so debug-log toggles are hydrated before other controllers start logging
+        this.debug = new debug_1.DebugController(this.storage, eventEmitterRegistry);
+        this.signAccountOpPreference = new signAccountOpPreference_1.SignAccountOpPreferenceController({
+            eventEmitterRegistry,
+            storage: this.storage
+        });
         this.featureFlags = new featureFlags_1.FeatureFlagsController(featureFlags, this.storage, eventEmitterRegistry);
         this.ui = new ui_1.UiController({ eventEmitterRegistry, uiManager });
         this.invite = new invite_1.InviteController({
@@ -140,32 +163,43 @@ class MainController extends eventEmitter_1.default {
             },
             onAddOrUpdateNetworks: async (networks) => {
                 networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId));
-                networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n));
+                await Promise.all(networks.filter((net) => !net.disabled).map((n) => this.providers.setProvider(n)));
+                this.verification?.updateNetworks(networks);
                 await this.reloadSelectedAccount({ chainIds: networks.map((n) => n.chainId) });
             },
             onReady: async () => {
                 await this.providers.init({ networks: this.networks.allNetworks });
-            }
+            },
+            featureFlags: this.featureFlags
         });
         this.providers = new providers_1.ProvidersController({
             eventEmitterRegistry,
             storage: this.storage,
             getNetworks: () => this.networks.allNetworks,
+            featureFlags: this.featureFlags,
             sendUiMessage: this.ui.message.sendUiMessage
+        });
+        this.verification = new verification_1.VerificationController({
+            eventEmitterRegistry,
+            networks: this.networks,
+            fetch: this.fetch,
+            velcroUrl,
+            featureFlags: this.featureFlags
         });
         this.accounts = new accounts_1.AccountsController(this.storage, this.providers, this.networks, this.keystore, async (accounts) => {
             const defaultSelectedAccount = (0, account_1.getDefaultSelectedAccount)(accounts);
             if (defaultSelectedAccount) {
                 await this.#selectAccount(defaultSelectedAccount.addr);
             }
-        }, this.providers.updateProviderIsWorking.bind(this.providers), this.#updateIsOffline.bind(this), relayerUrl, this.fetch, eventEmitterRegistry);
+        }, this.providers.updateProviderIsWorking.bind(this.providers), this.#updateIsOffline.bind(this), relayerUrl, this.fetch, eventEmitterRegistry, this.featureFlags, this.ui.message.sendUiMessage);
         this.autoLogin = new autoLogin_1.AutoLoginController(this.storage, this.keystore, this.providers, this.networks, this.accounts, this.#externalSignerControllers, this.invite, eventEmitterRegistry);
         this.safe = new safe_1.SafeController({
             eventEmitterRegistry,
             networks: this.networks,
             providers: this.providers,
             storage: this.storage,
-            accounts: this.accounts
+            accounts: this.accounts,
+            keystore: this.keystore
         });
         this.survey = new survey_1.SurveyController({
             fetch: this.fetch,
@@ -182,10 +216,10 @@ class MainController extends eventEmitter_1.default {
             if (!currentSelectedAcc)
                 return { status: 'no-selected-account' };
             let totalUsdBalance = this.selectedAccount.portfolio.totalBalance;
-            let numberOfTransactions = this.activity.getAccountOpsForAccount({
-                accountAddr: currentSelectedAcc.addr,
-                sortAccOps: false
-            }).length;
+            // Not getAccountOpsForAccount().length — that returns the in-memory cache, which
+            // on the IndexedDB backend holds only the bounded startup window, so a heavy
+            // account would report ~20 per chain and match the wrong minTxnsTotal bucket.
+            const numberOfTransactions = this.activity.getTotalOpsCountForAccount(currentSelectedAcc.addr);
             const hasKeys = (0, keys_1.getAccountKeysCount)({
                 accountAddr: currentSelectedAcc.addr,
                 keys: this.keystore.keys,
@@ -205,9 +239,24 @@ class MainController extends eventEmitter_1.default {
             storage: this.storage,
             accounts: this.accounts,
             autoLogin: this.autoLogin,
-            banner: this.banner
+            banner: this.banner,
+            ui: this.ui
         });
-        this.portfolio = new portfolio_1.PortfolioController(this.storage, this.fetch, this.providers, this.networks, this.accounts, this.keystore, relayerUrl, velcroUrl, this.banner, this.featureFlags, eventEmitterRegistry);
+        this.privacyPools = new privacyPools_1.PrivacyPoolsController({
+            eventEmitterRegistry,
+            keystore: this.keystore,
+            featureFlags: this.featureFlags,
+            networks: this.networks,
+            providers: this.providers,
+            selectedAccount: this.selectedAccount,
+            storage: this.storage,
+            ui: this.ui,
+            fetch: this.fetch,
+            circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
+            proverFactory: privacyPoolsProverFactory,
+            onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
+        });
+        this.portfolio = new portfolio_1.PortfolioController(this.storage, this.fetch, this.providers, this.networks, this.accounts, this.keystore, relayerUrl, velcroUrl, this.banner, this.featureFlags, this.ui, eventEmitterRegistry, this.verification, platform);
         if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
             this.emailVault = new emailVault_1.EmailVaultController(this.storage, this.fetch, relayerUrl, this.keystore, undefined, eventEmitterRegistry);
         }
@@ -220,6 +269,8 @@ class MainController extends eventEmitter_1.default {
             externalSignerControllers: this.#externalSignerControllers,
             relayerUrl,
             fetch: this.fetch,
+            featureFlags: this.featureFlags,
+            sendUiMessage: this.ui.message.sendUiMessage,
             /**
              * callback that gets triggered as a finalization step of adding new
              * accounts via the AccountPickerController.
@@ -237,7 +288,8 @@ class MainController extends eventEmitter_1.default {
             fetch: this.fetch,
             storage: this.storage,
             addressBook: this.addressBook,
-            ui: this.ui
+            ui: this.ui,
+            featureFlags: this.featureFlags
         });
         this.dapps = new dapps_1.DappsController({
             eventEmitterRegistry,
@@ -246,13 +298,38 @@ class MainController extends eventEmitter_1.default {
             storage: this.storage,
             networks: this.networks,
             phishing: this.phishing,
+            ui: this.ui,
+            selectedAccount: this.selectedAccount,
+            featureFlags: this.featureFlags
+        });
+        this.callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch: this.fetch });
+        this.erc7730 = new erc7730_1.Erc7730Controller({
+            storage: this.storage,
+            callRelayer: this.callRelayer,
+            featureFlags: this.featureFlags,
+            providers: this.providers,
+            ui: this.ui,
+            eventEmitterRegistry
+        });
+        this.contractInfo = new contractInfo_1.ContractInfoController({
+            eventEmitterRegistry,
+            fetch: this.fetch,
+            storage: this.storage,
+            featureFlags: this.featureFlags,
             ui: this.ui
         });
-        this.signMessage = new signMessage_1.SignMessageController(this.keystore, this.providers, this.networks, this.accounts, this.#externalSignerControllers, this.invite, eventEmitterRegistry, this.dapps);
-        this.callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch: this.fetch });
-        this.activity = new activity_1.ActivityController(this.storage, this.fetch, this.callRelayer, this.accounts, this.selectedAccount, this.providers, this.networks, this.portfolio, this.safe, async (network) => {
+        this.signMessage = new signMessage_1.SignMessageController(this.keystore, this.providers, this.networks, this.accounts, this.#externalSignerControllers, this.invite, eventEmitterRegistry, this.dapps, this.erc7730, platform);
+        this.activity = new activity_1.ActivityController(this.storage, this.fetch, this.callRelayer, this.accounts, this.selectedAccount, this.providers, this.networks, this.portfolio, this.safe, this.featureFlags, async (network) => {
             await this.setContractsDeployedToTrueIfDeployed(network);
-        }, eventEmitterRegistry);
+        }, eventEmitterRegistry, idb);
+        this.walletToken = new walletToken_1.WalletTokenController({
+            eventEmitterRegistry,
+            storage: this.storage,
+            featureFlags: this.featureFlags,
+            providers: this.providers,
+            callRelayer: this.callRelayer,
+            activity: this.activity
+        });
         this.transferScanner = new transfersScanner_1.TransfersScannerController({
             activity: this.activity,
             networks: this.networks,
@@ -260,12 +337,18 @@ class MainController extends eventEmitter_1.default {
             providers: this.providers,
             eventEmitterRegistry
         });
-        const LiFiProvider = new api_1.LiFiAPI({ fetch, apiKey: liFiApiKey });
-        const SocketProvider = new api_2.SocketAPI({ fetch, apiKey: bungeeApiKey });
-        const SquidProvider = new api_3.SquidAPI({ fetch, integratorId: squidIntegratorId });
+        const LiFiProvider = new api_2.LiFiAPI({
+            fetch,
+            apiKey: liFiApiKey,
+            featureFlags: this.featureFlags
+        });
+        const SocketProvider = new api_3.SocketV3API({ fetch, apiKey: bungeeApiKey });
+        const UniswapProvider = new api_4.UniswapAPI({ fetch, apiKey: uniswapApiKey });
+        const CowSwapProvider = new api_1.CowSwapAPI({ fetch, apiKey: cowSwapApiKey });
         this.swapAndBridge = new swapAndBridge_1.SwapAndBridgeController({
             eventEmitterRegistry,
             callRelayer: this.callRelayer,
+            fetch,
             accounts: this.accounts,
             keystore: this.keystore,
             portfolio: this.portfolio,
@@ -275,9 +358,14 @@ class MainController extends eventEmitter_1.default {
             networks: this.networks,
             activity: this.activity,
             storage: this.storage,
+            signAccountOpPreference: this.signAccountOpPreference,
+            featureFlags: this.featureFlags,
+            platform,
             phishing: this.phishing,
             dapps: this.dapps,
-            swapProvider: new swapProviderParallelExecutor_1.SwapProviderParallelExecutor([LiFiProvider, SocketProvider, SquidProvider]),
+            erc7730: this.erc7730,
+            contractInfo: this.contractInfo,
+            swapProvider: new swapProviderParallelExecutor_1.SwapProviderParallelExecutor([LiFiProvider, SocketProvider, UniswapProvider, CowSwapProvider], () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) })), () => this.swapAndBridge?.getDisabledSwapProviderIds() ?? []),
             relayerUrl,
             portfolioUpdate: (chainsToUpdate) => {
                 if (chainsToUpdate.length) {
@@ -304,15 +392,30 @@ class MainController extends eventEmitter_1.default {
             onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
             ui: this.ui
         });
-        this.transfer = new transfer_1.TransferController(this.callRelayer, this.storage, humanizerInfo_json_1.default, this.selectedAccount, this.networks, this.addressBook, this.accounts, this.keystore, this.portfolio, this.activity, this.#externalSignerControllers, this.providers, this.phishing, this.dapps, relayerUrl, this.commonHandlerForBroadcastSuccess.bind(this), this.ui, eventEmitterRegistry);
+        this.appDataSync = new appDataSync_1.AppDataSyncController({
+            eventEmitterRegistry,
+            keystore: this.keystore,
+            accounts: this.accounts,
+            networks: this.networks,
+            addressBook: this.addressBook,
+            featureFlags: this.featureFlags,
+            swapAndBridge: this.swapAndBridge,
+            ui: this.ui
+        });
+        this.transfer = new transfer_1.TransferController(this.callRelayer, this.storage, this.signAccountOpPreference, this.featureFlags, humanizerInfo_json_1.default, this.selectedAccount, this.networks, this.addressBook, this.accounts, this.keystore, this.portfolio, this.activity, this.#externalSignerControllers, this.providers, this.phishing, this.dapps, relayerUrl, this.commonHandlerForBroadcastSuccess.bind(this), this.ui, this.erc7730, this.contractInfo, platform, this.privacyPools, eventEmitterRegistry);
         this.domains = new domains_1.DomainsController({
             eventEmitterRegistry,
             providers: this.providers.providers,
-            defaultNetworksMode: this.networks.defaultNetworksMode
+            verification: this.verification,
+            defaultNetworksMode: this.networks.defaultNetworksMode,
+            storage: this.storage,
+            featureFlags: this.featureFlags,
+            getNetwork: (chainId) => this.networks.allNetworks.find((n) => n.chainId === chainId)
         });
         this.contractNames = new contractNames_1.ContractNamesController({
             eventEmitterRegistry,
-            fetch: this.fetch
+            fetch: this.fetch,
+            featureFlags: this.featureFlags
         });
         if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
             // TODO: [WIP] - The manager should be initialized with transfer and swap and bridge controller dependencies.
@@ -342,9 +445,15 @@ class MainController extends eventEmitter_1.default {
             activity: this.activity,
             phishing: this.phishing,
             dapps: this.dapps,
+            erc7730: this.erc7730,
+            contractInfo: this.contractInfo,
             accounts: this.accounts,
             networks: this.networks,
             providers: this.providers,
+            storage: this.storage,
+            featureFlags: this.featureFlags,
+            platform,
+            signAccountOpPreference: this.signAccountOpPreference,
             selectedAccount: this.selectedAccount,
             keystore: this.keystore,
             transfer: this.transfer,
@@ -370,16 +479,10 @@ class MainController extends eventEmitter_1.default {
                 this.portfolio.markSimulationAsBroadcasted(submittedAccountOp.accountAddr, submittedAccountOp.chainId);
                 await this.commonHandlerForBroadcastSuccess(props);
                 // resolve dapp requests, open benzin and etc only if the main sign accountOp
-                this.resolveAccountOpRequest(submittedAccountOp, fromRequestId);
+                await this.resolveAccountOpRequest(submittedAccountOp, fromRequestId);
                 this.transactionManager?.formState.resetForm(); // TODO: the form should be reset in a success state in FE
             },
             onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
-        });
-        this.contractInfo = new contractInfo_1.ContractInfoController({
-            eventEmitterRegistry,
-            fetch: this.fetch,
-            storage: this.storage,
-            featureFlags: this.featureFlags
         });
         this.initialLoadPromise = this.#load().finally(() => {
             this.initialLoadPromise = undefined;
@@ -411,6 +514,8 @@ class MainController extends eventEmitter_1.default {
         });
         this.keystore.onUpdate(() => {
             if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
+                // Don't call syncViewRoutes here, because the status is set after
+                // operations different than unlock too (change password, export key etc.)
                 // eslint-disable-next-line @typescript-eslint/no-floating-promises
                 this.storage.associateAccountKeysWithLegacySavedSeedMigration(() => new accountPicker_1.AccountPickerController({
                     eventEmitterRegistry,
@@ -421,16 +526,30 @@ class MainController extends eventEmitter_1.default {
                     externalSignerControllers: this.#externalSignerControllers,
                     relayerUrl,
                     fetch: this.fetch,
+                    featureFlags: this.featureFlags,
+                    sendUiMessage: this.ui.message.sendUiMessage,
                     onAddAccountsSuccessCallback: async () => { }
                 }), this.keystore, async () => {
                     await this.keystore.updateKeystoreKeys();
                 });
-                this.fetchSafeTxns().catch((e) => e); // we catch the error inside
+                // A view added or focused while the wallet was locked fetched nothing for the other
+                // Safes. The other operations that set this status are cheap here, as recently
+                // fetched Safes are skipped.
+                // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                this.#fetchAllSafesPending();
             }
         });
         this.ui.uiEvent.on('addView', async (view) => {
-            if (view.type === 'popup')
+            if (this.keystore.isUnlocked) {
+                // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                this.#fetchAllSafesPending();
+            }
+            if ((0, ui_2.isExtensionOverlayView)(view))
                 await this.onPopupOpen(view.id);
+        });
+        this.ui.uiEvent.on('viewFocus', () => {
+            // eslint-disable-next-line @typescript-eslint/no-floating-promises
+            this.#fetchAllSafesPending();
         });
     }
     /**
@@ -445,17 +564,27 @@ class MainController extends eventEmitter_1.default {
         if (selectedAccountAddr) {
             const FIVE_MINUTES = 1000 * 60 * 5;
             const ONE_HOUR = 1000 * 60 * 60;
-            this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr));
+            // Passively bulk-resolving ENS for all accounts links them together, so we
+            // only do it when the user opts out of privacy. Otherwise accounts are
+            // refreshed on interaction (see DomainsController).
+            if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
+                this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr), this.selectedAccount.account ? [this.selectedAccount.account.addr] : []);
+            }
+            else {
+                this.domains.reverseLookup(selectedAccountAddr, true, {
+                    privacyUpdateMode: 'whenStale',
+                    updateExpiry: true
+                });
+            }
+            const THIRTY_MINUTES = 1000 * 60 * 30;
             if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
                 this.updateSelectedAccountPortfolio({
                     maxDataAgeMs: FIVE_MINUTES,
-                    maxDataAgeMsUnused: ONE_HOUR
+                    maxDataAgeMsUnused: ONE_HOUR,
+                    defiMaxDataAgeMs: THIRTY_MINUTES
                 });
             }
-            if (!this.accounts.areAccountStatesLoading) {
-                this.accounts.updateAccountState(selectedAccountAddr);
-            }
-            this.fetchSafeTxns().catch((e) => e); // we catch the error inside
+            this.accounts.updateAccountState(selectedAccountAddr);
         }
         this.ui.updateView(viewId, { isReady: true });
     }
@@ -472,20 +601,40 @@ class MainController extends eventEmitter_1.default {
         await this.portfolio.initialLoadPromise;
         await this.keystore.initialLoadPromise;
         await this.contractInfo.initialLoadPromise;
+        await this.addressBook.initialLoadPromise;
         this.selectedAccount.initControllers({
             portfolio: this.portfolio,
             networks: this.networks,
-            providers: this.providers
+            providers: this.providers,
+            domains: this.domains
         });
         await this.selectedAccount.initialLoadPromise;
+        await this.domains.init(this.addressBook.contacts);
         this.updateSelectedAccountPortfolio();
-        this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr));
+        // Only passively bulk-resolve ENS for all accounts when the user opts out of
+        // privacy (see onPopupOpen and DomainsController for the default behaviour).
+        if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
+            this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr), this.selectedAccount.account ? [this.selectedAccount.account.addr] : []);
+        }
+        else if (this.selectedAccount.account?.addr) {
+            this.domains.reverseLookup(this.selectedAccount.account.addr, true, {
+                privacyUpdateMode: 'whenStale',
+                updateExpiry: true
+            });
+        }
         await this.survey.initialLoadPromise;
+        await this.privacyPools.initialLoadPromise;
+        // The restored Privacy Pools account may be gone, removed with its recovery phrase mid-load
+        const { privacyPoolsAccountId } = this.selectedAccount;
+        if (privacyPoolsAccountId && !this.#hasPrivacyPoolsAccount(privacyPoolsAccountId)) {
+            await this.#selectFallbackAccount();
+        }
         this.isReady = true;
         this.emitUpdate();
     }
     lock() {
         this.keystore.lock();
+        void this.ui.syncViewRoutes();
         this.emailVault?.cleanMagicAndSessionKeys();
         this.selectedAccount.setDashboardNetworkFilter(null);
         this.continuousUpdates?.updatePortfolioInterval.restart({
@@ -497,30 +646,23 @@ class MainController extends eventEmitter_1.default {
         await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true);
     }
     async #selectAccount(toAccountAddr) {
-        if (!toAccountAddr) {
-            await this.selectedAccount.setAccount(null);
-            this.emitUpdate();
-            return;
-        }
         const accountToSelect = this.accounts.accounts.find((acc) => acc.addr === toAccountAddr);
         if (!accountToSelect) {
             console.error(`Account with address ${toAccountAddr} does not exist`);
             return;
         }
         this.isOffline = false;
-        // call closeRequestWindow while still on the currently selected account to allow proper
-        // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
-        if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
-            await this.requests.closeRequestWindow();
-        }
-        const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(({ kind }) => kind === 'swapAndBridge');
-        if (swapAndBridgeSigningRequest) {
-            await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id]);
-        }
-        await this.selectedAccount.setAccount(accountToSelect);
+        await this.#leaveSelectedAccount();
+        await this.selectedAccount.select({ account: accountToSelect });
+        // Update reverse lookup data and ENS expiry
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.domains.reverseLookup(toAccountAddr, true, {
+            privacyUpdateMode: 'whenStale',
+            updateExpiry: true
+        });
         this.#continuousUpdates?.updatePortfolioInterval.restart();
         this.#continuousUpdates?.accountStateLatestInterval.restart();
-        this.#continuousUpdates?.accountsOpsStatusesInterval.restart({ runImmediately: true });
+        this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true });
         this.swapAndBridge.updateActiveRoutesInterval.restart({ runImmediately: true });
         this.swapAndBridge.reset();
         this.transfer.reset({ destroyAccountOp: true });
@@ -532,15 +674,112 @@ class MainController extends eventEmitter_1.default {
             maxDataAgeMs: 5 * 60 * 1000,
             maxDataAgeMsUnused: 60 * 60 * 1000
         });
+        await this.#forceEmitSelectedAccountUpdates(toAccountAddr);
+    }
+    /** Pushes the selected account's getters to the UI. `accountAddr` is null for a Privacy Pools one. */
+    async #forceEmitSelectedAccountUpdates(accountAddr) {
+        const accountScopedUpdates = accountAddr
+            ? [
+                this.activity.onSelectedAccountChange(accountAddr),
+                this.dapps.onSelectedAccountChange(accountAddr)
+            ]
+            : [this.activity.forceEmitUpdate()];
         // forceEmitUpdate to update the getters in the FE state of the ctrls
         await Promise.all([
-            this.activity.forceEmitUpdate(),
+            ...accountScopedUpdates,
             this.requests.forceEmitUpdate(),
             this.addressBook.forceEmitUpdate(),
             this.swapAndBridge.forceEmitUpdate(),
-            this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
             this.forceEmitUpdate()
         ]);
+    }
+    /** Cleans up after the selected account, before another one of either kind is selected. */
+    async #leaveSelectedAccount() {
+        // call closeRequestWindow while still on the currently selected account to allow proper
+        // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
+        if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
+            // Switching accounts is the user acting on the wallet, not refusing the apps that
+            // happened to be waiting, so it must not count towards the spam detection.
+            await this.requests.closeRequestWindow({ isUserInitiated: false });
+        }
+        const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(({ kind }) => kind === 'swapAndBridge');
+        if (swapAndBridgeSigningRequest) {
+            await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id]);
+        }
+    }
+    #hasPrivacyPoolsAccount(seedId) {
+        return this.privacyPools.accounts.some((account) => account.seedId === seedId);
+    }
+    /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
+    async addPrivacyPoolsAccount(seedId) {
+        await this.initialLoadPromise;
+        // Wrapped as a whole, so a refused account is shown to the user
+        await this.withStatus('selectAccount', async () => {
+            await this.privacyPools.addAccount(seedId);
+            await this.#selectPrivacyPoolsAccount(seedId);
+        }, true);
+    }
+    /**
+     * Creates a recovery phrase with only a Privacy Pools account on it, and selects it. The phrase
+     * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
+     */
+    async addPrivacyPoolsAccountFromNewSeed({ extraEntropy }) {
+        await this.initialLoadPromise;
+        await this.withStatus('selectAccount', async () => {
+            const seedId = await this.keystore.addGeneratedSeed({ extraEntropy });
+            await this.privacyPools.addAccount(seedId);
+            await this.#selectPrivacyPoolsAccount(seedId);
+        }, true);
+    }
+    async selectPrivacyPoolsAccount(seedId) {
+        await this.initialLoadPromise;
+        await this.withStatus('selectAccount', async () => this.#selectPrivacyPoolsAccount(seedId), true);
+    }
+    /**
+     * Selects a Privacy Pools account, leaving no regular account selected. Apps are not told: what
+     * they should see then is undecided, so they keep their account.
+     */
+    async #selectPrivacyPoolsAccount(seedId) {
+        if (!this.#hasPrivacyPoolsAccount(seedId)) {
+            this.emitError({
+                level: 'major',
+                message: 'The account you selected could not be found. Please select another account.',
+                error: new Error('main: the Privacy Pools account to select does not exist')
+            });
+            return;
+        }
+        await this.#leaveSelectedAccount();
+        await this.selectedAccount.select({ privacyPoolsSeedId: seedId });
+        this.swapAndBridge.reset();
+        this.transfer.reset({ destroyAccountOp: true });
+        await this.#forceEmitSelectedAccountUpdates(null);
+    }
+    /**
+     * Once the selected account is gone, selects the first regular account, else the first Privacy
+     * Pools account, else nothing (signed out).
+     */
+    async #selectFallbackAccount() {
+        const [firstAccount] = this.accounts.accounts;
+        if (firstAccount) {
+            await this.#selectAccount(firstAccount.addr);
+            return;
+        }
+        const [firstPrivacyPoolsAccount] = this.privacyPools.accounts;
+        if (firstPrivacyPoolsAccount) {
+            await this.#selectPrivacyPoolsAccount(firstPrivacyPoolsAccount.seedId);
+            return;
+        }
+        await this.selectedAccount.select(null);
+        this.emitUpdate();
+    }
+    async #onPrivacyPoolsAccountsRemoved(seedIds) {
+        const { privacyPoolsAccountId } = this.selectedAccount;
+        if (!privacyPoolsAccountId || !seedIds.includes(privacyPoolsAccountId))
+            return;
+        // Still loading: `#load` makes the same check once ready
+        if (!this.isReady)
+            return;
+        await this.#selectFallbackAccount();
     }
     async #onAccountPickerSuccess() {
         if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator))
@@ -558,66 +797,48 @@ class MainController extends eventEmitter_1.default {
         // first one to finish and skips the parallel one, if one is requested).
         await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal);
         await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external);
-        if (this.accountPicker.readyToRemoveAccounts) {
-            for (const acc of this.accountPicker.readyToRemoveAccounts) {
-                await this.#removeAccount(acc.addr);
-            }
-        }
-        // Add accounts as a final step, because some of the next steps check if accounts have keys.
-        await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts);
+        await this.#updateAccounts({
+            accountsToAdd: this.accountPicker.readyToAddAccounts,
+            accountAddressesToRemove: this.accountPicker.readyToRemoveAccounts.map((account) => account.addr)
+        });
     }
-    async commonHandlerForBroadcastSuccess({ submittedAccountOp, accountOp, fromRequestId }) {
+    async commonHandlerForBroadcastSuccess({ submittedAccountOp, accountOp }) {
         // add the txnIds from each transaction to each Call from the accountOp
         // if identifiedBy is MultipleTxns
         const isBasicAccountBroadcastingMultiple = submittedAccountOp.identifiedBy.type === 'MultipleTxns';
         if (isBasicAccountBroadcastingMultiple) {
-            const txnIds = submittedAccountOp.identifiedBy.identifier.split('-');
-            const calls = submittedAccountOp.calls.map((oneCall, i) => {
-                const localCall = { ...oneCall };
-                // if there's no tx id, we set it to Rejected and continue.
-                // it means broadcast has failed
-                if (!(i in txnIds)) {
-                    localCall.status = types_2.AccountOpStatus.Rejected;
-                    return localCall;
-                }
-                localCall.txnId = txnIds[i];
-                localCall.status = types_2.AccountOpStatus.BroadcastedButNotConfirmed;
-                return localCall;
-            });
-            submittedAccountOp.calls = calls;
-            const userRequest = this.requests.userRequests.find((r) => r.id === fromRequestId);
-            if (userRequest) {
-                // Handle the calls that weren't signed
-                const rejectedCalls = accountOp.calls.filter((call) => submittedAccountOp.calls.every((c) => c.id !== call.id));
-                await this.requests.rejectCalls({ callIds: rejectedCalls.map((c) => c.id) });
-            }
+            submittedAccountOp.calls = (0, submittedAccountOp_1.getCallsWithTxnIds)(submittedAccountOp);
         }
         if (accountOp.meta?.swapTxn) {
             // we need a quote to be able to add an active route
             const quote = accountOp.meta.quote || this.swapAndBridge.quote;
-            if (quote) {
+            // and it must be the quote the swap was built from, e.g. not one the form refreshed
+            // to in the meantime, otherwise the active route can't be matched to this transaction
+            if (quote?.selectedRoute?.routeId === accountOp.meta.swapTxn.activeRouteId) {
                 try {
                     this.swapAndBridge.addActiveRoute({
                         quote,
                         userTxIndex: accountOp.meta?.swapTxn.userTxIndex,
-                        routeStatus: !!quote?.selectedRoute ? 'in-progress' : 'ready'
+                        routeStatus: 'in-progress'
                     });
-                    if (quote.selectedRoute) {
-                        this.swapAndBridge.updateActiveRoute(quote.selectedRoute.routeId, {
-                            userTxHash: submittedAccountOp.txnId,
-                            identifiedBy: submittedAccountOp.identifiedBy
-                        });
-                    }
+                    this.swapAndBridge.updateActiveRoute(quote.selectedRoute.routeId, {
+                        userTxHash: submittedAccountOp.txnId,
+                        identifiedBy: submittedAccountOp.identifiedBy
+                    });
                 }
                 catch (e) {
                     console.log('failed to add an active route', e);
                 }
             }
-            // no need to keep it in storage
+            // no need to keep it in storage. The submitted account op, which is the one stored
+            // in the activity, has a shallow copy of the meta, so it has to be deleted there too
             delete accountOp.meta.quote;
+            delete submittedAccountOp.meta?.quote;
         }
         this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp);
         await this.activity.addAccountOp(submittedAccountOp);
+        // Every deposit into a Privacy Pools account, however signed, is broadcast through here
+        this.privacyPools.onAccountOpBroadcast(submittedAccountOp);
         await this.ui.notification.create({
             title: 
             // different count can happen only on isBasicAccountBroadcastingMultiple
@@ -634,8 +855,11 @@ class MainController extends eventEmitter_1.default {
         if (op.meta?.swapTxn)
             this.swapAndBridge.removeActiveRoute(op.meta.swapTxn.activeRouteId);
     }
-    async handleSignAndBroadcastAccountOp(type, fromRequestId) {
+    async handleSignAndBroadcastAccountOp(type, fromRequestId, reviewedAccountOpId) {
         let signAccountOp = null;
+        // Only the dapp calls request path shares a mutable SignAccountOpController
+        // that a second dapp request can append to before signing starts.
+        let isDappCallsRequest = false;
         if (type === 'one-click-swap-and-bridge' &&
             this.swapAndBridge.signAccountOpController &&
             this.swapAndBridge.signAccountOpController.fromRequestId === fromRequestId) {
@@ -649,12 +873,25 @@ class MainController extends eventEmitter_1.default {
         else if (this.requests.currentUserRequest?.kind === 'calls' &&
             this.requests.currentUserRequest.signAccountOp.fromRequestId === fromRequestId) {
             signAccountOp = this.requests.currentUserRequest.signAccountOp;
+            isDappCallsRequest = true;
         }
         if (!signAccountOp) {
             return this.emitError({
                 level: 'major',
                 message: 'Internal error: The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.',
                 error: new Error('Error: signAccountOp controller not initialized while trying to sign and broadcast')
+            });
+        }
+        // Security: a dapp can append calls before signing starts. The accountOp id
+        // changes on every calls change, so a mismatch with the reviewed id means the
+        // live op differs from the screen - abort so the user re-reviews.
+        if (isDappCallsRequest &&
+            reviewedAccountOpId &&
+            signAccountOp.accountOp.id !== reviewedAccountOpId) {
+            return this.emitError({
+                level: 'major',
+                message: 'The transaction changed after you reviewed it. Please review the updated transaction and try again.',
+                error: new Error('handleSignAndBroadcastAccountOp: reviewed accountOp id does not match the live accountOp id; aborting to prevent signing unreviewed calls')
             });
         }
         let isSignAndBroadcastInProgressOnThisAccountAndChain = false;
@@ -823,7 +1060,7 @@ class MainController extends eventEmitter_1.default {
             }
             const hdPathTemplate = derivation_1.BIP44_STANDARD_DERIVATION_TEMPLATE;
             const { walletSDK } = trezorCtrl;
-            await this.accountPicker.setInitParams({
+            this.accountPicker.setInitParams({
                 keyIterator: new TrezorKeyIterator({ walletSDK }),
                 hdPathTemplate,
                 pageSize: 5,
@@ -838,6 +1075,32 @@ class MainController extends eventEmitter_1.default {
     async handleAccountPickerInitTrezor(TrezorKeyIterator /* TODO: KeyIterator type mismatch */) {
         await this.withStatus('handleAccountPickerInitTrezor', async () => this.#handleAccountPickerInitTrezor(TrezorKeyIterator));
     }
+    async #handleAccountPickerInitOneKey(OneKeyKeyIterator, // TODO: KeyIterator type mismatch
+    preferredDeviceId) {
+        try {
+            const oneKeyCtrl = this.#externalSignerControllers.onekey;
+            if (!oneKeyCtrl?.connect) {
+                const message = 'Could not initialize connection with your OneKey device. Please try again later or contact Ambire support.';
+                throw new EmittableError_1.default({ message, level: 'major', error: new Error(message) });
+            }
+            await oneKeyCtrl.connect(preferredDeviceId);
+            const hdPathTemplate = derivation_1.BIP44_STANDARD_DERIVATION_TEMPLATE;
+            await this.accountPicker.setInitParams({
+                keyIterator: new OneKeyKeyIterator({ controller: oneKeyCtrl }),
+                hdPathTemplate,
+                pageSize: 5,
+                shouldAddNextAccountAutomatically: false
+            });
+        }
+        catch (error) {
+            const message = error?.message || 'Could not unlock the OneKey device. Please try again.';
+            throw new EmittableError_1.default({ message, level: 'major', error });
+        }
+    }
+    async handleAccountPickerInitOneKey(OneKeyKeyIterator, // TODO: KeyIterator type mismatch
+    preferredDeviceId) {
+        await this.withStatus('handleAccountPickerInitOneKey', async () => this.#handleAccountPickerInitOneKey(OneKeyKeyIterator, preferredDeviceId));
+    }
     async #handleAccountPickerInitLattice(LatticeKeyIterator /* TODO: KeyIterator type mismatch */) {
         try {
             const latticeCtrl = this.#externalSignerControllers.lattice;
@@ -846,7 +1109,7 @@ class MainController extends eventEmitter_1.default {
                 throw new EmittableError_1.default({ message, level: 'major', error: new Error(message) });
             }
             const hdPathTemplate = derivation_1.BIP44_STANDARD_DERIVATION_TEMPLATE;
-            await this.accountPicker.setInitParams({
+            this.accountPicker.setInitParams({
                 keyIterator: new LatticeKeyIterator({ controller: latticeCtrl }),
                 hdPathTemplate,
                 pageSize: 5,
@@ -904,15 +1167,49 @@ class MainController extends eventEmitter_1.default {
     payload) {
         await this.withStatus('handleAccountPickerInitQr', async () => this.#handleAccountPickerInitQr(QrKeyIterator, payload));
     }
+    async #handleAccountPickerInitNfc(NfcKeyIterator, // TODO: KeyIterator type mismatch
+    payload) {
+        try {
+            const nfcCtrl = this.#externalSignerControllers.nfc;
+            if (!nfcCtrl) {
+                const message = 'Could not initialize connection with your card. Please try again later or contact Ambire support.';
+                throw new EmittableError_1.default({ message, level: 'major', error: new Error(message) });
+            }
+            const keyIterator = new NfcKeyIterator({ controller: nfcCtrl });
+            // Initialize the iterator from the extended public key exported by the card
+            // before the AccountPicker init, so it can derive addresses on its own
+            // (the card is tapped only once, not per address).
+            keyIterator.initFromExportedKey(payload);
+            // v1 accounts have never supported NFC cards, so there is nothing to look
+            // for on the relayer (same reasoning as the QR flow).
+            this.accountPicker.setInitParams({
+                keyIterator,
+                hdPathTemplate: keyIterator.hdPathTemplate,
+                pageSize: 5,
+                shouldAddNextAccountAutomatically: false,
+                shouldSearchForLinkedAccounts: false
+            });
+        }
+        catch (error) {
+            const message = error?.message || 'Could not import the card account. Please try again.';
+            throw new EmittableError_1.default({ message, level: 'major', error });
+        }
+    }
+    async handleAccountPickerInitNfc(NfcKeyIterator, // TODO: KeyIterator type mismatch
+    payload) {
+        await this.withStatus('handleAccountPickerInitNfc', async () => this.#handleAccountPickerInitNfc(NfcKeyIterator, payload));
+    }
     async updateAccountsOpsStatuses() {
         await this.initialLoadPromise;
         const addressesWithPendingOps = Object.entries(this.activity.broadcastedButNotConfirmed)
             .filter(([, ops]) => ops.length > 0)
             .map(([addr]) => addr);
         const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps);
+        const safeDeployStatusUpdates = [];
         Object.values(updatedAccountsOpsByAccount).forEach(({ updatedAccountsOps: accUpdatedAccountsOps }) => {
             accUpdatedAccountsOps.forEach((op) => {
                 this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op);
+                safeDeployStatusUpdates.push(this.requests.handleSafeDeployStatusUpdate(op));
                 // we scan for logs only if Success & a dapp interaction has been made
                 // because only a dapp interaction might have a receiving txn after;
                 // receiving txns for inner bridges are handled in swapAndBridge.ts
@@ -934,28 +1231,40 @@ class MainController extends eventEmitter_1.default {
                 }
             });
         });
+        await Promise.all(safeDeployStatusUpdates);
         Object.entries(updatedAccountsOpsByAccount).forEach(async ([accountAddr, { shouldEmitUpdate, chainsToUpdate, portfoliosToUpdate, shouldFetchSafeTxns, updatedAccountsOps }]) => {
             if (shouldEmitUpdate) {
                 this.emitUpdate();
-                if (chainsToUpdate.length) {
-                    const networks = chainsToUpdate
-                        ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
-                        : undefined;
-                    if (networks?.length) {
-                        // The account state must be updated before the portfolio
-                        // as the portfolio has internal checks whether the nonce has changed
-                        // to decide if to force refetch certain data
-                        await this.accounts.updateAccountState(accountAddr, 'latest', networks?.map((net) => net.chainId));
-                        const finalizedAccountOps = updatedAccountsOps.filter((op) => op.status !== types_2.AccountOpStatus.Pending &&
-                            op.status !== types_2.AccountOpStatus.BroadcastedButNotConfirmed);
-                        await this.portfolio.discardSimulation(finalizedAccountOps);
-                        // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
-                        this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(accountAddr, updatedAccountsOps);
-                        Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
-                            // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                            this.portfolio.updateSelectedAccount(accountAddr, this.networks.networks.filter((n) => chainIds.includes(n.chainId)));
+                const finalizedAccountOps = updatedAccountsOps.filter((op) => op.status !== types_2.AccountOpStatus.Pending &&
+                    op.status !== types_2.AccountOpStatus.BroadcastedButNotConfirmed);
+                const networks = this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId));
+                if (networks.length) {
+                    // The account state must be updated before the portfolio
+                    // as the portfolio has internal checks whether the nonce has changed
+                    // to decide if to force refetch certain data
+                    await this.accounts.updateAccountState(accountAddr, 'latest', networks.map((net) => net.chainId), true);
+                    // Schedule an update that will refetch new defi positions (if any)
+                    chainsToUpdate.forEach((chainId) => {
+                        this.portfolio.scheduleUpdate({
+                            accountId: accountAddr,
+                            chainId,
+                            bypassServerSideCache: true
                         });
-                    }
+                    });
+                }
+                // Discard the simulation (that also updates the portfolio, but doesn't force update defi).
+                // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
+                // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
+                if (finalizedAccountOps.length) {
+                    await this.portfolio.discardSimulation(finalizedAccountOps);
+                }
+                if (networks.length) {
+                    // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
+                    this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(accountAddr, updatedAccountsOps);
+                    Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
+                        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                        this.portfolio.updateSelectedAccount(accountAddr, this.networks.networks.filter((n) => chainIds.includes(n.chainId)));
+                    });
                 }
             }
             if (shouldFetchSafeTxns) {
@@ -1005,8 +1314,9 @@ class MainController extends eventEmitter_1.default {
             await this.activity.removeAccountData(address);
             this.requests.removeAccountData(address);
             this.signMessage.removeAccountData(address);
+            this.dapps.removeAccountData(address);
             if (this.selectedAccount.account?.addr === address) {
-                await this.#selectAccount(this.accounts.accounts[0]?.addr ?? null);
+                await this.#selectFallbackAccount();
             }
             this.emitUpdate();
         }
@@ -1021,8 +1331,24 @@ class MainController extends eventEmitter_1.default {
     async removeAccount(address) {
         await this.withStatus('removeAccount', async () => this.#removeAccount(address));
     }
+    async #updateAccounts({ accountsToAdd, accountAddressesToRemove }) {
+        const addressesToAdd = new Set(accountsToAdd.map((account) => account.addr.toLowerCase()));
+        const importedAddresses = new Set(this.accounts.accounts.map((account) => account.addr.toLowerCase()));
+        const uniqueAddressesToRemove = Array.from(new Map(accountAddressesToRemove.map((address) => [address.toLowerCase(), address])).values());
+        for (const address of uniqueAddressesToRemove) {
+            const normalizedAddress = address.toLowerCase();
+            if (!importedAddresses.has(normalizedAddress) || addressesToAdd.has(normalizedAddress))
+                continue;
+            await this.#removeAccount(address);
+        }
+        // Add accounts as a final step, because some of the next steps check if accounts have keys.
+        await this.accounts.addAccounts(accountsToAdd);
+    }
+    async updateAccounts(accountsUpdate) {
+        await this.withStatus('updateAccounts', async () => this.#updateAccounts(accountsUpdate));
+    }
     async reloadSelectedAccount(options) {
-        const { chainIds, isManualReload = false, defiMaxDataAgeMs, maxDataAgeMsUnused, maxDataAgeMs } = options || {};
+        const { chainIds, isManualReload = false, defiMaxDataAgeMs = 30 * 60 * 1000, maxDataAgeMsUnused, maxDataAgeMs } = options || {};
         const networksToUpdate = chainIds
             ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
             : undefined;
@@ -1033,13 +1359,8 @@ class MainController extends eventEmitter_1.default {
         await Promise.all([
             // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
             // it's very likely that the account state is already in the process of being updated.
-            // If we try to run the same action, `withStatus` validation will throw an error.
-            // So, we perform this safety check to prevent the error.
-            // However, even if we don't trigger an update here, it's not a big problem,
-            // as the account state will be updated anyway, and its update will be very recent.
-            !this.accounts.areAccountStatesLoading && this.selectedAccount.account?.addr
-                ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds)
-                : Promise.resolve(),
+            // That fetch is reused, so this causes no extra fetch.
+            this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds),
             // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
             // as the PortfolioController already exposes flags that are highly sufficient for the UX.
             // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
@@ -1059,6 +1380,30 @@ class MainController extends eventEmitter_1.default {
      * if the selected account is a safe
      */
     async fetchSafeTxns(chainIds = [], forceRefetch = false) {
+        if (this.#fetchSafeTxnsPromise)
+            return this.#fetchSafeTxnsPromise;
+        this.#fetchSafeTxnsPromise = this.#fetchSafeTxns(chainIds, forceRefetch).finally(() => {
+            this.#fetchSafeTxnsPromise = undefined;
+        });
+        return this.#fetchSafeTxnsPromise;
+    }
+    /**
+     * Fetches the pending txns of the selected Safe, and then the pending counts of the other
+     * Safes, one after the other so they don't compete for the Safe API's rate limit
+     */
+    async #fetchAllSafesPending() {
+        await this.fetchSafeTxns([]).catch((e) => e); // we catch the error inside
+        // do not make Safe requests for the other Safes if the wallet is locked
+        if (!this.keystore.isUnlocked)
+            return;
+        await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr);
+    }
+    async refreshSafeTxns() {
+        if (this.statuses.refreshSafeTxns === 'LOADING')
+            return;
+        await this.withStatus('refreshSafeTxns', () => this.fetchSafeTxns([], true), true);
+    }
+    async #fetchSafeTxns(chainIds = [], forceRefetch = false) {
         if (!this.selectedAccount?.account?.safeCreation)
             return;
         // cache the addr here to prevent race conditions
@@ -1083,45 +1428,49 @@ class MainController extends eventEmitter_1.default {
             chainId: c,
             threshold: accountState[c.toString()]?.threshold || 0
         }));
-        for (let i = 0; i < networksAndThresholds.length; i++) {
-            // wait a second to not hit 5 request per minute API limit
-            if (i !== 0)
-                await (0, wait_1.default)(600);
-            const firstBatch = networksAndThresholds[i];
-            const res = await this.safe
-                .fetchPending(safeAddr, [firstBatch])
-                .catch((e) => {
-                console.log(e);
-                console.log('failed to retrieve pending Safe txns');
-                return null;
-            });
-            if (!res)
-                continue;
-            // build txn requests
-            const txnRequest = (0, safe_2.toCallsUserRequest)(safeAddr, res);
-            for (let i = 0; i < txnRequest.length; i++) {
-                // build the requests only if the selected account hasn't changed
-                if (this.selectedAccount?.account?.addr === safeAddr)
-                    await this.requests.build(txnRequest[i]).catch((e) => e);
-            }
-            // build and resolve message requests
-            const messageRequests = (0, safe_2.toSigMessageUserRequests)(res);
-            for (let i = 0; i < messageRequests.length; i++) {
-                const req = messageRequests[i];
-                const userRequest = this.requests.userRequests.find((u) => u.meta.accountAddr === safeAddr &&
-                    u.meta.chainId === req.params.chainId &&
-                    (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
-                    u.meta.hash === req.params.messageHash);
-                if (!userRequest && !req.isConfirmed) {
+        if (!networksAndThresholds.length)
+            return;
+        await this.withStatus('fetchSafeTxns', async () => {
+            for (let i = 0; i < networksAndThresholds.length; i++) {
+                // wait a second to not hit 5 request per minute API limit
+                if (i !== 0)
+                    await (0, wait_1.default)(600);
+                const firstBatch = networksAndThresholds[i];
+                const res = await this.safe
+                    .fetchPending(safeAddr, [firstBatch])
+                    .catch((e) => {
+                    console.log(e);
+                    console.log('failed to retrieve pending Safe txns');
+                    return null;
+                });
+                if (!res)
+                    continue;
+                // build txn requests
+                const txnRequest = (0, safe_2.toCallsUserRequest)(safeAddr, res);
+                for (let i = 0; i < txnRequest.length; i++) {
                     // build the requests only if the selected account hasn't changed
                     if (this.selectedAccount?.account?.addr === safeAddr)
-                        await this.requests.build(req).catch((e) => e);
+                        await this.requests.build(txnRequest[i]).catch((e) => e);
                 }
-                if (userRequest && req.isConfirmed) {
-                    await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id);
+                // build and resolve message requests
+                const messageRequests = (0, safe_2.toSigMessageUserRequests)(res);
+                for (let i = 0; i < messageRequests.length; i++) {
+                    const req = messageRequests[i];
+                    const userRequest = this.requests.userRequests.find((u) => u.meta.accountAddr === safeAddr &&
+                        u.meta.chainId === req.params.chainId &&
+                        (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
+                        u.meta.hash === req.params.messageHash);
+                    if (!userRequest && !req.isConfirmed) {
+                        // build the requests only if the selected account hasn't changed
+                        if (this.selectedAccount?.account?.addr === safeAddr)
+                            await this.requests.build(req).catch((e) => e);
+                    }
+                    if (userRequest && req.isConfirmed) {
+                        await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id);
+                    }
                 }
             }
-        }
+        }, true);
     }
     #updateIsOffline() {
         const oldIsOffline = this.isOffline;
@@ -1182,7 +1531,10 @@ class MainController extends eventEmitter_1.default {
         const userRequest = this.requests.userRequests.find((r) => r.kind === 'calls' &&
             !!r.signAccountOp.accountOp.calls.find((c) => c.activeRouteId === activeRouteId));
         if (userRequest) {
-            await this.requests.rejectCalls({ activeRouteIds: [activeRouteId] });
+            await this.requests.rejectCalls({
+                activeRouteIds: [activeRouteId],
+                isUserInitiated: false
+            });
         }
         else {
             this.swapAndBridge.removeActiveRoute(activeRouteId);
@@ -1228,7 +1580,7 @@ class MainController extends eventEmitter_1.default {
         }
         if (openBenzin) {
             const benzinUserRequest = {
-                id: new Date().getTime(),
+                id: (0, uuid_1.generateUuid)(),
                 kind: 'benzin',
                 meta,
                 dappPromises: []
@@ -1242,7 +1594,7 @@ class MainController extends eventEmitter_1.default {
         const safeRequests = this.requests.getSameNonceSafeRequests(requestId).map((r) => r.id);
         if (safeRequests.length) {
             await this.requests.removeUserRequests(safeRequests, {
-                shouldRejectSafeRequests: false
+                shouldOpenNextRequest: false
             });
         }
         const dappHandlers = [];
@@ -1259,9 +1611,24 @@ class MainController extends eventEmitter_1.default {
                 dappHandlers.push({ promise: dappPromise, txnId: submittedCall?.txnId });
             }
         });
-        await this.requests.removeUserRequests([accountOpRequest.id], {
-            shouldRemoveSwapAndBridgeRoute: false
-        });
+        // Calls that made it out are done with. Anything left was never signed, so the
+        // request stays with those in it and the user can come back and sign them.
+        const sentCallIds = submittedAccountOp.calls
+            .filter((call) => call.status !== types_2.AccountOpStatus.Rejected)
+            .map((call) => call.id);
+        const notSentCalls = signAccountOp.cleanupAfterBroadcast(sentCallIds);
+        if (notSentCalls.length) {
+            // Their promises have just been answered, so the request must not hold them
+            accountOpRequest.dappPromises = accountOpRequest.dappPromises.filter((promise) => 
+            // @ts-ignore
+            dappHandlers.every((handler) => handler.promise.id !== promise.id));
+        }
+        else {
+            await this.requests.removeUserRequests([accountOpRequest.id], {
+                shouldRemoveSwapAndBridgeRoute: false,
+                shouldOpenNextRequest: false
+            });
+        }
         this.resolveDappBroadcast(submittedAccountOp, dappHandlers);
         this.emitUpdate();
     }
@@ -1294,7 +1661,52 @@ class MainController extends eventEmitter_1.default {
     async accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({ privKeyOrSeed, seedPassphrase }) {
         const hdPathTemplate = derivation_1.BIP44_STANDARD_DERIVATION_TEMPLATE;
         const keyIterator = new keyIterator_1.KeyIterator(privKeyOrSeed, seedPassphrase);
-        await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate });
+        this.accountPicker.setInitParams({ keyIterator, hdPathTemplate });
+    }
+    async #accountPickerSetInitParamsFromPrivateKeys(privateKeys) {
+        if (!privateKeys.length) {
+            const message = 'Please enter at least one private key.';
+            throw new EmittableError_1.default({ message, level: 'major', error: new Error(message) });
+        }
+        if (privateKeys.length > keyIterator_1.MAX_BULK_PRIVATE_KEYS) {
+            const message = `You can import up to ${keyIterator_1.MAX_BULK_PRIVATE_KEYS} private keys at once. Please remove some and try again.`;
+            throw new EmittableError_1.default({ message, level: 'major', error: new Error(message) });
+        }
+        let keyIterator;
+        try {
+            // Trims the keys, strips the 0x prefix and drops duplicates before validating them
+            keyIterator = new keyIterator_1.KeyIterator(privateKeys);
+        }
+        catch (error) {
+            // The original error never includes the keys, so it is safe to report it
+            const message = 'One or more of the private keys you entered is not valid. Please check them and try again.';
+            throw new EmittableError_1.default({ message, level: 'major', error });
+        }
+        this.accountPicker.setInitParams({
+            keyIterator,
+            hdPathTemplate: derivation_1.BIP44_STANDARD_DERIVATION_TEMPLATE
+        });
+    }
+    /**
+     * Prepares the account picker with a list of private keys (bulk import). The key at position N
+     * in the list is listed as the account at index N. Duplicates are dropped and the list is
+     * limited to `MAX_BULK_PRIVATE_KEYS` keys.
+     */
+    async accountPickerSetInitParamsFromPrivateKeys({ privateKeys }) {
+        await this.withStatus('accountPickerSetInitParamsFromPrivateKeys', async () => this.#accountPickerSetInitParamsFromPrivateKeys(privateKeys), true);
+    }
+    /**
+     * Creates a brand new recovery phrase and prepares the account picker with it, all
+     * in the background. The phrase is never sent to the UI - the user gets prompted to
+     * write it down later, once the account holds funds.
+     */
+    async accountPickerSetInitParamsFromNewSeed({ extraEntropy }) {
+        await this.withStatus('accountPickerSetInitParamsFromNewSeed', async () => {
+            const tempSeed = await this.keystore.generateTempSeed({ extraEntropy });
+            await this.accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
+                privKeyOrSeed: tempSeed.seed
+            });
+        }, true);
     }
     // includes the getters in the stringified instance
     toJSON() {

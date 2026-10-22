@@ -1,4 +1,3 @@
 import { HumanizerUniMatcher } from './interfaces';
-declare const uniV3Mapping: () => HumanizerUniMatcher;
-export { uniV3Mapping };
+export declare const uniV3Mapping: HumanizerUniMatcher;
 //# sourceMappingURL=uniV3.d.ts.map

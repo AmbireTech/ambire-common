@@ -1,3 +1,4 @@
+import { cowSwapModule } from './cowSwapModule';
 import { eip7702AuthorizationModule } from './eip7702AuthorizationModule';
 import { ensMessageModule } from './ensModule';
 import { entryPointModule } from './entryPointModule';
@@ -9,5 +10,5 @@ import { permit2Module } from './permit2Module';
 import { safeMessageModule } from './safeModule';
 import { snapshotModule } from './snapshotModule';
 import { zealyMessageModule } from './zealyModule';
-export { ensMessageModule, entryPointModule, erc20Module, erc721Module, legendsMessageModule, permit2Module, openseaMessageModule, zealyMessageModule, eip7702AuthorizationModule, snapshotModule, safeMessageModule };
+export { ensMessageModule, entryPointModule, erc20Module, erc721Module, legendsMessageModule, cowSwapModule, permit2Module, openseaMessageModule, zealyMessageModule, eip7702AuthorizationModule, snapshotModule, safeMessageModule };
 //# sourceMappingURL=index.d.ts.map

@@ -1,11 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getUnknownTokenWarning = exports.getFeeTokenPriceUnavailableWarning = void 0;
+exports.isUnderpriced = exports.getUnknownTokenWarning = exports.getFeeTokenPriceUnavailableWarning = void 0;
 exports.getFeeSpeedIdentifier = getFeeSpeedIdentifier;
+exports.getSafeDelegateCallWarning = getSafeDelegateCallWarning;
+exports.getSafeGasRefundWarning = getSafeGasRefundWarning;
 exports.getSignificantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning;
 exports.getTokenUsdAmount = getTokenUsdAmount;
 const errorHandling_1 = require("../../consts/signAccountOp/errorHandling");
 const signAccountOp_1 = require("../../interfaces/signAccountOp");
+const safeTxGasRefund_1 = require("../../libs/humanizer/erc7730/safeTxGasRefund");
+const Safe_1 = require("../../libs/humanizer/modules/Safe");
 const helpers_1 = require("../../libs/portfolio/helpers");
 const formatters_1 = require("../../utils/numbers/formatters");
 function getFeeSpeedIdentifier(option, accountAddr) {
@@ -18,10 +22,13 @@ function getTokenUsdAmount(token, gasAmount) {
         return '';
     return (0, formatters_1.safeTokenAmountAndNumberMultiplication)(gasAmount, token.decimals, usdPrice);
 }
-function getSignificantBalanceDecreaseWarning(portfolioState, chainId, traceCallDiscoveryStatus) {
+function getSignificantBalanceDecreaseWarning(portfolioState, chainId, discoveryStatus) {
     const portfolioNetworkState = portfolioState?.[chainId.toString()];
-    if (portfolioNetworkState && portfolioNetworkState.result && !portfolioNetworkState.isLoading) {
-        const totalInUSD = (0, helpers_1.getAccountPortfolioTotal)(portfolioState, ['rewards', 'gasTank', 'projectedRewards'], false);
+    // calculate this only after traceCall has ended
+    const isDiscoveryOver = discoveryStatus === signAccountOp_1.TraceCallDiscoveryStatus.Failed ||
+        discoveryStatus === signAccountOp_1.TraceCallDiscoveryStatus.Done;
+    if (portfolioNetworkState && portfolioNetworkState.result && isDiscoveryOver) {
+        const totalInUSD = (0, helpers_1.getAccountPortfolioTotal)(portfolioState, ['rewards', 'gasTank'], false);
         const simulatedTokens = portfolioNetworkState.result.tokens.filter((t) => typeof t.amountPostSimulation === 'bigint');
         if (!simulatedTokens.length)
             return null;
@@ -45,19 +52,7 @@ function getSignificantBalanceDecreaseWarning(portfolioState, chainId, traceCall
         const hasSignificantBalanceDecrease = absoluteDecreaseInUSD >= totalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000;
         if (!hasSignificantBalanceDecrease)
             return null;
-        // We wait for the discovery process (main.traceCall) to complete before showing WARNINGS.significantBalanceDecrease.
-        // This is important because, in the case of a SWAP to a new token, the new token is not yet part of the portfolio,
-        // which could incorrectly trigger a significant balance drop warning.
-        // To prevent this, we ensure the discovery process is completed first.
-        if (traceCallDiscoveryStatus === signAccountOp_1.TraceCallDiscoveryStatus.Done) {
-            return errorHandling_1.WARNINGS.significantBalanceDecrease;
-        }
-        // If the discovery process takes too long (more than 2 seconds) or fails,
-        // we still show a warning, but we indicate that our balance decrease assumption may be incorrect.
-        if (traceCallDiscoveryStatus === signAccountOp_1.TraceCallDiscoveryStatus.Failed ||
-            traceCallDiscoveryStatus === signAccountOp_1.TraceCallDiscoveryStatus.SlowPendingResponse) {
-            return errorHandling_1.WARNINGS.possibleBalanceDecrease;
-        }
+        return errorHandling_1.WARNINGS.significantBalanceDecrease;
     }
     return null;
 }
@@ -70,10 +65,44 @@ const getUnknownTokenWarning = (pending, chainId) => {
     return hasUnknownTokens ? errorHandling_1.WARNINGS.unknownToken : null;
 };
 exports.getUnknownTokenWarning = getUnknownTokenWarning;
-const getFeeTokenPriceUnavailableWarning = (hasSpeed, feeTokenHasPrice) => {
-    if (!hasSpeed || feeTokenHasPrice)
+const getFeeTokenPriceUnavailableWarning = (hasSpeed, feeTokenHasPrice, areTokenPricesEnabled) => {
+    if (!areTokenPricesEnabled || !hasSpeed || feeTokenHasPrice)
         return null;
     return errorHandling_1.WARNINGS.feeTokenPriceUnavailable;
 };
 exports.getFeeTokenPriceUnavailableWarning = getFeeTokenPriceUnavailableWarning;
+function getSafeDelegateCallWarning(accountOp) {
+    if (!accountOp.safeTx)
+        return null;
+    const shouldWarn = (0, Safe_1.shouldDisplaySafeDelegateCallWarning)(BigInt(accountOp.safeTx.operation), accountOp.safeTx.to);
+    return shouldWarn ? errorHandling_1.WARNINGS.safeDelegateCall : null;
+}
+// Reuses the same "sus" gas refund detection the humanizer already applies when a Safe signer
+// signs the raw SafeTx message (see getSafeTxMessageWarnings in libs/humanizer/erc7730/humanize.ts),
+// so the account-op level sign screen (i.e. signing with the Safe account itself) warns about it too.
+// The wording is intentionally its own (not humanizer's getGasRefundWarning text) - this renders
+// as a standalone banner with no adjacent visualization row, so it can't reference "the address
+// below" or "what is shown above" and has to spell out the address itself.
+function getSafeGasRefundWarning(accountOp) {
+    if (!accountOp.safeTx)
+        return null;
+    const gasRefund = (0, safeTxGasRefund_1.buildSafeTxGasRefund)(accountOp.safeTx.baseGas, accountOp.safeTx.gasPrice, accountOp.safeTx.gasToken, accountOp.safeTx.refundReceiver);
+    if (!gasRefund)
+        return null;
+    const text = gasRefund.refundReceiver
+        ? `This transaction also sends a separate payment to ${gasRefund.refundReceiver} as a "gas refund", on top of the transaction itself. Only proceed if you expect this.`
+        : `This transaction also sends a separate payment to whoever broadcasts it, as a "gas refund", on top of the transaction itself. Only proceed if you expect this.`;
+    return {
+        id: 'safeGasRefund',
+        title: 'Suspicious gas refund detected',
+        text
+    };
+}
+const isUnderpriced = (msg) => {
+    return (msg.includes('underpriced') ||
+        msg.includes('Fee confirmation failed') ||
+        msg.includes('maxFeePerGas') ||
+        msg.includes('maxPriorityFeePerGas'));
+};
+exports.isUnderpriced = isUnderpriced;
 //# sourceMappingURL=helper.js.map

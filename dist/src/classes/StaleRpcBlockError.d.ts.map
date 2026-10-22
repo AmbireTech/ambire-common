@@ -1,0 +1,1 @@
+{"version":3,"file":"StaleRpcBlockError.d.ts","sourceRoot":"","sources":["../../../src/classes/StaleRpcBlockError.ts"],"names":[],"mappings":"AAAA;;;GAGG;AACH,qBAAa,kBAAmB,SAAQ,KAAK;IAC3C,mBAAmB,EAAE,MAAM,CAAA;IAE3B,YAAY,EAAE,MAAM,CAAA;IAEpB,kBAAkB,EAAE,MAAM,CAAA;gBAEd,EACV,mBAAmB,EACnB,YAAY,EACb,EAAE;QACD,mBAAmB,EAAE,MAAM,CAAA;QAC3B,YAAY,EAAE,MAAM,CAAA;KACrB;CAWF"}

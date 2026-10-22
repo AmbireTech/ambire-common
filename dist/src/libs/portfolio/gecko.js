@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.geckoResponseIdentifier = geckoResponseIdentifier;
 exports.geckoRequestBatcher = geckoRequestBatcher;
 const coingecko_1 = require("../../consts/coingecko");
-const pagination_1 = require("./pagination");
+const paginate_1 = require("../../utils/paginate");
 // max tokens per request; we seem to have faster results when it's lower
 const BATCH_LIMIT = 40;
 function geckoResponseIdentifier(tokenAddr, network) {
@@ -30,7 +30,7 @@ function geckoRequestBatcher(queue) {
     // deduplicating is OK because we use a key-based mapping (responseIdentifier) to map the responses
     // @TODO deduplication should happen BEFORE the pagination but without dropping items from queueSegment
     const pages = Object.entries(segments)
-        .map(([key, queueSegment]) => (0, pagination_1.paginate)(queueSegment, BATCH_LIMIT).map((page) => ({ key, queueSegment: page })))
+        .map(([key, queueSegment]) => (0, paginate_1.paginate)(queueSegment, BATCH_LIMIT).map((page) => ({ key, queueSegment: page })))
         .flat(1);
     const dedup = (x) => x.filter((y, i) => x.indexOf(y) === i);
     return pages.map(({ key, queueSegment }) => {
@@ -38,11 +38,15 @@ function geckoRequestBatcher(queue) {
         const baseCurrency = queueSegment[0].data.baseCurrency;
         const geckoPlatform = queueSegment[0].data.network.platformId;
         const mainApiUrl = 'https://cena.ambire.com';
+        // The ids are joined by a literal comma, never the pre-encoded %2C. Mobile puts the url
+        // through a percent-encoding pass when it carries characters that are invalid in a url, and
+        // that turns %2C into %252C - cena then reads the list as one malformed id and answers `{}`
+        // with a 200, so the request looks successful and every id in it comes back unpriced.
         let url;
         if (key.endsWith('natives'))
-            url = `${mainApiUrl}/api/v3/simple/price?ids=${dedup(queueSegment.map((x) => (0, coingecko_1.geckoIdMapper)(x.data.address, x.data.network))).join('%2C')}&vs_currencies=${baseCurrency}`;
+            url = `${mainApiUrl}/api/v3/simple/price?ids=${dedup(queueSegment.map((x) => (0, coingecko_1.geckoIdMapper)(x.data.address, x.data.network))).join(',')}&vs_currencies=${baseCurrency}`;
         else
-            url = `${mainApiUrl}/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${dedup(queueSegment.map((x) => x.data.address)).join('%2C')}&vs_currencies=${baseCurrency}`;
+            url = `${mainApiUrl}/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${dedup(queueSegment.map((x) => x.data.address)).join(',')}&vs_currencies=${baseCurrency}`;
         return { url, queueSegment };
     });
 }

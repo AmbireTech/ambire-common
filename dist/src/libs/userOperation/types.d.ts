@@ -33,6 +33,8 @@ export interface UserOperation {
     bundler: BUNDLER;
     eip7702Auth?: EIP7702Auth;
 }
+/** The userOp fields that make up its packed form, so a userOp from elsewhere can be packed. */
+export type PackableUserOperation = Pick<UserOperation, 'sender' | 'nonce' | 'factory' | 'factoryData' | 'callData' | 'callGasLimit' | 'verificationGasLimit' | 'preVerificationGas' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'paymaster' | 'paymasterVerificationGasLimit' | 'paymasterPostOpGasLimit' | 'paymasterData'>;
 export interface UserOperationEventData {
     nonce: number;
     success: boolean;

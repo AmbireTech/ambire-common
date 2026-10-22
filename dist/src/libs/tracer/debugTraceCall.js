@@ -1,7 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.parseCallTracerResult = parseCallTracerResult;
 exports.getStateOverride = getStateOverride;
 exports.getFunctionParams = getFunctionParams;
+exports.getDiscoveredAssets = getDiscoveredAssets;
 exports.debugTraceCall = debugTraceCall;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
@@ -12,7 +14,6 @@ const AmbireAccount7702_json_1 = tslib_1.__importDefault(require("../../../contr
 const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
 const BalanceGetter_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/BalanceGetter.json"));
 const NFTGetter_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/NFTGetter.json"));
-const ProviderError_1 = require("../../classes/ProviderError");
 const deploy_2 = require("../../consts/deploy");
 const deployless_1 = require("../../consts/deployless");
 const provider_1 = require("../../services/provider");
@@ -21,6 +22,44 @@ const accountOp_1 = require("../accountOp/accountOp");
 const deployless_2 = require("../deployless/deployless");
 const getOnchainBalances_1 = require("../portfolio/getOnchainBalances");
 const NFT_COLLECTION_LIMIT = 100;
+const ERC721_TRANSFER_TOPIC = (0, ethers_1.keccak256)((0, ethers_1.toUtf8Bytes)('Transfer(address,address,uint256)'));
+function parseCallTracerResult(result) {
+    const tokenAddresses = new Set();
+    const nftTokenIdsByAddress = new Map();
+    const addTokenAddress = (address) => {
+        if (!address)
+            return;
+        tokenAddresses.add((0, ethers_1.getAddress)(address));
+    };
+    const addNftTransfer = (log) => {
+        if (log.topics?.length !== 4 ||
+            log.topics[0]?.toLowerCase() !== ERC721_TRANSFER_TOPIC.toLowerCase())
+            return;
+        const address = (0, ethers_1.getAddress)(log.address);
+        const tokenId = BigInt(log.topics[3]);
+        const tokenIds = nftTokenIdsByAddress.get(address) || new Set();
+        tokenIds.add(tokenId);
+        nftTokenIdsByAddress.set(address, tokenIds);
+    };
+    const collectFrameAssets = (frame) => {
+        if (!frame)
+            return;
+        addTokenAddress(frame.to);
+        frame.logs?.forEach((log) => {
+            addTokenAddress(log.address);
+            addNftTransfer(log);
+        });
+        frame.calls?.forEach(collectFrameAssets);
+    };
+    collectFrameAssets(result);
+    return {
+        tokens: Array.from(tokenAddresses),
+        nfts: Array.from(nftTokenIdsByAddress.entries()).map(([address, tokenIds]) => [
+            address,
+            Array.from(tokenIds)
+        ])
+    };
+}
 function getStateOverride(account, op, accountState) {
     // if the account is a Safe,
     // add an additional state override that gives privileges to the assKey;
@@ -84,7 +123,7 @@ function getFunctionParams(account, op, accountState) {
         data: callData
     };
 }
-async function debugTraceCall(baseAcc, op, network, accountState, overrideData) {
+async function getDiscoveredAssets(provider, baseAcc, op, network, accountState, foundTokens, foundNftTransfers) {
     const account = baseAcc.getAccount();
     const opts = {
         blockTag: 'latest',
@@ -105,75 +144,6 @@ async function debugTraceCall(baseAcc, op, network, accountState, overrideData) 
             op.calls.map(accountOp_1.callToTuple)
         ]
     ];
-    // initialize a new provider for debug trace call to avoid batching it
-    // as sometimes debug_traceCall gets handled really slowly from the RPCs
-    // and that affects wallet performance
-    const provider = (0, provider_1.getRpcProvider)(network.rpcUrls, network.chainId, network.selectedRpcUrl);
-    const params = getFunctionParams(account, op, accountState);
-    if (!params)
-        return { tokens: [], nfts: [] };
-    const results = await provider
-        .send('debug_traceCall', [
-        {
-            to: params.to,
-            value: (0, ethers_1.toQuantity)(params.value.toString()),
-            data: params.data,
-            from: params.from
-        },
-        'latest',
-        {
-            tracer: `{
-          discovered: [],
-          fault: function (log) {},
-          step: function (log) {
-            const found = this.discovered.map(ob => ob.address)
-            if (log.contract && log.contract.getAddress() && found.indexOf(toHex(log.contract.getAddress())) === -1) {
-              this.discovered.push({
-                erc: 20,
-                address: toHex(log.contract.getAddress())
-              })
-            }
-            if (log.op.toString() === 'LOG4') {
-              this.discovered.push({
-                erc: 721,
-                address: toHex(log.contract.getAddress()),
-                tokenId: '0x' + log.stack.peek(5).toString(16)
-              })
-            }
-          },
-          result: function () {
-            return this.discovered
-          }
-        }`,
-            enableMemory: false,
-            enableReturnData: true,
-            disableStorage: true,
-            stateOverrides: (0, simulationStateOverride_1.getShouldStateOverride)(network, opts.simulation.baseAccount)
-                ? {
-                    // TODO: if it's an EOA, add the EOA state override data
-                    [params.from]: {
-                        balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-                    },
-                    ...overrideData
-                }
-                : {}
-        }
-    ])
-        .catch((e) => {
-        throw new ProviderError_1.ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url });
-    });
-    const foundTokens = [
-        ...new Set(results.filter((i) => i?.erc === 20).map((i) => (0, ethers_1.getAddress)(i.address)))
-    ];
-    const foundNftTransfersObject = results
-        .filter((i) => i?.erc === 721)
-        .reduce((res, i) => {
-        if (!res[i?.address])
-            res[i?.address] = new Set();
-        res[i.address].add(i.tokenId);
-        return res;
-    }, {});
-    const foundNftTransfers = Object.entries(foundNftTransfersObject).map(([address, id]) => [(0, ethers_1.getAddress)(address), Array.from(id).map((i) => BigInt(i))]);
     // we set the 3rd param to "true" as we don't need state override
     const deploylessTokens = (0, deployless_2.fromDescriptor)(provider, BalanceGetter_json_1.default, true);
     const deploylessNfts = (0, deployless_2.fromDescriptor)(provider, NFTGetter_json_1.default, true);
@@ -183,34 +153,104 @@ async function debugTraceCall(baseAcc, op, network, accountState, overrideData) 
         foundNftTransfers.map(([address]) => address),
         foundNftTransfers.map(([, x]) => x),
         NFT_COLLECTION_LIMIT,
+        // Only the errors are read here, so no metadata is worth fetching
+        '0x',
         factory,
         factoryCalldata,
         simulationOps
     ], deploylessOpts);
     const result = await Promise.all([
-        deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], deploylessOpts),
+        deploylessTokens.call('getBalances', [op.accountAddr, foundTokens, '0x'], deploylessOpts),
         getNftsPromise
     ]);
-    const [[tokensWithErr], [before, after, , , , deltaAddressesMapping]] = result;
+    const [[tokensWithErr], [before, after, , , , , deltaAddressesMapping]] = result;
     const beforeNftCollections = before.collections;
     const afterNftCollections = after.collections;
-    // clean up the provider after usage
-    try {
-        provider.destroy();
-    }
-    catch (e) {
-        console.error(e);
-    }
+    // NFTCollectionBalance is (nfts, error)
+    const collectionError = (collection) => collection?.[1];
     return {
         tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
         nfts: foundNftTransfers.filter((nft, i) => {
-            if (!beforeNftCollections[i][3] || beforeNftCollections[i][3] === '0x')
+            const beforeError = collectionError(beforeNftCollections[i]);
+            if (!beforeError || beforeError === '0x')
                 return true;
-            const foundAfterToken = afterNftCollections.find((t, j) => deltaAddressesMapping[j].toLowerCase() === foundNftTransfers[i][0].toLowerCase());
-            if (!foundAfterToken || !foundAfterToken[0])
+            // The delta array and its addresses mapping are parallel, so the collection
+            // after the simulation sits at the same index as its address
+            const afterIndex = deltaAddressesMapping.findIndex((addr) => addr.toLowerCase() === foundNftTransfers[i][0].toLowerCase());
+            if (afterIndex === -1)
                 return false;
-            return !foundAfterToken[i][3] || foundAfterToken[0][3] === '0x';
+            const afterError = collectionError(afterNftCollections[afterIndex]);
+            return !afterError || afterError === '0x';
         })
     };
+}
+async function debugTraceCall(baseAcc, op, network, accountState, overrideData) {
+    const account = baseAcc.getAccount();
+    const opts = {
+        blockTag: 'latest',
+        from: deploy_2.DEPLOYLESS_SIMULATION_FROM,
+        mode: deployless_2.DeploylessMode.ProxyContract,
+        isEOA: (0, account_1.isBasicAccount)(account, accountState),
+        simulation: {
+            accountOps: [op],
+            baseAccount: baseAcc,
+            state: accountState
+        }
+    };
+    const params = getFunctionParams(account, op, accountState);
+    // we throw on purpose here so the controller receives feedback that
+    // debugTraceCall has actually failed
+    if (!params)
+        throw new Error('cannot run debug_traceCall as getFunctionParams is empty');
+    // initialize a new provider for debug trace call to avoid batching it
+    // as sometimes debug_traceCall gets handled really slowly from the RPCs
+    // and that affects wallet performance
+    const provider = (0, provider_1.getRpcProvider)(network.rpcUrls, network.chainId, network.selectedRpcUrl);
+    try {
+        const trace = await provider.send('debug_traceCall', [
+            {
+                to: params.to,
+                value: (0, ethers_1.toQuantity)(params.value.toString()),
+                data: params.data,
+                from: params.from
+            },
+            'latest',
+            {
+                // we're replacing the custom tracer with the built-in callTracer
+                // because it has broader RPC support. The trade off is that the
+                // data we're pulling from the RPC is a bit bigger compared to the
+                // custom tracer. But at least it works broadly as networks like Base
+                // that use geth only don't support custom tracers, resulting in
+                // bad discovery
+                tracer: 'callTracer',
+                tracerConfig: {
+                    withLog: true
+                },
+                stateOverrides: (0, simulationStateOverride_1.getShouldStateOverride)(network, opts.simulation.baseAccount)
+                    ? {
+                        [params.from]: {
+                            balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+                        },
+                        ...overrideData
+                    }
+                    : {}
+            }
+        ]);
+        const { tokens: foundTokens, nfts: foundNftTransfers } = parseCallTracerResult(trace);
+        return await getDiscoveredAssets(provider, baseAcc, op, network, accountState, foundTokens, foundNftTransfers);
+    }
+    catch (e) {
+        // we do this so we could run finally
+        throw e;
+    }
+    finally {
+        // clean up the provider after usage
+        try {
+            provider.destroy();
+        }
+        catch (e) {
+            console.error(e);
+        }
+    }
 }
 //# sourceMappingURL=debugTraceCall.js.map

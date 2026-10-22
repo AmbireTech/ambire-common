@@ -1,12 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.rollProviderUrlsAndFindWorking = exports.convertToAmbireNetworkFormat = exports.checkIsRpcUrlWorking = exports.mapRelayerNetworkConfigToAmbireNetwork = void 0;
-const ethers_1 = require("ethers");
+const fetchJsonRpcProvider_1 = require("../services/provider/fetchJsonRpcProvider");
 const hardcodedRpcUrls = {
     '11155111': 'https://eth-sepolia.public.blastapi.io'
 };
 const checkIsRpcUrlWorking = async (rpcUrl) => {
-    const provider = new ethers_1.JsonRpcProvider(rpcUrl);
+    const provider = new fetchJsonRpcProvider_1.FetchJsonRpcProvider(rpcUrl);
     try {
         await provider.getBlockNumber();
     }
@@ -19,6 +19,8 @@ const checkIsRpcUrlWorking = async (rpcUrl) => {
 };
 exports.checkIsRpcUrlWorking = checkIsRpcUrlWorking;
 const rollProviderUrlsAndFindWorking = async (rpcUrls, index) => {
+    if (!rpcUrls[index])
+        return null;
     const isProviderWorking = await checkIsRpcUrlWorking(rpcUrls[index]);
     if (isProviderWorking) {
         return rpcUrls[index];
@@ -92,7 +94,7 @@ exports.convertToAmbireNetworkFormat = convertToAmbireNetworkFormat;
  * default values that need to be set for the so called "predefined" networks.
  */
 const mapRelayerNetworkConfigToAmbireNetwork = (chainId, relayerNetwork) => {
-    const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas, predefinedConfigVersion, rpcUrls, iconUrls, platformId, has7702, disabledByDefault, rpcNoStateOverride } = relayerNetwork;
+    const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas, predefinedConfigVersion, rpcUrls, iconUrls, platformId, has7702, disabledByDefault, rpcNoStateOverride, refreshInterval } = relayerNetwork;
     const { native: { symbol: nativeAssetSymbol, name: nativeAssetName, coingeckoId: nativeAssetId, wrapped: { address: wrappedAddr }, oldNativeAssetSymbols }, smartAccounts, feeOptions: incomingFeeOptions } = relayerNetwork;
     const is7702Enabled = has7702 || false;
     const hasRelayer = smartAccounts?.hasRelayer ?? false;
@@ -108,9 +110,6 @@ const mapRelayerNetworkConfigToAmbireNetwork = (chainId, relayerNetwork) => {
         }),
         ...(typeof incomingFeeOptions.baseFeeMaxChangeDenominator === 'number' && {
             baseFeeMaxChangeDenominator: BigInt(incomingFeeOptions.baseFeeMaxChangeDenominator)
-        }),
-        ...(typeof incomingFeeOptions.feeIncrease === 'number' && {
-            feeIncrease: BigInt(incomingFeeOptions.feeIncrease)
         })
     };
     const erc4337 = {
@@ -155,6 +154,9 @@ const mapRelayerNetworkConfigToAmbireNetwork = (chainId, relayerNetwork) => {
         hasRelayer,
         suggestedRpcUrl: relayerNetwork.selectedRpcUrl,
         suggestedRpcBatchCount: relayerNetwork.selectedRpcBatchCount,
+        refreshInterval: typeof refreshInterval === 'number' && Number.isFinite(refreshInterval) && refreshInterval > 0
+            ? refreshInterval
+            : undefined,
         wrappedAddr,
         oldNativeAssetSymbols,
         feeOptions,

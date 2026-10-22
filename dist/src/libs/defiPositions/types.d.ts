@@ -3,7 +3,10 @@ export declare enum AssetType {
     Liquidity = 0,
     Collateral = 1,
     Borrow = 2,
-    Reward = 3
+    Reward = 3,
+    Margin = 4,
+    Perpetual = 5,
+    Prediction = 6
 }
 export declare enum DeFiPositionsError {
     AssetPriceError = "AssetPriceError",

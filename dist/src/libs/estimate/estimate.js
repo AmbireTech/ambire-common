@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getEstimation = getEstimation;
 exports.getEstimationSummary = getEstimationSummary;
+exports.getGasLimitWithOverheadForSelfEOA = getGasLimitWithOverheadForSelfEOA;
+exports.getGasLimitWithOverhead = getGasLimitWithOverhead;
 const ambireEstimation_1 = require("./ambireEstimation");
 const estimateBundler_1 = require("./estimateBundler");
 const providerEstimateGas_1 = require("./providerEstimateGas");
@@ -18,7 +20,9 @@ async function getEstimation(baseAcc, accountState, op, network, provider, feeTo
     const ambireEstimation = (0, ambireEstimation_1.ambireEstimateGas)(baseAcc, accountState, op, network, provider, feeTokens, nativeToCheck);
     let bundlerGasPrices;
     const bundlerEstimation = async () => {
-        if (!baseAcc.supportsBundlerEstimation() || !network.erc4337.hasBundlerSupport)
+        if (op.meta?.isSafeDeploy ||
+            !baseAcc.supportsBundlerEstimation() ||
+            !network.erc4337.hasBundlerSupport)
             return null;
         const gasPrice = await (0, estimateBundler_1.fetchBundlerGasPrice)(baseAcc, network, switcher);
         if (gasPrice instanceof Error)
@@ -64,5 +68,31 @@ function getEstimationSummary(estimation) {
         bundlerGasPrices: estimation.bundlerGasPrices,
         updatedAt: Date.now()
     };
+}
+/**
+ * This extra gas limit is 12% as 10% might not be enough for swaps
+ * but 20% makes most actions look too expensive
+ */
+function getOverhead(gasLimit) {
+    return gasLimit + gasLimit / 8n;
+}
+/**
+ * Push extra gas limit for EOA / EOA7702 accounts to avoid OOG.
+ * Also, push this extra gas limit if the accountOp isn't a single call with ETH send
+ * which is fixed to 21k and no extra gas limit is needed
+ */
+function getGasLimitWithOverheadForSelfEOA(gasLimit, calls) {
+    if (calls && calls.length === 1) {
+        const call = calls[0];
+        if (call.data === '0x' && call.value > 0n)
+            return gasLimit;
+    }
+    return getOverhead(gasLimit);
+}
+/**
+ * Push extra gas limit for EOA broadcast when the account is smart.
+ */
+function getGasLimitWithOverhead(gasLimit) {
+    return getOverhead(gasLimit);
 }
 //# sourceMappingURL=estimate.js.map

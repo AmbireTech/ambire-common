@@ -13,6 +13,8 @@ exports.getPendingBlockTagIfSupported = getPendingBlockTagIfSupported;
  * networks is faster than Ethereum so it shouldn't impact the features
  */
 function getPendingBlockTagIfSupported(network) {
+    if (network.isColibriEnabled)
+        return 'latest';
     return network.chainId === 1n ? 'pending' : 'latest';
 }
 //# sourceMappingURL=getBlockTag.js.map

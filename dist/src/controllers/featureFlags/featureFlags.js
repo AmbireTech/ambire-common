@@ -37,6 +37,11 @@ class FeatureFlagsController extends eventEmitter_1.default {
         await this.#storage.set('flags', this.#flags);
         this.emitUpdate();
     }
+    async setFeatureFlags(flags) {
+        this.#flags = { ...this.#flags, ...flags };
+        await this.#storage.set('flags', this.#flags);
+        this.emitUpdate();
+    }
     get flags() {
         return this.#flags;
     }

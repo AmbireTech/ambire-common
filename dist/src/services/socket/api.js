@@ -4,10 +4,11 @@ exports.SocketAPI = exports.normalizeIncomingSocketToken = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const SwapAndBridgeProviderApiError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeProviderApiError"));
+const networks_1 = require("../../consts/networks");
+const fee_1 = require("../../libs/swapAndBridge/fee");
 const swapAndBridge_1 = require("../../libs/swapAndBridge/swapAndBridge");
-const constants_1 = require("../squid/constants");
-const constants_2 = require("./constants");
-const convertZeroAddressToNullAddressIfNeeded = (addr) => addr === constants_2.ZERO_ADDRESS ? constants_2.NULL_ADDRESS : addr;
+const constants_1 = require("./constants");
+const convertZeroAddressToNullAddressIfNeeded = (addr) => addr === constants_1.ZERO_ADDRESS ? constants_1.NULL_ADDRESS : addr;
 const normalizeIncomingSocketTokenAddress = (address) => 
 // incoming token addresses from Socket are all lowercased
 (0, ethers_1.getAddress)(
@@ -59,7 +60,7 @@ class SocketAPI {
     }
     /** disable explicitly citrea for socket */
     areChainsSupported({ fromChainId, toChainId }) {
-        return fromChainId !== constants_1.CITREA_CHAIN_ID && toChainId !== constants_1.CITREA_CHAIN_ID;
+        return fromChainId !== Number(networks_1.CITREA_CHAIN_ID) && toChainId !== Number(networks_1.CITREA_CHAIN_ID);
     }
     /**
      * Processes Socket API responses and throws custom errors for various
@@ -126,7 +127,7 @@ class SocketAPI {
             errorPrefix: 'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
         });
         const chains = response
-            .filter((c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== constants_1.CITREA_CHAIN_ID)
+            .filter((c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== Number(networks_1.CITREA_CHAIN_ID))
             .map(({ chainId }) => ({
             chainId
         }));
@@ -149,12 +150,12 @@ class SocketAPI {
         // Exception for Optimism, strip out the legacy ETH address
         // TODO: Remove when Socket removes the legacy ETH address from their response
         if (toChainId === 10)
-            tokens = tokens.filter((token) => token.address !== constants_2.ETH_ON_OPTIMISM_LEGACY_ADDRESS);
+            tokens = tokens.filter((token) => token.address !== constants_1.ETH_ON_OPTIMISM_LEGACY_ADDRESS);
         // Exception for Ethereum, duplicate ETH tokens are incoming from the API.
         // One is with the `ZERO_ADDRESS` and one with `NULL_ADDRESS`, both for ETH.
         // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
         if (toChainId === 1)
-            tokens = tokens.filter((token) => token.address !== constants_2.ZERO_ADDRESS);
+            tokens = tokens.filter((token) => token.address !== constants_1.ZERO_ADDRESS);
         tokens = tokens.map(exports.normalizeIncomingSocketToken);
         return (0, swapAndBridge_1.addCustomTokensIfNeeded)({ chainId: toChainId, tokens });
     }
@@ -171,7 +172,7 @@ class SocketAPI {
             return null;
         return (0, exports.normalizeIncomingSocketToken)(response.tokens[chainId][0]);
     }
-    async quote({ fromAsset, toAsset, fromChainId, fromTokenAddress, toChainId, toTokenAddress, fromAmount, userAddress, isWrapOrUnwrap, accountNativeBalance, nativeSymbol }) {
+    async quote({ fromAsset, toAsset, fromChainId, fromTokenAddress, toChainId, toTokenAddress, fromAmount, userAddress, isWrapOrUnwrap, accountNativeBalance, nativeSymbol, feePercent }) {
         if (!fromAsset || !toAsset)
             throw new SwapAndBridgeProviderApiError_1.default('Quote requested, but missing required params. Error details: <from token details are missing>');
         const params = new URLSearchParams({
@@ -185,11 +186,16 @@ class SocketAPI {
             useInbox: 'true',
             enableManual: 'true'
         });
-        const feeTakerAddress = constants_2.AMBIRE_FEE_TAKER_ADDRESSES[fromChainId];
-        const shouldIncludeConvenienceFee = !!feeTakerAddress && !isWrapOrUnwrap && !(0, swapAndBridge_1.isNoFeeToken)(fromChainId, fromTokenAddress);
-        if (shouldIncludeConvenienceFee) {
+        const feeTakerAddress = constants_1.AMBIRE_FEE_TAKER_ADDRESSES[fromChainId];
+        const feeExemptionReason = (0, fee_1.getFeeExemptionReason)({
+            isWrapOrUnwrap,
+            isFeeExemptToken: (0, swapAndBridge_1.isNoFeeToken)(fromChainId, fromTokenAddress),
+            isFeeCollectionAvailable: !!feeTakerAddress
+        });
+        const shouldIncludeConvenienceFee = feePercent > 0 && !feeExemptionReason;
+        if (shouldIncludeConvenienceFee && feeTakerAddress) {
             params.append('feeTakerAddress', feeTakerAddress);
-            params.append('feeBps', (constants_2.FEE_PERCENT * 100).toString());
+            params.append('feeBps', (feePercent * 100).toString());
         }
         const url = `${this.#bungeQuoteApiUrl}/api/v1/bungee/quote?${params.toString()}`;
         const response = await this.#handleResponse({
@@ -235,7 +241,7 @@ class SocketAPI {
                             displayName: route.routeDetails.name,
                             icon: route.routeDetails.logoURI
                         },
-                        protocolFees: constants_2.PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(route.routeDetails.name) &&
+                        protocolFees: constants_1.PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(route.routeDetails.name) &&
                             route.routeDetails.routeFee &&
                             route.routeDetails.routeFee.amount !== '0'
                             ? {
@@ -267,6 +273,7 @@ class SocketAPI {
                     ...steps[0],
                     providerId: 'socket',
                     outputValueInUsd: route.output.valueInUsd,
+                    outputValueAfterGasInUsd: route.output.effectiveReceivedInUsd,
                     routeId: route.quoteId,
                     disabled,
                     disabledReason,
@@ -290,6 +297,7 @@ class SocketAPI {
                     txData: 'txData' in route ? route.txData : undefined,
                     rawRoute: '', // not needed for socket,
                     withConvenienceFee: shouldIncludeConvenienceFee,
+                    feeExemptionReason,
                     usedBridgeNames: fromChainId !== route.output.token.chainId
                         ? [route.isIntent ? 'bungeeAutoRoute' : route.routeDetails.name.toLowerCase()]
                         : [route.isIntent ? 'bungeeAutoRoute' : '']

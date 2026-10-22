@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.validateSendTransferAmount = exports.validateSendTransferAddress = exports.validateAddAuthSignerAddress = exports.isValidHostname = exports.isValidPassword = exports.isValidCode = exports.isEmail = exports.validateAddress = void 0;
 exports.isValidURL = isValidURL;
+exports.getTimeAgo = getTimeAgo;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const isEmail_1 = tslib_1.__importDefault(require("validator/lib/isEmail"));
@@ -49,9 +50,9 @@ const validateAddAuthSignerAddress = (address, selectedAcc) => {
     return { severity: 'success', message: '' };
 };
 exports.validateAddAuthSignerAddress = validateAddAuthSignerAddress;
-const NOT_IN_ADDRESS_BOOK_MESSAGE = "This address isn't in your Address Book. Double-check the details before confirming.";
 const FIRST_TIME_SEND_MESSAGE = 'First time sending to this address.';
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE = FIRST_TIME_SEND_MESSAGE; // same same as above, but keep it separate just in case
+const VIEW_ONLY_RECIPIENT_MESSAGE = "This account is view-only in Ambire, so you can't move funds out of it from here. Make sure you can access it before you send.";
 // Keep poisoning warnings readable with compact address previews.
 // We size the preview based on the strongest symmetric part of the match:
 // 4-left/4-right uses 0x + 6...6, while stronger matches such as 5-left/5-right,
@@ -96,7 +97,7 @@ function getTimeAgo(date) {
     const diffYears = Math.round(diffMonths / 12);
     return `${diffYears} ${diffYears === 1 ? 'year' : 'years'} ago`;
 }
-const validateSendTransferAddress = (address, selectedAccAddr, addressConfirmed, isRecipientAddressUnknown, isRecipientHumanizerKnownTokenOrSmartContract, isDomain, isRecipientDomainResolving, networks, accountStates, recepientAccount, chainId, isRecipientAddressFirstTimeSend, lastRecipientTransactionDate, addressPoisoningMatch) => {
+const validateSendTransferAddress = (address, selectedAccAddr, addressConfirmed, isRecipientAddressUnknown, isRecipientHumanizerKnownTokenOrSmartContract, isRecipientDomainResolving, networks, accountStates, recepientAccount, chainId, isRecipientAddressFirstTimeSend, lastRecipientTransactionDate, addressPoisoningMatch, recipientDomainAddressChange, isRecipientAddressBlacklisted, isRecipientAddressViewOnly) => {
     // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
     if (!(0, address_1.isValidAddress)(address) || isRecipientDomainResolving) {
         return {
@@ -104,74 +105,119 @@ const validateSendTransferAddress = (address, selectedAccAddr, addressConfirmed,
             severity: 'success'
         };
     }
-    if (address.toLowerCase() === selectedAccAddr.toLowerCase()) {
-        return {
-            message: "You're about to send funds back to yourself.",
-            severity: 'warning'
-        };
-    }
-    // check if the account is supported on the receiving network
-    if (chainId) {
-        const accountNetworks = (0, networks_1.getSupportedNetworks)(networks, accountStates, recepientAccount);
-        const foundNetwork = accountNetworks.find((n) => n.chainId === chainId);
-        if (foundNetwork && foundNetwork.isNotSupported && foundNetwork.notSupportedReason) {
+    // The single source of truth for both the message under the input and the hold-to-proceed state
+    // of the buttons, so a check can't require a hold without also explaining why.
+    // All the checks run and the most important result that applies decides everything:
+    // 1. an error - it disables the buttons of the form
+    // 2. a warning that requires a hold - the user must hold the button to proceed
+    // 3. a warning that doesn't require a hold
+    // 4. a success message
+    // So a plain warning can't hide a hold. The order of the checks below only decides between
+    // results of the same importance (the first one wins).
+    const checks = [
+        // A known scam address is the most severe problem, so it takes priority over every other message.
+        // The severity is 'error' so that the buttons of the form stay disabled - sending to a known scam
+        // address is never something we let the user proceed with.
+        () => {
+            if (!isRecipientAddressBlacklisted)
+                return undefined;
+            return {
+                message: 'This address is known for stealing funds. Anything you send to it will be lost.',
+                severity: 'error'
+            };
+        },
+        () => {
+            if (!isRecipientHumanizerKnownTokenOrSmartContract)
+                return undefined;
+            return {
+                message: 'You are trying to send tokens to a smart contract. Doing so would burn them.',
+                severity: 'error'
+            };
+        },
+        // A domain the user sent to before now resolves to a different address - it may have expired and
+        // been re-pointed.
+        () => {
+            if (!recipientDomainAddressChange)
+                return undefined;
+            return {
+                message: 'This name now resolves to a different address than the last time you sent to it. Verify the new recipient before proceeding.',
+                severity: 'warning',
+                shouldHold: true
+            };
+        },
+        // poisoning detected - require hold-to-proceed as an additional safety step
+        () => {
+            if (!addressPoisoningMatch)
+                return undefined;
+            return {
+                message: getAddressPoisoningWarningMessage(formatAddressPoisoningMatchForMessage(addressPoisoningMatch)),
+                severity: 'warning',
+                shouldHold: true
+            };
+        },
+        () => {
+            if (!isRecipientAddressViewOnly)
+                return undefined;
+            return {
+                message: VIEW_ONLY_RECIPIENT_MESSAGE,
+                severity: 'warning',
+                shouldHold: true
+            };
+        },
+        () => {
+            if (address.toLowerCase() !== selectedAccAddr.toLowerCase())
+                return undefined;
+            return {
+                message: "You're about to send funds back to yourself.",
+                severity: 'warning'
+            };
+        },
+        // check if the account is supported on the receiving network
+        () => {
+            if (!chainId)
+                return undefined;
+            const accountNetworks = (0, networks_1.getSupportedNetworks)(networks, accountStates, recepientAccount);
+            const foundNetwork = accountNetworks.find((n) => n.chainId === chainId);
+            if (!foundNetwork || !foundNetwork.isNotSupported || !foundNetwork.notSupportedReason) {
+                return undefined;
+            }
             return {
                 message: foundNetwork.notSupportedReason,
                 severity: 'warning'
             };
+        },
+        // The first time sending to an unknown address requires a hold until the user agrees. The
+        // message stays the same after that, only the hold is released.
+        () => {
+            if (!isRecipientAddressFirstTimeSend)
+                return undefined;
+            return {
+                message: isRecipientAddressUnknown
+                    ? FIRST_TIME_SEND_MESSAGE
+                    : FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE,
+                severity: 'warning',
+                shouldHold: isRecipientAddressUnknown && !addressConfirmed
+            };
+        },
+        () => {
+            if (!lastRecipientTransactionDate)
+                return undefined;
+            return {
+                message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`,
+                severity: 'success'
+            };
         }
-    }
-    if (isRecipientHumanizerKnownTokenOrSmartContract) {
-        return {
-            message: 'You are trying to send tokens to a smart contract. Doing so would burn them.',
-            severity: 'error'
-        };
-    }
-    if (addressPoisoningMatch) {
-        return {
-            message: getAddressPoisoningWarningMessage(formatAddressPoisoningMatchForMessage(addressPoisoningMatch)),
-            severity: 'warning'
-        };
-    }
-    if (isRecipientAddressFirstTimeSend) {
-        let message = isRecipientAddressUnknown
-            ? FIRST_TIME_SEND_MESSAGE
-            : FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE;
-        if (lastRecipientTransactionDate) {
-            message = `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`;
-        }
-        return {
-            message,
-            severity: lastRecipientTransactionDate ? 'success' : 'warning'
-        };
-    }
-    if (isRecipientAddressUnknown &&
-        isRecipientAddressFirstTimeSend &&
-        !addressConfirmed &&
-        !isDomain &&
-        !isRecipientDomainResolving) {
-        return {
-            message: NOT_IN_ADDRESS_BOOK_MESSAGE,
-            severity: 'error'
-        };
-    }
-    if (isRecipientAddressUnknown &&
-        isRecipientAddressFirstTimeSend &&
-        !addressConfirmed &&
-        isDomain &&
-        !isRecipientDomainResolving) {
-        return {
-            message: NOT_IN_ADDRESS_BOOK_MESSAGE,
-            severity: 'error'
-        };
-    }
-    if (lastRecipientTransactionDate) {
-        return {
-            message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`,
-            severity: 'success'
-        };
-    }
-    return { severity: 'success', message: '' };
+    ];
+    const relevantChecks = checks
+        .map((check) => check())
+        .filter((result) => !!result);
+    return (relevantChecks.find((result) => result.severity === 'error') ||
+        relevantChecks.find((result) => result.severity === 'warning' && result.shouldHold) ||
+        relevantChecks.find((result) => result.severity === 'warning') ||
+        relevantChecks.find((result) => result.severity === 'success') || {
+        severity: 'success',
+        message: ''
+    });
 };
 exports.validateSendTransferAddress = validateSendTransferAddress;
 const validateSendTransferAmount = (amount, selectedAsset) => {
@@ -212,7 +258,7 @@ const validateSendTransferAmount = (amount, selectedAsset) => {
             }
         }
     }
-    catch (e) {
+    catch {
         // Keep original behavior but avoid adding new console usage beyond existing
         // callers may log if needed; return a warning indicating invalid amount.
         return {

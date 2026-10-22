@@ -1,5 +1,5 @@
 import { Fetch } from '../../interfaces/fetch';
-import { SocketAPIToken, SwapAndBridgeRoute, SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge';
+import { SocketAPIToken, SwapAndBridgeRoute, SwapAndBridgeRouteStatusResult, SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge';
 export declare class SocketAPIMock {
     #private;
     id: string;
@@ -12,6 +12,10 @@ export declare class SocketAPIMock {
     getHealth(): Promise<boolean>;
     updateHealth(): Promise<void>;
     resetHealth(): void;
+    getProvidersInfo(): {
+        id: string;
+        name: string;
+    }[];
     getSupportedChains(): Promise<{
         chainId: bigint;
     }[]>;
@@ -19,6 +23,10 @@ export declare class SocketAPIMock {
         fromChainId: number;
         toChainId: number;
     }): Promise<SocketAPIToken[]>;
+    getToken({ address, chainId }: {
+        address: string;
+        chainId: number;
+    }): Promise<SocketAPIToken>;
     quote({ fromChainId, fromTokenAddress, toChainId, toTokenAddress, fromAmount, userAddress }: {
         fromChainId: number;
         fromTokenAddress: string;
@@ -369,9 +377,6 @@ export declare class SocketAPIMock {
     }): Promise<SwapAndBridgeSendTxRequest>;
     getRouteStatus({ txHash }: {
         txHash: string;
-    }): Promise<{
-        status: string;
-        txnId: string;
-    }>;
+    }): Promise<SwapAndBridgeRouteStatusResult>;
 }
 //# sourceMappingURL=socketApiMock.d.ts.map

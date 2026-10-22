@@ -1,8 +1,7 @@
 "use strict";
 // @ts-nocheck
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSafeTypedDataForIsValidSignature = exports.getSafeV1TypedData = exports.getSafeTypedData = exports.toPersonalSignHex = exports.wrapCounterfactualSign = exports.get7702UserOpTypedData = exports.getTypedData = exports.getAmbireReadableTypedData = exports.adaptTypedMessageForMetaMaskSigUtil = exports.wrapWallet = exports.wrapStandard = exports.wrapUnprotected = exports.EIP_1271_NOT_SUPPORTED_BY = void 0;
-exports.verifyMessage = verifyMessage;
+exports.getSafeMessageTypedData = exports.getEIP712Hash = exports.getSafeTypedDataForIsValidSignature = exports.getSafeV1TypedData = exports.getSafeTypedData = exports.wrapCounterfactualSign = exports.get7702UserOpTypedData = exports.getTypedData = exports.adaptTypedMessageForMetaMaskSigUtil = exports.doesEIP712MessageContainAddress = exports.wrapWallet = exports.wrapStandard = exports.wrapUnprotected = exports.isCallToSelfOrAmbireOp = exports.AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE = exports.EIP_1271_NOT_SUPPORTED_BY = void 0;
 exports.getExecuteSignature = getExecuteSignature;
 exports.getPlainTextSignature = getPlainTextSignature;
 exports.getEIP712Signature = getEIP712Signature;
@@ -12,16 +11,12 @@ exports.getAuthorizationHash = getAuthorizationHash;
 exports.get7702Sig = get7702Sig;
 exports.getVerifyMessageSignature = getVerifyMessageSignature;
 exports.getAppFormatted = getAppFormatted;
-const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
-const signature_validator_1 = require("@ambire/signature-validator");
 const eth_sig_util_1 = require("@metamask/eth-sig-util");
 const addresses_1 = require("../../consts/addresses");
-const isSameAddr_1 = tslib_1.__importDefault(require("../../utils/isSameAddr"));
 const stripHexPrefix_1 = require("../../utils/stripHexPrefix");
 const accountOp_1 = require("../accountOp/accountOp");
-const errorDecoder_1 = require("../errorDecoder");
-const helpers_1 = require("../errorDecoder/helpers");
+const richJson_1 = require("../richJson/richJson");
 const userOperation_1 = require("../userOperation/userOperation");
 const utils_1 = require("./utils");
 // EIP6492 signature ends in magicBytes, which ends with a 0x92,
@@ -40,6 +35,20 @@ exports.EIP_1271_NOT_SUPPORTED_BY = [
     'hyperliquid.xyz',
     'bitrefill.com'
 ];
+exports.AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE = 'Signing an AmbireOperation is not allowed';
+/**
+ * Check if the typedData's intention is to target the current account
+ */
+const isCallToSelfOrAmbireOp = (typedData, account) => {
+    const isAmbireOp = typedData.primaryType === 'AmbireOperation' || 'AmbireOperation' in typedData.types;
+    const isAmbire4337Op = typedData.primaryType === 'Ambire4337AccountOp' || 'Ambire4337AccountOp' in typedData.types;
+    const isAmbireExecuteOp = typedData.primaryType === 'AmbireExecuteAccountOp' ||
+        'AmbireExecuteAccountOp' in typedData.types;
+    const verifyingContract = typedData.domain.verifyingContract;
+    const isVerifyingContractSameAsAccount = verifyingContract && account && verifyingContract.toLowerCase() === account.addr.toLowerCase();
+    return isAmbireOp || isAmbire4337Op || isAmbireExecuteOp || isVerifyingContractSameAsAccount;
+};
+exports.isCallToSelfOrAmbireOp = isCallToSelfOrAmbireOp;
 /**
  * For Unprotected signatures, we need to append 00 at the end
  * for ambire to recognize it
@@ -68,6 +77,9 @@ const wrapWallet = (signature, walletAddr) => {
     return `${signature}${wallet32bytes}02`;
 };
 exports.wrapWallet = wrapWallet;
+const signWithHardwareWalletSigningRequest = (request, sign, withHardwareWalletSigningRequest) => (withHardwareWalletSigningRequest ? withHardwareWalletSigningRequest(request, sign) : sign());
+const doesEIP712MessageContainAddress = (message, address) => (0, richJson_1.stringify)(message).toLowerCase().includes(address.toLowerCase());
+exports.doesEIP712MessageContainAddress = doesEIP712MessageContainAddress;
 const adaptTypedMessageForMetaMaskSigUtil = (typedMessage) => {
     return {
         ...typedMessage,
@@ -93,57 +105,6 @@ const adaptTypedMessageForMetaMaskSigUtil = (typedMessage) => {
     };
 };
 exports.adaptTypedMessageForMetaMaskSigUtil = adaptTypedMessageForMetaMaskSigUtil;
-const getAmbireReadableTypedData = (chainId, verifyingAddr, v1Execute) => {
-    const domain = {
-        name: 'Ambire',
-        version: '1',
-        chainId: chainId.toString(),
-        verifyingContract: verifyingAddr,
-        salt: (0, ethers_1.toBeHex)(0, 32)
-    };
-    const types = {
-        EIP712Domain: [
-            {
-                name: 'name',
-                type: 'string'
-            },
-            {
-                name: 'version',
-                type: 'string'
-            },
-            {
-                name: 'chainId',
-                type: 'uint256'
-            },
-            {
-                name: 'verifyingContract',
-                type: 'address'
-            },
-            {
-                name: 'salt',
-                type: 'bytes32'
-            }
-        ],
-        Calls: [
-            { name: 'to', type: 'address' },
-            { name: 'value', type: 'uint256' },
-            { name: 'data', type: 'bytes' }
-        ],
-        AmbireReadableOperation: [
-            { name: 'account', type: 'address' },
-            { name: 'chainId', type: 'uint256' },
-            { name: 'nonce', type: 'uint256' },
-            { name: 'calls', type: 'Calls[]' }
-        ]
-    };
-    return {
-        domain,
-        types,
-        message: v1Execute,
-        primaryType: 'AmbireOperation'
-    };
-};
-exports.getAmbireReadableTypedData = getAmbireReadableTypedData;
 /**
  * Return the typed data for EIP-712 sign
  */
@@ -277,112 +238,36 @@ const wrapCounterfactualSign = (signature, creation) => {
     return (coder.encode(['address', 'bytes', 'bytes'], [creation.factoryAddr, factoryCallData, signature]) + magicBytes);
 };
 exports.wrapCounterfactualSign = wrapCounterfactualSign;
-/**
- * Verifies the signature of a message using the provided signer and signature
- * via a "magic" universal validator contract using the provided provider to
- * verify the signature on-chain. The contract deploys itself within the
- * `eth_call`, tries to verify the signature using ERC-6492, ERC-1271, and
- * `ecrecover`, and returns the value to the function.
- *
- * Note: you only need to pass one of: `message` or `typedData`
- */
-async function verifyMessage({ provider, signer, signature, message, authorization, typedData }) {
-    let finalDigest;
-    if (message) {
-        try {
-            finalDigest = (0, ethers_1.hashMessage)(message);
-            if (!finalDigest)
-                throw Error('Hashing the message returned no (falsy) result.');
-        }
-        catch (e) {
-            throw Error(`Preparing the just signed (standard) message for validation failed. Please try again or contact Ambire support if the issue persists. Error details: ${e?.message || 'missing'}`);
-        }
-    }
-    else if (authorization) {
-        finalDigest = authorization;
-    }
-    else {
-        // According to the Props definition, either `message` or `typedData` must be provided.
-        // However, TypeScript struggles with this `else` condition, incorrectly treating `typedData` as undefined.
-        // To prevent TypeScript from complaining, we've added this runtime validation.
-        if (!typedData) {
-            throw new Error("Either 'message' or 'typedData' must be provided.");
-        }
-        try {
-            // the final digest for AmbireReadableOperation is the execute hash
-            // as it's wrapped in mode.standard and onchain gets transformed to
-            // an AmbireOperation
-            if ('AmbireReadableOperation' in typedData.types) {
-                const ambireReadableOperation = typedData.message;
-                finalDigest = (0, ethers_1.hexlify)((0, accountOp_1.getSignableHash)(ambireReadableOperation.addr, ambireReadableOperation.chainId, ambireReadableOperation.nonce, ambireReadableOperation.calls.map(accountOp_1.callToTuple)));
-            }
-            else {
-                // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
-                finalDigest = (0, ethers_1.hexlify)(eth_sig_util_1.TypedDataUtils.eip712Hash((0, exports.adaptTypedMessageForMetaMaskSigUtil)({ ...typedData }), eth_sig_util_1.SignTypedDataVersion.V4));
-            }
-            if (!finalDigest)
-                throw Error('Hashing the typedData returned no (falsy) result.');
-        }
-        catch (e) {
-            throw Error(`Preparing the just signed (typed data) message for validation failed. Please try again or contact Ambire support if the issue persists. Error details: ${e?.message || 'missing'}`);
-        }
-    }
-    // this 'magic' universal validator contract will deploy itself within the eth_call, try to verify the signature using
-    // ERC-6492, ERC-1271 and ecrecover, and return the value to us
-    const coder = new ethers_1.AbiCoder();
-    let callResult;
-    try {
-        const deploylessRes = await (0, signature_validator_1.verifyMessage)({
-            signer,
-            finalDigest,
-            signature,
-            provider: provider
-        });
-        if (deploylessRes === true)
-            callResult = '0x01';
-        else if (deploylessRes === false)
-            callResult = '0x00';
-        else
-            callResult = deploylessRes;
-    }
-    catch (e) {
-        const decoded = (0, errorDecoder_1.decodeError)(e);
-        const moreDetails = (0, helpers_1.getErrorCodeStringFromReason)(decoded.reason || e?.message || '');
-        throw new Error(`Validating the just signed message failed. Please try again or contact Ambire support if the issue persists. Error details: UniversalValidator call failed (${decoded.type}).${moreDetails ? `${moreDetails}` : ''}`);
-    }
-    if (callResult === '0x01')
-        return true;
-    if (callResult === '0x00')
-        return false;
-    if (callResult.startsWith('0x08c379a0'))
-        throw new Error(`Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support. Error details:: ${coder.decode(['string'], `0x${callResult.slice(10)}`)[0]}`);
-    throw new Error(`Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support. Error details: unexpected result from the UniversalValidator: ${callResult}`);
-}
+// Either `message` or `typedData` must be provided - never both.
 // Authorize the execute calls according to the version of the smart account
-async function getExecuteSignature(network, accountOp, accountState, signer) {
+async function getExecuteSignature(network, accountOp, accountState, signer, provider) {
+    const ctx = provider ? { chainId: network.chainId, provider } : undefined;
     // if we're authorizing calls for a v1 contract, we do a sign message
     // on the hash of the calls
     if (!accountState.isV2) {
         const message = (0, ethers_1.hexlify)((0, accountOp_1.accountOpSignableHash)(accountOp, network.chainId));
-        return (0, exports.wrapStandard)(await signer.signMessage(message));
+        return (0, exports.wrapStandard)(await signer.signMessage(message, ctx));
     }
     // txns for v2 contracts are always eip-712 so we put the hash of the calls
     // in eip-712 format
     const typedData = (0, exports.getTypedData)(network.chainId, accountState.accountAddr, (0, ethers_1.hexlify)((0, accountOp_1.accountOpSignableHash)(accountOp, network.chainId)));
-    return (0, exports.wrapStandard)(await signer.signTypedData(typedData));
+    return (0, exports.wrapStandard)(await signer.signTypedData(typedData, ctx));
 }
-async function getPlainTextSignature(messageHex, network, account, accountState, signer, isOG = false) {
+async function getPlainTextSignature(messageHex, network, account, accountState, signer, isOG = false, withHardwareWalletSigningRequest, provider) {
     const dedicatedToOneSA = signer.key.dedicatedToOneSA;
+    const ctx = provider ? { chainId: network.chainId, provider } : undefined;
     if (!!account.safeCreation) {
         // Safe always signs a typed data, even if plain sig
-        const typedData = (0, exports.getSafeTypedDataForIsValidSignature)(network.chainId, account.addr, (0, ethers_1.hashMessage)((0, ethers_1.getBytes)(messageHex)));
+        const typedData = (0, exports.getSafeMessageTypedData)(messageHex, network.chainId, account.addr);
         return {
-            signature: (await signer.signTypedData(typedData)),
-            hash: `0x${eth_sig_util_1.TypedDataUtils.eip712Hash((0, exports.adaptTypedMessageForMetaMaskSigUtil)({ ...typedData }), eth_sig_util_1.SignTypedDataVersion.V4).toString('hex')}`
+            signature: (await signWithHardwareWalletSigningRequest({ type: 'eip-712', data: typedData }, () => signer.signTypedData(typedData, ctx), withHardwareWalletSigningRequest)),
+            hash: (0, exports.getEIP712Hash)(typedData)
         };
     }
     if (!account.creation)
-        return { signature: (await signer.signMessage(messageHex)) };
+        return {
+            signature: (await signWithHardwareWalletSigningRequest({ type: 'message', data: { message: messageHex } }, () => signer.signMessage(messageHex, ctx), withHardwareWalletSigningRequest))
+        };
     if (!accountState.isV2) {
         const lowercaseHexAddrWithout0x = (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(account.addr.toLowerCase().slice(2)));
         const checksummedHexAddrWithout0x = (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(account.addr.slice(2)));
@@ -398,11 +283,15 @@ async function getPlainTextSignature(messageHex, network, account, accountState,
             !isChecksummedHexAddressInMessage) {
             throw new Error('Signing messages is disallowed for v1 accounts. Please contact support to proceed');
         }
-        return { signature: (0, exports.wrapUnprotected)(await signer.signMessage(messageHex)) };
+        return {
+            signature: (0, exports.wrapUnprotected)(await signWithHardwareWalletSigningRequest({ type: 'message', data: { message: messageHex } }, () => signer.signMessage(messageHex, ctx), withHardwareWalletSigningRequest))
+        };
     }
     // if it's safe, we proceed
     if (dedicatedToOneSA) {
-        return { signature: (0, exports.wrapUnprotected)(await signer.signMessage(messageHex)) };
+        return {
+            signature: (0, exports.wrapUnprotected)(await signWithHardwareWalletSigningRequest({ type: 'message', data: { message: messageHex } }, () => signer.signMessage(messageHex, ctx), withHardwareWalletSigningRequest))
+        };
     }
     // in case of only_standard priv key, we transform the data
     // for signing to EIP-712. This is because the key is not labeled safe
@@ -411,9 +300,12 @@ async function getPlainTextSignature(messageHex, network, account, accountState,
     // could be phishing him into approving an Ambire Op without him
     // knowing
     const typedData = (0, exports.getTypedData)(network.chainId, account.addr, (0, ethers_1.hashMessage)((0, ethers_1.getBytes)(messageHex)));
-    return { signature: (0, exports.wrapStandard)(await signer.signTypedData(typedData)) };
+    return {
+        signature: (0, exports.wrapStandard)(await signWithHardwareWalletSigningRequest({ type: 'eip-712', data: typedData }, () => signer.signTypedData(typedData, ctx), withHardwareWalletSigningRequest))
+    };
 }
-async function getEIP712Signature(message, account, accountState, signer, network, isOG = false) {
+async function getEIP712Signature(message, account, accountState, signer, network, isOG = false, withHardwareWalletSigningRequest, allowAmbireOperation = false, provider) {
+    const ctx = provider ? { chainId: network.chainId, provider } : undefined;
     if (!message.types.EIP712Domain) {
         throw new Error('Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.');
     }
@@ -422,20 +314,24 @@ async function getEIP712Signature(message, account, accountState, signer, networ
     }
     if (!!account.safeCreation) {
         // Safe wraps the EIP-712 message in it's own EIP-712
-        const typedData = (0, exports.getSafeTypedDataForIsValidSignature)(network.chainId, account.addr, `0x${eth_sig_util_1.TypedDataUtils.eip712Hash((0, exports.adaptTypedMessageForMetaMaskSigUtil)({ ...message }), eth_sig_util_1.SignTypedDataVersion.V4).toString('hex')}`);
+        const typedData = (0, exports.getSafeMessageTypedData)(message, network.chainId, account.addr);
         return {
-            signature: (await signer.signTypedData(typedData)),
-            hash: `0x${eth_sig_util_1.TypedDataUtils.eip712Hash((0, exports.adaptTypedMessageForMetaMaskSigUtil)({ ...typedData }), eth_sig_util_1.SignTypedDataVersion.V4).toString('hex')}`
+            signature: (await signWithHardwareWalletSigningRequest({ type: 'eip-712', data: typedData }, () => signer.signTypedData(typedData, ctx), withHardwareWalletSigningRequest)),
+            hash: (0, exports.getEIP712Hash)(typedData)
         };
     }
     if (!account.creation)
-        return { signature: (await signer.signTypedData(message)) };
+        return {
+            signature: (await signWithHardwareWalletSigningRequest({ type: 'eip-712', data: message }, () => signer.signTypedData(message, ctx), withHardwareWalletSigningRequest))
+        };
+    if ((0, exports.isCallToSelfOrAmbireOp)(message, account) && !allowAmbireOperation) {
+        throw new Error(exports.AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE);
+    }
     if (!accountState.isV2) {
-        const asString = JSON.stringify(message).toLowerCase();
         if (
         // @NOTE: isOG is to allow tem members to sign anything with v1 accounts regardless of safety and security
         !isOG &&
-            !asString.includes(account.addr.toLowerCase()) &&
+            !(0, exports.doesEIP712MessageContainAddress)(message, account.addr) &&
             !(message.domain.name === 'Permit2' &&
                 message.domain.verifyingContract &&
                 (0, ethers_1.getAddress)(message.domain.verifyingContract) === addresses_1.PERMIT_2_ADDRESS &&
@@ -445,7 +341,9 @@ async function getEIP712Signature(message, account, accountState, signer, networ
                 addresses_1.UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] === (0, ethers_1.getAddress)(message.message.spender))) {
             throw new Error('Signing this eip-712 message is disallowed for v1 accounts as it does not contain the smart account address and therefore deemed unsafe');
         }
-        return { signature: (0, exports.wrapUnprotected)(await signer.signTypedData(message)) };
+        return {
+            signature: (0, exports.wrapUnprotected)(await signWithHardwareWalletSigningRequest({ type: 'eip-712', data: message }, () => signer.signTypedData(message, ctx), withHardwareWalletSigningRequest))
+        };
     }
     // we do not allow signers who are not dedicated to one account to sign eip-712
     // messages in v2 as it could lead to reusing that key from
@@ -453,17 +351,9 @@ async function getEIP712Signature(message, account, accountState, signer, networ
     if (!dedicatedToOneSA) {
         throw new Error(`Signer with address ${signer.key.addr} does not have privileges to execute this operation. Please choose a different signer and try again`);
     }
-    if ('AmbireReadableOperation' in message.types) {
-        const ambireReadableOperation = message.message;
-        if ((0, isSameAddr_1.default)(ambireReadableOperation.addr, account.addr)) {
-            throw new Error('signature error: trying to sign an AmbireReadableOperation for the same address. Please contact support');
-        }
-        const hash = (0, ethers_1.hexlify)((0, accountOp_1.getSignableHash)(ambireReadableOperation.addr, ambireReadableOperation.chainId, ambireReadableOperation.nonce, ambireReadableOperation.calls.map(accountOp_1.callToTuple)));
-        const ambireOperation = (0, exports.getTypedData)(ambireReadableOperation.chainId, account.addr, hash);
-        const signature = (0, exports.wrapStandard)(await signer.signTypedData(ambireOperation));
-        return { signature: (0, exports.wrapWallet)(signature, account.addr) };
-    }
-    return { signature: (0, exports.wrapUnprotected)(await signer.signTypedData(message)) };
+    return {
+        signature: (0, exports.wrapUnprotected)(await signWithHardwareWalletSigningRequest({ type: 'eip-712', data: message }, () => signer.signTypedData(message, ctx), withHardwareWalletSigningRequest))
+    };
 }
 // get the typedData for the first ERC-4337 deploy txn
 async function getEntryPointAuthorization(addr, chainId, nonce) {
@@ -522,16 +412,6 @@ function getAppFormatted(signature, account, accountState) {
         return getHexStringSignature(signature, account, accountState);
     return signature;
 }
-/**
- * Tries to convert an input (from a dapp) to a hex string
- */
-const toPersonalSignHex = (input) => {
-    if (typeof input === 'string') {
-        return (0, ethers_1.isHexString)(input) ? input : (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(input));
-    }
-    return (0, ethers_1.hexlify)(input);
-};
-exports.toPersonalSignHex = toPersonalSignHex;
 const getSafeTypedData = (chainId, safeAddr, safeTx) => {
     const domain = {
         chainId: chainId.toString(),
@@ -627,4 +507,8 @@ const getSafeTypedDataForIsValidSignature = (chainId, safeAddr, hash) => {
     };
 };
 exports.getSafeTypedDataForIsValidSignature = getSafeTypedDataForIsValidSignature;
+const getEIP712Hash = (typedData) => `0x${eth_sig_util_1.TypedDataUtils.eip712Hash((0, exports.adaptTypedMessageForMetaMaskSigUtil)({ ...typedData }), eth_sig_util_1.SignTypedDataVersion.V4).toString('hex')}`;
+exports.getEIP712Hash = getEIP712Hash;
+const getSafeMessageTypedData = (message, chainId, safeAddr) => (0, exports.getSafeTypedDataForIsValidSignature)(chainId, safeAddr, typeof message === 'string' ? (0, ethers_1.hashMessage)((0, ethers_1.getBytes)(message)) : (0, exports.getEIP712Hash)(message));
+exports.getSafeMessageTypedData = getSafeMessageTypedData;
 //# sourceMappingURL=signMessage.js.map

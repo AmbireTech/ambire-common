@@ -4,6 +4,7 @@ exports.Paymaster = void 0;
 exports.getPaymasterDataForEstimate = getPaymasterDataForEstimate;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
+const uuid_1 = require("../../utils/uuid");
 const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
 const EntryPoint_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/EntryPoint.json"));
 const addresses_1 = require("../../consts/addresses");
@@ -41,6 +42,7 @@ class Paymaster extends abstractPaymaster_1.AbstractPaymaster {
     callRelayer;
     type = 'None';
     op = null;
+    #account = null;
     paymasterService = null;
     network = null;
     provider = null;
@@ -48,44 +50,62 @@ class Paymaster extends abstractPaymaster_1.AbstractPaymaster {
     // this is a temporary solution where the live relayer doesn't have
     // a chain id paymaster route open yet as it's not merged
     ambirePaymasterUrl;
+    #relayerUrl;
     constructor(relayerUrl, fetch, errorCallback) {
         super();
         this.callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch });
         this.errorCallback = errorCallback;
+        this.#relayerUrl = relayerUrl;
     }
-    async init(op, userOp, account, network, provider) {
-        this.op = op;
-        this.network = network;
-        this.provider = provider;
-        this.ambirePaymasterUrl = `/v2/paymaster/${this.network.chainId}/request`;
-        if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
+    async #tryToSetErc7677(userOp) {
+        if (!this.paymasterService || !this.#account || !this.network)
+            return;
+        try {
+            // when requesting stub data with an empty account, send over
+            // the deploy data as per EIP-7677 standard
+            const localOp = { ...userOp };
+            if (BigInt(localOp.nonce) === 0n && this.#account.creation) {
+                const factoryInterface = new ethers_1.Interface(AmbireFactory_json_1.default.abi);
+                localOp.factory = this.#account.creation.factoryAddr;
+                localOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
+                    this.#account.creation.bytecode,
+                    this.#account.creation.salt
+                ]);
+            }
+            let timeout;
             try {
-                this.paymasterService = op.meta.paymasterService;
-                // when requesting stub data with an empty account, send over
-                // the deploy data as per EIP-7677 standard
-                const localOp = { ...userOp };
-                if (BigInt(localOp.nonce) === 0n && account.creation) {
-                    const factoryInterface = new ethers_1.Interface(AmbireFactory_json_1.default.abi);
-                    localOp.factory = account.creation.factoryAddr;
-                    localOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
-                        account.creation.bytecode,
-                        account.creation.salt
-                    ]);
-                }
                 const response = await Promise.race([
-                    (0, erc7677_1.getPaymasterStubData)(op.meta.paymasterService, localOp, network),
+                    (0, erc7677_1.getPaymasterStubData)(this.paymasterService, localOp, this.network),
                     new Promise((_resolve, reject) => {
-                        setTimeout(() => reject(new Error('Sponsorship error, request too slow')), 5000);
+                        timeout = setTimeout(() => reject(new Error('Sponsorship error, request too slow')), 5000);
                     })
                 ]);
                 this.sponsorDataEstimation = response;
                 this.type = 'ERC7677';
                 return;
             }
-            catch (e) {
-                // TODO: error handling
-                console.log(e);
+            finally {
+                if (timeout !== undefined)
+                    clearTimeout(timeout);
             }
+        }
+        catch (e) {
+            console.log('ERC7677 sponsorship declined', e);
+        }
+    }
+    async init(op, userOp, account, network, provider) {
+        this.op = op;
+        this.network = network;
+        this.provider = provider;
+        this.#account = account;
+        this.ambirePaymasterUrl = `/v2/paymaster/${this.network.chainId}/request`;
+        if (op.meta?.paymasterService)
+            this.paymasterService = op.meta.paymasterService;
+        // try to init ERC-7677 if a paymasterService has been provided and it hasn't failed
+        if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
+            await this.#tryToSetErc7677(userOp);
+            if (this.type === 'ERC7677')
+                return;
         }
         // has the paymaster dried up
         const seenInsufficientFunds = FailedPaymasters_1.failedPaymasters.insufficientFundsNetworks[Number(this.network.chainId)];
@@ -197,7 +217,8 @@ class Paymaster extends abstractPaymaster_1.AbstractPaymaster {
             return {
                 success: true,
                 paymaster: isAmbirePaymaster ? deploy_1.AMBIRE_PAYMASTER : response.paymaster,
-                paymasterData: isAmbirePaymaster ? response.data.paymasterData : response.paymasterData
+                paymasterData: isAmbirePaymaster ? response.data.paymasterData : response.paymasterData,
+                signature: isAmbirePaymaster ? response.data.signature : undefined
             };
         }
         catch (e) {
@@ -242,8 +263,8 @@ class Paymaster extends abstractPaymaster_1.AbstractPaymaster {
                 bundler: userOp.bundler,
                 swapSponsorship: this.type === 'SwapSponsorship' && this.op?.meta?.swapSponsorship
                     ? {
-                        price: this.op.meta.swapSponsorship.fromTokenPriceInUsd,
-                        decimals: this.op.meta.swapSponsorship.fromTokenDecimals
+                        price: this.op.meta.swapSponsorship.feeTokenPriceInUsd,
+                        decimals: this.op.meta.swapSponsorship.feeTokenDecimals
                     }
                     : undefined
             });
@@ -286,6 +307,50 @@ class Paymaster extends abstractPaymaster_1.AbstractPaymaster {
         return (localOp.paymasterVerificationGasLimit === undefined ||
             BigInt(localOp.paymasterVerificationGasLimit) < BigInt(min.paymasterVerificationGasLimit));
     }
+    async #tryToSetSwapSponsorship(bundlerEstimateResult, gasPrices, userOp) {
+        if (!this.op?.meta?.swapSponsorship || !this.network)
+            return;
+        const gas = BigInt(bundlerEstimateResult.callGasLimit) + BigInt(bundlerEstimateResult.preVerificationGas);
+        const amountInWei = gas * BigInt(gasPrices.ape.maxFeePerGas);
+        const cost = Number((0, formatters_1.safeTokenAmountAndNumberMultiplication)(amountInWei, 18, this.op.meta.swapSponsorship.nativePrice));
+        const costPlusOverhead = cost + cost * 0.25;
+        if (costPlusOverhead >= this.op.meta.swapSponsorship.swapFeeInUsd) {
+            console.log('no sponsorship as cost is not justified');
+            return;
+        }
+        // call the paymaster for a final validation before showing the
+        // "Swap Sponsorship screen" as providers often change their implementation
+        // and we need confirmation from the relayer that the sponsorship is
+        // eligible before declaring it. Otherwise, we run the risk of the paymaster
+        // declining the sponsorship when the user clicks "Sign"
+        let sponsorshipTimeout;
+        try {
+            await Promise.race([
+                (0, erc7677_1.getPaymasterStubData)({
+                    url: (0, erc7677_1.getAmbireSponsorshipUrl)(this.#relayerUrl),
+                    id: (0, uuid_1.generateUuid)(),
+                    context: {
+                        policyId: erc7677_1.AMBIRE_SWAP_POLICY,
+                        swapSponsorship: {
+                            price: this.op.meta.swapSponsorship.feeTokenPriceInUsd,
+                            decimals: this.op.meta.swapSponsorship.feeTokenDecimals
+                        }
+                    }
+                }, userOp, this.network),
+                new Promise((_resolve, reject) => {
+                    sponsorshipTimeout = setTimeout(() => reject(new Error('Sponsorship error, request too slow')), 4000);
+                })
+            ]);
+            this.type = 'SwapSponsorship';
+        }
+        catch (e) {
+            console.log('Sponsorship declined', e);
+        }
+        finally {
+            if (sponsorshipTimeout !== undefined)
+                clearTimeout(sponsorshipTimeout);
+        }
+    }
     /**
      * We use the upgrade method when we initially need to start with another
      * paymaster type, e.g. Ambire, but then we understand we can use another
@@ -294,16 +359,30 @@ class Paymaster extends abstractPaymaster_1.AbstractPaymaster {
      * from the bundler so we could calculate the txn fee. If the swap fee is
      * bigger than the txn fee, we upgrade the paymaster to SwapSponsorship.
      */
-    upgrade(bundlerEstimateResult, gasPrices) {
+    async upgrade(bundlerEstimateResult, gasPrices, userOp) {
         // ERC7677 is already sponsoring the userOperation so we don't upgrade over it
-        if (!this.op?.meta?.swapSponsorship || this.type === 'ERC7677')
+        if (this.type === 'ERC7677' || !this.network)
             return;
-        const gas = BigInt(bundlerEstimateResult.callGasLimit) + BigInt(bundlerEstimateResult.preVerificationGas);
-        const amountInWei = gas * BigInt(gasPrices.ape.maxFeePerGas);
-        const cost = Number((0, formatters_1.safeTokenAmountAndNumberMultiplication)(amountInWei, 18, this.op.meta.swapSponsorship.nativePrice));
-        const costPlusOverhead = cost + cost * 0.25;
-        if (costPlusOverhead < this.op.meta.swapSponsorship.swapFeeInUsd)
-            this.type = 'SwapSponsorship';
+        // do not upgrade over the gnosis paymaster sponsorship
+        if (this.type === 'Ambire' &&
+            this.paymasterService?.context?.policyId === erc7677_1.AMBIRE_NETWORK_WIDE_SPONSORSHIP_POLICY)
+            return;
+        // apply estimation and gas changes to the userOp so a more realistic,
+        // final userOp could be sent over for paymaster stub data
+        //
+        // do not use structuredClone here as we rely on mutating nested objects
+        const localOp = { ...userOp };
+        localOp.preVerificationGas = bundlerEstimateResult.preVerificationGas;
+        localOp.verificationGasLimit = bundlerEstimateResult.verificationGasLimit;
+        localOp.callGasLimit = bundlerEstimateResult.callGasLimit;
+        localOp.maxFeePerGas = gasPrices.medium.maxFeePerGas;
+        localOp.maxPriorityFeePerGas = gasPrices.medium.maxPriorityFeePerGas;
+        await this.#tryToSetSwapSponsorship(bundlerEstimateResult, gasPrices, localOp);
+        if (!!this.op?.meta?.swapSponsorship)
+            return;
+        // try to init ERC-7677 if a paymasterService has been provided and it hasn't failed
+        if (this.op?.meta?.paymasterService && !this.op.meta.paymasterService.failed)
+            await this.#tryToSetErc7677(localOp);
     }
 }
 exports.Paymaster = Paymaster;

@@ -52,12 +52,15 @@ async function ambireEstimateGas(baseAcc, accountState, op, network, provider, f
         calls.push((0, userOperation_1.getActivatorCall)(op.accountAddr));
     }
     const shouldStateOverride = (0, simulationStateOverride_1.getShouldStateOverride)(network, baseAcc);
+    // A Safe deployment must be simulated from a different address. Overriding the undeployed
+    // Safe itself would put code at its future address and make the factory's CREATE2 fail.
+    const simulationAccountAddr = op.meta?.isSafeDeploy ? deploy_1.SAFE_SENDER : account.addr;
     const checkInnerCallsArgs = [
-        account.addr,
+        simulationAccountAddr,
         ...(0, account_1.getAccountDeployParams)(account),
-        [account.addr, op.nonce || 1, calls, '0x'],
+        [simulationAccountAddr, op.nonce || 1, calls, '0x'],
         (0, gasPrice_1.getProbableCallData)(op, accountState, baseAcc.shouldIncludeActivatorCall()),
-        shouldStateOverride ? [account.addr] : account.associatedKeys,
+        shouldStateOverride ? [simulationAccountAddr] : account.associatedKeys,
         feeTokens.map((feeToken) => feeToken.address),
         addresses_1.FEE_COLLECTOR,
         nativeToCheck,
@@ -68,7 +71,9 @@ async function ambireEstimateGas(baseAcc, accountState, op, network, provider, f
         from: deploy_1.DEPLOYLESS_SIMULATION_FROM,
         blockTag: (0, getBlockTag_1.getPendingBlockTagIfSupported)(network),
         mode: shouldStateOverride ? deployless_2.DeploylessMode.StateOverride : deployless_2.DeploylessMode.Detect,
-        stateToOverride: shouldStateOverride ? (0, simulationStateOverride_1.getNotAmbireStateOverride)(account.addr, network) : null
+        stateToOverride: shouldStateOverride
+            ? (0, simulationStateOverride_1.getNotAmbireStateOverride)(simulationAccountAddr, network)
+            : null
     })
         .catch(errorHumanizer_1.getHumanReadableEstimationError);
     if (ambireEstimation instanceof Error)

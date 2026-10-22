@@ -27,7 +27,7 @@ const handleTokenToFiatConversion = (amount, amountFormatted, tokenPrice, fromSe
     }
     const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(Number(tokenPrice));
     const fiatAmount = (0, ethers_1.formatUnits)(formattedAmount * tokenPriceBigInt, fromSelectedToken.decimals + tokenPriceDecimals);
-    return { tokenAmount: amount, fiatAmount };
+    return { tokenAmount: amount, fiatAmount: (0, formatters_1.truncateFiatAmountDecimals)(fiatAmount) };
 };
 const handleAmountConversion = (amount, amountFormatted, fromSelectedToken, isInFiatMode, hardCodedCurrency) => {
     if (amount === '') {

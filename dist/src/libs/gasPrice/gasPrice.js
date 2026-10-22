@@ -9,231 +9,151 @@ const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
 const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
+const provider_1 = require("../../services/provider");
 const accountOp_1 = require("../accountOp/accountOp");
 const userOperation_1 = require("../userOperation/userOperation");
-// https://eips.ethereum.org/EIPS/eip-1559
-const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n;
-const DEFAULT_ELASTICITY_MULTIPLIER = 2n;
 // a 1 gwei min for gas price, non1559 networks
 exports.MIN_GAS_PRICE = 1000000000n;
-// multipliers from the old: https://github.com/AmbireTech/relayer/blob/wallet-v2/src/utils/gasOracle.js#L64-L76
-// 2x, 2x*0.4, 2x*0.2 - all of them divided by 8 so 0.25, 0.1, 0.05 - those seem usable; with a slight tweak for the ape
+// https://eips.ethereum.org/EIPS/eip-1559
+// the base fee can grow by at most 1/8 (12.5%) from one block to the next
+const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n;
+// Per speed settings:
+// * fullBlocksToTolerate - how many consecutive full blocks (each raising the
+//   base fee by the max 12.5%) the txn survives before its maxFeePerGas falls
+//   below the base fee and the txn gets stuck. It costs the user nothing as
+//   EIP-1559 txns pay only the actual base fee + tip, maxFeePerGas is a cap
+// * legacyGasPriceAddBps - buffer for non-1559 networks. Unlike the base fee
+//   headroom, the legacy gasPrice is paid in full, so it's kept small
 const speeds = [
-    { name: 'slow', baseFeeAddBps: 0n },
-    { name: 'medium', baseFeeAddBps: 500n },
-    { name: 'fast', baseFeeAddBps: 1000n },
-    { name: 'ape', baseFeeAddBps: 1500n }
-];
-// https://stackoverflow.com/questions/20811131/javascript-remove-outlier-from-an-array
-function filterOutliers(data) {
-    if (!data.length)
-        return [];
-    // numeric sort, a - b doesn't work for bigint
-    data.sort((a, b) => {
-        if (a === b)
-            return 0;
-        if (a > b)
-            return 1;
-        return -1;
-    });
-    const q1 = data[Math.floor(data.length / 4)];
-    const endPosition = Math.ceil(data.length * (3 / 4));
-    const q2 = data[endPosition < data.length ? endPosition : data.length - 1];
-    // typescript extra protection
-    // q1 and q2 should always exist based on the code above.
-    // but the code changes and a bug is introduced, make sure we return
-    // the whole data instead of throwing an error
-    if (!q1 || !q2) {
-        console.error('q1 or q2 not found in gasPrice.ts');
-        return data;
+    {
+        name: 'slow',
+        fullBlocksToTolerate: 2,
+        legacyGasPriceAddBps: 0n
+    },
+    {
+        name: 'medium',
+        fullBlocksToTolerate: 3,
+        legacyGasPriceAddBps: 100n
+    },
+    {
+        name: 'fast',
+        fullBlocksToTolerate: 3,
+        legacyGasPriceAddBps: 200n
+    },
+    {
+        name: 'ape',
+        fullBlocksToTolerate: 4,
+        legacyGasPriceAddBps: 500n
     }
-    const iqr = q2 - q1;
-    const maxValue = q2 + (iqr * 15n) / 10n;
-    const minValue = q1 - (iqr * 15n) / 10n;
-    const filteredValues = data.filter((x) => x <= maxValue && x >= minValue);
-    return filteredValues;
-}
-function nthGroup(data, n, outOf) {
-    const step = Math.floor(data.length / outOf);
-    const at = n * step;
-    // if n is 3 (ape speed) and we have at least 4 txns in the previous block,
-    // we want to include the remaining high cost transactions in the group.
-    // Example: 15 txns make 3 groups of 3 for slow, medium and fast, totalling 9
-    // the remaining 6 get included in the ape calculation
-    const end = n !== 3 || data.length < 4 ? at + Math.max(1, step) : data.length;
-    return data.slice(at, end);
-}
-function average(data) {
+];
+// each speed's tip is at least 25% higher than the previous speed's one,
+// so the speeds stay distinct even when the recent tips are all the same
+const MIN_PRIORITY_FEE_STEP_BPS = 2500n;
+const FEE_HISTORY_BLOCK_COUNT = 3;
+const FEE_HISTORY_REWARD_PERCENTILES = [25, 50, 72, 88];
+function median(data) {
     if (data.length === 0)
         return 0n;
-    return data.reduce((a, b) => a + b, 0n) / BigInt(data.length);
+    const sorted = [...data].sort((a, b) => {
+        if (a === b)
+            return 0;
+        return a > b ? 1 : -1;
+    });
+    const middle = Math.floor(sorted.length / 2);
+    if (sorted.length % 2)
+        return sorted[middle];
+    return (sorted[middle - 1] + sorted[middle]) / 2n;
 }
-function getNetworkMinBaseFee(network, lastBlock) {
-    // if we have a minBaseFee set in our config, use it
-    if (network.feeOptions.minBaseFee)
-        return network.feeOptions.minBaseFee;
-    // if we don't have a config, we return 0
-    if (network.predefined && !network.feeOptions.minBaseFeeEqualToLastBlock)
-        return 0n;
-    // if it's a custom network and it has EIP-1559, set the minimum
-    // to the lastBlock's baseFeePerGas. Every chain is free to tweak
-    // its EIP-1559 implementation as it deems fit. Therefore, we have no
-    // guarantee the 12.5% block base fee reduction will actually happen.
-    // if it doesn't and we reduce the baseFee with our calculations,
-    // most often than not the transaction will just get stuck.
-    //
-    // Transaction fees are no longer an issue on L2s.
-    // Having the user spend a fraction of the cent more is way better
-    // than having his txns constantly getting stuck
-    return lastBlock.baseFeePerGas ?? 0n;
+function increaseByBps(value, bps) {
+    return value + (value * bps) / 10000n;
 }
-function hexToBigInt(value) {
-    return value ? BigInt(value) : null;
-}
-async function getRpcBlockTag(provider, blockTag) {
-    if (typeof blockTag !== 'number')
-        return blockTag;
-    if (blockTag >= 0)
-        return (0, ethers_1.toQuantity)(blockTag);
-    const currentBlockNumber = await provider.getBlockNumber();
-    return (0, ethers_1.toQuantity)(Math.max(currentBlockNumber + blockTag, 0));
-}
-async function fetchRawBlock(provider, blockTag) {
-    const rpcBlockTag = await getRpcBlockTag(provider, blockTag);
-    const rawBlock = (await provider.send('eth_getBlockByNumber', [
-        rpcBlockTag,
-        true
-    ]));
-    if (!rawBlock)
-        return null;
-    return {
-        baseFeePerGas: hexToBigInt(rawBlock.baseFeePerGas),
-        gasLimit: BigInt(rawBlock.gasLimit),
-        gasUsed: BigInt(rawBlock.gasUsed),
-        prefetchedTransactions: (rawBlock.transactions ?? [])
-            .filter((txn) => typeof txn !== 'string')
-            .map((txn) => ({
-            gasPrice: hexToBigInt(txn.gasPrice),
-            maxPriorityFeePerGas: hexToBigInt(txn.maxPriorityFeePerGas)
-        }))
-    };
-}
-async function fetchBlock(provider, network, blockTag) {
-    if (network.chainId === 2741n)
-        return fetchRawBlock(provider, blockTag);
-    return await provider.getBlock(blockTag, true);
-}
-// if there's an RPC issue, try refetching the block at least
-// 5 times before declaring a failure
-async function refetchBlock(provider, network, blockTag, getIsActive, counter = 0) {
-    if (counter >= 2)
-        throw new Error('unable to retrieve block');
-    let lastBlock = null;
-    let timeoutId = null;
-    try {
-        const response = await Promise.race([
-            fetchBlock(provider, network, blockTag),
-            new Promise((_resolve, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('last block failed to resolve, request too slow')), 30000);
-            })
-        ]);
-        lastBlock = response;
+/**
+ * Returns the base fee after `fullBlocks` consecutive full blocks,
+ * each raising it by the EIP-1559 max of 12.5%
+ */
+function getBaseFeeAfterFullBlocks(baseFee, fullBlocks) {
+    let increasedBaseFee = baseFee;
+    for (let i = 0; i < fullBlocks; i++) {
+        increasedBaseFee += increasedBaseFee / BASE_FEE_MAX_CHANGE_DENOMINATOR;
     }
-    catch (e) {
-        lastBlock = null;
-    }
-    finally {
-        if (timeoutId)
-            clearTimeout(timeoutId);
-    }
+    return increasedBaseFee;
+}
+function getMedianPriorityFeesFromHistory(rewards) {
+    return FEE_HISTORY_REWARD_PERCENTILES.map((_percentile, percentileIndex) => {
+        const fees = rewards
+            .map((reward) => reward[percentileIndex])
+            .filter((fee) => typeof fee === 'bigint' && fee > 0n);
+        return median(fees);
+    });
+}
+function getLastBaseFeeFromHistory(baseFeePerGas) {
+    return baseFeePerGas[baseFeePerGas.length - 1] ?? null;
+}
+async function fetchViemFeeHistory(client) {
+    return client.getFeeHistory({
+        blockCount: FEE_HISTORY_BLOCK_COUNT,
+        rewardPercentiles: FEE_HISTORY_REWARD_PERCENTILES
+    });
+}
+async function get1559ViemFees(client) {
+    return client.estimateFeesPerGas({ chain: null, type: 'eip1559' });
+}
+async function getLegacyViemFees(client) {
+    return client.estimateFeesPerGas({ chain: null, type: 'legacy' });
+}
+async function get1559GasPriceRecommendations(client) {
+    const [estimatedFees, feeHistory] = await Promise.all([
+        get1559ViemFees(client),
+        fetchViemFeeHistory(client).catch((e) => {
+            console.error('eth_feeHistory failed; falling back to viem fee estimation', e);
+            return null;
+        })
+    ]);
+    const estimatedBaseFee = estimatedFees.maxFeePerGas - estimatedFees.maxPriorityFeePerGas;
+    const expectedBaseFee = feeHistory
+        ? (getLastBaseFeeFromHistory(feeHistory.baseFeePerGas) ?? estimatedBaseFee)
+        : estimatedBaseFee;
+    const priorityFees = feeHistory ? getMedianPriorityFeesFromHistory(feeHistory.reward ?? []) : [];
+    const estimatedPriorityFee = estimatedFees.maxPriorityFeePerGas >= 100000n ? estimatedFees.maxPriorityFeePerGas : 100000n;
+    const slowPriorityFee = priorityFees[0] && priorityFees[0] > estimatedPriorityFee
+        ? priorityFees[0]
+        : estimatedPriorityFee;
+    const fee = [];
+    speeds.forEach(({ name, fullBlocksToTolerate }, i) => {
+        const baseFeePerGas = getBaseFeeAfterFullBlocks(expectedBaseFee, fullBlocksToTolerate);
+        const previousSpeed = fee[i - 1];
+        const minPriorityFee = previousSpeed
+            ? increaseByBps(previousSpeed.maxPriorityFeePerGas, MIN_PRIORITY_FEE_STEP_BPS)
+            : slowPriorityFee;
+        // no upper limit: the median of the recent blocks ignores a single
+        // expensive block, while a lasting spike is followed so the txn gets in
+        const percentilePriorityFee = priorityFees[i] ?? 0n;
+        const maxPriorityFeePerGas = percentilePriorityFee > minPriorityFee ? percentilePriorityFee : minPriorityFee;
+        fee.push({
+            name,
+            baseFeePerGas,
+            maxPriorityFeePerGas
+        });
+    });
+    return fee;
+}
+async function getLegacyGasPriceRecommendations(client) {
+    const { gasPrice } = await getLegacyViemFees(client);
+    const minGasPrice = gasPrice > exports.MIN_GAS_PRICE ? gasPrice : exports.MIN_GAS_PRICE;
+    return speeds.map(({ name, legacyGasPriceAddBps }) => ({
+        name,
+        gasPrice: increaseByBps(minGasPrice, legacyGasPriceAddBps)
+    }));
+}
+async function getGasPriceRecommendations(provider, network, _blockTag, getIsActive) {
     if (getIsActive && !getIsActive()) {
         throw new Error('operation aborted');
     }
-    if (!lastBlock) {
-        const localCounter = counter + 1;
-        lastBlock = await refetchBlock(provider, network, blockTag, getIsActive, localCounter);
+    const client = (0, provider_1.getViemClientForProvider)(provider);
+    if (network.feeOptions.is1559) {
+        return { gasPrice: await get1559GasPriceRecommendations(client) };
     }
-    return lastBlock;
-}
-async function getGasPriceRecommendations(provider, network, _blockTag, getIsActive) {
-    const blockTag = _blockTag ?? -1;
-    const [lastBlock, ethGasPrice] = await Promise.all([
-        refetchBlock(provider, network, blockTag, getIsActive),
-        provider.send('eth_gasPrice', []).catch((e) => {
-            console.log('eth_gasPrice failed because of the following reason:');
-            console.log(e);
-            return '0x';
-        })
-    ]);
-    // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
-    const txns = lastBlock.prefetchedTransactions;
-    if (network.feeOptions.is1559 &&
-        lastBlock.baseFeePerGas != null &&
-        lastBlock.baseFeePerGas !== 0n) {
-        // https://eips.ethereum.org/EIPS/eip-1559
-        const elasticityMultiplier = network.feeOptions.elasticityMultiplier ?? DEFAULT_ELASTICITY_MULTIPLIER;
-        const baseFeeMaxChangeDenominator = network.feeOptions.baseFeeMaxChangeDenominator ?? DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR;
-        const gasTarget = lastBlock.gasLimit / elasticityMultiplier;
-        const baseFeePerGas = lastBlock.baseFeePerGas;
-        const getBaseFeeDelta = (delta) => (baseFeePerGas * delta) / gasTarget / baseFeeMaxChangeDenominator;
-        let expectedBaseFee = baseFeePerGas;
-        if (lastBlock.gasUsed > gasTarget) {
-            const baseFeeDelta = getBaseFeeDelta(lastBlock.gasUsed - gasTarget);
-            expectedBaseFee += baseFeeDelta === 0n ? 1n : baseFeeDelta;
-        }
-        // <Bobby>: commenting out the decrease as it's really bad UX
-        // if the user chooses slow on Ethereum and the next block doesn't
-        // actually meet the base fee and starts going up from there, the user
-        // will need to do an RBF or wait ~forever for the txn to complete
-        // the below code is good in theory, bad in practise
-        // else if (lastBlock.gasUsed < gasTarget) {
-        //   const baseFeeDelta = getBaseFeeDelta(gasTarget - lastBlock.gasUsed)
-        //   expectedBaseFee -= baseFeeDelta
-        // }
-        // if the estimated fee is below the chain minimum, set it to the min
-        const minBaseFee = getNetworkMinBaseFee(network, lastBlock);
-        if (expectedBaseFee < minBaseFee)
-            expectedBaseFee = minBaseFee;
-        const tips = filterOutliers(txns.map((x) => x.maxPriorityFeePerGas).filter((x) => x > 0));
-        const fee = [];
-        speeds.forEach(({ name, baseFeeAddBps }, i) => {
-            const baseFee = expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n;
-            let maxPriorityFeePerGas = average(nthGroup(tips, i, speeds.length));
-            // set a bare minimum of 100000n for maxPriorityFeePerGas
-            maxPriorityFeePerGas = maxPriorityFeePerGas >= 100000n ? maxPriorityFeePerGas : 100000n;
-            // compare the maxPriorityFeePerGas with the previous speed
-            // if it's not at least 12% bigger, then replace the calculated one
-            // with at least 12% bigger maxPriorityFeePerGas.
-            // This is most impactufull on L2s where txns get stuck for low maxPriorityFeePerGas
-            //
-            // if the speed is ape, make it 50% more
-            const prevSpeed = fee.length ? fee[i - 1]?.maxPriorityFeePerGas : null;
-            if (prevSpeed) {
-                const divider = name === 'ape' ? 2n : 8n;
-                const min = prevSpeed + prevSpeed / divider;
-                if (maxPriorityFeePerGas < min)
-                    maxPriorityFeePerGas = min;
-            }
-            fee.push({
-                name,
-                baseFeePerGas: baseFee,
-                maxPriorityFeePerGas
-            });
-        });
-        return { gasPrice: fee };
-    }
-    const prices = filterOutliers(txns.map((x) => x.gasPrice).filter((x) => x > 0));
-    // use th fetched price as a min if not 0 as it could be actually lower
-    // than the hardcoded MIN.
-    const minOrFetchedGasPrice = ethGasPrice !== '0x' ? BigInt(ethGasPrice) : exports.MIN_GAS_PRICE;
-    const fee = speeds.map(({ name }, i) => {
-        const avgGasPrice = average(nthGroup(prices, i, speeds.length));
-        return {
-            name,
-            gasPrice: avgGasPrice >= minOrFetchedGasPrice ? avgGasPrice : minOrFetchedGasPrice
-        };
-    });
-    return { gasPrice: fee };
+    return { gasPrice: await getLegacyGasPriceRecommendations(client) };
 }
 function getProbableCallData(accountOp, accountState, shouldIncludeActivatorCall) {
     let estimationCallData;

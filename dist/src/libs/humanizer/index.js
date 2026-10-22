@@ -1,84 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.humanizeMessage = exports.humanizeAccountOp = exports.humanizerCallModules = void 0;
+exports.humanizerCallModules = exports.humanizeMessage = exports.humanizeAccountOp = void 0;
 const tslib_1 = require("tslib");
-const humanizerInfo_json_1 = tslib_1.__importDefault(require("../../consts/humanizer/humanizerInfo.json"));
 const richJson_1 = require("../richJson/richJson");
+const callModules_1 = require("./callModules");
+Object.defineProperty(exports, "humanizerCallModules", { enumerable: true, get: function () { return callModules_1.humanizerCallModules; } });
+const erc7730_1 = require("./erc7730");
 const messageModules_1 = require("./messageModules");
 const fallbackShortPlaintext_1 = require("./messageModules/fallbackShortPlaintext");
-const _1Inch_1 = tslib_1.__importDefault(require("./modules/1Inch"));
-const Aave_1 = require("./modules/Aave");
-const Across_1 = tslib_1.__importDefault(require("./modules/Across"));
-const Airdrops_1 = require("./modules/Airdrops");
-const Allowance_1 = tslib_1.__importDefault(require("./modules/Allowance"));
-const AsciiModule_1 = tslib_1.__importDefault(require("./modules/AsciiModule"));
-const Bundler3_1 = tslib_1.__importDefault(require("./modules/Bundler3"));
-const Curve_1 = tslib_1.__importDefault(require("./modules/Curve"));
-const Deployment_1 = require("./modules/Deployment");
-const embeddedAmbireOperationHumanizer_1 = require("./modules/embeddedAmbireOperationHumanizer");
-const ENS_1 = require("./modules/ENS");
-const FallbackHumanizer_1 = tslib_1.__importDefault(require("./modules/FallbackHumanizer"));
-const GasTankModule_1 = tslib_1.__importDefault(require("./modules/GasTankModule"));
-const Guild_1 = tslib_1.__importDefault(require("./modules/Guild"));
-const KyberSwap_1 = tslib_1.__importDefault(require("./modules/KyberSwap"));
-const Legends_1 = tslib_1.__importDefault(require("./modules/Legends"));
-const Lido_1 = require("./modules/Lido");
-const Lifi_1 = require("./modules/Lifi");
-const ModuleProxyFactory_1 = tslib_1.__importDefault(require("./modules/ModuleProxyFactory"));
-const OpenSea_1 = require("./modules/OpenSea");
-const Pancake_1 = tslib_1.__importDefault(require("./modules/Pancake"));
-const postProcessModule_1 = require("./modules/PostProcessing/postProcessModule");
-const PreProcess_1 = tslib_1.__importDefault(require("./modules/PreProcess"));
-const Privileges_1 = tslib_1.__importDefault(require("./modules/Privileges"));
-const Safe_1 = tslib_1.__importDefault(require("./modules/Safe"));
-const SingletonFactory_1 = tslib_1.__importDefault(require("./modules/SingletonFactory"));
-const Socket_1 = require("./modules/Socket");
-const Sushiswap_1 = tslib_1.__importDefault(require("./modules/Sushiswap"));
-const Tokens_1 = require("./modules/Tokens");
-const TraderJoe_1 = tslib_1.__importDefault(require("./modules/TraderJoe"));
-const TrustlessManifesto_1 = tslib_1.__importDefault(require("./modules/TrustlessManifesto"));
-const Uniswap_1 = require("./modules/Uniswap");
-const WALLET_1 = require("./modules/WALLET");
-const Wrapping_1 = tslib_1.__importDefault(require("./modules/Wrapping"));
-// from most generic to least generic
-// the final humanization is the final triggered module
-exports.humanizerCallModules = [
-    PreProcess_1.default,
-    embeddedAmbireOperationHumanizer_1.embeddedAmbireOperationHumanizer,
-    Deployment_1.deploymentModule,
-    Tokens_1.genericErc721Humanizer,
-    Tokens_1.genericErc20Humanizer,
-    TrustlessManifesto_1.default,
-    Lido_1.LidoModule,
-    GasTankModule_1.default,
-    Airdrops_1.airdropsModule,
-    Uniswap_1.uniswapHumanizer,
-    Curve_1.default,
-    TraderJoe_1.default,
-    KyberSwap_1.default,
-    Socket_1.SocketModule,
-    Lifi_1.LifiModule,
-    Across_1.default,
-    _1Inch_1.default,
-    Pancake_1.default,
-    Wrapping_1.default,
-    Aave_1.aaveHumanizer,
-    WALLET_1.WALLETModule,
-    Safe_1.default,
-    Bundler3_1.default,
-    Allowance_1.default,
-    ModuleProxyFactory_1.default,
-    Privileges_1.default,
-    Sushiswap_1.default,
-    Legends_1.default,
-    SingletonFactory_1.default,
-    ENS_1.ensModule,
-    Guild_1.default,
-    OpenSea_1.openSeaModule,
-    AsciiModule_1.default,
-    FallbackHumanizer_1.default,
-    postProcessModule_1.postProcessing
-];
+const utils_1 = require("./utils");
 // from least generic to most generic
 // the final visualization and warnings are from the first triggered module
 const humanizerTMModules = [
@@ -86,6 +16,7 @@ const humanizerTMModules = [
     messageModules_1.erc20Module,
     messageModules_1.erc721Module,
     messageModules_1.permit2Module,
+    messageModules_1.cowSwapModule,
     messageModules_1.entryPointModule,
     messageModules_1.legendsMessageModule,
     messageModules_1.ensMessageModule,
@@ -96,26 +27,63 @@ const humanizerTMModules = [
     messageModules_1.snapshotModule,
     fallbackShortPlaintext_1.fallbackShortPlaintext
 ];
-const humanizeAccountOp = (_accountOp) => {
+const humanizeAccountOp = (_accountOp, options) => {
     const accountOp = (0, richJson_1.parse)((0, richJson_1.stringify)(_accountOp));
-    let currentCalls = accountOp.calls;
-    exports.humanizerCallModules.forEach((hm) => {
-        try {
-            currentCalls = hm(accountOp, currentCalls, humanizerInfo_json_1.default);
-        }
-        catch (error) {
-            console.error(error);
-            // No action is needed here; we only set `currentCalls` if the module successfully resolves the calls.
-        }
-    });
+    let currentCalls = accountOp.calls.map((originalCall) => (0, callModules_1.humanizeCallWithModules)(accountOp, originalCall));
+    if (options?.erc7730Descriptors) {
+        currentCalls = currentCalls.map((call, index) => {
+            const resolvedDescriptor = options.erc7730Descriptors?.[index];
+            if (!resolvedDescriptor || call.preferredOverErc7730)
+                return call;
+            try {
+                const originalCall = accountOp.calls[index];
+                if (!originalCall)
+                    return call;
+                const erc7730Call = (0, erc7730_1.humanizeCallWithErc7730)(originalCall, accountOp.chainId, accountOp.accountAddr, resolvedDescriptor, options.nativeAssetSymbol);
+                if (!erc7730Call)
+                    return call;
+                // The descriptor builds its result from the raw call, so it starts with no warnings. The
+                // warnings the modules found are still about the same call, so keep them both.
+                return {
+                    ...erc7730Call,
+                    warnings: (0, utils_1.dedupeWarnings)([...(call.warnings || []), ...(erc7730Call.warnings || [])])
+                };
+            }
+            catch (error) {
+                console.error(error);
+                return call;
+            }
+        });
+    }
     return currentCalls;
 };
 exports.humanizeAccountOp = humanizeAccountOp;
-const humanizeMessage = (_message) => {
+const humanizeMessage = (_message, options) => {
     const message = (0, richJson_1.parse)((0, richJson_1.stringify)(_message));
     try {
         // runs all modules and takes the first non empty array
-        const { fullVisualization, warnings, canHideDropdownArrow } = humanizerTMModules.map((m) => m(message)).filter((p) => p.fullVisualization?.length)[0] || {};
+        const { fullVisualization, warnings, canHideDropdownArrow } = humanizerTMModules
+            .map((m) => {
+            try {
+                return m(message);
+            }
+            catch (error) {
+                console.error(error);
+                return {};
+            }
+        })
+            .filter((p) => p.fullVisualization?.length)[0] || {};
+        if (options?.erc7730Descriptor) {
+            const erc7730Message = (0, erc7730_1.humanizeMessageWithErc7730)(message, options.erc7730Descriptor);
+            if (erc7730Message) {
+                // The descriptor builds its result from the raw message, so it starts with no warnings.
+                // The warnings humanizerTMModules found are still about the same message, so keep both.
+                return {
+                    ...erc7730Message,
+                    warnings: (0, utils_1.dedupeWarnings)([...(warnings || []), ...(erc7730Message.warnings || [])])
+                };
+            }
+        }
         return { ...message, fullVisualization, warnings, canHideDropdownArrow };
     }
     catch (error) {
@@ -124,4 +92,5 @@ const humanizeMessage = (_message) => {
     }
 };
 exports.humanizeMessage = humanizeMessage;
+tslib_1.__exportStar(require("./erc7730"), exports);
 //# sourceMappingURL=index.js.map

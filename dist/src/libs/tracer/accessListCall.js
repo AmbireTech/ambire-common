@@ -14,7 +14,7 @@ const Safe_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled
 const ProviderError_1 = require("../../classes/ProviderError");
 const safe_1 = require("../../consts/safe");
 const provider_1 = require("../../services/provider");
-const safe_2 = require("../safe/safe");
+const helpers_1 = require("../safe/helpers");
 const safeSimulateTxAccessorAbi = [
     'function simulate(address to, uint256 value, bytes data, uint8 operation)'
 ];
@@ -31,11 +31,11 @@ function getSimulateTxnAccessor(version) {
         return safe_1.safeSimulateTxAccessor['v1.5.0'];
     return null;
 }
-function getShouldUseAccessListCall(account, needsStateOverride) {
-    // Use eth_createAccessList for Safe only if we know the
-    // simulateTxAccessor for the Safe version (see getSafeAccessListCallParams)
+function getShouldUseAccessListCall(account, accountState, needsStateOverride) {
+    // Use eth_createAccessList for Safe only if we know the simulateTxAccessor
+    // for the Safe version on this chain (see getSafeAccessListCallParams)
     if (account.safeCreation) {
-        return !!getSimulateTxnAccessor(account.safeCreation.version);
+        return !!getSimulateTxnAccessor(accountState.safeVersion);
     }
     return !needsStateOverride;
 }
@@ -54,8 +54,8 @@ function getSafeAccessListCallParams(baseAcc, op, accountState) {
         return null;
     if (!op.calls.length)
         return null;
-    const { to, value, data, operation } = (0, safe_2.encodeCalls)(op);
-    const simulateTxAccessor = getSimulateTxnAccessor(account.safeCreation.version);
+    const { to, value, data, operation } = (0, helpers_1.encodeCalls)(op);
+    const simulateTxAccessor = getSimulateTxnAccessor(accountState.safeVersion);
     if (!simulateTxAccessor)
         return null;
     const simulatePayload = simulateAccessorIface.encodeFunctionData('simulate', [
@@ -157,7 +157,8 @@ async function createAccessListCall(baseAcc, op, network, accountState) {
         return returned;
     }
     catch (e) {
-        console.error('Debug: eth_createAccessList error', e);
+        // do not console log the error as it's getting passed back to the
+        // signAccountOp controller where it gets logged as a traceCall error
         throw new ProviderError_1.ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url });
     }
     finally {

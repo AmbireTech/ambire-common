@@ -12,14 +12,16 @@ const legendsMessageModule = (message) => {
     }
     const messageRegex = /Assign 0x[a-fA-F0-9]{40} to Ambire Rewards 0x[a-fA-F0-9]{40}/;
     const addressRegex = /0x[a-fA-F0-9]{40}/g;
-    if (messageAsText.match(messageRegex) &&
-        messageAsText.match(addressRegex)[0] === message.accountAddr)
+    const addresses = messageAsText.match(addressRegex);
+    const firstAddr = addresses?.[0];
+    const secondAddr = addresses?.[1];
+    if (messageAsText.match(messageRegex) && firstAddr === message.accountAddr && secondAddr)
         return {
             fullVisualization: [
                 (0, utils_1.getAction)('Link'),
-                (0, utils_1.getAddressVisualization)(messageAsText.match(addressRegex)[0]),
+                (0, utils_1.getAddressVisualization)(firstAddr),
                 (0, utils_1.getLabel)('to'),
-                (0, utils_1.getAddressVisualization)(messageAsText.match(addressRegex)[1]),
+                (0, utils_1.getAddressVisualization)(secondAddr),
                 (0, utils_1.getLabel)('for Ambire Rewards', true)
             ]
         };

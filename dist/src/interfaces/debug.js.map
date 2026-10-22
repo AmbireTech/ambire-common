@@ -1,0 +1,1 @@
+{"version":3,"file":"debug.js","sourceRoot":"","sources":["../../../src/interfaces/debug.ts"],"names":[],"mappings":"","sourcesContent":["import { ControllerInterface } from './controller'\n\nexport type IDebugController = ControllerInterface<\n  InstanceType<typeof import('../controllers/debug/debug').DebugController>\n>\n"]}

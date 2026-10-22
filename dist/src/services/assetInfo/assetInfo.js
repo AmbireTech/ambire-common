@@ -6,12 +6,12 @@ const portfolio_1 = require("../../libs/portfolio");
 const provider_1 = require("../provider");
 const RANDOM_ADDRESS = '0x0000000000000000000000000000000000000001';
 const scheduledActions = {};
-async function executeBatchedFetch(network) {
+async function executeBatchedFetch(network, isTokenPricesEnabled) {
     const rpcUrl = network.selectedRpcUrl || network.rpcUrls[0];
     const provider = (0, provider_1.getRpcProvider)([rpcUrl], network.chainId);
     const allAddresses = Array.from(new Set(scheduledActions[network.chainId.toString()]?.data.map((i) => i.address))) ||
         [];
-    const portfolio = new portfolio_1.Portfolio(fetch, provider, network);
+    const portfolio = new portfolio_1.Portfolio(fetch, provider, network, undefined, undefined, isTokenPricesEnabled);
     const options = {
         disableAutoDiscovery: true,
         additionalErc20Hints: allAddresses,
@@ -30,12 +30,12 @@ async function executeBatchedFetch(network) {
 /**
  * Resolves symbol and decimals for tokens or name for nfts.
  */
-async function resolveAssetInfo(address, network, callback) {
+async function resolveAssetInfo(address, network, callback, isTokenPricesEnabled) {
     if (!scheduledActions[network.chainId.toString()]?.data?.length) {
         scheduledActions[network.chainId.toString()] = {
             promise: new Promise((resolve, reject) => {
                 setTimeout(async () => {
-                    await executeBatchedFetch(network).catch(reject);
+                    await executeBatchedFetch(network, isTokenPricesEnabled).catch(reject);
                     scheduledActions[network.chainId.toString()] = undefined;
                     resolve(0);
                 }, 500);

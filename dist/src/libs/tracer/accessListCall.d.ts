@@ -3,8 +3,8 @@ import { Account, AccountOnchainState } from '../../interfaces/account';
 import { Network } from '../../interfaces/network';
 import { BaseAccount } from '../account/BaseAccount';
 import { AccountOp } from '../accountOp/accountOp';
-export declare function getSimulateTxnAccessor(version?: string): string | null;
-export declare function getShouldUseAccessListCall(account: Account, needsStateOverride: boolean): boolean;
+export declare function getSimulateTxnAccessor(version?: string | null): string | null;
+export declare function getShouldUseAccessListCall(account: Account, accountState: AccountOnchainState, needsStateOverride: boolean): boolean;
 /**
  * We cannot use execTransaction for the access list call as it would require signatures for the transaction
  * (which we don't have at the point of simulation). Instead, we can use the simulate function of the SimulateTxAccessor contract,

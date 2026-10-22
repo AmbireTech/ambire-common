@@ -1,1 +1,1 @@
-{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../../../../src/libs/humanizer/modules/Pancake/index.ts"],"names":[],"mappings":"AAIA,OAAO,EAAE,mBAAmB,EAAU,MAAM,kBAAkB,CAAA;AAK9D,QAAA,MAAM,aAAa,EAAE,mBA8BpB,CAAA;AAED,eAAe,aAAa,CAAA"}
+{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../../../../src/libs/humanizer/modules/Pancake/index.ts"],"names":[],"mappings":"AAGA,OAAO,EACL,mBAAmB,EAIpB,MAAM,kBAAkB,CAAA;AAyBzB,QAAA,MAAM,aAAa,EAAE,mBA0CpB,CAAA;AAED,eAAe,aAAa,CAAA"}

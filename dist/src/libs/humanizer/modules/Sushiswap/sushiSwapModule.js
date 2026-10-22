@@ -1,20 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sushiSwapModule = void 0;
-const ethers_1 = require("ethers");
-const abis_1 = require("../../const/abis");
+const viem_1 = require("viem");
 const utils_1 = require("../../utils");
-const routeProcessorIface = new ethers_1.Interface(abis_1.RouteProcessor);
-const sushiSwapModule = (accountOp, irCalls) => {
+const processRouteAbi = (0, viem_1.parseAbi)([
+    'function processRoute(address tokenIn, uint256 amountIn, address tokenOut, uint256 amountOutMin, address to, bytes route) payable returns (uint256 amountOut)'
+]);
+const processRouteSelector = (0, viem_1.toFunctionSelector)(processRouteAbi[0]);
+const sushiSwapModule = (accountOp, call) => {
     const matcher = {
-        [`${routeProcessorIface.getFunction('processRoute')?.selector}`]: (_accountOp, call) => {
-            const params = routeProcessorIface.parseTransaction(call).args;
-            let { tokenIn, tokenOut /* route */ } = params;
-            const { amountIn, amountOutMin, to } = params;
-            if (tokenIn.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
-                tokenIn = ethers_1.ZeroAddress;
-            if (tokenOut.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
-                tokenOut = ethers_1.ZeroAddress;
+        [processRouteSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: processRouteAbi, data: call.data });
+            const [tokenInRaw, amountIn, tokenOutRaw, amountOutMin, to] = args;
+            const tokenIn = (0, utils_1.eToNative)(tokenInRaw);
+            const tokenOut = (0, utils_1.eToNative)(tokenOutRaw);
             return {
                 ...call,
                 fullVisualization: [
@@ -27,13 +26,12 @@ const sushiSwapModule = (accountOp, irCalls) => {
             };
         }
     };
-    const newCalls = irCalls.map((call) => {
-        if (matcher[call.data.slice(0, 10)]) {
-            return matcher[call.data.slice(0, 10)](accountOp, call);
-        }
+    if (!(0, utils_1.isHexCall)(call))
         return call;
-    });
-    return newCalls;
+    const match = matcher[call.data.slice(0, 10)];
+    if (!match)
+        return call;
+    return match(call);
 };
 exports.sushiSwapModule = sushiSwapModule;
 //# sourceMappingURL=sushiSwapModule.js.map

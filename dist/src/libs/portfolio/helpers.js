@@ -1,19 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.convertApiTokenDataToTokenDataCache = exports.getHardcodedCitreaPrices = exports.getHintsError = exports.isNative = exports.isPortfolioGasTankResult = exports.tokenFilter = exports.learnedErc721sToHints = exports.erc721CollectionToLearnedAssetKeys = exports.getSpecialHints = exports.formatExternalHintsAPIResponse = exports.getAccountPortfolioTotal = exports.addHiddenTokenValueToTotal = exports.getTotal = exports.getTokenBalanceInUSD = exports.getTokenAmount = exports.validateERC20Token = exports.mapToken = exports.isSuspectedToken = exports.isSuspectedRegardsKnownAddresses = void 0;
+exports.TOKEN_METADATA_MAX_AGE_MS = exports.convertApiTokenDataToTokenDataCache = exports.getTokenDataCacheKey = exports.getHardcodedCitreaPrices = exports.getHintsError = exports.isNative = exports.isPortfolioGasTankResult = exports.tokenFilter = exports.learnedErc721sToHints = exports.erc721CollectionToLearnedAssetKeys = exports.getSpecialHints = exports.formatExternalHintsAPIResponse = exports.getAccountPortfolioTotal = exports.addHiddenTokenValueToTotal = exports.getTotal = exports.sortTokensByBalanceInUSD = exports.getTokenBalanceInUSD = exports.getTokenUsdPrice = exports.getTokenAmount = exports.validateERC721Token = exports.validateCollectibleOwnership = exports.getErc721Validity = exports.getCollectibleCacheKey = exports.getAssetCacheKey = exports.normalizeAssetAddress = exports.getVisibleCollectibles = exports.mergeCollectionHints = exports.validateERC20Token = void 0;
 exports.overrideSymbol = overrideSymbol;
-exports.getFlags = getFlags;
 exports.mergeERC721s = mergeERC721s;
+exports.isAssetMetadataStale = isAssetMetadataStale;
+exports.planAssetMetadata = planAssetMetadata;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const viem_1 = require("viem");
 const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
-const gasTankFeeTokens_1 = tslib_1.__importDefault(require("../../consts/gasTankFeeTokens"));
-const humanizerInfo_json_1 = tslib_1.__importDefault(require("../../consts/humanizer/humanizerInfo.json"));
+const IERC721_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC721.json"));
 const pinnedTokens_1 = require("../../consts/pinnedTokens");
 const types_1 = require("../defiPositions/types");
-const portfolio_1 = require("./portfolio");
-const knownAddresses = humanizerInfo_json_1.default.knownAddresses || {};
+const errorNames_1 = require("./errorNames");
 const usdcEMapping = {
     '43114': '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
     '1285': '0x748134b5f553f2bcbd78c6826de99a70274bdeb3',
@@ -28,92 +27,6 @@ function overrideSymbol(address, chainId, symbol) {
         return 'USDC.E';
     }
     return symbol;
-}
-const removeNonLatinChars = (str) => str
-    // normalize to NFC form to unify visually-similar composed characters
-    .normalize('NFC')
-    .split('')
-    // keep only ASCII range (printable chars)
-    .filter((ch) => {
-    const code = ch.charCodeAt(0);
-    return code >= 32 && code <= 126;
-})
-    .join('');
-// safe address normalizer
-const normalizeAddress = (addr) => {
-    try {
-        return (0, viem_1.getAddress)(addr);
-    }
-    catch {
-        return addr;
-    }
-};
-const isSuspectedRegardsKnownAddresses = (tokenAddr, tokenSymbol, chainId) => {
-    if (!knownAddresses || !tokenAddr || !tokenSymbol)
-        return false;
-    const normalizedAddr = normalizeAddress(tokenAddr);
-    const normalizedSymbol = removeNonLatinChars(tokenSymbol).toUpperCase();
-    const numericChainId = Number(chainId);
-    const knownTokens = Object.values(knownAddresses);
-    // Only consider known tokens that have chainIds defined (skip those without chainIds)
-    return knownTokens.some((known) => {
-        const knownSymbolRaw = known?.token?.symbol;
-        const knownChains = known?.chainIds;
-        if (!knownSymbolRaw || !knownChains)
-            return false; // skip unknowns or entries without chainIds
-        const knownSymbol = removeNonLatinChars(knownSymbolRaw).toUpperCase();
-        if (knownSymbol !== normalizedSymbol)
-            return false;
-        if (!knownChains.includes(numericChainId))
-            return false;
-        // same symbol + same chain but different address -> suspected spoof
-        return normalizeAddress(known.address) !== normalizedAddr;
-    });
-};
-exports.isSuspectedRegardsKnownAddresses = isSuspectedRegardsKnownAddresses;
-const isSuspectedToken = (address, symbol, chainId) => {
-    const normalizedAddr = normalizeAddress(address);
-    const numericChainId = Number(chainId);
-    // 1) lookup known token by address
-    const knownToken = knownAddresses?.[normalizedAddr];
-    // 2) Only auto-accept if known token exists AND chainIds is defined AND includes chainId
-    if (knownToken?.chainIds?.includes(numericChainId)) {
-        return null; // trusted
-    }
-    // 3) Same-symbol spoofing on same chain (different address)
-    if ((0, exports.isSuspectedRegardsKnownAddresses)(address, symbol, chainId))
-        return 'suspected';
-    // 4) Not flagged
-    return null;
-};
-exports.isSuspectedToken = isSuspectedToken;
-function getFlags(networkData, chainId, tokenChainId, address, name, symbol, hasSimulationAmount) {
-    const isRewardsOrGasTank = ['gasTank', 'rewards'].includes(chainId);
-    const onGasTank = chainId === 'gasTank';
-    let rewardsType = null;
-    if (networkData?.stkWalletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
-        rewardsType = 'wallet-rewards';
-    if (networkData?.walletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
-        rewardsType = 'wallet-vesting';
-    const foundFeeToken = gasTankFeeTokens_1.default.find((t) => t.address.toLowerCase() === address.toLowerCase() &&
-        (isRewardsOrGasTank ? t.chainId === tokenChainId : t.chainId.toString() === chainId));
-    const canTopUpGasTank = !!foundFeeToken && !foundFeeToken?.disableGasTankDeposit && !rewardsType;
-    const isFeeToken = address === ethers_1.ZeroAddress ||
-        // disable if not in gas tank
-        (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
-        chainId === 'gasTank';
-    let suspectedType = null;
-    if (hasSimulationAmount && !isRewardsOrGasTank) {
-        suspectedType = (0, exports.isSuspectedToken)(address, symbol, BigInt(chainId));
-    }
-    return {
-        onGasTank,
-        rewardsType,
-        canTopUpGasTank,
-        isFeeToken,
-        isHidden: false,
-        suspectedType
-    };
 }
 function mergeERC721s(sources) {
     const result = {};
@@ -137,55 +50,6 @@ function mergeERC721s(sources) {
     });
     return result;
 }
-const mapToken = (token, network, address, opts, hasSimulationAmount, latestAmount) => {
-    const { specialErc20Hints, blockTag } = opts;
-    let symbol = 'Unknown';
-    try {
-        symbol = overrideSymbol(address, network.chainId, token.symbol);
-    }
-    catch (e) {
-        console.log(`no symbol was found for token with address ${address} on ${network.name}`);
-    }
-    let tokenName = symbol;
-    try {
-        tokenName = token.name;
-    }
-    catch (e) {
-        console.log(`no name was found for a token with a symbol of: ${symbol}, address: ${address} on ${network.name}`);
-    }
-    const tokenFlags = getFlags({}, network.chainId.toString(), network.chainId, address, tokenName, symbol, hasSimulationAmount);
-    if (specialErc20Hints) {
-        if (specialErc20Hints.custom.includes(address)) {
-            tokenFlags.isCustom = true;
-        }
-        if (specialErc20Hints.hidden.includes(address)) {
-            tokenFlags.isHidden = true;
-        }
-    }
-    const tokenResult = {
-        amount: token.amount,
-        chainId: network.chainId,
-        decimals: Number(token.decimals),
-        name: address === '0x0000000000000000000000000000000000000000'
-            ? network.nativeAssetName
-            : tokenName,
-        symbol: address === '0x0000000000000000000000000000000000000000' ? network.nativeAssetSymbol : symbol,
-        address,
-        flags: tokenFlags
-    };
-    if (blockTag !== 'both')
-        return tokenResult;
-    return {
-        ...tokenResult,
-        // Fallback to the pending amount if latestAmount is not provided
-        // Otherwise it will look like someone is receiving tokens and the current amount is 0
-        // It's important that we are using ?? here instead of ||
-        // because latestAmount can be 0
-        latestAmount: latestAmount ?? token.amount,
-        pendingAmount: tokenResult.amount
-    };
-};
-exports.mapToken = mapToken;
 /**
  * Determines whether an error is related to network connectivity issues rather than validation failures.
  *
@@ -334,6 +198,207 @@ const validateERC20Token = async (token, accountId, provider, options) => {
     };
 };
 exports.validateERC20Token = validateERC20Token;
+const ERC721_INTERFACE_ID = '0x80ac58cd';
+const ERC1155_INTERFACE_ID = '0xd9b67a26';
+// Not available in the compiled IERC721 ABI
+const ERC721_METADATA_ABI = [
+    'function name() view returns (string)',
+    'function symbol() view returns (string)',
+    'function supportsInterface(bytes4 interfaceId) view returns (bool)'
+];
+/**
+ * Merges every source of ERC-721 hints for a network.
+ *
+ * The custom and the hidden collections are requested like any other, as the
+ * account may hold a collectible no other source knows about, and a hidden
+ * collection still has to be read to be listed as hidden. Their ids are added to
+ * what the other sources found.
+ *
+ * An entry without ids asks for the whole collection, which would override the
+ * exact ids of the other sources, so it is only used for a collection no other
+ * source named ids for.
+ */
+const mergeCollectionHints = ({ additionalHints, apiHints, specialHints }) => {
+    const merged = mergeERC721s([additionalHints || {}, apiHints, specialHints?.learn || {}]);
+    const addCollections = (collections) => {
+        Object.keys(collections).forEach((address) => {
+            let checksummed = address;
+            try {
+                checksummed = (0, viem_1.getAddress)(address);
+            }
+            catch {
+                // Not an address, so it can't be a collection
+                return;
+            }
+            const ids = collections[address] || [];
+            if (!ids.length) {
+                // Asks for the whole collection, unless another source already named ids
+                if (!merged[checksummed]?.length)
+                    merged[checksummed] = [];
+                return;
+            }
+            const knownIds = merged[checksummed];
+            // The whole collection is already requested
+            if (knownIds && !knownIds.length)
+                return;
+            merged[checksummed] = [...new Set([...(knownIds || []), ...ids])];
+        });
+    };
+    addCollections(specialHints?.custom || {});
+    addCollections(specialHints?.hidden || {});
+    return merged;
+};
+exports.mergeCollectionHints = mergeCollectionHints;
+/**
+ * The collectibles of a collection that the account should see.
+ *
+ * A collection added by the user shows only the collectibles they added, so the
+ * rest of it doesn't come along with them. Collections added before the ids
+ * were recorded have none, which means the whole collection.
+ *
+ * `isDiscovered` marks a collection another source already found. Narrowing one
+ * of those down to the added ids would hide collectibles the account was already
+ * seeing, so only a collection that exists because it was added is narrowed.
+ */
+const getVisibleCollectibles = ({ collectibles, customIds, hiddenIds, isDiscovered }) => {
+    // No hidden ids stands for the whole collection, the same way it does in the hints
+    if (hiddenIds && !hiddenIds.length)
+        return [];
+    const added = customIds?.length && !isDiscovered
+        ? collectibles.filter((id) => customIds.includes(id))
+        : collectibles;
+    if (!hiddenIds)
+        return added;
+    return added.filter((id) => !hiddenIds.includes(id));
+};
+exports.getVisibleCollectibles = getVisibleCollectibles;
+/**
+ * Addresses reach the validation caches from user input, from dApps and from the
+ * portfolio, so they are normalized to always resolve to the same entry.
+ */
+const normalizeAssetAddress = (address) => {
+    try {
+        return (0, viem_1.getAddress)(address);
+    }
+    catch {
+        // Not an address, so the raw value is the best key we have
+        return address;
+    }
+};
+exports.normalizeAssetAddress = normalizeAssetAddress;
+/** Key of a token or a collection in the validation cache */
+const getAssetCacheKey = (address, chainId) => `${(0, exports.normalizeAssetAddress)(address)}-${chainId}`;
+exports.getAssetCacheKey = getAssetCacheKey;
+/** Key of a single collectible in the validation cache */
+const getCollectibleCacheKey = (address, chainId, tokenId) => `${(0, exports.getAssetCacheKey)(address, chainId)}-${tokenId}`;
+exports.getCollectibleCacheKey = getCollectibleCacheKey;
+/**
+ * Decides whether a contract is a collection, based on what it exposes.
+ * Extracted so the decision can be tested without a provider.
+ */
+const getErc721Validity = ({ supportsERC721, supportsERC1155, isContract, hasDecimals }) => {
+    // Some collections (e.g. vote-escrow NFTs) expose decimals() too, so this has
+    // to be trusted over the checks below
+    if (supportsERC721 === true)
+        return { isValid: true, reason: null };
+    // Multi edition NFTs are a different standard, which the portfolio can't read.
+    // Some of them expose ownerOf() too, so they would pass the checks below.
+    if (supportsERC1155 === true)
+        return { isValid: false, reason: 'erc1155-unsupported' };
+    if (!isContract)
+        return { isValid: false, reason: 'not-a-collection' };
+    if (hasDecimals)
+        return { isValid: false, reason: 'is-a-token' };
+    // Whether the account owns collectibles of it doesn't matter, the same way a
+    // custom token is added regardless of its balance
+    return { isValid: true, reason: null };
+};
+exports.getErc721Validity = getErc721Validity;
+/**
+ * Checks whether the account owns the collectible. Used when a collection can't
+ * be listed and the user names one of their collectibles explicitly.
+ */
+const validateCollectibleOwnership = async (collectible, accountId, provider) => {
+    const erc721 = new ethers_1.Contract(collectible.address, IERC721_json_1.default.abi, provider);
+    const invalid = (type, reason) => ({
+        isValid: false,
+        standard: 'erc721',
+        error: { message: null, type, reason }
+    });
+    let owner;
+    try {
+        owner = await erc721.ownerOf(collectible.tokenId);
+    }
+    catch (e) {
+        console.error('Error while checking the owner of a collectible', e);
+        if (isNetworkError(e))
+            return invalid('network', 'network-problem');
+        return invalid('validation', 'collectible-not-found');
+    }
+    if (typeof owner !== 'string' || owner.toLowerCase() !== accountId.toLowerCase())
+        return invalid('validation', 'collectible-not-owned');
+    return { isValid: true, standard: 'erc721', error: { message: null, type: null } };
+};
+exports.validateCollectibleOwnership = validateCollectibleOwnership;
+/** An ERC-20 token is rejected too, as it also exposes name() and balanceOf() */
+const validateERC721Token = async (collection, provider) => {
+    const metadata = new ethers_1.Contract(collection.address, ERC721_METADATA_ABI, provider);
+    const erc20 = new ethers_1.Contract(collection.address, IERC20_json_1.default.abi, provider);
+    let hasNetworkError = false;
+    const handleError = (e, operation) => {
+        console.error('Error during ERC721 validation operation:', operation, e);
+        if (isNetworkError(e))
+            hasNetworkError = true;
+        return undefined;
+    };
+    const [code, supportsERC721, supportsERC1155, decimals, name, symbol] = await Promise.all([
+        provider.getCode(collection.address).catch((e) => handleError(e, 'code')),
+        metadata.supportsInterface(ERC721_INTERFACE_ID).catch((e) => handleError(e, 'supportsInterface')),
+        metadata.supportsInterface(ERC1155_INTERFACE_ID).catch((e) => {
+            if (isNetworkError(e))
+                hasNetworkError = true;
+            return undefined;
+        }),
+        // A revert is the expected outcome for a collection, but a network problem
+        // must not read as one - it would leave a token looking like a collection
+        erc20.decimals().catch((e) => {
+            if (isNetworkError(e))
+                hasNetworkError = true;
+            return undefined;
+        }),
+        // Optional, used for the preview
+        metadata.name().catch(() => undefined),
+        metadata.symbol().catch(() => undefined)
+    ]);
+    if (hasNetworkError)
+        return {
+            isValid: false,
+            standard: 'erc721',
+            error: { message: null, type: 'network', reason: 'network-problem' }
+        };
+    const { isValid, reason } = (0, exports.getErc721Validity)({
+        supportsERC721,
+        supportsERC1155,
+        isContract: typeof code === 'string' && code !== '0x',
+        hasDecimals: typeof decimals !== 'undefined'
+    });
+    if (!isValid)
+        return {
+            isValid: false,
+            standard: 'erc721',
+            error: { message: null, type: 'validation', reason }
+        };
+    return {
+        isValid: true,
+        standard: 'erc721',
+        error: { message: null, type: null },
+        collection: {
+            name: typeof name === 'string' ? name : null,
+            symbol: typeof symbol === 'string' ? symbol : null
+        }
+    };
+};
+exports.validateERC721Token = validateERC721Token;
 // fetch the amountPostSimulation for the token if set
 // otherwise, the token.amount
 const getTokenAmount = (token, beforeSimulation) => {
@@ -342,14 +407,34 @@ const getTokenAmount = (token, beforeSimulation) => {
     return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount;
 };
 exports.getTokenAmount = getTokenAmount;
+const getTokenUsdPrice = (token) => token.priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')?.price || 0;
+exports.getTokenUsdPrice = getTokenUsdPrice;
+/**
+ * The token's balance in USD. Called once per token on every portfolio update and
+ * once per token per comparison wherever a token list is sorted by it, so the
+ * amount is converted with plain number math: `formatUnits` builds a decimal
+ * string, which costs ~80us per call on a mid-range phone and dominated the
+ * sorting of a large portfolio. A float carries the same precision the caller
+ * ends up with either way, since the result is a float in both cases.
+ */
 const getTokenBalanceInUSD = (token) => {
-    const amount = (0, exports.getTokenAmount)(token);
-    const { decimals, priceIn } = token;
-    const balance = parseFloat((0, ethers_1.formatUnits)(amount, decimals));
-    const price = priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')?.price || 0;
+    const price = (0, exports.getTokenUsdPrice)(token);
+    if (!price)
+        return 0;
+    const balance = Number((0, exports.getTokenAmount)(token)) / 10 ** token.decimals;
     return balance * price;
 };
 exports.getTokenBalanceInUSD = getTokenBalanceInUSD;
+/**
+ * Tokens ordered by their USD balance, highest first. Each token's balance is
+ * calculated once instead of on every comparison, which is what a comparator
+ * that derives it would do (~20 times per token for a 1000-token portfolio).
+ */
+const sortTokensByBalanceInUSD = (tokens) => tokens
+    .map((token) => ({ token, balanceInUSD: (0, exports.getTokenBalanceInUSD)(token) }))
+    .sort((a, b) => b.balanceInUSD - a.balanceInUSD)
+    .map(({ token }) => token);
+exports.sortTokensByBalanceInUSD = sortTokensByBalanceInUSD;
 const getTotal = (t, defiState, opts) => {
     const { includeHiddenTokens = false, beforeSimulation = false } = opts || {};
     const tokensTotal = t.reduce((cur, token) => {
@@ -391,6 +476,11 @@ const getTotal = (t, defiState, opts) => {
             });
             return cur;
         }, { usd: 0 });
+    }
+    // In case the user doesn't have any tokens or the function is calculating for the custom
+    // network `defiApps` that doesn't have any tokens
+    if (!Object.keys(tokensTotal).length && Object.keys(defiTotal).length > 0) {
+        return defiTotal;
     }
     return Object.keys(tokensTotal).reduce((cur, key) => {
         cur[key] = (tokensTotal[key] || 0) + (defiTotal[key] || 0);
@@ -462,15 +552,35 @@ const getSpecialHints = (chainId, customTokens, tokenPreferences, toBeLearnedAss
     };
     const networkToBeLearnedTokens = toBeLearnedAssets.erc20s?.[chainId.toString()] || [];
     const networkToBeLearnedNfts = toBeLearnedAssets.erc721s?.[chainId.toString()] || {};
-    customTokens.forEach((token) => {
-        if (token.chainId === chainId && token.standard === 'ERC20') {
-            specialErc20Hints.custom.push(token.address);
+    // A collectible is requested by its id, while an entry without one requests
+    // every collectible of the collection (an empty array of ids)
+    const addCollectionHint = (hints, { address, tokenId }) => {
+        if (typeof tokenId !== 'bigint') {
+            hints[address] = [];
+            return;
         }
+        if (hints[address]?.length === 0)
+            return;
+        hints[address] = [...(hints[address] || []), tokenId];
+    };
+    customTokens.forEach((token) => {
+        if (token.chainId !== chainId)
+            return;
+        if (token.standard === 'ERC20') {
+            specialErc20Hints.custom.push(token.address);
+            return;
+        }
+        if (token.standard === 'ERC721')
+            addCollectionHint(specialErc721Hints.custom, token);
     });
     tokenPreferences.forEach((token) => {
-        if (token.chainId === chainId && token.isHidden) {
-            specialErc20Hints.hidden.push(token.address);
+        if (token.chainId !== chainId || !token.isHidden)
+            return;
+        if (token.standard === 'ERC721') {
+            addCollectionHint(specialErc721Hints.hidden, token);
+            return;
         }
+        specialErc20Hints.hidden.push(token.address);
     });
     if (networkToBeLearnedTokens) {
         networkToBeLearnedTokens.forEach((token) => {
@@ -504,10 +614,20 @@ exports.erc721CollectionToLearnedAssetKeys = erc721CollectionToLearnedAssetKeys;
  */
 const learnedErc721sToHints = (keys) => {
     const hints = {};
+    // Split once and collect the enumerable collections up front. Checking for an
+    // enumerable key while building the hints would mean scanning every key for
+    // every key, and an account with many collections brings thousands of them.
+    const parsedKeys = [];
+    const enumerableCollections = new Set();
     keys.forEach((key) => {
         const [collectionAddress, tokenId] = key.split(':');
         if (!collectionAddress)
             return;
+        parsedKeys.push([collectionAddress, tokenId]);
+        if (tokenId === 'enumerable')
+            enumerableCollections.add(collectionAddress);
+    });
+    parsedKeys.forEach(([collectionAddress, tokenId]) => {
         if (tokenId === 'enumerable') {
             hints[collectionAddress] = [];
             return;
@@ -515,7 +635,7 @@ const learnedErc721sToHints = (keys) => {
         // The key already exists as an enumerable hint. Example:
         // collectionA:enumerable exists and collectionB:id is attempted to be added
         // (it shouldn't be)
-        if (keys.includes(`${collectionAddress}:enumerable`)) {
+        if (enumerableCollections.has(collectionAddress)) {
             return;
         }
         if (typeof tokenId !== 'string')
@@ -564,7 +684,7 @@ exports.isNative = isNative;
 const getHintsError = (errorMessage, lastExternalApiHintsData) => {
     if (!lastExternalApiHintsData) {
         return {
-            name: portfolio_1.PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+            name: errorNames_1.PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
             message: errorMessage,
             level: 'critical'
         };
@@ -574,8 +694,8 @@ const getHintsError = (errorMessage, lastExternalApiHintsData) => {
     const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES;
     return {
         name: isLastUpdateTooOld
-            ? portfolio_1.PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
-            : portfolio_1.PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
+            ? errorNames_1.PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
+            : errorNames_1.PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
         message: errorMessage,
         level: isLastUpdateTooOld ? 'critical' : 'silent'
     };
@@ -596,6 +716,11 @@ const getHardcodedCitreaPrices = (address) => {
     return null;
 };
 exports.getHardcodedCitreaPrices = getHardcodedCitreaPrices;
+/**
+ * The API may return the token checksummed or lowercase so we normalize it to lowercase to avoid cache misses.
+ */
+const getTokenDataCacheKey = (address) => address.toLowerCase();
+exports.getTokenDataCacheKey = getTokenDataCacheKey;
 const convertApiTokenDataToTokenDataCache = (tokenData) => {
     if (!tokenData) {
         return {
@@ -629,4 +754,38 @@ const convertApiTokenDataToTokenDataCache = (tokenData) => {
     };
 };
 exports.convertApiTokenDataToTokenDataCache = convertApiTokenDataToTokenDataCache;
+/**
+ * How long stored token metadata is trusted before it is read from the chain again.
+ * Symbols and names do change on rare occasions, such as a token rebrand behind an
+ * upgradeable proxy.
+ */
+exports.TOKEN_METADATA_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+/**
+ * Whether the chain has to be asked for an asset's metadata (a token's symbol, name
+ * and decimals, or a collection's name and symbol). True when nothing is stored for
+ * it, or when what is stored has aged out.
+ */
+function isAssetMetadataStale(entry, now) {
+    if (!entry)
+        return true;
+    return now - entry.fetchedAt > exports.TOKEN_METADATA_MAX_AGE_MS;
+}
+/**
+ * Splits the passed addresses into the metadata already held for them and the ones
+ * whose metadata has to be read on this update. The map is copied, so that an update in
+ * flight keeps the metadata it started with even if the caller's store drops entries in
+ * the meantime.
+ */
+function planAssetMetadata(addresses, known, now) {
+    const plan = { known: new Map(), needsMetadata: new Set() };
+    addresses.forEach((address) => {
+        const entry = known?.get(address);
+        if (!entry || isAssetMetadataStale(entry, now)) {
+            plan.needsMetadata.add(address);
+            return;
+        }
+        plan.known.set(address, entry);
+    });
+    return plan;
+}
 //# sourceMappingURL=helpers.js.map

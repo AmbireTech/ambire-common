@@ -3,10 +3,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.increaseFee = increaseFee;
 exports.calculateFeeAmount = calculateFeeAmount;
 const broadcast_1 = require("../broadcast/broadcast");
-function increaseFee(amount, broadcaster = 'relayer') {
-    if (broadcaster === 'paymaster')
-        return amount + amount / 10n;
-    return amount + amount / 20n;
+function increaseFee(amount, isAccountSafe, network) {
+    if (isAccountSafe) {
+        if (network.chainId === 1n)
+            return amount + amount / 4n;
+        return amount + amount / 2n;
+    }
+    return amount + amount / 10n;
 }
 function getAmountAfterFeeTokenConvert(simulatedGasLimit, gasPrice, nativeRatio, feeTokenDecimals, addedNative) {
     const amountInWei = simulatedGasLimit * gasPrice + addedNative;
@@ -20,7 +23,7 @@ function getAmountAfterFeeTokenConvert(simulatedGasLimit, gasPrice, nativeRatio,
     }
     return result;
 }
-function calculateFeeAmount({ broadcastOption, simulatedGasLimit, gasPrice, nativeRatio, feeTokenDecimals, addedNative, usesPaymaster }) {
+function calculateFeeAmount({ broadcastOption, simulatedGasLimit, gasPrice, nativeRatio, feeTokenDecimals, addedNative, usesPaymaster, isAccountSafe, network }) {
     if (broadcastOption === broadcast_1.BROADCAST_OPTIONS.bySelf ||
         broadcastOption === broadcast_1.BROADCAST_OPTIONS.bySelf7702 ||
         broadcastOption === broadcast_1.BROADCAST_OPTIONS.byOtherEOA) {
@@ -28,10 +31,7 @@ function calculateFeeAmount({ broadcastOption, simulatedGasLimit, gasPrice, nati
     }
     let amount = getAmountAfterFeeTokenConvert(simulatedGasLimit, gasPrice, nativeRatio, feeTokenDecimals, addedNative);
     if (broadcastOption === broadcast_1.BROADCAST_OPTIONS.byBundler && usesPaymaster) {
-        amount = increaseFee(amount, 'paymaster');
-    }
-    else if (broadcastOption !== broadcast_1.BROADCAST_OPTIONS.byBundler) {
-        amount = increaseFee(amount);
+        amount = increaseFee(amount, isAccountSafe, network);
     }
     return amount;
 }

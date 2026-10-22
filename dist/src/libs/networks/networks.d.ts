@@ -11,14 +11,21 @@ export declare const getNetworksWithFailedRPC: ({ providers }: {
     providers: RPCProviders;
 }) => string[];
 export declare function getProviderBatchMaxCount(network: Network, rpcUrl: string): number | undefined;
+export declare function getStateOverrideSupport(provider: RPCProvider): Promise<boolean>;
 /**
- * Fetches detailed network information from an RPC provider.
- * Used when adding a new network, updating network info, or when the RPC provider is changed,
- * And once every 24 hours for custom networks.
+ * The network info shape before any RPC probe has resolved. Every field is
+ * 'LOADING' except the chain id.
+ */
+export declare function getLoadingNetworkInfo(chainId: bigint): NetworkInfoLoading<NetworkInfo>;
+/**
+ * True while any of the probes behind the network info is still running.
+ */
+export declare function isNetworkInfoPending(info?: NetworkInfoLoading<NetworkInfo>): boolean;
+/**
+ * Fetches a network's capabilities from an RPC provider - smart account support, ERC-4337,
+ * fee options and price metadata.
  *
- * - Checks smart account (SA) support, singleton contract, and state override capabilities.
- * - Determines if the network supports ERC-4337 and Account Abstraction.
- * - Fetches additional metadata from external sources (e.g., CoinGecko).
+ * Streams progress through `callback`.
  */
 export declare function getNetworkInfo(fetch: Fetch, chainId: bigint, provider: RPCProvider, callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void, network: Network | undefined): Promise<void>;
 /**
@@ -27,8 +34,14 @@ export declare function getNetworkInfo(fetch: Fetch, chainId: bigint, provider: 
  * Smart Accounts, ERC-4337, transaction simulation, and price tracking are supported.
  */
 export declare function getFeaturesByNetworkProperties(networkInfo: NetworkInfo | NetworkInfoLoading<NetworkInfo> | undefined, network?: Network): NetworkFeature[];
+/** The feature list to render while a network's info is still being fetched. */
+export declare function getLoadingFeatures(): NetworkFeature[];
 export declare function getFeatures(networkInfo: NetworkInfoLoading<NetworkInfo> | undefined, network: Network | undefined): NetworkFeature[];
 export declare function hasRelayerSupport(network: Network): boolean;
+/**
+ * Validates a single network object against some of the Network interface requirements.
+ */
+export declare function sanityCheckImportantNetworkProperties(network: Network): boolean;
 /**
  * Validates networks coming from the storage, filtering out the invalid ones.
  * This prevents crashes when networks have missing or invalid mandatory properties.
@@ -60,5 +73,5 @@ export declare const getAccountNotSupportedReason: (acc?: Account | null) => "" 
 export declare const getSupportedNetworks: (networks: Network[], accountStates: AccountStates, acc?: Account | null, additionalCheck?: {
     chainIds: bigint[];
     reason: string;
-}) => SupportedNetworks[];
+}, allowUndeployedSafeOnChainId?: bigint) => SupportedNetworks[];
 //# sourceMappingURL=networks.d.ts.map

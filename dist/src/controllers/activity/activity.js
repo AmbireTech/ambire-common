@@ -4,36 +4,48 @@ exports.ActivityController = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const address_poisoning_1 = require("../../libs/transfer/address-poisoning");
+const accountOpsPersistence_1 = require("../../services/storage/accountOpsPersistence");
+const activityIdb_1 = require("../../services/storage/activityIdb");
 const balanceChanges_1 = require("../../libs/accountOp/balanceChanges");
 const submittedAccountOp_1 = require("../../libs/accountOp/submittedAccountOp");
 const types_1 = require("../../libs/accountOp/types");
+const feePayersHistory_1 = require("../../libs/activity/feePayersHistory");
+const replacements_1 = require("../../libs/activity/replacements");
+const sentToHistory_1 = require("../../libs/activity/sentToHistory");
 const parseLogs_1 = require("../../libs/logsParser/parseLogs");
 const blacklist_1 = require("../../libs/portfolio/blacklist");
 const scamFilter_1 = require("../../libs/scamFilter");
 const userOperation_1 = require("../../libs/userOperation/userOperation");
 const debugTransaction_1 = require("../../utils/debugTransaction");
+const getAddressCaught_1 = require("../../utils/getAddressCaught");
 const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
-// We are limiting items array to include no more than 1000 records,
-// as we trim out the oldest ones (in the beginning of the items array).
-// We do this to maintain optimal storage and performance.
-const trim = (items, maxSize = 1000) => {
-    if (items.length > maxSize) {
-        // If the array size is greater than maxSize, remove the last (oldest) item
-        // newest items are added to the beginning of the array so oldest will be at the end (thats why we .pop())
-        items.pop();
-    }
+// Same number as MAX_OPS_PER_GROUP today, but not the same policy — kept separate.
+const MAX_SIGNED_MESSAGES_PER_ACCOUNT = 1000;
+/** Drop the oldest item once over cap and return it, so callers can mirror the eviction. */
+const trim = (items, maxSize) => {
+    if (items.length <= maxSize)
+        return undefined;
+    return items.pop();
 };
-const paginate = (items, fromPage, itemsPerPage) => {
+/** `itemsTotal` is overridable: a caller holding one page cannot derive it, and navigation gates on it. */
+const paginate = (items, fromPage, itemsPerPage, itemsTotal = items.length) => {
     return {
         items: items.slice(fromPage * itemsPerPage, fromPage * itemsPerPage + itemsPerPage),
-        itemsTotal: items.length,
+        itemsTotal,
         currentPage: fromPage, // zero/index based
-        maxPages: Math.ceil(items.length / itemsPerPage)
+        maxPages: Math.ceil(itemsTotal / itemsPerPage)
     };
 };
 const getPreviousBlockNumber = (blockNumber) => (blockNumber > 0 ? blockNumber - 1 : 0);
 const normalizeTxnId = (txnId) => txnId?.toLowerCase();
+const ACCOUNT_OP_PENDING_TIMEOUT_MINS = 30;
+/**
+ * How many times a page may load more account ops to make up for the ones merged with their
+ * speed ups. One is almost always enough; the cap only guards against a history made of
+ * almost nothing but replaced transactions
+ */
+const MAX_EXTRA_LOADS_FOR_REPLACED_OPS = 5;
 /**
  * Take all txnIds from the account op
  * - normal case: accountOp.txnId
@@ -42,6 +54,7 @@ const normalizeTxnId = (txnId) => txnId?.toLowerCase();
 const getInternalAccountOpTxnIds = (accountOp) => {
     return [accountOp.txnId, ...accountOp.calls.map((call) => call.txnId)].filter((txnId) => !!txnId);
 };
+/** Matches an internal op's own txnId or any of its per-call ones, case-insensitively. */
 const internalAccountOpHasTxnId = (accountOp, txnId) => {
     const normalizedTxnId = normalizeTxnId(txnId);
     return getInternalAccountOpTxnIds(accountOp).some((internalTxnId) => normalizeTxnId(internalTxnId) === normalizedTxnId);
@@ -53,7 +66,11 @@ const isAccountOpFinalized = (accountOp) => accountOp.status !== types_1.Account
  * Fix address checksum problems as sometimes addresses are left out
  * only because they are not saved properly checksummed
  */
-const getAccountOpsAccountKey = (accountOps, accountAddr) => Object.keys(accountOps).find((key) => key.toLowerCase() === accountAddr.toLowerCase());
+/**
+ * The key an account is actually stored under. Addresses are not written canonically, so a
+ * plain index can miss an entry that differs only in casing.
+ */
+const getAccountOpsAccountKey = (accountKeyed, accountAddr) => Object.keys(accountKeyed).find((key) => key.toLowerCase() === accountAddr.toLowerCase());
 const getAccountOpsForAccountAndChain = (accountOps, accountAddr, chainIdString) => {
     const accountKey = getAccountOpsAccountKey(accountOps, accountAddr);
     return accountKey ? accountOps[accountKey]?.[chainIdString] || [] : [];
@@ -74,6 +91,27 @@ const getBalanceChangeTokenAddrsFromReceipts = async (accountOp, receipts) => {
     const foundTokens = (0, blacklist_1.filterStaticBlacklistedAddrs)((await Promise.all(receipts.map((receipt) => (0, parseLogs_1.getTransferLogTokens)(receipt.logs, accountOp.accountAddr)))).flat(), accountOp.chainId);
     return (0, balanceChanges_1.getBalanceChangeTokenAddresses)(foundTokens, accountOp.chainId);
 };
+const getNftBalanceChangesFromReceipts = async (accountOp, receipts) => {
+    const changes = await (0, parseLogs_1.getTransferLogNfts)(receipts.flatMap((receipt) => receipt.logs), accountOp.accountAddr);
+    return changes.map((change) => ({ ...change, chainId: accountOp.chainId }));
+};
+/**
+ * Groups the NFTs that entered the account by collection address, in the format expected by
+ * `addErc721sToBeLearned`. NFTs that left the account are skipped as learned NFTs are never
+ * removed from the hints and would otherwise be queried on every portfolio update.
+ */
+const getNftsToLearn = (nftBalanceChanges) => {
+    const tokenIdsByAddress = new Map();
+    nftBalanceChanges.forEach(({ address, tokenId, balanceChange }) => {
+        if (balanceChange <= 0n)
+            return;
+        const tokenIds = tokenIdsByAddress.get(address) || [];
+        if (!tokenIds.includes(tokenId))
+            tokenIds.push(tokenId);
+        tokenIdsByAddress.set(address, tokenIds);
+    });
+    return Array.from(tokenIdsByAddress.entries());
+};
 const getAccountOpReceipts = async (accountOp, provider) => {
     const txIds = (0, submittedAccountOp_1.isIdentifiedByMultipleTxn)(accountOp.identifiedBy)
         ? accountOp.calls.map((call) => call.txnId).filter((txnId) => !!txnId)
@@ -85,6 +123,7 @@ const getAccountOpReceipts = async (accountOp, provider) => {
     const receipts = await Promise.all(txIds.map((txnId) => provider.getTransactionReceipt(txnId)));
     return receipts.filter((receipt) => !!receipt);
 };
+const getBalanceChangesTaskId = (accountOp) => `${accountOp.accountAddr}:${accountOp.chainId.toString()}:${accountOp.identifiedBy.identifier}`;
 /**
  * Activity Controller
  * Manages signed AccountsOps and Messages in controller memory and browser storage.
@@ -102,23 +141,26 @@ const getAccountOpReceipts = async (accountOp, provider) => {
  * filters in "Settings -> Transactions History" and "Dashboard -> Activity Tab" are isolated per session.
  *
  * After adding or removing an AccountOp or SignedMessage, call `syncFilteredAccountsOps()` or
- * `syncFilteredSignedMessages()` to synchronize filtered data with the source data.
+ * `syncSignedMessages()` to synchronize filtered data with the source data.
  *
  * The frontend is responsible for clearing filtered items for a session when a component unmounts
  * by calling `resetAccountsOpsFilters()` or `resetSignedMessagesFilters()`. If not cleared, all
  * sessions will be automatically removed when the browser is closed or the controller terminates.
  *
- * 💡 For performance, items per account and network are limited to 1000.
+ * 💡 For performance, items per account and network are capped (see MAX_OPS_PER_GROUP).
  * Older items are trimmed, keeping the most recent ones.
  */
 class ActivityController extends eventEmitter_1.default {
     #storage;
     #fetch;
+    #persistence;
     #initialLoadPromise;
     #accounts;
     #selectedAccount;
     #accountsOps = {};
     #externalAccountOps = {};
+    #sentToHistory = { domains: {}, recipients: {} };
+    #feePayersHistory = {};
     accountsOps = {};
     #signedMessages = {};
     signedMessages = {};
@@ -126,16 +168,30 @@ class ActivityController extends eventEmitter_1.default {
     #networks;
     #portfolio;
     #safe;
+    #featureFlags;
     #onContractsDeployed;
     #callRelayer;
     #bannersByAccount = new Map();
     #updateAccountsOpsStatusesPromises = {};
     #backfillAccountOpBalanceChangesPromises = {};
+    #backfillAccountOpNftBalanceChangesPromises = {};
+    /**
+     * Task ids of NFT balance changes backfills that failed during this session.
+     * They are skipped until the next session so a failing RPC isn't hit on every sync.
+     */
+    #failedNftBalanceChangesBackfills = new Set();
     #addExternalAccountOpQueue = Promise.resolve();
-    constructor(storage, fetch, callRelayer, accounts, selectedAccount, providers, networks, portfolio, safe, onContractsDeployed, eventEmitterRegistry) {
+    constructor(storage, fetch, callRelayer, accounts, selectedAccount, providers, networks, portfolio, safe, featureFlags, onContractsDeployed, eventEmitterRegistry, idb) {
         super(eventEmitterRegistry);
         this.#storage = storage;
         this.#fetch = fetch;
+        // undefined on mobile, which selects the key-value backend.
+        this.#persistence = new accountOpsPersistence_1.AccountOpsPersistence({
+            storage,
+            idb,
+            getCache: () => this.#accountsOps,
+            onError: ({ message, error }) => this.emitError({ level: 'silent', message, error })
+        });
         this.#callRelayer = callRelayer;
         this.#accounts = accounts;
         this.#selectedAccount = selectedAccount;
@@ -143,6 +199,7 @@ class ActivityController extends eventEmitter_1.default {
         this.#networks = networks;
         this.#portfolio = portfolio;
         this.#safe = safe;
+        this.#featureFlags = featureFlags;
         this.#onContractsDeployed = onContractsDeployed;
         this.#initialLoadPromise = this.#load().finally(() => {
             this.#initialLoadPromise = undefined;
@@ -151,15 +208,32 @@ class ActivityController extends eventEmitter_1.default {
     async #load() {
         await this.#accounts.initialLoadPromise;
         await this.#selectedAccount.initialLoadPromise;
-        const [accountsOps, externalAccountOps, signedMessages] = await Promise.all([
-            this.#storage.get('accountsOps', {}),
+        // Owns migration, fallback and the bounded read. Never rejects.
+        //
+        // The selected account gets the full window, every other account a shorter one rather
+        // than none: #accountsOps has SYNCHRONOUS readers that ask about other accounts —
+        // swapAndBridge, wallet_getCallsStatus, and the same-EOA-nonce check in status polling —
+        // so an empty window left them reading an empty history. onSelectedAccountChange tops the
+        // account up to the full window when the user switches.
+        const [accountsOps, externalAccountOps, signedMessages, sentToHistory, feePayersHistory] = await Promise.all([
+            this.#persistence.init(this.#selectedAccount.account?.addr),
             this.#storage.get('externalAccountOps', {}),
-            this.#storage.get('signedMessages', {})
+            this.#storage.get('signedMessages', {}),
+            this.#storage.get('sentToHistory', { domains: {}, recipients: {} }),
+            this.#storage.get('feePayersHistory', {})
         ]);
         this.#accountsOps = accountsOps;
         this.#externalAccountOps = externalAccountOps;
         this.#signedMessages = signedMessages;
+        this.#sentToHistory = sentToHistory;
+        this.#feePayersHistory = feePayersHistory;
         this.emitUpdate();
+        // After the update on purpose — nothing here is rendered.
+        await this.#persistence.finalizeInit(accountsOps);
+    }
+    /** Total ops ever. Not the in-memory lengths — those are only the startup window. */
+    getTotalOpsCountForAccount(accountAddr) {
+        return this.#persistence.getTotalOpsCount(accountAddr);
     }
     /**
      * Checks if there are any account operations that were sent to a specific address.
@@ -169,55 +243,33 @@ class ActivityController extends eventEmitter_1.default {
     accountId // the account ID to filter operations from
     ) {
         await this.#initialLoadPromise;
-        if (!toAddress)
+        // Both are required. Answering without an account would have to fall back to every
+        // account, reporting another one's recipients as this user's own history.
+        if (!toAddress || !accountId)
             return { found: false, lastTransactionDate: null, addressPoisoningMatch: null };
-        const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps);
-        let found = false;
-        let lastTimestamp = null;
-        const normalizedToAddress = toAddress.toLowerCase();
+        const checksummedToAddress = (0, getAddressCaught_1.getAddressCaught)(toAddress);
+        // Deliberately not a scan of #accountsOps: recipients outlive MAX_OPS_PER_GROUP eviction,
+        // so the map is the more complete source. See README.md, "The recipient index".
+        const recipientsKey = getAccountOpsAccountKey(this.#sentToHistory.recipients, accountId);
+        const recipients = recipientsKey ? this.#sentToHistory.recipients[recipientsKey] : undefined;
+        const sentAt = checksummedToAddress ? recipients?.[checksummedToAddress] : undefined;
+        const lastTimestamp = sentAt || null;
+        const found = lastTimestamp !== null;
         let bestPoisoningMatch = null;
-        const updatePoisoningMatch = (address, lastInteractedAt = null) => {
-            const matchCounts = (0, address_poisoning_1.getAddressPoisoningMatchCounts)(toAddress, address);
-            if (!matchCounts)
-                return;
-            bestPoisoningMatch = (0, address_poisoning_1.pickBetterPoisoningMatch)(bestPoisoningMatch, {
-                matchedAddress: address,
-                matchedPrefixCharsCount: matchCounts.matchedPrefixCharsCount,
-                matchedSuffixCharsCount: matchCounts.matchedSuffixCharsCount,
-                lastInteractedAt
-            });
-        };
-        // Address poisoning compares the new recipient only against recipients from
-        // this account's historical account ops below.
-        accounts.forEach((account) => {
-            const accountOpsOfAccount = this.#accountsOps[account];
-            if (!accountOpsOfAccount)
-                return;
-            const networks = Object.keys(accountOpsOfAccount);
-            networks.forEach((network) => {
-                const networkAccountOpsOfAccount = accountOpsOfAccount[network];
-                if (!networkAccountOpsOfAccount)
-                    return;
-                networkAccountOpsOfAccount.forEach((op) => {
-                    const recipients = (0, submittedAccountOp_1.getAccountOpRecipients)(op);
-                    const hasSentToRecipient = recipients.some((recipient) => {
-                        if (recipient.toLowerCase() === normalizedToAddress)
-                            return true;
-                        // Poisoning checks are needed only for first-time sends. As soon as
-                        // we know the recipient was used before, skip this extra work.
-                        if (!found)
-                            updatePoisoningMatch(recipient, op.timestamp);
-                        return false;
-                    });
-                    if (hasSentToRecipient) {
-                        found = true;
-                        if (!lastTimestamp || op.timestamp > lastTimestamp) {
-                            lastTimestamp = op.timestamp;
-                        }
-                    }
+        // Only asked about first-time recipients, so skip it once we know the address was used.
+        if (!found && recipients) {
+            for (const [recipient, recipientSentAt] of Object.entries(recipients)) {
+                const matchCounts = (0, address_poisoning_1.getAddressPoisoningMatchCounts)(toAddress, recipient);
+                if (!matchCounts)
+                    continue;
+                bestPoisoningMatch = (0, address_poisoning_1.pickBetterPoisoningMatch)(bestPoisoningMatch, {
+                    matchedAddress: recipient,
+                    matchedPrefixCharsCount: matchCounts.matchedPrefixCharsCount,
+                    matchedSuffixCharsCount: matchCounts.matchedSuffixCharsCount,
+                    lastInteractedAt: recipientSentAt
                 });
-            });
-        });
+            }
+        }
         let addressPoisoningMatch = null;
         if (!found && bestPoisoningMatch) {
             const currentBestPoisoningMatch = bestPoisoningMatch;
@@ -233,20 +285,58 @@ class ActivityController extends eventEmitter_1.default {
             addressPoisoningMatch
         };
     }
+    /**
+     * Loads enough account ops to fill the rows up to `rowsNeeded`. A transaction and its speed
+     * ups are merged into one row (see collapseReplacedAccountOps), so every merged op needs one
+     * more op loaded. Otherwise the page would be short, and the next one, which starts where a
+     * full page would end, would skip the rows in between
+     */
+    async #loadRowsForPage(accountKey, rowsNeeded, chainIds) {
+        let limit = rowsNeeded;
+        for (let extraLoads = 0; extraLoads <= MAX_EXTRA_LOADS_FOR_REPLACED_OPS; extraLoads++) {
+            await this.#persistence.ensureRecentLoaded(accountKey, limit, chainIds);
+            const loadedOps = chainIds.flatMap((chainId) => this.#accountsOps[accountKey]?.[chainId] ?? []);
+            const mergedOpsCount = loadedOps.length - (0, replacements_1.collapseReplacedAccountOps)(loadedOps).length;
+            const nextLimit = rowsNeeded + mergedOpsCount;
+            // Nothing was merged, or nothing more is stored, so the loaded ops fill the rows
+            if (nextLimit <= limit)
+                return;
+            limit = nextLimit;
+        }
+    }
     async filterAccountsOps(sessionId, filters, pagination = { fromPage: 0, itemsPerPage: 10 }) {
         await this.#initialLoadPromise;
         this.#externalAccountOps = await this.#storage.get('externalAccountOps', this.#externalAccountOps);
         const enabledNetworkChainIds = this.#networks.networks.map(({ chainId }) => String(chainId));
-        const internalAccountOpsByChain = this.#accountsOps[filters.account] || {};
-        const externalAccountOpsByChain = this.#externalAccountOps[filters.account] || {};
+        // Both maps are keyed by the address exactly as it was written, which is not always the
+        // casing the caller filters by. Resolving once keeps the internal key usable for the
+        // backend too, since IDB rows carry that same casing.
+        const internalKey = getAccountOpsAccountKey(this.#accountsOps, filters.account);
+        const accountKey = internalKey ?? filters.account;
+        const externalKey = getAccountOpsAccountKey(this.#externalAccountOps, filters.account);
+        let internalAccountOpsByChain = this.#accountsOps[accountKey] || {};
+        const externalAccountOpsByChain = (externalKey && this.#externalAccountOps[externalKey]) || {};
+        // The chains this call renders; a filter naming a disabled network is ignored, as below.
+        const chainIdsToRender = filters.chainId && enabledNetworkChainIds.includes(String(filters.chainId))
+            ? [String(filters.chainId)]
+            : enabledNetworkChainIds;
+        // Enough for this page, per chain: an account-wide read would spend the budget on disabled
+        // networks and render a short page. Pending and external ops are already in memory.
+        const pageEnd = (pagination.fromPage + 1) * pagination.itemsPerPage;
+        await this.#loadRowsForPage(accountKey, pageEnd, chainIdsToRender);
+        internalAccountOpsByChain = this.#accountsOps[accountKey] || internalAccountOpsByChain;
         const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(internalAccountOpsByChain).filter(([chainId]) => enabledNetworkChainIds.includes(chainId));
         const internalAccountOps = new Set(internalAccountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps));
+        // Internal txnIds, so an external op duplicating one is dropped at the merge point below.
+        const internalTxnIds = new Set([...internalAccountOps].flatMap((op) => getInternalAccountOpTxnIds(op).map(normalizeTxnId)));
+        // Shared with the count below, so what is rendered and what is counted cannot drift apart.
+        const isNotDuplicateOfInternal = (extOp) => !extOp.txnId || !internalTxnIds.has(normalizeTxnId(extOp.txnId));
         const accountOpsEntriesOnEnabledNetworks = enabledNetworkChainIds
             .map((chainId) => [
             chainId,
             [
                 ...(internalAccountOpsByChain[chainId] || []),
-                ...(externalAccountOpsByChain[chainId] || [])
+                ...(externalAccountOpsByChain[chainId] || []).filter(isNotDuplicateOfInternal)
             ]
         ])
             .filter(([, accountOps]) => accountOps.length);
@@ -267,7 +357,25 @@ class ActivityController extends eventEmitter_1.default {
         if (filters.identifiedBy) {
             filteredItems = filteredItems.filter((i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy.identifier);
         }
-        const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage);
+        // A transaction and its speed ups are shown as one row, the one that got (or will get)
+        // onchain. Not for benzin, which looks up one specific transaction
+        const visibleItems = filters.identifiedBy
+            ? filteredItems
+            : (0, replacements_1.collapseReplacedAccountOps)(filteredItems);
+        const replacedOpsCount = filteredItems.length - visibleItems.length;
+        filteredItems = visibleItems;
+        // Scoped to the rendered chains; an identifiedBy filter has no stored count, so items are it.
+        const storedTotal = filters.identifiedBy
+            ? 0
+            : await this.#persistence.countOps(accountKey, chainIdsToRender);
+        const externalTotal = filters.identifiedBy
+            ? 0
+            : chainIdsToRender.reduce((sum, chainId) => sum +
+                (externalAccountOpsByChain[chainId] || []).filter(isNotDuplicateOfInternal).length, 0);
+        const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage, 
+        // Floored at what is already loaded, because a failed count returns 0. The stored count
+        // includes the replaced ops hidden above, so they are taken out of it
+        Math.max(storedTotal + externalTotal - replacedOpsCount, filteredItems.length));
         this.setDashboardBannersSeen(sessionId, filters.account);
         this.accountsOps[sessionId] = { result, filters, pagination };
         this.emitUpdate();
@@ -278,21 +386,39 @@ class ActivityController extends eventEmitter_1.default {
             op.status !== types_1.AccountOpStatus.BroadcastedButNotConfirmed &&
             op.balanceChanges === undefined);
         if (opsWithNoBalanceChanges.length)
-            this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch((e) => null);
+            this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch(() => null);
+        // ops recorded before NFT balance changes were introduced already have
+        // balanceChanges, so the backfill above skips them. Backfill only their NFTs
+        const opsWithNoNftBalanceChanges = result.items.filter((op) => internalAccountOps.has(op) &&
+            op.balanceChanges !== undefined &&
+            op.nftBalanceChanges === undefined &&
+            !this.#failedNftBalanceChangesBackfills.has(getBalanceChangesTaskId(op)));
+        if (opsWithNoNftBalanceChanges.length)
+            this.#backfillAccountOpNftBalanceChangesAndPersist(opsWithNoNftBalanceChanges).catch(() => null);
     }
-    setDashboardBannersSeen(sessionId, accountAddr) {
+    setDashboardBannersSeen(sessionId, accountAddr, params) {
+        const { accountOpIds, emitUpdate, hideImmediately } = params || {};
         if (!sessionId.startsWith('dashboard'))
             return;
         const prevBanners = this.#bannersByAccount.get(accountAddr);
         if (!prevBanners)
             return;
-        const updatedBanners = prevBanners.map((b) => {
-            if (b.category === 'failed-acc-ops') {
+        let updatedBanners = prevBanners.map((b) => {
+            if (b.category === 'failed-acc-ops' &&
+                (!accountOpIds ||
+                    (b.meta?.accountOpsDataForNextUpdate &&
+                        b.meta.accountOpsDataForNextUpdate.length === 1 &&
+                        b.meta.accountOpsDataForNextUpdate.some((opData) => accountOpIds.includes(opData.id))))) {
                 return { ...b, meta: { ...b.meta, seen: true } };
             }
             return b;
         });
+        if (hideImmediately) {
+            updatedBanners = updatedBanners.filter((b) => !b.meta?.seen);
+        }
         this.#bannersByAccount.set(accountAddr, updatedBanners);
+        if (emitUpdate)
+            this.emitUpdate();
     }
     // Reset filtered AccountsOps session.
     // Example: when a FE component is being unmounted, we don't need anymore the filtered accounts ops and we
@@ -321,8 +447,15 @@ class ActivityController extends eventEmitter_1.default {
         });
         await Promise.all(promises);
     }
-    async persistAccountsOps() {
-        await this.#storage.set('accountsOps', this.#accountsOps);
+    /** Persist changed ops, sync filtered views, and emit an update. */
+    async persistAccountsOps(changedOps) {
+        // Ops belonging to an account that is no longer in memory are dropped: removeAccountData()
+        // deletes the account here first, and updateOps() is an upsert — so a status poll that
+        // resolves after a removal would otherwise re-create the rows the removal just deleted.
+        // The pre-IDB write serialized #accountsOps, which gave this for free.
+        const opsForLiveAccounts = changedOps.filter((op) => !!getAccountOpsAccountKey(this.#accountsOps, op.accountAddr));
+        if (opsForLiveAccounts.length)
+            await this.#persistence.updateOps(opsForLiveAccounts);
         await this.syncFilteredAccountsOps();
         this.emitUpdate();
     }
@@ -361,7 +494,8 @@ class ActivityController extends eventEmitter_1.default {
     }
     async filterSignedMessages(sessionId, filters, pagination = { fromPage: 0, itemsPerPage: 10 }) {
         await this.#initialLoadPromise;
-        const filteredItems = this.#signedMessages[filters.account] || [];
+        const messagesKey = getAccountOpsAccountKey(this.#signedMessages, filters.account);
+        const filteredItems = (messagesKey && this.#signedMessages[messagesKey]) || [];
         const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage);
         this.signedMessages[sessionId] = {
             result,
@@ -384,6 +518,11 @@ class ActivityController extends eventEmitter_1.default {
         });
         await Promise.all(promises);
     }
+    /** Returns the account ops that the account submitted from this device on one network. */
+    async getInternalAccountOps(accountAddr, chainId) {
+        await this.#initialLoadPromise;
+        return this.#accountsOps[accountAddr]?.[chainId.toString()] || [];
+    }
     removeNetworkData(chainId) {
         Object.keys(this.accountsOps).forEach(async (sessionId) => {
             const state = this.accountsOps[sessionId];
@@ -400,12 +539,60 @@ class ActivityController extends eventEmitter_1.default {
             this.#accountsOps[accountAddr] = {};
         if (!this.#accountsOps[accountAddr][chainId.toString()])
             this.#accountsOps[accountAddr][chainId.toString()] = [];
+        const group = this.#accountsOps[accountAddr][chainId.toString()];
         // newest SubmittedAccountOp goes first in the list
-        this.#accountsOps[accountAddr][chainId.toString()].unshift({ ...accountOp });
-        trim(this.#accountsOps[accountAddr][chainId.toString()]);
+        group.unshift({ ...accountOp });
+        // Passed to persistence so the same op is dropped there. On IDB the group usually starts
+        // at the startup window, so nothing is evicted here and the backend applies its own cap.
+        const evicted = trim(group, activityIdb_1.MAX_OPS_PER_GROUP);
+        (0, submittedAccountOp_1.getAccountOpRecipients)(accountOp).forEach((recipient) => (0, sentToHistory_1.recordRecipient)(this.#sentToHistory, accountAddr, recipient.address, recipient.domain, accountOp.timestamp));
+        const hasFeePayersHistoryChanged = (0, feePayersHistory_1.recordFeePayer)(this.#feePayersHistory, accountAddr, chainId, accountOp.gasFeePayment?.paidBy, accountOp.timestamp);
         await this.syncFilteredAccountsOps();
-        await this.#storage.set('accountsOps', this.#accountsOps);
         this.emitUpdate();
+        // LAST on purpose: key-value rewrites the whole blob, and persisting first lets the sync
+        // above expand this group from the backend before the op is written.
+        await this.#persistence.addOp(accountAddr, chainId, accountOp, evicted?.id);
+        // Key-value, never IDB — persisted here so recipients survive a service worker restart.
+        await this.#storage.set('sentToHistory', this.#sentToHistory);
+        if (hasFeePayersHistoryChanged)
+            await this.#storage.set('feePayersHistory', this.#feePayersHistory);
+    }
+    /**
+     * The other accounts (EOAs) that already paid the fee for a transaction of `accountAddr` on
+     * `chainId`, checksummed and ordered from the one that paid last. Paying from one of them
+     * links nothing new to the account publicly.
+     *
+     * Only knows what this wallet broadcast: a payer used from another wallet or device is missing,
+     * which errs on the side of warning the user. The index is filled on broadcast, so the ops in
+     * memory (the recent ones, see STARTUP_RECENT_OPS_LIMIT) are merged in to also cover the ones
+     * broadcast before the index existed.
+     */
+    getFeePayers(accountAddr, chainId) {
+        const checksummedAccountAddr = (0, getAddressCaught_1.getAddressCaught)(accountAddr);
+        if (!checksummedAccountAddr)
+            return [];
+        const chainIdString = chainId.toString();
+        const accountKey = getAccountOpsAccountKey(this.#feePayersHistory, accountAddr);
+        const indexedPayers = accountKey ? this.#feePayersHistory[accountKey]?.[chainIdString] : {};
+        // A copy, so merging the ops in memory doesn't write them into the persisted index
+        const mergedHistory = {
+            [checksummedAccountAddr]: { [chainIdString]: { ...indexedPayers } }
+        };
+        getAccountOpsForAccountAndChain(this.#accountsOps, accountAddr, chainIdString).forEach((op) => {
+            // A rejected op never reached the network, so it linked nothing
+            if (op.status === types_1.AccountOpStatus.Rejected)
+                return;
+            (0, feePayersHistory_1.recordFeePayer)(mergedHistory, accountAddr, chainId, op.gasFeePayment?.paidBy, op.timestamp);
+        });
+        const lastPaidAtByPayer = mergedHistory[checksummedAccountAddr][chainIdString];
+        return Object.keys(lastPaidAtByPayer).sort((a, b) => lastPaidAtByPayer[b] - lastPaidAtByPayer[a]);
+    }
+    /** Returns the address a domain last resolved to when the user sent to it, or null if never. */
+    getSentToDomainAddress(domain) {
+        const normalizedDomain = domain.toLowerCase().trim();
+        if (!normalizedDomain)
+            return null;
+        return this.#sentToHistory.domains[normalizedDomain]?.address ?? null;
     }
     async addExternalAccountOp({ accountAddr, chainId, txnId, receipt, callId, shouldLearnTokens = false }) {
         const task = this.#addExternalAccountOpQueue
@@ -426,13 +613,21 @@ class ActivityController extends eventEmitter_1.default {
         await this.#initialLoadPromise;
         // a duplication guard
         const chainIdString = chainId.toString();
-        const hasExistingAccountOpWithTxnId = () => {
-            const internalAccountOps = getAccountOpsForAccountAndChain(this.#accountsOps, accountAddr, chainIdString);
+        // An indexed point lookup over every stored op, so this costs the same whatever the
+        // history size. External ops are not in that store, so they are still matched in memory.
+        const hasExistingAccountOpWithTxnId = async () => {
+            if (await this.#persistence.hasOpWithTxnId(accountAddr, txnId))
+                return true;
+            // The stored index cannot see an op whose write is still in flight, nor one whose txnId
+            // the relayer filled in but that has not been persisted yet — both are in memory only,
+            // and both are exactly what the scanner races against.
+            const inMemoryInternalOps = getAccountOpsForAccountAndChain(this.#accountsOps, accountAddr, chainIdString);
+            if (inMemoryInternalOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)))
+                return true;
             const existingExternalAccountOps = getAccountOpsForAccountAndChain(this.#externalAccountOps, accountAddr, chainIdString);
-            return (internalAccountOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)) ||
-                existingExternalAccountOps.some((accountOp) => externalAccountOpHasTxnId(accountOp, txnId)));
+            return existingExternalAccountOps.some((accountOp) => externalAccountOpHasTxnId(accountOp, txnId));
         };
-        if (hasExistingAccountOpWithTxnId())
+        if (await hasExistingAccountOpWithTxnId())
             return;
         const network = this.#networks.networks.find((n) => n.chainId === chainId);
         const provider = this.#providers.providers[chainIdString];
@@ -479,10 +674,18 @@ class ActivityController extends eventEmitter_1.default {
             }
         };
         try {
-            const foundTokens = (0, blacklist_1.filterStaticBlacklistedAddrs)(await (0, parseLogs_1.getTransferLogTokens)(receipt.logs, accountAddr), chainId);
+            const [foundTokens, nftBalanceChanges] = await Promise.all([
+                (0, parseLogs_1.getTransferLogTokens)(receipt.logs, accountAddr).then((tokens) => (0, blacklist_1.filterStaticBlacklistedAddrs)(tokens, chainId)),
+                getNftBalanceChangesFromReceipts(submittedAccountOpLike, [receipt])
+            ]);
+            submittedAccountOpLike.nftBalanceChanges = nftBalanceChanges;
             if (shouldLearnTokens) {
-                const scamFilter = new scamFilter_1.ScamFilter({ fetch: this.#fetch, network });
-                const tokensWithAPrice = await scamFilter.filterTokensWithoutAPrice(foundTokens);
+                this.#portfolio.addErc721sToBeLearned(getNftsToLearn(nftBalanceChanges), accountAddr, chainId);
+                const tokensWithAPrice = await new scamFilter_1.ScamFilter({
+                    fetch: this.#fetch,
+                    network,
+                    isTokenPricesEnabled: () => this.#featureFlags.isFeatureEnabled('tokenPrices') !== false
+                }).filterTokensWithoutAPrice(foundTokens);
                 this.#portfolio.addTokensToBeLearned(tokensWithAPrice, chainId);
             }
             const tokenAddrs = (0, balanceChanges_1.getBalanceChangeTokenAddresses)(foundTokens);
@@ -496,10 +699,10 @@ class ActivityController extends eventEmitter_1.default {
                 debugTraceTransaction: (0, debugTransaction_1.getDebugTraceTransaction)(network.chainId, this.#providers.providers[network.chainId.toString()])
             });
         }
-        catch (error) {
+        catch {
             submittedAccountOpLike.balanceChanges = undefined;
         }
-        if (hasExistingAccountOpWithTxnId())
+        if (await hasExistingAccountOpWithTxnId())
             return;
         if (!this.#externalAccountOps[accountAddr])
             this.#externalAccountOps[accountAddr] = {};
@@ -508,12 +711,13 @@ class ActivityController extends eventEmitter_1.default {
         }
         const externalAccountOps = this.#externalAccountOps[accountAddr][chainIdString];
         externalAccountOps.unshift(submittedAccountOpLike);
-        trim(externalAccountOps);
+        trim(externalAccountOps, activityIdb_1.MAX_OPS_PER_GROUP);
+        // externalAccountOps: using chrome.storage.local only (not migrated to IDB yet)
         await this.#storage.set('externalAccountOps', this.#externalAccountOps);
         await this.syncFilteredAccountsOps();
         this.emitUpdate();
     }
-    async setAccountOpBalanceChanges(identifiedBy, accountAddr, chainId, balanceChanges) {
+    async setAccountOpBalanceChanges(identifiedBy, accountAddr, chainId, balanceChanges, nftBalanceChanges = []) {
         await this.#initialLoadPromise;
         // get the latest instance just in case
         const accountOp = this.findByIdentifiedBy(identifiedBy, accountAddr, chainId);
@@ -523,6 +727,7 @@ class ActivityController extends eventEmitter_1.default {
         // we allow 3 retries before giving up on them and setting them to an
         // empty array
         if (balanceChanges instanceof Error) {
+            accountOp.nftBalanceChanges = nftBalanceChanges;
             const balanceChangesFetchRetryCount = accountOp.balanceChangesFetchRetryCount || 0;
             accountOp.balanceChangesFetchRetryCount = balanceChangesFetchRetryCount + 1;
             if (accountOp.balanceChangesFetchRetryCount >= 3) {
@@ -531,6 +736,7 @@ class ActivityController extends eventEmitter_1.default {
             return;
         }
         accountOp.balanceChanges = balanceChanges;
+        accountOp.nftBalanceChanges = nftBalanceChanges;
     }
     /**
      * Use this method for updates from the UI only
@@ -538,7 +744,7 @@ class ActivityController extends eventEmitter_1.default {
      */
     async backfillAccountOpBalanceChangesAndPersist(accountOps) {
         await Promise.all(accountOps.map((accOp) => this.backfillAccountOpBalanceChanges(accOp)));
-        await this.persistAccountsOps();
+        await this.persistAccountsOps(accountOps);
     }
     /**
      * This method calculate the balanche changes and puts them in memory
@@ -553,7 +759,7 @@ class ActivityController extends eventEmitter_1.default {
         const currentAccountOp = this.findByIdentifiedBy(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId);
         if (!currentAccountOp || typeof currentAccountOp.balanceChanges !== 'undefined')
             return;
-        const taskId = `${accountOp.accountAddr}:${accountOp.chainId.toString()}:${accountOp.identifiedBy.identifier}`;
+        const taskId = getBalanceChangesTaskId(accountOp);
         if (this.#backfillAccountOpBalanceChangesPromises[taskId]) {
             return this.#backfillAccountOpBalanceChangesPromises[taskId];
         }
@@ -562,11 +768,67 @@ class ActivityController extends eventEmitter_1.default {
         });
         return this.#backfillAccountOpBalanceChangesPromises[taskId];
     }
+    async #backfillAccountOpNftBalanceChangesAndPersist(accountOps) {
+        const updatedAccountOps = (await Promise.all(accountOps.map((accOp) => this.#backfillAccountOpNftBalanceChanges(accOp)))).filter((accOp) => !!accOp);
+        // persist only on changes as persisting re-runs the filters, which call this method again
+        if (updatedAccountOps.length)
+            await this.persistAccountsOps(updatedAccountOps);
+    }
+    /**
+     * Calculates only the NFT balance changes of an account op that already has
+     * its token balance changes. Returns the updated account op, or null if it wasn't updated
+     */
+    async #backfillAccountOpNftBalanceChanges(accountOp) {
+        const taskId = getBalanceChangesTaskId(accountOp);
+        if (this.#backfillAccountOpNftBalanceChangesPromises[taskId]) {
+            return this.#backfillAccountOpNftBalanceChangesPromises[taskId];
+        }
+        this.#backfillAccountOpNftBalanceChangesPromises[taskId] =
+            this.#runNftBalanceChangesBackfillTask(accountOp, taskId).finally(() => {
+                this.#backfillAccountOpNftBalanceChangesPromises[taskId] = undefined;
+            });
+        return this.#backfillAccountOpNftBalanceChangesPromises[taskId];
+    }
+    async #runNftBalanceChangesBackfillTask(accountOp, taskId) {
+        await this.#initialLoadPromise;
+        // take the latest #accountOp, not a stale one from the UI
+        const currentAccountOp = this.findByIdentifiedBy(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId);
+        if (!currentAccountOp || currentAccountOp.nftBalanceChanges !== undefined)
+            return null;
+        const hasReceipt = currentAccountOp.status === types_1.AccountOpStatus.Success ||
+            currentAccountOp.status === types_1.AccountOpStatus.Failure;
+        if (!hasReceipt || !currentAccountOp.txnId) {
+            currentAccountOp.nftBalanceChanges = [];
+            return currentAccountOp;
+        }
+        const provider = this.#providers.providers[currentAccountOp.chainId.toString()];
+        // temp error, do not set nft balance changes to allow the system to retry
+        if (!provider)
+            return null;
+        try {
+            const receipts = await getAccountOpReceipts(currentAccountOp, provider);
+            // NFTs from past ops are only displayed and not learned, as the account
+            // may no longer own them and learned NFTs are queried on every portfolio update
+            currentAccountOp.nftBalanceChanges = await getNftBalanceChangesFromReceipts(currentAccountOp, receipts);
+            return currentAccountOp;
+        }
+        catch (error) {
+            this.#failedNftBalanceChangesBackfills.add(taskId);
+            this.emitError({
+                level: 'silent',
+                message: `Failed to backfill NFT balance changes on network with id ${currentAccountOp.chainId} for ${currentAccountOp.txnId}.`,
+                error: error instanceof Error
+                    ? error
+                    : new Error(`activity: failed to backfill NFT balance changes for ${taskId}`)
+            });
+            return null;
+        }
+    }
     async #prepareAndRunBalanceChangesTask(accountOp) {
         const hasReceipt = accountOp.status === types_1.AccountOpStatus.Success || accountOp.status === types_1.AccountOpStatus.Failure;
         if (!hasReceipt || !accountOp.txnId) {
             // if the status is a status without a receipt, finish balance changes
-            await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, []);
+            await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, [], []);
             return;
         }
         const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId);
@@ -574,23 +836,26 @@ class ActivityController extends eventEmitter_1.default {
         // temp error, do not set balance changes to allow the system to retry
         if (!network || !provider)
             return;
+        let nftBalanceChanges = [];
         try {
             const receipts = await getAccountOpReceipts(accountOp, provider);
             if (!receipts.length) {
-                await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, new Error('no receipts found'));
+                await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, new Error('no receipts found'), nftBalanceChanges);
                 return;
             }
             const tokenAddrs = await getBalanceChangeTokenAddrsFromReceipts(accountOp, receipts);
+            nftBalanceChanges = await getNftBalanceChangesFromReceipts(accountOp, receipts);
+            this.#portfolio.addErc721sToBeLearned(getNftsToLearn(nftBalanceChanges), accountOp.accountAddr, accountOp.chainId);
             const balanceChangeWindow = getBalanceChangeWindowFromReceipts(accountOp, receipts);
             if (!balanceChangeWindow) {
                 await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, new Error('no receipts found'));
                 return;
             }
-            await this.updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, balanceChangeWindow.receiptBlockNumber, balanceChangeWindow.prevBlockNumber, receipts);
+            await this.updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, balanceChangeWindow.receiptBlockNumber, balanceChangeWindow.prevBlockNumber, receipts, nftBalanceChanges);
         }
         catch (error) {
             console.log(error);
-            await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, error);
+            await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, error, nftBalanceChanges);
         }
     }
     async updateAccountsOpsStatuses(accountAddresses = []) {
@@ -609,8 +874,10 @@ class ActivityController extends eventEmitter_1.default {
         return Object.fromEntries(results);
     }
     async #executeBalanceChanges(balanceChangesTasks) {
-        await Promise.all(balanceChangesTasks.map(({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts }) => this.updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts)));
-        await this.persistAccountsOps();
+        if (balanceChangesTasks.length === 0)
+            return;
+        await Promise.all(balanceChangesTasks.map(({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts, nftBalanceChanges }) => this.updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts, nftBalanceChanges)));
+        await this.persistAccountsOps(balanceChangesTasks.map((t) => t.accountOp));
     }
     /**
      * Update AccountsOps statuses (inner and public state, and storage)
@@ -619,8 +886,8 @@ class ActivityController extends eventEmitter_1.default {
      * 0. Once we broadcast an AccountOp, we are adding it to ActivityController via `addAccountOp`,
      * and are setting its status to AccountOpStatus.BroadcastedButNotConfirmed.
      * 1. Here, we firstly rely on `getTransactionReceipt` for determining the status (success or failure).
-     * 2. If we don't manage to determine its status, we are comparing AccountOp and Account nonce.
-     * If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
+     * 2. If there's no receipt and the txn is not in the mempool, we look for another confirmed AccountOp with the same eoaNonce.
+     * If there is one, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
      */
     async #updateAccountsOpsStatuses(accountAddr) {
         await this.#initialLoadPromise;
@@ -639,26 +906,72 @@ class ActivityController extends eventEmitter_1.default {
         const chainsToUpdate = new Set();
         const portfoliosToUpdate = {};
         const updatedAccountsOps = [];
+        /**
+         * Adds an op to the batch once. updateOpStatus() mutates in place and hands back the SAME
+         * object, so a status change and a markMutated() on the same op would otherwise queue it
+         * twice — persisting the row twice and double-counting it in the returned result.
+         */
+        const queueUpdatedOp = (accountOp) => {
+            if (!updatedAccountsOps.includes(accountOp))
+                updatedAccountsOps.push(accountOp);
+        };
+        /**
+         * Queues an op whose fields were mutated in place without its status changing.
+         *
+         * updateOpStatus() only returns an op when the STATUS changes, so a txnId learned while
+         * the op stays pending never reached persistAccountsOps() — the old whole-blob write saved
+         * it incidentally. Without this the txnId is lost on the next service-worker restart and
+         * the by-txn-id index never sees it.
+         */
+        const markMutated = (accountOp) => {
+            queueUpdatedOp(accountOp);
+            shouldEmitUpdate = true;
+        };
         const balanceChangesTasks = [];
         // we should fetch Safe txns again upon failure
         let shouldFetchSafeTxns = false;
         // Use this flag to make the auto-refresh slower with the passege of time.
         // implementation is in background.ts
         let newestOpTimestamp = 0;
+        const declareStuckIfExpired = (accountOp) => {
+            if (accountOp.status !== types_1.AccountOpStatus.BroadcastedButNotConfirmed ||
+                !(0, submittedAccountOp_1.hasTimePassedSinceBroadcast)(accountOp, ACCOUNT_OP_PENDING_TIMEOUT_MINS))
+                return;
+            if ((0, submittedAccountOp_1.isIdentifiedByMultipleTxn)(accountOp.identifiedBy)) {
+                accountOp.calls.forEach((call) => {
+                    if (call.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed)
+                        call.status = types_1.AccountOpStatus.BroadcastButStuck;
+                });
+                accountOp.status = types_1.AccountOpStatus.BroadcastButStuck;
+                queueUpdatedOp(accountOp);
+            }
+            else {
+                const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(accountOp, types_1.AccountOpStatus.BroadcastButStuck);
+                if (updatedOpIfAny)
+                    queueUpdatedOp(updatedOpIfAny);
+            }
+            shouldEmitUpdate = true;
+        };
         // Limit the number of iterations to optimize the performance on accounts with large transaction history
         const MAX_OPS_TO_ITERATE_PER_CHAIN = 50;
         await Promise.all(Object.keys(this.#accountsOps[accountAddr]).map(async (keyAsChainId) => {
-            const network = this.#networks.networks.find((n) => n.chainId.toString() === keyAsChainId);
-            if (!network)
-                return;
-            const provider = this.#providers.providers[network.chainId.toString()];
-            if (!provider)
-                return;
-            const allOps = this.#accountsOps[accountAddr][network.chainId.toString()];
+            const allOps = this.#accountsOps[accountAddr][keyAsChainId];
             if (!allOps || !allOps.length)
                 return;
-            const recentOps = Array.isArray(allOps) ? allOps.slice(0, MAX_OPS_TO_ITERATE_PER_CHAIN) : [];
-            const opsToUpdate = recentOps.filter((op) => op.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed);
+            const opsToUpdate = allOps
+                .filter((op) => op.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed)
+                .slice(0, MAX_OPS_TO_ITERATE_PER_CHAIN);
+            // user might have turned off his network
+            const network = this.#networks.networks.find((n) => n.chainId.toString() === keyAsChainId);
+            if (!network) {
+                opsToUpdate.forEach(declareStuckIfExpired);
+                return;
+            }
+            const provider = this.#providers.providers[network.chainId.toString()];
+            if (!provider) {
+                opsToUpdate.forEach(declareStuckIfExpired);
+                return;
+            }
             const confirmedOps = allOps.filter((op) => op.status === types_1.AccountOpStatus.Success || op.status === types_1.AccountOpStatus.Failure);
             return Promise.all(opsToUpdate.map(async (accountOp) => {
                 shouldEmitUpdate = true;
@@ -670,53 +983,31 @@ class ActivityController extends eventEmitter_1.default {
                 if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
                     newestOpTimestamp = accountOp.timestamp;
                 }
-                const declareStuckIfFiveMinsPassed = async (op) => {
-                    if ((0, submittedAccountOp_1.hasTimePassedSinceBroadcast)(op, 5)) {
-                        const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(accountOp, types_1.AccountOpStatus.BroadcastButStuck);
-                        if (updatedOpIfAny) {
-                            updatedAccountsOps.push(updatedOpIfAny);
-                            const acc = this.#accounts.accounts.find((a) => a.addr === op.accountAddr);
-                            if (acc && !!acc.safeCreation) {
-                                await this.#safe.unresolve(op.nonce).catch((e) => e);
-                                shouldFetchSafeTxns = true;
-                            }
-                        }
-                    }
-                };
-                const hasConfirmedOpWithSameEoaNonce = accountOp.eoaNonce !== null &&
-                    typeof accountOp.eoaNonce !== 'undefined' &&
-                    confirmedOps.some((op) => op !== accountOp && op.eoaNonce === accountOp.eoaNonce);
-                if (hasConfirmedOpWithSameEoaNonce) {
-                    const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(accountOp, types_1.AccountOpStatus.UnknownButPastNonce);
-                    if (updatedOpIfAny)
-                        updatedAccountsOps.push(updatedOpIfAny);
-                    return;
-                }
-                const txIds = [];
-                if (accountOp.identifiedBy.type !== 'MultipleTxns') {
-                    const fetchTxnIdResult = await (0, submittedAccountOp_1.fetchTxnId)(accountOp.identifiedBy, network, this.#callRelayer, accountOp);
-                    if (fetchTxnIdResult.status === 'rejected') {
-                        const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(accountOp, types_1.AccountOpStatus.Rejected);
-                        if (updatedOpIfAny)
-                            updatedAccountsOps.push(updatedOpIfAny);
-                        return;
-                    }
-                    if (fetchTxnIdResult.status === 'not_found') {
-                        await declareStuckIfFiveMinsPassed(accountOp);
-                        return;
-                    }
-                    const txnId = fetchTxnIdResult.txnId;
-                    accountOp.txnId = txnId;
-                    txIds.push(txnId);
-                }
-                else {
-                    const limit = !provider.batchMaxCount || provider.batchMaxCount > 1 ? 100 : 3;
-                    txIds.push(...accountOp.calls
-                        .filter((call) => !!call.status && call.txnId)
-                        .map((call) => call.txnId)
-                        .slice(0, limit));
-                }
                 try {
+                    let isAnyTxnInMempool = false;
+                    const txIds = [];
+                    if (accountOp.identifiedBy.type !== 'MultipleTxns') {
+                        const fetchTxnIdResult = await (0, submittedAccountOp_1.fetchTxnId)(accountOp.identifiedBy, network, this.#callRelayer, accountOp);
+                        if (fetchTxnIdResult.status === 'rejected') {
+                            const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(accountOp, types_1.AccountOpStatus.Rejected);
+                            if (updatedOpIfAny)
+                                queueUpdatedOp(updatedOpIfAny);
+                            return;
+                        }
+                        if (fetchTxnIdResult.status === 'not_found')
+                            return;
+                        const txnId = fetchTxnIdResult.txnId;
+                        accountOp.txnId = txnId;
+                        markMutated(accountOp);
+                        txIds.push(txnId);
+                    }
+                    else {
+                        const limit = !provider.batchMaxCount || provider.batchMaxCount > 1 ? 100 : 3;
+                        txIds.push(...accountOp.calls
+                            .filter((call) => !!call.status && call.txnId)
+                            .map((call) => call.txnId)
+                            .slice(0, limit));
+                    }
                     const receipts = await Promise.all(
                     // no catch, throw an error if one promise doesn't complete
                     txIds.map((txnId) => (txnId ? provider.getTransactionReceipt(txnId) : null)));
@@ -732,6 +1023,7 @@ class ActivityController extends eventEmitter_1.default {
                                 txnId) {
                                 const frontRanTxnId = await (0, submittedAccountOp_1.fetchFrontRanTxnId)(accountOp.identifiedBy, txnId, network);
                                 accountOp.txnId = frontRanTxnId;
+                                markMutated(accountOp);
                                 receipt = await provider.getTransactionReceipt(frontRanTxnId);
                                 if (!receipt)
                                     return;
@@ -759,7 +1051,7 @@ class ActivityController extends eventEmitter_1.default {
                                 isSuccess = !!receipt.status;
                             const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(accountOp, isSuccess ? types_1.AccountOpStatus.Success : types_1.AccountOpStatus.Failure, receipt);
                             if (updatedOpIfAny)
-                                updatedAccountsOps.push(updatedOpIfAny);
+                                queueUpdatedOp(updatedOpIfAny);
                             if (updatedOpIfAny &&
                                 (updatedOpIfAny.status === types_1.AccountOpStatus.Success ||
                                     updatedOpIfAny.status === types_1.AccountOpStatus.Failure)) {
@@ -767,15 +1059,6 @@ class ActivityController extends eventEmitter_1.default {
                             }
                             if (accountOp.isSingletonDeploy && receipt.status) {
                                 await this.#onContractsDeployed(network);
-                            }
-                            if (!isSuccess) {
-                                // if the txn resulted in a failure, unresolve all Safe txns
-                                // with the same nonce so that the user can retry
-                                const acc = this.#accounts.accounts.find((a) => a.addr === accountOp.accountAddr);
-                                if (acc && !!acc.safeCreation) {
-                                    await this.#safe.unresolve(accountOp.nonce).catch((e) => e);
-                                    shouldFetchSafeTxns = true;
-                                }
                             }
                             const foundTokens = isSuccess
                                 ? (0, blacklist_1.filterStaticBlacklistedAddrs)(await (0, parseLogs_1.getTransferLogTokens)(receipt.logs, accountOp.accountAddr), accountOp.chainId)
@@ -787,7 +1070,7 @@ class ActivityController extends eventEmitter_1.default {
                             accountOp.blockHash = receipt.blockHash;
                             accountOp.gasUsed = (0, ethers_1.toBeHex)(receipt.gasUsed);
                             // Add accounts that are recipients of the AccountOp
-                            const accountOpRecipients = (0, submittedAccountOp_1.getAccountOpRecipients)(accountOp, this.#accounts.accounts.map((a) => a.addr));
+                            const accountOpRecipients = (0, submittedAccountOp_1.getAccountOpRecipients)(accountOp, this.#accounts.accounts.map((a) => a.addr)).map((recipient) => recipient.address);
                             accountOpRecipients.forEach((accAddr) => {
                                 if (!portfoliosToUpdate[accAddr])
                                     portfoliosToUpdate[accAddr] = [];
@@ -799,21 +1082,49 @@ class ActivityController extends eventEmitter_1.default {
                             continue;
                         }
                         // if there's no receipt, confirm there's a txn
-                        // if there's no txn and 15 minutes have passed, declare it a failure
+                        // if it remains unresolved for 30 minutes, declare it stuck
                         const txn = txnId ? await provider.getTransaction(txnId) : null;
-                        if (txn)
+                        if (txn) {
+                            isAnyTxnInMempool = true;
                             continue;
-                        await declareStuckIfFiveMinsPassed(accountOp);
+                        }
+                    }
+                    // Checked only after the receipt lookup, so a matching nonce alone never marks a
+                    // successful op as replaced. eoaNonce is the nonce of the EOA that paid for the
+                    // broadcast (paidBy), which may differ from the account itself (e.g. a smart
+                    // account paid by one of its EOA keys). Nonces of different EOAs are unrelated,
+                    // so compare the payer too
+                    const hasReceipt = typeof firstReceiptBlockNumber !== 'undefined';
+                    const accountOpPaidBy = accountOp.gasFeePayment?.paidBy?.toLowerCase();
+                    const isReplacedByConfirmedOp = !hasReceipt &&
+                        !isAnyTxnInMempool &&
+                        accountOp.eoaNonce !== null &&
+                        typeof accountOp.eoaNonce !== 'undefined' &&
+                        !!accountOpPaidBy &&
+                        confirmedOps.some((op) => op !== accountOp &&
+                            op.eoaNonce === accountOp.eoaNonce &&
+                            op.gasFeePayment?.paidBy?.toLowerCase() === accountOpPaidBy);
+                    if (isReplacedByConfirmedOp) {
+                        const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(accountOp, types_1.AccountOpStatus.UnknownButPastNonce);
+                        if (updatedOpIfAny)
+                            queueUpdatedOp(updatedOpIfAny);
                     }
                 }
-                catch {
+                catch (error) {
                     this.emitError({
                         level: 'silent',
                         message: `Failed to determine transaction status on network with id ${accountOp.chainId} for ${accountOp.txnId}.`,
-                        error: new Error(`activity: failed to get transaction receipt for ${accountOp.txnId}`)
+                        error: error instanceof Error
+                            ? error
+                            : new Error(`activity: failed to get transaction receipt for ${accountOp.txnId}`)
                     });
                 }
+                finally {
+                    declareStuckIfExpired(accountOp);
+                }
                 if (shouldScheduleBalanceChangesTask && typeof lastReceiptBlockNumber !== 'undefined') {
+                    const nftBalanceChanges = await getNftBalanceChangesFromReceipts(accountOp, receiptsForBalanceChanges);
+                    this.#portfolio.addErc721sToBeLearned(getNftsToLearn(nftBalanceChanges), accountOp.accountAddr, accountOp.chainId);
                     balanceChangesTasks.push({
                         accountOp,
                         network,
@@ -823,7 +1134,8 @@ class ActivityController extends eventEmitter_1.default {
                             typeof firstReceiptBlockNumber !== 'undefined'
                             ? getPreviousBlockNumber(firstReceiptBlockNumber)
                             : undefined,
-                        receipts: receiptsForBalanceChanges
+                        receipts: receiptsForBalanceChanges,
+                        nftBalanceChanges
                     });
                 }
             }));
@@ -833,11 +1145,11 @@ class ActivityController extends eventEmitter_1.default {
         if (shouldEmitUpdate) {
             // remove duplicates if encountered during a race condition
             await this.#removeExternalAccountOpsMatchingInternalOps(updatedAccountsOps);
-            await this.persistAccountsOps();
+            await this.persistAccountsOps(updatedAccountsOps);
         }
         // record the balance changes but do not await them
         // no need to console.log errors in the catch() as it's handled inside
-        this.#executeBalanceChanges(balanceChangesTasks).catch((e) => null);
+        this.#executeBalanceChanges(balanceChangesTasks).catch(() => null);
         return {
             shouldEmitUpdate,
             chainsToUpdate: Array.from(chainsToUpdate),
@@ -847,7 +1159,7 @@ class ActivityController extends eventEmitter_1.default {
             shouldFetchSafeTxns
         };
     }
-    async updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts) {
+    async updateAccountOpBalanceChanges(accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts, nftBalanceChanges = []) {
         await this.#initialLoadPromise;
         try {
             if (accountOp.chainId !== network.chainId) {
@@ -863,12 +1175,12 @@ class ActivityController extends eventEmitter_1.default {
                 receipts,
                 debugTraceTransaction: (0, debugTransaction_1.getDebugTraceTransaction)(network.chainId, this.#providers.providers[network.chainId.toString()])
             });
-            await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, balanceChanges);
+            await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, balanceChanges, nftBalanceChanges);
             return balanceChanges;
         }
         catch (error) {
             console.log(error);
-            await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, error);
+            await this.setAccountOpBalanceChanges(accountOp.identifiedBy, accountOp.accountAddr, accountOp.chainId, error, nftBalanceChanges);
             return [];
         }
     }
@@ -878,19 +1190,48 @@ class ActivityController extends eventEmitter_1.default {
             this.#signedMessages[account] = [];
         // newest SignedMessage goes first in the list
         this.#signedMessages[account].unshift(signedMessage);
-        trim(this.#signedMessages[account]);
+        trim(this.#signedMessages[account], MAX_SIGNED_MESSAGES_PER_ACCOUNT);
         await this.syncSignedMessages();
         await this.#storage.set('signedMessages', this.#signedMessages);
         this.emitUpdate();
     }
+    /**
+     * Top the newly selected account up to the full startup window.
+     *
+     * Startup gives every non-selected account a shorter window (see
+     * STARTUP_RECENT_OPS_LIMIT_OTHER), so without this the account the user just switched to
+     * would render fewer finalized ops than one they started on. Awaited by selectAccount, so
+     * the switch does not resolve while the history is still short.
+     */
+    async onSelectedAccountChange(accountAddr) {
+        await this.#initialLoadPromise;
+        // Never rejects: it reports its own read failures and leaves the short window in place.
+        await this.#persistence.ensureRecentLoaded(accountAddr, activityIdb_1.STARTUP_RECENT_OPS_LIMIT, this.#networks.networks.map(({ chainId }) => chainId));
+        await this.syncFilteredAccountsOps();
+        // forceEmitUpdate, not emitUpdate — this replaces the forceEmitUpdate selectAccount used
+        // to call here, which bypasses throttling and React batching so the FE getters refresh.
+        await this.forceEmitUpdate();
+    }
     async removeAccountData(address) {
         await this.#initialLoadPromise;
-        delete this.#accountsOps[address];
-        delete this.#signedMessages[address];
+        // Resolved before the deletes: a key differing only in casing would otherwise survive
+        // both here and in the backend, leaving the removed account's history in place.
+        const opsKey = getAccountOpsAccountKey(this.#accountsOps, address) ?? address;
+        const messagesKey = getAccountOpsAccountKey(this.#signedMessages, address);
+        delete this.#accountsOps[opsKey];
+        if (messagesKey)
+            delete this.#signedMessages[messagesKey];
+        // sentToHistory kept on purpose: a re-imported account still recognises past recipients,
+        // which is what drives the poisoning warning.
+        // feePayersHistory kept on purpose too: the payers stay linked to the account on-chain,
+        // so a re-imported account must not treat them as unlinked.
         await this.syncFilteredAccountsOps();
         await this.syncSignedMessages();
-        await this.#storage.set('accountsOps', this.#accountsOps);
         await this.#storage.set('signedMessages', this.#signedMessages);
+        await this.#storage.set('sentToHistory', this.#sentToHistory);
+        // Also clears this account's cached op count, so a re-add
+        // re-reads from the backend instead of trusting a cache that no longer exists.
+        await this.#persistence.removeAccount(opsKey);
         this.emitUpdate();
     }
     get broadcastedButNotConfirmed() {
@@ -950,7 +1291,8 @@ class ActivityController extends eventEmitter_1.default {
         const mapToMetaData = (ops) => ops.map((op) => ({
             accountAddr: op.accountAddr,
             chainId: op.chainId,
-            timestamp: op.timestamp
+            timestamp: op.timestamp,
+            id: op.id
         }));
         for (const acc of this.#accounts.accounts) {
             const addr = acc.addr;
@@ -967,19 +1309,20 @@ class ActivityController extends eventEmitter_1.default {
                 .flat()
                 .sort((a, b) => b.timestamp - a.timestamp)
                 .slice(0, 10);
-            const pendingOps = latestOps.filter((op) => op.status === types_1.AccountOpStatus.Pending ||
+            // A transaction and its pending speed ups are one transaction for the user
+            const pendingOps = (0, replacements_1.collapseReplacedAccountOps)(latestOps).filter((op) => op.status === types_1.AccountOpStatus.Pending ||
                 op.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed);
             if (pendingOps.length) {
                 let opsDataForNextUpdate = mapToMetaData(pendingOps);
                 if (pendingBanner) {
                     opsDataForNextUpdate = [
-                        ...pendingBanner.meta.accountOpsDataForNextUpdate,
+                        ...(pendingBanner.meta?.accountOpsDataForNextUpdate || []),
                         ...opsDataForNextUpdate
                     ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i);
                 }
                 if (!pendingBanner && failedBanner) {
                     opsDataForNextUpdate = [
-                        ...failedBanner.meta.accountOpsDataForNextUpdate,
+                        ...(failedBanner.meta?.accountOpsDataForNextUpdate || []),
                         ...opsDataForNextUpdate
                     ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i);
                 }
@@ -1002,11 +1345,12 @@ class ActivityController extends eventEmitter_1.default {
                 });
             }
             const pendingOpsWithUpdatedStatus = pendingBanner
-                ? latestOps.filter((op) => pendingBanner.meta.accountOpsDataForNextUpdate.find((meta) => meta.accountAddr === op.accountAddr &&
+                ? latestOps.filter((op) => pendingBanner.meta.accountOpsDataForNextUpdate?.find((meta) => meta.accountAddr === op.accountAddr &&
                     meta.chainId === op.chainId &&
                     meta.timestamp === op.timestamp))
                 : [];
-            const failedOps = pendingOpsWithUpdatedStatus.filter((op) => op.status === types_1.AccountOpStatus.Failure || op.status === types_1.AccountOpStatus.Rejected);
+            const failedOps = pendingOpsWithUpdatedStatus.filter((op) => (op.status === types_1.AccountOpStatus.Failure || op.status === types_1.AccountOpStatus.Rejected) &&
+                !op.flags?.hiddenFromFailedBanner);
             if (failedOps.length) {
                 const shouldMarkSeen = Object.keys(this.accountsOps).some((k) => k.startsWith('dashboard'));
                 activityBanners.push({

@@ -1,11 +1,12 @@
 import { Contract } from 'ethers';
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter';
+import { IFeatureFlagsController } from '../../interfaces/featureFlags';
 import { Network } from '../../interfaces/network';
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider';
 import { IStorageController } from '../../interfaces/storage';
-import type { BalanceChangesReceipt } from '../../libs/accountOp/balanceChanges';
 import { TokenResult } from '../../libs/portfolio';
 import EventEmitter from '../eventEmitter/eventEmitter';
+import type { BalanceChangesReceipt } from '../../libs/accountOp/balanceChanges';
 declare const STATUS_WRAPPED_METHODS: {
     readonly toggleBatching: "INITIAL";
 };
@@ -18,11 +19,12 @@ export declare class ProvidersController extends EventEmitter implements IProvid
     initialLoadPromise?: Promise<void>;
     isBatchingEnabled: boolean;
     statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS>;
-    constructor({ storage, getNetworks, sendUiMessage, eventEmitterRegistry }: {
+    constructor({ storage, getNetworks, sendUiMessage, eventEmitterRegistry, featureFlags }: {
         storage: IStorageController;
         getNetworks: () => Network[];
         sendUiMessage: (params: {}) => void;
         eventEmitterRegistry?: IEventEmitterRegistryController;
+        featureFlags?: IFeatureFlagsController;
     });
     get providers(): RPCProviders;
     init({ networks }: {
@@ -30,7 +32,7 @@ export declare class ProvidersController extends EventEmitter implements IProvid
     }): Promise<void>;
     setProvider(network: Network, opts?: {
         forceUpdate: boolean;
-    }): void;
+    }): Promise<void>;
     updateProviderIsWorking(chainId: bigint, isWorking: boolean): void;
     removeProvider(chainId: bigint): void;
     toggleBatching(): Promise<void>;
@@ -50,6 +52,7 @@ export declare class ProvidersController extends EventEmitter implements IProvid
         method: keyof Contract;
         args: unknown[];
     }, requestId: string): Promise<void>;
+    getXWalletShareValueAndSendResToUi(requestId: string): Promise<void>;
     /**
      * Use this to communicate balanche changes for a transaction
      * to the external benzin

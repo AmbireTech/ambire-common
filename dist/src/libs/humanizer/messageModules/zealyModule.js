@@ -8,7 +8,13 @@ const zealyMessageModule = (message) => {
         return { fullVisualization: [] };
     let messageAsText = message.content.message;
     if ((0, ethers_1.isHexString)(message.content.message) && message.content.message.length % 2 === 0) {
-        messageAsText = (0, ethers_1.toUtf8String)(message.content.message);
+        try {
+            messageAsText = (0, ethers_1.toUtf8String)(message.content.message);
+        }
+        catch (e) {
+            console.log("zealy module: couldn't do toUtf8String on message");
+            return { fullVisualization: [] };
+        }
     }
     if (messageAsText.startsWith('zealy.io wants you to sign in with your Ethereum account'))
         return { fullVisualization: [(0, utils_1.getAction)('Login'), (0, utils_1.getLabel)('in'), (0, utils_1.getLabel)('Zealy', true)] };

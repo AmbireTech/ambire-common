@@ -10,7 +10,9 @@ exports.getUniqueAccountsArray = getUniqueAccountsArray;
 exports.isBasicAccount = isBasicAccount;
 exports.canBecomeSmarter = canBecomeSmarter;
 exports.canBecomeSmarterOnChain = canBecomeSmarterOnChain;
+exports.shouldBecomeSmarterAutomatically = shouldBecomeSmarterAutomatically;
 exports.hasBecomeSmarter = hasBecomeSmarter;
+exports.canOrHasBecomeSmarter = canOrHasBecomeSmarter;
 exports.shouldUseStateOverrideForEOA = shouldUseStateOverrideForEOA;
 const ethers_1 = require("ethers");
 const account_1 = require("../../consts/account");
@@ -159,16 +161,10 @@ const getDefaultSelectedAccount = (accounts) => {
 };
 exports.getDefaultSelectedAccount = getDefaultSelectedAccount;
 const getAccountImportStatus = ({ account, alreadyImportedAccounts, keys, accountsOnPage = [], keyIteratorType }) => {
-    const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr);
-    if (!isAlreadyImported)
-        return account_2.ImportStatus.NotImported;
     // Check if the account has been imported with at least one of the keys
     // that the account was originally associated with, when it was imported.
     const storedAssociatedKeys = alreadyImportedAccounts.find((x) => x.addr === account.addr)?.associatedKeys || [];
     const importedKeysForThisAcc = keys.filter((key) => storedAssociatedKeys.includes(key.addr));
-    // Could be imported as a view only account (and therefore, without a key)
-    if (!importedKeysForThisAcc.length)
-        return account_2.ImportStatus.ImportedWithoutKey;
     // Merge the `associatedKeys` from the account instances found on the page,
     // with the `associatedKeys` of the account from the extension storage. This
     // ensures up-to-date keys, considering the account existing associatedKeys
@@ -181,6 +177,21 @@ const getAccountImportStatus = ({ account, alreadyImportedAccounts, keys, accoun
             .flatMap((x) => x.account.associatedKeys),
         ...storedAssociatedKeys
     ]));
+    // The stats are key type agnostic on purpose, unlike the import status
+    // below, since they answer how many of this account's keys the user holds.
+    const importInfo = {
+        associatedKeysStats: {
+            total: mergedAssociatedKeys.length,
+            imported: new Set(importedKeysForThisAcc.map((key) => key.addr)).size
+        },
+        importedKeyTypes: Array.from(new Set(importedKeysForThisAcc.map((key) => key.type)))
+    };
+    const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr);
+    if (!isAlreadyImported)
+        return { ...importInfo, importStatus: account_2.ImportStatus.NotImported };
+    // Could be imported as a view only account (and therefore, without a key)
+    if (!importedKeysForThisAcc.length)
+        return { ...importInfo, importStatus: account_2.ImportStatus.ImportedWithoutKey };
     // Same key in this context means not only the same key address, but the
     // same type too. Because user can opt in to import same key address with
     // many different hardware wallets (Trezor, Ledger, GridPlus, etc.) or
@@ -189,10 +200,10 @@ const getAccountImportStatus = ({ account, alreadyImportedAccounts, keys, accoun
         // if key type is not provided, skip this part of the check on purpose
         (keyIteratorType ? key.type === keyIteratorType : true));
     if (associatedKeysAlreadyImported.length) {
-        const associatedKeysNotImportedYet = mergedAssociatedKeys.filter((keyAddr) => associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr));
+        const associatedKeysNotImportedYet = mergedAssociatedKeys.filter((keyAddr) => !associatedKeysAlreadyImported.some((x) => x.addr === keyAddr));
         const notImportedYetKeysExistInPage = accountsOnPage.some((x) => associatedKeysNotImportedYet.includes(x.account.addr));
         if (notImportedYetKeysExistInPage)
-            return account_2.ImportStatus.ImportedWithSomeOfTheKeys;
+            return { ...importInfo, importStatus: account_2.ImportStatus.ImportedWithSomeOfTheKeys };
         // Could happen when user imports a smart account with one associated key.
         // Then imports an EOA. Then makes the EOA a second key
         // for the smart account. In this case, both associated keys of the smart
@@ -204,13 +215,16 @@ const getAccountImportStatus = ({ account, alreadyImportedAccounts, keys, accoun
             const storedAssociatedKeysSet = new Set(storedAssociatedKeys);
             return ![...incomingAssociatedKeysSet].every((k) => storedAssociatedKeysSet.has(k));
         });
-        return associatedKeysFoundOnPageAreDifferent
-            ? account_2.ImportStatus.ImportedWithSomeOfTheKeys
-            : account_2.ImportStatus.ImportedWithTheSameKeys;
+        return {
+            ...importInfo,
+            importStatus: associatedKeysFoundOnPageAreDifferent
+                ? account_2.ImportStatus.ImportedWithSomeOfTheKeys
+                : account_2.ImportStatus.ImportedWithTheSameKeys
+        };
     }
     // Since there are `importedKeysForThisAcc`, as a fallback -
     // for all other scenarios this account has been imported with different keys.
-    return account_2.ImportStatus.ImportedWithDifferentKeys;
+    return { ...importInfo, importStatus: account_2.ImportStatus.ImportedWithDifferentKeys };
 };
 exports.getAccountImportStatus = getAccountImportStatus;
 const getDefaultAccountPreferences = (accountAddr, prevAccounts, i) => {
@@ -229,7 +243,13 @@ function getUniqueAccountsArray(accounts) {
 function isBasicAccount(account, state) {
     return !account.creation && !account.safeCreation && !state.isSmarterEoa;
 }
-const KEY_TYPES_ABLE_TO_BECOME_SMARTER = ['internal', 'lattice'];
+const KEY_TYPES_ABLE_TO_BECOME_SMARTER = ['internal', 'lattice', 'ledger'];
+/**
+ * Key types that support EIP-7702 but for which EIP-7702 flows are NOT forced.
+ */
+const KEY_TYPES_NOT_MADE_SMARTER_AUTOMATICALLY = [
+    'ledger' // can authorize the upgrade only through the extra steps via a custom "Ambire Signer" app
+];
 // can the account as a whole become smarter (disregarding chain and state)
 function canBecomeSmarter(acc, accKeys) {
     return (!(0, exports.isSmartAccount)(acc) &&
@@ -240,6 +260,17 @@ function canBecomeSmarterOnChain(network, acc, state) {
     return ((0, _7702_1.has7702)(network) &&
         isBasicAccount(acc, state) &&
         !!state.importedAccountKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type)));
+}
+/**
+ * Whether an account should be upgraded to a smart account on its own, the
+ * moment something would benefit from it (batching calls, for example).
+ * Accounts that can only be upgraded by a key type from
+ * `KEY_TYPES_NOT_MADE_SMARTER_AUTOMATICALLY` stay plain EOAs until the user asks
+ * for the upgrade from the account's smart settings.
+ */
+function shouldBecomeSmarterAutomatically(accKeys) {
+    return !!accKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type) &&
+        !KEY_TYPES_NOT_MADE_SMARTER_AUTOMATICALLY.includes(key.type));
 }
 function hasBecomeSmarter(account, state) {
     if (!state[account.addr])
@@ -253,6 +284,9 @@ function hasBecomeSmarter(account, state) {
             return true;
     }
     return false;
+}
+function canOrHasBecomeSmarter(account, state, keys) {
+    return canBecomeSmarter(account, keys) || hasBecomeSmarter(account, state);
 }
 function shouldUseStateOverrideForEOA(account, state) {
     return isBasicAccount(account, state);

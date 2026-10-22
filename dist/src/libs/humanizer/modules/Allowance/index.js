@@ -1,11 +1,22 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-/* eslint-disable @typescript-eslint/no-unused-vars */
-const ethers_1 = require("ethers");
-const Allowance_1 = require("../../const/abis/Allowance");
+exports.getSetAllowanceResetText = exports.getAllowanceResetText = void 0;
+const viem_1 = require("viem");
 const utils_1 = require("../../utils");
-const iface = new ethers_1.Interface(Allowance_1.Allowance);
-const getTimeString = (resetTimeMin) => {
+const setAllowanceAbi = (0, viem_1.parseAbi)([
+    'function setAllowance(address delegate, address token, uint96 allowanceAmount, uint16 resetTimeMin, uint32 resetBaseMin)'
+]);
+const deleteAllowanceAbi = (0, viem_1.parseAbi)(['function deleteAllowance(address delegate, address token)']);
+const executeAllowanceTransferAbi = (0, viem_1.parseAbi)([
+    'function executeAllowanceTransfer(address safe, address token, address to, uint96 amount, address paymentToken, uint96 payment, address delegate, bytes memory signature)'
+]);
+const addDelegateAbi = (0, viem_1.parseAbi)(['function addDelegate(address delegate)']);
+const removeDelegateAbi = (0, viem_1.parseAbi)([
+    'function removeDelegate(address delegate, bool removeAllowances)'
+]);
+const getAllowanceResetText = (resetTimeMin) => {
+    if (resetTimeMin === 0n)
+        return 'No reset';
     if (resetTimeMin === 1440n)
         return 'Daily';
     if (resetTimeMin === 10080n)
@@ -16,33 +27,53 @@ const getTimeString = (resetTimeMin) => {
         return 'Monthly';
     return `Every ${resetTimeMin.toString()} minutes`;
 };
-const AllowanceModule = (accOp, calls) => {
+exports.getAllowanceResetText = getAllowanceResetText;
+const setAllowanceSelector = (0, viem_1.toFunctionSelector)(setAllowanceAbi[0]);
+const addDelegateSelector = (0, viem_1.toFunctionSelector)(addDelegateAbi[0]);
+const removeDelegateSelector = (0, viem_1.toFunctionSelector)(removeDelegateAbi[0]);
+const deleteAllowanceSelector = (0, viem_1.toFunctionSelector)(deleteAllowanceAbi[0]);
+const executeAllowanceTransferSelector = (0, viem_1.toFunctionSelector)(executeAllowanceTransferAbi[0]);
+const getSetAllowanceResetText = (call) => {
+    if (!(0, utils_1.isHexCall)(call))
+        return null;
+    if (call.data.slice(0, 10) !== setAllowanceSelector)
+        return null;
+    const { args } = (0, viem_1.decodeFunctionData)({ abi: setAllowanceAbi, data: call.data });
+    const [, , , resetTimeMin] = args;
+    return (0, exports.getAllowanceResetText)(BigInt(resetTimeMin));
+};
+exports.getSetAllowanceResetText = getSetAllowanceResetText;
+const AllowanceModule = (accOp, call) => {
     const matcher = {
-        [iface.getFunction('setAllowance')?.selector]: (call) => {
-            const { delegate, token, allowanceAmount, resetTimeMin, resetBaseMin } = iface.parseTransaction(call).args;
+        [setAllowanceSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: setAllowanceAbi, data: call.data });
+            const [delegate, token, allowanceAmount, resetTimeMin] = args;
             const fullVisualization = [
                 (0, utils_1.getAction)('Allow'),
                 (0, utils_1.getAddressVisualization)(delegate),
                 (0, utils_1.getLabel)('to spend'),
                 (0, utils_1.getToken)(token, allowanceAmount),
-                (0, utils_1.getLabel)(getTimeString(resetTimeMin))
+                (0, utils_1.getLabel)((0, exports.getAllowanceResetText)(BigInt(resetTimeMin)))
             ];
             return { ...call, fullVisualization };
         },
-        [iface.getFunction('addDelegate')?.selector]: (call) => {
-            const { delegate } = iface.parseTransaction(call).args;
+        [addDelegateSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: addDelegateAbi, data: call.data });
+            const [delegate] = args;
             const fullVisualization = [(0, utils_1.getAction)('Add delegate'), (0, utils_1.getAddressVisualization)(delegate)];
             return { ...call, fullVisualization };
         },
-        [iface.getFunction('removeDelegate')?.selector]: (call) => {
-            const { delegate, removeAllowances } = iface.parseTransaction(call).args;
+        [removeDelegateSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: removeDelegateAbi, data: call.data });
+            const [delegate, removeAllowances] = args;
             const fullVisualization = [(0, utils_1.getAction)('Remove delegate'), (0, utils_1.getAddressVisualization)(delegate)];
             if (removeAllowances)
                 fullVisualization.push((0, utils_1.getLabel)('and set allowance to 0'));
             return { ...call, fullVisualization };
         },
-        [iface.getFunction('deleteAllowance')?.selector]: (call) => {
-            const { delegate, token } = iface.parseTransaction(call).args;
+        [deleteAllowanceSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: deleteAllowanceAbi, data: call.data });
+            const [delegate, token] = args;
             const fullVisualization = [
                 (0, utils_1.getAction)('Remove allowance for'),
                 (0, utils_1.getAddressVisualization)(delegate),
@@ -50,8 +81,12 @@ const AllowanceModule = (accOp, calls) => {
             ];
             return { ...call, fullVisualization };
         },
-        [iface.getFunction('executeAllowanceTransfer')?.selector]: (call) => {
-            const { safe, token, to, amount, paymentToken, payment, delegate, signature } = iface.parseTransaction(call).args;
+        [executeAllowanceTransferSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({
+                abi: executeAllowanceTransferAbi,
+                data: call.data
+            });
+            const [, token, , amount, , , delegate] = args;
             const fullVisualization = [
                 (0, utils_1.getAction)('Execute allowance for'),
                 (0, utils_1.getAddressVisualization)(delegate),
@@ -61,16 +96,15 @@ const AllowanceModule = (accOp, calls) => {
             return { ...call, fullVisualization };
         }
     };
-    const newCalls = calls.map((call) => {
-        const match = matcher[call.data.slice(0, 10)];
-        if (call.fullVisualization || !match)
-            return call;
-        const newCall = match(call);
-        if (!newCall)
-            return call;
-        return newCall;
-    });
-    return newCalls;
+    if (call.fullVisualization || !(0, utils_1.isHexCall)(call))
+        return call;
+    const match = matcher[call.data.slice(0, 10)];
+    if (!match)
+        return call;
+    const newCall = match(call);
+    if (!newCall)
+        return call;
+    return newCall;
 };
 exports.default = AllowanceModule;
 //# sourceMappingURL=index.js.map

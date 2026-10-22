@@ -1,7 +1,7 @@
 import { Hex } from '../../interfaces/hex';
 import { Network } from '../../interfaces/network';
 export declare function getContractImplementation(chainId: bigint, accountKeys: {
-    type: 'internal' | 'lattice' | 'trezor' | 'ledger' | 'qr';
+    type: 'internal' | 'lattice' | 'trezor' | 'onekey' | 'ledger' | 'qr' | 'nfc' | 'pq1';
 }[]): Hex;
 export declare function has7702(net: Network): boolean;
 export declare function getDelegatorName(contract: Hex): "" | "Ambire" | "Metamask";

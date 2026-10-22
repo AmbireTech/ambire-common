@@ -1,12 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.KeyIterator = exports.getPrivateKeyFromSeed = void 0;
+exports.KeyIterator = exports.normalizePrivateKey = exports.getPrivateKeyFromSeed = exports.MAX_BULK_PRIVATE_KEYS = void 0;
 exports.isValidPrivateKey = isValidPrivateKey;
 const ethers_1 = require("ethers");
 const derivation_1 = require("../../consts/derivation");
 const hdPath_1 = require("../../utils/hdPath");
 const account_1 = require("../account/account");
 const keys_1 = require("../keys/keys");
+/**
+ * The maximum number of private keys that can be imported at once (bulk import).
+ * Every imported account adds background work (portfolio and account state updates on every
+ * network), so the limit is kept low until the performance with more accounts is measured.
+ */
+exports.MAX_BULK_PRIVATE_KEYS = 20;
 function isValidPrivateKey(value) {
     try {
         return !!new ethers_1.Wallet(value);
@@ -25,20 +31,39 @@ const getPrivateKeyFromSeed = (seed, seedPassphrase, keyIndex, hdPathTemplate) =
 };
 exports.getPrivateKeyFromSeed = getPrivateKeyFromSeed;
 /**
- * Serves for retrieving a range of addresses/keys from a given private key or seed phrase
+ * Brings a private key to a single comparable form (trimmed, lowercase, without the `0x` prefix),
+ * so that the same key entered with or without a prefix or in a different case is detected as a duplicate.
+ */
+const normalizePrivateKey = (privateKey) => {
+    const trimmedPrivateKey = privateKey.trim().toLowerCase();
+    return trimmedPrivateKey.startsWith('0x') ? trimmedPrivateKey.slice(2) : trimmedPrivateKey;
+};
+exports.normalizePrivateKey = normalizePrivateKey;
+/**
+ * Serves for retrieving a range of addresses/keys from a given seed phrase, a private key
+ * or a list of private keys (bulk import). For a list, the key at position N is served at index N.
  */
 class KeyIterator {
     type = 'internal';
     subType;
-    #privateKey = null;
+    #privateKeys = [];
     #seedPhrase = null;
     #seedPassphrase = null;
     #cachedBaseWallet = null;
     constructor(_privKeyOrSeed, _seedPassphrase) {
-        if (!_privKeyOrSeed)
+        if (!_privKeyOrSeed?.length)
             throw new Error('keyIterator: no private key or seed phrase provided');
+        if (Array.isArray(_privKeyOrSeed)) {
+            // Duplicates are dropped, otherwise the same account would be listed more than once
+            const uniquePrivateKeys = [...new Set(_privKeyOrSeed.map(exports.normalizePrivateKey))];
+            if (!uniquePrivateKeys.every(isValidPrivateKey))
+                throw new Error('keyIterator: invalid argument provided to constructor');
+            this.#privateKeys = uniquePrivateKeys;
+            this.subType = 'private-key';
+            return;
+        }
         if (isValidPrivateKey(_privKeyOrSeed)) {
-            this.#privateKey = _privKeyOrSeed;
+            this.#privateKeys = [_privKeyOrSeed];
             this.subType = 'private-key';
             return;
         }
@@ -52,6 +77,13 @@ class KeyIterator {
         }
         throw new Error('keyIterator: invalid argument provided to constructor');
     }
+    /**
+     * How many keys the iterator can serve. Only set for private keys, since a seed phrase
+     * can derive keys at any index (undefined means there is no limit).
+     */
+    get keysCount() {
+        return this.subType === 'private-key' ? this.#privateKeys.length : undefined;
+    }
     #getBaseWallet() {
         if (this.#cachedBaseWallet)
             return this.#cachedBaseWallet;
@@ -61,25 +93,22 @@ class KeyIterator {
         this.#cachedBaseWallet = ethers_1.HDNodeWallet.fromMnemonic(mnemonic, 'm');
         return this.#cachedBaseWallet;
     }
-    async getEncryptedSeed(encryptor) {
-        if (!this.#seedPhrase)
-            return null;
-        const encryptedSeed = await encryptor(this.#seedPhrase, this.#seedPassphrase);
-        return encryptedSeed;
-    }
     async retrieve(fromToArr, hdPathTemplate) {
         const keys = [];
         const baseWallet = this.#getBaseWallet();
         for (const { from, to } of fromToArr) {
             if ((!from && from !== 0) || (!to && to !== 0) || !hdPathTemplate)
                 throw new Error('keyIterator: invalid or missing arguments');
-            if (this.#privateKey) {
+            if (this.#privateKeys.length) {
                 // Before v4.31.0, private keys for accounts used as smart account keys
                 // were derived. That's no longer the case. Importing private keys
                 // does not generate smart accounts anymore.
                 const shouldDerive = from >= derivation_1.SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET;
-                if (!shouldDerive)
-                    keys.push(new ethers_1.Wallet(this.#privateKey).address);
+                if (!shouldDerive) {
+                    this.#privateKeys
+                        .slice(from, to + 1)
+                        .forEach((privateKey) => keys.push(new ethers_1.Wallet(privateKey).address));
+                }
             }
             if (this.#seedPhrase && baseWallet) {
                 for (let i = from; i <= to; i++) {
@@ -130,27 +159,29 @@ class KeyIterator {
                     ];
                 }
                 // So the subType is 'private-key' then
-                if (!this.#privateKey) {
-                    // Should never happen
-                    console.error('keyIterator: no private key provided');
-                    return [];
-                }
                 // Before v4.31.0, private keys for accounts used as smart account keys
                 // were derived. That's no longer the case. Importing private keys
                 // does not generate smart accounts anymore.
-                const isPrivateKeyThatShouldBeDerived = isValidPrivateKey(this.#privateKey) && index >= derivation_1.SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET;
+                const isPrivateKeyThatShouldBeDerived = index >= derivation_1.SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET;
                 if (isPrivateKeyThatShouldBeDerived) {
                     // Should never happen
                     console.error('keyIterator: since v4.31.0, private keys should not be derived and importing them does not retrieve a smart account');
                     return [];
                 }
+                // The private key at position N in the list is served at index N
+                const privateKey = this.#privateKeys[index];
+                if (!privateKey) {
+                    // Should never happen
+                    console.error('keyIterator: no private key provided for index', index);
+                    return [];
+                }
                 return [
                     {
-                        addr: new ethers_1.Wallet(this.#privateKey).address,
+                        addr: new ethers_1.Wallet(privateKey).address,
                         type: 'internal',
                         label: (0, keys_1.getExistingKeyLabel)(keystoreKeys, acc.account.addr, this.type) ||
                             (0, keys_1.getDefaultKeyLabel)(keystoreKeys.filter((key) => acc.account.associatedKeys.includes(key.addr)), 0),
-                        privateKey: this.#privateKey,
+                        privateKey,
                         dedicatedToOneSA: false,
                         meta: {
                             createdAt: new Date().getTime()
@@ -160,9 +191,13 @@ class KeyIterator {
             });
         });
     }
-    isSeedMatching(seedPhraseToCompareWith) {
+    isSeedMatching(seedPhraseToCompareWith, passphraseToCompareWith) {
         if (!this.#seedPhrase)
             return false;
+        if (passphraseToCompareWith !== undefined &&
+            (passphraseToCompareWith ?? '') !== (this.#seedPassphrase ?? '')) {
+            return false;
+        }
         const baseWallet = this.#getBaseWallet();
         if (baseWallet) {
             const otherMnemonic = ethers_1.Mnemonic.fromPhrase(seedPhraseToCompareWith);

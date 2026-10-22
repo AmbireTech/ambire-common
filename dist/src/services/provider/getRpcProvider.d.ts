@@ -1,7 +1,10 @@
-import { JsonRpcApiProviderOptions, JsonRpcProvider } from 'ethers';
-import { PublicClient } from 'viem';
+import { JsonRpcApiProviderOptions } from 'ethers';
 import { Network as NetworkInterface } from '../../interfaces/network';
-declare const getRpcProvider: (rpcUrls: NetworkInterface["rpcUrls"], chainId?: bigint | number, selectedRpcUrl?: string, options?: JsonRpcApiProviderOptions) => JsonRpcProvider;
-declare const getViemClientForProvider: (provider: JsonRpcProvider) => PublicClient;
-export { getRpcProvider, getViemClientForProvider };
+import { RPCProvider } from '../../interfaces/provider';
+import { FetchJsonRpcProvider } from './fetchJsonRpcProvider';
+import type { PublicClient } from 'viem';
+declare const getRpcProvider: (rpcUrls: NetworkInterface["rpcUrls"], chainId?: bigint | number, selectedRpcUrl?: string, options?: JsonRpcApiProviderOptions) => FetchJsonRpcProvider;
+declare const getProviderConnectionUrl: (network: NetworkInterface) => string;
+declare const getViemClientForProvider: (provider: RPCProvider) => PublicClient;
+export { getProviderConnectionUrl, getRpcProvider, getViemClientForProvider };
 //# sourceMappingURL=getRpcProvider.d.ts.map

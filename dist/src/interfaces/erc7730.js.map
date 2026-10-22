@@ -1,0 +1,1 @@
+{"version":3,"file":"erc7730.js","sourceRoot":"","sources":["../../../src/interfaces/erc7730.ts"],"names":[],"mappings":"","sourcesContent":["import { ControllerInterface } from './controller'\n\nexport type IErc7730Controller = ControllerInterface<\n  InstanceType<typeof import('../controllers/erc7730/erc7730').Erc7730Controller>\n>\n"]}

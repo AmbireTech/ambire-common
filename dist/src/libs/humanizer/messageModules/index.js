@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.safeMessageModule = exports.snapshotModule = exports.eip7702AuthorizationModule = exports.zealyMessageModule = exports.openseaMessageModule = exports.permit2Module = exports.legendsMessageModule = exports.erc721Module = exports.erc20Module = exports.entryPointModule = exports.ensMessageModule = void 0;
+exports.safeMessageModule = exports.snapshotModule = exports.eip7702AuthorizationModule = exports.zealyMessageModule = exports.openseaMessageModule = exports.permit2Module = exports.cowSwapModule = exports.legendsMessageModule = exports.erc721Module = exports.erc20Module = exports.entryPointModule = exports.ensMessageModule = void 0;
+const cowSwapModule_1 = require("./cowSwapModule");
+Object.defineProperty(exports, "cowSwapModule", { enumerable: true, get: function () { return cowSwapModule_1.cowSwapModule; } });
 const eip7702AuthorizationModule_1 = require("./eip7702AuthorizationModule");
 Object.defineProperty(exports, "eip7702AuthorizationModule", { enumerable: true, get: function () { return eip7702AuthorizationModule_1.eip7702AuthorizationModule; } });
 const ensModule_1 = require("./ensModule");

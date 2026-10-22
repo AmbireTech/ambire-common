@@ -1,36 +1,23 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const ethers_1 = require("ethers");
-const Guild_1 = require("../../const/abis/Guild");
+const viem_1 = require("viem");
 const utils_1 = require("../../utils");
-const iface = new ethers_1.Interface(Guild_1.Guild);
-const GuildModule = (accOp, calls) => {
+const claimAbi = (0, viem_1.parseAbi)([
+    'function claim((address receiver, uint8 guildAction, uint256 userId, uint256 guildId, string guildName, uint256 createdAt) pinData, address adminTreasury, uint256 adminFee, uint256 signedAt, string cid, bytes signature) payable'
+]);
+const claimSelector = (0, viem_1.toFunctionSelector)(claimAbi[0]);
+const GuildModule = (accOp, call) => {
     const matcher = {
-        [iface.getFunction('claim((address receiver, uint8 guildAction, uint256 userId, uint256 guildId, string guildName, uint256 createdAt) pinData, address adminTreasury, uint256 adminFee, uint256 signedAt, string cid, bytes signature)')?.selector]: (call) => {
-            const { pinData: { 
-            // receiver,
-            // guildAction,
-            // userId,
-            // guildId,
-            guildName
-            // createdAt
-             }
-            // adminTreasury,
-            // adminFee,
-            // signedAt,
-            // cid,
-            // signature
-             } = iface.parseTransaction(call).args;
-            // if (receiver === accOp.accountAddr)
-            return [(0, utils_1.getAction)('Claim Guild badge'), (0, utils_1.getLabel)('for'), (0, utils_1.getLabel)(guildName, true)];
+        [claimSelector]: (call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: claimAbi, data: call.data });
+            const [pinData] = args;
+            return [(0, utils_1.getAction)('Claim Guild badge'), (0, utils_1.getLabel)('for'), (0, utils_1.getLabel)(pinData.guildName, true)];
         }
     };
-    const newCalls = calls.map((call) => {
-        if (call.fullVisualization || !matcher[call.data.slice(0, 10)])
-            return call;
-        return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) };
-    });
-    return newCalls;
+    const match = matcher[call.data.slice(0, 10)];
+    if (call.fullVisualization || !(0, utils_1.isHexCall)(call) || !match)
+        return call;
+    return { ...call, fullVisualization: match(call) };
 };
 exports.default = GuildModule;
 //# sourceMappingURL=index.js.map

@@ -5,10 +5,7 @@ exports.calculateSelectedAccountPortfolio = calculateSelectedAccountPortfolio;
 const tslib_1 = require("tslib");
 const portfolioView_1 = tslib_1.__importDefault(require("./portfolioView"));
 const isInternalChain = (chainId) => {
-    return (chainId === 'gasTank' ||
-        chainId === 'rewards' ||
-        chainId === 'projectedRewards' ||
-        chainId === 'defiApps');
+    return chainId === 'gasTank' || chainId === 'rewards' || chainId === 'defiApps';
 };
 exports.isInternalChain = isInternalChain;
 const stripPortfolioState = (portfolioState) => {
@@ -63,7 +60,7 @@ exports.DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
     isReloading: false,
     networkSimulatedAccountOp: {},
     portfolioState: {},
-    projectedRewardsStats: null
+    verification: null
 };
 /**
  * Calculates the selected account portfolio that is used by the UI

@@ -11,10 +11,16 @@ export interface TransferUpdate {
     addressState?: AddressStateOptional;
     isRecipientAddressUnknownAgreed?: boolean;
     amountFieldMode?: 'token' | 'fiat';
+    /** Seed id of a Privacy Pools account to send to instead of an address; null undoes it. */
+    privacyPoolsRecipient?: string | null;
 }
 export type AddressPoisoningMatch = {
     matchedAddress: string;
     matchedPrefixCharsCount: number;
     matchedSuffixCharsCount: number;
+};
+export type AmountAdjustmentInfo = {
+    feeAmount: string;
+    tokenSymbol: string;
 };
 //# sourceMappingURL=transfer.d.ts.map

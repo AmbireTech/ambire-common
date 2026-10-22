@@ -15,7 +15,6 @@ interface FeeOptions {
     minBaseFee?: bigint;
     elasticityMultiplier?: bigint;
     baseFeeMaxChangeDenominator?: bigint;
-    feeIncrease?: bigint;
     minBaseFeeEqualToLastBlock?: boolean;
 }
 /** Current network configuration and statuses, which may change over time */
@@ -100,6 +99,11 @@ export interface Network {
     allowForce4337?: boolean;
     disabled?: boolean;
     customBundlerUrl?: string;
+    isColibriEnabled?: boolean;
+    /**
+     * Initial polling interval for pending account operation statuses.
+     */
+    refreshInterval?: number;
 }
 export interface SupportedNetworks extends Network {
     isNotSupported?: boolean;
@@ -115,6 +119,7 @@ export interface AddNetworkRequestParams {
     explorerUrl?: Network['explorerUrl'];
     iconUrls: Network['iconUrls'];
     customBundlerUrl?: Network['customBundlerUrl'];
+    isColibriEnabled?: Network['isColibriEnabled'];
 }
 export interface ChainlistNetwork {
     name: string;
@@ -181,7 +186,6 @@ export type RelayerNetwork = {
         is1559: boolean;
         elasticityMultiplier?: number;
         baseFeeMaxChangeDenominator?: number;
-        feeIncrease?: number;
         minBaseFee?: number;
         minBaseFeeEqualToLastBlock?: boolean;
     };
@@ -198,6 +202,10 @@ export type RelayerNetwork = {
         };
     };
     disabledByDefault?: boolean;
+    /**
+     * Initial polling interval for pending account operation statuses.
+     */
+    refreshInterval?: number;
 };
 export type RelayerNetworkConfigResponse = {
     [chainId: string]: RelayerNetwork;

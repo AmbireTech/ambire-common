@@ -5,8 +5,10 @@ const tslib_1 = require("tslib");
 const aes_js_1 = tslib_1.__importDefault(require("aes-js"));
 const eth_crypto_1 = require("eth-crypto");
 const ethers_1 = require("ethers");
+const keystore_1 = require("../../libs/keystore/keystore");
 const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
 const derivation_1 = require("../../consts/derivation");
+const privacyPools_1 = require("../../consts/privacyPools");
 const entropyGenerator_1 = require("../../libs/entropyGenerator/entropyGenerator");
 const keys_1 = require("../../libs/keys/keys");
 const scryptAdapter_1 = require("../../libs/scrypt/scryptAdapter");
@@ -14,11 +16,10 @@ const shortenAddress_1 = tslib_1.__importDefault(require("../../utils/shortenAdd
 const uuid_1 = require("../../utils/uuid");
 const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
-const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 };
-const CIPHER = 'aes-128-ctr';
 const KEYSTORE_UNEXPECTED_ERROR_MESSAGE = 'Keystore unexpected error. If the problem persists, please contact support.';
 exports.STATUS_WRAPPED_METHODS = {
     unlockWithSecret: 'INITIAL',
+    verifySecret: 'INITIAL',
     addSecret: 'INITIAL',
     addSeed: 'INITIAL',
     updateSeed: 'INITIAL',
@@ -29,10 +30,6 @@ exports.STATUS_WRAPPED_METHODS = {
     changeKeystorePassword: 'INITIAL',
     updateKeyPreferences: 'INITIAL'
 };
-function getBytesForSecret(secret) {
-    // see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
-    return (0, ethers_1.toUtf8Bytes)(secret, 'NFKC');
-}
 /**
  * The KeystoreController is a class that manages a collection of encrypted keys.
  * It provides methods for adding, removing, and retrieving keys. The keys are
@@ -64,14 +61,32 @@ class KeystoreController extends eventEmitter_1.default {
     #keystoreSecrets = [];
     #storage;
     #keystoreSeeds = [];
+    /**
+     * Whether the stored recovery phrases have been read. False if reading failed, when `seeds` may
+     * be wrongly empty, so nothing may be dropped for a phrase missing from it.
+     */
+    areSeedsLoaded = false;
     #tempSeed = null;
     #keystoreSigners;
     #keystoreKeys = [];
     #internalKeysToAddOnKeystoreReady = [];
     #externalKeysToAddOnKeystoreReady = [];
+    #seedsToAddOnKeystoreReady = [];
     keyStoreUid;
     #isReadyToStoreKeys = false;
     errorMessage = '';
+    /**
+     * The outcome of the last `verifySecret` call. Unlike a status, it survives until the UI
+     * resets it, so a re-authentication prompt can read the result no matter when it re-renders.
+     */
+    signingAuthResult = null;
+    /**
+     * Stamped on every `signingAuthResult` and read nowhere else. It only makes two identical
+     * outcomes differ, so the UI's reconciled state still re-renders on the second one - keep it.
+     */
+    #signingAuthResultId = 0;
+    /** Set while `verifySecret` runs, so the shared unlock `errorMessage` is left alone. */
+    #isVerifyingSecret = false;
     statuses = exports.STATUS_WRAPPED_METHODS;
     // Holds the initial load promise, so that one can wait until it completes
     initialLoadPromise;
@@ -104,6 +119,7 @@ class KeystoreController extends eventEmitter_1.default {
                 // of the extension supported only one saved seed which lacked id and label props.
                 return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' };
             });
+            this.areSeedsLoaded = true;
             this.#keystoreKeys = keystoreKeys;
         }
         catch (e) {
@@ -130,6 +146,8 @@ class KeystoreController extends eventEmitter_1.default {
         this.#mainKey = null;
         if (this.#tempSeed)
             this.deleteTempSeed(false);
+        this.#seedsToAddOnKeystoreReady = [];
+        this.#internalKeysToAddOnKeystoreReady = [];
         this.emitUpdate();
     }
     get isUnlocked() {
@@ -143,12 +161,6 @@ class KeystoreController extends eventEmitter_1.default {
     }
     set isReadyToStoreKeys(val) {
         this.#isReadyToStoreKeys = val;
-        if (val && this.#internalKeysToAddOnKeystoreReady.length) {
-            this.#addKeys(this.#internalKeysToAddOnKeystoreReady);
-        }
-        if (val && this.#externalKeysToAddOnKeystoreReady.length) {
-            this.#addKeysExternallyStored(this.#externalKeysToAddOnKeystoreReady);
-        }
     }
     async getKeyStoreUid() {
         const uid = this.keyStoreUid;
@@ -176,28 +188,84 @@ class KeystoreController extends eventEmitter_1.default {
             });
         }
         const { scryptParams, aesEncrypted } = secretEntry;
-        if (aesEncrypted.cipherType !== CIPHER) {
+        if (aesEncrypted.cipherType !== keystore_1.CIPHER &&
+            aesEncrypted.cipherType !== keystore_1.CIPHER_OLD &&
+            // @ts-ignore
+            aesEncrypted.cipherType !== undefined) {
             throw new EmittableError_1.default({
                 message: 'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
                 level: 'major',
+                // @ts-ignore
                 error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
             });
         }
-        await (0, wait_1.default)(0); // a trick to prevent UI freeze while the CPU is busy
-        const key = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), (0, ethers_1.getBytes)(scryptParams.salt), {
-            N: scryptParams.N,
-            r: scryptParams.r,
-            p: scryptParams.p,
-            dkLen: scryptParams.dkLen
-        });
-        await (0, wait_1.default)(0);
+        const secretKey = await (0, keystore_1.deriveSecret)(this.#scryptAdapter, secret, scryptParams);
+        const isOldSecretCipher = aesEncrypted.cipherType === undefined || aesEncrypted.cipherType === keystore_1.CIPHER_OLD;
+        if (isOldSecretCipher) {
+            // 1. Retrieve the main key using the old encryption method
+            const mainKeyOld = this.#unlockWithSecretOld(secretKey, secretEntry);
+            // Rebuild the new main key from the old one.
+            // `mainKeyOld` is the previous 128-bit key (16 bytes), while the new encryption scheme
+            // needs a 256-bit main key (32 bytes).
+            // We cannot generate a new random key here, because the user may have more than one secret
+            // and we need to be able to recreate the same main key again if another secret is migrated later.
+            //
+            // We simply concatenate `mainKeyOld.key` and `mainKeyOld.iv` (16 bytes each, 32 bytes total).
+            this.#mainKey = await crypto.subtle.importKey('raw', new Uint8Array((0, ethers_1.getBytes)((0, ethers_1.concat)([mainKeyOld.key, mainKeyOld.iv]))), { name: keystore_1.CIPHER }, true, ['encrypt', 'decrypt']);
+            // 3. Migrate the secret and all stored seeds/pks to use GCM, then persist everything
+            // together once both migrations have completed.
+            try {
+                const migratedSecrets = await this.#migrateSecretToGCM(secretEntry.id, secretKey);
+                const { migratedKeys, migratedSeeds, hasMigrated } = await this.#migrateStoredPayloadsToGCMIfNeeded();
+                await this.#persistMigratedKeystoreData({
+                    secrets: migratedSecrets,
+                    keys: hasMigrated ? migratedKeys : undefined,
+                    seeds: hasMigrated ? migratedSeeds : undefined
+                });
+            }
+            catch (e) {
+                this.emitError({
+                    message: 'Keystore migration to GCM failed.',
+                    level: 'silent',
+                    error: e instanceof Error ? e : new Error('keystore: GCM migration failed')
+                });
+            }
+        }
+        else {
+            await this.#unlockWithSecretGCM(secretKey, secretEntry);
+            // The secret is already on GCM, but stored keys/seeds may still be on AES-CTR if a previous
+            // migration was interrupted or partially failed. Retry here so the migration eventually
+            // completes; it's a no-op when there is nothing left to migrate.
+            try {
+                const { migratedKeys, migratedSeeds, hasMigrated } = await this.#migrateStoredPayloadsToGCMIfNeeded();
+                if (hasMigrated) {
+                    await this.#persistMigratedKeystoreData({ keys: migratedKeys, seeds: migratedSeeds });
+                }
+            }
+            catch (e) {
+                this.emitError({
+                    message: 'Keystore migration to GCM failed.',
+                    level: 'silent',
+                    error: e instanceof Error ? e : new Error('keystore: GCM migration failed')
+                });
+            }
+        }
+    }
+    /**
+     * Used only once to decrypt the main key with AES-CTR, in order to migrate the secrets and stored keys/seeds to AES-GCM.
+     */
+    #unlockWithSecretOld(secretKey, secretEntry) {
+        const aesEncrypted = secretEntry.aesEncrypted;
+        if (aesEncrypted.cipherType !== undefined && aesEncrypted.cipherType !== keystore_1.CIPHER_OLD) {
+            throw new Error('keystore: invalid old secret cipher type');
+        }
         const iv = (0, ethers_1.getBytes)(aesEncrypted.iv);
-        const derivedKey = key.slice(0, 16);
-        const macPrefix = key.slice(16, 32);
+        const derivedKey = secretKey.slice(0, 16);
+        const macPrefix = secretKey.slice(16, 32);
         const counter = new aes_js_1.default.Counter(iv);
         const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(derivedKey, counter);
         const mac = (0, ethers_1.keccak256)((0, ethers_1.concat)([macPrefix, aesEncrypted.ciphertext]));
-        if (mac !== aesEncrypted.mac) {
+        if ('mac' in aesEncrypted && mac !== aesEncrypted.mac) {
             this.errorMessage = 'Incorrect password. Please try again.';
             this.emitUpdate();
             const error = new Error(this.errorMessage);
@@ -210,10 +278,168 @@ class KeystoreController extends eventEmitter_1.default {
         }
         this.errorMessage = '';
         const decrypted = aesCtr.decrypt((0, ethers_1.getBytes)(aesEncrypted.ciphertext));
-        this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) };
+        return {
+            key: decrypted.slice(0, 16),
+            iv: decrypted.slice(16, 32)
+        };
+    }
+    /**
+     * Used for all unlocks, unless the user hasn't unlocked and migrated the keystore since the AES-GCM migration was implemented.
+     */
+    async #unlockWithSecretGCM(secretKey, secretEntry) {
+        if (secretEntry.aesEncrypted.cipherType !== keystore_1.CIPHER) {
+            throw new Error('keystore: invalid gcm secret cipher type');
+        }
+        this.#mainKey = await this.#decryptMainKeyWithSecret(secretKey, secretEntry.aesEncrypted);
+        this.errorMessage = '';
+    }
+    /**
+     * Unwraps the main key of another device from a scanned app data sync payload, with the
+     * same wrong password handling as unlocking this device.
+     */
+    async #unwrapSyncedMainKey(secretKey, aesEncrypted) {
+        return this.#decryptMainKeyWithSecret(secretKey, aesEncrypted, keystore_1.decryptSyncedMainKeyWithSecret);
+    }
+    /**
+     * Decrypts a main key wrapped with the provided secret, translating a wrong
+     * secret into the user facing "Incorrect password" error. Used both when
+     * unlocking this device and when importing keys synced from another device
+     * (where the main key of the other device gets unwrapped with its password).
+     */
+    async #decryptMainKeyWithSecret(secretKey, aesEncrypted, decrypt = keystore_1.decryptMainKeyWithSecret) {
+        try {
+            return await decrypt(secretKey, aesEncrypted);
+        }
+        catch (error) {
+            // The unwrap marks the one failure the user can act on - the key not matching the ciphertext
+            // - so a broken platform is no longer reported to them as a wrong password
+            if (error instanceof keystore_1.WrongSecretError) {
+                // A verification carries its outcome in `signingAuthResult`, so it must not write the
+                // message the unlock screen reads
+                if (!this.#isVerifyingSecret) {
+                    this.errorMessage = 'Incorrect password. Please try again.';
+                    this.emitUpdate();
+                }
+                throw new EmittableError_1.default({
+                    level: 'silent',
+                    message: 'Incorrect password. Please try again.',
+                    error: error.thrown instanceof Error ? error.thrown : error,
+                    sendCrashReport: false
+                });
+            }
+            throw new EmittableError_1.default({
+                level: 'major',
+                message: 'Something went wrong when trying to unlock. Please try again or contact support if the problem persists.',
+                error: error instanceof Error ? error : new Error('keystore: unexpected error during GCM unlock')
+            });
+        }
+    }
+    async #findStoredSeed(seed, seedPassphrase) {
+        const normalizedSeed = ethers_1.Mnemonic.fromPhrase(seed).phrase;
+        const normalizedPassphrase = seedPassphrase || '';
+        for (const storedSeed of this.#keystoreSeeds) {
+            const decryptedStoredSeed = await this.getSavedSeed(storedSeed.id);
+            if (decryptedStoredSeed.seed !== normalizedSeed)
+                continue;
+            if ((decryptedStoredSeed.seedPassphrase || '') !== normalizedPassphrase)
+                continue;
+            return storedSeed;
+        }
+        return null;
+    }
+    /**
+     * Used to migrate a specific secret to GCM. Secrets have to be migrated separately, because
+     * they are encrypted with unique secrets, which we need from the user in order to be able to migrate them.
+     *
+     * At this point we have already validated that the provided secret is correct and we have the main key
+     * decrypted in memory, so we just need to re-encrypt it with GCM using the secret
+     */
+    async #migrateSecretToGCM(secretId, secretKey) {
+        return Promise.all(this.#keystoreSecrets.map(async (secret) => {
+            if (secret.id !== secretId)
+                return secret;
+            const encrypted = await (0, keystore_1.encryptMainKeyWithSecret)(this.#mainKey, secretKey);
+            return {
+                ...secret,
+                aesEncrypted: encrypted
+            };
+        }));
+    }
+    /**
+     * Re-encrypts all AES-CTR stored keys and seeds to AES-GCM. It does not persist anything itself,
+     * so the caller can persist the result together with the migrated secret in a single step.
+     * `hasMigrated` indicates whether anything was actually re-encrypted, so the caller can skip
+     * persisting (and avoid pointless storage writes) when there was nothing left to migrate.
+     */
+    async #migrateStoredPayloadsToGCMIfNeeded() {
+        if (!this.#mainKey)
+            throw new Error('keystore: needs to be unlocked');
+        const { migratedKeys, migratedSeeds, failedMigrations, hasMigrated } = await (0, keystore_1.migrateStoredPayloadsToGCM)(this.#mainKey, this.#keystoreKeys, this.#keystoreSeeds);
+        if (failedMigrations.keyAddrs.length || failedMigrations.seedIds.length) {
+            this.emitError({
+                message: `Failed to migrate ${failedMigrations.keyAddrs.length} keys and ${failedMigrations.seedIds.length} seeds to AES-GCM encryption.`,
+                level: 'silent',
+                error: new Error(`keystore: failed to migrate ${failedMigrations.keyAddrs.length} keys and ${failedMigrations.seedIds.length} seeds to AES-GCM encryption`)
+            });
+        }
+        return { migratedKeys, migratedSeeds, hasMigrated };
+    }
+    /**
+     * Persists the migrated keystore data and updates the in-memory state in one place.
+     * Only the provided slices are written, so callers persist exactly what they migrated.
+     */
+    async #persistMigratedKeystoreData({ secrets, keys, seeds }) {
+        if (secrets) {
+            await this.#storage.set('keystoreSecrets', secrets);
+            this.#keystoreSecrets = secrets;
+        }
+        if (keys) {
+            await this.#storage.set('keystoreKeys', keys);
+            this.#keystoreKeys = keys;
+        }
+        if (seeds) {
+            await this.#storage.set('keystoreSeeds', seeds);
+            this.#keystoreSeeds = seeds;
+        }
     }
     async unlockWithSecret(secretId, secret) {
         await this.withStatus('unlockWithSecret', () => this.#unlockWithSecret(secretId, secret), true);
+    }
+    /**
+     * Re-checks a secret on an already unlocked keystore, so the user can prove their identity before
+     * signing. Goes through the unlock path, which is a no-op for the lock state when unlocked.
+     */
+    async verifySecret(secretId, secret) {
+        await this.withStatus('verifySecret', async () => {
+            this.signingAuthResult = null;
+            this.#signingAuthResultId += 1;
+            const id = this.#signingAuthResultId;
+            this.#isVerifyingSecret = true;
+            try {
+                await this.#unlockWithSecret(secretId, secret);
+                this.signingAuthResult = { status: 'success', error: null, id };
+            }
+            catch (e) {
+                this.signingAuthResult = {
+                    status: 'failed',
+                    error: e?.message || 'Could not confirm your identity. Please try again.',
+                    id
+                };
+                // Re-thrown so a wrong secret keeps being reported the way unlocking reports it
+                throw e;
+            }
+            finally {
+                this.#isVerifyingSecret = false;
+            }
+        }, true);
+    }
+    resetSigningAuthResult() {
+        if (!this.signingAuthResult)
+            return;
+        // Only the verification's own outcome is cleared - the shared `errorMessage` belongs to the
+        // unlock screen, and wiping it here cleared an error the user had not read yet
+        this.signingAuthResult = null;
+        this.emitUpdate();
     }
     async #addSecret(secretId, secret, extraEntropy = '', leaveUnlocked = false) {
         await this.initialLoadPromise;
@@ -225,14 +451,12 @@ class KeystoreController extends eventEmitter_1.default {
                 error: new Error(`keystore: trying to add duplicate secret ${secretId}`)
             });
         let mainKey = this.#mainKey;
-        const entropyGenerator = new entropyGenerator_1.EntropyGenerator();
         // We are not unlocked
         if (!mainKey) {
             if (!this.#keystoreSecrets.length) {
-                mainKey = {
-                    key: entropyGenerator.generateRandomBytes(16, extraEntropy),
-                    iv: entropyGenerator.generateRandomBytes(16, extraEntropy)
-                };
+                // Generate a new main key if this is the first secret being added
+                const generatedMainKey = new entropyGenerator_1.EntropyGenerator().generateRandomBytes(32, extraEntropy);
+                mainKey = await crypto.subtle.importKey('raw', new Uint8Array(generatedMainKey), { name: keystore_1.CIPHER, length: 256 }, true, ['encrypt', 'decrypt']);
             }
             else
                 throw new EmittableError_1.default({
@@ -244,41 +468,31 @@ class KeystoreController extends eventEmitter_1.default {
                 this.#mainKey = mainKey;
             }
         }
+        const entropyGenerator = new entropyGenerator_1.EntropyGenerator();
         const salt = entropyGenerator.generateRandomBytes(32, extraEntropy);
-        await (0, wait_1.default)(0); // a trick to prevent UI freeze while the CPU is busy
-        const key = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), salt, {
-            N: scryptDefaults.N,
-            r: scryptDefaults.r,
-            p: scryptDefaults.p,
-            dkLen: scryptDefaults.dkLen
-        });
-        await (0, wait_1.default)(0);
-        const iv = entropyGenerator.generateRandomBytes(16, extraEntropy);
-        const derivedKey = key.slice(0, 16);
-        const macPrefix = key.slice(16, 32);
-        const counter = new aes_js_1.default.Counter(iv);
-        const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(derivedKey, counter);
-        const ciphertext = aesCtr.encrypt((0, ethers_1.getBytes)((0, ethers_1.concat)([mainKey.key, mainKey.iv])));
-        const mac = (0, ethers_1.keccak256)((0, ethers_1.concat)([macPrefix, ciphertext]));
+        const scryptParams = { salt: (0, ethers_1.hexlify)(salt), ...keystore_1.SCRYPT_PARAMS };
+        const secretKey = await (0, keystore_1.deriveSecret)(this.#scryptAdapter, secret, scryptParams);
+        const mainKeyEncryptedWithSecret = await (0, keystore_1.encryptMainKeyWithSecret)(mainKey, secretKey);
         this.#keystoreSecrets.push({
             id: secretId,
-            scryptParams: { salt: (0, ethers_1.hexlify)(salt), ...scryptDefaults },
-            aesEncrypted: {
-                cipherType: CIPHER,
-                ciphertext: (0, ethers_1.hexlify)(ciphertext),
-                iv: (0, ethers_1.hexlify)(iv),
-                mac: (0, ethers_1.hexlify)(mac)
-            }
+            scryptParams,
+            aesEncrypted: mainKeyEncryptedWithSecret
         });
         // Persist the new secrets
         await this.#storage.set('keystoreSecrets', this.#keystoreSecrets);
         // produce uid if one doesn't exist (should be created when the first secret is added)
         if (!this.keyStoreUid) {
-            const uid = (0, eth_crypto_1.publicKeyByPrivateKey)((0, ethers_1.hexlify)((0, ethers_1.getBytes)((0, ethers_1.concat)([mainKey.key, mainKey.iv]))));
+            const exportedMainKeyUint8Array = new Uint8Array(await crypto.subtle.exportKey('raw', mainKey));
+            const privateKeyHex = (0, ethers_1.hexlify)(exportedMainKeyUint8Array);
+            const uid = (0, eth_crypto_1.publicKeyByPrivateKey)(privateKeyHex);
             this.keyStoreUid = uid;
             await this.#storage.set('keyStoreUid', uid);
         }
         this.isReadyToStoreKeys = true;
+        // Awaited, so that the caller can rely on the synced keys being stored by the time
+        // this resolves. Otherwise the accounts added by the sync stay without their keys
+        // for a while
+        await this.#addQueuedKeysAndSeeds();
     }
     async addSecret(secretId, secret, extraEntropy, leaveUnlocked) {
         await this.withStatus('addSecret', () => this.#addSecret(secretId, secret, extraEntropy, leaveUnlocked), true);
@@ -323,39 +537,15 @@ class KeystoreController extends eventEmitter_1.default {
         });
     }
     get seeds() {
-        return this.#keystoreSeeds.map(({ id, label, hdPathTemplate, seedPassphrase }) => ({
+        return this.#keystoreSeeds.map(({ id, label, hdPathTemplate, seedPassphrase, notBackedUp }) => ({
             id,
             label: label || 'Unnamed Recovery Seed',
             hdPathTemplate,
-            withPassphrase: !!seedPassphrase
+            withPassphrase: !!seedPassphrase,
+            notBackedUp
         }));
     }
-    async #getEncryptedSeedPhrase(seed, seedPassphrase) {
-        await this.initialLoadPromise;
-        if (this.#mainKey === null)
-            throw new EmittableError_1.default({
-                message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
-                level: 'major',
-                error: new Error('keystore: needs to be unlocked')
-            });
-        if (!ethers_1.Mnemonic.isValidMnemonic(seed)) {
-            throw new EmittableError_1.default({
-                message: 'You are trying to store an invalid seed phrase.',
-                level: 'expected',
-                error: new Error('keystore: trying to add an invalid seed phrase')
-            });
-        }
-        // Set up the cipher
-        const counter = new aes_js_1.default.Counter(this.#mainKey.iv); // TS compiler fails to detect we check for null above
-        const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter); // TS compiler fails to detect we check for null above\
-        return {
-            seed: (0, ethers_1.hexlify)(aesCtr.encrypt(new TextEncoder().encode(seed))),
-            passphrase: seedPassphrase
-                ? (0, ethers_1.hexlify)(aesCtr.encrypt(new TextEncoder().encode(seedPassphrase)))
-                : null
-        };
-    }
-    async addTempSeed({ seed, seedPassphrase, hdPathTemplate }) {
+    async addTempSeed({ seed, seedPassphrase, hdPathTemplate, notBackedUp }) {
         const validHdPath = derivation_1.DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate);
         if (!validHdPath)
             throw new EmittableError_1.default({
@@ -363,14 +553,42 @@ class KeystoreController extends eventEmitter_1.default {
                 level: 'major',
                 error: new Error('keystore: hd path to temp seed incorrect')
             });
-        this.#tempSeed = { seed, seedPassphrase, hdPathTemplate };
+        this.#tempSeed = { seed, seedPassphrase, hdPathTemplate, notBackedUp };
         this.emitUpdate();
     }
+    /**
+     * Generates a brand new phrase without revealing it to the user. It is marked as
+     * not backed up, so the app can prompt for a backup once the account holds funds.
+     * Returns the generated temp seed, so the background can derive accounts from it
+     * without the phrase ever reaching the UI.
+     */
     async generateTempSeed({ extraEntropy }) {
-        const entropyGenerator = new entropyGenerator_1.EntropyGenerator();
-        const seed = entropyGenerator.generateRandomMnemonic(12, extraEntropy || '').phrase;
-        this.#tempSeed = { seed, hdPathTemplate: derivation_1.BIP44_STANDARD_DERIVATION_TEMPLATE };
+        this.#tempSeed = this.#generateNotBackedUpSeed(extraEntropy);
         this.emitUpdate();
+        return this.#tempSeed;
+    }
+    /**
+     * Generates and stores a recovery phrase flagged as not backed up, returning its id. For a
+     * Privacy Pools-only phrase: unlike `generateTempSeed`, it never touches the temp seed another
+     * flow may be holding.
+     */
+    async addGeneratedSeed({ extraEntropy }) {
+        const [seedId] = await this.#addSeeds([this.#generateNotBackedUpSeed(extraEntropy)]);
+        if (!seedId)
+            throw new EmittableError_1.default({
+                message: 'The new recovery phrase could not be saved. Please try again.',
+                level: 'major',
+                error: new Error('keystore: the generated seed was not stored')
+            });
+        return seedId;
+    }
+    /**
+     * Generates a new 12-word phrase on the standard derivation path, flagged as not backed up
+     * since the user has not seen it yet.
+     */
+    #generateNotBackedUpSeed(extraEntropy) {
+        const seed = new entropyGenerator_1.EntropyGenerator().generateRandomMnemonic(12, extraEntropy || '').phrase;
+        return { seed, hdPathTemplate: derivation_1.BIP44_STANDARD_DERIVATION_TEMPLATE, notBackedUp: true };
     }
     deleteTempSeed(shouldUpdate = true) {
         this.#tempSeed = null;
@@ -380,32 +598,111 @@ class KeystoreController extends eventEmitter_1.default {
     async persistTempSeed() {
         if (!this.#tempSeed)
             return;
-        await this.#addSeed(this.#tempSeed);
+        await this.#addSeeds([this.#tempSeed]);
         this.#tempSeed = null;
         this.emitUpdate();
     }
-    async #addSeed({ seed, seedPassphrase, hdPathTemplate }) {
-        const { seed: seedPhrase, passphrase } = await this.#getEncryptedSeedPhrase(seed, seedPassphrase);
-        const existingEntry = this.#keystoreSeeds.find((entry) => entry.seed === seedPhrase && entry.seedPassphrase === seedPassphrase);
-        if (existingEntry)
-            return;
-        const label = `Recovery Phrase ${this.#keystoreSeeds.length + 1}`;
-        const newEntry = {
-            id: (0, uuid_1.generateUuid)(),
-            label,
-            seed: seedPhrase,
-            seedPassphrase: passphrase,
-            hdPathTemplate
-        };
-        this.#keystoreSeeds.push(newEntry);
+    /**
+     * Adds seeds to the keystore in a single storage write and returns the ids they are
+     * stored with, in the order they were passed. An `id` can be passed per seed to
+     * preserve the id it already had on another device (app data sync), so that the
+     * synced keys' `meta.fromSeedId` keeps pointing to it.
+     */
+    async #addSeeds(seedsToAdd, shouldEmitUpdate = true) {
+        await this.initialLoadPromise;
+        if (!seedsToAdd.length)
+            return [];
+        if (this.#mainKey === null)
+            throw new EmittableError_1.default({
+                message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
+                level: 'major',
+                error: new Error('keystore: needs to be unlocked')
+            });
+        if (seedsToAdd.some(({ seed }) => !ethers_1.Mnemonic.isValidMnemonic(seed))) {
+            throw new EmittableError_1.default({
+                message: 'The provided seed phrase is invalid. Try again with a valid seed or contact support if you think this is a mistake.',
+                level: 'expected',
+                error: new Error('keystore: trying to add an invalid seed phrase')
+            });
+        }
+        const seedsBeforeAdd = [...this.#keystoreSeeds];
+        const ids = [];
+        try {
+            // Entries are pushed as they are built, so that duplicates and labels are
+            // resolved against the seeds added earlier in the same batch as well
+            for (const { seed, seedPassphrase, hdPathTemplate, notBackedUp, id } of seedsToAdd) {
+                const existingEntry = await this.#findStoredSeed(seed, seedPassphrase);
+                if (existingEntry) {
+                    ids.push(existingEntry.id);
+                    continue;
+                }
+                const newEntry = {
+                    id: id || (0, uuid_1.generateUuid)(),
+                    label: `Recovery Phrase ${this.#keystoreSeeds.length + 1}`,
+                    seed: await (0, keystore_1.encryptWithKey)(this.#mainKey, (0, keystore_1.extractEntropyFromSeed)(seed)),
+                    seedPassphrase: seedPassphrase
+                        ? await (0, keystore_1.encryptWithKey)(this.#mainKey, new TextEncoder().encode(seedPassphrase))
+                        : null,
+                    hdPathTemplate,
+                    notBackedUp
+                };
+                this.#keystoreSeeds.push(newEntry);
+                ids.push(newEntry.id);
+            }
+        }
+        catch (error) {
+            // Nothing has been persisted yet, so the in-memory seeds are rolled back to
+            // keep them in sync with storage
+            this.#keystoreSeeds = seedsBeforeAdd;
+            throw error;
+        }
         await this.#storage.set('keystoreSeeds', this.#keystoreSeeds);
-        this.emitUpdate();
+        if (shouldEmitUpdate)
+            this.emitUpdate();
+        return ids;
     }
     async addSeed(keystoreSeed) {
-        await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed), true);
+        await this.withStatus('addSeed', () => this.#addSeeds([keystoreSeed]), true);
     }
-    async #updateSeed({ id, label, hdPathTemplate }) {
-        if (!label && !hdPathTemplate)
+    /**
+     * Adds the seeds and keys that were queued while the keystore was not ready to store
+     * them yet (e.g. accounts synced from another device during onboarding, where the
+     * device password is set afterwards).
+     *
+     * Everything runs sequentially, because internal and external keys are persisted
+     * under the same storage key and would otherwise overwrite each other.
+     */
+    async #addQueuedKeysAndSeeds() {
+        const hasQueuedData = !!this.#seedsToAddOnKeystoreReady.length ||
+            !!this.#internalKeysToAddOnKeystoreReady.length ||
+            !!this.#externalKeysToAddOnKeystoreReady.length;
+        if (!hasQueuedData)
+            return;
+        const seedsToAdd = this.#seedsToAddOnKeystoreReady;
+        const internalKeysToAdd = this.#internalKeysToAddOnKeystoreReady;
+        const externalKeysToAdd = this.#externalKeysToAddOnKeystoreReady;
+        this.#seedsToAddOnKeystoreReady = [];
+        this.#internalKeysToAddOnKeystoreReady = [];
+        this.#externalKeysToAddOnKeystoreReady = [];
+        try {
+            // Seeds first, so the keys can keep pointing to the seed they were derived from
+            await this.#addSeeds(seedsToAdd, false);
+            await this.#addKeys(internalKeysToAdd);
+            await this.#addKeysExternallyStored(externalKeysToAdd);
+        }
+        catch (error) {
+            this.emitError({
+                level: 'major',
+                message: 'Something went wrong when saving your keys. Please try again or contact support if the problem persists.',
+                error: error instanceof Error ? error : new Error('keystore: failed to add queued keys')
+            });
+        }
+        finally {
+            this.emitUpdate();
+        }
+    }
+    async #updateSeed({ id, label, hdPathTemplate, notBackedUp }) {
+        if (!label && !hdPathTemplate && notBackedUp === undefined)
             return;
         const keystoreSeed = this.#keystoreSeeds.find((s) => s.id === id);
         if (!keystoreSeed)
@@ -414,13 +711,22 @@ class KeystoreController extends eventEmitter_1.default {
             keystoreSeed.label = label;
         if (hdPathTemplate)
             keystoreSeed.hdPathTemplate = hdPathTemplate;
+        if (notBackedUp !== undefined)
+            keystoreSeed.notBackedUp = notBackedUp;
         const updatedKeystoreSeeds = this.#keystoreSeeds.map((s) => s.id === keystoreSeed.id ? keystoreSeed : s);
         this.#keystoreSeeds = updatedKeystoreSeeds;
         await this.#storage.set('keystoreSeeds', this.#keystoreSeeds);
         this.emitUpdate();
     }
-    async updateSeed({ id, label, hdPathTemplate }) {
-        await this.withStatus('updateSeed', () => this.#updateSeed({ id, label, hdPathTemplate }), true);
+    async updateSeed({ id, label, hdPathTemplate, notBackedUp }) {
+        await this.withStatus('updateSeed', () => this.#updateSeed({ id, label, hdPathTemplate, notBackedUp }), true);
+    }
+    /**
+     * Called once the user has gone through the reveal + confirm-words backup flow,
+     * so the app stops prompting them to back this phrase up.
+     */
+    async markSeedAsBackedUp(id) {
+        await this.updateSeed({ id, notBackedUp: false });
     }
     async deleteSeed(id) {
         await this.withStatus('deleteSeed', () => this.#deleteSeed(id));
@@ -517,21 +823,18 @@ class KeystoreController extends eventEmitter_1.default {
         if (!uniqueKeysToAdd.length)
             return;
         const keys = this.#keystoreKeys;
-        const newKeys = uniqueKeysToAdd
-            .map(({ addr, type, label, privateKey, dedicatedToOneSA, meta }) => {
+        const newKeys = (await Promise.all(uniqueKeysToAdd.map(async ({ addr, type, label, privateKey, dedicatedToOneSA, meta }) => {
             privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey;
             // Set up the cipher
-            const counter = new aes_js_1.default.Counter(this.#mainKey.iv); // TS compiler fails to detect we check for null above
-            const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter); // TS compiler fails to detect we check for null above
             return {
                 addr,
                 type,
                 label,
                 dedicatedToOneSA,
-                privKey: (0, ethers_1.hexlify)(aesCtr.encrypt(aes_js_1.default.utils.hex.toBytes(privateKey))), // TODO: consider a MAC?
+                privKey: await (0, keystore_1.encryptWithKey)(this.#mainKey, aes_js_1.default.utils.hex.toBytes(privateKey)),
                 meta
             };
-        })
+        })))
             // No need to re-add keys that are already added, private key never changes
             .filter(({ addr, type }) => !keys.some((x) => x.addr === addr && x.type === type));
         if (!newKeys.length)
@@ -574,11 +877,8 @@ class KeystoreController extends eventEmitter_1.default {
             throw new Error('keystore: key not found');
         if (storedKey.type !== 'internal')
             throw new Error('keystore: key does not have privateKey');
-        const encryptedBytes = (0, ethers_1.getBytes)(storedKey.privKey);
-        const counter = new aes_js_1.default.Counter(this.#mainKey.iv);
-        const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter);
-        const decryptedBytes = aesCtr.decrypt(encryptedBytes);
-        const decryptedPrivateKey = aes_js_1.default.utils.hex.fromBytes(decryptedBytes);
+        const decryptedBytes = await (0, keystore_1.decryptWithKey)(this.#mainKey, storedKey.privKey);
+        const decryptedPrivateKey = (0, ethers_1.hexlify)(decryptedBytes);
         const wallet = new ethers_1.Wallet(decryptedPrivateKey);
         const keyBackup = await wallet.encrypt(passphrase);
         return JSON.stringify(keyBackup);
@@ -598,12 +898,7 @@ class KeystoreController extends eventEmitter_1.default {
         const entropyGenerator = new entropyGenerator_1.EntropyGenerator();
         const salt = entropyGenerator.generateRandomBytes(32, entropy);
         await (0, wait_1.default)(0); // a trick to prevent UI freeze while the CPU is busy
-        const key = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), salt, {
-            N: scryptDefaults.N,
-            r: scryptDefaults.r,
-            p: scryptDefaults.p,
-            dkLen: scryptDefaults.dkLen
-        });
+        const key = await this.#scryptAdapter.scrypt((0, keystore_1.getBytesForSecret)(secret), salt, keystore_1.SCRYPT_PARAMS);
         await (0, wait_1.default)(0);
         const iv = entropyGenerator.generateRandomBytes(16, entropy);
         const derivedKey = key.slice(0, 16);
@@ -624,12 +919,7 @@ class KeystoreController extends eventEmitter_1.default {
     async sendPasswordDecryptedPrivateKeyToUi(secret, key, salt, iv, associatedKeys) {
         await this.initialLoadPromise;
         const counter = new aes_js_1.default.Counter((0, ethers_1.getBytes)(iv));
-        const decryptKey = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), (0, ethers_1.getBytes)(salt), {
-            N: scryptDefaults.N,
-            r: scryptDefaults.r,
-            p: scryptDefaults.p,
-            dkLen: scryptDefaults.dkLen
-        });
+        const decryptKey = await this.#scryptAdapter.scrypt((0, keystore_1.getBytesForSecret)(secret), (0, ethers_1.getBytes)(salt), keystore_1.SCRYPT_PARAMS);
         const derivedKey = decryptKey.slice(0, 16);
         const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(derivedKey, counter);
         const decryptedBytes = aesCtr.decrypt((0, ethers_1.getBytes)(key));
@@ -660,13 +950,9 @@ class KeystoreController extends eventEmitter_1.default {
             throw new Error('keystore: needs to be unlocked');
         const keys = this.#keystoreKeys;
         const storedKey = keys.find((x) => x.addr === keyAddress && x.type === 'internal');
-        if (!storedKey)
+        if (!storedKey || storedKey.type !== 'internal' || !storedKey.privKey)
             throw new Error('keystore: key not found');
-        // decrypt the pk of keyAddress with the keystore's key
-        const encryptedBytes = (0, ethers_1.getBytes)(storedKey.privKey);
-        const counter = new aes_js_1.default.Counter(this.#mainKey.iv);
-        const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter);
-        const decryptedBytes = aesCtr.decrypt(encryptedBytes);
+        const decryptedBytes = await (0, keystore_1.decryptWithKey)(this.#mainKey, storedKey.privKey);
         return aes_js_1.default.utils.hex.fromBytes(decryptedBytes);
     }
     /**
@@ -684,7 +970,9 @@ class KeystoreController extends eventEmitter_1.default {
     async importKeyWithPublicKeyEncryption(encryptedSk, dedicatedToOneSA) {
         if (this.#mainKey === null)
             throw new Error('keystore: needs to be unlocked');
-        const privateKey = await (0, eth_crypto_1.decryptWithPrivateKey)((0, ethers_1.hexlify)((0, ethers_1.getBytes)((0, ethers_1.concat)([this.#mainKey.key, this.#mainKey.iv]))), encryptedSk);
+        const exportedKey = await crypto.subtle.exportKey('raw', this.#mainKey);
+        const privateKeyHex = (0, ethers_1.hexlify)(new Uint8Array(exportedKey));
+        const privateKey = await (0, eth_crypto_1.decryptWithPrivateKey)(privateKeyHex, encryptedSk);
         if (!privateKey)
             throw new Error('keystore: wrong encryptedSk or private key');
         const keyToAdd = {
@@ -698,6 +986,132 @@ class KeystoreController extends eventEmitter_1.default {
             }
         };
         await this.addKeys([keyToAdd]);
+    }
+    /**
+     * Collects everything another Ambire product needs in order to take over the given
+     * keys: the keys themselves and the seeds they were derived from (still encrypted
+     * with this device's main key), plus this device's main key wrapped with its password.
+     * Nothing gets decrypted here, so this works even when the keystore is locked.
+     *
+     * `includeSeeds` is what the user chose on the confirmation screen: with it off the
+     * keys still travel (so the accounts can sign on the other device), but the recovery
+     * phrases they were derived from stay on this device.
+     *
+     * The main key goes along even when nothing encrypted is exported (hardware wallet keys
+     * only, or no keys at all), so the other device always asks for this device's password.
+     */
+    async exportForSync(keyAddrs, includeSeeds = true) {
+        await this.initialLoadPromise;
+        const secret = this.#keystoreSecrets.find((s) => s.id === 'password');
+        if (!secret)
+            throw new EmittableError_1.default({
+                level: 'expected',
+                message: 'Set a password for this device before syncing your accounts.',
+                error: new Error('keystore: no password secret to sync with')
+            });
+        if (secret.aesEncrypted.cipherType !== keystore_1.CIPHER)
+            throw new EmittableError_1.default({
+                level: 'major',
+                message: 'Something went wrong when preparing your accounts for syncing. Please unlock the app again or contact support if the problem persists.',
+                error: new Error('keystore: password secret not migrated to GCM yet')
+            });
+        const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr));
+        const seedIds = new Set(keys.map((key) => key.meta?.fromSeedId).filter(Boolean));
+        const seeds = includeSeeds ? this.#keystoreSeeds.filter((seed) => seedIds.has(seed.id)) : [];
+        // Keys and seeds are migrated to GCM on unlock, so this should never happen. If it
+        // does, fail here rather than on the other device, which would reject the payload
+        const isEncryptedWithGCM = (payload) => typeof payload !== 'string' && payload?.cipherType === keystore_1.CIPHER;
+        const hasNotMigratedPayload = keys.some((key) => key.type === 'internal' && !isEncryptedWithGCM(key.privKey)) ||
+            seeds.some((seed) => !isEncryptedWithGCM(seed.seed) ||
+                (!!seed.seedPassphrase && !isEncryptedWithGCM(seed.seedPassphrase)));
+        if (hasNotMigratedPayload)
+            throw new EmittableError_1.default({
+                level: 'major',
+                message: 'Something went wrong when preparing your accounts for syncing. Please try again.',
+                error: new Error('keystore: keys or seeds not migrated to GCM yet')
+            });
+        return { secret, keys, seeds };
+    }
+    /**
+     * Takes over the keys and seeds exported by another Ambire product. The password of
+     * that other device unwraps its main key, which is used only to decrypt the synced
+     * data in memory - everything is then re-encrypted with this device's main key.
+     *
+     * Intentionally not wrapped in `withStatus` and lets errors propagate, because the
+     * MainController orchestrates the whole migration (and must not add the accounts if
+     * this fails).
+     *
+     * The password is required even without anything encrypted in the payload (hardware
+     * wallet keys only, or no keys at all), as unwrapping the main key is how the user
+     * confirms the sync came from their other device.
+     */
+    async importFromSync(payload, password) {
+        await this.initialLoadPromise;
+        const { secret, keys, seeds } = payload;
+        if (secret.aesEncrypted.cipherType !== keystore_1.CIPHER)
+            throw new Error('keystore: synced main key is not encrypted with GCM');
+        const secretKey = await (0, keystore_1.deriveSecret)(this.#scryptAdapter, password, secret.scryptParams);
+        // The exporting device's main key. Kept in this scope only, never persisted, and only
+        // able to decrypt, so its bytes never reach this app.
+        const exportedMainKey = await this.#unwrapSyncedMainKey(secretKey, secret.aesEncrypted);
+        try {
+            // Seeds first, so the keys below can be linked to the seed they were derived from
+            const syncedSeedIds = {};
+            for (const seed of seeds) {
+                const { seed: decryptedSeed, seedPassphrase } = await (0, keystore_1.decryptStoredSeed)(exportedMainKey, seed);
+                syncedSeedIds[seed.id] = await this.#storeSyncedSeed({
+                    id: seed.id,
+                    seed: decryptedSeed,
+                    seedPassphrase,
+                    hdPathTemplate: seed.hdPathTemplate,
+                    notBackedUp: seed.notBackedUp
+                });
+            }
+            const internalKeys = [];
+            const externalKeys = [];
+            for (const key of keys) {
+                if (key.type !== 'internal') {
+                    externalKeys.push(key);
+                    continue;
+                }
+                const { fromSeedId, ...restMeta } = key.meta;
+                // Drop the reference if the seed didn't come along, so it doesn't dangle
+                const syncedFromSeedId = fromSeedId ? syncedSeedIds[fromSeedId] : undefined;
+                internalKeys.push({
+                    addr: key.addr,
+                    type: 'internal',
+                    label: key.label,
+                    dedicatedToOneSA: key.dedicatedToOneSA,
+                    privateKey: (0, ethers_1.hexlify)(await (0, keystore_1.decryptWithKey)(exportedMainKey, key.privKey)),
+                    meta: syncedFromSeedId ? { ...restMeta, fromSeedId: syncedFromSeedId } : restMeta
+                });
+            }
+            // Both queue themselves until the keystore is ready to store keys, which is what
+            // makes syncing before the device password is set (onboarding) work
+            await this.#addKeys(internalKeys);
+            await this.#addKeysExternallyStored(externalKeys);
+        }
+        finally {
+            // Everything is re-encrypted with this device's main key by now, so the key derived
+            // from the other device's password is of no further use and gets wiped. Its main key
+            // itself is a non-extractable handle that goes out of scope with this method, so
+            // there are no bytes of it left to wipe
+            secretKey.fill(0);
+            this.emitUpdate();
+        }
+    }
+    /**
+     * Stores a synced seed, or queues it if the device password is not set yet
+     * (onboarding). The keystore holds no seeds in that case, so the requested id is
+     * guaranteed to be the one the seed ends up stored with.
+     */
+    async #storeSyncedSeed(seed) {
+        if (!this.isReadyToStoreKeys || !this.#mainKey) {
+            this.#seedsToAddOnKeystoreReady.push(seed);
+            return seed.id;
+        }
+        const [storedSeedId] = await this.#addSeeds([seed]);
+        return storedSeedId;
     }
     async getSigner(keyAddress, keyType) {
         await this.initialLoadPromise;
@@ -718,14 +1132,11 @@ class KeystoreController extends eventEmitter_1.default {
         if (!SignerInitializer)
             throw new Error('keystore: unsupported signer type');
         if (key.type === 'internal') {
-            if (!this.isUnlocked)
+            if (!this.isUnlocked || !this.#mainKey)
                 throw new Error('keystore: not unlocked');
-            const encryptedBytes = (0, ethers_1.getBytes)(storedKey.privKey);
-            // @ts-ignore
-            const counter = new aes_js_1.default.Counter(this.#mainKey.iv);
-            // @ts-ignore
-            const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter);
-            const decryptedBytes = aesCtr.decrypt(encryptedBytes);
+            if (storedKey.type !== 'internal' || !storedKey.privKey)
+                throw new Error('keystore: key does not have privateKey');
+            const decryptedBytes = await (0, keystore_1.decryptWithKey)(this.#mainKey, storedKey.privKey);
             const decryptedPrivateKey = aes_js_1.default.utils.hex.fromBytes(decryptedBytes);
             // @ts-ignore TODO: Figure out the correct type definition
             return new SignerInitializer(key, decryptedPrivateKey);
@@ -735,35 +1146,35 @@ class KeystoreController extends eventEmitter_1.default {
     }
     async getSavedSeed(id) {
         await this.initialLoadPromise;
-        if (!this.isUnlocked)
+        if (!this.isUnlocked || !this.#mainKey)
             throw new Error('keystore: not unlocked');
         if (!this.#keystoreSeeds.length)
             throw new Error('keystore: no seed phrase added yet');
         const keystoreSeed = this.#keystoreSeeds.find((s) => s.id === id);
         if (!keystoreSeed)
             throw new Error(`keystore seed with id:${id} not found`);
-        const encryptedSeedBytes = (0, ethers_1.getBytes)(keystoreSeed.seed);
-        // @ts-ignore
-        const counter = new aes_js_1.default.Counter(this.#mainKey.iv);
-        // @ts-ignore
-        const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter);
-        const decryptedSeedBytes = aesCtr.decrypt(encryptedSeedBytes);
-        const decryptedSeed = new TextDecoder().decode(decryptedSeedBytes);
-        if (keystoreSeed.seedPassphrase) {
-            const encryptedSeedPassphraseBytes = (0, ethers_1.getBytes)(keystoreSeed.seedPassphrase);
-            const decryptedSeedPassphraseBytes = aesCtr.decrypt(encryptedSeedPassphraseBytes);
-            const decryptedSeedPassphrase = new TextDecoder().decode(decryptedSeedPassphraseBytes);
-            return {
-                ...keystoreSeed,
-                seed: decryptedSeed,
-                seedPassphrase: decryptedSeedPassphrase
-            };
-        }
-        return {
-            ...keystoreSeed,
-            seed: decryptedSeed,
-            seedPassphrase: ''
-        };
+        const { seed, seedPassphrase } = await (0, keystore_1.decryptStoredSeed)(this.#mainKey, keystoreSeed);
+        return { ...keystoreSeed, seed, seedPassphrase };
+    }
+    /**
+     * Derives a recovery phrase's Privacy Pools signing key, so the phrase never reaches
+     * `@kohaku-eth/privacy-pools`, whose bundled keystore would keep it.
+     *
+     * The path check is the security boundary: the SDK chooses the paths, so without it a bug or a
+     * malicious bump could get the user's EVM keys. Only `PRIVACY_POOLS_SIGNING_KEY_PATH` passes.
+     *
+     * Not cached here: each call decrypts the phrase and runs a PBKDF2, so callers keep the key while
+     * unlocked - see `createKohakuKeystore`.
+     */
+    async derivePrivacyPoolsKey(seedId, path) {
+        await this.initialLoadPromise;
+        if (!this.isUnlocked)
+            throw new Error('keystore: not unlocked');
+        if (path !== privacyPools_1.PRIVACY_POOLS_SIGNING_KEY_PATH)
+            throw new Error(`keystore: refusing to derive a key outside Privacy Pools' paths (${path})`);
+        const { seed, seedPassphrase } = await this.getSavedSeed(seedId);
+        return ethers_1.HDNodeWallet.fromMnemonic(ethers_1.Mnemonic.fromPhrase(seed, seedPassphrase), path)
+            .privateKey;
     }
     async #changeKeystorePassword(newSecret, oldSecret, extraEntropy) {
         await this.initialLoadPromise;
@@ -821,6 +1232,18 @@ class KeystoreController extends eventEmitter_1.default {
     get hasBiometricsSecret() {
         return this.#keystoreSecrets.some((x) => x.id === 'biometrics');
     }
+    /**
+     * Whether the user must unlock with their password instead of biometrics, because the
+     * password secret still awaits its AES-GCM migration. A secret can only be migrated by
+     * unlocking with it, so unlocking with biometrics leaves the password secret on the legacy
+     * cipher.
+     */
+    get isPasswordUnlockRequired() {
+        if (!this.hasBiometricsSecret)
+            return false;
+        const passwordSecret = this.#keystoreSecrets.find((x) => x.id === 'password');
+        return !!passwordSecret && passwordSecret.aesEncrypted.cipherType !== keystore_1.CIPHER;
+    }
     get hasKeystoreTempSeed() {
         return !!this.#tempSeed;
     }
@@ -829,7 +1252,8 @@ class KeystoreController extends eventEmitter_1.default {
     }
     getFeePayerKey(accountAddr, paidByKeyAddr, paidByKeyType) {
         const feePayerKeys = this.keys.filter((key) => key.addr === paidByKeyAddr);
-        let feePayerKey = feePayerKeys[0];
+        // A private key pays on its own, so it is the default, like it is for signing
+        let feePayerKey = feePayerKeys.find((key) => key.type === 'internal') ?? feePayerKeys[0];
         if (paidByKeyType) {
             feePayerKey = feePayerKeys.find((key) => key.type === paidByKeyType) || feePayerKey;
         }
@@ -843,15 +1267,17 @@ class KeystoreController extends eventEmitter_1.default {
     isKeyIteratorInitializedWithTempSeed(keyIterator) {
         if (!this.#tempSeed || !keyIterator || keyIterator.subType !== 'seed')
             return false;
-        return !!keyIterator.isSeedMatching && keyIterator.isSeedMatching(this.#tempSeed.seed);
+        return (!!keyIterator.isSeedMatching &&
+            keyIterator.isSeedMatching(this.#tempSeed.seed, this.#tempSeed.seedPassphrase ?? null));
     }
     async getKeystoreSeed(keyIterator) {
-        if (!keyIterator || keyIterator.subType !== 'seed')
+        if (!keyIterator || keyIterator.subType !== 'seed' || !keyIterator.isSeedMatching)
             return null;
-        if (keyIterator.getEncryptedSeed) {
-            const encryptedKeyIteratorSeed = await keyIterator.getEncryptedSeed(this.#getEncryptedSeedPhrase.bind(this));
-            return (this.#keystoreSeeds.find((s) => s.seed === encryptedKeyIteratorSeed?.seed &&
-                (s.seedPassphrase || '') === (encryptedKeyIteratorSeed?.passphrase || '')) || null);
+        for (const storedSeed of this.#keystoreSeeds) {
+            const decryptedStoredSeed = await this.getSavedSeed(storedSeed.id);
+            if (!keyIterator.isSeedMatching(decryptedStoredSeed.seed, decryptedStoredSeed.seedPassphrase ?? null))
+                continue;
+            return storedSeed;
         }
         return null;
     }
@@ -890,6 +1316,7 @@ class KeystoreController extends eventEmitter_1.default {
             seeds: this.seeds,
             hasPasswordSecret: this.hasPasswordSecret,
             hasBiometricsSecret: this.hasBiometricsSecret,
+            isPasswordUnlockRequired: this.isPasswordUnlockRequired,
             hasKeystoreTempSeed: this.hasKeystoreTempSeed,
             hasTempSeed: this.hasTempSeed,
             isReadyToStoreKeys: this.isReadyToStoreKeys

@@ -28,7 +28,6 @@ async function getSASupport(provider) {
         mode: deployless_1.DeploylessMode.StateOverride
     };
     const deployless = (0, deployless_1.fromDescriptor)(provider, AmbireFactory_json_1.default, true);
-    let supportsStateOverride = true;
     const result = await deployless
         .call('deployAndExecute', [
         smartAccount.creation.bytecode,
@@ -42,12 +41,10 @@ async function getSASupport(provider) {
         }
         // if there's an error, return the zero address indicating that
         // our smart accounts will most likely not work on this chain
-        supportsStateOverride = false;
         return [ethers_1.ZeroAddress];
     });
     return {
-        addressMatches: result === smartAccount.addr,
-        supportsStateOverride
+        addressMatches: result === smartAccount.addr
     };
 }
 //# sourceMappingURL=simulateDeployCall.js.map

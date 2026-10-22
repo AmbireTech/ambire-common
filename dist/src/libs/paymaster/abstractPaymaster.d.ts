@@ -27,6 +27,6 @@ export declare abstract class AbstractPaymaster {
     abstract isAmbire(): boolean;
     abstract call(acc: Account, op: AccountOp, userOp: UserOperation, network: Network): Promise<PaymasterSuccessReponse | PaymasterErrorReponse>;
     abstract isEstimateBelowMin(userOperation: UserOperation): boolean;
-    abstract upgrade(bundlerEstimateResult: BundlerEstimateResult, gasPrices: GasSpeeds): void;
+    abstract upgrade(bundlerEstimateResult: BundlerEstimateResult, gasPrices: GasSpeeds, userOp: UserOperation): Promise<void>;
 }
 //# sourceMappingURL=abstractPaymaster.d.ts.map

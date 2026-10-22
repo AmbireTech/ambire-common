@@ -5,24 +5,26 @@ const ethers_1 = require("ethers");
 const hyperEvmBalanceChanges_1 = require("./hyperEvmBalanceChanges");
 const ABSTRACT_CHAIN_ID = 2741n;
 const ABSTRACT_NATIVE_TOKEN_ADDRESS = '0x000000000000000000000000000000000000800A';
+const NATIVE_TOKEN_TRANSFER_LOG_ADDRESS = '0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE';
 /**
- * The ETH token on abstract is represented on an address
- * that isn't a standard ERC-20 but it emits such a transfer log,
- * causing our balance changes to break. We're fixing that here by
- * omiting it
+ * Some native tokens emit ERC-20-shaped transfer logs from addresses that
+ * aren't standard ERC-20 contracts. Exclude the universal native transfer
+ * log address and Abstract's native token alias from ERC-20 balance checks.
  */
-const filterAbstractNativeTokenAlias = (tokenAddrs, chainId) => {
-    if (chainId !== ABSTRACT_CHAIN_ID)
-        return tokenAddrs;
-    return tokenAddrs.filter((tokenAddr) => tokenAddr.toLowerCase() !== ABSTRACT_NATIVE_TOKEN_ADDRESS.toLowerCase());
-};
+const filterNativeTokenAliases = (tokenAddrs, chainId) => tokenAddrs.filter((tokenAddr) => {
+    const normalizedTokenAddr = tokenAddr.toLowerCase();
+    if (normalizedTokenAddr === NATIVE_TOKEN_TRANSFER_LOG_ADDRESS.toLowerCase())
+        return false;
+    return (chainId !== ABSTRACT_CHAIN_ID ||
+        normalizedTokenAddr !== ABSTRACT_NATIVE_TOKEN_ADDRESS.toLowerCase());
+});
 const getBalanceChangeTokenAddresses = (tokenAddrs, chainId) => {
-    const tokenAddrsToNormalize = filterAbstractNativeTokenAlias(tokenAddrs, chainId);
+    const tokenAddrsToNormalize = filterNativeTokenAliases(tokenAddrs, chainId);
     return Array.from(new Set([ethers_1.ZeroAddress, ...tokenAddrsToNormalize].map((tokenAddr) => {
         try {
             return (0, ethers_1.getAddress)(tokenAddr);
         }
-        catch (e) {
+        catch {
             return null;
         }
     }))).filter((addr) => addr !== null);
@@ -83,7 +85,7 @@ const getAccountOpBalanceChanges = async ({ accountAddr, chainId, tokenAddrs, re
             debugTraceTransaction
         });
     }
-    const balanceChangeTokenAddrs = filterAbstractNativeTokenAlias(tokenAddrs, chainId);
+    const balanceChangeTokenAddrs = filterNativeTokenAliases(tokenAddrs, chainId);
     const previousBlockNumber = prevBlockNumber
         ? prevBlockNumber
         : receiptBlockNumber > 0

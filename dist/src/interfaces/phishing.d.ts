@@ -1,4 +1,4 @@
 import { ControllerInterface } from './controller';
 export type IPhishingController = ControllerInterface<InstanceType<typeof import('../controllers/phishing/phishing').PhishingController>>;
-export type BlacklistedStatus = 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED';
+export type BlacklistedStatus = 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'SUSPICIOUS_HOSTING' | 'VERIFIED';
 //# sourceMappingURL=phishing.d.ts.map

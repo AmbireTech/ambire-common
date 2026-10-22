@@ -26,6 +26,9 @@ class SocketAPIMock {
     resetHealth() {
         this.isHealthy = null;
     }
+    getProvidersInfo() {
+        return [{ id: this.id, name: this.name }];
+    }
     async getSupportedChains() {
         return networks_1.networks.map((network) => ({ chainId: network.chainId }));
     }
@@ -59,6 +62,17 @@ class SocketAPIMock {
                 logoURI: 'https://media.socket.tech/tokens/all/USDT'
             }
         ];
+    }
+    async getToken({ address, chainId }) {
+        return {
+            name: 'Token Not In The List',
+            address,
+            icon: '',
+            decimals: 18,
+            symbol: 'NOTLISTED',
+            chainId,
+            logoURI: ''
+        };
     }
     async quote({ fromChainId, fromTokenAddress, toChainId, toTokenAddress, fromAmount, userAddress }) {
         return {

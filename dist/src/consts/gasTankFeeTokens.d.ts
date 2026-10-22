@@ -13,9 +13,9 @@ declare const _default: ({
     address: string;
     symbol: string;
     chainId: bigint;
-    disableGasTankDeposit: boolean;
     decimals: number;
     icon: string;
+    disableGasTankDeposit: boolean;
     currencyIcon?: undefined;
     disableAsFeeToken?: undefined;
     baseToken?: undefined;

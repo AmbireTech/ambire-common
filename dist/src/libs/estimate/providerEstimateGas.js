@@ -11,7 +11,7 @@ const account_1 = require("../account/account");
 const accountOp_1 = require("../accountOp/accountOp");
 const errorHumanizer_1 = require("../errorHumanizer");
 function getEstimateGasProps(op, account, accountState) {
-    if (accountState.isSmarterEoa) {
+    if (accountState.isSmarterEoa && op.calls.length > 1) {
         const saAbi = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
         return {
             from: account.addr,

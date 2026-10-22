@@ -1,6 +1,7 @@
 import { IContractNamesController } from '../../interfaces/contractNames';
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter';
 import { Fetch } from '../../interfaces/fetch';
+import { IFeatureFlagsController } from '../../interfaces/featureFlags';
 import EventEmitter from '../eventEmitter/eventEmitter';
 interface ContractNames {
     [address: string]: {
@@ -22,9 +23,10 @@ export declare function isUnderstandableName(name: string): boolean;
  */
 export declare class ContractNamesController extends EventEmitter implements IContractNamesController {
     #private;
-    constructor({ eventEmitterRegistry, fetch, debounceTime }: {
+    constructor({ eventEmitterRegistry, fetch, featureFlags, debounceTime }: {
         eventEmitterRegistry?: IEventEmitterRegistryController;
         fetch: Fetch;
+        featureFlags?: IFeatureFlagsController;
         debounceTime?: number;
     });
     get contractNames(): ContractNames;

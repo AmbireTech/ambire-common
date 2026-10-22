@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sumTopUps = exports.buildSwitchAccountUserRequest = exports.getCallsUserRequestsByNetwork = exports.messageOnNewRequest = exports.isSignRequest = exports.dappRequestMethodToRequestKind = void 0;
+exports.isWaitingForSafeDeployment = exports.isSignedSafeCallsRequest = exports.sumTopUps = exports.buildSwitchAccountUserRequest = exports.getCallsUserRequestsByNetwork = exports.messageOnNewRequest = exports.isSignRequest = exports.dappRequestMethodToRequestKind = void 0;
+const uuid_1 = require("../../utils/uuid");
 const dappRequestMethodToRequestKind = (method) => {
     if (['call', 'calls', 'eth_sendTransaction', 'wallet_sendCalls'].includes(method))
         return 'calls';
@@ -63,7 +64,7 @@ const getCallsUserRequestsByNetwork = (accountAddr, userRequests) => {
 exports.getCallsUserRequestsByNetwork = getCallsUserRequestsByNetwork;
 const buildSwitchAccountUserRequest = ({ nextUserRequest, selectedAccountAddr, dappPromises }) => {
     return {
-        id: new Date().getTime(),
+        id: (0, uuid_1.generateUuid)(),
         kind: 'switchAccount',
         meta: {
             accountAddr: selectedAccountAddr,
@@ -82,4 +83,18 @@ const sumTopUps = (userRequests) => {
         .reduce((a, b) => a + b, 0n) ?? undefined);
 };
 exports.sumTopUps = sumTopUps;
+/**
+ * True for a Safe transaction that at least one owner has already signed. Such a transaction
+ * waits in the Safe queue for the other owners, so the wallet should open it only when the
+ * user picks it.
+ */
+const isSignedSafeCallsRequest = (request) => request.kind === 'calls' &&
+    !!request.signAccountOp.account.safeCreation &&
+    !!request.signAccountOp.accountOp.signed?.length;
+exports.isSignedSafeCallsRequest = isSignedSafeCallsRequest;
+// todo: description
+const isWaitingForSafeDeployment = (request, accountStates) => request.kind === 'calls' &&
+    !!request.signAccountOp.account.safeCreation &&
+    !accountStates[request.meta.accountAddr]?.[request.meta.chainId.toString()]?.isDeployed;
+exports.isWaitingForSafeDeployment = isWaitingForSafeDeployment;
 //# sourceMappingURL=requests.js.map

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.EstimationController = void 0;
+exports.EstimationController = exports.ESTIMATION_FAILURES = void 0;
 const tslib_1 = require("tslib");
 const ErrorHumanizerError_1 = tslib_1.__importDefault(require("../../classes/ErrorHumanizerError"));
 const account_1 = require("../../libs/account/account");
@@ -10,12 +10,32 @@ const helpers_1 = require("../../libs/portfolio/helpers");
 const accounts_1 = require("../../utils/accounts");
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const types_1 = require("./types");
+/** User-facing reasons an estimation attempt could not produce a result. */
+exports.ESTIMATION_FAILURES = {
+    missingAccount: {
+        message: 'This transaction belongs to an account that is no longer in the wallet.',
+        kind: types_1.EstimationFailureKind.Permanent
+    },
+    missingNetwork: {
+        message: 'This transaction is for a network that is currently turned off. Turn the network back on to continue.',
+        kind: types_1.EstimationFailureKind.Permanent
+    },
+    missingAccountState: {
+        message: "We couldn't load the latest information about your account. Please try again in a moment, or contact Ambire support if this keeps happening.",
+        kind: types_1.EstimationFailureKind.Retriable
+    },
+    unexpected: {
+        message: "We couldn't prepare your transaction.",
+        kind: types_1.EstimationFailureKind.Retriable
+    }
+};
 class EstimationController extends eventEmitter_1.default {
     #keystore;
     #accounts;
     #networks;
     #provider;
     #portfolio;
+    #featureFlags;
     status = types_1.EstimationStatus.Initial;
     estimation = null;
     error = null;
@@ -24,7 +44,11 @@ class EstimationController extends eventEmitter_1.default {
      * at least one indicating clearly that all other are re-estimates
      */
     hasEstimated = false;
-    estimationRetryError = null;
+    /**
+     * How the last attempt failed, or null when it produced an answer - even one
+     * the user has to act on, like not enough funds to cover the fee.
+     */
+    failureKind = null;
     availableFeeOptions = [];
     #bundlerSwitcher;
     #notFatalBundlerError;
@@ -34,38 +58,86 @@ class EstimationController extends eventEmitter_1.default {
      * the latest estimation results
      */
     lastAccountOpId = null;
-    constructor(keystore, accounts, networks, provider, portfolio, bundlerSwitcher, activity) {
+    constructor(keystore, accounts, networks, provider, portfolio, bundlerSwitcher, activity, featureFlags) {
         super();
         this.#keystore = keystore;
         this.#accounts = accounts;
         this.#networks = networks;
         this.#provider = provider;
         this.#portfolio = portfolio;
+        this.#featureFlags = featureFlags;
         this.#bundlerSwitcher = bundlerSwitcher;
         this.#activity = activity;
     }
-    #getAvailableFeeOptions(baseAcc, op) {
-        const estimation = this.estimation;
+    #getAvailableFeeOptions(baseAcc, op, estimation) {
         return baseAcc.getAvailableFeeOptions(estimation, estimation.ambireEstimation
             ? estimation.ambireEstimation.feePaymentOptions
             : estimation.providerEstimation
                 ? estimation.providerEstimation.feePaymentOptions
                 : [], op);
     }
+    #setFailure(failure) {
+        this.failureKind = failure.kind;
+        // A failure we will ask about again must not take away an estimation the
+        // user can still broadcast with. The status goes back to the one the kept
+        // estimation was fetched with, and `calculateWarnings` says it may be
+        // outdated.
+        if (this.isRetryingFailure() && this.estimation) {
+            this.status = types_1.EstimationStatus.Success;
+            return;
+        }
+        this.error = new Error(failure.message);
+        this.estimation = null;
+        this.status = types_1.EstimationStatus.Error;
+        this.availableFeeOptions = [];
+    }
+    #onUnexpectedFailure(error) {
+        this.#setFailure(exports.ESTIMATION_FAILURES.unexpected);
+        this.emitError({
+            level: 'silent',
+            sendCrashReport: true,
+            message: exports.ESTIMATION_FAILURES.unexpected.message,
+            error: error instanceof Error ? error : new Error(String(error))
+        });
+    }
     async estimate(op) {
         this.status = types_1.EstimationStatus.Loading;
         this.emitUpdate();
+        // An estimation that a newer accountOp took over must not resolve the
+        // loading state - the estimation owning `lastAccountOpId` does that instead.
+        let isSupersededByNewerOp = false;
+        try {
+            await this.#estimate(op, () => {
+                isSupersededByNewerOp = true;
+            });
+        }
+        catch (error) {
+            this.#onUnexpectedFailure(error);
+        }
+        finally {
+            if (!isSupersededByNewerOp) {
+                this.hasEstimated = true;
+                this.emitUpdate();
+            }
+        }
+    }
+    async #estimate(op, onSupersededByNewerOp) {
         const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr);
-        const network = this.#networks.networks.find((net) => net.chainId === op.chainId);
-        const accountState = await this.#accounts.getOrFetchAccountOnChainState(op.accountAddr, op.chainId);
-        if (!accountState) {
-            this.error = new Error('During the preparation step, required transaction information was found missing (account state). Please try again later or contact support.');
-            this.status = types_1.EstimationStatus.Error;
-            this.hasEstimated = true;
-            this.emitUpdate();
+        if (!account) {
+            this.#setFailure(exports.ESTIMATION_FAILURES.missingAccount);
             return;
         }
-        const baseAcc = (0, getBaseAccount_1.getBaseAccount)(account, accountState, network);
+        const network = this.#networks.networks.find((net) => net.chainId === op.chainId);
+        if (!network) {
+            this.#setFailure(exports.ESTIMATION_FAILURES.missingNetwork);
+            return;
+        }
+        const accountState = await this.#accounts.getOrFetchAccountOnChainState(op.accountAddr, op.chainId);
+        if (!accountState) {
+            this.#setFailure(exports.ESTIMATION_FAILURES.missingAccountState);
+            return;
+        }
+        const baseAcc = (0, getBaseAccount_1.getBaseAccount)(account, accountState, network, this.#featureFlags.isFeatureEnabled('erc4337'), this.#featureFlags.isFeatureEnabled('eip7702'));
         // Take the fee tokens from two places: the user's tokens and his gasTank
         // The gasTank tokens participate on each network as they belong everywhere
         // NOTE: at some point we should check all the "?" signs below and if
@@ -128,15 +200,22 @@ class EstimationController extends eventEmitter_1.default {
                 error,
                 level: 'silent'
             });
+            onSupersededByNewerOp();
             return;
         }
-        const isSuccess = !(estimation instanceof Error) && !estimation.criticalError;
-        if (isSuccess) {
-            this.estimation = (0, estimate_1.getEstimationSummary)(estimation);
+        if (estimation instanceof Error) {
+            this.#onUnexpectedFailure(estimation);
+            return;
+        }
+        if (!estimation.criticalError) {
+            // Compute before setting as to not leave a partial state in case of an error
+            const summary = (0, estimate_1.getEstimationSummary)(estimation);
+            const availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op, summary);
+            this.estimation = summary;
             this.error = null;
             this.status = types_1.EstimationStatus.Success;
-            this.estimationRetryError = null;
-            this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op);
+            this.failureKind = null;
+            this.availableFeeOptions = availableFeeOptions;
             this.#notFatalBundlerError =
                 estimation.bundler instanceof Error
                     ? new Error(estimation.bundler.message, { cause: '4337_ESTIMATION' })
@@ -144,9 +223,10 @@ class EstimationController extends eventEmitter_1.default {
         }
         else {
             this.estimation = null;
-            this.error = estimation instanceof Error ? estimation : estimation.criticalError;
+            this.error = estimation.criticalError;
             this.status = types_1.EstimationStatus.Error;
             this.availableFeeOptions = [];
+            this.failureKind = null;
         }
         // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
         // that the account state is not the latest and needs to be updated
@@ -154,11 +234,9 @@ class EstimationController extends eventEmitter_1.default {
             (this.estimation.flags.hasNonceDiscrepancy || this.estimation.flags.has4337NonceDiscrepancy)) {
             // continue on error here as the flags are more like app helpers
             this.#accounts
-                .updateAccountState(op.accountAddr, 'pending', [op.chainId])
+                .updateAccountState(op.accountAddr, 'pending', [op.chainId], true)
                 .catch((e) => console.error(e));
         }
-        this.hasEstimated = true;
-        this.emitUpdate();
     }
     /**
      * it's initialized if it has estimated at least once
@@ -167,21 +245,35 @@ class EstimationController extends eventEmitter_1.default {
         return this.hasEstimated;
     }
     /**
-     * has it estimated at least once without a failure
+     * Whether the last attempt failed for a reason that could resolve on its own.
+     * The reestimation loop keeps going and the sign screen says the estimation
+     * is taking longer than usual instead of showing a dead end.
      */
-    isLoadingOrFailed() {
-        return this.status === types_1.EstimationStatus.Loading || this.error instanceof Error;
+    isRetryingFailure() {
+        return this.failureKind === types_1.EstimationFailureKind.Retriable;
     }
-    calculateWarnings() {
+    /**
+     * Whether asking again cannot change the outcome, so the reestimation loop
+     * has nothing left to do.
+     */
+    hasPermanentFailure() {
+        return this.failureKind === types_1.EstimationFailureKind.Permanent;
+    }
+    calculateWarnings(acc) {
         const warnings = [];
-        if (this.estimationRetryError && this.status === types_1.EstimationStatus.Success) {
+        // The estimation on screen is the last one that worked out
+        if (this.isRetryingFailure() && this.estimation) {
             warnings.push({
                 id: 'estimation-retry',
-                title: this.estimationRetryError.message,
+                title: "We couldn't refresh the network fee",
                 text: 'You can proceed, but fee estimation is outdated - consider waiting for an updated estimation for a more optimal fee.'
             });
         }
-        if (this.#notFatalBundlerError?.cause === '4337_ESTIMATION') {
+        if (this.#notFatalBundlerError?.cause === '4337_ESTIMATION' &&
+            // do not show the warning for safe accounts that don't have a gas tank
+            (!acc.safeCreation ||
+                (this.availableFeeOptions.find((opt) => opt.token.flags.onGasTank)?.availableAmount || 0) >
+                    0)) {
             warnings.push({
                 id: 'bundler-failure',
                 title: 'Fee options are temporarily limited',
@@ -198,17 +290,9 @@ class EstimationController extends eventEmitter_1.default {
     }
     get errors() {
         const errors = [];
-        if (this.isLoadingOrFailed() && this.estimationRetryError) {
-            // If there is a successful estimation we should show this as a warning
-            // as the user can use the old estimation to broadcast
-            errors.push({
-                title: `${this.estimationRetryError.message} ${this.error
-                    ? 'We will continue retrying, but please check your internet connection.'
-                    : 'Automatically retrying in a few seconds. Please wait...'}`
-            });
-            return errors;
-        }
         if (!this.isInitialized())
+            return [];
+        if (this.isRetryingFailure() && !this.estimation)
             return [];
         if (this.error) {
             let code = '';

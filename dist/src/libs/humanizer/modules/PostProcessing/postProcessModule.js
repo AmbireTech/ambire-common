@@ -2,19 +2,16 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.postProcessing = void 0;
 const ethers_1 = require("ethers");
-const postProcessing = (_, currentIrCalls) => {
-    const newCalls = currentIrCalls.map((_call) => {
-        const fullVisualization = _call.fullVisualization?.map((i) => {
-            if (i.type === 'token' && i.address.toLowerCase() === '0x'.padEnd(42, 'e'))
-                return { ...i, address: ethers_1.ZeroAddress };
-            return i;
-        });
-        return {
-            ..._call,
-            fullVisualization
-        };
+const postProcessing = (_, call) => {
+    const fullVisualization = call.fullVisualization?.map((i) => {
+        if (i.type === 'token' && i.address.toLowerCase() === '0x'.padEnd(42, 'e'))
+            return { ...i, address: ethers_1.ZeroAddress };
+        return i;
     });
-    return newCalls;
+    return {
+        ...call,
+        fullVisualization
+    };
 };
 exports.postProcessing = postProcessing;
 //# sourceMappingURL=postProcessModule.js.map

@@ -10,5 +10,5 @@ import { Network } from '../interfaces/network';
  * and the latest for all other networks. Block time on all other
  * networks is faster than Ethereum so it shouldn't impact the features
  */
-export declare function getPendingBlockTagIfSupported(network: Network): "pending" | "latest";
+export declare function getPendingBlockTagIfSupported(network: Network): "latest" | "pending";
 //# sourceMappingURL=getBlockTag.d.ts.map

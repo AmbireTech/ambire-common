@@ -1,1 +1,1 @@
-{"version":3,"file":"permit2Module.d.ts","sourceRoot":"","sources":["../../../../../src/libs/humanizer/messageModules/permit2Module.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,2BAA2B,EAA0B,MAAM,eAAe,CAAA;AAqCnF,eAAO,MAAM,aAAa,EAAE,2BAiE3B,CAAA"}
+{"version":3,"file":"permit2Module.d.ts","sourceRoot":"","sources":["../../../../../src/libs/humanizer/messageModules/permit2Module.ts"],"names":[],"mappings":"AAIA,OAAO,EACL,2BAA2B,EAG5B,MAAM,eAAe,CAAA;AAuEtB,eAAO,MAAM,aAAa,EAAE,2BAwH3B,CAAA"}

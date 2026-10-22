@@ -1,8 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.aaveV3Pool = void 0;
-const ethers_1 = require("ethers");
-const abis_1 = require("../../const/abis");
+const viem_1 = require("viem");
 const utils_1 = require("../../utils");
 /*
 Fetched via
@@ -104,14 +103,100 @@ const AAVE_TOKENS_BY_INDEX = {
         '0x2416092f143378750bb29b79ed961ab195cceea5'
     ]
 };
+const supplyAbi = (0, viem_1.parseAbi)([
+    'function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)'
+]);
+const flashLoanSimpleAbi = (0, viem_1.parseAbi)([
+    'function flashLoanSimple(address receiverAddress, address asset, uint256 amount, bytes params, uint16 referralCode)'
+]);
+const repayWithATokensAbi = (0, viem_1.parseAbi)(['function repayWithATokens(bytes32 args) returns (uint256)']);
+const repayWithPermitAbi = (0, viem_1.parseAbi)([
+    'function repayWithPermit(bytes32 args, bytes32 r, bytes32 s) returns (uint256)'
+]);
+const supplyWithPermitAbi = (0, viem_1.parseAbi)([
+    'function supplyWithPermit(address asset, uint256 amount, address onBehalfOf, uint16 referralCode, uint256 deadline, uint8 permitV, bytes32 permitR, bytes32 permitS)'
+]);
+const withdrawBytes32Abi = (0, viem_1.parseAbi)(['function withdraw(bytes32 args) returns (uint256)']);
+const setUserEModeAbi = (0, viem_1.parseAbi)(['function setUserEMode(uint8 categoryId)']);
+const AAVE_EMODE_CATEGORY_TEXT_BY_CHAIN_ID = {
+    '8453': {
+        '1': {
+            action: 'Enable ETH-correlated efficiency mode',
+            category: 'ETH correlated'
+        },
+        '2': {
+            action: 'Enable ezETH / wstETH efficiency mode',
+            category: 'ezETH / wstETH'
+        },
+        '3': {
+            action: 'Enable ezETH stablecoin efficiency mode',
+            category: 'ezETH / stablecoins'
+        },
+        '4': {
+            action: 'Enable LBTC / cbBTC efficiency mode',
+            category: 'LBTC / cbBTC'
+        },
+        '5': {
+            action: 'Enable rsETH / wstETH efficiency mode',
+            category: 'rsETH / wstETH'
+        },
+        '6': {
+            action: 'Enable rsETH stablecoin efficiency mode',
+            category: 'rsETH / stablecoins'
+        },
+        '7': {
+            action: 'Enable weETH / WETH efficiency mode',
+            category: 'weETH / WETH'
+        },
+        '8': {
+            action: 'Enable wstETH / WETH efficiency mode',
+            category: 'wstETH / WETH'
+        },
+        '9': {
+            action: 'Enable cbETH / WETH efficiency mode',
+            category: 'cbETH / WETH'
+        },
+        '10': {
+            action: 'Enable cbBTC stablecoin efficiency mode',
+            category: 'cbBTC / stablecoins'
+        },
+        '11': {
+            action: 'Enable SyrupUSDC stablecoin efficiency mode',
+            category: 'SyrupUSDC / USDC / GHO'
+        },
+        '12': {
+            action: 'Enable AAVE stablecoin efficiency mode',
+            category: 'AAVE / USDC / GHO'
+        },
+        '13': {
+            action: 'Enable EURC stablecoin efficiency mode',
+            category: 'EURC / USDC / GHO'
+        },
+        '14': {
+            action: 'Enable LBTC stablecoin efficiency mode',
+            category: 'LBTC / USDC / GHO'
+        },
+        '15': {
+            action: 'Enable tBTC stablecoin efficiency mode',
+            category: 'tBTC / USDC / GHO'
+        }
+    }
+};
+const getEModeCategoryText = (chainId, categoryId) => AAVE_EMODE_CATEGORY_TEXT_BY_CHAIN_ID[chainId.toString()]?.[categoryId.toString()] || null;
+const supplySelector = (0, viem_1.toFunctionSelector)(supplyAbi[0]);
+const flashLoanSimpleSelector = (0, viem_1.toFunctionSelector)(flashLoanSimpleAbi[0]);
+const repayWithATokensSelector = (0, viem_1.toFunctionSelector)(repayWithATokensAbi[0]);
+const repayWithPermitSelector = (0, viem_1.toFunctionSelector)(repayWithPermitAbi[0]);
+const supplyWithPermitSelector = (0, viem_1.toFunctionSelector)(supplyWithPermitAbi[0]);
+const withdrawBytes32Selector = (0, viem_1.toFunctionSelector)(withdrawBytes32Abi[0]);
+const setUserEModeSelector = (0, viem_1.toFunctionSelector)(setUserEModeAbi[0]);
 const aaveV3Pool = () => {
-    const iface = new ethers_1.Interface(abis_1.AaveV3Pool);
     return {
-        [iface.getFunction('supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)')?.selector]: (accountOp, call) => {
+        [supplySelector]: (accountOp, call) => {
             if (!call.to)
                 throw Error('Humanizer: should not be in aave module when !call.to');
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { asset, amount, onBehalfOf, referralCode } = iface.parseTransaction(call).args;
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: supplyAbi, data: call.data });
+            const [asset, amount, onBehalfOf] = args;
             return [
                 (0, utils_1.getAction)('Deposit'),
                 (0, utils_1.getToken)(asset, amount),
@@ -120,9 +205,9 @@ const aaveV3Pool = () => {
                 ...(0, utils_1.getOnBehalfOf)(onBehalfOf, accountOp.accountAddr)
             ];
         },
-        [iface.getFunction('flashLoanSimple(address receiverAddress, address asset, uint256 amount, bytes params, uint16 referralCode)')?.selector]: (accountOp, call) => {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { receiverAddress, asset, amount, params, referralCode } = iface.parseTransaction(call).args;
+        [flashLoanSimpleSelector]: (accountOp, call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: flashLoanSimpleAbi, data: call.data });
+            const [receiverAddress, asset, amount] = args;
             return [
                 (0, utils_1.getAction)('Execute Flash Loan'),
                 (0, utils_1.getToken)(asset, amount),
@@ -130,25 +215,21 @@ const aaveV3Pool = () => {
                 (0, utils_1.getAddressVisualization)(receiverAddress)
             ];
         },
-        [iface.getFunction('repayWithATokens(bytes32 args)')?.selector]: (accountOp, call) => {
+        [repayWithATokensSelector]: (accountOp, call) => {
             if (!call.to)
                 throw Error('Humanizer: should not be in aave module when !call.to');
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { args } = iface.parseTransaction(call).args;
             return [(0, utils_1.getAction)('Repay with token A'), (0, utils_1.getLabel)('to'), (0, utils_1.getAddressVisualization)(call.to)];
         },
-        [iface.getFunction('repayWithPermit(bytes32 args, bytes32 r, bytes32 s)')?.selector]: (accountOp, call) => {
+        [repayWithPermitSelector]: (accountOp, call) => {
             if (!call.to)
                 throw Error('Humanizer: should not be in aave module when !call.to');
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { args } = iface.parseTransaction(call).args;
             return [(0, utils_1.getAction)('Repay with permit'), (0, utils_1.getLabel)('to'), (0, utils_1.getAddressVisualization)(call.to)];
         },
-        [iface.getFunction('supplyWithPermit(address asset, uint256 amount, address onBehalfOf, uint16 referralCode, uint256 deadline, uint8 permitV, bytes32 permitR, bytes32 permitS)')?.selector]: (accountOp, call) => {
+        [supplyWithPermitSelector]: (accountOp, call) => {
             if (!call.to)
                 throw Error('Humanizer: should not be in aave module when !call.to');
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { asset, amount, onBehalfOf, referralCode, deadline, permitV, permitR, bytes32 } = iface.parseTransaction(call).args;
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: supplyWithPermitAbi, data: call.data });
+            const [asset, amount, onBehalfOf, , deadline] = args;
             return [
                 (0, utils_1.getAction)('Supply'),
                 (0, utils_1.getToken)(asset, amount),
@@ -160,24 +241,42 @@ const aaveV3Pool = () => {
                 (0, utils_1.getDeadline)(deadline)
             ];
         },
-        [iface.getFunction('withdraw(bytes32 args)')?.selector]: (accountOp, call) => {
+        [withdrawBytes32Selector]: (accountOp, call) => {
             if (!call.to)
                 throw Error('Humanizer: should not be in aave module when !call.to');
             // @TODO  do some hecks for network OR
-            const { args } = iface.parseTransaction(call).args;
-            const amountAsString = args.slice(30, 62);
-            const tokenIndex = Number(`0x${args.slice(62)}`);
-            if (!AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()])
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: withdrawBytes32Abi, data: call.data });
+            const [packedArgs] = args;
+            const amountAsString = packedArgs.slice(30, 62);
+            const tokenIndex = Number(`0x${packedArgs.slice(62)}`);
+            const tokensByIndex = AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()];
+            if (!tokensByIndex)
                 return [(0, utils_1.getAction)('Withdraw'), (0, utils_1.getLabel)('from'), (0, utils_1.getAddressVisualization)(call.to)];
-            if (tokenIndex >= AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()].length)
+            if (tokenIndex >= tokensByIndex.length)
+                return [(0, utils_1.getAction)('Withdraw'), (0, utils_1.getLabel)('from'), (0, utils_1.getAddressVisualization)(call.to)];
+            const token = tokensByIndex[tokenIndex];
+            if (!token)
                 return [(0, utils_1.getAction)('Withdraw'), (0, utils_1.getLabel)('from'), (0, utils_1.getAddressVisualization)(call.to)];
             // stores amount inn uint128 instead of uint256, but max value is treated as max value
-            const amount = amountAsString === 'f'.repeat(32) ? ethers_1.MaxUint256 : BigInt(`0x${amountAsString}`);
+            const amount = amountAsString === 'f'.repeat(32) ? viem_1.maxUint256 : BigInt(`0x${amountAsString}`);
             return [
                 (0, utils_1.getAction)('Withdraw'),
-                (0, utils_1.getToken)(AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()][tokenIndex], amount),
+                (0, utils_1.getToken)(token, amount),
                 (0, utils_1.getLabel)('from'),
                 (0, utils_1.getAddressVisualization)(call.to)
+            ];
+        },
+        [setUserEModeSelector]: (accountOp, call) => {
+            const { args } = (0, viem_1.decodeFunctionData)({ abi: setUserEModeAbi, data: call.data });
+            const [categoryId] = args;
+            const eModeText = getEModeCategoryText(accountOp.chainId, categoryId);
+            if (categoryId === 0) {
+                return [(0, utils_1.getAction)('Disable efficiency mode'), (0, utils_1.getLabel)('Category'), (0, utils_1.getText)('None')];
+            }
+            return [
+                (0, utils_1.getAction)(eModeText?.action || 'Set efficiency mode'),
+                (0, utils_1.getLabel)('Category'),
+                (0, utils_1.getText)(eModeText?.category || String(categoryId))
             ];
         }
     };

@@ -40,20 +40,20 @@ class BannerController extends eventEmitter_1.default {
         this.#dismissedBanners = dismissedBanners || [];
         this.emitUpdate();
     }
-    #notSurveyOrValidSurvey(banner, accData) {
-        if (!banner.actions || !banner.actions[0])
-            return true;
-        let action = banner.actions[0];
-        // if not survey return it
-        if (action.actionName !== 'survey')
-            return true;
-        const { minBalanceTotal, maxBalanceTotal, minTxnsTotal, maxTxnsTotal, minAppVersion, whitelistedAddresses } = action.meta.requirements;
-        // do not display surveys when there is no selected acc
+    #shouldShowBanner(banner, accData) {
+        // when survey, enforce survey controller data to be loaded
+        if (banner.actions?.[0]?.actionName === 'survey') {
+            if (!this.#survey.isReady)
+                return false;
+            if (this.#survey.isSurveyAnswered(banner.actions[0].meta.surveyId))
+                return false;
+        }
         if (accData.status === 'no-selected-account')
             return false;
+        const { minBalanceTotal, maxBalanceTotal, minTxnsTotal, maxTxnsTotal, minAppVersion, whitelistedAddresses, shouldHaveKeys } = banner.meta?.requirements || {};
         if (whitelistedAddresses && !whitelistedAddresses.includes(accData.address))
             return false;
-        if (!accData.hasKeys)
+        if (shouldHaveKeys && !accData.hasKeys)
             return false;
         if (minBalanceTotal !== undefined &&
             (accData.totalUsdBalance < minBalanceTotal || !accData.isBalanceReady))
@@ -69,10 +69,6 @@ class BannerController extends eventEmitter_1.default {
         if (maxTxnsTotal !== undefined && accData.numberOfTransactions > maxTxnsTotal)
             return false;
         if (minAppVersion && this.#appVersion < minAppVersion)
-            return false;
-        if (!this.#survey.isReady)
-            return false;
-        if (this.#survey.isSurveyAnswered(action.meta.surveyId))
             return false;
         return true;
     }
@@ -90,7 +86,7 @@ class BannerController extends eventEmitter_1.default {
         const accData = this.#getAccountData();
         return {
             banners: this.#getValidBanners(this.#banners)
-                .filter((b) => this.#notSurveyOrValidSurvey(b, accData))
+                .filter((b) => this.#shouldShowBanner(b, accData))
                 .slice(0, this.maxBannerCount),
             account: accData.status === 'has-selected-account' ? accData.address : null
         };

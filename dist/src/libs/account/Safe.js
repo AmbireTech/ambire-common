@@ -1,8 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Safe = void 0;
+const tslib_1 = require("tslib");
 /* eslint-disable @typescript-eslint/no-unused-vars */
 const ethers_1 = require("ethers");
+const SafeNoSignatureValidation_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/SafeNoSignatureValidation.json"));
 const safe_1 = require("../../consts/safe");
 const signMessage_1 = require("../../libs/signMessage/signMessage");
 const accountOp_1 = require("../accountOp/accountOp");
@@ -35,19 +37,37 @@ class Safe extends BaseAccount_1.BaseAccount {
      * Add 5k additional gas for nonce > 0
      */
     NONCE_GAS = 5000n;
+    /**
+     * A one time gas addition if the txn is an userOp.
+     * This accounts for the missing signature validation data as we're
+     * doing a state override during estimation and replacing the original
+     * Safe code with one that allows all signatures to pass
+     */
+    BUNDLER_OVERHEAD = 40000n;
     getEstimationCriticalError(estimation) {
         if (estimation.ambire instanceof Error)
             return estimation.ambire;
         return null;
     }
     supportsBundlerEstimation() {
-        return false;
+        return this.isErc4337Enabled;
     }
     isSponsorable() {
         return false;
     }
-    getAvailableFeeOptions(estimation, feePaymentOptions) {
-        return feePaymentOptions.filter((opt) => (0, helpers_1.isNative)(opt.token));
+    canUseErc4337() {
+        return true;
+    }
+    getAvailableFeeOptions(estimation, feePaymentOptions, op) {
+        if (op.meta?.isSafeDeploy) {
+            return feePaymentOptions.filter((option) => option.paidBy !== this.account.addr && (0, helpers_1.isNative)(option.token));
+        }
+        const hasPaymaster = estimation.bundlerEstimation &&
+            estimation.bundlerEstimation.paymaster.isUsable() &&
+            // disable the Safe gas tank for megaeth for now as we need a special
+            // estimation implementation for it to make it work
+            this.network.chainId !== 4326n;
+        return feePaymentOptions.filter((opt) => (0, helpers_1.isNative)(opt.token) || (hasPaymaster && opt.token.flags.onGasTank));
     }
     getGasUsed(estimation, options) {
         const isError = estimation instanceof Error;
@@ -63,19 +83,34 @@ class Safe extends BaseAccount_1.BaseAccount {
                 callToSelfGas += this.CALL_TO_SELF_GAS;
             }
         }
+        if (estimation.bundlerEstimation && options.feeToken.flags.onGasTank) {
+            return (BigInt(estimation.bundlerEstimation.callGasLimit) +
+                callToSelfGas +
+                this.EXTRA_ESTIMATION_GAS +
+                this.BUNDLER_OVERHEAD +
+                nonceGas);
+        }
         return (ambireBroaddcastGas +
             estimation.ambireEstimation.gasUsed +
             callToSelfGas +
             this.EXTRA_ESTIMATION_GAS +
             nonceGas);
     }
-    getBroadcastOption() {
+    getBroadcastOption(feeOption) {
+        if (feeOption.paidBy === this.getAccount().addr)
+            return broadcast_1.BROADCAST_OPTIONS.byBundler;
         return broadcast_1.BROADCAST_OPTIONS.byOtherEOA;
     }
     canUseReceivingNativeForFee() {
-        return false; // because we're always paying with EOA atm
+        return false; // because the account cannot pay by itself in native
     }
     getBroadcastCalldata(accountOp) {
+        if (accountOp.meta?.isSafeDeploy) {
+            const deploymentCall = accountOp.calls[0];
+            if (!deploymentCall)
+                throw new Error('Safe deployment transaction is missing');
+            return deploymentCall.data;
+        }
         const exec = new ethers_1.Interface(safe_1.execTransactionAbi);
         const calls = (0, accountOp_1.getSignableCalls)(accountOp);
         const coder = new ethers_1.AbiCoder();
@@ -100,25 +135,31 @@ class Safe extends BaseAccount_1.BaseAccount {
             signature
         ]);
     }
-    getBundlerStateOverride(userOp) {
-        return undefined;
+    /**
+     * We override the state to an ambire smart account so we could
+     * successfully do a bundler estimation. Safe accounts don't have
+     * the 4337 module attached so they revert
+     */
+    getBundlerStateOverride() {
+        return {
+            [this.account.addr]: {
+                code: SafeNoSignatureValidation_json_1.default.binRuntime
+            }
+        };
     }
-    // should we authorize the entry point;
-    // since we're not using 4337 for Safe accounts for now, we keep it false
-    shouldSignDeployAuth(broadcastOption) {
+    // Safe deployment does not use Ambire entry point deployment authorization.
+    shouldSignDeployAuth() {
         return false;
     }
     getAtomicStatus() {
         return 'supported';
     }
     getNonceId() {
-        // the Safe will move only its own smart account nonce as we don't have 4337
+        // the Safe will move only its own smart account nonce
         return `${this.accountState.nonce.toString()}`;
     }
     canBroadcastByItself() {
-        // later, when we enable 4337:
-        // check the account version and enable this for versions > 1.3
-        return false;
+        return true;
     }
     async getBroadcastNonce(activity, op, provider) {
         // the Safe account nonce
@@ -136,11 +177,12 @@ class Safe extends BaseAccount_1.BaseAccount {
     }
     /**
      * Final commitment Safe data can differ according to the Safe v.
+     * The version is chain specific, so it's taken from the account state.
      * We encapsulate the logic here
      */
     getTxnTypedData(safeTx) {
-        const safeCreation = this.account.safeCreation;
-        if (safeCreation.version.startsWith('1.1.') || safeCreation.version.startsWith('1.2'))
+        const safeVersion = this.accountState.safeVersion ?? '';
+        if (safeVersion.startsWith('1.1.') || safeVersion.startsWith('1.2'))
             return (0, signMessage_1.getSafeV1TypedData)(this.account.addr, safeTx);
         return (0, signMessage_1.getSafeTypedData)(this.network.chainId, this.account.addr, safeTx);
     }

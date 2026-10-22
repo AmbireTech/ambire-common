@@ -1,5 +1,5 @@
 import { IAccountsController } from '../../interfaces/account';
-import { IAddressBookController } from '../../interfaces/addressBook';
+import { Contacts, IAddressBookController } from '../../interfaces/addressBook';
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter';
 import { ISelectedAccountController } from '../../interfaces/selectedAccount';
 import { IStorageController } from '../../interfaces/storage';
@@ -22,6 +22,12 @@ export declare class AddressBookController extends EventEmitter implements IAddr
     addContact(name: string, address: string): Promise<void>;
     renameManuallyAddedContact(address: string, newName: string): Promise<void>;
     removeManuallyAddedContact(address: string): Promise<void>;
+    /**
+     * Bulk-adds contacts coming from another device. A contact whose address is already in
+     * the Address Book gets the incoming name, the rest of the Address Book stays untouched.
+     * Addresses of the wallet's own accounts are skipped, as they are contacts already.
+     */
+    mergeContacts(contacts: Contacts): Promise<void>;
     toJSON(): this & {
         contacts: (import("../../interfaces/addressBook").Contact | {
             name: string;

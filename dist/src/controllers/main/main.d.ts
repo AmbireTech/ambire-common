@@ -3,17 +3,21 @@ import { ContinuousUpdatesController } from '../continuousUpdates/continuousUpda
 import EventEmitter from '../eventEmitter/eventEmitter';
 import { SignAccountOpType } from '../signAccountOp/helper';
 import { OnboardingSuccessProps } from '../signAccountOp/signAccountOp';
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference';
 import { Account, IAccountsController } from '../../interfaces/account';
 import { IAccountPickerController } from '../../interfaces/accountPicker';
 import { IActivityController } from '../../interfaces/activity';
 import { IAddressBookController } from '../../interfaces/addressBook';
+import { IAppDataSyncController } from '../../interfaces/appDataSync';
 import { IAutoLoginController } from '../../interfaces/autoLogin';
 import { IBannerController } from '../../interfaces/banner';
 import { IContractInfoController } from '../../interfaces/contractInfo';
 import { IContractNamesController } from '../../interfaces/contractNames';
 import { IDappsController } from '../../interfaces/dapp';
+import { IDebugController } from '../../interfaces/debug';
 import { IDomainsController } from '../../interfaces/domains';
 import { IEmailVaultController } from '../../interfaces/emailVault';
+import { IErc7730Controller } from '../../interfaces/erc7730';
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter';
 import { IFeatureFlagsController } from '../../interfaces/featureFlags';
 import { Fetch } from '../../interfaces/fetch';
@@ -24,6 +28,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '../../int
 import { IPhishingController } from '../../interfaces/phishing';
 import { Platform } from '../../interfaces/platform';
 import { IPortfolioController } from '../../interfaces/portfolio';
+import { IPrivacyPoolsController } from '../../interfaces/privacyPools';
 import { IProvidersController } from '../../interfaces/provider';
 import { IRequestsController } from '../../interfaces/requests';
 import { ISafeController } from '../../interfaces/safe';
@@ -37,20 +42,32 @@ import { ITransferController } from '../../interfaces/transfer';
 import { ITransfersScannerController } from '../../interfaces/transferScanner';
 import { IUiController, UiManager } from '../../interfaces/ui';
 import { CallsUserRequest } from '../../interfaces/userRequest';
+import { IVerificationController } from '../../interfaces/verification';
+import { IWalletTokenController } from '../../interfaces/walletToken';
 import { AccountOp } from '../../libs/accountOp/accountOp';
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp';
+import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover';
+import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall';
+import { AmbireIdbDatabase } from '../../services/storage/idbDatabase';
+type AccountsUpdate = {
+    accountsToAdd: Account[];
+    accountAddressesToRemove: Account['addr'][];
+};
 export declare class MainController extends EventEmitter implements IMainController {
     #private;
     fetch: Fetch;
     initialLoadPromise?: Promise<void>;
-    callRelayer: Function;
+    callRelayer: BindedRelayerCall;
     isReady: boolean;
     storage: IStorageController;
+    signAccountOpPreference: SignAccountOpPreferenceController;
     featureFlags: IFeatureFlagsController;
+    debug: IDebugController;
     invite: IInviteController;
     keystore: IKeystoreController;
     networks: INetworksController;
     providers: IProvidersController;
+    verification: IVerificationController;
     accountPicker: IAccountPickerController;
     portfolio: IPortfolioController;
     dapps: IDappsController;
@@ -65,14 +82,18 @@ export declare class MainController extends EventEmitter implements IMainControl
     transferScanner: ITransfersScannerController;
     addressBook: IAddressBookController;
     domains: IDomainsController;
+    erc7730: IErc7730Controller;
     contractNames: IContractNamesController;
     contractInfo: IContractInfoController;
+    walletToken: IWalletTokenController;
     autoLogin: IAutoLoginController;
     accounts: IAccountsController;
     selectedAccount: ISelectedAccountController;
+    privacyPools: IPrivacyPoolsController;
     requests: IRequestsController;
     banner: IBannerController;
     survey: ISurveyController;
+    appDataSync: IAppDataSyncController;
     accountOpsToBeConfirmed: {
         [key: string]: {
             [key: string]: AccountOp;
@@ -84,7 +105,7 @@ export declare class MainController extends EventEmitter implements IMainControl
     ui: IUiController;
     safe: ISafeController;
     get continuousUpdates(): ContinuousUpdatesController;
-    constructor({ eventEmitterRegistry, appVersion, platform, storageAPI, fetch, relayerUrl, velcroUrl, liFiApiKey, bungeeApiKey, squidIntegratorId, featureFlags, keystoreSigners, externalSignerControllers, uiManager }: {
+    constructor({ eventEmitterRegistry, appVersion, platform, storageAPI, fetch, relayerUrl, velcroUrl, liFiApiKey, cowSwapApiKey, bungeeApiKey, uniswapApiKey, featureFlags, keystoreSigners, externalSignerControllers, uiManager, privacyPoolsCircuitsBaseUrl, privacyPoolsProverFactory, idb }: {
         eventEmitterRegistry?: IEventEmitterRegistryController;
         appVersion: string;
         platform: Platform;
@@ -93,14 +114,20 @@ export declare class MainController extends EventEmitter implements IMainControl
         relayerUrl: string;
         velcroUrl: string;
         liFiApiKey: string;
+        cowSwapApiKey: string;
         bungeeApiKey: string;
-        squidIntegratorId: string;
+        uniswapApiKey: string;
         featureFlags: Partial<FeatureFlags>;
         keystoreSigners: Partial<{
             [key in Key['type']]: KeystoreSignerType;
         }>;
         externalSignerControllers: ExternalSignerControllers;
         uiManager: UiManager;
+        /** Base URL of the Privacy Pools circuit artifacts, a build asset only the platform knows. */
+        privacyPoolsCircuitsBaseUrl: string;
+        /** Where to generate Privacy Pools proofs if not here - see `PrivacyPoolsController`. */
+        privacyPoolsProverFactory?: PrivacyPoolsProverFactory;
+        idb?: AmbireIdbDatabase;
     });
     /**
      * - Updates the selected account's account state, portfolio and defi positions
@@ -112,8 +139,18 @@ export declare class MainController extends EventEmitter implements IMainControl
     onPopupOpen(viewId: string): Promise<void>;
     lock(): void;
     selectAccount(toAccountAddr: string): Promise<void>;
-    commonHandlerForBroadcastSuccess({ submittedAccountOp, accountOp, fromRequestId }: OnboardingSuccessProps): Promise<void>;
-    handleSignAndBroadcastAccountOp(type: SignAccountOpType, fromRequestId: string | number): Promise<void>;
+    /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
+    addPrivacyPoolsAccount(seedId: string): Promise<void>;
+    /**
+     * Creates a recovery phrase with only a Privacy Pools account on it, and selects it. The phrase
+     * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
+     */
+    addPrivacyPoolsAccountFromNewSeed({ extraEntropy }: {
+        extraEntropy?: string;
+    }): Promise<void>;
+    selectPrivacyPoolsAccount(seedId: string): Promise<void>;
+    commonHandlerForBroadcastSuccess({ submittedAccountOp, accountOp }: OnboardingSuccessProps): Promise<void>;
+    handleSignAndBroadcastAccountOp(type: SignAccountOpType, fromRequestId: string | number, reviewedAccountOpId?: string): Promise<void>;
     resolveDappBroadcast(submittedAccountOp: SubmittedAccountOp, dappHandlers: {
         promise: {
             session: {
@@ -129,12 +166,20 @@ export declare class MainController extends EventEmitter implements IMainControl
     handleSignMessage(): Promise<void>;
     handleAccountPickerInitLedger(LedgerKeyIterator: any): Promise<void>;
     handleAccountPickerInitTrezor(TrezorKeyIterator: any): Promise<void>;
+    handleAccountPickerInitOneKey(OneKeyKeyIterator: any, // TODO: KeyIterator type mismatch
+    preferredDeviceId?: string): Promise<void>;
     handleAccountPickerInitLattice(LatticeKeyIterator: any): Promise<void>;
     handleAccountPickerInitQr(QrKeyIterator: any, // TODO: KeyIterator type mismatch
     payload: string | Uint8Array): Promise<void>;
+    handleAccountPickerInitNfc(NfcKeyIterator: any, // TODO: KeyIterator type mismatch
+    payload: {
+        extendedPublicKey: string;
+        hdPath: string;
+    }): Promise<void>;
     updateAccountsOpsStatuses(): Promise<void>;
     setContractsDeployedToTrueIfDeployed(network: Network): Promise<void>;
     removeAccount(address: Account['addr']): Promise<void>;
+    updateAccounts(accountsUpdate: AccountsUpdate): Promise<void>;
     reloadSelectedAccount(options?: {
         chainIds?: bigint[];
         maxDataAgeMs?: number;
@@ -147,6 +192,7 @@ export declare class MainController extends EventEmitter implements IMainControl
      * if the selected account is a safe
      */
     fetchSafeTxns(chainIds?: bigint[], forceRefetch?: boolean): Promise<void>;
+    refreshSafeTxns(): Promise<void>;
     updateSelectedAccountPortfolio(opts?: {
         networks?: Network[];
         isManualUpdate?: boolean;
@@ -164,9 +210,26 @@ export declare class MainController extends EventEmitter implements IMainControl
         privKeyOrSeed: string;
         seedPassphrase?: string | null;
     }): Promise<void>;
+    /**
+     * Prepares the account picker with a list of private keys (bulk import). The key at position N
+     * in the list is listed as the account at index N. Duplicates are dropped and the list is
+     * limited to `MAX_BULK_PRIVATE_KEYS` keys.
+     */
+    accountPickerSetInitParamsFromPrivateKeys({ privateKeys }: {
+        privateKeys: string[];
+    }): Promise<void>;
+    /**
+     * Creates a brand new recovery phrase and prepares the account picker with it, all
+     * in the background. The phrase is never sent to the UI - the user gets prompted to
+     * write it down later, once the account holds funds.
+     */
+    accountPickerSetInitParamsFromNewSeed({ extraEntropy }: {
+        extraEntropy?: string;
+    }): Promise<void>;
     toJSON(): this & {
         name: string;
         emittedErrors: ErrorRef[];
     };
 }
+export {};
 //# sourceMappingURL=main.d.ts.map

@@ -5,16 +5,23 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags';
 import { Fetch } from '../../interfaces/fetch';
 import { IKeystoreController } from '../../interfaces/keystore';
 import { INetworksController, Network } from '../../interfaces/network';
+import { Platform } from '../../interfaces/platform';
 import { IPortfolioController } from '../../interfaces/portfolio';
 import { IProvidersController, RPCProviders } from '../../interfaces/provider';
 import { IStorageController } from '../../interfaces/storage';
+import { IUiController } from '../../interfaces/ui';
+import { IVerificationController } from '../../interfaces/verification';
 import { AccountOp } from '../../libs/accountOp/accountOp';
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp';
 import { NetworksWithPositions, PositionCountOnDisabledNetworks } from '../../libs/defiPositions/types';
 import { Portfolio } from '../../libs/portfolio';
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken';
-import { AccountAssetsState, AccountState, ExchangeInfoMap, FormattedPortfolioDiscoveryResponse, GetOptions, Hints, TemporaryTokens, TokenDataCache, TokenError, TokenResult } from '../../libs/portfolio/interfaces';
+import { PortfolioDebugFlow } from '../../libs/portfolio/debug';
+import { AccountAssetsState, AccountState, ExchangeInfoMap, FormattedPortfolioDiscoveryResponse, GetOptions, TemporaryTokens, TokenDataCache, TokenError, AssetValidations, TokenResult } from '../../libs/portfolio/interfaces';
+import batcher from '../../utils/batcher';
 import EventEmitter from '../eventEmitter/eventEmitter';
+import { HintsController } from '../hintsController/hintsController';
+export declare const EXCHANGE_LIST_URL = "https://cena.ambire.com/api/v3/exchanges";
 /**
  * The portfolio controller is responsible for managing and updating the portfolio state.
  * The portfolio state is divided by account and network. Every network's state
@@ -49,33 +56,50 @@ import EventEmitter from '../eventEmitter/eventEmitter';
  * - Velcro, existing defi positions, learned assets, toBeLearnedAssets, custom tokens
  * - On manual updates, learned tokens of other accounts are also used to discover new assets
  */
-export declare class PortfolioController extends EventEmitter implements IPortfolioController {
+export declare class PortfolioController extends EventEmitter<PortfolioDebugFlow> implements IPortfolioController {
     #private;
-    customTokens: CustomToken[];
-    tokenPreferences: TokenPreference[];
-    validTokens: any;
+    validTokens: AssetValidations;
     temporaryTokens: TemporaryTokens;
     hasFundedHotAccount: boolean;
-    protected batchedPortfolioDiscovery: Function;
+    protected batchedPortfolioDiscovery: ReturnType<typeof batcher>;
     protected tokenDataCache: {
         [chainId: string]: TokenDataCache;
     };
+    /**
+     * Handles token learning, temporary tokens, hints and their storage.
+     */
+    protected hints: HintsController;
     initialLoadPromise?: Promise<void>;
-    defiSessionIds: string[];
-    defiPositionsCountOnDisabledNetworks: PositionCountOnDisabledNetworks;
-    exchangeState: {
-        exchanges: ExchangeInfoMap | null;
-        updatedAt: number | null;
-        isLoading: boolean;
-        retryCount: number;
-    };
-    constructor(storage: IStorageController, fetch: Fetch, providers: IProvidersController, networks: INetworksController, accounts: IAccountsController, keystore: IKeystoreController, relayerUrl: string, velcroUrl: string, banner: IBannerController, featureFlags: IFeatureFlagsController, eventEmitterRegistry?: IEventEmitterRegistryController);
+    /**
+     * When the exchange list was last loaded, or null before that. Lets the UI look up
+     * exchanges again once the list arrives, without the list itself being public.
+     */
+    exchangeListUpdatedAt: number | null;
+    constructor(storage: IStorageController, fetch: Fetch, providers: IProvidersController, networks: INetworksController, accounts: IAccountsController, keystore: IKeystoreController, relayerUrl: string, velcroUrl: string, banner: IBannerController, featureFlags: IFeatureFlagsController, ui: IUiController, eventEmitterRegistry?: IEventEmitterRegistryController, verification?: IVerificationController, platform?: Platform);
     updateExchangeList(): Promise<void>;
+    /**
+     * Looks up the display info of the given exchanges. Unknown ids are left out, and the
+     * result is empty until the exchange list has loaded.
+     */
+    getExchangesInfo(exchangeIds: string[]): ExchangeInfoMap;
+    /** Replies to a UI request with {@link getExchangesInfo} for the given exchanges. */
+    getExchangesInfoAndSendResToUi(exchangeIds: string[], requestId: string): void;
+    /** The account's invite key for the Ambire Mobile app, or undefined if it has none. */
+    getMobileInviteKey(accountAddr: string): string | undefined;
+    /**
+     * The account's DeFi position counts on networks the user has disabled. Empty until a
+     * full update across all networks has completed.
+     */
+    getDefiPositionsCountOnDisabledNetworks(accountAddr: string): PositionCountOnDisabledNetworks[string];
     private fetchBlacklist;
     private get blacklist();
     addCustomToken(customToken: CustomToken, selectedAccountAddr?: string, shouldUpdatePortfolio?: boolean): Promise<void>;
     removeCustomToken(customToken: Omit<CustomToken, 'standard'>, selectedAccountAddr?: string, shouldUpdatePortfolio?: boolean): Promise<void>;
     toggleHideToken(tokenPreference: TokenPreference, selectedAccountAddr?: string, shouldUpdatePortfolio?: boolean): Promise<void>;
+    get customTokens(): CustomToken[];
+    get tokenPreferences(): TokenPreference[];
+    addTokensToBeLearned(tokenAddresses: string[], chainId: bigint): boolean;
+    addErc721sToBeLearned(nftsData: [string, bigint[]][] | undefined, accountAddr: string, chainId: bigint): boolean;
     removeNetworkData(chainId: bigint): void;
     /**
      * Removes simulation results from the portfolio state. This function is used when
@@ -84,8 +108,28 @@ export declare class PortfolioController extends EventEmitter implements IPortfo
      *
      * If you instead need to remove a specific accountOp from the simulation results, use `discardSimulation`
      * (e.g., after an account op is broadcasted and confirmed)
+     *
+     * If possible, this method shouldn't be awaited as we run the
+     * risks of slowing the extension down unintentionally
      */
     overrideSimulationResults(accountOp: AccountOp): Promise<void>;
+    /**
+     * Used to schedule portfolio updates for a specific account and network. Atm it's only used to
+     * update the portfolio after an interval from the last transaction, so we are sure that potential changes
+     * to defi positions have been indexed by our discovery API
+     */
+    scheduleUpdate({ accountId, chainId, bypassServerSideCache }: {
+        accountId: AccountId;
+        chainId: bigint;
+        bypassServerSideCache: true;
+    }): void;
+    /**
+     * The chains with a portfolio update queued or in flight after a recent transaction, by account.
+     * Read by the UI to tell the user their defi positions are about to refresh.
+     */
+    get scheduledUpdateChainIds(): {
+        [accountId: string]: bigint[];
+    };
     /**
      * Removes a specific simulated account op from the portfolio state and updates
      * the portfolio for the corresponding account and networks.
@@ -99,9 +143,33 @@ export declare class PortfolioController extends EventEmitter implements IPortfo
         address: TokenResult['address'];
         chainId: TokenResult['chainId'];
     }, accountId: AccountId, allNetworks?: boolean): Promise<void>;
+    /**
+     * Validates that the address is an ERC-721 collection before it's added as a
+     * custom one and stores the result in `validTokens.erc721`.
+     *
+     * `shouldRefetch` runs the check again for an address that already has a
+     * verdict, which the UI asks for after a network problem.
+     */
+    updateCollectionValidation(collection: {
+        address: TokenResult['address'];
+        chainId: TokenResult['chainId'];
+    }, shouldRefetch?: boolean): Promise<void>;
+    /**
+     * Checks whether the account owns the collectible and stores the result in
+     * `validTokens.erc721`, keyed by the collection and the id.
+     *
+     * `shouldRefetch` checks again for a collectible that already has a verdict,
+     * which the UI asks for after a network problem.
+     */
+    updateCollectibleValidation(collectible: {
+        address: TokenResult['address'];
+        chainId: TokenResult['chainId'];
+        tokenId: bigint;
+    }, accountId: AccountId, shouldRefetch?: boolean): Promise<void>;
     initializePortfolioLibIfNeeded(accountId: AccountId, chainId: bigint, network: Network): Portfolio | null;
     getTokenBalancesOnBlock(accountId: AccountId, chainId: bigint, tokenAddrs: string[], blockTag: GetOptions['blockTag'], accountAddr?: string): Promise<[TokenError, TokenResult][]>;
     getTemporaryTokens(accountId: AccountId, chainId: bigint, additionalHint: string): Promise<boolean>;
+    getTokenPrice(accountId: AccountId, chainId: bigint, address: string): Promise<number>;
     /**
      * Fetches portfolio asset hints and defi positions from the external API (Velcro)
      * and formats the response. If both hints and defi positions can be skipped, returns null data.
@@ -114,6 +182,7 @@ export declare class PortfolioController extends EventEmitter implements IPortfo
         hasKeys: boolean;
         maxDataAgeMs?: number;
         isManualUpdate?: boolean;
+        bypassServerSideCache?: boolean;
     }): Promise<[boolean, FormattedPortfolioDiscoveryResponse | null]>;
     /**
      * Most defi positions are fetched from the external API per network, but there are some
@@ -127,13 +196,8 @@ export declare class PortfolioController extends EventEmitter implements IPortfo
         hasKeys: boolean;
         maxDataAgeMs?: number;
         isManualUpdate?: boolean;
+        bypassServerSideCache?: boolean;
     }): Promise<void>;
-    /**
-     * Gets hints from all sources and formats them as expected
-     * by the portfolio lib. These are all hints the portfolio uses,
-     * except the external hints discovery request
-     */
-    protected getAllHints(accountId: AccountId, chainId: Network['chainId'], isManualUpdate?: boolean, velcroHints?: Hints | null): Pick<Required<GetOptions>, 'specialErc20Hints' | 'specialErc721Hints' | 'additionalErc20Hints' | 'additionalErc721Hints'>;
     /**
      * Updates the portfolio of the passed account on the specified networks, or on all networks if none is specified.
      * If a simulation object is passed, it will be used to perform the update.
@@ -156,63 +220,33 @@ export declare class PortfolioController extends EventEmitter implements IPortfo
         defiMaxDataAgeMs?: number;
         maxDataAgeMsUnused?: number;
         isManualUpdate?: boolean;
+        bypassServerSideCache?: boolean;
+        accountOpIdsToDiscard?: {
+            [chainId: string]: string[];
+        };
     }): Promise<void>;
     reportMissedPortfolioUpdateAfterUpdatedAccountOp(accountId: AccountId, updatedAccountsOps: SubmittedAccountOp[]): void;
     markSimulationAsBroadcasted(accountId: string, chainId: bigint): void;
-    /**
-     * Adds tokens to the hints of the portfolio with the intention of learning them.
-     * The tokens are removed only if they are learned, which happens if their balance is
-     * more than 0.
-     */
-    addTokensToBeLearned(tokenAddresses: string[], chainId: bigint): boolean;
-    /**
-     * Adds ERC-721 NFTs to the hints of the portfolio with the intention of learning them.
-     * The nfts are removed only if they are learned, which happens if the user owns them
-     */
-    addErc721sToBeLearned(nftsData: [string, bigint[]][] | undefined, accountAddr: string, chainId: bigint): boolean;
-    /**
-     * toBeLearnedAssets contains arbitrary addresses that include:
-     * - tokens and collectibles
-     * - random smart contracts and addresses
-     * That's why we need to clean it up by removing the addresses that the portfolio lib returned
-     * an error for, as those are not NFTs/Tokens.
-     */
-    private cleanupToBeLearnedAssets;
-    /**
-     * Used to learn new tokens (by adding them to `learnedAssets`) and updating
-     * the timestamps of learned tokens.
-     *
-     * !!NOTE: This method must be called only by updateSelectedAccount with tokens
-     * that have a `balance > 0`, because it updates the timestamp of tokens, that indicates
-     * when the token was last seen with a balance > 0
-     *
-     * !!NOTE2: As this method is only called after a portfolio update, we are not
-     * checksumming the passed tokens (because the lib always returns them checksummed).
-     * If this ever changes, we need to checksum the addresses
-     */
-    protected learnTokens(tokensWithBalance: string[] | undefined, key: `${string}:${string}`, chainId: bigint): Promise<boolean>;
-    /**
-     * Used to learn new ERC-721 NFTs (by adding them to `learnedAssets`) and updating
-     * the timestamps of learned collectibles.
-     *
-     * !!NOTE: This method must be called only by updateSelectedAccount with nfts
-     * that the user owns, because it updates the timestamp of collectibles, that indicates
-     * when the collectible was last seen with a balance > 0
-     * !!NOTE2: As this method is only called after a portfolio update, we are not
-     * checksumming the passed addresses (because the lib always returns them checksummed).
-     * If this ever changes, we need to checksum them
-     */
-    protected learnNfts(nftsData: [string, bigint[]][] | undefined, accountAddr: string, chainId: bigint): Promise<boolean>;
     removeAccountData(address: Account['addr']): void;
     getAccountPortfolioState(accountAddr: string): AccountState;
     getIsStateWithOutdatedNetworks(accountAddr: string): boolean;
     getNetworksWithAssets(accountAddr: string): AccountAssetsState;
+    /**
+     * Always pass account ops that belong to the same account & network
+     */
     simulateAccountOp(op: AccountOp): Promise<void>;
     updateNetworksWithDefiPositions(accountId: AccountId, accountState: AccountState, providers: RPCProviders): Promise<void>;
     getNetworksWithDefiPositions(accountAddr: string): NetworksWithPositions;
     addDefiSession(sessionId: string): void;
     removeDefiSession(sessionId: string): void;
     toJSON(): this & {
+        customTokens: CustomToken[];
+        tokenPreferences: TokenPreference[];
+        scheduledUpdateChainIds: {
+            [accountId: string]: bigint[];
+        };
+        hints: any;
+        tokenDataCache: any;
         name: string;
         emittedErrors: import("../../interfaces/eventEmitter").ErrorRef[];
     };

@@ -25,6 +25,7 @@ export declare class V2 extends BaseAccount {
     getBundlerStateOverride(userOp: UserOperation): BundlerStateOverride | undefined;
     shouldSignDeployAuth(broadcastOption: string): boolean;
     isSponsorable(): boolean;
+    canUseErc4337(): boolean;
     getAtomicStatus(): 'unsupported' | 'supported' | 'ready';
     getNonceId(): string;
     getBroadcastNonce(activity: IActivityController, op: AccountOp, provider: RPCProvider): Promise<bigint>;
@@ -35,5 +36,6 @@ export declare class V2 extends BaseAccount {
     canBroadcastByOtherEOA(): boolean;
     canSetCustomGasPrices(feeOption: FeePaymentOption): boolean;
     canSetCustomGas(feeOption: FeePaymentOption): boolean;
+    canBroadcastByItself(): boolean;
 }
 //# sourceMappingURL=V2.d.ts.map

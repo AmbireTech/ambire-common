@@ -4,6 +4,7 @@ exports.isTransferredTokenFeeOption = exports.canFeeOptionCoverAmount = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
+const amount_1 = require("../transfer/amount");
 const ERC20Interface = new ethers_1.Interface(IERC20_json_1.default.abi);
 const isTransferredTokenFeeOption = (feeOption, op) => {
     if (!op.meta?.allowTransferFeeTokenSelfReserve)
@@ -28,7 +29,11 @@ const isTransferredTokenFeeOption = (feeOption, op) => {
 };
 exports.isTransferredTokenFeeOption = isTransferredTokenFeeOption;
 const canFeeOptionCoverAmount = (feeOption, op, amount) => {
-    return feeOption.availableAmount >= amount || isTransferredTokenFeeOption(feeOption, op);
+    if (feeOption.availableAmount >= amount)
+        return true;
+    if (!isTransferredTokenFeeOption(feeOption, op))
+        return false;
+    return (0, amount_1.getAmountAfterFeeReserve)(feeOption.token.amount, amount) > 0n;
 };
 exports.canFeeOptionCoverAmount = canFeeOptionCoverAmount;
 //# sourceMappingURL=feeOptions.js.map

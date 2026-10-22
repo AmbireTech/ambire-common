@@ -13,6 +13,17 @@ export interface KeyIterator {
     walletSDK?: any;
     /** Needed for the hardware wallets only */
     controller?: ExternalSignerController;
+    /**
+     * Which of the offered derivation paths this wallet can browse. Wallets that hand
+     * over a single extended public key (QR, NFC) are limited to the paths that branch
+     * off it. Undefined means every path is available.
+     */
+    derivableHdPathTemplates?: HD_PATH_TEMPLATE_TYPE[];
+    /**
+     * How many keys the iterator can serve, when that number is limited (e.g. a list of
+     * private keys). Undefined means keys can be retrieved at any index.
+     */
+    keysCount?: number;
     /** Retrieves the the public addresses (accounts) from specific indexes */
     retrieve: (fromToArr: {
         from: number;
@@ -29,12 +40,8 @@ export interface KeyIterator {
             createdAt: number;
         };
     }[];
-    getEncryptedSeed?: (encryptor: any) => Promise<{
-        seed: string;
-        passphrase: string | null;
-    } | null>;
     /** Checks if the seed matches the key iterator's seed (optional, for hot wallets) */
-    isSeedMatching?: (seedToCompareWith: string) => boolean;
+    isSeedMatching?: (seedToCompareWith: string, passphraseToCompareWith: string | null) => boolean;
     parsedAccount?: ParsedQrAccount;
 }
 //# sourceMappingURL=keyIterator.d.ts.map

@@ -28,7 +28,7 @@ async function updatePositionsByProviderAssetPrices(fetch, positionsByProvider, 
             });
         });
     });
-    const cenaUrl = `https://cena.ambire.com/api/v3/simple/token_price/${platformId}?contract_addresses=${dedup(addresses).join('%2C')}&vs_currencies=usd`;
+    const cenaUrl = `https://cena.ambire.com/api/v3/simple/token_price/${platformId}?contract_addresses=${dedup(addresses).join(',')}&vs_currencies=usd`;
     const resp = await (0, fetch_1.fetchWithTimeout)(fetch, cenaUrl, {}, 3000);
     const body = await resp.json();
     if (resp.status !== 200)

@@ -1,8 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.textToValidDecimal = exports.safeTokenAmountAndNumberMultiplication = exports.getSafeAmountFromFieldValue = exports.convertTokenPriceToBigInt = void 0;
+exports.truncateFiatAmountDecimals = exports.textToValidDecimal = exports.safeTokenAmountAndNumberMultiplication = exports.getSafeAmountFromFieldValue = exports.convertTokenPriceToBigInt = void 0;
+const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const amount_1 = require("../../libs/transfer/amount");
+const formatDecimals_1 = tslib_1.__importDefault(require("../formatDecimals/formatDecimals"));
 /**
  * Converts floating point token price to big int
  */
@@ -51,6 +53,27 @@ const getSafeAmountFromFieldValue = (fieldValue, tokenDecimals) => {
     return (0, amount_1.getSanitizedAmount)(parsedFieldValue, tokenDecimals);
 };
 exports.getSafeAmountFromFieldValue = getSafeAmountFromFieldValue;
+const getDisplayedDecimalsCount = (fiatAmount) => {
+    const formatted = (0, formatDecimals_1.default)(Number(fiatAmount), 'price');
+    const indexOfDot = formatted.indexOf('.');
+    return indexOfDot === -1 ? 0 : formatted.length - indexOfDot - 1;
+};
+/**
+ * Cuts a fiat amount down to the precision a currency field can display. The
+ * number of decimals is taken from what `formatDecimals` shows for the same
+ * amount.
+ */
+const truncateFiatAmountDecimals = (fiatAmount) => {
+    const [wholePart, decimals] = fiatAmount.split('.');
+    if (!decimals)
+        return fiatAmount;
+    const decimalsToKeep = getDisplayedDecimalsCount(fiatAmount);
+    const truncated = decimals.length <= decimalsToKeep
+        ? fiatAmount
+        : `${wholePart}.${decimals.slice(0, decimalsToKeep)}`;
+    return Number(truncated) === 0 ? '0' : truncated;
+};
+exports.truncateFiatAmountDecimals = truncateFiatAmountDecimals;
 const textToValidDecimal = (text) => {
     let formatted = text;
     // Remove invalid chars (only digits and dots allowed)

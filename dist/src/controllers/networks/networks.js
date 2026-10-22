@@ -27,9 +27,13 @@ class NetworksController extends eventEmitter_1.default {
     #storage;
     #fetch;
     #callRelayer;
+    #featureFlags;
     #networks = {};
     statuses = exports.STATUS_WRAPPED_METHODS;
     networkToAddOrUpdate = null;
+    // Prevents race conditions in setNetworkToAddOrUpdate
+    #networkToAddOrUpdateRequestId = 0;
+    areNetworksFetchingFromRelayer = false;
     #useTempProvider;
     /** Callback that gets called when adding or updating network */
     #onAddOrUpdateNetworks;
@@ -37,7 +41,7 @@ class NetworksController extends eventEmitter_1.default {
     // Holds the initial load promise, so that one can wait until it completes
     initialLoadPromise;
     #updateWithRelayerNetworksInterval;
-    constructor({ eventEmitterRegistry, defaultNetworksMode, storage, fetch, relayerUrl, useTempProvider, onAddOrUpdateNetworks, onReady }) {
+    constructor({ eventEmitterRegistry, defaultNetworksMode, storage, fetch, relayerUrl, useTempProvider, onAddOrUpdateNetworks, onReady, featureFlags }) {
         super(eventEmitterRegistry);
         if (defaultNetworksMode)
             this.defaultNetworksMode = defaultNetworksMode;
@@ -47,6 +51,7 @@ class NetworksController extends eventEmitter_1.default {
         this.#useTempProvider = useTempProvider;
         this.#onAddOrUpdateNetworks = onAddOrUpdateNetworks;
         this.#onReady = onReady;
+        this.#featureFlags = featureFlags;
         this.initialLoadPromise = this.#load().finally(() => {
             this.initialLoadPromise = undefined;
         });
@@ -100,48 +105,59 @@ class NetworksController extends eventEmitter_1.default {
         return (0, networks_2.getValidNetworks)(rawNetworksInStorage);
     }
     /**
-     * Loads and synchronizes network configurations from storage and the relayer.
+     * Loads the network configurations for the initial load.
      *
      * This method performs the following steps:
      * 1. Retrieves the latest network configurations from storage.
-     * 2. If no networks are found in storage, sets predefined networks and emits an update.
-     * 3. Merges the networks from the Relayer with the stored networks.
-     * 4. Ensures predefined networks are marked correctly and handles special cases (e.g., Odyssey network).
-     * 5. Sorts networks with predefined ones first, followed by custom networks, ordered by chainId.
-     * 6. Updates the networks in storage.
-     * 7. Asynchronously updates network features if needed.
+     * 2. Seeds the networks from storage, or from the predefined networks on a fresh
+     *    install (instantiating the RPC providers via `#onReady` in that case).
+     * 3. Persists the seeded networks and updates network features asynchronously.
+     * 4. Triggers `synchronizeNetworks` in the BACKGROUND (not awaited) to merge the
+     *    latest configuration from the Relayer.
      *
-     * This method ensures that the application has the most up-to-date network configurations,
-     * handles migration of legacy data, and maintains consistency between stored and relayer-provided networks.
+     * The relayer merge is intentionally not awaited so that `initialLoadPromise`
+     * resolves with the stored networks immediately — keeping the relayer fetch off
+     * the critical path of controllers that gate the mobile splash hide. The merge,
+     * provider swap and portfolio reload for any changed networks all happen in
+     * `synchronizeNetworks`.
      */
     async #load() {
+        await this.#featureFlags?.initialLoadPromise;
         // Step 1. Get latest storage (networksInStorage) and validate/normalize
         const networksInStorage = await this.getNetworksInStorage();
-        let finalNetworks = {};
-        // If networksInStorage is empty, set predefinedNetworks and emit update
+        // Step 2. Seed the networks from storage (or predefined on a fresh install).
+        // The relayer refresh is intentionally NOT awaited here (see Step 4) so that
+        // the initial load resolves immediately with the stored networks. This keeps
+        // the relayer fetch (/v2/config/networks, up to a 5s timeout) off the critical
+        // path of controllers that await `initialLoadPromise` (accounts →
+        // selectedAccount), which on mobile gate the splash hide.
         if (!Object.keys(networksInStorage).length) {
             const defaultNetworks = this.defaultNetworksMode === 'mainnet' ? networks_1.networks : testnetNetworks_1.testnetNetworks;
-            finalNetworks = defaultNetworks.reduce((acc, network) => {
+            this.#networks = defaultNetworks.reduce((acc, network) => {
                 acc[network.chainId.toString()] = network;
                 return acc;
             }, {});
-            this.#networks = finalNetworks;
+            // Instantiate the RPC providers from the seeded networks before resolving.
             await this.#onReady();
-            this.emitUpdate();
         }
-        finalNetworks = Object.fromEntries(Object.values(networksInStorage).map((network) => [network.chainId.toString(), network]));
-        if (this.defaultNetworksMode === 'mainnet') {
-            // Step 4: Merge the networks from the Relayer
-            // Note: there is no need to call #onAddOrUpdateNetworks here
-            // as this code runs in the initial load promise, thus the RPC providers
-            // will be instantiated from the final networks list
-            finalNetworks = (await this.mergeRelayerNetworks(finalNetworks)).mergedNetworks;
+        else {
+            this.#networks = Object.fromEntries(Object.values(networksInStorage).map((network) => [network.chainId.toString(), network]));
         }
-        this.#networks = finalNetworks;
         this.emitUpdate();
         await this.#storage.set('networks', this.#networks);
-        // Step 8: Update networks features asynchronously
-        this.#updateNetworkFeatures(finalNetworks);
+        // Step 3: Update networks features asynchronously
+        this.#updateNetworkFeatures(this.#networks);
+        // Step 4: Refresh from the Relayer in the background (RPC URLs may have
+        // changed). `synchronizeNetworks` merges the relayer config, swaps providers
+        // and reloads the portfolio for any changed networks, and toggles
+        // `areNetworksFetchingFromRelayer` so the dashboard can hold the balance in a
+        // loading state until the fresh data lands. Not awaited so `initialLoadPromise`
+        // resolves now. (Skipped in testnet mode by `synchronizeNetworks` itself.)
+        this.synchronizeNetworks().catch((error) => this.emitError({
+            level: 'silent',
+            message: 'Failed to refresh the networks configuration from the Relayer.',
+            error
+        }));
     }
     /**
      * Processes network updates, finalizes changes, and updates network features asynchronously.
@@ -150,17 +166,33 @@ class NetworksController extends eventEmitter_1.default {
     async synchronizeNetworks() {
         if (this.defaultNetworksMode === 'testnet')
             return;
-        // Process updates (merge Relayer data and apply rules)
-        const { mergedNetworks, updatedNetworkChainIds } = await this.mergeRelayerNetworks(this.#networks);
-        // Finalize updates
-        this.#networks = mergedNetworks;
+        if (this.#featureFlags?.isFeatureEnabled('networkConfig') === false)
+            return;
+        this.areNetworksFetchingFromRelayer = true;
         this.emitUpdate();
-        await this.#storage.set('networks', this.#networks);
-        // We must call this after merging the local networks with the ones from the Relayer
-        // to ensure that RPC providers of newly enabled networks are instantiated
-        this.#onAddOrUpdateNetworks(this.allNetworks.filter((n) => updatedNetworkChainIds.includes(n.chainId)));
-        // Asynchronously update network features
-        this.#updateNetworkFeatures(mergedNetworks);
+        try {
+            // Process updates (merge Relayer data and apply rules)
+            const { mergedNetworks, updatedNetworkChainIds } = await this.mergeRelayerNetworks(this.#networks);
+            // Finalize updates
+            this.#networks = mergedNetworks;
+            this.emitUpdate();
+            await this.#storage.set('networks', this.#networks);
+            // We must call this after merging the local networks with the ones from the Relayer
+            // to ensure that RPC providers of newly enabled networks are instantiated.
+            // Awaited so `areNetworksFetchingFromRelayer` stays true until the portfolio
+            // reload triggered by the updated RPCs has finished — otherwise the flag would
+            // flip to false before the reload re-enters its loading state, briefly exposing
+            // a balance (and warnings) computed from the old RPCs that were potentially being replaced.
+            if (updatedNetworkChainIds.length) {
+                await this.#onAddOrUpdateNetworks(this.allNetworks.filter((n) => updatedNetworkChainIds.includes(n.chainId)));
+            }
+            // Asynchronously update network features
+            this.#updateNetworkFeatures(mergedNetworks);
+        }
+        finally {
+            this.areNetworksFetchingFromRelayer = false;
+            this.emitUpdate();
+        }
     }
     /**
      * Merges locally stored networks with those fetched from the Relayer.
@@ -181,6 +213,9 @@ class NetworksController extends eventEmitter_1.default {
      *
      */
     async mergeRelayerNetworks(currentNetworks) {
+        if (this.#featureFlags?.isFeatureEnabled('networkConfig') === false) {
+            return { mergedNetworks: currentNetworks, updatedNetworkChainIds: [] };
+        }
         let relayerNetworks = {};
         try {
             const res = await Promise.race([
@@ -216,9 +251,8 @@ class NetworksController extends eventEmitter_1.default {
                 rpcUrl: network.selectedRpcUrl
             }, async (provider) => {
                 await (0, networks_2.getNetworkInfo)(this.#fetch, network.chainId, provider, async (info) => {
-                    if (Object.values(info).some((prop) => prop === 'LOADING')) {
+                    if ((0, networks_2.isNetworkInfoPending)(info))
                         return;
-                    }
                     // If RPC is flagged there might be an issue with the RPC
                     // this information will fail to return
                     // and we dont want to update lastUpdatedNetworkInfo
@@ -238,29 +272,41 @@ class NetworksController extends eventEmitter_1.default {
         await Promise.all(updatePromises);
     }
     async setNetworkToAddOrUpdate(networkToAddOrUpdate = null) {
-        await this.initialLoadPromise;
-        if (networkToAddOrUpdate) {
-            this.networkToAddOrUpdate = networkToAddOrUpdate;
-            this.emitUpdate();
-            await this.#useTempProvider({ chainId: networkToAddOrUpdate.chainId, rpcUrl: networkToAddOrUpdate.rpcUrl }, async (provider) => {
-                await (0, networks_2.getNetworkInfo)(this.#fetch, networkToAddOrUpdate.chainId, provider, (info) => {
-                    if (this.networkToAddOrUpdate) {
-                        this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info };
-                        this.emitUpdate();
-                    }
-                }, this.#networks[networkToAddOrUpdate.chainId.toString()]);
-            });
-        }
-        else {
+        this.#networkToAddOrUpdateRequestId += 1;
+        const requestId = this.#networkToAddOrUpdateRequestId;
+        if (!networkToAddOrUpdate) {
             this.networkToAddOrUpdate = null;
             this.emitUpdate();
+            return;
         }
+        // Seeded so the very first emission already carries the loading shape, instead of the
+        // UI rendering a frame of "?" rows before the probes report in.
+        this.networkToAddOrUpdate = {
+            ...networkToAddOrUpdate,
+            info: (0, networks_2.getLoadingNetworkInfo)(networkToAddOrUpdate.chainId)
+        };
+        this.emitUpdate();
+        await this.initialLoadPromise;
+        await this.#useTempProvider({ chainId: networkToAddOrUpdate.chainId, rpcUrl: networkToAddOrUpdate.rpcUrl }, async (provider) => {
+            await (0, networks_2.getNetworkInfo)(this.#fetch, networkToAddOrUpdate.chainId, provider, (info) => {
+                if (requestId !== this.#networkToAddOrUpdateRequestId)
+                    return;
+                if (!this.networkToAddOrUpdate)
+                    return;
+                this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info };
+                this.emitUpdate();
+            }, this.#networks[networkToAddOrUpdate.chainId.toString()]);
+        });
     }
     async #addNetwork(network) {
         await this.initialLoadPromise;
-        if (!this.networkToAddOrUpdate?.info ||
-            Object.values(this.networkToAddOrUpdate.info).some((prop) => prop === 'LOADING')) {
-            return;
+        // The redundant-looking `info` check is what narrows `networkToAddOrUpdate` below
+        if (!this.networkToAddOrUpdate?.info || (0, networks_2.isNetworkInfoPending)(this.networkToAddOrUpdate.info)) {
+            throw new EmittableError_1.default({
+                message: "We're still checking this network. Please wait a moment and try again.",
+                level: 'expected',
+                error: new Error('settings: addNetwork called before the network info was resolved')
+            });
         }
         const chainIds = this.allNetworks.map((net) => net.chainId);
         // make sure the id and chainId of the network are unique
@@ -284,7 +330,7 @@ class NetworksController extends eventEmitter_1.default {
             predefined: false,
             has7702: false
         };
-        this.#onAddOrUpdateNetworks([this.#networks[network.chainId.toString()]]);
+        void this.#onAddOrUpdateNetworks([this.#networks[network.chainId.toString()]]);
         await this.#storage.set('networks', this.#networks);
         this.networkToAddOrUpdate = null;
         this.emitUpdate();
@@ -310,9 +356,9 @@ class NetworksController extends eventEmitter_1.default {
             ...networkData,
             ...changedNetwork
         };
-        if (!skipUpdate)
-            this.#onAddOrUpdateNetworks([this.#networks[chainId.toString()]]);
         await this.#storage.set('networks', this.#networks);
+        if (!skipUpdate)
+            void this.#onAddOrUpdateNetworks([this.#networks[chainId.toString()]]);
         const checkRPC = async (networkToAddOrUpdate) => {
             if (changedNetwork.selectedRpcUrl) {
                 const stringChainId = chainId.toString();
@@ -338,9 +384,8 @@ class NetworksController extends eventEmitter_1.default {
                     rpcUrl: changedNetwork.selectedRpcUrl
                 }, async (provider) => {
                     await (0, networks_2.getNetworkInfo)(this.#fetch, chainId, provider, async (info) => {
-                        if (Object.values(info).some((prop) => prop === 'LOADING')) {
+                        if ((0, networks_2.isNetworkInfoPending)(info))
                             return;
-                        }
                         const { feeOptions } = info;
                         delete info.feeOptions;
                         this.#networks[stringChainId] = {
@@ -366,11 +411,27 @@ class NetworksController extends eventEmitter_1.default {
     }
     async #updateNetworks(network, chainIds) {
         await Promise.all(chainIds.map((chainId) => this.#updateNetwork(network, chainId, true)));
-        this.#onAddOrUpdateNetworks(this.allNetworks.filter((n) => chainIds.includes(n.chainId)));
+        void this.#onAddOrUpdateNetworks(this.allNetworks.filter((n) => chainIds.includes(n.chainId)));
         this.emitUpdate();
     }
     async updateNetworks(network, chainIds) {
         await this.withStatus('updateNetwork', () => this.#updateNetworks(network, chainIds));
+    }
+    /**
+     * Bulk-adds networks coming from another device. A network whose chainId is already
+     * here gets overridden, the rest of the networks stay untouched.
+     */
+    async mergeNetworks(networks) {
+        await this.initialLoadPromise;
+        if (!networks.length)
+            return;
+        networks.forEach((network) => {
+            this.#networks[network.chainId.toString()] = network;
+        });
+        await this.#storage.set('networks', this.#networks);
+        const mergedChainIds = networks.map((network) => network.chainId);
+        void this.#onAddOrUpdateNetworks(this.allNetworks.filter((network) => mergedChainIds.includes(network.chainId)));
+        this.emitUpdate();
     }
     /**
      * @deprecated - users can no longer remove networks from the UI

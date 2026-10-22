@@ -1,28 +1,30 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.encodeCalls = encodeCalls;
+exports.getApiKit = getApiKit;
+exports.getSafeAccountByOwner = getSafeAccountByOwner;
 exports.getCalculatedSafeAddress = getCalculatedSafeAddress;
+exports.hasCompleteSafeCreationData = hasCompleteSafeCreationData;
+exports.findDeployData = findDeployData;
+exports.getSafeDeploymentCall = getSafeDeploymentCall;
 exports.decodeSetupData = decodeSetupData;
-exports.getSafeTxn = getSafeTxn;
-exports.getSafeBroadcastTxn = getSafeBroadcastTxn;
 exports.sortByAddress = sortByAddress;
 exports.getSafeTxnHash = getSafeTxnHash;
 exports.propose = propose;
 exports.confirm = confirm;
 exports.addMessage = addMessage;
+exports.normalizeSafeGlobalMessage = normalizeSafeGlobalMessage;
 exports.getMessage = getMessage;
 exports.addMessageSignature = addMessageSignature;
 exports.getPendingTransactions = getPendingTransactions;
 exports.getLatestMessages = getLatestMessages;
-exports.getTransaction = getTransaction;
 exports.fetchAllPending = fetchAllPending;
 exports.toCallsUserRequest = toCallsUserRequest;
 exports.toSigMessageUserRequests = toSigMessageUserRequests;
 exports.getAlreadySignedOwners = getAlreadySignedOwners;
 exports.getImportedSignersThatHaveNotSigned = getImportedSignersThatHaveNotSigned;
+exports.canHotOwnersMeetSafeThreshold = canHotOwnersMeetSafeThreshold;
 exports.getSigs = getSigs;
 exports.sortSigs = sortSigs;
-exports.getSameNonceRequests = getSameNonceRequests;
 exports.fetchExecutedTransactions = fetchExecutedTransactions;
 exports.getNonce = getNonce;
 const tslib_1 = require("tslib");
@@ -31,54 +33,84 @@ const eth_sig_util_1 = require("@metamask/eth-sig-util");
 const api_kit_1 = tslib_1.__importDefault(require("@safe-global/api-kit"));
 const Safe_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/Safe.json"));
 const safe_1 = require("../../consts/safe");
+const paginate_1 = require("../../utils/paginate");
 const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
-const accountOp_1 = require("../accountOp/accountOp");
+const with_timeout_1 = require("../../utils/with-timeout");
 const signMessage_1 = require("../signMessage/signMessage");
-const multiCallAbi = [
-    { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },
-    {
-        inputs: [{ internalType: 'bytes', name: 'transactions', type: 'bytes' }],
-        name: 'multiSend',
-        outputs: [],
-        stateMutability: 'payable',
-        type: 'function'
-    }
-];
-const SAFE_CALL_OPERATION = 0;
-const SAFE_DELEGATE_CALL_OPERATION = 1;
-function encodeCalls(op) {
-    const calls = (0, accountOp_1.getSignableCalls)(op);
-    if (calls.length === 1) {
-        const singleCall = calls[0];
-        return {
-            to: singleCall[0],
-            value: BigInt(singleCall[1]),
-            data: singleCall[2],
-            operation: SAFE_CALL_OPERATION
-        };
-    }
-    const multiSendData = new ethers_1.Interface(multiCallAbi).encodeFunctionData('multiSend', [
-        (0, ethers_1.concat)(calls.map((call) => {
-            return (0, ethers_1.solidityPacked)(['uint8', 'address', 'uint256', 'uint256', 'bytes'], [SAFE_CALL_OPERATION, call[0], BigInt(call[1]), BigInt((0, ethers_1.getBytes)(call[2]).length), call[2]]);
-        }))
-    ]);
-    return {
-        to: safe_1.multiSendAddr,
-        value: 0n,
-        data: multiSendData,
-        operation: SAFE_DELEGATE_CALL_OPERATION
+const helpers_1 = require("./helpers");
+function getApiKit(chainId) {
+    return new api_kit_1.default({
+        chainId,
+        apiKey: process.env.SAFE_API_KEY
+    });
+}
+async function getSafeAccountByOwner(safeAddr, owner, deployedOn, apiKitFactory = getApiKit) {
+    const getAccountFromChain = async ([chainId, ...remainingChainIds], hasRequestFailed = false) => {
+        if (chainId === undefined)
+            return { account: null, failed: hasRequestFailed };
+        const apiKit = apiKitFactory(chainId);
+        try {
+            const safeInfo = await (0, with_timeout_1.withTimeout)(() => apiKit.getSafeInfo(safeAddr), {
+                timeoutMs: safe_1.SAFE_API_TIMEOUT_MS,
+                message: `Safe API: get Safe info timed out after ${safe_1.SAFE_API_TIMEOUT_MS}ms`
+            });
+            const address = (0, ethers_1.getAddress)(safeAddr.toLowerCase());
+            const owners = safeInfo.owners.map((safeOwner) => (0, ethers_1.getAddress)(safeOwner.toLowerCase()));
+            if (!owners.some((safeOwner) => safeOwner === owner)) {
+                return getAccountFromChain(remainingChainIds, hasRequestFailed);
+            }
+            const safeCreationInfo = await (0, with_timeout_1.withTimeout)(() => apiKit.getSafeCreationInfo(safeAddr), {
+                timeoutMs: safe_1.SAFE_API_TIMEOUT_MS,
+                message: `Safe API: get Safe creation info timed out after ${safe_1.SAFE_API_TIMEOUT_MS}ms`
+            });
+            return {
+                account: {
+                    addr: address,
+                    associatedKeys: owners,
+                    initialPrivileges: owners.map((safeOwner) => [safeOwner, '0x01']),
+                    creation: null,
+                    safeCreation: {
+                        factoryAddr: safeCreationInfo.factoryAddress,
+                        singleton: safeCreationInfo.singleton,
+                        setupData: safeCreationInfo.setupData,
+                        saltNonce: safeCreationInfo.saltNonce
+                            ? (0, ethers_1.toBeHex)(BigInt(safeCreationInfo.saltNonce), 32)
+                            : (0, ethers_1.toBeHex)(0, 32)
+                    },
+                    preferences: {
+                        label: 'Safe',
+                        pfp: address
+                    },
+                    deployedOn
+                },
+                failed: false
+            };
+        }
+        catch (error) {
+            console.error(`Failed to retrieve Safe account ${safeAddr} on network ${chainId.toString()}`, error);
+            return getAccountFromChain(remainingChainIds, true);
+        }
     };
+    return getAccountFromChain(deployedOn);
 }
 async function getCalculatedSafeAddress(creation, provider) {
-    const salt = (0, ethers_1.keccak256)((0, ethers_1.concat)([(0, ethers_1.keccak256)(creation.setupData), (0, ethers_1.zeroPadValue)((0, ethers_1.toBeHex)(creation.saltNonce || 0), 32)]));
+    return getCalculatedSafeAddressFromCreation({
+        factoryAddr: creation.factoryAddress,
+        singleton: creation.singleton,
+        setupData: creation.setupData,
+        saltNonce: (0, ethers_1.toBeHex)(BigInt(creation.saltNonce || 0), 32)
+    }, provider);
+}
+async function getCalculatedSafeAddressFromCreation(creation, provider) {
+    const salt = (0, ethers_1.keccak256)((0, ethers_1.concat)([(0, ethers_1.keccak256)(creation.setupData), (0, ethers_1.zeroPadValue)(creation.saltNonce, 32)]));
     const factoryAbi = ['function proxyCreationCode() view returns (bytes)'];
-    const factory = new ethers_1.Contract(creation.factoryAddress, factoryAbi, provider);
+    const factory = new ethers_1.Contract(creation.factoryAddr, factoryAbi, provider);
     let proxyCreationCode;
     try {
         proxyCreationCode = await factory.proxyCreationCode();
     }
     catch (e) {
-        console.error(`failed to call proxyCreationCode on Safe factory with addr: ${creation.factoryAddress}`);
+        console.error(`failed to call proxyCreationCode on Safe factory with addr: ${creation.factoryAddr}`, e);
         return null;
     }
     const abiCoder = new ethers_1.AbiCoder();
@@ -86,7 +118,165 @@ async function getCalculatedSafeAddress(creation, provider) {
         proxyCreationCode,
         abiCoder.encode(['address'], [creation.singleton])
     ]);
-    return (0, ethers_1.getCreate2Address)(creation.factoryAddress, salt, (0, ethers_1.keccak256)(bytecode));
+    return (0, ethers_1.getCreate2Address)(creation.factoryAddr, salt, (0, ethers_1.keccak256)(bytecode));
+}
+const safeProxyFactoryInterface = new ethers_1.Interface([
+    'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)',
+    // v1.5.0+: calls createProxyWithNonce internally, so it uses the same salt and derives the
+    // same address, which makes its deployment data reusable on other chains
+    'function createProxyWithNonceL2(address _singleton, bytes initializer, uint256 saltNonce)'
+]);
+/**
+ * Factory functions whose deployment data can be replayed on other chains. Chain specific and
+ * callback deployments are intentionally excluded as they don't derive the same address elsewhere.
+ */
+const crossChainSafeDeployFunctions = ['createProxyWithNonce', 'createProxyWithNonceL2'];
+const getSafeProxyFactorySelector = (functionName) => safeProxyFactoryInterface.getFunction(functionName).selector.slice(2);
+const proxyCreationTopic = (0, ethers_1.id)('ProxyCreation(address,address)');
+/** Returns whether all fields required to redeploy a Safe are available. */
+function hasCompleteSafeCreationData(creation) {
+    return !!(creation?.factoryAddr &&
+        creation.factoryAddr !== '0x' &&
+        creation.singleton &&
+        creation.singleton !== '0x' &&
+        creation.setupData &&
+        creation.setupData !== '0x' &&
+        creation.saltNonce &&
+        creation.saltNonce !== '0x');
+}
+function decodeSafeDeploymentCalls(transactionData, factoryAddr, functionName) {
+    const safeProxyFactorySelector = getSafeProxyFactorySelector(functionName);
+    const normalizedTransactionData = transactionData.toLowerCase();
+    const deploymentData = [];
+    let selectorIndex = normalizedTransactionData.indexOf(safeProxyFactorySelector);
+    while (selectorIndex !== -1) {
+        try {
+            const [singleton, setupData, saltNonce] = safeProxyFactoryInterface.decodeFunctionData(functionName, `0x${transactionData.slice(selectorIndex)}`);
+            deploymentData.push({
+                factoryAddr,
+                singleton: (0, ethers_1.getAddress)(singleton),
+                setupData: (0, ethers_1.hexlify)(setupData),
+                saltNonce: (0, ethers_1.toBeHex)(saltNonce, 32)
+            });
+        }
+        catch {
+            // The selector can occur in unrelated calldata. Continue looking for a valid deployment call.
+        }
+        selectorIndex = normalizedTransactionData.indexOf(safeProxyFactorySelector, selectorIndex + safeProxyFactorySelector.length);
+    }
+    return deploymentData;
+}
+function decodeSafeDeploymentData(transactionData, factoryAddr) {
+    return crossChainSafeDeployFunctions.flatMap((functionName) => decodeSafeDeploymentCalls(transactionData, factoryAddr, functionName));
+}
+/**
+ * Finds the Safe factory that deployed safeAddr. Uses transaction.to when the factory was called
+ * directly; otherwise locates the ProxyCreation event emitted for safeAddr in the deploy receipt,
+ * which works regardless of how the factory call was wrapped (4337, MultiSend, relayers, etc.)
+ */
+async function findFactoryAddr(transaction, safeAddr, provider) {
+    // lucky guess: if the call is to the factory, just take it directly
+    if (transaction.to &&
+        crossChainSafeDeployFunctions.some((functionName) => transaction.data.toLowerCase().startsWith(`0x${getSafeProxyFactorySelector(functionName)}`))) {
+        return (0, ethers_1.getAddress)(transaction.to);
+    }
+    // take the receipt, find the deploy log and take the factory from there
+    const receipt = await provider.getTransactionReceipt(transaction.hash).catch((e) => e);
+    if (receipt instanceof Error) {
+        console.error('failed to fetch the Safe deploy receipt', receipt);
+        return null;
+    }
+    if (!receipt)
+        return null;
+    const paddedSafeAddr = (0, ethers_1.zeroPadValue)(safeAddr, 32).toLowerCase();
+    const proxyCreationLog = receipt.logs.find((log) => log.topics[0] === proxyCreationTopic &&
+        // v1.4.1+ indexes proxy (topics[1]); v1.3.0 has it as the first word of data
+        (log.topics[1]?.toLowerCase() === paddedSafeAddr ||
+            log.data.toLowerCase().startsWith(paddedSafeAddr)));
+    return proxyCreationLog ? (0, ethers_1.getAddress)(proxyCreationLog.address) : null;
+}
+/**
+ * Returns the Safe creation data available from the Safe Transaction Service, recovering missing
+ * fields from the validated deployment transaction when possible.
+ */
+async function findDeployData(safeAddr, chainId, provider, apiKitFactory = getApiKit) {
+    const creationInfo = await (0, with_timeout_1.withTimeout)(() => apiKitFactory(chainId).getSafeCreationInfo(safeAddr), {
+        timeoutMs: safe_1.SAFE_API_TIMEOUT_MS,
+        message: `Safe API: get Safe creation info timed out after ${safe_1.SAFE_API_TIMEOUT_MS}ms`
+    }).catch((e) => e);
+    // on timeout or problems with the Safe API, return an error
+    // the caller should not proceed in this case
+    if (creationInfo instanceof Error)
+        return creationInfo;
+    const safeCreation = {
+        factoryAddr: (creationInfo.factoryAddress || '0x'),
+        singleton: (creationInfo.singleton || '0x'),
+        setupData: (creationInfo.setupData || '0x'),
+        saltNonce: creationInfo.saltNonce !== null && creationInfo.saltNonce !== undefined
+            ? (0, ethers_1.toBeHex)(BigInt(creationInfo.saltNonce), 32)
+            : '0x'
+    };
+    if (hasCompleteSafeCreationData(safeCreation))
+        return safeCreation;
+    // if there's no transactionHash, we cannot find additional data,
+    // but we pass back the found safeCreation until now
+    if (!creationInfo.transactionHash)
+        return safeCreation;
+    const transaction = await provider
+        .getTransaction(creationInfo.transactionHash)
+        .catch((e) => e);
+    // if the provider step fails, we cannot add additional data,
+    // but we still pass back the found safeCreation until now
+    if (transaction instanceof Error || !transaction?.data)
+        return safeCreation;
+    // if factoryAddr is missing for whatever reason, try to locate it
+    // from the transaction itself
+    let factoryAddr = safeCreation.factoryAddr;
+    if (factoryAddr === '0x') {
+        factoryAddr = (await findFactoryAddr(transaction, safeAddr, provider)) ?? '0x';
+    }
+    // if we cannot locate the factoryAddr, we return the data and move on
+    if (factoryAddr === '0x')
+        return safeCreation;
+    factoryAddr = (0, ethers_1.getAddress)(factoryAddr);
+    const deploymentData = decodeSafeDeploymentData(transaction.data, factoryAddr);
+    for (const candidate of deploymentData) {
+        const calculatedAddress = await getCalculatedSafeAddressFromCreation(candidate, provider);
+        if (calculatedAddress?.toLowerCase() !== safeAddr.toLowerCase())
+            continue;
+        return candidate;
+    }
+    return safeCreation;
+}
+/**
+ * Builds a Safe deployment call only when the stored creation data derives the imported address
+ * and the configured singleton is deployed on the target network.
+ */
+async function getSafeDeploymentCall(account, provider) {
+    if (!account.safeCreation)
+        return null;
+    try {
+        const calculatedAddress = await getCalculatedSafeAddressFromCreation(account.safeCreation, provider);
+        if (!calculatedAddress || calculatedAddress.toLowerCase() !== account.addr.toLowerCase()) {
+            return null;
+        }
+        const singletonCode = await provider.getCode(account.safeCreation.singleton);
+        if (singletonCode === '0x')
+            return null;
+        return {
+            to: account.safeCreation.factoryAddr,
+            value: 0n,
+            data: safeProxyFactoryInterface.encodeFunctionData('createProxyWithNonce', [
+                account.safeCreation.singleton,
+                account.safeCreation.setupData,
+                account.safeCreation.saltNonce
+            ])
+        };
+    }
+    catch (error) {
+        console.error(`failed to build Safe deployment call for ${account.addr}`, error);
+        return null;
+    }
 }
 /**
  * The setup() method is the same for v1.3, 1.4.1, 1.5. We decode it
@@ -103,64 +293,10 @@ function decodeSetupData(setupData) {
         decoded = setupMethodInterface.decodeFunctionData('setup', setupData);
     }
     catch (e) {
-        console.error('failed to decode the Safe setup data');
+        console.error('failed to decode the Safe setup data', e);
         return [];
     }
     return Object.keys(decoded[0]).map((key) => decoded[0][key]);
-}
-/**
- * Construct a Safe txn for signing
- */
-function getSafeTxn(op, state) {
-    // todo: we're blindly trusting the returned txn from Safe Global, is this OK?
-    if (op.safeTx) {
-        return {
-            to: op.safeTx.to,
-            value: (0, ethers_1.toBeHex)(op.safeTx.value),
-            data: op.safeTx.data ? op.safeTx.data : '0x',
-            operation: op.safeTx.operation,
-            safeTxGas: (0, ethers_1.toBeHex)(op.safeTx.safeTxGas),
-            baseGas: (0, ethers_1.toBeHex)(op.safeTx.baseGas),
-            gasPrice: (0, ethers_1.toBeHex)(op.safeTx.gasPrice),
-            gasToken: op.safeTx.gasToken,
-            refundReceiver: op.safeTx.refundReceiver ? op.safeTx.refundReceiver : '0x',
-            nonce: (0, ethers_1.toBeHex)(op.safeTx.nonce)
-        };
-    }
-    const coder = new ethers_1.AbiCoder();
-    const { to, value, data, operation } = encodeCalls(op);
-    return {
-        to: to,
-        value: (0, ethers_1.toBeHex)(value),
-        data: data,
-        operation,
-        safeTxGas: (0, ethers_1.toBeHex)(0),
-        baseGas: (0, ethers_1.toBeHex)(0),
-        gasPrice: (0, ethers_1.toBeHex)(0),
-        gasToken: ethers_1.ZeroAddress,
-        refundReceiver: ethers_1.ZeroAddress,
-        nonce: (0, ethers_1.toBeHex)(op.nonce || state.nonce || 0n)
-    };
-}
-function getSafeBroadcastTxn(op, state) {
-    const exec = new ethers_1.Interface(safe_1.execTransactionAbi);
-    const safeTxn = getSafeTxn(op, state);
-    return {
-        to: op.accountAddr,
-        value: 0n,
-        data: exec.encodeFunctionData('execTransaction', [
-            safeTxn.to,
-            safeTxn.value,
-            safeTxn.data,
-            safeTxn.operation,
-            safeTxn.safeTxGas,
-            safeTxn.baseGas,
-            safeTxn.gasPrice,
-            safeTxn.gasToken,
-            safeTxn.refundReceiver,
-            op.signature
-        ])
-    };
 }
 /**
  * In Safe, the signatures need to be in order, starting with
@@ -178,10 +314,7 @@ function getSafeTxnHash(typedData) {
     return `0x${eth_sig_util_1.TypedDataUtils.eip712Hash((0, signMessage_1.adaptTypedMessageForMetaMaskSigUtil)({ ...typedData }), eth_sig_util_1.SignTypedDataVersion.V4).toString('hex')}`;
 }
 async function propose(txn, chainId, safeAddress, owner, ownerSig, safeTxHash) {
-    const apiKit = new api_kit_1.default({
-        chainId,
-        apiKey: process.env.SAFE_API_KEY
-    });
+    const apiKit = getApiKit(chainId);
     const proposeTransactionProps = {
         safeAddress: (0, ethers_1.getAddress)(safeAddress),
         safeTxHash: safeTxHash,
@@ -200,28 +333,42 @@ async function propose(txn, chainId, safeAddress, owner, ownerSig, safeTxHash) {
     return apiKit.proposeTransaction(proposeTransactionProps);
 }
 async function confirm(chainId, ownerSig, safeTxHash) {
-    const apiKit = new api_kit_1.default({
-        chainId,
-        apiKey: process.env.SAFE_API_KEY
-    });
+    const apiKit = getApiKit(chainId);
     return apiKit.confirmTransaction(safeTxHash, ownerSig);
 }
-async function addMessage(chainId, safeAddress, message, signature) {
-    const apiKit = new api_kit_1.default({
-        chainId,
-        apiKey: process.env.SAFE_API_KEY
-    });
-    return apiKit.addMessage(safeAddress, {
-        message,
+async function addMessage(chainId, safeAddress, message, signature, origin) {
+    const apiKit = getApiKit(chainId);
+    // `origin` is a free-form field the Safe Transaction Service persists and returns
+    // on the message. api-kit doesn't type it, but it forwards the options as the POST
+    // body verbatim, so we widen the payload to carry it through.
+    const options = {
+        message: normalizeSafeGlobalMessage(message),
         signature
-    });
+    };
+    if (origin)
+        options.origin = origin;
+    return apiKit.addMessage(safeAddress, options);
+}
+function normalizeSafeGlobalMessage(message) {
+    if (typeof message === 'string')
+        return message;
+    const chainId = message.domain.chainId;
+    if (typeof chainId !== 'bigint')
+        return message;
+    return {
+        ...message,
+        domain: {
+            ...message.domain,
+            chainId: chainId.toString()
+        }
+    };
 }
 async function getMessage({ chainId, threshold, messageHash }) {
-    const apiKit = new api_kit_1.default({
-        chainId: chainId,
-        apiKey: process.env.SAFE_API_KEY
+    const apiKit = getApiKit(chainId);
+    const msg = await apiKit.getMessage(messageHash).catch((e) => {
+        console.log('safe message not found', e);
+        return null;
     });
-    const msg = await apiKit.getMessage(messageHash).catch((e) => null);
     if (!msg)
         return null;
     return {
@@ -230,17 +377,11 @@ async function getMessage({ chainId, threshold, messageHash }) {
     };
 }
 async function addMessageSignature(chainId, hash, signature) {
-    const apiKit = new api_kit_1.default({
-        chainId,
-        apiKey: process.env.SAFE_API_KEY
-    });
+    const apiKit = getApiKit(chainId);
     return apiKit.addMessageSignature(hash, signature);
 }
 async function getPendingTransactions(chainId, safeAddress) {
-    const apiKit = new api_kit_1.default({
-        chainId,
-        apiKey: process.env.SAFE_API_KEY
-    });
+    const apiKit = getApiKit(chainId);
     const response = await apiKit.getPendingTransactions(safeAddress, {
         ordering: 'nonce'
     });
@@ -254,10 +395,7 @@ async function getPendingTransactions(chainId, safeAddress) {
  * So we fetch the newest 15 and filter them on a higher level
  */
 async function getLatestMessages(chainId, safeAddress) {
-    const apiKit = new api_kit_1.default({
-        chainId,
-        apiKey: process.env.SAFE_API_KEY
-    });
+    const apiKit = getApiKit(chainId);
     const response = await apiKit.getMessages(safeAddress, {
         ordering: '-created',
         limit: 15
@@ -267,13 +405,6 @@ async function getLatestMessages(chainId, safeAddress) {
     // filter messages older than one week
     const finalRes = response.results.filter((m) => new Date(m.created).getTime() + oneWeek > currentTime);
     return { ...response, results: finalRes, chainId, type: 'message' };
-}
-async function getTransaction(chainId, safeTxnHash) {
-    const apiKit = new api_kit_1.default({
-        chainId,
-        apiKey: process.env.SAFE_API_KEY
-    });
-    return apiKit.getTransaction(safeTxnHash);
 }
 async function fetchAllPending(networks, safeAddr) {
     const results = {};
@@ -296,30 +427,6 @@ async function fetchAllPending(networks, safeAddr) {
     }
     return results;
 }
-function decodeMultiSend(transactionsHex) {
-    const bytes = (0, ethers_1.getBytes)(transactionsHex);
-    let i = 0;
-    const results = [];
-    while (i < bytes.length) {
-        const operation = bytes[i];
-        i += 1;
-        const to = (0, ethers_1.hexlify)(bytes.slice(i, i + 20));
-        i += 20;
-        const value = BigInt((0, ethers_1.hexlify)(bytes.slice(i, i + 32)));
-        i += 32;
-        const dataLength = Number(BigInt((0, ethers_1.hexlify)(bytes.slice(i, i + 32))));
-        i += 32;
-        const data = (0, ethers_1.hexlify)(bytes.slice(i, i + dataLength));
-        i += dataLength;
-        results.push({
-            operation,
-            to,
-            value,
-            data
-        });
-    }
-    return results;
-}
 function toCallsUserRequest(safeAddr, response) {
     const userRequests = [];
     Object.keys(response).forEach((chainId) => {
@@ -329,20 +436,24 @@ function toCallsUserRequest(safeAddr, response) {
             try {
                 // try to decode the data to check if it's a batch
                 // if it is, use it; otherwise, construct a single call reqx
-                const multisendInterface = new ethers_1.Interface(multiCallAbi);
+                const multisendInterface = new ethers_1.Interface(helpers_1.multiCallAbi);
                 const multiSendCall = multisendInterface.decodeFunctionData('multiSend', txn.data);
-                calls = decodeMultiSend(multiSendCall[0]).map((call) => ({
+                const decodedCalls = (0, helpers_1.decodeMultiSend)(multiSendCall[0]);
+                if (!decodedCalls.every((call) => call.success)) {
+                    throw new Error('failed to decode one or more multiSend calls');
+                }
+                calls = decodedCalls.map((call) => ({
                     to: call.to,
                     value: call.value,
                     data: call.data
                 }));
             }
-            catch (e) {
+            catch {
                 // this just means it's not a batch
                 calls = [{ to: txn.to, value: BigInt(txn.value), data: txn.data || '0x' }];
             }
             const signature = txn.confirmations
-                ? (0, ethers_1.concat)(txn.confirmations?.map((c) => c.signature))
+                ? sortSigs(txn.confirmations.map((c) => c.signature), txn.safeTxHash, txn.confirmations)
                 : null;
             if (!signature)
                 return;
@@ -379,6 +490,7 @@ function toSigMessageUserRequests(response) {
                 : null;
             if (!signature)
                 return;
+            const { name: dappName, url: dappUrl } = (0, helpers_1.parseSafeMessageOrigin)(message.origin);
             userRequests.push({
                 type: 'safeSignMessageRequest',
                 params: {
@@ -390,7 +502,9 @@ function toSigMessageUserRequests(response) {
                     messageHash: message.messageHash,
                     signature: sortSigs(message.confirmations.map((c) => c.signature), message.messageHash, message.confirmations),
                     created: new Date(message.created).getTime(),
-                    signatures: message.confirmations.map((c) => c.signature)
+                    signatures: message.confirmations.map((c) => c.signature),
+                    dappName,
+                    dappUrl
                 },
                 isConfirmed: !!message.isConfirmed
             });
@@ -427,6 +541,13 @@ function getAlreadySignedOwners(signature, hash, safeTx) {
 function getImportedSignersThatHaveNotSigned(signed, importedOwners) {
     return importedOwners.filter((o) => !signed.includes(o));
 }
+/**
+ * Whether the imported owners of a Safe can reach its threshold with hot (keystore held) keys
+ * alone. Hardware wallets and cards confirm on the device, so they do not count towards it.
+ */
+function canHotOwnersMeetSafeThreshold(importedOwners, threshold) {
+    return importedOwners.filter(({ type }) => type === 'internal').length >= threshold;
+}
 function getSigs(signature) {
     if (!signature)
         return [];
@@ -447,47 +568,60 @@ function sortSigs(signatures, hash, confirmations) {
     return (0, ethers_1.concat)(sorted.map((s) => s.sig));
 }
 /**
- * Safe requests may have multiple "call" ones with the same nonce
+ * Fetch the Safe transactions of an account on each of the passed chains.
+ * `minNonce` is the smallest nonce we are still waiting on for that chain -
+ * transactions below it can no longer execute, so the API does not have to
+ * return them.
  */
-function getSameNonceRequests(requests) {
-    return requests.reduce((acc, r) => {
-        const key = r.signAccountOp.accountOp.nonce?.toString() || '0';
-        if (!acc[key]) {
-            acc[key] = [];
-        }
-        acc[key].push(r);
-        return acc;
-    }, {});
-}
-async function fetchExecutedTransactions(txns) {
-    let promises = [];
+async function fetchExecutedTransactions(safeAddr, chains) {
     const results = [];
-    for (let i = 0; i < txns.length; i++) {
-        const txn = txns[i];
-        promises.push(getTransaction(txn.chainId, txn.safeTxnHash));
+    const pages = (0, paginate_1.paginate)(chains, 3);
+    for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
         // we're allowed a max of 5 req to the API per second so we
         // have to be careful - making 3 at a time from here
-        if ((i + 1) % 3 === 0 || i + 1 === txns.length) {
-            const responses = await Promise.all(promises);
-            responses.forEach((r) => {
-                if (r.transactionHash) {
+        const responses = await Promise.all(page.map(async ({ chainId, minNonce }) => {
+            const apiKit = getApiKit(chainId);
+            // @TODO this method can be used to get safe tx history
+            // @TODO make rate limit tracking for the whole library
+            // Cut the response size down: the account may have a long history, but
+            // everything below minNonce can no longer execute, so it cannot resolve a
+            // request we are waiting on. The double underscore is the filter syntax of
+            // the Safe Transaction Service, not a typo
+            const res = await apiKit
+                .getMultisigTransactions(safeAddr, {
+                ordering: 'nonce',
+                nonce__gte: minNonce
+            })
+                .catch((error) => {
+                console.log(`failed to call getMultisigTransactions on ${chainId}`, error);
+                return null;
+            });
+            return res;
+        }));
+        responses
+            .filter((response) => response !== null)
+            .forEach(({ results: txns }) => {
+            txns.forEach((tx) => {
+                if (tx.transactionHash) {
                     results.push({
-                        safeTxnHash: r.safeTxHash,
-                        transactionHash: r.transactionHash,
-                        nonce: r.nonce
+                        safeTxnHash: tx.safeTxHash,
+                        transactionHash: tx.transactionHash,
+                        nonce: tx.nonce
                     });
                 }
                 else {
                     results.push({
-                        safeTxnHash: r.safeTxHash,
-                        nonce: r.nonce,
-                        confirmations: r.confirmations
+                        safeTxnHash: tx.safeTxHash,
+                        nonce: tx.nonce,
+                        confirmations: tx.confirmations
                     });
                 }
             });
+        });
+        // no need to throttle after the last page, nothing follows it
+        if (i + 1 < pages.length)
             await (0, wait_1.default)(1100);
-            promises = [];
-        }
     }
     return results;
 }

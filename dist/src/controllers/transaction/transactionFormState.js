@@ -625,7 +625,7 @@ class TransactionFormState extends eventEmitter_1.default {
             return DEFAULT_VALIDATION_FORM_MSGS;
         const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS;
         if (this.#humanizerInfo && this.#selectedAccountData) {
-            validationFormMsgsNew.recipientAddress = (0, validations_1.validateSendTransferAddress)(this.recipientAddress, this.#selectedAccountData.addr, this.isRecipientAddressUnknownAgreed, this.isRecipientAddressUnknown, this.isRecipientHumanizerKnownTokenOrSmartContract, !!this.addressState.resolvedAddress, this.addressState.isDomainResolving, this.dependencies.networks.networks, this.dependencies.accounts.accountStates, this.dependencies.accounts.accounts.find((a) => a.addr === this.recipientAddress), this.toChainId ? BigInt(this.toChainId) : undefined);
+            validationFormMsgsNew.recipientAddress = (0, validations_1.validateSendTransferAddress)(this.recipientAddress, this.#selectedAccountData.addr, this.isRecipientAddressUnknownAgreed, this.isRecipientAddressUnknown, this.isRecipientHumanizerKnownTokenOrSmartContract, this.addressState.isDomainResolving, this.dependencies.networks.networks, this.dependencies.accounts.accountStates, this.dependencies.accounts.accounts.find((a) => a.addr === this.recipientAddress), this.toChainId ? BigInt(this.toChainId) : undefined);
         }
         return validationFormMsgsNew;
     }

@@ -1,4 +1,4 @@
-import { Account, AccountOnchainState, AccountOnPage, AccountPreferences, AccountStates, ImportStatus } from '../../interfaces/account';
+import { Account, AccountImportInfo, AccountOnchainState, AccountPreferences, AccountStates, DerivedAccount } from '../../interfaces/account';
 import { KeyIterator } from '../../interfaces/keyIterator';
 import { Key } from '../../interfaces/keystore';
 import { Network } from '../../interfaces/network';
@@ -51,15 +51,24 @@ export declare const getAccountImportStatus: ({ account, alreadyImportedAccounts
     account: Account;
     alreadyImportedAccounts: Account[];
     keys: Key[];
-    accountsOnPage?: Omit<AccountOnPage, "importStatus">[];
+    accountsOnPage?: DerivedAccount[];
     keyIteratorType?: KeyIterator["type"];
-}) => ImportStatus;
+}) => AccountImportInfo;
 export declare const getDefaultAccountPreferences: (accountAddr: string, prevAccounts: Account[], i?: number) => AccountPreferences;
 export declare function getUniqueAccountsArray(accounts: Account[]): Account[];
 export declare function isBasicAccount(account: Account, state: AccountOnchainState): boolean;
 export declare function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean;
 export declare function canBecomeSmarterOnChain(network: Network, acc: Account, state: AccountOnchainState): boolean;
+/**
+ * Whether an account should be upgraded to a smart account on its own, the
+ * moment something would benefit from it (batching calls, for example).
+ * Accounts that can only be upgraded by a key type from
+ * `KEY_TYPES_NOT_MADE_SMARTER_AUTOMATICALLY` stay plain EOAs until the user asks
+ * for the upgrade from the account's smart settings.
+ */
+export declare function shouldBecomeSmarterAutomatically(accKeys: Key[]): boolean;
 export declare function hasBecomeSmarter(account: Account, state: AccountStates): boolean;
+export declare function canOrHasBecomeSmarter(account: Account, state: AccountStates, keys: Key[]): boolean;
 export declare function shouldUseStateOverrideForEOA(account: Account, state: AccountOnchainState): boolean;
 export {};
 //# sourceMappingURL=account.d.ts.map

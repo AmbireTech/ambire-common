@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers';
+import { JsonRpcProvider, TypedDataDomain } from 'ethers';
 import { CallTuple } from '../accountOp/types';
 import { MessageTypes } from '@metamask/eth-sig-util';
 import { EIP7702Auth } from '../../consts/7702';
@@ -11,7 +11,17 @@ import { EIP7702Signature } from '../../interfaces/signatures';
 import { PlainTextMessageUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest';
 import { AccountOp } from '../accountOp/accountOp';
 import { PackedUserOperation } from '../userOperation/types';
+import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp';
 export declare const EIP_1271_NOT_SUPPORTED_BY: string[];
+export declare const AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE = "Signing an AmbireOperation is not allowed";
+/**
+ * Check if the typedData's intention is to target the current account
+ */
+export declare const isCallToSelfOrAmbireOp: (typedData: {
+    primaryType: string;
+    types: Record<string, unknown>;
+    domain: TypedDataDomain;
+}, account?: Account | null) => boolean;
 /**
  * For Unprotected signatures, we need to append 00 at the end
  * for ambire to recognize it
@@ -30,16 +40,8 @@ export declare const wrapStandard: (signature: string) => string;
  * {sig+mode}{wallet_32bytes}{mode}
  */
 export declare const wrapWallet: (signature: string, walletAddr: string) => string;
-interface AmbireReadableOperation {
-    addr: Hex;
-    chainId: bigint;
-    nonce: bigint;
-    calls: {
-        to: Hex;
-        value: bigint;
-        data: Hex;
-    }[];
-}
+type WithHardwareWalletSigningRequest = <T>(request: HardwareWalletSigningRequest, sign: () => Promise<T>) => Promise<T>;
+export declare const doesEIP712MessageContainAddress: (message: TypedMessageUserRequest["meta"]["params"], address: string) => boolean;
 export declare const adaptTypedMessageForMetaMaskSigUtil: (typedMessage: TypedMessageUserRequest["meta"]["params"]) => {
     types: MessageTypes;
     domain: {
@@ -52,7 +54,6 @@ export declare const adaptTypedMessageForMetaMaskSigUtil: (typedMessage: TypedMe
     message: Record<string, any>;
     primaryType: keyof Record<string, Array<import("ethers").TypedDataField>>;
 };
-export declare const getAmbireReadableTypedData: (chainId: bigint, verifyingAddr: string, v1Execute: AmbireReadableOperation) => TypedMessageUserRequest["meta"]["params"];
 /**
  * Return the typed data for EIP-712 sign
  */
@@ -71,39 +72,12 @@ export declare const get7702UserOpTypedData: (chainId: bigint, txns: CallTuple[]
  * @returns {string} - EIP6492 signature
  */
 export declare const wrapCounterfactualSign: (signature: string, creation: AccountCreation) => string;
-type Props = {
-    provider: JsonRpcProvider;
-    signer: string;
-    signature: string | Uint8Array;
-} & ({
-    message: string | Uint8Array;
-    typedData?: never;
-    authorization?: never;
-} | {
-    typedData: TypedMessageUserRequest['meta']['params'];
-    message?: never;
-    authorization?: never;
-} | {
-    message?: never;
-    typedData?: never;
-    authorization: Hex;
-});
-/**
- * Verifies the signature of a message using the provided signer and signature
- * via a "magic" universal validator contract using the provided provider to
- * verify the signature on-chain. The contract deploys itself within the
- * `eth_call`, tries to verify the signature using ERC-6492, ERC-1271, and
- * `ecrecover`, and returns the value to the function.
- *
- * Note: you only need to pass one of: `message` or `typedData`
- */
-export declare function verifyMessage({ provider, signer, signature, message, authorization, typedData }: Props): Promise<boolean>;
-export declare function getExecuteSignature(network: Network, accountOp: AccountOp, accountState: AccountOnchainState, signer: KeystoreSignerInterface): Promise<string>;
-export declare function getPlainTextSignature(messageHex: PlainTextMessageUserRequest['meta']['params']['message'], network: Network, account: Account, accountState: AccountOnchainState, signer: KeystoreSignerInterface, isOG?: boolean): Promise<{
+export declare function getExecuteSignature(network: Network, accountOp: AccountOp, accountState: AccountOnchainState, signer: KeystoreSignerInterface, provider?: JsonRpcProvider): Promise<string>;
+export declare function getPlainTextSignature(messageHex: PlainTextMessageUserRequest['meta']['params']['message'], network: Network, account: Account, accountState: AccountOnchainState, signer: KeystoreSignerInterface, isOG?: boolean, withHardwareWalletSigningRequest?: WithHardwareWalletSigningRequest, provider?: JsonRpcProvider): Promise<{
     signature: Hex;
     hash?: Hex;
 }>;
-export declare function getEIP712Signature(message: TypedMessageUserRequest['meta']['params'], account: Account, accountState: AccountOnchainState, signer: KeystoreSignerInterface, network: Network, isOG?: boolean): Promise<{
+export declare function getEIP712Signature(message: TypedMessageUserRequest['meta']['params'], account: Account, accountState: AccountOnchainState, signer: KeystoreSignerInterface, network: Network, isOG?: boolean, withHardwareWalletSigningRequest?: WithHardwareWalletSigningRequest, allowAmbireOperation?: boolean, provider?: JsonRpcProvider): Promise<{
     signature: Hex;
     hash?: Hex;
 }>;
@@ -113,12 +87,10 @@ export declare function getAuthorizationHash(chainId: bigint, contractAddr: Hex,
 export declare function get7702Sig(chainId: bigint, nonce: bigint, implementation: Hex, signature: EIP7702Signature): EIP7702Auth;
 export declare function getVerifyMessageSignature(signature: EIP7702Signature | string, account: Account, accountState: AccountOnchainState): Hex;
 export declare function getAppFormatted(signature: EIP7702Signature | string, account: Account, accountState: AccountOnchainState): EIP7702Signature | Hex;
-/**
- * Tries to convert an input (from a dapp) to a hex string
- */
-export declare const toPersonalSignHex: (input: string | Uint8Array | Hex) => Hex;
 export declare const getSafeTypedData: (chainId: bigint, safeAddr: Hex, safeTx: SafeTx) => TypedMessageUserRequest["meta"]["params"];
 export declare const getSafeV1TypedData: (safeAddr: Hex, safeTx: SafeTx) => TypedMessageUserRequest["meta"]["params"];
 export declare const getSafeTypedDataForIsValidSignature: (chainId: bigint, safeAddr: Hex, hash: string) => TypedMessageUserRequest["meta"]["params"];
+export declare const getEIP712Hash: (typedData: TypedMessageUserRequest["meta"]["params"]) => Hex;
+export declare const getSafeMessageTypedData: (message: PlainTextMessageUserRequest["meta"]["params"]["message"] | TypedMessageUserRequest["meta"]["params"], chainId: bigint, safeAddr: Hex) => TypedMessageUserRequest["meta"]["params"];
 export {};
 //# sourceMappingURL=signMessage.d.ts.map

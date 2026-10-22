@@ -1,4 +1,4 @@
-import { Provider } from 'ethers';
+import { JsonRpcProvider } from 'ethers';
 import { AccountOnchainState } from '../../interfaces/account';
 import { Network } from '../../interfaces/network';
 import { GasSpeeds } from '../../services/bundlers/types';
@@ -15,7 +15,7 @@ export interface Gas1559Recommendation {
     maxPriorityFeePerGas: bigint;
 }
 export type GasRecommendation = GasPriceRecommendation | Gas1559Recommendation;
-export declare function getGasPriceRecommendations(provider: Provider, network: Network, _blockTag?: string | number, getIsActive?: () => boolean): Promise<{
+export declare function getGasPriceRecommendations(provider: JsonRpcProvider, network: Network, _blockTag?: string | number, getIsActive?: () => boolean): Promise<{
     gasPrice: GasRecommendation[];
 }>;
 export declare function getProbableCallData(accountOp: AccountOp, accountState: AccountOnchainState, shouldIncludeActivatorCall: boolean): string;

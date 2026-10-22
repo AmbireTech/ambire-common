@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getNetworksWithDeFiPositionsErrorErrors = exports.getNetworksWithErrors = exports.addPortfolioError = exports.addRPCError = void 0;
+exports.getNetworksWithDeFiPositionsErrorErrors = exports.getDefiAppsErrors = exports.getNetworksWithErrors = exports.addPortfolioError = exports.addStaleBlockError = exports.addRPCError = void 0;
 const types_1 = require("../defiPositions/types");
 const portfolio_1 = require("../portfolio/portfolio");
 const TEN_MINUTES = 10 * 60 * 1000;
@@ -50,6 +50,48 @@ const addRPCError = (errors, chainId, networks) => {
     return newErrors;
 };
 exports.addRPCError = addRPCError;
+/**
+ * Tells the user that the network data we are getting is behind, so the displayed balances
+ * are the last ones we could trust. Offers switching the RPC when there is another one.
+ */
+const addStaleBlockError = (errors, network) => {
+    const newErrors = [...errors];
+    const hasMultipleRpcUrls = network.rpcUrls && network.rpcUrls.length > 1;
+    // Networks with another RPC to switch to get a banner of their own, so the action
+    // knows which network it applies to. The rest are grouped in a single banner.
+    const errorId = hasMultipleRpcUrls
+        ? `stale-block-${network.chainId.toString()}`
+        : 'portfolio-stale-block';
+    const existingError = newErrors.find((error) => error.id === errorId);
+    if (existingError) {
+        if (!existingError.networkNames.includes(network.name)) {
+            existingError.networkNames.push(network.name);
+            existingError.title = `${existingError.networkNames.join(', ')} data is behind`;
+        }
+        return newErrors;
+    }
+    const text = hasMultipleRpcUrls
+        ? "The network data we're getting is behind, so balances may be out of date. You can try selecting another RPC URL."
+        : "The network data we're getting is behind, so balances may be out of date. We keep checking and will show the new balances as soon as they arrive.";
+    newErrors.push({
+        id: errorId,
+        networkNames: [network.name],
+        type: 'error',
+        title: `${network.name} data is behind`,
+        text,
+        actions: hasMultipleRpcUrls
+            ? [
+                {
+                    label: 'Select',
+                    actionName: 'select-rpc-url',
+                    meta: { network }
+                }
+            ]
+            : undefined
+    });
+    return newErrors;
+};
+exports.addStaleBlockError = addStaleBlockError;
 const addPortfolioError = (errors, networkName, newError) => {
     const newErrors = [...errors];
     const existingError = newErrors.find((error) => error.id === newError);
@@ -119,8 +161,6 @@ const getNetworkName = (networks, chainId) => {
         networkName = 'Gas Tank';
     else if (chainId === 'rewards')
         networkName = 'Rewards';
-    else if (chainId === 'projectedRewards')
-        networkName = 'Projected Rewards';
     return networkName;
 };
 /**
@@ -148,6 +188,12 @@ const getNetworksWithErrors = ({ networks, selectedAccountPortfolioState, provid
         const isLoadingFromScratch = portfolioForNetwork?.isLoading && !isAllReady;
         if (!networkName) {
             console.error('Network name not found for network in getNetworksWithErrors', chainId);
+            return;
+        }
+        // The RPC serving older blocks freezes the portfolio, so the user is told about it
+        // right away, without the grace period the other errors have.
+        if (portfolioForNetwork?.rpcInfo?.behindBy) {
+            errors = (0, exports.addStaleBlockError)(errors, network);
             return;
         }
         // No other errors should be displayed if the portfolio is still loading
@@ -199,6 +245,29 @@ const getNetworksWithErrors = ({ networks, selectedAccountPortfolioState, provid
     return errors;
 };
 exports.getNetworksWithErrors = getNetworksWithErrors;
+/**
+ * The DeFi apps (`defiApps`) live outside of the per-network state, so they are missed by the
+ * network loops above. Their failure silently lowers the total balance, hence the dedicated check.
+ */
+const getDefiAppsErrors = (portfolioState) => {
+    const defiAppsState = portfolioState.defiApps;
+    if (!defiAppsState?.criticalError)
+        return [];
+    // The previously fetched positions are still displayed, so a recent success keeps this quiet
+    const lastSuccessfulUpdate = defiAppsState.lastSuccessfulUpdate;
+    if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)
+        return [];
+    return [
+        {
+            id: 'defi-apps',
+            type: 'error',
+            networkNames: ['DeFi apps'],
+            title: 'Failed to retrieve your positions in some DeFi apps',
+            text: 'Your total balance may be lower than it actually is. Your funds are safe.'
+        }
+    ];
+};
+exports.getDefiAppsErrors = getDefiAppsErrors;
 const getNetworksWithDeFiPositionsErrorErrors = ({ networks, portfolioState, providers, networksWithPositions }) => {
     const networkNamesWithUnknownCriticalError = [];
     const networkNamesWithAssetPriceCriticalError = [];

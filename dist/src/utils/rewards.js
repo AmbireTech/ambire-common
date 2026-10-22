@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getProjectedRewardsStatsAndToken = exports.calculateRewardsStats = void 0;
-const addresses_1 = require("../consts/addresses");
+exports.calculateRewardsStats = void 0;
 const calculateRewardsStats = (projectedRewardsResult, walletOrStkWalletTokenPrice, currentBalance, stkBalanceUsd, walletEthProvidedLiquidityInUsd) => {
     if (!projectedRewardsResult || !walletOrStkWalletTokenPrice)
         return null;
@@ -64,40 +63,4 @@ const calculateRewardsStats = (projectedRewardsResult, walletOrStkWalletTokenPri
     };
 };
 exports.calculateRewardsStats = calculateRewardsStats;
-const getProjectedRewardsStatsAndToken = (projectedRewards, walletOrStkWalletTokenPrice, currentBalance, stkBalanceUsd, walletEthProvidedLiquidityInUsd) => {
-    if (!projectedRewards)
-        return;
-    const result = projectedRewards?.result;
-    if (!result)
-        return;
-    // take the price of stkWALLET/WALLET if available from portfolio, otherwise WALLET from the relayer
-    const walletTokenPrice = walletOrStkWalletTokenPrice || result.walletPrice;
-    const data = (0, exports.calculateRewardsStats)(result, walletTokenPrice, currentBalance, stkBalanceUsd, walletEthProvidedLiquidityInUsd);
-    if (!data)
-        return;
-    let estimatedRewardsBothSeasons = data.estimatedRewards;
-    if (result.frozenRewardSeason1) {
-        estimatedRewardsBothSeasons += Math.floor(result.frozenRewardSeason1);
-    }
-    return {
-        token: {
-            chainId: BigInt(1),
-            amount: BigInt(estimatedRewardsBothSeasons) * BigInt(10 ** 18),
-            address: addresses_1.WALLET_TOKEN,
-            symbol: 'WALLET',
-            name: '$WALLET',
-            decimals: 18,
-            priceIn: [{ baseCurrency: 'usd', price: walletTokenPrice }],
-            flags: {
-                onGasTank: false,
-                rewardsType: 'wallet-projected-rewards',
-                canTopUpGasTank: false,
-                isFeeToken: false
-            },
-            marketDataIn: []
-        },
-        data
-    };
-};
-exports.getProjectedRewardsStatsAndToken = getProjectedRewardsStatsAndToken;
 //# sourceMappingURL=rewards.js.map

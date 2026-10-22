@@ -3,15 +3,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SelectedAccountController = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
-const addresses_1 = require("../../consts/addresses");
 const deploy_1 = require("../../consts/deploy");
 const account_1 = require("../../libs/account/account");
 const banners_1 = require("../../libs/banners/banners");
-const types_1 = require("../../libs/defiPositions/types");
 const errors_1 = require("../../libs/selectedAccount/errors");
 const selectedAccount_1 = require("../../libs/selectedAccount/selectedAccount");
-const rewards_1 = require("../../utils/rewards");
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+// Portfolio recalculations fire back-to-back as per-network results stream in.
+// Throttle their UI emit so the state isn't serialized on every partial tick.
+const PORTFOLIO_UPDATE_THROTTLE_MS = 100;
+// The constant is already checksummed, so an address matches it when the two agree
+// without regard to case - which needs no keccak hash of the address to find out.
+const AMBIRE_ACCOUNT_FACTORY_LOWERCASED = deploy_1.AMBIRE_ACCOUNT_FACTORY.toLowerCase();
 class SelectedAccountController extends eventEmitter_1.default {
     #storage;
     #accounts;
@@ -20,7 +23,22 @@ class SelectedAccountController extends eventEmitter_1.default {
     #networks = null;
     #providers = null;
     #banner = null;
+    #domains = null;
+    #ui = null;
+    /**
+     * The selected regular account. Also null while a Privacy Pools account is selected, so read
+     * `selectedType` to tell that apart from being signed out.
+     */
     account = null;
+    /**
+     * Seed id of the selected Privacy Pools account, or null when a regular one is selected. Lives
+     * here, not in the Privacy Pools controller, as it is part of "the selected account" to the UI
+     * (signed in, dashboard) and this state reaches a view before its first paint.
+     *
+     * Exclusive with `account`, which is null meanwhile: the account has no address, and nothing that
+     * reads `account` (portfolio, apps, signing) may act on it.
+     */
+    privacyPoolsAccountId = null;
     /**
      * Holds the selected account portfolio that is used by the UI to display the portfolio.
      * It includes the portfolio and defi positions for the selected account.
@@ -38,31 +56,36 @@ class SelectedAccountController extends eventEmitter_1.default {
     // Holds the initial load promise, so that one can wait until it completes
     initialLoadPromise;
     dismissedBannerIds = {};
-    constructor({ eventEmitterRegistry, storage, accounts, autoLogin, banner }) {
+    constructor({ eventEmitterRegistry, storage, accounts, autoLogin, banner, ui }) {
         super(eventEmitterRegistry);
         this.#storage = storage;
         this.#accounts = accounts;
         this.#autoLogin = autoLogin;
         this.#banner = banner;
+        this.#ui = ui;
         this.initialLoadPromise = this.#load().finally(() => {
             this.initialLoadPromise = undefined;
         });
     }
     async #load() {
         await this.#accounts.initialLoadPromise;
-        const [selectedAccountAddress, selectedAccountDismissedBannerIds] = await Promise.all([
+        const [selectedAccountAddress, selectedAccountDismissedBannerIds, privacyPoolsAccountId] = await Promise.all([
             this.#storage.get('selectedAccount', null),
-            this.#storage.get('selectedAccountDismissedBannerIds', {})
+            this.#storage.get('selectedAccountDismissedBannerIds', {}),
+            this.#storage.get('selectedPrivacyPoolsAccount', null)
         ]);
         this.dismissedBannerIds = selectedAccountDismissedBannerIds;
         this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null;
+        // Only when no regular account is selected, in case storage ever holds both
+        this.privacyPoolsAccountId = this.account ? null : privacyPoolsAccountId;
         this.isReady = true;
         this.emitUpdate();
     }
-    initControllers({ portfolio, networks, providers }) {
+    initControllers({ portfolio, networks, providers, domains }) {
         this.#portfolio = portfolio;
         this.#networks = networks;
         this.#providers = providers;
+        this.#domains = domains;
         this.updateSelectedAccountPortfolio(true);
         this.#updatePortfolioErrors(true);
         this.#portfolio.onUpdate(async () => {
@@ -70,6 +93,12 @@ class SelectedAccountController extends eventEmitter_1.default {
                 this.updateSelectedAccountPortfolio();
             });
         }, 'selectedAccount');
+        this.#domains.onUpdate(() => {
+            this.#debounceFunctionCallsOnSameTick('updateDomainData', () => {
+                if (this.account)
+                    this.propagateUpdate();
+            });
+        });
         this.#providers.onUpdate(() => {
             this.#debounceFunctionCallsOnSameTick('updateErrors', () => {
                 this.#updatePortfolioErrors();
@@ -89,8 +118,12 @@ class SelectedAccountController extends eventEmitter_1.default {
         this.areControllersInitialized = true;
         this.emitUpdate();
     }
-    async setAccount(account) {
-        this.account = account;
+    /** Selects a regular account or a Privacy Pools account in its place, never both. */
+    async select(selection) {
+        // Both are set before the update goes out, so the UI never sees a mix of the two
+        this.account = selection && 'account' in selection ? selection.account : null;
+        this.privacyPoolsAccountId =
+            selection && 'privacyPoolsSeedId' in selection ? selection.privacyPoolsSeedId : null;
         this.balanceAffectingErrors = [];
         this.resetSelectedAccountPortfolio({ skipUpdate: true });
         const isStateWithOutdatedNetworks = this.account &&
@@ -106,12 +139,31 @@ class SelectedAccountController extends eventEmitter_1.default {
             clearTimeout(this.#portfolioLoadingTimeout);
         this.#portfolioLoadingTimeout = null;
         this.emitUpdate();
-        if (!account) {
+        await this.#persistSelection();
+    }
+    get selectedType() {
+        if (this.account)
+            return 'regular';
+        if (this.privacyPoolsAccountId)
+            return 'privacyPools';
+        return null;
+    }
+    // The new key is written before the other is removed: an interrupted write leaves both, and
+    // `#load` then prefers the regular account, instead of leaving neither and signing out.
+    async #persistSelection() {
+        if (this.account) {
+            // @TODO: Persist in one key once we have other accounts (like Tornado)
+            await this.#storage.set('selectedAccount', this.account.addr);
+            await this.#storage.remove('selectedPrivacyPoolsAccount');
+            return;
+        }
+        if (this.privacyPoolsAccountId) {
+            await this.#storage.set('selectedPrivacyPoolsAccount', this.privacyPoolsAccountId);
             await this.#storage.remove('selectedAccount');
+            return;
         }
-        else {
-            await this.#storage.set('selectedAccount', account.addr);
-        }
+        await this.#storage.remove('selectedAccount');
+        await this.#storage.remove('selectedPrivacyPoolsAccount');
     }
     #updateSelectedAccount(skipUpdate = false) {
         if (!this.account)
@@ -124,7 +176,8 @@ class SelectedAccountController extends eventEmitter_1.default {
             this.emitUpdate();
     }
     resetSelectedAccountPortfolio({ isManualUpdate, skipUpdate } = {}) {
-        if (!this.#portfolio || !this.account)
+        // Also runs with no regular account, so the last one's portfolio doesn't outlive it
+        if (!this.#portfolio)
             return;
         if (isManualUpdate) {
             this.#isManualUpdate = true;
@@ -138,69 +191,23 @@ class SelectedAccountController extends eventEmitter_1.default {
     updateSelectedAccountPortfolio(skipUpdate) {
         if (!this.#portfolio || !this.account)
             return;
-        const portfolioAccountState = structuredClone(this.#portfolio.getAccountPortfolioState(this.account.addr));
+        const portfolioAccountState = this.#portfolio.getAccountPortfolioState(this.account.addr);
         const newSelectedAccountPortfolio = (0, selectedAccount_1.calculateSelectedAccountPortfolio)(portfolioAccountState, this.portfolio.shouldShowPartialResult, this.#isManualUpdate);
-        // Try catch this just in case the relayer sends unexpected data or we have other errs in the calculations
-        try {
-            // Find stkWALLET or WALLET token in the latest portfolio state
-            const walletOrStkWalletTokenPrice = portfolioAccountState['1']?.result?.tokens.find(({ address }) => address === addresses_1.STK_WALLET || address === addresses_1.WALLET_TOKEN)?.priceIn?.[0]?.price;
-            const ethTokenPrice = portfolioAccountState['1']?.result?.tokens.find(({ symbol }) => symbol === 'ETH')?.priceIn?.[0]?.price;
-            const stkTokenInPortfolio = portfolioAccountState['1']?.result?.tokens.find(({ address }) => address === addresses_1.STK_WALLET);
-            const stkBalanceUsd = stkTokenInPortfolio === undefined || stkTokenInPortfolio.priceIn[0]?.price === undefined
-                ? undefined
-                : Number((0, ethers_1.formatEther)(stkTokenInPortfolio.amount)) * stkTokenInPortfolio.priceIn[0].price;
-            const walletEthProvidedLiquidityInUsd = portfolioAccountState['1']?.result?.defiPositions.positionsByProvider
-                .find((p) => p.providerName === 'Uniswap V3')
-                ?.positions.filter((p) => p.additionalData.inRange &&
-                (0, ethers_1.isAddress)(p.additionalData.pool?.id) &&
-                (0, ethers_1.getAddress)(p.additionalData.pool.id) === addresses_1.UNI_V3_WALLET_WETH_POOL)
-                .map((p) => p.assets)
-                .flat()
-                // assets in the uniswap positions can have asset type of liquidity or rewards
-                // we remove the latter because the rewards app does not fetch anything
-                // from debank, and is only able to get the assets with liquidity type for the
-                // uniswap liquidity position. To achieve minimal discrepancy between the
-                // extension and the app, we will not include assets with type Reward for the
-                // uniswap liquidity position
-                .filter((a) => a.type === types_1.AssetType.Liquidity)
-                .map((a) => {
-                const tokenPriceFromPosition = a.priceIn?.price;
-                const tokenPriceFromPortfolio = a.address === addresses_1.WALLET_TOKEN ? walletOrStkWalletTokenPrice : ethTokenPrice;
-                const tokenPriceToUse = tokenPriceFromPosition || tokenPriceFromPortfolio;
-                if (tokenPriceToUse === undefined)
-                    return undefined;
-                return tokenPriceToUse * Number((0, ethers_1.formatEther)(a.amount));
-            })
-                .reduce((a, b) => (a === undefined || b === undefined ? undefined : a + b), 0);
-            const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
-                .filter(([k]) => portfolioAccountState.projectedRewards?.result?.supportedChainIds
-                .map((n) => n.toString())
-                .includes(k))
-                .map(([, v]) => v)
-                .reduce((a, b) => a + b, 0);
-            if (portfolioAccountState.projectedRewards) {
-                const projectedRewardsData = (0, rewards_1.getProjectedRewardsStatsAndToken)(portfolioAccountState.projectedRewards, walletOrStkWalletTokenPrice, currentBalance, stkBalanceUsd, walletEthProvidedLiquidityInUsd);
-                // Calculate and add projected rewards token
-                if (projectedRewardsData) {
-                    newSelectedAccountPortfolio.tokens.push(projectedRewardsData?.token);
-                    newSelectedAccountPortfolio.projectedRewardsStats = projectedRewardsData.data;
-                }
-            }
-        }
-        catch (e) {
-            this.emitError({
-                level: 'silent',
-                message: 'Should NEVER happen: Error while calculating projected rewards stats',
-                error: e
-            });
-        }
+        newSelectedAccountPortfolio.mobileInviteKey = this.#portfolio.getMobileInviteKey(this.account.addr);
+        let justLoaded = false;
         // Reset the loading timestamp if the portfolio is ready
         if (this.#portfolioLoadingTimeout && newSelectedAccountPortfolio.isAllReady) {
+            justLoaded = true;
             clearTimeout(this.#portfolioLoadingTimeout);
             this.#portfolioLoadingTimeout = null;
         }
         // Set the loading timestamp when the portfolio starts loading
-        if (!this.#portfolioLoadingTimeout && !newSelectedAccountPortfolio.isAllReady) {
+        if (!this.#portfolioLoadingTimeout &&
+            !newSelectedAccountPortfolio.isAllReady &&
+            // Don't start the timeout until the user is on the dashboard
+            // to avoid showing the waiting too long warning on mobile when the
+            // loading has started before the user has navigated to the dashboard
+            this.#ui?.views.some((v) => v.currentRoute === 'dashboard')) {
             this.#portfolioLoadingTimeout = setTimeout(() => {
                 this.portfolio.shouldShowPartialResult = true;
                 this.updateSelectedAccountPortfolio();
@@ -227,7 +234,7 @@ class SelectedAccountController extends eventEmitter_1.default {
         }
         this.#updatePortfolioErrors(true);
         if (!skipUpdate) {
-            this.emitUpdate();
+            this.emitUpdate({ throttleMs: justLoaded ? 0 : PORTFOLIO_UPDATE_THROTTLE_MS });
         }
     }
     #debounceFunctionCallsOnSameTick(funcName, func) {
@@ -276,7 +283,8 @@ class SelectedAccountController extends eventEmitter_1.default {
                 portfolioState: this.portfolio.portfolioState,
                 providers: this.#providers.providers,
                 networksWithPositions: this.#portfolio.getNetworksWithDefiPositions(this.account.addr)
-            })
+            }),
+            ...(0, errors_1.getDefiAppsErrors)(this.portfolio.portfolioState)
         ].sort((a, b) => {
             const order = { error: 0, warning: 1 };
             return order[a.type] - order[b.type];
@@ -291,7 +299,7 @@ class SelectedAccountController extends eventEmitter_1.default {
         if (!this.#accounts.accountStates[this.account.addr]?.['1']?.isV2)
             return [];
         if (!this.account.creation ||
-            (0, ethers_1.getAddress)(this.account.creation.factoryAddr) === deploy_1.AMBIRE_ACCOUNT_FACTORY)
+            this.account.creation.factoryAddr.toLowerCase() === AMBIRE_ACCOUNT_FACTORY_LOWERCASED)
             return [];
         return [
             {
@@ -342,32 +350,70 @@ class SelectedAccountController extends eventEmitter_1.default {
         await this.#storage.set('selectedAccountDismissedBannerIds', this.dismissedBannerIds);
         this.emitUpdate();
     }
+    async dismissEnsExpiryBannerForTheSelectedAccount() {
+        if (!this.account)
+            return;
+        const expiry = this.#domains?.domains[(0, ethers_1.getAddress)(this.account.addr)]?.expiry;
+        if (!expiry)
+            return;
+        // Key the dismissal by expiry timestamp so a renewed name (new expiry) shows the banner again.
+        const dismissKey = `${this.account.addr}-${expiry.expiresAt}`;
+        if (!this.dismissedBannerIds[banners_1.ensExpiryBannerId])
+            this.dismissedBannerIds[banners_1.ensExpiryBannerId] = [];
+        if (!this.dismissedBannerIds[banners_1.ensExpiryBannerId].includes(dismissKey))
+            this.dismissedBannerIds[banners_1.ensExpiryBannerId].push(dismissKey);
+        await this.#storage.set('selectedAccountDismissedBannerIds', this.dismissedBannerIds);
+        this.emitUpdate();
+    }
     // ! IMPORTANT !
     // Banners that depend on async data from sub-controllers should be implemented
     // in the sub-controllers themselves. This is because updates in the sub-controllers
     // will not trigger emitUpdate in the MainController, therefore the banners will
     // remain the same until a subsequent update in the MainController.
     get banners() {
-        if (!this.account ||
-            !this.#networks ||
-            !this.#portfolio ||
-            !this.#networks.isInitialized ||
-            !this.portfolio.isAllReady)
+        if (!this.account)
             return [];
-        const defiPositionsCountOnDisabledNetworks = this.#portfolio.defiPositionsCountOnDisabledNetworks[this.account.addr] || {};
-        const notDismissedNetworks = this.dismissedBannerIds[banners_1.defiPositionsOnDisabledNetworksBannerId]
-            ? this.#networks.allNetworks.filter((n) => !this.dismissedBannerIds[banners_1.defiPositionsOnDisabledNetworksBannerId]?.includes(`${this.account.addr}-${n.chainId}`))
-            : this.#networks.allNetworks;
-        return (0, banners_1.getDefiPositionsOnDisabledNetworksForTheSelectedAccount)({
-            defiPositionsCountOnDisabledNetworks,
-            networks: notDismissedNetworks,
-            accountAddr: this.account.addr
-        });
+        const banners = [];
+        // ENS expiry banner
+        const ownDomainEntry = this.#domains?.domains[this.account.addr];
+        const ensExpiry = ownDomainEntry?.expiry;
+        const ensName = ownDomainEntry?.names?.ens;
+        if (ensExpiry && ensName) {
+            const dismissKey = `${this.account.addr}-${ensExpiry.expiresAt}`;
+            const isDismissed = !!this.dismissedBannerIds[banners_1.ensExpiryBannerId]?.includes(dismissKey);
+            const ensExpiryBanner = isDismissed
+                ? null
+                : (0, banners_1.getEnsExpiryBanner)({
+                    accountAddr: this.account.addr,
+                    ens: ensName,
+                    expiresAt: ensExpiry.expiresAt,
+                    gracePeriodEndsAt: ensExpiry.gracePeriodEndsAt
+                });
+            if (ensExpiryBanner)
+                banners.push(ensExpiryBanner);
+        }
+        // DeFi positions banner
+        if (this.#networks &&
+            this.#portfolio &&
+            this.#networks.isInitialized &&
+            this.portfolio.isAllReady) {
+            const defiPositionsCountOnDisabledNetworks = this.#portfolio.getDefiPositionsCountOnDisabledNetworks(this.account.addr);
+            const notDismissedNetworks = this.dismissedBannerIds[banners_1.defiPositionsOnDisabledNetworksBannerId]
+                ? this.#networks.allNetworks.filter((n) => !this.dismissedBannerIds[banners_1.defiPositionsOnDisabledNetworksBannerId]?.includes(`${this.account.addr}-${n.chainId}`))
+                : this.#networks.allNetworks;
+            banners.push(...(0, banners_1.getDefiPositionsOnDisabledNetworksForTheSelectedAccount)({
+                defiPositionsCountOnDisabledNetworks,
+                networks: notDismissedNetworks,
+                accountAddr: this.account.addr
+            }));
+        }
+        return banners;
     }
     toJSON() {
         return {
             ...this,
             ...super.toJSON(),
+            selectedType: this.selectedType,
             banners: this.banners,
             deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
             autoLoginPolicies: this.autoLoginPolicies

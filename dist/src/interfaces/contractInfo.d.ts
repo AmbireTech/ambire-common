@@ -17,15 +17,6 @@ export interface Selectors {
     } | {
         status: 'not-found';
         updatedAt: number;
-    } | {
-        status: 'loading';
-        data?: {
-            signature: string;
-        }[];
-        updatedAt: number;
-    } | {
-        status: 'fetching-disabled';
-        updatedAt: number;
     };
 }
 //# sourceMappingURL=contractInfo.d.ts.map

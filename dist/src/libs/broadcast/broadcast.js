@@ -7,13 +7,14 @@ exports.buildRawTransaction = buildRawTransaction;
 exports.broadcastTransaction = broadcastTransaction;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
+const estimate_1 = require("../estimate/estimate");
 const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
 const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
 const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
-const safe_1 = require("../../libs/safe/safe");
+const helpers_1 = require("../../libs/safe/helpers");
 const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
 const accountOp_1 = require("../accountOp/accountOp");
-const helpers_1 = require("../errorDecoder/helpers");
+const helpers_2 = require("../errorDecoder/helpers");
 const erc20interface = new ethers_1.Interface(IERC20_json_1.default.abi);
 exports.BROADCAST_OPTIONS = {
     bySelf: 'self', // standard txn
@@ -24,8 +25,8 @@ exports.BROADCAST_OPTIONS = {
     delegation: 'delegation' // txn type 4
 };
 async function waitBeforeRetry(chainId) {
-    // block time at ethereum is bigger, so we wait 3s per failures
-    await (0, wait_1.default)(chainId === 1n ? 3000 : 1500);
+    // wait a bit longer on ethereum as txn confirmations are slower
+    await (0, wait_1.default)(chainId === 1n ? 2000 : 1000);
 }
 function getByOtherEOATxnData(account, op, accountState) {
     if (accountState.isDeployed) {
@@ -49,10 +50,10 @@ function getByOtherEOATxnData(account, op, accountState) {
     };
 }
 // estimate the gas for the call
-async function estimateGas(provider, from, call, nonce, chainId, error, counter = 0) {
+async function estimateGas(provider, from, call, nonce, chainId, broadcastOption, op, error, counter = 0) {
     // this should happen only in the case of internet issues
-    if (counter > 10) {
-        throw new Error(`Failed estimating gas for broadcast${error ? `: ${(0, helpers_1.getErrorCodeStringFromReason)(error.message)}` : ''}`);
+    if (counter > 9) {
+        throw new Error(`Failed estimating gas for broadcast${error ? `: ${(0, helpers_2.getErrorCodeStringFromReason)(error.message)}` : ''}`);
     }
     const callEstimateGas = provider
         .send('eth_estimateGas', [
@@ -82,29 +83,46 @@ async function estimateGas(provider, from, call, nonce, chainId, error, counter 
             hasNonceDiscrepancyOnApproval =
                 call.data !== '0x' && !!erc20interface.decodeFunctionData('approve', call.data);
         }
-        catch (e) {
+        catch {
             hasNonceDiscrepancyOnApproval = false;
         }
     }
-    // if there's an error, wait a bit and retry
-    // the error is most likely because of an incorrect RPC pending state
+    // Sequential EOA calls can fail temporarily if the RPC pending state is stale.
     if (gasLimit instanceof Error || hasNonceDiscrepancyOnApproval) {
-        // if the gasLimit is throwing because the smart account is returning INSUFFICIENT_PRIVILEGE,
-        // return the error without retrying
-        if (gasLimit instanceof Error && gasLimit.message.includes('INSUFFICIENT_PRIVILEGE'))
-            throw gasLimit;
+        if (gasLimit instanceof Error) {
+            // Other estimation errors are deterministic, so return them immediately.
+            const isGS013 = gasLimit.message.includes('GS013');
+            const isEoaBatch = broadcastOption === exports.BROADCAST_OPTIONS.bySelf && op.calls.length > 1;
+            if (!isGS013 && !isEoaBatch)
+                throw gasLimit;
+        }
         await waitBeforeRetry(chainId);
-        return estimateGas(provider, from, call, nonce, chainId, gasLimit, counter + 1);
+        return estimateGas(provider, from, call, nonce, chainId, broadcastOption, op, gasLimit, counter + 1);
     }
-    // add a 10% overhead to prevent OOG
-    return BigInt(gasLimit) + BigInt(gasLimit) / 10n;
+    // add gas overhead to prevent OOG
+    return (0, estimate_1.getGasLimitWithOverhead)(BigInt(gasLimit));
 }
 async function getTxnData(account, op, accountState, provider, broadcastOption, nonce, call) {
     if (account.safeCreation) {
-        const safeData = (0, safe_1.getSafeBroadcastTxn)(op, accountState);
+        const safeData = op.meta?.isSafeDeploy ? op.calls[0] : (0, helpers_1.getSafeBroadcastTxn)(op, accountState);
+        if (!safeData)
+            throw new Error('Safe deployment transaction is missing');
+        const gasFeePayment = op.gasFeePayment;
+        const simulatedGasLimit = gasFeePayment.simulatedGasLimit;
+        if (gasFeePayment.isCustomGasLimit) {
+            return {
+                to: safeData.to,
+                value: safeData.value,
+                data: safeData.data,
+                gasLimit: simulatedGasLimit
+            };
+        }
+        const estimatedGasLimit = await estimateGas(provider, gasFeePayment.paidBy, safeData, nonce, op.chainId, broadcastOption, op);
         return {
-            ...safeData,
-            gasLimit: op.gasFeePayment.simulatedGasLimit
+            to: safeData.to,
+            value: safeData.value,
+            data: safeData.data,
+            gasLimit: estimatedGasLimit > simulatedGasLimit ? estimatedGasLimit : simulatedGasLimit
         };
     }
     // no need to estimate gas for delegation, it's already estimated
@@ -133,7 +151,7 @@ async function getTxnData(account, op, accountState, provider, broadcastOption, 
         // for each one seperately
         let gasLimit = op.gasFeePayment.simulatedGasLimit;
         if (op.calls.length > 1) {
-            gasLimit = await estimateGas(provider, account.addr, call, nonce, op.chainId);
+            gasLimit = await estimateGas(provider, account.addr, call, nonce, op.chainId, broadcastOption, op);
         }
         const singleCallTxn = {
             to: call.to,
@@ -145,7 +163,7 @@ async function getTxnData(account, op, accountState, provider, broadcastOption, 
     }
     if (broadcastOption === exports.BROADCAST_OPTIONS.byOtherEOA) {
         const otherEOACall = getByOtherEOATxnData(account, op, accountState);
-        const gasLimit = await estimateGas(provider, op.gasFeePayment.paidBy, otherEOACall, nonce, op.chainId);
+        const gasLimit = await estimateGas(provider, op.gasFeePayment.paidBy, otherEOACall, nonce, op.chainId, broadcastOption, op);
         return { ...otherEOACall, gasLimit };
     }
     // 7702 executeBySender

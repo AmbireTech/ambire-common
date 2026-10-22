@@ -6,6 +6,7 @@ interface BuildUserRequestParams {
     selectedToken: TokenResult;
     selectedAccount: string;
     recipientAddress: string;
+    recipientDomain: string | undefined;
     paymasterService?: PaymasterService;
     windowId?: number;
     amountInFiat?: bigint;
@@ -26,7 +27,7 @@ declare function getClaimWalletRequestParams({ selectedAccount, selectedToken, c
     calls: CallsUserRequest['signAccountOp']['accountOp']['calls'];
     meta: CallsUserRequest['meta'];
 };
-declare function getTransferRequestParams({ amount, amountInFiat, selectedToken, selectedAccount, recipientAddress: _recipientAddress, paymasterService }: BuildUserRequestParams): {
+declare function getTransferRequestParams({ amount, amountInFiat, selectedToken, selectedAccount, recipientAddress: _recipientAddress, paymasterService, recipientDomain }: BuildUserRequestParams): {
     calls: CallsUserRequest['signAccountOp']['accountOp']['calls'];
     meta: CallsUserRequest['meta'];
 } | null;

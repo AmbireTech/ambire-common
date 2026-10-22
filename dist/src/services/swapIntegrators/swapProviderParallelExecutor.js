@@ -4,15 +4,29 @@ exports.SwapProviderParallelExecutor = void 0;
 const tslib_1 = require("tslib");
 const SwapAndBridgeProviderApiError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeProviderApiError"));
 const wait_1 = tslib_1.__importStar(require("../../utils/wait"));
+const GET_SUPPORTED_CHAINS_TIMEOUT = 10000;
+const GET_TO_TOKEN_LIST_TIMEOUT = 30000;
 class SwapProviderParallelExecutor {
     id = 'parallel';
     name = 'Parallel';
     isHealthy = null;
     #providers;
+    #getFallbackSupportedChains;
+    #getDisabledProviders;
     // Added for compatibility with the type
     supportedChains = [];
-    constructor(providers) {
+    constructor(providers, getFallbackSupportedChains, getDisabledProviders = () => []) {
         this.#providers = providers;
+        this.#getFallbackSupportedChains = getFallbackSupportedChains;
+        this.#getDisabledProviders = getDisabledProviders;
+    }
+    /** Returns serializable metadata without exposing the private provider instances. */
+    getProvidersInfo() {
+        return this.#providers.map(({ id, name }) => ({ id, name }));
+    }
+    #getEnabledProviders() {
+        const disabledProviders = this.#getDisabledProviders();
+        return this.#providers.filter(({ id }) => !disabledProviders.includes(id));
     }
     /**
      * In the dual setup, we're not using the health feature as
@@ -32,7 +46,7 @@ class SwapProviderParallelExecutor {
         const MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE = 15000; // 15s
         const results = [];
         const startTime = Date.now();
-        const supportedProviders = this.#providers.filter((provider) => {
+        const supportedProviders = this.#getEnabledProviders().filter((provider) => {
             // If the request is not chainId specific, use all providers
             if (!uniqueChainIds.length)
                 return true;
@@ -54,42 +68,26 @@ class SwapProviderParallelExecutor {
         }
         const tasks = supportedProviders.map((provider) => fetchMethod(provider)
             .then((result) => ({ provider, result }))
-            .catch((err) => ({ provider, result: err })));
+            .catch((err) => ({ provider, result: err }))
+            .then((result) => {
+            results.push(result);
+            return result;
+        }));
         const waitPromise = (0, wait_1.waitWithAbort)(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE);
         const absoluteTimeout = waitPromise.promise.then(() => {
             throw new Error('Our service providers are temporarily unavailable or your internet connection is too slow.');
         });
-        const firstResult = await Promise.race([Promise.any(tasks), absoluteTimeout]);
+        await Promise.race([Promise.race(tasks), absoluteTimeout]);
         if (waitPromise.abort)
             waitPromise.abort();
-        if ('provider' in firstResult && 'result' in firstResult) {
-            results.push(firstResult);
-        }
-        const remainingTasks = supportedProviders
-            // Make sure the provider was not filtered out
-            .filter((p) => !results.some((r) => r.provider === p))
-            .map((provider) => {
-            const originalIdx = supportedProviders.indexOf(provider);
-            if (!tasks[originalIdx])
-                return null;
-            return tasks[originalIdx]
-                .then((res) => res)
-                .catch((err) => ({ provider, result: err }));
-        });
         // Figure out how long we've already waited
         const elapsed = Date.now() - startTime;
         // If first was too quick, extend wait time so total ≥ MIN_WAIT
         const remainingMinWait = Math.max(0, MIN_WAIT - elapsed);
-        const secondResult = (await Promise.race([
-            // Promise.any can't be called with an empty array
-            remainingTasks.length ? Promise.any(remainingTasks) : Promise.resolve(),
+        await Promise.race([
+            Promise.allSettled(tasks),
             (0, wait_1.default)(MAX_WAIT_AFTER_FIRST_COMPLETED + remainingMinWait)
-        ]));
-        if (secondResult) {
-            if ('provider' in secondResult && 'result' in secondResult) {
-                results.push(secondResult);
-            }
-        }
+        ]);
         const valid = results.map((r) => r.result).filter((r) => !(r instanceof Error));
         if (valid.length > 0)
             return valid.flat();
@@ -129,19 +127,99 @@ class SwapProviderParallelExecutor {
             throw new Error('Swap provider misconfiguration');
         return provider[method](...args);
     }
+    async #getSupportedChainsWithTimeout(provider) {
+        const waitPromise = (0, wait_1.waitWithAbort)(GET_SUPPORTED_CHAINS_TIMEOUT);
+        try {
+            return await Promise.race([
+                provider.getSupportedChains().catch((e) => e),
+                waitPromise.promise.then(() => new Error('Get supported chains timeout'))
+            ]);
+        }
+        finally {
+            if (waitPromise.abort)
+                waitPromise.abort();
+        }
+    }
     async getSupportedChains() {
-        const chainIds = await this.#fetchFromAll((provider) => provider.getSupportedChains().catch((e) => e));
+        const enabledProviders = this.#getEnabledProviders();
+        if (!enabledProviders.length)
+            return [];
+        const promises = enabledProviders.map((provider) => this.#getSupportedChainsWithTimeout(provider));
+        const fetchResults = await Promise.all(promises);
+        const chainIds = fetchResults
+            .filter((r) => !(r instanceof Error))
+            .flat();
         // filter duplicates
-        return [
+        const uniqueChainIds = [
             ...new Map(chainIds.map((item) => [item.chainId, item])).values()
         ];
+        // A broad fallback would reintroduce chains that may only work with a disabled provider.
+        const areAllProvidersEnabled = enabledProviders.length === this.#providers.length;
+        if (uniqueChainIds.length < 10 && this.#getFallbackSupportedChains && areAllProvidersEnabled) {
+            return this.#getFallbackSupportedChains();
+        }
+        return uniqueChainIds;
     }
-    async getToTokenList({ fromChainId, toChainId }) {
-        const toTokenList = await this.#fetchFromAll((provider) => provider.getToTokenList({ fromChainId, toChainId }).catch((e) => e), { chainIds: [fromChainId, toChainId] });
-        // filter duplicates
-        return [
-            ...new Map(toTokenList.map((item) => [`${item.chainId}-${item.address}`, item])).values()
-        ];
+    async getToTokenList({ fromChainId, toChainId, onUpdate }) {
+        const supportedProviders = this.#getEnabledProviders().filter((provider) => {
+            if (provider.areChainsSupported) {
+                return provider.areChainsSupported({ fromChainId, toChainId });
+            }
+            if (provider.supportedChains === null)
+                return true;
+            const supportedChainIds = provider.supportedChains.map(({ chainId }) => chainId);
+            return supportedChainIds.includes(fromChainId) && supportedChainIds.includes(toChainId);
+        });
+        if (!supportedProviders.length) {
+            throw new SwapAndBridgeProviderApiError_1.default(`The requested network(s) are not supported by any available service provider. Chain IDs: ${[
+                ...new Set([fromChainId, toChainId])
+            ].join(', ')}`);
+        }
+        // Kept per provider to merge in registration order, not answer order
+        const tokenListsByProvider = new Map();
+        const loadingProviders = new Set(supportedProviders);
+        let toTokenList = [];
+        const requests = supportedProviders.map(async (provider) => {
+            const waitPromise = (0, wait_1.waitWithAbort)(GET_TO_TOKEN_LIST_TIMEOUT);
+            try {
+                const result = await Promise.race([
+                    provider
+                        .getToTokenList({ fromChainId, toChainId })
+                        .catch((error) => error instanceof Error ? error : new Error('Get to token list failed')),
+                    waitPromise.promise.then(() => new Error('Get to token list timeout'))
+                ]);
+                loadingProviders.delete(provider);
+                if (!(result instanceof Error))
+                    tokenListsByProvider.set(provider, result);
+                // Nothing to report until a provider returns tokens
+                if (tokenListsByProvider.size) {
+                    toTokenList = this.#mergeTokenLists(supportedProviders.map((p) => tokenListsByProvider.get(p) || []));
+                    onUpdate?.(toTokenList, [...loadingProviders].map(({ name }) => name));
+                }
+                return result;
+            }
+            finally {
+                if (waitPromise.abort)
+                    waitPromise.abort();
+            }
+        });
+        const results = await Promise.all(requests);
+        if (!results.some((result) => !(result instanceof Error))) {
+            throw new SwapAndBridgeProviderApiError_1.default('Our service providers are currently unavailable. Please try again later.');
+        }
+        return toTokenList;
+    }
+    /** A duplicate token keeps the position and data of the first provider. */
+    #mergeTokenLists(tokenLists) {
+        const tokensById = new Map();
+        tokenLists.forEach((tokens) => {
+            tokens.forEach((token) => {
+                const tokenId = `${token.chainId}-${token.address}`;
+                if (!tokensById.has(tokenId))
+                    tokensById.set(tokenId, token);
+            });
+        });
+        return [...tokensById.values()];
     }
     async getToken({ address, chainId }) {
         const toTokens = await this.#fetchFromAll((provider) => provider.getToken({ address, chainId }).catch((e) => e), { chainIds: [chainId] });
@@ -150,7 +228,7 @@ class SwapProviderParallelExecutor {
     async startRoute(route) {
         return this.#routeTo(route.providerId, 'startRoute', route);
     }
-    async quote({ fromAsset, fromChainId, fromTokenAddress, toAsset, toChainId, toTokenAddress, fromAmount, userAddress, sort, accountNativeBalance, nativeSymbol, isWrapOrUnwrap }) {
+    async quote({ fromAsset, fromChainId, fromTokenAddress, toAsset, toChainId, toTokenAddress, fromAmount, userAddress, sort, accountNativeBalance, nativeSymbol, isWrapOrUnwrap, feePercent }) {
         const quotes = await this.#fetchFromAll((provider) => provider
             .quote({
             fromAsset,
@@ -164,7 +242,8 @@ class SwapProviderParallelExecutor {
             sort,
             accountNativeBalance,
             nativeSymbol,
-            isWrapOrUnwrap
+            isWrapOrUnwrap,
+            feePercent
         })
             .catch((e) => e), { chainIds: [fromChainId, toChainId] });
         const firstQuote = quotes[0];
@@ -173,14 +252,15 @@ class SwapProviderParallelExecutor {
             routes: quotes.map((q) => q.routes.flat()).flat()
         };
     }
-    getRouteStatus({ txHash, fromChainId, toChainId, bridge, providerId, requestId, routeId }) {
+    getRouteStatus({ txHash, fromChainId, toChainId, bridge, providerId, requestId, routeId, rawRoute }) {
         return this.#routeTo(providerId, 'getRouteStatus', {
             txHash,
             fromChainId,
             toChainId,
             bridge,
             requestId,
-            routeId
+            routeId,
+            rawRoute
         });
     }
 }

@@ -1,20 +1,33 @@
+import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp';
 import { ControllerInterface } from './controller';
 import { UserRequest } from './userRequest';
 export type IBannerController = ControllerInterface<InstanceType<typeof import('../controllers/banner/banner').BannerController>>;
 export type BannerType = 'error' | 'warning' | 'info' | 'success';
 export type BannerCategory = 'pending-to-be-signed-acc-op' | 'pending-to-be-confirmed-acc-ops' | 'successful-acc-op' | 'failed-acc-ops' | 'bridge-in-progress' | 'bridge-waiting-approval-to-resolve' | 'bridge-ready' | 'bridge-completed' | 'bridge-failed' | 'temp-seed-not-confirmed' | 'old-account';
+interface BannerRequirements {
+    minBalanceTotal?: number;
+    maxBalanceTotal?: number;
+    minTxnsTotal?: number;
+    maxTxnsTotal?: number;
+    minAppVersion?: string;
+    whitelistedAddresses?: string[];
+    shouldHaveKeys?: boolean;
+}
 export interface Banner {
     id: number | string;
     type: BannerType | MarketingBannerTypes;
     category?: BannerCategory;
     title: string;
     text?: string;
+    emoji?: string;
     actions: [Action] | [];
     dismissAction?: Action;
     meta?: {
         accountAddr?: string;
         startTime?: number;
         endTime?: number;
+        requirements?: BannerRequirements;
+        accountOpsDataForNextUpdate?: Pick<SubmittedAccountOp, 'accountAddr' | 'chainId' | 'timestamp' | 'id'>[];
         [key: string]: any;
     };
 }
@@ -75,6 +88,8 @@ export type Action = ({
 } | {
     actionName: 'update-extension-version';
 } | {
+    actionName: 'apply-ota-update';
+} | {
     actionName: 'reload-selected-account';
 } | {
     actionName: 'dismiss-7702-banner';
@@ -96,6 +111,8 @@ export type Action = ({
 } | {
     actionName: 'dismiss-defi-positions-banner';
 } | {
+    actionName: 'dismiss-ens-expiry-banner';
+} | {
     actionName: 'open-link';
     meta: {
         url: string;
@@ -104,16 +121,9 @@ export type Action = ({
     actionName: 'survey';
     meta: {
         surveyId: string;
-        requirements: {
-            minBalanceTotal?: number;
-            maxBalanceTotal?: number;
-            minTxnsTotal?: number;
-            maxTxnsTotal?: number;
-            minAppVersion?: string;
-            whitelistedAddresses?: string[];
-        };
     };
 }) & {
     label?: string;
 };
+export {};
 //# sourceMappingURL=banner.d.ts.map

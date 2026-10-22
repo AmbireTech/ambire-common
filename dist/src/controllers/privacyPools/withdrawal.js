@@ -1,0 +1,504 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PrivacyPoolsWithdrawal = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const privacy_pools_1 = require("@kohaku-eth/privacy-pools");
+const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
+const privacyPools_1 = require("../../consts/privacyPools");
+const privacyPoolsModule_1 = require("../../libs/humanizer/modules/PrivacyPools/privacyPoolsModule");
+const entrypointAssetConfig_1 = require("../../libs/privacyPools/entrypointAssetConfig");
+const estimateWithdrawal_1 = require("../../libs/privacyPools/estimateWithdrawal");
+const paymasterWithdrawal_1 = require("../../libs/privacyPools/paymasterWithdrawal");
+const sdkError_1 = require("../../libs/privacyPools/sdkError");
+const uuid_1 = require("../../utils/uuid");
+const with_timeout_1 = require("../../utils/with-timeout");
+const context_1 = require("./context");
+const errors_1 = require("./errors");
+/** After this, a proved withdrawal is shown with only its fee cap. */
+const WITHDRAWAL_ESTIMATION_TIMEOUT_MS = 8 * 1000;
+/**
+ * A proved withdrawal older than this is run again before it is sent: its gas price and the roots
+ * it was proved against are fixed in it, while the chain moves on. Like the regular Send's
+ * re-estimation interval.
+ */
+const WITHDRAWAL_RECHECK_AFTER_MS = 30 * 1000;
+/** Shown in the confirmation sheet when a proved withdrawal can no longer be sent as it is. */
+const STALE_WITHDRAWAL_MESSAGE = 'This transfer has expired. Go back to prepare it again.';
+/**
+ * The SDK's error when the paymaster fee exceeds the withdrawn amount. Matched by wording: it has
+ * no code, and arrives as a plain object (see `toPrivacyPoolsSdkError`).
+ */
+const FEE_ABOVE_AMOUNT_SDK_MESSAGE = 'Withdrawal amount too small to cover the sponsored gas fee';
+/** Makes the fee-above-amount SDK error readable; passes anything else through as an `Error`. */
+const toReadableWithdrawalError = (error) => {
+    const sdkError = (0, sdkError_1.toPrivacyPoolsSdkError)(error, 'privacyPools: withdrawal failed');
+    if (!sdkError.message.includes(FEE_ABOVE_AMOUNT_SDK_MESSAGE))
+        return sdkError;
+    return errors_1.privacyPoolsErrors.withdrawalFeeAboveAmount(sdkError);
+};
+const WITHDRAWAL_CANCELLED_MESSAGE = 'privacyPools: the withdrawal was cancelled';
+const throwIfWithdrawalCancelled = (signal) => {
+    if (signal.aborted)
+        throw new Error(WITHDRAWAL_CANCELLED_MESSAGE);
+};
+/** Waits for `promise`, but fails as soon as `signal` aborts. `promise` itself runs on. */
+const untilWithdrawalCancelled = (promise, signal) => new Promise((resolve, reject) => {
+    const onAbort = () => reject(new Error(WITHDRAWAL_CANCELLED_MESSAGE));
+    if (signal.aborted) {
+        onAbort();
+        return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+});
+/**
+ * Withdrawals from Privacy Pools accounts: proving one, checking it again while it waits, and
+ * sending it. One at a time across phrases.
+ */
+class PrivacyPoolsWithdrawal {
+    #ctx;
+    #registry;
+    #sync;
+    /** The latest withdrawal of any phrase. */
+    #operation = null;
+    /** The proved-but-unsent withdrawal. Private: it holds the proof and the signed userOp. */
+    #pendingWithdrawal = null;
+    /** Cancels the withdrawal being prepared, if any. See `dropUnsent`. */
+    #preparationAbortController = null;
+    /** The signal of the withdrawal proving now, which its proofs are cancelled by. */
+    #provingSignal = null;
+    /**
+     * Settles once the last started withdrawal preparation has stopped. The SDK cannot be stopped
+     * between proofs, nor an in-process proof midway, so a cancelled preparation may still run for a
+     * while; the next one waits for it rather than prove beside it on the same plugin.
+     */
+    #preparationQueue = Promise.resolve();
+    constructor(ctx, registry, sync) {
+        this.#ctx = ctx;
+        this.#registry = registry;
+        this.#sync = sync;
+    }
+    /** The latest withdrawal of any phrase - see `PrivacyPoolsController.operation`. */
+    get operation() {
+        return this.#operation;
+    }
+    get provingSignal() {
+        return this.#provingSignal;
+    }
+    /**
+     * The withdrawal half of `PrivacyPoolsController.prepareWithdrawal`, for an account already
+     * checked to be available.
+     */
+    async prepare({ seedId, chainId, tokenAddress, amount, recipient }) {
+        const { paymaster } = (0, context_1.getChainConfig)(chainId);
+        if (!paymaster)
+            throw errors_1.privacyPoolsErrors.withdrawalUnsupportedNetwork(chainId);
+        this.#assertBundlerIsAllowed();
+        // Not only in the form: a proof to a malformed or zero address would burn the funds
+        if (!(0, ethers_1.isAddress)(recipient) || BigInt(recipient) === 0n)
+            throw errors_1.privacyPoolsErrors.withdrawalInvalidRecipient();
+        // One at a time across phrases: only one proved withdrawal is kept
+        if (this.#isOperationInFlight())
+            throw errors_1.privacyPoolsErrors.withdrawalInFlight();
+        this.#discardPending();
+        const operation = this.#startOperation({
+            seedId,
+            chainId,
+            tokenAddress,
+            isNative: (0, privacyPools_1.isPrivacyPoolsNativeAsset)(tokenAddress),
+            amount,
+            recipient
+        });
+        const abortController = new AbortController();
+        this.#preparationAbortController = abortController;
+        const { signal } = abortController;
+        const previousPreparation = this.#preparationQueue;
+        let finishPreparation = () => { };
+        this.#preparationQueue = new Promise((resolve) => {
+            finishPreparation = resolve;
+        });
+        try {
+            // Not raced with the signal: a cancelled preparation must stop before this one proves
+            await previousPreparation;
+            throwIfWithdrawalCancelled(signal);
+            this.#provingSignal = signal;
+            const poolAddress = await this.#assertPoolIsSponsored(chainId, tokenAddress);
+            throwIfWithdrawalCancelled(signal);
+            // The SDK syncs before proving, outside the queue, so only wait for this account's sync of
+            // the chain rather than run beside it on the same plugin. No sync of our own: it would only
+            // double the wait. Stops waiting once cancelled, as a first sync can take minutes.
+            await untilWithdrawalCancelled(this.#sync.getRunningSync(seedId, chainId) || Promise.resolve(), signal);
+            const protocol = await this.#registry.getProtocol(chainId, seedId);
+            throwIfWithdrawalCancelled(signal);
+            // Checked by `isAddress` above
+            const sdkRecipient = recipient;
+            // Prices gas, proves and signs the userOp. Always a batch (a batch of one equals a plain
+            // withdrawal): the SDK's plain withdrawal may pick a pending deposit, failing the proof.
+            // The unused gas is refunded to the recipient, which is the SDK's default too, so a
+            // different default can't leave it on a batch's single-use sender.
+            const privateOp = await protocol.prepareUnshield({
+                asset: { __type: 'erc20', contract: (0, privacyPools_1.toPrivacyPoolsAssetAddress)(tokenAddress) },
+                amount
+            }, sdkRecipient, { mode: 'paymaster', batch: true, refundRecipient: sdkRecipient });
+            // Only paymaster mode is asked for, so anything else means the SDK ignored it
+            if (privateOp.mode !== 'paymaster')
+                throw new Error('privacyPools: the withdrawal came back in an unsupported form');
+            const paymasterWithdrawal = (0, paymasterWithdrawal_1.readPaymasterWithdrawal)({
+                withdrawal: privateOp.withdrawal,
+                paymaster,
+                poolAddress,
+                recipient,
+                tokenAddress,
+                amount
+            });
+            const { fee, noteCount } = paymasterWithdrawal;
+            const feeEstimate = await this.#getExpectedWithdrawalFee({
+                chainId,
+                userOperation: privateOp.withdrawal.userOperation,
+                paymaster,
+                recipient,
+                tokenAddress,
+                fee
+            });
+            throwIfWithdrawalCancelled(signal);
+            const expectedFeeAmount = feeEstimate?.expectedFee ?? null;
+            // A batch must simulate first: if its calls fail on chain, the largest deposit is still paid
+            // to the single-use sender, out of the wallet's reach
+            if (noteCount > 1 && expectedFeeAmount === null)
+                throw errors_1.privacyPoolsErrors.withdrawalBatchNotSimulated();
+            const isStillCurrent = this.#updateOperation({
+                ...operation,
+                phase: 'ready',
+                quote: { feeAmount: fee, amountAfterFee: amount - fee, expectedFeeAmount },
+                humanization: (0, privacyPoolsModule_1.humanizePrivacyPoolsWithdrawal)({
+                    chainId,
+                    withdrawal: paymasterWithdrawal,
+                    expectedFeeAmount,
+                    usdPrice: this.#ctx.getTokenPrice(chainId, tokenAddress)
+                })
+            });
+            // Not kept if a lock or a cancel superseded it
+            if (isStillCurrent)
+                this.#pendingWithdrawal = { privateOp, paymasterWithdrawal, checkedAt: Date.now() };
+        }
+        catch (error) {
+            // Whatever it failed with: the user left, so there is nothing to tell them
+            if (!signal.aborted)
+                this.#failOperation(operation, toReadableWithdrawalError(error), 'The transfer could not be prepared. Please try again.');
+        }
+        finally {
+            if (this.#provingSignal === signal)
+                this.#provingSignal = null;
+            if (this.#preparationAbortController === abortController)
+                this.#preparationAbortController = null;
+            finishPreparation();
+        }
+        this.#ctx.emitUpdate();
+    }
+    /**
+     * Runs the proved withdrawal of `operation` again, if it is due - see
+     * `PrivacyPoolsController.recheckWithdrawal`.
+     */
+    async recheck(operation) {
+        const pendingWithdrawal = this.#pendingWithdrawal;
+        if (operation?.status !== 'pending' || operation.phase !== 'ready' || !pendingWithdrawal)
+            return;
+        if (!this.#isDueForCheck(pendingWithdrawal))
+            return;
+        const { isStale, estimate } = await this.#checkWithdrawal(operation, pendingWithdrawal);
+        // Sent, dropped or proved again meanwhile
+        if (this.#pendingWithdrawal !== pendingWithdrawal)
+            return;
+        if (isStale) {
+            this.#failStaleWithdrawal(operation);
+            return;
+        }
+        // Not run, so it is still due: sending checks it again
+        if (!estimate || !operation.quote)
+            return;
+        this.#pendingWithdrawal = { ...pendingWithdrawal, checkedAt: Date.now() };
+        const expectedFeeAmount = estimate.expectedFee;
+        this.#updateOperation({
+            ...operation,
+            quote: { ...operation.quote, expectedFeeAmount },
+            humanization: (0, privacyPoolsModule_1.humanizePrivacyPoolsWithdrawal)({
+                chainId: operation.chainId,
+                withdrawal: pendingWithdrawal.paymasterWithdrawal,
+                expectedFeeAmount,
+                usdPrice: this.#ctx.getTokenPrice(operation.chainId, operation.tokenAddress)
+            })
+        });
+        this.#ctx.emitUpdate();
+    }
+    /** Throws unless `operation` has a proved withdrawal waiting to be sent. */
+    assertReadyToSend(operation) {
+        this.#getPendingToSend(operation);
+    }
+    /**
+     * Sends the proved withdrawal of `operation` to the bundler and waits for it. Null when it was
+     * not handed over: it went stale, or a lock came while it was checked again.
+     */
+    async broadcast(operation) {
+        const pendingWithdrawal = this.#getPendingToSend(operation);
+        this.#assertBundlerIsAllowed();
+        const { seedId } = operation;
+        this.#updateOperation({ ...operation, phase: 'broadcasting' });
+        this.#ctx.emitUpdate();
+        // Sent once: the sender is single-use (nonce 0), so a retry could only fail or duplicate. A
+        // failed send is prepared again from scratch.
+        this.#discardPending();
+        const { privateOp } = pendingWithdrawal;
+        if (this.#isDueForCheck(pendingWithdrawal) &&
+            (await this.#checkWithdrawal(operation, pendingWithdrawal)).isStale) {
+            // Nothing was sent: the sheet says so and goes back to the form, to prove it again
+            this.#failStaleWithdrawal(operation);
+            return null;
+        }
+        // A lock while checking: not sent, as nothing derived from the phrase may outlive it
+        if (this.#operation?.id !== operation.id)
+            return null;
+        try {
+            const host = this.#registry.getHost(operation.chainId, seedId);
+            // No relayers: a paymaster withdrawal goes to the bundler URL carried in the payload.
+            const broadcaster = (0, privacy_pools_1.createPPv1Broadcaster)(host, { broadcasterUrl: {} });
+            await broadcaster.broadcast(privateOp);
+            const isCurrentOperation = this.#updateOperation({
+                ...operation,
+                status: 'success',
+                phase: 'finalizing'
+            });
+            this.#ctx.emitUpdate();
+            return { operation, isSent: isCurrentOperation };
+        }
+        catch (error) {
+            // Silent: the confirmation sheet is open and shows the error itself
+            this.#failOperation({ ...operation, phase: 'broadcasting' }, error, 'We could not confirm the transfer yet. Check your balance before you send it again.', 'silent');
+            this.#ctx.emitUpdate();
+            return { operation, isSent: false };
+        }
+    }
+    /**
+     * Drops a withdrawal not sent yet: cancels one being proved and forgets a proved one, whose proof
+     * is for a form no longer shown. One being sent is left to finish. Returns whether there was one.
+     */
+    dropUnsent() {
+        this.#preparationAbortController?.abort();
+        this.#preparationAbortController = null;
+        const operation = this.#operation;
+        if (operation?.status !== 'pending' || operation.phase === 'broadcasting')
+            return false;
+        this.#operation = null;
+        this.#discardPending();
+        return true;
+    }
+    /** Forgets the operation unless it is in flight. Returns whether it did. */
+    dismiss() {
+        if (this.#isOperationInFlight())
+            return false;
+        this.#operation = null;
+        this.#discardPending();
+        return true;
+    }
+    hasPhraseDerivedState() {
+        return !!this.#pendingWithdrawal || !!this.#preparationAbortController;
+    }
+    /** Drops the account's withdrawal unless it is being sent, which is left to finish. */
+    forgetSeed(seedId) {
+        if (this.#operation?.seedId === seedId)
+            this.dropUnsent();
+    }
+    /**
+     * Drops the operation and its proof. A withdrawal being proved is cancelled; one being sent
+     * cannot be stopped, and finds itself replaced when it ends.
+     */
+    clear() {
+        this.#preparationAbortController?.abort();
+        this.#preparationAbortController = null;
+        this.#operation = null;
+        this.#discardPending();
+    }
+    #startOperation(params) {
+        const operation = {
+            id: (0, uuid_1.generateUuid)(),
+            ...params,
+            status: 'pending',
+            phase: 'proving',
+            startedAt: Date.now(),
+            quote: null,
+            humanization: null,
+            error: null
+        };
+        this.#operation = operation;
+        this.#ctx.emitUpdate();
+        return operation;
+    }
+    /** Updates the operation unless a lock, a cancel or a newer one replaced it meanwhile. */
+    #updateOperation(operation) {
+        if (this.#operation?.id !== operation.id)
+            return false;
+        this.#operation = operation;
+        return true;
+    }
+    #isOperationInFlight() {
+        return this.#operation?.status === 'pending' && this.#operation.phase !== 'ready';
+    }
+    #getPendingToSend(operation) {
+        const pendingWithdrawal = this.#pendingWithdrawal;
+        if (operation && pendingWithdrawal)
+            return pendingWithdrawal;
+        throw errors_1.privacyPoolsErrors.withdrawalNotReady();
+    }
+    /**
+     * The expected fee of a proved withdrawal, by simulating it, or null when it cannot be run.
+     * Best effort: the proof's fee is already the cap. A simulated failure does not fail it here, as
+     * the bundler checks it again. The bundler checks only the sponsored part of a batch, though, so
+     * `prepare` refuses a batch this cannot run.
+     */
+    async #getExpectedWithdrawalFee(params) {
+        const simulation = await this.#simulateWithdrawal(params);
+        if (simulation.status === 'ran')
+            return simulation.estimate;
+        if (simulation.error)
+            this.#ctx.emitError({
+                message: 'Could not work out the exact network fee, so the most it can cost is shown.',
+                level: 'silent',
+                error: simulation.error
+            });
+        return null;
+    }
+    /** Runs a proved withdrawal on the latest block, as the bundler will submit it. */
+    async #simulateWithdrawal({ chainId, userOperation, paymaster, recipient, tokenAddress, fee }) {
+        const network = this.#ctx.networks.networks.find((n) => n.chainId.toString() === chainId);
+        // The sender only has code to run through a state override
+        if (!network || network.rpcNoStateOverride)
+            return { status: 'unavailable', error: null };
+        try {
+            const estimate = await (0, with_timeout_1.withTimeout)(() => (0, estimateWithdrawal_1.estimatePaymasterWithdrawalFee)({
+                provider: (0, context_1.getChainProvider)(this.#ctx.providers, chainId),
+                userOperation,
+                entryPointAddress: paymaster.entryPointAddress,
+                paymasterAddress: paymaster.paymasterAddress,
+                recipient,
+                tokenAddress,
+                fee
+            }), {
+                timeoutMs: WITHDRAWAL_ESTIMATION_TIMEOUT_MS,
+                message: 'privacyPools: the withdrawal fee estimation timed out'
+            });
+            return { status: 'ran', estimate };
+        }
+        catch (error) {
+            return {
+                status: error instanceof estimateWithdrawal_1.PrivacyPoolsWithdrawalWouldFailError ? 'would-fail' : 'unavailable',
+                error: error instanceof Error
+                    ? error
+                    : new Error('privacyPools: withdrawal fee estimation failed')
+            };
+        }
+    }
+    /** Whether a proved withdrawal has gone unchecked long enough for the chain to have moved on. */
+    #isDueForCheck({ checkedAt }) {
+        return Date.now() - checkedAt >= WITHDRAWAL_RECHECK_AFTER_MS;
+    }
+    /**
+     * Runs a proved withdrawal again. Stale when it fails on the latest block (e.g. the association
+     * set's root moved on), or the network's base fee has outgrown the gas price signed into it,
+     * which no bundler would submit at. `estimate` is its fee as of now, when it could be run.
+     *
+     * One that cannot be checked is not stale: a stale one is refused by the bundler before anything
+     * is spent, while calling it stale would send the user back to prove again over a flaky node.
+     */
+    async #checkWithdrawal(operation, { privateOp }) {
+        const paymaster = (0, privacyPools_1.getPrivacyPoolsChainConfig)(BigInt(operation.chainId))?.paymaster;
+        if (!paymaster || !operation.quote)
+            return { isStale: false, estimate: null };
+        const { userOperation } = privateOp.withdrawal;
+        try {
+            const latestBlock = await (0, context_1.getChainProvider)(this.#ctx.providers, operation.chainId).getBlock('latest');
+            const baseFee = latestBlock?.baseFeePerGas;
+            if (baseFee != null && BigInt(userOperation.maxFeePerGas) < baseFee)
+                return { isStale: true, estimate: null };
+        }
+        catch (error) {
+            this.#ctx.emitError({
+                message: 'Could not check the network fee of the transfer again.',
+                level: 'silent',
+                error: error instanceof Error ? error : new Error('privacyPools: base fee read failed')
+            });
+        }
+        const simulation = await this.#simulateWithdrawal({
+            chainId: operation.chainId,
+            userOperation,
+            paymaster,
+            recipient: operation.recipient,
+            tokenAddress: operation.tokenAddress,
+            fee: operation.quote.feeAmount
+        });
+        if (simulation.status === 'ran')
+            return { isStale: false, estimate: simulation.estimate };
+        if (simulation.status === 'unavailable' && simulation.error)
+            this.#ctx.emitError({
+                message: 'Could not check the transfer again.',
+                level: 'silent',
+                error: simulation.error
+            });
+        return { isStale: simulation.status === 'would-fail', estimate: null };
+    }
+    /** Drops a stale withdrawal. Nothing was sent: the sheet says so and goes back to the form. */
+    #failStaleWithdrawal(operation) {
+        this.#discardPending();
+        this.#updateOperation({
+            ...operation,
+            status: 'failed',
+            phase: 'ready',
+            error: STALE_WITHDRAWAL_MESSAGE
+        });
+        this.#ctx.emitUpdate();
+    }
+    /** A transfer out goes through an ERC-4337 bundler, which the user can opt out of. */
+    #assertBundlerIsAllowed() {
+        if (this.#ctx.featureFlags.isFeatureEnabled('erc4337'))
+            return;
+        throw errors_1.privacyPoolsErrors.withdrawalBundlerOptedOut();
+    }
+    /**
+     * Refuses before proving a token whose pool has no paymaster adapter (the SDK does so only after
+     * syncing). The pool is read from the entrypoint, so a replaced pool is caught. Returns the pool,
+     * which the proved withdrawal must be from.
+     */
+    async #assertPoolIsSponsored(chainId, tokenAddress) {
+        const config = (0, privacyPools_1.getPrivacyPoolsChainConfig)(BigInt(chainId));
+        if (!config?.paymaster)
+            throw new Error(`privacyPools: no paymaster for chain ${chainId}`);
+        const { poolAddress } = await (0, entrypointAssetConfig_1.readEntrypointAssetConfig)({
+            provider: (0, context_1.getChainProvider)(this.#ctx.providers, chainId),
+            entrypointAddress: config.entrypointAddress,
+            assetAddress: (0, privacyPools_1.toPrivacyPoolsAssetAddress)(tokenAddress)
+        });
+        if (config.paymaster.poolAdapters[poolAddress.toLowerCase()])
+            return poolAddress;
+        const symbol = (0, privacyPools_1.getPrivacyPoolsAsset)(BigInt(chainId), tokenAddress)?.symbol || 'this token';
+        throw errors_1.privacyPoolsErrors.withdrawalUnsupportedToken(symbol, poolAddress);
+    }
+    /** Drops the unsent withdrawal, so its proof is not sent later at a stale gas price. */
+    #discardPending() {
+        this.#pendingWithdrawal = null;
+    }
+    /**
+     * Shows an `EmittableError`'s message, or `fallback` for SDK, bundler and chain errors. Also as a
+     * toast, unless `level` is 'silent' because the UI shows the failed operation itself - the error
+     * is reported either way.
+     */
+    #failOperation(operation, error, fallback, level = 'major') {
+        const message = error instanceof EmittableError_1.default ? error.message : fallback;
+        this.#updateOperation({ ...operation, status: 'failed', error: message });
+        this.#ctx.emitError({
+            message,
+            level,
+            error: (0, sdkError_1.toPrivacyPoolsSdkError)(error, 'privacyPools: withdrawal failed')
+        });
+    }
+}
+exports.PrivacyPoolsWithdrawal = PrivacyPoolsWithdrawal;
+//# sourceMappingURL=withdrawal.js.map

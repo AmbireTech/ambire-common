@@ -1,0 +1,328 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AccountOpsPersistence = void 0;
+const activityIdb_1 = require("./activityIdb");
+const persistenceError_1 = require("./persistenceError");
+/**
+ * Owns everything about *where* account ops live, so ActivityController does not have to.
+ *
+ * Picks a storage adapter from what it is given, runs the one-time data migration, falls
+ * back when that fails, and keeps the in-memory cache coherent with a partially-loaded
+ * backend. The controller calls plain methods and never branches on the backend.
+ *
+ * Adding a service (e.g. expo-sqlite on mobile) means writing an IActivityOpsBackend
+ * adapter and selecting it in #pickAdapter — nothing else here or in the controller changes.
+ *
+ * No method rejects. This runs behind ActivityController's #initialLoadPromise, which every
+ * public method awaits, so a single failure escaping here would break the controller for the
+ * whole session.
+ */
+class AccountOpsPersistence {
+    #adapter;
+    #storage;
+    #getCache;
+    #onError;
+    // Only used with a partially-loading adapter; otherwise the cache is summed live.
+    #totalOpsCount = new Map();
+    /**
+     * How many ops of each `account:chain` group the cache already holds, so a re-render of the
+     * same page does not read it again. Infinity once a read came back short, which means the
+     * whole group is in memory and no depth can miss.
+     */
+    #loadedDepth = new Map();
+    /** Stored count per `account:chain`, so a re-render does not re-count either. */
+    #chainCounts = new Map();
+    constructor({ storage, idb, getCache, onError }) {
+        this.#storage = storage;
+        this.#getCache = getCache;
+        this.#onError = onError;
+        this.#adapter = this.#pickAdapter(idb);
+    }
+    #activeBackend = 'keyValue';
+    #pickAdapter(idb) {
+        if (idb) {
+            this.#activeBackend = 'idb';
+            return new activityIdb_1.ActivityIdbStorage(idb);
+        }
+        return new activityIdb_1.ActivityKeyValueStorage(this.#storage, this.#getCache);
+    }
+    /** Migrate if needed, then return the startup dataset. Bookkeeping is in finalizeInit(). */
+    async init(fullWindowFor) {
+        // Read before #migrate(), which can record a new one. Guarded: nothing in init() may
+        // reject — it runs behind the controller's #initialLoadPromise, so a throw here would
+        // break the controller for the whole session. A failed read just skips the recovery.
+        const previousBackend = await this.#readActiveBackend().catch(() => null);
+        const migrated = await this.#migrate();
+        // Reads AND writes must both go to the legacy key. Writing to IDB while reading the blob
+        // would put a row in the empty store, making isEmpty() skip the retry forever.
+        if (!migrated)
+            this.#fallBackToKeyValue();
+        else
+            await this.#recoverFallbackWrites(previousBackend);
+        return this.#loadStartupOps(fullWindowFor);
+    }
+    /**
+     * Re-merges the legacy key after a session that ran on key-value because IDB was
+     * unavailable.
+     *
+     * Such a session writes its ops into the legacy blob, and ensureMigrated() will not pick
+     * them up on the next run because the store is no longer empty — so without this they are
+     * simply lost. The merge is an upsert, so ops IDB already has are rewritten unchanged.
+     */
+    async #recoverFallbackWrites(previousBackend) {
+        if (previousBackend !== 'keyValue' || this.#activeBackend !== 'idb')
+            return;
+        try {
+            const legacy = await this.#storage.get('accountsOps', {});
+            if (!Object.keys(legacy).length)
+                return;
+            await this.#adapter.mergeGroups(legacy);
+            // Row counts changed by an unknown amount, so nothing cached about them survives.
+            this.#chainCounts.clear();
+            this.#loadedDepth.clear();
+        }
+        catch (error) {
+            this.#report('Transactions made while your history was unavailable could not be restored.', error, 'recover fallback writes');
+        }
+    }
+    /** Bookkeeping nothing renders, so the caller can paint before paying for it. */
+    async finalizeInit(ops) {
+        await this.#recordActiveBackend(ops);
+        await this.#refreshAllCounts(ops);
+    }
+    /**
+     * Merge each chain's newest `limit` ops into the cache, so one page costs one read per chain.
+     */
+    async ensureRecentLoaded(accountAddr, limit, chainIds) {
+        if (!this.#adapter.loadsPartially)
+            return;
+        await Promise.all(chainIds.map(async (chainId) => {
+            const key = `${accountAddr}:${chainId.toString()}`;
+            // Already holding at least this many — syncFilteredAccountsOps re-renders every open
+            // session on every status update, so without this each one re-reads the same page.
+            if ((this.#loadedDepth.get(key) ?? 0) >= limit)
+                return;
+            try {
+                const ops = await this.#adapter.getRecentOps(accountAddr, limit, chainId);
+                if (ops.length)
+                    this.#mergeIntoCache(accountAddr, chainId.toString(), ops);
+                // A short read means there was nothing more to give, so the group is now complete.
+                this.#loadedDepth.set(key, ops.length < limit ? Infinity : limit);
+            }
+            catch (error) {
+                this.#report('Older transactions could not be loaded.', error, 'load a page');
+            }
+        }));
+    }
+    /**
+     * Whether the account already stores an op carrying this txnId.
+     *
+     * @returns true when the lookup fails, so a caller guarding against duplicates treats
+     *          "unknown" as "present" — a stored duplicate is permanent, a skipped op is not.
+     */
+    async hasOpWithTxnId(accountAddr, txnId) {
+        try {
+            return await this.#adapter.hasOpWithTxnId(accountAddr, txnId);
+        }
+        catch (error) {
+            this.#report('Your transaction history could not be checked.', error, 'look up a txn id');
+            return true;
+        }
+    }
+    /** Persist one new op, and delete the op the caller's in-memory trim evicted. */
+    async addOp(accountAddr, chainId, op, trimmedId) {
+        let delta = 0;
+        try {
+            delta = await this.#adapter.putSingleOp(accountAddr, chainId, op, trimmedId);
+        }
+        catch (error) {
+            // Left at 0: a rejected write means the transaction aborted, so no row was committed.
+            this.#report('Your latest transaction could not be saved to your history.', error, 'add op');
+        }
+        // Adjusted by the delta the write reports, so adding an op costs no extra read. Only when
+        // a count is already cached — otherwise getTotalOpsCount falls back to the cache sum.
+        const cached = this.#totalOpsCount.get(accountAddr);
+        if (delta && cached !== undefined)
+            this.#totalOpsCount.set(accountAddr, cached + delta);
+        // The group gained a row, so both per-chain caches move with it.
+        const key = `${accountAddr}:${chainId.toString()}`;
+        const cachedChainCount = this.#chainCounts.get(key);
+        if (delta && cachedChainCount !== undefined) {
+            this.#chainCounts.set(key, cachedChainCount + delta);
+        }
+        const depth = this.#loadedDepth.get(key);
+        if (delta && depth !== undefined && depth !== Infinity)
+            this.#loadedDepth.set(key, depth + delta);
+    }
+    async updateOps(ops) {
+        try {
+            await this.#adapter.updateOps(ops);
+        }
+        catch (error) {
+            this.#report('Some transaction updates could not be saved.', error, 'update ops');
+        }
+    }
+    /** Drop an account's rows and every marker keyed to it. */
+    async removeAccount(accountAddr) {
+        this.#totalOpsCount.delete(accountAddr);
+        const prefix = `${accountAddr}:`;
+        [...this.#loadedDepth.keys()].forEach((key) => {
+            if (key.startsWith(prefix))
+                this.#loadedDepth.delete(key);
+        });
+        [...this.#chainCounts.keys()].forEach((key) => {
+            if (key.startsWith(prefix))
+                this.#chainCounts.delete(key);
+        });
+        // Also dropped from the retained legacy copy, or #recoverFallbackWrites() would merge the
+        // removed account straight back in — the copy is frozen at migration time and still holds it.
+        try {
+            const legacy = await this.#storage.get('accountsOps', {});
+            const legacyKey = Object.keys(legacy).find((key) => key.toLowerCase() === accountAddr.toLowerCase());
+            if (legacyKey) {
+                delete legacy[legacyKey];
+                await this.#storage.set('accountsOps', legacy);
+            }
+        }
+        catch (error) {
+            this.#report("The removed account's safety-net copy could not be cleared.", error, 'clear legacy');
+        }
+        try {
+            await this.#adapter.deleteAccount(accountAddr);
+        }
+        catch (error) {
+            this.#report("Some of the removed account's transaction history could not be deleted.", error, 'delete account');
+        }
+    }
+    /** Total ops ever. Synchronous because BannerController evaluates inside a sync callback. */
+    getTotalOpsCount(accountAddr) {
+        // The cache IS the whole history here, so a stored count could only ever be staler.
+        if (!this.#adapter.loadsPartially)
+            return this.#countInCache(accountAddr);
+        return this.#totalOpsCount.get(accountAddr) ?? this.#countInCache(accountAddr);
+    }
+    // ──────────────────────────────────────────────────────────────────────────────
+    // Internals
+    // ──────────────────────────────────────────────────────────────────────────────
+    /** @returns false only on failure, meaning the target is empty and must not be read. */
+    async #migrate() {
+        try {
+            await this.#adapter.ensureMigrated(() => this.#storage.get('accountsOps', {}), 
+            // Deliberately a no-op: the legacy key is kept as a safety-net copy.
+            async () => { });
+            return true;
+        }
+        catch (error) {
+            // Non-fatal: the legacy key is intact and the next startup retries.
+            this.#report('Your transaction history could not be moved to its new location.', error, 'migrate to IDB');
+            return false;
+        }
+    }
+    #fallBackToKeyValue() {
+        if (!this.#adapter.loadsPartially)
+            return;
+        this.#activeBackend = 'keyValue';
+        this.#adapter = new activityIdb_1.ActivityKeyValueStorage(this.#storage, this.#getCache);
+    }
+    async #loadStartupOps(fullWindowFor) {
+        try {
+            return await this.#adapter.loadStartupOps(fullWindowFor);
+        }
+        catch (error) {
+            // Degrading to empty keeps the controller usable; the data is untouched on disk.
+            this.#report('Your transaction history could not be loaded.', error, 'read startup ops');
+            return {};
+        }
+    }
+    /** Record which backend holds the history — only recordable while that backend works. */
+    async #recordActiveBackend(ops) {
+        // Only once there is history to lose. Recording a backend for an empty wallet would make
+        // the stranded check below fire at a user who never had a transaction.
+        if (!Object.keys(ops).length)
+            return;
+        try {
+            // Defaulted to null, not to the current backend — otherwise the comparison below is
+            // always equal on a first run and the value never gets written.
+            const previous = await this.#readActiveBackend();
+            // Written to IndexedDB last session, key-value this one: the history is in a store this
+            // session cannot open. The retained legacy blob keeps the wallet usable, but it is
+            // frozen at migration time, so what the user sees is missing everything written since.
+            if (previous === 'idb' && this.#activeBackend === 'keyValue') {
+                this.#report('Some of your recent transactions could not be loaded.', new Error('AccountOpsPersistence: IDB unavailable after history was written to it'), 'reach the transaction history');
+            }
+            if (previous !== this.#activeBackend) {
+                await this.#storage.set('activityStorageBackend', this.#activeBackend);
+            }
+        }
+        catch (error) {
+            this.#report('Your transaction history could not be checked.', error, 'record the backend');
+        }
+    }
+    /** Merge, not replace: the cache holds unwritten ops and objects in-flight work still mutates. */
+    #mergeIntoCache(accountAddr, chainId, fetched) {
+        const cache = this.#getCache();
+        if (!cache[accountAddr])
+            cache[accountAddr] = {};
+        const cached = cache[accountAddr][chainId];
+        if (!cached?.length) {
+            cache[accountAddr][chainId] = [...fetched];
+            return;
+        }
+        const byId = new Map();
+        for (const op of fetched)
+            byId.set(op.id, op);
+        for (const op of cached)
+            byId.set(op.id, op);
+        cache[accountAddr][chainId] = Array.from(byId.values()).sort((a, b) => b.timestamp - a.timestamp);
+    }
+    #countInCache(accountAddr) {
+        return Object.values(this.#getCache()[accountAddr] ?? {}).reduce((total, ops) => total + (ops?.length ?? 0), 0);
+    }
+    /** Startup accounts only — loadStartupOps() lists every non-empty group, so absent means zero. */
+    async #refreshAllCounts(ops) {
+        if (!this.#adapter.loadsPartially)
+            return;
+        await Promise.all(Object.keys(ops).map((addr) => this.#refreshCount(addr)));
+    }
+    /**
+     * Exact stored count, scoped to the chains the caller renders so the pager cannot overshoot.
+     */
+    async countOps(accountAddr, chainIds) {
+        try {
+            const counts = await Promise.all(chainIds.map(async (chainId) => {
+                const key = `${accountAddr}:${chainId.toString()}`;
+                const cached = this.#chainCounts.get(key);
+                if (cached !== undefined)
+                    return cached;
+                const count = await this.#adapter.countOpsForAccount(accountAddr, chainId);
+                this.#chainCounts.set(key, count);
+                return count;
+            }));
+            return counts.reduce((total, count) => total + count, 0);
+        }
+        catch (error) {
+            this.#report('Your transaction history could not be counted.', error, 'count ops');
+            return 0;
+        }
+    }
+    async #refreshCount(accountAddr) {
+        // Nothing to store when the cache is already the whole history.
+        if (!this.#adapter.loadsPartially)
+            return;
+        try {
+            this.#totalOpsCount.set(accountAddr, await this.#adapter.countOpsForAccount(accountAddr));
+        }
+        catch (error) {
+            // Leave the previous value; getTotalOpsCount falls back to the cache sum if unset.
+            this.#report('The transaction count could not be refreshed.', error, 'count ops');
+        }
+    }
+    #readActiveBackend() {
+        return this.#storage.get('activityStorageBackend', null);
+    }
+    #report(message, error, what) {
+        this.#onError((0, persistenceError_1.toPersistenceError)(message, error, `AccountOpsPersistence: failed to ${what}`));
+    }
+}
+exports.AccountOpsPersistence = AccountOpsPersistence;
+//# sourceMappingURL=accountOpsPersistence.js.map

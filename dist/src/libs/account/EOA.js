@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EOA = void 0;
-/* eslint-disable @typescript-eslint/no-unused-vars */
 const ethers_1 = require("ethers");
 const broadcast_1 = require("../broadcast/broadcast");
 const BaseAccount_1 = require("./BaseAccount");
@@ -46,21 +45,25 @@ class EOA extends BaseAccount_1.BaseAccount {
         const isError = estimation instanceof Error;
         if (isError || !estimation.providerEstimation || !options.op)
             return 0n;
+        // add extra gas if the user wants to revoke
+        const isDelegating = options.op.meta && options.op.meta.setDelegation !== undefined;
+        const revokeGas = isDelegating ? this.ACTIVATOR_GAS_USED : 0n;
         const calls = options.op.calls;
         if (calls.length === 1) {
             const call = calls[0]; // ! as we check calls.length === 1 one line above
             // a normal transfer is 21k, so just return the providerEstimation
             if (call.data === '0x')
-                return estimation.providerEstimation.gasUsed;
+                return estimation.providerEstimation.gasUsed + revokeGas;
         }
         const ambireGasUsed = estimation.ambireEstimation ? estimation.ambireEstimation.gasUsed : 0n;
         const gasUsed = estimation.providerEstimation.gasUsed > ambireGasUsed
             ? estimation.providerEstimation.gasUsed
             : ambireGasUsed;
-        // add a 10% overhead to prevent OOG
-        return gasUsed + gasUsed / 10n;
+        return gasUsed + revokeGas;
     }
     getBroadcastOption(feeOption, options) {
+        if (options.op.meta && options.op.meta.setDelegation !== undefined)
+            return broadcast_1.BROADCAST_OPTIONS.delegation;
         return broadcast_1.BROADCAST_OPTIONS.bySelf;
     }
     shouldBroadcastCallsSeparately(op) {

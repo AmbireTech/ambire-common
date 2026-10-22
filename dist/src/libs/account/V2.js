@@ -34,9 +34,12 @@ class V2 extends BaseAccount_1.BaseAccount {
         return null;
     }
     supportsBundlerEstimation() {
-        return !this.#isTransitioningTo4337();
+        return this.isErc4337Enabled && !this.#isTransitioningTo4337();
     }
     getAvailableFeeOptions(estimation, feePaymentOptions, op) {
+        if (!this.isErc4337Enabled) {
+            return feePaymentOptions.filter((opt) => (0, helpers_1.isNative)(opt.token) || (opt.paidBy !== this.account.addr && opt.availableAmount > 0n));
+        }
         const hasPaymaster = estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster.isUsable();
         return feePaymentOptions.filter((opt) => 
         // always show account native, even if not enough
@@ -124,6 +127,9 @@ class V2 extends BaseAccount_1.BaseAccount {
     isSponsorable() {
         return this.network.chainId === 100n;
     }
+    canUseErc4337() {
+        return true;
+    }
     getAtomicStatus() {
         return 'supported';
     }
@@ -149,6 +155,9 @@ class V2 extends BaseAccount_1.BaseAccount {
     }
     canSetCustomGas(feeOption) {
         return this.canSetCustomGasPrices(feeOption);
+    }
+    canBroadcastByItself() {
+        return this.isErc4337Enabled;
     }
 }
 exports.V2 = V2;

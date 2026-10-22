@@ -1,22 +1,17 @@
-import { EIP712TypedData } from '@safe-global/types-kit';
+import type { EIP712TypedData } from '@safe-global/types-kit';
 import { AccountOp } from '../libs/accountOp/accountOp';
 import { TokenResult } from '../libs/portfolio';
 import { ControllerInterface } from './controller';
 import { DappProviderRequest } from './dapp';
 import { Hex } from './hex';
 import { SwapAndBridgeActiveRoute, SwapAndBridgeQuote } from './swapAndBridge';
-import { CallsUserRequest, RequestExecutionType, RequestPosition } from './userRequest';
+import { CallsUserRequest, PendingDappPromise, RequestExecutionType, RequestPosition } from './userRequest';
 export type IRequestsController = ControllerInterface<InstanceType<typeof import('../controllers/requests/requests').RequestsController>>;
 export type BuildRequest = {
     type: 'dappRequest';
     params: {
         request: DappProviderRequest;
-        dappPromise: {
-            id: string;
-            session: DappProviderRequest['session'];
-            resolve: (data: any) => void;
-            reject: (data: any) => void;
-        };
+        dappPromise: PendingDappPromise;
     };
 } | {
     type: 'calls';
@@ -37,8 +32,11 @@ export type BuildRequest = {
         amount: string;
         amountInFiat: bigint;
         recipientAddress: string;
+        recipientDomain: string | undefined;
         selectedToken: TokenResult;
         executionType: RequestExecutionType;
+        /** Seed id of the Privacy Pools account to send to, which has no address. */
+        privacyPoolsSeedId?: string;
     };
 } | {
     type: 'swapAndBridgeRequest';
@@ -71,6 +69,13 @@ export type BuildRequest = {
         messageHash: Hex;
         created: number;
         signatures: Hex[];
+        dappName?: string;
+        dappUrl?: string;
+    };
+} | {
+    type: 'onchainSafeRejection';
+    params: {
+        requestId: CallsUserRequest['id'];
     };
 };
 //# sourceMappingURL=requests.d.ts.map

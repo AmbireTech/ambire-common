@@ -56,7 +56,7 @@ function getClaimWalletRequestParams({ selectedAccount, selectedToken, claimable
         }
     };
 }
-function getTransferRequestParams({ amount, amountInFiat, selectedToken, selectedAccount, recipientAddress: _recipientAddress, paymasterService }) {
+function getTransferRequestParams({ amount, amountInFiat, selectedToken, selectedAccount, recipientAddress: _recipientAddress, paymasterService, recipientDomain }) {
     if (!selectedToken || !selectedAccount || !_recipientAddress)
         return null;
     // if the request is a top up, the recipient is the relayer
@@ -104,7 +104,8 @@ function getTransferRequestParams({ amount, amountInFiat, selectedToken, selecte
         {
             to: selectedToken.address,
             value: BigInt(0),
-            data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
+            data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount]),
+            recipientDomain
         }
     ];
     if (Number(selectedToken.address) === 0) {
@@ -112,7 +113,8 @@ function getTransferRequestParams({ amount, amountInFiat, selectedToken, selecte
             {
                 to: recipientAddress,
                 value: BigInt(bigNumberHexAmount),
-                data: '0x'
+                data: '0x',
+                recipientDomain
             }
         ];
     }

@@ -1,26 +1,17 @@
-import { IDomainsController } from '../../interfaces/domains';
+import { Contacts } from '../../interfaces/addressBook';
+import { Domains, IDomainsController, ReverseLookupOptions } from '../../interfaces/domains';
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter';
+import { IFeatureFlagsController } from '../../interfaces/featureFlags';
+import { Network } from '../../interfaces/network';
 import { RPCProviders } from '../../interfaces/provider';
+import { IStorageController } from '../../interfaces/storage';
+import { IVerificationController } from '../../interfaces/verification';
+import { NameResolver, NameServiceId } from '../../services/nameResolvers';
 import EventEmitter from '../eventEmitter/eventEmitter';
-interface Domains {
-    [address: string]: {
-        ens: string | null;
-        /**
-         * Namoshi domains are fully compatible with the ENS implementation, they just use a different universal resolver contract
-         * and have different TLDs (.btc and .citrea).
-         */
-        namoshi: string | null;
-        /**
-         * ENS or Namoshi avatar URL
-         */
-        ensAvatar?: string | null;
-        createdAt?: number;
-        updatedAt?: number;
-        updateFailedAt?: number;
-    };
-}
 export declare const PERSIST_DOMAIN_FOR_IN_MS: number;
 export declare const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS: number;
+export declare const PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS: number;
+export declare const PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS: number;
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
  * Resolved names are saved in `domains` for a short period of time(15 minutes) to avoid unnecessary lookups.
@@ -37,30 +28,47 @@ export declare class DomainsController extends EventEmitter implements IDomainsC
     domainToAddresses: {
         [domain: string]: {
             address: string | undefined;
-            type: 'ens' | 'namoshi';
+            type: NameServiceId;
         };
     };
     loadingAddresses: string[];
     resolveDomainsStatus: {
         [domain: string]: 'LOADING' | 'RESOLVED' | 'FAILED' | undefined;
     };
-    constructor({ eventEmitterRegistry, providers, defaultNetworksMode }: {
+    resolveDomainsErrors: {
+        [domain: string]: string | undefined;
+    };
+    verifiedDomainsStatus: {
+        [domain: string]: 'VERIFIED' | undefined;
+    };
+    constructor({ eventEmitterRegistry, providers, verification, defaultNetworksMode, storage, featureFlags, resolvers, getNetwork }: {
         eventEmitterRegistry?: IEventEmitterRegistryController;
         providers: RPCProviders;
+        verification?: IVerificationController;
         defaultNetworksMode?: 'mainnet' | 'testnet';
+        storage?: IStorageController;
+        featureFlags?: IFeatureFlagsController;
+        resolvers?: NameResolver[];
+        getNetwork: (chainId: bigint) => Network | undefined;
     });
-    batchReverseLookup(addresses: string[]): Promise<void>;
     /**
-     * Resolves an ENS domain and persists it to state only if resolution succeeds.
+     * Initializes the controller with the data persisted in storage
+     * As the domains in storage may be from one time requests in sign message/sign account op, we don't want
+     * to load them all in a public variable which will be sent to the UI. Instead, we filter only the domains
+     * that are in the address book, which includes accounts and address book contacts
+     */
+    init(contacts: Contacts): Promise<void>;
+    batchReverseLookup(addresses: string[], updateExpiryForAddresses?: string[]): Promise<void>;
+    /**
+     * Resolves a domain and persists it to state only if resolution succeeds.
      */
     resolveDomain({ domain }: {
         domain: string;
     }): Promise<void>;
-    reverseLookup(address: string, emitUpdate?: boolean): Promise<void>;
+    reverseLookup(address: string, emitUpdate?: boolean, opts?: ReverseLookupOptions): Promise<void>;
     toJSON(): this & {
         name: string;
         emittedErrors: import("../../interfaces/eventEmitter").ErrorRef[];
     };
 }
-export {};
 //# sourceMappingURL=domains.d.ts.map

@@ -5,7 +5,6 @@ import { TokenResult } from '../portfolio';
 import { UserOperation } from '../userOperation/types';
 import { BaseAccount } from './BaseAccount';
 export declare class EOA7702 extends BaseAccount {
-    ACTIVATOR_GAS_USED: bigint;
     /**
      * Introduce a public variable we can use to make a simple check on the FE
      * whether this account type is 7702.
@@ -30,6 +29,7 @@ export declare class EOA7702 extends BaseAccount {
     getBroadcastCalldata(accountOp: AccountOp): Hex;
     getBundlerStateOverride(userOp: UserOperation): BundlerStateOverride | undefined;
     isSponsorable(): boolean;
+    canUseErc4337(): boolean;
     getAtomicStatus(): 'unsupported' | 'supported' | 'ready';
     getNonceId(): string;
     /**

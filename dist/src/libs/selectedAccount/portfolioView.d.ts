@@ -12,6 +12,8 @@ export default class PortfolioViewBuilder {
     private networkSimulatedAccountOp;
     private isAllReady;
     private isReloading;
+    private verification;
+    private walletStaking?;
     /**
      * If there is an emit update from the portfolio where only the additional
      * portfolio has loaded (gasTank, rewards etc.) we shouldn't flip isAllReady to true
@@ -36,6 +38,7 @@ export default class PortfolioViewBuilder {
      * Checks for visible non-zero tokens
      */
     private static hasVisibleTokens;
+    private addVerificationData;
     /**
      * Add a network's data to the portfolio view
      */

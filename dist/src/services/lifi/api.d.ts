@@ -1,3 +1,4 @@
+import { IFeatureFlagsController } from '../../interfaces/featureFlags';
 import { Fetch } from '../../interfaces/fetch';
 import { ProviderQuoteParams, SwapAndBridgeQuote, SwapAndBridgeRoute, SwapAndBridgeRouteStatusResult, SwapAndBridgeSendTxRequest, SwapAndBridgeSupportedChain, SwapAndBridgeToToken, SwapProvider } from '../../interfaces/swapAndBridge';
 export declare class LiFiAPI implements SwapProvider {
@@ -6,9 +7,10 @@ export declare class LiFiAPI implements SwapProvider {
     name: string;
     isHealthy: boolean | null;
     supportedChains: SwapProvider['supportedChains'];
-    constructor({ fetch, apiKey }: {
+    constructor({ fetch, apiKey, featureFlags }: {
         fetch: Fetch;
         apiKey: string;
+        featureFlags: Pick<IFeatureFlagsController, 'isFeatureEnabled'>;
     });
     activateApiKey(): void;
     deactivateApiKeyIfStale(): void;
@@ -30,7 +32,7 @@ export declare class LiFiAPI implements SwapProvider {
         address: string;
         chainId: number;
     }): Promise<SwapAndBridgeToToken | null>;
-    quote({ fromAsset, fromChainId, fromTokenAddress, toAsset, toChainId, toTokenAddress, fromAmount, userAddress, sort, isWrapOrUnwrap, accountNativeBalance, nativeSymbol }: ProviderQuoteParams): Promise<SwapAndBridgeQuote>;
+    quote({ fromAsset, fromChainId, fromTokenAddress, toAsset, toChainId, toTokenAddress, fromAmount, userAddress, sort, isWrapOrUnwrap, accountNativeBalance, nativeSymbol, feePercent }: ProviderQuoteParams): Promise<SwapAndBridgeQuote>;
     startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest>;
     getRouteStatus({ txHash, fromChainId, toChainId, bridge }: {
         txHash: string;

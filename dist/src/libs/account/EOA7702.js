@@ -14,12 +14,6 @@ const feeOptions_1 = require("./feeOptions");
 // this class describes an EOA that CAN transition to 7702
 // even if it is YET to transition to 7702
 class EOA7702 extends BaseAccount_1.BaseAccount {
-    // when doing the 7702 activator, we should add the additional gas required
-    // for the authorization list:
-    // PER_EMPTY_ACCOUNT_COST: 25000
-    // access list storage key: 1900
-    // access list address: 2400
-    ACTIVATOR_GAS_USED = 29300n;
     /**
      * Introduce a public variable we can use to make a simple check on the FE
      * whether this account type is 7702.
@@ -49,7 +43,7 @@ class EOA7702 extends BaseAccount_1.BaseAccount {
         return null;
     }
     supportsBundlerEstimation() {
-        return true;
+        return this.isErc4337Enabled;
     }
     /*
      * Available options:
@@ -155,8 +149,12 @@ class EOA7702 extends BaseAccount_1.BaseAccount {
     isSponsorable() {
         return this.network.chainId === 100n;
     }
+    canUseErc4337() {
+        return true;
+    }
     getAtomicStatus() {
-        return this.accountState.isSmarterEoa ? 'supported' : 'ready';
+        // always supported to make dapps recognize it correctly
+        return 'supported';
     }
     getNonceId() {
         // 7702 accounts have an execution layer nonce and an entry point nonce
