@@ -5,7 +5,10 @@ import {
   getAddress,
   hexlify,
   Interface,
+  JsonRpcProvider,
+  keccak256,
   MaxUint256,
+  Network as EthersNetwork,
   parseEther,
   toBeHex,
   verifyMessage
@@ -4188,6 +4191,121 @@ describe('broadcasting a batch one transaction at a time', () => {
     // goes through the regular success handler
     expect(submittedAccountOps).toHaveLength(1)
     expect(sentAccountOps).toHaveLength(0)
+  })
+
+  describe('nonces', () => {
+    test('locks the nonces of the sent part of a batch and keeps its eoaNonce', async () => {
+      const { controller, submittedAccountOps } = await initBatch()
+      const lockNonces = jest.spyOn(AccountsController.prototype, 'lockNonces')
+      mockBroadcastChain(2)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(submittedAccountOps).toHaveLength(1)
+      // The error path resets this.accountOp.eoaNonce, which must not reach the saved op
+      expect(submittedAccountOps[0].eoaNonce).toBe(7n)
+      expect(lockNonces).toHaveBeenCalledTimes(1)
+      expect(lockNonces).toHaveBeenCalledWith(submittedAccountOps[0].id, 1n, [
+        { kind: 'sender', addr: eoaAccount.addr, nonce: 7n },
+        { kind: 'sender', addr: eoaAccount.addr, nonce: 8n }
+      ])
+    })
+
+    test('skips the nonce of a pending txn that the RPC does not count yet', async () => {
+      const { controller, submittedAccountOps } = await initBatch()
+      ;(controller.accountOp as any).eoaNonce = undefined
+      jest.spyOn(controller.provider, 'getTransactionCount').mockResolvedValue(7)
+      // Another op of this device locked nonce 7
+      const getNextNonce = jest
+        .spyOn(AccountsController.prototype, 'getNextNonce')
+        .mockReturnValue(8n)
+      mockBroadcastChain(null)
+      const buildRawTransaction = jest.mocked(broadcastLib.buildRawTransaction)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(getNextNonce).toHaveBeenCalledWith(eoaAccount.addr, 1n, 'sender', 7n)
+      expect(buildRawTransaction.mock.calls.map((call) => call[5])).toEqual([8, 9, 10])
+      expect(submittedAccountOps[0].eoaNonce).toBe(8n)
+    })
+
+    test('a node that already has the txn counts it as sent', async () => {
+      const { controller, submittedAccountOps } = await initBatch()
+      jest
+        .spyOn(broadcastLib, 'buildRawTransaction')
+        .mockImplementation(async () => ({ to: '0x', value: 0n }) as any)
+      let signedCount = 0
+      jest.spyOn(KeystoreSigner.prototype, 'signRawTransaction').mockImplementation(async () => {
+        signedCount += 1
+        return `0x0${signedCount}`
+      })
+      jest.spyOn(broadcastLib, 'broadcastTransaction').mockImplementation(async () => {
+        if (signedCount === 2) {
+          throw new Error(
+            'could not coalesce error (error={ "code": -32000, "message": "already known" })'
+          )
+        }
+        return { hash: `0xhash${signedCount}` } as any
+      })
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(submittedAccountOps).toHaveLength(1)
+      expect(submittedAccountOps[0].identifiedBy.identifier.split('-')).toEqual([
+        '0xhash1',
+        keccak256('0x02'),
+        '0xhash3'
+      ])
+      expect(getPartialBroadcastError(controller)).toBeUndefined()
+    })
+  })
+
+  describe('broadcast refusals', () => {
+    const rpcProvider = new JsonRpcProvider('http://127.0.0.1:1', EthersNetwork.from(1), {
+      staticNetwork: EthersNetwork.from(1)
+    })
+    afterAll(() => rpcProvider.destroy())
+
+    // Built the way ethers builds them from a node answer to eth_sendRawTransaction
+    const nodeError = (message: string) =>
+      rpcProvider.getRpcError(
+        { method: 'eth_sendRawTransaction', params: ['0x00'], id: 1, jsonrpc: '2.0' },
+        { error: { code: -32000, message } }
+      )
+
+    const initRawTxn = async () => {
+      const { controller } = await initBatch()
+      ;(controller.accountOp as any).gasFeePayment = {
+        ...controller.accountOp.gasFeePayment,
+        broadcastOption: broadcastLib.BROADCAST_OPTIONS.bySelf
+      }
+      return controller
+    }
+
+    test('a txn of another app that holds the nonce gets a plain message and no fee change', async () => {
+      const controller = await initRawTxn()
+
+      expect(() =>
+        controller.throwBroadcastAccountOp({
+          error: nodeError('replacement transaction underpriced')
+        })
+      ).toThrow(
+        'Another transaction from this account is still waiting to be confirmed. Wait for it to finish, then try again.'
+      )
+      expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+    })
+
+    test('a nonce that is already used refreshes the account state', async () => {
+      const controller = await initRawTxn()
+      const updateAccountState = jest
+        .spyOn(AccountsController.prototype, 'updateAccountState')
+        .mockResolvedValue(undefined)
+
+      expect(() =>
+        controller.throwBroadcastAccountOp({ error: nodeError('nonce too low') })
+      ).toThrow('Pending transaction detected. Please try again in a few seconds')
+      expect(updateAccountState).toHaveBeenCalledWith(eoaAccount.addr, 'pending', [1n], true)
+    })
   })
 
   describe('in the built-in swap', () => {

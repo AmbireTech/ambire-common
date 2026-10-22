@@ -2,7 +2,12 @@ import { ethers } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { AccountOp, accountOpSignableHash, isSafeRejectionCall } from './accountOp'
+import {
+  AccountOp,
+  accountOpSignableHash,
+  isSafeRejectionCall,
+  isSameChainAndSender
+} from './accountOp'
 import { Call } from './types'
 
 describe('AccountOp', () => {
@@ -104,5 +109,31 @@ describe('isSafeRejectionCall', () => {
 
   test('does not mark an empty calls array', () => {
     expect(isSafeRejectionCall([], safeAddr)).toBe(false)
+  })
+
+  describe('isSameChainAndSender', () => {
+    const SMART = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const EOA = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const OTHER = '0x8f4B2F3e18a4E1Fc5c9d95e1eE5A9B37a55f6A67'
+    const op = (accountAddr: string, paidBy?: string, chainId = 8453n) =>
+      ({
+        accountAddr,
+        chainId,
+        gasFeePayment: paidBy ? { paidBy } : null
+      }) as Pick<AccountOp, 'accountAddr' | 'chainId' | 'gasFeePayment'>
+
+    test('a smart account paid by EOA E and E itself share a sender', () => {
+      expect(isSameChainAndSender(op(SMART, EOA), op(EOA, EOA))).toBe(true)
+      expect(isSameChainAndSender(op(EOA, EOA), op(SMART, EOA.toLowerCase()))).toBe(true)
+    })
+
+    test('the same account without a fee payer yet shares a sender', () => {
+      expect(isSameChainAndSender(op(SMART), op(SMART))).toBe(true)
+    })
+
+    test('unrelated accounts, or the same account on another chain, do not', () => {
+      expect(isSameChainAndSender(op(SMART, EOA), op(OTHER, OTHER))).toBe(false)
+      expect(isSameChainAndSender(op(EOA, EOA), op(EOA, EOA, 1n))).toBe(false)
+    })
   })
 })

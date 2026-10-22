@@ -604,9 +604,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         const accountStateBefore =
           this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
-        // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
+        // Try to update the account state for 2 seconds. If that fails, use the previous account state if it exists,
         // otherwise wait for the fetch to complete (no matter how long it takes).
         // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
+        let fallbackTimeoutId: ReturnType<typeof setTimeout> | undefined
         const accountState = await Promise.race([
           this.#accounts
             .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
@@ -615,10 +616,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           accountStateBefore
             ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
               new Promise<AccountOnchainState | undefined>((res) => {
-                setTimeout(() => res(accountStateBefore), 2000)
+                fallbackTimeoutId = setTimeout(() => res(accountStateBefore), 2000)
               })
             : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
         ])
+        clearTimeout(fallbackTimeoutId)
 
         if (!accountState) {
           const message =
@@ -3505,9 +3507,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const accountStateBefore =
         this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
-      // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
+      // Try to update the account state for 2 seconds. If that fails, use the previous account state if it exists,
       // otherwise wait for the fetch to complete (no matter how long it takes).
       // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
+      let fallbackTimeoutId: ReturnType<typeof setTimeout> | undefined
       const accountState = await Promise.race([
         this.#accounts
           .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
@@ -3515,10 +3518,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // Fallback to the old account state if it exists and the fetch takes too long
         accountStateBefore
           ? new Promise<AccountOnchainState>((res) => {
-              setTimeout(() => res(accountStateBefore), 2000)
+              fallbackTimeoutId = setTimeout(() => res(accountStateBefore), 2000)
             })
           : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
       ])
+      clearTimeout(fallbackTimeoutId)
 
       if (!accountState) {
         this.emitError({
@@ -3552,11 +3556,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // transaction has already raised the nonce. Keeping the old one there makes it fail
       const speedUpNonce =
         isSpeedUpRequest && account.safeCreation ? providedAccountOp?.nonce : undefined
+      // A Safe starts past the nonces of its txns this device sent that the RPC may not count
+      // yet, so a new txn isn't queued behind one that already uses the nonce
+      const startNonce = account.safeCreation
+        ? this.#accounts.getNextNonce(meta.accountAddr, meta.chainId, 'account', accountState.nonce)
+        : accountState.nonce
       const initialNonce =
         speedUpNonce ??
         (account.safeCreation && !meta.safeTxnProps && accountOpNonce === undefined
-          ? this.#getFirstFreeNonce(meta.accountAddr, meta.chainId, accountState.nonce)
-          : (accountOpNonce ?? meta.safeTxnProps?.nonce ?? accountState.nonce))
+          ? this.#getFirstFreeNonce(meta.accountAddr, meta.chainId, startNonce)
+          : (accountOpNonce ?? meta.safeTxnProps?.nonce ?? startNonce))
       await this.#signAccountOpPreference.initialLoadPromise
       callUserRequest = {
         id: requestId,

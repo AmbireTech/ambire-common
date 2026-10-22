@@ -5,6 +5,11 @@ import {
   IRecurringTimeout,
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
+import {
+  ACCOUNT_STATE_AFTER_RECEIPT_RETRY_LIMIT_MS,
+  AFTER_RECEIPT_RETRY_MAX_DELAY_MS,
+  AFTER_RECEIPT_RETRY_MIN_DELAY_MS
+} from '../../consts/account'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
   SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
@@ -31,9 +36,14 @@ import { IStorageController } from '../../interfaces/storage'
 import { UiManager } from '../../interfaces/ui'
 import { getUniqueAccountsArray, isAmbireV2Account } from '../../libs/account/account'
 import { normalizeIdentityResponse } from '../../libs/accountPicker/accountPicker'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
+import isSameAddr from '../../utils/isSameAddr'
+import { isMinedStatus, isNonceCounted, NonceLock, TakenNonce } from '../../utils/nonce'
+import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
@@ -117,6 +127,12 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   /** Orders calls and fetches, so a job can tell which fetches started after a call. */
   #sequence = 0
+
+  /**
+   * The nonces of the ops this device sent, by op id. A new op skips them while the RPC may not
+   * count them yet. In memory only, so a restart forgets them.
+   */
+  #nonceLocks: { [accountOpId: string]: NonceLock } = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -247,6 +263,144 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     await this.updateAccountStates([accountData], blockTag, networks, force)
   }
 
+  /** Holds the nonces a just sent op takes, until `updateAccountStateAfterOps` frees them. */
+  lockNonces(accountOpId: string, chainId: bigint, nonces: TakenNonce[]) {
+    if (!nonces.length) return
+
+    this.#nonceLocks[accountOpId] = { chainId, nonces, isSettled: false }
+  }
+
+  /**
+   * The nonce for a new op of `addr`: `chainNonce`, raised past the locked nonces. `chainNonce`
+   * must already be the next nonce (a txn count or a contract nonce).
+   */
+  getNextNonce(
+    addr: string,
+    chainId: bigint,
+    kind: TakenNonce['kind'],
+    chainNonce: bigint
+  ): bigint {
+    return Object.values(this.#nonceLocks)
+      .filter((lock) => lock.chainId === chainId)
+      .flatMap((lock) => lock.nonces)
+      .filter((taken) => taken.kind === kind && isSameAddr(taken.addr, addr))
+      .reduce((next, taken) => (taken.nonce >= next ? taken.nonce + 1n : next), chainNonce)
+  }
+
+  /**
+   * Call after ops of `accountAddr` get a final status. Frees the nonces the ops did not use,
+   * then reads the latest state on `chainIds` again until it counts the rest, as a lagging RPC
+   * can still return the state from before the ops. After a time limit it stops reading, but the
+   * rest stay locked until a later latest read counts them, as the ops did use them.
+   */
+  async updateAccountStateAfterOps(
+    accountAddr: Account['addr'],
+    chainIds: bigint[],
+    ops: SubmittedAccountOp[]
+  ) {
+    const startedAt = Date.now()
+    let delay = AFTER_RECEIPT_RETRY_MIN_DELAY_MS
+    const opIds = ops.map((op) => op.id)
+    ops.forEach((op) => this.#settleNonceLock(op))
+
+    const readLatestStates = (addrs: Account['addr'][], chainIdsToRead: bigint[]) =>
+      Promise.all(
+        addrs.map((addr) => this.updateAccountState(addr, 'latest', chainIdsToRead, true))
+      )
+
+    const firstChainIds = [...new Set([...chainIds, ...this.#getLockedChainIds(opIds)])]
+    // Without chains, updateAccountState would read all of them
+    if (!firstChainIds.length) return
+
+    await readLatestStates(
+      [...new Set([accountAddr, ...this.#getLockedAccountAddrs(opIds)])],
+      firstChainIds
+    )
+
+    while (this.#getLockedChainIds(opIds).length) {
+      if (Date.now() - startedAt >= ACCOUNT_STATE_AFTER_RECEIPT_RETRY_LIMIT_MS) {
+        this.emitError({
+          level: 'silent',
+          message: `The account state of ${accountAddr} did not count its confirmed transactions in time on chains ${this.#getLockedChainIds(opIds).join(', ')}.`,
+          error: new Error('accounts: account state is behind the confirmed ops')
+        })
+        return
+      }
+
+      await wait(delay)
+      // Removing the account also freed its nonces
+      if (!this.accounts.some((account) => account.addr === accountAddr)) return
+      delay = Math.min(delay * 2, AFTER_RECEIPT_RETRY_MAX_DELAY_MS)
+
+      await readLatestStates(this.#getLockedAccountAddrs(opIds), this.#getLockedChainIds(opIds))
+    }
+  }
+
+  /** Frees the nonces a finalized op did not use, and lets a state read free the rest. */
+  #settleNonceLock(op: SubmittedAccountOp) {
+    const lock = this.#nonceLocks[op.id]
+    if (!lock) return
+
+    // A batch sent one txn at a time takes the status of its last txn, and its txns are mined in
+    // nonce order, so its mined txns hold its lowest sender nonces
+    const minedTxnCount =
+      op.identifiedBy.type === 'MultipleTxns'
+        ? op.calls.filter((call) => isMinedStatus(call.status)).length
+        : undefined
+    const senderNonces = lock.nonces.filter((taken) => taken.kind === 'sender')
+
+    lock.isSettled = true
+    lock.nonces = lock.nonces.filter((taken) => {
+      // A mined txn always raises the sender nonce, while a reverted call undoes the account nonce raise
+      if (taken.kind === 'account') return op.status === AccountOpStatus.Success
+      if (minedTxnCount === undefined) return isMinedStatus(op.status)
+
+      const lowerNonceCount = senderNonces.filter((other) => other.nonce < taken.nonce).length
+      return lowerNonceCount < minedTxnCount
+    })
+    if (!lock.nonces.length) delete this.#nonceLocks[op.id]
+  }
+
+  /** Frees the settled nonces the saved states count. A nonce of a removed account is freed too. */
+  #freeCountedNonces() {
+    Object.keys(this.#nonceLocks).forEach((opId) => {
+      const lock = this.#nonceLocks[opId]
+      if (!lock?.isSettled) return
+
+      lock.nonces = lock.nonces.filter((taken) => {
+        const account = this.accounts.find((acc) => isSameAddr(acc.addr, taken.addr))
+        if (!account) return false
+
+        const state = this.accountStates[account.addr]?.[lock.chainId.toString()]
+        return !state || !isNonceCounted(state, taken)
+      })
+      if (!lock.nonces.length) delete this.#nonceLocks[opId]
+    })
+  }
+
+  /** The chains of the settled nonces of `opIds`. */
+  #getLockedChainIds(opIds: string[]): bigint[] {
+    return [
+      ...new Set(
+        opIds.flatMap((opId) => {
+          const lock = this.#nonceLocks[opId]
+          return lock?.isSettled ? [lock.chainId] : []
+        })
+      )
+    ]
+  }
+
+  /** The wallet accounts that hold the settled nonces of `opIds`, as saved in `accounts`. */
+  #getLockedAccountAddrs(opIds: string[]): Account['addr'][] {
+    const lockedAddrs = opIds.flatMap((opId) => {
+      const lock = this.#nonceLocks[opId]
+      return lock?.isSettled ? lock.nonces.map((taken) => taken.addr) : []
+    })
+    return this.accounts
+      .filter((account) => lockedAddrs.some((addr) => isSameAddr(addr, account.addr)))
+      .map((account) => account.addr)
+  }
+
   private async updateAccountStates(
     accounts: Account[],
     blockTag: AccountStateBlockTag = 'latest',
@@ -280,6 +434,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     await Promise.all(networkUpdates)
 
+    // A pending state may count a txn that is dropped later
+    if (blockTag === 'latest') this.#freeCountedNonces()
     this.#onAccountStateUpdate()
   }
 
@@ -480,6 +636,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.accounts = this.accounts.filter((acc) => acc.addr !== address)
 
     delete this.accountStates[address]
+    Object.entries(this.#nonceLocks).forEach(([opId, lock]) => {
+      lock.nonces = lock.nonces.filter((taken) => !isSameAddr(taken.addr, address))
+      if (!lock.nonces.length) delete this.#nonceLocks[opId]
+    })
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('accounts', this.accounts)
