@@ -18,7 +18,7 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
-import { IProvidersController } from '../../interfaces/provider'
+import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
@@ -169,6 +169,9 @@ const getAccountOpsAccountKey = (
   accountAddr: string
 ) => Object.keys(accountKeyed).find((key) => key.toLowerCase() === accountAddr.toLowerCase())
 
+/** How many polls must find a pending EOA op without a txn and with a past nonce to drop it. */
+export const PAST_NONCE_CHECKS_TO_DROP_OP = 3
+
 const getAccountOpsForAccountAndChain = <T>(
   accountOps: { [account: string]: { [network: string]: T[] } },
   accountAddr: string,
@@ -304,6 +307,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
   #selectedAccount: ISelectedAccountController
 
   #accountsOps: InternalAccountsOps = {}
+
+  /** How many polls found a pending EOA op with no txn and a past nonce, by op id. */
+  #pastNonceCheckCounts = new Map<string, number>()
 
   #externalAccountOps: ExternalAccountOps = {}
 
@@ -1740,7 +1746,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     op.eoaNonce === accountOp.eoaNonce &&
                     op.gasFeePayment?.paidBy?.toLowerCase() === accountOpPaidBy
                 )
-              if (isReplacedByConfirmedOp) {
+              const isDroppedOrReplacedElsewhere =
+                !hasReceipt &&
+                !isAnyTxnInMempool &&
+                !isReplacedByConfirmedOp &&
+                (await this.#isEoaOpPastNonceOnRepeatedChecks(accountOp, provider))
+              if (isReplacedByConfirmedOp || isDroppedOrReplacedElsewhere) {
+                this.#pastNonceCheckCounts.delete(accountOp.id)
                 const updatedOpIfAny = updateOpStatus(
                   accountOp,
                   AccountOpStatus.UnknownButPastNonce
@@ -1936,6 +1948,29 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.#persistence.removeAccount(opsKey)
 
     this.emitUpdate()
+  }
+
+  /**
+   * Whether a pending op sent by an EOA had no txn and a nonce the EOA already used on
+   * `PAST_NONCE_CHECKS_TO_DROP_OP` polls, which means another device replaced it or it was
+   * dropped. The polls don't need to be in a row, as a node can briefly miss a txn.
+   */
+  async #isEoaOpPastNonceOnRepeatedChecks(
+    accountOp: SubmittedAccountOp,
+    provider: RPCProvider
+  ): Promise<boolean> {
+    const paidBy = accountOp.gasFeePayment?.paidBy
+    if (accountOp.eoaNonce === null || accountOp.eoaNonce === undefined || !paidBy) return false
+
+    const lastEoaNonce = isIdentifiedByMultipleTxn(accountOp.identifiedBy)
+      ? accountOp.eoaNonce + BigInt(accountOp.calls.length - 1)
+      : accountOp.eoaNonce
+    const minedNonceCount = await provider.getTransactionCount(paidBy, 'latest')
+    if (lastEoaNonce >= BigInt(minedNonceCount)) return false
+
+    const checkCount = (this.#pastNonceCheckCounts.get(accountOp.id) || 0) + 1
+    this.#pastNonceCheckCounts.set(accountOp.id, checkCount)
+    return checkCount >= PAST_NONCE_CHECKS_TO_DROP_OP
   }
 
   get broadcastedButNotConfirmed(): { [accAddr: string]: SubmittedAccountOp[] } {
@@ -2142,6 +2177,18 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     return Array.from(this.#bannersByAccount.values()).flat()
+  }
+
+  /**
+   * The loaded ops on one chain, used to pick the next nonce. Only of `accountAddr` when it is
+   * passed, else of every account, as a payer EOA can send the ops of another account.
+   */
+  getAccountOpsForChain(chainId: bigint, accountAddr?: string): SubmittedAccountOp[] {
+    const chainIdString = chainId.toString()
+    if (accountAddr) {
+      return getAccountOpsForAccountAndChain(this.#accountsOps, accountAddr, chainIdString)
+    }
+    return Object.values(this.#accountsOps).flatMap((accountOps) => accountOps[chainIdString] || [])
   }
 
   getAccountOpsForAccount({

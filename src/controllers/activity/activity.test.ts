@@ -1052,6 +1052,38 @@ describe('Activity Controller ', () => {
         expect(pendingOp?.status).toBe(AccountOpStatus.UnknownButPastNonce)
       })
 
+      test('an op with no txn is replaced only after three polls find its nonce already used', async () => {
+        // No local op took the nonce, so another device or app replaced the op, or it was dropped
+        const { pollStatuses } = await setupOps({
+          receiptsByTxnId: {},
+          previousOpPaidBy: '0x2222222222222222222222222222222222222222'
+        })
+        // The op used nonce 5, so a mined nonce count of 6 means it is gone. A node that
+        // briefly lags and reports 5 must not count, but must not reset the count either
+        const minedNonceCounts = [6, 5, 6, 6]
+        const getTransactionCount = jest
+          .spyOn(mainCtrl.providers.providers['1']!, 'getTransactionCount')
+          .mockImplementation(async () => minedNonceCounts.shift()!)
+
+        const statuses = []
+        for (let poll = 0; poll < 4; poll++) {
+          const { pendingOp } = await pollStatuses()
+          statuses.push(pendingOp?.status)
+        }
+
+        expect(statuses).toEqual([
+          AccountOpStatus.BroadcastedButNotConfirmed,
+          AccountOpStatus.BroadcastedButNotConfirmed,
+          AccountOpStatus.BroadcastedButNotConfirmed,
+          AccountOpStatus.UnknownButPastNonce
+        ])
+        expect(getTransactionCount).toHaveBeenCalledTimes(4)
+        expect(getTransactionCount).toHaveBeenCalledWith(
+          SUBMITTED_ACCOUNT_OP.gasFeePayment!.paidBy,
+          'latest'
+        )
+      })
+
       test('an op still in the mempool is not marked as replaced while it waits', async () => {
         const { pollStatuses } = await setupOps({
           receiptsByTxnId: { [PREVIOUS_TXN_ID]: buildMockReceipt() },
