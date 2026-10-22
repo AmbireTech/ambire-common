@@ -75,6 +75,20 @@ export interface ExtraDappInfo {
 
 export type Dapp = PredefinedDapp & Partial<ExtraDappInfo>
 
+/**
+ * When the website of an app served from an ENS name over IPFS (e.g. `tornadocash.eth.limo`)
+ * was last replaced. The ENS name owner can swap the whole website at any time, so a recent
+ * change on an app the user trusts is a warning sign.
+ */
+export type DappWebsiteContentUpdate =
+  | { status: 'LOADING' }
+  | {
+      status: 'LOADED'
+      /** When the website started serving its current content, in ms. */
+      updatedAt: number
+    }
+  | { status: 'FAILED' }
+
 export interface RecentDappEntry {
   id: string
   openedAt: number
