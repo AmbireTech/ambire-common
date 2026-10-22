@@ -1011,7 +1011,7 @@ describe('SignAccountOp Controller ', () => {
     return { controller, storageCtrl, accountsCtrl }
   }
 
-  const initSafeNonce = async (signed: string[] = []) => {
+  const initSafeNonce = async (signed: string[] = [], { isSpeedUp = false } = {}) => {
     const feePaymentOptions = getDefaultFeeSelectionOptions().map((option) => ({
       ...option,
       paidBy: safeAccount.addr
@@ -1019,6 +1019,9 @@ describe('SignAccountOp Controller ', () => {
     const accountOp = createAccountOp(safeAccount, 1n)
     accountOp.op.nonce = 3n
     accountOp.op.signed = signed
+    if (isSpeedUp) {
+      accountOp.op.meta = { ...accountOp.op.meta, speedUp: { enabled: true } }
+    }
 
     return init(
       safeAccount,
@@ -1039,7 +1042,13 @@ describe('SignAccountOp Controller ', () => {
         flags: {},
         updatedAt: Date.now()
       },
-      defaultFeeSelectionGasPrices
+      defaultFeeSelectionGasPrices,
+      false,
+      {
+        createSpeedUp: isSpeedUp
+          ? (activity) => new SpeedUp({ accountOp: accountOp.op, activity })
+          : undefined
+      }
     )
   }
 
@@ -1153,6 +1162,24 @@ describe('SignAccountOp Controller ', () => {
       action: 'refetch-account-state'
     })
     expect(controller.canBroadcast).toBe(false)
+  })
+
+  test('does not block a Safe speed up for keeping the nonce of the transaction it replaces', async () => {
+    const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress], {
+      isSpeedUp: true
+    })
+    const accountState =
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!
+
+    controller.update({ accountOpData: { nonce: accountState.nonce + 1n } })
+
+    expect(controller.errors).not.toContainEqual(
+      expect.objectContaining({
+        title: 'You need to broadcast pending transactions before this one.'
+      })
+    )
   })
 
   test('does not change the nonce of a non-Safe or already-signed transaction', async () => {
@@ -5444,6 +5471,20 @@ describe('speed up of a pending transaction', () => {
       expect(controller.readyToSign).toBe(false)
     }
   )
+
+  test('does not ask how to pay for a speed up that is no longer needed', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue({ status: AccountOpStatus.Success } as any)
+    // The original way of paying isn't available anymore, which would be an error while the
+    // speed up is still needed. Other errors (e.g. of the estimation) are still shown
+    const { controller } = await initSpeedUp({
+      replacedPaidBy: '0x1111111111111111111111111111111111111111'
+    })
+
+    expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+    expect(controller.errors.some((e) => e.title.includes("can't be sped up"))).toBe(false)
+  })
 
   test('stops right away when the original transaction was processed before opening', async () => {
     jest

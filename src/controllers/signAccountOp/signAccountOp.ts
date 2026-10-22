@@ -1659,10 +1659,12 @@ export class SignAccountOpController
 
     // A speed up must be paid the same way as the pending transaction it replaces. Paid any
     // other way, it's sent as a new transaction and the same calls could run twice. The other
-    // fee errors would be about a way of paying that can't be used, so they are not shown
+    // fee errors would be about a way of paying that can't be used, so they are not shown.
+    // Checked once the fee options are known, and not only after a successful estimation, as
+    // the options are kept while the estimation reloads and the error must not flicker away
     if (
       this.canBroadcast &&
-      this.estimation.status === EstimationStatus.Success &&
+      this.estimation.availableFeeOptions.length > 0 &&
       this.status?.type !== SigningStatus.SpeedUpNotNeeded &&
       this.#speedUp?.isReplacedFeeOptionMissing(this.estimation.availableFeeOptions)
     ) {
@@ -1852,10 +1854,13 @@ export class SignAccountOpController
       }
     }
 
-    // Safe txn, signed, with a future nonce: display an error
+    // Safe txn, signed, with a future nonce: display an error.
+    // Not for a speed up, which keeps the nonce of the pending transaction it replaces on
+    // purpose. If that transaction gets processed first, the speed up is stopped instead
     if (
       !!this.account.safeCreation &&
       !this.accountOp.meta?.isSafeDeploy &&
+      !this.#speedUp &&
       accountState &&
       this.accountOp.nonce &&
       this.accountOp.nonce !== accountState.nonce &&
