@@ -101,7 +101,7 @@ const getDomainFromUrl = (url: string) => {
   return domain
 }
 
-const formatDappName = (name: string) => {
+const formatDappName = (name: string = '') => {
   if (name.toLowerCase().includes('uniswap')) return 'Uniswap'
   if (name.toLowerCase().includes('aave v3')) return 'AAVE'
 
