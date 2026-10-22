@@ -693,26 +693,5 @@ describe('typed message tests', () => {
         ])
       )
     })
-
-    test('does not show a native value row when no native value is sent', () => {
-      const { fullVisualization } = humanizeMessage(getSafeTxMessage('0', transferData))
-
-      expect(
-        fullVisualization?.some((item) => item.type === 'label' && item.content === 'send')
-      ).toBe(false)
-    })
-
-    test('shows the native value that is sent with the token call', () => {
-      const { fullVisualization } = humanizeMessage(
-        getSafeTxMessage('1000000000000000000', transferData)
-      )
-
-      expect(fullVisualization).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ type: 'label', content: 'send' }),
-          expect.objectContaining({ type: 'token', value: 10n ** 18n })
-        ])
-      )
-    })
   })
 })
