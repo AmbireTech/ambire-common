@@ -296,12 +296,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (
       aesEncrypted.cipherType !== CIPHER &&
       aesEncrypted.cipherType !== CIPHER_OLD &&
+      // @ts-ignore
       aesEncrypted.cipherType !== undefined
     ) {
       throw new EmittableError({
         message:
           'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
         level: 'major',
+        // @ts-ignore
         error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
       })
     }

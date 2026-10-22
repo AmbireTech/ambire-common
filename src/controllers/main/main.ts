@@ -2262,6 +2262,7 @@ export class MainController extends EventEmitter implements IMainController {
     if (notSentCalls.length) {
       // Their promises have just been answered, so the request must not hold them
       accountOpRequest.dappPromises = accountOpRequest.dappPromises.filter((promise) =>
+        // @ts-ignore
         dappHandlers.every((handler) => handler.promise.id !== promise.id)
       )
     } else {

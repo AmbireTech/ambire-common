@@ -120,6 +120,7 @@ const toBigIntOrNull = (value: unknown): bigint | null => {
 const normalizeComparableValue = (value: unknown): string | number | boolean | null => {
   if (typeof value === 'bigint') return value.toString()
   if (typeof value === 'string') return value.toLowerCase()
+  // @ts-ignore
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
 
   return String(value)

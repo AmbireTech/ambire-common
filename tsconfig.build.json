@@ -4,7 +4,8 @@
     "baseUrl": "src/",
     "paths": {
       "@/*": ["*"],
-      "@test/*": ["../test/*"]
+      "@test/*": ["../test/*"],
+      "ox/tempo/*": ["../node_modules/ox/_types/tempo/*.d.ts"]
     },
     "outDir": "./dist",
     "module": "commonjs",
@@ -45,7 +46,8 @@
   },
   "include": [
     "src",
-    "v1"
+    "v1",
+    "types"
   ],
   "exclude": ["node_modules", "dist", "test", "scripts", "src/**/*.test.ts", "src/**/tests"]
 }

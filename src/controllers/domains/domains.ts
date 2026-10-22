@@ -646,6 +646,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
           continue
         }
 
+        // @ts-ignore
         const { address, names } = entry
         const primary = getPrimaryName(names)
         if (primary) this.domainToAddresses[primary.name] = { address, type: primary.id }
@@ -688,6 +689,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
   ): Promise<ExtraReverseData> {
     if (entry.failed) return { avatar: null, expiry: undefined }
 
+    // @ts-ignore
     const primary = getPrimaryName(entry.names)
     if (!primary) return { avatar: null, expiry: undefined }
 

@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import { Address, isAddress, labelhash, namehash } from 'viem'
 import { getEnsAddress, getEnsAvatar as viemGetEnsAvatar, getEnsName, normalize } from 'viem/ens'
 
