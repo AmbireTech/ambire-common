@@ -2,7 +2,11 @@ import { describe, expect, test } from '@jest/globals'
 
 import { SubmittedAccountOpLike } from '../accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../accountOp/types'
-import { collapseReplacedAccountOps, getReplacementKey } from './replacements'
+import {
+  collapseReplacedAccountOps,
+  findAccountOpOrReplacement,
+  getReplacementKey
+} from './replacements'
 
 const ACCOUNT = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
 const OTHER_EOA = '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'
@@ -139,5 +143,48 @@ describe('collapseReplacedAccountOps', () => {
 
   test('returns an empty list for no ops', () => {
     expect(collapseReplacedAccountOps([])).toEqual([])
+  })
+})
+
+describe('findAccountOpOrReplacement', () => {
+  test('finds the op itself while it is the one shown', () => {
+    const original = buildOp({ id: 'original', timestamp: 1 })
+
+    expect(findAccountOpOrReplacement([original], original)?.id).toBe('original')
+  })
+
+  test('finds the speed up that is shown in place of the op', () => {
+    const original = buildOp({ id: 'original', timestamp: 1 })
+    const ops = collapseReplacedAccountOps([buildOp({ id: 'speed-up', timestamp: 2 }), original])
+
+    expect(findAccountOpOrReplacement(ops, original)?.id).toBe('speed-up')
+  })
+
+  test('does not match an op of another payer, nonce or network', () => {
+    const original = buildOp({ id: 'original' })
+    const ops = [
+      buildOp({ id: 'other-payer', paidBy: OTHER_EOA }),
+      buildOp({ id: 'other-nonce', eoaNonce: 6n }),
+      buildOp({ id: 'other-network', chainId: 10n })
+    ]
+
+    expect(findAccountOpOrReplacement(ops, original)).toBeUndefined()
+  })
+
+  test('matches an op that cannot be replaced by its signature', () => {
+    const tracked = { ...buildOp({ id: 'tracked', eoaNonce: undefined }), signature: '0xaa' }
+    const ops = [
+      { ...buildOp({ id: 'other', eoaNonce: undefined }), signature: '0xbb' },
+      { ...buildOp({ id: 'same', eoaNonce: undefined }), signature: '0xaa' }
+    ]
+
+    expect(findAccountOpOrReplacement(ops, tracked)?.id).toBe('same')
+  })
+
+  test('matches nothing for an op that cannot be replaced and has no signature', () => {
+    const tracked = buildOp({ id: 'tracked', eoaNonce: undefined })
+    const ops = [buildOp({ id: 'other', eoaNonce: undefined })]
+
+    expect(findAccountOpOrReplacement(ops, tracked)).toBeUndefined()
   })
 })

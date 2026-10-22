@@ -16,7 +16,9 @@ const isProcessed = ({ status }: SubmittedAccountOpLike) =>
  * the account itself (e.g. a smart account paid by one of its EOA keys). Nonces of different
  * EOAs are unrelated, so the payer is part of the key too
  */
-export const getReplacementKey = (accountOp: SubmittedAccountOpLike): string | null => {
+export const getReplacementKey = (
+  accountOp: Pick<SubmittedAccountOpLike, 'chainId' | 'gasFeePayment' | 'eoaNonce'>
+): string | null => {
   const paidBy = accountOp.gasFeePayment?.paidBy?.toLowerCase()
   if (accountOp.eoaNonce === null || accountOp.eoaNonce === undefined || !paidBy) return null
 
@@ -59,4 +61,21 @@ export const collapseReplacedAccountOps = <T extends SubmittedAccountOpLike>(
 
     return !key || representatives.get(key) === accountOp
   })
+}
+
+/**
+ * Finds `accountOp` in a list collapsed by collapseReplacedAccountOps. Once it's sped up, only
+ * one op of its group is in the list, so the op shown in its place is returned instead: the one
+ * that got (or will get) onchain. Ops that can't be replaced are matched by their signature
+ */
+export const findAccountOpOrReplacement = <T extends SubmittedAccountOpLike>(
+  accountOps: T[],
+  accountOp: Pick<SubmittedAccountOpLike, 'chainId' | 'gasFeePayment' | 'eoaNonce' | 'signature'>
+): T | undefined => {
+  const replacementKey = getReplacementKey(accountOp)
+  if (replacementKey) return accountOps.find((op) => getReplacementKey(op) === replacementKey)
+
+  if (!accountOp.signature) return undefined
+
+  return accountOps.find((op) => op.signature === accountOp.signature)
 }

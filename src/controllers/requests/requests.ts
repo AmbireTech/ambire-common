@@ -263,6 +263,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #safeDeploymentRequestsInFlight = new Map<string, Promise<SafeDeploymentRequestResult>>()
 
   /**
+   * Speed ups still being built, keyed by the chain and the pending transaction they replace.
+   * Building one waits on the network, and it's in `userRequests` only once that's done, so
+   * without this, pressing Speed up again meanwhile would build a second speed up
+   */
+  #speedUpsBeingBuilt = new Set<string>()
+
+  /**
    * Requests that have been built and are about to be added. Prevents opening and closing
    * the request window in a quick succession.
    */
@@ -779,6 +786,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         r.signAccountOp.accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier ===
           replacedIdentifier
     )
+  }
+
+  /**
+   * Identifies the pending transaction a speed up replaces, the same way as
+   * `#findOpenSpeedUpRequest` does. Undefined for anything that isn't a speed up
+   */
+  #getSpeedUpKey(accountOp: AccountOp | undefined): string | undefined {
+    if (!accountOp || !SpeedUp.isSpeedUp(accountOp)) return undefined
+    const replacedIdentifier = accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier
+    if (!replacedIdentifier) return undefined
+
+    return `${accountOp.chainId.toString()}:${replacedIdentifier}`
   }
 
   #getSafeDeployRequest(accountAddr: string, chainId: bigint): CallsUserRequest | undefined {
@@ -3244,8 +3263,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    const userRequest = await this.#createOrUpdateCallsUserRequest(params, executionType)
-    if (userRequest) await this.addUserRequests([userRequest], { executionType, ...addOptions })
+    // The speed up being built opens once it's ready, so pressing Speed up again meanwhile
+    // has nothing to add
+    const speedUpKey = this.#getSpeedUpKey(params.accountOp)
+    if (speedUpKey && this.#speedUpsBeingBuilt.has(speedUpKey)) return
+    if (speedUpKey) this.#speedUpsBeingBuilt.add(speedUpKey)
+
+    try {
+      const userRequest = await this.#createOrUpdateCallsUserRequest(params, executionType)
+      if (userRequest) await this.addUserRequests([userRequest], { executionType, ...addOptions })
+    } finally {
+      if (speedUpKey) this.#speedUpsBeingBuilt.delete(speedUpKey)
+    }
   }
 
   /**

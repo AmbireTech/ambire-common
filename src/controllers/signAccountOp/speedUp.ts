@@ -48,6 +48,9 @@ export class SpeedUp {
 
   #unsubscribeFromActivity?: () => void
 
+  /** Set by watchReplacedTransaction, see checkReplacedTransaction */
+  #onReplacedTransactionProcessed?: () => boolean
+
   /** Whether the account op is a speed up, so a SpeedUp should be created for it */
   static isSpeedUp(accountOp: AccountOp): boolean {
     return !!accountOp.meta?.speedUp?.enabled
@@ -95,6 +98,15 @@ export class SpeedUp {
   }
 
   /**
+   * Whether the pending transaction was paid in a way that isn't among the fee options anymore
+   * (e.g. the account that paid has no funds left). Paying any other way would send a new
+   * transaction instead of replacing the pending one, so the same calls could run twice
+   */
+  isReplacedFeeOptionMissing(feeOptions: FeePaymentOption[]): boolean {
+    return !!this.#replacedFeePayment && !this.findReplacedFeeOption(feeOptions)
+  }
+
+  /**
    * Calls `onProcessed` when the pending transaction gets processed, and right away if it
    * already was. `onProcessed` returns whether it's done with the speed up: if not (e.g. it's
    * in the middle of signing), it's called again on the next activity update, otherwise the
@@ -102,19 +114,25 @@ export class SpeedUp {
    */
   watchReplacedTransaction(onProcessed: () => boolean) {
     this.#stopWatchingReplacedTransaction()
-
-    const checkReplacedTransaction = () => {
-      if (!this.#isReplacedTransactionProcessed()) return
-      if (onProcessed()) this.#stopWatchingReplacedTransaction()
-    }
+    this.#onReplacedTransactionProcessed = onProcessed
 
     // Unique, as unsubscribing removes every listener with the same id, which would stop
     // the other open speed ups from watching their transactions
     this.#unsubscribeFromActivity = this.#activity.onUpdate(
-      checkReplacedTransaction,
+      () => this.checkReplacedTransaction(),
       `sign-account-op-speed-up-${generateUuid()}`
     )
-    checkReplacedTransaction()
+    this.checkReplacedTransaction()
+  }
+
+  /**
+   * Calls the `onProcessed` of watchReplacedTransaction if the pending transaction was
+   * processed. Also for when the activity may not update anymore, e.g. the transaction got
+   * processed while the speed up was being signed, so nothing is left pending
+   */
+  checkReplacedTransaction() {
+    if (!this.#onReplacedTransactionProcessed || !this.#isReplacedTransactionProcessed()) return
+    if (this.#onReplacedTransactionProcessed()) this.#stopWatchingReplacedTransaction()
   }
 
   #stopWatchingReplacedTransaction() {
@@ -138,5 +156,6 @@ export class SpeedUp {
 
   destroy() {
     this.#stopWatchingReplacedTransaction()
+    this.#onReplacedTransactionProcessed = undefined
   }
 }

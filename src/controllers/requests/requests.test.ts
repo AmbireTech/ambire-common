@@ -779,6 +779,41 @@ describe('RequestsController ', () => {
       expect(getCallsRequests(controller)).toHaveLength(2)
     })
 
+    test('pressing Speed up twice while the first is still being built adds one speed up', async () => {
+      const { controller } = await prepareTest()
+      const replacedTxnId = `0x${'aa'.repeat(32)}`
+
+      // Neither is awaited before the other starts, the same as two quick presses
+      await Promise.all([
+        buildSpeedUpRequest(controller, { replacedTxnId }),
+        buildSpeedUpRequest(controller, { replacedTxnId })
+      ])
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+    })
+
+    test('speed ups of different transactions built at the same time are both added', async () => {
+      const { controller } = await prepareTest()
+
+      await Promise.all([
+        buildSpeedUpRequest(controller, { replacedTxnId: `0x${'aa'.repeat(32)}` }),
+        buildSpeedUpRequest(controller, { replacedTxnId: `0x${'bb'.repeat(32)}` })
+      ])
+
+      expect(getCallsRequests(controller)).toHaveLength(2)
+    })
+
+    test('a speed up can be built again after the previous one was closed', async () => {
+      const { controller } = await prepareTest()
+      const replacedTxnId = `0x${'aa'.repeat(32)}`
+      await buildSpeedUpRequest(controller, { replacedTxnId })
+      await controller.removeUserRequests([getCallsRequests(controller)[0]!.id])
+
+      await buildSpeedUpRequest(controller, { replacedTxnId })
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+    })
+
     // The replaced transaction is still pending, so the pending account state is one nonce ahead
     const mockPendingNonce = (
       accountsCtrl: Awaited<ReturnType<typeof prepareTest>>['accountsCtrl']

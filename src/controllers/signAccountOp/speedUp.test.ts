@@ -209,6 +209,53 @@ describe('SpeedUp', () => {
     })
   })
 
+  describe('isReplacedFeeOptionMissing', () => {
+    const nativeOption = createFeeOption(accountAddr, '0x0000000000000000000000000000000000000000')
+
+    test('is false when the option the pending transaction was paid with is available', () => {
+      const speedUp = new SpeedUp({
+        accountOp: createAccountOp(),
+        activity: createActivity().activity
+      })
+
+      expect(speedUp.isReplacedFeeOptionMissing([nativeOption])).toBe(false)
+    })
+
+    test('is true when only other ways to pay are available', () => {
+      const speedUp = new SpeedUp({
+        accountOp: createAccountOp(),
+        activity: createActivity().activity
+      })
+      const options = [
+        createFeeOption(accountAddr, usdcAddr),
+        createFeeOption(accountAddr, '0x0000000000000000000000000000000000000000', {
+          onGasTank: true
+        }),
+        createFeeOption(otherAddr, '0x0000000000000000000000000000000000000000')
+      ]
+
+      expect(speedUp.isReplacedFeeOptionMissing(options)).toBe(true)
+    })
+
+    test('is true when there are no fee options at all', () => {
+      const speedUp = new SpeedUp({
+        accountOp: createAccountOp(),
+        activity: createActivity().activity
+      })
+
+      expect(speedUp.isReplacedFeeOptionMissing([])).toBe(true)
+    })
+
+    test('is false when it is unknown how the pending transaction was paid', () => {
+      const speedUp = new SpeedUp({
+        accountOp: createAccountOp({ gasFeePayment: null }),
+        activity: createActivity().activity
+      })
+
+      expect(speedUp.isReplacedFeeOptionMissing([])).toBe(false)
+    })
+  })
+
   describe('watchReplacedTransaction', () => {
     test('calls back right away when the pending transaction was already processed', () => {
       const { activity, findByIdentifiedBy } = createActivity(AccountOpStatus.Success)

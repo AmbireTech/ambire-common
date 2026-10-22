@@ -1144,8 +1144,8 @@ export class SignAccountOpController
    * Returns whether it's done with the speed up, so the activity no longer needs to be watched
    */
   #stopSpeedUp(): boolean {
-    // Signing is in progress, so this is checked again on the next activity update.
-    // If the broadcast fails because the nonce is taken, the request is stopped then
+    // Signing is in progress, so this is checked again on the next activity update, or once
+    // the status goes back to ReadyToSign (see #checkSpeedUpStillNeeded)
     if (
       this.status?.type === SigningStatus.InProgress ||
       this.status?.type === SigningStatus.WaitingForPaymaster
@@ -1161,6 +1161,17 @@ export class SignAccountOpController
     this.#stopIntervals()
     this.updateStatus(SigningStatus.SpeedUpNotNeeded)
     return true
+  }
+
+  /**
+   * Checks again whether the transaction being sped up was processed, once back to ReadyToSign.
+   * It may have been processed while signing, so the broadcast fails as its place (nonce) is
+   * taken, and with nothing left pending the activity may never update again
+   */
+  #checkSpeedUpStillNeeded() {
+    if (this.status?.type !== SigningStatus.ReadyToSign) return
+
+    this.#speedUp?.checkReplacedTransaction()
   }
 
   #withDecodedCalls(humanization: IrCall[]) {
@@ -1645,6 +1656,23 @@ export class SignAccountOpController
      * any errors
      */
     if (!this.isInitialized) return []
+
+    // A speed up must be paid the same way as the pending transaction it replaces. Paid any
+    // other way, it's sent as a new transaction and the same calls could run twice. The other
+    // fee errors would be about a way of paying that can't be used, so they are not shown
+    if (
+      this.canBroadcast &&
+      this.estimation.status === EstimationStatus.Success &&
+      this.status?.type !== SigningStatus.SpeedUpNotNeeded &&
+      this.#speedUp?.isReplacedFeeOptionMissing(this.estimation.availableFeeOptions)
+    ) {
+      return [
+        {
+          title:
+            "This transaction can't be sped up right now. The speed up has to be paid the same way as the original transaction, but that option isn't available anymore (for example, there isn't enough left to cover the fee). Add funds or wait for the original transaction to complete."
+        }
+      ]
+    }
 
     const areGasPricesLoading = typeof this.gasPrices === 'undefined'
 
@@ -2330,10 +2358,15 @@ export class SignAccountOpController
   }
 
   updateStatus(forceStatusChange?: SigningStatus, replacementFeeLow = false) {
+    // final, the speed up can't go through anymore. Checked before the forced change too, as
+    // a failed broadcast forces ReadyToSign, which would bring back a speed up that was stopped
+    if (this.status?.type === SigningStatus.SpeedUpNotNeeded) return
+
     // use this to go back to ReadyToSign when a broadcasting error is emitted
     if (forceStatusChange) {
       this.status = { type: forceStatusChange }
       this.emitUpdate()
+      this.#checkSpeedUpStillNeeded()
       return
     }
 
@@ -2342,10 +2375,8 @@ export class SignAccountOpController
       this.status?.type === SigningStatus.InProgress ||
       this.status?.type === SigningStatus.WaitingForPaymaster
     const isDone = this.status?.type === SigningStatus.Done
-    // final, the speed up can't go through anymore
-    const isSpeedUpNotNeeded = this.status?.type === SigningStatus.SpeedUpNotNeeded
 
-    if (isInTheMiddleOfSigning || isDone || isSpeedUpNotNeeded) return
+    if (isInTheMiddleOfSigning || isDone) return
 
     // Set to EstimationError if not retrying
     if (this.estimation.error && !this.estimation.isRetryingFailure()) {
@@ -2390,6 +2421,7 @@ export class SignAccountOpController
       // do not reset this once triggered
       if (replacementFeeLow) this.replacementFeeLow = replacementFeeLow
       this.emitUpdate()
+      this.#checkSpeedUpStillNeeded()
       return
     }
 
@@ -4647,6 +4679,9 @@ export class SignAccountOpController
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
     this.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
+    // The transaction being sped up was processed meanwhile, which is why the broadcast failed.
+    // The status already tells the user there's no need to speed up, so the error isn't shown
+    const isSpeedUpNotNeeded = this.status?.type === SigningStatus.SpeedUpNotNeeded
 
     if (this.#onBroadcastFailed) {
       this.#onBroadcastFailed(this.#accountOp)
@@ -4654,8 +4689,9 @@ export class SignAccountOpController
 
     this.emitError({
       // Keep the report for Sentry/logging, but don't show a toast when we're
-      // handling this softly via the "Gas fee updated" confirmation modal.
-      level: softFeeUpdateConfirmation ? 'silent' : 'major',
+      // handling this softly via the "Gas fee updated" confirmation modal
+      // or when the speed up is no longer needed.
+      level: softFeeUpdateConfirmation || isSpeedUpNotNeeded ? 'silent' : 'major',
       message,
       error: _err || new Error(message),
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
