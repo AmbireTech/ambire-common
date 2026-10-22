@@ -4014,6 +4014,7 @@ export class SignAccountOpController
       // Otherwise (Safe signature collected, bundler, relayer) no key is needed anymore
       const willBroadcastNeedSignature =
         this.status.type === SigningStatus.Done &&
+        !!broadcastOption &&
         RAW_TXN_BROADCAST_OPTIONS.includes(broadcastOption)
       if (!willBroadcastNeedSignature) this.activeSigningKeyType = null
 
