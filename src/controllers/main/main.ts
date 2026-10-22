@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/brace-style */
 import { ethErrors } from 'eth-rpc-errors'
 
 import EmittableError from '@/classes/EmittableError'
@@ -13,17 +12,19 @@ import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
 import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
 import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
-
 import { SignedMessage } from '@/controllers/activity/types'
 import { AddressBookController } from '@/controllers/addressBook/addressBook'
+import { AppDataSyncController } from '@/controllers/appDataSync/appDataSync'
 import { AutoLoginController } from '@/controllers/autoLogin/autoLogin'
 import { AccountData, BannerController } from '@/controllers/banner/banner'
 import { ContinuousUpdatesController } from '@/controllers/continuousUpdates/continuousUpdates'
 import { ContractInfoController } from '@/controllers/contractInfo/contractInfo'
 import { ContractNamesController } from '@/controllers/contractNames/contractNames'
 import { DappsController } from '@/controllers/dapps/dapps'
+import { DebugController } from '@/controllers/debug/debug'
 import { DomainsController } from '@/controllers/domains/domains'
 import { EmailVaultController } from '@/controllers/emailVault/emailVault'
+import { Erc7730Controller } from '@/controllers/erc7730/erc7730'
 import { EstimationStatus } from '@/controllers/estimation/types'
 import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '@/controllers/featureFlags/featureFlags'
@@ -32,32 +33,38 @@ import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
+import { PrivacyPoolsController } from '@/controllers/privacyPools/privacyPools'
 import { ProvidersController } from '@/controllers/providers/providers'
 import { RequestsController } from '@/controllers/requests/requests'
 import { SafeController } from '@/controllers/safe/safe'
 import { SelectedAccountController } from '@/controllers/selectedAccount/selectedAccount'
 import { SignAccountOpType } from '@/controllers/signAccountOp/helper'
 import { OnboardingSuccessProps } from '@/controllers/signAccountOp/signAccountOp'
+import { SignAccountOpPreferenceController } from '@/controllers/signAccountOp/signAccountOpPreference'
 import { SignMessageController } from '@/controllers/signMessage/signMessage'
 import { StorageController } from '@/controllers/storage/storage'
 import { SurveyController } from '@/controllers/survey/survey'
 import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '@/controllers/transaction/transactionManager'
 import { TransferController } from '@/controllers/transfer/transfer'
-
 import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
+import { VerificationController } from '@/controllers/verification/verification'
+import { WalletTokenController } from '@/controllers/walletToken/walletToken'
 import { Account, IAccountsController } from '@/interfaces/account'
 import { IAccountPickerController } from '@/interfaces/accountPicker'
 import { IActivityController } from '@/interfaces/activity'
 import { IAddressBookController } from '@/interfaces/addressBook'
+import { IAppDataSyncController } from '@/interfaces/appDataSync'
 import { IAutoLoginController } from '@/interfaces/autoLogin'
 import { Banner, IBannerController } from '@/interfaces/banner'
 import { IContractInfoController } from '@/interfaces/contractInfo'
 import { IContractNamesController } from '@/interfaces/contractNames'
 import { IDappsController } from '@/interfaces/dapp'
+import { IDebugController } from '@/interfaces/debug'
 import { IDomainsController } from '@/interfaces/domains'
 import { IEmailVaultController } from '@/interfaces/emailVault'
+import { IErc7730Controller } from '@/interfaces/erc7730'
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '@/interfaces/eventEmitter'
 import { IFeatureFlagsController } from '@/interfaces/featureFlags'
 import { Fetch } from '@/interfaces/fetch'
@@ -74,6 +81,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '@/interfa
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
 import { IPortfolioController } from '@/interfaces/portfolio'
+import { IPrivacyPoolsController } from '@/interfaces/privacyPools'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
 import { ISafeController } from '@/interfaces/safe'
@@ -86,29 +94,41 @@ import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
 import { ITransfersScannerController } from '@/interfaces/transferScanner'
-import { IUiController, UiManager, View } from '@/interfaces/ui'
+import { isExtensionOverlayView, IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
+import { IVerificationController } from '@/interfaces/verification'
+import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
 import {
+  getCallsWithTxnIds,
   getDappIdentifier,
   isIdentifiedByUserOpHash,
   SubmittedAccountOp
 } from '@/libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
-import { KeyIterator } from '@/libs/keyIterator/keyIterator'
+import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
-import { relayerCall } from '@/libs/relayerCall/relayerCall'
+import { PrivacyPoolsProverFactory } from '@/libs/privacyPools/prover'
+import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
+import { CowSwapAPI } from '@/services/cowswap/api'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
-import { SocketAPI } from '@/services/socket/api'
-import { SquidAPI } from '@/services/squid/api'
+import { SocketV3API } from '@/services/socketv3/api'
+import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
+import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
+import { generateUuid } from '@/utils/uuid'
 import wait from '@/utils/wait'
+
+type AccountsUpdate = {
+  accountsToAdd: Account[]
+  accountAddressesToRemove: Account['addr'][]
+}
 
 export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
@@ -120,7 +140,7 @@ export class MainController extends EventEmitter implements IMainController {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
-  callRelayer: Function
+  callRelayer: BindedRelayerCall
 
   isReady: boolean = false
 
@@ -135,7 +155,11 @@ export class MainController extends EventEmitter implements IMainController {
 
   storage: IStorageController
 
+  signAccountOpPreference: SignAccountOpPreferenceController
+
   featureFlags: IFeatureFlagsController
+
+  debug: IDebugController
 
   invite: IInviteController
 
@@ -144,6 +168,8 @@ export class MainController extends EventEmitter implements IMainController {
   networks: INetworksController
 
   providers: IProvidersController
+
+  verification: IVerificationController
 
   accountPicker: IAccountPickerController
 
@@ -173,9 +199,13 @@ export class MainController extends EventEmitter implements IMainController {
 
   domains: IDomainsController
 
+  erc7730: IErc7730Controller
+
   contractNames: IContractNamesController
 
   contractInfo: IContractInfoController
+
+  walletToken: IWalletTokenController
 
   autoLogin: IAutoLoginController
 
@@ -183,11 +213,15 @@ export class MainController extends EventEmitter implements IMainController {
 
   selectedAccount: ISelectedAccountController
 
+  privacyPools: IPrivacyPoolsController
+
   requests: IRequestsController
 
   banner: IBannerController
 
   survey: ISurveyController
+
+  appDataSync: IAppDataSyncController
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -200,6 +234,8 @@ export class MainController extends EventEmitter implements IMainController {
   ui: IUiController
 
   #continuousUpdates: ContinuousUpdatesController | undefined
+
+  #fetchSafeTxnsPromise: Promise<void> | undefined
 
   safe: ISafeController
 
@@ -216,12 +252,16 @@ export class MainController extends EventEmitter implements IMainController {
     relayerUrl,
     velcroUrl,
     liFiApiKey,
+    cowSwapApiKey,
     bungeeApiKey,
-    squidIntegratorId,
+    uniswapApiKey,
     featureFlags,
     keystoreSigners,
     externalSignerControllers,
-    uiManager
+    uiManager,
+    privacyPoolsCircuitsBaseUrl,
+    privacyPoolsProverFactory,
+    idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -231,18 +271,30 @@ export class MainController extends EventEmitter implements IMainController {
     relayerUrl: string
     velcroUrl: string
     liFiApiKey: string
+    cowSwapApiKey: string
     bungeeApiKey: string
-    squidIntegratorId: string
+    uniswapApiKey: string
     featureFlags: Partial<FeatureFlags>
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
+    /** Base URL of the Privacy Pools circuit artifacts, a build asset only the platform knows. */
+    privacyPoolsCircuitsBaseUrl: string
+    /** Where to generate Privacy Pools proofs if not here - see `PrivacyPoolsController`. */
+    privacyPoolsProverFactory?: PrivacyPoolsProverFactory
+    idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
     this.#appVersion = appVersion
     this.fetch = fetch
     this.storage = new StorageController(this.#storageAPI, eventEmitterRegistry)
+    // Constructed early so debug-log toggles are hydrated before other controllers start logging
+    this.debug = new DebugController(this.storage, eventEmitterRegistry)
+    this.signAccountOpPreference = new SignAccountOpPreferenceController({
+      eventEmitterRegistry,
+      storage: this.storage
+    })
     this.featureFlags = new FeatureFlagsController(featureFlags, this.storage, eventEmitterRegistry)
     this.ui = new UiController({ eventEmitterRegistry, uiManager })
     this.invite = new InviteController({
@@ -272,19 +324,31 @@ export class MainController extends EventEmitter implements IMainController {
       },
       onAddOrUpdateNetworks: async (networks: Network[]) => {
         networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))
-        networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n))
+        await Promise.all(
+          networks.filter((net) => !net.disabled).map((n) => this.providers.setProvider(n))
+        )
+        this.verification?.updateNetworks(networks)
         await this.reloadSelectedAccount({ chainIds: networks.map((n) => n.chainId) })
       },
       onReady: async () => {
         await this.providers.init({ networks: this.networks.allNetworks })
-      }
+      },
+      featureFlags: this.featureFlags
     })
 
     this.providers = new ProvidersController({
       eventEmitterRegistry,
       storage: this.storage,
       getNetworks: () => this.networks.allNetworks,
+      featureFlags: this.featureFlags,
       sendUiMessage: this.ui.message.sendUiMessage
+    })
+    this.verification = new VerificationController({
+      eventEmitterRegistry,
+      networks: this.networks,
+      fetch: this.fetch,
+      velcroUrl,
+      featureFlags: this.featureFlags
     })
     this.accounts = new AccountsController(
       this.storage,
@@ -301,7 +365,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.#updateIsOffline.bind(this),
       relayerUrl,
       this.fetch,
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      this.featureFlags
     )
     this.autoLogin = new AutoLoginController(
       this.storage,
@@ -318,7 +383,8 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       providers: this.providers,
       storage: this.storage,
-      accounts: this.accounts
+      accounts: this.accounts,
+      keystore: this.keystore
     })
 
     this.survey = new SurveyController({
@@ -338,10 +404,12 @@ export class MainController extends EventEmitter implements IMainController {
         const currentSelectedAcc = this.selectedAccount.account
         if (!currentSelectedAcc) return { status: 'no-selected-account' }
         let totalUsdBalance = this.selectedAccount.portfolio.totalBalance
-        let numberOfTransactions = this.activity.getAccountOpsForAccount({
-          accountAddr: currentSelectedAcc.addr,
-          sortAccOps: false
-        }).length
+        // Not getAccountOpsForAccount().length — that returns the in-memory cache, which
+        // on the IndexedDB backend holds only the bounded startup window, so a heavy
+        // account would report ~20 per chain and match the wrong minTxnsTotal bucket.
+        const numberOfTransactions = this.activity.getTotalOpsCountForAccount(
+          currentSelectedAcc.addr
+        )
         const hasKeys =
           getAccountKeysCount({
             accountAddr: currentSelectedAcc.addr,
@@ -366,7 +434,23 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       accounts: this.accounts,
       autoLogin: this.autoLogin,
-      banner: this.banner
+      banner: this.banner,
+      ui: this.ui
+    })
+
+    this.privacyPools = new PrivacyPoolsController({
+      eventEmitterRegistry,
+      keystore: this.keystore,
+      featureFlags: this.featureFlags,
+      networks: this.networks,
+      providers: this.providers,
+      selectedAccount: this.selectedAccount,
+      storage: this.storage,
+      ui: this.ui,
+      fetch: this.fetch,
+      circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
+      proverFactory: privacyPoolsProverFactory,
+      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
     })
 
     this.portfolio = new PortfolioController(
@@ -380,7 +464,10 @@ export class MainController extends EventEmitter implements IMainController {
       velcroUrl,
       this.banner,
       this.featureFlags,
-      eventEmitterRegistry
+      this.ui,
+      eventEmitterRegistry,
+      this.verification,
+      platform
     )
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(
@@ -401,6 +488,8 @@ export class MainController extends EventEmitter implements IMainController {
       externalSignerControllers: this.#externalSignerControllers,
       relayerUrl,
       fetch: this.fetch,
+      featureFlags: this.featureFlags,
+      sendUiMessage: this.ui.message.sendUiMessage,
       /**
        * callback that gets triggered as a finalization step of adding new
        * accounts via the AccountPickerController.
@@ -423,7 +512,8 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       storage: this.storage,
       addressBook: this.addressBook,
-      ui: this.ui
+      ui: this.ui,
+      featureFlags: this.featureFlags
     })
     this.dapps = new DappsController({
       eventEmitterRegistry,
@@ -432,6 +522,24 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       networks: this.networks,
       phishing: this.phishing,
+      ui: this.ui,
+      selectedAccount: this.selectedAccount,
+      featureFlags: this.featureFlags
+    })
+    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
+    this.erc7730 = new Erc7730Controller({
+      storage: this.storage,
+      callRelayer: this.callRelayer,
+      featureFlags: this.featureFlags,
+      providers: this.providers,
+      ui: this.ui,
+      eventEmitterRegistry
+    })
+    this.contractInfo = new ContractInfoController({
+      eventEmitterRegistry,
+      fetch: this.fetch,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
       ui: this.ui
     })
     this.signMessage = new SignMessageController(
@@ -442,10 +550,11 @@ export class MainController extends EventEmitter implements IMainController {
       this.#externalSignerControllers,
       this.invite,
       eventEmitterRegistry,
-      this.dapps
+      this.dapps,
+      this.erc7730,
+      platform
     )
 
-    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
       this.storage,
       this.fetch,
@@ -456,11 +565,21 @@ export class MainController extends EventEmitter implements IMainController {
       this.networks,
       this.portfolio,
       this.safe,
+      this.featureFlags,
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      idb
     )
+    this.walletToken = new WalletTokenController({
+      eventEmitterRegistry,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
+      providers: this.providers,
+      callRelayer: this.callRelayer,
+      activity: this.activity
+    })
     this.transferScanner = new TransfersScannerController({
       activity: this.activity,
       networks: this.networks,
@@ -468,12 +587,18 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       eventEmitterRegistry
     })
-    const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
-    const SocketProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
-    const SquidProvider = new SquidAPI({ fetch, integratorId: squidIntegratorId })
+    const LiFiProvider = new LiFiAPI({
+      fetch,
+      apiKey: liFiApiKey,
+      featureFlags: this.featureFlags
+    })
+    const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
+    const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
+    const CowSwapProvider = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
       callRelayer: this.callRelayer,
+      fetch,
       accounts: this.accounts,
       keystore: this.keystore,
       portfolio: this.portfolio,
@@ -483,9 +608,18 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       activity: this.activity,
       storage: this.storage,
+      signAccountOpPreference: this.signAccountOpPreference,
+      featureFlags: this.featureFlags,
+      platform,
       phishing: this.phishing,
       dapps: this.dapps,
-      swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider, SquidProvider]),
+      erc7730: this.erc7730,
+      contractInfo: this.contractInfo,
+      swapProvider: new SwapProviderParallelExecutor(
+        [LiFiProvider, SocketProvider, UniswapProvider, CowSwapProvider],
+        () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) })),
+        () => this.swapAndBridge?.getDisabledSwapProviderIds() ?? []
+      ),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
         if (chainsToUpdate.length) {
@@ -519,9 +653,21 @@ export class MainController extends EventEmitter implements IMainController {
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
       ui: this.ui
     })
+    this.appDataSync = new AppDataSyncController({
+      eventEmitterRegistry,
+      keystore: this.keystore,
+      accounts: this.accounts,
+      networks: this.networks,
+      addressBook: this.addressBook,
+      featureFlags: this.featureFlags,
+      swapAndBridge: this.swapAndBridge,
+      ui: this.ui
+    })
     this.transfer = new TransferController(
       this.callRelayer,
       this.storage,
+      this.signAccountOpPreference,
+      this.featureFlags,
       humanizerInfo as HumanizerMeta,
       this.selectedAccount,
       this.networks,
@@ -537,17 +683,26 @@ export class MainController extends EventEmitter implements IMainController {
       relayerUrl,
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
+      this.erc7730,
+      this.contractInfo,
+      platform,
+      this.privacyPools,
       eventEmitterRegistry
     )
     this.domains = new DomainsController({
       eventEmitterRegistry,
       providers: this.providers.providers,
-      defaultNetworksMode: this.networks.defaultNetworksMode
+      verification: this.verification,
+      defaultNetworksMode: this.networks.defaultNetworksMode,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
+      getNetwork: (chainId: bigint) => this.networks.allNetworks.find((n) => n.chainId === chainId)
     })
 
     this.contractNames = new ContractNamesController({
       eventEmitterRegistry,
-      fetch: this.fetch
+      fetch: this.fetch,
+      featureFlags: this.featureFlags
     })
 
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
@@ -579,9 +734,15 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       phishing: this.phishing,
       dapps: this.dapps,
+      erc7730: this.erc7730,
+      contractInfo: this.contractInfo,
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
+      platform,
+      signAccountOpPreference: this.signAccountOpPreference,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
       transfer: this.transfer,
@@ -610,17 +771,10 @@ export class MainController extends EventEmitter implements IMainController {
         )
         await this.commonHandlerForBroadcastSuccess(props)
         // resolve dapp requests, open benzin and etc only if the main sign accountOp
-        this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
+        await this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
         this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
       },
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
-    })
-
-    this.contractInfo = new ContractInfoController({
-      eventEmitterRegistry,
-      fetch: this.fetch,
-      storage: this.storage,
-      featureFlags: this.featureFlags
     })
 
     this.initialLoadPromise = this.#load().finally(() => {
@@ -654,6 +808,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.keystore.onUpdate(() => {
       if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
+        // Don't call syncViewRoutes here, because the status is set after
+        // operations different than unlock too (change password, export key etc.)
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.storage.associateAccountKeysWithLegacySavedSeedMigration(
           () =>
@@ -666,6 +822,8 @@ export class MainController extends EventEmitter implements IMainController {
               externalSignerControllers: this.#externalSignerControllers,
               relayerUrl,
               fetch: this.fetch,
+              featureFlags: this.featureFlags,
+              sendUiMessage: this.ui.message.sendUiMessage,
               onAddAccountsSuccessCallback: async () => {}
             }),
           this.keystore,
@@ -673,12 +831,25 @@ export class MainController extends EventEmitter implements IMainController {
             await this.keystore.updateKeystoreKeys()
           }
         )
-        this.fetchSafeTxns().catch((e) => e) // we catch the error inside
+        // A view added or focused while the wallet was locked fetched nothing for the other
+        // Safes. The other operations that set this status are cheap here, as recently
+        // fetched Safes are skipped.
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchAllSafesPending()
       }
     })
 
     this.ui.uiEvent.on('addView', async (view: View) => {
-      if (view.type === 'popup') await this.onPopupOpen(view.id)
+      if (this.keystore.isUnlocked) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchAllSafesPending()
+      }
+      if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
+    })
+
+    this.ui.uiEvent.on('viewFocus', () => {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#fetchAllSafesPending()
     })
   }
 
@@ -695,20 +866,31 @@ export class MainController extends EventEmitter implements IMainController {
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
       const ONE_HOUR = 1000 * 60 * 60
-      this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+      // Passively bulk-resolving ENS for all accounts links them together, so we
+      // only do it when the user opts out of privacy. Otherwise accounts are
+      // refreshed on interaction (see DomainsController).
+      if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
+        this.domains.batchReverseLookup(
+          this.accounts.accounts.map((a) => a.addr),
+          this.selectedAccount.account ? [this.selectedAccount.account.addr] : []
+        )
+      } else {
+        this.domains.reverseLookup(selectedAccountAddr, true, {
+          privacyUpdateMode: 'whenStale',
+          updateExpiry: true
+        })
+      }
+      const THIRTY_MINUTES = 1000 * 60 * 30
 
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
         this.updateSelectedAccountPortfolio({
           maxDataAgeMs: FIVE_MINUTES,
-          maxDataAgeMsUnused: ONE_HOUR
+          maxDataAgeMsUnused: ONE_HOUR,
+          defiMaxDataAgeMs: THIRTY_MINUTES
         })
       }
 
-      if (!this.accounts.areAccountStatesLoading) {
-        this.accounts.updateAccountState(selectedAccountAddr)
-      }
-
-      this.fetchSafeTxns().catch((e) => e) // we catch the error inside
+      this.accounts.updateAccountState(selectedAccountAddr)
     }
 
     this.ui.updateView(viewId, { isReady: true })
@@ -727,19 +909,41 @@ export class MainController extends EventEmitter implements IMainController {
     await this.portfolio.initialLoadPromise
     await this.keystore.initialLoadPromise
     await this.contractInfo.initialLoadPromise
+    await this.addressBook.initialLoadPromise
 
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
       networks: this.networks,
-      providers: this.providers
+      providers: this.providers,
+      domains: this.domains
     })
 
     await this.selectedAccount.initialLoadPromise
+    await this.domains.init(this.addressBook.contacts)
 
     this.updateSelectedAccountPortfolio()
-    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    // Only passively bulk-resolve ENS for all accounts when the user opts out of
+    // privacy (see onPopupOpen and DomainsController for the default behaviour).
+    if (this.featureFlags.isFeatureEnabled('keepEnsProfilesUpToDate')) {
+      this.domains.batchReverseLookup(
+        this.accounts.accounts.map((a) => a.addr),
+        this.selectedAccount.account ? [this.selectedAccount.account.addr] : []
+      )
+    } else if (this.selectedAccount.account?.addr) {
+      this.domains.reverseLookup(this.selectedAccount.account.addr, true, {
+        privacyUpdateMode: 'whenStale',
+        updateExpiry: true
+      })
+    }
 
     await this.survey.initialLoadPromise
+
+    await this.privacyPools.initialLoadPromise
+    // The restored Privacy Pools account may be gone, removed with its recovery phrase mid-load
+    const { privacyPoolsAccountId } = this.selectedAccount
+    if (privacyPoolsAccountId && !this.#hasPrivacyPoolsAccount(privacyPoolsAccountId)) {
+      await this.#selectFallbackAccount()
+    }
 
     this.isReady = true
     this.emitUpdate()
@@ -747,6 +951,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   lock() {
     this.keystore.lock()
+    void this.ui.syncViewRoutes()
     this.emailVault?.cleanMagicAndSessionKeys()
     this.selectedAccount.setDashboardNetworkFilter(null)
     this.continuousUpdates?.updatePortfolioInterval.restart({
@@ -760,14 +965,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
   }
 
-  async #selectAccount(toAccountAddr: string | null) {
-    if (!toAccountAddr) {
-      await this.selectedAccount.setAccount(null)
-
-      this.emitUpdate()
-      return
-    }
-
+  async #selectAccount(toAccountAddr: string) {
     const accountToSelect = this.accounts.accounts.find((acc) => acc.addr === toAccountAddr)
     if (!accountToSelect) {
       console.error(`Account with address ${toAccountAddr} does not exist`)
@@ -775,21 +973,17 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     this.isOffline = false
-    // call closeRequestWindow while still on the currently selected account to allow proper
-    // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
-    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
-      await this.requests.closeRequestWindow()
-    }
-    const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
-      ({ kind }) => kind === 'swapAndBridge'
-    )
-    if (swapAndBridgeSigningRequest) {
-      await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
-    }
-    await this.selectedAccount.setAccount(accountToSelect)
+    await this.#leaveSelectedAccount()
+    await this.selectedAccount.select({ account: accountToSelect })
+    // Update reverse lookup data and ENS expiry
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.domains.reverseLookup(toAccountAddr, true, {
+      privacyUpdateMode: 'whenStale',
+      updateExpiry: true
+    })
     this.#continuousUpdates?.updatePortfolioInterval.restart()
     this.#continuousUpdates?.accountStateLatestInterval.restart()
-    this.#continuousUpdates?.accountsOpsStatusesInterval.restart({ runImmediately: true })
+    this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true })
     this.swapAndBridge.updateActiveRoutesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
     this.transfer.reset({ destroyAccountOp: true })
@@ -803,15 +997,142 @@ export class MainController extends EventEmitter implements IMainController {
       maxDataAgeMsUnused: 60 * 60 * 1000
     })
 
+    await this.#forceEmitSelectedAccountUpdates(toAccountAddr)
+  }
+
+  /** Pushes the selected account's getters to the UI. `accountAddr` is null for a Privacy Pools one. */
+  async #forceEmitSelectedAccountUpdates(accountAddr: string | null) {
+    const accountScopedUpdates = accountAddr
+      ? [
+          this.activity.onSelectedAccountChange(accountAddr),
+          this.dapps.onSelectedAccountChange(accountAddr)
+        ]
+      : [this.activity.forceEmitUpdate()]
+
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
-      this.activity.forceEmitUpdate(),
+      ...accountScopedUpdates,
       this.requests.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.swapAndBridge.forceEmitUpdate(),
-      this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
       this.forceEmitUpdate()
     ])
+  }
+
+  /** Cleans up after the selected account, before another one of either kind is selected. */
+  async #leaveSelectedAccount() {
+    // call closeRequestWindow while still on the currently selected account to allow proper
+    // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
+    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
+      // Switching accounts is the user acting on the wallet, not refusing the apps that
+      // happened to be waiting, so it must not count towards the spam detection.
+      await this.requests.closeRequestWindow({ isUserInitiated: false })
+    }
+    const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
+      ({ kind }) => kind === 'swapAndBridge'
+    )
+    if (swapAndBridgeSigningRequest) {
+      await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
+    }
+  }
+
+  #hasPrivacyPoolsAccount(seedId: string) {
+    return this.privacyPools.accounts.some((account) => account.seedId === seedId)
+  }
+
+  /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
+  async addPrivacyPoolsAccount(seedId: string) {
+    await this.initialLoadPromise
+
+    // Wrapped as a whole, so a refused account is shown to the user
+    await this.withStatus(
+      'selectAccount',
+      async () => {
+        await this.privacyPools.addAccount(seedId)
+        await this.#selectPrivacyPoolsAccount(seedId)
+      },
+      true
+    )
+  }
+
+  /**
+   * Creates a recovery phrase with only a Privacy Pools account on it, and selects it. The phrase
+   * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
+   */
+  async addPrivacyPoolsAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'selectAccount',
+      async () => {
+        const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
+        await this.privacyPools.addAccount(seedId)
+        await this.#selectPrivacyPoolsAccount(seedId)
+      },
+      true
+    )
+  }
+
+  async selectPrivacyPoolsAccount(seedId: string) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'selectAccount',
+      async () => this.#selectPrivacyPoolsAccount(seedId),
+      true
+    )
+  }
+
+  /**
+   * Selects a Privacy Pools account, leaving no regular account selected. Apps are not told: what
+   * they should see then is undecided, so they keep their account.
+   */
+  async #selectPrivacyPoolsAccount(seedId: string) {
+    if (!this.#hasPrivacyPoolsAccount(seedId)) {
+      this.emitError({
+        level: 'major',
+        message: 'The account you selected could not be found. Please select another account.',
+        error: new Error('main: the Privacy Pools account to select does not exist')
+      })
+      return
+    }
+
+    await this.#leaveSelectedAccount()
+    await this.selectedAccount.select({ privacyPoolsSeedId: seedId })
+    this.swapAndBridge.reset()
+    this.transfer.reset({ destroyAccountOp: true })
+
+    await this.#forceEmitSelectedAccountUpdates(null)
+  }
+
+  /**
+   * Once the selected account is gone, selects the first regular account, else the first Privacy
+   * Pools account, else nothing (signed out).
+   */
+  async #selectFallbackAccount() {
+    const [firstAccount] = this.accounts.accounts
+    if (firstAccount) {
+      await this.#selectAccount(firstAccount.addr)
+      return
+    }
+
+    const [firstPrivacyPoolsAccount] = this.privacyPools.accounts
+    if (firstPrivacyPoolsAccount) {
+      await this.#selectPrivacyPoolsAccount(firstPrivacyPoolsAccount.seedId)
+      return
+    }
+
+    await this.selectedAccount.select(null)
+    this.emitUpdate()
+  }
+
+  async #onPrivacyPoolsAccountsRemoved(seedIds: string[]) {
+    const { privacyPoolsAccountId } = this.selectedAccount
+    if (!privacyPoolsAccountId || !seedIds.includes(privacyPoolsAccountId)) return
+    // Still loading: `#load` makes the same check once ready
+    if (!this.isReady) return
+
+    await this.#selectFallbackAccount()
   }
 
   async #onAccountPickerSuccess() {
@@ -836,83 +1157,57 @@ export class MainController extends EventEmitter implements IMainController {
     await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
     await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
 
-    if (this.accountPicker.readyToRemoveAccounts) {
-      for (const acc of this.accountPicker.readyToRemoveAccounts) {
-        await this.#removeAccount(acc.addr)
-      }
-    }
-
-    // Add accounts as a final step, because some of the next steps check if accounts have keys.
-    await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
+    await this.#updateAccounts({
+      accountsToAdd: this.accountPicker.readyToAddAccounts,
+      accountAddressesToRemove: this.accountPicker.readyToRemoveAccounts.map(
+        (account) => account.addr
+      )
+    })
   }
 
   async commonHandlerForBroadcastSuccess({
     submittedAccountOp,
-    accountOp,
-    fromRequestId
+    accountOp
   }: OnboardingSuccessProps) {
     // add the txnIds from each transaction to each Call from the accountOp
     // if identifiedBy is MultipleTxns
     const isBasicAccountBroadcastingMultiple =
       submittedAccountOp.identifiedBy.type === 'MultipleTxns'
     if (isBasicAccountBroadcastingMultiple) {
-      const txnIds = submittedAccountOp.identifiedBy.identifier.split('-')
-      const calls = submittedAccountOp.calls.map((oneCall, i) => {
-        const localCall = { ...oneCall }
-
-        // if there's no tx id, we set it to Rejected and continue.
-        // it means broadcast has failed
-        if (!(i in txnIds)) {
-          localCall.status = AccountOpStatus.Rejected
-          return localCall
-        }
-
-        localCall.txnId = txnIds[i] as Hex
-        localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
-        return localCall
-      })
-
-      submittedAccountOp.calls = calls
-
-      const userRequest = this.requests.userRequests.find((r) => r.id === fromRequestId)
-
-      if (userRequest) {
-        // Handle the calls that weren't signed
-        const rejectedCalls = accountOp.calls.filter((call) =>
-          submittedAccountOp.calls.every((c) => c.id !== call.id)
-        )
-
-        await this.requests.rejectCalls({ callIds: rejectedCalls.map((c) => c.id) })
-      }
+      submittedAccountOp.calls = getCallsWithTxnIds(submittedAccountOp)
     }
 
     if (accountOp.meta?.swapTxn) {
       // we need a quote to be able to add an active route
       const quote = accountOp.meta.quote || this.swapAndBridge.quote
-      if (quote) {
+      // and it must be the quote the swap was built from, e.g. not one the form refreshed
+      // to in the meantime, otherwise the active route can't be matched to this transaction
+      if (quote?.selectedRoute?.routeId === accountOp.meta.swapTxn.activeRouteId) {
         try {
           this.swapAndBridge.addActiveRoute({
             quote,
             userTxIndex: accountOp.meta?.swapTxn.userTxIndex,
-            routeStatus: !!quote?.selectedRoute ? 'in-progress' : 'ready'
+            routeStatus: 'in-progress'
           })
-          if (quote.selectedRoute) {
-            this.swapAndBridge.updateActiveRoute(quote.selectedRoute.routeId, {
-              userTxHash: submittedAccountOp.txnId,
-              identifiedBy: submittedAccountOp.identifiedBy
-            })
-          }
+          this.swapAndBridge.updateActiveRoute(quote.selectedRoute.routeId, {
+            userTxHash: submittedAccountOp.txnId,
+            identifiedBy: submittedAccountOp.identifiedBy
+          })
         } catch (e) {
           console.log('failed to add an active route', e)
         }
       }
 
-      // no need to keep it in storage
+      // no need to keep it in storage. The submitted account op, which is the one stored
+      // in the activity, has a shallow copy of the meta, so it has to be deleted there too
       delete accountOp.meta.quote
+      delete submittedAccountOp.meta?.quote
     }
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.activity.addAccountOp(submittedAccountOp)
+    // Every deposit into a Privacy Pools account, however signed, is broadcast through here
+    this.privacyPools.onAccountOpBroadcast(submittedAccountOp)
     await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple
@@ -932,8 +1227,15 @@ export class MainController extends EventEmitter implements IMainController {
     if (op.meta?.swapTxn) this.swapAndBridge.removeActiveRoute(op.meta.swapTxn.activeRouteId)
   }
 
-  async handleSignAndBroadcastAccountOp(type: SignAccountOpType, fromRequestId: string | number) {
+  async handleSignAndBroadcastAccountOp(
+    type: SignAccountOpType,
+    fromRequestId: string | number,
+    reviewedAccountOpId?: string
+  ) {
     let signAccountOp: ISignAccountOpController | null = null
+    // Only the dapp calls request path shares a mutable SignAccountOpController
+    // that a second dapp request can append to before signing starts.
+    let isDappCallsRequest = false
 
     if (
       type === 'one-click-swap-and-bridge' &&
@@ -952,6 +1254,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.requests.currentUserRequest.signAccountOp.fromRequestId === fromRequestId
     ) {
       signAccountOp = this.requests.currentUserRequest.signAccountOp
+      isDappCallsRequest = true
     }
 
     if (!signAccountOp) {
@@ -961,6 +1264,24 @@ export class MainController extends EventEmitter implements IMainController {
           'Internal error: The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.',
         error: new Error(
           'Error: signAccountOp controller not initialized while trying to sign and broadcast'
+        )
+      })
+    }
+
+    // Security: a dapp can append calls before signing starts. The accountOp id
+    // changes on every calls change, so a mismatch with the reviewed id means the
+    // live op differs from the screen - abort so the user re-reviews.
+    if (
+      isDappCallsRequest &&
+      reviewedAccountOpId &&
+      signAccountOp.accountOp.id !== reviewedAccountOpId
+    ) {
+      return this.emitError({
+        level: 'major',
+        message:
+          'The transaction changed after you reviewed it. Please review the updated transaction and try again.',
+        error: new Error(
+          'handleSignAndBroadcastAccountOp: reviewed accountOp id does not match the live accountOp id; aborting to prevent signing unreviewed calls'
         )
       })
     }
@@ -1195,7 +1516,7 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
       const { walletSDK } = trezorCtrl
-      await this.accountPicker.setInitParams({
+      this.accountPicker.setInitParams({
         keyIterator: new TrezorKeyIterator({ walletSDK }),
         hdPathTemplate,
         pageSize: 5,
@@ -1215,6 +1536,43 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  async #handleAccountPickerInitOneKey(
+    OneKeyKeyIterator: any, // TODO: KeyIterator type mismatch
+    preferredDeviceId?: string
+  ) {
+    try {
+      const oneKeyCtrl = this.#externalSignerControllers.onekey
+
+      if (!oneKeyCtrl?.connect) {
+        const message =
+          'Could not initialize connection with your OneKey device. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      await oneKeyCtrl.connect(preferredDeviceId)
+
+      const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
+      await this.accountPicker.setInitParams({
+        keyIterator: new OneKeyKeyIterator({ controller: oneKeyCtrl }),
+        hdPathTemplate,
+        pageSize: 5,
+        shouldAddNextAccountAutomatically: false
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not unlock the OneKey device. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountPickerInitOneKey(
+    OneKeyKeyIterator: any, // TODO: KeyIterator type mismatch
+    preferredDeviceId?: string
+  ) {
+    await this.withStatus('handleAccountPickerInitOneKey', async () =>
+      this.#handleAccountPickerInitOneKey(OneKeyKeyIterator, preferredDeviceId)
+    )
+  }
+
   async #handleAccountPickerInitLattice(
     LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
   ) {
@@ -1228,7 +1586,7 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
 
-      await this.accountPicker.setInitParams({
+      this.accountPicker.setInitParams({
         keyIterator: new LatticeKeyIterator({ controller: latticeCtrl }),
         hdPathTemplate,
         pageSize: 5,
@@ -1304,6 +1662,49 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  async #handleAccountPickerInitNfc(
+    NfcKeyIterator: any, // TODO: KeyIterator type mismatch
+    payload: { extendedPublicKey: string; hdPath: string }
+  ) {
+    try {
+      const nfcCtrl = this.#externalSignerControllers.nfc
+
+      if (!nfcCtrl) {
+        const message =
+          'Could not initialize connection with your card. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      const keyIterator = new NfcKeyIterator({ controller: nfcCtrl })
+      // Initialize the iterator from the extended public key exported by the card
+      // before the AccountPicker init, so it can derive addresses on its own
+      // (the card is tapped only once, not per address).
+      keyIterator.initFromExportedKey(payload)
+
+      // v1 accounts have never supported NFC cards, so there is nothing to look
+      // for on the relayer (same reasoning as the QR flow).
+      this.accountPicker.setInitParams({
+        keyIterator,
+        hdPathTemplate: keyIterator.hdPathTemplate,
+        pageSize: 5,
+        shouldAddNextAccountAutomatically: false,
+        shouldSearchForLinkedAccounts: false
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not import the card account. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountPickerInitNfc(
+    NfcKeyIterator: any, // TODO: KeyIterator type mismatch
+    payload: { extendedPublicKey: string; hdPath: string }
+  ) {
+    await this.withStatus('handleAccountPickerInitNfc', async () =>
+      this.#handleAccountPickerInitNfc(NfcKeyIterator, payload)
+    )
+  }
+
   async updateAccountsOpsStatuses() {
     await this.initialLoadPromise
 
@@ -1314,10 +1715,13 @@ export class MainController extends EventEmitter implements IMainController {
     const updatedAccountsOpsByAccount =
       await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
+    const safeDeployStatusUpdates: Promise<void>[] = []
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+
+          safeDeployStatusUpdates.push(this.requests.handleSafeDeployStatusUpdate(op))
 
           // we scan for logs only if Success & a dapp interaction has been made
           // because only a dapp interaction might have a receiving txn after;
@@ -1343,6 +1747,7 @@ export class MainController extends EventEmitter implements IMainController {
         })
       }
     )
+    await Promise.all(safeDeployStatusUpdates)
 
     Object.entries(updatedAccountsOpsByAccount).forEach(
       async ([
@@ -1358,43 +1763,56 @@ export class MainController extends EventEmitter implements IMainController {
         if (shouldEmitUpdate) {
           this.emitUpdate()
 
-          if (chainsToUpdate.length) {
-            const networks = chainsToUpdate
-              ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
-              : undefined
+          const finalizedAccountOps = updatedAccountsOps.filter(
+            (op) =>
+              op.status !== AccountOpStatus.Pending &&
+              op.status !== AccountOpStatus.BroadcastedButNotConfirmed
+          )
 
-            if (networks?.length) {
-              // The account state must be updated before the portfolio
-              // as the portfolio has internal checks whether the nonce has changed
-              // to decide if to force refetch certain data
-              await this.accounts.updateAccountState(
-                accountAddr,
-                'latest',
-                networks?.map((net) => net.chainId)
-              )
+          const networks = this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
 
-              const finalizedAccountOps = updatedAccountsOps.filter(
-                (op) =>
-                  op.status !== AccountOpStatus.Pending &&
-                  op.status !== AccountOpStatus.BroadcastedButNotConfirmed
-              )
+          if (networks.length) {
+            // The account state must be updated before the portfolio
+            // as the portfolio has internal checks whether the nonce has changed
+            // to decide if to force refetch certain data
+            await this.accounts.updateAccountState(
+              accountAddr,
+              'latest',
+              networks.map((net) => net.chainId),
+              true
+            )
 
-              await this.portfolio.discardSimulation(finalizedAccountOps)
-
-              // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
-              this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
-                accountAddr,
-                updatedAccountsOps
-              )
-
-              Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
-                // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                this.portfolio.updateSelectedAccount(
-                  accountAddr,
-                  this.networks.networks.filter((n) => chainIds.includes(n.chainId))
-                )
+            // Schedule an update that will refetch new defi positions (if any)
+            chainsToUpdate.forEach((chainId) => {
+              this.portfolio.scheduleUpdate({
+                accountId: accountAddr,
+                chainId,
+                bypassServerSideCache: true
               })
-            }
+            })
+          }
+
+          // Discard the simulation (that also updates the portfolio, but doesn't force update defi).
+          // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
+          // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
+          if (finalizedAccountOps.length) {
+            await this.portfolio.discardSimulation(finalizedAccountOps)
+          }
+
+          if (networks.length) {
+            // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
+            this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+              accountAddr,
+              updatedAccountsOps
+            )
+
+            Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
+              // eslint-disable-next-line @typescript-eslint/no-floating-promises
+              this.portfolio.updateSelectedAccount(
+                accountAddr,
+                this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+              )
+            })
           }
         }
 
@@ -1448,9 +1866,10 @@ export class MainController extends EventEmitter implements IMainController {
       await this.activity.removeAccountData(address)
       this.requests.removeAccountData(address)
       this.signMessage.removeAccountData(address)
+      this.dapps.removeAccountData(address)
 
       if (this.selectedAccount.account?.addr === address) {
-        await this.#selectAccount(this.accounts.accounts[0]?.addr ?? null)
+        await this.#selectFallbackAccount()
       }
 
       this.emitUpdate()
@@ -1467,6 +1886,30 @@ export class MainController extends EventEmitter implements IMainController {
     await this.withStatus('removeAccount', async () => this.#removeAccount(address))
   }
 
+  async #updateAccounts({ accountsToAdd, accountAddressesToRemove }: AccountsUpdate) {
+    const addressesToAdd = new Set(accountsToAdd.map((account) => account.addr.toLowerCase()))
+    const importedAddresses = new Set(
+      this.accounts.accounts.map((account) => account.addr.toLowerCase())
+    )
+    const uniqueAddressesToRemove = Array.from(
+      new Map(accountAddressesToRemove.map((address) => [address.toLowerCase(), address])).values()
+    )
+
+    for (const address of uniqueAddressesToRemove) {
+      const normalizedAddress = address.toLowerCase()
+      if (!importedAddresses.has(normalizedAddress) || addressesToAdd.has(normalizedAddress))
+        continue
+      await this.#removeAccount(address)
+    }
+
+    // Add accounts as a final step, because some of the next steps check if accounts have keys.
+    await this.accounts.addAccounts(accountsToAdd)
+  }
+
+  async updateAccounts(accountsUpdate: AccountsUpdate) {
+    await this.withStatus('updateAccounts', async () => this.#updateAccounts(accountsUpdate))
+  }
+
   async reloadSelectedAccount(options?: {
     chainIds?: bigint[]
     maxDataAgeMs?: number
@@ -1477,7 +1920,7 @@ export class MainController extends EventEmitter implements IMainController {
     const {
       chainIds,
       isManualReload = false,
-      defiMaxDataAgeMs,
+      defiMaxDataAgeMs = 30 * 60 * 1000,
       maxDataAgeMsUnused,
       maxDataAgeMs
     } = options || {}
@@ -1492,13 +1935,8 @@ export class MainController extends EventEmitter implements IMainController {
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
       // it's very likely that the account state is already in the process of being updated.
-      // If we try to run the same action, `withStatus` validation will throw an error.
-      // So, we perform this safety check to prevent the error.
-      // However, even if we don't trigger an update here, it's not a big problem,
-      // as the account state will be updated anyway, and its update will be very recent.
-      !this.accounts.areAccountStatesLoading && this.selectedAccount.account?.addr
-        ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds)
-        : Promise.resolve(),
+      // That fetch is reused, so this causes no extra fetch.
+      this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
@@ -1519,6 +1957,35 @@ export class MainController extends EventEmitter implements IMainController {
    * if the selected account is a safe
    */
   async fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
+    if (this.#fetchSafeTxnsPromise) return this.#fetchSafeTxnsPromise
+
+    this.#fetchSafeTxnsPromise = this.#fetchSafeTxns(chainIds, forceRefetch).finally(() => {
+      this.#fetchSafeTxnsPromise = undefined
+    })
+
+    return this.#fetchSafeTxnsPromise
+  }
+
+  /**
+   * Fetches the pending txns of the selected Safe, and then the pending counts of the other
+   * Safes, one after the other so they don't compete for the Safe API's rate limit
+   */
+  async #fetchAllSafesPending() {
+    await this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
+
+    // do not make Safe requests for the other Safes if the wallet is locked
+    if (!this.keystore.isUnlocked) return
+
+    await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
+  }
+
+  async refreshSafeTxns() {
+    if (this.statuses.refreshSafeTxns === 'LOADING') return
+
+    await this.withStatus('refreshSafeTxns', () => this.fetchSafeTxns([], true), true)
+  }
+
+  async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
     if (!this.selectedAccount?.account?.safeCreation) return
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex
@@ -1546,50 +2013,58 @@ export class MainController extends EventEmitter implements IMainController {
       threshold: accountState[c.toString()]?.threshold || 0
     }))
 
-    for (let i = 0; i < networksAndThresholds.length; i++) {
-      // wait a second to not hit 5 request per minute API limit
-      if (i !== 0) await wait(600)
+    if (!networksAndThresholds.length) return
 
-      const firstBatch = networksAndThresholds[i]!
-      const res: SafeResults | null = await this.safe
-        .fetchPending(safeAddr, [firstBatch])
-        .catch((e) => {
-          console.log(e)
-          console.log('failed to retrieve pending Safe txns')
-          return null
-        })
+    await this.withStatus(
+      'fetchSafeTxns',
+      async () => {
+        for (let i = 0; i < networksAndThresholds.length; i++) {
+          // wait a second to not hit 5 request per minute API limit
+          if (i !== 0) await wait(600)
 
-      if (!res) continue
+          const firstBatch = networksAndThresholds[i]!
+          const res: SafeResults | null = await this.safe
+            .fetchPending(safeAddr, [firstBatch])
+            .catch((e) => {
+              console.log(e)
+              console.log('failed to retrieve pending Safe txns')
+              return null
+            })
 
-      // build txn requests
-      const txnRequest = toCallsUserRequest(safeAddr, res)
-      for (let i = 0; i < txnRequest.length; i++) {
-        // build the requests only if the selected account hasn't changed
-        if (this.selectedAccount?.account?.addr === safeAddr)
-          await this.requests.build(txnRequest[i]!).catch((e) => e)
-      }
+          if (!res) continue
 
-      // build and resolve message requests
-      const messageRequests = toSigMessageUserRequests(res)
-      for (let i = 0; i < messageRequests.length; i++) {
-        const req = messageRequests[i]!
-        const userRequest = this.requests.userRequests.find(
-          (u) =>
-            u.meta.accountAddr === safeAddr &&
-            u.meta.chainId === req.params.chainId &&
-            (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
-            u.meta.hash === req.params.messageHash
-        )
-        if (!userRequest && !req.isConfirmed) {
-          // build the requests only if the selected account hasn't changed
-          if (this.selectedAccount?.account?.addr === safeAddr)
-            await this.requests.build(req).catch((e) => e)
+          // build txn requests
+          const txnRequest = toCallsUserRequest(safeAddr, res)
+          for (let i = 0; i < txnRequest.length; i++) {
+            // build the requests only if the selected account hasn't changed
+            if (this.selectedAccount?.account?.addr === safeAddr)
+              await this.requests.build(txnRequest[i]!).catch((e) => e)
+          }
+
+          // build and resolve message requests
+          const messageRequests = toSigMessageUserRequests(res)
+          for (let i = 0; i < messageRequests.length; i++) {
+            const req = messageRequests[i]!
+            const userRequest = this.requests.userRequests.find(
+              (u) =>
+                u.meta.accountAddr === safeAddr &&
+                u.meta.chainId === req.params.chainId &&
+                (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
+                u.meta.hash === req.params.messageHash
+            )
+            if (!userRequest && !req.isConfirmed) {
+              // build the requests only if the selected account hasn't changed
+              if (this.selectedAccount?.account?.addr === safeAddr)
+                await this.requests.build(req).catch((e) => e)
+            }
+            if (userRequest && req.isConfirmed) {
+              await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
+            }
+          }
         }
-        if (userRequest && req.isConfirmed) {
-          await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
-        }
-      }
-    }
+      },
+      true
+    )
   }
 
   #updateIsOffline() {
@@ -1677,7 +2152,10 @@ export class MainController extends EventEmitter implements IMainController {
     ) as CallsUserRequest | undefined
 
     if (userRequest) {
-      await this.requests.rejectCalls({ activeRouteIds: [activeRouteId] })
+      await this.requests.rejectCalls({
+        activeRouteIds: [activeRouteId],
+        isUserInitiated: false
+      })
     } else {
       this.swapAndBridge.removeActiveRoute(activeRouteId)
     }
@@ -1724,7 +2202,6 @@ export class MainController extends EventEmitter implements IMainController {
       txnId: null,
       userOpHash: null
     }
-
     if (submittedAccountOp) {
       meta.txnId = submittedAccountOp.txnId
       meta.identifiedBy = submittedAccountOp.identifiedBy
@@ -1736,7 +2213,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (openBenzin) {
       const benzinUserRequest: BenzinUserRequest = {
-        id: new Date().getTime(),
+        id: generateUuid(),
         kind: 'benzin',
         meta,
         dappPromises: []
@@ -1752,7 +2229,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (safeRequests.length) {
       await this.requests.removeUserRequests(safeRequests, {
-        shouldRejectSafeRequests: false
+        shouldOpenNextRequest: false
       })
     }
 
@@ -1774,9 +2251,24 @@ export class MainController extends EventEmitter implements IMainController {
       }
     })
 
-    await this.requests.removeUserRequests([accountOpRequest.id], {
-      shouldRemoveSwapAndBridgeRoute: false
-    })
+    // Calls that made it out are done with. Anything left was never signed, so the
+    // request stays with those in it and the user can come back and sign them.
+    const sentCallIds = submittedAccountOp.calls
+      .filter((call) => call.status !== AccountOpStatus.Rejected)
+      .map((call) => call.id)
+    const notSentCalls = signAccountOp.cleanupAfterBroadcast(sentCallIds)
+
+    if (notSentCalls.length) {
+      // Their promises have just been answered, so the request must not hold them
+      accountOpRequest.dappPromises = accountOpRequest.dappPromises.filter((promise) =>
+        dappHandlers.every((handler) => handler.promise.id !== promise.id)
+      )
+    } else {
+      await this.requests.removeUserRequests([accountOpRequest.id], {
+        shouldRemoveSwapAndBridgeRoute: false,
+        shouldOpenNextRequest: false
+      })
+    }
 
     this.resolveDappBroadcast(submittedAccountOp, dappHandlers)
 
@@ -1831,7 +2323,67 @@ export class MainController extends EventEmitter implements IMainController {
   }) {
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
     const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
-    await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+    this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+  }
+
+  async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
+    if (!privateKeys.length) {
+      const message = 'Please enter at least one private key.'
+      throw new EmittableError({ message, level: 'major', error: new Error(message) })
+    }
+
+    if (privateKeys.length > MAX_BULK_PRIVATE_KEYS) {
+      const message = `You can import up to ${MAX_BULK_PRIVATE_KEYS} private keys at once. Please remove some and try again.`
+      throw new EmittableError({ message, level: 'major', error: new Error(message) })
+    }
+
+    let keyIterator: KeyIterator
+    try {
+      // Trims the keys, strips the 0x prefix and drops duplicates before validating them
+      keyIterator = new KeyIterator(privateKeys)
+    } catch (error: any) {
+      // The original error never includes the keys, so it is safe to report it
+      const message =
+        'One or more of the private keys you entered is not valid. Please check them and try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+
+    this.accountPicker.setInitParams({
+      keyIterator,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+  }
+
+  /**
+   * Prepares the account picker with a list of private keys (bulk import). The key at position N
+   * in the list is listed as the account at index N. Duplicates are dropped and the list is
+   * limited to `MAX_BULK_PRIVATE_KEYS` keys.
+   */
+  async accountPickerSetInitParamsFromPrivateKeys({ privateKeys }: { privateKeys: string[] }) {
+    await this.withStatus(
+      'accountPickerSetInitParamsFromPrivateKeys',
+      async () => this.#accountPickerSetInitParamsFromPrivateKeys(privateKeys),
+      true
+    )
+  }
+
+  /**
+   * Creates a brand new recovery phrase and prepares the account picker with it, all
+   * in the background. The phrase is never sent to the UI - the user gets prompted to
+   * write it down later, once the account holds funds.
+   */
+  async accountPickerSetInitParamsFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+    await this.withStatus(
+      'accountPickerSetInitParamsFromNewSeed',
+      async () => {
+        const tempSeed = await this.keystore.generateTempSeed({ extraEntropy })
+
+        await this.accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
+          privKeyOrSeed: tempSeed.seed
+        })
+      },
+      true
+    )
   }
 
   // includes the getters in the stringified instance

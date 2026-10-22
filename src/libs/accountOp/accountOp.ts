@@ -1,6 +1,4 @@
-import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
-
-import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
+import { AbiCoder, getBytes, Interface, keccak256, toBeHex, ZeroAddress } from 'ethers'
 
 import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
@@ -10,6 +8,8 @@ import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from '../../interfaces
 import { PaymasterService } from '../erc7677/types'
 import { UserOperation } from '../userOperation/types'
 import { AccountOpStatus, Call, CallTuple } from './types'
+
+import type { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 // This is an abstract representation of the gas fee payment
 // 1) it cannot contain details about maxFeePerGas/baseFee because some networks might not be aware of EIP-1559; it only cares about total amount
@@ -91,22 +91,78 @@ export interface AccountOp {
     fromQuoteId?: string
     /** Used to enable the gas tank if the user is topping up */
     topUpAmount?: bigint
+    /** The operation deploys an undeployed Safe and does not require Safe owner signatures. */
+    isSafeDeploy?: boolean
     /** Allows transfer.ts-owned MAX flows to reserve the fee from the transferred token. */
     allowTransferFeeTokenSelfReserve?: boolean
     /** Used to enable swap&bridge sponsorship */
     swapSponsorship?: {
       swapFeeInUsd: number
       nativePrice: number
-      fromTokenPriceInUsd: number
-      fromTokenDecimals: number
+      feeTokenPriceInUsd: number
+      feeTokenDecimals: number
     }
     speedUp?: {
       enabled: boolean
     }
+    /**
+     * @deprecated No longer written or read anywhere. Used to hold the descriptor-backed
+     * humanization output, persisted so activity/history/Benzin could redisplay a past op without
+     * re-humanizing it. Removed because it coupled storage to the humanizer's internal, frequently
+     * reshaped output type - see the persisted ERC-7730 descriptor cache (`erc7730RegistryCache`
+     * in `interfaces/storage.ts`) for how this is cached now instead. Kept here, loosely typed,
+     * only so the field name stays documented and isn't accidentally reused for something else.
+     */
+    clearSigningHumanization?: unknown[]
   }
   flags?: {
-    hideActivityBanner?: boolean
+    /** Excludes it from the "failed transactions" banner and the Activity counter badge,
+     *  while keeping it in the Activity history. */
+    hiddenFromFailedBanner?: boolean
   }
+  /** Session ID of the dApp that initiated this accountOp, used for phishing context checks. */
+  dappSessionId?: string
+}
+
+export const getAccountOpNonce = (accountOp: AccountOp): bigint | null => {
+  const nonce = accountOp.safeTx?.nonce ?? accountOp.nonce
+
+  return nonce === null || typeof nonce === 'undefined' ? null : BigInt(nonce)
+}
+
+/**
+ * A Safe "on-chain rejection" is a transaction that only exists to occupy a pending Safe
+ * nonce, replacing whatever real transaction was queued at it. Safe (the protocol) has no
+ * dedicated rejection type - it's just a no-op call: a single call with no value and no data,
+ * sent either to the zero address or to the Safe itself, executed as a regular call (not a
+ * delegate call).
+ *
+ * This is the source of truth for that check, sharable by anything that has the raw call data
+ * (a fetched Safe transaction, a built `AccountOp`, etc.) without needing a full `AccountOp`.
+ *
+ * @param calls the calls of the transaction, e.g. `accountOp.calls`
+ * @param accountAddr the Safe account the transaction belongs to
+ * @param operation the Safe `operation` value of the transaction (0 = Call, 1 = DelegateCall);
+ * pass the `operation` from the fetched Safe transaction, or omit it for a transaction built
+ * locally, which is always a plain Call
+ */
+export function isSafeRejectionCall(
+  calls: Call[],
+  accountAddr: string,
+  operation: number = 0
+): boolean {
+  if (calls.length !== 1) return false
+  if (!calls[0]) return false
+  const [call] = calls
+
+  return (
+    operation === 0 &&
+    !!call.to &&
+    (call.to.toLowerCase() === ZeroAddress ||
+      call.to.toLowerCase() === accountAddr.toLowerCase()) &&
+    call.value === 0n &&
+    call.data === '0x'
+  )
 }
 
 /**

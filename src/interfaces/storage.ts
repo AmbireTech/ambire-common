@@ -3,10 +3,12 @@ import { Contacts } from '@/interfaces/addressBook'
 import { EmailVaultData } from '@/interfaces/emailVault'
 
 import { FeatureFlags } from '../consts/featureFlags'
-import { SignedMessage } from '../controllers/activity/types'
+import { FeePayersHistory, SentToHistory, SignedMessage } from '../controllers/activity/types'
 import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
+import { Erc7730PersistedRegistryCache } from '../libs/humanizer/erc7730/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
+import { WalletStakingRelayerLog } from '../libs/walletStaking/pendingWithdrawal'
 import {
   AccountAssetsState as PortfolioAccountAssetsState,
   LearnedAssets,
@@ -17,14 +19,24 @@ import { Account, AccountId, AccountPreferences } from './account'
 import { AutoLoginPoliciesByAccount, AutoLoginSettings } from './autoLogin'
 import { Selectors } from './contractInfo'
 import { ControllerInterface } from './controller'
-import { Dapp, RecentDappEntry } from './dapp'
-import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
+import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
+import { Domains } from './domains'
+import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
+import { PrivacyPoolsAccount } from './privacyPools'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
+import type { FeeSpeed } from './signAccountOp'
 export type IStorageController = ControllerInterface<
   InstanceType<typeof import('../controllers/storage/storage').StorageController>
 >
+
+export type AutomaticallyResolvedSafeTxn = {
+  accountAddr?: string
+  chainId?: bigint
+  nonce: bigint
+  txnIds: string[]
+}
 
 export type StorageProps = {
   // Onboarding
@@ -32,10 +44,24 @@ export type StorageProps = {
   isSetupComplete: boolean
   onboardingState: object
   termsState: object
+  themeType: string
+  avatarType: string
+  logLevel: string
+  crashAnalyticsEnabledV2: boolean
+  autoLockTime: number
   // Activity
   accountsOps: { [key: string]: { [key: string]: SubmittedAccountOp[] } }
   externalAccountOps: { [key: string]: { [key: string]: SubmittedAccountOpLike[] } }
   signedMessages: { [key: AccountId]: SignedMessage[] }
+  sentToHistory: SentToHistory
+  feePayersHistory: FeePayersHistory
+  /**
+   * Which backend the transaction history was last written to. Recorded rather than a
+   * "migrated" boolean because it says what is true rather than what happened: a session that
+   * finds 'idb' here but cannot open IndexedDB knows the history exists and is unreachable,
+   * which is indistinguishable from "no transactions yet" otherwise.
+   */
+  activityStorageBackend: 'idb' | 'keyValue'
   // Migrations
   passedMigrations: string[]
   migrations: string[]
@@ -44,14 +70,21 @@ export type StorageProps = {
   keystoreSecrets: MainKeyEncryptedWithSecret[]
   keyPreferences: { addr: Key['addr']; type: Key['type']; label: string }[]
   keystoreKeys: StoredKey[]
-  keystoreSeeds: KeystoreSeed[]
+  keystoreSeeds: StoredKeystoreSeed[]
   // Dapps
   dappsV2: Dapp[]
   dapps: Dapp[]
   recentDapps: RecentDappEntry[]
+  disguisedAsMetaMaskDapps: string[]
+  trending: {
+    updatedAt: number
+    tokens: TrendingToken[]
+  }
   // Selected account
   dismissedBanners: (string | number)[]
   selectedAccount: string | null
+  /** Seed id of the selected Privacy Pools account. Exclusive with `selectedAccount`. */
+  selectedPrivacyPoolsAccount: string | null
   selectedAccountDismissedBannerIds: { [key: string]: string[] }
   // Email vault
   emailVault: {
@@ -76,9 +109,23 @@ export type StorageProps = {
   // Address book
   contacts: Contacts
   // Safe
-  automaticallyResolvedSafeTxns: { nonce: bigint; txnIds: string[] }[]
+  automaticallyResolvedSafeTxns: AutomaticallyResolvedSafeTxn[]
   rejectedSafeTxns: string[]
+  // Privacy Pools
+  /**
+   * The SDK's per-chain state as one blob, as the SDK invents its storage keys at runtime. Values
+   * are serialized stores (megabytes each on mainnet) that spare a full rescan from deployment.
+   */
+  privacyPoolsState: { [key: string]: string }
+  /** The wallet's Privacy Pools accounts, at most one per stored recovery phrase. */
+  privacyPoolsAccounts: PrivacyPoolsAccount[]
   // Other
+  signAccountOpFeeTokenPreference: {
+    [chainId: string]: string | 'gasTank'
+  }
+  signAccountOpFeeSpeedPreference: {
+    [chainId: string]: FeeSpeed
+  }
   networks: { [key: string]: Network }
   accounts: Account[]
   networkPreferences: { [key: string]: Partial<Network> }
@@ -86,6 +133,7 @@ export type StorageProps = {
   lastDappsUpdateVersion: string | null
   isPinned: boolean
   isPrivacyModeEnabled: boolean
+  isSidePanelModeEnabled: boolean
   phishing: {
     version: number
     updatedAt: number
@@ -93,12 +141,26 @@ export type StorageProps = {
     addresses: string[]
   }
   swapAndBridgeActiveRoutes: SwapAndBridgeActiveRoute[]
+  disabledSwapProviderIds: string[]
+  // Persisted reverse ENS/Namoshi lookup cache, kept indefinitely so accounts
+  // don't need to be re-resolved after a service worker restart.
+  domainsCache: Domains
+  // Persisted ERC-7730 "clear signing" descriptor cache (calldata/EIP-712 index + resolved
+  // descriptor JSON), so descriptors fetched once from the relayer survive reloads and are
+  // reusable by history/Benzin without a fresh network round trip. Purely a cache - safe to clear.
+  erc7730RegistryCache: Erc7730PersistedRegistryCache
   flags: Partial<FeatureFlags>
   isDefaultWallet: boolean
   shouldSkipTransactionQueuedModal: boolean
   isBatchingEnabled: boolean
   surveysRespondedTo: string[]
   functionSelectors: Selectors
+  // Per-controller debug logging toggles. Only enabled ones are stored
+  debugLogNamespaces: Record<string, boolean>
+  // The $WALLET staking leave logs (in the relayer's shape) of each account's pending withdrawals,
+  // keyed by the lowercase account address. Kept so that the withdrawals are known without the
+  // relayer, e.g. when the user opted out of the withdrawals lookup
+  walletStakingLeaveLogs: { [accountAddr: string]: WalletStakingRelayerLog[] }
 }
 
 export interface Storage {

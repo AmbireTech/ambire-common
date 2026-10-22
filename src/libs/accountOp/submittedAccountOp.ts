@@ -1,4 +1,5 @@
-import { Interface, isAddress, toBeHex, TransactionReceipt, ZeroAddress } from 'ethers'
+import { getAddress, toBeHex, TransactionReceipt, ZeroAddress } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { BUNDLER } from '../../consts/bundlers'
 import { Hex } from '../../interfaces/hex'
@@ -66,6 +67,13 @@ export type BalanceChange = Pick<
   balanceChange: bigint
 }
 
+export type NftBalanceChange = {
+  address: string
+  chainId: bigint
+  tokenId: bigint
+  balanceChange: bigint
+}
+
 export interface SubmittedAccountOp extends AccountOp {
   txnId?: string
   nonce: bigint
@@ -77,6 +85,7 @@ export interface SubmittedAccountOp extends AccountOp {
   blockHash?: string
   gasUsed?: string
   balanceChanges?: BalanceChange[]
+  nftBalanceChanges?: NftBalanceChange[]
   balanceChangesFetchRetryCount?: number
 }
 
@@ -114,10 +123,86 @@ export interface SubmittedAccountOpLike
       | 'blockHash'
       | 'gasUsed'
       | 'balanceChanges'
+      | 'nftBalanceChanges'
       | 'balanceChangesFetchRetryCount'
     >,
     Partial<SubmittedAccountOpActionFields> {
   activitySource?: 'internal' | 'external'
+}
+
+/**
+ * Adds to each call of a batch broadcast as one txn per call (`MultipleTxns`) the hash
+ * of its txn. Calls without a txn were not sent (e.g. rejected on the hardware wallet
+ * midway through the batch), so they are marked as rejected.
+ */
+export function getCallsWithTxnIds(
+  submittedAccountOp: SubmittedAccountOp
+): SubmittedAccountOp['calls'] {
+  const txnIds = submittedAccountOp.identifiedBy.identifier.split('-')
+
+  return submittedAccountOp.calls.map((oneCall, i) => {
+    const localCall = { ...oneCall }
+
+    // if there's no tx id, we set it to Rejected and continue.
+    // it means broadcast has failed
+    if (!(i in txnIds)) {
+      localCall.status = AccountOpStatus.Rejected
+      return localCall
+    }
+
+    localCall.txnId = txnIds[i] as Hex
+    localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
+    return localCall
+  })
+}
+
+/**
+ * Rebuilds a full `AccountOp` from a `SubmittedAccountOpLike` - e.g. to re-run `humanizeAccountOp`
+ * against a past activity item, which only carries the looser `SubmittedAccountOpLike` shape.
+ * Fields absent from `SubmittedAccountOpLike` (because they were optional on
+ * `SubmittedAccountOpActionFields`, or never persisted) fall back to `AccountOp`'s own defaults.
+ */
+export function submittedAccountOpToAccountOp(
+  submittedAccountOp: SubmittedAccountOpLike
+): AccountOp {
+  return {
+    id: submittedAccountOp.id,
+    accountAddr: submittedAccountOp.accountAddr,
+    chainId: submittedAccountOp.chainId,
+    signingKeyAddr: submittedAccountOp.signingKeyAddr ?? null,
+    signingKeyType: submittedAccountOp.signingKeyType ?? null,
+    nonce: submittedAccountOp.nonce ?? null,
+    eoaNonce: submittedAccountOp.eoaNonce,
+    calls: submittedAccountOp.calls,
+    feeCall: submittedAccountOp.feeCall,
+    activatorCall: submittedAccountOp.activatorCall,
+    gasLimit: submittedAccountOp.gasLimit ?? null,
+    signature: submittedAccountOp.signature ?? null,
+    gasFeePayment: submittedAccountOp.gasFeePayment,
+    txnId: submittedAccountOp.txnId,
+    status: submittedAccountOp.status,
+    asUserOperation: submittedAccountOp.asUserOperation,
+    signers: submittedAccountOp.signers,
+    signed: submittedAccountOp.signed,
+    safeTx: submittedAccountOp.safeTx,
+    meta: submittedAccountOp.meta,
+    flags: submittedAccountOp.flags
+  }
+}
+
+/**
+ * Returns the account-level nonce to store in Activity. Safe transactions broadcast through a
+ * bundler have an unrelated, random UserOperation nonce, which remains available on
+ * `accountOp.asUserOperation.nonce` and must not replace the Safe transaction nonce.
+ */
+export function getSubmittedAccountOpNonce(
+  accountOpNonce: AccountOp['nonce'],
+  broadcastNonce: number | bigint,
+  isSafeAccount: boolean
+): bigint {
+  if (isSafeAccount && accountOpNonce !== null) return accountOpNonce
+
+  return BigInt(broadcastNonce)
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
@@ -383,47 +468,94 @@ export function updateOpStatus(
   return opReference
 }
 
-const transferIface = new Interface(['function transfer(address,uint256)'])
+// `transferFrom(address,address,uint256)` is shared by ERC20 and ERC721, so one entry covers both
+const transferAbi = parseAbi(['function transfer(address to, uint256 amountOrTokenId)'])
+const transferFromAbi = parseAbi([
+  'function transferFrom(address from, address to, uint256 amountOrTokenId)'
+])
+const safeTransferFromAbi = parseAbi([
+  'function safeTransferFrom(address from, address to, uint256 tokenId)'
+])
+const safeTransferFromWithDataAbi = parseAbi([
+  'function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)'
+])
 
 /**
- * Returns all addresses that the SubmittedAccountOp has calls sent to.
- *
- * @param whitelist Optional list of addresses to filter the results.
+ * Which decoded argument holds the recipient, per function that moves funds to someone else.
+ * Everything not listed here is a contract interaction rather than a send.
  */
-export function getAccountOpRecipients(op: SubmittedAccountOp, whitelist?: string[]): string[] {
-  const sentTo = new Set<string>()
+const RECIPIENT_ARG_INDEX_BY_SELECTOR: Record<string, { abi: any; index: number; args: number }> = {
+  [toFunctionSelector(transferAbi[0])]: { abi: transferAbi, index: 0, args: 2 },
+  [toFunctionSelector(transferFromAbi[0])]: { abi: transferFromAbi, index: 1, args: 3 },
+  [toFunctionSelector(safeTransferFromAbi[0])]: { abi: safeTransferFromAbi, index: 1, args: 3 },
+  [toFunctionSelector(safeTransferFromWithDataAbi[0])]: {
+    abi: safeTransferFromWithDataAbi,
+    index: 1,
+    args: 3
+  }
+}
+
+const getRecipientFromCall = (call: Call): string | null => {
+  const data = (call.data || '0x') as Hex
+
+  // A plain value transfer - the call target is the recipient
+  if (data === '0x') return call.value > 0n && call.to ? call.to : null
+
+  const decoder = RECIPIENT_ARG_INDEX_BY_SELECTOR[data.slice(0, 10)]
+  if (!decoder) return null
+
+  try {
+    // Some tokens send shorter calldata than the ABI expects, the same way the humanizer pads it
+    const expectedLength = 2 + 8 + decoder.args * 64
+    const { args } = decodeFunctionData({
+      abi: decoder.abi,
+      data: data.padEnd(expectedLength, '0') as Hex
+    })
+
+    return (args[decoder.index] as string) || null
+  } catch {
+    // Not actually the function the selector suggests, so there is no recipient to read
+    return null
+  }
+}
+
+/**
+ * Returns the addresses an account op sends funds to - native transfers plus ERC20/ERC721
+ * `transfer`, `transferFrom` and both `safeTransferFrom` overloads - checksummed, deduplicated
+ * and in call order. Contract interactions are left out: calling a contract is not sending to it.
+ *
+ * @param whitelist Optional list of addresses to filter the results (case-insensitive).
+ */
+export function getAccountOpRecipients(
+  op: Pick<AccountOp, 'calls'>,
+  whitelist?: string[]
+): {
+  address: string
+  domain?: string
+}[] {
+  const domainByRecipient = new Map<string, string | undefined>()
   const lowercaseWhitelist = whitelist?.map((addr) => addr.toLowerCase())
 
   op.calls.forEach((call) => {
-    // 1) Direct call.to match
-    if (call.to && isAddress(call.to)) {
-      if (!lowercaseWhitelist || lowercaseWhitelist.includes(call.to.toLowerCase())) {
-        sentTo.add(call.to)
-      }
+    const recipient = getRecipientFromCall(call)
+    if (!recipient) return
+
+    let address: string
+    try {
+      address = getAddress(recipient)
+    } catch {
+      // A malformed address can never have been sent to, so it is not a recipient
+      return
     }
 
-    // 2) If this is an ERC-20 transfer(address,uint256), decode the recipient from call.data
-    const data = (call as Call).data as string | undefined
+    if (lowercaseWhitelist && !lowercaseWhitelist.includes(address.toLowerCase())) return
 
-    if (!data || typeof data !== 'string' || data.length < 10) return
-
-    const selector = transferIface.getFunction('transfer')?.selector
-    if (selector && data.startsWith(selector)) {
-      try {
-        const decoded = transferIface.decodeFunctionData('transfer', data)
-        const recipient = decoded[0] as string
-        if (isAddress(recipient)) {
-          if (lowercaseWhitelist && !lowercaseWhitelist.includes(recipient.toLowerCase())) return
-
-          sentTo.add(recipient)
-        }
-      } catch {
-        // ignore decode errors and continue
-      }
-    }
+    const domain = call.recipientDomain?.toLowerCase()?.trim()
+    if (domain || !domainByRecipient.has(address))
+      domainByRecipient.set(address, domain || undefined)
   })
 
-  return Array.from(sentTo)
+  return Array.from(domainByRecipient, ([address, domain]) => ({ address, domain }))
 }
 
 /**

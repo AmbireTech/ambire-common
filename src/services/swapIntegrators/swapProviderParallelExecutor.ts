@@ -7,11 +7,16 @@ import {
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
-  SwapProvider
+  SwapProvider,
+  SwapProviderExecutor,
+  SwapProviderInfo
 } from '../../interfaces/swapAndBridge'
 import wait, { waitWithAbort } from '../../utils/wait'
 
-export class SwapProviderParallelExecutor {
+const GET_SUPPORTED_CHAINS_TIMEOUT = 10000
+const GET_TO_TOKEN_LIST_TIMEOUT = 30000
+
+export class SwapProviderParallelExecutor implements SwapProviderExecutor {
   id: string = 'parallel'
 
   name = 'Parallel'
@@ -20,11 +25,31 @@ export class SwapProviderParallelExecutor {
 
   #providers: SwapProvider[]
 
+  #getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[]
+
+  #getDisabledProviders: () => string[]
+
   // Added for compatibility with the type
   supportedChains: SwapProvider['supportedChains'] = []
 
-  constructor(providers: SwapProvider[]) {
+  constructor(
+    providers: SwapProvider[],
+    getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[],
+    getDisabledProviders: () => string[] = () => []
+  ) {
     this.#providers = providers
+    this.#getFallbackSupportedChains = getFallbackSupportedChains
+    this.#getDisabledProviders = getDisabledProviders
+  }
+
+  /** Returns serializable metadata without exposing the private provider instances. */
+  getProvidersInfo(): SwapProviderInfo[] {
+    return this.#providers.map(({ id, name }) => ({ id, name }))
+  }
+
+  #getEnabledProviders(): SwapProvider[] {
+    const disabledProviders = this.#getDisabledProviders()
+    return this.#providers.filter(({ id }) => !disabledProviders.includes(id))
   }
 
   /**
@@ -55,7 +80,7 @@ export class SwapProviderParallelExecutor {
 
     const startTime = Date.now()
 
-    const supportedProviders = this.#providers.filter((provider) => {
+    const supportedProviders = this.#getEnabledProviders().filter((provider) => {
       // If the request is not chainId specific, use all providers
       if (!uniqueChainIds.length) return true
       if (reqMeta?.chainIds?.length === 2 && provider.areChainsSupported) {
@@ -86,6 +111,10 @@ export class SwapProviderParallelExecutor {
       fetchMethod(provider)
         .then((result) => ({ provider, result }))
         .catch((err) => ({ provider, result: err as Error }))
+        .then((result) => {
+          results.push(result)
+          return result
+        })
     )
 
     const waitPromise = waitWithAbort(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE)
@@ -96,41 +125,19 @@ export class SwapProviderParallelExecutor {
       )
     })
 
-    const firstResult = await Promise.race([Promise.any(tasks), absoluteTimeout])
+    await Promise.race([Promise.race(tasks), absoluteTimeout])
 
     if (waitPromise.abort) waitPromise.abort()
-
-    if ('provider' in firstResult && 'result' in firstResult) {
-      results.push(firstResult)
-    }
-
-    const remainingTasks = supportedProviders
-      // Make sure the provider was not filtered out
-      .filter((p) => !results.some((r) => r.provider === p))
-      .map((provider) => {
-        const originalIdx = supportedProviders.indexOf(provider)
-        if (!tasks[originalIdx]) return null
-        return tasks[originalIdx]
-          .then((res) => res)
-          .catch((err) => ({ provider, result: err as Error }))
-      })
 
     // Figure out how long we've already waited
     const elapsed = Date.now() - startTime
     // If first was too quick, extend wait time so total ≥ MIN_WAIT
     const remainingMinWait = Math.max(0, MIN_WAIT - elapsed)
 
-    const secondResult = (await Promise.race([
-      // Promise.any can't be called with an empty array
-      remainingTasks.length ? Promise.any(remainingTasks) : Promise.resolve(),
+    await Promise.race([
+      Promise.allSettled(tasks),
       wait(MAX_WAIT_AFTER_FIRST_COMPLETED + remainingMinWait)
-    ])) as { provider: SwapProvider; result: Error | T }
-
-    if (secondResult) {
-      if ('provider' in secondResult && 'result' in secondResult) {
-        results.push(secondResult)
-      }
-    }
+    ])
 
     const valid = results.map((r) => r.result).filter((r) => !(r instanceof Error))
     if (valid.length > 0) return valid.flat() as T
@@ -184,36 +191,136 @@ export class SwapProviderParallelExecutor {
     return (provider[method] as any)(...args)
   }
 
+  async #getSupportedChainsWithTimeout(
+    provider: SwapProvider
+  ): Promise<SwapAndBridgeSupportedChain[] | Error> {
+    const waitPromise = waitWithAbort(GET_SUPPORTED_CHAINS_TIMEOUT)
+
+    try {
+      return await Promise.race([
+        provider.getSupportedChains().catch((e) => e),
+        waitPromise.promise.then(() => new Error('Get supported chains timeout'))
+      ])
+    } finally {
+      if (waitPromise.abort) waitPromise.abort()
+    }
+  }
+
   async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
-    const chainIds = await this.#fetchFromAll<SwapAndBridgeSupportedChain[]>(
-      (provider: SwapProvider) => provider.getSupportedChains().catch((e) => e)
+    const enabledProviders = this.#getEnabledProviders()
+    if (!enabledProviders.length) return []
+
+    const promises = enabledProviders.map((provider: SwapProvider) =>
+      this.#getSupportedChainsWithTimeout(provider)
     )
+    const fetchResults = await Promise.all(promises)
+    const chainIds = fetchResults
+      .filter((r): r is SwapAndBridgeSupportedChain[] => !(r instanceof Error))
+      .flat()
 
     // filter duplicates
-    return [
+    const uniqueChainIds = [
       ...new Map(chainIds.map((item: SwapAndBridgeSupportedChain) => [item.chainId, item])).values()
     ]
+
+    // A broad fallback would reintroduce chains that may only work with a disabled provider.
+    const areAllProvidersEnabled = enabledProviders.length === this.#providers.length
+    if (uniqueChainIds.length < 10 && this.#getFallbackSupportedChains && areAllProvidersEnabled) {
+      return this.#getFallbackSupportedChains()
+    }
+
+    return uniqueChainIds
   }
 
   async getToTokenList({
     fromChainId,
-    toChainId
+    toChainId,
+    onUpdate
   }: {
     fromChainId: number
     toChainId: number
+    onUpdate?: (tokens: SwapAndBridgeToToken[], loadingProviderNames: string[]) => void
   }): Promise<SwapAndBridgeToToken[]> {
-    const toTokenList = await this.#fetchFromAll<SwapAndBridgeToToken[]>(
-      (provider: SwapProvider) =>
-        provider.getToTokenList({ fromChainId, toChainId }).catch((e) => e),
-      { chainIds: [fromChainId, toChainId] }
-    )
+    const supportedProviders = this.#getEnabledProviders().filter((provider) => {
+      if (provider.areChainsSupported) {
+        return provider.areChainsSupported({ fromChainId, toChainId })
+      }
 
-    // filter duplicates
-    return [
-      ...new Map(
-        toTokenList.map((item: SwapAndBridgeToToken) => [`${item.chainId}-${item.address}`, item])
-      ).values()
-    ]
+      if (provider.supportedChains === null) return true
+
+      const supportedChainIds = provider.supportedChains.map(({ chainId }) => chainId)
+      return supportedChainIds.includes(fromChainId) && supportedChainIds.includes(toChainId)
+    })
+
+    if (!supportedProviders.length) {
+      throw new SwapAndBridgeProviderApiError(
+        `The requested network(s) are not supported by any available service provider. Chain IDs: ${[
+          ...new Set([fromChainId, toChainId])
+        ].join(', ')}`
+      )
+    }
+
+    // Kept per provider to merge in registration order, not answer order
+    const tokenListsByProvider = new Map<SwapProvider, SwapAndBridgeToToken[]>()
+    const loadingProviders = new Set(supportedProviders)
+    let toTokenList: SwapAndBridgeToToken[] = []
+
+    const requests = supportedProviders.map(async (provider) => {
+      const waitPromise = waitWithAbort(GET_TO_TOKEN_LIST_TIMEOUT)
+
+      try {
+        const result = await Promise.race([
+          provider
+            .getToTokenList({ fromChainId, toChainId })
+            .catch((error) =>
+              error instanceof Error ? error : new Error('Get to token list failed')
+            ),
+          waitPromise.promise.then(() => new Error('Get to token list timeout'))
+        ])
+
+        loadingProviders.delete(provider)
+        if (!(result instanceof Error)) tokenListsByProvider.set(provider, result)
+
+        // Nothing to report until a provider returns tokens
+        if (tokenListsByProvider.size) {
+          toTokenList = this.#mergeTokenLists(
+            supportedProviders.map((p) => tokenListsByProvider.get(p) || [])
+          )
+          onUpdate?.(
+            toTokenList,
+            [...loadingProviders].map(({ name }) => name)
+          )
+        }
+
+        return result
+      } finally {
+        if (waitPromise.abort) waitPromise.abort()
+      }
+    })
+
+    const results = await Promise.all(requests)
+
+    if (!results.some((result) => !(result instanceof Error))) {
+      throw new SwapAndBridgeProviderApiError(
+        'Our service providers are currently unavailable. Please try again later.'
+      )
+    }
+
+    return toTokenList
+  }
+
+  /** A duplicate token keeps the position and data of the first provider. */
+  #mergeTokenLists(tokenLists: SwapAndBridgeToToken[][]) {
+    const tokensById = new Map<string, SwapAndBridgeToToken>()
+
+    tokenLists.forEach((tokens) => {
+      tokens.forEach((token) => {
+        const tokenId = `${token.chainId}-${token.address}`
+        if (!tokensById.has(tokenId)) tokensById.set(tokenId, token)
+      })
+    })
+
+    return [...tokensById.values()]
   }
 
   async getToken({
@@ -246,7 +353,8 @@ export class SwapProviderParallelExecutor {
     sort,
     accountNativeBalance,
     nativeSymbol,
-    isWrapOrUnwrap
+    isWrapOrUnwrap,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     const quotes = await this.#fetchFromAll<SwapAndBridgeQuote[]>(
       (provider: SwapProvider) =>
@@ -263,7 +371,8 @@ export class SwapProviderParallelExecutor {
             sort,
             accountNativeBalance,
             nativeSymbol,
-            isWrapOrUnwrap
+            isWrapOrUnwrap,
+            feePercent
           })
           .catch((e) => e),
       { chainIds: [fromChainId, toChainId] }
@@ -282,7 +391,8 @@ export class SwapProviderParallelExecutor {
     bridge,
     providerId,
     requestId,
-    routeId
+    routeId,
+    rawRoute
   }: {
     txHash: string
     fromChainId: number
@@ -291,6 +401,7 @@ export class SwapProviderParallelExecutor {
     providerId: string
     requestId?: string
     routeId?: string
+    rawRoute?: SwapAndBridgeRoute['rawRoute']
   }): Promise<SwapAndBridgeRouteStatusResult> {
     return this.#routeTo(providerId, 'getRouteStatus', {
       txHash,
@@ -298,7 +409,8 @@ export class SwapProviderParallelExecutor {
       toChainId,
       bridge,
       requestId,
-      routeId
+      routeId,
+      rawRoute
     })
   }
 }

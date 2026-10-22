@@ -1,15 +1,15 @@
 import { toUtf8String } from 'ethers'
 
-import { EIP712TypedData } from '@safe-global/types-kit'
-
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
+import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Account, IAccountsController } from '../../interfaces/account'
 import {
   DAPP_VERIFICATION_BANNER_IDS,
   DappVerificationBanner,
   IDappsController
 } from '../../interfaces/dapp'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
@@ -20,7 +20,9 @@ import {
   KeystoreSignerInterface
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { Platform } from '../../interfaces/platform'
 import { IProvidersController } from '../../interfaces/provider'
+import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import {
   ISignMessageController,
   SignMessageStatus,
@@ -28,27 +30,51 @@ import {
 } from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
 import {
+  getDappIdFromUrl,
+  getUnauthenticatedDapps,
+  isSigningAuthPlatform
+} from '../../libs/dapps/helpers'
+import { humanizeMessage } from '../../libs/humanizer'
+import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
+import {
   addMessage,
   addMessageSignature,
+  canHotOwnersMeetSafeThreshold,
   getImportedSignersThatHaveNotSigned,
   sortSigs
 } from '../../libs/safe/safe'
 import {
+  getEIP712SigningRequest,
+  getSigningRequestDisplayData
+} from '../../libs/signingRequest/signingRequest'
+import {
+  AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
   getAppFormatted,
+  getEIP712Hash,
   getEIP712Signature,
   getPlainTextSignature,
+  getSafeMessageTypedData,
   getVerifyMessageSignature,
-  verifyMessage
+  isCallToSelfOrAmbireOp
 } from '../../libs/signMessage/signMessage'
+import { verifyMessage } from '../../libs/signMessage/verifyMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
+import { withTimeout } from '../../utils/with-timeout'
 import { SignedMessage } from '../activity/types'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import HumanizationController from '../humanization/humanization'
 
+import type { EIP712TypedData } from '@safe-global/types-kit'
+
+import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp'
+import type { IrMessage } from '../../libs/humanizer/interfaces'
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
 } as const
 
-export class SignMessageController extends EventEmitter implements ISignMessageController {
+export class SignMessageController
+  extends HumanizationController
+  implements ISignMessageController
+{
   #keystore: IKeystoreController
 
   #providers: IProvidersController
@@ -63,6 +89,15 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   #dapps?: IDappsController
 
+  #erc7730?: IErc7730Controller
+
+  #platform?: Platform
+
+  // Bumped when init() starts and whenever reset() is called; async operations
+  // capture it and re-check after each await, so obsolete requests can't update
+  // controller state or be signed under a previous approval.
+  #signingGeneration = 0
+
   signer?: KeystoreSignerInterface
 
   isInitialized: boolean = false
@@ -73,9 +108,18 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     name: string
     icon: string
     url?: string
+    sessionId?: string
   } | null = null
 
   messageToSign: Message | null = null
+
+  humanizedMessage?: IrMessage
+
+  isHumanizing = false
+
+  safeEip712Data: unknown | null = null
+
+  hardwareWalletSigningRequest: HardwareWalletSigningRequest | null = null
 
   signedMessage: SignedMessage | null = null
 
@@ -108,7 +152,9 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     externalSignerControllers: ExternalSignerControllers,
     invite: IInviteController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
-    dapps?: IDappsController
+    dapps?: IDappsController,
+    erc7730?: IErc7730Controller,
+    platform?: Platform
   ) {
     super(eventEmitterRegistry)
 
@@ -119,7 +165,18 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.#accounts = accounts
     this.#invite = invite
     this.#dapps = dapps
+    this.#erc7730 = erc7730
+    this.#platform = platform
     this.status = SignMessageStatus.Initial
+
+    // `banners` is derived from DappsController state (the dapp verification status), so its
+    // updates must be propagated - otherwise a banner computed before the status resolves
+    // (e.g. right after a service worker restart) would stay stale in the UI until this
+    // controller happens to emit for another reason.
+    // NOTE: No unsubscribe needed - both controllers are singletons living for the app lifetime.
+    this.#dapps?.onUpdate((forceEmit) => {
+      if (this.dapp?.url) this.propagateUpdate(forceEmit)
+    }, 'sign-message-dapps-verification')
   }
 
   async init({
@@ -129,7 +186,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     hash,
     signatures
   }: {
-    dapp?: { name: string; icon: string; url?: string }
+    dapp?: { name: string; icon: string; url?: string; sessionId?: string }
     messageToSign: Message
     // who are the signers that already signed this message
     // applicable on Safe message
@@ -142,7 +199,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     // displaying the prev sign message request.
     if (this.isInitialized) this.reset()
 
+    const initializationGeneration = ++this.#signingGeneration
+
     await this.#accounts.initialLoadPromise
+    if (this.#signingGeneration !== initializationGeneration) return
 
     if (
       ['message', 'typedMessage', 'authorization-7702', 'siwe'].includes(messageToSign.content.kind)
@@ -172,6 +232,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         this.#account.addr,
         this.network.chainId
       )
+      if (this.#signingGeneration !== initializationGeneration) return
+
       if (!accountState) {
         if (this.network.disabled) {
           throw new Error(
@@ -182,6 +244,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       }
 
       if (this.#account.safeCreation) {
+        this.#updateSafeEip712Data()
         const notSigned = getImportedSignersThatHaveNotSigned(
           this.signed,
           accountState.importedAccountKeys.map((k) => k.addr)
@@ -200,6 +263,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       }
 
       this.emitUpdate()
+      this.humanize()
     } else {
       this.emitError({
         level: 'major',
@@ -213,12 +277,18 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   }
 
   reset() {
+    this.#signingGeneration += 1
+    this.stopHumanization()
     if (!this.isInitialized) return
 
     this.#onAbortOperation()
     this.isInitialized = false
     this.dapp = null
     this.messageToSign = null
+    this.humanizedMessage = undefined
+    this.isHumanizing = false
+    this.safeEip712Data = null
+    this.hardwareWalletSigningRequest = null
     this.signedMessage = null
     this.#account = undefined
     this.network = undefined
@@ -227,6 +297,132 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.signer = undefined
     this.status = SignMessageStatus.Initial
     this.emitUpdate()
+  }
+
+  #updateSafeEip712Data() {
+    if (!this.#account?.safeCreation || !this.messageToSign || !this.network) {
+      this.safeEip712Data = null
+      return
+    }
+
+    const { content } = this.messageToSign
+
+    try {
+      const message = content.kind === 'typedMessage' ? content : content.message
+      const typedData = getSafeMessageTypedData(
+        message,
+        this.network.chainId,
+        this.#account.addr as Hex
+      )
+      const safeMessageHash = getEIP712Hash(typedData)
+
+      this.safeEip712Data = getSigningRequestDisplayData(
+        getEIP712SigningRequest({ ...typedData, safeMessageHash })
+      )
+    } catch (error) {
+      this.safeEip712Data = null
+      this.emitError({
+        message: 'Error calculating Safe EIP-712 data',
+        error: error instanceof Error ? error : new Error(String(error)),
+        level: 'silent'
+      })
+    }
+  }
+
+  #setHardwareWalletSigningRequest(request: HardwareWalletSigningRequest | null) {
+    let serializedRequestData: unknown = null
+
+    try {
+      if (request) serializedRequestData = getSigningRequestDisplayData(request)
+    } catch {
+      serializedRequestData = null
+    }
+
+    this.hardwareWalletSigningRequest =
+      request && serializedRequestData !== null
+        ? {
+            ...request,
+            data: serializedRequestData
+          }
+        : null
+    this.emitUpdate()
+  }
+
+  async #withHardwareWalletSigningRequest<T>(
+    request: HardwareWalletSigningRequest,
+    sign: () => Promise<T>
+  ) {
+    this.#setHardwareWalletSigningRequest(request)
+
+    try {
+      return await sign()
+    } finally {
+      this.#setHardwareWalletSigningRequest(null)
+    }
+  }
+
+  #startHumanization() {
+    return this.startHumanization(() => {
+      this.isHumanizing = true
+      this.humanizedMessage = undefined
+    })
+  }
+
+  #setHumanizedMessage(humanizedMessage: IrMessage, humanizationId: number) {
+    if (!this.isCurrentHumanization(humanizationId)) return false
+
+    this.humanizedMessage = humanizedMessage
+    this.isHumanizing = false
+    this.emitUpdate()
+
+    return true
+  }
+
+  #setFallbackHumanization(humanizationId: number) {
+    if (!this.messageToSign) return false
+
+    return this.#setHumanizedMessage(humanizeMessage(this.messageToSign), humanizationId)
+  }
+
+  async #applyDescriptorFirstHumanization(humanizationId: number) {
+    const messageToSign = this.messageToSign
+    const erc7730 = this.#erc7730
+
+    if (!messageToSign) return
+    // `Erc7730Controller` is the only route to a descriptor (it owns the relayer and the cache), so
+    // its absence means clear signing is simply not available here - as in the auto-login flow,
+    // which builds this controller without any relayer access at all.
+    if (messageToSign.content.kind !== 'typedMessage' || !erc7730) {
+      this.#setFallbackHumanization(humanizationId)
+      return
+    }
+
+    await this.applyDescriptorFirstHumanization({
+      humanizationId,
+      fetchDescriptor: async () => erc7730.getDescriptorForMessage(messageToSign),
+      applyDescriptorHumanization: (erc7730Descriptor, currentHumanizationId) => {
+        if (!erc7730Descriptor) return false
+
+        const erc7730Humanization = humanizeMessage(messageToSign, { erc7730Descriptor })
+
+        return this.#setHumanizedMessage(erc7730Humanization, currentHumanizationId)
+      },
+      applyFallbackHumanization: (currentHumanizationId) =>
+        this.#setFallbackHumanization(currentHumanizationId)
+    })
+  }
+
+  humanize() {
+    if (!this.messageToSign) return
+
+    if (this.messageToSign.content.kind !== 'typedMessage' || !this.#erc7730) {
+      const currentHumanizationId = this.#startHumanization()
+      this.#setFallbackHumanization(currentHumanizationId)
+      return
+    }
+
+    const currentHumanizationId = this.#startHumanization()
+    void this.#applyDescriptorFirstHumanization(currentHumanizationId)
   }
 
   update({ isAutoLoginEnabledByUser, autoLoginDuration }: SignMessageUpdateParams) {
@@ -257,25 +453,46 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
   /**
    * Checks if the signing operation is still valid after each async step, to guard
-   * against a race condition where the operation is reset before the async operation is completed.
+   * against a race condition where the operation is reset or the installed message is
+   * replaced before the async operation is completed. The `signingGeneration` captured
+   * at the start of the operation must still match, otherwise a same-kind request that
+   * called init() mid-signing would get its payload signed under the previous approval.
    */
-  #isSigningOperationValidAfterAsyncOperation() {
-    return this.isInitialized && !!this.messageToSign
+  #isSigningOperationValidAfterAsyncOperation(signingGeneration: number) {
+    return (
+      this.isInitialized && !!this.messageToSign && this.#signingGeneration === signingGeneration
+    )
   }
 
   async addMsgToSafeGlobal(sig: string, message: string | EIP712TypedData) {
-    if (!this.network || !this.#account) return
+    const network = this.network
+    const account = this.#account
+    if (!network || !account) return
+
+    // Attach the requesting dapp's name and url so the other owners can see the
+    // request context when co-signing on a different device (see buildSafeMessageOrigin)
+    const origin = buildSafeMessageOrigin(this.dapp)
 
     // send only to Safe Global if it doesn't already exists and if the threshold is not met
-    await addMessage(this.network.chainId, this.#account.addr as Hex, message, sig).catch((e) => {
+    await withTimeout(
+      () => addMessage(network.chainId, account.addr as Hex, message, sig, origin),
+      {
+        timeoutMs: SAFE_API_TIMEOUT_MS,
+        message: `Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`
+      }
+    ).catch((e) => {
       console.log('failed to send message to Safe Global: ', e)
     })
   }
 
   async addSigToSafeGlobal(sig: string, hash: string) {
-    if (!this.network) return
+    const network = this.network
+    if (!network) return
 
-    await addMessageSignature(this.network.chainId, hash, sig).catch((e) => {
+    await withTimeout(() => addMessageSignature(network.chainId, hash, sig), {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe API: add message signature timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    }).catch((e) => {
       console.log('failed to send message to Safe Global: ', e)
     })
   }
@@ -298,6 +515,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       return SignMessageController.#throwMissingSigningKey()
     }
 
+    // Bind this op to the current message; if init() replaces it during any
+    // await below, the generation changes and the op aborts.
+    const signingGeneration = this.#signingGeneration
+
     // we're always signing with the first signer
     // the goal was to have an array of signers that sign simultaneously
     // but it was too confusing, so we threw it away
@@ -310,7 +531,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.emitUpdate() // pass the signer to the UI
 
     try {
-      if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+      if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
       if (!this.#account) {
         throw new Error(
           'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
@@ -344,7 +565,9 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             this.#account,
             accountState,
             this.signer,
-            this.#invite.isOG
+            this.#invite.isOG,
+            (request, sign) => this.#withHardwareWalletSigningRequest(request, sign),
+            provider
           )
           this.signatures.push(signed.signature)
           this.signed.push(signerKey.addr)
@@ -363,7 +586,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             }
           }
 
-          if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+          if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
 
           // get the final signature
           signature =
@@ -373,6 +596,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
+          if (isCallToSelfOrAmbireOp(this.messageToSign.content, this.#account)) {
+            throw new Error(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
+          }
+
           if (this.#account.creation && this.messageToSign.content.primaryType === 'Permit') {
             throw new Error(
               'It looks like that this app doesn\'t detect Smart Account wallets, and requested incompatible approval type. Please, go back to the app and change the approval type to "Transaction", which is supported by Smart Account wallets.'
@@ -385,7 +612,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             accountState,
             this.signer,
             this.network,
-            this.#invite.isOG
+            this.#invite.isOG,
+            (request, sign) => this.#withHardwareWalletSigningRequest(request, sign),
+            false,
+            provider
           )
           this.signatures.push(signed.signature)
           this.signed.push(signerKey.addr)
@@ -396,7 +626,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
               if (this.signed.length === 1) {
                 await this.addMsgToSafeGlobal(
                   signed.signature,
-                  this.messageToSign.content.message as EIP712TypedData
+                  this.messageToSign.content as EIP712TypedData
                 )
               } else {
                 await this.addSigToSafeGlobal(signed.signature, signed.hash)
@@ -404,7 +634,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             }
           }
 
-          if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+          if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
 
           signature =
             this.signatures.length === 1 || !signed.hash
@@ -468,13 +698,18 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
                 })
         }
         const isValidSignature = await verifyMessage(verifyMessageParams)
-        if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+        if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
 
         if (!isValidSignature) {
           throw new Error(
             'Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support.'
           )
         }
+      }
+
+      // A flagged app never gets an auto-login policy, whatever the toggle was left at
+      if (this.messageToSign.content.kind === 'siwe' && this.isAutoLoginBlockedByScamChecker) {
+        this.messageToSign.content.isAutoLoginEnabledByUser = false
       }
 
       this.signedMessage = {
@@ -525,12 +760,13 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
    */
   cancelSignReq() {
     this.statuses.sign = 'INITIAL'
+    this.hardwareWalletSigningRequest = null
     this.emitUpdate()
   }
 
   #onAbortOperation() {
     if (this.signer?.signingCleanup) {
-      this.signer.signingCleanup()
+      void this.signer.signingCleanup()
     }
   }
 
@@ -563,7 +799,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     const banner = this.#dapps.getDappVerificationBanner([this.dapp.url.toLowerCase()], {
       // SignMessage operates on a single dApp, and the request window already shows it,
       // so repeating the dApp name in the banner text adds noise.
-      includeDappNamesInText: false
+      includeDappNamesInText: false,
+      sessionId: this.dapp.sessionId
     })
     if (!banner) return null
     // In the SignMessage flow, "not in catalog" is too noisy and not actionable enough on its own.
@@ -579,11 +816,53 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     return [banner]
   }
 
+  /**
+   * Whether auto-login can't be turned on for the requesting app, because the scam checker flags
+   * it as unsafe. Clears as soon as the user trusts the app from the warning.
+   */
+  get isAutoLoginBlockedByScamChecker(): boolean {
+    if (!this.#dapps || !this.dapp?.url) return false
+
+    return this.#dapps.isDappFlaggedAsUnsafe(this.dapp.url.toLowerCase(), this.dapp.sessionId)
+  }
+
+  /**
+   * Why this message needs the password/biometrics confirmation, or `null` when it does not. Only
+   * a dapp the catalog knows can require it - elsewhere the confirmation cannot be remembered.
+   * Mobile only. A Safe needs it only when its hot owners can meet the threshold on their own.
+   */
+  get signingAuthRequirement(): SigningAuthRequirement | null {
+    const dapps = this.#dapps
+    if (!isSigningAuthPlatform(this.#platform) || !dapps || !this.dapp?.url) return null
+
+    if (this.#account?.safeCreation && this.messageToSign) {
+      const accountState =
+        this.#accounts.accountStates[this.#account.addr]?.[this.messageToSign.chainId.toString()]
+      // A state that is not loaded yet falls through to the dapp check, so it never skips the prompt
+      if (
+        accountState &&
+        !canHotOwnersMeetSafeThreshold(accountState.importedAccountKeys, accountState.threshold)
+      )
+        return null
+    }
+
+    // Looked up by dapp id, which is what dapps are stored under - looking up by the registrable
+    // domain silently found nothing for every dapp on a subdomain
+    const unauthenticatedDapps = getUnauthenticatedDapps([
+      dapps.getDapp(getDappIdFromUrl(this.dapp.url))
+    ])
+    if (!unauthenticatedDapps.length) return null
+
+    return { firstTimeRecipients: [], unauthenticatedDapps }
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
-      banners: this.banners
+      banners: this.banners,
+      isAutoLoginBlockedByScamChecker: this.isAutoLoginBlockedByScamChecker,
+      signingAuthRequirement: this.signingAuthRequirement
     }
   }
 }

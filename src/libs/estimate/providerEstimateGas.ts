@@ -18,7 +18,7 @@ export function getEstimateGasProps(
   account: Account,
   accountState: AccountOnchainState
 ): { from: Hex; to: Hex | undefined; value: Hex; data: Hex; useStateOverride: boolean } {
-  if (accountState.isSmarterEoa) {
+  if (accountState.isSmarterEoa && op.calls.length > 1) {
     const saAbi = new Interface(AmbireAccount.abi)
     return {
       from: account.addr as Hex,

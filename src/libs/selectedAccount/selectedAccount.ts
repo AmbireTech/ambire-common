@@ -6,12 +6,7 @@ import { AccountState, InternalPortfolioChain, NetworkState } from '../portfolio
 import PortfolioViewBuilder from './portfolioView'
 
 export const isInternalChain = (chainId: InternalPortfolioChain | string) => {
-  return (
-    chainId === 'gasTank' ||
-    chainId === 'rewards' ||
-    chainId === 'projectedRewards' ||
-    chainId === 'defiApps'
-  )
+  return chainId === 'gasTank' || chainId === 'rewards' || chainId === 'defiApps'
 }
 
 export const stripPortfolioState = (portfolioState: AccountState) => {
@@ -80,7 +75,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   isReloading: false,
   networkSimulatedAccountOp: {},
   portfolioState: {},
-  projectedRewardsStats: null
+  verification: null
 }
 
 /**

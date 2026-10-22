@@ -7,19 +7,30 @@ import {
   parseUnits,
   ZeroAddress
 } from 'ethers'
+import { ethAddress, zeroAddress } from 'viem'
+
+import {
+  AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
+  JPYC_TOKEN,
+  SOCKET_EXPLORER_URL
+} from '@/services/socketv3/constants'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { MAX_UINT256 } from '../../consts/deploy'
+import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import {
-  BRIDGE_STATUS_INTERVAL,
-  UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
-} from '../../consts/intervals'
+  HIGH_PRICE_IMPACT_PERCENT_THRESHOLD,
+  SLIPPAGE_MIN_QUOTE_DIFF_USD
+} from '../../consts/safeguards/extremeSwapLoss'
+import { SwapAmountWarning } from '../../consts/safeguards/swapAmountWarnings'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
+  FromToken,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
@@ -28,23 +39,22 @@ import {
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest } from '../../interfaces/userRequest'
+import { COWSWAP_EXPLORER_URL } from '../../services/cowswap/constants'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
-import {
-  AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
-  FEE_PERCENT,
-  JPYC_TOKEN,
-  NULL_ADDRESS,
-  SOCKET_EXPLORER_URL,
-  ZERO_ADDRESS
-} from '../../services/socket/constants'
-import { SQUID_EXPLORER_URL } from '../../services/squid/constants'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isBasicAccount } from '../account/account'
+import { getCallsWithTxnIds, SubmittedAccountOp } from '../accountOp/submittedAccountOp'
 import { Call } from '../accountOp/types'
 import { AssetType } from '../defiPositions/types'
 import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
-import { getTokenBalanceInUSD } from '../portfolio/helpers'
+import { getTokenBalanceInUSD, getTokenUsdPrice } from '../portfolio/helpers'
+import {
+  getSwapEstimatedLossUsd,
+  getSwapQuoteLossUsd,
+  getSwapSlippageLossUsd,
+  isExtremeSwapLoss
+} from '../safeguards/extremeSwapLoss'
 import { getSanitizedAmount } from '../transfer/amount'
 
 /**
@@ -127,20 +137,25 @@ const getBannedToTokenList = (chainId: string): string[] => {
   return Object.keys(list[chainId])
 }
 
-const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
-  // Pending tokens go on top
-  const isAPending =
-    typeof a.amountPostSimulation === 'bigint' && a.amountPostSimulation !== BigInt(a.amount)
-  const isBPending =
-    typeof b.amountPostSimulation === 'bigint' && b.amountPostSimulation !== BigInt(b.amount)
+type TokenSortKey = { isPending: boolean; balanceInUSD: number }
 
-  if (isAPending && !isBPending) return -1
-  if (!isAPending && isBPending) return 1
+/**
+ * Everything the order of a token depends on, read once per token instead of on
+ * every comparison - which for a large portfolio is around twenty times each.
+ */
+const getTokenSortKey = (token: TokenResult): TokenSortKey => ({
+  isPending:
+    typeof token.amountPostSimulation === 'bigint' &&
+    token.amountPostSimulation !== BigInt(token.amount),
+  balanceInUSD: getTokenBalanceInUSD(token)
+})
+
+const compareTokenSortKeys = (a: TokenSortKey, b: TokenSortKey) => {
+  // Pending tokens go on top
+  if (a.isPending !== b.isPending) return a.isPending ? -1 : 1
 
   // Otherwise, higher balance comes first
-  const aBalanceUSD = getTokenBalanceInUSD(a)
-  const bBalanceUSD = getTokenBalanceInUSD(b)
-  if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
+  if (a.balanceInUSD !== b.balanceInUSD) return b.balanceInUSD - a.balanceInUSD
 
   return 0
 }
@@ -148,12 +163,20 @@ const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
 export const attemptToSortTokensByMarketCap = async ({
   fetch,
   chainId,
-  tokens
+  tokens,
+  featureFlags
 }: {
   fetch: Fetch
   chainId: number
   tokens: SwapAndBridgeToToken[]
+  featureFlags: Pick<IFeatureFlagsController, 'isFeatureEnabled'>
 }) => {
+  if (
+    !featureFlags.isFeatureEnabled('tokenPrices') ||
+    !featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')
+  )
+    return tokens
+
   try {
     const tokenAddressesByMarketCapRes = await fetch(
       `https://cena.ambire.com/api/v3/lists/byMarketCap/${chainId}`
@@ -200,32 +223,40 @@ export const sortTokenListResponse = (
   tokenListResponse: SwapAndBridgeToToken[],
   accountPortfolioTokenList: TokenResult[]
 ) => {
-  return tokenListResponse.sort((a: SwapAndBridgeToToken, b: SwapAndBridgeToToken) => {
-    const aInPortfolio = accountPortfolioTokenList.find((t) => t.address === a.address)
-    const bInPortfolio = accountPortfolioTokenList.find((t) => t.address === b.address)
+  const sortKeyByAddress = new Map(
+    accountPortfolioTokenList.map((t) => [t.address.toLowerCase(), getTokenSortKey(t)])
+  )
 
-    // Tokens in portfolio should come first
-    if (aInPortfolio && !bInPortfolio) return -1
-    if (!aInPortfolio && bInPortfolio) return 1
+  // The portfolio lookup is done once per token rather than on every comparison. The
+  // service provider's list runs to thousands of tokens, so the sort makes tens of
+  // thousands of comparisons, and lowercasing both addresses in each one is what made
+  // deriving this list block the JS thread for hundreds of milliseconds.
+  return tokenListResponse
+    .map((token) => ({ token, sortKey: sortKeyByAddress.get(token.address.toLowerCase()) }))
+    .sort((a, b) => {
+      // Tokens in portfolio should come first
+      if (a.sortKey && !b.sortKey) return -1
+      if (!a.sortKey && b.sortKey) return 1
 
-    if (aInPortfolio && bInPortfolio) {
-      const comparisonResult = sortTokensByPendingAndBalance(aInPortfolio, bInPortfolio)
-      if (comparisonResult !== 0) return comparisonResult
-    }
+      if (a.sortKey && b.sortKey) return compareTokenSortKeys(a.sortKey, b.sortKey)
 
-    // Otherwise, don't change, persist the order from the service provider
-    return 0
-  })
+      // Otherwise, don't change, persist the order from the service provider
+      return 0
+    })
+    .map(({ token }) => token)
 }
 
 export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[]) => {
-  return accountPortfolioTokenList.sort((a, b) => {
-    const comparisonResult = sortTokensByPendingAndBalance(a, b)
-    if (comparisonResult !== 0) return comparisonResult
+  return accountPortfolioTokenList
+    .map((token) => ({ token, sortKey: getTokenSortKey(token), symbol: token.symbol || '' }))
+    .sort((a, b) => {
+      const comparisonResult = compareTokenSortKeys(a.sortKey, b.sortKey)
+      if (comparisonResult !== 0) return comparisonResult
 
-    // Otherwise, just alphabetical
-    return (a.symbol || '').localeCompare(b.symbol || '')
-  })
+      // Otherwise, just alphabetical
+      return a.symbol.localeCompare(b.symbol)
+    })
+    .map(({ token }) => token)
 }
 
 /**
@@ -234,7 +265,8 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[])
  */
 export const getIsTokenEligibleForSwapAndBridge = (
   token: TokenResult,
-  requirePositiveBalance: boolean = true
+  requirePositiveBalance: boolean = true,
+  requirePrice: boolean = false
 ) => {
   const flagsRequirement =
     // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
@@ -245,6 +277,14 @@ export const getIsTokenEligibleForSwapAndBridge = (
     // Borrow tokens (e.g. variableDebt tokens) are protocol accounting assets
     // and are not transferable/swappable by design.
     token.flags.defiTokenType !== AssetType.Borrow
+
+  // Tokens without a known USD price most prob can't be quoted reliably, so exclude them
+  // from the list when the caller opts in (e.g. the Swap & Bridge "form" tokens).
+  // Custom tokens are exempt - the user explicitly imported them and likely wants
+  // to use them for something (maybe swap or bridge).
+  if (requirePrice && !token.flags.isCustom && getTokenUsdPrice(token) <= 0) {
+    return false
+  }
 
   if (!requirePositiveBalance) {
     return flagsRequirement
@@ -282,12 +322,6 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute
   const serviceTimes: number[] = []
 
   activeRoutes.forEach((r) => {
-    // for squid swaps, make the service time 10s
-    if (r.serviceProviderId === 'squid' && r.fromAsset?.chainId === r.toAsset?.chainId) {
-      serviceTimes.push(BRIDGE_STATUS_INTERVAL / 1000)
-      return
-    }
-
     r.route?.userTxs.forEach((tx) => {
       if (tx.serviceTime) {
         serviceTimes.push(tx.serviceTime)
@@ -336,7 +370,7 @@ const buildRevokeApprovalIfNeeded = async (
       to: userTx.approvalData.approvalTokenAddress,
       data: approveCallData
     })
-  } catch (e) {
+  } catch {
     fails = true
   }
 
@@ -437,7 +471,8 @@ const getSwapAndBridgeCalls = async (
     to: userTx.txTarget,
     value: BigInt(userTx.value),
     data: userTx.txData,
-    activeRouteId: userTx.activeRouteId
+    activeRouteId: userTx.activeRouteId,
+    ...(userTx.cowSwapOrder ? { cowSwapOrder: userTx.cowSwapOrder } : {})
   })
 
   return calls
@@ -470,7 +505,12 @@ const getSwapAndBridgeRequestParams = async (
 }
 
 export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
-  return route.providerId === 'squid' || route.fromChainId !== route.toChainId
+  return route.fromChainId !== route.toChainId
+}
+
+/** Returns whether the route completes asynchronously after the user's transaction. */
+export const getIsIntentRoute = (route: SwapAndBridgeRoute) => {
+  return getIsBridgeRoute(route) || route.providerId === 'cowswap' || route.isIntent === true
 }
 
 /**
@@ -594,16 +634,7 @@ export const calculateAmountWarnings = (
   fromAmountInFiat: string,
   fromAmount: string,
   fromSelectedTokenDecimals: number
-):
-  | { type: 'highPriceImpact'; percentageDiff: number }
-  | {
-      type: 'slippageImpact'
-      possibleSlippage: number
-      minInUsd: number
-      minInToken: string
-      symbol: string
-    }
-  | null => {
+): SwapAmountWarning | null => {
   if (!selectedRoute) return null
 
   let inputValueInUsd = 0
@@ -611,7 +642,7 @@ export const calculateAmountWarnings = (
 
   try {
     inputValueInUsd = Number(fromAmountInFiat)
-  } catch (error) {
+  } catch {
     // silent fail
   }
   if (!inputValueInUsd) return null
@@ -624,17 +655,12 @@ export const calculateAmountWarnings = (
     if (bigintFromAmount !== BigInt(selectedRoute.fromAmount)) return null
 
     // Can be negative if the output is higher
-    // (possible during arbitrage swaps)
+    // (possible during arbitrage swaps). We must NOT bail out here: even when
+    // the quote difference is favorable, a very low minAmountOut can still
+    // expose the user to dangerous slippage, which is checked further below.
     const difference = inputValueInUsd - outputValueInUsd
 
     const percentageDiff = (difference / inputValueInUsd) * 100
-
-    if (percentageDiff >= 5) {
-      return {
-        type: 'highPriceImpact',
-        percentageDiff
-      }
-    }
 
     // try to calculate the slippage
     const txn = selectedRoute.userTxs[selectedRoute.userTxs.length - 1]
@@ -646,38 +672,77 @@ export const calculateAmountWarnings = (
       selectedRoute.toToken.decimals,
       Number(selectedRoute.toToken.priceUSD)
     )
+    const minInUsdNumber = Number(minInUsd)
     const allowedSlippage =
       Number(inputValueInUsd) < 400
         ? 1.05
         : Number((0.005 / Math.ceil(Number(inputValueInUsd) / 20000)).toPrecision(2)) * 100 + 0.01
-    const possibleSlippage = (1 - Number(minInUsd) / outputValueInUsd) * 100
-    // @precautionary if
-    const diffBetweenQuoteAndMinAmount =
-      outputValueInUsd > Number(minInUsd) ? outputValueInUsd - Number(minInUsd) : 0
+    // Percentage of the loss relative to the amount the user is putting in (not the quote),
+    // so it stays consistent with `estimatedLossUsd` below, which is also input-based. Using
+    // the quote as the denominator would understate this when the quote itself is already
+    // far below the input (large price impact already baked into the quote).
+    const possibleSlippage = (1 - minInUsdNumber / inputValueInUsd) * 100
 
+    const quoteLossUsd = getSwapQuoteLossUsd(inputValueInUsd, outputValueInUsd)
+    const slippageLossUsd = getSwapSlippageLossUsd(inputValueInUsd, minInUsdNumber)
+    const estimatedLossUsd = getSwapEstimatedLossUsd(
+      inputValueInUsd,
+      outputValueInUsd,
+      minInUsdNumber
+    )
+    const isExtreme = isExtremeSwapLoss(estimatedLossUsd)
+    const isElevatedPriceImpact = percentageDiff >= HIGH_PRICE_IMPACT_PERCENT_THRESHOLD
     // It seems a bit odd to display a slippage warning only if the difference
     // is > $50?
-    if (possibleSlippage > allowedSlippage && diffBetweenQuoteAndMinAmount > 50) {
+    const isElevatedSlippage =
+      possibleSlippage > allowedSlippage && slippageLossUsd > SLIPPAGE_MIN_QUOTE_DIFF_USD
+
+    if (isExtreme && slippageLossUsd > quoteLossUsd) {
       return {
         type: 'slippageImpact',
         possibleSlippage,
-        minInUsd: Number(minInUsd),
+        minInUsd: minInUsdNumber,
         minInToken: formatUnits(minAmountOutInWei, selectedRoute.toToken.decimals),
-        symbol: selectedRoute.toToken.symbol
+        symbol: selectedRoute.toToken.symbol,
+        estimatedLossUsd: slippageLossUsd,
+        severity: 'extreme'
+      }
+    }
+
+    if (isExtreme || isElevatedPriceImpact) {
+      return {
+        type: 'highPriceImpact',
+        percentageDiff,
+        estimatedLossUsd: quoteLossUsd,
+        severity: isExtreme ? 'extreme' : 'elevated'
+      }
+    }
+
+    if (isElevatedSlippage) {
+      return {
+        type: 'slippageImpact',
+        possibleSlippage,
+        minInUsd: minInUsdNumber,
+        minInToken: formatUnits(minAmountOutInWei, selectedRoute.toToken.decimals),
+        symbol: selectedRoute.toToken.symbol,
+        estimatedLossUsd: slippageLossUsd,
+        severity: 'elevated'
       }
     }
 
     return null
-  } catch (error) {
+  } catch {
     return null
   }
 }
 
 const getLink = (route: SwapAndBridgeActiveRoute) => {
   const providerId = route.route ? route.route.providerId : route.serviceProviderId
-  if (providerId === 'socket') return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
-  if (providerId === 'squid') return `${SQUID_EXPLORER_URL}/${route.userTxHash}`
-
+  if (providerId === 'cowswap') {
+    return `${COWSWAP_EXPLORER_URL}/orders/${route.activeRouteId}`
+  }
+  if (providerId === 'socket' || providerId === 'socketv3')
+    return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
   return `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
 }
 
@@ -686,7 +751,7 @@ const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
 }
 
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
-  addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
+  addr === ethAddress ? zeroAddress : addr
 
 /**
  * Get the swap sponsorship details.
@@ -697,52 +762,203 @@ const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
  * amount in USD to the fee percent
  */
 const getSwapSponsorship = ({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  isErc4337Enabled,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   hasConvinienceFee,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   nativePrice,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   fromAmountInUsd,
-  fromTokenPriceInUsd,
-  fromTokenDecimals,
-  providerId
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  feeTokenPriceInUsd,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  feeTokenDecimals,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  providerId,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  isIntent,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  feePercent
 }: {
+  isErc4337Enabled: boolean
   hasConvinienceFee: boolean
   nativePrice: number | undefined
   fromAmountInUsd: number | undefined
-  fromTokenPriceInUsd: number | undefined
-  fromTokenDecimals: number | undefined
+  feeTokenPriceInUsd: number | undefined
+  feeTokenDecimals: number | undefined
   providerId: string | undefined
+  isIntent: boolean
+  feePercent: number
 }):
   | {
       nativePrice: number
       swapFeeInUsd: number
-      fromTokenPriceInUsd: number
-      fromTokenDecimals: number
+      feeTokenPriceInUsd: number
+      feeTokenDecimals: number
     }
   | undefined => {
+  // disable sponsorship for now as it's too buggy and inconsistent
+  return undefined
+
+  // if (
+  //   !isErc4337Enabled ||
+  //   !hasConvinienceFee ||
+  //   !nativePrice ||
+  //   !fromAmountInUsd ||
+  //   !feeTokenPriceInUsd ||
+  //   !feeTokenDecimals ||
+  //   (providerId === 'uniswap' && isIntent) ||
+  //   feePercent === 0
+  // )
+  //   return undefined
+  // return {
+  //   nativePrice,
+  //   swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100,
+  //   feeTokenPriceInUsd,
+  //   feeTokenDecimals
+  // }
+}
+
+const getFeeTokenForSponsorship = (
+  fromSelectedToken: FromToken,
+  quote?: SwapAndBridgeQuote | null,
+  fromAmount?: string
+): { feeTokenPriceInUsd: number | undefined; decimals: number | undefined } => {
+  // if the provider is uniswap, we're getting the fee from the output token
+  if (quote?.selectedRoute?.providerId === 'uniswap') {
+    const outputAmount = Number(formatUnits(quote.selectedRoute.toAmount, quote.toAsset.decimals))
+
+    return {
+      feeTokenPriceInUsd: outputAmount
+        ? quote.selectedRoute.outputValueInUsd / outputAmount
+        : undefined,
+      decimals: quote.toAsset.decimals
+    }
+  }
+
+  // try to get from portfolio, if exists
+  // else take from quote
+  let feeTokenPriceInUsd = fromSelectedToken.priceIn.find((p) => p.baseCurrency === 'usd')?.price
+  const normalizedFromAmount = Number(fromAmount)
   if (
-    !hasConvinienceFee ||
-    !nativePrice ||
-    !fromAmountInUsd ||
-    !fromTokenPriceInUsd ||
-    !fromTokenDecimals ||
-    providerId === 'squid'
-  )
-    return undefined
+    !feeTokenPriceInUsd &&
+    quote?.selectedRoute?.inputValueInUsd &&
+    Number.isFinite(normalizedFromAmount) &&
+    normalizedFromAmount > 0
+  ) {
+    feeTokenPriceInUsd = quote.selectedRoute.inputValueInUsd / normalizedFromAmount
+  }
+
   return {
-    nativePrice,
-    swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100,
-    fromTokenPriceInUsd,
-    fromTokenDecimals
+    feeTokenPriceInUsd,
+    decimals: quote?.fromAsset.decimals
+  }
+}
+
+/**
+ * Calculates route output values for sorting with a shared output-token price,
+ * without changing the provider values displayed in the UI.
+ */
+const getRouteOutputValuesForSorting = (
+  route: SwapAndBridgeRoute,
+  outputTokenPriceUSD?: number | null
+) => {
+  if (!outputTokenPriceUSD) {
+    return {
+      outputValueInUsd: route.outputValueInUsd,
+      outputValueAfterGasInUsd: route.outputValueAfterGasInUsd
+    }
+  }
+
+  const outputValueInUsd = Number(
+    safeTokenAmountAndNumberMultiplication(
+      BigInt(route.toAmount),
+      route.toToken.decimals,
+      outputTokenPriceUSD
+    )
+  )
+  const gasCostInUsd =
+    route.outputValueAfterGasInUsd === undefined
+      ? undefined
+      : route.outputValueInUsd - route.outputValueAfterGasInUsd
+
+  return {
+    outputValueInUsd,
+    outputValueAfterGasInUsd:
+      gasCostInUsd === undefined ? undefined : outputValueInUsd - gasCostInUsd
+  }
+}
+
+/**
+ * Adds the Cena output-token price required by the warning calculations when the provider
+ * doesn't supply one, without changing the provider USD values displayed in the UI.
+ */
+const enrichRouteWithOutputTokenPrice = (
+  route: SwapAndBridgeRoute,
+  outputTokenPriceUSD?: number | null
+): SwapAndBridgeRoute => {
+  const providerOutputTokenPriceUSD = Number(route.toToken.priceUSD)
+  const cenaOutputTokenPriceUSD = Number(outputTokenPriceUSD)
+  const hasProviderOutputTokenPrice =
+    Number.isFinite(providerOutputTokenPriceUSD) && providerOutputTokenPriceUSD > 0
+  const hasCenaOutputTokenPrice =
+    Number.isFinite(cenaOutputTokenPriceUSD) && cenaOutputTokenPriceUSD > 0
+
+  if (hasProviderOutputTokenPrice || !hasCenaOutputTokenPrice) return route
+
+  return {
+    ...route,
+    toToken: {
+      ...route.toToken,
+      priceUSD: cenaOutputTokenPriceUSD.toString()
+    }
+  }
+}
+
+/**
+ * Turns the txns of a swap that went out before the rest of it failed (e.g. the approval
+ * was sent but the swap was rejected on the hardware wallet) into an activity record.
+ * - Only the sent calls are kept, so e.g. speeding it up doesn't include the unsent swap.
+ * - It's detached from the swap route, as the user can retry the same route while it's
+ *   still pending. The route is matched to account ops by their call ids and
+ *   `meta.swapTxn.activeRouteId`, so e.g. the approval failing later would fail the retry.
+ */
+const getSentPartOfSwap = (sentAccountOp: SubmittedAccountOp): SubmittedAccountOp => {
+  const sentTxnsCount = sentAccountOp.identifiedBy.identifier.split('-').length
+  const calls = getCallsWithTxnIds({
+    ...sentAccountOp,
+    calls: sentAccountOp.calls.slice(0, sentTxnsCount)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  }).map(({ activeRouteId, ...call }) => ({
+    ...call,
+    id: call.id ? `${call.id}-sent-before-retry` : call.id
+  }))
+  const swapTxn = sentAccountOp.meta?.swapTxn
+  if (!swapTxn) return { ...sentAccountOp, calls }
+
+  return {
+    ...sentAccountOp,
+    calls,
+    meta: {
+      ...sentAccountOp.meta,
+      swapTxn: { ...swapTxn, activeRouteId: `${swapTxn.activeRouteId}-sent-before-retry` }
+    }
   }
 }
 
 export {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
+  enrichRouteWithOutputTokenPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
   getBannedToTokenList,
+  getFeeTokenForSponsorship,
   getLink,
+  getRouteOutputValuesForSorting,
+  getSentPartOfSwap,
   getSlippage,
   getSwapAndBridgeCalls,
   getSwapAndBridgeRequestParams,

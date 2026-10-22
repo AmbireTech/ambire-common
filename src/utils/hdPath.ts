@@ -1,4 +1,4 @@
-import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
+import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 
 export const getHdPathFromTemplate = (hdPathTemplate: HD_PATH_TEMPLATE_TYPE, index: number) => {
   return hdPathTemplate.replace('<account>', index.toString())
@@ -41,3 +41,32 @@ export const getHDPathIndices = (hdPathTemplate: HD_PATH_TEMPLATE_TYPE, insertId
   if (indices.length > 5) throw new Error('Only HD paths with up to 5 indices are allowed.')
   return indices
 }
+
+/**
+ * The part of an HD path template that is relative to `originPath` - the path an
+ * extended public key was exported from. Returns null when the template does not
+ * branch off the origin (e.g. a hardened account index), meaning that extended
+ * public key cannot derive it.
+ */
+export const getHdPathTemplateRelativeToOrigin = (
+  originPath: string,
+  hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+) => {
+  const originLevels = originPath.split('/')
+  const templateLevels = hdPathTemplate.split('/')
+
+  if (templateLevels.length <= originLevels.length) return null
+  if (originLevels.some((level, i) => level !== templateLevels[i])) return null
+
+  return templateLevels.slice(originLevels.length).join('/')
+}
+
+/**
+ * Which of the offered derivation paths an extended public key exported from
+ * `originPath` can browse. Wallets that hand over a single extended public key
+ * (QR, NFC) are limited to these.
+ */
+export const getDerivableHdPathTemplates = (originPath: string) =>
+  DERIVATION_OPTIONS.map(({ value }) => value).filter(
+    (template) => !!getHdPathTemplateRelativeToOrigin(originPath, template)
+  )

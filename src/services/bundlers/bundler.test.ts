@@ -29,7 +29,6 @@ const to = '0x706431177041C87BEb1C25Fa29b92057Cb3c7089'
 
 const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
 const optimism = networks.find((n) => n.chainId === 10n)!
-const arbitrum = networks.find((n) => n.chainId === 42161n)!
 const gnosis: Network = {
   name: 'Gnosis',
   nativeAssetSymbol: 'XDAI',
@@ -53,8 +52,7 @@ const gnosis: Network = {
   has7702: false,
   features: [],
   feeOptions: {
-    is1559: true,
-    feeIncrease: 100n
+    is1559: true
   },
   predefined: false
 }
@@ -179,27 +177,6 @@ const base: Network = {
     is1559: true
   },
   predefined: false
-}
-
-const smartAccNew: Account = {
-  addr: '0x0a83DB1C54D6CbD7d23BbcB504C7a9E36A6c9038',
-  initialPrivileges: [
-    [
-      '0xC85cc4127a6E7fcFcab66BA36198c9aD4Ee54E61',
-      '0x0000000000000000000000000000000000000000000000000000000000000002'
-    ]
-  ],
-  creation: {
-    factoryAddr: AMBIRE_ACCOUNT_FACTORY,
-    bytecode:
-      '0x7f00000000000000000000000000000000000000000000000000000000000000027f2d17cfd8161c7b1377884dafe009bcbff53a4255916f43e68b6debb84d22e8d3553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
-    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
-  },
-  associatedKeys: ['0xC85cc4127a6E7fcFcab66BA36198c9aD4Ee54E61'],
-  preferences: {
-    label: DEFAULT_ACCOUNT_LABEL,
-    pfp: '0x0a83DB1C54D6CbD7d23BbcB504C7a9E36A6c9038'
-  }
 }
 
 export async function getDeploySignature(smartAcc: Account, network: Network) {

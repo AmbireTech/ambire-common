@@ -3,6 +3,7 @@ import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SocketAPIToken,
   SwapAndBridgeRoute,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest
 } from '../../interfaces/swapAndBridge'
 
@@ -39,6 +40,10 @@ export class SocketAPIMock {
 
   resetHealth() {
     this.isHealthy = null
+  }
+
+  getProvidersInfo() {
+    return [{ id: this.id, name: this.name }]
   }
 
   async getSupportedChains() {
@@ -81,6 +86,24 @@ export class SocketAPIMock {
         logoURI: 'https://media.socket.tech/tokens/all/USDT'
       }
     ]
+  }
+
+  async getToken({
+    address,
+    chainId
+  }: {
+    address: string
+    chainId: number
+  }): Promise<SocketAPIToken> {
+    return {
+      name: 'Token Not In The List',
+      address,
+      icon: '',
+      decimals: 18,
+      symbol: 'NOTLISTED',
+      chainId,
+      logoURI: ''
+    }
   }
 
   async quote({
@@ -439,7 +462,7 @@ export class SocketAPIMock {
     }
   }
 
-  async getRouteStatus({ txHash }: { txHash: string }) {
+  async getRouteStatus({ txHash }: { txHash: string }): Promise<SwapAndBridgeRouteStatusResult> {
     return { status: 'completed', txnId: txHash }
   }
 }

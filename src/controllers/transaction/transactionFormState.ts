@@ -849,7 +849,6 @@ export class TransactionFormState extends EventEmitter {
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        !!this.addressState.resolvedAddress,
         this.addressState.isDomainResolving,
         this.dependencies.networks.networks,
         this.dependencies.accounts.accountStates,

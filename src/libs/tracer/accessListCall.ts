@@ -12,7 +12,7 @@ import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
-import { encodeCalls } from '../safe/safe'
+import { encodeCalls } from '../safe/helpers'
 
 const safeSimulateTxAccessorAbi = [
   'function simulate(address to, uint256 value, bytes data, uint8 operation)'
@@ -20,7 +20,7 @@ const safeSimulateTxAccessorAbi = [
 const safeIface = new Interface(SafeContract)
 const simulateAccessorIface = new Interface(safeSimulateTxAccessorAbi)
 
-export function getSimulateTxnAccessor(version?: string): string | null {
+export function getSimulateTxnAccessor(version?: string | null): string | null {
   if (!version) return null
 
   if (version.startsWith('1.3')) return safeSimulateTxAccessor['v1.3.0']
@@ -30,11 +30,15 @@ export function getSimulateTxnAccessor(version?: string): string | null {
   return null
 }
 
-export function getShouldUseAccessListCall(account: Account, needsStateOverride: boolean): boolean {
-  // Use eth_createAccessList for Safe only if we know the
-  // simulateTxAccessor for the Safe version (see getSafeAccessListCallParams)
+export function getShouldUseAccessListCall(
+  account: Account,
+  accountState: AccountOnchainState,
+  needsStateOverride: boolean
+): boolean {
+  // Use eth_createAccessList for Safe only if we know the simulateTxAccessor
+  // for the Safe version on this chain (see getSafeAccessListCallParams)
   if (account.safeCreation) {
-    return !!getSimulateTxnAccessor(account.safeCreation.version)
+    return !!getSimulateTxnAccessor(accountState.safeVersion)
   }
 
   return !needsStateOverride
@@ -61,7 +65,7 @@ export function getSafeAccessListCallParams(
 
   const { to, value, data, operation } = encodeCalls(op)
 
-  const simulateTxAccessor = getSimulateTxnAccessor(account.safeCreation.version)
+  const simulateTxAccessor = getSimulateTxnAccessor(accountState.safeVersion)
 
   if (!simulateTxAccessor) return null
 
@@ -202,7 +206,8 @@ export async function createAccessListCall(
 
     return returned
   } catch (e: any) {
-    console.error('Debug: eth_createAccessList error', e)
+    // do not console log the error as it's getting passed back to the
+    // signAccountOp controller where it gets logged as a traceCall error
 
     throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
   } finally {

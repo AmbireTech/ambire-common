@@ -27,6 +27,19 @@ const makeResponse = (body: any, status = 200) =>
 const makeScamFilter = (fetch: Fetch) => new ScamFilter({ fetch, network, timeout: 1 })
 
 describe('ScamFilter', () => {
+  test('does not filter tokens when token prices are disabled', async () => {
+    const token = '0x0000000000000000000000000000000000000001'
+    const fetch = jest.fn() as unknown as Fetch
+    const scamFilter = new ScamFilter({
+      fetch,
+      network,
+      isTokenPricesEnabled: () => false
+    })
+
+    await expect(scamFilter.filterTokensWithoutAPrice([token])).resolves.toEqual([token])
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   test('filters out tokens without a Cena price', async () => {
     const pricedToken = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     const unpricedToken = '0x0000000000000000000000000000000000000001'
@@ -54,7 +67,8 @@ describe('ScamFilter', () => {
 
     expect(fetch).toHaveBeenCalledWith(
       'https://cena.ambire.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
-      {}
+      // The abort signal `fetchWithTimeout` adds, so it can cancel a request it gives up on
+      { signal: expect.any(AbortSignal) }
     )
   })
 

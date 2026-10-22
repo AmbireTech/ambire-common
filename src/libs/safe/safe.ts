@@ -3,59 +3,56 @@ import {
   concat,
   Contract,
   getAddress,
-  getBytes,
   getCreate2Address,
   hexlify,
+  id,
   Interface,
   keccak256,
   recoverAddress,
-  solidityPacked,
   toBeHex,
   toUtf8Bytes,
-  ZeroAddress,
+  TransactionResponse,
   zeroPadValue
 } from 'ethers'
 
 import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
-import SafeApiKit, {
+import SafeApiKit from '@safe-global/api-kit'
+
+import SafeAbi from '../../../contracts/compiled/Safe.json'
+import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
+import { Account, SafeAccountCreation } from '../../interfaces/account'
+import { Hex } from '../../interfaces/hex'
+import { Key } from '../../interfaces/keystore'
+import { RPCProvider } from '../../interfaces/provider'
+import { SafeAccountByOwner, SafeTx } from '../../interfaces/safe'
+import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
+import { paginate } from '../../utils/paginate'
+import wait from '../../utils/wait'
+import { withTimeout } from '../../utils/with-timeout'
+import { Call } from '../accountOp/types'
+import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
+import {
+  decodeMultiSend,
+  multiCallAbi,
+  parseSafeMessageOrigin,
+  SuccessfullyDecoded
+} from './helpers'
+
+import type {
+  AddMessageOptions,
   ProposeTransactionProps,
   SafeCreationInfoResponse,
   SafeMessage,
   SafeMessageListResponse,
   SafeMultisigTransactionListResponse
 } from '@safe-global/api-kit'
-import {
+import type {
   EIP712TypedData,
   SafeMultisigConfirmationResponse,
   SafeMultisigTransactionResponse
 } from '@safe-global/types-kit'
 
-import SafeAbi from '../../../contracts/compiled/Safe.json'
-import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
-import { AccountOnchainState } from '../../interfaces/account'
-import { Hex } from '../../interfaces/hex'
-import { RPCProvider } from '../../interfaces/provider'
-import { SafeTx } from '../../interfaces/safe'
-import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
-import wait from '../../utils/wait'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
-import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
-
-const multiCallAbi = [
-  { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },
-  {
-    inputs: [{ internalType: 'bytes', name: 'transactions', type: 'bytes' }],
-    name: 'multiSend',
-    outputs: [],
-    stateMutability: 'payable',
-    type: 'function'
-  }
-]
-
 export type ExtendedSafeMessage = SafeMessage & { isConfirmed: boolean }
-
-const SAFE_CALL_OPERATION = 0
-const SAFE_DELEGATE_CALL_OPERATION = 1
 
 export interface SafeResults {
   [chainId: string]: {
@@ -64,58 +61,118 @@ export interface SafeResults {
   }
 }
 
-export function encodeCalls(op: AccountOp): {
-  to: Hex
-  value: bigint
-  data: Hex
-  operation: number
-} {
-  const calls = getSignableCalls(op)
+export function getApiKit(chainId: bigint) {
+  return new SafeApiKit({
+    chainId,
+    apiKey: process.env.SAFE_API_KEY
+  })
+}
 
-  if (calls.length === 1) {
-    const singleCall = calls[0]!
-    return {
-      to: singleCall[0] as Hex,
-      value: BigInt(singleCall[1]),
-      data: singleCall[2] as Hex,
-      operation: SAFE_CALL_OPERATION
+type SafeDeploymentApiKitFactory = (
+  chainId: bigint
+) => Pick<ReturnType<typeof getApiKit>, 'getSafeCreationInfo'>
+
+type SafeAccountApiKitFactory = (
+  chainId: bigint
+) => Pick<ReturnType<typeof getApiKit>, 'getSafeInfo' | 'getSafeCreationInfo'>
+
+export async function getSafeAccountByOwner(
+  safeAddr: string,
+  owner: Hex,
+  deployedOn: bigint[],
+  apiKitFactory: SafeAccountApiKitFactory = getApiKit
+): Promise<{ account: SafeAccountByOwner | null; failed: boolean }> {
+  const getAccountFromChain = async (
+    [chainId, ...remainingChainIds]: bigint[],
+    hasRequestFailed = false
+  ): Promise<{
+    account: SafeAccountByOwner | null
+    failed: boolean
+  }> => {
+    if (chainId === undefined) return { account: null, failed: hasRequestFailed }
+
+    const apiKit = apiKitFactory(chainId)
+    try {
+      const safeInfo = await withTimeout(() => apiKit.getSafeInfo(safeAddr), {
+        timeoutMs: SAFE_API_TIMEOUT_MS,
+        message: `Safe API: get Safe info timed out after ${SAFE_API_TIMEOUT_MS}ms`
+      })
+      const address = getAddress(safeAddr.toLowerCase())
+      const owners = safeInfo.owners.map((safeOwner: string) => getAddress(safeOwner.toLowerCase()))
+      if (!owners.some((safeOwner) => safeOwner === owner)) {
+        return getAccountFromChain(remainingChainIds, hasRequestFailed)
+      }
+
+      const safeCreationInfo = await withTimeout(() => apiKit.getSafeCreationInfo(safeAddr), {
+        timeoutMs: SAFE_API_TIMEOUT_MS,
+        message: `Safe API: get Safe creation info timed out after ${SAFE_API_TIMEOUT_MS}ms`
+      })
+
+      return {
+        account: {
+          addr: address,
+          associatedKeys: owners,
+          initialPrivileges: owners.map((safeOwner) => [safeOwner, '0x01']),
+          creation: null,
+          safeCreation: {
+            factoryAddr: safeCreationInfo.factoryAddress as Hex,
+            singleton: safeCreationInfo.singleton as Hex,
+            setupData: safeCreationInfo.setupData as Hex,
+            saltNonce: safeCreationInfo.saltNonce
+              ? (toBeHex(BigInt(safeCreationInfo.saltNonce), 32) as Hex)
+              : (toBeHex(0, 32) as Hex)
+          },
+          preferences: {
+            label: 'Safe',
+            pfp: address
+          },
+          deployedOn
+        },
+        failed: false
+      }
+    } catch (error) {
+      console.error(
+        `Failed to retrieve Safe account ${safeAddr} on network ${chainId.toString()}`,
+        error
+      )
+      return getAccountFromChain(remainingChainIds, true)
     }
   }
 
-  const multiSendData = new Interface(multiCallAbi).encodeFunctionData('multiSend', [
-    concat(
-      calls.map((call) => {
-        return solidityPacked(
-          ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
-          [SAFE_CALL_OPERATION, call[0], BigInt(call[1]), BigInt(getBytes(call[2]).length), call[2]]
-        )
-      })
-    )
-  ])
-
-  return {
-    to: multiSendAddr as Hex,
-    value: 0n,
-    data: multiSendData as Hex,
-    operation: SAFE_DELEGATE_CALL_OPERATION
-  }
+  return getAccountFromChain(deployedOn)
 }
 
 export async function getCalculatedSafeAddress(
   creation: SafeCreationInfoResponse,
   provider: RPCProvider
 ): Promise<Hex | null> {
+  return getCalculatedSafeAddressFromCreation(
+    {
+      factoryAddr: creation.factoryAddress as Hex,
+      singleton: creation.singleton as Hex,
+      setupData: creation.setupData as Hex,
+      saltNonce: toBeHex(BigInt(creation.saltNonce || 0), 32) as Hex
+    },
+    provider
+  )
+}
+
+async function getCalculatedSafeAddressFromCreation(
+  creation: SafeAccountCreation,
+  provider: RPCProvider
+): Promise<Hex | null> {
   const salt = keccak256(
-    concat([keccak256(creation.setupData), zeroPadValue(toBeHex(creation.saltNonce || 0), 32)])
+    concat([keccak256(creation.setupData), zeroPadValue(creation.saltNonce, 32)])
   )
   const factoryAbi = ['function proxyCreationCode() view returns (bytes)']
-  const factory = new Contract(creation.factoryAddress, factoryAbi, provider)
+  const factory = new Contract(creation.factoryAddr, factoryAbi, provider)
   let proxyCreationCode
   try {
     proxyCreationCode = await (factory as any).proxyCreationCode()
   } catch (e) {
     console.error(
-      `failed to call proxyCreationCode on Safe factory with addr: ${creation.factoryAddress}`
+      `failed to call proxyCreationCode on Safe factory with addr: ${creation.factoryAddr}`,
+      e
     )
     return null
   }
@@ -124,7 +181,229 @@ export async function getCalculatedSafeAddress(
     proxyCreationCode,
     abiCoder.encode(['address'], [creation.singleton])
   ]) as Hex
-  return getCreate2Address(creation.factoryAddress, salt, keccak256(bytecode)) as Hex
+  return getCreate2Address(creation.factoryAddr, salt, keccak256(bytecode)) as Hex
+}
+
+const safeProxyFactoryInterface = new Interface([
+  'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)',
+  // v1.5.0+: calls createProxyWithNonce internally, so it uses the same salt and derives the
+  // same address, which makes its deployment data reusable on other chains
+  'function createProxyWithNonceL2(address _singleton, bytes initializer, uint256 saltNonce)'
+])
+/**
+ * Factory functions whose deployment data can be replayed on other chains. Chain specific and
+ * callback deployments are intentionally excluded as they don't derive the same address elsewhere.
+ */
+const crossChainSafeDeployFunctions = ['createProxyWithNonce', 'createProxyWithNonceL2'] as const
+const getSafeProxyFactorySelector = (
+  functionName: (typeof crossChainSafeDeployFunctions)[number]
+): string => safeProxyFactoryInterface.getFunction(functionName)!.selector.slice(2)
+const proxyCreationTopic = id('ProxyCreation(address,address)')
+
+/** Returns whether all fields required to redeploy a Safe are available. */
+export function hasCompleteSafeCreationData(
+  creation: Partial<SafeAccountCreation> | null | undefined
+): boolean {
+  return !!(
+    creation?.factoryAddr &&
+    creation.factoryAddr !== '0x' &&
+    creation.singleton &&
+    creation.singleton !== '0x' &&
+    creation.setupData &&
+    creation.setupData !== '0x' &&
+    creation.saltNonce &&
+    creation.saltNonce !== '0x'
+  )
+}
+
+function decodeSafeDeploymentCalls(
+  transactionData: string,
+  factoryAddr: Hex,
+  functionName: (typeof crossChainSafeDeployFunctions)[number]
+): SafeAccountCreation[] {
+  const safeProxyFactorySelector = getSafeProxyFactorySelector(functionName)
+  const normalizedTransactionData = transactionData.toLowerCase()
+  const deploymentData = []
+  let selectorIndex = normalizedTransactionData.indexOf(safeProxyFactorySelector)
+
+  while (selectorIndex !== -1) {
+    try {
+      const [singleton, setupData, saltNonce] = safeProxyFactoryInterface.decodeFunctionData(
+        functionName,
+        `0x${transactionData.slice(selectorIndex)}`
+      )
+      deploymentData.push({
+        factoryAddr,
+        singleton: getAddress(singleton) as Hex,
+        setupData: hexlify(setupData) as Hex,
+        saltNonce: toBeHex(saltNonce, 32) as Hex
+      })
+    } catch {
+      // The selector can occur in unrelated calldata. Continue looking for a valid deployment call.
+    }
+
+    selectorIndex = normalizedTransactionData.indexOf(
+      safeProxyFactorySelector,
+      selectorIndex + safeProxyFactorySelector.length
+    )
+  }
+
+  return deploymentData
+}
+
+function decodeSafeDeploymentData(
+  transactionData: string,
+  factoryAddr: Hex
+): SafeAccountCreation[] {
+  return crossChainSafeDeployFunctions.flatMap((functionName) =>
+    decodeSafeDeploymentCalls(transactionData, factoryAddr, functionName)
+  )
+}
+
+/**
+ * Finds the Safe factory that deployed safeAddr. Uses transaction.to when the factory was called
+ * directly; otherwise locates the ProxyCreation event emitted for safeAddr in the deploy receipt,
+ * which works regardless of how the factory call was wrapped (4337, MultiSend, relayers, etc.)
+ */
+async function findFactoryAddr(
+  transaction: TransactionResponse,
+  safeAddr: string,
+  provider: RPCProvider
+): Promise<Hex | null> {
+  // lucky guess: if the call is to the factory, just take it directly
+  if (
+    transaction.to &&
+    crossChainSafeDeployFunctions.some((functionName) =>
+      transaction.data.toLowerCase().startsWith(`0x${getSafeProxyFactorySelector(functionName)}`)
+    )
+  ) {
+    return getAddress(transaction.to) as Hex
+  }
+
+  // take the receipt, find the deploy log and take the factory from there
+  const receipt = await provider.getTransactionReceipt(transaction.hash).catch((e: Error) => e)
+  if (receipt instanceof Error) {
+    console.error('failed to fetch the Safe deploy receipt', receipt)
+    return null
+  }
+  if (!receipt) return null
+
+  const paddedSafeAddr = zeroPadValue(safeAddr, 32).toLowerCase()
+  const proxyCreationLog = receipt.logs.find(
+    (log) =>
+      log.topics[0] === proxyCreationTopic &&
+      // v1.4.1+ indexes proxy (topics[1]); v1.3.0 has it as the first word of data
+      (log.topics[1]?.toLowerCase() === paddedSafeAddr ||
+        log.data.toLowerCase().startsWith(paddedSafeAddr))
+  )
+
+  return proxyCreationLog ? (getAddress(proxyCreationLog.address) as Hex) : null
+}
+
+/**
+ * Returns the Safe creation data available from the Safe Transaction Service, recovering missing
+ * fields from the validated deployment transaction when possible.
+ */
+export async function findDeployData(
+  safeAddr: string,
+  chainId: bigint,
+  provider: RPCProvider,
+  apiKitFactory: SafeDeploymentApiKitFactory = getApiKit
+): Promise<SafeAccountCreation | Error> {
+  const creationInfo = await withTimeout(
+    () => apiKitFactory(chainId).getSafeCreationInfo(safeAddr),
+    {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe API: get Safe creation info timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    }
+  ).catch((e: Error) => e)
+
+  // on timeout or problems with the Safe API, return an error
+  // the caller should not proceed in this case
+  if (creationInfo instanceof Error) return creationInfo
+
+  const safeCreation = {
+    factoryAddr: (creationInfo.factoryAddress || '0x') as Hex,
+    singleton: (creationInfo.singleton || '0x') as Hex,
+    setupData: (creationInfo.setupData || '0x') as Hex,
+    saltNonce:
+      creationInfo.saltNonce !== null && creationInfo.saltNonce !== undefined
+        ? (toBeHex(BigInt(creationInfo.saltNonce), 32) as Hex)
+        : '0x'
+  }
+
+  if (hasCompleteSafeCreationData(safeCreation)) return safeCreation
+
+  // if there's no transactionHash, we cannot find additional data,
+  // but we pass back the found safeCreation until now
+  if (!creationInfo.transactionHash) return safeCreation
+
+  const transaction = await provider
+    .getTransaction(creationInfo.transactionHash)
+    .catch((e: Error) => e)
+
+  // if the provider step fails, we cannot add additional data,
+  // but we still pass back the found safeCreation until now
+  if (transaction instanceof Error || !transaction?.data) return safeCreation
+
+  // if factoryAddr is missing for whatever reason, try to locate it
+  // from the transaction itself
+  let factoryAddr = safeCreation.factoryAddr
+  if (factoryAddr === '0x') {
+    factoryAddr = (await findFactoryAddr(transaction, safeAddr, provider)) ?? '0x'
+  }
+
+  // if we cannot locate the factoryAddr, we return the data and move on
+  if (factoryAddr === '0x') return safeCreation
+
+  factoryAddr = getAddress(factoryAddr) as Hex
+  const deploymentData = decodeSafeDeploymentData(transaction.data, factoryAddr)
+
+  for (const candidate of deploymentData) {
+    const calculatedAddress = await getCalculatedSafeAddressFromCreation(candidate, provider)
+    if (calculatedAddress?.toLowerCase() !== safeAddr.toLowerCase()) continue
+
+    return candidate
+  }
+
+  return safeCreation
+}
+
+/**
+ * Builds a Safe deployment call only when the stored creation data derives the imported address
+ * and the configured singleton is deployed on the target network.
+ */
+export async function getSafeDeploymentCall(
+  account: Account,
+  provider: RPCProvider
+): Promise<Call | null> {
+  if (!account.safeCreation) return null
+
+  try {
+    const calculatedAddress = await getCalculatedSafeAddressFromCreation(
+      account.safeCreation,
+      provider
+    )
+    if (!calculatedAddress || calculatedAddress.toLowerCase() !== account.addr.toLowerCase()) {
+      return null
+    }
+
+    const singletonCode = await provider.getCode(account.safeCreation.singleton)
+    if (singletonCode === '0x') return null
+
+    return {
+      to: account.safeCreation.factoryAddr,
+      value: 0n,
+      data: safeProxyFactoryInterface.encodeFunctionData('createProxyWithNonce', [
+        account.safeCreation.singleton,
+        account.safeCreation.setupData,
+        account.safeCreation.saltNonce
+      ]) as Hex
+    }
+  } catch (error) {
+    console.error(`failed to build Safe deployment call for ${account.addr}`, error)
+    return null
+  }
 }
 
 /**
@@ -141,72 +420,11 @@ export function decodeSetupData(setupData: Hex): Hex[] {
   try {
     decoded = setupMethodInterface.decodeFunctionData('setup', setupData)
   } catch (e) {
-    console.error('failed to decode the Safe setup data')
+    console.error('failed to decode the Safe setup data', e)
     return []
   }
 
   return Object.keys(decoded[0]).map((key) => decoded[0][key])
-}
-
-/**
- * Construct a Safe txn for signing
- */
-export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
-  // todo: we're blindly trusting the returned txn from Safe Global, is this OK?
-  if (op.safeTx) {
-    return {
-      to: op.safeTx.to as Hex,
-      value: toBeHex(op.safeTx.value) as Hex,
-      data: op.safeTx.data ? (op.safeTx.data as Hex) : '0x',
-      operation: op.safeTx.operation,
-      safeTxGas: toBeHex(op.safeTx.safeTxGas) as Hex,
-      baseGas: toBeHex(op.safeTx.baseGas) as Hex,
-      gasPrice: toBeHex(op.safeTx.gasPrice) as Hex,
-      gasToken: op.safeTx.gasToken as Hex,
-      refundReceiver: op.safeTx.refundReceiver ? (op.safeTx.refundReceiver as Hex) : '0x',
-      nonce: toBeHex(op.safeTx.nonce) as Hex
-    }
-  }
-
-  const coder = new AbiCoder()
-  const { to, value, data, operation } = encodeCalls(op)
-
-  return {
-    to: to as Hex,
-    value: toBeHex(value) as Hex,
-    data: data as Hex,
-    operation,
-    safeTxGas: toBeHex(0) as Hex,
-    baseGas: toBeHex(0) as Hex,
-    gasPrice: toBeHex(0) as Hex,
-    gasToken: ZeroAddress as Hex,
-    refundReceiver: ZeroAddress as Hex,
-    nonce: toBeHex(op.nonce || state.nonce || 0n) as Hex
-  }
-}
-
-export function getSafeBroadcastTxn(
-  op: AccountOp,
-  state: AccountOnchainState
-): { to: Hex; value: bigint; data: Hex } {
-  const exec = new Interface(execTransactionAbi)
-  const safeTxn = getSafeTxn(op, state)
-  return {
-    to: op.accountAddr as Hex,
-    value: 0n,
-    data: exec.encodeFunctionData('execTransaction', [
-      safeTxn.to,
-      safeTxn.value,
-      safeTxn.data,
-      safeTxn.operation,
-      safeTxn.safeTxGas,
-      safeTxn.baseGas,
-      safeTxn.gasPrice,
-      safeTxn.gasToken,
-      safeTxn.refundReceiver,
-      op.signature
-    ]) as Hex
-  }
 }
 
 /**
@@ -237,11 +455,7 @@ export async function propose(
   ownerSig: Hex,
   safeTxHash: string
 ) {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-
+  const apiKit = getApiKit(chainId)
   const proposeTransactionProps: ProposeTransactionProps = {
     safeAddress: getAddress(safeAddress),
     safeTxHash: safeTxHash,
@@ -262,10 +476,7 @@ export async function propose(
 }
 
 export async function confirm(chainId: bigint, ownerSig: Hex, safeTxHash: string) {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
+  const apiKit = getApiKit(chainId)
   return apiKit.confirmTransaction(safeTxHash, ownerSig)
 }
 
@@ -273,16 +484,33 @@ export async function addMessage(
   chainId: bigint,
   safeAddress: Hex,
   message: string | EIP712TypedData,
-  signature: string
+  signature: string,
+  origin?: string
 ) {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-  return apiKit.addMessage(safeAddress, {
-    message,
+  const apiKit = getApiKit(chainId)
+  // `origin` is a free-form field the Safe Transaction Service persists and returns
+  // on the message. api-kit doesn't type it, but it forwards the options as the POST
+  // body verbatim, so we widen the payload to carry it through.
+  const options: AddMessageOptions & { origin?: string } = {
+    message: normalizeSafeGlobalMessage(message),
     signature
-  })
+  }
+  if (origin) options.origin = origin
+  return apiKit.addMessage(safeAddress, options)
+}
+
+export function normalizeSafeGlobalMessage(message: string | EIP712TypedData) {
+  if (typeof message === 'string') return message
+  const chainId = (message.domain as { chainId?: unknown }).chainId
+  if (typeof chainId !== 'bigint') return message
+
+  return {
+    ...message,
+    domain: {
+      ...message.domain,
+      chainId: chainId.toString()
+    }
+  } as unknown as EIP712TypedData
 }
 
 export async function getMessage({
@@ -294,11 +522,11 @@ export async function getMessage({
   threshold: number
   messageHash: Hex
 }): Promise<ExtendedSafeMessage | null> {
-  const apiKit = new SafeApiKit({
-    chainId: chainId,
-    apiKey: process.env.SAFE_API_KEY
+  const apiKit = getApiKit(chainId)
+  const msg = await apiKit.getMessage(messageHash).catch((e) => {
+    console.log('safe message not found', e)
+    return null
   })
-  const msg = await apiKit.getMessage(messageHash).catch((e) => null)
   if (!msg) return null
   return {
     ...msg,
@@ -307,10 +535,7 @@ export async function getMessage({
 }
 
 export async function addMessageSignature(chainId: bigint, hash: string, signature: string) {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
+  const apiKit = getApiKit(chainId)
   return apiKit.addMessageSignature(hash, signature)
 }
 
@@ -318,11 +543,7 @@ export async function getPendingTransactions(
   chainId: bigint,
   safeAddress: Hex
 ): Promise<SafeMultisigTransactionListResponse & { chainId: bigint; type: string }> {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-
+  const apiKit = getApiKit(chainId)
   const response = await apiKit.getPendingTransactions(safeAddress, {
     ordering: 'nonce'
   })
@@ -340,11 +561,7 @@ export async function getLatestMessages(
   chainId: bigint,
   safeAddress: Hex
 ): Promise<SafeMessageListResponse & { chainId: bigint; type: string }> {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-
+  const apiKit = getApiKit(chainId)
   const response = await apiKit.getMessages(safeAddress, {
     ordering: '-created',
     limit: 15
@@ -356,18 +573,6 @@ export async function getLatestMessages(
     (m) => new Date(m.created).getTime() + oneWeek > currentTime
   )
   return { ...response, results: finalRes, chainId, type: 'message' }
-}
-
-export async function getTransaction(
-  chainId: bigint,
-  safeTxnHash: Hex
-): Promise<SafeMultisigTransactionResponse> {
-  const apiKit = new SafeApiKit({
-    chainId,
-    apiKey: process.env.SAFE_API_KEY
-  })
-
-  return apiKit.getTransaction(safeTxnHash)
 }
 
 export async function fetchAllPending(
@@ -390,38 +595,6 @@ export async function fetchAllPending(
         results[r.chainId.toString()]!.messages = r.results.map((r) => {
           return { ...r, isConfirmed: (r.confirmations?.length || 0) >= network.threshold }
         }) as ExtendedSafeMessage[]
-    })
-  }
-
-  return results
-}
-
-function decodeMultiSend(transactionsHex: string) {
-  const bytes = getBytes(transactionsHex)
-  let i = 0
-  const results = []
-
-  while (i < bytes.length) {
-    const operation = bytes[i]
-    i += 1
-
-    const to = hexlify(bytes.slice(i, i + 20))
-    i += 20
-
-    const value = BigInt(hexlify(bytes.slice(i, i + 32)))
-    i += 32
-
-    const dataLength = Number(BigInt(hexlify(bytes.slice(i, i + 32))))
-    i += 32
-
-    const data = hexlify(bytes.slice(i, i + dataLength))
-    i += dataLength
-
-    results.push({
-      operation,
-      to,
-      value,
-      data
     })
   }
 
@@ -467,18 +640,26 @@ export function toCallsUserRequest(
         // if it is, use it; otherwise, construct a single call reqx
         const multisendInterface = new Interface(multiCallAbi)
         const multiSendCall = multisendInterface.decodeFunctionData('multiSend', txn.data!)
-        calls = decodeMultiSend(multiSendCall[0]).map((call) => ({
+        const decodedCalls = decodeMultiSend(multiSendCall[0])
+        if (!decodedCalls.every((call): call is SuccessfullyDecoded => call.success)) {
+          throw new Error('failed to decode one or more multiSend calls')
+        }
+        calls = decodedCalls.map((call) => ({
           to: call.to,
           value: call.value,
           data: call.data
         }))
-      } catch (e) {
+      } catch {
         // this just means it's not a batch
         calls = [{ to: txn.to, value: BigInt(txn.value), data: txn.data || '0x' }]
       }
 
       const signature = txn.confirmations
-        ? (concat(txn.confirmations?.map((c) => c.signature)) as Hex)
+        ? sortSigs(
+            txn.confirmations.map((c) => c.signature as Hex),
+            txn.safeTxHash,
+            txn.confirmations
+          )
         : null
       if (!signature) return
       userRequests.push({
@@ -516,6 +697,8 @@ export function toSigMessageUserRequests(response: SafeResults): {
     signature: Hex
     created: number
     signatures: Hex[]
+    dappName?: string
+    dappUrl?: string
   }
   isConfirmed: boolean
 }[] {
@@ -529,6 +712,8 @@ export function toSigMessageUserRequests(response: SafeResults): {
       signature: Hex
       created: number
       signatures: Hex[]
+      dappName?: string
+      dappUrl?: string
     }
     isConfirmed: boolean
   }[] = []
@@ -540,6 +725,8 @@ export function toSigMessageUserRequests(response: SafeResults): {
         ? (concat(message.confirmations.map((c) => c.signature)) as Hex)
         : null
       if (!signature) return
+
+      const { name: dappName, url: dappUrl } = parseSafeMessageOrigin(message.origin)
 
       userRequests.push({
         type: 'safeSignMessageRequest',
@@ -557,7 +744,9 @@ export function toSigMessageUserRequests(response: SafeResults): {
             message.confirmations
           ),
           created: new Date(message.created).getTime(),
-          signatures: message.confirmations.map((c) => c.signature) as Hex[]
+          signatures: message.confirmations.map((c) => c.signature) as Hex[],
+          dappName,
+          dappUrl
         },
         isConfirmed: !!message.isConfirmed
       })
@@ -614,6 +803,17 @@ export function getImportedSignersThatHaveNotSigned(
   return importedOwners.filter((o) => !signed.includes(o))
 }
 
+/**
+ * Whether the imported owners of a Safe can reach its threshold with hot (keystore held) keys
+ * alone. Hardware wallets and cards confirm on the device, so they do not count towards it.
+ */
+export function canHotOwnersMeetSafeThreshold(
+  importedOwners: Pick<Key, 'type'>[],
+  threshold: number
+): boolean {
+  return importedOwners.filter(({ type }) => type === 'internal').length >= threshold
+}
+
 export function getSigs(signature?: string | null): Hex[] {
   if (!signature) return []
   const signed: Hex[] = []
@@ -641,23 +841,14 @@ export function sortSigs(
 }
 
 /**
- * Safe requests may have multiple "call" ones with the same nonce
+ * Fetch the Safe transactions of an account on each of the passed chains.
+ * `minNonce` is the smallest nonce we are still waiting on for that chain -
+ * transactions below it can no longer execute, so the API does not have to
+ * return them.
  */
-export function getSameNonceRequests(requests: CallsUserRequest[]) {
-  return requests.reduce((acc: { [nonce: string]: CallsUserRequest[] }, r) => {
-    const key = r.signAccountOp.accountOp.nonce?.toString() || '0'
-
-    if (!acc[key]) {
-      acc[key] = []
-    }
-
-    acc[key].push(r)
-    return acc
-  }, {})
-}
-
 export async function fetchExecutedTransactions(
-  txns: { chainId: bigint; safeTxnHash: Hex }[]
+  safeAddr: Hex,
+  chains: { chainId: bigint; minNonce: number }[]
 ): Promise<
   {
     safeTxnHash: Hex
@@ -666,40 +857,60 @@ export async function fetchExecutedTransactions(
     confirmations?: SafeMultisigConfirmationResponse[]
   }[]
 > {
-  let promises = []
   const results: {
     safeTxnHash: Hex
     nonce: string
     transactionHash?: Hex
     confirmations?: SafeMultisigConfirmationResponse[]
   }[] = []
+  const pages = paginate(chains, 3)
 
-  for (let i = 0; i < txns.length; i++) {
-    const txn = txns[i]!
-    promises.push(getTransaction(txn.chainId, txn.safeTxnHash))
-
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i]!
     // we're allowed a max of 5 req to the API per second so we
     // have to be careful - making 3 at a time from here
-    if ((i + 1) % 3 === 0 || i + 1 === txns.length) {
-      const responses = await Promise.all(promises)
-      responses.forEach((r) => {
-        if (r.transactionHash) {
-          results.push({
-            safeTxnHash: r.safeTxHash as Hex,
-            transactionHash: r.transactionHash as Hex,
-            nonce: r.nonce
+    const responses = await Promise.all(
+      page.map(async ({ chainId, minNonce }) => {
+        const apiKit = getApiKit(chainId)
+        // @TODO this method can be used to get safe tx history
+        // @TODO make rate limit tracking for the whole library
+        // Cut the response size down: the account may have a long history, but
+        // everything below minNonce can no longer execute, so it cannot resolve a
+        // request we are waiting on. The double underscore is the filter syntax of
+        // the Safe Transaction Service, not a typo
+        const res = await apiKit
+          .getMultisigTransactions(safeAddr, {
+            ordering: 'nonce',
+            nonce__gte: minNonce
           })
-        } else {
-          results.push({
-            safeTxnHash: r.safeTxHash as Hex,
-            nonce: r.nonce,
-            confirmations: r.confirmations
+          .catch((error: unknown) => {
+            console.log(`failed to call getMultisigTransactions on ${chainId}`, error)
+            return null
           })
-        }
+        return res
       })
-      await wait(1100)
-      promises = []
-    }
+    )
+    responses
+      .filter((response): response is SafeMultisigTransactionListResponse => response !== null)
+      .forEach(({ results: txns }) => {
+        txns.forEach((tx) => {
+          if (tx.transactionHash) {
+            results.push({
+              safeTxnHash: tx.safeTxHash as Hex,
+              transactionHash: tx.transactionHash as Hex,
+              nonce: tx.nonce
+            })
+          } else {
+            results.push({
+              safeTxnHash: tx.safeTxHash as Hex,
+              nonce: tx.nonce,
+              confirmations: tx.confirmations
+            })
+          }
+        })
+      })
+    // no need to throttle after the last page, nothing follows it
+    if (i + 1 < pages.length) await wait(1100)
   }
 
   return results

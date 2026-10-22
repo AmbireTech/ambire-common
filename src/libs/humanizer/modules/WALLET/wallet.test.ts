@@ -68,7 +68,7 @@ describe('wallet', () => {
 
     accountOp.calls = [...transactions.WALLET]
     let irCalls: IrCall[] = accountOp.calls
-    irCalls = WALLETModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    irCalls = irCalls.map((c) => WALLETModule(accountOp, c, humanizerInfo as HumanizerMeta))
 
     compareHumanizerVisualizations(irCalls, expectedHumanization)
   })
@@ -85,7 +85,7 @@ describe('wallet', () => {
       }
     ]
     let irCalls: IrCall[] = accountOp.calls
-    irCalls = WALLETModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    irCalls = irCalls.map((c) => WALLETModule(accountOp, c, humanizerInfo as HumanizerMeta))
 
     compareHumanizerVisualizations(irCalls, expectedHumanization)
   })

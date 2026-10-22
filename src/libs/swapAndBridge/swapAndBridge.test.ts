@@ -1,10 +1,94 @@
 import { parseUnits } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 import { Token as LiFiToken } from '@lifi/types'
 
-import { SwapAndBridgeQuote } from '../../interfaces/swapAndBridge'
-import { calculateAmountWarnings, getIsBridgeRoute } from './swapAndBridge'
+import { defaultFeatureFlags, FeatureFlags } from '../../consts/featureFlags'
+import { Fetch } from '../../interfaces/fetch'
+import {
+  CowSwapOrderStruct,
+  SwapAndBridgeQuote,
+  SwapAndBridgeSendTxRequest,
+  SwapAndBridgeToToken
+} from '../../interfaces/swapAndBridge'
+import { TokenResult } from '../portfolio'
+import {
+  attemptToSortTokensByMarketCap,
+  calculateAmountWarnings,
+  enrichRouteWithOutputTokenPrice,
+  getFeeTokenForSponsorship,
+  getIsBridgeRoute,
+  getIsIntentRoute,
+  getSentPartOfSwap,
+  getSwapAndBridgeCalls,
+  getSwapSponsorship,
+  sortTokenListResponse
+} from './swapAndBridge'
+
+const makeFeatureFlags = (overrides: Partial<FeatureFlags> = {}) => {
+  const flags = { ...defaultFeatureFlags, ...overrides }
+
+  return {
+    isFeatureEnabled: (flag: keyof FeatureFlags) => flags[flag]
+  }
+}
+
+describe('attemptToSortTokensByMarketCap', () => {
+  const makeTokens = (): SwapAndBridgeToToken[] => [
+    {
+      address: '0x0000000000000000000000000000000000000001',
+      chainId: 1,
+      decimals: 18,
+      name: 'Token One',
+      symbol: 'ONE'
+    },
+    {
+      address: '0x0000000000000000000000000000000000000002',
+      chainId: 1,
+      decimals: 18,
+      name: 'Token Two',
+      symbol: 'TWO'
+    }
+  ]
+
+  test.each([
+    ['token prices', { tokenPrices: false }],
+    ['token auto discovery', { tokenAndDefiAutoDiscovery: false }]
+  ] as const)('does not make a request wn %s is disabled', async (_, disabledFlag) => {
+    const fetch = jest.fn()
+    const tokens = makeTokens()
+
+    const result = await attemptToSortTokensByMarketCap({
+      fetch: fetch as unknown as Fetch,
+      chainId: 1,
+      tokens,
+      featureFlags: makeFeatureFlags(disabledFlag)
+    })
+
+    expect(fetch).not.toHaveBeenCalled()
+    expect(result).toBe(tokens)
+  })
+
+  test('requests market cap data and sorts tokens when both options are enabled', async () => {
+    const tokens = makeTokens()
+    const higherPriorityToken = tokens[1]
+    const lowerPriorityToken = tokens[0]
+    const fetch = jest.fn(async () => ({
+      status: 200,
+      json: async () => ({ data: [higherPriorityToken.address, lowerPriorityToken.address] })
+    })) as unknown as Fetch
+
+    const result = await attemptToSortTokensByMarketCap({
+      fetch,
+      chainId: 1,
+      tokens,
+      featureFlags: makeFeatureFlags()
+    })
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(result).toEqual([higherPriorityToken, lowerPriorityToken])
+  })
+})
 
 // Helper function to create a mock route for testing
 const createMockRoute = ({
@@ -87,24 +171,96 @@ const createMockRoute = ({
   }
 }
 
+const createToToken = (address: string, symbol = address): SwapAndBridgeToToken => ({
+  address,
+  symbol,
+  name: symbol,
+  decimals: 18,
+  chainId: 1
+})
+
+const createPortfolioToken = ({
+  address,
+  balanceInUSD = 0,
+  isPending = false
+}: {
+  address: string
+  balanceInUSD?: number
+  isPending?: boolean
+}): TokenResult => ({
+  symbol: address,
+  name: address,
+  decimals: 18,
+  address,
+  chainId: 1n,
+  amount: parseUnits(balanceInUSD.toString(), 18),
+  // A token counts as pending when its post-simulation amount differs from its amount
+  ...(isPending ? { amountPostSimulation: 0n } : {}),
+  priceIn: [{ baseCurrency: 'usd', price: 1 }],
+  marketDataIn: [],
+  flags: {
+    onGasTank: false,
+    rewardsType: null,
+    canTopUpGasTank: true,
+    isFeeToken: true
+  }
+})
+
+describe('sortTokenListResponse', () => {
+  test('puts the tokens held in the portfolio first, highest balance first', () => {
+    const sorted = sortTokenListResponse(
+      [createToToken('0xa'), createToToken('0xb'), createToToken('0xc')],
+      [
+        createPortfolioToken({ address: '0xc', balanceInUSD: 5 }),
+        createPortfolioToken({ address: '0xa', balanceInUSD: 50 })
+      ]
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual(['0xa', '0xc', '0xb'])
+  })
+
+  test('puts a pending token above a held token with a higher balance', () => {
+    const sorted = sortTokenListResponse(
+      [createToToken('0xa'), createToToken('0xb')],
+      [
+        createPortfolioToken({ address: '0xa', balanceInUSD: 50 }),
+        createPortfolioToken({ address: '0xb', balanceInUSD: 1, isPending: true })
+      ]
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual(['0xb', '0xa'])
+  })
+
+  test('matches the portfolio regardless of address casing', () => {
+    const sorted = sortTokenListResponse(
+      [createToToken('0xAAA'), createToToken('0xBBB')],
+      [createPortfolioToken({ address: '0xbbb', balanceInUSD: 10 })]
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual(['0xBBB', '0xAAA'])
+  })
+
+  test("keeps the service provider's order for tokens that are not in the portfolio", () => {
+    const providerOrder = ['0xd', '0xc', '0xb', '0xa']
+    const sorted = sortTokenListResponse(
+      providerOrder.map((a) => createToToken(a)),
+      []
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual(providerOrder)
+  })
+
+  test('does not reorder the array it was given', () => {
+    const tokens = [createToToken('0xa'), createToToken('0xb')]
+    sortTokenListResponse(tokens, [createPortfolioToken({ address: '0xb', balanceInUSD: 10 })])
+
+    expect(tokens.map((t) => t.address)).toEqual(['0xa', '0xb'])
+  })
+})
+
 describe('swapAndBridge lib', () => {
   describe('getIsBridgeRoute', () => {
-    test('should treat same-chain Squid routes as bridge-like routes', () => {
-      const selectedRoute = createMockRoute({
-        inputValueInUsd: 100,
-        outputValueInUsd: 99,
-        fromAmount: 0.05,
-        minAmountOut: 99
-      })
-
-      expect(selectedRoute).toBeDefined()
-      if (!selectedRoute) return
-      selectedRoute.providerId = 'squid'
-
-      expect(getIsBridgeRoute(selectedRoute)).toBe(true)
-    })
-
-    test('should not treat same-chain non-Squid routes as bridge routes', () => {
+    test('should not treat same-chain routes as bridge routes', () => {
       const selectedRoute = createMockRoute({
         inputValueInUsd: 100,
         outputValueInUsd: 99,
@@ -116,6 +272,225 @@ describe('swapAndBridge lib', () => {
       if (!selectedRoute) return
 
       expect(getIsBridgeRoute(selectedRoute)).toBe(false)
+    })
+  })
+
+  describe('getIsIntentRoute', () => {
+    test('treats same-network CoW Swap routes as intents', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 99,
+        fromAmount: 1,
+        minAmountOut: 99
+      })!
+      selectedRoute.fromChainId = 1
+      selectedRoute.toChainId = 1
+      selectedRoute.providerId = 'cowswap'
+
+      expect(getIsBridgeRoute(selectedRoute)).toBe(false)
+      expect(getIsIntentRoute(selectedRoute)).toBe(true)
+    })
+
+    test('does not treat regular same-network swaps as intents', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 99,
+        fromAmount: 1,
+        minAmountOut: 99
+      })!
+      selectedRoute.fromChainId = 1
+      selectedRoute.toChainId = 1
+
+      expect(getIsIntentRoute(selectedRoute)).toBe(false)
+    })
+  })
+
+  describe('getFeeTokenForSponsorship', () => {
+    test('should calculate the Uniswap output token price in USD', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 100,
+        fromAmount: 1,
+        minAmountOut: 50,
+        toTokenDecimals: 6
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      selectedRoute.providerId = 'uniswap'
+      selectedRoute.toAmount = parseUnits('50', 6).toString()
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [] } as any,
+        {
+          selectedRoute,
+          toAsset: { decimals: 6 }
+        } as SwapAndBridgeQuote
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: 2,
+        decimals: 6
+      })
+    })
+
+    test('should not calculate an infinite Uniswap output token price', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 100,
+        fromAmount: 1,
+        minAmountOut: 0,
+        toTokenDecimals: 6
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      selectedRoute.providerId = 'uniswap'
+      selectedRoute.toAmount = '0'
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [] } as any,
+        {
+          selectedRoute,
+          toAsset: { decimals: 6 }
+        } as SwapAndBridgeQuote
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: undefined,
+        decimals: 6
+      })
+    })
+
+    test('should use the source token portfolio price for non-Uniswap providers', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 10,
+        minAmountOut: 95
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [{ baseCurrency: 'usd', price: 7 }] } as any,
+        {
+          selectedRoute,
+          fromAsset: { decimals: 18 }
+        } as SwapAndBridgeQuote,
+        '10'
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: 7,
+        decimals: 18
+      })
+    })
+
+    test('should calculate the source token price from the quote when it is missing from portfolio', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 4,
+        minAmountOut: 95
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [] } as any,
+        {
+          selectedRoute,
+          fromAsset: { decimals: 18 }
+        } as SwapAndBridgeQuote,
+        '4'
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: 25,
+        decimals: 18
+      })
+    })
+
+    test('should not calculate an infinite source token price', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 1,
+        minAmountOut: 95
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      const result = getFeeTokenForSponsorship(
+        { priceIn: [] } as any,
+        {
+          selectedRoute,
+          fromAsset: { decimals: 18 }
+        } as SwapAndBridgeQuote,
+        '0'
+      )
+
+      expect(result).toEqual({
+        feeTokenPriceInUsd: undefined,
+        decimals: 18
+      })
+    })
+  })
+
+  describe('getSwapSponsorship', () => {
+    test('returns undefined when ERC-4337 is disabled', () => {
+      expect(
+        getSwapSponsorship({
+          isErc4337Enabled: false,
+          hasConvinienceFee: true,
+          nativePrice: 3000,
+          fromAmountInUsd: 100,
+          feeTokenPriceInUsd: 1,
+          feeTokenDecimals: 6,
+          providerId: 'lifi',
+          isIntent: false,
+          feePercent: 0.5
+        })
+      ).toBeUndefined()
+    })
+  })
+
+  describe('enrichRouteWithOutputTokenPrice', () => {
+    test('uses the fetched token price for warnings when the provider price is missing', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 1,
+        minAmountOut: 50,
+        toTokenDecimals: 6
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      selectedRoute.toAmount = parseUnits('50', 6).toString()
+      delete (selectedRoute.toToken as { priceUSD?: string }).priceUSD
+
+      expect(calculateAmountWarnings(selectedRoute, '100', '1', 18)).toBeNull()
+
+      const result = enrichRouteWithOutputTokenPrice(selectedRoute, 2)
+
+      expect(result.outputValueInUsd).toBe(95)
+      expect(result.toToken.priceUSD).toBe('2')
+      expect(calculateAmountWarnings(result, '100', '1', 18)).not.toBeNull()
+    })
+
+    test('does not change routes from providers that supply their own token price', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 1,
+        minAmountOut: 50
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      expect(enrichRouteWithOutputTokenPrice(selectedRoute, 2)).toBe(selectedRoute)
     })
   })
 
@@ -252,7 +627,9 @@ describe('swapAndBridge lib', () => {
       expect(result).not.toBeNull()
       expect(result?.type).toBe('slippageImpact')
       if (result?.type === 'slippageImpact') {
-        expect(result.possibleSlippage).toBeGreaterThan(81.8)
+        // possibleSlippage is relative to inputValueInUsd (100), not the more favorable
+        // outputValueInUsd (110), so it doesn't understate the risk of the low minAmountOut
+        expect(result.possibleSlippage).toBeCloseTo(80, 5)
         expect(result.minInUsd).toBe(20)
       }
     })
@@ -269,6 +646,26 @@ describe('swapAndBridge lib', () => {
       const result = calculateAmountWarnings(selectedRoute, '200', '0.1', 18)
 
       expect(result).toBeNull()
+    })
+
+    test('should return slippage warning when quote-to-min gap is small but the loss vs. input exceeds $50', () => {
+      // Input: $1000, Output (quote): $960 (4% price impact, under the 5% threshold)
+      // minAmountOut: $930 -> quote-to-min gap is only $30, but the loss vs. input is $70,
+      // which is what should gate the $50 noise filter (not the quote-relative gap)
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 1000,
+        outputValueInUsd: 960,
+        fromAmount: 0.5,
+        minAmountOut: 930
+      })
+      const result = calculateAmountWarnings(selectedRoute, '1000', '0.5', 18)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('slippageImpact')
+      if (result?.type === 'slippageImpact') {
+        expect(result.severity).toBe('elevated')
+        expect(result.estimatedLossUsd).toBeCloseTo(70, 5)
+      }
     })
 
     test('should calculate slippage correctly for very large swaps', () => {
@@ -306,6 +703,79 @@ describe('swapAndBridge lib', () => {
       }
     })
 
+    test('should return extreme price impact warning when estimated loss exceeds $100k', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 50_000_000,
+        outputValueInUsd: 36_000,
+        fromAmount: 50,
+        minAmountOut: 36_000
+      })
+      const result = calculateAmountWarnings(selectedRoute, '50000000', '50', 18)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('highPriceImpact')
+      if (result?.type === 'highPriceImpact') {
+        expect(result.severity).toBe('extreme')
+        expect(result.estimatedLossUsd).toBeGreaterThan(100_000)
+      }
+    })
+
+    test('should return extreme slippage warning when slippage loss exceeds $100k', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 5_000_000,
+        outputValueInUsd: 4_950_000,
+        fromAmount: 50,
+        minAmountOut: 3_800_000
+      })
+      const result = calculateAmountWarnings(selectedRoute, '5000000', '50', 18)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('slippageImpact')
+      if (result?.type === 'slippageImpact') {
+        expect(result.severity).toBe('extreme')
+        expect(result.estimatedLossUsd).toBeGreaterThan(100_000)
+      }
+    })
+
+    test('extreme slippage percentage should reflect the loss relative to the input, not the already-discounted quote', () => {
+      // Input: $140,000, quote (outputValueInUsd): $93,000 -> the quote itself already
+      // reflects ~33.6% price impact. minAmountOut: $92,900, so the quote -> min-out gap
+      // is a negligible ~0.1%, but the slippage-based loss ($47,100) still edges out the
+      // quote-based loss ($47,000), routing this into the "extreme slippage" branch.
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 140_000,
+        outputValueInUsd: 93_000,
+        fromAmount: 70,
+        minAmountOut: 92_900
+      })
+      const result = calculateAmountWarnings(selectedRoute, '140000', '70', 18)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('slippageImpact')
+      if (result?.type === 'slippageImpact') {
+        expect(result.severity).toBe('extreme')
+        expect(result.estimatedLossUsd).toBeCloseTo(47_100, 0)
+        // Must reflect the ~33.6% total loss vs. input, not the ~0.1% quote-to-floor gap
+        expect(result.possibleSlippage).toBeGreaterThan(30)
+      }
+    })
+
+    test('should include elevated severity for existing high price impact warnings', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 0.05,
+        minAmountOut: 95
+      })
+      const result = calculateAmountWarnings(selectedRoute, '100', '0.05', 18)
+
+      expect(result).not.toBeNull()
+      if (result?.type === 'highPriceImpact') {
+        expect(result.severity).toBe('elevated')
+        expect(result.estimatedLossUsd).toBe(5)
+      }
+    })
+
     test('should catch errors gracefully and return null', () => {
       // Create a route where price impact is < 5% so it reaches the slippage check
       // But userTxs is empty, which will cause an error when accessing userTxs[length - 1]
@@ -323,5 +793,118 @@ describe('swapAndBridge lib', () => {
       // The function catches errors and returns null
       expect(result).toBeNull()
     })
+  })
+})
+
+describe('getSentPartOfSwap', () => {
+  const ROUTE_ID = 'route-1'
+  const partlySentSwap = (
+    identifier: string,
+    meta: any = { swapTxn: { activeRouteId: ROUTE_ID } }
+  ) =>
+    ({
+      id: 'op-1',
+      accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      chainId: 8453n,
+      calls: [
+        { id: `${ROUTE_ID}-approval`, activeRouteId: ROUTE_ID, to: '0x01', value: 0n, data: '0x' },
+        { id: ROUTE_ID, activeRouteId: ROUTE_ID, to: '0x02', value: 0n, data: '0x' }
+      ],
+      identifiedBy: { type: 'MultipleTxns', identifier },
+      meta
+    }) as any
+
+  test('keeps only the sent calls, each with the hash of its own txn', () => {
+    const { calls } = getSentPartOfSwap(partlySentSwap('0xa'))
+
+    // Speeding up the record must not include the swap that was never sent
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ txnId: '0xa', to: '0x01' })
+  })
+
+  test('keeps every call when all of them were sent before the failure', () => {
+    const { calls } = getSentPartOfSwap(partlySentSwap('0xa-0xb'))
+
+    expect(calls.map((c) => c.txnId)).toEqual(['0xa', '0xb'])
+  })
+
+  test('detaches the record from the swap route, so the route of a retry is not affected', () => {
+    const sentPart = getSentPartOfSwap(partlySentSwap('0xa'))
+    const activeRouteIds = [
+      sentPart.meta?.swapTxn?.activeRouteId,
+      ...sentPart.calls.map((c) => c.id)
+    ]
+
+    expect(activeRouteIds).not.toContain(ROUTE_ID)
+    expect(activeRouteIds).not.toContain(`${ROUTE_ID}-approval`)
+    expect(sentPart.calls[0]!.activeRouteId).toBeUndefined()
+    // Still a swap, so the activity shows it as one
+    expect(sentPart.meta?.swapTxn).toBeDefined()
+  })
+
+  test('works for a record without swap meta', () => {
+    const op = partlySentSwap('0xa')
+    delete op.meta
+
+    const sentPart = getSentPartOfSwap(op)
+
+    expect(sentPart.meta).toBeUndefined()
+    expect(sentPart.calls).toHaveLength(1)
+  })
+
+  test('does not change the given account op', () => {
+    const op = partlySentSwap('0xa')
+
+    getSentPartOfSwap(op)
+
+    expect(op.calls).toHaveLength(2)
+    expect(op.calls[0].id).toBe(`${ROUTE_ID}-approval`)
+    expect(op.meta.swapTxn.activeRouteId).toBe(ROUTE_ID)
+  })
+})
+
+describe('getSwapAndBridgeCalls', () => {
+  const cowSwapOrder: CowSwapOrderStruct = {
+    sellToken: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    buyToken: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    receiver: '0x0000000000000000000000000000000000000001',
+    sellAmount: '1000000',
+    buyAmount: '400000000000000',
+    validTo: 1783581106,
+    appData: `0x${'11'.repeat(32)}`,
+    feeAmount: '0',
+    kind: 'sell',
+    partiallyFillable: false,
+    sellTokenBalance: 'erc20',
+    buyTokenBalance: 'erc20'
+  }
+  const userTx: SwapAndBridgeSendTxRequest = {
+    activeRouteId: '0xorder-uid',
+    // no approval, so neither the provider nor the account state is read
+    approvalData: null,
+    chainId: 1,
+    txData: '0x1234',
+    txTarget: '0x9008D19f58AAbD9eD0D60971565AA8510560ab41',
+    userTxIndex: 0,
+    value: '0'
+  }
+
+  test('keeps the CoW Swap order on the call it pre-signs', async () => {
+    const calls = await getSwapAndBridgeCalls(
+      { ...userTx, cowSwapOrder },
+      {} as any,
+      {} as any,
+      {} as any
+    )
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ activeRouteId: userTx.activeRouteId, cowSwapOrder })
+  })
+
+  test('adds no CoW Swap order to calls of other providers', async () => {
+    const calls = await getSwapAndBridgeCalls(userTx, {} as any, {} as any, {} as any)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).not.toHaveProperty('cowSwapOrder')
   })
 })

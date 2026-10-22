@@ -15,13 +15,6 @@ export default [
   },
   {
     address: '0x0000000000000000000000000000000000000000',
-    symbol: 'ftm',
-    chainId: 250n,
-    decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/4001/large/Fantom.png'
-  },
-  {
-    address: '0x0000000000000000000000000000000000000000',
     symbol: 'bnb',
     chainId: 56n,
     decimals: 18,
@@ -46,7 +39,8 @@ export default [
     symbol: 'metis',
     chainId: 1088n,
     decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/15595/large/metis.PNG'
+    icon: 'https://assets.coingecko.com/coins/images/15595/large/metis.PNG',
+    disableGasTankDeposit: true
   },
   {
     address: '0x0000000000000000000000000000000000000000',
@@ -59,6 +53,7 @@ export default [
     address: '0x0000000000000000000000000000000000000000',
     symbol: 'glmr',
     chainId: 1284n,
+    disableGasTankDeposit: true,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/22459/large/glmr.png'
   },
@@ -67,7 +62,8 @@ export default [
     symbol: 'movr',
     chainId: 1285n,
     decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/17984/large/9285.png'
+    icon: 'https://assets.coingecko.com/coins/images/17984/large/9285.png',
+    disableGasTankDeposit: true
   },
   {
     address: '0x0000000000000000000000000000000000000000',
@@ -98,7 +94,8 @@ export default [
     symbol: 'kcs',
     chainId: 321n,
     decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/1047/large/sa9z79.png'
+    icon: 'https://assets.coingecko.com/coins/images/1047/large/sa9z79.png',
+    disableGasTankDeposit: true
   },
   {
     address: '0x0000000000000000000000000000000000000000',
@@ -160,22 +157,17 @@ export default [
     address: '0x0000000000000000000000000000000000000000',
     symbol: 'okt',
     chainId: 66n,
+    disableGasTankDeposit: true,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/13708/large/WeChat_Image_20220118095654.png'
-  },
-  {
-    address: '0x0000000000000000000000000000000000000000',
-    symbol: 'matic',
-    chainId: 80001n,
-    decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png'
   },
   {
     address: '0x0000000000000000000000000000000000000000',
     symbol: 'eth',
     chainId: 11155111n,
     decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png'
+    icon: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png',
+    disableGasTankDeposit: true
   },
   {
     address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
@@ -227,6 +219,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/12645/standard/aave-token-round.png?1720472354'
   },
   {
+    chainId: 1n,
+    address: '0x39b8B6385416f4cA36a20319F70D28621895279D',
+    symbol: 'eure',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/54303/standard/eure.jpg'
+  },
+  {
     address: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
     symbol: 'steth',
     chainId: 1n,
@@ -260,13 +259,6 @@ export default [
     chainId: 1n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
-  },
-  {
-    address: '0x4Fabb145d64652a948d72533023f6E7A623C7C53',
-    symbol: 'busd',
-    chainId: 1n,
-    decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/9576/small/BUSD.png'
   },
   {
     address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
@@ -371,6 +363,13 @@ export default [
     chainId: 137n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
+  },
+  {
+    chainId: 137n,
+    address: '0xE0aEa583266584DafBB3f9C3211d5588c73fEa8d',
+    symbol: 'eure',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/54303/standard/eure.jpg'
   },
   {
     address: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6',
@@ -539,27 +538,6 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/877/standard/chainlink-new-logo.png?1696502009'
   },
   {
-    address: '0x049d68029688eAbF473097a2fC38ef61633A3C7A',
-    symbol: 'usdt',
-    chainId: 250n,
-    decimals: 6,
-    icon: 'https://assets.coingecko.com/coins/images/325/small/Tether-logo.png'
-  },
-  {
-    address: '0x04068DA6C83AFCFA0e13ba15A6696662335D5B75',
-    symbol: 'usdc',
-    chainId: 250n,
-    decimals: 6,
-    icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
-  },
-  {
-    address: '0x8D11eC38a3EB5E956B052f67Da8Bdc9bef8Abf3E',
-    symbol: 'dai',
-    chainId: 250n,
-    decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
-  },
-  {
     address: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
     symbol: 'wavax',
     chainId: 43114n,
@@ -707,6 +685,7 @@ export default [
     address: '0xeFAeeE334F0Fd1712f9a8cc375f427D9Cdd40d73',
     symbol: 'usdt',
     chainId: 1284n,
+    disableGasTankDeposit: true,
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/325/small/Tether-logo.png'
   },
@@ -714,6 +693,7 @@ export default [
     address: '0x765277EebeCA2e31912C9946eAe1021199B39C61',
     symbol: 'dai',
     chainId: 1284n,
+    disableGasTankDeposit: true,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
   },
@@ -721,6 +701,7 @@ export default [
     address: '0xB44a9B6905aF7c801311e8F4E76932ee959c663C',
     symbol: 'usdt',
     chainId: 1285n,
+    disableGasTankDeposit: true,
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/325/small/Tether-logo.png'
   },
@@ -729,12 +710,14 @@ export default [
     symbol: 'dai',
     chainId: 1285n,
     decimals: 18,
+    disableGasTankDeposit: true,
     icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
   },
   {
     address: '0xbB06DCA3AE6887fAbF931640f67cab3e3a16F4dC',
     symbol: 'usdt',
     chainId: 1088n,
+    disableGasTankDeposit: true,
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/325/small/Tether-logo.png'
   },
@@ -827,6 +810,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
   },
   {
+    address: '0x0c06cCF38114ddfc35e07427B9424adcca9F44F8',
+    symbol: 'eure',
+    chainId: 42161n,
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/54303/standard/eure.jpg'
+  },
+  {
     address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
     symbol: 'usdc',
     chainId: 42161n,
@@ -886,7 +876,7 @@ export default [
     chainId: 42161n,
     address: '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf',
     symbol: 'cbbtc',
-    decimals: 18,
+    decimals: 8,
     icon: 'https://assets.coingecko.com/coins/images/40143/standard/cbbtc.webp?1726136727'
   },
   {
@@ -916,27 +906,6 @@ export default [
     symbol: 'zchf',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/37150/standard/Coin_Logo_Frankencoin_1024px.png?1728679791'
-  },
-  {
-    address: '0x382bB369d343125BfB2117af9c149795C6C65C50',
-    symbol: 'usdc',
-    chainId: 66n,
-    decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
-  },
-  {
-    address: '0xc946DAf81b08146B1C7A8Da2A851Ddf2B3EAaf85',
-    symbol: 'usdt',
-    chainId: 66n,
-    decimals: 6,
-    icon: 'https://assets.coingecko.com/coins/images/325/small/Tether-logo.png'
-  },
-  {
-    address: '0xEF71CA2EE68F45B9Ad6F72fbdb33d707b872315C',
-    symbol: 'ethk',
-    chainId: 66n,
-    decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/18537/small/0xef71ca2ee68f45b9ad6f72fbdb33d707b872315c.png'
   },
   {
     address: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA',
@@ -1005,7 +974,7 @@ export default [
     chainId: 8453n,
     address: '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf',
     symbol: 'cbbtc',
-    decimals: 18,
+    decimals: 8,
     icon: 'https://assets.coingecko.com/coins/images/40143/standard/cbbtc.webp?1726136727'
   },
   {
@@ -1049,15 +1018,6 @@ export default [
     symbol: 'wsteth',
     decimals: 18,
     icon: 'https://coin-images.coingecko.com/coins/images/18834/small/wstETH.png'
-  },
-  {
-    // USDC
-    address: '0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4',
-    chainId: 130n,
-    disableGasTankDeposit: true,
-    symbol: 'usdc',
-    decimals: 6,
-    icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
   },
   {
     // usd₮0
@@ -1119,7 +1079,7 @@ export default [
     chainId: 57073n,
     disableGasTankDeposit: true,
     symbol: 'kbtc',
-    decimals: 18,
+    decimals: 8,
     icon: 'https://assets.coingecko.com/coins/images/50879/standard/kBTC.png?1730321084'
   },
   // ctUSD

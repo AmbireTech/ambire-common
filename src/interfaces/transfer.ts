@@ -15,6 +15,8 @@ export interface TransferUpdate {
   addressState?: AddressStateOptional
   isRecipientAddressUnknownAgreed?: boolean
   amountFieldMode?: 'token' | 'fiat'
+  /** Seed id of a Privacy Pools account to send to instead of an address; null undoes it. */
+  privacyPoolsRecipient?: string | null
 }
 
 export type AddressPoisoningMatch = {
@@ -23,4 +25,9 @@ export type AddressPoisoningMatch = {
   // We keep them separate because poisoning lookalikes are not always symmetric (e.g. 3-left, 6-right).
   matchedPrefixCharsCount: number
   matchedSuffixCharsCount: number
+}
+
+export type AmountAdjustmentInfo = {
+  feeAmount: string
+  tokenSymbol: string
 }

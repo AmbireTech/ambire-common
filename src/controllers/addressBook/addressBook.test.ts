@@ -6,10 +6,8 @@ import { Account } from '../../interfaces/account'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 
-let errors = 0
-
 // Mock the emitError method to capture the emitted error
-const mockEmitError = jest.fn(() => errors++)
+const mockEmitError = jest.fn()
 
 const MOCK_ACCOUNTS: Account[] = [
   {
@@ -54,8 +52,11 @@ describe('AddressBookController', () => {
     })
     addressBookController = mainCtrl.addressBook
     selectedAccountCtrl = mainCtrl.selectedAccount
-    // 'any' is on purpose, to override 'emitError' prop (which is protected)
-    ;(addressBookController as any).emitError = mockEmitError
+    jest.spyOn(addressBookController as any, 'emitError').mockImplementation(mockEmitError)
+  })
+
+  beforeEach(() => {
+    mockEmitError.mockClear()
   })
 
   const getContactFromName = (name: string) => {
@@ -64,7 +65,7 @@ describe('AddressBookController', () => {
 
   it('wallet accounts are in contacts', async () => {
     await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(MOCK_ACCOUNTS[0]!)
+    await selectedAccountCtrl.select({ account: MOCK_ACCOUNTS[0]! })
     expect(getContactFromName('Account 1')?.isWalletAccount).toBeTruthy()
     expect(getContactFromName('Account 1')?.address).toEqual(
       '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'
@@ -73,6 +74,24 @@ describe('AddressBookController', () => {
     expect(getContactFromName('Account 2')?.address).toEqual(
       '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0'
     )
+  })
+  it('the selected account is left out of the contacts', async () => {
+    await selectedAccountCtrl.select({ account: MOCK_ACCOUNTS[1]! })
+
+    expect(getContactFromName('Account 1')).toBeUndefined()
+    expect(getContactFromName(DEFAULT_ACCOUNT_LABEL)?.isWalletAccount).toBeTruthy()
+  })
+  it('every wallet account is in contacts while a Privacy Pools account is selected', async () => {
+    await selectedAccountCtrl.select({ privacyPoolsSeedId: 'privacy-pools-seed' })
+
+    expect(selectedAccountCtrl.account).toBeNull()
+    MOCK_ACCOUNTS.forEach(({ addr }) => {
+      expect(
+        addressBookController.contacts.find((contact) => contact.address === addr)?.isWalletAccount
+      ).toBeTruthy()
+    })
+
+    await selectedAccountCtrl.select({ account: MOCK_ACCOUNTS[0]! })
   })
   it('add contact', async () => {
     await addressBookController.addContact('vitaly', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
@@ -113,19 +132,20 @@ describe('AddressBookController', () => {
       '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     )
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(1)
   })
   it('error when adding contact with already existing address', async () => {
     await addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
     await addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(1)
   })
   it('error when adding contact with already existing address but lowercased', async () => {
+    // tony already exists from the previous test; both adds below error
     await addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
     await addressBookController.addContact('tony', '0xd8da6bf26964af9d7eed9e03e53415d37aa96045')
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(2)
   })
   it('error when renaming wallet account contact', async () => {
     await addressBookController.renameManuallyAddedContact(
@@ -133,13 +153,52 @@ describe('AddressBookController', () => {
       'Account 2'
     )
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(1)
   })
   it('error when removing wallet account contact', async () => {
     await addressBookController.removeManuallyAddedContact(
       '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'
     )
 
-    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+    expect(mockEmitError).toHaveBeenCalledTimes(1)
+  })
+  describe('merge contacts from another device', () => {
+    const EXISTING_ADDR = '0x1A2C3802A9eC12725678dAF23DbFD13134e5893A'
+    const UNTOUCHED_ADDR = '0x085f8A348f6fBc6F8d8FC3f1e427473436506D65'
+    const NEW_ADDR = '0x8DC9b3e1F5b0Dc9F6b2e0d3D0Ba0A5a32B0E7C4B'
+    const getContactByAddress = (address: string) =>
+      addressBookController.contacts.find((contact) => contact.address === address)
+
+    it('renames the existing contacts, adds the new ones and keeps the rest', async () => {
+      await addressBookController.addContact('Old name', EXISTING_ADDR)
+      await addressBookController.addContact('Untouched', UNTOUCHED_ADDR)
+      const untouchedBefore = getContactByAddress(UNTOUCHED_ADDR)
+
+      await addressBookController.mergeContacts([
+        // Compared case-insensitively, so this one is the existing contact
+        { name: ' New name ', address: EXISTING_ADDR.toLowerCase() },
+        { name: 'New contact', address: NEW_ADDR.toLowerCase() }
+      ])
+
+      expect(getContactByAddress(EXISTING_ADDR)?.name).toBe('New name')
+      expect(getContactByAddress(NEW_ADDR)?.name).toBe('New contact')
+      expect(getContactByAddress(UNTOUCHED_ADDR)).toEqual(untouchedBefore)
+      expect(
+        addressBookController.contacts.filter((c) => c.address === EXISTING_ADDR)
+      ).toHaveLength(1)
+      expect(mockEmitError).not.toHaveBeenCalled()
+    })
+    it('does not turn the wallet accounts into manually added contacts', async () => {
+      await addressBookController.mergeContacts([
+        { name: 'Someone else', address: MOCK_ACCOUNTS[1]!.addr }
+      ])
+
+      const walletAccountContacts = addressBookController.contacts.filter(
+        (contact) => contact.address === MOCK_ACCOUNTS[1]!.addr
+      )
+      expect(walletAccountContacts).toEqual([
+        expect.objectContaining({ name: 'Account 1', isWalletAccount: true })
+      ])
+    })
   })
 })

@@ -1,9 +1,48 @@
+import { encodeFunctionData, parseAbi, zeroAddress } from 'viem'
+
+import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
+
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta } from '../../interfaces'
+import { HumanizerMeta, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getLabel } from '../../utils'
-import SafeModule from '.'
+import SafeModule, { getSafeHumanization } from './'
+
+const buildSafeTxFixture = (
+  overrides: Partial<SafeMultisigTransactionResponse>
+): SafeMultisigTransactionResponse => ({
+  safe: '0x0000000000000000000000000000000000000000',
+  to: '0x0000000000000000000000000000000000000000',
+  value: '0',
+  operation: 0,
+  gasToken: '0x0000000000000000000000000000000000000000',
+  safeTxGas: '0',
+  baseGas: '0',
+  gasPrice: '0',
+  nonce: '0',
+  executionDate: null,
+  submissionDate: '2024-01-01T00:00:00Z',
+  modified: '2024-01-01T00:00:00Z',
+  blockNumber: null,
+  transactionHash: null,
+  safeTxHash: '0x0',
+  executor: null,
+  proposer: null,
+  proposedByDelegate: null,
+  isExecuted: false,
+  isSuccessful: null,
+  ethGasPrice: null,
+  maxFeePerGas: null,
+  maxPriorityFeePerGas: null,
+  gasUsed: null,
+  fee: null,
+  origin: '',
+  confirmationsRequired: 1,
+  trusted: true,
+  signatures: null,
+  ...overrides
+})
 
 const transactions = [
   {
@@ -12,6 +51,7 @@ const transactions = [
     data: '0x6a7612020000000000000000000000000bbbead62f7647ae8323d2cb243a0db74b7c2b800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000014000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001c00000000000000000000000000000000000000000000000000000000000000044a9059cbb0000000000000000000000006969174fd72466430a46e18234d0b530c9fd5f49000000000000000000000000000000000000000000000000016345785d8a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000820000000000000000000000004206d534CD8aCF86ba0eeC5ABb3c0B98EF7728dC000000000000000000000000000000000000000000000000000000000000000001a2df9e98285798df2bc8ba5368202ed950e153dee458fa9264dabf03722203d60a6ec8fc34f6dd0c745ef498795bf6bb00f32aec006af6fc94df3ac4b8284f1c1b000000000000000000000000000000000000000000000000000000000000'
   }
 ]
+
 const accountOp: AccountOp = {
   accountAddr: '0x6969174FD72466430a46e18234D0b530c9FD5f49',
   chainId: 42161n,
@@ -23,7 +63,8 @@ const accountOp: AccountOp = {
   calls: [],
   gasLimit: null,
   signature: null,
-  gasFeePayment: null
+  gasFeePayment: null,
+  id: 'testSafe'
   // This is fed into the humanizer to help visualize the accountOp
   // This can contain info like the value of specific share tokens at the time of signing,
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
@@ -41,7 +82,333 @@ describe('Safe', () => {
         getAddressVisualization('0x0BbbEad62f7647AE8323d2cb243A0DB74B7C2b80')
       ]
     ]
-    const irCalls = SafeModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = transactions.map((c) =>
+      SafeModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
     compareHumanizerVisualizations(irCalls, expectedVisualization)
+  })
+
+  describe('safeTx delegatecall warning', () => {
+    const plainCalls = [
+      { to: '0x1111111111111111111111111111111111111111', value: 0n, data: '0x' },
+      { to: '0x2222222222222222222222222222222222222222', value: 0n, data: '0x' },
+      { to: '0x3333333333333333333333333333333333333333', value: 0n, data: '0x' }
+    ]
+
+    // accountOp.safeTx describes the outer Safe{WALLET} execTransaction being imported/
+    // co-signed, not any single call's own data, so SafeModule (a per-call humanizer module)
+    // must not attach a warning to any of the individual calls for it. It is surfaced once,
+    // at the accountOp level, via getSafeDelegateCallWarning (src/controllers/signAccountOp/helper.ts)
+    test('never attaches a call-level warning for accountOp.safeTx, even when it is a delegatecall to an unwhitelisted contract', () => {
+      const accOpWithSafeTx: AccountOp = {
+        ...accountOp,
+        safeTx: buildSafeTxFixture({
+          operation: 1,
+          to: '0x9999999999999999999999999999999999999999'
+        })
+      }
+
+      const irCalls = plainCalls.map((c) =>
+        SafeModule(accOpWithSafeTx, c, humanizerInfo as HumanizerMeta)
+      )
+
+      irCalls.forEach((call) => {
+        expect(call.warnings?.some((w) => w.code === 'SAFE{WALLET}_DELEGATE_CALL')).toBeFalsy()
+      })
+    })
+
+    test('does not warn when accountOp.safeTx is not set', () => {
+      const irCalls = plainCalls.map((c) =>
+        SafeModule(accountOp, c, humanizerInfo as HumanizerMeta)
+      )
+
+      irCalls.forEach((call) => {
+        expect(call.warnings?.some((w) => w.code === 'SAFE{WALLET}_DELEGATE_CALL')).toBeFalsy()
+      })
+    })
+  })
+
+  describe('execTransaction delegatecall warning in a mixed batch', () => {
+    const execTransactionAbi = parseAbi([
+      'function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) payable returns (bool)'
+    ])
+
+    const encodeExecTransaction = (to: string, operation: number) =>
+      encodeFunctionData({
+        abi: execTransactionAbi,
+        args: [to as `0x${string}`, 0n, '0x', operation, 0n, 0n, 0n, zeroAddress, zeroAddress, '0x']
+      })
+
+    // Each call in a batch is humanized independently by SafeModule's execTransaction
+    // matcher, so a delegatecall to an unwhitelisted contract must only warn on the
+    // specific call that carries it, not on its sibling calls in the same batch.
+    test('warns only on the call that is a delegatecall to an unwhitelisted contract, not on sibling calls', () => {
+      const delegateCall = {
+        to: accountOp.accountAddr,
+        value: 0n,
+        data: encodeExecTransaction('0x9999999999999999999999999999999999999999', 1)
+      }
+      const regularCall = {
+        to: accountOp.accountAddr,
+        value: 0n,
+        data: encodeExecTransaction('0x8888888888888888888888888888888888888888', 0)
+      }
+
+      const [delegateCallResult, regularCallResult] = [delegateCall, regularCall].map((c) =>
+        SafeModule(accountOp, c, humanizerInfo as HumanizerMeta)
+      ) as [IrCall, IrCall]
+
+      expect(
+        delegateCallResult.warnings?.some((w) => w.code === 'SAFE{WALLET}_DELEGATE_CALL')
+      ).toBe(true)
+      expect(
+        regularCallResult.warnings?.some((w) => w.code === 'SAFE{WALLET}_DELEGATE_CALL')
+      ).toBeFalsy()
+    })
+
+    test('does not warn when the delegatecall target is whitelisted by Safe', () => {
+      const delegateCallToWhitelisted = {
+        to: accountOp.accountAddr,
+        value: 0n,
+        data: encodeExecTransaction('0xA83c336B20401Af773B6219BA5027174338D1836', 1)
+      }
+
+      const result = SafeModule(
+        accountOp,
+        delegateCallToWhitelisted,
+        humanizerInfo as HumanizerMeta
+      )
+
+      expect(result.warnings?.some((w) => w.code === 'SAFE{WALLET}_DELEGATE_CALL')).toBeFalsy()
+    })
+  })
+
+  describe('setFallbackHandler', () => {
+    const setFallbackHandlerAbi = parseAbi(['function setFallbackHandler(address handler)'])
+
+    const encode = (handler: string) =>
+      encodeFunctionData({ abi: setFallbackHandlerAbi, args: [handler as `0x${string}`] })
+
+    test('does not warn when the handler is a known Safe default (CompatibilityFallbackHandler v1.3.0)', () => {
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        accountOp.accountAddr,
+        0n,
+        encode('0xf48f2B2d2a534e402487b3ee7C18c33Aec0Fe5e4')
+      )
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_FALLBACK_HANDLER')).toBeFalsy()
+    })
+
+    test('does not warn when the handler is the zero address (disabling the fallback handler)', () => {
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        accountOp.accountAddr,
+        0n,
+        encode('0x0000000000000000000000000000000000000000')
+      )
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_FALLBACK_HANDLER')).toBeFalsy()
+    })
+
+    test('warns when the handler is not a known Safe default (e.g. an ExtensibleFallbackHandler)', () => {
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        accountOp.accountAddr,
+        0n,
+        encode('0x2f55e8b20D0B9FEFA187AA7d00B6Cbe563605bF5')
+      )
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_FALLBACK_HANDLER')).toBe(true)
+    })
+  })
+
+  describe('createProxyWithNonce / createProxyWithNonceL2', () => {
+    const factory = '0x14F2982D601c9458F93bd70B218933A6f8165e7b'
+    const singleton = '0xFf51A5898e281Db6DfC7855790607438dF2ca44b'
+    const setupAbi = parseAbi([
+      'function setup(address[] _owners,uint256 _threshold,address to,bytes data,address fallbackHandler,address paymentToken,uint256 payment,address paymentReceiver)'
+    ])
+    const initializer = encodeFunctionData({
+      abi: setupAbi,
+      args: [
+        ['0x900C7589200010D6C6eCaaE5B06EBe653bc2D82a'],
+        1n,
+        zeroAddress,
+        '0x',
+        zeroAddress,
+        zeroAddress,
+        0n,
+        zeroAddress
+      ]
+    })
+
+    const encode = (functionName: 'createProxyWithNonce' | 'createProxyWithNonceL2') =>
+      encodeFunctionData({
+        abi: parseAbi([
+          `function ${functionName}(address _singleton, bytes initializer, uint256 saltNonce)`
+        ]),
+        functionName,
+        args: [singleton, initializer, 1n]
+      })
+
+    test.each(['createProxyWithNonce', 'createProxyWithNonceL2'] as const)(
+      'humanizes %s as a Safe account creation with its setup',
+      (functionName) => {
+        const result = getSafeHumanization(accountOp.accountAddr, factory, 0n, encode(functionName))
+        expect(result?.visuals?.[0]).toMatchObject({
+          type: 'action',
+          content: 'Create Safe account'
+        })
+        expect(result?.visuals).toContainEqual(
+          expect.objectContaining({ type: 'action', content: 'Account setup' })
+        )
+        expect(result?.visuals).toContainEqual(
+          expect.objectContaining({
+            type: 'address',
+            address: '0x900c7589200010d6c6ecaae5b06ebe653bc2d82a'
+          })
+        )
+      }
+    )
+
+    test('keeps the action label when the initializer cannot be decoded', () => {
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        factory,
+        0n,
+        encodeFunctionData({
+          abi: parseAbi([
+            'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
+          ]),
+          args: [singleton, '0xb63e800d', 1n]
+        })
+      )
+      expect(result?.visuals).toHaveLength(1)
+      expect(result?.visuals?.[0]).toMatchObject({ type: 'action', content: 'Create Safe account' })
+    })
+  })
+
+  describe('setDomainVerifier', () => {
+    const setDomainVerifierAbi = parseAbi([
+      'function setDomainVerifier(bytes32 domainSeparator, address newVerifier)'
+    ])
+
+    test('always warns, since it grants a contract standing signature authority for a domain', () => {
+      const data = encodeFunctionData({
+        abi: setDomainVerifierAbi,
+        args: [
+          '0xd72ffa789b6fae41254d0b5a13e6e1e92ed947ec6a251edf1cf0b6c02c257b4',
+          '0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74'
+        ]
+      })
+      const result = getSafeHumanization(accountOp.accountAddr, accountOp.accountAddr, 0n, data)
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_DOMAIN_VERIFIER')).toBe(true)
+    })
+  })
+})
+
+describe('cancel queued transaction', () => {
+  test('a self-call is labeled with its nonce', () => {
+    const cancelAccountOp: AccountOp = { ...accountOp, nonce: 5n }
+    const cancelCall = {
+      to: cancelAccountOp.accountAddr,
+      value: 0n,
+      data: '0x'
+    }
+    const expectedVisualization = [
+      [getAction('Cancel'), getLabel('transaction with'), getLabel('nonce 5', true)]
+    ]
+    const irCalls = [cancelCall].map((c) =>
+      SafeModule(cancelAccountOp, c, humanizerInfo as HumanizerMeta)
+    )
+    compareHumanizerVisualizations(irCalls, expectedVisualization)
+  })
+
+  test('a call to the zero address is labeled with its nonce', () => {
+    const cancelAccountOp: AccountOp = { ...accountOp, nonce: 5n }
+    const cancelCall = {
+      to: zeroAddress,
+      value: 0n,
+      data: '0x'
+    }
+    const expectedVisualization = [
+      [getAction('Cancel'), getLabel('transaction with'), getLabel('nonce 5', true)]
+    ]
+    const irCalls = [cancelCall].map((c) =>
+      SafeModule(cancelAccountOp, c, humanizerInfo as HumanizerMeta)
+    )
+    compareHumanizerVisualizations(irCalls, expectedVisualization)
+  })
+
+  test('without a known nonce falls back to a generic label', () => {
+    const cancelCall = {
+      to: accountOp.accountAddr,
+      value: 0n,
+      data: '0x'
+    }
+    const expectedVisualization = [[getAction('Cancel'), getLabel('currently queued transaction')]]
+    const irCalls = [cancelCall].map((c) =>
+      SafeModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
+    compareHumanizerVisualizations(irCalls, expectedVisualization)
+  })
+
+  // this calldata would still execute onchain - the missing trailing words are read as zeroes
+  // by the EVM - so the humanizer has to decode it the same way and still show the config
+  // change warning, rather than silently dropping the whole call
+  describe('short calldata protection', () => {
+    test('changeThreshold with the trailing threshold word missing still warns', () => {
+      const changeThresholdAbi = parseAbi(['function changeThreshold(uint256 _threshold)'])
+      const fullData = encodeFunctionData({ abi: changeThresholdAbi, args: [2n] })
+      const shortData = fullData.slice(0, -64) as `0x${string}`
+
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        accountOp.accountAddr,
+        0n,
+        shortData
+      )
+
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_CONFIG_CHANGE')).toBe(true)
+    })
+
+    test('enableModule with the trailing module address word missing still warns', () => {
+      const enableModuleAbi = parseAbi(['function enableModule(address module)'])
+      const fullData = encodeFunctionData({
+        abi: enableModuleAbi,
+        args: ['0x2f55e8b20D0B9FEFA187AA7d00B6Cbe563605bF5']
+      })
+      const shortData = fullData.slice(0, -64) as `0x${string}`
+
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        accountOp.accountAddr,
+        0n,
+        shortData
+      )
+
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_CONFIG_CHANGE')).toBe(true)
+    })
+
+    test('setDomainVerifier with the trailing verifier address word missing still warns', () => {
+      const setDomainVerifierAbi = parseAbi([
+        'function setDomainVerifier(bytes32 domainSeparator, address newVerifier)'
+      ])
+      const fullData = encodeFunctionData({
+        abi: setDomainVerifierAbi,
+        args: [
+          '0xd72ffa789b6fae41254d0b5a13e6e1e92ed947ec6a251edf1cf0b6c02c257b4',
+          '0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74'
+        ]
+      })
+      const shortData = fullData.slice(0, -64) as `0x${string}`
+
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        accountOp.accountAddr,
+        0n,
+        shortData
+      )
+
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_DOMAIN_VERIFIER')).toBe(true)
+    })
   })
 })

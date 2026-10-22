@@ -38,7 +38,9 @@ describe('asciiHumanizer', () => {
     ]
     accountOp.calls = transactions
 
-    const irCalls = asciiModule(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta)
+    const irCalls = accountOp.calls.map((c) =>
+      asciiModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
 
     compareVisualizations(irCalls[0]!.fullVisualization!, [...humanizationPrefix, getText('hello')])
     compareVisualizations(irCalls[1]!.fullVisualization!, [...humanizationPrefix, getText('hello')])

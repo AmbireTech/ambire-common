@@ -1,26 +1,36 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
+
+import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { getPrivacyPoolsDepositAsset } from '../../consts/privacyPools'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
+import { IContractInfoController } from '../../interfaces/contractInfo'
 import { IDappsController } from '../../interfaces/dapp'
 import { AddressState } from '../../interfaces/domains'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
+import { IPrivacyPoolsController } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
 import {
   AddressPoisoningMatch,
+  AmountAdjustmentInfo,
   ITransferController,
   TransferUpdate
 } from '../../interfaces/transfer'
-import { IUiController, View } from '../../interfaces/ui'
+import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
@@ -29,20 +39,22 @@ import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
-import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers'
+import { getTokenAmount, sortTokensByBalanceInUSD } from '../../libs/portfolio/helpers'
 import {
   getAmountAfterFeeReserve,
   getAmountAfterFeeSync,
   getSanitizedAmount
 } from '../../libs/transfer/amount'
+import { getAmountsFromFieldValue } from '../../libs/transfer/fieldAmounts'
 import { getTransferRequestParams } from '../../libs/transfer/userRequest'
 import {
+  RecipientValidation,
   validateSendTransferAddress,
   validateSendTransferAmount,
   Validation
 } from '../../services/validations'
 import { getIsViewOnly } from '../../utils/accounts'
-import { getAddressFromAddressState } from '../../utils/domains'
+import { getAddressFromAddressState, getDomainFromAddressState } from '../../utils/domains'
 import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
@@ -50,9 +62,7 @@ import {
 import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/signAccountOp'
-
-const CONVERSION_PRECISION = 16
-const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
 const DEFAULT_ADDRESS_STATE: AddressState = {
   fieldValue: '',
@@ -62,7 +72,8 @@ const DEFAULT_ADDRESS_STATE: AddressState = {
 }
 
 const DEFAULT_VALIDATION_FORM_MSGS: {
-  [key in 'amount' | 'recipientAddress']: Validation
+  amount: Validation
+  recipientAddress: RecipientValidation
 } = {
   amount: {
     severity: 'error',
@@ -86,9 +97,15 @@ type SignAccountOpControllerMethods = {
 }
 
 export class TransferController extends EventEmitter implements ITransferController {
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #storage: IStorageController
+
+  #signAccountOpPreference: SignAccountOpPreferenceController
+
+  #featureFlags: IFeatureFlagsController
+
+  #platform: Platform
 
   #networks: INetworksController
 
@@ -133,9 +150,28 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   isTopUp: boolean = false
 
+  /**
+   * Seed id of the Privacy Pools account to deposit into, instead of an address. Exclusive with
+   * `addressState`: setting either clears the other. Limits the tokens to what the pools accept.
+   */
+  privacyPoolsRecipient: string | null = null
+
+  /** Whether the deposit calls are being built. The first build per account syncs its network. */
+  isPreparingPrivacyPoolsDeposit = false
+
+  /** Why the deposit cannot be prepared, in words for the user. */
+  privacyPoolsDepositError: string | null = null
+
+  /** Lets a newer deposit preparation discard the result of an older, slower one. */
+  #privacyPoolsDepositPreparationId = 0
+
+  #privacyPools?: IPrivacyPoolsController
+
   #shouldSkipTransactionQueuedModal: boolean = false
 
   #isMaxAmountSelected: boolean = false
+
+  #wasAmountAdjustedForFee: boolean = false
 
   #maxFeeReservation: { key: string; amount: bigint } | null = null
 
@@ -153,6 +189,10 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #dapps: IDappsController
 
+  #erc7730: IErc7730Controller
+
+  #contractInfo: IContractInfoController
+
   #relayerUrl: string
 
   isRecipientAddressFirstTimeSend: boolean = false
@@ -162,6 +202,12 @@ export class TransferController extends EventEmitter implements ITransferControl
   // Set only for first-time sends when the recipient matches a known address
   // by both prefix and suffix, which may indicate address poisoning.
   addressPoisoningMatch: AddressPoisoningMatch | null = null
+
+  /**
+   * Set when the recipient is a domain (ENS/Namoshi) the user has sent to before, but it now resolves
+   * to a DIFFERENT address than last time (possible expiry/snipe).
+   */
+  recipientDomainAddressChange: { previousAddress: string } | null = null
 
   signAccountOpController: ISignAccountOpController | null = null
 
@@ -189,8 +235,10 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   constructor(
-    callRelayer: Function,
+    callRelayer: BindedRelayerCall,
     storage: IStorageController,
+    signAccountOpPreference: SignAccountOpPreferenceController,
+    featureFlags: IFeatureFlagsController,
     humanizerInfo: HumanizerMeta,
     selectedAccount: ISelectedAccountController,
     networks: INetworksController,
@@ -206,12 +254,18 @@ export class TransferController extends EventEmitter implements ITransferControl
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess,
     ui: IUiController,
+    erc7730: IErc7730Controller,
+    contractInfo: IContractInfoController,
+    platform: Platform,
+    privacyPools?: IPrivacyPoolsController,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
 
     this.#callRelayer = callRelayer
     this.#storage = storage
+    this.#signAccountOpPreference = signAccountOpPreference
+    this.#featureFlags = featureFlags
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccount = selectedAccount
     this.#networks = networks
@@ -225,9 +279,13 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#providers = providers
     this.#phishing = phishing
     this.#dapps = dapps
+    this.#erc7730 = erc7730
+    this.#privacyPools = privacyPools
+    this.#contractInfo = contractInfo
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#ui = ui
+    this.#platform = platform
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -265,6 +323,21 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.propagateUpdate(forceEmit)
     })
 
+    // isRecipientAddressBlacklisted reads the phishing list, which loads from storage and refreshes
+    // in the background, so the UI has to be told when the answer may have changed
+    this.#phishing.onUpdate((forceEmit) => {
+      if (!this.#currentTransferSessionId || !isAddress(this.recipientAddress)) return
+
+      this.propagateUpdate(forceEmit)
+    }, 'transfer-recipient-phishing-check')
+
+    // Re-validates the amount once the entrypoint's deposit limits are read
+    this.#privacyPools?.onUpdate((forceEmit) => {
+      if (!this.#currentTransferSessionId || !this.privacyPoolsRecipient) return
+
+      this.propagateUpdate(forceEmit)
+    }, 'transfer-privacy-pools-recipient')
+
     this.emitUpdate()
   }
 
@@ -278,7 +351,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     const isSameMode = this.isTopUp === nextIsTopUp
     const hasNoSearchParams = Object.keys(searchParams || {}).length === 0
 
-    const shouldKeepExistingForm = isFormInitialized && isSameMode && hasNoSearchParams
+    const shouldKeepExistingForm =
+      isFormInitialized && isSameMode && hasNoSearchParams && !isSidePanelView(view)
 
     if (shouldKeepExistingForm) {
       if (!this.areDefaultsSet) {
@@ -315,41 +389,47 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #setTokens() {
-    const tokens = this.#selectedAccount.portfolio.tokens
-      .filter((token) => {
-        const hasAmount = Number(getTokenAmount(token)) > 0
-        const isVisible = !token.flags.isHidden
+    // Indexed once rather than scanned inside the filter below, which runs for every
+    // token the account holds - a large portfolio runs to thousands of them.
+    const networkByChainId = new Map(this.#networks.networks.map((n) => [n.chainId, n]))
 
-        if (this.isTopUp) {
-          const tokenNetwork = this.#networks.networks.find(
-            (network) => network.chainId === token.chainId
-          )
+    const tokens = this.#selectedAccount.portfolio.tokens.filter((token) => {
+      const hasAmount = Number(getTokenAmount(token)) > 0
+      const isVisible = !token.flags.isHidden
 
-          return (
-            hasAmount &&
-            isVisible &&
-            tokenNetwork?.hasRelayer &&
-            token.flags.canTopUpGasTank &&
-            !token.flags.onGasTank
-          )
-        }
-
+      if (this.privacyPoolsRecipient) {
         return (
           hasAmount &&
           isVisible &&
           !token.flags.onGasTank &&
           !token.flags.rewardsType &&
-          token.flags.defiTokenType !== AssetType.Borrow
+          token.flags.defiTokenType !== AssetType.Borrow &&
+          this.#isPrivacyPoolsDepositToken(token)
         )
-      })
-      .sort((a, b) => {
-        const tokenAinUSD = getTokenBalanceInUSD(a)
-        const tokenBinUSD = getTokenBalanceInUSD(b)
+      }
 
-        return tokenBinUSD - tokenAinUSD
-      })
+      if (this.isTopUp) {
+        const tokenNetwork = networkByChainId.get(token.chainId)
 
-    this.#tokens = tokens
+        return (
+          hasAmount &&
+          isVisible &&
+          tokenNetwork?.hasRelayer &&
+          token.flags.canTopUpGasTank &&
+          !token.flags.onGasTank
+        )
+      }
+
+      return (
+        hasAmount &&
+        isVisible &&
+        !token.flags.onGasTank &&
+        !token.flags.rewardsType &&
+        token.flags.defiTokenType !== AssetType.Borrow
+      )
+    })
+
+    this.#tokens = sortTokensByBalanceInUSD(tokens)
 
     if (this.selectedToken) {
       this.selectedToken =
@@ -362,6 +442,14 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.#tokens[0] ||
         null
     }
+  }
+
+  /** Whether a Privacy Pools account can receive this token, and send it out again. */
+  #isPrivacyPoolsDepositToken(token: TokenResult) {
+    return (
+      !!this.#privacyPools?.supportedChainIds.includes(token.chainId.toString()) &&
+      !!getPrivacyPoolsDepositAsset(token.chainId, token.address)
+    )
   }
 
   #setDefaultSelectedToken(tokenData?: { address: string; chainId: string | number }) {
@@ -430,6 +518,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
       this.#isMaxAmountSelected = false
+      this.#wasAmountAdjustedForFee = false
       this.#resetMaxFeeReservation()
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
@@ -446,6 +535,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       prevSelectedToken?.chainId !== token?.chainId
     ) {
       this.#isMaxAmountSelected = false
+      this.#wasAmountAdjustedForFee = false
       this.#resetMaxFeeReservation()
       if (!token.priceIn.length) this.amountFieldMode = 'token'
       this.#setAmountAndNotifyUI('')
@@ -488,11 +578,13 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   resetForm(shouldDestroyAccountOp = true) {
     this.#isMaxAmountSelected = false
+    this.#wasAmountAdjustedForFee = false
     this.amount = ''
     this.amountInFiat = ''
     this.amountFieldMode = 'token'
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.#onRecipientAddressChange()
+    this.#clearPrivacyPoolsRecipient()
     // This MUST be incremented and not reset to zero, because the UI relies on
     // the change of this value. If the value was 0 and is reset to 0, the UI
     // would not detect a change.
@@ -529,9 +621,14 @@ export class TransferController extends EventEmitter implements ITransferControl
   get validationFormMsgs() {
     if (!this.isInitialized) return DEFAULT_VALIDATION_FORM_MSGS
 
-    const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
+    // A copy, so a failed validation doesn't leak into the shared defaults (e.g. an "Insufficient
+    // amount." error showing up later for an account with no tokens to select)
+    const validationFormMsgsNew = { ...DEFAULT_VALIDATION_FORM_MSGS }
 
-    if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
+    if (this.privacyPoolsRecipient) {
+      // No address to check: the recipient is one of the wallet's own accounts
+      validationFormMsgsNew.recipientAddress = { severity: 'success', message: '' }
+    } else if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
       // if the recipientAcc is an account in the extension
       // & the account state is not fetched for it, fetch it
       // so that we could validate the account properly
@@ -544,7 +641,6 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        !!this.addressState.resolvedAddress,
         this.addressState.isDomainResolving,
         this.#networks.networks,
         this.#accounts.accountStates,
@@ -552,7 +648,10 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.selectedToken?.chainId,
         this.isRecipientAddressFirstTimeSend,
         this.lastSentToRecipientAt,
-        this.addressPoisoningMatch
+        this.addressPoisoningMatch,
+        this.recipientDomainAddressChange,
+        this.isRecipientAddressBlacklisted,
+        this.isRecipientAddressViewOnly
       )
     }
 
@@ -561,7 +660,46 @@ export class TransferController extends EventEmitter implements ITransferControl
       validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
     }
 
+    const privacyPoolsAmountError =
+      validationFormMsgsNew.amount.severity === 'success' && this.#getPrivacyPoolsAmountError()
+    if (privacyPoolsAmountError) {
+      validationFormMsgsNew.amount = { severity: 'error', message: privacyPoolsAmountError }
+    }
+
     return validationFormMsgsNew
+  }
+
+  /**
+   * Checks the amount against the configured maximum and the entrypoint's minimum (once read).
+   * Null when it passes or the transfer is not to a Privacy Pools account.
+   */
+  #getPrivacyPoolsAmountError(): string | null {
+    const token = this.selectedToken
+    if (!this.privacyPoolsRecipient || !token) return null
+
+    const asset = getPrivacyPoolsDepositAsset(token.chainId, token.address)
+    if (!asset) return 'This token cannot be sent to a Privacy Pools account.'
+
+    const amount = parseUnits(
+      getSafeAmountFromFieldValue(this.amount, token.decimals) || '0',
+      token.decimals
+    )
+
+    if (amount > asset.maxDeposit)
+      return `A Privacy Pools account accepts at most ${formatUnits(
+        asset.maxDeposit,
+        asset.decimals
+      )} ${asset.symbol} at a time.`
+
+    const config =
+      this.#privacyPools?.depositAssetConfigs[`${token.chainId}:${token.address.toLowerCase()}`]
+    if (config && amount < config.minimumDepositAmount)
+      return `A Privacy Pools account accepts at least ${formatUnits(
+        config.minimumDepositAmount,
+        asset.decimals
+      )} ${asset.symbol} at a time.`
+
+    return null
   }
 
   get isFormValid() {
@@ -576,6 +714,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     const areFormFieldsValid = this.validationFormMsgs.amount.severity === 'success'
+
+    // No address to resolve; the amount check covers the pools' limits
+    if (this.privacyPoolsRecipient) return !!this.selectedToken && areFormFieldsValid
 
     return areFormFieldsValid && !this.addressState.isDomainResolving
   }
@@ -592,6 +733,16 @@ export class TransferController extends EventEmitter implements ITransferControl
     return getAddressFromAddressState(this.addressState)
   }
 
+  /**
+   * Whether the recipient is in the locally stored phishing list. The list is kept up to date by
+   * the PhishingController, so the lookup needs no network request.
+   */
+  get isRecipientAddressBlacklisted() {
+    if (!isAddress(this.recipientAddress)) return false
+
+    return this.#phishing.getAddressBlacklistedStatus(this.recipientAddress) === 'BLACKLISTED'
+  }
+
   async update({
     humanizerInfo,
     selectedToken,
@@ -599,7 +750,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     shouldSetMaxAmount,
     addressState,
     isRecipientAddressUnknownAgreed,
-    amountFieldMode
+    amountFieldMode,
+    privacyPoolsRecipient
   }: TransferUpdate) {
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
@@ -623,25 +775,39 @@ export class TransferController extends EventEmitter implements ITransferControl
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
       this.#isMaxAmountSelected = false
+      this.#wasAmountAdjustedForFee = false
       this.#resetMaxFeeReservation()
       this.#setAmount(amount)
     }
 
     if (shouldSetMaxAmount) {
+      const maxAmountAfterFeeReservation = this.#getMaxAmountAfterFeeReservation()
+      if (!Number(maxAmountAfterFeeReservation)) return
+
       this.#isMaxAmountSelected = true
+      this.#wasAmountAdjustedForFee = maxAmountAfterFeeReservation !== this.maxAmount
       this.#resetMaxFeeReservation()
-      this.amountFieldMode = 'token'
-      this.#setTokenAmount(this.#getMaxAmountAfterFeeReservation(), true)
+      // Keeps the field in whichever mode the user picked - the max is still set from the exact
+      // token balance, so fiat mode doesn't round it and leave dust behind.
+      this.#setTokenAmount(maxAmountAfterFeeReservation, true)
     }
+
+    if (privacyPoolsRecipient !== undefined) this.#setPrivacyPoolsRecipient(privacyPoolsRecipient)
 
     if (addressState) {
       this.addressState = {
         ...this.addressState,
         ...addressState
       }
+      // Typing an address means sending to it instead
+      if (this.addressState.fieldValue) this.#setPrivacyPoolsRecipient(null)
       if (this.isInitialized) {
         this.#onRecipientAddressChange()
       }
+    }
+
+    if (this.privacyPoolsRecipient && (selectedToken || privacyPoolsRecipient)) {
+      this.#loadPrivacyPoolsDepositLimits()
     }
     // We can do a regular check here, because the property defines if it should be updated
     // and not the actual value
@@ -653,6 +819,55 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     await this.syncSignAccountOp()
     this.emitUpdate()
+  }
+
+  /**
+   * Switches between sending to a Privacy Pools account and to an address. Drops the account op
+   * either way, as the calls and the tokens to choose from differ.
+   */
+  #setPrivacyPoolsRecipient(seedId: string | null) {
+    if (this.privacyPoolsRecipient === seedId) return
+
+    this.privacyPoolsRecipient = seedId
+    this.privacyPoolsDepositError = null
+    this.isPreparingPrivacyPoolsDeposit = false
+    this.#privacyPoolsDepositPreparationId += 1
+
+    if (seedId) {
+      this.addressState = { ...DEFAULT_ADDRESS_STATE }
+      this.#onRecipientAddressChange()
+      // The address field may still hold the text typed to find the account; make the UI clear it
+      this.programmaticUpdateCounter += 1
+    }
+
+    this.destroySignAccountOp()
+    this.#setTokens()
+    if (!this.selectedToken) this.#setDefaultSelectedToken()
+  }
+
+  #clearPrivacyPoolsRecipient() {
+    this.privacyPoolsRecipient = null
+    this.privacyPoolsDepositError = null
+    this.isPreparingPrivacyPoolsDeposit = false
+    this.#privacyPoolsDepositPreparationId += 1
+  }
+
+  /** Loads the entrypoint's deposit limits for the selected token. */
+  #loadPrivacyPoolsDepositLimits() {
+    const token = this.selectedToken
+    if (!this.#privacyPools || !token || !getPrivacyPoolsDepositAsset(token.chainId, token.address))
+      return
+
+    this.#privacyPools
+      .loadDepositAssetConfig(token.chainId.toString(), token.address)
+      .catch((error) => {
+        // Not fatal: preparing the deposit checks the same limits
+        this.emitError({
+          level: 'silent',
+          message: 'Could not read what Privacy Pools accepts for this token.',
+          error: error instanceof Error ? error : new Error('transfer: deposit limits read failed')
+        })
+      })
   }
 
   checkIsRecipientAddressUnknown() {
@@ -697,6 +912,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressFirstTimeSend = false
       this.lastSentToRecipientAt = null
       this.addressPoisoningMatch = null
+      this.recipientDomainAddressChange = null
       this.isRecipientAddressViewOnly = false
 
       return
@@ -730,62 +946,17 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.programmaticUpdateCounter += 1
     }
 
-    if (!fieldValue) {
-      this.amount = ''
-      this.amountInFiat = ''
-      return
-    }
-
-    const tokenPrice = this.selectedToken?.priceIn.find(
-      (p) => p.baseCurrency === HARD_CODED_CURRENCY
-    )?.price
-
-    if (!tokenPrice) {
-      this.amount = fieldValue
-      this.amountInFiat = ''
-      return
-    }
-
-    if (this.amountFieldMode === 'fiat' && typeof this.selectedToken?.decimals === 'number') {
-      this.amountInFiat = fieldValue
-
-      // Get the number of decimals
-      const amountInFiatDecimals = 10
-      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
-
-      // Convert the numbers to big int
-      const sanitizedFiat = getSanitizedAmount(fieldValue, amountInFiatDecimals)
-      const amountInFiatBigInt = sanitizedFiat
-        ? parseUnits(sanitizedFiat, amountInFiatDecimals)
-        : 0n
-      this.amount = formatUnits(
-        (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
-        // Shift the decimal point by the number of decimals in the token price
-        amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals
-      )
-
-      return
-    }
-    if (this.amountFieldMode === 'token') {
-      this.amount = fieldValue
-
-      if (!this.selectedToken) return
-
-      const formattedAmount = parseUnits(
-        getSafeAmountFromFieldValue(fieldValue, this.selectedToken.decimals),
-        this.selectedToken.decimals
-      )
-
-      if (!formattedAmount) return
-
-      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
-
-      this.amountInFiat = formatUnits(
-        formattedAmount * tokenPriceBigInt,
-        // Shift the decimal point by the number of decimals in the token price
-        this.selectedToken.decimals + tokenPriceDecimals
-      )
-    }
+    const { amount, amountInFiat } = getAmountsFromFieldValue({
+      fieldValue,
+      fieldMode: this.amountFieldMode,
+      price:
+        this.selectedToken?.priceIn.find((p) => p.baseCurrency === HARD_CODED_CURRENCY)?.price ??
+        null,
+      // Unused without a token, as there is no price then
+      decimals: this.selectedToken?.decimals ?? 0
+    })
+    this.amount = amount
+    this.amountInFiat = amountInFiat
   }
 
   #setTokenAmount(amount: string, isProgrammaticUpdate = false) {
@@ -899,7 +1070,10 @@ export class TransferController extends EventEmitter implements ITransferControl
     const reservedFee =
       shouldReserveFee && this.#isMaxAmountSelected ? this.#getMaxReservedFeeAmount(fee) : fee
 
-    if (!shouldReserveFee) this.#resetMaxFeeReservation()
+    if (!shouldReserveFee) {
+      this.#wasAmountAdjustedForFee = false
+      this.#resetMaxFeeReservation()
+    }
 
     const currentAmount = this.amount
       ? parseUnits(
@@ -916,12 +1090,10 @@ export class TransferController extends EventEmitter implements ITransferControl
       isMaxAmountSelected: this.#isMaxAmountSelected
     })
 
-    if (currentAmount === desiredAmount) return false
+    if (desiredAmount === 0n || currentAmount === desiredAmount) return false
 
-    this.#setTokenAmount(
-      desiredAmount === 0n ? '0' : formatUnits(desiredAmount, this.selectedToken.decimals),
-      true
-    )
+    this.#wasAmountAdjustedForFee = shouldReserveFee
+    this.#setTokenAmount(formatUnits(desiredAmount, this.selectedToken.decimals), true)
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.syncSignAccountOp()
     this.propagateUpdate(forceEmit)
@@ -929,35 +1101,39 @@ export class TransferController extends EventEmitter implements ITransferControl
     return true
   }
 
-  /**
-   * When doing a MAX transfer or a close to MAX transfer out,
-   * if the selected fee token is the same as the transfer token,
-   * we automatically adjust the transfer amount so the user
-   * can successfully broadcast. For that, we put an additional
-   * warning telling him why this is happening
-   */
-  get amountAdjustmentWarning(): Validation | null {
-    if (!this.amount || !this.selectedToken || !this.#shouldReserveFeeFromTransferredToken()) {
+  /** Information needed by the UI when the transfer amount was reduced to leave funds for the fee. */
+  get amountAdjustmentInfo(): AmountAdjustmentInfo | null {
+    if (
+      !this.amount ||
+      !this.selectedToken ||
+      !this.#wasAmountAdjustedForFee ||
+      !this.#shouldReserveFeeFromTransferredToken()
+    ) {
       return null
     }
-
-    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
-    if (!gasFeePayment) return null
 
     const currentAmount = parseUnits(
       getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals),
       this.selectedToken.decimals
     )
-    const totalTokenAmount = getTokenAmount(this.selectedToken)
+    const feeAmount = getTokenAmount(this.selectedToken) - currentAmount
 
-    if (currentAmount > 0n && currentAmount + gasFeePayment.amount >= totalTokenAmount) {
-      return {
-        severity: 'warning',
-        message: 'Amount adjusted to cover blockchain fees'
-      }
+    if (feeAmount <= 0n) return null
+
+    return {
+      feeAmount: formatUnits(feeAmount, this.selectedToken.decimals),
+      tokenSymbol: this.selectedToken.symbol
     }
+  }
 
-    return null
+  /** Kept for clients that still render the previous validation-style adjustment message. */
+  get amountAdjustmentWarning(): Validation | null {
+    if (!this.amountAdjustmentInfo) return null
+
+    return {
+      severity: 'warning',
+      message: 'Amount adjusted to cover network fees'
+    }
   }
 
   async #updateRecipientHistoryAndPoisoning() {
@@ -977,19 +1153,54 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     this.isRecipientAddressFirstTimeSend =
-      !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+      !found &&
+      !this.privacyPoolsRecipient &&
+      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
 
     this.addressPoisoningMatch = this.isRecipientAddressFirstTimeSend ? addressPoisoningMatch : null
+
+    this.#updateRecipientDomainAddressChange()
+  }
+
+  /**
+   * When the recipient was entered as a domain (ENS/Namoshi) the user has sent to before, warn if it
+   * now resolves to a different address than last time — the name may have expired and been re-pointed.
+   */
+  #updateRecipientDomainAddressChange() {
+    const { resolvedAddressType, resolvedAddress, fieldValue } = this.addressState
+
+    // Don't warn if the user is sending to the address directly
+    if (!resolvedAddressType || !isAddress(resolvedAddress) || isAddress(fieldValue)) {
+      this.recipientDomainAddressChange = null
+      return
+    }
+
+    const previousAddress = this.#activity.getSentToDomainAddress(fieldValue)
+
+    this.recipientDomainAddressChange =
+      previousAddress && previousAddress.toLowerCase() !== resolvedAddress.toLowerCase()
+        ? { previousAddress }
+        : null
   }
 
   get hasPersistedState() {
-    return !!(this.amount || this.amountInFiat || this.addressState.fieldValue)
+    return !!(
+      this.amount ||
+      this.amountInFiat ||
+      this.addressState.fieldValue ||
+      this.privacyPoolsRecipient
+    )
   }
 
   async syncSignAccountOp() {
     // shouldn't happen ever
     if (!this.#selectedAccount.account) return
+
+    if (this.privacyPoolsRecipient) {
+      await this.#syncPrivacyPoolsDeposit()
+      return
+    }
 
     const recipientAddress = this.isTopUp
       ? FEE_COLLECTOR
@@ -1006,7 +1217,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       amount: getSafeAmountFromFieldValue(this.amount, this.selectedToken?.decimals),
       selectedToken: this.#selectedToken,
       recipientAddress,
-      amountInFiat: amountInFiatBigInt
+      amountInFiat: amountInFiatBigInt,
+      recipientDomain: getDomainFromAddressState(this.addressState)
     })
 
     if (!userRequestParams) {
@@ -1039,6 +1251,86 @@ export class TransferController extends EventEmitter implements ITransferControl
     await this.#initSignAccOp(userRequestParams.calls, userRequestParams.meta.topUpAmount)
   }
 
+  /** Builds the deposit calls into a Privacy Pools account. May first sync its network (slow). */
+  async buildPrivacyPoolsDepositCalls({
+    seedId,
+    selectedToken,
+    amount
+  }: {
+    seedId: string
+    selectedToken: TokenResult
+    /** Already sanitized to the token's decimals. */
+    amount: string
+  }): Promise<Call[]> {
+    if (!this.#privacyPools || !this.#selectedAccount.account)
+      throw new EmittableError({
+        message: 'Sending to a Privacy Pools account is not available here.',
+        level: 'expected',
+        error: new Error('transfer: no Privacy Pools controller or selected account')
+      })
+
+    return this.#privacyPools.buildDepositCalls({
+      seedId,
+      accountAddr: this.#selectedAccount.account.addr,
+      chainId: selectedToken.chainId.toString(),
+      tokenAddress: selectedToken.address,
+      amount: parseUnits(amount, selectedToken.decimals)
+    })
+  }
+
+  async #syncPrivacyPoolsDeposit() {
+    const seedId = this.privacyPoolsRecipient
+    const token = this.#selectedToken
+    if (!seedId || !token || !this.amount || !this.isFormValid) return
+
+    this.#privacyPoolsDepositPreparationId += 1
+    const preparationId = this.#privacyPoolsDepositPreparationId
+    const isCurrent = () => preparationId === this.#privacyPoolsDepositPreparationId
+
+    this.isPreparingPrivacyPoolsDeposit = true
+    this.privacyPoolsDepositError = null
+    this.emitUpdate()
+
+    let calls: Call[]
+    try {
+      calls = await this.buildPrivacyPoolsDepositCalls({
+        seedId,
+        selectedToken: token,
+        amount: getSafeAmountFromFieldValue(this.amount, token.decimals)
+      })
+    } catch (error: any) {
+      if (!isCurrent()) return
+
+      this.isPreparingPrivacyPoolsDeposit = false
+      // Shown in the form, not as a toast, which would pop up again on every keystroke
+      this.privacyPoolsDepositError =
+        error instanceof EmittableError
+          ? error.message
+          : 'Could not prepare the transfer to this Privacy Pools account. Please try again.'
+      if (!(error instanceof EmittableError))
+        this.emitError({
+          level: 'silent',
+          message: this.privacyPoolsDepositError,
+          error: error instanceof Error ? error : new Error('transfer: deposit preparation failed')
+        })
+      this.emitUpdate()
+      return
+    }
+
+    if (!isCurrent()) return
+
+    this.isPreparingPrivacyPoolsDeposit = false
+
+    if (this.signAccountOpController) {
+      this.signAccountOpController.update({ accountOpData: { calls } })
+      this.emitUpdate()
+      return
+    }
+
+    await this.#initSignAccOp(calls)
+    this.emitUpdate()
+  }
+
   async #initSignAccOp(calls: Call[], topUpAmount?: bigint) {
     if (!this.#selectedAccount.account || this.signAccountOpController) return
 
@@ -1069,7 +1361,13 @@ export class TransferController extends EventEmitter implements ITransferControl
       return
     }
 
-    const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
+    const baseAcc = getBaseAccount(
+      this.#selectedAccount.account,
+      accountState,
+      network,
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
+    )
     const accountOp = {
       id: generateUuid(),
       accountAddr: this.#selectedAccount.account.addr,
@@ -1089,6 +1387,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     await this.#updateRecipientHistoryAndPoisoning()
+    await this.#signAccountOpPreference.initialLoadPromise
     this.signAccountOpController = new SignAccountOpController({
       type: 'one-click-transfer',
       callRelayer: this.#callRelayer,
@@ -1096,6 +1395,9 @@ export class TransferController extends EventEmitter implements ITransferControl
       networks: this.#networks,
       keystore: this.#keystore,
       portfolio: this.#portfolio,
+      featureFlags: this.#featureFlags,
+      platform: this.#platform,
+      signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
       account: this.#selectedAccount.account,
@@ -1103,6 +1405,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       provider,
       phishing: this.#phishing,
       dapps: this.#dapps,
+      erc7730: this.#erc7730,
+      contractInfo: this.#contractInfo,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,
@@ -1186,6 +1490,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     // Always reset the session id
     this.#currentTransferSessionId = null
 
+    // Popup keeps in-progress forms when closed; side panel should start fresh on reopen.
     if (this.hasPersistedState && !isNavigateOut && viewType === 'popup') return
 
     this.reset({ destroyAccountOp: true })
@@ -1227,6 +1532,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal,
       hasPersistedState: this.hasPersistedState,
       isRecipientAddressViewOnly: this.isRecipientAddressViewOnly,
+      isRecipientAddressBlacklisted: this.isRecipientAddressBlacklisted,
+      amountAdjustmentInfo: this.amountAdjustmentInfo,
       amountAdjustmentWarning: this.amountAdjustmentWarning
     }
   }

@@ -1,8 +1,57 @@
 import { Account } from '../../interfaces/account'
+import { DecodedCall } from '../../interfaces/decodeCall'
 import { BlacklistedStatus } from '../../interfaces/phishing'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
+
+export type HumanizerErc7730Row = {
+  // The ERC-7730 field path this row was built from - used to match against `excludedFieldPaths`.
+  // Absent for rows synthesized outside real ERC-7730 fields (fallback/multicall/Safe rows), which
+  // are never candidates for exclusion anyway.
+  path?: string
+  /**
+   * Draws a divider above the row, setting it and the rows after it apart from the ones above.
+   * Off for descriptor rows, which only some humanizer modules group this way.
+   */
+  hasSeparatorBefore?: boolean
+} & (
+  | {
+      // One embedded call of a `calldata` field, rendered inline on a single line and never split
+      // into rows of its own. Holds the nested `erc7730` visualization when that call had a
+      // descriptor, or the flat parts the legacy humanizer modules produced when it had none - so
+      // a module's own wording (e.g. "Swap X for Y") survives instead of being taken apart. Carries
+      // no label: the parts are the whole row.
+      type: 'call'
+      value: HumanizerVisualization[]
+    }
+  | {
+      // Any other field: its label and the single value the ERC-7730 formatter produced for it.
+      type: 'single-value'
+      label: string
+      value: HumanizerVisualization
+      /** Shown before the value, e.g. '≈' for an estimate. Translated by the UI. */
+      valuePrefix?: string
+    }
+)
+
+export interface HumanizerErc7730Visualization {
+  type: 'erc7730'
+  // The rendered intent, as parts (text/token/address/action/...). `[action]`
+  // (from the spec's plain `intent`) when there's no `interpolatedIntent` or it
+  // failed to resolve; the full structured breakdown otherwise.
+  intent: HumanizerVisualization[]
+  // Paths of fields already rendered inline in `intent` (empty for the plain
+  // `[action]` form). Rows to display = `fields` filtered to exclude these -
+  // recomputed from `fields` rather than stored as a second row array, so a
+  // nested visualization tree doesn't double its own payload at every level.
+  excludedFieldPaths: string[]
+  // Every field turned into a row, regardless of what's excluded above - for
+  // heuristics (spender/recipient detection, swap pairing, layout complexity)
+  // that need full context independent of `intent`.
+  fields: HumanizerErc7730Row[]
+  dapp?: Call['dapp']
+}
 
 // @TODO remove property humanizerMeta
 export type HumanizerVisualization = (
@@ -25,23 +74,53 @@ export type HumanizerVisualization = (
       warning?: boolean
       chainId?: bigint
     }
+  | HumanizerErc7730Visualization
   | {
       type: 'token'
       address: string
       value: bigint
       chainId?: bigint
+      /**
+       * The token's symbol and decimals, when the humanizer already knows them for certain. The UI
+       * then shows the token right away instead of looking it up.
+       */
+      tokenInfo?: { symbol: string; decimals: number }
+      /** USD price of one token. When set, the UI shows the amount's USD value next to it. */
+      usdPrice?: number
     }
 ) & {
   id: number
+  url?: string
+  address?: string
   content?: string
+  value?: bigint
   isBold?: boolean
+  warning?: boolean
+  chainId?: bigint
   verification?: BlacklistedStatus
+  mlMi?: boolean
+  /**
+   * Names the address only from what the wallet already knows (accounts, contacts), with no
+   * lookup that sends it out of the wallet.
+   */
+  isLocalLabelOnly?: boolean
 }
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
   isFallback?: boolean
   to?: string
+  /** The call data decoded with the function signature of its selector, when it can be decoded. */
+  decodedCall?: DecodedCall
+  /** The call isn't decoded yet because the function signatures it needs are still being fetched. */
+  isDecodingCall?: boolean
+  /**
+   * Set by a module whose visualization is built from data it verified against the call (e.g. a
+   * CoW Swap order that hashes to the order ID in the calldata). Such a visualization shows more
+   * than a generic ERC-7730 descriptor can derive from the calldata alone, so it's kept instead
+   * of the descriptor's.
+   */
+  preferredOverErc7730?: boolean
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
@@ -52,6 +131,7 @@ export interface HumanizerWarning {
   content: string
   blocking?: boolean
   code: string
+  address?: string
 }
 export interface Ir {
   calls: IrCall[]
@@ -60,7 +140,7 @@ export interface Ir {
 
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
-  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta): IrCall[]
+  (accountOp: AccountOp, call: IrCall, humanizerMeta?: HumanizerMeta): IrCall
 }
 
 export interface HumanizerTypedMessageModule {

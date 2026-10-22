@@ -1,24 +1,33 @@
 import { ZeroAddress } from 'ethers'
-
 import { getAddress } from 'viem'
+
+import { getFeeToken } from '@/libs/portfolio/tokenProcessing'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import { AMBIRE_API_TIMEOUT } from '../../consts/portfolio'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import batcher from '../../utils/batcher'
+import { paginate } from '../../utils/paginate'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
-import batcher from './batcher'
-import { STATIC_BLACKLIST } from './blacklist'
+import { isBlacklistedAsset, prepareBlacklistPatterns, STATIC_BLACKLIST } from './blacklist'
+import { portfolioDebugLog } from './debug'
+import { PORTFOLIO_LIB_ERROR_NAMES } from './errorNames'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
   convertApiTokenDataToTokenDataCache,
+  getTokenDataCacheKey,
   formatExternalHintsAPIResponse,
   getHardcodedCitreaPrices,
+  getVisibleCollectibles,
+  mergeCollectionHints,
   mergeERC721s,
+  planAssetMetadata,
   tokenFilter
 } from './helpers'
 import {
@@ -32,9 +41,10 @@ import {
   TokenDataCache,
   TokenDataCacheValue,
   TokenError,
+  TokenMetadataFetchPlan,
   TokenResult
 } from './interfaces'
-import { flattenResults, paginate } from './pagination'
+import { flattenResults } from './pagination'
 
 export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
@@ -56,19 +66,8 @@ export const LIMITS: Limits = {
   }
 }
 
-// @TODO: Move this somewhere else
-export const PORTFOLIO_LIB_ERROR_NAMES = {
-  /** External hints API (Velcro) request failed but fallback is sufficient */
-  NonCriticalApiHintsError: 'NonCriticalApiHintsError',
-  /** External API (Velcro) hints are older than X minutes */
-  StaleApiHintsError: 'StaleApiHintsError',
-  /** No external API (Velcro) hints are available- the request failed without fallback */
-  NoApiHintsError: 'NoApiHintsError',
-  /** One or more cena request has failed */
-  PriceFetchError: 'PriceFetchError',
-  /** Defi discovery failed */
-  DefiDiscoveryError: 'DefiDiscoveryError'
-}
+// Re-exported for backwards compatibility.
+export { PORTFOLIO_LIB_ERROR_NAMES }
 
 export const getEmptyHints = (): Hints => ({
   erc20s: [],
@@ -93,6 +92,8 @@ export class Portfolio {
 
   private batchedGecko: Function
 
+  private isTokenPricesEnabled: () => boolean
+
   private deploylessTokens: Deployless
 
   private deploylessNfts: Deployless
@@ -102,7 +103,8 @@ export class Portfolio {
     provider: RPCProvider,
     network: Network,
     velcroUrl?: string,
-    customBatcher?: Function
+    customBatcher?: Function,
+    isTokenPricesEnabled: () => boolean = () => true
   ) {
     if (customBatcher) {
       this.batchedVelcroDiscovery = customBatcher
@@ -132,12 +134,13 @@ export class Portfolio {
     }
     this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
       timeoutSettings: {
-        timeoutAfter: 3000,
+        timeoutAfter: AMBIRE_API_TIMEOUT,
         timeoutErrorMessage: `Cena request timed out on ${network.name}`
       }
     })
     this.provider = provider
     this.network = network
+    this.isTokenPricesEnabled = isTokenPricesEnabled
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
   }
@@ -218,7 +221,10 @@ export class Portfolio {
       tokenDataCache: paramsTokenDataCache,
       tokenDataRecency,
       blacklist,
-      preventTokenBlacklisting
+      preventTokenBlacklisting,
+      deployless,
+      knownTokenMetadata,
+      knownCollectionMetadata
     } = { ...defaultOptions, ...opts }
     const toBeLearned: PortfolioLibGetResult['toBeLearned'] = {
       erc20s: [],
@@ -248,23 +254,41 @@ export class Portfolio {
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
 
-    hints.erc721s = mergeERC721s([
-      additionalErc721Hints || {},
-      hints.erc721s,
-      ...Object.values(specialErc721Hints || {})
-    ])
+    // Taken before the merge, which folds the custom ids in. The learned assets
+    // are left out on purpose: adding a collectible also asks for it to be
+    // learned, so they would report every custom collection as discovered.
+    const discoveredCollections = new Set(
+      [...Object.keys(hints.erc721s), ...Object.keys(additionalErc721Hints || {})].map((address) =>
+        address.toLowerCase()
+      )
+    )
 
-    const checksummedErc20Hints = hints.erc20s
-      .map((address) => {
-        try {
-          // getAddress may throw an error. This will break the portfolio
-          // if the error isn't caught
-          return getAddress(address)
-        } catch {
-          return null
-        }
-      })
-      .filter(Boolean) as string[]
+    hints.erc721s = mergeCollectionHints({
+      additionalHints: additionalErc721Hints,
+      apiHints: hints.erc721s,
+      specialHints: specialErc721Hints
+    })
+
+    // Deduped before checksumming for performance
+    const seenErc20Hints = new Set<string>()
+    const checksummedErc20Hints: string[] = []
+
+    hints.erc20s.forEach((address) => {
+      try {
+        const lowercasedAddress = address.toLowerCase()
+
+        if (seenErc20Hints.has(lowercasedAddress)) return
+
+        // getAddress may throw an error. This will break the portfolio
+        // if the error isn't caught
+        const checksummedAddress = getAddress(address)
+
+        seenErc20Hints.add(lowercasedAddress)
+        checksummedErc20Hints.push(checksummedAddress)
+      } catch {
+        // Not an address, so it can't be a token
+      }
+    })
 
     // Merge static and dynamic blacklisted addresses for this chain
     const chainIdStr = this.network.chainId.toString()
@@ -286,26 +310,36 @@ export class Portfolio {
 
       if (!tokenDataHint) continue
 
-      tokenDataCache.set(addr, [start, tokenDataHint])
+      tokenDataCache.set(getTokenDataCacheKey(addr), [start, tokenDataHint])
     }
+    const collectionsHints = Object.entries(hints.erc721s)
+
+    // Decided once for the whole update so that every page agrees on which assets
+    // must be read in full, and so the freshly read ones can be reported back. With
+    // nothing held, everything is read from the chain and nothing is reported back.
+    const metadataPlan = planAssetMetadata(hints.erc20s, knownTokenMetadata, start)
+    const collectionMetadataPlan = planAssetMetadata(
+      Object.keys(hints.erc721s),
+      knownCollectionMetadata,
+      start
+    )
+
     const discoveryDone = Date.now()
 
     // .isLimitedAt24kbData should be the same for both instances; @TODO more elegant check?
     const limits: LimitsOptions = this.deploylessTokens.isLimitedAt24kbData
       ? LIMITS.deploylessProxyMode
       : LIMITS.deploylessStateOverrideMode
-    const collectionsHints = Object.entries(hints.erc721s)
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
         paginate(hints.erc20s, opts.simulation ? limits.erc20Simulation : limits.erc20).map(
-          (page, index) =>
+          (page) =>
             getTokens(
               this.network,
               this.deploylessTokens,
-              { simulation, blockTag, specialErc20Hints },
+              { simulation, blockTag, specialErc20Hints, deployless, metadataPlan },
               accountAddr,
-              page,
-              index
+              page
             )
         )
       ),
@@ -314,7 +348,7 @@ export class Portfolio {
           getNFTs(
             this.network,
             this.deploylessNfts,
-            { simulation, blockTag },
+            { simulation, blockTag, deployless, metadataPlan: collectionMetadataPlan },
             accountAddr,
             page,
             limits
@@ -330,6 +364,8 @@ export class Portfolio {
       afterNonce: bigint
     }
     const [collectionsWithErrResult] = collectionsWithErr
+    const fetchedTokenMetadata: PortfolioLibGetResult['fetchedTokenMetadata'] = []
+    const fetchedCollectionMetadata: PortfolioLibGetResult['fetchedCollectionMetadata'] = []
 
     // Re-map/filter into our format
     const getTokenDataFromCache = (
@@ -346,7 +382,7 @@ export class Portfolio {
           }
       }
 
-      const cached = tokenDataCache.get(address)
+      const cached = tokenDataCache.get(getTokenDataCacheKey(address))
       if (!cached) return null
       const [timestamp, entry] = cached
       const eligible = entry.priceIn.find((p) => p.baseCurrency === baseCurrency)
@@ -366,19 +402,58 @@ export class Portfolio {
     const isValidToken = (error: TokenError, token: TokenResult): boolean =>
       error === '0x' && !!token.symbol
 
-    const allBlacklistedSymbols = [
+    // name() and symbol() belong to the optional ERC721Metadata extension, so a
+    // collection without them is still a collection - the ENS registrar is one.
+    // Only the getter erroring says an address holds no collection, and it does
+    // error for one that doesn't.
+    const isValidCollection = (error: TokenError): boolean => error === '0x'
+
+    const blacklistPatterns = prepareBlacklistPatterns([
       ...STATIC_BLACKLIST.blacklistBySymbols,
       ...(blacklist?.blacklistBySymbols || [])
-    ].map((p) => p.toLowerCase())
+    ])
 
     const tokensWithoutPrices = tokensWithErrResult
       .filter((_tokensWithErrResult: [TokenError, TokenResult]) => {
         if (!isValidToken(_tokensWithErrResult[0], _tokensWithErrResult[1])) return false
 
-        // Symbol-based blacklist: skip custom tokens so user-added assets are never hidden
-        if (allBlacklistedSymbols.length > 0 && !_tokensWithErrResult[1]?.flags?.isCustom) {
-          const symbolLower = _tokensWithErrResult[1].symbol.toLowerCase()
-          if (allBlacklistedSymbols.some((pattern) => symbolLower.includes(pattern))) return false
+        const token = _tokensWithErrResult[1]
+
+        // Kept before any of the filtering below, so metadata read for a token the
+        // user never sees is not read again on the next update.
+        if (knownTokenMetadata && metadataPlan.needsMetadata.has(token.address)) {
+          fetchedTokenMetadata.push([
+            token.address,
+            {
+              symbol: token.symbol,
+              name: token.name,
+              decimals: token.decimals,
+              fetchedAt: start
+            }
+          ])
+        }
+
+        // Spam filter: hide tokens whose symbol/name matches a blacklisted
+        // pattern. Custom (user-added) tokens are never hidden. We don't run the
+        // embedded-domain check here because token names/symbols legitimately contain domains.
+        if (
+          isBlacklistedAsset({
+            symbol: token.symbol,
+            name: token.name,
+            isCustom: token.flags?.isCustom,
+            patterns: blacklistPatterns
+          })
+        ) {
+          portfolioDebugLog(
+            'blacklist',
+            `${this.network.chainId.toString()}: Filtered token ${token.symbol}`,
+            {
+              address: token.address,
+              symbol: token.symbol,
+              name: token.name
+            }
+          )
+          return false
         }
 
         // Don't filter by balance/custom/hidden etc. if this param isn't passed
@@ -413,23 +488,95 @@ export class Portfolio {
         return result
       })
 
+    // Unlike the deployless ones, preference addresses aren't always checksummed.
+    // An empty array of ids means the collection was added before they were
+    // recorded, otherwise the listed collectibles are the added ones
+    const customCollectibles: { [lowercasedAddress: string]: bigint[] } = {}
+    Object.entries(specialErc721Hints?.custom || {}).forEach(([address, ids]) => {
+      customCollectibles[address.toLowerCase()] = ids
+    })
+    // An empty array of ids hides the whole collection, otherwise the listed
+    // collectibles are the hidden ones
+    const hiddenCollectibles: { [lowercasedAddress: string]: bigint[] } = {}
+    Object.entries(specialErc721Hints?.hidden || {}).forEach(([address, ids]) => {
+      hiddenCollectibles[address.toLowerCase()] = ids
+    })
+
     const collections = collectionsWithErrResult.reduce<CollectionResult[]>(
       (acc, [error, collection]) => {
-        if (!isValidToken(error, collection)) return acc
+        // The same check the collection errors are built from, so a collection is
+        // either displayed or reported, never both
+        if (!isValidCollection(error)) return acc
 
-        // Never filter custom collections, even tho we don't support them atm
-        if (allBlacklistedSymbols.length > 0 && !collection?.flags?.isCustom) {
-          const symbolLower = collection.symbol.toLowerCase()
-          if (allBlacklistedSymbols.some((pattern) => symbolLower.includes(pattern))) return acc
+        const lowercasedAddress = collection.address.toLowerCase()
+        const customIds = customCollectibles[lowercasedAddress]
+        const isCustom = !!customIds
+        const hiddenIds = hiddenCollectibles[lowercasedAddress]
+        const isHidden = !!hiddenIds && !hiddenIds.length
+        const visibleCollectibles = getVisibleCollectibles({
+          collectibles: collection.collectibles,
+          customIds,
+          hiddenIds,
+          isDiscovered: discoveredCollections.has(lowercasedAddress)
+        })
+
+        // Kept before the filtering below, for the same reason as the token metadata
+        if (
+          knownCollectionMetadata &&
+          collectionMetadataPlan.needsMetadata.has(collection.address)
+        ) {
+          fetchedCollectionMetadata.push([
+            collection.address,
+            {
+              symbol: collection.symbol,
+              name: collection.name,
+              fetchedAt: start
+            }
+          ])
         }
 
-        // Important note: Collections with 0 collectibles are allow to pass through the filter.
-        if (!toBeLearned.erc721s[collection.address] && collection.collectibles.length > 0) {
+        // Spam filter: hide collections whose symbol/name matches a blacklisted
+        // pattern or embeds a phishing domain. Custom (user-added) collections
+        // are never hidden.
+        if (
+          isBlacklistedAsset({
+            symbol: collection.symbol,
+            name: collection.name,
+            isCustom,
+            patterns: blacklistPatterns,
+            checkForEmbeddedDomain: true
+          })
+        ) {
+          portfolioDebugLog(
+            'blacklist',
+            `${this.network.chainId.toString()}: Filtered collection ${collection.name}`,
+            {
+              address: collection.address,
+              symbol: collection.symbol,
+              name: collection.name
+            }
+          )
+
+          return acc
+        }
+
+        // Important note: Collections with 0 collectibles are allowed to pass through the filter.
+        // A hidden collection is requested by its own hint, so it doesn't have to
+        // be learned. A custom one is learned like any other, and removing it
+        // forgets that too, see `#forgetCollectible` in the hints controller.
+        if (
+          !isHidden &&
+          !toBeLearned.erc721s[collection.address] &&
+          collection.collectibles.length > 0
+        ) {
           toBeLearned.erc721s[collection.address] = collection.collectibles
         }
 
         acc.push({
           ...collection,
+          collectibles: visibleCollectibles,
+          // Collections have no flags until this point
+          flags: { isCustom, isHidden },
           priceIn: getTokenDataFromCache(collection.address)?.priceIn || []
         })
         return acc
@@ -456,7 +603,7 @@ export class Portfolio {
             }
           }
 
-          if (!this.network.platformId) {
+          if (!this.network.platformId || !this.isTokenPricesEnabled()) {
             return {
               ...token,
               priceIn: [],
@@ -483,7 +630,10 @@ export class Portfolio {
               hasPrice = true
             }
 
-            tokenDataCache.set(token.address, [Date.now(), formattedTokenData])
+            tokenDataCache.set(getTokenDataCacheKey(token.address), [
+              Date.now(),
+              formattedTokenData
+            ])
 
             return {
               ...token,
@@ -536,6 +686,8 @@ export class Portfolio {
 
     return {
       toBeLearned,
+      fetchedTokenMetadata,
+      fetchedCollectionMetadata,
       errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,
@@ -547,11 +699,7 @@ export class Portfolio {
         // return the native token
         if (t.address === ZeroAddress && t.chainId === this.network.chainId) return true
 
-        return gasTankFeeTokens.find(
-          (gasTankT) =>
-            gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
-            gasTankT.chainId === t.chainId
-        )
+        return getFeeToken(t.address, t.chainId)
       }),
       beforeNonce,
       afterNonce,
@@ -560,7 +708,7 @@ export class Portfolio {
         .filter(([error, result]: [string, TokenResult]) => !isValidToken(error, result))
         .map(([error, result]: [string, TokenResult]) => ({ error, address: result.address })),
       collectionErrors: collectionsWithErrResult
-        .filter(([error, result]: [string, CollectionResult]) => !isValidToken(error, result))
+        .filter(([error]: [string, CollectionResult]) => !isValidCollection(error))
         .map(([error, result]: [string, CollectionResult]) => ({ error, address: result.address })),
       collections
     }
@@ -569,7 +717,7 @@ export class Portfolio {
   async getTokensByAddresses(
     accountAddr: string,
     tokenAddrs: string[],
-    opts: Pick<GetOptions, 'blockTag' | 'simulation' | 'specialErc20Hints'>
+    opts: Pick<GetOptions, 'blockTag' | 'simulation' | 'specialErc20Hints' | 'deployless'>
   ): Promise<[TokenError, TokenResult][]> {
     const uniqueTokenAddrs = [...new Set(tokenAddrs)]
 
@@ -579,9 +727,15 @@ export class Portfolio {
       ? LIMITS.deploylessProxyMode
       : LIMITS.deploylessStateOverrideMode
 
+    // Nothing is remembered across these one-off reads, so every token is read in full
+    const metadataPlan: TokenMetadataFetchPlan = {
+      known: new Map(),
+      needsMetadata: new Set(uniqueTokenAddrs)
+    }
+
     const [tokensWithErrResult] = await flattenResults(
-      paginate(uniqueTokenAddrs, limits.erc20).map((page, index) =>
-        getTokens(this.network, this.deploylessTokens, opts, accountAddr, page, index)
+      paginate(uniqueTokenAddrs, limits.erc20).map((page) =>
+        getTokens(this.network, this.deploylessTokens, { ...opts, metadataPlan }, accountAddr, page)
       )
     )
 
@@ -593,5 +747,38 @@ export class Portfolio {
         marketDataIn: token.marketDataIn || []
       }
     ])
+  }
+
+  async getTokenPrice(
+    address: string,
+    {
+      baseCurrency = 'usd',
+      tokenDataCache = new Map(),
+      tokenDataRecency = 0
+    }: {
+      baseCurrency?: string
+      tokenDataCache?: TokenDataCache
+      tokenDataRecency?: number
+    } = {}
+  ): Promise<number | undefined> {
+    const cachedTokenData = tokenDataCache.get(getTokenDataCacheKey(address))
+
+    if (cachedTokenData && Date.now() - cachedTokenData[0] <= tokenDataRecency) {
+      return cachedTokenData[1].priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
+    }
+
+    if (!this.network.platformId || !this.isTokenPricesEnabled()) return undefined
+
+    const tokenData = await this.batchedGecko({
+      address,
+      network: this.network,
+      baseCurrency,
+      responseIdentifier: geckoResponseIdentifier(address, this.network)
+    })
+    const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData)
+
+    tokenDataCache.set(getTokenDataCacheKey(address), [Date.now(), formattedTokenData])
+
+    return formattedTokenData.priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
   }
 }

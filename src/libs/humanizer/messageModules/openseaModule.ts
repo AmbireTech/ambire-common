@@ -22,7 +22,12 @@ export const openseaMessageModule: HumanizerTypedMessageModule = (message: Messa
   if (message.content.kind === 'message' && typeof message.content.message === 'string') {
     let messageAsText: string = message.content.message
     if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
-      messageAsText = toUtf8String(message.content.message)
+      try {
+        messageAsText = toUtf8String(message.content.message)
+      } catch (e) {
+        console.log("open sea module: couldn't do toUtf8String on message")
+        return { fullVisualization: [] }
+      }
     }
     const OPENSEA_LOGIN_MESSAGE_PREFIX = 'Welcome to OpenSea!'
     if (

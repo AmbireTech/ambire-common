@@ -7,7 +7,10 @@ export enum AssetType {
   Liquidity,
   Collateral,
   Borrow,
-  Reward
+  Reward,
+  Margin,
+  Perpetual,
+  Prediction
 }
 
 export enum DeFiPositionsError {

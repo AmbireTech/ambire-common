@@ -1,4 +1,4 @@
-import { AbiCoder, Contract, ethers, JsonRpcProvider, ZeroAddress } from 'ethers'
+import { AbiCoder, Contract, ethers, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -64,6 +64,7 @@ describe('Portfolio', () => {
       const res = await accountContract.nonce!()
       return res
     } catch (e) {
+      console.log('accountContract nonce was not fetched', e)
       return '0x00'
     }
   }
@@ -83,13 +84,13 @@ describe('Portfolio', () => {
 
     const [{ hints: hints1 }, { hints: hints2 }]: [{ hints: Hints }, { hints: Hints }] =
       await Promise.all([
-        // @ts-ignore
+        // @ts-expect-error tests
         portfolio.externalHintsAPIDiscovery({
           chainId: 1n,
           accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
           baseCurrency: 'usd'
         }),
-        // @ts-ignore
+        // @ts-expect-error tests
         portfolio.externalHintsAPIDiscovery({
           chainId: 1n,
           accountAddr: '0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6',
@@ -176,7 +177,13 @@ describe('Portfolio', () => {
     const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
       simulation: {
         accountOps: [accountOp],
-        baseAccount: getBaseAccount(account, accountStates[accountOp.accountAddr]!['1']!, ethereum),
+        baseAccount: getBaseAccount(
+          account,
+          accountStates[accountOp.accountAddr]!['1']!,
+          ethereum,
+          true,
+          true
+        ),
         state: accountStates[accountOp.accountAddr]!['1']!
       }
     })
@@ -245,7 +252,9 @@ describe('Portfolio', () => {
           baseAccount: getBaseAccount(
             account,
             accountStates[accountOp.accountAddr]!['1']!,
-            ethereum
+            ethereum,
+            true,
+            true
           ),
           state: accountStates[accountOp.accountAddr]![accountOp.chainId.toString()]!
         }
@@ -269,6 +278,65 @@ describe('Portfolio', () => {
     })
     expect(resultTwo.priceUpdateTime).toBeLessThanOrEqual(3)
     expect(resultTwo.tokens.every((x) => x.priceIn.length)).toBe(true)
+  })
+
+  test('fetches and caches the price of an arbitrary token address', async () => {
+    const priceFetch = jest.fn(async () => ({
+      status: 200,
+      json: async () => ({
+        [USDT_ADDRESS.toLowerCase()]: {
+          usd: 0.99785
+        }
+      })
+    }))
+    const portfolioWithMockedPriceFetch = new Portfolio(
+      priceFetch as any,
+      provider,
+      ethereum,
+      velcroUrl
+    )
+    const tokenDataCache = new Map()
+
+    await expect(
+      portfolioWithMockedPriceFetch.getTokenPrice(USDT_ADDRESS, {
+        tokenDataCache,
+        tokenDataRecency: 60000
+      })
+    ).resolves.toBe(0.99785)
+    await expect(
+      portfolioWithMockedPriceFetch.getTokenPrice(USDT_ADDRESS.toLowerCase(), {
+        tokenDataCache,
+        tokenDataRecency: 60000
+      })
+    ).resolves.toBe(0.99785)
+    expect(priceFetch).toHaveBeenCalledTimes(1)
+  })
+
+  test('finds a cached price the price API stored under a differently cased address', async () => {
+    const priceFetch = jest.fn(async () => ({ status: 200, json: async () => ({}) }))
+    const portfolioWithMockedPriceFetch = new Portfolio(
+      priceFetch as any,
+      provider,
+      ethereum,
+      velcroUrl
+    )
+    // Keyed the way the external price API returns it, which is not the casing our
+    // own token results carry. An exact-match lookup misses this entry and refetches
+    // a price that was already there.
+    const tokenDataCache = new Map<string, [number, any]>([
+      [
+        USDT_ADDRESS.toLowerCase(),
+        [Date.now(), { priceIn: [{ baseCurrency: 'usd', price: 1.5 }], marketDataIn: [] }]
+      ]
+    ])
+
+    await expect(
+      portfolioWithMockedPriceFetch.getTokenPrice(USDT_ADDRESS, {
+        tokenDataCache,
+        tokenDataRecency: 60000
+      })
+    ).resolves.toBe(1.5)
+    expect(priceFetch).not.toHaveBeenCalled()
   })
 
   test('simulation works for EOAs', async () => {
@@ -299,7 +367,13 @@ describe('Portfolio', () => {
     const postSimulation = await portfolio.get(acc, {
       simulation: {
         accountOps: [accountOp],
-        baseAccount: getBaseAccount(account, accountStates[accountOp.accountAddr]!['1']!, ethereum),
+        baseAccount: getBaseAccount(
+          account,
+          accountStates[accountOp.accountAddr]!['1']!,
+          ethereum,
+          true,
+          true
+        ),
         state: accountStates[accountOp.accountAddr]!['1']!
       }
     })
@@ -342,7 +416,13 @@ describe('Portfolio', () => {
     const postSimulation = await portfolio.get(acc, {
       simulation: {
         accountOps: [accountOp],
-        baseAccount: getBaseAccount(account, accountStates[accountOp.accountAddr]!['1']!, ethereum),
+        baseAccount: getBaseAccount(
+          account,
+          accountStates[accountOp.accountAddr]!['1']!,
+          ethereum,
+          true,
+          true
+        ),
         state: accountStates[accountOp.accountAddr]!['1']!
       }
     })
@@ -391,7 +471,9 @@ describe('Portfolio', () => {
           baseAccount: getBaseAccount(
             account,
             accountStates[accountOp.accountAddr]!['1']!,
-            ethereum
+            ethereum,
+            true,
+            true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
         }
@@ -412,7 +494,9 @@ describe('Portfolio', () => {
           baseAccount: getBaseAccount(
             account,
             accountStates[accountOp.accountAddr]!['1']!,
-            ethereum
+            ethereum,
+            true,
+            true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
         }
@@ -466,7 +550,9 @@ describe('Portfolio', () => {
           baseAccount: getBaseAccount(
             account,
             accountStates[accountOp.accountAddr]!['1']!,
-            ethereum
+            ethereum,
+            true,
+            true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
         }
@@ -514,7 +600,9 @@ describe('Portfolio', () => {
           baseAccount: getBaseAccount(
             account,
             accountStates[accountOp.accountAddr]!['1']!,
-            ethereum
+            ethereum,
+            true,
+            true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
         }
@@ -564,7 +652,13 @@ describe('Portfolio', () => {
     const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
       simulation: {
         accountOps: [accountOp],
-        baseAccount: getBaseAccount(account, accountStates[accountOp.accountAddr]!['1']!, ethereum),
+        baseAccount: getBaseAccount(
+          account,
+          accountStates[accountOp.accountAddr]!['1']!,
+          ethereum,
+          true,
+          true
+        ),
         state: accountStates[accountOp.accountAddr]!['1']!
       }
     })
@@ -617,7 +711,9 @@ describe('Portfolio', () => {
           baseAccount: getBaseAccount(
             account,
             accountStates[accountOp.accountAddr]!['1']!,
-            ethereum
+            ethereum,
+            true,
+            true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
         }
@@ -633,7 +729,7 @@ describe('Portfolio', () => {
   })
   test('errors caused by a malfunctioning RPC are not swallowed', async () => {
     const { restore } = suppressConsole()
-    const failingProvider = new JsonRpcProvider('https://invictus.ambire.com/ethereum-fail')
+    const failingProvider = getRpcProvider(['https://invictus.ambire.com/ethereum-fail'], 1n)
 
     const failingPortfolio = new Portfolio(fetch, failingProvider, ethereum, velcroUrl)
 
@@ -658,16 +754,18 @@ describe('Portfolio', () => {
       // mocks can't be reused as functions
       beforeEach(() => {
         // Simulate a Velcro Discovery failure
-        jest.spyOn(global, 'fetch').mockImplementation((url: any) => {
-          // @ts-ignore
+        jest.spyOn(global, 'fetch').mockImplementation((url: any, init: any) => {
+          // @ts-expect-error tests
           const { Response } = jest.requireActual('node-fetch')
           if (url.includes(`${velcroUrl}/multi-hints`)) {
             const body = stringify({ message: 'API error' })
             const headers = { status: 200 }
             return Promise.resolve(new Response(body, headers))
           }
-          // @ts-ignore
-          return jest.requireActual('node-fetch')(url)
+          // Passed on with the init, which the JSON-RPC requests that now come
+          // through here carry their method and body in
+          // @ts-expect-error tests
+          return jest.requireActual('node-fetch')(url, init)
         })
       })
       afterEach(() => {
@@ -677,7 +775,7 @@ describe('Portfolio', () => {
       })
       test('An error is added when the external api hints call fails', async () => {
         const { restore } = suppressConsole()
-        // @ts-ignore
+        // @ts-expect-error tests
         const portfolioInner = new Portfolio(global.fetch, provider, ethereum, velcroUrl)
 
         const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {})
@@ -726,7 +824,7 @@ describe('Portfolio', () => {
         }
       }
 
-      // @ts-ignore
+      // @ts-expect-error tests
       jest.spyOn(Portfolio.prototype, 'externalHintsAPIDiscovery').mockResolvedValueOnce({
         hints
       })
@@ -801,23 +899,49 @@ describe('Portfolio', () => {
       expect(blacklistedTokenFound).toBe(false)
     })
 
-    test('should filter a held token by symbol pattern (case-insensitive, substring match)', async () => {
-      const filtered = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+    test('should filter a held token by symbol or name pattern (case-insensitive, substring match)', async () => {
+      const baseline = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
         additionalErc20Hints: [ETHEREUM_TOKEN_ADDRESS],
         blacklist: {
           blacklistAddrs: {},
-          blacklistBySymbols: ['usdt'],
+          blacklistBySymbols: [],
           updatedAt: Date.now()
         }
       })
 
-      const blacklistedTokenFound = filtered.tokens.some(
+      const token = baseline.tokens.find(
         (t) => t.address.toLowerCase() === ETHEREUM_TOKEN_ADDRESS.toLowerCase()
       )
-      expect(blacklistedTokenFound).toBe(false)
+
+      if (!token) throw new Error('Expected token to be present in baseline')
+
+      const isFilteredBy = async (pattern: string) => {
+        const filtered = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+          additionalErc20Hints: [ETHEREUM_TOKEN_ADDRESS],
+          blacklist: {
+            blacklistAddrs: {},
+            blacklistBySymbols: [pattern],
+            updatedAt: Date.now()
+          }
+        })
+
+        return !filtered.tokens.some(
+          (t) => t.address.toLowerCase() === ETHEREUM_TOKEN_ADDRESS.toLowerCase()
+        )
+      }
+
+      // Symbol match
+      expect(await isFilteredBy(token.symbol.toLowerCase())).toBe(true)
+
+      // Name match: the pattern lives in the name only, so the previous
+      // symbol-only filter would not have caught it.
+      const namePattern = token.name.toLowerCase()
+      expect(token.name).not.toBe('')
+      expect(token.symbol.toLowerCase().includes(namePattern)).toBe(false)
+      expect(await isFilteredBy(namePattern)).toBe(true)
     })
 
-    test('should filter a held collection by symbol pattern', async () => {
+    test('should filter a held collection by symbol or name pattern', async () => {
       const baseline = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
         additionalErc721Hints: {
           [ETHEREUM_COLLECTION_ADDRESS]: []
@@ -837,25 +961,36 @@ describe('Portfolio', () => {
         throw new Error('Expected collection to be present in baseline')
       }
 
-      const pattern = collection.symbol
+      const isFilteredBy = async (pattern: string) => {
+        const filtered = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+          additionalErc721Hints: {
+            [ETHEREUM_COLLECTION_ADDRESS]: []
+          },
+          blacklist: {
+            blacklistAddrs: {},
+            blacklistBySymbols: [pattern],
+            updatedAt: Date.now()
+          }
+        })
+
+        return !filtered.collections.some(
+          (c) => c.address.toLowerCase() === ETHEREUM_COLLECTION_ADDRESS.toLowerCase()
+        )
+      }
+
+      // Symbol match
+      const symbolPattern = collection.symbol
         .slice(0, Math.min(4, collection.symbol.length))
         .toLowerCase()
+      expect(await isFilteredBy(symbolPattern)).toBe(true)
 
-      const filtered = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-        additionalErc721Hints: {
-          [ETHEREUM_COLLECTION_ADDRESS]: []
-        },
-        blacklist: {
-          blacklistAddrs: {},
-          blacklistBySymbols: [pattern],
-          updatedAt: Date.now()
-        }
-      })
-
-      const blacklistedCollectionFound = filtered.collections.some(
-        (c) => c.address.toLowerCase() === ETHEREUM_COLLECTION_ADDRESS.toLowerCase()
-      )
-      expect(blacklistedCollectionFound).toBe(false)
+      // Name match: the pattern lives in the name only, so the previous
+      // symbol-only filter would not have caught it. This is the common spam
+      // NFT shape, where the URL/lure sits in the name and not the symbol.
+      const namePattern = collection.name.toLowerCase()
+      expect(collection.name).not.toBe('')
+      expect(collection.symbol.toLowerCase().includes(namePattern)).toBe(false)
+      expect(await isFilteredBy(namePattern)).toBe(true)
     })
 
     test('should never filter custom tokens even if blacklisted', async () => {
@@ -960,6 +1095,39 @@ describe('Portfolio', () => {
 
       // Should not crash and still return valid tokens
       expect(result.tokens.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('Price request timeout', () => {
+    // A fetch that never settles, so only the timeout can end the request
+    const hangingFetch = () => new Promise(() => {}) as any
+
+    const getPriceOf = (portfolioInstance: Portfolio) =>
+      portfolioInstance.getTokenPrice(USDT_ADDRESS, {
+        tokenDataCache: new Map(),
+        tokenDataRecency: 0
+      })
+
+    test('the price request is given 3s', async () => {
+      const { restore } = suppressConsole()
+      jest.useFakeTimers()
+      try {
+        const portfolioInstance = new Portfolio(hangingFetch, provider, ethereum, velcroUrl)
+        const pricePromise = getPriceOf(portfolioInstance)
+        const onSettled = jest.fn()
+        pricePromise.then(onSettled, onSettled)
+
+        // Flushes the batcher debounce, so the request is actually in flight
+        await jest.advanceTimersByTimeAsync(0)
+        await jest.advanceTimersByTimeAsync(2999)
+        expect(onSettled).not.toHaveBeenCalled()
+
+        await jest.advanceTimersByTimeAsync(1)
+        await expect(pricePromise).rejects.toThrow('request-timeout')
+      } finally {
+        jest.useRealTimers()
+        restore()
+      }
     })
   })
 })

@@ -1,6 +1,7 @@
 name: Execute Unit Tests
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - v2

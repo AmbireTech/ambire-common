@@ -1,6 +1,10 @@
 import { formatUnits, parseUnits } from 'ethers'
-import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
+
 import { FromToken } from '../../interfaces/swapAndBridge'
+import {
+  convertTokenPriceToBigInt,
+  truncateFiatAmountDecimals
+} from '../../utils/numbers/formatters'
 import { getSanitizedAmount } from '../transfer/amount'
 
 const CONVERSION_PRECISION = 16
@@ -58,7 +62,7 @@ const handleTokenToFiatConversion = (
     fromSelectedToken.decimals + tokenPriceDecimals
   )
 
-  return { tokenAmount: amount, fiatAmount }
+  return { tokenAmount: amount, fiatAmount: truncateFiatAmountDecimals(fiatAmount) }
 }
 
 export const handleAmountConversion = (

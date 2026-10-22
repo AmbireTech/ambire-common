@@ -36,7 +36,7 @@ export async function updatePositionsByProviderAssetPrices(
 
   const cenaUrl = `https://cena.ambire.com/api/v3/simple/token_price/${platformId}?contract_addresses=${dedup(
     addresses
-  ).join('%2C')}&vs_currencies=usd`
+  ).join(',')}&vs_currencies=usd`
 
   const resp = await fetchWithTimeout(fetch, cenaUrl, {}, 3000)
   const body = await resp.json()

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { AbiCoder, concat, Interface, ZeroAddress } from 'ethers'
 
+import SafeNoSignatureValidation from '../../../contracts/compiled/SafeNoSignatureValidation.json'
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { IActivityController } from '../../interfaces/activity'
 import { Hex } from '../../interfaces/hex'
@@ -19,7 +20,6 @@ import {
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
 import { isNative } from '../portfolio/helpers'
-import { UserOperation } from '../userOperation/types'
 import { BaseAccount } from './BaseAccount'
 
 // this class describes a plain EOA that cannot transition
@@ -50,24 +50,52 @@ export class Safe extends BaseAccount {
    */
   NONCE_GAS = 5000n
 
+  /**
+   * A one time gas addition if the txn is an userOp.
+   * This accounts for the missing signature validation data as we're
+   * doing a state override during estimation and replacing the original
+   * Safe code with one that allows all signatures to pass
+   */
+  BUNDLER_OVERHEAD = 40000n
+
   getEstimationCriticalError(estimation: FullEstimation): Error | null {
     if (estimation.ambire instanceof Error) return estimation.ambire
     return null
   }
 
   supportsBundlerEstimation() {
-    return false
+    return this.isErc4337Enabled
   }
 
   isSponsorable() {
     return false
   }
 
+  canUseErc4337(): boolean {
+    return true
+  }
+
   getAvailableFeeOptions(
     estimation: FullEstimationSummary,
-    feePaymentOptions: FeePaymentOption[]
+    feePaymentOptions: FeePaymentOption[],
+    op: AccountOp
   ): FeePaymentOption[] {
-    return feePaymentOptions.filter((opt) => isNative(opt.token))
+    if (op.meta?.isSafeDeploy) {
+      return feePaymentOptions.filter(
+        (option) => option.paidBy !== this.account.addr && isNative(option.token)
+      )
+    }
+
+    const hasPaymaster =
+      estimation.bundlerEstimation &&
+      estimation.bundlerEstimation.paymaster.isUsable() &&
+      // disable the Safe gas tank for megaeth for now as we need a special
+      // estimation implementation for it to make it work
+      this.network.chainId !== 4326n
+
+    return feePaymentOptions.filter(
+      (opt) => isNative(opt.token) || (hasPaymaster && opt.token.flags.onGasTank)
+    )
   }
 
   getGasUsed(
@@ -92,6 +120,16 @@ export class Safe extends BaseAccount {
       }
     }
 
+    if (estimation.bundlerEstimation && options.feeToken.flags.onGasTank) {
+      return (
+        BigInt(estimation.bundlerEstimation.callGasLimit) +
+        callToSelfGas +
+        this.EXTRA_ESTIMATION_GAS +
+        this.BUNDLER_OVERHEAD +
+        nonceGas
+      )
+    }
+
     return (
       ambireBroaddcastGas +
       estimation.ambireEstimation.gasUsed +
@@ -101,15 +139,23 @@ export class Safe extends BaseAccount {
     )
   }
 
-  getBroadcastOption(): string {
+  getBroadcastOption(feeOption: FeePaymentOption): string {
+    if (feeOption.paidBy === this.getAccount().addr) return BROADCAST_OPTIONS.byBundler
+
     return BROADCAST_OPTIONS.byOtherEOA
   }
 
   canUseReceivingNativeForFee(): boolean {
-    return false // because we're always paying with EOA atm
+    return false // because the account cannot pay by itself in native
   }
 
   getBroadcastCalldata(accountOp: AccountOp): Hex {
+    if (accountOp.meta?.isSafeDeploy) {
+      const deploymentCall = accountOp.calls[0]
+      if (!deploymentCall) throw new Error('Safe deployment transaction is missing')
+      return deploymentCall.data as Hex
+    }
+
     const exec = new Interface(execTransactionAbi)
     const calls = getSignableCalls(accountOp)
     const coder = new AbiCoder()
@@ -140,13 +186,21 @@ export class Safe extends BaseAccount {
     ]) as Hex
   }
 
-  getBundlerStateOverride(userOp: UserOperation): BundlerStateOverride | undefined {
-    return undefined
+  /**
+   * We override the state to an ambire smart account so we could
+   * successfully do a bundler estimation. Safe accounts don't have
+   * the 4337 module attached so they revert
+   */
+  getBundlerStateOverride(): BundlerStateOverride | undefined {
+    return {
+      [this.account.addr]: {
+        code: SafeNoSignatureValidation.binRuntime
+      }
+    }
   }
 
-  // should we authorize the entry point;
-  // since we're not using 4337 for Safe accounts for now, we keep it false
-  shouldSignDeployAuth(broadcastOption: string): boolean {
+  // Safe deployment does not use Ambire entry point deployment authorization.
+  shouldSignDeployAuth(): boolean {
     return false
   }
 
@@ -155,14 +209,12 @@ export class Safe extends BaseAccount {
   }
 
   getNonceId(): string {
-    // the Safe will move only its own smart account nonce as we don't have 4337
+    // the Safe will move only its own smart account nonce
     return `${this.accountState.nonce.toString()}`
   }
 
   canBroadcastByItself(): boolean {
-    // later, when we enable 4337:
-    // check the account version and enable this for versions > 1.3
-    return false
+    return true
   }
 
   async getBroadcastNonce(
@@ -188,11 +240,12 @@ export class Safe extends BaseAccount {
 
   /**
    * Final commitment Safe data can differ according to the Safe v.
+   * The version is chain specific, so it's taken from the account state.
    * We encapsulate the logic here
    */
   getTxnTypedData(safeTx: SafeTx) {
-    const safeCreation = this.account.safeCreation!
-    if (safeCreation.version.startsWith('1.1.') || safeCreation.version.startsWith('1.2'))
+    const safeVersion = this.accountState.safeVersion ?? ''
+    if (safeVersion.startsWith('1.1.') || safeVersion.startsWith('1.2'))
       return getSafeV1TypedData(this.account.addr as Hex, safeTx)
 
     return getSafeTypedData(this.network.chainId, this.account.addr as Hex, safeTx)

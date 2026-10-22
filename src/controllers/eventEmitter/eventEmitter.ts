@@ -1,11 +1,17 @@
 import { v4 as uuidv4 } from 'uuid'
 
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import {
+  debugLog as moduleDebugLog,
+  debugLoggerRegistry,
+  DebugLogOptions
+} from '../../libs/debugLogger/debugLogger'
 import wait from '../../utils/wait'
 
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100
 
-export default class EventEmitter {
+// Can be overwritten by controllers to narrow the flow tags for better console filtering and type safety.
+export default class EventEmitter<DebugFlow extends string = string> {
   id: string
 
   #registry: IEventEmitterRegistryController | null = null
@@ -26,6 +32,11 @@ export default class EventEmitter {
 
   #errors: ErrorRef[] = []
 
+  // Trailing throttle used by `emitUpdate({ throttleMs })`
+  #throttleTimeout: ReturnType<typeof setTimeout> | null = null
+
+  #hasTrailingUpdate = false
+
   statuses: Statuses<string> = {}
 
   /**
@@ -38,6 +49,9 @@ export default class EventEmitter {
    */
   constructor(registry?: IEventEmitterRegistryController, registerImmediately: boolean = true) {
     this.id = uuidv4()
+
+    // Register the controller on construction
+    debugLoggerRegistry.registerNamespace(this.name)
 
     if (registry) {
       this.#registry = registry
@@ -78,20 +92,73 @@ export default class EventEmitter {
    * normal batching may skip intermediate states and only emit the first and last ones.
    */
   async forceEmitUpdate() {
+    // An immediate emit supersedes any pending throttled update
+    this.#clearThrottle()
+
     // Bypassing background batching on the same tick
     await wait(1)
 
     // Passing `true` to the cb will bypass React batching
-
-    for (const i of this.#callbacksWithId) i.cb(true)
-
-    for (const cb of this.#callbacks) cb(true)
+    this.#doEmit(true)
   }
 
-  protected emitUpdate() {
-    for (const i of this.#callbacksWithId) i.cb()
+  #doEmit(forceEmit?: boolean) {
+    for (const i of this.#callbacksWithId) i.cb(forceEmit)
 
-    for (const cb of this.#callbacks) cb()
+    for (const cb of this.#callbacks) cb(forceEmit)
+  }
+
+  #clearThrottle() {
+    if (this.#throttleTimeout !== null) {
+      clearTimeout(this.#throttleTimeout)
+      this.#throttleTimeout = null
+    }
+    this.#hasTrailingUpdate = false
+  }
+
+  #openThrottleWindow(throttleMs: number) {
+    this.#throttleTimeout = setTimeout(() => {
+      // Keep throttling as long as updates keep arriving; stop once a window
+      // passes with nothing pending so an idle controller holds no timer.
+      if (this.#hasTrailingUpdate) {
+        this.#hasTrailingUpdate = false
+        this.#doEmit()
+        this.#openThrottleWindow(throttleMs)
+      } else {
+        this.#throttleTimeout = null
+      }
+    }, throttleMs)
+  }
+
+  /**
+   * Emits an update to all subscribers.
+   *
+   * Pass `throttleMs` for high-frequency background updates (e.g. portfolio
+   * ticks) that don't need to reach the UI on every single change. The first
+   * emit fires immediately, while further throttled emits within the
+   * window are coalesced into a single trailing emit that carries the latest
+   * state. A plain `emitUpdate()` or `forceEmitUpdate()` in the meantime flushes
+   * the pending update instantly, so user interactions are never delayed.
+   */
+  protected emitUpdate(options?: { throttleMs?: number }) {
+    const throttleMs = options?.throttleMs ?? 0
+
+    if (throttleMs <= 0) {
+      // An immediate emit supersedes any pending throttled update
+      this.#clearThrottle()
+      this.#doEmit()
+      return
+    }
+
+    // Leading edge: emit now and open the throttle window
+    if (this.#throttleTimeout === null) {
+      this.#doEmit()
+      this.#openThrottleWindow(throttleMs)
+      return
+    }
+
+    // Within the window: defer to a single trailing emit
+    this.#hasTrailingUpdate = true
   }
 
   /**
@@ -121,9 +188,25 @@ export default class EventEmitter {
    *     and the controller updates its own state), use `emitUpdate()` or `forceEmitUpdate()`.
    */
   protected propagateUpdate(forceEmit?: boolean) {
-    for (const i of this.#callbacksWithId) i.cb(forceEmit)
+    // An immediate emit supersedes any pending throttled update
+    this.#clearThrottle()
+    this.#doEmit(forceEmit)
+  }
 
-    for (const cb of this.#callbacks) cb(forceEmit)
+  /** True when this controller's debug logging is toggled on. */
+  get isDebugLogEnabled(): boolean {
+    return debugLoggerRegistry.isEnabled(this.name)
+  }
+
+  /** Per-controller gated debug log. No-op unless this controller's namespace is
+   *  toggled on via DebugController. */
+  protected debugLog(
+    flow: DebugFlow,
+    message: string,
+    payload?: unknown | (() => unknown),
+    options?: DebugLogOptions
+  ): void {
+    moduleDebugLog(this.name, flow, message, payload, options)
   }
 
   protected emitError(error: ErrorRef) {
@@ -260,6 +343,7 @@ export default class EventEmitter {
    * clearing all callbacks and errors.
    */
   destroy() {
+    this.#clearThrottle()
     this.unregisterFromRegistry()
     this.#callbacks = []
     this.#callbacksWithId = []

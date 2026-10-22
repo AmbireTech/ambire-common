@@ -1,3 +1,5 @@
+import { SubmittedAccountOp } from '@/libs/accountOp/submittedAccountOp'
+
 import { ControllerInterface } from './controller'
 import { UserRequest } from './userRequest'
 
@@ -19,12 +21,23 @@ export type BannerCategory =
   | 'temp-seed-not-confirmed'
   | 'old-account'
 
+interface BannerRequirements {
+  minBalanceTotal?: number
+  maxBalanceTotal?: number
+  minTxnsTotal?: number
+  maxTxnsTotal?: number
+  minAppVersion?: string
+  whitelistedAddresses?: string[]
+  shouldHaveKeys?: boolean
+}
+
 export interface Banner {
   id: number | string
   type: BannerType | MarketingBannerTypes
   category?: BannerCategory
   title: string
   text?: string
+  emoji?: string
   // Force a single action on purpose
   actions: [Action] | []
   dismissAction?: Action
@@ -32,6 +45,11 @@ export interface Banner {
     accountAddr?: string
     startTime?: number
     endTime?: number
+    requirements?: BannerRequirements
+    accountOpsDataForNextUpdate?: Pick<
+      SubmittedAccountOp,
+      'accountAddr' | 'chainId' | 'timestamp' | 'id'
+    >[]
     [key: string]: any
   }
 }
@@ -88,6 +106,10 @@ export type Action = (
       actionName: 'update-extension-version'
     }
   | {
+      // Mobile-only: apply a downloaded over the air update (bundle) by restarting the app
+      actionName: 'apply-ota-update'
+    }
+  | {
       actionName: 'reload-selected-account'
     }
   | {
@@ -108,21 +130,11 @@ export type Action = (
   | {
       actionName: 'dismiss-defi-positions-banner'
     }
-  | { actionName: 'open-link'; meta: { url: string } }
   | {
-      actionName: 'survey'
-      meta: {
-        surveyId: string
-        requirements: {
-          minBalanceTotal?: number
-          maxBalanceTotal?: number
-          minTxnsTotal?: number
-          maxTxnsTotal?: number
-          minAppVersion?: string
-          whitelistedAddresses?: string[]
-        }
-      }
+      actionName: 'dismiss-ens-expiry-banner'
     }
+  | { actionName: 'open-link'; meta: { url: string } }
+  | { actionName: 'survey'; meta: { surveyId: string } }
 ) & {
   label?: string
 }

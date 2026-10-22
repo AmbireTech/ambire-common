@@ -10,6 +10,7 @@ import { getRpcProvider } from '../../services/provider'
 import {
   addPortfolioError,
   addRPCError,
+  getDefiAppsErrors,
   getNetworksWithErrors,
   SelectedAccountBalanceError
 } from './errors'
@@ -699,6 +700,57 @@ describe('selectedAccount errors', () => {
       })
 
       expect(errors).toHaveLength(0)
+    })
+  })
+
+  describe('getDefiAppsErrors', () => {
+    const criticalError = { message: 'Velcro discovery timed out' }
+
+    it('no error is added when the DeFi apps state is missing', () => {
+      expect(getDefiAppsErrors({})).toHaveLength(0)
+    })
+    it('no error is added when the DeFi apps update succeeded', () => {
+      const errors = getDefiAppsErrors({
+        defiApps: { isReady: true, isLoading: false, errors: [] }
+      } as SelectedAccountPortfolioState)
+
+      expect(errors).toHaveLength(0)
+    })
+    it('an error is added when the DeFi apps update failed and there is no previous result', () => {
+      const errors = getDefiAppsErrors({
+        defiApps: { isReady: false, isLoading: false, errors: [], criticalError }
+      } as SelectedAccountPortfolioState)
+
+      expect(errors).toHaveLength(1)
+      expect(errors[0]!.id).toBe('defi-apps')
+      expect(errors[0]!.networkNames).toEqual(['DeFi apps'])
+    })
+    it('no error is added when the DeFi apps update failed but the previous result is recent', () => {
+      const errors = getDefiAppsErrors({
+        defiApps: {
+          isReady: true,
+          isLoading: false,
+          errors: [],
+          criticalError,
+          lastSuccessfulUpdate: Date.now() - 60 * 1000
+        }
+      } as SelectedAccountPortfolioState)
+
+      expect(errors).toHaveLength(0)
+    })
+    it('an error is added when the DeFi apps update failed and the previous result is stale', () => {
+      const errors = getDefiAppsErrors({
+        defiApps: {
+          isReady: true,
+          isLoading: false,
+          errors: [],
+          criticalError,
+          lastSuccessfulUpdate: Date.now() - 11 * 60 * 1000
+        }
+      } as SelectedAccountPortfolioState)
+
+      expect(errors).toHaveLength(1)
+      expect(errors[0]!.id).toBe('defi-apps')
     })
   })
 })

@@ -41,14 +41,20 @@ export interface MakeMainControllerOpts {
   skipAppsFetchOnLoad?: boolean
   /** Don't fetch the portfolio blacklist on load. Default: `true`. */
   skipPortfolioFetchBlacklistOnLoad?: boolean
+  /**
+   * Don't call `init()` on the dapps and phishing controllers, which load their data
+   * lazily. Set to `true` only when the test asserts on the pre-init state. Default: `false`.
+   */
+  skipDappsAndPhishingInit?: boolean
   /** Override any `MainController` constructor params. */
   overrides?: {
     appVersion?: string
     platform?: Platform
     featureFlags?: Partial<FeatureFlags>
     liFiApiKey?: string
+    cowSwapApiKey?: string
     bungeeApiKey?: string
-    squidIntegratorId?: string
+    uniswapApiKey?: string
     externalSignerControllers?: ExternalSignerControllers
     keystoreSigners?: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     relayerUrl?: string
@@ -79,6 +85,7 @@ export const makeMainController = async (
     skipDomainsResolveOnLoad = true,
     skipAppsFetchOnLoad = true,
     skipPortfolioFetchBlacklistOnLoad = true,
+    skipDappsAndPhishingInit = false,
     overrides = {}
   } = opts
   const eventEmitterRegistry = new EventEmitterRegistryController(() => null)
@@ -156,13 +163,15 @@ export const makeMainController = async (
     relayerUrl: overrides.relayerUrl ?? relayerUrl,
     velcroUrl: overrides.velcroUrl ?? velcroUrl,
     liFiApiKey: overrides.liFiApiKey ?? '',
+    cowSwapApiKey: overrides.cowSwapApiKey ?? '',
     bungeeApiKey: overrides.bungeeApiKey ?? '',
-    squidIntegratorId: overrides.squidIntegratorId ?? '',
+    uniswapApiKey: overrides.uniswapApiKey ?? '',
     featureFlags,
     keystoreSigners: overrides.keystoreSigners ?? { internal: KeystoreSigner },
     externalSignerControllers: overrides.externalSignerControllers ?? {},
     uiManager,
-    eventEmitterRegistry
+    eventEmitterRegistry,
+    privacyPoolsCircuitsBaseUrl: ''
   })
 
   // Disable simulation in requests' signAccountOps
@@ -176,6 +185,7 @@ export const makeMainController = async (
   }
   if (skipDomainsResolveOnLoad) {
     mainCtrl.domains.reverseLookup = jest.fn().mockResolvedValue(undefined)
+    mainCtrl.domains.batchReverseLookup = jest.fn().mockResolvedValue(undefined)
   }
 
   if (awaitInitialLoad) {
@@ -184,6 +194,10 @@ export const makeMainController = async (
 
   await mainCtrl.accounts.accountStateInitialLoadPromise
   accountStateSpy?.mockRestore()
+
+  if (!skipDappsAndPhishingInit) {
+    await Promise.all([mainCtrl.dapps.init(), mainCtrl.phishing.init()])
+  }
 
   return {
     mainCtrl,

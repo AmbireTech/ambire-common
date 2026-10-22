@@ -1,13 +1,19 @@
-import { ZeroAddress, formatUnits } from 'ethers'
+import { formatUnits, getAddress, ZeroAddress } from 'ethers'
 
-import { expect } from '@jest/globals'
+import { expect, jest } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
+import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { TokenResult } from '../../libs/portfolio'
-import { TransferController } from './transfer'
+import * as ensDomainsModule from '../../services/ensDomains/ensDomains'
+import {
+  safeTokenAmountAndNumberMultiplication,
+  truncateFiatAmountDecimals
+} from '../../utils/numbers/formatters'
+import { DomainsController } from '../domains/domains'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
 const polygon = networks.find((x) => x.chainId === 137n)
@@ -39,15 +45,29 @@ const getTokens = () => {
   return structuredClone(ETHEREUM_TOKENS.concat(POLYGON_TOKENS))
 }
 
-const prepareTest = async () => {
+// An account of the wallet that no key in the keystore can sign for (view-only), used as a recipient
+const VIEW_ONLY_RECIPIENT_ADDRESS = '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'
+const viewOnlyRecipientAccount = {
+  addr: VIEW_ONLY_RECIPIENT_ADDRESS,
+  initialPrivileges: [],
+  associatedKeys: [VIEW_ONLY_RECIPIENT_ADDRESS],
+  creation: null,
+  preferences: {
+    label: 'View-only recipient',
+    pfp: VIEW_ONLY_RECIPIENT_ADDRESS
+  }
+}
+
+const prepareTest = async (extraAccounts: (typeof viewOnlyRecipientAccount)[] = []) => {
   const { mainCtrl } = await makeMainController(async (storageCtrl) => {
-    await storageCtrl.set('accounts', [account])
+    await storageCtrl.set('accounts', [account, ...extraAccounts])
     await storageCtrl.set('selectedAccount', account.addr)
   })
-  await mainCtrl.selectedAccount.setAccount(account)
+  await mainCtrl.selectedAccount.select({ account })
   mainCtrl.transfer.resetForm()
 
   return {
+    mainCtrl,
     transferController: mainCtrl.transfer,
     tokens: getTokens(),
     uiCtrl: mainCtrl.ui,
@@ -114,6 +134,56 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.amount).toBe('1')
   })
+  test('should clear the fiat amount when the amount is cleared to zero', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const ethOnEthereum = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)
+    await transferController.update({ selectedToken: ethOnEthereum })
+
+    await transferController.update({ amount: '1' })
+    expect(Number(transferController.amountInFiat)).toBeGreaterThan(0)
+
+    await transferController.update({ amount: '0' })
+    expect(Number(transferController.amountInFiat)).toBe(0)
+  })
+  test('should not carry an amount error over to a form without a selected token', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const ethOnEthereum = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    await transferController.update({ selectedToken: ethOnEthereum, amount: '1000000' })
+    expect(transferController.validationFormMsgs.amount.message).toBe('Insufficient amount.')
+
+    transferController.selectedToken = null
+    expect(transferController.validationFormMsgs.amount.message).toBe('')
+  })
+  test('should keep fiat mode when setting the max amount', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const ethOnEthereum = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    await transferController.update({ selectedToken: ethOnEthereum, amountFieldMode: 'fiat' })
+    await transferController.update({ shouldSetMaxAmount: true })
+
+    expect(transferController.amountFieldMode).toBe('fiat')
+    expect(transferController.amount).toBe(transferController.maxAmount)
+  })
+  test('should keep the fiat amount at a displayable precision when switching to fiat mode', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const ethOnEthereum = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    await transferController.update({ selectedToken: ethOnEthereum })
+    await transferController.update({ shouldSetMaxAmount: true })
+    await transferController.update({ amountFieldMode: 'fiat' })
+
+    expect(transferController.amountInFiat).toBe(
+      truncateFiatAmountDecimals(
+        safeTokenAmountAndNumberMultiplication(
+          ethOnEthereum.amount,
+          ethOnEthereum.decimals,
+          ethOnEthereum.priceIn[0]!.price
+        )
+      )
+    )
+  })
   test('should set max amount minus fee when the selected fee token matches the transfer token', async () => {
     const { transferController, tokens } = await prepareTest()
 
@@ -150,6 +220,82 @@ describe('Transfer Controller', () => {
     expect(transferController.amount).toBe(
       formatUnits(nativeToken.amount - feeAmount - feeAmount / 5n, nativeToken.decimals)
     )
+    expect(transferController.amountAdjustmentInfo).toEqual({
+      feeAmount: formatUnits(feeAmount + feeAmount / 5n, nativeToken.decimals),
+      tokenSymbol: nativeToken.symbol
+    })
+
+    await transferController.update({ amount: '0.001' })
+    expect(transferController.amountAdjustmentInfo).toBeNull()
+  })
+  test('should not show fee adjustment info when another token pays the fee', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    const feeToken = tokens.find((t) => t.address !== ZeroAddress && t.chainId === 1n)!
+
+    await transferController.update({ selectedToken: nativeToken })
+    ;(transferController as any).signAccountOpController = {
+      accountOp: {
+        gasFeePayment: {
+          amount: 1_000_000_000_000_000n,
+          inToken: feeToken.address,
+          feeTokenChainId: feeToken.chainId
+        }
+      },
+      selectedOption: {
+        paidBy: account.addr,
+        token: {
+          ...feeToken,
+          flags: {
+            ...feeToken.flags,
+            onGasTank: false
+          }
+        }
+      }
+    }
+
+    await transferController.update({ shouldSetMaxAmount: true })
+
+    expect(transferController.amount).toBe(transferController.maxAmount)
+    expect(transferController.amountAdjustmentInfo).toBeNull()
+  })
+  test('should preserve the amount when the fee leaves no transferable max amount', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    const initialAmount = '0.001'
+
+    await transferController.update({
+      selectedToken: nativeToken,
+      amount: initialAmount
+    })
+    ;(transferController as any).signAccountOpController = {
+      accountOp: {
+        gasFeePayment: {
+          amount: nativeToken.amount,
+          inToken: nativeToken.address,
+          feeTokenChainId: nativeToken.chainId
+        }
+      },
+      selectedOption: {
+        paidBy: account.addr,
+        token: {
+          ...nativeToken,
+          flags: {
+            ...nativeToken.flags,
+            onGasTank: false
+          }
+        }
+      }
+    }
+
+    await transferController.update({
+      shouldSetMaxAmount: true
+    })
+
+    expect(transferController.amount).toBe(initialAmount)
+    expect(transferController.amountAdjustmentWarning).toBeNull()
   })
   test('should set validation form messages', async () => {
     const { transferController, tokens } = await prepareTest()
@@ -197,6 +343,132 @@ describe('Transfer Controller', () => {
     await transferController.update({
       amount: transferController.maxAmount
     })
+  })
+  test('should require hold-to-proceed and explain it when the recipient is a view-only account', async () => {
+    const { transferController } = await prepareTest([viewOnlyRecipientAccount])
+
+    await transferController.update({
+      addressState: {
+        fieldValue: VIEW_ONLY_RECIPIENT_ADDRESS,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    const { recipientAddress } = transferController.validationFormMsgs
+    expect(transferController.isRecipientAddressViewOnly).toBe(true)
+    // A hold without a message was the bug: the user saw a green text next to a hold button
+    expect(recipientAddress.shouldHold).toBe(true)
+    expect(recipientAddress.severity).toBe('warning')
+    expect(recipientAddress.message).toContain('view-only')
+    expect(transferController.toJSON().validationFormMsgs.recipientAddress.shouldHold).toBe(true)
+  })
+
+  test('should keep the hold for a view-only recipient after the user agrees to send to an unknown address', async () => {
+    const { transferController } = await prepareTest([viewOnlyRecipientAccount])
+
+    await transferController.update({
+      addressState: {
+        fieldValue: VIEW_ONLY_RECIPIENT_ADDRESS,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+    await transferController.update({ isRecipientAddressUnknownAgreed: true })
+
+    expect(transferController.validationFormMsgs.recipientAddress.shouldHold).toBe(true)
+  })
+
+  test('should release the hold for an unknown recipient after the user agrees, without changing the message', async () => {
+    const { transferController } = await prepareTest()
+
+    await transferController.update({
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    const beforeAgreeing = { ...transferController.validationFormMsgs.recipientAddress }
+    expect(transferController.isRecipientAddressViewOnly).toBe(false)
+    expect(beforeAgreeing.shouldHold).toBe(true)
+
+    await transferController.update({ isRecipientAddressUnknownAgreed: true })
+
+    const afterAgreeing = transferController.validationFormMsgs.recipientAddress
+    expect(afterAgreeing.shouldHold).toBeFalsy()
+    expect(afterAgreeing.message).toBe(beforeAgreeing.message)
+  })
+
+  test('should not require a hold or block when the recipient is a smart contract', async () => {
+    const { transferController } = await prepareTest()
+
+    await transferController.update({
+      addressState: {
+        fieldValue: XWALLET_ADDRESS,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    const { recipientAddress } = transferController.validationFormMsgs
+    // The error disables the buttons of the form, so there is nothing to hold
+    expect(recipientAddress.severity).toBe('error')
+    expect(recipientAddress.shouldHold).toBeFalsy()
+  })
+
+  test('should not require a hold when there is no recipient yet', async () => {
+    const { transferController } = await prepareTest()
+
+    expect(transferController.validationFormMsgs.recipientAddress.shouldHold).toBeFalsy()
+  })
+
+  test('should allow proceeding with a Colibri-verified ENS recipient', async () => {
+    const { transferController, tokens } = await prepareTest()
+    const domain = '0xbobby.eth'
+    const resolvedAddress = getAddress('0x4ba5250000000000000000000000000003bc63d4')
+    const provider = {} as any
+    const verificationProvider = { destroyed: false } as any
+    const domainsController = new DomainsController({
+      providers: { ['1']: provider },
+      verification: {
+        getReadyProvider: jest.fn(() => verificationProvider)
+      } as any,
+      getNetwork: (chainId: bigint) => ({ chainId, disabled: false }) as any
+    })
+    const resolveENSDomainSpy = jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
+
+    try {
+      await domainsController.resolveDomain({ domain })
+
+      expect(domainsController.domainToAddresses[domain]?.address).toBe(resolvedAddress)
+      expect(domainsController.verifiedDomainsStatus[domain]).toBe('VERIFIED')
+
+      const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+      await transferController.update({
+        amount: '0.0001',
+        selectedToken: nativeToken,
+        addressState: {
+          fieldValue: domain,
+          resolvedAddress,
+          resolvedAddressType: 'ens',
+          isDomainResolving: false
+        }
+      })
+
+      expect(transferController.recipientAddress).toBe(resolvedAddress)
+      expect(transferController.validationFormMsgs.amount.severity).toBe('success')
+      expect(transferController.isFormValid).toBe(true)
+    } finally {
+      resolveENSDomainSpy.mockRestore()
+    }
   })
   test("should reject a token that doesn't have amount or amountPostSimulation for transfer", async () => {
     const { transferController, tokens } = await prepareTest()
@@ -256,8 +528,153 @@ describe('Transfer Controller', () => {
   test('should toJSON()', async () => {
     const { transferController } = await prepareTest()
 
-    const json = transferController.toJSON()
-    expect(json).toBeDefined()
+    expect(transferController.toJSON()).toBeDefined()
+  })
+})
+
+describe('Transfer Controller - Privacy Pools recipient', () => {
+  const PRIVACY_POOLS_SEED_ID = 'privacy-pools-seed'
+  const ETH_DEPOSIT_LIMITS = { minimumDepositAmount: 10n ** 16n }
+
+  /** A transfer screen open on a portfolio with ETH on Ethereum and POL on Polygon. */
+  const prepareOpenTransfer = async () => {
+    const context = await prepareTest()
+    const { mainCtrl, uiCtrl, selectedAccountCtrl } = context
+
+    // The limits come from the chain, which the tests do not reach
+    let depositAssetConfigs = {}
+    jest
+      .spyOn(mainCtrl.privacyPools, 'depositAssetConfigs', 'get')
+      .mockImplementation(() => depositAssetConfigs)
+    jest.spyOn(mainCtrl.privacyPools, 'loadDepositAssetConfig').mockImplementation(async () => {
+      depositAssetConfigs = { [`1:${ZeroAddress}`]: ETH_DEPOSIT_LIMITS }
+      return ETH_DEPOSIT_LIMITS
+    })
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      tokens: getTokens(),
+      isReadyToVisualize: true,
+      isAllReady: true
+    }
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', { currentRoute: 'transfer', isReady: true, searchParams: {} })
+
+    return context
+  }
+
+  test('offers only the tokens a Privacy Pools account accepts', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    expect(transferController.tokens.some(({ chainId }) => chainId === 137n)).toBe(true)
+
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    expect(
+      transferController.tokens.map(({ chainId, address }) => `${chainId}:${address}`)
+    ).toEqual([`1:${ZeroAddress}`])
+    expect(transferController.selectedToken?.chainId).toBe(1n)
+    expect(transferController.selectedToken?.address).toBe(ZeroAddress)
+  })
+
+  test('drops the typed address and every check that is about one', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    // Already a token the account accepts, so picking the account does not change it
+    await transferController.update({
+      selectedToken: transferController.tokens.find(
+        ({ chainId, address }) => chainId === 1n && address === ZeroAddress
+      )
+    })
+    await transferController.update({
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+    const programmaticUpdateCounterBefore = transferController.programmaticUpdateCounter
+
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    expect(transferController.addressState.fieldValue).toBe('')
+    // So the field drops what was typed, instead of disagreeing with the controller
+    expect(transferController.programmaticUpdateCounter).not.toBe(programmaticUpdateCounterBefore)
+    expect(transferController.isRecipientAddressUnknown).toBe(false)
+    expect(transferController.isRecipientAddressFirstTimeSend).toBe(false)
+    expect(transferController.validationFormMsgs.recipientAddress.severity).toBe('success')
+  })
+
+  test('typing an address goes back to sending to an address', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    await transferController.update({
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    expect(transferController.privacyPoolsRecipient).toBeNull()
+    expect(transferController.tokens.some(({ chainId }) => chainId === 137n)).toBe(true)
+  })
+
+  test('refuses an amount below what a Privacy Pools account accepts', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    await transferController.update({ amount: '0.005' })
+
+    expect(transferController.validationFormMsgs.amount.severity).toBe('error')
+    expect(transferController.validationFormMsgs.amount.message).toContain('at least 0.01 ETH')
+    expect(transferController.isFormValid).toBe(false)
+  })
+
+  test('shows why the transfer cannot be prepared next to the form', async () => {
+    const { mainCtrl, transferController } = await prepareOpenTransfer()
+    const buildDepositCalls = jest
+      .spyOn(mainCtrl.privacyPools, 'buildDepositCalls')
+      .mockRejectedValue(
+        new EmittableError({
+          message: 'Your previous transfer to this Privacy Pools account is still being confirmed.',
+          level: 'expected',
+          error: new Error('pending deposit')
+        })
+      )
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    await transferController.update({ amount: '0.012' })
+
+    expect(buildDepositCalls).toHaveBeenCalledWith({
+      seedId: PRIVACY_POOLS_SEED_ID,
+      accountAddr: account.addr,
+      chainId: '1',
+      tokenAddress: ZeroAddress,
+      amount: 12n * 10n ** 15n
+    })
+    expect(transferController.privacyPoolsDepositError).toBe(
+      'Your previous transfer to this Privacy Pools account is still being confirmed.'
+    )
+    expect(transferController.isPreparingPrivacyPoolsDeposit).toBe(false)
+    expect(transferController.signAccountOpController).toBeNull()
+  })
+
+  test('resetting the form goes back to sending to an address', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    transferController.resetForm()
+
+    expect(transferController.privacyPoolsRecipient).toBeNull()
+    expect(transferController.hasPersistedState).toBe(false)
   })
 })
 
@@ -464,6 +881,46 @@ describe('Transfer Controller defaults logic', () => {
     expect(transferController.amount).toBe('1')
     expect(transferController.recipientAddress).toBe(PLACEHOLDER_RECIPIENT)
     expect(transferController.areDefaultsSet).toBe(true)
+  })
+
+  test('should reset transfer state on side-panel removeView even when form is persisted', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'side-panel',
+      type: 'side-panel',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('side-panel', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    await transferController.update({
+      amount: '1',
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    uiCtrl.removeView('side-panel')
+
+    expect(transferController.transferSessionId).toBe(null)
+    expect(transferController.areDefaultsSet).toBe(false)
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.amount).toBe('')
+    expect(transferController.recipientAddress).toBe('')
   })
 
   test('should reset transfer state on popup removeView when form is not persisted', async () => {

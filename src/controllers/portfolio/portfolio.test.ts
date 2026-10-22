@@ -1,43 +1,54 @@
+/* eslint-disable @typescript-eslint/no-non-null-asserted-optional-chain */
 import { getAddress, Interface, Wallet, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest } from '@jest/globals'
 
 import { getNonce } from '../../../test/helpers'
-import { suppressConsole } from '../../../test/helpers/console'
+import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { BALANCE_GETTER, NFT_GETTER } from '../../consts/deploy'
 import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { Account, AccountStates } from '../../interfaces/account'
+import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { StoredKey } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp, areAccountOpsEqual } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
+import * as defiPositionsLib from '../../libs/defiPositions/defiPositions'
 import * as defiPricesLib from '../../libs/defiPositions/defiPrices'
 import { getProviderId } from '../../libs/defiPositions/helpers'
 import * as defiProviders from '../../libs/defiPositions/providers'
-import { DeFiPositionsError } from '../../libs/defiPositions/types'
+import { AssetType, DeFiPositionsError } from '../../libs/defiPositions/types'
+import { DeploylessMode } from '../../libs/deployless/deployless'
 import {
   erc721CollectionToLearnedAssetKeys,
   learnedErc721sToHints
 } from '../../libs/portfolio/helpers'
 import {
   CollectionResult,
+  GetOptions,
   Hints,
   LearnedAssets,
   PortfolioGasTankResult,
+  PortfolioLibGetResult,
   PortfolioNetworkResult,
-  PreviousHintsStorage
+  PreviousHintsStorage,
+  TokenResult
 } from '../../libs/portfolio/interfaces'
 import { Portfolio, PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
+import { stringify } from '../../libs/richJson/richJson'
 import { getRpcProvider } from '../../services/provider'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { StorageController } from '../storage/storage'
-import { PortfolioController } from './portfolio'
+import { COLIBRI_CATCH_UP_RETRY_INTERVAL } from '../verification/verification'
+import { EXCHANGE_LIST_URL, PortfolioController } from './portfolio'
+
+import type { FeatureFlags } from '../../consts/featureFlags'
 
 const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
 
@@ -49,6 +60,47 @@ networks.forEach((network) => {
 })
 
 const ethereum = networks.find((network) => network.chainId === 1n)!
+const gnosis: Network = {
+  ...ethereum,
+  name: 'Gnosis',
+  nativeAssetSymbol: 'xDAI',
+  nativeAssetName: 'xDAI',
+  rpcUrls: ['https://invictus.ambire.com/gnosis'],
+  selectedRpcUrl: 'https://invictus.ambire.com/gnosis',
+  rpcNoStateOverride: true,
+  chainId: 100n,
+  explorerUrl: 'https://gnosisscan.io',
+  platformId: 'xdai',
+  nativeAssetId: 'xdai',
+  feeOptions: { is1559: false },
+  wrappedAddr: '0x6A023ccd1ff6f2045C3309768eAd9E68F978f6e1'
+}
+
+const getAccountOnchainState = (
+  stateAccount: Account,
+  overrides?: Partial<AccountOnchainState>
+): AccountOnchainState => ({
+  accountAddr: stateAccount.addr,
+  isDeployed: true,
+  eoaNonce: null,
+  nonce: 0n,
+  erc4337Nonce: 0n,
+  associatedKeys: stateAccount.associatedKeys,
+  importedAccountKeys: [],
+  balance: 0n,
+  isEOA: false,
+  isErc4337Enabled: false,
+  isErc4337Nonce: false,
+  isV2: false,
+  currentBlock: 0n,
+  isSmarterEoa: false,
+  delegatedContract: null,
+  delegatedContractName: null,
+  threshold: 1,
+  safeVersion: null,
+  updatedAt: 0,
+  ...overrides
+})
 
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
@@ -101,7 +153,7 @@ const account2 = {
   }
 }
 
-const account3 = {
+const account3: Account = {
   addr: '0x018D034c782db8462d864996dE3c297bcf66f86A',
   initialPrivileges: [
     [
@@ -122,7 +174,7 @@ const account3 = {
   }
 }
 
-const account4 = {
+const account4: Account = {
   addr: '0x3e2D734349654166a2Ad92CaB2437A76a70B650a',
   initialPrivileges: [
     [
@@ -154,7 +206,7 @@ const emptyAccount = {
   }
 }
 
-const ambireV2Account = {
+const ambireV2Account: Account = {
   addr: '0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA',
   initialPrivileges: [
     [
@@ -295,11 +347,13 @@ const prepareTest = async (opts?: {
   skipBlacklistFetch?: boolean
   awaitInitialLoad?: boolean
   skipAccountStateFetch?: boolean
+  featureFlags?: Partial<FeatureFlags>
 }) => {
   const {
     initialSetStorage,
     awaitInitialLoad = true,
     fetchOverride,
+    featureFlags,
     skipBlacklistFetch = true,
     skipAccountStateFetch = true
   } = opts || {}
@@ -332,7 +386,8 @@ const prepareTest = async (opts?: {
       skipPortfolioFetchBlacklistOnLoad: skipBlacklistFetch,
       skipAccountStateLoad: skipAccountStateFetch,
       overrides: {
-        fetch: fetchOverride
+        fetch: fetchOverride,
+        featureFlags
       }
     }
   )
@@ -346,10 +401,14 @@ const prepareTest = async (opts?: {
     controller: mainCtrl.portfolio as PortfolioController,
     storageCtrl: mainCtrl.storage,
     networksCtrl: mainCtrl.networks,
-    accountsCtrl: mainCtrl.accounts
+    accountsCtrl: mainCtrl.accounts,
+    providersCtrl: mainCtrl.providers,
+    verificationCtrl: mainCtrl.verification,
+    uiCtrl: mainCtrl.ui
   }
 }
 
+// @TODO: Divide into multiple files (.blacklisting, .hints, .simulation, .tokens, .defiPositions, etc.)
 describe('Portfolio Controller ', () => {
   beforeEach(() => {
     jest.restoreAllMocks()
@@ -357,7 +416,8 @@ describe('Portfolio Controller ', () => {
   })
   async function getAccountOp(
     collectibleAddress: string = '0xcf30def37dcb65d244f14e075dc0ce875ccfa065',
-    tokenId: number = 2442
+    tokenId: number = 2442,
+    network: Network = ethereum
   ) {
     const ABI = ['function transferFrom(address from, address to, uint256 tokenId)']
     const iface = new Interface(ABI)
@@ -367,7 +427,10 @@ describe('Portfolio Controller ', () => {
       tokenId
     ])
 
-    const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', providers['1']!)
+    const nonce = await getNonce(
+      '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      providers[network.chainId.toString()]!
+    )
     const calls = [{ to: collectibleAddress, value: BigInt(0), data }]
 
     const op = {
@@ -377,16 +440,311 @@ describe('Portfolio Controller ', () => {
       gasLimit: null,
       gasFeePayment: null,
       signingKeyType: 'internal',
-      chainId: 1n,
+      chainId: network.chainId,
       nonce,
       signature: '0x',
       calls
     } as AccountOp
 
     return {
-      '1': [op]
+      [network.chainId.toString()]: [op]
     } as Record<string, AccountOp[]>
   }
+
+  test('Colibri portfolio verification warns on changed balances, stale RPCs and succeeds on matching balances', async () => {
+    // The Colibri head. Its relation to the RPC result block decides whether a
+    // fresh, comparable verification is possible (see VerificationController).
+    const verifiedProvider = {
+      destroyed: false,
+      getBlockNumber: jest.fn<() => Promise<number>>().mockResolvedValue(122)
+    } as any
+    const colibriEthereum = { ...ethereum, isColibriEnabled: true }
+    const tokenAddress = getAddress('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48')
+    const rpcAmount = 100n
+    let verifiedAmount = 99n
+    // The block the RPC balances were fetched at. Colibri verifies at this exact block.
+    let rpcResultBlockNumber = 122
+    const makeToken = (amount: bigint, chainId: bigint): TokenResult => ({
+      symbol: 'USDC',
+      name: 'USD Coin',
+      decimals: 6,
+      address: tokenAddress,
+      chainId,
+      amount,
+      priceIn: [{ baseCurrency: 'usd', price: 1 }],
+      marketDataIn: [],
+      flags: {
+        onGasTank: false,
+        rewardsType: null,
+        canTopUpGasTank: false,
+        isFeeToken: false
+      }
+    })
+    const makePortfolioLibResult = (
+      amount: bigint,
+      blockNumber: number,
+      chainId: bigint
+    ): PortfolioLibGetResult => ({
+      updateStarted: Date.now(),
+      discoveryTime: 0,
+      oracleCallTime: 0,
+      priceUpdateTime: 0,
+      tokenDataCache: new Map(),
+      tokens: [makeToken(amount, chainId)],
+      feeTokens: [],
+      toBeLearned: { erc20s: [], erc721s: {} },
+      fetchedTokenMetadata: [],
+      fetchedCollectionMetadata: [],
+      tokenErrors: [],
+      collectionErrors: [],
+      collections: [],
+      errors: [],
+      blockNumber,
+      beforeNonce: 0n,
+      afterNonce: 0n
+    })
+    const createRelayerResponse = (body: unknown) =>
+      ({
+        status: 200,
+        text: () => Promise.resolve(JSON.stringify(body))
+      }) as any
+    const fetchOverride = jest.fn(() =>
+      Promise.resolve(
+        createRelayerResponse({
+          success: true,
+          data: {
+            banner: null,
+            rewards: {
+              stkWalletClaimableBalance: [],
+              walletClaimableBalance: []
+            },
+            gasTank: {
+              balance: []
+            }
+          }
+        })
+      )
+    ) as unknown as typeof fetch
+    const { controller, providersCtrl, verificationCtrl } = await prepareTest({
+      fetchOverride,
+      featureFlags: { tokenAndDefiAutoDiscovery: false }
+    })
+
+    jest.spyOn(verificationCtrl, 'getReadyProvider').mockReturnValue(verifiedProvider)
+    const verifyPortfolioSpy = jest.spyOn(verificationCtrl, 'verifyPortfolio')
+    jest.spyOn(controller as any, 'batchedPortfolioDiscovery').mockResolvedValue({
+      data: { hints: null, defi: null, otherNetworksDefiCounts: {} },
+      discoveryTime: 0,
+      errors: []
+    })
+    jest
+      .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+      .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] } as any)
+    const portfolioGetCalls: {
+      isColibri: boolean
+      blockTag: unknown
+      rpcNoStateOverride: boolean
+    }[] = []
+    const verifierPortfolioGetOptions: Partial<GetOptions>[] = []
+    const expectedVerifierDeployless = {
+      erc20: { mode: DeploylessMode.Predeployed, to: BALANCE_GETTER },
+      erc721: { mode: DeploylessMode.Predeployed, to: NFT_GETTER }
+    }
+    jest.spyOn(Portfolio.prototype, 'get').mockImplementation(function (this: Portfolio, _, opts) {
+      const isColibri = this.provider === verifiedProvider
+      const chainId = this.network.chainId
+      if (isColibri) verifierPortfolioGetOptions.push(opts || {})
+      portfolioGetCalls.push({
+        isColibri,
+        blockTag: opts?.blockTag,
+        rpcNoStateOverride: this.network.rpcNoStateOverride
+      })
+
+      return Promise.resolve(
+        isColibri
+          ? makePortfolioLibResult(verifiedAmount, rpcResultBlockNumber, chainId)
+          : makePortfolioLibResult(rpcAmount, rpcResultBlockNumber, chainId)
+      )
+    })
+
+    // Verification is fire-and-forget, so it resolves after updateSelectedAccount returns.
+    const waitForVerification = async (chainId = '1') => {
+      for (let i = 0; i < 50; i += 1) {
+        const current = controller.getAccountPortfolioState(account.addr)[chainId]?.verification
+        if (current && current.status !== 'loading') return current
+
+        await wait(10)
+      }
+
+      return controller.getAccountPortfolioState(account.addr)[chainId]?.verification
+    }
+
+    // 1) Balances differ between RPC and Colibri at the same block -> warning.
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const warningVerification = await waitForVerification()
+
+    // The RPC fetch is a plain 'both'; Colibri re-fetches at the RPC result's block.
+    expect(portfolioGetCalls).toEqual(
+      expect.arrayContaining([
+        { isColibri: false, blockTag: 'both', rpcNoStateOverride: false },
+        { isColibri: true, blockTag: 122, rpcNoStateOverride: true }
+      ])
+    )
+    expect(verifierPortfolioGetOptions[0]?.deployless).toEqual(expectedVerifierDeployless)
+    expect(warningVerification?.status).toBe('warning')
+    expect(warningVerification?.error).toBe(
+      '1 balance(s) differed from the Colibri verified result'
+    )
+
+    // 2) Matching balances -> success.
+    verifiedAmount = rpcAmount
+    portfolioGetCalls.length = 0
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const successfulVerification = await waitForVerification()
+
+    expect(successfulVerification?.status).toBe('success')
+    expect(successfulVerification?.error).toBeUndefined()
+
+    // 3) If Colibri is slightly behind, wait for it to catch up and verify the RPC block.
+    verifiedProvider.getBlockNumber.mockReset()
+    verifiedProvider.getBlockNumber.mockResolvedValueOnce(121).mockResolvedValueOnce(122)
+    rpcResultBlockNumber = 122
+    verifiedAmount = rpcAmount
+    portfolioGetCalls.length = 0
+    jest.useFakeTimers()
+    try {
+      // Started rather than awaited: the update yields to the main thread
+      // between networks (see yieldToMain), and that timer only fires once the
+      // clock below moves. Awaiting here would deadlock the test.
+      const catchUpUpdate = controller.updateSelectedAccount(account.addr, [colibriEthereum])
+
+      await jest.advanceTimersByTimeAsync(COLIBRI_CATCH_UP_RETRY_INTERVAL)
+      await catchUpUpdate
+
+      await jest.advanceTimersByTimeAsync(COLIBRI_CATCH_UP_RETRY_INTERVAL)
+      await Promise.resolve()
+
+      const catchUpVerification = controller.getAccountPortfolioState(account.addr)['1']
+        ?.verification
+      expect(catchUpVerification?.status).toBe('success')
+      expect(catchUpVerification?.error).toBeUndefined()
+      expect(verifiedProvider.getBlockNumber).toHaveBeenCalledTimes(2)
+      expect(portfolioGetCalls).toEqual(
+        expect.arrayContaining([
+          { isColibri: false, blockTag: 'both', rpcNoStateOverride: false },
+          { isColibri: true, blockTag: 122, rpcNoStateOverride: true }
+        ])
+      )
+    } finally {
+      jest.useRealTimers()
+    }
+
+    // 4) Colibri is more than the threshold behind the RPC block -> warning, no Colibri fetch.
+    rpcResultBlockNumber = 123
+    verifiedProvider.getBlockNumber.mockResolvedValue(117)
+    portfolioGetCalls.length = 0
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const colibriBehindVerification = await waitForVerification()
+
+    expect(portfolioGetCalls).toEqual([
+      { isColibri: false, blockTag: 'both', rpcNoStateOverride: false }
+    ])
+    expect(colibriBehindVerification?.status).toBe('warning')
+    expect(colibriBehindVerification?.error).toBe('Colibri is 6 blocks behind the RPC latest block')
+
+    // 5) RPC is more than the threshold behind Colibri -> stale, no Colibri fetch.
+    // The block must still move forward, otherwise the update is rejected as stale
+    // by the controller before the verification result lands.
+    rpcResultBlockNumber = 124
+    verifiedProvider.getBlockNumber.mockResolvedValue(135)
+    portfolioGetCalls.length = 0
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const staleVerification = await waitForVerification()
+
+    expect(portfolioGetCalls).toEqual([
+      { isColibri: false, blockTag: 'both', rpcNoStateOverride: false }
+    ])
+    expect(staleVerification?.status).toBe('stale')
+    expect(staleVerification?.blockDiff).toBe(11)
+
+    // 6) Gnosis is also Colibri-supported: changed balances warn.
+    const colibriGnosis = { ...gnosis, isColibriEnabled: true }
+    await providersCtrl.setProvider(colibriGnosis)
+    verifiedProvider.getBlockNumber.mockResolvedValue(222)
+    rpcResultBlockNumber = 222
+    verifiedAmount = 99n
+    portfolioGetCalls.length = 0
+    verifierPortfolioGetOptions.length = 0
+
+    await controller.updateSelectedAccount(account.addr, [colibriGnosis])
+    const gnosisWarningVerification = await waitForVerification('100')
+
+    expect(portfolioGetCalls).toEqual(
+      expect.arrayContaining([
+        { isColibri: false, blockTag: 'both', rpcNoStateOverride: true },
+        { isColibri: true, blockTag: 222, rpcNoStateOverride: true }
+      ])
+    )
+    expect(verifierPortfolioGetOptions[0]?.deployless).toEqual(expectedVerifierDeployless)
+    expect(gnosisWarningVerification?.status).toBe('warning')
+    expect(gnosisWarningVerification?.error).toBe(
+      '1 balance(s) differed from the Colibri verified result'
+    )
+
+    // 7) Gnosis matching balances succeed.
+    verifiedAmount = rpcAmount
+    portfolioGetCalls.length = 0
+    await controller.updateSelectedAccount(account.addr, [colibriGnosis])
+    const gnosisSuccessfulVerification = await waitForVerification('100')
+
+    expect(gnosisSuccessfulVerification?.status).toBe('success')
+    expect(gnosisSuccessfulVerification?.error).toBeUndefined()
+
+    // 8) Simulated portfolio updates must skip Colibri verification.
+    const verifyCallsBeforeSimulation = verifyPortfolioSpy.mock.calls.length
+    const simulatedAccountOp: AccountOp = {
+      id: 'colibri-simulation-skip',
+      accountAddr: account.addr,
+      signingKeyAddr: account.associatedKeys[0]!,
+      signingKeyType: 'internal',
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: 1n,
+      nonce: 0n,
+      signature: '0x',
+      calls: []
+    }
+    portfolioGetCalls.length = 0
+
+    await controller.updateSelectedAccount(
+      account.addr,
+      [colibriEthereum],
+      {
+        accountOps: { ['1']: [simulatedAccountOp] },
+        states: { ['1']: getAccountOnchainState(account) }
+      },
+      { isManualUpdate: true }
+    )
+
+    expect(verifyPortfolioSpy).toHaveBeenCalledTimes(verifyCallsBeforeSimulation)
+    expect(controller.getAccountPortfolioState(account.addr)['1']?.verification).toBeUndefined()
+    expect(portfolioGetCalls).toEqual([
+      { isColibri: false, blockTag: 'both', rpcNoStateOverride: false }
+    ])
+
+    // 9) Unexpected verifier failures should resolve the pending loading state to a warning.
+    verifyPortfolioSpy.mockRejectedValueOnce(new Error('Colibri verification crashed'))
+    portfolioGetCalls.length = 0
+
+    await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+    const rejectedVerification = await waitForVerification()
+
+    expect(rejectedVerification?.status).toBe('warning')
+    expect(rejectedVerification?.error).toBe('Colibri could not verify portfolio balances')
+    expect(portfolioGetCalls).toEqual([
+      { isColibri: false, blockTag: 'both', rpcNoStateOverride: false }
+    ])
+  })
 
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {
     const { controller } = await prepareTest()
@@ -401,15 +759,14 @@ describe('Portfolio Controller ', () => {
     const queueOrder: string[] = []
 
     jest
-      // @ts-ignore
+      // @ts-expect-error test
       .spyOn(controller, 'updatePortfolioState')
       .mockImplementationOnce(
         () =>
-          // @ts-ignore
           new Promise((resolve) => {
             setTimeout(() => {
               queueOrder.push('updatePortfolioState - #1 call')
-              // @ts-ignore
+              // @ts-expect-error test
               resolve([true, null])
             }, 2000)
           })
@@ -718,15 +1075,78 @@ describe('Portfolio Controller ', () => {
         states: accountStates[account.addr]!
       })
 
-      const updateSelectedAccountSpy = jest.spyOn(controller, 'updateSelectedAccount')
+      const updatePortfolioStateSpy = jest.spyOn(controller as any, 'updatePortfolioState')
       const nonMatchingAccountOp = structuredClone(accountOp['1']![0]!)
       nonMatchingAccountOp.accountAddr = account2.addr
 
       await controller.discardSimulation([nonMatchingAccountOp])
 
-      expect(updateSelectedAccountSpy).not.toHaveBeenCalled()
+      expect(updatePortfolioStateSpy).not.toHaveBeenCalled()
       expect(getEthereumPortfolioState(controller).accountOps).toStrictEqual(accountOp['1'])
       expect(getSimulatedCollection(controller)?.amountPostSimulation).toBe(0n)
+    })
+
+    test('discardSimulation skips the refresh for a non-Safe account without a stored simulation', async () => {
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
+      const accountOp = await getAccountOp()
+
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      const stateBefore = getEthereumPortfolioState(controller)
+      expect(stateBefore.accountOps).toBeUndefined()
+
+      const updatePortfolioStateSpy = jest.spyOn(controller as any, 'updatePortfolioState')
+
+      await controller.discardSimulation(accountOp['1']!)
+
+      const stateAfter = getEthereumPortfolioState(controller)
+
+      expect(updatePortfolioStateSpy).not.toHaveBeenCalled()
+      expect(stateAfter.result?.updateStarted).toBe(stateBefore.result?.updateStarted)
+    })
+
+    test('discardSimulation refreshes a Safe account without a stored simulation', async () => {
+      const safeAccount: Account = {
+        ...account,
+        creation: null,
+        safeCreation: {
+          factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
+          singleton: '0x29fcB43b46531BcA003ddC8FCB67FFE91900C762',
+          saltNonce: '0x00',
+          setupData: '0x'
+        }
+      }
+      const { controller } = await prepareTest({
+        skipAccountStateFetch: false,
+        initialSetStorage: async (storageCtrl) => {
+          await storageCtrl.set('accounts', [safeAccount, account2])
+        }
+      })
+      const accountOp = await getAccountOp()
+
+      await controller.updateSelectedAccount(safeAccount.addr, [ethereum])
+
+      const stateBefore = getEthereumPortfolioState(controller)
+      expect(stateBefore.accountOps).toBeUndefined()
+      expect(stateBefore.result?.updateStarted).toBeDefined()
+
+      const updatePortfolioStateSpy = jest.spyOn(controller as any, 'updatePortfolioState')
+
+      await controller.discardSimulation(accountOp['1']!)
+
+      const stateAfter = getEthereumPortfolioState(controller)
+      const [, updatedNetwork, , updatedPortfolioProps] = updatePortfolioStateSpy.mock.calls[0] as [
+        Account,
+        Network,
+        Portfolio | null,
+        Partial<GetOptions>
+      ]
+
+      expect(updatePortfolioStateSpy).toHaveBeenCalledTimes(1)
+      expect(updatedNetwork.chainId).toBe(ethereum.chainId)
+      expect(updatedPortfolioProps.simulation).toBeUndefined()
+      expect(stateAfter.result?.updateStarted).toBeGreaterThan(stateBefore.result?.updateStarted!)
+      expect(stateAfter.accountOps).toBeUndefined()
     })
 
     test('discardSimulation does not affect a different account op, even if they are called together', async () => {
@@ -777,6 +1197,57 @@ describe('Portfolio Controller ', () => {
 
       expect(areAccountOpsEqual(stateAfter.accountOps!, newAccountOp['1']!)).toBe(true)
     })
+    test('discardSimulation does not discard a newer simulation that is already in progress', async () => {
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
+      const oldAccountOp = await getAccountOp()
+      const newAccountOp = await getAccountOp('0x932261f9fc8da46c4a22e31b45c4de60623848bf', 39118)
+      const accountStates = await getAccountsInfo([account])
+
+      await controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: oldAccountOp,
+        states: accountStates[account.addr]!
+      })
+
+      let resolveNewSimulationStarted: () => void = () => {}
+      const newSimulationStarted = new Promise<void>((resolve) => {
+        resolveNewSimulationStarted = resolve
+      })
+      let resolveNewSimulation: () => void = () => {}
+      const newSimulationCanFinish = new Promise<void>((resolve) => {
+        resolveNewSimulation = resolve
+      })
+      const originalUpdatePortfolioState = (controller as any).updatePortfolioState.bind(controller)
+
+      jest
+        .spyOn(controller as any, 'updatePortfolioState')
+        .mockImplementation(async (...args: any[]) => {
+          const simulatedAccountOp = args[3]?.simulation?.accountOps?.[0]
+
+          if (simulatedAccountOp?.id === newAccountOp['1']![0]!.id) {
+            resolveNewSimulationStarted()
+            await newSimulationCanFinish
+          }
+
+          return originalUpdatePortfolioState(...args)
+        })
+
+      const updatePromise = controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: newAccountOp,
+        states: accountStates[account.addr]!
+      })
+
+      await newSimulationStarted
+      const discardPromise = controller.discardSimulation(oldAccountOp['1']!)
+
+      // Let discardSimulation enqueue its atomic AccountOp ID check behind the running simulation.
+      await wait(0)
+      resolveNewSimulation()
+      await Promise.all([updatePromise, discardPromise])
+
+      const stateAfter = getEthereumPortfolioState(controller)
+
+      expect(areAccountOpsEqual(stateAfter.accountOps!, newAccountOp['1']!)).toBe(true)
+    })
     test('discardSimulation is not affected by account op nonces being updated in between', async () => {
       const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const ethereum = networks.find((network) => network.chainId === 1n)!
@@ -812,8 +1283,8 @@ describe('Portfolio Controller ', () => {
       expect(controller.getAccountPortfolioState(account.addr)['1']!.accountOps).toBeDefined()
 
       // Mock getAllHints error which will cause the update to fail
-      // @ts-ignore
-      jest.spyOn(controller, 'getAllHints').mockImplementationOnce(() => {
+      // @ts-expect-error test
+      jest.spyOn(controller.hints, 'getAllHints').mockImplementationOnce(() => {
         throw new Error('Failed to get hints')
       })
 
@@ -823,6 +1294,565 @@ describe('Portfolio Controller ', () => {
 
       expect(stateAfter.accountOps).toBeUndefined()
       restore()
+    })
+  })
+
+  describe('Scheduled updates', () => {
+    suppressConsoleBeforeEach()
+
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    // A minimal portfolio lib result, so updatePortfolioState can fill the state without
+    // hitting the network.
+    const makePortfolioLibResult = (): any => ({
+      updateStarted: Date.now(),
+      discoveryTime: 0,
+      oracleCallTime: 0,
+      priceUpdateTime: 0,
+      tokenDataCache: new Map(),
+      tokens: [],
+      feeTokens: [],
+      toBeLearned: { erc20s: [], erc721s: {} },
+      fetchedTokenMetadata: [],
+      fetchedCollectionMetadata: [],
+      tokenErrors: [],
+      collectionErrors: [],
+      collections: [],
+      errors: [],
+      blockNumber: 0,
+      beforeNonce: 0n,
+      afterNonce: 0n
+    })
+
+    // Mock the network calls so a real updateSelectedAccount completes without real requests.
+    const mockFetchLayer = (controller: PortfolioController) => {
+      const discoverySpy: any = jest
+        // @ts-expect-error test
+        .spyOn(controller, 'batchedPortfolioDiscovery')
+      discoverySpy.mockResolvedValue(null)
+      jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue(makePortfolioLibResult())
+      jest
+        .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+        .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] } as any)
+
+      return { discoverySpy }
+    }
+
+    // The runner's scheduled updates are the calls that pass bypassServerSideCache in opts.
+    const getBypassUpdates = (spy: any) =>
+      spy.mock.calls.filter((call: any[]) => call[3]?.bypassServerSideCache === true)
+
+    // Schedules a cache-busting update the way MainController does after a confirmed tx.
+    const schedule = (controller: PortfolioController, accountId: string, chainId: bigint) =>
+      controller.scheduleUpdate({ accountId, chainId, bypassServerSideCache: true })
+
+    test('schedules a cache-busting update that fires only after the 60s threshold', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockResolvedValue(undefined)
+
+        schedule(controller, account.addr, 1n)
+
+        // The runner ticks at 20s and 40s, but the update is younger than 60s so nothing fires.
+        await jest.advanceTimersByTimeAsync(40 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(0)
+
+        // At 60s it's old enough, so the bypass update fires for the account and network.
+        await jest.advanceTimersByTimeAsync(20 * 1000)
+        const bypassUpdates = getBypassUpdates(updateSpy)
+        expect(bypassUpdates).toHaveLength(1)
+        expect(bypassUpdates[0][0]).toBe(account.addr)
+        expect(bypassUpdates[0][1].map((n: Network) => n.chainId)).toEqual([1n])
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('a scheduled update is removed after it fires and does not run twice', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockResolvedValue(undefined)
+
+        schedule(controller, account.addr, 1n)
+
+        // Advance past the threshold so the scheduled update fires.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+
+        // The entry was removed, so later ticks don't fire it again.
+        await jest.advanceTimersByTimeAsync(120 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('re-scheduling debounces: the window restarts from the most recent confirmation', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockResolvedValue(undefined)
+
+        // First confirmation schedules the update.
+        schedule(controller, account.addr, 1n)
+
+        // After 40s a second confirmation re-schedules and resets the timer.
+        await jest.advanceTimersByTimeAsync(40 * 1000)
+        schedule(controller, account.addr, 1n)
+
+        // 80s after the first confirmation it would have fired already, but it's only 40s after
+        // the second one, so nothing fires yet.
+        await jest.advanceTimersByTimeAsync(40 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(0)
+
+        // 60s after the second confirmation it finally fires.
+        await jest.advanceTimersByTimeAsync(20 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('the runner does not call updateSelectedAccount when no scheduled update is due yet', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockResolvedValue(undefined)
+
+        schedule(controller, account.addr, 1n)
+
+        // The update is younger than 60s, so the runner shouldn't call updateSelectedAccount.
+        await jest.advanceTimersByTimeAsync(40 * 1000)
+        expect(updateSpy).not.toHaveBeenCalled()
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('scheduled updates are tracked per network and fire independently', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockResolvedValue(undefined)
+
+        // Ethereum confirms first, Polygon 30s later.
+        schedule(controller, account.addr, 1n)
+        await jest.advanceTimersByTimeAsync(30 * 1000)
+        schedule(controller, account.addr, 137n)
+
+        // At 60s only Ethereum is due.
+        await jest.advanceTimersByTimeAsync(30 * 1000)
+        let bypassUpdates = getBypassUpdates(updateSpy)
+        expect(bypassUpdates).toHaveLength(1)
+        expect(bypassUpdates[0][1].map((n: Network) => n.chainId)).toEqual([1n])
+
+        // Polygon was scheduled 30s later, so it becomes due around 90s and fires on the 100s
+        // tick. Ethereum has already fired.
+        await jest.advanceTimersByTimeAsync(40 * 1000)
+        bypassUpdates = getBypassUpdates(updateSpy)
+        expect(bypassUpdates).toHaveLength(2)
+        expect(bypassUpdates[1][1].map((n: Network) => n.chainId)).toEqual([137n])
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('a slow scheduled update is flagged as running and is not processed twice', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+
+        // Make the scheduled update hang so it's still running on the next ticks. The entry stays
+        // in the schedule while it runs, but is flagged, so it shouldn't be picked up again.
+        let resolveSlowUpdate: () => void = () => {}
+        const slowUpdate = new Promise<void>((resolve) => {
+          resolveSlowUpdate = () => resolve()
+        })
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) =>
+            args[3]?.bypassServerSideCache ? (slowUpdate as any) : Promise.resolve(undefined)
+          )
+
+        schedule(controller, account.addr, 1n)
+
+        // This fires the scheduled update, which now hangs.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+
+        // While it's still running, it isn't called again.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+
+        // Once it resolves the schedule is empty, so it still doesn't run again.
+        resolveSlowUpdate()
+        await jest.advanceTimersByTimeAsync(40 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('scheduledUpdateChainIds exposes the chain while the update is pending and while it runs', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+
+        let resolveSlowUpdate: () => void = () => {}
+        const slowUpdate = new Promise<void>((resolve) => {
+          resolveSlowUpdate = () => resolve()
+        })
+        jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) =>
+            args[3]?.bypassServerSideCache ? (slowUpdate as any) : Promise.resolve(undefined)
+          )
+
+        expect(controller.scheduledUpdateChainIds).toEqual({})
+
+        // Pending: visible right away, so the UI can tell the user an update is coming.
+        schedule(controller, account.addr, 1n)
+        expect(controller.scheduledUpdateChainIds).toEqual({ [account.addr]: [1n] })
+
+        // Running: still visible, because the positions haven't been refreshed yet.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(controller.scheduledUpdateChainIds).toEqual({ [account.addr]: [1n] })
+
+        // Done: gone, so the UI stops telling the user anything.
+        resolveSlowUpdate()
+        await jest.advanceTimersByTimeAsync(0)
+        expect(controller.scheduledUpdateChainIds).toEqual({})
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('a confirmation during a running update schedules a separate update instead of debouncing it', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+
+        let resolveSlowUpdate: () => void = () => {}
+        const slowUpdate = new Promise<void>((resolve) => {
+          resolveSlowUpdate = () => resolve()
+        })
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) =>
+            args[3]?.bypassServerSideCache ? (slowUpdate as any) : Promise.resolve(undefined)
+          )
+
+        schedule(controller, account.addr, 1n)
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+
+        // A second tx confirms while the first update is still fetching. Debouncing onto the
+        // running entry would lose it, since that request can't see the new position changes.
+        schedule(controller, account.addr, 1n)
+        expect(controller.scheduledUpdateChainIds).toEqual({ [account.addr]: [1n, 1n] })
+
+        // The running one finishes, but the newly scheduled one keeps the indicator up.
+        resolveSlowUpdate()
+        await jest.advanceTimersByTimeAsync(0)
+        expect(controller.scheduledUpdateChainIds).toEqual({ [account.addr]: [1n] })
+
+        // And it fires 60s after the second confirmation.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(2)
+        expect(controller.scheduledUpdateChainIds).toEqual({})
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('emits an update when a scheduled update is added, starts running and completes', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+
+        let resolveSlowUpdate: () => void = () => {}
+        const slowUpdate = new Promise<void>((resolve) => {
+          resolveSlowUpdate = () => resolve()
+        })
+        jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) =>
+            args[3]?.bypassServerSideCache ? (slowUpdate as any) : Promise.resolve(undefined)
+          )
+
+        // Without these emits the UI never re-renders and the indicator never appears or hides.
+        const onUpdate = jest.fn()
+        controller.onUpdate(onUpdate)
+
+        schedule(controller, account.addr, 1n)
+        expect(onUpdate).toHaveBeenCalledTimes(1)
+
+        // Debouncing the pending entry changes its scheduledAt, which the UI doesn't read, but the
+        // emit keeps the state the UI holds in sync with the controller.
+        schedule(controller, account.addr, 1n)
+        expect(onUpdate).toHaveBeenCalledTimes(2)
+
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(onUpdate).toHaveBeenCalledTimes(3)
+
+        resolveSlowUpdate()
+        await jest.advanceTimersByTimeAsync(0)
+        expect(onUpdate).toHaveBeenCalledTimes(4)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('a scheduled update is forgotten even when the portfolio request fails', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+
+        jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) =>
+            args[3]?.bypassServerSideCache
+              ? Promise.reject(new Error('discovery api is down'))
+              : Promise.resolve(undefined)
+          )
+
+        schedule(controller, account.addr, 1n)
+
+        // A failed update must not leave the indicator stuck on forever.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(controller.scheduledUpdateChainIds).toEqual({})
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    // The force state derived from the defiUpdateMode passed to batchedPortfolioDiscovery. Only the
+    // per-network discovery sets the mode; the defi-apps (customAppChain) call doesn't, so it's
+    // filtered out.
+    const getForceFlags = (discoverySpy: any): boolean[] =>
+      discoverySpy.mock.calls
+        .map((call: any[]) => call[0].defiUpdateMode)
+        .filter((mode: unknown) => mode !== undefined)
+        .map((mode: string) => mode === defiPositionsLib.DefiUpdateMode.Force)
+
+    test('a pending scheduled update suppresses the server-side bypass on the next update', async () => {
+      const { controller } = await prepareTest()
+      const { discoverySpy } = mockFetchLayer(controller)
+      // After a tx the nonce changes, so the defi update can't be skipped and discovery runs.
+      jest.spyOn(defiPositionsLib, 'getHasNonceChangedSinceLastUpdate').mockReturnValue(true)
+
+      // A cache-busting update is scheduled, as MainController does after a confirmed tx.
+      schedule(controller, account.addr, 1n)
+
+      // A regular update in the meantime shouldn't force the bypass (the scheduled one will),
+      // even though the nonce changed.
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      const forceFlags = getForceFlags(discoverySpy)
+      expect(forceFlags.length).toBeGreaterThan(0)
+      forceFlags.forEach((flag: boolean) => expect(flag).toBe(false))
+    })
+
+    test('a manual update does not clear a pending scheduled update', async () => {
+      // The real update awaited below yields to the main thread, which falls back to a 0ms
+      // timeout. Letting real time drive the fake clock keeps those yields resolving, while
+      // advanceTimersByTimeAsync still controls the scheduled update's 60s threshold.
+      jest.useFakeTimers({ advanceTimers: true })
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        mockFetchLayer(controller)
+        const updateSpy = jest.spyOn(controller, 'updateSelectedAccount')
+
+        schedule(controller, account.addr, 1n)
+
+        // The user refreshes the portfolio before the scheduled update is due.
+        await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+          isManualUpdate: true
+        })
+        expect(controller.scheduledUpdateChainIds).toEqual({ [account.addr]: [1n] })
+
+        // The scheduled cache-busting update still fires afterwards.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('without a pending scheduled update, a nonce change does force the server-side bypass (control)', async () => {
+      const { controller } = await prepareTest()
+      const { discoverySpy } = mockFetchLayer(controller)
+      jest.spyOn(defiPositionsLib, 'getHasNonceChangedSinceLastUpdate').mockReturnValue(true)
+
+      // With no scheduled update pending, a nonce change forces the bypass. This is the
+      // counterpart to the previous test.
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      const forceFlags = getForceFlags(discoverySpy)
+      expect(forceFlags.length).toBeGreaterThan(0)
+      expect(forceFlags.some((flag: boolean) => flag === true)).toBe(true)
+    })
+
+    test('The scheduled cache-busting update reaches discovery with forceUpdateDefi=true', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        const { discoverySpy } = mockFetchLayer(controller)
+
+        discoverySpy.mockResolvedValue({
+          networkId: '1',
+          chainId: 1,
+          accountAddr: account.addr,
+          erc20s: [],
+          erc721s: {},
+          hasHints: true,
+          prices: {},
+          defi: { positions: [], updatedAt: Date.now() }
+        })
+
+        // Spy without mocking the implementation, so the runner runs the real updateSelectedAccount.
+        const updateSpy = jest.spyOn(controller, 'updateSelectedAccount')
+
+        schedule(controller, account.addr, 1n)
+
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+
+        const bypassCalls = updateSpy.mock.calls.filter(
+          (call: any[]) => call[3]?.bypassServerSideCache === true
+        )
+        expect(bypassCalls).toHaveLength(1)
+
+        // And it actually forces the defi discovery.
+        const forcedDiscovery = discoverySpy.mock.calls.some(
+          (call: any[]) => call[0]?.defiUpdateMode === defiPositionsLib.DefiUpdateMode.Force
+        )
+        expect(forcedDiscovery).toBe(true)
+
+        // The defi-apps (customAppChain) positions are refreshed too, not skipped. In the real
+        // batcher this call is merged with the network one, so it inherits update=true.
+        const updatedDefiApps = discoverySpy.mock.calls.some(
+          (call: any[]) => call[0]?.chainId === 'customAppChain'
+        )
+        expect(updatedDefiApps).toBe(true)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('scheduled updates are tracked per account and fire independently', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockResolvedValue(undefined)
+
+        // account confirms first, account2 30s later.
+        schedule(controller, account.addr, 1n)
+        await jest.advanceTimersByTimeAsync(30 * 1000)
+        schedule(controller, account2.addr, 1n)
+
+        // At 60s only account is due.
+        await jest.advanceTimersByTimeAsync(30 * 1000)
+        let bypassUpdates = getBypassUpdates(updateSpy)
+        expect(bypassUpdates).toHaveLength(1)
+        expect(bypassUpdates[0][0]).toBe(account.addr)
+
+        // account2 was scheduled 30s later, so it becomes due around 90s and fires on the 100s
+        // tick. account has already fired.
+        await jest.advanceTimersByTimeAsync(40 * 1000)
+        bypassUpdates = getBypassUpdates(updateSpy)
+        expect(bypassUpdates).toHaveLength(2)
+        expect(bypassUpdates[1][0]).toBe(account2.addr)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('a failing scheduled update does not crash the runner or block other accounts', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+
+        // The scheduled update for account fails, account2 succeeds.
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) => {
+            if (args[3]?.bypassServerSideCache && args[0] === account.addr)
+              return Promise.reject(new Error('RPC down'))
+            return Promise.resolve(undefined)
+          })
+
+        schedule(controller, account.addr, 1n)
+        schedule(controller, account2.addr, 1n)
+
+        // Both are due at 60s. account2 should still run even though account's update fails, and
+        // the runner shouldn't throw.
+        await expect(jest.advanceTimersByTimeAsync(60 * 1000)).resolves.not.toThrow()
+
+        const accounts = getBypassUpdates(updateSpy).map((call: any[]) => call[0])
+        expect(accounts).toContain(account.addr)
+        expect(accounts).toContain(account2.addr)
+
+        // There's no retry. The failed entry was already removed, so account isn't run again.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        const accountsAfter = getBypassUpdates(updateSpy).map((call: any[]) => call[0])
+        expect(accountsAfter.filter((addr: string) => addr === account.addr)).toHaveLength(1)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('a confirmation arriving while a scheduled update is in flight is not lost', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+
+        // Make the scheduled update hang so a new confirmation can come in while it's running.
+        let resolveSlowUpdate: () => void = () => {}
+        const slowUpdate = new Promise<void>((resolve) => {
+          resolveSlowUpdate = () => resolve()
+        })
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) =>
+            args[3]?.bypassServerSideCache ? (slowUpdate as any) : Promise.resolve(undefined)
+          )
+
+        // First confirmation schedules the update.
+        schedule(controller, account.addr, 1n)
+
+        // At 60s the runner fires the first update, which hangs.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+
+        // A new confirmation comes in while the first update is still running. The old entry was
+        // already removed, so this adds a fresh one.
+        schedule(controller, account.addr, 1n)
+
+        // Let the hanging update finish, then advance to the new entry's deadline.
+        resolveSlowUpdate()
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+
+        // The new confirmation wasn't lost, so a second update fired.
+        expect(getBypassUpdates(updateSpy)).toHaveLength(2)
+      } finally {
+        jest.useRealTimers()
+      }
     })
   })
 
@@ -906,7 +1936,10 @@ describe('Portfolio Controller ', () => {
 
       await controller.updateSelectedAccount(account.addr)
 
-      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const learnedAssets: LearnedAssets = await storageCtrl.get(
+        'learnedAssets',
+        {} as LearnedAssets
+      )
       const key = `${1}:${account.addr}`
 
       expect(learnedAssets.erc20s[key]).not.toHaveProperty(SMART_CONTRACT_ADDR)
@@ -926,7 +1959,10 @@ describe('Portfolio Controller ', () => {
         1n
       )
       await controller.updateSelectedAccount(account2.addr)
-      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const learnedAssets: LearnedAssets = await storageCtrl.get(
+        'learnedAssets',
+        {} as LearnedAssets
+      )
       const key = `${1}:${account2.addr}`
 
       expect(learnedAssets.erc721s[key]).not.toHaveProperty(SMART_CONTRACT_ADDR)
@@ -939,8 +1975,8 @@ describe('Portfolio Controller ', () => {
 
       controller.addErc721sToBeLearned([[NFT_ADDR, [1n]]], account2.addr, 1n)
 
-      // @ts-ignore
-      const allHints = controller.getAllHints(account2.addr, 1n)
+      // @ts-expect-error test
+      const allHints = controller.hints.getAllHints(account2.addr, 1n)
 
       expect(allHints.specialErc721Hints.learn[NFT_ADDR]).toContain(1n)
     })
@@ -949,8 +1985,8 @@ describe('Portfolio Controller ', () => {
       const ERC_20_MATIC_ADDR = '0x0000000000000000000000000000000000001010'
       const { controller } = await prepareTest()
 
-      // @ts-ignore
-      await controller.learnTokens([ERC_20_MATIC_ADDR], `${137}:${account.addr}`, 137n)
+      // @ts-expect-error test
+      await controller.hints.learnTokens([ERC_20_MATIC_ADDR], `${137}:${account.addr}`, 137n)
 
       await controller.updateSelectedAccount(account.addr)
 
@@ -987,11 +2023,14 @@ describe('Portfolio Controller ', () => {
       const nextBatchOf30 = generateRandomAddresses(30)
       const allCurrentlyOwned = [...firstBatchOf50.slice(0, 20), ...nextBatchOf30]
 
-      // @ts-ignore
-      await controller.learnTokens(allCurrentlyOwned, `${1}:${account.addr}`, 1n)
+      // @ts-expect-error test
+      await controller.hints.learnTokens(allCurrentlyOwned, `${1}:${account.addr}`, 1n)
 
       // Expect the oldest 10 to be removed
-      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const learnedAssets: LearnedAssets = await storageCtrl.get(
+        'learnedAssets',
+        {} as LearnedAssets
+      )
       const learnedErc20s = learnedAssets.erc20s?.[`${1}:${account.addr}`]
 
       expect(Object.keys(learnedErc20s!).length).toBe(70)
@@ -1044,11 +2083,14 @@ describe('Portfolio Controller ', () => {
         ...nextRandomCollections
       ]
 
-      // @ts-ignore
-      await controller.learnNfts(allCurrentlyOwnedCollections, account.addr, 1n)
+      // @ts-expect-error test
+      await controller.hints.learnNfts(allCurrentlyOwnedCollections, account.addr, 1n)
 
       // Expect the oldest 10 to be removed
-      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const learnedAssets: LearnedAssets = await storageCtrl.get(
+        'learnedAssets',
+        {} as LearnedAssets
+      )
 
       const learnedErc721s = learnedAssets.erc721s?.[`${1}:${account.addr}`]!
 
@@ -1089,8 +2131,8 @@ describe('Portfolio Controller ', () => {
         1n
       )
 
-      // @ts-ignore
-      const allHints = controller.getAllHints(account.addr, 1n)
+      // @ts-expect-error test
+      const allHints = controller.hints.getAllHints(account.addr, 1n)
 
       expect(
         allHints.specialErc20Hints.learn.filter(
@@ -1114,8 +2156,8 @@ describe('Portfolio Controller ', () => {
         [1n]
       ]
 
-      // @ts-ignore
-      await controller.learnTokens(
+      // @ts-expect-error test
+      await controller.hints.learnTokens(
         [
           DUPLICATE_TOKEN_ADDR,
           '0x4c9edd5852cd905f086c759e8383e09bff1e68b3',
@@ -1125,8 +2167,8 @@ describe('Portfolio Controller ', () => {
         1n
       )
 
-      // @ts-ignore
-      await controller.learnTokens(
+      // @ts-expect-error test
+      await controller.hints.learnTokens(
         [
           '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984',
           DUPLICATE_TOKEN_ADDR,
@@ -1136,11 +2178,11 @@ describe('Portfolio Controller ', () => {
         1n
       )
 
-      // @ts-ignore
-      await controller.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
+      // @ts-expect-error test
+      await controller.hints.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
 
-      // @ts-ignore
-      await controller.learnNfts(
+      // @ts-expect-error test
+      await controller.hints.learnNfts(
         [
           [DUPLICATE_COLLECTION[0], [1n, 2n]],
           ['0x0a1bbd57033f57e7b6743621b79fcb9eb2ce3676', [1n, 2n]]
@@ -1149,7 +2191,10 @@ describe('Portfolio Controller ', () => {
         1n
       )
 
-      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const learnedAssets: LearnedAssets = await storageCtrl.get(
+        'learnedAssets',
+        {} as LearnedAssets
+      )
 
       expect(
         Object.keys(learnedAssets.erc20s?.[`${1}:${account.addr}`] || {}).filter(
@@ -1172,11 +2217,11 @@ describe('Portfolio Controller ', () => {
         [1n]
       ]
 
-      // @ts-ignore
-      await controller.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
+      // @ts-expect-error test
+      await controller.hints.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
 
-      // @ts-ignore
-      await controller.learnNfts(
+      // @ts-expect-error test
+      await controller.hints.learnNfts(
         [
           // Empty array makes it enumerable
           [DUPLICATE_COLLECTION[0], []]
@@ -1185,7 +2230,10 @@ describe('Portfolio Controller ', () => {
         1n
       )
 
-      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const learnedAssets: LearnedAssets = await storageCtrl.get(
+        'learnedAssets',
+        {} as LearnedAssets
+      )
 
       expect(learnedAssets.erc721s[`${1}:${account.addr}`]).toHaveProperty(
         `${DUPLICATE_COLLECTION[0]}:1`
@@ -1194,8 +2242,8 @@ describe('Portfolio Controller ', () => {
         `${DUPLICATE_COLLECTION[0]}:enumerable`
       )
 
-      // @ts-ignore
-      const { additionalErc721Hints } = controller.getAllHints(account.addr, 1n)
+      // @ts-expect-error test
+      const { additionalErc721Hints } = controller.hints.getAllHints(account.addr, 1n)
 
       // Enumerable is with priority
       expect(additionalErc721Hints[DUPLICATE_COLLECTION[0]]).toEqual([])
@@ -1209,8 +2257,8 @@ describe('Portfolio Controller ', () => {
         [1n]
       ]
 
-      // @ts-ignore
-      await controller.learnNfts(
+      // @ts-expect-error test
+      await controller.hints.learnNfts(
         [
           // Empty array makes it enumerable
           [DUPLICATE_COLLECTION[0], []]
@@ -1219,10 +2267,13 @@ describe('Portfolio Controller ', () => {
         1n
       )
 
-      // @ts-ignore
-      await controller.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
+      // @ts-expect-error test
+      await controller.hints.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
 
-      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const learnedAssets: LearnedAssets = await storageCtrl.get(
+        'learnedAssets',
+        {} as LearnedAssets
+      )
 
       expect(learnedAssets.erc721s[`${1}:${account.addr}`]).toHaveProperty(
         `${DUPLICATE_COLLECTION[0]}:1`
@@ -1231,8 +2282,8 @@ describe('Portfolio Controller ', () => {
         `${DUPLICATE_COLLECTION[0]}:enumerable`
       )
 
-      // @ts-ignore
-      const { additionalErc721Hints } = controller.getAllHints(account.addr, 1n)
+      // @ts-expect-error test
+      const { additionalErc721Hints } = controller.hints.getAllHints(account.addr, 1n)
 
       // Enumerable is with priority
       expect(additionalErc721Hints[DUPLICATE_COLLECTION[0]]).toEqual([])
@@ -1287,7 +2338,10 @@ describe('Portfolio Controller ', () => {
 
       expect(toBeLearnedToken).toBeTruthy()
 
-      const previousHintsStorage = await storageCtrl.get('previousHints', {})
+      const previousHintsStorage = await storageCtrl.get(
+        'previousHints',
+        {} as PreviousHintsStorage
+      )
       const tokenInLearnedTokens =
         previousHintsStorage.learnedTokens?.['1'] &&
         previousHintsStorage.learnedTokens?.['1'][toBeLearnedToken!.address]
@@ -1314,9 +2368,9 @@ describe('Portfolio Controller ', () => {
         }
       }
 
-      // @ts-ignore
+      // @ts-expect-error test
       jest.spyOn(Portfolio.prototype, 'externalHintsAPIDiscovery').mockImplementationOnce(() =>
-        // @ts-ignore
+        // @ts-expect-error test
         Promise.resolve({
           hints
         })
@@ -1335,7 +2389,10 @@ describe('Portfolio Controller ', () => {
 
       const key = `${137}:${account2.addr}`
 
-      const previousHintsStorage: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const previousHintsStorage: LearnedAssets = await storageCtrl.get(
+        'learnedAssets',
+        {} as LearnedAssets
+      )
       const tokenInLearnedTokens = previousHintsStorage.erc20s?.[key]![toBeLearnedToken!.address]
 
       expect(tokenInLearnedTokens).toBeTruthy()
@@ -1472,8 +2529,8 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      // @ts-ignore
-      const allHints = controller.getAllHints(account.addr, 1n)
+      // @ts-expect-error test
+      const allHints = controller.hints.getAllHints(account.addr, 1n)
 
       expect(allHints.additionalErc20Hints).toContain(STETH)
       expect(allHints.additionalErc20Hints).not.toContain(CHAINLINK)
@@ -1492,8 +2549,8 @@ describe('Portfolio Controller ', () => {
         state1.result?.collections?.find(({ address }) => address === LILPUDGIS_COLLECTION)
       ).not.toBeDefined()
 
-      // @ts-ignore
-      await controller.learnNfts([[LILPUDGIS_COLLECTION, [1n, 2n, 3n]]], account.addr, 1n)
+      // @ts-expect-error test
+      await controller.hints.learnNfts([[LILPUDGIS_COLLECTION, [1n, 2n, 3n]]], account.addr, 1n)
 
       await controller.updateSelectedAccount(account.addr, [ethereum])
 
@@ -1503,7 +2560,10 @@ describe('Portfolio Controller ', () => {
         state2.result?.collections?.find(({ address }) => address === LILPUDGIS_COLLECTION)
       ).toBeDefined()
 
-      const learnedInStorage: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const learnedInStorage: LearnedAssets = await storageCtrl.get(
+        'learnedAssets',
+        {} as LearnedAssets
+      )
 
       if (!learnedInStorage.erc721s[key]) throw new Error('No learned erc721s for the account')
 
@@ -1524,8 +2584,8 @@ describe('Portfolio Controller ', () => {
         account.addr,
         1n
       )
-      // @ts-ignore
-      const { specialErc721Hints } = controller.getAllHints(account.addr, 1n)
+      // @ts-expect-error test
+      const { specialErc721Hints } = controller.hints.getAllHints(account.addr, 1n)
 
       expect(hasLearned).toBeFalsy()
       expect(specialErc721Hints).toEqual({
@@ -1539,8 +2599,11 @@ describe('Portfolio Controller ', () => {
         account.addr,
         1n
       )
-      // @ts-ignore
-      const { specialErc721Hints: specialErc721Hints2 } = controller.getAllHints(account.addr, 1n)
+      // @ts-expect-error test
+      const { specialErc721Hints: specialErc721Hints2 } = controller.hints.getAllHints(
+        account.addr,
+        1n
+      )
 
       expect(hasLearned2).toBeTruthy()
       expect(specialErc721Hints2.learn).toEqual({
@@ -1584,7 +2647,10 @@ describe('Portfolio Controller ', () => {
       await controller.updateSelectedAccount(accountWithManyAssets.addr, [ethereum])
 
       const state1 = controller.getAccountPortfolioState(accountWithManyAssets.addr)?.['1']!
-      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const learnedAssets: LearnedAssets = await storageCtrl.get(
+        'learnedAssets',
+        {} as LearnedAssets
+      )
       const key = `1:${accountWithManyAssets.addr}`
       const { tokens, collections } = state1.result || {}
 
@@ -1649,8 +2715,8 @@ describe('Portfolio Controller ', () => {
       const learnedAssets = await storageCtrl.get('learnedAssets', null)
       expect(learnedAssets).toBe(null)
 
-      // @ts-ignore
-      const allHints = controller.getAllHints(account.addr, 1n)
+      // @ts-expect-error test
+      const allHints = controller.hints.getAllHints(account.addr, 1n)
 
       Object.keys(previousHints.learnedTokens['1']!).forEach((addr) => {
         expect(allHints.specialErc20Hints.learn.find((toBeLearned) => addr === toBeLearned))
@@ -1663,8 +2729,8 @@ describe('Portfolio Controller ', () => {
       // expect allHints to no longer return zero balance asset hints
       await controller.updateSelectedAccount(account.addr)
 
-      // @ts-ignore
-      const allHints2 = controller.getAllHints(account.addr, 1n)
+      // @ts-expect-error test
+      const allHints2 = controller.hints.getAllHints(account.addr, 1n)
 
       expect(allHints2.specialErc20Hints.learn.length).toBe(0)
       expect(Object.keys(allHints2.specialErc721Hints.learn).length).toBe(0)
@@ -1680,8 +2746,8 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      // @ts-ignore
-      const hints = controller.getAllHints(account.addr, 1n, true)
+      // @ts-expect-error test
+      const hints = controller.hints.getAllHints(account.addr, 1n, undefined, true)
       const key = `${1n}:${account.addr}`
 
       expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]!))
@@ -1700,8 +2766,8 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      // @ts-ignore
-      const hints = controller.getAllHints(account.addr, 1n)
+      // @ts-expect-error test
+      const hints = controller.hints.getAllHints(account.addr, 1n)
       const key = `${1n}:${account.addr}`
 
       expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]!))
@@ -1720,8 +2786,8 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      // @ts-ignore
-      const hints = controller.getAllHints(account.addr, 1n, true)
+      // @ts-expect-error test
+      const hints = controller.hints.getAllHints(account.addr, 1n, undefined, true)
       const key = `${1n}:${account.addr}`
       const key2 = `${1n}:${account2.addr}`
 
@@ -1895,9 +2961,9 @@ describe('Portfolio Controller ', () => {
       const { controller } = await prepareTest()
 
       jest
-        // @ts-ignore
+        // @ts-expect-error test
         .spyOn(controller, 'batchedPortfolioDiscovery')
-        // @ts-ignore
+        // @ts-expect-error test
         .mockRejectedValue(new Error('Portfolio discovery failed'))
 
       await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
@@ -1972,9 +3038,9 @@ describe('Portfolio Controller ', () => {
       expect(result?.defiPositions.error).toBe(DeFiPositionsError.AssetPriceError)
 
       jest
-        // @ts-ignore
+        // @ts-expect-error test
         .spyOn(controller, 'batchedPortfolioDiscovery')
-        // @ts-ignore
+        // @ts-expect-error test
         .mockRejectedValue(new Error('Portfolio discovery failed'))
 
       await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
@@ -2045,9 +3111,9 @@ describe('Portfolio Controller ', () => {
       expect(hasDebankPositions).toBe(true)
 
       jest
-        // @ts-ignore
+        // @ts-expect-error test
         .spyOn(controller, 'batchedPortfolioDiscovery')
-        // @ts-ignore
+        // @ts-expect-error test
         .mockRejectedValue(new Error('Portfolio discovery failed'))
 
       await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
@@ -2067,21 +3133,100 @@ describe('Portfolio Controller ', () => {
       restore()
     })
 
+    it("Uniswap V3 shouldn't lose its API enhancement (e.g. rewards) when the discovery call is skipped", async () => {
+      const { controller } = await prepareTest()
+
+      // A formatted discovery response carrying a Debank Uniswap V3 entry. It's mocked rather than
+      // relying on the live API, since Debank's coverage of a given account varies over time.
+      const discoveryWithDebankUniV3 = {
+        data: {
+          defi: {
+            updatedAt: Date.now(),
+            isForceUpdate: false,
+            positions: [
+              {
+                providerName: 'Uniswap V3',
+                chainId: 1n,
+                source: 'debank' as const,
+                iconUrl: '',
+                siteUrl: 'https://app.uniswap.org',
+                type: 'common' as const,
+                positions: [
+                  {
+                    id: 'debank-uni-v3-eth',
+                    assets: [
+                      {
+                        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+                        symbol: 'WETH',
+                        name: 'Wrapped Ether',
+                        decimals: 18,
+                        amount: 1000000000000000000n,
+                        priceIn: { price: 3000, baseCurrency: 'usd' },
+                        value: 3000,
+                        type: AssetType.Liquidity,
+                        iconUrl: ''
+                      }
+                    ],
+                    additionalData: { positionIndex: 'debank-uni-v3-eth', name: 'Liquidity Pool' }
+                  }
+                ],
+                positionInUSD: 3000
+              }
+            ]
+          },
+          hints: null,
+          otherNetworksDefiCounts: {}
+        },
+        discoveryTime: 1,
+        errors: []
+      }
+
+      // @ts-expect-error - getPortfolioFromApiDiscovery is private, spied on at runtime
+      const discoverySpy: any = jest.spyOn(controller, 'getPortfolioFromApiDiscovery')
+      // First update: the custom (deployless) position is enhanced with the Debank entry (source: 'mixed')
+      discoverySpy.mockResolvedValueOnce(discoveryWithDebankUniV3)
+      // Second update: a skipped discovery returns null. This is a routine occurrence (the data is
+      // still fresh) and is NOT a failure.
+      discoverySpy.mockResolvedValueOnce(null)
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      const firstResult = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+      const uniBeforeSkip = firstResult?.defiPositions.positionsByProvider.find(
+        (p) => getProviderId(p.providerName) === 'uniswap v3'
+      )
+
+      // Check before updating again to ensure it's mixed
+      expect(uniBeforeSkip?.source).toBe('mixed')
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
+        defiMaxDataAgeMs: 0,
+        isManualUpdate: true
+      })
+
+      const secondResult = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
+      const uniAfterSkip = secondResult?.defiPositions.positionsByProvider.find(
+        (p) => getProviderId(p.providerName) === 'uniswap v3'
+      )
+
+      // MUST BE MIXED!!!!!
+      expect(uniAfterSkip?.source).toBe('mixed')
+    })
+
     describe('Defi apps', () => {
       it('should skip update if canSkipUpdate=true', async () => {
         const { controller } = await prepareTest()
-        // @ts-ignore
+        // @ts-expect-error test
         const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
         discoverySpy.mockResolvedValue(getDefiAppsResponse())
 
-        // @ts-ignore
+        // @ts-expect-error test
         await controller.updateDefiAppsState(account, {
           defiMaxDataAgeMs: 60 * 1000,
           hasKeys: true,
           isManualUpdate: false
         })
 
-        // @ts-ignore
+        // @ts-expect-error test
         await controller.updateDefiAppsState(account, {
           defiMaxDataAgeMs: 60 * 1000,
           hasKeys: true,
@@ -2093,11 +3238,11 @@ describe('Portfolio Controller ', () => {
 
       it('should bypass skip and re-fetch on manual update', async () => {
         const { controller } = await prepareTest()
-        // @ts-ignore
+        // @ts-expect-error test
         const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
         discoverySpy.mockResolvedValue(getDefiAppsResponse())
 
-        // @ts-ignore
+        // @ts-expect-error test
         await controller.updateDefiAppsState(account, {
           defiMaxDataAgeMs: 60 * 1000,
           hasKeys: true,
@@ -2109,7 +3254,7 @@ describe('Portfolio Controller ', () => {
 
         await wait(5)
 
-        // @ts-ignore
+        // @ts-expect-error test
         await controller.updateDefiAppsState(account, {
           defiMaxDataAgeMs: 60 * 1000,
           hasKeys: true,
@@ -2126,11 +3271,11 @@ describe('Portfolio Controller ', () => {
       it('should persist app positions under defiApps with no chainId and empty tokens', async () => {
         const { controller } = await prepareTest()
 
-        // @ts-ignore
+        // @ts-expect-error test
         const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
         discoverySpy.mockResolvedValue(getDefiAppsResponse())
 
-        // @ts-ignore
+        // @ts-expect-error test
         await controller.updateDefiAppsState(account, {
           defiMaxDataAgeMs: 0,
           hasKeys: true,
@@ -2153,11 +3298,11 @@ describe('Portfolio Controller ', () => {
         const { restore } = suppressConsole()
         const { controller } = await prepareTest()
 
-        // @ts-ignore
+        // @ts-expect-error test
         const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
         discoverySpy.mockRejectedValue(new Error('Defi apps failure'))
 
-        // @ts-ignore
+        // @ts-expect-error test
         await controller.updateDefiAppsState(account, {
           defiMaxDataAgeMs: 0,
           hasKeys: true,
@@ -2175,7 +3320,7 @@ describe('Portfolio Controller ', () => {
         const { restore } = suppressConsole()
         const { controller } = await prepareTest()
 
-        // @ts-ignore
+        // @ts-expect-error test
         const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
         discoverySpy.mockResolvedValue({
           defi: {
@@ -2184,7 +3329,7 @@ describe('Portfolio Controller ', () => {
           }
         })
 
-        // @ts-ignore
+        // @ts-expect-error test
         await controller.updateDefiAppsState(account, {
           defiMaxDataAgeMs: 0,
           hasKeys: true,
@@ -2201,12 +3346,12 @@ describe('Portfolio Controller ', () => {
       it('should not skip update when previous defiApps state has a criticalError', async () => {
         const { restore } = suppressConsole()
         const { controller } = await prepareTest()
-        // @ts-ignore
+        // @ts-expect-error test
         const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
         discoverySpy.mockRejectedValueOnce(new Error('first call fails'))
         discoverySpy.mockResolvedValueOnce(getDefiAppsResponse())
 
-        // @ts-ignore
+        // @ts-expect-error test
         await controller.updateDefiAppsState(account, {
           defiMaxDataAgeMs: 60 * 1000,
           hasKeys: true,
@@ -2214,7 +3359,7 @@ describe('Portfolio Controller ', () => {
         })
 
         // Should not be skipped despite maxDataAgeMs, because state.criticalError is set
-        // @ts-ignore
+        // @ts-expect-error test
         await controller.updateDefiAppsState(account, {
           defiMaxDataAgeMs: 60 * 1000,
           hasKeys: true,
@@ -2382,7 +3527,6 @@ describe('Portfolio Controller ', () => {
     expect(lastSuccessfulUpdate).toBeTruthy()
 
     jest
-      // @ts-ignore
       .spyOn(Portfolio.prototype, 'get')
       // Mock an error twice
       .mockRejectedValueOnce(new Error('Simulated error'))
@@ -2395,7 +3539,6 @@ describe('Portfolio Controller ', () => {
     expect(lastSuccessfulUpdate2).toEqual(lastSuccessfulUpdate)
 
     jest
-      // @ts-ignore
       .spyOn(Portfolio.prototype, 'get')
       // Mock an error twice
       .mockRejectedValueOnce(new Error('Simulated error'))
@@ -2418,7 +3561,7 @@ describe('Portfolio Controller ', () => {
 
     // Make the test deterministic: we only want to verify that discovery prices
     // populate the controller cache, not that the external API is reachable.
-    // @ts-ignore
+    // @ts-expect-error test
     controller.batchedPortfolioDiscovery = jest.fn().mockResolvedValue({
       networkId: '137',
       chainId: 137,
@@ -2444,13 +3587,13 @@ describe('Portfolio Controller ', () => {
       otherNetworksDefiCounts: {}
     })
 
-    // @ts-ignore
+    // @ts-expect-error test
     expect(controller.tokenDataCache['137']).toBe(undefined)
 
     jest
-      // @ts-ignore
+      // @ts-expect-error test
       .spyOn(controller, 'batchedPortfolioDiscovery')
-      // @ts-ignore
+      // @ts-expect-error test
       .mockResolvedValueOnce({
         networkId: 'polygon',
         chainId: 137,
@@ -2471,7 +3614,7 @@ describe('Portfolio Controller ', () => {
         otherNetworksDefiCounts: {}
       })
 
-    // @ts-ignore
+    // @ts-expect-error test
     await controller.getPortfolioFromApiDiscovery({
       chainId: 137n,
       account,
@@ -2480,9 +3623,9 @@ describe('Portfolio Controller ', () => {
       externalApiHintsResponse: null
     })
 
-    // @ts-ignore
+    // @ts-expect-error test
     expect(controller.tokenDataCache['137']).toBeDefined()
-    // @ts-ignore
+    // @ts-expect-error test
     expect(controller.tokenDataCache['137'].size).toBeGreaterThan(0)
   })
   it('A defi error is not returned if canSkipDefiUpdate=true', async () => {
@@ -2494,12 +3637,12 @@ describe('Portfolio Controller ', () => {
     await controller.updateSelectedAccount(account.addr, [ethereum])
 
     jest
-      // @ts-ignore
+      // @ts-expect-error test
       .spyOn(controller, 'batchedPortfolioDiscovery')
-      // @ts-ignore
+      // @ts-expect-error test
       .mockRejectedValue(new Error('Velcro error'))
 
-    // @ts-ignore
+    // @ts-expect-error test
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
       account,
@@ -2521,12 +3664,12 @@ describe('Portfolio Controller ', () => {
     const { controller } = await prepareTest()
 
     jest
-      // @ts-ignore
+      // @ts-expect-error test
       .spyOn(controller, 'batchedPortfolioDiscovery')
-      // @ts-ignore
+      // @ts-expect-error test
       .mockRejectedValue(new Error('Velcro error'))
 
-    // @ts-ignore
+    // @ts-expect-error test
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
       account,
@@ -2547,12 +3690,12 @@ describe('Portfolio Controller ', () => {
     const { controller } = await prepareTest()
 
     jest
-      // @ts-ignore
+      // @ts-expect-error test
       .spyOn(controller, 'batchedPortfolioDiscovery')
-      // @ts-ignore
+      // @ts-expect-error test
       .mockRejectedValue(new Error('Velcro error'))
 
-    // @ts-ignore
+    // @ts-expect-error test
     const formatted = await controller.getPortfolioFromApiDiscovery({
       chainId: 1n,
       account,
@@ -2626,6 +3769,109 @@ describe('Portfolio Controller ', () => {
     expect(newEthereumPortfolioState.accountOps).toStrictEqual(accountOpsOnEthereum['1'])
   })
 
+  describe('Exchange list and public state', () => {
+    const UNISWAP_EXCHANGE = {
+      id: 'uniswap_v3',
+      name: 'Uniswap V3',
+      url: 'https://app.uniswap.org',
+      image: 'https://example.com/uniswap.png'
+    }
+    const BINANCE_EXCHANGE = {
+      id: 'binance',
+      name: 'Binance',
+      url: 'https://www.binance.com',
+      image: 'https://example.com/binance.png'
+    }
+    // Mirrors the extra fields the real API returns that the UI never reads
+    const mockExchangeListResponse = {
+      data: {
+        [UNISWAP_EXCHANGE.id]: {
+          ...UNISWAP_EXCHANGE,
+          description: 'A decentralized exchange',
+          trust_score: 9,
+          trade_volume_24h_btc: 1234.5
+        },
+        [BINANCE_EXCHANGE.id]: {
+          ...BINANCE_EXCHANGE,
+          description: 'A centralized exchange',
+          trust_score: 10,
+          trade_volume_24h_btc: 98765.4
+        }
+      }
+    }
+
+    const exchangeListFetchOverride = jest.fn(
+      (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const url = typeof input === 'string' ? input : input.toString()
+
+        if (url === EXCHANGE_LIST_URL)
+          return Promise.resolve({
+            ok: true,
+            statusText: 'OK',
+            json: () => Promise.resolve(mockExchangeListResponse)
+          })
+
+        return fetch(input as any, init as any)
+      }
+    ) as unknown as typeof fetch
+
+    // makeMainController stubs the exchange list fetch out for every other test
+    const loadExchangeList = async (controller: PortfolioController) => {
+      jest.mocked(PortfolioController.prototype.updateExchangeList).mockRestore()
+      await controller.updateExchangeList()
+    }
+
+    test('only the requested exchanges are served, with their display fields, once the list loads', async () => {
+      const { controller, uiCtrl } = await prepareTest({
+        fetchOverride: exchangeListFetchOverride
+      })
+
+      expect(controller.exchangeListUpdatedAt).toBeNull()
+      expect(controller.getExchangesInfo([UNISWAP_EXCHANGE.id])).toEqual({})
+
+      await loadExchangeList(controller)
+
+      const exchangesInfo = controller.getExchangesInfo([UNISWAP_EXCHANGE.id, 'unknown_exchange'])
+      expect(typeof controller.exchangeListUpdatedAt).toBe('number')
+      expect(exchangesInfo).toEqual({ [UNISWAP_EXCHANGE.id]: UNISWAP_EXCHANGE })
+      expect(controller.getExchangesInfo([])).toEqual({})
+
+      const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
+      controller.getExchangesInfoAndSendResToUi([BINANCE_EXCHANGE.id], 'request-1')
+      expect(sendUiMessageSpy).toHaveBeenCalledTimes(1)
+      expect(sendUiMessageSpy).toHaveBeenCalledWith({
+        requestId: 'request-1',
+        ok: true,
+        res: { [BINANCE_EXCHANGE.id]: BINANCE_EXCHANGE }
+      })
+    })
+
+    test('the serialized state leaves out what the UI never reads', async () => {
+      const { controller } = await prepareTest({ fetchOverride: exchangeListFetchOverride })
+      await loadExchangeList(controller)
+      controller.addDefiSession('session-1')
+
+      const serialized = stringify(controller)
+      const serializedKeys = Object.keys(JSON.parse(serialized))
+      ;[
+        'exchangeState',
+        'hints',
+        'mobileInviteKeys',
+        'defiSessionIds',
+        'defiPositionsCountOnDisabledNetworks',
+        'tokenDataCache'
+      ].forEach((hiddenKey) => expect(serializedKeys).not.toContain(hiddenKey))
+      ;[
+        'customTokens',
+        'tokenPreferences',
+        'scheduledUpdateChainIds',
+        'validTokens',
+        'exchangeListUpdatedAt'
+      ].forEach((publicKey) => expect(serializedKeys).toContain(publicKey))
+      expect(serialized).not.toContain(UNISWAP_EXCHANGE.url)
+    })
+  })
+
   describe('Blacklisting', () => {
     const mockBlacklistResponse = {
       success: true,
@@ -2674,7 +3920,7 @@ describe('Portfolio Controller ', () => {
       advanceTime?: (ms: number) => Promise<void>
     ) => {
       for (let attempt = 0; attempt < 20; attempt++) {
-        // @ts-ignore - access private getter
+        // @ts-expect-error test - access private getter
         const blacklist = controller.blacklist
         if (!blacklist.isLoading && blacklist.updatedAt) return blacklist
 
@@ -2685,7 +3931,7 @@ describe('Portfolio Controller ', () => {
         }
       }
 
-      // @ts-ignore - access private getter
+      // @ts-expect-error test - access private getter
       return controller.blacklist
     }
 
@@ -2697,6 +3943,51 @@ describe('Portfolio Controller ', () => {
 
     afterEach(() => {
       jest.restoreAllMocks()
+    })
+
+    test('should not fetch blacklist when the scam and phishing checker is disabled', async () => {
+      const blacklistFetch = jest.fn(() =>
+        Promise.resolve(createJsonResponse(mockBlacklistResponse))
+      )
+      const fetchOverride = createBlacklistFetchOverride(blacklistFetch)
+
+      const { storageCtrl } = await prepareTest({
+        fetchOverride,
+        featureFlags: { scamAndPhishingChecker: false },
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
+      })
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(false)
+      expect(blacklistFetch).not.toHaveBeenCalled()
+      expect(await storageCtrl.get('tokenBlacklist', null)).toBeNull()
+    })
+
+    test('should not refresh a stale cached blacklist when the checker is disabled', async () => {
+      const staleCachedBlacklist = {
+        blacklistAddrs: { '1': [getAddress(mockBlacklistResponse.blacklistAddrs['1'][0]!)] },
+        blacklistBySymbols: ['claim'],
+        updatedAt: Date.now() - BLACKLIST_UPDATE_INTERVAL - 60 * 1000
+      }
+      const blacklistFetch = jest.fn(() =>
+        Promise.resolve(createJsonResponse(mockBlacklistResponse))
+      )
+      const fetchOverride = createBlacklistFetchOverride(blacklistFetch)
+
+      const { controller } = await prepareTest({
+        fetchOverride,
+        featureFlags: { scamAndPhishingChecker: false },
+        initialSetStorage: async (storageCtrlInner) => {
+          await storageCtrlInner.set('tokenBlacklist', staleCachedBlacklist)
+        },
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
+      })
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(false)
+      expect(blacklistFetch).not.toHaveBeenCalled()
+      // @ts-expect-error test - access private getter
+      expect(controller.blacklist).toEqual({ ...staleCachedBlacklist, isLoading: false })
     })
 
     test('should fetch blacklist from API successfully', async () => {
@@ -2780,7 +4071,7 @@ describe('Portfolio Controller ', () => {
       })
 
       expect(wasBlacklistFetched(fetchOverride)).toBe(true)
-      // @ts-ignore - access private getter
+      // @ts-expect-error test - access private getter
       expect(controller.blacklist).toEqual({ ...staleCachedBlacklist, isLoading: false })
       expect(await storageCtrl.get('tokenBlacklist', null)).toEqual(staleCachedBlacklist)
       restore()
@@ -2901,7 +4192,7 @@ describe('Portfolio Controller ', () => {
         return Promise.resolve(createJsonResponse({}))
       }) as unknown as typeof fetch
 
-    test('Should add update=true even when batchedPortfolioDiscovery is called for multiple networks, but only one calls with forceUpdateDefi=true', async () => {
+    test('Should send defi=force even when batchedPortfolioDiscovery is called for multiple networks, but only one calls with the Force mode', async () => {
       const discoveryUrls: string[] = []
       const fetchOverride = createDiscoveryFetchOverride(async (url) => {
         discoveryUrls.push(url)
@@ -2914,29 +4205,29 @@ describe('Portfolio Controller ', () => {
         awaitInitialLoad: false
       })
 
-      // @ts-ignore
+      // @ts-expect-error test
       const firstCall = controller.batchedPortfolioDiscovery({
         chainId: 1n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
-      // @ts-ignore
+      // @ts-expect-error test
       const secondCall = controller.batchedPortfolioDiscovery({
         chainId: 137n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: true
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Force
       })
 
       await Promise.allSettled([firstCall, secondCall])
 
       expect(discoveryUrls).toHaveLength(1)
-      expect(new URL(discoveryUrls[0]!).searchParams.get('update')).toBe('true')
+      expect(new URL(discoveryUrls[0]!).searchParams.get('defi')).toBe('force')
     })
 
-    test('update=true is account-pair specific', async () => {
+    test('defi=force is account-pair specific', async () => {
       const discoveryUrls: string[] = []
       const fetchOverride = createDiscoveryFetchOverride(async (url) => {
         discoveryUrls.push(url)
@@ -2950,29 +4241,29 @@ describe('Portfolio Controller ', () => {
       })
 
       const affectedPair = [
-        // @ts-ignore
+        // @ts-expect-error test
         controller.batchedPortfolioDiscovery({
           chainId: 1n,
           accountAddr: account.addr,
           baseCurrency: 'usd',
-          forceUpdateDefi: false
+          defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
         }),
-        // @ts-ignore
+        // @ts-expect-error test
         controller.batchedPortfolioDiscovery({
           chainId: 137n,
           accountAddr: account.addr,
           baseCurrency: 'usd',
-          forceUpdateDefi: true
+          defiUpdateMode: defiPositionsLib.DefiUpdateMode.Force
         })
       ]
 
       const unaffectedPair = [
-        // @ts-ignore
+        // @ts-expect-error test
         controller.batchedPortfolioDiscovery({
           chainId: 1n,
           accountAddr: account2.addr,
           baseCurrency: 'usd',
-          forceUpdateDefi: false
+          defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
         })
       ]
 
@@ -2989,8 +4280,8 @@ describe('Portfolio Controller ', () => {
       expect(pairWithForceUpdate).toBeDefined()
       expect(pairWithoutForceUpdate).toBeDefined()
 
-      expect(new URL(pairWithForceUpdate!).searchParams.get('update')).toBe('true')
-      expect(new URL(pairWithoutForceUpdate!).searchParams.get('update')).toBeNull()
+      expect(new URL(pairWithForceUpdate!).searchParams.get('defi')).toBe('force')
+      expect(new URL(pairWithoutForceUpdate!).searchParams.get('defi')).toBe('default')
     })
 
     test('Malformed array length mismatch should trigger mismatch rejection', async () => {
@@ -3001,20 +4292,20 @@ describe('Portfolio Controller ', () => {
         awaitInitialLoad: false
       })
 
-      // @ts-ignore
+      // @ts-expect-error test
       const firstCall = controller.batchedPortfolioDiscovery({
         chainId: 1n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
-      // @ts-ignore
+      // @ts-expect-error test
       const secondCall = controller.batchedPortfolioDiscovery({
         chainId: 137n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
       const [firstResult, secondResult] = await Promise.allSettled([firstCall, secondCall])
@@ -3048,20 +4339,20 @@ describe('Portfolio Controller ', () => {
         awaitInitialLoad: false
       })
 
-      // @ts-ignore
+      // @ts-expect-error test
       const firstCall = controller.batchedPortfolioDiscovery({
         chainId: 1n,
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
-      // @ts-ignore
+      // @ts-expect-error test
       const secondCall = controller.batchedPortfolioDiscovery({
         chainId: 'customAppChain',
         accountAddr: account.addr,
         baseCurrency: 'usd',
-        forceUpdateDefi: false
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
       })
 
       await Promise.allSettled([firstCall, secondCall])
@@ -3073,6 +4364,55 @@ describe('Portfolio Controller ', () => {
 
       expect(networkParams).toContain('1')
       expect(networkParams).toContain('customAppChain')
+    })
+
+    test('b is 0 before the first fetch and then the rounded total balance on all networks', async () => {
+      const discoveryUrls: string[] = []
+      // Only discovery is mocked, as the update also needs the real relayer responses
+      const fetchOverride = jest.fn(
+        (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+          const url = typeof input === 'string' ? input : input.toString()
+          if (!url.includes('/portfolio?')) return fetch(input, init)
+
+          discoveryUrls.push(url)
+          return Promise.resolve(createJsonResponse(getPortfolioResponseByNetworks(url)))
+        }
+      ) as unknown as typeof fetch
+
+      const { controller } = await prepareTest({
+        fetchOverride,
+        awaitInitialLoad: false
+      })
+      const polygon = networks.find((network) => network.chainId === 137n)!
+
+      await controller.updateSelectedAccount(account.addr, [ethereum, polygon])
+
+      expect(discoveryUrls).toHaveLength(1)
+      expect(new URL(discoveryUrls[0]!).searchParams.get('b')).toBe('0')
+
+      const accountState = controller.getAccountPortfolioState(account.addr)
+      const ethereumResult = accountState['1']?.result
+      const polygonResult = accountState['137']?.result
+      if (!ethereumResult || !polygonResult)
+        throw new Error(`Missing portfolio results. Chains in state: ${Object.keys(accountState)}`)
+
+      Object.values(accountState).forEach((networkState) => {
+        if (networkState?.result) networkState.result.total = { usd: 0 }
+      })
+      ethereumResult.total = { usd: 12.6 }
+      polygonResult.total = { usd: 30.3 }
+
+      // @ts-expect-error test
+      await controller.batchedPortfolioDiscovery({
+        chainId: 1n,
+        accountAddr: account.addr,
+        baseCurrency: 'usd',
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
+      })
+
+      expect(discoveryUrls).toHaveLength(2)
+      expect(new URL(discoveryUrls[1]!).searchParams.get('networks')).toBe('1')
+      expect(new URL(discoveryUrls[1]!).searchParams.get('b')).toBe('43')
     })
   })
 })

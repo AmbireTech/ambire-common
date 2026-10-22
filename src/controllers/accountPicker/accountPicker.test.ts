@@ -1,8 +1,8 @@
-import { Wallet } from 'ethers'
+import { toBeHex, Wallet } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
-import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
@@ -149,6 +149,136 @@ describe('AccountPicker', () => {
     expect(controller.accountsOnPage.filter((a) => !isSmartAccount(a.account))).toHaveLength(5)
   })
 
+  test('should update basic account usage while smart accounts are still loading', async () => {
+    const { controller } = await prepareTest()
+    const pageSize = 5
+    const keyIterator = new KeyIterator(process.env.SEED)
+    const retrieve = keyIterator.retrieve.bind(keyIterator)
+    let resolveSmartAccountKeys: (keys: string[]) => void = () => {}
+    const smartAccountKeysPromise = new Promise<string[]>((resolve) => {
+      resolveSmartAccountKeys = resolve
+    })
+
+    jest.spyOn(keyIterator, 'retrieve').mockImplementation((indices, hdPathTemplate) => {
+      if ((indices[0]?.from || 0) >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET) {
+        return smartAccountKeysPromise
+      }
+
+      return retrieve(indices, hdPathTemplate)
+    })
+
+    controller.setInitParams({
+      keyIterator,
+      pageSize,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: false,
+      shouldAddNextAccountAutomatically: false
+    })
+    await controller.init()
+
+    const setPagePromise = controller.setPage({ page: 1 })
+
+    while (!controller.smartAccountsLoading) await wait(0)
+    await wait(0)
+
+    expect(controller.accountsLoading).toBe(false)
+    expect(controller.accountsOnPage).toHaveLength(pageSize)
+    expect(controller.accountsOnPage.every((a) => !isSmartAccount(a.account))).toBe(true)
+    expect(controller.accountsOnPage.every((a) => a.account.usedOnNetworks === null)).toBe(true)
+
+    controller.selectAccount(controller.accountsOnPage[0]!.account)
+    expect(controller.selectedAccounts).toHaveLength(1)
+
+    resolveSmartAccountKeys(
+      key1to11BasicAccUsedForSmartAccKeysOnlyPublicAddresses.slice(0, pageSize)
+    )
+    await setPagePromise
+
+    expect(controller.smartAccountsLoading).toBe(false)
+    expect(controller.accountsOnPage).toHaveLength(pageSize + 1)
+    expect(controller.selectedAccounts).toHaveLength(1)
+  })
+
+  test('should keep basic accounts available when smart account retrieval fails', async () => {
+    const { controller } = await prepareTest()
+    const pageSize = 5
+    const keyIterator = new KeyIterator(process.env.SEED)
+    const retrieve = keyIterator.retrieve.bind(keyIterator)
+
+    jest.spyOn(keyIterator, 'retrieve').mockImplementation((indices, hdPathTemplate) => {
+      if ((indices[0]?.from || 0) >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET) {
+        return Promise.reject(new Error('Smart account key retrieval failed'))
+      }
+
+      return retrieve(indices, hdPathTemplate)
+    })
+
+    controller.setInitParams({
+      keyIterator,
+      pageSize,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: false,
+      shouldAddNextAccountAutomatically: false
+    })
+    await controller.init()
+    const { restore } = suppressConsole()
+    await controller.setPage({ page: 1 })
+    restore()
+
+    expect(controller.accountsLoading).toBe(false)
+    expect(controller.smartAccountsLoading).toBe(false)
+    expect(controller.accountsOnPage).toHaveLength(pageSize)
+    expect(controller.pageError).toBeNull()
+    expect(controller.emittedErrors.at(-1)?.level).toBe('minor')
+    expect(controller.emittedErrors.at(-1)?.message).toBe(
+      'We could not finish loading smart accounts. You can still import the accounts already shown.'
+    )
+
+    controller.selectAccount(controller.accountsOnPage[0]!.account)
+    expect(controller.selectedAccounts).toHaveLength(1)
+  })
+
+  test('should ignore smart accounts retrieved after the account picker is reset', async () => {
+    const { controller } = await prepareTest()
+    const keyIterator = new KeyIterator(process.env.SEED)
+    const retrieve = keyIterator.retrieve.bind(keyIterator)
+    let resolveSmartAccountKeys: (keys: string[]) => void = () => {}
+    const smartAccountKeysPromise = new Promise<string[]>((resolve) => {
+      resolveSmartAccountKeys = resolve
+    })
+
+    jest.spyOn(keyIterator, 'retrieve').mockImplementation((indices, hdPathTemplate) => {
+      if ((indices[0]?.from || 0) >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET) {
+        return smartAccountKeysPromise
+      }
+
+      return retrieve(indices, hdPathTemplate)
+    })
+
+    controller.setInitParams({
+      keyIterator,
+      pageSize: 5,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: false,
+      shouldAddNextAccountAutomatically: false
+    })
+    await controller.init()
+
+    const setPagePromise = controller.setPage({ page: 1 })
+    while (!controller.smartAccountsLoading) await wait(0)
+
+    await controller.reset()
+    resolveSmartAccountKeys(key1to11BasicAccUsedForSmartAccKeysOnlyPublicAddresses.slice(0, 5))
+    await setPagePromise
+
+    expect(controller.isInitialized).toBe(false)
+    expect(controller.smartAccountsLoading).toBe(false)
+    expect(controller.accountsOnPage).toHaveLength(0)
+  })
+
   test('should find linked accounts', async () => {
     const { controller } = await prepareTest()
     const keyIterator = new KeyIterator(process.env.SEED)
@@ -276,49 +406,183 @@ describe('AccountPicker', () => {
       })
   })
 
-  DERIVATION_OPTIONS.forEach(({ label, value }) => {
-    test(`should derive correctly ${label}`, async () => {
-      const { controller } = await prepareTest()
-      const keyIterator = new KeyIterator(process.env.SEED)
-      const pageSize = 5
+  describe('private keys', () => {
+    const PAGE_SIZE = 5
+    const bulkPrivateKeys = Array.from({ length: 7 }, (_, i) => toBeHex(i + 1, 32))
+    const bulkAddresses = bulkPrivateKeys.map((privateKey) => new Wallet(privateKey).address)
+
+    const toImportedBasicAccount = (addr: string): Account => ({
+      ...basicAccount,
+      addr,
+      associatedKeys: [addr],
+      initialPrivileges: [[addr, basicAccount.initialPrivileges[0]![1]]],
+      preferences: { label: DEFAULT_ACCOUNT_LABEL, pfp: addr }
+    })
+
+    /**
+     * Makes a main controller with an unlocked keystore, in which the given private keys
+     * (and their accounts) are already imported.
+     */
+    const prepareTestWithImportedPrivateKeys = async (importedPrivateKeys: string[]) => {
+      const importedAddresses = importedPrivateKeys.map((key) => new Wallet(key).address)
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', importedAddresses.map(toImportedBasicAccount))
+      })
+      await mainCtrl.initialLoadPromise
+      await mainCtrl.keystore.addSecret('password', '12345678', '', true)
+      await mainCtrl.keystore.addKeys(
+        importedPrivateKeys.map((privateKey, i) => ({
+          addr: importedAddresses[i]!,
+          type: 'internal' as const,
+          label: `Key ${i + 1}`,
+          privateKey,
+          dedicatedToOneSA: false,
+          meta: { createdAt: Date.now() }
+        }))
+      )
+
+      return { mainCtrl, controller: mainCtrl.accountPicker }
+    }
+
+    const initWithPrivateKeys = async (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      privateKeys: string | string[],
+      { pageSize, shouldAddNextAccountAutomatically = false } = {} as {
+        pageSize?: number
+        shouldAddNextAccountAutomatically?: boolean
+      }
+    ) => {
       controller.setInitParams({
-        keyIterator,
-        hdPathTemplate: value,
+        keyIterator: new KeyIterator(privateKeys),
         pageSize,
-        shouldSearchForLinkedAccounts: false,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
         shouldGetAccountsUsedOnNetworks: false,
-        shouldAddNextAccountAutomatically: false
+        shouldSearchForLinkedAccounts: false,
+        shouldAddNextAccountAutomatically
       })
       await controller.init()
+    }
 
-      // Checks page 1 EOAs
+    test('should list every private key in order, with paging', async () => {
+      const { controller } = await prepareTest()
+      await initWithPrivateKeys(controller, bulkPrivateKeys, { pageSize: PAGE_SIZE })
+
       await controller.setPage({ page: 1 })
-      const basicAccountsOnFirstPage = controller.accountsOnPage.filter(
-        (x) => !isSmartAccount(x.account)
+      expect(controller.accountsOnPage.map((a) => a.account.addr)).toEqual(
+        bulkAddresses.slice(0, PAGE_SIZE)
       )
-      const key1to5BasicAccPublicAddresses = Array.from(
-        { length: pageSize },
-        (_, i) => new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i, value)).address
+      expect(controller.accountsOnPage.map((a) => a.index)).toEqual([0, 1, 2, 3, 4])
+      expect(controller.accountsOnPage.some((a) => isSmartAccount(a.account))).toBe(false)
+
+      await controller.setPage({ page: 2 })
+      expect(controller.accountsOnPage.map((a) => a.account.addr)).toEqual(
+        bulkAddresses.slice(PAGE_SIZE)
       )
-      basicAccountsOnFirstPage.forEach((x) => {
-        const address = x.account.addr
-        expect(address).toBe(key1to5BasicAccPublicAddresses[x.index])
+      expect(controller.accountsOnPage.map((a) => a.index)).toEqual([5, 6])
+
+      await controller.setPage({ page: 3 })
+      expect(controller.accountsOnPage).toEqual([])
+    })
+
+    test('should automatically import every private key from the list', async () => {
+      const { mainCtrl, controller } = await prepareTestWithImportedPrivateKeys([])
+
+      await initWithPrivateKeys(controller, bulkPrivateKeys, {
+        shouldAddNextAccountAutomatically: true
       })
 
-      // Checks page 2 EOAs
-      await controller.setPage({ page: 2 })
-      const basicAccountsOnSecondPage = controller.accountsOnPage.filter(
-        (x) => !isSmartAccount(x.account)
-      )
-      const key6to10BasicAccPublicAddresses = Array.from(
-        { length: pageSize },
-        (_, i) =>
-          new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i + pageSize, value)).address
-      )
-      basicAccountsOnSecondPage.forEach((x) => {
-        const address = x.account.addr
-        expect(address).toBe(key6to10BasicAccPublicAddresses[x.index - pageSize])
+      const importedAddresses = mainCtrl.accounts.accounts.map((a) => a.addr)
+      expect(importedAddresses).toEqual(expect.arrayContaining(bulkAddresses))
+      expect(controller.addedAccountsFromCurrentSession.map((a) => a.addr)).toEqual(bulkAddresses)
+      const keystoreAddresses = mainCtrl.keystore.keys.map((k) => k.addr)
+      expect(keystoreAddresses).toEqual(expect.arrayContaining(bulkAddresses))
+    })
+
+    test('should automatically import only the private keys that are not imported yet', async () => {
+      const alreadyImportedPrivateKeys = bulkPrivateKeys.slice(0, 2)
+      const { controller } = await prepareTestWithImportedPrivateKeys(alreadyImportedPrivateKeys)
+
+      await initWithPrivateKeys(controller, bulkPrivateKeys.slice(0, 4), {
+        shouldAddNextAccountAutomatically: true
       })
+
+      expect(controller.addedAccountsFromCurrentSession.map((a) => a.addr)).toEqual(
+        bulkAddresses.slice(2, 4)
+      )
+    })
+
+    test('should automatically import a single private key, as before', async () => {
+      const { controller } = await prepareTestWithImportedPrivateKeys([])
+
+      await initWithPrivateKeys(controller, bulkPrivateKeys[0]!, {
+        shouldAddNextAccountAutomatically: true
+      })
+
+      expect(controller.addedAccountsFromCurrentSession.map((a) => a.addr)).toEqual([
+        bulkAddresses[0]
+      ])
+    })
+
+    test('should stop looking for the next account after the last private key when all are imported', async () => {
+      const privateKeys = bulkPrivateKeys.slice(0, 3)
+      const { controller } = await prepareTestWithImportedPrivateKeys(privateKeys)
+      await initWithPrivateKeys(controller, privateKeys, { pageSize: PAGE_SIZE })
+      const setPageSpy = jest.spyOn(controller, 'setPage')
+      const emittedErrors: string[] = []
+      const unsubscribe = controller.onError((e) => emittedErrors.push(e.error.message))
+
+      await controller.selectNextAccount()
+
+      unsubscribe()
+      // The first page holds all the keys, the second one is empty
+      expect(setPageSpy).toHaveBeenCalledTimes(2)
+      expect(controller.selectedAccounts).toEqual([])
+      expect(emittedErrors).toEqual([])
+      setPageSpy.mockRestore()
+    })
+  })
+
+  test.each(DERIVATION_OPTIONS)('should derive correctly $label', async ({ value }) => {
+    const { controller } = await prepareTest()
+    const keyIterator = new KeyIterator(process.env.SEED)
+    const pageSize = 5
+    controller.setInitParams({
+      keyIterator,
+      hdPathTemplate: value,
+      pageSize,
+      shouldSearchForLinkedAccounts: false,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldAddNextAccountAutomatically: false
+    })
+    await controller.init()
+
+    // Checks page 1 EOAs
+    await controller.setPage({ page: 1 })
+    const basicAccountsOnFirstPage = controller.accountsOnPage.filter(
+      (x) => !isSmartAccount(x.account)
+    )
+    const key1to5BasicAccPublicAddresses = Array.from(
+      { length: pageSize },
+      (_, i) => new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i, value)).address
+    )
+    basicAccountsOnFirstPage.forEach((x) => {
+      const address = x.account.addr
+      expect(address).toBe(key1to5BasicAccPublicAddresses[x.index])
+    })
+
+    // Checks page 2 EOAs
+    await controller.setPage({ page: 2 })
+    const basicAccountsOnSecondPage = controller.accountsOnPage.filter(
+      (x) => !isSmartAccount(x.account)
+    )
+    const key6to10BasicAccPublicAddresses = Array.from(
+      { length: pageSize },
+      (_, i) =>
+        new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i + pageSize, value)).address
+    )
+    basicAccountsOnSecondPage.forEach((x) => {
+      const address = x.account.addr
+      expect(address).toBe(key6to10BasicAccPublicAddresses[x.index - pageSize])
     })
   })
 })
