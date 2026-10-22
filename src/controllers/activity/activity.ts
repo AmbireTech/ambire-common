@@ -43,6 +43,7 @@ import {
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
+import { recordFeePayer } from '../../libs/activity/feePayersHistory'
 import { collapseReplacedAccountOps } from '../../libs/activity/replacements'
 import { recordRecipient } from '../../libs/activity/sentToHistory'
 import { getTransferLogNfts, getTransferLogTokens } from '../../libs/logsParser/parseLogs'
@@ -53,7 +54,7 @@ import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import { getAddressCaught } from '../../utils/getAddressCaught'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { InternalSignedMessages, SentToHistory, SignedMessage } from './types'
+import { FeePayersHistory, InternalSignedMessages, SentToHistory, SignedMessage } from './types'
 
 import type { BalanceChangesReceipt } from '../../libs/accountOp/balanceChanges'
 
@@ -316,6 +317,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #sentToHistory: SentToHistory = { domains: {}, recipients: {} }
 
+  #feePayersHistory: FeePayersHistory = {}
+
   accountsOps: {
     [sessionId: string]: {
       result: AccountsOps
@@ -432,17 +435,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // swapAndBridge, wallet_getCallsStatus, and the same-EOA-nonce check in status polling —
     // so an empty window left them reading an empty history. onSelectedAccountChange tops the
     // account up to the full window when the user switches.
-    const [accountsOps, externalAccountOps, signedMessages, sentToHistory] = await Promise.all([
-      this.#persistence.init(this.#selectedAccount.account?.addr),
-      this.#storage.get('externalAccountOps', {}),
-      this.#storage.get('signedMessages', {}),
-      this.#storage.get('sentToHistory', { domains: {}, recipients: {} })
-    ])
+    const [accountsOps, externalAccountOps, signedMessages, sentToHistory, feePayersHistory] =
+      await Promise.all([
+        this.#persistence.init(this.#selectedAccount.account?.addr),
+        this.#storage.get('externalAccountOps', {}),
+        this.#storage.get('signedMessages', {}),
+        this.#storage.get('sentToHistory', { domains: {}, recipients: {} }),
+        this.#storage.get('feePayersHistory', {})
+      ])
 
     this.#accountsOps = accountsOps
     this.#externalAccountOps = externalAccountOps
     this.#signedMessages = signedMessages
     this.#sentToHistory = sentToHistory
+    this.#feePayersHistory = feePayersHistory
 
     this.emitUpdate()
 
@@ -527,7 +533,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
   async #loadRowsForPage(accountKey: string, rowsNeeded: number, chainIds: string[]) {
     let limit = rowsNeeded
     for (let extraLoads = 0; extraLoads <= MAX_EXTRA_LOADS_FOR_REPLACED_OPS; extraLoads++) {
-      // eslint-disable-next-line no-await-in-loop
       await this.#persistence.ensureRecentLoaded(accountKey, limit, chainIds)
 
       const loadedOps = chainIds.flatMap(
@@ -916,6 +921,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
       )
     )
 
+    const hasFeePayersHistoryChanged = recordFeePayer(
+      this.#feePayersHistory,
+      accountAddr,
+      chainId,
+      accountOp.gasFeePayment?.paidBy,
+      accountOp.timestamp
+    )
+
     await this.syncFilteredAccountsOps()
 
     this.emitUpdate()
@@ -926,6 +939,44 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // Key-value, never IDB — persisted here so recipients survive a service worker restart.
     await this.#storage.set('sentToHistory', this.#sentToHistory)
+
+    if (hasFeePayersHistoryChanged)
+      await this.#storage.set('feePayersHistory', this.#feePayersHistory)
+  }
+
+  /**
+   * The other accounts (EOAs) that already paid the fee for a transaction of `accountAddr` on
+   * `chainId`, checksummed and ordered from the one that paid last. Paying from one of them
+   * links nothing new to the account publicly.
+   *
+   * Only knows what this wallet broadcast: a payer used from another wallet or device is missing,
+   * which errs on the side of warning the user. The index is filled on broadcast, so the ops in
+   * memory (the recent ones, see STARTUP_RECENT_OPS_LIMIT) are merged in to also cover the ones
+   * broadcast before the index existed.
+   */
+  getFeePayers(accountAddr: string, chainId: bigint): string[] {
+    const checksummedAccountAddr = getAddressCaught(accountAddr)
+    if (!checksummedAccountAddr) return []
+
+    const chainIdString = chainId.toString()
+    const accountKey = getAccountOpsAccountKey(this.#feePayersHistory, accountAddr)
+    const indexedPayers = accountKey ? this.#feePayersHistory[accountKey]?.[chainIdString] : {}
+    // A copy, so merging the ops in memory doesn't write them into the persisted index
+    const mergedHistory: FeePayersHistory = {
+      [checksummedAccountAddr]: { [chainIdString]: { ...indexedPayers } }
+    }
+
+    getAccountOpsForAccountAndChain(this.#accountsOps, accountAddr, chainIdString).forEach((op) => {
+      // A rejected op never reached the network, so it linked nothing
+      if (op.status === AccountOpStatus.Rejected) return
+
+      recordFeePayer(mergedHistory, accountAddr, chainId, op.gasFeePayment?.paidBy, op.timestamp)
+    })
+
+    const lastPaidAtByPayer = mergedHistory[checksummedAccountAddr]![chainIdString]!
+    return Object.keys(lastPaidAtByPayer).sort(
+      (a, b) => lastPaidAtByPayer[b]! - lastPaidAtByPayer[a]!
+    )
   }
 
   /** Returns the address a domain last resolved to when the user sent to it, or null if never. */
@@ -1910,6 +1961,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (messagesKey) delete this.#signedMessages[messagesKey]
     // sentToHistory kept on purpose: a re-imported account still recognises past recipients,
     // which is what drives the poisoning warning.
+    // feePayersHistory kept on purpose too: the payers stay linked to the account on-chain,
+    // so a re-imported account must not treat them as unlinked.
 
     await this.syncFilteredAccountsOps()
     await this.syncSignedMessages()
