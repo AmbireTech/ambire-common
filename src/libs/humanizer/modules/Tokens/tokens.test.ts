@@ -16,7 +16,6 @@ import {
   getToken,
   getUnlimitedApprovalWarning,
   getWarning,
-  NATIVE_VALUE_WARNING_CODE,
   UNLIMITED_APPROVAL_WARNING_CODE
 } from '../../utils'
 
@@ -296,51 +295,6 @@ describe('Tokens', () => {
         getSingleValueRow('To', getAddressVisualization(spender))
       ])
     ])
-  })
-
-  describe('native value of an ERC-20 call', () => {
-    const approveData = transactions.erc20[0]!.data
-    const nativeValue = 10n ** 18n
-
-    test('is shown as a row, not as a part of the intent', () => {
-      const [irCall] = humanizeErc20Calls([{ to: USDT, value: nativeValue, data: approveData }])
-
-      compareRichVisualizations(
-        [irCall!],
-        [
-          getRichVisualization('Approve', [
-            getSingleValueRow('Spender', getAddressVisualization(spender)),
-            getSingleValueRow('Amount', getToken(USDT, 1000000000n, accountOp.chainId)),
-            getSingleValueRow('Send', getToken(ethers.ZeroAddress, nativeValue, accountOp.chainId))
-          ])
-        ]
-      )
-    })
-
-    test('is warned about', () => {
-      const [irCall] = humanizeErc20Calls([{ to: USDT, value: nativeValue, data: approveData }])
-
-      expect(irCall!.warnings?.map((warning) => warning.code)).toEqual([NATIVE_VALUE_WARNING_CODE])
-    })
-
-    test('adds no row and no warning when no value is sent', () => {
-      const [irCall] = humanizeErc20Calls([{ to: USDT, value: 0n, data: approveData }])
-
-      expect(irCall!.fullVisualization?.fields).toHaveLength(2)
-      expect(irCall!.warnings).toBeUndefined()
-    })
-
-    test('keeps the warning for the unlimited approval next to the one for the value', () => {
-      const unlimitedApproveData = `0x095ea7b3000000000000000000000000${spender.substring(2)}${'f'.repeat(64)}`
-      const [irCall] = humanizeErc20Calls([
-        { to: USDT, value: nativeValue, data: unlimitedApproveData }
-      ])
-
-      expect(irCall!.warnings?.map((warning) => warning.code)).toEqual([
-        UNLIMITED_APPROVAL_WARNING_CODE,
-        NATIVE_VALUE_WARNING_CODE
-      ])
-    })
   })
 
   test('genericErc721Humanizer', () => {

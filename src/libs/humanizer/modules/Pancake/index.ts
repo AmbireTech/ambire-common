@@ -19,8 +19,7 @@ import {
   isHexCall,
   isUnlimitedAmount,
   mergeWarnings,
-  padCallData,
-  showNativeValueOfCall
+  padCallData
 } from '../../utils'
 
 // This is the Permit2 `approve`, which Pancake's permit contract shares. Permit2 keeps the
@@ -66,18 +65,10 @@ const PancakeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   if (call.fullVisualization || !isHexCall(call) || !matcher[selector]) return call
 
   const { visualization, warning } = matcher[selector](call)
-  // This function is not payable, so a contract that accepts value here is unusual. The coin would
-  // leave the account without the call saying so, which is why it is shown and warned about.
-  const { fullVisualization, warnings } = showNativeValueOfCall(
-    visualization,
-    call.value,
-    accOp.chainId
-  )
-
   return {
     ...call,
-    fullVisualization,
-    warnings: mergeWarnings(call.warnings, [...(warning ? [warning] : []), ...warnings])
+    fullVisualization: visualization,
+    warnings: mergeWarnings(call.warnings, warning ? [warning] : [])
   }
 }
 

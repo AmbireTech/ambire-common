@@ -23,7 +23,6 @@ import {
   isUnlimitedAmount,
   mergeWarnings,
   padCallData,
-  showNativeValueOfCall,
   UNLIMITED_APPROVAL_WARNING_CODE
 } from '../../utils'
 
@@ -334,16 +333,9 @@ export const genericErc20Humanizer = (
     'richVisualization' in decodedCall
       ? decodedCall.richVisualization
       : getLegacyVisualization(decodedCall.visualizations)
-  // These functions are not payable, so a token that accepts value here is unusual. The coin would
-  // leave the account without the call saying so, which is why it is shown and warned about.
-  const { fullVisualization, warnings } = showNativeValueOfCall(visualization, call.value, chainId)
-
   return {
     ...call,
-    fullVisualization,
-    warnings: mergeWarnings(call.warnings, [
-      ...(decodedCall.warning ? [decodedCall.warning] : []),
-      ...warnings
-    ])
+    fullVisualization: visualization,
+    warnings: mergeWarnings(call.warnings, decodedCall.warning ? [decodedCall.warning] : [])
   }
 }

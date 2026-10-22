@@ -253,7 +253,7 @@ export function formatTimestampAsDate(timestamp: bigint): string | null {
  */
 export const NATIVE_VALUE_WARNING_CODE = 'ERC7730_REQUIRES_NATIVE_VALUE'
 
-export const hasDisplayedNativeTransactionValue = (
+const hasDisplayedNativeTransactionValue = (
   visualization: RichHumanizerVisualization,
   nativeValue: bigint
 ) =>

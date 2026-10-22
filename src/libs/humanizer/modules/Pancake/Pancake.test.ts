@@ -11,8 +11,7 @@ import {
   getSingleValueRow,
   getText,
   getToken,
-  getUnlimitedApprovalWarning,
-  NATIVE_VALUE_WARNING_CODE
+  getUnlimitedApprovalWarning
 } from '../../utils'
 import OneInchModule from './'
 
@@ -82,23 +81,6 @@ describe('Pancake', () => {
 
     compareRichVisualizations([irCall], [getApproveVisualization('Revoke approval', 0n, 'now')])
     expect(irCall.warnings).toBeUndefined()
-  })
-
-  test('shows the native value a call sends as a row and warns about it', () => {
-    const call: IrCall = {
-      to: pancakePermit2,
-      value: 10n ** 18n,
-      data: encodeFunctionData({ abi: approveAbi, args: [token, spender, 5n, 1746289513] })
-    }
-
-    const irCall = OneInchModule(accountOp, call, humanizerInfo as HumanizerMeta)
-
-    expect(irCall.fullVisualization?.fields.at(-1)).toMatchObject({
-      type: 'single-value',
-      label: 'Send',
-      value: { type: 'token', value: 10n ** 18n }
-    })
-    expect(irCall.warnings?.map((warning) => warning.code)).toEqual([NATIVE_VALUE_WARNING_CODE])
   })
 
   // this calldata would still execute onchain - the missing trailing `expiration` word is
