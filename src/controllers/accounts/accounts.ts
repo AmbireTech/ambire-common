@@ -34,6 +34,8 @@ import { normalizeIdentityResponse } from '../../libs/accountPicker/accountPicke
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
+import { hasLowerNonce } from '../../utils/nonce'
+import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
@@ -41,15 +43,27 @@ export const STATUS_WRAPPED_METHODS = {
 } as const
 
 type AccountStateBlockTag = 'latest' | 'pending'
+/** A block tag, or the number of the block to read the state at, like the block of a receipt. */
+type AccountStateBlock = AccountStateBlockTag | number
+
+/**
+ * How long a saved account state with higher nonces wins over a new one with lower nonces.
+ * After it, the lower nonces are saved, so a nonce raised by a txn that a reorg removed heals.
+ */
+export const ACCOUNT_STATE_NONCE_ROLLBACK_LIMIT_MS = 5 * 60 * 1000
+/** How long to retry a read at a receipt block. Non-archive nodes drop the state after ~25 s. */
+export const RECEIPT_BLOCK_STATE_RETRY_LIMIT_MS = 20 * 1000
+export const RECEIPT_BLOCK_STATE_RETRY_MIN_DELAY_MS = 250
+export const RECEIPT_BLOCK_STATE_RETRY_MAX_DELAY_MS = 2000
 
 /** The queued jobs and fetches of one account on one chain. Deleted when its last job ends. */
 type AccountStateFetchTracker = {
   /** The last queued job. A new call for the account waits for it. */
-  lastJob: Promise<void>
-  /** The sequence number of the last fetch that started, by block tag. */
+  lastJob: Promise<unknown>
+  /** The sequence number of the last fetch that started, by block tag. A block number counts as `latest`. */
   lastFetchStarted: { [blockTag in AccountStateBlockTag]?: number }
   /** The fetch that runs now, if any. */
-  runningFetch?: { startedAt: number; blockTag: AccountStateBlockTag }
+  runningFetch?: { startedAt: number; blockTag: AccountStateBlock }
 }
 
 /**
@@ -64,7 +78,7 @@ type QueuedAccountStateFetch = {
 
 /** Whether a fetch with `fetchBlockTag` also gives the state a `blockTag` call asks for. */
 const isBlockTagCovered = (
-  fetchBlockTag: AccountStateBlockTag,
+  fetchBlockTag: AccountStateBlock,
   blockTag: AccountStateBlockTag
 ): boolean => fetchBlockTag === 'pending' || blockTag === 'latest'
 
@@ -231,12 +245,14 @@ export class AccountsController extends EventEmitter implements IAccountsControl
    * - Use `'latest'` for background refreshes and for facts that must already
    * be mined. `'pending'` differs from `'latest'` only on Ethereum, see
    * `getPendingBlockTagIfSupported`.
+   * - Pass the block number of a receipt to read the state right after the transaction, so a
+   * lagging RPC can't return the state from before it. Such a read is always forced.
    * - Pass `force` when a transaction or a nonce error changed the
    * state, so a fetch that started before the call is not enough.
    */
   async updateAccountState(
     accountAddr: Account['addr'],
-    blockTag: AccountStateBlockTag = 'latest',
+    blockTag: AccountStateBlock = 'latest',
     networks: bigint[] = [],
     force = false
   ) {
@@ -249,7 +265,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   private async updateAccountStates(
     accounts: Account[],
-    blockTag: AccountStateBlockTag = 'latest',
+    blockTag: AccountStateBlock = 'latest',
     updateOnlyNetworksWithIds: bigint[] = [],
     force = false
   ) {
@@ -267,7 +283,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     let readyNetworks = 0
 
     const networkUpdates = networksToUpdate.map(async (network) => {
-      await this.#queueFetchJob(network, addrs, blockTag, force)
+      if (typeof blockTag === 'number') await this.#fetchAtBlock(network, addrs, blockTag)
+      else await this.#queueFetchJob(network, addrs, blockTag, force)
       readyNetworks++
 
       const areAllReady = readyNetworks === networksToUpdate.length
@@ -284,20 +301,46 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   }
 
   /**
+   * Fetches the states at `blockNumber`, retrying while the RPC doesn't have the block yet.
+   * Falls back to one `latest` fetch when the retries run out.
+   */
+  async #fetchAtBlock(network: Network, addrs: Account['addr'][], blockNumber: number) {
+    const deadline = Date.now() + RECEIPT_BLOCK_STATE_RETRY_LIMIT_MS
+    let retryDelay = RECEIPT_BLOCK_STATE_RETRY_MIN_DELAY_MS
+    let error = await this.#queueFetchJob(network, addrs, blockNumber, true)
+    while (error && Date.now() + retryDelay < deadline) {
+      await wait(retryDelay)
+      retryDelay = Math.min(retryDelay * 2, RECEIPT_BLOCK_STATE_RETRY_MAX_DELAY_MS)
+      error = await this.#queueFetchJob(network, addrs, blockNumber, true)
+    }
+    if (!error) return
+
+    this.emitError({
+      level: 'silent',
+      message: `Failed to read the account state at block ${blockNumber} on ${network.name}`,
+      error: error instanceof Error ? error : new Error(String(error))
+    })
+    await this.#queueFetchJob(network, addrs, 'latest', true)
+  }
+
+  /**
    * Fetches the states of `addrs` on `network` after the earlier jobs of the same accounts.
    * Jobs for other accounts run at the same time. Never rejects, as a rejected job would also
-   * reject every later job of the same accounts.
+   * reject every later job of the same accounts. Resolves with the error of a failed read at a
+   * block number, which the caller retries, and with undefined otherwise.
    */
   async #queueFetchJob(
     network: Network,
     addrs: Account['addr'][],
-    requestedBlockTag: AccountStateBlockTag,
+    requestedBlockTag: AccountStateBlock,
     force: boolean
-  ) {
+  ): Promise<unknown> {
     const chainIdKey = network.chainId.toString()
     const calledAt = ++this.#sequence
     const blockTag =
-      requestedBlockTag === 'pending' ? getPendingBlockTagIfSupported(network) : 'latest'
+      requestedBlockTag === 'pending'
+        ? getPendingBlockTagIfSupported(network, 'accountState')
+        : requestedBlockTag
 
     if (!this.#fetchTrackers[chainIdKey]) this.#fetchTrackers[chainIdKey] = {}
     const chainTrackers = this.#fetchTrackers[chainIdKey]
@@ -309,7 +352,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       // Without force, the fetch that runs now is enough. With force, only a later fetch is.
       const runningFetch = tracker.runningFetch
       const canUseRunningFetch =
-        !force && !!runningFetch && isBlockTagCovered(runningFetch.blockTag, blockTag)
+        !force &&
+        typeof blockTag !== 'number' &&
+        !!runningFetch &&
+        isBlockTagCovered(runningFetch.blockTag, blockTag)
 
       return { addr, tracker, coveredFrom: canUseRunningFetch ? runningFetch.startedAt : calledAt }
     })
@@ -322,20 +368,22 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       tracker.lastJob = job
     })
 
-    await job
+    const error = await job
 
     queuedAccounts.forEach(({ addr, tracker }) => {
       if (tracker.lastJob !== job) return
       delete chainTrackers[addr]
     })
     if (!Object.keys(chainTrackers).length) delete this.#fetchTrackers[chainIdKey]
+
+    return error
   }
 
   async #runFetchJob(
     network: Network,
-    blockTag: AccountStateBlockTag,
+    blockTag: AccountStateBlock,
     queuedAccounts: QueuedAccountStateFetch[]
-  ) {
+  ): Promise<unknown> {
     const chainIdKey = network.chainId.toString()
     // Read the accounts now, as the keys or the Safe data may have changed while the job waited
     const accountsByAddr = new Map(this.accounts.map((account) => [account.addr, account]))
@@ -346,7 +394,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
       return [{ ...queuedAccount, account }]
     })
-    if (!accountsToFetch.length) return
+    if (!accountsToFetch.length) return undefined
 
     const provider = this.#providers.providers[chainIdKey]
     if (!provider) {
@@ -357,12 +405,13 @@ export class AccountsController extends EventEmitter implements IAccountsControl
         sendCrashReport: true,
         error
       })
-      return
+      return undefined
     }
 
     const startedAt = ++this.#sequence
+    const coveredBlockTag = typeof blockTag === 'number' ? 'latest' : blockTag
     accountsToFetch.forEach(({ tracker }) => {
-      tracker.lastFetchStarted[blockTag] = startedAt
+      tracker.lastFetchStarted[coveredBlockTag] = startedAt
       tracker.runningFetch = { startedAt, blockTag }
     })
 
@@ -381,6 +430,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
         this.#saveAccountState(chainIdKey, blockTag, accountState)
       )
     } catch (err: any) {
+      // An RPC that has no state for the block yet answers with all kinds of errors
+      if (typeof blockTag === 'number') return err
+
       this.emitError({
         level: 'silent',
         message: `Failed to update account state for ${network.name}`,
@@ -392,12 +444,13 @@ export class AccountsController extends EventEmitter implements IAccountsControl
         tracker.runningFetch = undefined
       })
     }
+    return undefined
   }
 
   /** A failed fetch also covers the account, so queued calls don't each wait for a down RPC. */
   #isCoveredByStartedFetch(
     { tracker, coveredFrom }: QueuedAccountStateFetch,
-    blockTag: AccountStateBlockTag
+    blockTag: AccountStateBlock
   ): boolean {
     const { latest = 0, pending = 0 } = tracker.lastFetchStarted
     const lastCoveringFetchStart = blockTag === 'pending' ? pending : Math.max(latest, pending)
@@ -407,7 +460,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   #saveAccountState(
     chainIdKey: string,
-    blockTag: AccountStateBlockTag,
+    blockTag: AccountStateBlock,
     accountState: AccountOnchainState
   ) {
     const addr = accountState.accountAddr
@@ -419,11 +472,16 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     // we keep it. We do this because rogue RPCs sometimes mess up the pending state.
     // A pending result from the same block is saved, as the pending block can change
     // without a new block number.
-    // Other results need no block check, as the queue saves them in call order
+    // A read at a block number can also be older than the saved state.
+    // Latest results need no block check, as the queue saves them in call order
     const current = this.accountStates[addr][chainIdKey]
-    if (blockTag === 'pending' && current && current.currentBlock > accountState.currentBlock) {
+    if (blockTag !== 'latest' && current && current.currentBlock > accountState.currentBlock) {
       return
     }
+    // A lagging RPC must not take a nonce back, or the next op would reuse a nonce
+    const isCurrentRecent =
+      !!current && Date.now() - current.updatedAt < ACCOUNT_STATE_NONCE_ROLLBACK_LIMIT_MS
+    if (current && isCurrentRecent && hasLowerNonce(accountState, current)) return
 
     this.accountStates[addr][chainIdKey] = accountState
   }

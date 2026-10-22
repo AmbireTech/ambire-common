@@ -644,11 +644,6 @@ describe('Main Controller ', () => {
         await storageCtrl.set('accounts', accounts)
       })
 
-      // Avoid noisy side effects from this call while keeping the update flow realistic.
-      jest
-        .spyOn(mainCtrl.portfolio, 'reportMissedPortfolioUpdateAfterUpdatedAccountOp')
-        .mockImplementation(() => {})
-
       jest
         .spyOn(mainCtrl.swapAndBridge, 'handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate')
         .mockImplementation(() => {})
@@ -790,7 +785,7 @@ describe('Main Controller ', () => {
       await flushAsyncUpdates()
 
       expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
-      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp], {})
       // A cache-busting update is scheduled for the updated chain.
       expect(scheduleUpdateSpy).toHaveBeenCalledTimes(1)
       expect(scheduleUpdateSpy).toHaveBeenCalledWith({
@@ -841,7 +836,7 @@ describe('Main Controller ', () => {
         await flushAsyncUpdates()
 
         // Otherwise the pending simulation stays on the dashboard until the app restarts
-        expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+        expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp], {})
       }
     )
 
@@ -880,7 +875,7 @@ describe('Main Controller ', () => {
       await flushAsyncUpdates()
 
       expect(updateAccountStateSpy).not.toHaveBeenCalled()
-      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp], {})
     })
 
     test('should call updateSelectedAccount for recipient accounts from portfoliosToUpdate', async () => {
@@ -922,7 +917,9 @@ describe('Main Controller ', () => {
 
       expect(updateSelectedAccountSpy).toHaveBeenCalledWith(
         recipientAccount,
-        expect.arrayContaining([expect.objectContaining({ chainId: 1n })])
+        expect.arrayContaining([expect.objectContaining({ chainId: 1n })]),
+        undefined,
+        { blockNumberByChainId: {} }
       )
     })
 
@@ -970,7 +967,7 @@ describe('Main Controller ', () => {
 
       expect(mainCtrl.selectedAccount.account?.addr).toBe(selectedAccountAddr)
       expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
-      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp], {})
       // Scheduling targets the tx account, not the selected one.
       expect(scheduleUpdateSpy).toHaveBeenCalledWith({
         accountId: senderAccount,

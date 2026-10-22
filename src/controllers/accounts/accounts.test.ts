@@ -17,8 +17,13 @@ import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { UiManager } from '../../interfaces/ui'
 import * as accountStateLib from '../../libs/accountState/accountState'
+import * as waitModule from '../../utils/wait'
 import { StorageController } from '../storage/storage'
-import { AccountsController } from './accounts'
+import {
+  ACCOUNT_STATE_NONCE_ROLLBACK_LIMIT_MS,
+  AccountsController,
+  RECEIPT_BLOCK_STATE_RETRY_LIMIT_MS
+} from './accounts'
 
 const accounts = [
   {
@@ -355,6 +360,27 @@ describe('AccountsController account state fetching', () => {
     expect(accountsCtrl.accountStates[ADDR_A]?.[ETHEREUM.chainId.toString()]?.nonce).toBe(101n)
   })
 
+  test('a lower nonce from a lagging RPC does not replace a recent state, but heals after the limit', async () => {
+    const { accountsCtrl, fetches } = ctrl
+    const getSavedState = () => accountsCtrl.accountStates[ADDR_A]?.[BASE.chainId.toString()]
+    const fetchState = async (state: AccountOnchainState) => {
+      const update = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId])
+      await flushPromises()
+      fetches.at(-1)!.resolve([state])
+      await update
+    }
+
+    await fetchState(makeAccountState(ADDR_A, 10n))
+    // A newer block, but one nonce went back, which only a lagging RPC or a reorg causes
+    await fetchState({ ...makeAccountState(ADDR_A, 11n), nonce: 9n })
+    expect(getSavedState()?.nonce).toBe(10n)
+
+    // A reorg can really remove a txn, so an old state must not block the lower nonce forever
+    getSavedState()!.updatedAt = Date.now() - ACCOUNT_STATE_NONCE_ROLLBACK_LIMIT_MS - 1
+    await fetchState({ ...makeAccountState(ADDR_A, 12n), nonce: 9n })
+    expect(getSavedState()?.nonce).toBe(9n)
+  })
+
   test('a removed account is not written back by a running fetch', async () => {
     const { accountsCtrl, fetches } = ctrl
     const update = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId])
@@ -399,6 +425,92 @@ describe('AccountsController account state fetching', () => {
     fetches[0]!.resolve([makeAccountState(ADDR_A, 10n)])
     await update
     expect(loadingStates.at(-1)).toBe(false)
+  })
+})
+
+describe('AccountsController account state at a receipt block', () => {
+  const RECEIPT_BLOCK = 200
+
+  /**
+   * Answers every account state read with `answer`. Waits move a fake clock instead of real
+   * time, so the retry deadline is reached at once.
+   */
+  const setup = async (answer: (blockTag: unknown, readIndex: number) => AccountOnchainState) => {
+    const ctrl = await makeAccountsController()
+    const readBlockTags: unknown[] = []
+    jest.mocked(accountStateLib.getAccountState).mockImplementation(async (...args) => {
+      const blockTag = args[4]
+      readBlockTags.push(blockTag)
+      return [answer(blockTag, readBlockTags.length - 1)]
+    })
+    const startedAt = Date.now()
+    let now = startedAt
+    jest.spyOn(Date, 'now').mockImplementation(() => now)
+    jest.spyOn(waitModule, 'default').mockImplementation(async (ms: number) => {
+      now += ms
+    })
+
+    const update = () => ctrl.accountsCtrl.updateAccountState(ADDR_A, RECEIPT_BLOCK, [BASE.chainId])
+    const getSavedState = () => ctrl.accountsCtrl.accountStates[ADDR_A]?.[BASE.chainId.toString()]
+
+    return { ...ctrl, readBlockTags, update, getSavedState, getWaitedMs: () => now - startedAt }
+  }
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  test('retries at the receipt block while the RPC has no state for it, then saves that state', async () => {
+    const { update, readBlockTags, getSavedState, errors, updateProviderIsWorking } = await setup(
+      (_, readIndex) => {
+        if (readIndex < 2) throw new Error('header not found')
+        return makeAccountState(ADDR_A, BigInt(RECEIPT_BLOCK))
+      }
+    )
+
+    await update()
+
+    expect(readBlockTags).toEqual([RECEIPT_BLOCK, RECEIPT_BLOCK, RECEIPT_BLOCK])
+    expect(getSavedState()?.nonce).toBe(BigInt(RECEIPT_BLOCK))
+    // An RPC that is a few blocks behind still works, so it must not be shown as down
+    expect(updateProviderIsWorking).not.toHaveBeenCalledWith(BASE.chainId, false)
+    expect(errors).toEqual([])
+  })
+
+  test('falls back to one latest read once the retries run out', async () => {
+    const LATEST_BLOCK = 210n
+    const { update, readBlockTags, getSavedState, errors, getWaitedMs } = await setup(
+      (blockTag) => {
+        if (blockTag !== 'latest') throw new Error('header not found')
+        return makeAccountState(ADDR_A, LATEST_BLOCK)
+      }
+    )
+
+    await update()
+
+    expect(readBlockTags.length).toBeGreaterThan(2)
+    expect(readBlockTags.slice(0, -1).every((blockTag) => blockTag === RECEIPT_BLOCK)).toBe(true)
+    expect(readBlockTags.at(-1)).toBe('latest')
+    // Non-archive nodes drop the state of the block soon, so the retries must stop in time
+    expect(getWaitedMs()).toBeLessThan(RECEIPT_BLOCK_STATE_RETRY_LIMIT_MS)
+    expect(getSavedState()?.nonce).toBe(LATEST_BLOCK)
+    expect(errors).toEqual([
+      `Failed to read the account state at block ${RECEIPT_BLOCK} on ${BASE.name}`
+    ])
+  })
+
+  test('does not replace a state saved from a newer block', async () => {
+    const NEWER_BLOCK = 205n
+    // Same nonces in both, so only the block number can tell which state is newer
+    const { accountsCtrl, update, getSavedState } = await setup((blockTag) => ({
+      ...makeAccountState(ADDR_A, NEWER_BLOCK),
+      currentBlock: blockTag === 'latest' ? NEWER_BLOCK : BigInt(RECEIPT_BLOCK)
+    }))
+    await accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId])
+
+    await update()
+
+    expect(getSavedState()?.currentBlock).toBe(NEWER_BLOCK)
   })
 })
 

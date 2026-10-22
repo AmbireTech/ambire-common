@@ -123,6 +123,7 @@ import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapPro
 import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
 import { generateUuid } from '@/utils/uuid'
+import { getHighestBlockNumberByChainId } from '@/utils/nonce'
 import wait from '@/utils/wait'
 
 type AccountsUpdate = {
@@ -848,9 +849,15 @@ export class MainController extends EventEmitter implements IMainController {
       if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
     })
 
-    this.ui.uiEvent.on('viewFocus', () => {
+    this.ui.uiEvent.on('viewFocus', (view: View) => {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.#fetchAllSafesPending()
+      // The mobile app has no popup to open, so returning to the app refreshes the nonce instead
+      const selectedAccountAddr = this.selectedAccount.account?.addr
+      if (view.type === 'mobile' && selectedAccountAddr) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.accounts.updateAccountState(selectedAccountAddr)
+      }
     })
   }
 
@@ -1290,9 +1297,10 @@ export class MainController extends EventEmitter implements IMainController {
     let isSignAndBroadcastInProgressOnThisAccountAndChain = false
 
     if (
-      this.requests.visibleUserRequests.some(
+      this.requests.userRequests.some(
         (r) =>
           r.kind === 'calls' &&
+          r.signAccountOp.accountOp.accountAddr === signAccountOp.accountOp.accountAddr &&
           r.signAccountOp.accountOp.chainId === signAccountOp.accountOp.chainId &&
           r.signAccountOp.isSignAndBroadcastInProgress
       )
@@ -1771,17 +1779,32 @@ export class MainController extends EventEmitter implements IMainController {
           )
 
           const networks = this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
+          const receiptOps = finalizedAccountOps.filter(
+            (op) => op.accountAddr === accountAddr && !!op.blockNumber
+          )
+          const blockNumberByChainId = getHighestBlockNumberByChainId(receiptOps)
 
           if (networks.length) {
             // The account state must be updated before the portfolio
             // as the portfolio has internal checks whether the nonce has changed
-            // to decide if to force refetch certain data
-            await this.accounts.updateAccountState(
-              accountAddr,
-              'latest',
-              networks.map((net) => net.chainId),
-              true
-            )
+            // to decide if to force refetch certain data.
+            // Chains with a receipt are read at its block, so a lagging RPC can't return
+            // the state from before the op
+            const chainIdsWithoutReceipt = networks
+              .map((net) => net.chainId)
+              .filter((chainId) => !blockNumberByChainId[chainId.toString()])
+            await Promise.all([
+              chainIdsWithoutReceipt.length &&
+                this.accounts.updateAccountState(
+                  accountAddr,
+                  'latest',
+                  chainIdsWithoutReceipt,
+                  true
+                ),
+              ...Object.entries(blockNumberByChainId).map(([chainId, blockNumber]) =>
+                this.accounts.updateAccountState(accountAddr, blockNumber, [BigInt(chainId)])
+              )
+            ])
 
             // Schedule an update that will refetch new defi positions (if any)
             chainsToUpdate.forEach((chainId) => {
@@ -1797,21 +1820,17 @@ export class MainController extends EventEmitter implements IMainController {
           // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
           // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
           if (finalizedAccountOps.length) {
-            await this.portfolio.discardSimulation(finalizedAccountOps)
+            await this.portfolio.discardSimulation(finalizedAccountOps, blockNumberByChainId)
           }
 
           if (networks.length) {
-            // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
-            this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
-              accountAddr,
-              updatedAccountsOps
-            )
-
             Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
               // eslint-disable-next-line @typescript-eslint/no-floating-promises
               this.portfolio.updateSelectedAccount(
                 accountAddr,
-                this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+                this.networks.networks.filter((n) => chainIds.includes(n.chainId)),
+                undefined,
+                { blockNumberByChainId }
               )
             })
           }
