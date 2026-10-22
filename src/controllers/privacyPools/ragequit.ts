@@ -67,22 +67,20 @@ export class PrivacyPoolsRagequit {
     const readAt = Date.now()
 
     return notes
-      .map(({ label, amount }) => {
-        const { depositorAddr, blockNumber } = this.#getStoredDeposit(storedDeposits, label)
+      .map((note) => ({ note, stored: this.#getStoredDeposit(storedDeposits, note.label) }))
+      .sort((a, b) => (a.stored.blockNumber > b.stored.blockNumber ? -1 : 1))
+      .map(({ note: { label, amount }, stored: { depositorAddr, blockNumber } }) => {
         const blocksAgo = latestBlock === null ? null : latestBlock - blockNumber
 
         return {
           label,
           amount,
           depositorAddr,
-          blockNumber,
           // Never in the future, as the latest block read may be behind the deposit's
           depositedAt:
             blocksAgo === null ? null : readAt - Math.max(0, Number(blocksAgo)) * blockTimeMs
         }
       })
-      .sort((a, b) => (a.blockNumber > b.blockNumber ? -1 : 1))
-      .map(({ blockNumber, ...deposit }) => deposit)
   }
 
   /**
