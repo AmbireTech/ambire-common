@@ -92,6 +92,7 @@ import {
   AccountOp,
   GasFeePayment,
   getAccountOpNonce,
+  getPq1BroadcastBlocker,
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
 import {
@@ -4147,20 +4148,17 @@ export class SignAccountOpController
     //   2. Device interaction runs inside #withHardwareWalletSigningRequest
     //      so the "confirm on your device" UI shows while the PQ1 waits
     //      for its physical confirmation.
+    // The UserOperation is sent from the PQ1 wallet itself, so an op for any
+    // other account the PQ1 key can sign for (e.g. a Safe it is an owner of)
+    // is refused up front as well, instead of running its calls from the PQ1
+    // wallet. Both refusals come from `getPq1BroadcastBlocker`.
     if (accountOp.signingKeyType === 'pq1' && accountOp.signingKeyAddr) {
       try {
-        const { gasFeePayment } = accountOp
-        if (
-          gasFeePayment.isGasTank ||
-          gasFeePayment.paidBy !== accountOp.accountAddr ||
-          gasFeePayment.inToken !== ZeroAddress
-        ) {
-          return this.throwBroadcastAccountOp({
-            message:
-              'PQ1 accounts pay gas with the native token from the account itself. Please select the native-token fee option paid by this account and try again.',
-            accountState
-          })
+        const pq1BroadcastBlocker = getPq1BroadcastBlocker(accountOp)
+        if (pq1BroadcastBlocker) {
+          return this.throwBroadcastAccountOp({ message: pq1BroadcastBlocker, accountState })
         }
+        const { gasFeePayment } = accountOp
         const signer = await this.#keystore.getSigner(
           accountOp.signingKeyAddr,
           accountOp.signingKeyType
@@ -4943,11 +4941,17 @@ export class SignAccountOpController
     const dappVerificationBanner = this.#getDappVerificationBanner()
     if (dappVerificationBanner) banners.push(dappVerificationBanner)
 
-    const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
-      this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr),
-      this.accountOp.chainId,
-      this.traceCallDiscoveryStatus
-    )
+    // In the one-click transfer and swap & bridge flows the user entered the amount in the wallet
+    // themselves, so the warning tells them nothing new. Bridging is also where it's least accurate
+    const isOneClickFlow =
+      this.#type === 'one-click-transfer' || this.#type === 'one-click-swap-and-bridge'
+    const significantBalanceDecreaseWarning = isOneClickFlow
+      ? null
+      : getSignificantBalanceDecreaseWarning(
+          this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr),
+          this.accountOp.chainId,
+          this.traceCallDiscoveryStatus
+        )
     if (significantBalanceDecreaseWarning) {
       banners.push({
         id: significantBalanceDecreaseWarning.id,

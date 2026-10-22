@@ -255,6 +255,34 @@ export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   return true
 }
 
+/**
+ * Why an AccountOp signed with a PQ1 key can't be broadcast, as a message for
+ * the user, or null when it can.
+ *
+ * A PQ1 key is a smart-contract wallet that sends its own transactions as
+ * ERC-4337 UserOperations (`KeystoreSignerInterface.broadcastAccountOp`): the
+ * calls run from the PQ1 wallet and it pays the fee, in the native token. So
+ * the AccountOp must be for the PQ1 wallet itself (for any other account the
+ * key can sign for, such as a Safe it is an owner of, the calls would run
+ * from the PQ1 wallet instead of that account) and its fee must be paid in
+ * the native token by the PQ1 wallet.
+ */
+export function getPq1BroadcastBlocker(op: AccountOp): string | null {
+  if (op.accountAddr !== op.signingKeyAddr) {
+    return "Your PQ1 can only send transactions from its own account. Sending from a Safe or another account it is an owner of isn't supported yet."
+  }
+  const { gasFeePayment } = op
+  if (
+    !gasFeePayment ||
+    gasFeePayment.isGasTank ||
+    gasFeePayment.paidBy !== op.accountAddr ||
+    gasFeePayment.inToken !== ZeroAddress
+  ) {
+    return "PQ1 accounts can only pay the fee themselves, in the network's own currency (such as ETH). Please choose that fee option and try again."
+  }
+  return null
+}
+
 export function getSignableCalls(op: AccountOp): CallTuple[] {
   const callsToSign = op.calls.map(toSingletonCall).map(callToTuple)
   if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
