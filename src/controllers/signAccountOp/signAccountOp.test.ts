@@ -832,7 +832,8 @@ const initDappVerificationBannerTest = async (
     sessions,
     contractInfoFetch,
     contractInfo,
-    initialSetStorage
+    initialSetStorage,
+    type
   }: {
     isPermit2?: boolean
     calls?: AccountOp['calls']
@@ -842,6 +843,7 @@ const initDappVerificationBannerTest = async (
     contractInfoFetch?: Fetch
     contractInfo?: ContractInfoController
     initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
+    type?: SignAccountOpType
   } = {}
 ) => {
   const accountOp = createEOAAccountOp(eoaAccount)
@@ -926,7 +928,8 @@ const initDappVerificationBannerTest = async (
       sessions,
       contractInfoFetch,
       contractInfo,
-      initialSetStorage
+      initialSetStorage,
+      type
     }
   )
 }
@@ -3244,6 +3247,53 @@ describe('ERC-7730 humanization', () => {
 })
 
 describe('significant balance decrease banners', () => {
+  test.each(['one-click-transfer', 'one-click-swap-and-bridge'] as const)(
+    'is not shown in the %s flow, where the user entered the amount themselves',
+    async (type) => {
+      const { controller, portfolio } = await initDappVerificationBannerTest(verifiedDapp, {
+        type
+      })
+      const portfolioState = portfolio.getAccountPortfolioState(eoaAccount.addr)
+
+      try {
+        controller.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
+        portfolioState['1'] = buildPortfolioState({
+          amountBeforeSimulation: 5000n,
+          amountPostSimulation: 3000n,
+          isLoading: false
+        })['1']
+
+        expect(
+          controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+        ).toBeUndefined()
+      } finally {
+        controller.destroy()
+      }
+    }
+  )
+
+  test('is shown for the same balance decrease outside of the one-click flows', async () => {
+    const { controller, portfolio } = await initDappVerificationBannerTest(verifiedDapp, {
+      type: 'default'
+    })
+    const portfolioState = portfolio.getAccountPortfolioState(eoaAccount.addr)
+
+    try {
+      controller.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
+      portfolioState['1'] = buildPortfolioState({
+        amountBeforeSimulation: 5000n,
+        amountPostSimulation: 3000n,
+        isLoading: false
+      })['1']
+
+      expect(
+        controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+      ).toBeDefined()
+    } finally {
+      controller.destroy()
+    }
+  })
+
   test('keeps the previous banner while refreshing and recalculates when the result changes', async () => {
     const { controller, portfolio } = await initDappVerificationBannerTest(verifiedDapp)
     const portfolioState = portfolio.getAccountPortfolioState(eoaAccount.addr)

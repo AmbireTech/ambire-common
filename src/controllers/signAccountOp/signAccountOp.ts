@@ -4836,11 +4836,17 @@ export class SignAccountOpController
     const dappVerificationBanner = this.#getDappVerificationBanner()
     if (dappVerificationBanner) banners.push(dappVerificationBanner)
 
-    const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
-      this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr),
-      this.accountOp.chainId,
-      this.traceCallDiscoveryStatus
-    )
+    // In the one-click transfer and swap & bridge flows the user entered the amount in the wallet
+    // themselves, so the warning tells them nothing new. Bridging is also where it's least accurate
+    const isOneClickFlow =
+      this.#type === 'one-click-transfer' || this.#type === 'one-click-swap-and-bridge'
+    const significantBalanceDecreaseWarning = isOneClickFlow
+      ? null
+      : getSignificantBalanceDecreaseWarning(
+          this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr),
+          this.accountOp.chainId,
+          this.traceCallDiscoveryStatus
+        )
     if (significantBalanceDecreaseWarning) {
       banners.push({
         id: significantBalanceDecreaseWarning.id,
