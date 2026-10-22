@@ -300,11 +300,12 @@ export async function broadcastTransaction(
   chainId: bigint,
   counter: number = 0
 ): Promise<TransactionResponse> {
-  if (counter > 2) throw new Error('broadcast failed')
   try {
-    return provider.broadcastTransaction(signedTx)
+    return await provider.broadcastTransaction(signedTx)
   } catch (e) {
     console.log('broadcast failed: ', e)
+    // The last error is thrown as it is, so the caller can explain it to the user
+    if (counter >= 2) throw e
     await waitBeforeRetry(chainId)
     return broadcastTransaction(provider, signedTx, chainId, counter + 1)
   }

@@ -24,6 +24,7 @@ import {
   UserRequest
 } from '../../interfaces/userRequest'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import * as safeLib from '../../libs/safe/safe'
 import { generateUuid } from '../../utils/uuid'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
@@ -1172,6 +1173,86 @@ describe('RequestsController ', () => {
     expect(request.signAccountOp.accountOp.nonce).toBe(119n)
     expect(request.signAccountOp.accountOp.calls).toHaveLength(2)
     request.signAccountOp.destroy()
+  })
+  describe('the nonce of a new Ambire account request', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const calls = [{ to: ZeroAddress, value: 1n, data: '0x' as Hex }]
+
+    const getPendingOp = (nonce: bigint, broadcastOption: string): SubmittedAccountOp => ({
+      ...getActivityAccountOp(accountAddr, chainId, nonce),
+      calls,
+      eoaNonce: 40n,
+      gasFeePayment: {
+        isGasTank: false,
+        paidBy: SAFE_OWNER,
+        paidByKeyType: 'internal',
+        inToken: ZeroAddress,
+        amount: 1n,
+        simulatedGasLimit: 1n,
+        gasPrice: 1n,
+        broadcastOption
+      },
+      status: AccountOpStatus.BroadcastedButNotConfirmed
+    })
+
+    /** Builds one calls request while the RPC reports `rpcNonce` and the ops in Activity. */
+    const buildRequest = async (
+      rpcNonce: bigint,
+      pendingOps: SubmittedAccountOp[],
+      accountOp?: AccountOp
+    ) => {
+      const { controller, accountsCtrl, activityCtrl } = await prepareTest()
+      // The mocked state is a V2 account, whose relayer coordinates the relayer ops
+      accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = rpcNonce
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+      for (const op of pendingOps) await activityCtrl.addAccountOp(op)
+
+      await controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: { calls, meta: { accountAddr, chainId }, accountOp }
+        }
+      })
+
+      const request = controller.userRequests[0]
+      if (request?.kind !== 'calls') throw new Error('Expected calls request')
+      request.signAccountOp.destroy()
+      return request.signAccountOp.accountOp
+    }
+
+    test('starts above the ops this device sent, except relayer ops of a V2 account', async () => {
+      const accountOp = await buildRequest(119n, [
+        getPendingOp(119n, BROADCAST_OPTIONS.byOtherEOA),
+        getPendingOp(125n, BROADCAST_OPTIONS.byRelayer)
+      ])
+
+      expect(accountOp.nonce).toBe(120n)
+    })
+
+    test.each([
+      {
+        name: 'a speed-up keeps the nonce of the op it replaces, as a separate Activity entry',
+        rpcNonce: 119n
+      },
+      {
+        // The fresh state is read at the pending block on Ethereum, which counts the replaced op
+        name: 'a speed-up keeps the nonce of the op it replaces once the RPC counts that op as used',
+        rpcNonce: 120n
+      }
+    ])('$name', async ({ rpcNonce }) => {
+      const replacedOp = getPendingOp(119n, BROADCAST_OPTIONS.byOtherEOA)
+
+      const accountOp = await buildRequest(rpcNonce, [replacedOp], {
+        ...replacedOp,
+        meta: { speedUp: { enabled: true } }
+      })
+
+      expect(accountOp.id).not.toBe(replacedOp.id)
+      // Compared as strings, as a failed bigint match crashes the Jest worker that reports it
+      expect(String(accountOp.nonce)).toBe(String(replacedOp.nonce))
+    })
   })
   test('builds an onchain Safe rejection as the current request at the same nonce', async () => {
     const { accountsCtrl, controller, getCallsRequest, portfolioCtrl } = await prepareTest(

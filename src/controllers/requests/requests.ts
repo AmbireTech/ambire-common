@@ -121,6 +121,7 @@ import {
   getMintVestingRequestParams,
   getTransferRequestParams
 } from '../../libs/transfer/userRequest'
+import { getAccountNonceWithLocalFloor } from '../../utils/nonce'
 import { generateUuid } from '../../utils/uuid'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -583,9 +584,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         const accountStateBefore =
           this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
-        // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
+        // Try to update the account state for 2 seconds. If that fails, use the previous account state if it exists,
         // otherwise wait for the fetch to complete (no matter how long it takes).
         // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
+        let fallbackTimeout: ReturnType<typeof setTimeout> | undefined
         const accountState = await Promise.race([
           this.#accounts
             .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
@@ -594,10 +596,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           accountStateBefore
             ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
               new Promise<AccountOnchainState | undefined>((res) => {
-                setTimeout(() => res(accountStateBefore), 2000)
+                fallbackTimeout = setTimeout(() => res(accountStateBefore), 2000)
               })
             : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
-        ])
+        ]).finally(() => clearTimeout(fallbackTimeout))
 
         if (!accountState) {
           const message =
@@ -3403,9 +3405,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const accountStateBefore =
         this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
-      // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
+      // Try to update the account state for 2 seconds. If that fails, use the previous account state if it exists,
       // otherwise wait for the fetch to complete (no matter how long it takes).
       // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
+      let fallbackTimeout: ReturnType<typeof setTimeout> | undefined
       const accountState = await Promise.race([
         this.#accounts
           .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
@@ -3413,10 +3416,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // Fallback to the old account state if it exists and the fetch takes too long
         accountStateBefore
           ? new Promise<AccountOnchainState>((res) => {
-              setTimeout(() => res(accountStateBefore), 2000)
+              fallbackTimeout = setTimeout(() => res(accountStateBefore), 2000)
             })
           : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
-      ])
+      ]).finally(() => clearTimeout(fallbackTimeout))
 
       if (!accountState) {
         this.emitError({
@@ -3442,10 +3445,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const requestId = !!account.safeCreation
         ? `${baseRequestId}-${generateUuid()}`
         : baseRequestId
+      // The RPC may not count the ops this device just sent yet. A speed-up reuses the
+      // nonce of the op it replaces, which the RPC may already count as used
+      const nonceWithLocalFloor = providedAccountOp?.meta?.speedUp?.enabled
+        ? (providedAccountOp.nonce ?? accountState.nonce)
+        : getAccountNonceWithLocalFloor(
+            account,
+            accountState.isV2,
+            this.#activity.getAccountOpsForChain(meta.chainId, meta.accountAddr),
+            accountState.nonce
+          )
       const initialNonce =
         account.safeCreation && !meta.safeTxnProps && accountOpNonce === undefined
-          ? this.#getFirstFreeNonce(meta.accountAddr, meta.chainId, accountState.nonce)
-          : (accountOpNonce ?? meta.safeTxnProps?.nonce ?? accountState.nonce)
+          ? this.#getFirstFreeNonce(meta.accountAddr, meta.chainId, nonceWithLocalFloor)
+          : (accountOpNonce ?? meta.safeTxnProps?.nonce ?? nonceWithLocalFloor)
       await this.#signAccountOpPreference.initialLoadPromise
       callUserRequest = {
         id: requestId,
@@ -3472,7 +3485,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           contractInfo: this.#contractInfo,
           fromRequestId: requestId,
           accountOp: providedAccountOp
-            ? { ...providedAccountOp, nonce: initialNonce }
+            ? {
+                ...providedAccountOp,
+                // A speed-up keeps the nonce but is a separate Activity entry, so it must not
+                // overwrite the op it replaces
+                id: providedAccountOp.meta?.speedUp?.enabled
+                  ? generateUuid()
+                  : providedAccountOp.id,
+                nonce: initialNonce
+              }
             : {
                 id: generateUuid(),
                 accountAddr: meta.accountAddr,

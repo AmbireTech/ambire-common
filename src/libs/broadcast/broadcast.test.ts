@@ -4,7 +4,7 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../accountOp/accountOp'
-import { BROADCAST_OPTIONS, buildRawTransaction } from './broadcast'
+import { BROADCAST_OPTIONS, broadcastTransaction, buildRawTransaction } from './broadcast'
 
 jest.mock('../../utils/wait', () => jest.fn(async () => undefined))
 
@@ -274,5 +274,33 @@ describe('broadcast', () => {
         })
       ])
     )
+  })
+
+  test('retries a refused broadcast and throws the last node error as it is', async () => {
+    const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => {})
+    const sentTxn = { hash: '0xhash' }
+    const refusingProvider = (refusals: Error[]) => {
+      const send = jest.fn(async () => {
+        const refusal = refusals.shift()
+        if (refusal) throw refusal
+        return sentTxn
+      })
+      return { send, provider: { broadcastTransaction: send } as unknown as RPCProvider }
+    }
+
+    const recovering = refusingProvider([new Error('timeout'), new Error('timeout')])
+    await expect(
+      broadcastTransaction(recovering.provider, '0xsigned', network.chainId)
+    ).resolves.toBe(sentTxn)
+    expect(recovering.send).toHaveBeenCalledTimes(3)
+
+    // The caller explains the node error to the user, so it must not turn into a generic one
+    const lastError = new Error('insufficient funds for gas * price + value')
+    const refusing = refusingProvider([new Error('timeout'), new Error('timeout'), lastError])
+    await expect(broadcastTransaction(refusing.provider, '0xsigned', network.chainId)).rejects.toBe(
+      lastError
+    )
+    expect(refusing.send).toHaveBeenCalledTimes(3)
+    consoleLog.mockRestore()
   })
 })

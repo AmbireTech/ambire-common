@@ -5,6 +5,7 @@ import {
   getAddress,
   hexlify,
   Interface,
+  keccak256,
   MaxUint256,
   parseEther,
   toBeHex,
@@ -814,7 +815,15 @@ const init = async (
   // have already started their immediate run.
   if (options?.pauseOnInit) controller.pause()
 
-  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl, portfolio, contractInfo }
+  return {
+    controller,
+    storageCtrl,
+    signAccountOpPreference,
+    accountsCtrl,
+    portfolio,
+    contractInfo,
+    activity
+  }
 }
 
 const initDappVerificationBannerTest = async (
@@ -3059,6 +3068,158 @@ test('Signing [V1 with EOA payment]: working case', async () => {
   expect(controller.status).toEqual({ type: 'done' })
 })
 
+describe('replacing a pending txn', () => {
+  suppressConsoleBeforeEach()
+
+  const OTHER_PENDING_TXN_MESSAGE =
+    'Another transaction from this account is still pending. Wait for it to finish, then try again. You can also replace it, which cancels the other transaction.'
+
+  const initEoa = async ({
+    meta,
+    nonce = null,
+    pauseOnInit
+  }: { meta?: AccountOp['meta']; nonce?: bigint | null; pauseOnInit?: boolean } = {}) => {
+    const accountOp = createEOAAccountOp(eoaAccount)
+    if (meta) (accountOp.op as AccountOp).meta = meta
+    ;(accountOp.op as AccountOp).nonce = nonce
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: nativeFeeToken
+      }
+    ]
+    return init(
+      eoaAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      },
+      false,
+      // A self-sent txn, not one sent through an EIP-7702 delegation
+      { featureFlags: { eip7702: false }, pauseOnInit }
+    )
+  }
+
+  const getThrownMessage = (controller: SignAccountOpTesterController, error: Error) => {
+    try {
+      controller.throwBroadcastAccountOp({ error })
+    } catch (e: any) {
+      return e.message
+    }
+    throw new Error('throwBroadcastAccountOp did not throw')
+  }
+
+  const REFUSAL = new Error('replacement transaction underpriced')
+  const fee = (maxFeePerGas: bigint, maxPriorityFeePerGas: bigint) => ({
+    maxFeePerGas: toBeHex(maxFeePerGas),
+    maxPriorityFeePerGas: toBeHex(maxPriorityFeePerGas)
+  })
+
+  test('offers to replace the other txn and raises the fee above it on each try', async () => {
+    // Paused, so no new estimation is loading, which would hold back the new fee speeds
+    const { controller } = await initEoa({ pauseOnInit: true })
+
+    expect(getThrownMessage(controller, REFUSAL)).toBe(OTHER_PENDING_TXN_MESSAGE)
+    expect(controller.canReplaceOtherPendingTransaction).toBe(true)
+
+    // 15% over the fast fee, rounded up, for every speed
+    controller.replaceOtherPendingTransaction()
+    const firstReplacementFee = fee(690n, 345n)
+    expect(controller.gasPrices).toEqual({
+      slow: firstReplacementFee,
+      medium: firstReplacementFee,
+      fast: firstReplacementFee,
+      ape: firstReplacementFee
+    })
+    // The signed txn pays the new fee, or the node refuses it for the same reason
+    expect(controller.accountOp.gasFeePayment).toMatchObject({
+      gasPrice: 690n,
+      maxPriorityFeePerGas: 345n
+    })
+    expect(controller.hasCustomGasPrices).toBe(true)
+    expect(controller.canReplaceOtherPendingTransaction).toBe(false)
+
+    // Nothing was refused since, so the fee stays
+    controller.replaceOtherPendingTransaction()
+    expect(controller.gasPrices?.fast).toEqual(firstReplacementFee)
+
+    // The fee of the other txn can't be read, so a new refusal raises the raised fee again
+    getThrownMessage(controller, REFUSAL)
+    controller.replaceOtherPendingTransaction()
+    expect(controller.gasPrices?.fast).toEqual(fee(794n, 397n))
+    expect(controller.accountOp.gasFeePayment).toMatchObject({
+      gasPrice: 794n,
+      maxPriorityFeePerGas: 397n
+    })
+  })
+
+  test.each([
+    {
+      name: 'the refused txn is a speed-up of a txn of this device',
+      meta: { speedUp: { enabled: true } },
+      errors: [REFUSAL]
+    },
+    {
+      name: 'the last refusal had another cause',
+      meta: undefined,
+      errors: [REFUSAL, new Error('nonce too low: next nonce 8, tx nonce 7')]
+    }
+  ])('does not offer to replace a txn when $name', async ({ meta, errors }) => {
+    const { controller } = await initEoa({ meta })
+
+    const messages = errors.map((error) => getThrownMessage(controller, error))
+
+    expect(messages.at(-1)).not.toBe(OTHER_PENDING_TXN_MESSAGE)
+    expect(controller.canReplaceOtherPendingTransaction).toBe(false)
+  })
+
+  test.each([
+    {
+      name: 'a speed-up keeps the nonce of the txn it replaces',
+      meta: { speedUp: { enabled: true } },
+      expectedNonce: 119n
+    },
+    { name: 'a new txn takes the nonce the estimation found', meta: undefined, expectedNonce: 120n }
+  ])('$name when the estimation counts that txn as pending', async ({ meta, expectedNonce }) => {
+    const { controller, accountsCtrl, portfolio } = await initEoa({ meta, nonce: 119n })
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+    jest.spyOn(portfolio, 'simulateAccountOp').mockResolvedValue(undefined)
+    controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.Done
+    // On Ethereum the estimation runs on the pending block, where the replaced txn
+    // already used nonce 119
+    jest.spyOn(controller.estimation, 'estimate').mockImplementation(async () => {
+      controller.estimation.estimation = {
+        ...controller.estimation.estimation!,
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: 120,
+          flags: {}
+        },
+        flags: { hasNonceDiscrepancy: true }
+      }
+    })
+
+    await controller.refetchAccountState()
+
+    // Compared as strings, as a failed bigint match crashes the Jest worker that reports it
+    expect(String(controller.accountOp.nonce)).toBe(String(expectedNonce))
+  })
+})
+
 describe('ERC-7730 humanization', () => {
   test('shows loading, uses ERC-7730 data, caches it and fetches a shared batch descriptor once', async () => {
     const tokenAddress = '0x1111111111111111111111111111111111111111'
@@ -3932,7 +4093,7 @@ describe('broadcasting a batch one transaction at a time', () => {
   }
 
   /** An EOA broadcasts every call as its own transaction, so three calls take three signatures. */
-  const createThreeCallBatch = (account: Account) => {
+  const createThreeCallBatch = (account: Account, eoaNonce: bigint | null) => {
     const batch = createEOAAccountOp(account)
     batch.op.calls = [1n, 2n, 3n].map((value) => ({
       to: '0x0000000000000000000000000000000000000000',
@@ -3940,7 +4101,7 @@ describe('broadcasting a batch one transaction at a time', () => {
       data: '0x' as Hex
     }))
     // Set, so the nonce is not read off the network during the test
-    ;(batch.op as any).eoaNonce = 7n
+    ;(batch.op as any).eoaNonce = eoaNonce
 
     return batch
   }
@@ -3949,6 +4110,7 @@ describe('broadcasting a batch one transaction at a time', () => {
     callRelayer?: any
     type?: SignAccountOpType
     onPartialBroadcast?: (sentAccountOp: any) => Promise<void>
+    eoaNonce?: bigint | null
   }) => {
     const submittedAccountOps: any[] = []
     const sentAccountOps: any[] = []
@@ -3963,9 +4125,9 @@ describe('broadcasting a batch one transaction at a time', () => {
         token: nativeFeeToken
       }
     ]
-    const { controller } = await init(
+    const { controller, activity } = await init(
       eoaAccount,
-      createThreeCallBatch(eoaAccount),
+      createThreeCallBatch(eoaAccount, overrides?.eoaNonce === undefined ? 7n : overrides.eoaNonce),
       eoaSigner,
       {
         providerEstimation: { gasUsed: 10000n, feePaymentOptions },
@@ -3995,7 +4157,13 @@ describe('broadcasting a batch one transaction at a time', () => {
     )
     broadcastingController = controller
 
-    return { controller, submittedAccountOps, sentAccountOps, broadcastStatusesOnSuccess }
+    return {
+      controller,
+      activity,
+      submittedAccountOps,
+      sentAccountOps,
+      broadcastStatusesOnSuccess
+    }
   }
 
   /**
@@ -4040,6 +4208,67 @@ describe('broadcasting a batch one transaction at a time', () => {
     expect(submittedAccountOps).toHaveLength(1)
     expect(submittedAccountOps[0].calls).toHaveLength(3)
     expect(submittedAccountOps[0].identifiedBy.type).toBe('MultipleTxns')
+    expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+
+  test('starts above the txns this device sent when the RPC does not count them yet', async () => {
+    const { controller, activity, submittedAccountOps } = await initBatch({ eoaNonce: null })
+    // A txn sent a moment ago, which the RPC does not count in the next nonce yet
+    await activity.addAccountOp({
+      ...createEOAAccountOp(eoaAccount).op,
+      id: generateUuid(),
+      nonce: 5n,
+      eoaNonce: 5n,
+      gasFeePayment: {
+        isGasTank: false,
+        paidBy: eoaAccount.addr,
+        paidByKeyType: 'internal',
+        inToken: '0x0000000000000000000000000000000000000000',
+        amount: 1n,
+        simulatedGasLimit: 21000n,
+        gasPrice: 1n,
+        broadcastOption: broadcastLib.BROADCAST_OPTIONS.bySelf
+      },
+      status: AccountOpStatus.BroadcastedButNotConfirmed,
+      txnId: `0x${'5'.repeat(64)}`,
+      identifiedBy: { type: 'Transaction', identifier: `0x${'5'.repeat(64)}` },
+      timestamp: Date.now()
+    })
+    const getTransactionCount = jest
+      .spyOn(controller.provider, 'getTransactionCount')
+      .mockResolvedValue(5)
+    mockBroadcastChain(null)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(getTransactionCount).toHaveBeenCalledWith(eoaAccount.addr, 'pending')
+    const builtNonces = jest.mocked(broadcastLib.buildRawTransaction).mock.calls.map((c) => c[5])
+    expect(builtNonces).toEqual([6, 7, 8])
+    expect(submittedAccountOps[0]?.eoaNonce).toBe(6n)
+  })
+
+  test('counts a txn the node already holds as sent', async () => {
+    const { controller, submittedAccountOps } = await initBatch()
+    const { signRawTransaction, broadcastTransaction } = mockBroadcastChain(null)
+    let signedCount = 0
+    signRawTransaction.mockImplementation(async () => {
+      signedCount += 1
+      return toBeHex(signedCount, 32)
+    })
+    // A retried send of the second txn reaches a node that got it on the first try
+    broadcastTransaction.mockImplementation(async (_provider, signedTxn) => {
+      if (signedTxn === toBeHex(2, 32)) throw new Error('already known')
+      return { hash: `0xsent${BigInt(signedTxn)}` } as any
+    })
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(broadcastTransaction).toHaveBeenCalledTimes(3)
+    expect(submittedAccountOps).toHaveLength(1)
+    // The hash of a signed txn is the hash of its bytes, so it is known without the node
+    expect(submittedAccountOps[0].identifiedBy.identifier).toBe(
+      ['0xsent1', keccak256(toBeHex(2, 32)), '0xsent3'].join('-')
+    )
     expect(getPartialBroadcastError(controller)).toBeUndefined()
   })
 

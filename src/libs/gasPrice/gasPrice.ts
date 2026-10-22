@@ -285,3 +285,9 @@ export function gasPriceToBundlerFormat(gasRecommendations: GasRecommendation[])
 
   return formatted as GasSpeeds
 }
+
+/**
+ * Raises a fee by 15%, rounded up. Nodes accept a txn that replaces a pending one only when
+ * both fees grow by at least 10%, so this leaves room for rounding.
+ */
+export const increaseByFifteenPercent = (value: bigint) => (value * 115n + 99n) / 100n

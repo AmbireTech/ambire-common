@@ -6,6 +6,7 @@ import {
   Interface,
   isAddress,
   isBytesLike,
+  keccak256,
   toBeHex,
   ZeroAddress
 } from 'ethers'
@@ -174,12 +175,19 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
+import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
+import {
+  applyLocalNonceFloor,
+  getAccountNonceWithLocalFloor,
+  getLocalNonceFloor
+} from '../../utils/nonce'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import { withTimeout } from '../../utils/with-timeout'
 import { SELECTOR_LOADING_DEADLINE_MS } from '../contractInfo/contractInfo'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
+import { increaseByFifteenPercent } from '../../libs/gasPrice/gasPrice'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import HumanizationController from '../humanization/humanization'
 import { discoverTxnTokens } from './discoverTxnTokens'
@@ -323,6 +331,12 @@ export class SignAccountOpController
   rpcGasPrices?: GasSpeeds
 
   hasCustomGasPrices: boolean = false
+
+  /**
+   * True when another device or app holds a pending txn with the nonce this op needs. The user
+   * can then replace it with `replaceOtherPendingTransaction`.
+   */
+  canReplaceOtherPendingTransaction: boolean = false
 
   customGasLimit?: bigint
 
@@ -803,6 +817,50 @@ export class SignAccountOpController
     this.selectedFeeSpeed = FeeSpeed.Medium
     this.feeSpeeds = {}
     this.#updateAccountOp({ gasFeePayment: null })
+  }
+
+  /**
+   * The next nonce of an EOA that sends a raw txn. Never lower than the ops this device already
+   * sent, as the RPC may not count them yet.
+   */
+  async #getEoaBroadcastNonce(senderAddr: string): Promise<bigint> {
+    const rpcNonce = await this.provider.getTransactionCount(
+      senderAddr,
+      getPendingBlockTagIfSupported(this.#network, 'accountState')
+    )
+    const localFloor = getLocalNonceFloor(
+      this.#activity.getAccountOpsForChain(this.#network.chainId),
+      senderAddr,
+      { type: 'eoa' }
+    )
+    return applyLocalNonceFloor(BigInt(rpcNonce), localFloor)
+  }
+
+  /**
+   * The account nonce from the RPC, raised above the ops this device already sent. A speed-up
+   * keeps the nonce of the op it replaces, which the RPC may already count as used. A bundler
+   * op of an Ambire account uses a random nonce key, so it keeps the RPC nonce.
+   */
+  #getAccountNonceWithLocalFloor(rpcNonce: bigint): bigint {
+    if (this.isSpeedUpTransaction) return this.accountOp.nonce ?? rpcNonce
+    const isSentByBundler =
+      this.accountOp.gasFeePayment?.broadcastOption === BROADCAST_OPTIONS.byBundler
+    if (isSentByBundler && !this.account.safeCreation) return rpcNonce
+    const accountState =
+      this.#accounts.accountStates[this.accountOp.accountAddr]?.[this.accountOp.chainId.toString()]
+    return getAccountNonceWithLocalFloor(
+      this.account,
+      !!accountState?.isV2,
+      this.#activity.getAccountOpsForChain(this.accountOp.chainId, this.accountOp.accountAddr),
+      rpcNonce
+    )
+  }
+
+  async #sendSignedTxn(signedTxn: string, isDelegationBroadcast: boolean) {
+    if (isDelegationBroadcast) {
+      return { hash: await this.provider.send('eth_sendRawTransaction', [signedTxn]) }
+    }
+    return broadcastTransaction(this.provider, signedTxn, this.accountOp.chainId)
   }
 
   #updateNonce(nonce: bigint) {
@@ -1896,7 +1954,9 @@ export class SignAccountOpController
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
     // that we should update the portfolio to get a correct simulation
     if (estimation && estimation.ambireEstimation && estimation.flags.hasNonceDiscrepancy) {
-      this.#updateNonce(BigInt(estimation.ambireEstimation.ambireAccountNonce))
+      this.#updateNonce(
+        this.#getAccountNonceWithLocalFloor(BigInt(estimation.ambireEstimation.ambireAccountNonce))
+      )
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -1923,7 +1983,9 @@ export class SignAccountOpController
         this.#accounts.accountStates[this.accountOp.accountAddr]?.[
           this.accountOp.chainId.toString()
         ]
-      if (pendingAccountState) this.#updateNonce(pendingAccountState.nonce)
+      if (pendingAccountState) {
+        this.#updateNonce(this.#getAccountNonceWithLocalFloor(pendingAccountState.nonce))
+      }
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -2084,7 +2146,11 @@ export class SignAccountOpController
 
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation && !isSpeedUpTransaction) {
-          this.#updateNonce(BigInt(estimation.ambireEstimation.ambireAccountNonce))
+          this.#updateNonce(
+            this.#getAccountNonceWithLocalFloor(
+              BigInt(estimation.ambireEstimation.ambireAccountNonce)
+            )
+          )
         }
       } else if (this.estimation.status === EstimationStatus.Error) {
         // No need to update gasPrices if the estimation failed
@@ -3532,7 +3598,7 @@ export class SignAccountOpController
               return null
             }
           )
-          if (latestNonce) {
+          if (latestNonce !== null && latestNonce !== undefined) {
             this.#updateNonce(latestNonce)
           }
         }
@@ -3671,13 +3737,22 @@ export class SignAccountOpController
             this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
 
           const signer = await this.#getDefaultSigner()
+          // The txn must use the nonce the authorization was built from, or the
+          // delegation is skipped, so it is fixed here for the broadcast as well
+          const txnNonce =
+            this.isSpeedUpTransaction &&
+            this.accountOp.eoaNonce !== null &&
+            this.accountOp.eoaNonce !== undefined
+              ? this.accountOp.eoaNonce
+              : await this.#getEoaBroadcastNonce(this.accountOp.accountAddr)
+          this.#updateAccountOp({ eoaNonce: txnNonce })
           const authorization = {
             chainId: this.#network.chainId,
             contract,
             // because we're broadcasting by ourselves, we need to add 1 to the nonce
             // as the sender nonce (the curr acc) gets incremented before the
             // authrorization validation
-            nonce: accountState.eoaNonce! + 1n
+            nonce: txnNonce + 1n
           }
           this.accountOp.meta.delegation = get7702Sig(
             this.#network.chainId,
@@ -4091,7 +4166,9 @@ export class SignAccountOpController
       const senderNonce =
         accountOp.eoaNonce !== null && typeof accountOp.eoaNonce !== 'undefined'
           ? Number(accountOp.eoaNonce)
-          : await this.provider.getTransactionCount(senderAddr).catch((e) => e)
+          : await this.#getEoaBroadcastNonce(senderAddr)
+              .then(Number)
+              .catch((e) => e)
 
       // @precaution
       if (senderNonce instanceof Error) {
@@ -4147,15 +4224,14 @@ export class SignAccountOpController
                 : signer.signRawTransaction(rawTxn)
           )
 
-          if (isDelegationBroadcast) {
-            multipleTxnsBroadcastRes.push({
-              hash: await this.provider.send('eth_sendRawTransaction', [signedTxn])
+          multipleTxnsBroadcastRes.push(
+            await this.#sendSignedTxn(signedTxn, isDelegationBroadcast).catch((error) => {
+              // The same signed txn is already waiting to be mined, which is a success
+              const errorMessage = error instanceof Error ? error.message : String(error)
+              if (!errorMessage.toLowerCase().includes('already known')) throw error
+              return { hash: keccak256(signedTxn) }
             })
-          } else {
-            multipleTxnsBroadcastRes.push(
-              await broadcastTransaction(this.provider, signedTxn, accountOp.chainId)
-            )
-          }
+          )
           if (txnLength > 1) this.update({ signedTransactionsCount: i + 1 })
 
           // record the EOA txn only if isErc4337Enabled as
@@ -4536,6 +4612,7 @@ export class SignAccountOpController
   }) {
     const originalMessage = _err?.message
     let message = humanReadableMessage
+    this.canReplaceOtherPendingTransaction = false
     let isReplacementFeeLow = false
     // When the broadcast fails only because the network fee changed and we
     // auto-updated the gas prices, we surface a soft confirmation modal instead
@@ -4564,6 +4641,10 @@ export class SignAccountOpController
           .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
+      } else if (this.#isNonceTakenByUnknownPendingTxn(originalMessage)) {
+        message =
+          'Another transaction from this account is still pending. Wait for it to finish, then try again. You can also replace it, which cancels the other transaction.'
+        this.canReplaceOtherPendingTransaction = true
       } else if (isUnderpriced(originalMessage)) {
         if (!this.hasCustomGasPrices) message = 'Transaction fees changed. Please try again'
         else message = originalMessage
@@ -4585,7 +4666,8 @@ export class SignAccountOpController
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA account'
       } else if (
         originalMessage.includes('INVALID_ACCOUNT_NONCE') ||
-        originalMessage.includes('user nonce')
+        originalMessage.includes('user nonce') ||
+        originalMessage.toLowerCase().includes('nonce too low')
       ) {
         message = 'Pending transaction detected. Please try again in a few seconds'
         this.#accounts
@@ -4641,6 +4723,52 @@ export class SignAccountOpController
     }
 
     throw new Error(message) // so that broadcast resolves with an error status
+  }
+
+  /**
+   * Whether the node refused a raw txn because a pending txn with the same nonce pays more. The
+   * local nonce floor keeps the ops of this device apart, so outside a speed-up the other txn
+   * comes from another device or app.
+   */
+  #isNonceTakenByUnknownPendingTxn(errorMessage: string): boolean {
+    const broadcastOption = this.accountOp.gasFeePayment?.broadcastOption
+    const isRawTxnBroadcast =
+      broadcastOption === BROADCAST_OPTIONS.bySelf ||
+      broadcastOption === BROADCAST_OPTIONS.bySelf7702 ||
+      broadcastOption === BROADCAST_OPTIONS.byOtherEOA ||
+      broadcastOption === BROADCAST_OPTIONS.delegation
+    return (
+      isRawTxnBroadcast &&
+      !this.isSpeedUpTransaction &&
+      errorMessage.toLowerCase().includes('replacement transaction underpriced')
+    )
+  }
+
+  /**
+   * Raises the fee above the pending txn of another device or app, so the next broadcast
+   * replaces it. Each call raises the fee again, as the fee of the other txn can't be read.
+   */
+  replaceOtherPendingTransaction() {
+    if (!this.canReplaceOtherPendingTransaction || !this.gasPrices) return
+
+    // The fast fee first, then 15% on the fee that was already raised
+    const baseFee = this.hasCustomGasPrices ? this.gasPrices.ape : this.gasPrices.fast
+    const maxFeePerGas = toBeHex(increaseByFifteenPercent(BigInt(baseFee.maxFeePerGas))) as Hex
+    const maxPriorityFeePerGas = toBeHex(
+      increaseByFifteenPercent(BigInt(baseFee.maxPriorityFeePerGas))
+    ) as Hex
+    const replacementFee = { maxFeePerGas, maxPriorityFeePerGas }
+
+    this.canReplaceOtherPendingTransaction = false
+    // Through `update`, so the fee speeds and the fee the txn pays get the new fee as well
+    this.update({
+      customGasPrices: {
+        slow: replacementFee,
+        medium: replacementFee,
+        fast: replacementFee,
+        ape: replacementFee
+      }
+    })
   }
 
   canUpdate(): boolean {
