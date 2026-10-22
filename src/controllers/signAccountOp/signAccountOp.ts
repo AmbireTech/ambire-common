@@ -198,6 +198,7 @@ import {
   SignAccountOpFeeTokenPreference,
   SignAccountOpPreferenceController
 } from './signAccountOpPreference'
+import { SpeedUp } from './speedUp'
 
 import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
 // Re-exporting for backwards compatibility with existing importers
@@ -508,6 +509,9 @@ export class SignAccountOpController
 
   #onDappsUpdateUnsubscribe?: () => void
 
+  /** Set only when speeding up a pending transaction, see SpeedUp */
+  #speedUp?: SpeedUp
+
   constructor({
     eventEmitterRegistry,
     type,
@@ -534,7 +538,8 @@ export class SignAccountOpController
     onUpdateAfterTraceCallSuccess,
     onBroadcastSuccess,
     onBroadcastFailed,
-    onPartialBroadcast
+    onPartialBroadcast,
+    speedUp
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
@@ -562,6 +567,8 @@ export class SignAccountOpController
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
     onPartialBroadcast?: OnPartialBroadcast
+    /** Pass only when speeding up a pending transaction */
+    speedUp?: SpeedUp
   }) {
     super(eventEmitterRegistry, false)
     this.#type = type || 'default'
@@ -594,8 +601,8 @@ export class SignAccountOpController
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
+    this.#speedUp = speedUp
     this.#updateSafeEip712Data()
-    this.#setSpeedUpGasPrices()
 
     if (this.#accountOp.signature && this.#accountOp.txnId) {
       this.#accountOp.signed = getAlreadySignedOwners(
@@ -687,7 +694,7 @@ export class SignAccountOpController
   }
 
   get isSpeedUpTransaction(): boolean {
-    return !!this.#accountOp.meta?.speedUp?.enabled
+    return !!this.#speedUp
   }
 
   #updateAccountOp(accountOp: Partial<AccountOp>) {
@@ -964,45 +971,27 @@ export class SignAccountOpController
     }
   }
 
-  #syncSpeedUpFeeSelectionFromEstimation() {
-    if (
-      !this.isSpeedUpTransaction ||
-      this.estimation.status !== EstimationStatus.Success ||
-      !this.accountOp.gasFeePayment
-    ) {
-      return
-    }
+  /** A speed up must be paid the same way as the pending transaction it replaces */
+  #selectSpeedUpFeeOption() {
+    if (!this.#speedUp || this.estimation.status !== EstimationStatus.Success) return
 
-    const selectedOption = this.estimation.availableFeeOptions.find(
-      (option) =>
-        option.paidBy === this.accountOp.gasFeePayment?.paidBy &&
-        option.token.address === this.accountOp.gasFeePayment?.inToken &&
-        (!this.accountOp.gasFeePayment?.feeTokenChainId ||
-          option.token.chainId === this.accountOp.gasFeePayment?.feeTokenChainId) &&
-        option.token.flags.onGasTank === this.accountOp.gasFeePayment?.isGasTank
+    const replacedFeeOption = this.#speedUp.findReplacedFeeOption(
+      this.estimation.availableFeeOptions
     )
+    if (!replacedFeeOption) return
 
-    if (!selectedOption) return
-
-    this.#paidBy = selectedOption.paidBy
-    this.feeTokenResult = selectedOption.token
-    this.selectedOption = selectedOption
+    this.#paidBy = replacedFeeOption.paidBy
+    this.feeTokenResult = replacedFeeOption.token
+    this.selectedOption = replacedFeeOption
   }
 
-  #setSpeedUpGasPrices() {
-    const gasFeePayment = this.accountOp.gasFeePayment
-    if (!this.isSpeedUpTransaction || !gasFeePayment) return
-
-    const maxFeePerGas = toBeHex(gasFeePayment.gasPrice) as Hex
-    const maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas || 0n) as Hex
-
-    this.gasPrices = {
-      slow: { maxFeePerGas, maxPriorityFeePerGas },
-      medium: { maxFeePerGas, maxPriorityFeePerGas },
-      fast: { maxFeePerGas, maxPriorityFeePerGas },
-      ape: { maxFeePerGas, maxPriorityFeePerGas }
-    }
-    this.hasCustomGasPrices = true
+  /**
+   * When speeding up a pending transaction, raises the gas prices of every speed
+   * to the minimum the network needs to accept the replacement. The estimation keeps
+   * running, so speeds that are already above that minimum are used as they are
+   */
+  #applySpeedUpMinFees(gasPrices?: GasSpeeds): GasSpeeds | undefined {
+    return this.#speedUp ? this.#speedUp.applyMinFees(gasPrices) : gasPrices
   }
 
   async #getDefaultSigner() {
@@ -1143,6 +1132,46 @@ export class SignAccountOpController
       timeout: ESTIMATE_UPDATE_INTERVAL
     })
     this.#gasPriceInterval.start({ runImmediately: true, timeout: GAS_PRICE_UPDATE_INTERVAL })
+
+    // Started after the intervals, so they can be stopped if the pending transaction
+    // was already processed while the request was opening
+    this.#speedUp?.watchReplacedTransaction(() => this.#stopSpeedUp())
+  }
+
+  /**
+   * During a speed up, the pending transaction that is being replaced may get processed before
+   * the speed up is signed. Its place (nonce) is then taken, so there's nothing left to sign.
+   * Returns whether it's done with the speed up, so the activity no longer needs to be watched
+   */
+  #stopSpeedUp(): boolean {
+    // Signing is in progress, so this is checked again on the next activity update, or once
+    // the status goes back to ReadyToSign (see #checkSpeedUpStillNeeded)
+    if (
+      this.status?.type === SigningStatus.InProgress ||
+      this.status?.type === SigningStatus.WaitingForPaymaster
+    )
+      return false
+    // Already broadcast or already stopped
+    if (
+      this.status?.type === SigningStatus.Done ||
+      this.status?.type === SigningStatus.SpeedUpNotNeeded
+    )
+      return true
+
+    this.#stopIntervals()
+    this.updateStatus(SigningStatus.SpeedUpNotNeeded)
+    return true
+  }
+
+  /**
+   * Checks again whether the transaction being sped up was processed, once back to ReadyToSign.
+   * It may have been processed while signing, so the broadcast fails as its place (nonce) is
+   * taken, and with nothing left pending the activity may never update again
+   */
+  #checkSpeedUpStillNeeded() {
+    if (this.status?.type !== SigningStatus.ReadyToSign) return
+
+    this.#speedUp?.checkReplacedTransaction()
   }
 
   #withDecodedCalls(humanization: IrCall[]) {
@@ -1628,6 +1657,25 @@ export class SignAccountOpController
      */
     if (!this.isInitialized) return []
 
+    // A speed up must be paid the same way as the pending transaction it replaces. Paid any
+    // other way, it's sent as a new transaction and the same calls could run twice. The other
+    // fee errors would be about a way of paying that can't be used, so they are not shown.
+    // Checked once the fee options are known, and not only after a successful estimation, as
+    // the options are kept while the estimation reloads and the error must not flicker away
+    if (
+      this.canBroadcast &&
+      this.estimation.availableFeeOptions.length > 0 &&
+      this.status?.type !== SigningStatus.SpeedUpNotNeeded &&
+      this.#speedUp?.isReplacedFeeOptionMissing(this.estimation.availableFeeOptions)
+    ) {
+      return [
+        {
+          title:
+            "This transaction can't be sped up right now. The speed up has to be paid the same way as the original transaction, but that option isn't available anymore (for example, there isn't enough left to cover the fee). Add funds or wait for the original transaction to complete."
+        }
+      ]
+    }
+
     const areGasPricesLoading = typeof this.gasPrices === 'undefined'
 
     if (!areGasPricesLoading && !this.gasPrices && this.canBroadcast) {
@@ -1806,10 +1854,13 @@ export class SignAccountOpController
       }
     }
 
-    // Safe txn, signed, with a future nonce: display an error
+    // Safe txn, signed, with a future nonce: display an error.
+    // Not for a speed up, which keeps the nonce of the pending transaction it replaces on
+    // purpose. If that transaction gets processed first, the speed up is stopped instead
     if (
       !!this.account.safeCreation &&
       !this.accountOp.meta?.isSafeDeploy &&
+      !this.#speedUp &&
       accountState &&
       this.accountOp.nonce &&
       this.accountOp.nonce !== accountState.nonce &&
@@ -2205,8 +2256,6 @@ export class SignAccountOpController
           : null
       }
 
-      this.#syncSpeedUpFeeSelectionFromEstimation()
-
       if (feeToken && paidBy && !isSpeedUpTransaction) {
         this.#paidBy = paidBy
         this.feeTokenResult = feeToken
@@ -2224,7 +2273,7 @@ export class SignAccountOpController
         }
       }
 
-      if (speed && this.isInitialized && !isSpeedUpTransaction) {
+      if (speed && this.isInitialized) {
         this.selectedFeeSpeed = speed
         // Only an explicitly picked speed becomes the default for the network.
         // Speeds set while switching the fee token are a fallback, not a choice
@@ -2249,7 +2298,8 @@ export class SignAccountOpController
 
       // Set defaults, if some of the optional params are omitted
       this.#setDefaults()
-      if (isSpeedUpTransaction) this.#syncSpeedUpFeeSelectionFromEstimation()
+      // After the defaults, so the default fee option gets replaced with the pending transaction's
+      this.#selectSpeedUpFeeOption()
 
       if (
         this.estimation.status === EstimationStatus.Success &&
@@ -2313,10 +2363,15 @@ export class SignAccountOpController
   }
 
   updateStatus(forceStatusChange?: SigningStatus, replacementFeeLow = false) {
+    // final, the speed up can't go through anymore. Checked before the forced change too, as
+    // a failed broadcast forces ReadyToSign, which would bring back a speed up that was stopped
+    if (this.status?.type === SigningStatus.SpeedUpNotNeeded) return
+
     // use this to go back to ReadyToSign when a broadcasting error is emitted
     if (forceStatusChange) {
       this.status = { type: forceStatusChange }
       this.emitUpdate()
+      this.#checkSpeedUpStillNeeded()
       return
     }
 
@@ -2371,6 +2426,7 @@ export class SignAccountOpController
       // do not reset this once triggered
       if (replacementFeeLow) this.replacementFeeLow = replacementFeeLow
       this.emitUpdate()
+      this.#checkSpeedUpStillNeeded()
       return
     }
 
@@ -2392,6 +2448,7 @@ export class SignAccountOpController
     this.gasPrice.destroy()
     this.#onDappsUpdateUnsubscribe?.()
     this.#onDappsUpdateUnsubscribe = undefined
+    this.#speedUp?.destroy()
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
@@ -2466,6 +2523,9 @@ export class SignAccountOpController
    * That is because they may be stopped (after inactivity).
    */
   #resumeIntervals(opts?: { haveCallsChanged?: boolean }) {
+    // Nothing is left to estimate once the transaction being sped up was processed
+    if (this.status?.type === SigningStatus.SpeedUpNotNeeded) return
+
     const { haveCallsChanged = false } = opts || {}
 
     // we want to restart the interval if signAccountOp is for a Safe.
@@ -2517,6 +2577,9 @@ export class SignAccountOpController
   }
 
   resetStatus() {
+    // Final, the speed up can't go through anymore no matter what is reset
+    if (this.status?.type === SigningStatus.SpeedUpNotNeeded) return
+
     this.status = null
     this.emitUpdate()
   }
@@ -2836,7 +2899,9 @@ export class SignAccountOpController
 
       const nativeRatio = this.#getNativeToFeeTokenRatio(option.token)
       const shouldUseRpcGasPrices = this.#shouldUseRpcGasPrices(broadcastOption)
-      const gasPrices = shouldUseRpcGasPrices ? this.rpcGasPrices : this.gasPrices
+      const gasPrices = this.#applySpeedUpMinFees(
+        shouldUseRpcGasPrices ? this.rpcGasPrices : this.gasPrices
+      )
       // the RPC gas prices are used only for broadcasts outside erc-4337,
       // so they should not be increased
       const increasedGasPrices = shouldUseRpcGasPrices
@@ -4619,6 +4684,9 @@ export class SignAccountOpController
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
     this.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
+    // The transaction being sped up was processed meanwhile, which is why the broadcast failed.
+    // The status already tells the user there's no need to speed up, so the error isn't shown
+    const isSpeedUpNotNeeded = this.status?.type === SigningStatus.SpeedUpNotNeeded
 
     if (this.#onBroadcastFailed) {
       this.#onBroadcastFailed(this.#accountOp)
@@ -4626,8 +4694,9 @@ export class SignAccountOpController
 
     this.emitError({
       // Keep the report for Sentry/logging, but don't show a toast when we're
-      // handling this softly via the "Gas fee updated" confirmation modal.
-      level: softFeeUpdateConfirmation ? 'silent' : 'major',
+      // handling this softly via the "Gas fee updated" confirmation modal
+      // or when the speed up is no longer needed.
+      level: softFeeUpdateConfirmation || isSpeedUpNotNeeded ? 'silent' : 'major',
       message,
       error: _err || new Error(message),
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
@@ -4815,14 +4884,17 @@ export class SignAccountOpController
    * (see BaseAccount.getGasPriceFetchStrategy)
    */
   get selectedOptionGasPrices(): GasSpeeds | undefined {
-    if (!this.selectedOption) return this.gasPrices
+    if (!this.selectedOption) return this.#applySpeedUpMinFees(this.gasPrices)
 
     const broadcastOption = this.baseAccount.getBroadcastOption(this.selectedOption, {
       op: this.accountOp,
       isSponsored: this.isSponsored
     })
 
-    return this.#shouldUseRpcGasPrices(broadcastOption) ? this.rpcGasPrices : this.gasPrices
+    // Raised like the fee speeds, so the advanced options don't start below the speed up minimum
+    return this.#applySpeedUpMinFees(
+      this.#shouldUseRpcGasPrices(broadcastOption) ? this.rpcGasPrices : this.gasPrices
+    )
   }
 
   get canSetCustomGasPrices(): boolean {
