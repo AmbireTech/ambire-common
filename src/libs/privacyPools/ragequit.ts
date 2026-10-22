@@ -31,22 +31,34 @@ export const readPrivacyPoolsRagequit = (data: string): PrivacyPoolsRagequitCall
   return { amount: BigInt(pubSignals[2]), label: BigInt(pubSignals[3]) }
 }
 
+/** What the persisted pool history tells of one deposit. */
+export type PrivacyPoolsStoredDeposit = {
+  /** The address the deposit was made from, the only one that can ragequit it. */
+  depositorAddr: Hex
+  /** The block it landed in, which dates it without asking the network. */
+  blockNumber: bigint
+}
+
 /**
- * The address each deposit was made from, by label, read from the SDK's persisted public state of a
- * chain (stored under `getPrivacyPoolsStoreKey`): every deposit in its pools, as synced in bulk.
+ * The depositor and block of each deposit, by label, read from the SDK's persisted public state of
+ * a chain (stored under `getPrivacyPoolsStoreKey`): every deposit in its pools, as synced in bulk.
  *
  * Read from there rather than with the SDK's `history()` or the pool's `depositors(label)`: both ask
  * the network about single deposits, which tells it which ones are the user's.
  *
+ * TEMPORARY: this reads the SDK's internal store format. Kohaku is asked to expose `depositor` (and
+ * the deposit's block) on `INote`, which `notes()` already reads from the same record; once it
+ * does, take both from the notes in `PrivacyPoolsSync` and remove this.
+ *
  * Labels it does not find are left out. Throws if the state is not the shape it reads, so an SDK
  * that changes it fails clearly instead of reporting no deposits.
  */
-export const readPrivacyPoolsDepositors = (
+export const readPrivacyPoolsStoredDeposits = (
   storedState: string | null,
   labels: bigint[]
-): Map<bigint, Hex> => {
-  const depositors = new Map<bigint, Hex>()
-  if (!storedState || !labels.length) return depositors
+): Map<bigint, PrivacyPoolsStoredDeposit> => {
+  const deposits = new Map<bigint, PrivacyPoolsStoredDeposit>()
+  if (!storedState || !labels.length) return deposits
 
   const depositsTuples: unknown = JSON.parse(storedState)?.deposits?.depositsTuples
   if (!Array.isArray(depositsTuples))
@@ -56,13 +68,21 @@ export const readPrivacyPoolsDepositors = (
   depositsTuples.forEach((tuple: unknown) => {
     // Each is `[precommitment, deposit]`, its numbers as hex strings
     const deposit = Array.isArray(tuple) ? tuple[1] : null
-    if (typeof deposit?.label !== 'string' || typeof deposit?.depositor !== 'string') return
+    if (
+      typeof deposit?.label !== 'string' ||
+      typeof deposit?.depositor !== 'string' ||
+      typeof deposit?.blockNumber !== 'string'
+    )
+      return
 
     const label = BigInt(deposit.label)
     if (!wantedLabels.has(label)) return
 
-    depositors.set(label, getAddress(toBeHex(BigInt(deposit.depositor), 20)) as Hex)
+    deposits.set(label, {
+      depositorAddr: getAddress(toBeHex(BigInt(deposit.depositor), 20)) as Hex,
+      blockNumber: BigInt(deposit.blockNumber)
+    })
   })
 
-  return depositors
+  return deposits
 }

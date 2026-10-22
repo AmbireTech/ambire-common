@@ -34,6 +34,8 @@ export type PrivacyPoolsChainConfig = {
   entrypointAddress: Hex
   /** Where a first sync starts reading the entrypoint's history. */
   deploymentBlock: bigint
+  /** How far apart blocks are (ms), to date a deposit by its block - see `PrivacyPoolsRagequitDeposit`. */
+  blockTimeMs: number
   /** 0xBow's association-set API for this chain. */
   aspUrl: string
   /** The saga-sync CDN serving the pools' history. Without it, a first sync is slow. */
@@ -107,6 +109,12 @@ export type PrivacyPoolsRagequitDeposit = {
   amount: bigint
   /** The address the deposit was made from, the only one it can go back to. */
   depositorAddr: Hex
+  /**
+   * Roughly when it was made (ms), estimated from its block and the latest block's number - asking
+   * for its block's time would tell the network which deposit is the user's. Null if the latest
+   * block could not be read.
+   */
+  depositedAt: number | null
 }
 
 /** Notes summed per token. Only `approvedAmount` can be withdrawn. */

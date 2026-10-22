@@ -2,7 +2,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import {
   POOL_RAGEQUIT_INTERFACE,
-  readPrivacyPoolsDepositors,
+  readPrivacyPoolsStoredDeposits,
   readPrivacyPoolsRagequit
 } from './ragequit'
 
@@ -31,6 +31,7 @@ const storeState = (deposits: { label: bigint; depositor: string }[]) =>
         {
           depositor: `0x${BigInt(depositor).toString(16)}`,
           label: `0x${label.toString(16)}`,
+          blockNumber: `0x${(label * 10n).toString(16)}`,
           value: '0x0a',
           precommitment: `0x0${i + 1}`
         }
@@ -55,9 +56,9 @@ describe('readPrivacyPoolsRagequit', () => {
   })
 })
 
-describe('readPrivacyPoolsDepositors', () => {
-  test('finds the address each deposit was made from, checksummed', () => {
-    const depositors = readPrivacyPoolsDepositors(
+describe('readPrivacyPoolsStoredDeposits', () => {
+  test('finds the address each deposit was made from, checksummed, and its block', () => {
+    const depositors = readPrivacyPoolsStoredDeposits(
       storeState([
         { label: 1n, depositor: DEPOSITOR },
         { label: 2n, depositor: '0x0000000000000000000000000000000000000001' }
@@ -65,13 +66,13 @@ describe('readPrivacyPoolsDepositors', () => {
       [1n, 2n]
     )
 
-    expect(depositors.get(1n)).toBe(DEPOSITOR)
+    expect(depositors.get(1n)).toEqual({ depositorAddr: DEPOSITOR, blockNumber: 10n })
     // Leading zeros dropped by the hex encoding come back
-    expect(depositors.get(2n)).toBe('0x0000000000000000000000000000000000000001')
+    expect(depositors.get(2n)?.depositorAddr).toBe('0x0000000000000000000000000000000000000001')
   })
 
   test('reads only the deposits asked for, leaving out ones it does not find', () => {
-    const depositors = readPrivacyPoolsDepositors(
+    const depositors = readPrivacyPoolsStoredDeposits(
       storeState([
         { label: 1n, depositor: DEPOSITOR },
         { label: 2n, depositor: DEPOSITOR }
@@ -83,9 +84,9 @@ describe('readPrivacyPoolsDepositors', () => {
   })
 
   test('finds nothing without a stored state or labels', () => {
-    expect(readPrivacyPoolsDepositors(null, [1n]).size).toBe(0)
+    expect(readPrivacyPoolsStoredDeposits(null, [1n]).size).toBe(0)
     expect(
-      readPrivacyPoolsDepositors(storeState([{ label: 1n, depositor: DEPOSITOR }]), []).size
+      readPrivacyPoolsStoredDeposits(storeState([{ label: 1n, depositor: DEPOSITOR }]), []).size
     ).toBe(0)
   })
 
@@ -93,20 +94,24 @@ describe('readPrivacyPoolsDepositors', () => {
     const state = JSON.stringify({
       deposits: {
         depositsTuples: [
-          ['0x01', { label: '0x01' }],
+          ['0x01', { label: '0x01', blockNumber: '0x01' }],
           'not a tuple',
-          ['0x02', { label: '0x02', depositor: `0x${BigInt(DEPOSITOR).toString(16)}` }]
+          ['0x03', { label: '0x03', depositor: `0x${BigInt(DEPOSITOR).toString(16)}` }],
+          [
+            '0x02',
+            { label: '0x02', depositor: `0x${BigInt(DEPOSITOR).toString(16)}`, blockNumber: '0x02' }
+          ]
         ]
       }
     })
 
-    expect([...readPrivacyPoolsDepositors(state, [1n, 2n]).keys()]).toEqual([2n])
+    expect([...readPrivacyPoolsStoredDeposits(state, [1n, 2n, 3n]).keys()]).toEqual([2n])
   })
 
   test('throws on a state that is not the shape it reads, rather than finding no deposits', () => {
-    expect(() => readPrivacyPoolsDepositors(JSON.stringify({ sync: {} }), [1n])).toThrow(
+    expect(() => readPrivacyPoolsStoredDeposits(JSON.stringify({ sync: {} }), [1n])).toThrow(
       'privacyPools: the stored state has no deposits'
     )
-    expect(() => readPrivacyPoolsDepositors('synced-1', [1n])).toThrow()
+    expect(() => readPrivacyPoolsStoredDeposits('synced-1', [1n])).toThrow()
   })
 })

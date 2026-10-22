@@ -3,10 +3,11 @@ import { Hex } from '../../interfaces/hex'
 import { PrivacyPoolsNote, PrivacyPoolsRagequitDeposit } from '../../interfaces/privacyPools'
 import { Call } from '../../libs/accountOp/types'
 import {
-  readPrivacyPoolsDepositors,
-  readPrivacyPoolsRagequit
+  PrivacyPoolsStoredDeposit,
+  readPrivacyPoolsRagequit,
+  readPrivacyPoolsStoredDeposits
 } from '../../libs/privacyPools/ragequit'
-import { getChainConfig, PrivacyPoolsContext } from './context'
+import { getChainConfig, getChainProvider, PrivacyPoolsContext } from './context'
 import { privacyPoolsErrors } from './errors'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsSync } from './sync'
@@ -18,6 +19,7 @@ import { PrivacyPoolsSync } from './sync'
  *
  * Holds nothing of its own: the notes come from the last sync, and the depositors from this
  * device's copy of the pools' history, so nothing about single deposits is asked of the network.
+ * That copy is read raw for now - see `readPrivacyPoolsStoredDeposits`.
  */
 export class PrivacyPoolsRagequit {
   #ctx: PrivacyPoolsContext
@@ -36,7 +38,10 @@ export class PrivacyPoolsRagequit {
     this.#sync = sync
   }
 
-  /** A token's deposits that can be taken back, each with the account it would go back to. */
+  /**
+   * A token's deposits that can be taken back, newest first, each with the account it would go
+   * back to and roughly when it was made.
+   */
   async getDeposits({
     seedId,
     chainId,
@@ -51,16 +56,33 @@ export class PrivacyPoolsRagequit {
     )
     if (!notes.length) return []
 
-    const depositors = await this.#readDepositors(
-      chainId,
-      notes.map(({ label }) => label)
-    )
+    const [storedDeposits, latestBlock] = await Promise.all([
+      this.#readStoredDeposits(
+        chainId,
+        notes.map(({ label }) => label)
+      ),
+      this.#getLatestBlock(chainId)
+    ])
+    const { blockTimeMs } = getChainConfig(chainId)
+    const readAt = Date.now()
 
-    return notes.map(({ label, amount }) => ({
-      label,
-      amount,
-      depositorAddr: this.#getDepositor(depositors, label)
-    }))
+    return notes
+      .map(({ label, amount }) => {
+        const { depositorAddr, blockNumber } = this.#getStoredDeposit(storedDeposits, label)
+        const blocksAgo = latestBlock === null ? null : latestBlock - blockNumber
+
+        return {
+          label,
+          amount,
+          depositorAddr,
+          blockNumber,
+          // Never in the future, as the latest block read may be behind the deposit's
+          depositedAt:
+            blocksAgo === null ? null : readAt - Math.max(0, Number(blocksAgo)) * blockTimeMs
+        }
+      })
+      .sort((a, b) => (a.blockNumber > b.blockNumber ? -1 : 1))
+      .map(({ blockNumber, ...deposit }) => deposit)
   }
 
   /**
@@ -81,8 +103,8 @@ export class PrivacyPoolsRagequit {
     const note = this.#getPendingNotes(seedId, chainId).find((n) => n.label === label)
     if (!note) throw privacyPoolsErrors.ragequitDepositNotFound()
 
-    const depositors = await this.#readDepositors(chainId, [label])
-    const accountAddr = this.#getDepositor(depositors, label)
+    const storedDeposits = await this.#readStoredDeposits(chainId, [label])
+    const { depositorAddr: accountAddr } = this.#getStoredDeposit(storedDeposits, label)
 
     let txns: { to: string; data: string; value: bigint }[]
     try {
@@ -125,26 +147,50 @@ export class PrivacyPoolsRagequit {
     return notes.filter(({ approval, amount }) => approval === 'pending' && amount > 0n)
   }
 
-  async #readDepositors(chainId: string, labels: bigint[]): Promise<Map<bigint, Hex>> {
+  async #readStoredDeposits(
+    chainId: string,
+    labels: bigint[]
+  ): Promise<Map<bigint, PrivacyPoolsStoredDeposit>> {
     try {
       const storedState = await this.#ctx.kohakuStorage.get(
         getPrivacyPoolsStoreKey(getChainConfig(chainId))
       )
 
-      return readPrivacyPoolsDepositors(storedState, labels)
+      return readPrivacyPoolsStoredDeposits(storedState, labels)
     } catch (error) {
       throw privacyPoolsErrors.ragequitDepositsReadFailed(error)
     }
   }
 
   /** Every note comes from a deposit the same sync persisted, so one missing is a broken state. */
-  #getDepositor(depositors: Map<bigint, Hex>, label: bigint): Hex {
-    const depositor = depositors.get(label)
-    if (!depositor)
+  #getStoredDeposit(
+    storedDeposits: Map<bigint, PrivacyPoolsStoredDeposit>,
+    label: bigint
+  ): PrivacyPoolsStoredDeposit {
+    const storedDeposit = storedDeposits.get(label)
+    if (!storedDeposit)
       throw privacyPoolsErrors.ragequitDepositsReadFailed(
         new Error(`privacyPools: no stored deposit for label ${label}`)
       )
 
-    return depositor
+    return storedDeposit
+  }
+
+  /**
+   * The chain's latest block number, which says nothing of the user. Null if it cannot be read, as
+   * the deposits can still be listed without when they were made.
+   */
+  async #getLatestBlock(chainId: string): Promise<bigint | null> {
+    try {
+      return BigInt(await getChainProvider(this.#ctx.providers, chainId).getBlockNumber())
+    } catch (error) {
+      this.#ctx.emitError({
+        level: 'silent',
+        message: 'Could not tell when your deposits were made.',
+        error: error instanceof Error ? error : new Error('privacyPools: latest block read failed')
+      })
+
+      return null
+    }
   }
 }

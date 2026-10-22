@@ -41,6 +41,8 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
     chainId: 1n,
     entrypointAddress: '0x6818809EefCe719E480a7526D76bD3e561526b46',
     deploymentBlock: 22153713n,
+    // A block every 12s slot; the rare missed slot makes a deposit's age read slightly short
+    blockTimeMs: 12_000,
     aspUrl: 'https://api.0xbow.io',
     sagaSyncUrl: PRIVACY_POOLS_SAGA_SYNC_URL,
     paymaster: {

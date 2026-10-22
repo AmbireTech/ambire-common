@@ -98,7 +98,12 @@ const toStoredState = (deposits: { label: bigint; depositor: string }[]) =>
     deposits: {
       depositsTuples: deposits.map(({ label, depositor }) => [
         `0x${label.toString(16).padStart(2, '0')}`,
-        { label: `0x${label.toString(16)}`, depositor: `0x${BigInt(depositor).toString(16)}` }
+        {
+          label: `0x${label.toString(16)}`,
+          depositor: `0x${BigInt(depositor).toString(16)}`,
+          // Later labels landed later, ten blocks apart
+          blockNumber: `0x${(label * 10n).toString(16)}`
+        }
       ])
     }
   })
@@ -260,6 +265,8 @@ let storedDepositors: { label: bigint; depositor: string }[] | null = null
 let ragequitTxns: { to: string; data: string; value: bigint }[] | null = null
 /** Holds `ragequit` until the test releases it, when set. */
 let ragequitGate: Deferred | null = null
+/** The chain's latest block, or null for the read to fail. */
+let latestBlockNumber: number | null = 100
 /** What `prepareUnshield` returns, or null for it to fail like proving did. */
 let preparedWithdrawal: ReturnType<typeof buildPreparedWithdrawal> | null = null
 /** What `prepareUnshield` throws instead, when set - the SDK's thunks throw plain objects, not `Error`s. */
@@ -524,6 +531,11 @@ const createFakeProvider = (chainId: bigint) => ({
   getNetwork: async () => ({ chainId }),
   call: fakeProviderCall,
   getBlock: async () => ({ baseFeePerGas: latestBaseFee }),
+  getBlockNumber: async () => {
+    if (latestBlockNumber === null) throw new Error('FakeProvider: the node is down')
+
+    return latestBlockNumber
+  },
   send: jest.fn(async (method: string) => {
     if (method === 'eth_simulateV1') return simulateWithdrawal()
 
@@ -660,6 +672,7 @@ describe('PrivacyPoolsController', () => {
     storedDepositors = null
     ragequitTxns = null
     ragequitGate = null
+    latestBlockNumber = 100
   })
 
   describe('accounts', () => {
@@ -2580,7 +2593,8 @@ describe('PrivacyPoolsController', () => {
           { label: 3n, amount: 30n, approved: false },
           // Spent in full: nothing left to take back
           { label: 4n, amount: 0n, approved: false },
-          { label: 5n, amount: 5n, approved: false, assetAddress: BigInt(USDC) }
+          { label: 5n, amount: 5n, approved: false, assetAddress: BigInt(USDC) },
+          { label: 6n, amount: 60n, approved: false }
         ],
         'seed-b': [{ label: 2n, amount: 20n, approved: false }]
       }
@@ -2589,9 +2603,17 @@ describe('PrivacyPoolsController', () => {
         { label: 2n, depositor: DEPOSITOR },
         { label: 3n, depositor: DEPOSITOR },
         { label: 4n, depositor: DEPOSITOR },
-        { label: 5n, depositor: OTHER_DEPOSITOR }
+        { label: 5n, depositor: OTHER_DEPOSITOR },
+        { label: 6n, depositor: OTHER_DEPOSITOR }
       ]
     })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    const NOW = 1_800_000_000_000
+    const BLOCK_TIME_MS = 12_000
 
     const prove = jest.fn(async () => ({}) as any)
 
@@ -2608,18 +2630,46 @@ describe('PrivacyPoolsController', () => {
     const buildRagequit = (controller: PrivacyPoolsController, label: bigint) =>
       controller.buildRagequitCalls({ chainId: '1', label })
 
-    it("lists the token's deposits still being verified, each with the account it came from", async () => {
+    it("lists the token's deposits still being verified, newest first, with their account and age", async () => {
       const { controller } = await prepareSynced()
+      jest.spyOn(Date, 'now').mockReturnValue(NOW)
 
+      // The latest block is 100; label 3 landed at 30, label 6 at 60
       await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).resolves.toEqual([
-        { label: 3n, amount: 30n, depositorAddr: DEPOSITOR }
+        {
+          label: 6n,
+          amount: 60n,
+          depositorAddr: OTHER_DEPOSITOR,
+          depositedAt: NOW - 40 * BLOCK_TIME_MS
+        },
+        { label: 3n, amount: 30n, depositorAddr: DEPOSITOR, depositedAt: NOW - 70 * BLOCK_TIME_MS }
       ])
       await expect(controller.getRagequitDeposits('1', USDC.toUpperCase())).resolves.toEqual([
-        { label: 5n, amount: 5n, depositorAddr: OTHER_DEPOSITOR }
+        { label: 5n, amount: 5n, depositorAddr: OTHER_DEPOSITOR, depositedAt: expect.any(Number) }
       ])
     })
 
-    it('asks the network nothing to list them, nor syncs again', async () => {
+    it('still lists them when the latest block cannot be read, only undated', async () => {
+      const { controller } = await prepareSynced()
+      latestBlockNumber = null
+
+      const deposits = await controller.getRagequitDeposits('1', ZERO_ADDRESS)
+
+      expect(deposits.map(({ depositedAt }) => depositedAt)).toEqual([null, null])
+      expect(controller.emittedErrors.at(-1)?.level).toBe('silent')
+    })
+
+    it('never dates a deposit in the future, when the latest block read is behind it', async () => {
+      const { controller } = await prepareSynced()
+      jest.spyOn(Date, 'now').mockReturnValue(NOW)
+      latestBlockNumber = 50
+
+      const [newest] = await controller.getRagequitDeposits('1', ZERO_ADDRESS)
+
+      expect(newest?.depositedAt).toBe(NOW)
+    })
+
+    it('asks the network only for its latest block to list them, and does not sync again', async () => {
       const { controller, protocol, providers } = await prepareSynced()
       const syncCount = protocol.syncCount
 
@@ -2646,7 +2696,10 @@ describe('PrivacyPoolsController', () => {
       expect(ui.message.sendUiMessage).toHaveBeenNthCalledWith(1, {
         requestId: 'request-1',
         ok: true,
-        res: [{ label: 3n, amount: 30n, depositorAddr: DEPOSITOR }]
+        res: [
+          expect.objectContaining({ label: 6n }),
+          expect.objectContaining({ label: 3n, amount: 30n, depositorAddr: DEPOSITOR })
+        ]
       })
       expect(ui.message.sendUiMessage).toHaveBeenNthCalledWith(2, {
         requestId: 'request-2',
