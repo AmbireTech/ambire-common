@@ -5,7 +5,13 @@ import { describe, expect, test } from '@jest/globals'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
-import { getLegacyVisualization } from '../../utils'
+import {
+  getAddressVisualization,
+  getLegacyVisualization,
+  getRichVisualization,
+  getSingleValueRow,
+  getToken
+} from '../../utils'
 import { fallbackHumanizer } from './fallBackHumanizer'
 
 const accountOp: AccountOp = {
@@ -155,6 +161,54 @@ describe('fallbackHumanizer', () => {
       result!.fullVisualization!.intent.forEach((item, i) => {
         expect(item).toMatchObject(expected[i]!)
       })
+    })
+  })
+
+  describe('a call that a module already described with rows', () => {
+    const spenderRow = getSingleValueRow('Spender', getAddressVisualization(TO))
+    const rowsVisualization = getRichVisualization('Approve', [spenderRow])
+
+    test('keeps the rows', () => {
+      const call = { to: TO, value: 0n, data: DATA, fullVisualization: rowsVisualization } as IrCall
+
+      const result = fallbackHumanizer(accountOp, call, humanizerInfo as HumanizerMeta)
+
+      expect(result.fullVisualization?.fields).toEqual([spenderRow])
+      expect(result.fullVisualization?.intent).toEqual(rowsVisualization.intent)
+      expect(result.isFallback).toBe(false)
+    })
+
+    test('does not add the native value to the intent when a row already shows it', () => {
+      const nativeRow = getSingleValueRow('Send', getToken(ZeroAddress, ETH, 1n))
+      const call = {
+        to: TO,
+        value: ETH,
+        data: DATA,
+        fullVisualization: { ...rowsVisualization, fields: [spenderRow, nativeRow] }
+      } as IrCall
+
+      const result = fallbackHumanizer(accountOp, call, humanizerInfo as HumanizerMeta)
+
+      expect(result.fullVisualization?.fields).toEqual([spenderRow, nativeRow])
+      expect(result.fullVisualization?.intent).toEqual(rowsVisualization.intent)
+    })
+
+    test('adds the native value to the intent when no row shows it', () => {
+      const call = {
+        to: TO,
+        value: ETH,
+        data: DATA,
+        fullVisualization: rowsVisualization
+      } as IrCall
+
+      const result = fallbackHumanizer(accountOp, call, humanizerInfo as HumanizerMeta)
+
+      expect(result.fullVisualization?.fields).toEqual([spenderRow])
+      expect(result.fullVisualization?.intent.slice(0, 3)).toMatchObject([
+        { type: 'action', content: 'Send' },
+        { type: 'token', address: ZERO, value: ETH },
+        { type: 'label', content: 'and' }
+      ])
     })
   })
 })

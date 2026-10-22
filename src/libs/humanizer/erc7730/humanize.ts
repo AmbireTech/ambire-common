@@ -4,7 +4,6 @@ import {
   Interface,
   isAddress,
   isHexString,
-  MaxUint256,
   ParamType,
   ZeroAddress
 } from 'ethers'
@@ -26,9 +25,10 @@ import {
 import { getSetAllowanceResetText } from '../modules/Allowance'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import {
+  appendNativeValueRow,
   dedupeWarnings,
+  formatTimestampAsDate,
   eToNative,
-  flattenHumanizerVisualization,
   getAction,
   getAddressVisualization,
   getChain,
@@ -40,6 +40,7 @@ import {
   getText,
   getToken,
   getWarning,
+  NATIVE_VALUE_WARNING_CODE,
   uintToAddress
 } from '../utils'
 import { MAX_DISPLAYED_NESTED_CALLDATA_DEPTH, SAFE_TX_PRIMARY_TYPE } from './consts'
@@ -462,19 +463,8 @@ const formatDate = (value: unknown, field: Erc7730Field): string => {
 
   const timestamp = toBigIntOrNull(value)
   if (timestamp === null) return valueToText(value)
-  if (isNoExpirationValue(timestamp)) return 'No expiration'
 
-  const date = new Date(Number(timestamp) * 1000)
-  if (Number.isNaN(date.getTime())) return valueToText(value)
-
-  return date.toLocaleString()
-}
-
-const isNoExpirationValue = (value: bigint): boolean => {
-  if (value === MaxUint256) return true
-
-  const hexValue = value.toString(16)
-  return hexValue.length >= 8 && [...hexValue].every((char) => char.toLowerCase() === 'f')
+  return formatTimestampAsDate(timestamp) ?? valueToText(value)
 }
 
 const formatDuration = (value: unknown): string => {
@@ -1296,8 +1286,10 @@ const getFlatCallValue = (
   return parts.length ? parts : null
 }
 
-// The flat parts a nested call gets when no ERC-7730 descriptor describes it: the legacy humanizer
-// modules run over it and their own wording is handed back untouched, for a `call` row to render.
+// What a nested call gets when no ERC-7730 descriptor describes it: the legacy humanizer modules
+// run over it and their own wording is handed back untouched, for a `call` row to render. A module
+// that returns rows of its own (e.g. a token approval) keeps them, so the nested call looks the
+// same as a top-level one.
 const getModuleFallbackValue = (
   call: Call,
   chainId: bigint,
@@ -1312,8 +1304,9 @@ const getModuleFallbackValue = (
 
   const humanizedCall = humanizeCallWithModules(accountOp, call as IrCall)
 
-  const value = getFlatCallValue(humanizedCall?.fullVisualization)
-  if (!value) return null
+  const humanizedVisualization = humanizedCall?.fullVisualization
+  const value = getFlatCallValue(humanizedVisualization)
+  if (!humanizedVisualization || !value) return null
 
   const resetText = getSetAllowanceResetText(call as IrCall)
   const valueWithReset =
@@ -1325,41 +1318,7 @@ const getModuleFallbackValue = (
   // its visualization becomes a row. Hand the warnings to the caller so they reach the top level.
   collectedWarnings?.push(...(humanizedCall?.warnings || []))
 
-  return getLegacyVisualization(valueWithReset, humanizedCall.dapp)
-}
-
-const hasDisplayedNativeTransactionValue = (
-  fullVisualization: RichHumanizerVisualization,
-  nativeValue: bigint
-) =>
-  flattenHumanizerVisualization(fullVisualization).some(
-    (visualization) =>
-      visualization.type === 'token' &&
-      visualization.address.toLowerCase() === ZeroAddress &&
-      visualization.value === nativeValue
-  )
-
-const appendNativeValueRow = (
-  fullVisualization: RichHumanizerVisualization,
-  nativeValue: bigint,
-  chainId: bigint
-): { fullVisualization: RichHumanizerVisualization; didAppendNativeValueRow: boolean } => {
-  if (nativeValue === 0n) return { fullVisualization, didAppendNativeValueRow: false }
-  if (hasDisplayedNativeTransactionValue(fullVisualization, nativeValue)) {
-    return { fullVisualization, didAppendNativeValueRow: false }
-  }
-
-  return {
-    fullVisualization: updateRows(fullVisualization, (rows) => [
-      ...rows,
-      {
-        type: 'single-value',
-        label: 'Send',
-        value: getToken(ZeroAddress, nativeValue, chainId)
-      }
-    ]),
-    didAppendNativeValueRow: true
-  }
+  return { ...humanizedVisualization, intent: valueWithReset, dapp: humanizedCall.dapp }
 }
 
 const getNativeValueWarnings = (
@@ -1368,12 +1327,7 @@ const getNativeValueWarnings = (
 ): HumanizerWarning[] => {
   if (!nativeAssetSymbol) return []
   return didAppendNativeValueRow
-    ? [
-        getWarning(
-          `This transaction will send ${nativeAssetSymbol}`,
-          'ERC7730_REQUIRES_NATIVE_VALUE'
-        )
-      ]
+    ? [getWarning(`This transaction will send ${nativeAssetSymbol}`, NATIVE_VALUE_WARNING_CODE)]
     : []
 }
 

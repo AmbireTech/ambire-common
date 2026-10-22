@@ -4,7 +4,7 @@ import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule, HumanizerVisualizationItem } from '../interfaces'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
-import { getAction, getAddressVisualization, getBreak, getLabel } from '../utils'
+import { getAction, getAddressVisualization, getBreak, getFlatParts, getLabel } from '../utils'
 
 export const safeMessageModule: HumanizerTypedMessageModule = (message: Message) => {
   if (message.content.kind === 'message' || typeof message.content.message === 'string')
@@ -13,7 +13,10 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
   const { to, value, data, operation, nonce } = message.content.message
   const { accountAddr } = message
   const { verifyingContract } = message.content.domain
-  const humanizedCall = genericErc20Humanizer({ accountAddr }, { to, value, data })
+  const humanizedCall = genericErc20Humanizer(
+    { accountAddr, chainId: message.chainId },
+    { to, value: BigInt(value ?? 0), data }
+  )
   const safeStandardHumanization = getSafeHumanization(
     verifyingContract ?? undefined,
     to,
@@ -35,7 +38,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
       : [])
   )
   if (humanizedCall.fullVisualization) {
-    fullVisualization.push(...humanizedCall.fullVisualization.intent)
+    fullVisualization.push(...getFlatParts(humanizedCall.fullVisualization))
   }
   const delegateCallWarnings = operation !== undefined ? getDelegateCallWarning(operation, to) : []
   if (delegateCallWarnings.length) {

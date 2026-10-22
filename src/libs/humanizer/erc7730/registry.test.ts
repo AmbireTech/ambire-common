@@ -285,6 +285,55 @@ describe('ERC-7730 registry cache', () => {
     expect(descriptor).toBe(null)
   })
 
+  describe('token calls', () => {
+    const token = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+    const approveData =
+      '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000001'
+    const transferData =
+      '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000001'
+    const permit2ApproveData =
+      '0x87517c45000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda0291300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000006a2c1c44'
+
+    // The modules describe a token call, so no descriptor is made up for it. A registry descriptor
+    // of the contract still has to be looked for, as it is for any other call.
+    test.each([
+      ['an ERC-20 approve', token, approveData],
+      ['an ERC-20 transfer', token, transferData],
+      ['a Permit2 approve', '0x000000000022d473030f116ddee9f6b43ac78ba3', permit2ApproveData]
+    ])('%s has no built-in descriptor and its contract descriptor is looked for', (_, to, data) => {
+      const { descriptor, wants } = resolveErc7730Call(
+        { to, value: 0n, data },
+        1n as AccountOp['chainId'],
+        EMPTY_ERC7730_KNOWN
+      )
+
+      expect(descriptor).toBeNull()
+      expect(wants).toEqual([{ kind: 'contractDescriptor', chainId: 1n, address: to }])
+    })
+
+    test('an ERC-20 approve to a token with a registered descriptor uses the descriptor', () => {
+      const registryPath = 'registry/test/token.json'
+      const { descriptor, wants } = resolveErc7730Call(
+        { to: token, value: 0n, data: approveData },
+        1n as AccountOp['chainId'],
+        {
+          ...EMPTY_ERC7730_KNOWN,
+          contractDescriptors: { [`eip155:1:${token}`]: { path: registryPath } },
+          descriptorsByPath: {
+            [registryPath]: {
+              display: {
+                formats: { 'approve(address _spender, uint256 _value)': { intent: 'Approve' } }
+              }
+            }
+          }
+        }
+      )
+
+      expect(wants).toEqual([])
+      expect(descriptor?.path).toBe(registryPath)
+    })
+  })
+
   test('does not keep a hanging relayer index promise cached', async () => {
     const callRelayer = jest.fn(() => new Promise(() => {}))
 
@@ -440,7 +489,8 @@ describe('ERC-7730 registry cache', () => {
     )
 
     expect(descriptor?.path).toBe(registryPath)
-    expect(descriptor?.innerCallDescriptors?.[0]?.path).toBe('built-in/erc20-transfer')
+    // a token transfer has no descriptor of its own, the module that knows it describes the call
+    expect(descriptor?.innerCallDescriptors?.[0]).toBeUndefined()
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
     expect(callRelayer).toHaveBeenCalledTimes(3)
   })
@@ -584,8 +634,9 @@ describe('ERC-7730 registry cache', () => {
     )
 
     expect(descriptor?.path).toBe(registryPath)
-    expect(descriptor?.innerCallDescriptors?.[0]?.path).toBe('built-in/erc20-transfer')
-    expect(descriptor?.innerCallDescriptors?.[1]?.path).toBe('built-in/erc20-transfer')
+    // token transfers have no descriptor of their own, the module that knows them describes them
+    expect(descriptor?.innerCallDescriptors?.[0]).toBeUndefined()
+    expect(descriptor?.innerCallDescriptors?.[1]).toBeUndefined()
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
   })
 

@@ -9,7 +9,8 @@ import {
   getKnownFunctionName,
   getLabel,
   getToken,
-  getLegacyVisualization
+  getLegacyVisualization,
+  hasDisplayedNativeTransactionValue
 } from '../../utils'
 
 export const fallbackHumanizer: HumanizerCallModule = (
@@ -75,8 +76,15 @@ export const fallbackHumanizer: HumanizerCallModule = (
         (capitalizedFunctionName
           ? [getAction(capitalizedFunctionName), getLabel('on'), getAddressVisualization(call.to!)]
           : [getAction('Interacting'), getLabel('with'), getAddressVisualization(call.to!)])
+      // A module that returns rows shows the coin as a row of its own, see `appendNativeValueRow`.
+      // Only the rows are checked, so the modules that show it in the intent behave as before.
+      const humanizedVisualization = call.fullVisualization
+      const showsNativeValue =
+        !!humanizedVisualization &&
+        hasDisplayedNativeTransactionValue({ ...humanizedVisualization, intent: [] }, call.value)
       if (
         call.value &&
+        !showsNativeValue &&
         !['Swap', 'Bridge', 'Swap/Bridge', 'Supply', 'Deposit', 'Supply to vault', 'Wrap'].includes(
           fullVisualization[0]?.content || ''
         )
@@ -91,7 +99,11 @@ export const fallbackHumanizer: HumanizerCallModule = (
       return {
         ...call,
         isFallback: !call.fullVisualization,
-        fullVisualization: getLegacyVisualization(fullVisualization)
+        // The rows a module returned are kept, only the intent is the one built above
+        fullVisualization: {
+          ...(humanizedVisualization ?? getLegacyVisualization(fullVisualization)),
+          intent: fullVisualization
+        }
       }
     default:
       return { ...call, fullVisualization: getLegacyVisualization([getAction('Empty call')]) }
