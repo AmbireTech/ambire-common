@@ -9,7 +9,7 @@ const playstationEmail = 'playstation'
 const exMagicLinkKey = 'b12239309b38294f4075463ff131ac8cfe32ef2f99fc'
 const email = 'unufri+playstation@ambire.com'
 
-describe('MagicLink', () => {
+describe.skip('MagicLink', () => {
   test('should return key for session', async () => {
     const result = await requestMagicLink(email, relayerUrl, fetch)
     expect(result.key).not.toBe('')

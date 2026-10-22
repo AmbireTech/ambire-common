@@ -93,7 +93,9 @@ export class CowSwapAPI implements SwapProvider {
   }
 
   areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
-    return !!getApiNetwork(fromChainId) && !!getApiNetwork(toChainId)
+    // CoW Swap orders settle on a single network, so a different destination chain would
+    // silently turn into a swap for the destination token address on the source chain
+    return fromChainId === toChainId && !!getApiNetwork(fromChainId)
   }
 
   #getApiUrl(chainId: number, path: string, version: 'v1' | 'v2' = 'v1') {

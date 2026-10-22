@@ -15,6 +15,11 @@ const accounts = process.env.PRIVATE_KEY
   : undefined
 
 const config: HardhatUserConfig = {
+  paths: {
+    // `hardhat test` loads every file under this folder. The rest of `test/` holds Jest helpers
+    // that import the whole `MainController`, which Hardhat cannot load (see `jest.config.js`)
+    tests: './test/hardhat'
+  },
   solidity: {
     version: '0.8.19',
     settings: {

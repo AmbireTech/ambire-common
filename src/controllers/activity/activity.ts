@@ -43,6 +43,8 @@ import {
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
+import { recordFeePayer } from '../../libs/activity/feePayersHistory'
+import { collapseReplacedAccountOps } from '../../libs/activity/replacements'
 import { recordRecipient } from '../../libs/activity/sentToHistory'
 import { getTransferLogNfts, getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { filterStaticBlacklistedAddrs } from '../../libs/portfolio/blacklist'
@@ -52,7 +54,7 @@ import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import { getAddressCaught } from '../../utils/getAddressCaught'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { InternalSignedMessages, SentToHistory, SignedMessage } from './types'
+import { FeePayersHistory, InternalSignedMessages, SentToHistory, SignedMessage } from './types'
 
 import type { BalanceChangesReceipt } from '../../libs/accountOp/balanceChanges'
 
@@ -127,6 +129,13 @@ const getPreviousBlockNumber = (blockNumber: number) => (blockNumber > 0 ? block
 const normalizeTxnId = (txnId?: string | null) => txnId?.toLowerCase()
 
 const ACCOUNT_OP_PENDING_TIMEOUT_MINS = 30
+
+/**
+ * How many times a page may load more account ops to make up for the ones merged with their
+ * speed ups. One is almost always enough; the cap only guards against a history made of
+ * almost nothing but replaced transactions
+ */
+const MAX_EXTRA_LOADS_FOR_REPLACED_OPS = 5
 
 /**
  * Take all txnIds from the account op
@@ -308,6 +317,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #sentToHistory: SentToHistory = { domains: {}, recipients: {} }
 
+  #feePayersHistory: FeePayersHistory = {}
+
   accountsOps: {
     [sessionId: string]: {
       result: AccountsOps
@@ -424,17 +435,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // swapAndBridge, wallet_getCallsStatus, and the same-EOA-nonce check in status polling —
     // so an empty window left them reading an empty history. onSelectedAccountChange tops the
     // account up to the full window when the user switches.
-    const [accountsOps, externalAccountOps, signedMessages, sentToHistory] = await Promise.all([
-      this.#persistence.init(this.#selectedAccount.account?.addr),
-      this.#storage.get('externalAccountOps', {}),
-      this.#storage.get('signedMessages', {}),
-      this.#storage.get('sentToHistory', { domains: {}, recipients: {} })
-    ])
+    const [accountsOps, externalAccountOps, signedMessages, sentToHistory, feePayersHistory] =
+      await Promise.all([
+        this.#persistence.init(this.#selectedAccount.account?.addr),
+        this.#storage.get('externalAccountOps', {}),
+        this.#storage.get('signedMessages', {}),
+        this.#storage.get('sentToHistory', { domains: {}, recipients: {} }),
+        this.#storage.get('feePayersHistory', {})
+      ])
 
     this.#accountsOps = accountsOps
     this.#externalAccountOps = externalAccountOps
     this.#signedMessages = signedMessages
     this.#sentToHistory = sentToHistory
+    this.#feePayersHistory = feePayersHistory
 
     this.emitUpdate()
 
@@ -510,6 +524,28 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
   }
 
+  /**
+   * Loads enough account ops to fill the rows up to `rowsNeeded`. A transaction and its speed
+   * ups are merged into one row (see collapseReplacedAccountOps), so every merged op needs one
+   * more op loaded. Otherwise the page would be short, and the next one, which starts where a
+   * full page would end, would skip the rows in between
+   */
+  async #loadRowsForPage(accountKey: string, rowsNeeded: number, chainIds: string[]) {
+    let limit = rowsNeeded
+    for (let extraLoads = 0; extraLoads <= MAX_EXTRA_LOADS_FOR_REPLACED_OPS; extraLoads++) {
+      await this.#persistence.ensureRecentLoaded(accountKey, limit, chainIds)
+
+      const loadedOps = chainIds.flatMap(
+        (chainId) => this.#accountsOps[accountKey]?.[chainId] ?? []
+      )
+      const mergedOpsCount = loadedOps.length - collapseReplacedAccountOps(loadedOps).length
+      const nextLimit = rowsNeeded + mergedOpsCount
+      // Nothing was merged, or nothing more is stored, so the loaded ops fill the rows
+      if (nextLimit <= limit) return
+      limit = nextLimit
+    }
+  }
+
   async filterAccountsOps(
     sessionId: string,
     filters: Filters,
@@ -542,7 +578,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // Enough for this page, per chain: an account-wide read would spend the budget on disabled
     // networks and render a short page. Pending and external ops are already in memory.
     const pageEnd = (pagination.fromPage + 1) * pagination.itemsPerPage
-    await this.#persistence.ensureRecentLoaded(accountKey, pageEnd, chainIdsToRender)
+    await this.#loadRowsForPage(accountKey, pageEnd, chainIdsToRender)
     internalAccountOpsByChain = this.#accountsOps[accountKey] || internalAccountOpsByChain
 
     const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
@@ -596,6 +632,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
       )
     }
 
+    // A transaction and its speed ups are shown as one row, the one that got (or will get)
+    // onchain. Not for benzin, which looks up one specific transaction
+    const visibleItems = filters.identifiedBy
+      ? filteredItems
+      : collapseReplacedAccountOps(filteredItems)
+    const replacedOpsCount = filteredItems.length - visibleItems.length
+    filteredItems = visibleItems
+
     // Scoped to the rendered chains; an identifiedBy filter has no stored count, so items are it.
     const storedTotal = filters.identifiedBy
       ? 0
@@ -613,8 +657,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
       filteredItems,
       pagination.fromPage,
       pagination.itemsPerPage,
-      // Floored at what is already loaded, because a failed count returns 0.
-      Math.max(storedTotal + externalTotal, filteredItems.length)
+      // Floored at what is already loaded, because a failed count returns 0. The stored count
+      // includes the replaced ops hidden above, so they are taken out of it
+      Math.max(storedTotal + externalTotal - replacedOpsCount, filteredItems.length)
     )
 
     this.setDashboardBannersSeen(sessionId, filters.account)
@@ -876,6 +921,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
       )
     )
 
+    const hasFeePayersHistoryChanged = recordFeePayer(
+      this.#feePayersHistory,
+      accountAddr,
+      chainId,
+      accountOp.gasFeePayment?.paidBy,
+      accountOp.timestamp
+    )
+
     await this.syncFilteredAccountsOps()
 
     this.emitUpdate()
@@ -886,6 +939,44 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // Key-value, never IDB — persisted here so recipients survive a service worker restart.
     await this.#storage.set('sentToHistory', this.#sentToHistory)
+
+    if (hasFeePayersHistoryChanged)
+      await this.#storage.set('feePayersHistory', this.#feePayersHistory)
+  }
+
+  /**
+   * The other accounts (EOAs) that already paid the fee for a transaction of `accountAddr` on
+   * `chainId`, checksummed and ordered from the one that paid last. Paying from one of them
+   * links nothing new to the account publicly.
+   *
+   * Only knows what this wallet broadcast: a payer used from another wallet or device is missing,
+   * which errs on the side of warning the user. The index is filled on broadcast, so the ops in
+   * memory (the recent ones, see STARTUP_RECENT_OPS_LIMIT) are merged in to also cover the ones
+   * broadcast before the index existed.
+   */
+  getFeePayers(accountAddr: string, chainId: bigint): string[] {
+    const checksummedAccountAddr = getAddressCaught(accountAddr)
+    if (!checksummedAccountAddr) return []
+
+    const chainIdString = chainId.toString()
+    const accountKey = getAccountOpsAccountKey(this.#feePayersHistory, accountAddr)
+    const indexedPayers = accountKey ? this.#feePayersHistory[accountKey]?.[chainIdString] : {}
+    // A copy, so merging the ops in memory doesn't write them into the persisted index
+    const mergedHistory: FeePayersHistory = {
+      [checksummedAccountAddr]: { [chainIdString]: { ...indexedPayers } }
+    }
+
+    getAccountOpsForAccountAndChain(this.#accountsOps, accountAddr, chainIdString).forEach((op) => {
+      // A rejected op never reached the network, so it linked nothing
+      if (op.status === AccountOpStatus.Rejected) return
+
+      recordFeePayer(mergedHistory, accountAddr, chainId, op.gasFeePayment?.paidBy, op.timestamp)
+    })
+
+    const lastPaidAtByPayer = mergedHistory[checksummedAccountAddr]![chainIdString]!
+    return Object.keys(lastPaidAtByPayer).sort(
+      (a, b) => lastPaidAtByPayer[b]! - lastPaidAtByPayer[a]!
+    )
   }
 
   /** Returns the address a domain last resolved to when the user sent to it, or null if never. */
@@ -1870,6 +1961,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (messagesKey) delete this.#signedMessages[messagesKey]
     // sentToHistory kept on purpose: a re-imported account still recognises past recipients,
     // which is what drives the poisoning warning.
+    // feePayersHistory kept on purpose too: the payers stay linked to the account on-chain,
+    // so a re-imported account must not treat them as unlinked.
 
     await this.syncFilteredAccountsOps()
     await this.syncSignedMessages()
@@ -1999,7 +2092,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         .sort((a, b) => b.timestamp - a.timestamp)
         .slice(0, 10)
 
-      const pendingOps = latestOps.filter(
+      // A transaction and its pending speed ups are one transaction for the user
+      const pendingOps = collapseReplacedAccountOps(latestOps).filter(
         (op) =>
           op.status === AccountOpStatus.Pending ||
           op.status === AccountOpStatus.BroadcastedButNotConfirmed

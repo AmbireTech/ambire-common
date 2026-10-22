@@ -163,7 +163,7 @@ describe('Activity Controller ', () => {
         )
       )
     }))
-    await mainCtrl.selectedAccount.setAccount(ACCOUNTS[1]!)
+    await mainCtrl.selectedAccount.select({ account: ACCOUNTS[1]! })
   })
 
   // Clear activity storage after each test
@@ -1213,7 +1213,7 @@ describe('Activity Controller ', () => {
     })
 
     // test('`Unknown but past nonce` status is set correctly', async () => {
-    //   await selectedAccountCtrl.setAccount(ACCOUNTS[0])
+    //   await selectedAccountCtrl.select({ account: ACCOUNTS[0] })
     //   await accountsCtrl.updateAccountState('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
     //   const controller = new ActivityController(
     //     storageCtrl,
@@ -1635,6 +1635,69 @@ describe('Activity Controller ', () => {
 
       expect(recipientsForAccount![getAddress(recipientLower)]).toBe(SENT_AT_LATER)
       expect(recipientsForAccount![recipientLower]).toBeUndefined()
+    })
+  })
+
+  describe('Speed ups', () => {
+    const SENDER = SUBMITTED_ACCOUNT_OP.accountAddr
+    const buildAttempt = (txnId: string, timestamp: number, eoaNonce: bigint | null = 5n) =>
+      buildSubmittedAccountOp({
+        txnId,
+        identifiedBy: { type: 'Transaction', identifier: txnId },
+        timestamp,
+        eoaNonce
+      })
+
+    test('shows a transaction and its speed up as a single row, the newest one while pending', async () => {
+      const { controller, sessionId } = await prepareTest()
+      const original = buildAttempt(`0x${'01'.repeat(32)}`, 1000)
+      const speedUp = buildAttempt(`0x${'02'.repeat(32)}`, 2000)
+      await controller.addAccountOp(original)
+      await controller.addAccountOp(speedUp)
+
+      await controller.filterAccountsOps(sessionId, { account: SENDER, chainId: 1n })
+
+      const { result } = controller.accountsOps[sessionId]!
+      expect(result.items.map((op) => op.txnId)).toEqual([speedUp.txnId])
+      expect(result.itemsTotal).toBe(1)
+    })
+
+    test('keeps transactions with different nonces as separate rows', async () => {
+      const { controller, sessionId } = await prepareTest()
+      await controller.addAccountOp(buildAttempt(`0x${'03'.repeat(32)}`, 1000, 5n))
+      await controller.addAccountOp(buildAttempt(`0x${'04'.repeat(32)}`, 2000, 6n))
+
+      await controller.filterAccountsOps(sessionId, { account: SENDER, chainId: 1n })
+
+      expect(controller.accountsOps[sessionId]!.result.items).toHaveLength(2)
+    })
+
+    test('keeps transactions without a known nonce as separate rows', async () => {
+      const { controller, sessionId } = await prepareTest()
+      // null, as passing undefined would fall back to the default nonce
+      await controller.addAccountOp(buildAttempt(`0x${'05'.repeat(32)}`, 1000, null))
+      await controller.addAccountOp(buildAttempt(`0x${'06'.repeat(32)}`, 2000, null))
+
+      await controller.filterAccountsOps(sessionId, { account: SENDER, chainId: 1n })
+
+      expect(controller.accountsOps[sessionId]!.result.items).toHaveLength(2)
+    })
+
+    test('still finds a replaced transaction when looking it up directly', async () => {
+      const { controller, sessionId } = await prepareTest()
+      const original = buildAttempt(`0x${'07'.repeat(32)}`, 1000)
+      await controller.addAccountOp(original)
+      await controller.addAccountOp(buildAttempt(`0x${'08'.repeat(32)}`, 2000))
+
+      await controller.filterAccountsOps(sessionId, {
+        account: SENDER,
+        chainId: 1n,
+        identifiedBy: original.identifiedBy
+      })
+
+      expect(controller.accountsOps[sessionId]!.result.items.map((op) => op.txnId)).toEqual([
+        original.txnId
+      ])
     })
   })
 })
