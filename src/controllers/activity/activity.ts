@@ -43,7 +43,7 @@ import {
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
-import { recordFeePayer, recordFeePayerOfOp } from '../../libs/activity/feePayersHistory'
+import { recordFeePayerOfOp } from '../../libs/activity/feePayersHistory'
 import { recordRecipient } from '../../libs/activity/sentToHistory'
 import { getTransferLogNfts, getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { filterStaticBlacklistedAddrs } from '../../libs/portfolio/blacklist'
@@ -779,8 +779,19 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     if (opsForLiveAccounts.length) await this.#persistence.updateOps(opsForLiveAccounts)
 
+    // Every status change passes through here, so this is where a payer gets linked: once the op
+    // is confirmed on-chain, not when it is broadcast (see hasOpReachedChain).
+    let hasFeePayersHistoryChanged = false
+    opsForLiveAccounts.forEach((op) => {
+      if (recordFeePayerOfOp(this.#feePayersHistory, op.accountAddr, op))
+        hasFeePayersHistoryChanged = true
+    })
+
     await this.syncFilteredAccountsOps()
     this.emitUpdate()
+
+    if (hasFeePayersHistoryChanged)
+      await this.#storage.set('feePayersHistory', this.#feePayersHistory)
   }
 
   /**
@@ -917,12 +928,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
       )
     )
 
-    const hasFeePayersHistoryChanged = recordFeePayer(
+    // Usually a no-op: a just-broadcast op is not on-chain yet, so its payer is recorded by
+    // persistAccountsOps once a status update confirms it.
+    const hasFeePayersHistoryChanged = recordFeePayerOfOp(
       this.#feePayersHistory,
       accountAddr,
-      chainId,
-      accountOp.gasFeePayment?.paidBy,
-      accountOp.timestamp
+      accountOp
     )
 
     await this.syncFilteredAccountsOps()
@@ -946,8 +957,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
    * links nothing new to the account publicly.
    *
    * Only knows what this wallet broadcast: a payer used from another wallet or device is missing,
-   * which errs on the side of warning the user. The index is filled on broadcast and backfilled
-   * once from the whole stored history (#backfillFeePayersHistory). The ops in memory (the recent
+   * which errs on the side of warning the user. So is a payer whose op is not confirmed on-chain
+   * yet (see hasOpReachedChain). The index is filled when an op is confirmed and backfilled once
+   * from the whole stored history (#backfillFeePayersHistory). The ops in memory (the recent
    * ones, see STARTUP_RECENT_OPS_LIMIT) are merged in too, in case that pass could not run yet.
    */
   getFeePayers(accountAddr: string, chainId: bigint): string[] {
@@ -962,12 +974,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
       [checksummedAccountAddr]: { [chainIdString]: { ...indexedPayers } }
     }
 
-    getAccountOpsForAccountAndChain(this.#accountsOps, accountAddr, chainIdString).forEach((op) => {
-      // A rejected op never reached the network, so it linked nothing
-      if (op.status === AccountOpStatus.Rejected) return
-
-      recordFeePayer(mergedHistory, accountAddr, chainId, op.gasFeePayment?.paidBy, op.timestamp)
-    })
+    // Only ops confirmed on-chain linked their payer (see hasOpReachedChain)
+    getAccountOpsForAccountAndChain(this.#accountsOps, accountAddr, chainIdString).forEach((op) =>
+      recordFeePayerOfOp(mergedHistory, accountAddr, op)
+    )
 
     const lastPaidAtByPayer = mergedHistory[checksummedAccountAddr]![chainIdString]!
     return Object.keys(lastPaidAtByPayer).sort(

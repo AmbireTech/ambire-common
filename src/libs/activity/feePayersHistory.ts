@@ -32,12 +32,22 @@ export function recordFeePayer(
 }
 
 /**
- * Record, in place, the fee payer of one stored op of `accountId`. Used by the one-time pass that
- * backfills the index from the history stored before it existed.
+ * Whether an op with this status is known to be on-chain, mined successfully or not. Only then
+ * is its fee payer publicly linked to the account. Pending, stuck and unknown ops may never land
+ * (e.g. replaced or dropped), and counting their payer as linked would skip the warning for a
+ * payer that is not linked yet - so they are left out, which errs on the side of warning.
+ */
+export const hasOpReachedChain = (status: AccountOpStatus | undefined): boolean =>
+  status === AccountOpStatus.Success ||
+  status === AccountOpStatus.Failure ||
+  status === AccountOpStatus.PartiallyComplete
+
+/**
+ * Record, in place, the fee payer of one op of `accountId`, if the op is on-chain (see
+ * hasOpReachedChain). The single rule for every path that indexes payers: the status updates,
+ * the one-time backfill from the stored history and getFeePayers' merge of the ops in memory.
  *
- * Rejected ops are skipped: they never reached the network, so they linked nothing (same rule as
- * ActivityController.getFeePayers). So are ops without a bigint chainId or a numeric timestamp,
- * which cannot be indexed.
+ * Ops without a bigint chainId or a numeric timestamp cannot be indexed, so they are skipped too.
  * Returns whether the history changed, so the caller persists only then.
  */
 export function recordFeePayerOfOp(
@@ -45,7 +55,7 @@ export function recordFeePayerOfOp(
   accountId: string,
   op: SubmittedAccountOp | SubmittedAccountOpLike | null | undefined
 ): boolean {
-  if (!op || op.status === AccountOpStatus.Rejected) return false
+  if (!op || !hasOpReachedChain(op.status)) return false
   if (typeof op.chainId !== 'bigint' || typeof op.timestamp !== 'number') return false
 
   return recordFeePayer(history, accountId, op.chainId, op.gasFeePayment?.paidBy, op.timestamp)

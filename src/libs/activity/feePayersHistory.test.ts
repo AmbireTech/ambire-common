@@ -70,7 +70,7 @@ describe('recordFeePayerOfOp', () => {
     chainId: bigint,
     timestamp: number,
     paidBy?: string,
-    status?: AccountOpStatus
+    status: AccountOpStatus = AccountOpStatus.Success
   ) => ({ chainId, timestamp, status, gasFeePayment: paidBy ? { paidBy } : undefined }) as any
 
   test('records the payer of a stored op under its chain, keeping the latest payment', () => {
@@ -90,6 +90,34 @@ describe('recordFeePayerOfOp', () => {
     ).toBe(false)
     expect(recordFeePayerOfOp(history, SAFE, storedOp(1n, 200, SAFE))).toBe(false)
     expect(recordFeePayerOfOp(history, SAFE, storedOp(1n, 300))).toBe(false)
+    expect(history).toEqual({})
+  })
+
+  test('records the payer of every op that is on-chain, mined successfully or not', () => {
+    ;[AccountOpStatus.Success, AccountOpStatus.Failure, AccountOpStatus.PartiallyComplete].forEach(
+      (status) => {
+        const history: FeePayersHistory = {}
+
+        expect(recordFeePayerOfOp(history, SAFE, storedOp(1n, 100, PAYER, status))).toBe(true)
+        expect(history).toEqual({ [SAFE]: { '1': { [PAYER]: 100 } } })
+      }
+    )
+  })
+
+  // Counting one of these as linked would skip the warning for a payer that may never have
+  // reached the chain - the op can still be replaced or dropped
+  test('skips ops that are not known to be on-chain', () => {
+    const history: FeePayersHistory = {}
+
+    ;[
+      AccountOpStatus.Pending,
+      AccountOpStatus.BroadcastedButNotConfirmed,
+      AccountOpStatus.BroadcastButStuck,
+      AccountOpStatus.UnknownButPastNonce,
+      undefined
+    ].forEach((status) =>
+      expect(recordFeePayerOfOp(history, SAFE, { ...storedOp(1n, 100, PAYER), status })).toBe(false)
+    )
     expect(history).toEqual({})
   })
 

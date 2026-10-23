@@ -63,6 +63,14 @@ export class AccountOpsPersistence {
 
   #activeBackend: StorageProps['activityStorageBackend'] = 'keyValue'
 
+  /**
+   * Whether this session runs on the key-value copy although the history already moved to IDB
+   * (e.g. IDB did not open in time on a cold browser start). That copy is frozen at migration
+   * time, so it is not the whole history. Captured in init(), because finalizeInit() records the
+   * key-value backend as the active one right after.
+   */
+  #readsFrozenCopy = false
+
   #pickAdapter(idb?: AmbireIdbDatabase): IActivityOpsBackend {
     if (idb) {
       this.#activeBackend = 'idb'
@@ -85,6 +93,9 @@ export class AccountOpsPersistence {
     // would put a row in the empty store, making isEmpty() skip the retry forever.
     if (!migrated) this.#fallBackToKeyValue()
     else await this.#recoverFallbackWrites(previousBackend)
+
+    // After the fallback above, so the adapter is final
+    this.#readsFrozenCopy = previousBackend === 'idb' && this.#activeBackend === 'keyValue'
 
     return this.#loadStartupOps(fullWindowFor)
   }
@@ -408,11 +419,15 @@ export class AccountOpsPersistence {
   /**
    * Calls `visit` once for every stored op, from whichever backend is active. Reads the whole
    * history, so only for one-time passes over it. Never rejects: returns false when the read
-   * failed, so the caller can retry the pass on a later start.
+   * failed, or when this session can only see the frozen key-value copy (see #readsFrozenCopy),
+   * so the caller can retry the pass on a later start that reaches the whole history.
    */
   async forEachStoredOp(
     visit: (accountAddr: string, op: SubmittedAccountOp | SubmittedAccountOpLike) => void
   ): Promise<boolean> {
+    // The legacy copy is frozen at migration time, so walking it is not the whole history
+    if (this.#readsFrozenCopy) return false
+
     try {
       await this.#adapter.forEachOp(visit)
       return true
