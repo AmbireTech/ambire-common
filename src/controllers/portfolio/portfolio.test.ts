@@ -1953,17 +1953,20 @@ describe('Portfolio Controller ', () => {
       expect(getEthereumState()?.result?.blockNumber).toBe(RECEIPT_BLOCK + 5)
     })
 
-    test('saves a receipt-block result that is far older than the stored one', async () => {
+    test('reads the latest block when the stored portfolio is newer than the receipt', async () => {
       const { controller, getSpy, updateAtReceipt, getEthereumState } = await setup()
       getSpy.mockResolvedValue(makeResult(RECEIPT_BLOCK + 20))
       await controller.updateSelectedAccount(account.addr, [ethereum])
       expect(getEthereumState()?.result?.blockNumber).toBe(RECEIPT_BLOCK + 20)
 
-      getSpy.mockResolvedValue(makeResult(RECEIPT_BLOCK))
+      getSpy.mockClear()
+      getSpy.mockResolvedValue(makeResult(RECEIPT_BLOCK + 25))
       await updateAtReceipt()
 
+      expect(getSpy).toHaveBeenCalledTimes(1)
+      expect(getSpy.mock.calls[0]![1]?.blockTag).toBe('both')
       expect(getEthereumState()?.criticalError).toBeUndefined()
-      expect(getEthereumState()?.result?.blockNumber).toBe(RECEIPT_BLOCK)
+      expect(getEthereumState()?.result?.blockNumber).toBe(RECEIPT_BLOCK + 25)
     })
 
     test('still rejects an old result of a normal update', async () => {
