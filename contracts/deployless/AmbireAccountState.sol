@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.19;
 
+import "./BlockNumber.sol";
 import "./IAmbireAccount.sol";
 
 interface IEntryPoint {
@@ -56,7 +57,7 @@ contract AmbireAccountState {
             }
 
             // set before any continue, so every result tells which block it was read at
-            accountResult[i].currentBlock = block.number;
+            accountResult[i].currentBlock = BlockNumber.current();
             accountResult[i].balance = address(account.addr).balance;
             accountResult[i].associatedKeys = account.associatedKeys;
 
@@ -117,7 +118,7 @@ contract AmbireAccountState {
     }
 
     function getSafeAccountState(AccountInput memory account) external view returns (AccountInfo memory safeRes) {
-        safeRes.currentBlock = block.number;
+        safeRes.currentBlock = BlockNumber.current();
         safeRes.balance = address(account.addr).balance;
         bytes memory code = address(account.addr).code;
         if (code.length > 0) safeRes.isDeployed = true;
