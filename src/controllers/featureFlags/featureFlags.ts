@@ -1,4 +1,8 @@
-import { defaultFeatureFlags, FeatureFlags } from '../../consts/featureFlags'
+import {
+  defaultFeatureFlags,
+  FeatureFlags,
+  IS_PRIVACY_OPT_OUT_FLAG
+} from '../../consts/featureFlags'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IStorageController } from '../../interfaces/storage'
@@ -34,9 +38,33 @@ export class FeatureFlagsController extends EventEmitter implements IFeatureFlag
   }
 
   async #load(): Promise<void> {
-    const features = await this.#storage.get('flags', {})
-    this.#flags = { ...this.#flags, ...(features || {}) }
+    const storedFlags: Partial<FeatureFlags> = (await this.#storage.get('flags', {})) || {}
+    const newPrivacyFlagsTurnedOff =
+      FeatureFlagsController.#getNewPrivacyFlagsTurnedOff(storedFlags)
+    this.#flags = { ...this.#flags, ...storedFlags, ...newPrivacyFlagsTurnedOff }
+
+    // Store the turned off flags, so they are not new (and do not change) on the next load
+    if (Object.keys(newPrivacyFlagsTurnedOff).length) {
+      await this.#storage.set('flags', this.#flags)
+    }
+
     this.emitUpdate()
+  }
+
+  /**
+   * The flags are stored together each time one of them changes. Thus, when the user enables
+   * `newPrivacyFeaturesOffByDefault`, all flags that exist at that time are stored. A privacy
+   * opt-out that is not in storage was shipped after that, so it must start turned off.
+   */
+  static #getNewPrivacyFlagsTurnedOff(storedFlags: Partial<FeatureFlags>): Partial<FeatureFlags> {
+    if (!storedFlags.newPrivacyFeaturesOffByDefault) return {}
+
+    const allFlags = Object.keys(IS_PRIVACY_OPT_OUT_FLAG) as (keyof FeatureFlags)[]
+    const newPrivacyFlags = allFlags.filter(
+      (flag) => IS_PRIVACY_OPT_OUT_FLAG[flag] && !(flag in storedFlags)
+    )
+
+    return Object.fromEntries(newPrivacyFlags.map((flag) => [flag, false]))
   }
 
   /** Syntactic sugar for checking if a feature flag is enabled */
