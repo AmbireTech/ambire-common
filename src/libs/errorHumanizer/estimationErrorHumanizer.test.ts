@@ -61,6 +61,35 @@ describe('Estimation errors are humanized', () => {
     expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
     expect(humanizedError.isFallbackMessage).toBe(false)
   })
+  describe('NFT sent to a recipient that cannot receive NFTs', () => {
+    const EXPECTED_MESSAGE = `${MESSAGE_PREFIX} the recipient address can't receive NFTs, so the NFT would be lost. Please send it to a different address.`
+
+    it('OpenZeppelin v4 revert reason', async () => {
+      try {
+        await contract.revertWithReason('ERC721: transfer to non ERC721Receiver implementer')
+        throw new Error('Expected a revert')
+      } catch (error: any) {
+        const humanizedError = getHumanReadableEstimationError(error)
+
+        expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
+        expect(humanizedError.isFallbackMessage).toBe(false)
+      }
+    })
+
+    it('OpenZeppelin v5 custom error ERC721InvalidReceiver(address) (0x64a0ae92)', () => {
+      const receiverWord = '000000000000000000000000a07d75aacefd11b425af7181958f0f85c312f143'
+      const error = new MockCustomError(
+        'CALL_EXCEPTION',
+        `0x64a0ae92${receiverWord}`,
+        'Error: execution reverted (unknown custom error) '
+      )
+
+      const humanizedError = getHumanReadableEstimationError(error)
+
+      expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
+      expect(humanizedError.isFallbackMessage).toBe(false)
+    })
+  })
   it('Random error humanized to fallback message', () => {
     const error: DecodedError = {
       type: ErrorType.InnerCallFailureError,

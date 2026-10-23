@@ -10,6 +10,7 @@ import { StaleRpcBlockError } from '../../classes/StaleRpcBlockError'
 import { STK_WALLET } from '../../consts/addresses'
 import {
   BLACKLIST_UPDATE_INTERVAL,
+  CONFIRMED_ACCOUNT_OP_PORTFOLIO_REFRESH_DELAY,
   SCHEDULED_PORTFOLIO_UPDATE_DELAY,
   SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL
 } from '../../consts/intervals'
@@ -110,6 +111,7 @@ import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCa
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import { getWalletStakingShareValue } from '../../libs/walletStaking/shareValue'
 import batcher from '../../utils/batcher'
+import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
 
@@ -279,6 +281,13 @@ export class PortfolioController
 
   /** See {@link ScheduledUpdates} */
   #scheduledUpdates: ScheduledUpdates = {}
+
+  /**
+   * The blocks a refresh after confirmed AccountOps waits to reach, per account and chain.
+   * An account has an entry only while its refresh is waiting, so AccountOps confirmed during
+   * the wait join that refresh instead of starting another one.
+   */
+  #pendingConfirmedBlockRefreshes: { [accountId: AccountId]: { [chainId: string]: number } } = {}
 
   /**
    * Runs every SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL and checks if there are any scheduled updates to run.
@@ -2435,22 +2444,16 @@ export class PortfolioController
     this.emitUpdate()
   }
 
-  // Reports to Sentry if the portfolio was not updated after an updated AccountOp.
-  // We previously encountered such a case (see https://github.com/AmbireTech/ambire-app/issues/6371),
-  // and this method is added to verify whether our hypothesis about the root cause is correct.
-  reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+  /**
+   * The minimum block number that the portfolio must be updated to per chainId.
+   * The portfolio block does NOT have to match this block exactly.
+   * It can be higher (because other updates may have occurred in the meantime),
+   * but it must be >= this value to ensure the Activity confirmation is reflected.
+   */
+  static #getExpectedMinPortfolioBlocks(
     accountId: AccountId,
     updatedAccountsOps: SubmittedAccountOp[]
-  ) {
-    if (!updatedAccountsOps.length) return
-
-    const accountState = this.#state[accountId]
-    if (!accountState) return
-
-    // The minimum block number that the portfolio must be updated to per chainId.
-    // The portfolio block does NOT have to match this block exactly.
-    // It can be higher (because other updates may have occurred in the meantime),
-    // but it must be >= this value to ensure the Activity confirmation is reflected.
+  ): { [chainId: string]: number } {
     const expectedMinPortfolioBlockByChainId: { [chainId: string]: number } = {}
 
     for (const op of updatedAccountsOps) {
@@ -2463,6 +2466,82 @@ export class PortfolioController
         expectedMinPortfolioBlockByChainId[chainKey] = op.blockNumber
       }
     }
+
+    return expectedMinPortfolioBlockByChainId
+  }
+
+  /**
+   * Updates the portfolio once more, after a short wait, on the chains where it's still behind
+   * the block of a just confirmed AccountOp. The update right after the confirmation may be
+   * served by an RPC that doesn't have that block yet, which would keep showing the old balances
+   * and collectibles (e.g. a sent NFT) until the scheduled update, a minute later.
+   */
+  async refreshPortfolioBehindConfirmedAccountOps(
+    accountId: AccountId,
+    updatedAccountsOps: SubmittedAccountOp[]
+  ) {
+    const expectedMinPortfolioBlockByChainId = PortfolioController.#getExpectedMinPortfolioBlocks(
+      accountId,
+      updatedAccountsOps
+    )
+
+    const getChainIdsBehind = (expectedBlocks: { [chainId: string]: number }) =>
+      Object.entries(expectedBlocks)
+        .filter(([chainKey, expectedMinBlock]) => {
+          const portfolioBlock = this.#state[accountId]?.[chainKey]?.result?.blockNumber
+
+          // Without a portfolio yet, there is nothing outdated to refresh
+          return portfolioBlock != null && portfolioBlock < expectedMinBlock
+        })
+        .map(([chainKey]) => chainKey)
+
+    if (!getChainIdsBehind(expectedMinPortfolioBlockByChainId).length) return
+
+    // A refresh is already waiting for this account - it will also cover these blocks, so the
+    // account isn't updated several times in parallel
+    const pendingRefresh = this.#pendingConfirmedBlockRefreshes[accountId]
+    if (pendingRefresh) {
+      Object.entries(expectedMinPortfolioBlockByChainId).forEach(([chainKey, block]) => {
+        pendingRefresh[chainKey] = Math.max(pendingRefresh[chainKey] ?? 0, block)
+      })
+      return
+    }
+
+    this.#pendingConfirmedBlockRefreshes[accountId] = { ...expectedMinPortfolioBlockByChainId }
+
+    await wait(CONFIRMED_ACCOUNT_OP_PORTFOLIO_REFRESH_DELAY)
+
+    const expectedBlocks = this.#pendingConfirmedBlockRefreshes[accountId] || {}
+    delete this.#pendingConfirmedBlockRefreshes[accountId]
+
+    // Another update may have caught up during the wait
+    const chainIdsBehind = getChainIdsBehind(expectedBlocks)
+    const networks = this.#networks.networks.filter((n) =>
+      chainIdsBehind.includes(n.chainId.toString())
+    )
+    // The account or the networks may have been removed in the meantime
+    const isAccountStillAdded = this.#accounts.accounts.some((a) => a.addr === accountId)
+    if (!networks.length || !isAccountStillAdded) return
+
+    await this.updateSelectedAccount(accountId, networks)
+  }
+
+  // Reports to Sentry if the portfolio was not updated after an updated AccountOp.
+  // We previously encountered such a case (see https://github.com/AmbireTech/ambire-app/issues/6371),
+  // and this method is added to verify whether our hypothesis about the root cause is correct.
+  reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+    accountId: AccountId,
+    updatedAccountsOps: SubmittedAccountOp[]
+  ) {
+    if (!updatedAccountsOps.length) return
+
+    const accountState = this.#state[accountId]
+    if (!accountState) return
+
+    const expectedMinPortfolioBlockByChainId = PortfolioController.#getExpectedMinPortfolioBlocks(
+      accountId,
+      updatedAccountsOps
+    )
 
     // We don't need the full error and its stack trace reported to Sentry
     const flatError = (e: ExtendedError) => ({

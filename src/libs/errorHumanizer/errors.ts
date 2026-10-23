@@ -232,6 +232,13 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'the NFT you are trying to mint is already minted. This can also happen if you have batched multiple mint transactions for the same NFT.'
   },
   {
+    // A safe NFT transfer to a contract that can't hold NFTs. The NFT would be stuck there forever,
+    // so the transfer is reverted. 0x64a0ae92 is ERC721InvalidReceiver(address) (OpenZeppelin v5).
+    reasons: ['ERC721: transfer to non ERC721Receiver implementer', '0x64a0ae92'],
+    message:
+      "the recipient address can't receive NFTs, so the NFT would be lost. Please send it to a different address."
+  },
+  {
     reasons: ['ERC721: token does not exist'],
     message:
       'the NFT you are trying to interact with does not exist. Ensure you are using the correct token ID.'

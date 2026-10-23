@@ -54,7 +54,7 @@ import {
   SwapAndBridgeSendTxRequest
 } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
-import { ITransferController } from '../../interfaces/transfer'
+import { ITransferController, TransferNft } from '../../interfaces/transfer'
 import {
   FocusWindowParams,
   IUiController,
@@ -119,6 +119,7 @@ import {
   getClaimWalletRequestParams,
   getIntentRequestParams,
   getMintVestingRequestParams,
+  getNftTransferRequestParams,
   getTransferRequestParams
 } from '../../libs/transfer/userRequest'
 import { generateUuid } from '../../utils/uuid'
@@ -1751,6 +1752,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       await this.#buildTransferUserRequest(params)
     }
 
+    if (type === 'nftTransferRequest') {
+      await this.#buildNftTransferUserRequest(params)
+    }
+
     if (type === 'swapAndBridgeRequest') {
       await this.#buildSwapAndBridgeUserRequest(params)
     }
@@ -2776,6 +2781,41 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
   }
 
+  /**
+   * The base account of the selected account on the given chain, needed to pick the paymaster
+   * of a transfer. Emits an error and returns `null` when the account data can't be retrieved.
+   */
+  async #getTransferBaseAccount(chainId: bigint) {
+    if (!this.#selectedAccount.account) return null
+
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.#selectedAccount.account.addr,
+      chainId
+    )
+
+    if (!accountState) {
+      this.emitError({
+        level: 'major',
+        message:
+          "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support.",
+        error: new Error(
+          `requestsController error: accountState for ${
+            this.#selectedAccount.account?.addr
+          } is undefined on network with id ${chainId}`
+        )
+      })
+      return null
+    }
+
+    return getBaseAccount(
+      this.#selectedAccount.account,
+      accountState,
+      this.#networks.networks.find((net) => net.chainId === chainId)!,
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
+    )
+  }
+
   async #buildTransferUserRequest({
     amount,
     amountInFiat,
@@ -2796,32 +2836,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
 
-    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
-      this.#selectedAccount.account.addr,
-      selectedToken.chainId
-    )
-
-    if (!accountState) {
-      this.emitError({
-        level: 'major',
-        message:
-          "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support.",
-        error: new Error(
-          `requestsController error: accountState for ${
-            this.#selectedAccount.account?.addr
-          } is undefined on network with id ${selectedToken.chainId}`
-        )
-      })
-      return
-    }
-
-    const baseAcc = getBaseAccount(
-      this.#selectedAccount.account,
-      accountState,
-      this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!,
-      this.#featureFlags.isFeatureEnabled('erc4337'),
-      this.#featureFlags.isFeatureEnabled('eip7702')
-    )
+    const baseAcc = await this.#getTransferBaseAccount(selectedToken.chainId)
+    if (!baseAcc) return
 
     const paymasterService = getAmbirePaymasterService(baseAcc, this.#relayerUrl)
     // A transfer to a Privacy Pools account is a deposit
@@ -2854,6 +2870,50 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         message: 'Unexpected error while building transfer request',
         error: new Error(
           'buildUserRequestFromTransferRequest: bad parameters passed to buildTransferUserRequest'
+        )
+      })
+      return
+    }
+
+    const userRequest = await this.#createOrUpdateCallsUserRequest(
+      callsRequestParams,
+      executionType
+    )
+    if (userRequest) await this.addUserRequests([userRequest], { position: 'last', executionType })
+    this.#transfer.resetForm() // reset the transfer form after adding a req
+  }
+
+  async #buildNftTransferUserRequest({
+    nft,
+    recipientAddress,
+    recipientDomain,
+    executionType = 'open-request-window'
+  }: {
+    nft: TransferNft
+    recipientAddress: string
+    recipientDomain: string | undefined
+    executionType: RequestExecutionType
+  }) {
+    await this.initialLoadPromise
+    if (!this.#selectedAccount.account) return
+
+    const baseAcc = await this.#getTransferBaseAccount(nft.chainId)
+    if (!baseAcc) return
+
+    const callsRequestParams = getNftTransferRequestParams({
+      nft,
+      selectedAccount: this.#selectedAccount.account.addr,
+      recipientAddress,
+      recipientDomain,
+      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+    })
+
+    if (!callsRequestParams) {
+      this.emitError({
+        level: 'major',
+        message: "We couldn't prepare the NFT transfer. Please check the recipient and try again.",
+        error: new Error(
+          'buildNftTransferUserRequest: bad parameters passed to getNftTransferRequestParams'
         )
       })
       return

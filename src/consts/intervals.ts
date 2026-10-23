@@ -31,3 +31,7 @@ export const SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL = 20 * 1000 // 20 secon
 // How long a scheduled portfolio update waits before the runner executes it, giving the
 // discovery API time to index the defi position changes caused by the transaction
 export const SCHEDULED_PORTFOLIO_UPDATE_DELAY = 60 * 1000 // 1 minute
+// The wait before updating the portfolio again when it's still behind the block of a just
+// confirmed AccountOp (the RPC may not have that block yet). Without it, the confirmed changes
+// would show only with the scheduled update above, a minute later.
+export const CONFIRMED_ACCOUNT_OP_PORTFOLIO_REFRESH_DELAY = 3 * 1000 // 3 seconds
