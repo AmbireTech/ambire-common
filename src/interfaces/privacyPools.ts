@@ -34,12 +34,19 @@ export type PrivacyPoolsChainConfig = {
   entrypointAddress: Hex
   /** Where a first sync starts reading the entrypoint's history. */
   deploymentBlock: bigint
+  /** How far apart blocks are (ms), to date a deposit by its block - see `PrivacyPoolsRagequitDeposit`. */
+  blockTimeMs: number
   /** 0xBow's association-set API for this chain. */
   aspUrl: string
   /** The saga-sync CDN serving the pools' history. Without it, a first sync is slow. */
   sagaSyncUrl?: string
   /** The ERC-4337 paymaster for withdrawals. Without it, withdrawals are unavailable. */
   paymaster?: PrivacyPoolsPaymasterConfig
+  /**
+   * Pool address (lowercase) to the wallet's address of the asset it holds. Only calls to these are
+   * shown as Privacy Pools calls, and only their deposits can be taken back from the wallet.
+   */
+  pools: { [poolAddress: string]: Hex }
   /** In the order the UI offers them. */
   assets: PrivacyPoolsAsset[]
 }
@@ -90,6 +97,24 @@ export type PrivacyPoolsNote = {
   tokenAddress: string
   amount: bigint
   approval: PrivacyPoolsApprovalStatus
+}
+
+/**
+ * A deposit still being verified. Only the account it was made from can take it back, publicly and
+ * in full (ragequit).
+ */
+export type PrivacyPoolsRagequitDeposit = {
+  label: bigint
+  /** What goes back: the whole deposit, as nothing of it can have been sent yet. */
+  amount: bigint
+  /** The address the deposit was made from, the only one it can go back to. */
+  depositorAddr: Hex
+  /**
+   * Roughly when it was made (ms), estimated from its block and the latest block's number - asking
+   * for its block's time would tell the network which deposit is the user's. Null if the latest
+   * block could not be read.
+   */
+  depositedAt: number | null
 }
 
 /** Notes summed per token. Only `approvedAmount` can be withdrawn. */

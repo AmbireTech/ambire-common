@@ -19,6 +19,7 @@ import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IUiController, View } from '../../interfaces/ui'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
+import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
@@ -76,6 +77,36 @@ const SIMULATION_LOGS_INTERFACE = new Interface([
 ])
 
 const WITHDRAWAL_SENDER = '0xA3a4D83896ec4b595668fA3d5430157cd235F720'
+
+/** A pool's ragequit the way the SDK encodes it, public signals `[commitment, nullifierHash, value, label]`. */
+const encodeRagequit = (amount: bigint, label: bigint) =>
+  POOL_RAGEQUIT_INTERFACE.encodeFunctionData('ragequit', [
+    {
+      pA: [1n, 2n],
+      pB: [
+        [3n, 4n],
+        [5n, 6n]
+      ],
+      pC: [7n, 8n],
+      pubSignals: [11n, 12n, amount, label]
+    }
+  ])
+
+/** The SDK's persisted public state of a chain, with only what the depositors are read from. */
+const toStoredState = (deposits: { label: bigint; depositor: string }[]) =>
+  JSON.stringify({
+    deposits: {
+      depositsTuples: deposits.map(({ label, depositor }) => [
+        `0x${label.toString(16).padStart(2, '0')}`,
+        {
+          label: `0x${label.toString(16)}`,
+          depositor: `0x${BigInt(depositor).toString(16)}`,
+          // Later labels landed later, ten blocks apart
+          blockNumber: `0x${(label * 10n).toString(16)}`
+        }
+      ])
+    }
+  })
 
 const toFakeProof = (withdrawnValue: bigint) => ({
   pA: [1n, 2n],
@@ -222,7 +253,20 @@ const getPrecommitment = (seedId: string) =>
 
 const protocols: FakeProtocol[] = []
 let runningSyncs: RunningSync[] = []
-let notesBySeed: { [seedId: string]: { label: bigint; amount: bigint; approved: boolean }[] } = {}
+let notesBySeed: {
+  [seedId: string]: { label: bigint; amount: bigint; approved: boolean; assetAddress?: bigint }[]
+} = {}
+/**
+ * The depositor of each deposit, by label, that a sync persists the way the SDK does: in the
+ * chain's public state. Null to persist a placeholder instead, as most tests need nothing of it.
+ */
+let storedDepositors: { label: bigint; depositor: string }[] | null = null
+/** What `ragequit` returns instead of a call for every note asked for, when set. */
+let ragequitTxns: { to: string; data: string; value: bigint }[] | null = null
+/** Holds `ragequit` until the test releases it, when set. */
+let ragequitGate: Deferred | null = null
+/** The chain's latest block, or null for the read to fail. */
+let latestBlockNumber: number | null = 100
 /** What `prepareUnshield` returns, or null for it to fail like proving did. */
 let preparedWithdrawal: ReturnType<typeof buildPreparedWithdrawal> | null = null
 /** What `prepareUnshield` throws instead, when set - the SDK's thunks throw plain objects, not `Error`s. */
@@ -272,7 +316,33 @@ class FakeProtocol {
 
     // What the real plugin does at the end of every sync: persist the chain's public history
     const config = getPrivacyPoolsChainConfig(chainId)
-    if (config) await this.host.storage.set(getPrivacyPoolsStoreKey(config), `synced-${Date.now()}`)
+    if (config)
+      await this.host.storage.set(
+        getPrivacyPoolsStoreKey(config),
+        storedDepositors ? toStoredState(storedDepositors) : `synced-${Date.now()}`
+      )
+  }
+
+  ragequitLabels: bigint[][] = []
+
+  // The real one syncs first and proves each note with the 'commitment' circuit
+  async ragequit(labels: bigint[]) {
+    this.ragequitLabels.push(labels)
+    const prover = await this.params.proverFactory()
+    await prover.prove('commitment', { value: 1n })
+    if (ragequitGate) await ragequitGate.promise
+    if (ragequitTxns) return { txns: ragequitTxns }
+
+    const notes = notesBySeed[this.seedId as string] || []
+    return {
+      txns: notes
+        .filter((note) => labels.includes(note.label))
+        .map((note) => ({
+          to: ETHEREUM_ETH_POOL,
+          value: 0n,
+          data: encodeRagequit(note.amount, note.label)
+        }))
+    }
   }
 
   // The real one syncs first as well, which the controller has already queued by this point
@@ -315,7 +385,7 @@ class FakeProtocol {
 
     return (notesBySeed[this.seedId as string] || []).map((note) => ({
       label: note.label,
-      assetAddress: 0n,
+      assetAddress: note.assetAddress ?? 0n,
       balance: note.amount,
       approved: note.approved
     }))
@@ -389,6 +459,8 @@ class FakeUi {
 
   uiEvent = new NodeEventEmitter()
 
+  message = { sendUiMessage: jest.fn() }
+
   open(id: string, type: View['type'], route: string) {
     this.views.push({ id, type, currentRoute: route })
   }
@@ -459,6 +531,11 @@ const createFakeProvider = (chainId: bigint) => ({
   getNetwork: async () => ({ chainId }),
   call: fakeProviderCall,
   getBlock: async () => ({ baseFeePerGas: latestBaseFee }),
+  getBlockNumber: async () => {
+    if (latestBlockNumber === null) throw new Error('FakeProvider: the node is down')
+
+    return latestBlockNumber
+  },
   send: jest.fn(async (method: string) => {
     if (method === 'eth_simulateV1') return simulateWithdrawal()
 
@@ -592,6 +669,10 @@ describe('PrivacyPoolsController', () => {
       'seed-a': [{ label: 1n, amount: 10n, approved: true }],
       'seed-b': [{ label: 2n, amount: 20n, approved: false }]
     }
+    storedDepositors = null
+    ragequitTxns = null
+    ragequitGate = null
+    latestBlockNumber = 100
   })
 
   describe('accounts', () => {
@@ -2498,6 +2579,224 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-a')
       await syncing
       expect(protocols[0]?.syncCountWhenProving).toBeNull()
+    })
+  })
+
+  describe('taking back deposits (ragequit)', () => {
+    const USDC_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
+    const OTHER_DEPOSITOR = '0x0000000000000000000000000000000000000001'
+
+    beforeEach(() => {
+      notesBySeed = {
+        'seed-a': [
+          { label: 1n, amount: 10n, approved: true },
+          { label: 3n, amount: 30n, approved: false },
+          // Spent in full: nothing left to take back
+          { label: 4n, amount: 0n, approved: false },
+          { label: 5n, amount: 5n, approved: false, assetAddress: BigInt(USDC) },
+          { label: 6n, amount: 60n, approved: false }
+        ],
+        'seed-b': [{ label: 2n, amount: 20n, approved: false }]
+      }
+      storedDepositors = [
+        { label: 1n, depositor: DEPOSITOR },
+        { label: 2n, depositor: DEPOSITOR },
+        { label: 3n, depositor: DEPOSITOR },
+        { label: 4n, depositor: DEPOSITOR },
+        { label: 5n, depositor: OTHER_DEPOSITOR },
+        { label: 6n, depositor: OTHER_DEPOSITOR }
+      ]
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    const NOW = 1_800_000_000_000
+    const BLOCK_TIME_MS = 12_000
+
+    const prove = jest.fn(async () => ({}) as any)
+
+    const prepareSynced = async () => {
+      const prepared = await prepareTest({ proverFactory: async () => ({ prove }) })
+      prepared.selectedAccount.select('seed-a')
+      const syncing = prepared.controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+
+      return { ...prepared, protocol: protocols[0]! }
+    }
+
+    const buildRagequit = (controller: PrivacyPoolsController, label: bigint) =>
+      controller.buildRagequitCalls({ chainId: '1', label })
+
+    it("lists the token's deposits still being verified, newest first, with their account and age", async () => {
+      const { controller } = await prepareSynced()
+      jest.spyOn(Date, 'now').mockReturnValue(NOW)
+
+      // The latest block is 100; label 3 landed at 30, label 6 at 60
+      await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).resolves.toEqual([
+        {
+          label: 6n,
+          amount: 60n,
+          depositorAddr: OTHER_DEPOSITOR,
+          depositedAt: NOW - 40 * BLOCK_TIME_MS
+        },
+        { label: 3n, amount: 30n, depositorAddr: DEPOSITOR, depositedAt: NOW - 70 * BLOCK_TIME_MS }
+      ])
+      await expect(controller.getRagequitDeposits('1', USDC.toUpperCase())).resolves.toEqual([
+        { label: 5n, amount: 5n, depositorAddr: OTHER_DEPOSITOR, depositedAt: expect.any(Number) }
+      ])
+    })
+
+    it('still lists them when the latest block cannot be read, only undated', async () => {
+      const { controller } = await prepareSynced()
+      latestBlockNumber = null
+
+      const deposits = await controller.getRagequitDeposits('1', ZERO_ADDRESS)
+
+      expect(deposits.map(({ depositedAt }) => depositedAt)).toEqual([null, null])
+      expect(controller.emittedErrors.at(-1)?.level).toBe('silent')
+    })
+
+    it('never dates a deposit in the future, when the latest block read is behind it', async () => {
+      const { controller } = await prepareSynced()
+      jest.spyOn(Date, 'now').mockReturnValue(NOW)
+      latestBlockNumber = 50
+
+      const [newest] = await controller.getRagequitDeposits('1', ZERO_ADDRESS)
+
+      expect(newest?.depositedAt).toBe(NOW)
+    })
+
+    it('asks the network only for its latest block to list them, and does not sync again', async () => {
+      const { controller, protocol, providers } = await prepareSynced()
+      const syncCount = protocol.syncCount
+
+      await controller.getRagequitDeposits('1', ZERO_ADDRESS)
+
+      expect(protocol.syncCount).toBe(syncCount)
+      expect(providers.providers['1'].send).not.toHaveBeenCalled()
+    })
+
+    it('lists nothing before a sync, nor for a token with no deposits being verified', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).resolves.toEqual([])
+    })
+
+    it('answers the Rage quit sheet, and tells it why when it cannot', async () => {
+      const { controller, ui, selectedAccount } = await prepareSynced()
+
+      await controller.getRagequitDepositsAndSendResToUi('1', ZERO_ADDRESS, 'request-1')
+      selectedAccount.select(null)
+      await controller.getRagequitDepositsAndSendResToUi('1', ZERO_ADDRESS, 'request-2')
+
+      expect(ui.message.sendUiMessage).toHaveBeenNthCalledWith(1, {
+        requestId: 'request-1',
+        ok: true,
+        res: [
+          expect.objectContaining({ label: 6n }),
+          expect.objectContaining({ label: 3n, amount: 30n, depositorAddr: DEPOSITOR })
+        ]
+      })
+      expect(ui.message.sendUiMessage).toHaveBeenNthCalledWith(2, {
+        requestId: 'request-2',
+        ok: false,
+        error: 'Please select a Privacy Pools account first.'
+      })
+      expect(controller.emittedErrors.at(-1)?.message).toBe(
+        'Please select a Privacy Pools account first.'
+      )
+    })
+
+    it('fails clearly when the stored history is not what it reads', async () => {
+      // Synced with a placeholder where the chain's public state goes
+      storedDepositors = null
+      const { controller } = await prepareSynced()
+
+      await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).rejects.toThrow(
+        'Could not load your deposits that are being verified. Please try again.'
+      )
+    })
+
+    it('fails clearly when a deposit is missing from the stored history', async () => {
+      storedDepositors = [{ label: 1n, depositor: DEPOSITOR }]
+      const { controller } = await prepareSynced()
+
+      await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).rejects.toThrow(
+        'Could not load your deposits that are being verified. Please try again.'
+      )
+    })
+
+    it('builds the reclaim as a call of the account the deposit came from', async () => {
+      const { controller, protocol } = await prepareSynced()
+
+      await expect(buildRagequit(controller, 3n)).resolves.toEqual({
+        accountAddr: DEPOSITOR,
+        calls: [{ to: ETHEREUM_ETH_POOL, value: 0n, data: encodeRagequit(30n, 3n) }]
+      })
+      expect(protocol.ragequitLabels).toEqual([[3n]])
+    })
+
+    it('never takes back a verified deposit, one spent in full, or one it does not know', async () => {
+      const { controller, protocol } = await prepareSynced()
+
+      await expect(buildRagequit(controller, 1n)).rejects.toThrow(
+        'This deposit can no longer be taken back. It may have been verified or taken back already.'
+      )
+      await expect(buildRagequit(controller, 4n)).rejects.toThrow(EmittableError)
+      await expect(buildRagequit(controller, 99n)).rejects.toThrow(EmittableError)
+      // Another account's deposit, though it is being verified
+      await expect(buildRagequit(controller, 2n)).rejects.toThrow(EmittableError)
+      expect(protocol.ragequitLabels).toEqual([])
+    })
+
+    it('refuses what the SDK built when it is not the reclaim of that deposit', async () => {
+      const { controller } = await prepareSynced()
+      const message = 'Could not prepare taking back this deposit. Please try again.'
+      const builtFor = (txns: { to: string; data: string; value: bigint }[]) => {
+        ragequitTxns = txns
+        return buildRagequit(controller, 3n)
+      }
+
+      // It leaves out a deposit it could not prove for
+      await expect(builtFor([])).rejects.toThrow(message)
+      const reclaim = { to: ETHEREUM_ETH_POOL, value: 0n, data: encodeRagequit(30n, 3n) }
+      await expect(builtFor([reclaim, reclaim])).rejects.toThrow(message)
+      await expect(builtFor([{ ...reclaim, data: encodeRagequit(30n, 1n) }])).rejects.toThrow(
+        message
+      )
+      await expect(builtFor([{ ...reclaim, data: encodeRagequit(29n, 3n) }])).rejects.toThrow(
+        message
+      )
+      // Another token's pool, or one we do not know
+      await expect(builtFor([{ ...reclaim, to: USDC_POOL }])).rejects.toThrow(message)
+      await expect(builtFor([{ ...reclaim, to: WITHDRAWAL_RECIPIENT }])).rejects.toThrow(message)
+      await expect(builtFor([{ ...reclaim, value: 1n }])).rejects.toThrow(message)
+      await expect(builtFor([{ ...reclaim, data: '0x12345678' }])).rejects.toThrow(message)
+    })
+
+    it('hands nothing over once the wallet was locked while proving', async () => {
+      const { controller, keystore } = await prepareSynced()
+      ragequitGate = createDeferred()
+
+      const building = buildRagequit(controller, 3n)
+      await waitUntil(() => protocols[0]!.ragequitLabels.length > 0)
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      ragequitGate.resolve()
+
+      await expect(building).rejects.toThrow('Please unlock your wallet to use Privacy Pools.')
+    })
+
+    it("proves with no cancel signal, which only a withdrawal's proofs get", async () => {
+      const { controller } = await prepareSynced()
+
+      await buildRagequit(controller, 3n)
+
+      expect(prove).toHaveBeenLastCalledWith('commitment', { value: 1n }, { signal: undefined })
     })
   })
 

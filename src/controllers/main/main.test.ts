@@ -1159,4 +1159,81 @@ describe('Main Controller ', () => {
       expect(storedAccountOp.meta?.swapTxn?.activeRouteId).toBe(SIGNED_ROUTE_ID)
     })
   })
+
+  describe('privacyPoolsRagequit', () => {
+    const [depositor, otherAccount, viewOnlyAccount] = accounts
+    const RAGEQUIT_CALL = {
+      to: '0xF241d57C6DebAe225c0F2e6eA1529373C9A9C9fB',
+      value: 0n,
+      data: '0x1234'
+    }
+
+    const setupController = async ({ depositorAddr }: { depositorAddr: string }) => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+        await storageCtrl.set('selectedAccount', otherAccount!.addr)
+      })
+      await mainCtrl.initialLoadPromise
+      // Every account but the view-only one has its key in the wallet
+      jest.spyOn(mainCtrl.keystore, 'keys', 'get').mockReturnValue(
+        [depositor!, otherAccount!].map(({ associatedKeys }) => ({
+          addr: associatedKeys[0]
+        })) as any
+      )
+      jest
+        .spyOn(mainCtrl.privacyPools, 'buildRagequitCalls')
+        .mockResolvedValue({ accountAddr: depositorAddr, calls: [RAGEQUIT_CALL] })
+      jest.spyOn(mainCtrl.requests, 'build').mockResolvedValue(undefined)
+      const errors: ErrorRef[] = []
+      mainCtrl.onError((error) => errors.push(error))
+
+      return { mainCtrl, errors }
+    }
+
+    test('selects the account the deposit came from and adds the call for it to sign', async () => {
+      // Lowercase, as an address read from the chain's history may be
+      const { mainCtrl, errors } = await setupController({
+        depositorAddr: depositor!.addr.toLowerCase()
+      })
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors).toEqual([])
+      expect(mainCtrl.privacyPools.buildRagequitCalls).toHaveBeenCalledWith({
+        chainId: '1',
+        label: 3n
+      })
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(depositor!.addr)
+      expect(mainCtrl.requests.build).toHaveBeenCalledWith({
+        type: 'privacyPoolsRagequitRequest',
+        params: { accountAddr: depositor!.addr, chainId: 1n, calls: [RAGEQUIT_CALL] }
+      })
+    })
+
+    test('adds nothing for an account that is not in the wallet', async () => {
+      const { mainCtrl, errors } = await setupController({
+        depositorAddr: '0x0000000000000000000000000000000000000001'
+      })
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors.map(({ message }) => message)).toEqual([
+        'This deposit was made from an account that is not in your wallet. Add that account to take the deposit back.'
+      ])
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
+      expect(mainCtrl.requests.build).not.toHaveBeenCalled()
+    })
+
+    test('adds nothing for a view-only account, which could not sign it', async () => {
+      const { mainCtrl, errors } = await setupController({ depositorAddr: viewOnlyAccount!.addr })
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors.map(({ message }) => message)).toEqual([
+        'This deposit was made from an account you can only view. Import its key to take the deposit back.'
+      ])
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
+      expect(mainCtrl.requests.build).not.toHaveBeenCalled()
+    })
+  })
 })

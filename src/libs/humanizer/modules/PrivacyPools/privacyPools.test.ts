@@ -4,6 +4,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { getPrivacyPoolsAsset, getPrivacyPoolsChainConfig } from '../../../../consts/privacyPools'
 import { encodePrivacyPoolsDeposit } from '../../../privacyPools/deposit'
+import { POOL_RAGEQUIT_INTERFACE } from '../../../privacyPools/ragequit'
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import {
@@ -76,6 +77,57 @@ describe('Privacy Pools humanizer', () => {
     expect(onOtherNetwork).toEqual(deposit)
     expect(unknownCall).toEqual(otherEntrypointCall)
     expect(notEntrypoint).toEqual(depositElsewhere)
+  })
+
+  describe('taking back a deposit', () => {
+    const ETH_POOL = '0xF241d57C6DebAe225c0F2e6eA1529373C9A9C9fB'
+    const USDC_POOL = '0xb419c2867aB3CBc78921660cB95150d95A94ce86'
+
+    const encodeRagequit = (amount: bigint) =>
+      POOL_RAGEQUIT_INTERFACE.encodeFunctionData('ragequit', [
+        {
+          pA: [1n, 2n],
+          pB: [
+            [3n, 4n],
+            [5n, 6n]
+          ],
+          pC: [7n, 8n],
+          pubSignals: [11n, 12n, amount, 14n]
+        }
+      ])
+
+    test('shows it as getting the pool asset back to this account', () => {
+      const calls: IrCall[] = [
+        { to: ETH_POOL, value: 0n, data: encodeRagequit(10n ** 18n) },
+        { to: USDC_POOL, value: 0n, data: encodeRagequit(5_000_000n) }
+      ]
+
+      compareHumanizerVisualizations(humanize(calls), [
+        [
+          getAction('Take back'),
+          getToken(ZeroAddress, 10n ** 18n),
+          getLabel('from Privacy Pools to this account')
+        ],
+        [
+          getAction('Take back'),
+          getToken(USDC, 5_000_000n),
+          getLabel('from Privacy Pools to this account')
+        ]
+      ])
+    })
+
+    test('leaves alone a ragequit to an unknown contract, and other calls to a pool', () => {
+      const elsewhere = {
+        to: '0x000000000000000000000000000000000000dEaD',
+        value: 0n,
+        data: encodeRagequit(1n)
+      }
+      const otherPoolCall = { to: ETH_POOL, value: 0n, data: '0x12345678' }
+      const [onOtherNetwork] = humanize([{ ...elsewhere, to: ETH_POOL }], { chainId: 137n } as any)
+
+      expect(humanize([elsewhere, otherPoolCall])).toEqual([elsewhere, otherPoolCall])
+      expect(onOtherNetwork).toEqual({ ...elsewhere, to: ETH_POOL })
+    })
   })
 
   describe('a withdrawal', () => {
