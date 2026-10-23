@@ -426,9 +426,10 @@ describe('AccountsController nonce locks', () => {
   })
 
   afterEach(() => {
-    expect(jest.getTimerCount()).toBe(0)
+    const pendingTimerCount = jest.getTimerCount()
     jest.useRealTimers()
     jest.restoreAllMocks()
+    expect(pendingTimerCount).toBe(0)
   })
 
   test('a new op skips the locked nonces of its sender, kind and chain only', () => {
