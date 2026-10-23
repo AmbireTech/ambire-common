@@ -336,7 +336,6 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       networks: this.networks,
       fetch: this.fetch,
-      velcroUrl,
       featureFlags: this.featureFlags
     })
     this.accounts = new AccountsController(
