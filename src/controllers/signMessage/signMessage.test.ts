@@ -582,7 +582,15 @@ describe('SignMessageController', () => {
 
       expect(callRelayer).not.toHaveBeenCalled()
       expect(signMessageController.isHumanizing).toBe(false)
-      expect(signMessageController.humanizedMessage?.richVisualization).toBeUndefined()
+      // the module that knows the permit shows it the way the descriptor would, with no relayer
+      expect(signMessageController.humanizedMessage?.richVisualization).toMatchObject({
+        intent: [expect.objectContaining({ content: 'Authorize spending of tokens' })],
+        fields: [
+          { label: 'Spender' },
+          { label: 'Max spending amount' },
+          { label: 'Valid until', value: expect.objectContaining({ content: 'No expiration' }) }
+        ]
+      })
     } finally {
       await featureFlagsCtrl.setFeatureFlag('clearSigning', true)
     }

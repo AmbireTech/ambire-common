@@ -3,12 +3,13 @@ import { encodeFunctionData, maxUint160, parseAbi } from 'viem'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
-import { compareHumanizerVisualizations } from '../../testHelpers'
+import { compareRichVisualizations } from '../../testHelpers'
 import {
-  getAction,
+  formatTimestampAsDate,
   getAddressVisualization,
-  getDeadline,
-  getLabel,
+  getRichVisualization,
+  getSingleValueRow,
+  getText,
   getToken,
   getUnlimitedApprovalWarning
 } from '../../utils'
@@ -41,63 +42,64 @@ const accountOp: AccountOp = {
   // humanizerMeta: {}
 }
 describe('Pancake', () => {
+  const token = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+  const spender = '0xFE6508f0015C778Bdcc1fB5465bA5ebE224C9912'
+  const pancakePermit2 = '0x31c2F6fcFf4F8759b3Bd5Bf0e1084A055615c768'
+  const approveAbi = parseAbi([
+    'function approve(address token, address spender, uint160 amount, uint48 expiration)'
+  ])
+
+  const getApproveVisualization = (intent: string, amount: bigint, expirationText: string) =>
+    getRichVisualization(intent, [
+      getSingleValueRow('Spender', getAddressVisualization(spender)),
+      getSingleValueRow('Amount', getToken(token, amount, accountOp.chainId)),
+      getSingleValueRow('Approval expires', getText(expirationText))
+    ])
+
   test('basic', () => {
-    const expectedVisualization = [
-      [
-        getAction('Approve'),
-        getAddressVisualization('0xFE6508f0015C778Bdcc1fB5465bA5ebE224C9912'),
-        getLabel('to use'),
-        getToken(
-          '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-          1461501637330902918203684832716283019655932542975n,
-          undefined,
-          undefined,
-          {
-            spenderAddr: '0xFE6508f0015C778Bdcc1fB5465bA5ebE224C9912',
-            expiration: 1746289513n
-          }
-        ),
-        getDeadline(1746289513n)
-      ]
-    ]
     const irCalls = transactions.map((c) =>
       OneInchModule(accountOp, c, humanizerInfo as HumanizerMeta)
     )
-    compareHumanizerVisualizations(irCalls, expectedVisualization)
+
+    compareRichVisualizations(irCalls, [
+      getApproveVisualization(
+        'Approve',
+        1461501637330902918203684832716283019655932542975n,
+        formatTimestampAsDate(1746289513n)!
+      )
+    ])
+  })
+
+  test('describes an approval of zero as a revoke that expires now', () => {
+    const call: IrCall = {
+      to: pancakePermit2,
+      value: 0n,
+      data: encodeFunctionData({ abi: approveAbi, args: [token, spender, 0n, 0] })
+    }
+
+    const irCall = OneInchModule(accountOp, call, humanizerInfo as HumanizerMeta)
+
+    compareRichVisualizations([irCall], [getApproveVisualization('Revoke approval', 0n, 'now')])
+    expect(irCall.warnings).toBeUndefined()
   })
 
   // this calldata would still execute onchain - the missing trailing `expiration` word is
   // read as zero by the EVM - so the humanizer has to decode it the same way and still show
   // the unlimited approval warning, rather than silently dropping the whole call
   test('still warns about an unlimited approval when the trailing expiration word is missing', () => {
-    const token = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
-    const spender = '0xFE6508f0015C778Bdcc1fB5465bA5ebE224C9912'
-    const approveAbi = parseAbi([
-      'function approve(address token, address spender, uint160 amount, uint48 expiration)'
-    ])
     const fullData = encodeFunctionData({
       abi: approveAbi,
       args: [token, spender, maxUint160, 1746289513]
     })
     const call: IrCall = {
-      to: '0x31c2F6fcFf4F8759b3Bd5Bf0e1084A055615c768',
+      to: pancakePermit2,
       value: 0n,
       data: fullData.slice(0, -64)
     }
 
     const irCall = OneInchModule(accountOp, call, humanizerInfo as HumanizerMeta)
-    compareHumanizerVisualizations(
-      [irCall],
-      [
-        [
-          getAction('Approve'),
-          getAddressVisualization(spender),
-          getLabel('to use'),
-          getToken(token, maxUint160),
-          getLabel('now')
-        ]
-      ]
-    )
+
+    compareRichVisualizations([irCall], [getApproveVisualization('Approve', maxUint160, 'now')])
     expect(irCall.warnings).toEqual([getUnlimitedApprovalWarning(spender)])
   })
 })

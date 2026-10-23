@@ -7,8 +7,18 @@ import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../userOperation/userOpera
 import { humanizeMessage } from './index'
 import { cowSwapModule, erc20Module, erc721Module, permit2Module } from './messageModules'
 import { entryPointModule } from './messageModules/entryPointModule'
-import { compareVisualizations } from './testHelpers'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
+import { compareRichVisualization, compareVisualizations } from './testHelpers'
+import {
+  formatTimestampAsDate,
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getLabel,
+  getRichVisualization,
+  getSingleValueRow,
+  getText,
+  getToken
+} from './utils'
 
 const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -206,6 +216,82 @@ describe('typed message tests', () => {
     const { fullVisualization } = erc20Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+  describe('erc20 module with an EIP-2612 permit', () => {
+    const permitTypes = [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' }
+    ]
+
+    const getPermitMessage = (types: { name: string; type: string }[]): Message => {
+      const params = messageTemplate.content as TypedMessageUserRequest['meta']['params']
+      params.types = { EIP712Domain: [], Permit: types }
+      params.message = typedMessages.erc20[0]!
+
+      return messageTemplate
+    }
+
+    test('shows the intent and the rows a descriptor shows', () => {
+      const { fullVisualization, richVisualization, canHideDropdownArrow } = erc20Module(
+        getPermitMessage(permitTypes)
+      )
+
+      compareRichVisualization(
+        richVisualization,
+        getRichVisualization('Authorize spending of tokens', [
+          getSingleValueRow('Spender', getAddressVisualization(address2)),
+          getSingleValueRow('Max spending amount', getToken(WETH_ADDRESS, parseEther('1'), 1n)),
+          getSingleValueRow('Valid until', getText(formatTimestampAsDate(968187600n)!))
+        ])
+      )
+      expect(canHideDropdownArrow).toBe(true)
+      // the flat form stays for the places that read only it
+      expect(fullVisualization?.[0]).toMatchObject({ type: 'action', content: 'Grant approval' })
+    })
+
+    test('shows an expiration that never ends as no expiration', () => {
+      const message = getPermitMessage(permitTypes)
+      ;(message.content as TypedMessageUserRequest['meta']['params']).message = {
+        ...typedMessages.erc20[0]!,
+        deadline: MaxUint256
+      }
+
+      const { richVisualization } = erc20Module(message)
+
+      expect(richVisualization?.fields.at(-1)).toMatchObject({
+        label: 'Valid until',
+        value: { type: 'text', content: 'No expiration' }
+      })
+    })
+
+    // an app can name the fields the same and give them other types, which changes what is signed
+    test('shows no rows when the struct is not the exact EIP-2612 one', () => {
+      const { fullVisualization, richVisualization, canHideDropdownArrow } = erc20Module(
+        getPermitMessage(permitTypes.map((field) => ({ ...field, type: 'uint160' })))
+      )
+
+      expect(richVisualization).toBeUndefined()
+      expect(canHideDropdownArrow).toBeUndefined()
+      expect(fullVisualization?.[0]).toMatchObject({ type: 'action', content: 'Grant approval' })
+    })
+
+    test('is passed on by the humanizer, so a message with no descriptor shows the rows', () => {
+      const irMessage = humanizeMessage(getPermitMessage(permitTypes))
+
+      expect(irMessage.richVisualization?.intent[0]).toMatchObject({
+        content: 'Authorize spending of tokens'
+      })
+      expect(irMessage.canHideDropdownArrow).toBe(true)
+    })
+
+    test('does not show rows for a DAI-style permit', () => {
+      messageTemplate.content.message = typedMessages.daiPermit[0]!
+
+      expect(erc20Module(messageTemplate).richVisualization).toBeUndefined()
+    })
   })
   test('erc20 module with DAI-style permit (grant)', () => {
     const expectedVisualization = [
@@ -554,5 +640,58 @@ describe('typed message tests', () => {
       getAddressVisualization(messageTemplate.accountAddr)
     ]
     compareVisualizations(expected, received!)
+  })
+
+  describe('Safe transaction that calls a token', () => {
+    const USDT = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+    const safeAddress = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
+    const transferData = `0xa9059cbb000000000000000000000000${address2.slice(
+      2
+    )}0000000000000000000000000000000000000000000000000000000000000064`
+
+    const getSafeTxMessage = (value: string, data: string): Message => ({
+      fromRequestId: 1,
+      accountAddr: address1,
+      chainId: 1n,
+      signature: null,
+      content: {
+        kind: 'typedMessage',
+        domain: { chainId: 1, verifyingContract: safeAddress },
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: []
+        },
+        message: {
+          to: USDT,
+          value,
+          data,
+          operation: 0,
+          safeTxGas: '0',
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: '0x0000000000000000000000000000000000000000',
+          refundReceiver: '0x0000000000000000000000000000000000000000',
+          nonce: 1
+        },
+        primaryType: 'SafeTx'
+      }
+    })
+
+    test('shows the amount and the recipient of a token transfer with their labels', () => {
+      const { fullVisualization } = humanizeMessage(getSafeTxMessage('0', transferData))
+
+      expect(fullVisualization).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'action', content: 'Send' }),
+          expect.objectContaining({ type: 'label', content: 'amount' }),
+          expect.objectContaining({ type: 'token', address: USDT, value: 100n }),
+          expect.objectContaining({ type: 'label', content: 'to' }),
+          expect.objectContaining({ type: 'address', address: address2 })
+        ])
+      )
+    })
   })
 })

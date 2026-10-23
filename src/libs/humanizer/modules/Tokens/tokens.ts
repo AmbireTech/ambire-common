@@ -5,13 +5,17 @@ import {
   HumanizerCallModule,
   HumanizerVisualizationItem,
   HumanizerWarning,
-  IrCall
+  IrCall,
+  RichHumanizerVisualization
 } from '../../interfaces'
 import {
   HexIrCall,
   getAction,
   getAddressVisualization,
   getLabel,
+  getLegacyVisualization,
+  getRichVisualization,
+  getSingleValueRow,
   getToken,
   getUnlimitedApprovalWarning,
   getWarning,
@@ -19,8 +23,7 @@ import {
   isUnlimitedAmount,
   mergeWarnings,
   padCallData,
-  UNLIMITED_APPROVAL_WARNING_CODE,
-  getLegacyVisualization
+  UNLIMITED_APPROVAL_WARNING_CODE
 } from '../../utils'
 
 // Narrowed ABIs — defined once at module level, used for typed decoding
@@ -60,8 +63,17 @@ const erc20DecreaseApprovalAbi = parseAbi([
  * What a matcher returns for one call: how to show it, plus a warning when the call turns out to
  * be an approval with no limit. The warning is built while the call is decoded, so the amount and
  * the spender are read only once.
+ *
+ * A call is shown either as a flat run of `visualizations`, or as a `richVisualization` with an
+ * intent and labelled rows - the way an ERC-7730 descriptor shows it.
  */
-type DecodedCall = { visualizations: HumanizerVisualizationItem[]; warning?: HumanizerWarning }
+type DecodedCall = (
+  | { visualizations: HumanizerVisualizationItem[] }
+  | { richVisualization: RichHumanizerVisualization }
+) & { warning?: HumanizerWarning }
+
+// The NFT matchers have no rows to show, so they always return the flat form
+type FlatDecodedCall = { visualizations: HumanizerVisualizationItem[]; warning?: HumanizerWarning }
 
 const erc721ApproveSelector = toFunctionSelector(erc721ApproveAbi[0])
 const erc721SetApprovalForAllSelector = toFunctionSelector(erc721SetApprovalForAllAbi[0])
@@ -95,7 +107,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp
         ]
   }
 
-  const matcher: Record<string, (call: HexIrCall) => DecodedCall> = {
+  const matcher: Record<string, (call: HexIrCall) => FlatDecodedCall> = {
     [erc721ApproveSelector]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
@@ -177,7 +189,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp
 }
 
 export const genericErc20Humanizer = (
-  { accountAddr }: { accountAddr: string },
+  { accountAddr, chainId }: { accountAddr: string; chainId: bigint },
   call: IrCall
 ): IrCall => {
   // `increaseApproval` is the pre-final-EIP-20 spelling of `increaseAllowance` that some tokens
@@ -206,24 +218,14 @@ export const genericErc20Humanizer = (
         data: padCallData(call.data, 2)
       })
       const [spender, value] = args
-      if (value === 0n)
-        return {
-          visualizations: [
-            getAction('Revoke approval'),
-            getToken(call.to, value),
-            getLabel('for'),
-            getAddressVisualization(spender)
-          ]
-        }
+      const richVisualization = getRichVisualization(value === 0n ? 'Revoke approval' : 'Approve', [
+        getSingleValueRow('Spender', getAddressVisualization(spender)),
+        getSingleValueRow('Amount', getToken(call.to, value, chainId))
+      ])
+      if (value === 0n) return { richVisualization }
 
       return {
-        visualizations: [
-          getAction('Grant approval'),
-          getLabel('for'),
-          getToken(call.to, value),
-          getLabel('to'),
-          getAddressVisualization(spender)
-        ],
+        richVisualization,
         warning: isUnlimitedAmount(value) ? getUnlimitedApprovalWarning(spender) : undefined
       }
     },
@@ -277,12 +279,10 @@ export const genericErc20Humanizer = (
       })
       const [to, value] = args
       return {
-        visualizations: [
-          getAction('Send'),
-          getToken(call.to, value),
-          getLabel('to'),
-          getAddressVisualization(to)
-        ]
+        richVisualization: getRichVisualization('Send', [
+          getSingleValueRow('Amount', getToken(call.to, value, chainId)),
+          getSingleValueRow('To', getAddressVisualization(to))
+        ])
       }
     },
     [erc20TransferFromSelector]: (call) => {
@@ -328,11 +328,14 @@ export const genericErc20Humanizer = (
   const sigHash = call.data.substring(0, 10)
   if (!matcher[sigHash]) return call
 
-  const { visualizations, warning } = matcher[sigHash](call)
-
+  const decodedCall = matcher[sigHash](call)
+  const visualization =
+    'richVisualization' in decodedCall
+      ? decodedCall.richVisualization
+      : getLegacyVisualization(decodedCall.visualizations)
   return {
     ...call,
-    fullVisualization: getLegacyVisualization(visualizations),
-    warnings: mergeWarnings(call.warnings, warning ? [warning] : [])
+    fullVisualization: visualization,
+    warnings: mergeWarnings(call.warnings, decodedCall.warning ? [decodedCall.warning] : [])
   }
 }

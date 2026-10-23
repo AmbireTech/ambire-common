@@ -5,7 +5,15 @@ import { describe, expect, test } from '@jest/globals'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
-import { getLegacyVisualization } from '../../utils'
+import {
+  getAddressVisualization,
+  getLegacyVisualization,
+  getRichVisualization,
+  getSingleValueRow,
+  getToken,
+  getWarning,
+  NATIVE_VALUE_WARNING_CODE
+} from '../../utils'
 import { fallbackHumanizer } from './fallBackHumanizer'
 
 const accountOp: AccountOp = {
@@ -101,12 +109,9 @@ const fallbackCases: Array<{
   },
   {
     label:
-      'has-to:has-value:has-data — Send ETH and known function name instead of Interacting with',
+      'has-to:has-value:has-data — known function name instead of Interacting with, the ETH is a row',
     call: { to: TO, value: ETH, data: DATA } as IrCall,
     expected: [
-      { type: 'action', content: 'Send' },
-      { type: 'token', address: ZERO, value: ETH },
-      { type: 'label', content: 'and' },
       { type: 'action', content: 'Approve' },
       { type: 'label', content: 'on' },
       { type: 'address', address: TO }
@@ -156,5 +161,104 @@ describe('fallbackHumanizer', () => {
         expect(item).toMatchObject(expected[i]!)
       })
     })
+  })
+
+  describe('a call that a module already described with rows', () => {
+    const spenderRow = getSingleValueRow('Spender', getAddressVisualization(TO))
+    const rowsVisualization = getRichVisualization('Approve', [spenderRow])
+
+    test('keeps the rows', () => {
+      const call = { to: TO, value: 0n, data: DATA, fullVisualization: rowsVisualization } as IrCall
+
+      const result = fallbackHumanizer(accountOp, call, humanizerInfo as HumanizerMeta)
+
+      expect(result.fullVisualization?.fields).toEqual([spenderRow])
+      expect(result.fullVisualization?.intent).toEqual(rowsVisualization.intent)
+      expect(result.isFallback).toBe(false)
+    })
+
+    test('does not add the native value to the intent when a row already shows it', () => {
+      const nativeRow = getSingleValueRow('Send', getToken(ZeroAddress, ETH, 1n))
+      const call = {
+        to: TO,
+        value: ETH,
+        data: DATA,
+        fullVisualization: { ...rowsVisualization, fields: [spenderRow, nativeRow] }
+      } as IrCall
+
+      const result = fallbackHumanizer(accountOp, call, humanizerInfo as HumanizerMeta)
+
+      expect(result.fullVisualization?.fields).toEqual([spenderRow, nativeRow])
+      expect(result.fullVisualization?.intent).toEqual(rowsVisualization.intent)
+      expect(result.warnings).toBeUndefined()
+    })
+
+    test('shows the native value as a row and warns, and leaves the intent as it is', () => {
+      const call = {
+        to: TO,
+        value: ETH,
+        data: DATA,
+        fullVisualization: rowsVisualization
+      } as IrCall
+
+      const result = fallbackHumanizer(accountOp, call, humanizerInfo as HumanizerMeta)
+
+      expect(result.fullVisualization?.intent).toEqual(rowsVisualization.intent)
+      expect(result.fullVisualization?.fields).toEqual([
+        spenderRow,
+        expect.objectContaining({
+          type: 'single-value',
+          label: 'Send',
+          value: expect.objectContaining({ address: ZERO, value: ETH, chainId: 1n })
+        })
+      ])
+      expect(result.warnings?.map((warning) => warning.code)).toEqual([NATIVE_VALUE_WARNING_CODE])
+    })
+
+    test('keeps the warnings a module found next to the one for the native value', () => {
+      const moduleWarning = getWarning('A warning of a module', 'MODULE_WARNING')
+      const call = {
+        to: TO,
+        value: ETH,
+        data: DATA,
+        fullVisualization: rowsVisualization,
+        warnings: [moduleWarning]
+      } as IrCall
+
+      const result = fallbackHumanizer(accountOp, call, humanizerInfo as HumanizerMeta)
+
+      expect(result.warnings?.map((warning) => warning.code)).toEqual([
+        'MODULE_WARNING',
+        NATIVE_VALUE_WARNING_CODE
+      ])
+    })
+
+    test('shows the native value as a row for a call no module described', () => {
+      const call = { to: TO, value: ETH, data: '0x12345678' } as IrCall
+
+      const result = fallbackHumanizer(accountOp, call, humanizerInfo as HumanizerMeta)
+
+      expect(result.isFallback).toBe(true)
+      expect(result.fullVisualization?.intent[0]).toMatchObject({ content: 'Interacting' })
+      expect(result.fullVisualization?.fields).toHaveLength(1)
+      expect(result.fullVisualization?.fields[0]).toMatchObject({ label: 'Send' })
+    })
+
+    test.each(['Swap', 'Bridge', 'Swap/Bridge', 'Supply', 'Deposit', 'Supply to vault', 'Wrap'])(
+      'adds no row for a %s, which shows its own value',
+      (action) => {
+        const call = {
+          to: TO,
+          value: ETH,
+          data: DATA,
+          fullVisualization: getRichVisualization(action, [])
+        } as IrCall
+
+        const result = fallbackHumanizer(accountOp, call, humanizerInfo as HumanizerMeta)
+
+        expect(result.fullVisualization?.fields).toEqual([])
+        expect(result.warnings).toBeUndefined()
+      }
+    )
   })
 })

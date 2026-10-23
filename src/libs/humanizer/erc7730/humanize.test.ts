@@ -173,14 +173,16 @@ describe('warnings from nested calls', () => {
     const multicallVisualization = humanizedCall?.fullVisualization
     if (!multicallVisualization) throw new Error('expected an ERC-7730 result')
 
-    // The nested approval has no descriptor of its own, so the legacy module humanizes it and its
-    // parts stay flat on a `call` row instead of becoming a nested visualization with its own rows.
-    expect(multicallVisualization.fields[0]).toMatchObject({ type: 'call' })
-    expect(getRowValues(multicallVisualization.fields[0]!)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: 'action', content: 'Grant approval' })
-      ])
-    )
+    // The nested approval has no descriptor of its own, so the legacy module humanizes it. It
+    // returns the intent and the rows a descriptor would, and the `call` row keeps them all.
+    const nestedRow = multicallVisualization.fields[0]
+    expect(nestedRow).toMatchObject({ type: 'call' })
+    if (nestedRow?.type !== 'call') throw new Error('expected a call row')
+
+    expect(nestedRow.value.intent).toEqual([
+      expect.objectContaining({ type: 'action', content: 'Approve' })
+    ])
+    expect(nestedRow.value.fields.map((row) => getRowLabel(row))).toEqual(['Spender', 'Amount'])
   })
 
   test('a multicall with no approval carries no approval warning', () => {

@@ -9,7 +9,9 @@ import {
   getKnownFunctionName,
   getLabel,
   getToken,
-  getLegacyVisualization
+  getLegacyVisualization,
+  mergeWarnings,
+  showNativeValueOfCall
 } from '../../utils'
 
 export const fallbackHumanizer: HumanizerCallModule = (
@@ -75,23 +77,26 @@ export const fallbackHumanizer: HumanizerCallModule = (
         (capitalizedFunctionName
           ? [getAction(capitalizedFunctionName), getLabel('on'), getAddressVisualization(call.to!)]
           : [getAction('Interacting'), getLabel('with'), getAddressVisualization(call.to!)])
-      if (
-        call.value &&
+      // The rows a module returned are kept, only the intent is the one built above
+      const humanizedVisualization = {
+        ...(call.fullVisualization ?? getLegacyVisualization(fullVisualization)),
+        intent: fullVisualization
+      }
+      // The coin the call sends is a row of its own, so the intent keeps describing the action
+      const shouldShowNativeValue =
+        !!call.value &&
         !['Swap', 'Bridge', 'Swap/Bridge', 'Supply', 'Deposit', 'Supply to vault', 'Wrap'].includes(
           fullVisualization[0]?.content || ''
         )
-      ) {
-        fullVisualization = [
-          getAction('Send'),
-          getToken(ZeroAddress, call.value),
-          getLabel('and'),
-          ...fullVisualization
-        ]
-      }
+      const { fullVisualization: visualizationWithNativeValue, warnings } = shouldShowNativeValue
+        ? showNativeValueOfCall(humanizedVisualization, call.value, accountOp.chainId)
+        : { fullVisualization: humanizedVisualization, warnings: [] }
+
       return {
         ...call,
         isFallback: !call.fullVisualization,
-        fullVisualization: getLegacyVisualization(fullVisualization)
+        fullVisualization: visualizationWithNativeValue,
+        warnings: mergeWarnings(call.warnings, warnings)
       }
     default:
       return { ...call, fullVisualization: getLegacyVisualization([getAction('Empty call')]) }
