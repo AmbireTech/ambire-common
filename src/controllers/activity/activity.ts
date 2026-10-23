@@ -52,6 +52,7 @@ import { ScamFilter } from '../../libs/scamFilter'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import { getAddressCaught } from '../../utils/getAddressCaught'
+import isSameAddr from '../../utils/isSameAddr'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { FeePayersHistory, InternalSignedMessages, SentToHistory, SignedMessage } from './types'
@@ -1737,15 +1738,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   ).map((recipient) => recipient.address)
 
                   // Another account of the wallet that paid the fee has a new balance too
-                  const paidBy = accountOp.gasFeePayment?.paidBy?.toLowerCase()
-                  const feePayer = this.#accounts.accounts.find(
-                    (a) =>
-                      a.addr.toLowerCase() === paidBy &&
-                      paidBy !== accountOp.accountAddr.toLowerCase()
-                  )
+                  const paidBy = accountOp.gasFeePayment?.paidBy
+                  const feePayer =
+                    paidBy && !isSameAddr(paidBy, accountOp.accountAddr)
+                      ? this.#accounts.accounts.find((a) => isSameAddr(a.addr, paidBy))
+                      : undefined
                   if (
                     feePayer &&
-                    !accountOpRecipients.some((addr) => addr.toLowerCase() === paidBy)
+                    !accountOpRecipients.some((addr) => isSameAddr(addr, feePayer.addr))
                   )
                     accountOpRecipients.push(feePayer.addr)
 
