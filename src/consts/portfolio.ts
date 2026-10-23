@@ -1,13 +1,11 @@
 import { Platform } from '../interfaces/platform'
 
-// Different invictus requests can hit different providers so we allow a few blocks of difference
-export const DEFAULT_STALE_RPC_BLOCK_THRESHOLD = 10
+// Different invictus requests can hit different providers, and L2 blocks are seconds or less
+// apart, so we allow a few blocks of difference
+export const DEFAULT_STALE_RPC_BLOCK_THRESHOLD = 20
 
 // Ethereum blocks are ~12s apart, so every tolerated block is a long stretch of stale data
 export const ETHEREUM_STALE_RPC_BLOCK_THRESHOLD = 2
-
-// Arbitrum makes about 4 blocks a second, so this allows about as much time as the default
-export const ARBITRUM_STALE_RPC_BLOCK_THRESHOLD = 80
 
 /**
  * How long a request to our own APIs is given. Enough for the token prices, which come back in

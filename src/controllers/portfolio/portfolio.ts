@@ -13,13 +13,8 @@ import {
   SCHEDULED_PORTFOLIO_UPDATE_DELAY,
   SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL
 } from '../../consts/intervals'
+import { ETHEREUM_CHAIN_ID, INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/networks'
 import {
-  ARBITRUM_CHAIN_ID,
-  ETHEREUM_CHAIN_ID,
-  INVICTUS_RPC_URL_IDENTIFIER
-} from '../../consts/networks'
-import {
-  ARBITRUM_STALE_RPC_BLOCK_THRESHOLD,
   DEFAULT_STALE_RPC_BLOCK_THRESHOLD,
   ETHEREUM_STALE_RPC_BLOCK_THRESHOLD,
   getDiscoveryTimeout
@@ -74,11 +69,11 @@ import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
   getAccountPortfolioTotal,
+  getAssetCacheKey,
+  getCollectibleCacheKey,
   getHintsError,
   getTokenDataCacheKey,
   getTotal,
-  getAssetCacheKey,
-  getCollectibleCacheKey,
   validateCollectibleOwnership,
   validateERC20Token,
   validateERC721Token
@@ -86,6 +81,7 @@ import {
 import {
   AccountAssetsState,
   AccountState,
+  AssetValidations,
   ExchangeInfo,
   ExchangeInfoMap,
   ExtendedError,
@@ -105,7 +101,6 @@ import {
   TokenDataCache,
   TokenDataCacheValue,
   TokenError,
-  AssetValidations,
   TokenResult,
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'
@@ -1891,11 +1886,10 @@ export class PortfolioController
       // A lagging RPC returns the state of an older block, which would take the portfolio
       // backwards - outdated balances and an outdated nonce for the simulation. Keep what
       // is already displayed until the RPC catches up.
-      let staleBlockThreshold = DEFAULT_STALE_RPC_BLOCK_THRESHOLD
-      if (network.chainId === ETHEREUM_CHAIN_ID)
-        staleBlockThreshold = ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
-      if (network.chainId === ARBITRUM_CHAIN_ID)
-        staleBlockThreshold = ARBITRUM_STALE_RPC_BLOCK_THRESHOLD
+      const staleBlockThreshold =
+        network.chainId === ETHEREUM_CHAIN_ID
+          ? ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
+          : DEFAULT_STALE_RPC_BLOCK_THRESHOLD
 
       if (blocksBehind > staleBlockThreshold) {
         throw new StaleRpcBlockError({
