@@ -55,6 +55,8 @@ contract AmbireAccountState {
                 continue;
             }
 
+            // set before any continue, so every result tells which block it was read at
+            accountResult[i].currentBlock = block.number;
             accountResult[i].balance = address(account.addr).balance;
             accountResult[i].associatedKeys = account.associatedKeys;
 
@@ -96,8 +98,6 @@ contract AmbireAccountState {
                 accountResult[i].deployErr = err;
                 continue;
             }
-
-            accountResult[i].currentBlock = block.number;
         }
         return accountResult;
     }
@@ -117,6 +117,7 @@ contract AmbireAccountState {
     }
 
     function getSafeAccountState(AccountInput memory account) external view returns (AccountInfo memory safeRes) {
+        safeRes.currentBlock = block.number;
         safeRes.balance = address(account.addr).balance;
         bytes memory code = address(account.addr).code;
         if (code.length > 0) safeRes.isDeployed = true;
@@ -125,7 +126,6 @@ contract AmbireAccountState {
             safeRes.nonce = safeAccount.nonce();
             safeRes.associatedKeys = safeAccount.getOwners();
             safeRes.threshold = safeAccount.getThreshold();
-            safeRes.currentBlock = block.number;
         }
 
         // a deployed Safe proxy delegates VERSION() to its current singleton, while an

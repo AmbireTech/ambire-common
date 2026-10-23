@@ -5,7 +5,10 @@ import {
   getAddress,
   hexlify,
   Interface,
+  JsonRpcProvider,
+  keccak256,
   MaxUint256,
+  Network as EthersNetwork,
   parseEther,
   toBeHex,
   verifyMessage
@@ -53,6 +56,7 @@ import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../libs/decodeCall'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
@@ -1968,6 +1972,99 @@ describe('SignAccountOp Controller ', () => {
 
     // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
     expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
+  })
+})
+
+describe('Relayer nonce lock', () => {
+  suppressConsoleBeforeEach()
+  afterEach(() => jest.restoreAllMocks())
+
+  const chainId = 137n
+  const chainNonce = 0n
+
+  const initRelayerSign = async () => {
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: { ...usdcFeeToken, chainId, priceIn: [{ baseCurrency: 'usd', price: 1 }] }
+      }
+    ]
+    const gasPrice = {
+      maxFeePerGas: toBeHex(10000000000n) as Hex,
+      maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
+    }
+    const { controller, accountsCtrl } = await init(
+      smartAccount,
+      createAccountOp(smartAccount, chainId),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 50000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 50000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(chainNonce),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      { slow: gasPrice, medium: gasPrice, fast: gasPrice, ape: gasPrice }
+    )
+    controller.update({
+      feeToken: usdcFeeToken,
+      paidBy: smartAccount.addr,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal',
+      speed: FeeSpeed.Fast,
+      hasNewEstimation: true
+    })
+
+    return { controller, accountsCtrl }
+  }
+
+  const lockAccountNonce = (accountsCtrl: AccountsController, opId: string) =>
+    accountsCtrl.lockNonces(opId, chainId, [
+      { kind: 'account', addr: smartAccount.addr, nonce: chainNonce }
+    ])
+
+  test('a V2 account skips the account nonce of its own pending Relayer op', async () => {
+    const { controller, accountsCtrl } = await initRelayerSign()
+    lockAccountNonce(accountsCtrl, 'pending-op')
+
+    await controller.sign()
+
+    expect(controller.status).toEqual({ type: 'done' })
+    expect(controller.accountOp.nonce).toBe(chainNonce + 1n)
+  })
+
+  test('a failed op does not raise the account nonce once it settles', async () => {
+    const { controller, accountsCtrl } = await initRelayerSign()
+    lockAccountNonce(accountsCtrl, 'failed-op')
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+    await accountsCtrl.updateAccountStateAfterOps(
+      smartAccount.addr,
+      [chainId],
+      [
+        {
+          id: 'failed-op',
+          status: AccountOpStatus.Failure,
+          accountAddr: smartAccount.addr,
+          chainId,
+          calls: [],
+          identifiedBy: { type: 'Transaction', identifier: '0x01' }
+        } as unknown as SubmittedAccountOp
+      ]
+    )
+
+    await controller.sign()
+
+    // The revert undid the nonce raise, so the next op signs the same nonce again
+    expect(controller.status).toEqual({ type: 'done' })
+    expect(controller.accountOp.nonce).toBe(chainNonce)
   })
 })
 
@@ -4238,6 +4335,121 @@ describe('broadcasting a batch one transaction at a time', () => {
     // goes through the regular success handler
     expect(submittedAccountOps).toHaveLength(1)
     expect(sentAccountOps).toHaveLength(0)
+  })
+
+  describe('nonces', () => {
+    test('locks the nonces of the sent part of a batch and keeps its eoaNonce', async () => {
+      const { controller, submittedAccountOps } = await initBatch()
+      const lockNonces = jest.spyOn(AccountsController.prototype, 'lockNonces')
+      mockBroadcastChain(2)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(submittedAccountOps).toHaveLength(1)
+      // The error path resets this.accountOp.eoaNonce, which must not reach the saved op
+      expect(submittedAccountOps[0].eoaNonce).toBe(7n)
+      expect(lockNonces).toHaveBeenCalledTimes(1)
+      expect(lockNonces).toHaveBeenCalledWith(submittedAccountOps[0].id, 1n, [
+        { kind: 'sender', addr: eoaAccount.addr, nonce: 7n },
+        { kind: 'sender', addr: eoaAccount.addr, nonce: 8n }
+      ])
+    })
+
+    test('skips the nonce of a pending txn that the RPC does not count yet', async () => {
+      const { controller, submittedAccountOps } = await initBatch()
+      ;(controller.accountOp as any).eoaNonce = undefined
+      jest.spyOn(controller.provider, 'getTransactionCount').mockResolvedValue(7)
+      // Another op of this device locked nonce 7
+      const getNextNonce = jest
+        .spyOn(AccountsController.prototype, 'getNextNonce')
+        .mockReturnValue(8n)
+      mockBroadcastChain(null)
+      const buildRawTransaction = jest.mocked(broadcastLib.buildRawTransaction)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(getNextNonce).toHaveBeenCalledWith(eoaAccount.addr, 1n, 'sender', 7n)
+      expect(buildRawTransaction.mock.calls.map((call) => call[5])).toEqual([8, 9, 10])
+      expect(submittedAccountOps[0].eoaNonce).toBe(8n)
+    })
+
+    test('a node that already has the txn counts it as sent', async () => {
+      const { controller, submittedAccountOps } = await initBatch()
+      jest
+        .spyOn(broadcastLib, 'buildRawTransaction')
+        .mockImplementation(async () => ({ to: '0x', value: 0n }) as any)
+      let signedCount = 0
+      jest.spyOn(KeystoreSigner.prototype, 'signRawTransaction').mockImplementation(async () => {
+        signedCount += 1
+        return `0x0${signedCount}`
+      })
+      jest.spyOn(broadcastLib, 'broadcastTransaction').mockImplementation(async () => {
+        if (signedCount === 2) {
+          throw new Error(
+            'could not coalesce error (error={ "code": -32000, "message": "already known" })'
+          )
+        }
+        return { hash: `0xhash${signedCount}` } as any
+      })
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(submittedAccountOps).toHaveLength(1)
+      expect(submittedAccountOps[0].identifiedBy.identifier.split('-')).toEqual([
+        '0xhash1',
+        keccak256('0x02'),
+        '0xhash3'
+      ])
+      expect(getPartialBroadcastError(controller)).toBeUndefined()
+    })
+  })
+
+  describe('broadcast refusals', () => {
+    const rpcProvider = new JsonRpcProvider('http://127.0.0.1:1', EthersNetwork.from(1), {
+      staticNetwork: EthersNetwork.from(1)
+    })
+    afterAll(() => rpcProvider.destroy())
+
+    // Built the way ethers builds them from a node answer to eth_sendRawTransaction
+    const nodeError = (message: string) =>
+      rpcProvider.getRpcError(
+        { method: 'eth_sendRawTransaction', params: ['0x00'], id: 1, jsonrpc: '2.0' },
+        { error: { code: -32000, message } }
+      )
+
+    const initRawTxn = async () => {
+      const { controller } = await initBatch()
+      ;(controller.accountOp as any).gasFeePayment = {
+        ...controller.accountOp.gasFeePayment,
+        broadcastOption: broadcastLib.BROADCAST_OPTIONS.bySelf
+      }
+      return controller
+    }
+
+    test('a txn of another app that holds the nonce gets a plain message and no fee change', async () => {
+      const controller = await initRawTxn()
+
+      expect(() =>
+        controller.throwBroadcastAccountOp({
+          error: nodeError('replacement transaction underpriced')
+        })
+      ).toThrow(
+        'Another transaction from this account is still waiting to be confirmed. Wait for it to finish, then try again.'
+      )
+      expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+    })
+
+    test('a nonce that is already used refreshes the account state', async () => {
+      const controller = await initRawTxn()
+      const updateAccountState = jest
+        .spyOn(AccountsController.prototype, 'updateAccountState')
+        .mockResolvedValue(undefined)
+
+      expect(() =>
+        controller.throwBroadcastAccountOp({ error: nodeError('nonce too low') })
+      ).toThrow('Pending transaction detected. Please try again in a few seconds')
+      expect(updateAccountState).toHaveBeenCalledWith(eoaAccount.addr, 'pending', [1n], true)
+    })
   })
 
   describe('in the built-in swap', () => {

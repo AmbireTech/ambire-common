@@ -6,6 +6,7 @@ import {
   Interface,
   isAddress,
   isBytesLike,
+  keccak256,
   toBeHex,
   ZeroAddress
 } from 'ethers'
@@ -175,6 +176,8 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
+import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
+import { getTakenNonces, TakenNonce } from '../../utils/nonce'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import { withTimeout } from '../../utils/with-timeout'
@@ -192,6 +195,8 @@ import {
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
+  isNonceTooLow,
+  isReplacementRefused,
   isUnderpriced,
   SignAccountOpType
 } from './helper'
@@ -217,6 +222,14 @@ const SLOWED_DOWN_REESTIMATE_STEP = 10000
 
 /** After this many reestimates the loop gives up and stops refetching. */
 export const MAX_REESTIMATES = 20
+
+/** The broadcast options that send the op as raw txns of an EOA */
+const RAW_TXN_BROADCAST_OPTIONS = [
+  BROADCAST_OPTIONS.bySelf,
+  BROADCAST_OPTIONS.bySelf7702,
+  BROADCAST_OPTIONS.byOtherEOA,
+  BROADCAST_OPTIONS.delegation
+]
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
@@ -1946,8 +1959,14 @@ export class SignAccountOpController
     const estimation = this.estimation.estimation
 
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
-    // that we should update the portfolio to get a correct simulation
-    if (estimation && estimation.ambireEstimation && estimation.flags.hasNonceDiscrepancy) {
+    // that we should update the portfolio to get a correct simulation.
+    // canUpdate() is checked again, as signing may have set the nonce while this awaited
+    if (
+      this.canUpdate() &&
+      estimation &&
+      estimation.ambireEstimation &&
+      estimation.flags.hasNonceDiscrepancy
+    ) {
       this.#updateNonce(BigInt(estimation.ambireEstimation.ambireAccountNonce))
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
@@ -1975,7 +1994,7 @@ export class SignAccountOpController
         this.#accounts.accountStates[this.accountOp.accountAddr]?.[
           this.accountOp.chainId.toString()
         ]
-      if (pendingAccountState) this.#updateNonce(pendingAccountState.nonce)
+      if (pendingAccountState && this.canUpdate()) this.#updateNonce(pendingAccountState.nonce)
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -3598,8 +3617,9 @@ export class SignAccountOpController
               return null
             }
           )
-          if (latestNonce) {
-            this.#updateNonce(latestNonce)
+          // A speed-up keeps its nonce, as its signatures are for it
+          if (latestNonce !== null && latestNonce !== undefined && !this.isSpeedUpTransaction) {
+            this.#updateNonce(this.#getAccountNextNonce(latestNonce))
           }
         }
 
@@ -3624,10 +3644,12 @@ export class SignAccountOpController
           ? this.accountOp.signed.concat([signingKeyAddr!])
           : [signingKeyAddr!]
 
+        // The first free nonce, past this device's own pending txns, still goes out in one click
         const isQuickBroadcast =
           this.threshold === 1 &&
           this.accountKeyStoreKeys.length === 1 &&
-          (!this.#customSafeNonce || this.#customSafeNonce === accountState.nonce)
+          (!this.#customSafeNonce ||
+            this.#customSafeNonce === this.#getAccountNextNonce(accountState.nonce))
         if (!isQuickBroadcast) {
           if (!prevSignedSigs.length) {
             // propose the txn to Safe Global upon first entry
@@ -3695,11 +3717,10 @@ export class SignAccountOpController
       } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
         // SA, EOA pays fee. execute() needs a signature
         if (!this.isSpeedUpTransaction) {
-          // fetch the nonce if needed
-          const nonce = await this.baseAccount.getBroadcastNonce(
-            this.#activity,
-            this.accountOp,
-            this.provider
+          // fetch the nonce if needed. The op is sent right away, so it skips the nonces of the
+          // ops this device sent that the RPC may not count yet
+          const nonce = this.#getAccountNextNonce(
+            await this.baseAccount.getBroadcastNonce(this.#activity, this.accountOp, this.provider)
           )
           if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
 
@@ -3737,13 +3758,20 @@ export class SignAccountOpController
             this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
 
           const signer = await this.#getDefaultSigner()
+          // The broadcast sends the txn with this same nonce, so the authorization matches it.
+          // Only a speed-up keeps the nonce it already has
+          const txnNonce =
+            this.isSpeedUpTransaction && typeof this.accountOp.eoaNonce === 'bigint'
+              ? this.accountOp.eoaNonce
+              : await this.#getEoaBroadcastNonce(this.accountOp.accountAddr)
+          this.#updateAccountOp({ eoaNonce: txnNonce })
           const authorization = {
             chainId: this.#network.chainId,
             contract,
             // because we're broadcasting by ourselves, we need to add 1 to the nonce
             // as the sender nonce (the curr acc) gets incremented before the
             // authrorization validation
-            nonce: accountState.eoaNonce! + 1n
+            nonce: txnNonce + 1n
           }
           this.accountOp.meta.delegation = get7702Sig(
             this.#network.chainId,
@@ -3787,14 +3815,17 @@ export class SignAccountOpController
             this.#network.chainId,
             this.accountKeyStoreKeys
           )
+          // The bundler's own EOA sends the txn, so the authorization takes the next nonce of
+          // this EOA. Read fresh, as a pending or just mined txn makes the cached one wrong
+          const authorizationNonce = await this.#getEoaBroadcastNonce(this.accountOp.accountAddr)
           const authorization = {
             chainId: this.#network.chainId,
             contract,
-            nonce: accountState.nonce
+            nonce: authorizationNonce
           }
           eip7702Auth = get7702Sig(
             this.#network.chainId,
-            accountState.nonce,
+            authorizationNonce,
             contract,
             await this.#withHardwareWalletSigningRequest(
               get7702AuthorizationSigningRequest(authorization),
@@ -3947,11 +3978,10 @@ export class SignAccountOpController
         // Relayer
         this.#addFeePayment()
 
-        // fetch the nonce if needed
-        const nonce = await this.baseAccount.getBroadcastNonce(
-          this.#activity,
-          this.accountOp,
-          this.provider
+        // fetch the nonce if needed. The op is sent right away, so it skips the nonces of the
+        // ops this device sent that the RPC may not count yet
+        const nonce = this.#getAccountNextNonce(
+          await this.baseAccount.getBroadcastNonce(this.#activity, this.accountOp, this.provider)
         )
         if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
 
@@ -3991,6 +4021,33 @@ export class SignAccountOpController
         accountState
       })
     }
+  }
+
+  /** The account nonce for a new op: `chainNonce`, raised past the nonces of the ops this device sent. */
+  #getAccountNextNonce(chainNonce: bigint): bigint {
+    return this.#accounts.getNextNonce(
+      this.accountOp.accountAddr,
+      this.#network.chainId,
+      'account',
+      chainNonce
+    )
+  }
+
+  /**
+   * The txn nonce for a new txn of `senderAddr` (or a 7702 authorization it signs). Raised past
+   * the nonces of the ops this device sent, as the RPC may not count them yet.
+   */
+  async #getEoaBroadcastNonce(senderAddr: string): Promise<bigint> {
+    const chainNonce = await this.provider.getTransactionCount(
+      senderAddr,
+      getPendingBlockTagIfSupported(this.#network)
+    )
+    return this.#accounts.getNextNonce(
+      senderAddr,
+      this.#network.chainId,
+      'sender',
+      BigInt(chainNonce)
+    )
   }
 
   /**
@@ -4068,15 +4125,10 @@ export class SignAccountOpController
       nonce: number
       identifiedBy: AccountOpIdentifiedBy
     } | null = null
-    // broadcasting by EOA is quite the same:
-    // 1) build a rawTxn 2) sign 3) broadcast
-    // we have one handle, just a diff rawTxn for each case
-    const rawTxnBroadcast = [
-      BROADCAST_OPTIONS.bySelf,
-      BROADCAST_OPTIONS.bySelf7702,
-      BROADCAST_OPTIONS.byOtherEOA,
-      BROADCAST_OPTIONS.delegation
-    ]
+    // Written by the branch that sends, as only it knows which nonces went out
+    let takenNonces: TakenNonce[] = []
+    let sentEoaNonce: bigint | undefined
+    const isSafe = !!account.safeCreation
 
     // PQ1 is a smart-contract-only signer that cannot produce a raw EOA
     // transaction. The signer packages the calls into a 4337 UserOperation,
@@ -4145,7 +4197,10 @@ export class SignAccountOpController
       } catch (error: any) {
         return this.throwBroadcastAccountOp({ error, accountState })
       }
-    } else if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
+    } else if (RAW_TXN_BROADCAST_OPTIONS.includes(accountOp.gasFeePayment.broadcastOption)) {
+      // broadcasting by EOA is quite the same:
+      // 1) build a rawTxn 2) sign 3) broadcast
+      // we have one handle, just a diff rawTxn for each case
       const multipleTxnsBroadcastRes = []
       const senderAddr =
         accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
@@ -4154,7 +4209,9 @@ export class SignAccountOpController
       const senderNonce =
         accountOp.eoaNonce !== null && typeof accountOp.eoaNonce !== 'undefined'
           ? Number(accountOp.eoaNonce)
-          : await this.provider.getTransactionCount(senderAddr).catch((e) => e)
+          : await this.#getEoaBroadcastNonce(senderAddr)
+              .then(Number)
+              .catch((e) => e)
 
       // @precaution
       if (senderNonce instanceof Error) {
@@ -4163,6 +4220,18 @@ export class SignAccountOpController
           accountState
         })
       }
+
+      const firstSentNonce = BigInt(senderNonce)
+      const getSentTakenNonces = () =>
+        getTakenNonces({
+          accountOp,
+          isSafe,
+          sender: {
+            addr: senderAddr,
+            firstNonce: firstSentNonce,
+            sentTxnCount: multipleTxnsBroadcastRes.length
+          }
+        })
 
       try {
         const { gasFeePayment } = accountOp
@@ -4183,7 +4252,7 @@ export class SignAccountOpController
         const txnLength = this.baseAccount.shouldBroadcastCallsSeparately(accountOp)
           ? accountOp.calls.length
           : 1
-        this.#updateAccountOp({ eoaNonce: BigInt(senderNonce) })
+        this.#updateAccountOp({ eoaNonce: firstSentNonce })
         if (txnLength > 1) this.update({ signedTransactionsCount: 0 })
         for (let i = 0; i < txnLength; i++) {
           const currentNonce = senderNonce + i
@@ -4210,14 +4279,21 @@ export class SignAccountOpController
                 : signer.signRawTransaction(rawTxn)
           )
 
-          if (isDelegationBroadcast) {
-            multipleTxnsBroadcastRes.push({
-              hash: await this.provider.send('eth_sendRawTransaction', [signedTxn])
-            })
-          } else {
-            multipleTxnsBroadcastRes.push(
-              await broadcastTransaction(this.provider, signedTxn, accountOp.chainId)
-            )
+          try {
+            if (isDelegationBroadcast) {
+              multipleTxnsBroadcastRes.push({
+                hash: await this.provider.send('eth_sendRawTransaction', [signedTxn])
+              })
+            } else {
+              multipleTxnsBroadcastRes.push(
+                await broadcastTransaction(this.provider, signedTxn, accountOp.chainId)
+              )
+            }
+          } catch (sendError: unknown) {
+            // The node already has this exact txn, so it went out
+            if (!(sendError instanceof Error) || !sendError.message.includes('already known'))
+              throw sendError
+            multipleTxnsBroadcastRes.push({ hash: keccak256(signedTxn) })
           }
           if (txnLength > 1) this.update({ signedTransactionsCount: i + 1 })
 
@@ -4226,6 +4302,8 @@ export class SignAccountOpController
           if (this.isErc4337Enabled) this.#recordEoaTxnForGasTank(accountOp.chainId, signedTxn)
         }
 
+        sentEoaNonce = firstSentNonce
+        takenNonces = getSentTakenNonces()
         transactionRes = {
           nonce:
             accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
@@ -4240,8 +4318,8 @@ export class SignAccountOpController
       } catch (error: any) {
         console.error('Error broadcasting', error)
 
-        // reset the eoaNonce on error
-        this.#updateAccountOp({ eoaNonce: undefined })
+        // reset the eoaNonce on error, except for a speed-up, which must keep the nonce it replaces
+        if (!this.isSpeedUpTransaction) this.#updateAccountOp({ eoaNonce: undefined })
 
         // for multiple txn cases
         // if a batch of 5 txn is sent to Ledger for sign but the user reject
@@ -4251,6 +4329,7 @@ export class SignAccountOpController
         // unless it's the build-in swap - we want to throw an error and
         // allow the user to retry in this case. The swap is told what was sent, so
         // the retry is built only after the sent txns are confirmed
+        const sentTakenNonces = getSentTakenNonces()
         const sentTransactionRes = {
           nonce: senderNonce,
           identifiedBy: {
@@ -4261,6 +4340,9 @@ export class SignAccountOpController
         }
         if (multipleTxnsBroadcastRes.length && this.#type !== 'one-click-swap-and-bridge') {
           transactionRes = sentTransactionRes
+          // this.accountOp.eoaNonce may have been reset above, so keep the nonce of the sent part
+          sentEoaNonce = firstSentNonce
+          takenNonces = sentTakenNonces
 
           // The part that went out is reported as broadcast, so without saying this
           // the rest of the batch looks sent when it never was.
@@ -4281,14 +4363,14 @@ export class SignAccountOpController
           // Signing the whole batch again would send them twice (e.g. a second approval)
           if (multipleTxnsBroadcastRes.length && this.#onPartialBroadcast) {
             try {
-              await this.#onPartialBroadcast(
-                this.#buildSubmittedAccountOp(
-                  accountOp,
-                  account,
-                  sentTransactionRes,
-                  BigInt(senderNonce)
-                )
+              const sentAccountOp = this.#buildSubmittedAccountOp(
+                accountOp,
+                account,
+                sentTransactionRes,
+                firstSentNonce
               )
+              this.#accounts.lockNonces(sentAccountOp.id, this.#network.chainId, sentTakenNonces)
+              await this.#onPartialBroadcast(sentAccountOp)
             } catch (e: any) {
               // Not reporting them must not hide the error that stopped the batch
               this.emitError({
@@ -4350,6 +4432,13 @@ export class SignAccountOpController
         })
       }
 
+      takenNonces = getTakenNonces({
+        accountOp,
+        isSafe,
+        bundlerAuthorizationNonce: userOperation.eip7702Auth
+          ? BigInt(userOperation.eip7702Auth.nonce)
+          : undefined
+      })
       transactionRes = {
         nonce: Number(userOperation.nonce),
         identifiedBy: {
@@ -4382,6 +4471,7 @@ export class SignAccountOpController
         )
         if (!response.success) throw new Error(response.message)
 
+        takenNonces = getTakenNonces({ accountOp, isSafe })
         transactionRes = {
           txnId: response.txId,
           nonce: Number(accountOp.nonce),
@@ -4404,8 +4494,9 @@ export class SignAccountOpController
       accountOp,
       account,
       transactionRes,
-      this.accountOp.eoaNonce
+      sentEoaNonce ?? this.accountOp.eoaNonce
     )
+    this.#accounts.lockNonces(submittedAccountOp.id, this.#network.chainId, takenNonces)
 
     await this.#onBroadcastSuccess({
       submittedAccountOp,
@@ -4610,8 +4701,17 @@ export class SignAccountOpController
     this.broadcastStatus = 'INITIAL'
     this.forceEmitUpdate()
 
+    const isRawTxnBroadcast = RAW_TXN_BROADCAST_OPTIONS.includes(
+      this.accountOp.gasFeePayment?.broadcastOption ?? ''
+    )
+
     if (originalMessage) {
-      if (originalMessage.includes('replacement fee too low')) {
+      // Outside a speed-up, a txn this device doesn't know (e.g. from another app) holds the nonce.
+      // The fee is left as is, as a higher one would replace that txn
+      if (isRawTxnBroadcast && !this.isSpeedUpTransaction && isReplacementRefused(_err)) {
+        message =
+          'Another transaction from this account is still waiting to be confirmed. Wait for it to finish, then try again.'
+      } else if (originalMessage.includes('replacement fee too low')) {
         // if custom gas prices have been set, show the original error
         if (!this.hasCustomGasPrices) {
           message =
@@ -4648,7 +4748,8 @@ export class SignAccountOpController
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA account'
       } else if (
         originalMessage.includes('INVALID_ACCOUNT_NONCE') ||
-        originalMessage.includes('user nonce')
+        originalMessage.includes('user nonce') ||
+        isNonceTooLow(_err)
       ) {
         message = 'Pending transaction detected. Please try again in a few seconds'
         this.#accounts

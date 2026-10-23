@@ -16,6 +16,8 @@ import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { UiManager } from '../../interfaces/ui'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import * as accountStateLib from '../../libs/accountState/accountState'
 import { StorageController } from '../storage/storage'
 import { AccountsController } from './accounts'
@@ -399,6 +401,196 @@ describe('AccountsController account state fetching', () => {
     fetches[0]!.resolve([makeAccountState(ADDR_A, 10n)])
     await update
     expect(loadingStates.at(-1)).toBe(false)
+  })
+})
+
+describe('AccountsController nonce locks', () => {
+  let ctrl: Awaited<ReturnType<typeof makeAccountsController>>
+  const CHAIN = BASE.chainId
+  const op = (id: string, status: AccountOpStatus, overrides: Partial<SubmittedAccountOp> = {}) =>
+    ({
+      id,
+      status,
+      accountAddr: ADDR_A,
+      chainId: CHAIN,
+      calls: [],
+      identifiedBy: { type: 'Transaction', identifier: '0x01' },
+      ...overrides
+    }) as SubmittedAccountOp
+  const sender = (nonce: bigint, addr = ADDR_A) => ({ kind: 'sender' as const, addr, nonce })
+  const account = (nonce: bigint, addr = ADDR_A) => ({ kind: 'account' as const, addr, nonce })
+
+  beforeEach(async () => {
+    ctrl = await makeAccountsController()
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] })
+  })
+
+  afterEach(() => {
+    const pendingTimerCount = jest.getTimerCount()
+    jest.useRealTimers()
+    jest.restoreAllMocks()
+    expect(pendingTimerCount).toBe(0)
+  })
+
+  test('a new op skips the locked nonces of its sender, kind and chain only', () => {
+    const { accountsCtrl } = ctrl
+    accountsCtrl.lockNonces('a', CHAIN, [sender(7n), sender(8n)])
+    accountsCtrl.lockNonces('b', CHAIN, [account(3n), sender(20n, ADDR_B)])
+    accountsCtrl.lockNonces('c', ETHEREUM.chainId, [sender(30n)])
+
+    expect(accountsCtrl.getNextNonce(ADDR_A.toLowerCase(), CHAIN, 'sender', 7n)).toBe(9n)
+    // The RPC already counts the locked nonces
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 10n)).toBe(10n)
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'account', 3n)).toBe(4n)
+    expect(accountsCtrl.getNextNonce(ADDR_A, ETHEREUM.chainId, 'sender', 7n)).toBe(31n)
+    expect(accountsCtrl.getNextNonce(ADDR_B, ETHEREUM.chainId, 'sender', 5n)).toBe(5n)
+  })
+
+  test('keeps the nonces of a confirmed op until a lagging state counts them', async () => {
+    const { accountsCtrl, fetches } = ctrl
+    accountsCtrl.lockNonces('a', CHAIN, [sender(7n)])
+    const update = track(
+      accountsCtrl.updateAccountStateAfterOps(ADDR_A, [CHAIN], [op('a', AccountOpStatus.Success)])
+    )
+    await flushPromises()
+    fetches[0]!.resolve([makeAccountState(ADDR_A, 7n)])
+    await flushPromises()
+
+    expect(update.isSettled).toBe(false)
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(8n)
+
+    await jest.advanceTimersByTimeAsync(250)
+    await flushPromises()
+    expect(fetches).toHaveLength(2)
+    fetches[1]!.resolve([makeAccountState(ADDR_A, 8n)])
+    await update.promise
+
+    expect(fetches).toHaveLength(2)
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 6n)).toBe(6n)
+  })
+
+  test('a state that counts a nonce does not free the lock of a pending op', async () => {
+    const { accountsCtrl, fetches } = ctrl
+    accountsCtrl.lockNonces('pending', CHAIN, [sender(7n)])
+    accountsCtrl.lockNonces('a', CHAIN, [sender(6n)])
+    const update = accountsCtrl.updateAccountStateAfterOps(
+      ADDR_A,
+      [CHAIN],
+      [op('a', AccountOpStatus.Success)]
+    )
+    await flushPromises()
+    fetches[0]!.resolve([makeAccountState(ADDR_A, 8n)])
+    await update
+
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 6n)).toBe(8n)
+  })
+
+  test.each([AccountOpStatus.Rejected, AccountOpStatus.BroadcastButStuck])(
+    'an op that becomes %s frees its nonces at once, without a read',
+    async (status) => {
+      const { accountsCtrl, fetches } = ctrl
+      accountsCtrl.lockNonces('a', CHAIN, [sender(7n), account(3n)])
+
+      await accountsCtrl.updateAccountStateAfterOps(ADDR_A, [], [op('a', status)])
+
+      expect(fetches).toHaveLength(0)
+      expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(7n)
+      expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'account', 3n)).toBe(3n)
+    }
+  )
+
+  test('a failed op frees the account nonce its revert undid and keeps the sender nonce', async () => {
+    const { accountsCtrl, fetches } = ctrl
+    accountsCtrl.lockNonces('a', CHAIN, [sender(7n, ADDR_B), account(3n)])
+    const update = track(
+      accountsCtrl.updateAccountStateAfterOps(ADDR_A, [CHAIN], [op('a', AccountOpStatus.Failure)])
+    )
+    await flushPromises()
+
+    // The fee payer holds a lock too, so its state is read with the account
+    expect(fetches.map((fetch) => fetch.addrs)).toEqual([[ADDR_A], [ADDR_B]])
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'account', 3n)).toBe(3n)
+    fetches[0]!.resolve([makeAccountState(ADDR_A, 3n)])
+    fetches[1]!.resolve([makeAccountState(ADDR_B, 7n)])
+    await flushPromises()
+    expect(update.isSettled).toBe(false)
+    expect(accountsCtrl.getNextNonce(ADDR_B, CHAIN, 'sender', 7n)).toBe(8n)
+
+    await jest.advanceTimersByTimeAsync(250)
+    await flushPromises()
+    expect(fetches[2]!.addrs).toEqual([ADDR_B])
+    fetches[2]!.resolve([makeAccountState(ADDR_B, 8n)])
+    await update.promise
+    expect(accountsCtrl.getNextNonce(ADDR_B, CHAIN, 'sender', 7n)).toBe(7n)
+  })
+
+  test('keeps a used nonce locked after the read limit, until a later latest read counts it', async () => {
+    const { accountsCtrl, fetches, errors } = ctrl
+    accountsCtrl.lockNonces('a', CHAIN, [sender(7n)])
+    const update = track(
+      accountsCtrl.updateAccountStateAfterOps(ADDR_A, [CHAIN], [op('a', AccountOpStatus.Success)])
+    )
+
+    for (let i = 0; i < 20 && !update.isSettled; i++) {
+      await flushPromises()
+      fetches.at(-1)?.resolve([makeAccountState(ADDR_A, 7n)])
+      await jest.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+    }
+
+    expect(update.isSettled).toBe(true)
+    expect(fetches.length).toBeGreaterThan(1)
+    expect(errors.some((message) => message.includes('did not count'))).toBe(true)
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(8n)
+
+    // A pending state can count a txn that is dropped later, so it frees nothing
+    const pendingRead = accountsCtrl.updateAccountState(ADDR_A, 'pending', [CHAIN])
+    await flushPromises()
+    fetches.at(-1)!.resolve([makeAccountState(ADDR_A, 8n)])
+    await pendingRead
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(8n)
+
+    const latestRead = accountsCtrl.updateAccountState(ADDR_A, 'latest', [CHAIN], true)
+    await flushPromises()
+    fetches.at(-1)!.resolve([makeAccountState(ADDR_A, 8n)])
+    await latestRead
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(7n)
+  })
+
+  test('a batch sent one txn at a time keeps only the nonces of its mined txns', async () => {
+    const { accountsCtrl, fetches } = ctrl
+    accountsCtrl.lockNonces('a', CHAIN, [sender(7n), sender(8n), sender(9n)])
+    const minedCall = { to: ADDR_B, value: 0n, data: '0x', status: AccountOpStatus.Success }
+    const droppedCall = { ...minedCall, status: AccountOpStatus.Rejected }
+    // The batch takes the status of its last txn, though its first one was mined
+    const batch = op('a', AccountOpStatus.Rejected, {
+      identifiedBy: { type: 'MultipleTxns', identifier: '0x01-0x02-0x03' },
+      calls: [minedCall, droppedCall, droppedCall]
+    })
+    const update = accountsCtrl.updateAccountStateAfterOps(ADDR_A, [CHAIN], [batch])
+    await flushPromises()
+
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(8n)
+    fetches[0]!.resolve([makeAccountState(ADDR_A, 8n)])
+    await update
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(7n)
+  })
+
+  test('stops and frees the nonces when the account is removed while it waits', async () => {
+    const { accountsCtrl, fetches } = ctrl
+    accountsCtrl.lockNonces('a', CHAIN, [sender(7n)])
+    const update = track(
+      accountsCtrl.updateAccountStateAfterOps(ADDR_A, [CHAIN], [op('a', AccountOpStatus.Success)])
+    )
+    await flushPromises()
+    fetches[0]!.resolve([makeAccountState(ADDR_A, 7n)])
+    await flushPromises()
+    accountsCtrl.removeAccountData(ADDR_A)
+    await jest.advanceTimersByTimeAsync(250)
+    await update.promise
+
+    expect(fetches).toHaveLength(1)
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(7n)
   })
 })
 
