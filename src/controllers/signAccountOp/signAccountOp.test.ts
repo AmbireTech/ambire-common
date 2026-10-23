@@ -56,6 +56,7 @@ import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../libs/decodeCall'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
@@ -1971,6 +1972,99 @@ describe('SignAccountOp Controller ', () => {
 
     // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
     expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
+  })
+})
+
+describe('Relayer nonce lock', () => {
+  suppressConsoleBeforeEach()
+  afterEach(() => jest.restoreAllMocks())
+
+  const chainId = 137n
+  const chainNonce = 0n
+
+  const initRelayerSign = async () => {
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: { ...usdcFeeToken, chainId, priceIn: [{ baseCurrency: 'usd', price: 1 }] }
+      }
+    ]
+    const gasPrice = {
+      maxFeePerGas: toBeHex(10000000000n) as Hex,
+      maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
+    }
+    const { controller, accountsCtrl } = await init(
+      smartAccount,
+      createAccountOp(smartAccount, chainId),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 50000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 50000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(chainNonce),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      { slow: gasPrice, medium: gasPrice, fast: gasPrice, ape: gasPrice }
+    )
+    controller.update({
+      feeToken: usdcFeeToken,
+      paidBy: smartAccount.addr,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal',
+      speed: FeeSpeed.Fast,
+      hasNewEstimation: true
+    })
+
+    return { controller, accountsCtrl }
+  }
+
+  const lockAccountNonce = (accountsCtrl: AccountsController, opId: string) =>
+    accountsCtrl.lockNonces(opId, chainId, [
+      { kind: 'account', addr: smartAccount.addr, nonce: chainNonce }
+    ])
+
+  test('a V2 account skips the account nonce of its own pending Relayer op', async () => {
+    const { controller, accountsCtrl } = await initRelayerSign()
+    lockAccountNonce(accountsCtrl, 'pending-op')
+
+    await controller.sign()
+
+    expect(controller.status).toEqual({ type: 'done' })
+    expect(controller.accountOp.nonce).toBe(chainNonce + 1n)
+  })
+
+  test('a failed op does not raise the account nonce once it settles', async () => {
+    const { controller, accountsCtrl } = await initRelayerSign()
+    lockAccountNonce(accountsCtrl, 'failed-op')
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+    await accountsCtrl.updateAccountStateAfterOps(
+      smartAccount.addr,
+      [chainId],
+      [
+        {
+          id: 'failed-op',
+          status: AccountOpStatus.Failure,
+          accountAddr: smartAccount.addr,
+          chainId,
+          calls: [],
+          identifiedBy: { type: 'Transaction', identifier: '0x01' }
+        } as unknown as SubmittedAccountOp
+      ]
+    )
+
+    await controller.sign()
+
+    // The revert undid the nonce raise, so the next op signs the same nonce again
+    expect(controller.status).toEqual({ type: 'done' })
+    expect(controller.accountOp.nonce).toBe(chainNonce)
   })
 })
 
