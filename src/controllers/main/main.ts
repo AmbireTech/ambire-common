@@ -1,6 +1,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 
 import EmittableError from '@/classes/EmittableError'
+import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '@/consts/activity'
 import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
 import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
@@ -125,6 +126,7 @@ import { getHdPathFromTemplate } from '@/utils/hdPath'
 import { getReceiptBlockNumberByChainId } from '@/utils/nonce'
 import { generateUuid } from '@/utils/uuid'
 import wait from '@/utils/wait'
+import { waitForBlockNumber } from '@/utils/waitForBlockNumber'
 
 type AccountsUpdate = {
   accountsToAdd: Account[]
@@ -1782,14 +1784,22 @@ export class MainController extends EventEmitter implements IMainController {
               op.status !== AccountOpStatus.Pending &&
               op.status !== AccountOpStatus.BroadcastedButNotConfirmed
           )
-          // The balances are read at the receipt block, so a lagging RPC can't return the
-          // state from before the confirmation
           const blockNumberByChainId = getReceiptBlockNumberByChainId(finalizedAccountOps)
 
           const networks = this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
 
           // Nothing awaits this callback, so a failure is reported here
           try {
+            // A lagging RPC would return the balances and the nonce from before the confirmation
+            await Promise.all(
+              Object.entries(blockNumberByChainId).map(([chainId, blockNumber]) => {
+                const provider = this.providers.providers[chainId]
+                if (!provider) return undefined
+
+                return waitForBlockNumber(provider, blockNumber, CONFIRMED_BLOCK_WAIT_TIMEOUT_MS)
+              })
+            )
+
             if (networks.length) {
               // The account state must be updated before the portfolio
               // as the portfolio has internal checks whether the nonce has changed
@@ -1811,23 +1821,38 @@ export class MainController extends EventEmitter implements IMainController {
               })
             }
 
-            // Discard the simulation (that also updates the portfolio, but doesn't force update defi).
-            // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
-            // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
-            if (finalizedAccountOps.length) {
-              await this.portfolio.discardSimulation(finalizedAccountOps, blockNumberByChainId)
-            }
+            const otherAccountsToUpdate = networks.length ? Object.entries(portfoliosToUpdate) : []
+
+            // The other accounts have their own portfolio queues, so they don't wait for the
+            // sender's read
+            await Promise.all([
+              // Discard the simulation (that also updates the portfolio, but doesn't force update defi).
+              // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
+              // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
+              finalizedAccountOps.length
+                ? this.portfolio.discardSimulation(finalizedAccountOps)
+                : undefined,
+              ...otherAccountsToUpdate.map(async ([portfolioAccountAddr, chainIds]) => {
+                // A fee payer has a new nonce and a recipient a new balance, and the
+                // account state goes first for the same reason as above
+                await this.accounts.updateAccountState(
+                  portfolioAccountAddr,
+                  'latest',
+                  chainIds,
+                  true
+                )
+                await this.portfolio.updateSelectedAccount(
+                  portfolioAccountAddr,
+                  this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+                )
+              })
+            ])
 
             if (networks.length) {
-              await Promise.all(
-                Object.entries(portfoliosToUpdate).map(([portfolioAccountAddr, chainIds]) =>
-                  this.portfolio.updateSelectedAccount(
-                    portfolioAccountAddr,
-                    this.networks.networks.filter((n) => chainIds.includes(n.chainId)),
-                    undefined,
-                    { blockNumberByChainId }
-                  )
-                )
+              // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
+              this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+                accountAddr,
+                updatedAccountsOps
               )
             }
           } catch (error) {

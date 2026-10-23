@@ -665,6 +665,11 @@ describe('Main Controller ', () => {
         await storageCtrl.set('accounts', accounts)
       })
 
+      // Avoid noisy side effects from this call while keeping the update flow realistic.
+      jest
+        .spyOn(mainCtrl.portfolio, 'reportMissedPortfolioUpdateAfterUpdatedAccountOp')
+        .mockImplementation(() => {})
+
       jest
         .spyOn(mainCtrl.swapAndBridge, 'handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate')
         .mockImplementation(() => {})
@@ -806,7 +811,7 @@ describe('Main Controller ', () => {
       await flushAsyncUpdates()
 
       expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
-      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp], {})
+      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
       // A cache-busting update is scheduled for the updated chain.
       expect(scheduleUpdateSpy).toHaveBeenCalledTimes(1)
       expect(scheduleUpdateSpy).toHaveBeenCalledWith({
@@ -857,7 +862,7 @@ describe('Main Controller ', () => {
         await flushAsyncUpdates()
 
         // Otherwise the pending simulation stays on the dashboard until the app restarts
-        expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp], {})
+        expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
       }
     )
 
@@ -896,7 +901,7 @@ describe('Main Controller ', () => {
       await flushAsyncUpdates()
 
       expect(updateAccountStateSpy).not.toHaveBeenCalled()
-      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp], {})
+      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
     })
 
     test('should call updateSelectedAccount for recipient accounts from portfoliosToUpdate', async () => {
@@ -938,13 +943,11 @@ describe('Main Controller ', () => {
 
       expect(updateSelectedAccountSpy).toHaveBeenCalledWith(
         recipientAccount,
-        expect.arrayContaining([expect.objectContaining({ chainId: 1n })]),
-        undefined,
-        { blockNumberByChainId: {} }
+        expect.arrayContaining([expect.objectContaining({ chainId: 1n })])
       )
     })
 
-    test('reads the sender and the recipients at the receipt block of the confirmed op', async () => {
+    test('waits for the RPC to reach the confirmed block before the sender and the recipients are refreshed', async () => {
       const mainCtrl = await setupController()
 
       const confirmedAccountOp = {
@@ -969,9 +972,19 @@ describe('Main Controller ', () => {
           updatedAccountsOps: [confirmedAccountOp]
         }
       })
+      // The RPC is one block behind, then fails once on a node of its load balancer
+      const getBlockNumberSpy = jest
+        .spyOn(mainCtrl.providers.providers['1']!, 'getBlockNumber')
+        .mockResolvedValueOnce(122)
+        .mockRejectedValueOnce(new Error('rpc node down'))
+        .mockResolvedValue(123)
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+      const blockNumberReadsBeforeRefresh: number[] = []
       const updateAccountStateSpy = jest
         .spyOn(mainCtrl.accounts, 'updateAccountState')
-        .mockResolvedValue(undefined)
+        .mockImplementation(async () => {
+          blockNumberReadsBeforeRefresh.push(getBlockNumberSpy.mock.calls.length)
+        })
       jest.spyOn(mainCtrl.portfolio, 'scheduleUpdate').mockImplementation(() => {})
       const discardSimulationSpy = jest
         .spyOn(mainCtrl.portfolio, 'discardSimulation')
@@ -980,17 +993,23 @@ describe('Main Controller ', () => {
         .spyOn(mainCtrl.portfolio, 'updateSelectedAccount')
         .mockResolvedValue(undefined)
 
-      await mainCtrl.updateAccountsOpsStatuses()
-      await flushAsyncUpdates()
+      try {
+        await mainCtrl.updateAccountsOpsStatuses()
+        // The reads are 250ms and then 500ms apart
+        await wait(1000)
+        await flushAsyncUpdates()
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
-      expect(discardSimulationSpy).toHaveBeenCalledWith([confirmedAccountOp], { '1': 123 })
-      expect(updateSelectedAccountSpy).toHaveBeenCalledWith(
-        recipientAccount,
-        expect.arrayContaining([expect.objectContaining({ chainId: 1n })]),
-        undefined,
-        { blockNumberByChainId: { '1': 123 } }
-      )
+        expect(blockNumberReadsBeforeRefresh).toEqual([3, 3])
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(recipientAccount, 'latest', [1n], true)
+        expect(discardSimulationSpy).toHaveBeenCalledWith([confirmedAccountOp])
+        expect(updateSelectedAccountSpy).toHaveBeenCalledWith(
+          recipientAccount,
+          expect.arrayContaining([expect.objectContaining({ chainId: 1n })])
+        )
+      } finally {
+        consoleErrorSpy.mockRestore()
+      }
     })
 
     test('reports a failed refresh instead of leaving an unhandled rejection', async () => {
@@ -1016,6 +1035,7 @@ describe('Main Controller ', () => {
           updatedAccountsOps: [confirmedAccountOp]
         }
       })
+      jest.spyOn(mainCtrl.providers.providers['1']!, 'getBlockNumber').mockResolvedValue(123)
       jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockRejectedValue(new Error('rpc down'))
       const errors: string[] = []
       mainCtrl.onError((error) => errors.push(error.message))
@@ -1072,7 +1092,7 @@ describe('Main Controller ', () => {
 
       expect(mainCtrl.selectedAccount.account?.addr).toBe(selectedAccountAddr)
       expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
-      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp], {})
+      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
       // Scheduling targets the tx account, not the selected one.
       expect(scheduleUpdateSpy).toHaveBeenCalledWith({
         accountId: senderAccount,

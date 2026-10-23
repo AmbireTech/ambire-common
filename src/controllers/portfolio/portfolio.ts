@@ -7,22 +7,22 @@ import {
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { StaleRpcBlockError } from '../../classes/StaleRpcBlockError'
-import {
-  AFTER_RECEIPT_RETRY_MAX_DELAY_MS,
-  AFTER_RECEIPT_RETRY_MIN_DELAY_MS
-} from '../../consts/account'
 import { STK_WALLET } from '../../consts/addresses'
 import {
   BLACKLIST_UPDATE_INTERVAL,
   SCHEDULED_PORTFOLIO_UPDATE_DELAY,
   SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL
 } from '../../consts/intervals'
-import { ETHEREUM_CHAIN_ID, INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/networks'
 import {
+  ARBITRUM_CHAIN_ID,
+  ETHEREUM_CHAIN_ID,
+  INVICTUS_RPC_URL_IDENTIFIER
+} from '../../consts/networks'
+import {
+  ARBITRUM_STALE_RPC_BLOCK_THRESHOLD,
   DEFAULT_STALE_RPC_BLOCK_THRESHOLD,
   ETHEREUM_STALE_RPC_BLOCK_THRESHOLD,
-  getDiscoveryTimeout,
-  RECEIPT_BLOCK_READ_RETRY_LIMIT_MS
+  getDiscoveryTimeout
 } from '../../consts/portfolio'
 import {
   Account,
@@ -45,6 +45,7 @@ import { IVerificationController } from '../../interfaces/verification'
 import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
   DefiUpdateMode,
@@ -87,6 +88,7 @@ import {
   AccountState,
   ExchangeInfo,
   ExchangeInfoMap,
+  ExtendedError,
   ExtendedErrorWithLevel,
   ExternalAPITokenMarketDataResponse,
   ExternalPortfolioDiscoveryResponse,
@@ -95,7 +97,6 @@ import {
   GetOptions,
   NetworkState,
   PortfolioControllerState,
-  PortfolioLibGetResult,
   PortfolioNetworkResult,
   PortfolioVerification,
   ScheduledUpdates,
@@ -114,7 +115,6 @@ import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCa
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import { getWalletStakingShareValue } from '../../libs/walletStaking/shareValue'
 import batcher from '../../utils/batcher'
-import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
 
@@ -976,10 +976,7 @@ export class PortfolioController
    *
    * Example usage: after an account op is broadcasted and confirmed
    */
-  async discardSimulation(
-    accountOps: AccountOp[],
-    blockNumberByChainId?: { [chainId: string]: number }
-  ) {
+  async discardSimulation(accountOps: AccountOp[]) {
     const updatesByAccount: {
       [accountAddr: string]: {
         networksByChainId: { [chainId: string]: Network }
@@ -1028,8 +1025,7 @@ export class PortfolioController
             chainIds: Object.keys(networksByChainId)
           }))
           await this.updateSelectedAccount(accountAddr, networksToUpdate, undefined, {
-            accountOpIdsToDiscard: accountOpIdsByChainId,
-            blockNumberByChainId
+            accountOpIdsToDiscard: accountOpIdsByChainId
           })
         }
       )
@@ -1731,53 +1727,6 @@ export class PortfolioController
     }
   }
 
-  /**
-   * Reads the portfolio at a receipt block, so a lagging RPC can't return the state from before
-   * the receipt. The node may not have that block yet, so any error is retried until a time
-   * limit, and then `'both'` is read once (`isAtReceiptBlock: false`). Null when the account was
-   * removed or the network disabled while it retried, as a save would add them back.
-   */
-  async #getAtReceiptBlock(
-    accountAddr: AccountId,
-    network: Network,
-    portfolioLib: Portfolio,
-    getOptions: Partial<GetOptions>,
-    receiptBlockNumber: number
-  ): Promise<{ result: PortfolioLibGetResult; isAtReceiptBlock: boolean } | null> {
-    const startedAt = Date.now()
-    let delay = AFTER_RECEIPT_RETRY_MIN_DELAY_MS
-    let lastError: unknown
-
-    while (Date.now() - startedAt < RECEIPT_BLOCK_READ_RETRY_LIMIT_MS) {
-      try {
-        const result = await portfolioLib.get(accountAddr, {
-          ...getOptions,
-          blockTag: receiptBlockNumber
-        })
-        return { result, isAtReceiptBlock: true }
-      } catch (error) {
-        lastError = error
-      }
-
-      await wait(delay)
-      const isStillTracked =
-        !!this.#state[accountAddr]?.[network.chainId.toString()] &&
-        this.#networks.networks.some((n) => n.chainId === network.chainId)
-      if (!isStillTracked) return null
-
-      delay = Math.min(delay * 2, AFTER_RECEIPT_RETRY_MAX_DELAY_MS)
-    }
-
-    this.emitError({
-      level: 'silent',
-      message: `The portfolio could not be read at the receipt block ${receiptBlockNumber} on ${network.name} (${network.chainId}), so the latest block is read instead.`,
-      error: lastError instanceof Error ? lastError : new Error(String(lastError))
-    })
-
-    const result = await portfolioLib.get(accountAddr, { ...getOptions, blockTag: 'both' })
-    return { result, isAtReceiptBlock: false }
-  }
-
   // By our convention, we always stick with private (#) instead of protected methods.
   // However, we made a compromise here to allow Jest tests to mock updatePortfolioState.
   protected async updatePortfolioState(
@@ -1876,34 +1825,20 @@ export class PortfolioController
         delete state.verification
       }
 
-      const getOptions: Partial<GetOptions> = {
-        tokenDataRecency: 60000 * 5,
-        tokenDataCache: networkTokenDataCache,
-        knownTokenMetadata: this.hints.getKnownTokenMetadata(network.chainId),
-        knownCollectionMetadata: this.hints.getKnownCollectionMetadata(network.chainId),
-        fetchPinned: !hasNonZeroTokens,
-        ...allHints,
-        ...portfolioProps,
-        blockTag: portfolioProps.blockTag ?? 'both',
-        disableAutoDiscovery: true,
-        blacklist: this.#blacklist
-      }
-      const receiptBlockNumber =
-        typeof portfolioProps.blockTag === 'number' ? portfolioProps.blockTag : null
-
       // Fetch the portfolio and custom defi positions in parallel
-      const [portfolioRead, customPositionsResult] = await Promise.all([
-        receiptBlockNumber !== null
-          ? this.#getAtReceiptBlock(
-              account.addr,
-              network,
-              portfolioLib,
-              getOptions,
-              receiptBlockNumber
-            )
-          : portfolioLib
-              .get(account.addr, getOptions)
-              .then((result) => ({ result, isAtReceiptBlock: false })),
+      const [portfolioResult, customPositionsResult] = await Promise.all([
+        portfolioLib.get(account.addr, {
+          tokenDataRecency: 60000 * 5,
+          tokenDataCache: networkTokenDataCache,
+          knownTokenMetadata: this.hints.getKnownTokenMetadata(network.chainId),
+          knownCollectionMetadata: this.hints.getKnownCollectionMetadata(network.chainId),
+          fetchPinned: !hasNonZeroTokens,
+          ...allHints,
+          ...portfolioProps,
+          blockTag: 'both',
+          disableAutoDiscovery: true,
+          blacklist: this.#blacklist
+        }),
         getCustomProviderPositions(
           account.addr,
           portfolioLib.provider,
@@ -1915,15 +1850,6 @@ export class PortfolioController
           this.#featureFlags.isFeatureEnabled('tokenPrices')
         )
       ])
-
-      // The account was removed or the network disabled while the read retried
-      if (!portfolioRead) {
-        state.isLoading = false
-        if (state.verification?.status === 'loading') delete state.verification
-        this.emitUpdate()
-        return [false, null]
-      }
-      const { result: portfolioResult, isAtReceiptBlock } = portfolioRead
 
       const stkWalletToken =
         portfolioResult.tokens.find(
@@ -1965,14 +1891,13 @@ export class PortfolioController
       // A lagging RPC returns the state of an older block, which would take the portfolio
       // backwards - outdated balances and an outdated nonce for the simulation. Keep what
       // is already displayed until the RPC catches up.
-      const staleBlockThreshold =
-        network.chainId === ETHEREUM_CHAIN_ID
-          ? ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
-          : DEFAULT_STALE_RPC_BLOCK_THRESHOLD
+      let staleBlockThreshold = DEFAULT_STALE_RPC_BLOCK_THRESHOLD
+      if (network.chainId === ETHEREUM_CHAIN_ID)
+        staleBlockThreshold = ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
+      if (network.chainId === ARBITRUM_CHAIN_ID)
+        staleBlockThreshold = ARBITRUM_STALE_RPC_BLOCK_THRESHOLD
 
-      // A read at a receipt block includes that receipt, also when the stored result is from a
-      // newer block (on fast chains it often is by more than the threshold)
-      if (!isAtReceiptBlock && blocksBehind > staleBlockThreshold) {
+      if (blocksBehind > staleBlockThreshold) {
         throw new StaleRpcBlockError({
           receivedBlockNumber: portfolioResult.blockNumber,
           blocksBehind
@@ -2324,11 +2249,6 @@ export class PortfolioController
       isManualUpdate?: boolean
       bypassServerSideCache?: boolean
       accountOpIdsToDiscard?: { [chainId: string]: string[] }
-      /**
-       * Read these chains at the receipt block of a confirmed op, see #getAtReceiptBlock. A chain
-       * whose portfolio is already from a newer block is read at `'both'` instead.
-       */
-      blockNumberByChainId?: { [chainId: string]: number }
     }
   ) {
     const {
@@ -2339,8 +2259,7 @@ export class PortfolioController
       defiMaxDataAgeMs = -1,
       isManualUpdate,
       bypassServerSideCache,
-      accountOpIdsToDiscard,
-      blockNumberByChainId
+      accountOpIdsToDiscard
     } = opts || {}
     await this.initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
@@ -2386,17 +2305,13 @@ export class PortfolioController
           const simulatedAccountOps = accountState[network.chainId.toString()]?.accountOps
           const accountOpIdsToDiscardOnNetwork = accountOpIdsToDiscard?.[network.chainId.toString()]
           const accountOpIdsToDiscardSet = new Set(accountOpIdsToDiscardOnNetwork)
-          const receiptBlockNumber = blockNumberByChainId?.[network.chainId.toString()]
 
           // Read and filter the latest simulation inside the queue so an older confirmed
           // AccountOp cannot discard a newer simulation that was already queued before it.
           // Safe accounts are refreshed even without a matching simulation, because signed
           // Safe txns are intentionally not simulated while waiting in the Safe queue.
-          // After a receipt the balances changed, so they are always read again: the simulation
-          // may belong to another op, or there may be none.
           if (
             accountOpIdsToDiscardOnNetwork &&
-            receiptBlockNumber === undefined &&
             !selectedAccount.safeCreation &&
             !simulatedAccountOps?.some((op) => accountOpIdsToDiscardSet.has(op.id))
           )
@@ -2416,20 +2331,11 @@ export class PortfolioController
           const maxDataAgeMs = this.#getMaxDataAgeMs(
             accountId,
             network.chainId,
-            !!currentAccountOps ||
-              !!accountOpIdsToDiscardOnNetwork ||
-              receiptBlockNumber !== undefined,
+            !!currentAccountOps || !!accountOpIdsToDiscardOnNetwork,
             paramsMaxDataAgeMs,
             paramsMaxDataAgeMsUnused
           )
           const state = simulation?.states?.[network.chainId.toString()] || networkAccountState
-          const portfolioBlockNumber = accountState[network.chainId.toString()]?.result?.blockNumber
-          // Other pending ops are simulated on top of the latest state, as before. A portfolio
-          // from a newer block already includes the receipt, so the latest state is read too
-          const shouldReadAtReceiptBlock =
-            receiptBlockNumber !== undefined &&
-            !accountOpsToSimulate?.length &&
-            !(portfolioBlockNumber && portfolioBlockNumber > receiptBlockNumber)
 
           const baseAcc = state
             ? getBaseAccount(
@@ -2449,7 +2355,7 @@ export class PortfolioController
               maxDataAgeMs,
               isManualUpdate,
               bypassServerSideCache,
-              blockTag: shouldReadAtReceiptBlock ? receiptBlockNumber : 'both',
+              blockTag: 'both',
               defiMaxDataAgeMs,
               ...(accountOpsToSimulate &&
                 accountOpsToSimulate.length &&
@@ -2533,6 +2439,87 @@ export class PortfolioController
 
     await this.#updateNetworksWithAssets(accountId, accountState)
     this.emitUpdate()
+  }
+
+  // Reports to Sentry if the portfolio was not updated after an updated AccountOp.
+  // We previously encountered such a case (see https://github.com/AmbireTech/ambire-app/issues/6371),
+  // and this method is added to verify whether our hypothesis about the root cause is correct.
+  reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+    accountId: AccountId,
+    updatedAccountsOps: SubmittedAccountOp[]
+  ) {
+    if (!updatedAccountsOps.length) return
+
+    const accountState = this.#state[accountId]
+    if (!accountState) return
+
+    // The minimum block number that the portfolio must be updated to per chainId.
+    // The portfolio block does NOT have to match this block exactly.
+    // It can be higher (because other updates may have occurred in the meantime),
+    // but it must be >= this value to ensure the Activity confirmation is reflected.
+    const expectedMinPortfolioBlockByChainId: { [chainId: string]: number } = {}
+
+    for (const op of updatedAccountsOps) {
+      if (op.accountAddr !== accountId || !op.blockNumber) continue
+
+      const chainKey = op.chainId.toString()
+      const prev = expectedMinPortfolioBlockByChainId[chainKey]
+
+      if (prev == null || op.blockNumber > prev) {
+        expectedMinPortfolioBlockByChainId[chainKey] = op.blockNumber
+      }
+    }
+
+    // We don't need the full error and its stack trace reported to Sentry
+    const flatError = (e: ExtendedError) => ({
+      name: e.name,
+      message: e.message,
+      simulationErrorMsg: e.simulationErrorMsg
+    })
+
+    const chainIds = Object.keys(expectedMinPortfolioBlockByChainId)
+    if (!chainIds.length) return
+
+    for (const chainKey of chainIds) {
+      const expectedMinBlock = expectedMinPortfolioBlockByChainId[chainKey]
+      // satisfies TS and is safe guard
+      if (expectedMinBlock == null) continue
+
+      const networkState = accountState[chainKey]
+      const portfolioBlock = networkState?.result?.blockNumber
+      const isLoading = !!networkState?.isLoading
+      const hasCriticalError = !!networkState?.criticalError
+
+      // Can't validate yet - no portfolio data or still loading.
+      if (portfolioBlock == null) continue
+      if (isLoading) continue
+
+      // In case of a critical error, the portfolio won't be updated to the new block.
+      // However, we already handle this on the UI level (showing a warning + an option for a manual refresh),
+      // so we are not interested in reporting it.
+      if (hasCriticalError) continue
+
+      if (portfolioBlock < expectedMinBlock) {
+        const message =
+          '[PORTFOLIO_ACTIVITY_BLOCK_MISMATCH] Portfolio block is behind confirmed Activity block'
+        const error = new Error(message)
+
+        ;(error as any).debugInfo = {
+          accountId,
+          chainId: chainKey,
+          expectedMinBlock,
+          portfolioBlock,
+          errors: (networkState?.errors || []).map(flatError)
+        }
+
+        this.emitError({
+          level: 'silent',
+          sendCrashReport: true,
+          message,
+          error
+        })
+      }
+    }
   }
 
   markSimulationAsBroadcasted(accountId: string, chainId: bigint) {
