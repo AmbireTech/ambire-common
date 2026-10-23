@@ -17,7 +17,13 @@ export enum SigningStatus {
   WaitingForPaymaster = 'waiting-for-paymaster-response',
   Done = 'done',
   Queued = 'queued',
-  SafeQuickBroadcastBundler = 'safe-quick-broadcast-bundler'
+  SafeQuickBroadcastBundler = 'safe-quick-broadcast-bundler',
+  /**
+   * The pending transaction that is being sped up was processed before the speed up was
+   * signed, so its place (nonce) is taken and the speed up can't go through anymore.
+   * Final, nothing can be signed in this state.
+   */
+  SpeedUpNotNeeded = 'speed-up-not-needed'
 }
 
 export type Status = {
@@ -48,7 +54,8 @@ export const noStateUpdateStatuses = [
   SigningStatus.Done,
   SigningStatus.UpdatesPaused,
   SigningStatus.WaitingForPaymaster,
-  SigningStatus.SafeQuickBroadcastBundler
+  SigningStatus.SafeQuickBroadcastBundler,
+  SigningStatus.SpeedUpNotNeeded
 ]
 
 type Warning = {
