@@ -8,7 +8,6 @@ import {
   ZeroAddress
 } from 'ethers'
 
-import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { execTransactionAbi } from '../../../consts/safe'
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
@@ -684,33 +683,6 @@ const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknow
 const getArrayValueAt = (value: unknown, index: number): unknown =>
   Array.isArray(value) ? value[index] : value
 
-/**
- * A Morpho general adapter carries the action it performs in its own calldata and has no ERC-7730
- * descriptor of its own, so nothing above this can describe it. Tried only after the embedded call
- * failed to find a descriptor, so a descriptor always wins over this.
- */
-const getGeneralAdapterCalldataValue = (
-  context: FormatContext,
-  calldata: unknown,
-  callee: unknown,
-  amount: unknown
-): RichHumanizerVisualization | null => {
-  if (typeof calldata !== 'string' || !calldata.startsWith('0x')) return null
-  if (typeof callee !== 'string' || !isAddress(callee)) return null
-
-  const accountAddr = resolvePath('#.@.accountAddr', context, context.root)
-  if (typeof accountAddr !== 'string' || !isAddress(accountAddr)) return null
-
-  const decodedCall = decodeGeneralAdapterCall(accountAddr, {
-    to: callee,
-    data: calldata,
-    value: toBigIntOrNull(amount) || 0n
-  })
-  const decodedValue = decodedCall.fullVisualization?.intent.filter((item) => item.type !== 'break')
-
-  return decodedValue?.length ? getLegacyVisualization(decodedValue) : null
-}
-
 const getNestedErc7730CalldataValue = (
   context: FormatContext,
   calldata: unknown,
@@ -803,13 +775,6 @@ const getCalldataRows = (
     const nestedVisualization = getNestedErc7730CalldataValue(context, calldata, callee, amount)
     if (nestedVisualization) {
       acc.push({ type: 'call', value: nestedVisualization })
-
-      return acc
-    }
-
-    const generalAdapterValue = getGeneralAdapterCalldataValue(context, calldata, callee, amount)
-    if (generalAdapterValue) {
-      acc.push({ type: 'call', value: generalAdapterValue })
 
       return acc
     }

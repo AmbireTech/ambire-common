@@ -17,10 +17,13 @@ import { getCowSwapOrderUid } from '../../services/cowswap/helper'
 import { AccountOp } from '../accountOp/accountOp'
 import { Erc7730CallDescriptors, EMPTY_ERC7730_KNOWN, resolveErc7730Descriptors } from './erc7730'
 import { humanizeAccountOp, humanizeMessage } from './index'
+import { IrCall } from './interfaces'
 import {
   erc20TransferAbi,
   erc20TransferFromAbi,
+  morphoBorrowAbi,
   morphoRepayAbi,
+  morphoSupplyCollateralAbi,
   morphoWithdrawCollateralAbi,
   publicAllocatorReallocateToAbi
 } from './modules/Bundler3/generalAdapter'
@@ -2332,6 +2335,185 @@ describe('ERC-7730 descriptors', () => {
           ['0xd96ca0b9', '0x4d5fcf68', '0x1af3bbc6', '0x3790767d'].includes(value.content || '')
         )
     ).toBe(false)
+  })
+
+  describe('calls to a Morpho general adapter inside a Bundler3 bundle', () => {
+    const morphoBundler = '0x6BFd8137e702540E7A42B74178A4a49Ba43920C4'
+    const generalAdapter = '0xb98c948cfa24072e58935bc004a8a7b376ae746a'
+    const baseUsdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+    const baseCbBtc = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
+    const owner = '0xd8293ad21678c6f09da139b4b62d38e514a03b78'
+    const stranger = '0x9999999999999999999999999999999999999999'
+    const bundlerRegistryPath = 'registry/morpho/calldata-MorphoBundlerV3.json'
+    const adapterRegistryPath = 'test/morpho/calldata-GeneralAdapter1.json'
+    const marketParams = {
+      loanToken: baseUsdc,
+      collateralToken: baseCbBtc,
+      oracle: '0x663becd10dae6c4a3dcd89f1d76c1174199639b9',
+      irm: '0x46415998764c29ab2a25cbea6254146d50d22687',
+      lltv: 86145408065551n
+    } as const
+    const multicallInterface = new ethers.Interface([
+      'function multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)'
+    ])
+
+    const getBundleOp = (adapter: string, receiver: string): AccountOp => ({
+      ...accountOp,
+      accountAddr: owner,
+      chainId: 8453n,
+      calls: [
+        {
+          to: morphoBundler,
+          value: 0n,
+          data: multicallInterface.encodeFunctionData('multicall', [
+            [
+              encodeFunctionData({
+                abi: erc20TransferAbi,
+                args: [baseUsdc, owner, 7n]
+              }),
+              encodeFunctionData({
+                abi: morphoSupplyCollateralAbi,
+                args: [marketParams, 100000n, receiver, '0x']
+              }),
+              encodeFunctionData({
+                abi: morphoBorrowAbi,
+                args: [marketParams, 50_000000n, 0n, 0n, receiver]
+              })
+            ].map((data) => ({
+              to: adapter,
+              data,
+              value: 0n,
+              skipRevert: false,
+              callbackHash: ethers.ZeroHash
+            }))
+          ])
+        }
+      ]
+    })
+
+    // The Bundler3 descriptor as the registry has it, and optionally a descriptor of the adapter
+    const getRelayer =
+      (adapterDescriptor?: Record<string, unknown>) =>
+      async (path: string, method?: string, body?: any) => {
+        if (path === '/v2/erc7730/account-op') {
+          return {
+            success: true,
+            data: {
+              [`eip155:8453:${morphoBundler.toLowerCase()}`]: bundlerRegistryPath,
+              ...(adapterDescriptor
+                ? { [`eip155:8453:${generalAdapter}`]: adapterRegistryPath }
+                : {})
+            },
+            errorState: []
+          }
+        }
+
+        if (
+          path === '/v2/erc7730/fetch-descriptor' &&
+          body.descriptorPath === `/${adapterRegistryPath}`
+        ) {
+          return { success: true, ...adapterDescriptor }
+        }
+
+        if (path === '/v2/erc7730/fetch-descriptor') {
+          return {
+            success: true,
+            display: {
+              formats: {
+                'multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)':
+                  {
+                    intent: 'Bundler3 Multicall',
+                    fields: [
+                      {
+                        path: '#.bundle.[].data',
+                        label: 'Action',
+                        format: 'calldata',
+                        params: {
+                          calleePath: '#.bundle.[].to',
+                          amountPath: '#.bundle.[].value'
+                        },
+                        visible: 'always'
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+
+        throw new Error(`Unexpected ERC-7730 relayer call: ${path} ${method}`)
+      }
+
+    const humanizeBundle = async (
+      bundleOp: AccountOp,
+      adapterDescriptor?: Record<string, unknown>
+    ) => {
+      const descriptors = await getTestErc7730Descriptors(bundleOp, getRelayer(adapterDescriptor))
+
+      return humanizeAccountOp(bundleOp, { erc7730Descriptors: descriptors })[0]!
+    }
+
+    const getActions = (call: IrCall) =>
+      call.fullVisualization!.fields.map(
+        (row) => getRowValues(row).find((value) => value.type === 'action')?.content
+      )
+
+    test('are described by the module, and its warning reaches the result of the Bundler3 descriptor', async () => {
+      const call = await humanizeBundle(getBundleOp(generalAdapter, stranger))
+
+      expect(call.isErc7730).toBe(true)
+      expect(getActions(call)).toEqual(['Transfer', 'Supply', 'Borrow'])
+      expect(call.warnings?.map((warning) => warning.code)).toEqual(['Morpho_diff_addr'])
+      expect(call.warnings?.[0]?.content).toContain(stranger)
+    })
+
+    test('give no warning when the actions are for the account', async () => {
+      const call = await humanizeBundle(getBundleOp(generalAdapter, owner))
+
+      expect(getActions(call)).toEqual(['Transfer', 'Supply', 'Borrow'])
+      expect(call.warnings).toEqual([])
+    })
+
+    test('are described when the adapter is at an address nothing is registered for', async () => {
+      const call = await humanizeBundle(
+        getBundleOp('0x3a9c1f5d8e7b2a4c6d0e9f1a2b3c4d5e6f708192', stranger)
+      )
+
+      expect(getActions(call)).toEqual(['Transfer', 'Supply', 'Borrow'])
+      expect(call.warnings?.map((warning) => warning.code)).toEqual(['Morpho_diff_addr'])
+    })
+
+    test('are described by the descriptor of the adapter when it has one', async () => {
+      const call = await humanizeBundle(getBundleOp(generalAdapter, owner), {
+        display: {
+          formats: {
+            'erc20Transfer(address token, address receiver, uint256 amount)': {
+              intent: 'Send token',
+              fields: [
+                {
+                  path: 'amount',
+                  label: 'Amount',
+                  format: 'tokenAmount',
+                  params: { tokenPath: '#.token' },
+                  visible: 'always'
+                }
+              ]
+            }
+          }
+        }
+      })
+      const [firstRow] = call.fullVisualization!.fields
+
+      expect(firstRow).toMatchObject({
+        type: 'call',
+        value: {
+          intent: [expect.objectContaining({ content: 'Send token' })],
+          fields: [{ label: 'Amount' }]
+        }
+      })
+      // the actions the descriptor does not know are still described by the module
+      expect(getActions(call).slice(1)).toEqual(['Supply', 'Borrow'])
+    })
   })
 
   test('humanizes Morpho PublicAllocator reallocateTo in Bundler3 ERC-7730 calldata', () => {
