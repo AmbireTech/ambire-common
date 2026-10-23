@@ -1913,6 +1913,62 @@ describe('DappsController', () => {
       emitUpdateSpy.mockRestore()
     })
 
+    test('keeps the account picked for a dapp when the wallet switches to another one it may see', async () => {
+      const dappId = 'pinned-dapp.com'
+      const { controller } = await prepareWithDapps([
+        makeDapp({
+          id: dappId,
+          name: 'Pinned Dapp',
+          url: `https://${dappId}`,
+          isConnected: true,
+          accountPreferences: {
+            enabled: true,
+            selectedAccount: ADDR_1,
+            accounts: [ADDR_1, ADDR_2],
+            isSelectedAccountPinned: true
+          }
+        })
+      ])
+
+      await controller.getOrCreateDappSession({ tabId: 1, url: `https://${dappId}` })
+
+      const broadcastSpy = jest
+        .spyOn(controller, 'broadcastDappSessionEvent')
+        .mockResolvedValue(undefined)
+
+      await controller.onSelectedAccountChange(ADDR_2)
+
+      expect(controller.getDapp(dappId)!.accountPreferences!.selectedAccount).toBe(ADDR_1)
+      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_1, ADDR_2], dappId, true)
+      broadcastSpy.mockRestore()
+    })
+
+    test('unpins the account picked for a dapp once it is removed', async () => {
+      const dappId = 'pinned-removed-dapp.com'
+      const { controller } = await prepareWithDapps([
+        makeDapp({
+          id: dappId,
+          name: 'Pinned Removed Dapp',
+          url: `https://${dappId}`,
+          isConnected: true,
+          accountPreferences: {
+            enabled: true,
+            selectedAccount: ADDR_1,
+            accounts: [ADDR_1, ADDR_2, ADDR_3],
+            isSelectedAccountPinned: true
+          }
+        })
+      ])
+
+      controller.removeAccountData(ADDR_3)
+      expect(controller.getDapp(dappId)!.accountPreferences!.isSelectedAccountPinned).toBe(true)
+
+      controller.removeAccountData(ADDR_1)
+      const preferences = controller.getDapp(dappId)!.accountPreferences!
+      expect(preferences.selectedAccount).toBe(ADDR_2)
+      expect(preferences.isSelectedAccountPinned).toBe(false)
+    })
+
     test('mainCtrl.selectAccount delegates to onSelectedAccountChange; removeAccount calls dapps.removeAccountData', async () => {
       const { mainCtrl } = await prepareWithDapps([])
 
