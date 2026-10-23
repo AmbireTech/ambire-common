@@ -2324,7 +2324,10 @@ export class PortfolioController
       isManualUpdate?: boolean
       bypassServerSideCache?: boolean
       accountOpIdsToDiscard?: { [chainId: string]: string[] }
-      /** Read these chains at the receipt block of a confirmed op, see #getAtReceiptBlock */
+      /**
+       * Read these chains at the receipt block of a confirmed op, see #getAtReceiptBlock. A chain
+       * whose portfolio is already from a newer block is read at `'both'` instead.
+       */
       blockNumberByChainId?: { [chainId: string]: number }
     }
   ) {
@@ -2420,6 +2423,13 @@ export class PortfolioController
             paramsMaxDataAgeMsUnused
           )
           const state = simulation?.states?.[network.chainId.toString()] || networkAccountState
+          const portfolioBlockNumber = accountState[network.chainId.toString()]?.result?.blockNumber
+          // Other pending ops are simulated on top of the latest state, as before. A portfolio
+          // from a newer block already includes the receipt, so the latest state is read too
+          const shouldReadAtReceiptBlock =
+            receiptBlockNumber !== undefined &&
+            !accountOpsToSimulate?.length &&
+            !(portfolioBlockNumber && portfolioBlockNumber > receiptBlockNumber)
 
           const baseAcc = state
             ? getBaseAccount(
@@ -2439,11 +2449,7 @@ export class PortfolioController
               maxDataAgeMs,
               isManualUpdate,
               bypassServerSideCache,
-              // Other pending ops are simulated on top of the latest state, as before
-              blockTag:
-                receiptBlockNumber !== undefined && !accountOpsToSimulate?.length
-                  ? receiptBlockNumber
-                  : 'both',
+              blockTag: shouldReadAtReceiptBlock ? receiptBlockNumber : 'both',
               defiMaxDataAgeMs,
               ...(accountOpsToSimulate &&
                 accountOpsToSimulate.length &&
