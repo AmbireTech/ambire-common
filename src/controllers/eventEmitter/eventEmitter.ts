@@ -388,8 +388,9 @@ export default class EventEmitter<DebugFlow extends string = string> {
   toJSON() {
     return {
       ...this,
-      name: this.name,
-      emittedErrors: this.emittedErrors // includes the getter in the stringified instance
+      // `emittedErrors` is left out on purpose. The UI gets errors through a separate
+      // error message, and sending them with every update slows down messaging.
+      name: this.name
     }
   }
 }
