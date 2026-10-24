@@ -5,6 +5,7 @@ import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { getPrivacyPoolsDepositAsset } from '../../consts/privacyPools'
+import { TORNADO_CASH_CHAIN_ID, TORNADO_CASH_MAX_NOTES_PER_DEPOSIT } from '../../consts/tornadoCash'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
@@ -20,6 +21,8 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IPrivacyPoolsController } from '../../interfaces/privacyPools'
+import { PrivateAccountRef } from '../../interfaces/privateAccount'
+import { ITornadoCashController } from '../../interfaces/tornadoCash'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
@@ -40,6 +43,13 @@ import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount, sortTokensByBalanceInUSD } from '../../libs/portfolio/helpers'
+import { isSamePrivateAccount } from '../../libs/privateAccount/privateAccount'
+import {
+  countTornadoCashNotes,
+  describeTornadoCashAmounts,
+  getTornadoCashPoolsOfAsset,
+  splitIntoTornadoCashNotes
+} from '../../libs/tornadoCash/amounts'
 import {
   getAmountAfterFeeReserve,
   getAmountAfterFeeSync,
@@ -151,21 +161,36 @@ export class TransferController extends EventEmitter implements ITransferControl
   isTopUp: boolean = false
 
   /**
-   * Seed id of the Privacy Pools account to deposit into, instead of an address. Exclusive with
-   * `addressState`: setting either clears the other. Limits the tokens to what the pools accept.
+   * The private account (Privacy Pools, Tornado Cash) to deposit into, instead of an address.
+   * Exclusive with `addressState`: setting either clears the other. Limits the tokens to what its
+   * protocol accepts.
    */
-  privacyPoolsRecipient: string | null = null
+  privateRecipient: PrivateAccountRef | null = null
 
-  /** Whether the deposit calls are being built. The first build per account syncs its network. */
-  isPreparingPrivacyPoolsDeposit = false
+  /**
+   * Whether the deposit calls are being built, which starts once the user proceeds (see
+   * `preparePrivateDeposit`). The first build per account syncs its network.
+   */
+  isPreparingPrivateDeposit = false
+
+  /**
+   * Counts the finished `preparePrivateDeposit` calls, whether they worked or not, so the UI can
+   * tell when the one it asked for is done.
+   */
+  privateDepositPreparationsCount = 0
 
   /** Why the deposit cannot be prepared, in words for the user. */
-  privacyPoolsDepositError: string | null = null
+  privateDepositError: string | null = null
 
   /** Lets a newer deposit preparation discard the result of an older, slower one. */
-  #privacyPoolsDepositPreparationId = 0
+  #privateDepositPreparationId = 0
+
+  /** What the account op's deposit calls were built for, so they are built again only on a change. */
+  #preparedPrivateDepositKey: string | null = null
 
   #privacyPools?: IPrivacyPoolsController
+
+  #tornadoCash?: ITornadoCashController
 
   #shouldSkipTransactionQueuedModal: boolean = false
 
@@ -258,6 +283,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     contractInfo: IContractInfoController,
     platform: Platform,
     privacyPools?: IPrivacyPoolsController,
+    tornadoCash?: ITornadoCashController,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
@@ -281,6 +307,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#dapps = dapps
     this.#erc7730 = erc7730
     this.#privacyPools = privacyPools
+    this.#tornadoCash = tornadoCash
     this.#contractInfo = contractInfo
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
@@ -333,7 +360,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     // Re-validates the amount once the entrypoint's deposit limits are read
     this.#privacyPools?.onUpdate((forceEmit) => {
-      if (!this.#currentTransferSessionId || !this.privacyPoolsRecipient) return
+      if (!this.#currentTransferSessionId || this.privateRecipient?.providerId !== 'privacyPools')
+        return
 
       this.propagateUpdate(forceEmit)
     }, 'transfer-privacy-pools-recipient')
@@ -397,14 +425,14 @@ export class TransferController extends EventEmitter implements ITransferControl
       const hasAmount = Number(getTokenAmount(token)) > 0
       const isVisible = !token.flags.isHidden
 
-      if (this.privacyPoolsRecipient) {
+      if (this.privateRecipient) {
         return (
           hasAmount &&
           isVisible &&
           !token.flags.onGasTank &&
           !token.flags.rewardsType &&
           token.flags.defiTokenType !== AssetType.Borrow &&
-          this.#isPrivacyPoolsDepositToken(token)
+          this.#isPrivateDepositToken(token)
         )
       }
 
@@ -444,8 +472,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
   }
 
-  /** Whether a Privacy Pools account can receive this token, and send it out again. */
-  #isPrivacyPoolsDepositToken(token: TokenResult) {
+  /** Whether the private recipient can receive this token, and send it out again. */
+  #isPrivateDepositToken(token: TokenResult) {
+    if (this.privateRecipient?.providerId === 'tornadoCash')
+      return (
+        token.chainId === TORNADO_CASH_CHAIN_ID &&
+        getTornadoCashPoolsOfAsset(token.address).length > 0
+      )
+
     return (
       !!this.#privacyPools?.supportedChainIds.includes(token.chainId.toString()) &&
       !!getPrivacyPoolsDepositAsset(token.chainId, token.address)
@@ -584,7 +618,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.amountFieldMode = 'token'
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.#onRecipientAddressChange()
-    this.#clearPrivacyPoolsRecipient()
+    this.#clearPrivateRecipient()
     // This MUST be incremented and not reset to zero, because the UI relies on
     // the change of this value. If the value was 0 and is reset to 0, the UI
     // would not detect a change.
@@ -625,7 +659,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     // amount." error showing up later for an account with no tokens to select)
     const validationFormMsgsNew = { ...DEFAULT_VALIDATION_FORM_MSGS }
 
-    if (this.privacyPoolsRecipient) {
+    if (this.privateRecipient) {
       // No address to check: the recipient is one of the wallet's own accounts
       validationFormMsgsNew.recipientAddress = { severity: 'success', message: '' }
     } else if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
@@ -660,13 +694,43 @@ export class TransferController extends EventEmitter implements ITransferControl
       validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
     }
 
-    const privacyPoolsAmountError =
-      validationFormMsgsNew.amount.severity === 'success' && this.#getPrivacyPoolsAmountError()
-    if (privacyPoolsAmountError) {
-      validationFormMsgsNew.amount = { severity: 'error', message: privacyPoolsAmountError }
+    const privateAmountError =
+      validationFormMsgsNew.amount.severity === 'success' && this.#getPrivateAmountError()
+    if (privateAmountError) {
+      validationFormMsgsNew.amount = { severity: 'error', message: privateAmountError }
     }
 
     return validationFormMsgsNew
+  }
+
+  /** Checks the amount against what the private recipient's protocol accepts. Null when it passes. */
+  #getPrivateAmountError(): string | null {
+    if (this.privateRecipient?.providerId === 'tornadoCash')
+      return this.#getTornadoCashAmountError()
+
+    return this.#getPrivacyPoolsAmountError()
+  }
+
+  /**
+   * Tornado Cash holds fixed amounts, so the amount must be an exact sum of them, in at most
+   * `TORNADO_CASH_MAX_NOTES_PER_DEPOSIT` parts.
+   */
+  #getTornadoCashAmountError(): string | null {
+    const token = this.selectedToken
+    if (!token) return null
+
+    const amount = parseUnits(
+      getSafeAmountFromFieldValue(this.amount, token.decimals) || '0',
+      token.decimals
+    )
+    const noteCounts = splitIntoTornadoCashNotes(token.address, amount)
+    if (!noteCounts)
+      return `Tornado Cash accepts only ${describeTornadoCashAmounts(token.address)}, or a sum of them.`
+
+    if (countTornadoCashNotes(noteCounts) > TORNADO_CASH_MAX_NOTES_PER_DEPOSIT)
+      return 'This amount is split into too many parts to send at once. Please send a rounder amount.'
+
+    return null
   }
 
   /**
@@ -675,7 +739,7 @@ export class TransferController extends EventEmitter implements ITransferControl
    */
   #getPrivacyPoolsAmountError(): string | null {
     const token = this.selectedToken
-    if (!this.privacyPoolsRecipient || !token) return null
+    if (this.privateRecipient?.providerId !== 'privacyPools' || !token) return null
 
     const asset = getPrivacyPoolsDepositAsset(token.chainId, token.address)
     if (!asset) return 'This token cannot be sent to a Privacy Pools account.'
@@ -715,8 +779,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     const areFormFieldsValid = this.validationFormMsgs.amount.severity === 'success'
 
-    // No address to resolve; the amount check covers the pools' limits
-    if (this.privacyPoolsRecipient) return !!this.selectedToken && areFormFieldsValid
+    // No address to resolve; the amount check covers the protocol's limits
+    if (this.privateRecipient) return !!this.selectedToken && areFormFieldsValid
 
     return areFormFieldsValid && !this.addressState.isDomainResolving
   }
@@ -751,7 +815,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     addressState,
     isRecipientAddressUnknownAgreed,
     amountFieldMode,
-    privacyPoolsRecipient
+    privateRecipient
   }: TransferUpdate) {
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
@@ -792,7 +856,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#setTokenAmount(maxAmountAfterFeeReservation, true)
     }
 
-    if (privacyPoolsRecipient !== undefined) this.#setPrivacyPoolsRecipient(privacyPoolsRecipient)
+    if (privateRecipient !== undefined) this.#setPrivateRecipient(privateRecipient)
 
     if (addressState) {
       this.addressState = {
@@ -800,13 +864,16 @@ export class TransferController extends EventEmitter implements ITransferControl
         ...addressState
       }
       // Typing an address means sending to it instead
-      if (this.addressState.fieldValue) this.#setPrivacyPoolsRecipient(null)
+      if (this.addressState.fieldValue) this.#setPrivateRecipient(null)
       if (this.isInitialized) {
         this.#onRecipientAddressChange()
       }
     }
 
-    if (this.privacyPoolsRecipient && (selectedToken || privacyPoolsRecipient)) {
+    if (
+      this.privateRecipient?.providerId === 'privacyPools' &&
+      (selectedToken || privateRecipient)
+    ) {
       this.#loadPrivacyPoolsDepositLimits()
     }
     // We can do a regular check here, because the property defines if it should be updated
@@ -822,18 +889,19 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   /**
-   * Switches between sending to a Privacy Pools account and to an address. Drops the account op
-   * either way, as the calls and the tokens to choose from differ.
+   * Switches between sending to a private account and to an address. Drops the account op either
+   * way, as the calls and the tokens to choose from differ.
    */
-  #setPrivacyPoolsRecipient(seedId: string | null) {
-    if (this.privacyPoolsRecipient === seedId) return
+  #setPrivateRecipient(privateRecipient: PrivateAccountRef | null) {
+    if (isSamePrivateAccount(this.privateRecipient, privateRecipient)) return
 
-    this.privacyPoolsRecipient = seedId
-    this.privacyPoolsDepositError = null
-    this.isPreparingPrivacyPoolsDeposit = false
-    this.#privacyPoolsDepositPreparationId += 1
+    this.privateRecipient = privateRecipient
+    this.privateDepositError = null
+    this.isPreparingPrivateDeposit = false
+    this.#privateDepositPreparationId += 1
+    this.#preparedPrivateDepositKey = null
 
-    if (seedId) {
+    if (privateRecipient) {
       this.addressState = { ...DEFAULT_ADDRESS_STATE }
       this.#onRecipientAddressChange()
       // The address field may still hold the text typed to find the account; make the UI clear it
@@ -845,11 +913,12 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (!this.selectedToken) this.#setDefaultSelectedToken()
   }
 
-  #clearPrivacyPoolsRecipient() {
-    this.privacyPoolsRecipient = null
-    this.privacyPoolsDepositError = null
-    this.isPreparingPrivacyPoolsDeposit = false
-    this.#privacyPoolsDepositPreparationId += 1
+  #clearPrivateRecipient() {
+    this.privateRecipient = null
+    this.privateDepositError = null
+    this.isPreparingPrivateDeposit = false
+    this.#privateDepositPreparationId += 1
+    this.#preparedPrivateDepositKey = null
   }
 
   /** Loads the entrypoint's deposit limits for the selected token. */
@@ -1154,7 +1223,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.isRecipientAddressFirstTimeSend =
       !found &&
-      !this.privacyPoolsRecipient &&
+      !this.privateRecipient &&
       this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
 
@@ -1189,7 +1258,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.amount ||
       this.amountInFiat ||
       this.addressState.fieldValue ||
-      this.privacyPoolsRecipient
+      this.privateRecipient
     )
   }
 
@@ -1197,8 +1266,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     // shouldn't happen ever
     if (!this.#selectedAccount.account) return
 
-    if (this.privacyPoolsRecipient) {
-      await this.#syncPrivacyPoolsDeposit()
+    // Building a private deposit's calls is slow, so it waits for the user to proceed
+    if (this.privateRecipient) {
+      this.#dropOutdatedPrivateDeposit()
       return
     }
 
@@ -1251,66 +1321,135 @@ export class TransferController extends EventEmitter implements ITransferControl
     await this.#initSignAccOp(userRequestParams.calls, userRequestParams.meta.topUpAmount)
   }
 
-  /** Builds the deposit calls into a Privacy Pools account. May first sync its network (slow). */
-  async buildPrivacyPoolsDepositCalls({
-    seedId,
+  /**
+   * Builds the deposit calls into a private account (Privacy Pools, Tornado Cash). May first sync
+   * its protocol's state (slow).
+   */
+  async buildPrivateDepositCalls({
+    privateRecipient,
     selectedToken,
     amount
   }: {
-    seedId: string
+    privateRecipient: PrivateAccountRef
     selectedToken: TokenResult
     /** Already sanitized to the token's decimals. */
     amount: string
   }): Promise<Call[]> {
-    if (!this.#privacyPools || !this.#selectedAccount.account)
-      throw new EmittableError({
-        message: 'Sending to a Privacy Pools account is not available here.',
+    const accountAddr = this.#selectedAccount.account?.addr
+    const { providerId, seedId } = privateRecipient
+    const notAvailable = () =>
+      new EmittableError({
+        message: 'Sending to this private account is not available here.',
         level: 'expected',
-        error: new Error('transfer: no Privacy Pools controller or selected account')
+        error: new Error(`transfer: no ${providerId} controller or selected account`)
       })
+
+    if (providerId === 'tornadoCash') {
+      if (!this.#tornadoCash || !accountAddr) throw notAvailable()
+
+      return this.#tornadoCash.buildDepositCalls({
+        seedId,
+        accountAddr,
+        assetAddress: selectedToken.address,
+        amount: parseUnits(amount, selectedToken.decimals)
+      })
+    }
+
+    if (!this.#privacyPools || !accountAddr) throw notAvailable()
 
     return this.#privacyPools.buildDepositCalls({
       seedId,
-      accountAddr: this.#selectedAccount.account.addr,
+      accountAddr,
       chainId: selectedToken.chainId.toString(),
       tokenAddress: selectedToken.address,
       amount: parseUnits(amount, selectedToken.decimals)
     })
   }
 
-  async #syncPrivacyPoolsDeposit() {
-    const seedId = this.privacyPoolsRecipient
+  /** Identifies what a deposit is built for: the recipient, the token and the amount. */
+  #getPrivateDepositKey() {
     const token = this.#selectedToken
-    if (!seedId || !token || !this.amount || !this.isFormValid) return
+    if (!this.privateRecipient || !token) return null
 
-    this.#privacyPoolsDepositPreparationId += 1
-    const preparationId = this.#privacyPoolsDepositPreparationId
-    const isCurrent = () => preparationId === this.#privacyPoolsDepositPreparationId
+    const { providerId, seedId } = this.privateRecipient
+    const amount = getSafeAmountFromFieldValue(this.amount, token.decimals)
 
-    this.isPreparingPrivacyPoolsDeposit = true
-    this.privacyPoolsDepositError = null
+    return [providerId, seedId, token.chainId, token.address, amount].join(':')
+  }
+
+  /**
+   * Drops the deposit being built and the account op of a built one once the form no longer
+   * matches them. Kept while the user has proceeded, as the form cannot change then.
+   */
+  #dropOutdatedPrivateDeposit() {
+    if (this.hasProceeded) return
+
+    const key = this.#getPrivateDepositKey()
+    if (key && key === this.#preparedPrivateDepositKey && this.signAccountOpController) return
+    if (
+      !this.isPreparingPrivateDeposit &&
+      !this.signAccountOpController &&
+      !this.privateDepositError
+    )
+      return
+
+    this.#privateDepositPreparationId += 1
+    this.#preparedPrivateDepositKey = null
+    this.isPreparingPrivateDeposit = false
+    this.privateDepositError = null
+    this.destroySignAccountOp()
+  }
+
+  /**
+   * Builds the private deposit's calls and its account op, once the user proceeds. A no-op when
+   * they are already built for the form as it is. Counted in `privateDepositPreparationsCount`
+   * when done, whether it worked or not.
+   */
+  async preparePrivateDeposit() {
+    const isAlreadyPrepared =
+      !!this.signAccountOpController &&
+      this.#getPrivateDepositKey() === this.#preparedPrivateDepositKey
+
+    if (!isAlreadyPrepared) await this.#syncPrivateDeposit()
+
+    this.privateDepositPreparationsCount += 1
+    this.emitUpdate()
+  }
+
+  async #syncPrivateDeposit() {
+    const privateRecipient = this.privateRecipient
+    const token = this.#selectedToken
+    const key = this.#getPrivateDepositKey()
+    if (!privateRecipient || !token || !this.amount || !this.isFormValid) return
+
+    this.#privateDepositPreparationId += 1
+    const preparationId = this.#privateDepositPreparationId
+    const isCurrent = () => preparationId === this.#privateDepositPreparationId
+
+    this.isPreparingPrivateDeposit = true
+    this.privateDepositError = null
     this.emitUpdate()
 
     let calls: Call[]
     try {
-      calls = await this.buildPrivacyPoolsDepositCalls({
-        seedId,
+      calls = await this.buildPrivateDepositCalls({
+        privateRecipient,
         selectedToken: token,
         amount: getSafeAmountFromFieldValue(this.amount, token.decimals)
       })
     } catch (error: any) {
       if (!isCurrent()) return
 
-      this.isPreparingPrivacyPoolsDeposit = false
+      this.isPreparingPrivateDeposit = false
       // Shown in the form, not as a toast, which would pop up again on every keystroke
-      this.privacyPoolsDepositError =
+      this.privateDepositError =
         error instanceof EmittableError
           ? error.message
-          : 'Could not prepare the transfer to this Privacy Pools account. Please try again.'
+          : 'Could not prepare the transfer to this private account. Please try again.'
       if (!(error instanceof EmittableError))
         this.emitError({
           level: 'silent',
-          message: this.privacyPoolsDepositError,
+          message: this.privateDepositError,
           error: error instanceof Error ? error : new Error('transfer: deposit preparation failed')
         })
       this.emitUpdate()
@@ -1319,7 +1458,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     if (!isCurrent()) return
 
-    this.isPreparingPrivacyPoolsDeposit = false
+    this.isPreparingPrivateDeposit = false
+    this.#preparedPrivateDepositKey = key
 
     if (this.signAccountOpController) {
       this.signAccountOpController.update({ accountOpData: { calls } })

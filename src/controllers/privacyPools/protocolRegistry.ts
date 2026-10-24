@@ -206,7 +206,7 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
     if (existing) return existing
 
     const keystore = createKohakuKeystore((path) =>
-      this.#ctx.keystore.derivePrivacyPoolsKey(seedId, path)
+      this.#ctx.keystore.derivePrivacyKey(seedId, 'privacyPools', path)
     )
     this.#kohakuKeystores.set(seedId, keystore)
 

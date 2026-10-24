@@ -3490,7 +3490,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
     // Read once, as the selection can change while this awaits, and the quote guards below
-    // drop the result then. Missing when a Privacy Pools account is selected.
+    // drop the result then. Missing when a private account is selected.
     const { account } = this.#selectedAccount
     if (!account) return
 

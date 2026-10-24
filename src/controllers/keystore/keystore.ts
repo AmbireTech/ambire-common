@@ -39,7 +39,6 @@ import {
   DERIVATION_OPTIONS,
   HD_PATH_TEMPLATE_TYPE
 } from '../../consts/derivation'
-import { PRIVACY_POOLS_SIGNING_KEY_PATH } from '../../consts/privacyPools'
 import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -65,11 +64,13 @@ import {
   StoredKeystoreSeed
 } from '../../interfaces/keystore'
 import { Platform } from '../../interfaces/platform'
+import { PrivacyProviderId } from '../../interfaces/privateAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { AppDataSyncPayload } from '../../libs/appDataSync/appDataSync'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
+import { isAllowedPrivacyKeyPath } from '../../libs/privateAccount/keyPaths'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
@@ -1549,22 +1550,27 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Derives a recovery phrase's Privacy Pools signing key, so the phrase never reaches
-   * `@kohaku-eth/privacy-pools`, whose bundled keystore would keep it.
+   * Derives a key of a recovery phrase for a privacy plugin (`@kohaku-eth/*`), so the phrase never
+   * reaches the plugin, whose bundled keystore would keep it.
    *
    * The path check is the security boundary: the SDK chooses the paths, so without it a bug or a
-   * malicious bump could get the user's EVM keys. Only `PRIVACY_POOLS_SIGNING_KEY_PATH` passes.
+   * malicious bump could get the user's EVM keys. Only the provider's paths pass - see
+   * `isAllowedPrivacyKeyPath`.
    *
    * Not cached here: each call decrypts the phrase and runs a PBKDF2, so callers keep the key while
    * unlocked - see `createKohakuKeystore`.
    */
-  async derivePrivacyPoolsKey(seedId: KeystoreSeed['id'], path: string): Promise<Hex> {
+  async derivePrivacyKey(
+    seedId: KeystoreSeed['id'],
+    providerId: PrivacyProviderId,
+    path: string
+  ): Promise<Hex> {
     await this.initialLoadPromise
 
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
 
-    if (path !== PRIVACY_POOLS_SIGNING_KEY_PATH)
-      throw new Error(`keystore: refusing to derive a key outside Privacy Pools' paths (${path})`)
+    if (!isAllowedPrivacyKeyPath(providerId, path))
+      throw new Error(`keystore: refusing to derive a key outside ${providerId}' paths (${path})`)
 
     const { seed, seedPassphrase } = await this.getSavedSeed(seedId)
 

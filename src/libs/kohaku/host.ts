@@ -84,7 +84,7 @@ export const createKohakuStorage = ({
 /**
  * Derives plugin keys without giving the plugin the recovery phrase, unlike the SDK's
  * `MnemonicKeystore`. `deriveKey` must whitelist its paths - see
- * `KeystoreController.derivePrivacyPoolsKey`.
+ * `KeystoreController.derivePrivacyKey`.
  *
  * Cached because the SDK asks for its signing key on every note it signs, and each derivation is a
  * pbkdf2 over the seed. Cached as a promise, so chains syncing at once share one derivation, and
