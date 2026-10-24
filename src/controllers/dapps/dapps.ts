@@ -1109,8 +1109,9 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       const accountPreferences = this.getDapp(session.id)?.accountPreferences
 
-      // Update the last selected account
+      // Update the last selected account, unless the user picked one for the dapp
       if (
+        !accountPreferences?.isSelectedAccountPinned &&
         accountPreferences?.accounts.includes(newAccount) &&
         accountPreferences.selectedAccount !== newAccount
       ) {
@@ -1154,6 +1155,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (!dapp.accountPreferences.accounts.includes(address)) return
 
       const newAccounts = dapp.accountPreferences.accounts.filter((a) => a !== address)
+      const isSelectedAccountRemoved = dapp.accountPreferences.selectedAccount === address
 
       this.#dapps.set(dapp.id, {
         ...dapp,
@@ -1164,10 +1166,11 @@ export class DappsController extends EventEmitter implements IDappsController {
           ? {
               ...dapp.accountPreferences,
               accounts: newAccounts,
-              selectedAccount:
-                dapp.accountPreferences.selectedAccount === address
-                  ? newAccounts[0]!
-                  : dapp.accountPreferences.selectedAccount
+              selectedAccount: isSelectedAccountRemoved
+                ? newAccounts[0]!
+                : dapp.accountPreferences.selectedAccount,
+              // The account picked for the dapp is gone, so it follows the wallet again
+              ...(isSelectedAccountRemoved && { isSelectedAccountPinned: false })
             }
           : undefined
       })

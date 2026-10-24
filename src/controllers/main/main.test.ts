@@ -1,9 +1,11 @@
 import { toBeHex, Wallet } from 'ethers'
 
+import { Session } from '@/classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
 import { AccountOnchainState } from '@/interfaces/account'
 import { ErrorRef } from '@/interfaces/eventEmitter'
+import { DappConnectRequest, PlainTextMessageUserRequest } from '@/interfaces/userRequest'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
 import wait from '@/utils/wait'
@@ -1072,6 +1074,101 @@ describe('Main Controller ', () => {
       )
     })
   })
+
+  describe('selectAccount while a request is open', () => {
+    const session = new Session({ tabId: 1, url: 'https://test-dApp.com' })
+    const [fromAccount, toAccount] = accounts
+
+    const prepareSwitchTest = async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set(
+          'accounts',
+          accounts.map((acc) => ({
+            ...acc,
+            initialPrivileges: [],
+            preferences: { label: '', pfp: '' }
+          }))
+        )
+        await storageCtrl.set('selectedAccount', fromAccount!.addr)
+      })
+      return mainCtrl
+    }
+
+    const makeConnectRequest = (reject: (err: any) => void): DappConnectRequest => ({
+      id: 'connect-request',
+      kind: 'dappConnect',
+      meta: {},
+      dappPromises: [{ id: 'connect-request', resolve: () => {}, reject, session, meta: {} }]
+    })
+
+    const makeMessageRequest = (
+      id: string,
+      accountAddr: string,
+      reject: (err: any) => void
+    ): PlainTextMessageUserRequest => ({
+      id,
+      kind: 'message',
+      meta: { params: { message: '0x48656c6c6f' }, accountAddr, chainId: 1n },
+      dappPromises: [{ id, resolve: () => {}, reject, session, meta: {} }]
+    })
+
+    test('keeps the connect request open for the newly selected account', async () => {
+      const mainCtrl = await prepareSwitchTest()
+      const connectReject = jest.fn()
+      await mainCtrl.requests.addUserRequests([makeConnectRequest(connectReject)])
+      const windowId = mainCtrl.requests.requestWindow.windowProps?.id
+      expect(windowId).toBeDefined()
+
+      await mainCtrl.selectAccount(toAccount!.addr)
+
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(toAccount!.addr)
+      expect(connectReject).not.toHaveBeenCalled()
+      expect(mainCtrl.requests.currentUserRequest?.id).toBe('connect-request')
+      expect(mainCtrl.requests.visibleUserRequests.map((r) => r.id)).toEqual(['connect-request'])
+      expect(mainCtrl.requests.requestWindow.windowProps?.id).toBe(windowId)
+    })
+
+    test('still rejects a message request of the previous account', async () => {
+      const mainCtrl = await prepareSwitchTest()
+      const messageReject = jest.fn()
+      await mainCtrl.requests.addUserRequests([
+        makeMessageRequest('message-request', fromAccount!.addr, messageReject)
+      ])
+      expect(mainCtrl.requests.currentUserRequest?.id).toBe('message-request')
+
+      await mainCtrl.selectAccount(toAccount!.addr)
+
+      expect(messageReject).toHaveBeenCalledTimes(1)
+      expect(mainCtrl.requests.userRequests).toHaveLength(0)
+      expect(mainCtrl.requests.requestWindow.windowProps).toBe(null)
+    })
+
+    test('keeps a message of the previous account queued behind the connect request', async () => {
+      const mainCtrl = await prepareSwitchTest()
+      const connectReject = jest.fn()
+      const messageReject = jest.fn()
+      await mainCtrl.requests.addUserRequests([
+        makeConnectRequest(connectReject),
+        makeMessageRequest('message-request', fromAccount!.addr, messageReject)
+      ])
+      expect(mainCtrl.requests.currentUserRequest?.id).toBe('connect-request')
+
+      await mainCtrl.selectAccount(toAccount!.addr)
+
+      expect(connectReject).not.toHaveBeenCalled()
+      expect(messageReject).not.toHaveBeenCalled()
+      // The message belongs to the previous account, so it is hidden until it is selected again
+      expect(mainCtrl.requests.visibleUserRequests.map((r) => r.id)).toEqual(['connect-request'])
+
+      await mainCtrl.selectAccount(fromAccount!.addr)
+
+      expect(mainCtrl.requests.visibleUserRequests.map((r) => r.id)).toEqual([
+        'connect-request',
+        'message-request'
+      ])
+    })
+  })
+
   describe('commonHandlerForBroadcastSuccess for swaps', () => {
     const SIGNED_ROUTE_ID = 'signed-route'
     const TXN_ID = '0x8d94395e374c50feaaf22f940a18b85717609c667e9ff45368c45b3f2ee1b06f'

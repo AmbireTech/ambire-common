@@ -221,6 +221,18 @@ export function getAccountsForDapp(
   preferences: Dapp['accountPreferences'],
   extensionSelectedAccountAddr: string | undefined
 ): string[] {
+  // An account the user picked for the dapp comes first while the dapp may see it
+  if (
+    preferences?.isSelectedAccountPinned &&
+    isAccountAllowedForDapp(preferences, preferences.selectedAccount)
+  ) {
+    const otherAccounts = preferences.enabled
+      ? preferences.accounts.filter((acc) => acc !== preferences.selectedAccount)
+      : []
+
+    return [preferences.selectedAccount, ...otherAccounts]
+  }
+
   // Always prioritize the extension-selected account if it's in the dapp's allowed accounts, or if no account is currently selected in the dapp
   if (preferences?.enabled) {
     const selectedAccount = preferences.accounts.includes(extensionSelectedAccountAddr || '')

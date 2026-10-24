@@ -974,7 +974,9 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     this.isOffline = false
-    await this.#leaveSelectedAccount()
+    // A connect request isn't tied to an account - it connects whichever one is selected when
+    // approved - so it stays open and the user can pick the account to connect with.
+    await this.#leaveSelectedAccount({ keepsDappConnectRequest: true })
     await this.selectedAccount.select({ account: accountToSelect })
     // Update reverse lookup data and ENS expiry
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -1021,10 +1023,14 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /** Cleans up after the selected account, before another one of either kind is selected. */
-  async #leaveSelectedAccount() {
+  async #leaveSelectedAccount({ keepsDappConnectRequest = false } = {}) {
     // call closeRequestWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
-    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
+    const currentRequestKind = this.requests.currentUserRequest?.kind
+    const keepsCurrentRequest =
+      currentRequestKind === 'switchAccount' ||
+      (keepsDappConnectRequest && currentRequestKind === 'dappConnect')
+    if (!keepsCurrentRequest) {
       // Switching accounts is the user acting on the wallet, not refusing the apps that
       // happened to be waiting, so it must not count towards the spam detection.
       await this.requests.closeRequestWindow({ isUserInitiated: false })
