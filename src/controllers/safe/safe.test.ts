@@ -2,6 +2,7 @@ import { getAddress } from 'ethers'
 
 import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 
+import { Account } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { SafeAccountByOwner } from '../../interfaces/safe'
 import {
@@ -13,7 +14,7 @@ import {
 import { SafeController } from './safe'
 
 jest.mock('../../libs/safe/safe', () => ({
-  ...jest.requireActual('../../libs/safe/safe'),
+  ...jest.requireActual<typeof import('../../libs/safe/safe')>('../../libs/safe/safe'),
   fetchAllPending: jest.fn(),
   findDeployData: jest.fn(),
   getApiKit: jest.fn(),
@@ -344,6 +345,118 @@ describe('SafeController findSafesByOwner', () => {
       getAddress(SAFE_A)
     ])
     expect(getOwnerSearch(controller)?.status).toBe('DONE')
+  })
+})
+
+describe('SafeController createSafeAccount', () => {
+  // verified against the v1.4.1 SafeProxyFactory, see libs/safe/safe.test.ts
+  const OWNERS = [OWNER, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'] as Hex[]
+  const SAFE_ADDR = '0x913F170e793293e71749ee6CA674DF0469Ee3735'
+
+  const createControllerWithAddAccounts = ({
+    accountsInWallet = [],
+    failsToAddAccounts = false
+  }: {
+    accountsInWallet?: Account[]
+    /** Mimics AccountsController.addAccounts, which emits its errors instead of throwing them */
+    failsToAddAccounts?: boolean
+  } = {}) => {
+    const accounts = {
+      accounts: [...accountsInWallet],
+      accountStates: {},
+      initialLoadPromise: Promise.resolve(),
+      addAccounts: jest.fn(async (accountsToAdd: Account[]) => {
+        if (!failsToAddAccounts) accounts.accounts.push(...accountsToAdd)
+      })
+    }
+    const { addAccounts } = accounts
+    const controller = new SafeController({
+      accounts: accounts as any,
+      networks: { initialLoadPromise: Promise.resolve(), networks: [] } as any,
+      providers: { providers: {} } as any,
+      storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any,
+      keystore: { getAccountKeys: () => [] } as any
+    })
+
+    return { controller, addAccounts }
+  }
+
+  // withStatus resets the status to INITIAL before it resolves, so the statuses
+  // in between can be read only from the emitted updates
+  const recordCreateSafeAccountStatuses = (controller: SafeController) => {
+    const statuses: string[] = []
+    controller.onUpdate(() => statuses.push(controller.statuses.createSafeAccount))
+    return statuses
+  }
+
+  it('adds the new Safe account with its counterfactual address', async () => {
+    const { controller, addAccounts } = createControllerWithAddAccounts()
+    const statuses = recordCreateSafeAccountStatuses(controller)
+
+    await controller.createSafeAccount(OWNERS, 2)
+
+    expect(addAccounts).toHaveBeenCalledWith([
+      expect.objectContaining({
+        addr: SAFE_ADDR,
+        associatedKeys: OWNERS,
+        preferences: { label: 'Account 1', pfp: SAFE_ADDR },
+        creation: null,
+        safeCreation: expect.objectContaining({
+          factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
+          singleton: '0x29fcB43b46531BcA003ddC8FCB67FFE91900C762'
+        })
+      })
+    ])
+    expect(statuses).toContain('SUCCESS')
+    expect(statuses).not.toContain('ERROR')
+    expect(controller.statuses.createSafeAccount).toBe('INITIAL')
+  })
+
+  it('does not add an account for an invalid setup', async () => {
+    const { controller, addAccounts } = createControllerWithAddAccounts()
+    const statuses = recordCreateSafeAccountStatuses(controller)
+    const onError = jest.fn()
+    controller.onError(onError)
+
+    await controller.createSafeAccount([OWNER as Hex], 2)
+
+    expect(addAccounts).not.toHaveBeenCalled()
+    expect(statuses).toContain('ERROR')
+    expect(statuses).not.toContain('SUCCESS')
+    expect(controller.statuses.createSafeAccount).toBe('INITIAL')
+    expect(onError).toHaveBeenCalled()
+  })
+
+  it('errors when the same Safe is already in the wallet', async () => {
+    const { controller, addAccounts } = createControllerWithAddAccounts({
+      accountsInWallet: [{ addr: SAFE_ADDR } as Account]
+    })
+    const statuses = recordCreateSafeAccountStatuses(controller)
+    const onError = jest.fn()
+    controller.onError(onError)
+
+    await controller.createSafeAccount(OWNERS, 2)
+
+    expect(addAccounts).not.toHaveBeenCalled()
+    expect(statuses).toContain('ERROR')
+    expect(statuses).not.toContain('SUCCESS')
+    expect(controller.emittedErrors.at(-1)?.message).toContain('already in your wallet')
+  })
+
+  it('errors instead of succeeding when the account was not added', async () => {
+    const { controller, addAccounts } = createControllerWithAddAccounts({
+      failsToAddAccounts: true
+    })
+    const statuses = recordCreateSafeAccountStatuses(controller)
+    const onError = jest.fn()
+    controller.onError(onError)
+
+    await controller.createSafeAccount(OWNERS, 2)
+
+    expect(addAccounts).toHaveBeenCalled()
+    expect(statuses).toContain('ERROR')
+    expect(statuses).not.toContain('SUCCESS')
+    expect(onError).toHaveBeenCalled()
   })
 })
 
