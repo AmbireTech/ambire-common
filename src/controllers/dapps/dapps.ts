@@ -1570,7 +1570,7 @@ export class DappsController extends EventEmitter implements IDappsController {
    * clean. `topFrameOrigin` comes from the browser on every request, so the page cannot spoof it.
    *
    * `undefined` means no verdict: the dApp is the top frame itself, the platform reports no frame
-   * context (mobile WebViews, WalletConnect), or the top frame is not dangerous. Frames between
+   * context (WalletConnect), or the top frame is not dangerous. Frames between
    * the top one and the dApp are not visible without the `webNavigation` permission - not checked.
    */
   #getFrameContextStatus(session: Session): BlacklistedStatus | undefined {
