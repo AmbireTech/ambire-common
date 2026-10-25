@@ -91,6 +91,7 @@ import {
   AccountOp,
   GasFeePayment,
   getAccountOpNonce,
+  getPq1BroadcastBlocker,
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
 import {
@@ -216,6 +217,17 @@ const SLOWED_DOWN_REESTIMATE_STEP = 10000
 
 /** After this many reestimates the loop gives up and stops refetching. */
 export const MAX_REESTIMATES = 20
+
+/**
+ * Broadcast options that build a raw transaction and sign it with the fee payer key.
+ * The others (bundler, relayer) only submit what's already signed, without a key.
+ */
+const RAW_TXN_BROADCAST_OPTIONS = [
+  BROADCAST_OPTIONS.bySelf,
+  BROADCAST_OPTIONS.bySelf7702,
+  BROADCAST_OPTIONS.byOtherEOA,
+  BROADCAST_OPTIONS.delegation
+]
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
@@ -397,6 +409,13 @@ export class SignAccountOpController
   signedTransactionsCount: number | null = null
 
   hardwareWalletSigningRequest: HardwareWalletSigningRequest | null = null
+
+  /**
+   * The type of the key whose signature the current sign and broadcast flow is on,
+   * or null when no key is needed anymore. The UI uses it to show the "confirm on
+   * your device" prompt only while a device is actually involved.
+   */
+  activeSigningKeyType: Key['type'] | null = null
 
   safeEip712Data: unknown | null = null
 
@@ -956,11 +975,23 @@ export class SignAccountOpController
     this.emitUpdate()
   }
 
+  /**
+   * Runs a signing step and marks `keyType` as the active signing key type.
+   * It intentionally stays set after the step, so the device prompt in the UI
+   * doesn't close and reopen between two device signatures in a row. It's
+   * cleared when sign() or the whole sign and broadcast flow no longer needs a key.
+   */
   async #withHardwareWalletSigningRequest<T>(
     request: HardwareWalletSigningRequest | null,
-    sign: () => Promise<T>
+    sign: () => Promise<T>,
+    keyType: Key['type'] | null = this.accountOp.signingKeyType
   ) {
-    if (!request) return sign()
+    this.activeSigningKeyType = keyType
+
+    if (!request) {
+      this.emitUpdate()
+      return sign()
+    }
 
     this.#setHardwareWalletSigningRequest(request)
 
@@ -3980,6 +4011,14 @@ export class SignAccountOpController
       )
         this.status = { type: SigningStatus.Done }
 
+      // Only a raw transaction broadcast asks for one more signature (from the fee payer).
+      // Otherwise (Safe signature collected, bundler, relayer) no key is needed anymore
+      const willBroadcastNeedSignature =
+        this.status.type === SigningStatus.Done &&
+        !!broadcastOption &&
+        RAW_TXN_BROADCAST_OPTIONS.includes(broadcastOption)
+      if (!willBroadcastNeedSignature) this.activeSigningKeyType = null
+
       this.emitUpdate()
     } catch (error: any) {
       const { message } = getHumanReadableBroadcastError(error)
@@ -4069,13 +4108,7 @@ export class SignAccountOpController
     } | null = null
     // broadcasting by EOA is quite the same:
     // 1) build a rawTxn 2) sign 3) broadcast
-    // we have one handle, just a diff rawTxn for each case
-    const rawTxnBroadcast = [
-      BROADCAST_OPTIONS.bySelf,
-      BROADCAST_OPTIONS.bySelf7702,
-      BROADCAST_OPTIONS.byOtherEOA,
-      BROADCAST_OPTIONS.delegation
-    ]
+    // we have one handle, just a diff rawTxn for each case (RAW_TXN_BROADCAST_OPTIONS)
 
     // PQ1 is a smart-contract-only signer that cannot produce a raw EOA
     // transaction. The signer packages the calls into a 4337 UserOperation,
@@ -4090,20 +4123,17 @@ export class SignAccountOpController
     //   2. Device interaction runs inside #withHardwareWalletSigningRequest
     //      so the "confirm on your device" UI shows while the PQ1 waits
     //      for its physical confirmation.
+    // The UserOperation is sent from the PQ1 wallet itself, so an op for any
+    // other account the PQ1 key can sign for (e.g. a Safe it is an owner of)
+    // is refused up front as well, instead of running its calls from the PQ1
+    // wallet. Both refusals come from `getPq1BroadcastBlocker`.
     if (accountOp.signingKeyType === 'pq1' && accountOp.signingKeyAddr) {
       try {
-        const { gasFeePayment } = accountOp
-        if (
-          gasFeePayment.isGasTank ||
-          gasFeePayment.paidBy !== accountOp.accountAddr ||
-          gasFeePayment.inToken !== ZeroAddress
-        ) {
-          return this.throwBroadcastAccountOp({
-            message:
-              'PQ1 accounts pay gas with the native token from the account itself. Please select the native-token fee option paid by this account and try again.',
-            accountState
-          })
+        const pq1BroadcastBlocker = getPq1BroadcastBlocker(accountOp)
+        if (pq1BroadcastBlocker) {
+          return this.throwBroadcastAccountOp({ message: pq1BroadcastBlocker, accountState })
         }
+        const { gasFeePayment } = accountOp
         const signer = await this.#keystore.getSigner(
           accountOp.signingKeyAddr,
           accountOp.signingKeyType
@@ -4147,7 +4177,7 @@ export class SignAccountOpController
       } catch (error: any) {
         return this.throwBroadcastAccountOp({ error, accountState })
       }
-    } else if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
+    } else if (RAW_TXN_BROADCAST_OPTIONS.includes(accountOp.gasFeePayment.broadcastOption)) {
       const multipleTxnsBroadcastRes = []
       const senderAddr =
         accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
@@ -4209,7 +4239,8 @@ export class SignAccountOpController
                     txnRequest: rawTxn,
                     eip7702Auth: accountOp.meta!.delegation!
                   })
-                : signer.signRawTransaction(rawTxn)
+                : signer.signRawTransaction(rawTxn),
+            gasFeePayment.paidByKeyType
           )
 
           if (isDelegationBroadcast) {
@@ -4520,6 +4551,11 @@ export class SignAccountOpController
     })().finally(() => {
       this.signAndBroadcastPromise = undefined
       this.#endPinSessions()
+
+      if (this.activeSigningKeyType) {
+        this.activeSigningKeyType = null
+        this.emitUpdate()
+      }
     })
 
     await this.signAndBroadcastPromise
@@ -4547,6 +4583,7 @@ export class SignAccountOpController
 
   #hwCleanup() {
     this.hardwareWalletSigningRequest = null
+    this.activeSigningKeyType = null
 
     const paidByKeyType = this.accountOp.gasFeePayment?.paidByKeyType
     const uniqueSigningKeys = [...new Set([this.accountOp.signingKeyType, paidByKeyType])]
@@ -4836,11 +4873,17 @@ export class SignAccountOpController
     const dappVerificationBanner = this.#getDappVerificationBanner()
     if (dappVerificationBanner) banners.push(dappVerificationBanner)
 
-    const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
-      this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr),
-      this.accountOp.chainId,
-      this.traceCallDiscoveryStatus
-    )
+    // In the one-click transfer and swap & bridge flows the user entered the amount in the wallet
+    // themselves, so the warning tells them nothing new. Bridging is also where it's least accurate
+    const isOneClickFlow =
+      this.#type === 'one-click-transfer' || this.#type === 'one-click-swap-and-bridge'
+    const significantBalanceDecreaseWarning = isOneClickFlow
+      ? null
+      : getSignificantBalanceDecreaseWarning(
+          this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr),
+          this.accountOp.chainId,
+          this.traceCallDiscoveryStatus
+        )
     if (significantBalanceDecreaseWarning) {
       banners.push({
         id: significantBalanceDecreaseWarning.id,
@@ -4975,6 +5018,7 @@ export class SignAccountOpController
       isSafeFeePayerChoiceRequired: this.isSafeFeePayerChoiceRequired,
       hasSafeApiFailed: this.hasSafeApiFailed,
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
+      activeSigningKeyType: this.activeSigningKeyType,
       safeEip712Data: this.safeEip712Data,
       gasFeeChangedConfirmationRequired: this.gasFeeChangedConfirmationRequired,
       previousFee: this.previousFee,
