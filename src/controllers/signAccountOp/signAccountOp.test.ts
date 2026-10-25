@@ -8,7 +8,8 @@ import {
   MaxUint256,
   parseEther,
   toBeHex,
-  verifyMessage
+  verifyMessage,
+  Wallet
 } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -1196,6 +1197,62 @@ describe('SignAccountOp Controller ', () => {
         title: 'You need to broadcast pending transactions before this one.'
       })
     )
+  })
+
+  describe('Safe cancel signatures from the Safe API', () => {
+    const safeTxnHash = `0x${'5a'.repeat(32)}`
+    const ownerA = new Wallet(`0x${'a1'.repeat(32)}`)
+    const ownerB = new Wallet(`0x${'b2'.repeat(32)}`)
+    const sign = (owner: Wallet) => owner.signingKey.sign(safeTxnHash).serialized
+    const joinSigs = (...sigs: string[]) => `0x${sigs.map((sig) => sig.slice(2)).join('')}`
+    const ownersOf = (controller: SignAccountOpController) =>
+      (controller.accountOp.signed ?? []).map((addr) => addr.toLowerCase()).sort()
+
+    // A new cancel whose Safe transaction hash is known, as after its first signature
+    const initNewSafeCancel = () =>
+      initSafeNonce([], { isSpeedUp: true, isCancel: true, txnId: safeTxnHash })
+
+    test('takes the signature of an owner who has not signed yet', async () => {
+      const { controller } = await initNewSafeCancel()
+
+      controller.update({ accountOpData: { signature: sign(ownerA) } })
+
+      expect(ownersOf(controller)).toEqual([ownerA.address.toLowerCase()])
+    })
+
+    test('adds an owner even when the Safe API returns as many signatures as collected', async () => {
+      const { controller } = await initNewSafeCancel()
+      controller.update({ accountOpData: { signature: sign(ownerA) } })
+
+      // The Safe API never got owner A's signature, only owner B's: same length, other owner
+      controller.update({ accountOpData: { signature: sign(ownerB) } })
+
+      expect(ownersOf(controller)).toEqual(
+        [ownerA.address, ownerB.address].map((addr) => addr.toLowerCase()).sort()
+      )
+      expect(controller.accountOp.signature!.length).toBe(2 + 130 * 2)
+    })
+
+    test('never counts an owner twice', async () => {
+      const { controller } = await initNewSafeCancel()
+      controller.update({ accountOpData: { signature: sign(ownerA) } })
+
+      controller.update({ accountOpData: { signature: joinSigs(sign(ownerA), sign(ownerB)) } })
+      controller.update({ accountOpData: { signature: joinSigs(sign(ownerB), sign(ownerA)) } })
+
+      expect(ownersOf(controller)).toHaveLength(2)
+      expect(controller.accountOp.signature!.length).toBe(2 + 130 * 2)
+    })
+
+    test('keeps the collected signatures when the Safe API has none of them', async () => {
+      const { controller } = await initNewSafeCancel()
+      controller.update({ accountOpData: { signature: joinSigs(sign(ownerA), sign(ownerB)) } })
+      const collectedSignature = controller.accountOp.signature
+
+      controller.update({ accountOpData: { signature: sign(ownerB) } })
+
+      expect(controller.accountOp.signature).toBe(collectedSignature)
+    })
   })
 
   describe('Safe speed up', () => {

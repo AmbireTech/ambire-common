@@ -366,6 +366,20 @@ describe('cancel queued transaction', () => {
       ])
     })
 
+    test('a 7702 EOA cancel without a known transaction count shows no nonce', () => {
+      const cancelAccountOp: AccountOp = {
+        ...accountOp,
+        nonce: 0n,
+        eoaNonce: undefined,
+        gasFeePayment: feePaidWith(BROADCAST_OPTIONS.bySelf7702),
+        meta: { speedUp: { enabled: true, isCancel: true, replacedNonce: 0n } }
+      }
+      const irCalls = [SafeModule(cancelAccountOp, emptyCall, humanizerInfo as HumanizerMeta)]
+      compareHumanizerVisualizations(irCalls, [
+        [getAction('Cancel'), getLabel('currently queued transaction')]
+      ])
+    })
+
     test('a smart account sent by another account shows the nonce it signed', () => {
       const cancelAccountOp: AccountOp = {
         ...accountOp,

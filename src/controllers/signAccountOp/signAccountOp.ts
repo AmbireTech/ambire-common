@@ -1,5 +1,6 @@
 import {
   AbiCoder,
+  concat,
   formatEther,
   formatUnits,
   getAddress,
@@ -884,18 +885,39 @@ export class SignAccountOpController
 
   /**
    * Adds the signatures other Safe owners made for this Safe cancel through the Safe API.
-   * Only the signatures (and the Safe transaction they were made for) are taken
+   * Only the signatures (and the Safe transaction they were made for) are taken.
+   *
+   * Merged per owner: every signature collected so far stays (one may have never reached the
+   * Safe API), and a signature is added only for an owner who hasn't signed yet, so no owner
+   * is ever counted twice (the Safe rejects a repeated owner)
    */
   #addSafeCancelSignatures({
     signature,
     safeTx
   }: NonNullable<SignAccountOpUpdateProps['accountOpData']>) {
-    if (!signature || !this.accountOp.txnId) return
+    const { txnId } = this.accountOp
+    if (!signature || !txnId) return
     // The Safe transaction must be the one being signed, otherwise its signatures don't apply
-    if (safeTx && safeTx.safeTxHash.toLowerCase() !== this.accountOp.txnId.toLowerCase()) return
+    if (safeTx && safeTx.safeTxHash.toLowerCase() !== txnId.toLowerCase()) return
 
-    this.#mergeSafeSignatures(signature, safeTx ?? this.accountOp.safeTx)
+    const ownersSafeTx = safeTx ?? this.accountOp.safeTx
+    const getSignaturesByOwner = (signatures: string) => {
+      const owners = getAlreadySignedOwners(signatures, txnId, ownersSafeTx)
+
+      return getSigs(signatures).map((sig, i) => ({ sig, owner: owners[i]!.toLowerCase() }))
+    }
+    const collected = getSignaturesByOwner(this.accountOp.signature ?? '0x')
+    const collectedOwners = new Set(collected.map(({ owner }) => owner))
+    const added = getSignaturesByOwner(signature).filter(({ owner }) => {
+      if (collectedOwners.has(owner)) return false
+      collectedOwners.add(owner)
+      return true
+    })
+
     if (safeTx) this.#updateAccountOp({ safeTx })
+    if (!added.length) return
+
+    this.#mergeSafeSignatures(concat([...collected, ...added].map(({ sig }) => sig)), ownersSafeTx)
   }
 
   #updateNonce(nonce: bigint) {

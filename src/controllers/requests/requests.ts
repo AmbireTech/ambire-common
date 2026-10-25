@@ -3399,14 +3399,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const openSafeCancelRequest =
       meta.safeTxnProps && this.#findOpenSafeCancelRequest(meta.safeTxnProps.txnId)
     if (meta.safeTxnProps && openSafeCancelRequest) {
-      // Only new signatures are taken, the rest is the same Safe transaction (same hash)
-      const safeGlobalSig = meta.safeTxnProps.signature
-      const accOpSig = openSafeCancelRequest.signAccountOp.accountOp.signature
-      if ((accOpSig?.length || 0) < safeGlobalSig.length) {
-        openSafeCancelRequest.signAccountOp.update({
-          accountOpData: { signature: safeGlobalSig, safeTx: meta.safeTx }
-        })
-      }
+      // The rest is the same Safe transaction (same hash). The cancel takes the signatures of
+      // owners who haven't signed it yet, compared by owner rather than by signature length
+      openSafeCancelRequest.signAccountOp.update({
+        accountOpData: { signature: meta.safeTxnProps.signature, safeTx: meta.safeTx }
+      })
       return
     }
 
