@@ -10,6 +10,7 @@ import {
 
 import { allowedFallbackHandlers, allowedMulticallContracts } from '../../../../consts/safe'
 import { AccountOp, isSafeRejectionCall } from '../../../accountOp/accountOp'
+import { getCancelledNonce } from '../../../accountOp/cancel'
 import { decodeMultiSend } from '../../../safe/helpers'
 import {
   HumanizerCallModule,
@@ -520,13 +521,15 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
     }
   }
   let newCall = call
+  // A cancel (of any account, not only a Safe) is the same empty call, but the nonce of the
+  // transaction it cancels isn't always `accOp.nonce` - see getCancelledNonce
   const safeSpecificHumanization = getSafeHumanization(
     accOp.accountAddr,
     call.to,
     call.value,
     call.data,
     0,
-    accOp.nonce
+    getCancelledNonce(accOp) ?? accOp.nonce
   )
   if (safeSpecificHumanization) {
     newCall = {
