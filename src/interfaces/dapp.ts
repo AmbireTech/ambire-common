@@ -16,8 +16,10 @@ export interface DappAccountPreferences {
    */
   selectedAccount: string
   /**
-   * Set once the user picks the app's account themselves. The app then keeps `selectedAccount` while it
-   * may see it, instead of following the account selected in the wallet. Absent on older preferences.
+   * Set when the user picks the app's account without switching the wallet's. The app then keeps
+   * `selectedAccount` until the wallet switches to another account the app may see, after which it
+   * follows the wallet again.
+   * Absent on older preferences.
    */
   isSelectedAccountPinned?: boolean
   accounts: string[]

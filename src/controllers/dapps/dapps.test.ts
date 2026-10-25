@@ -1913,7 +1913,7 @@ describe('DappsController', () => {
       emitUpdateSpy.mockRestore()
     })
 
-    test('keeps the account picked for a dapp when the wallet switches to another one it may see', async () => {
+    test('follows the wallet again once it switches to another account the dapp may see after one was picked for the dapp', async () => {
       const dappId = 'pinned-dapp.com'
       const { controller } = await prepareWithDapps([
         makeDapp({
@@ -1938,9 +1938,93 @@ describe('DappsController', () => {
 
       await controller.onSelectedAccountChange(ADDR_2)
 
-      expect(controller.getDapp(dappId)!.accountPreferences!.selectedAccount).toBe(ADDR_1)
-      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_1, ADDR_2], dappId, true)
+      const preferences = controller.getDapp(dappId)!.accountPreferences!
+      expect(preferences.selectedAccount).toBe(ADDR_2)
+      expect(preferences.isSelectedAccountPinned).toBe(false)
+      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_2, ADDR_1], dappId, true)
       broadcastSpy.mockRestore()
+    })
+
+    test('keeps the account picked for a dapp when the wallet switches to one the dapp may not see', async () => {
+      const dappId = 'pinned-hidden-dapp.com'
+      const { controller } = await prepareWithDapps([
+        makeDapp({
+          id: dappId,
+          name: 'Pinned Hidden Dapp',
+          url: `https://${dappId}`,
+          isConnected: true,
+          accountPreferences: {
+            enabled: true,
+            selectedAccount: ADDR_2,
+            accounts: [ADDR_1, ADDR_2],
+            isSelectedAccountPinned: true
+          }
+        })
+      ])
+
+      await controller.getOrCreateDappSession({ tabId: 1, url: `https://${dappId}` })
+
+      const broadcastSpy = jest
+        .spyOn(controller, 'broadcastDappSessionEvent')
+        .mockResolvedValue(undefined)
+
+      await controller.onSelectedAccountChange(ADDR_3)
+
+      const preferences = controller.getDapp(dappId)!.accountPreferences!
+      expect(preferences.selectedAccount).toBe(ADDR_2)
+      expect(preferences.isSelectedAccountPinned).toBe(true)
+      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_2, ADDR_1], dappId, true)
+      broadcastSpy.mockRestore()
+    })
+
+    test('unpins the account picked for a dapp that is not open only when the wallet switches to an account it may see', async () => {
+      const pinnedDappId = 'pinned-closed-dapp.com'
+      const pinnedHiddenDappId = 'pinned-hidden-closed-dapp.com'
+      const otherDappId = 'unpinned-closed-dapp.com'
+      const otherPreferences = { enabled: true, selectedAccount: ADDR_1, accounts: [ADDR_1] }
+      const { controller } = await prepareWithDapps([
+        makeDapp({
+          id: pinnedDappId,
+          name: 'Pinned Closed Dapp',
+          url: `https://${pinnedDappId}`,
+          isConnected: true,
+          accountPreferences: {
+            enabled: true,
+            selectedAccount: ADDR_1,
+            accounts: [ADDR_1, ADDR_2],
+            isSelectedAccountPinned: true
+          }
+        }),
+        makeDapp({
+          id: pinnedHiddenDappId,
+          name: 'Pinned Hidden Closed Dapp',
+          url: `https://${pinnedHiddenDappId}`,
+          isConnected: true,
+          accountPreferences: {
+            enabled: true,
+            selectedAccount: ADDR_1,
+            accounts: [ADDR_1, ADDR_3],
+            isSelectedAccountPinned: true
+          }
+        }),
+        makeDapp({
+          id: otherDappId,
+          name: 'Unpinned Closed Dapp',
+          url: `https://${otherDappId}`,
+          isConnected: true,
+          accountPreferences: otherPreferences
+        })
+      ])
+
+      await controller.onSelectedAccountChange(ADDR_2)
+
+      expect(controller.getDapp(pinnedDappId)!.accountPreferences!.isSelectedAccountPinned).toBe(
+        false
+      )
+      expect(
+        controller.getDapp(pinnedHiddenDappId)!.accountPreferences!.isSelectedAccountPinned
+      ).toBe(true)
+      expect(controller.getDapp(otherDappId)!.accountPreferences).toEqual(otherPreferences)
     })
 
     test('unpins the account picked for a dapp once it is removed', async () => {

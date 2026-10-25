@@ -54,6 +54,7 @@ import {
   getDappNameFromId,
   getDomainFromUrl,
   getNormalizedHostnameFromUrl,
+  isAccountAllowedForDapp,
   modifyDappPropsIfNeeded,
   normalizeDappConnection,
   normalizeHostname,
@@ -1104,14 +1105,15 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   async onSelectedAccountChange(newAccount: string) {
+    this.#unpinSelectedAccounts(newAccount)
+
     Object.values(this.dappSessions).forEach(async (session) => {
       if (!this.hasPermission(session.id)) return
 
       const accountPreferences = this.getDapp(session.id)?.accountPreferences
 
-      // Update the last selected account, unless the user picked one for the dapp
+      // Update the last selected account the dapp may see
       if (
-        !accountPreferences?.isSelectedAccountPinned &&
         accountPreferences?.accounts.includes(newAccount) &&
         accountPreferences.selectedAccount !== newAccount
       ) {
@@ -1123,6 +1125,28 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       await this.broadcastDappSessionEvent('accountsChanged', accounts, session.id, true)
     })
+  }
+
+  // An account picked for a dapp lasts only until the wallet switches to another account the dapp
+  // may see, so the dapp follows the wallet again after it - also the dapps that aren't open
+  #unpinSelectedAccounts(newAccount: string) {
+    let hasUnpinned = false
+
+    this.#dapps.forEach((dapp) => {
+      if (!dapp.accountPreferences?.isSelectedAccountPinned) return
+      if (!isAccountAllowedForDapp(dapp.accountPreferences, newAccount)) return
+
+      hasUnpinned = true
+      this.#dapps.set(dapp.id, {
+        ...dapp,
+        accountPreferences: { ...dapp.accountPreferences, isSelectedAccountPinned: false }
+      })
+    })
+
+    if (!hasUnpinned) return
+
+    this.emitUpdate()
+    void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
   }
 
   /**
