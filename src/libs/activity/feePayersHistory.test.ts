@@ -2,6 +2,7 @@ import { getAddress } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { FeePayersHistory } from '../../controllers/activity/types'
 import { recordFeePayer } from './feePayersHistory'
 
@@ -54,11 +55,13 @@ describe('recordFeePayer', () => {
   })
 
   test('skips a missing or invalid payer without throwing', () => {
+    const { restore } = suppressConsole()
     const history: FeePayersHistory = {}
 
     expect(recordFeePayer(history, SAFE, 1n, undefined, 100)).toBe(false)
     expect(recordFeePayer(history, SAFE, 1n, 'not-an-address', 100)).toBe(false)
     expect(recordFeePayer(history, 'not-an-address', 1n, PAYER, 100)).toBe(false)
     expect(history).toEqual({})
+    restore()
   })
 })

@@ -10,6 +10,7 @@ import wait from '@/utils/wait'
 import { describe, expect, jest, test } from '@jest/globals'
 import { makeMainController } from '@test/helpers/mainController'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { MainController } from './main'
 
 describe('Main Controller ', () => {
@@ -463,6 +464,7 @@ describe('Main Controller ', () => {
     })
 
     test('rejects more private keys than the maximum', async () => {
+      const { restore } = suppressConsole()
       const privateKeys = Array.from({ length: MAX_BULK_PRIVATE_KEYS + 1 }, (_, i) =>
         toPrivateKey(i + 1)
       )
@@ -475,18 +477,22 @@ describe('Main Controller ', () => {
         `You can import up to ${MAX_BULK_PRIVATE_KEYS} private keys at once. Please remove some and try again.`
       )
       expect(emittedErrors[0]!.level).toBe('major')
+      restore()
     })
 
     test('rejects an empty list', async () => {
+      const { restore } = suppressConsole()
       const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([])
 
       expect(initParams).toBeUndefined()
       expect(emittedErrors.map((e) => e.message)).toEqual([
         'Please enter at least one private key.'
       ])
+      restore()
     })
 
     test('rejects the whole list if any private key is invalid, without exposing the keys', async () => {
+      const { restore } = suppressConsole()
       const validPrivateKey = toPrivateKey(1)
       const invalidPrivateKey = `${toPrivateKey(2).slice(0, -1)}z`
 
@@ -503,9 +509,11 @@ describe('Main Controller ', () => {
       const reportedError = `${emittedErrors[0]!.message} ${emittedErrors[0]!.error?.message}`
       expect(reportedError).not.toContain(validPrivateKey.slice(2))
       expect(reportedError).not.toContain(invalidPrivateKey.slice(2))
+      restore()
     })
 
     test('rejects a recovery phrase passed as one of the private keys', async () => {
+      const { restore } = suppressConsole()
       const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([
         toPrivateKey(1),
         process.env.SEED!
@@ -514,6 +522,7 @@ describe('Main Controller ', () => {
       expect(initParams).toBeUndefined()
       expect(emittedErrors).toHaveLength(1)
       expect(emittedErrors[0]!.error?.message).not.toContain(process.env.SEED!)
+      restore()
     })
   })
 

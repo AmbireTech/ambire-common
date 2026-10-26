@@ -1,21 +1,22 @@
-import {
-  getTestErc7730Descriptors,
-  getTestErc7730MessageDescriptor,
-  SAFE_PROXY_V1_4_1_RUNTIME_CODE
-} from '../../controllers/erc7730/testDescriptors'
 import { ethers, getAddress, ZeroAddress } from 'ethers'
 import { encodeFunctionData } from 'viem'
 
 import { beforeEach, describe, jest, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
+import {
+  getTestErc7730Descriptors,
+  getTestErc7730MessageDescriptor,
+  SAFE_PROXY_V1_4_1_RUNTIME_CODE
+} from '../../controllers/erc7730/testDescriptors'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { CowSwapOrderStruct } from '../../interfaces/swapAndBridge'
 import { getCowSwapOrderUid } from '../../services/cowswap/helper'
 import { AccountOp } from '../accountOp/accountOp'
-import { Erc7730CallDescriptors, EMPTY_ERC7730_KNOWN, resolveErc7730Descriptors } from './erc7730'
+import { EMPTY_ERC7730_KNOWN, Erc7730CallDescriptors, resolveErc7730Descriptors } from './erc7730'
 import { humanizeAccountOp, humanizeMessage } from './index'
 import {
   erc20TransferAbi,
@@ -28,8 +29,8 @@ import { compareHumanizerVisualizations, compareVisualizations } from './testHel
 import {
   getAction,
   getAddressVisualization,
-  getDeadline,
   getBreak,
+  getDeadline,
   getErc7730RowLabel,
   getErc7730RowValues,
   getErc7730Visualization,
@@ -2863,6 +2864,7 @@ describe('ERC-7730 descriptors', () => {
   })
 
   test('falls back to the built-in calldata descriptor when the relayer index fails', async () => {
+    const { restore } = suppressConsole()
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     const call = transactions.erc20[1]!
     const fallbackAccountOp: AccountOp = {
@@ -2881,6 +2883,7 @@ describe('ERC-7730 descriptors', () => {
     } finally {
       consoleErrorSpy.mockRestore()
     }
+    restore()
   })
 
   test('resolves Safe execTransaction through the Safe singleton and humanizes inner calls only', async () => {
@@ -5671,6 +5674,7 @@ describe('non-strict encoding / dirty bytes', () => {
     // Dirty: the bool slot uses 0xff instead of the valid 0x01, which viem rejects
     // as an invalid boolean. The module should throw and the humanizer should degrade
     // to the generic fallback visualization rather than crashing.
+    const { restore } = suppressConsole()
     const data =
       `0xa22cb465` +
       `000000000000000000000000${spender}` + // operator slot (clean)
@@ -5682,5 +5686,6 @@ describe('non-strict encoding / dirty bytes', () => {
     compareHumanizerVisualizations(irCalls, [
       [getAction('SetApprovalForAll'), getLabel('on'), getAddressVisualization(nftAddress)]
     ])
+    restore()
   })
 })

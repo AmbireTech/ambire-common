@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 
 import { expect, jest } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import {
   PHISHING_ACTIVE_UPDATE_INTERVAL,
@@ -558,6 +559,7 @@ describe('PhishingController', () => {
     })
 
     test('ends as FAILED_TO_GET, not LOADING, when the list download fails', async () => {
+      const { restore } = suppressConsole()
       const { controller, callback, scamcheckerRequests, cleanup } = await prepareNoListTest({
         isListDownloadFailing: true
       })
@@ -574,6 +576,7 @@ describe('PhishingController', () => {
       expect(scamcheckerRequests.map(({ url }) => url)).toEqual([`${SCAMCHECKER_BASE_URL}/data`])
 
       cleanup()
+      restore()
     })
 
     test('ends as FAILED_TO_GET, not LOADING, when no list download ever runs', async () => {

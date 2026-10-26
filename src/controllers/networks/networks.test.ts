@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, jest, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
@@ -600,6 +601,7 @@ describe('Networks Controller - add or update network info', () => {
     }
 
     test('ends in ERROR and adds nothing when there is no network info at all', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await buildForNetworkInfo()
       const { statuses, unsubscribe } = recordAddNetworkStatuses(controller)
 
@@ -609,9 +611,11 @@ describe('Networks Controller - add or update network info', () => {
       expect(statuses).toContain('ERROR')
       expect(statuses).not.toContain('SUCCESS')
       expect(controller.allNetworks.some((n) => n.chainId === CHAIN_ID_A)).toBe(false)
+      restore()
     })
 
     test('ends in ERROR and adds nothing while the network info is still loading', async () => {
+      const { restore } = suppressConsole()
       const { controller, harness } = await buildForNetworkInfo()
 
       const pendingRun = controller.setNetworkToAddOrUpdate({
@@ -632,6 +636,7 @@ describe('Networks Controller - add or update network info', () => {
 
       harness.release(RPC_URL_A)
       await pendingRun
+      restore()
     })
   })
 })

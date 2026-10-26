@@ -1,6 +1,7 @@
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Selectors } from '../../interfaces/contractInfo'
@@ -271,6 +272,7 @@ describe('StorageController', () => {
     // The reported case: a stored op without calls made indexSentToHistoryFromAccountsOps throw,
     // which skipped this migration on every start and left the phishing list unsorted.
     test('still runs when the history holds an op without calls', async () => {
+      const { restore } = suppressConsole(true)
       const ACCOUNT = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
       const storageCtrl = await bootWithPendingMigrations(
         ['indexSentToHistoryFromAccountsOps', MIGRATION_KEY],
@@ -291,6 +293,7 @@ describe('StorageController', () => {
       expect(await storageCtrl.get('passedMigrations', [])).toEqual(
         expect.arrayContaining(['indexSentToHistoryFromAccountsOps', MIGRATION_KEY])
       )
+      restore()
     })
 
     test('leaves a malformed list as it is instead of throwing', async () => {
@@ -908,6 +911,7 @@ describe('StorageController', () => {
     // BUG: the networks used to be stored first, without their legacy `id`, so an interrupted run
     // left the rest of the data impossible to migrate and the next run corrupted it.
     test('completes on the next boot when interrupted in the middle', async () => {
+      const { restore } = suppressConsole()
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
       const inner = produceMemoryStore()
       let shouldInterrupt = true
@@ -935,6 +939,7 @@ describe('StorageController', () => {
       expect(await readMigratedValues(next)).toEqual(expectedMigratedValues)
       expect(await next.get('passedMigrations', [])).toContain(MIGRATION_KEY)
       consoleErrorSpy.mockRestore()
+      restore()
     })
   })
 

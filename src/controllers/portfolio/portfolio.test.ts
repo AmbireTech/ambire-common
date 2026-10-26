@@ -4285,6 +4285,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Malformed array length mismatch should trigger mismatch rejection', async () => {
+      const { restore } = suppressConsole()
       const fetchOverride = createDiscoveryFetchOverride(async () => createJsonResponse([{}]))
 
       const { controller } = await prepareTest({
@@ -4324,6 +4325,7 @@ describe('Portfolio Controller ', () => {
           'internal error: queue length and response length mismatch'
         )
       }
+      restore()
     })
 
     test('customAppChain discovery is batched with network discovery for the same account/baseCurrency', async () => {
