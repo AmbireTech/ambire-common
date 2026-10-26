@@ -12,6 +12,7 @@ import { BALANCE_GETTER, NFT_GETTER } from '../../consts/deploy'
 import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import * as portfolioConsts from '../../consts/portfolio'
 import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { StoredKey } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
@@ -237,6 +238,7 @@ const accountWithManyAssets = {
     pfp: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
   }
 }
+const SLOW_DISCOVERY_TIMEOUT = 10000
 
 // If the account ever has to be replaced:
 // 1. Go to https://debank.com/protocols
@@ -736,8 +738,10 @@ describe('Portfolio Controller ', () => {
     verifyPortfolioSpy.mockRejectedValueOnce(new Error('Colibri verification crashed'))
     portfolioGetCalls.length = 0
 
+    const { restore } = suppressConsole()
     await controller.updateSelectedAccount(account.addr, [colibriEthereum])
     const rejectedVerification = await waitForVerification()
+    restore()
 
     expect(rejectedVerification?.status).toBe('warning')
     expect(rejectedVerification?.error).toBe('Colibri could not verify portfolio balances')
@@ -2641,6 +2645,9 @@ describe('Portfolio Controller ', () => {
       expect(latestHintsUpdate2).toBe(latestHintsUpdate)
     })
     test('All external API hints with balance are learned', async () => {
+      // Velcro often needs more than the extension's budget to discover an account with this
+      // many assets, and a timed out discovery returns no hints to learn from
+      jest.spyOn(portfolioConsts, 'getDiscoveryTimeout').mockReturnValue(SLOW_DISCOVERY_TIMEOUT)
       const { controller, storageCtrl } = await prepareTest()
       const ethereum = networks.find(({ chainId }) => chainId === 1n)!
 
@@ -2661,12 +2668,8 @@ describe('Portfolio Controller ', () => {
         ?.filter(({ amount }) => amount > 0)
         .forEach(({ address, flags }) => {
           if (address === ZeroAddress) return
-          if (flags.defiTokenType) {
-            console.warn(`Skipping defi token ${address} from learned assets check`)
-            // Defi tokens are learned in a different way. Warning just in case someone debugs
-            // this test in the future if the behaviour changes
-            return
-          }
+          // Defi tokens are learned in a different way
+          if (flags.defiTokenType) return
           expect(learnedAssets.erc20s[key]).toHaveProperty(address)
           // Has a timestamp
           expect(learnedAssets.erc20s[key]![address]).toBeDefined()
