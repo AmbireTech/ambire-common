@@ -12,8 +12,10 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
+import { CowSwapOrderStruct } from '../../interfaces/swapAndBridge'
+import { getCowSwapOrderUid } from '../../services/cowswap/helper'
 import { AccountOp } from '../accountOp/accountOp'
-import { EMPTY_ERC7730_KNOWN, resolveErc7730Descriptors } from './erc7730'
+import { Erc7730CallDescriptors, EMPTY_ERC7730_KNOWN, resolveErc7730Descriptors } from './erc7730'
 import { humanizeAccountOp, humanizeMessage } from './index'
 import {
   erc20TransferAbi,
@@ -557,6 +559,91 @@ describe('ERC-7730 descriptors', () => {
         ])
       ]
     ])
+  })
+
+  describe('CoW Swap pre-sign calls carrying their order', () => {
+    const cowSwapSettlement = '0x9008D19f58AAbD9eD0D60971565AA8510560ab41'
+    const sellToken = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+    const buyToken = WETH_ADDRESS
+    const validTo = 1783581106
+    const presignedOrder: CowSwapOrderStruct = {
+      sellToken,
+      buyToken,
+      receiver: accountOp.accountAddr,
+      sellAmount: '1000000',
+      buyAmount: '400000000000000',
+      validTo,
+      appData: `0x${'11'.repeat(32)}`,
+      feeAmount: '0',
+      kind: 'sell',
+      partiallyFillable: false,
+      sellTokenBalance: 'erc20',
+      buyTokenBalance: 'erc20'
+    }
+    const orderUid = getCowSwapOrderUid({
+      chainId: accountOp.chainId,
+      order: presignedOrder,
+      owner: accountOp.accountAddr
+    })
+    const getPreSignCall = (cowSwapOrder: CowSwapOrderStruct) => ({
+      to: cowSwapSettlement,
+      value: 0n,
+      data: new ethers.Interface([
+        'function setPreSignature(bytes orderUid, bool signed)'
+      ]).encodeFunctionData('setPreSignature', [orderUid, true]),
+      cowSwapOrder
+    })
+    const getSetPreSignatureDescriptors = (): Erc7730CallDescriptors => ({
+      0: {
+        descriptor: {
+          display: {
+            formats: {
+              'setPreSignature(bytes orderUid, bool signed)': {
+                intent: 'Pre-sign CowSwap order',
+                fields: [
+                  {
+                    path: '#.signed',
+                    label: 'Pre-signature enabled',
+                    format: 'raw',
+                    visible: 'always'
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    })
+
+    test('keeps the verified order over the descriptor that only knows the order ID', () => {
+      accountOp.calls = [getPreSignCall(presignedOrder)]
+
+      const irCalls = humanizeAccountOp(accountOp, {
+        erc7730Descriptors: getSetPreSignatureDescriptors()
+      })
+
+      compareHumanizerVisualizations(irCalls, [
+        [
+          getAction('Swap'),
+          getToken(sellToken, 1000000n, 1n),
+          getLabel('for at least'),
+          getToken(buyToken, 400000000000000n, 1n),
+          getDeadline(validTo)
+        ]
+      ])
+      expect(hasErc7730Humanization(irCalls)).toBe(false)
+    })
+
+    test('still uses the descriptor when the attached order does not match the order ID', () => {
+      accountOp.calls = [getPreSignCall({ ...presignedOrder, buyAmount: '1' })]
+
+      const irCalls = humanizeAccountOp(accountOp, {
+        erc7730Descriptors: getSetPreSignatureDescriptors()
+      })
+
+      expect(hasErc7730Humanization(irCalls)).toBe(true)
+      expect(irCalls[0]!.preferredOverErc7730).toBeUndefined()
+    })
   })
 
   test('resolves the ERC-7730 call sender metadata used by 1inch unoswap2', () => {

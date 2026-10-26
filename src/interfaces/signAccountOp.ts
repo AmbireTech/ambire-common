@@ -17,7 +17,13 @@ export enum SigningStatus {
   WaitingForPaymaster = 'waiting-for-paymaster-response',
   Done = 'done',
   Queued = 'queued',
-  SafeQuickBroadcastBundler = 'safe-quick-broadcast-bundler'
+  SafeQuickBroadcastBundler = 'safe-quick-broadcast-bundler',
+  /**
+   * The pending transaction that is being sped up was processed before the speed up was
+   * signed, so its place (nonce) is taken and the speed up can't go through anymore.
+   * Final, nothing can be signed in this state.
+   */
+  SpeedUpNotNeeded = 'speed-up-not-needed'
 }
 
 export type Status = {
@@ -48,7 +54,8 @@ export const noStateUpdateStatuses = [
   SigningStatus.Done,
   SigningStatus.UpdatesPaused,
   SigningStatus.WaitingForPaymaster,
-  SigningStatus.SafeQuickBroadcastBundler
+  SigningStatus.SafeQuickBroadcastBundler,
+  SigningStatus.SpeedUpNotNeeded
 ]
 
 type Warning = {
@@ -79,6 +86,19 @@ type SignAccountOpBanner = {
   trustableDappUrls?: string[]
 }
 
+/**
+ * How the EOAs that can pay a Safe's fee relate to it (lowercased addresses). Paying from an
+ * owner or an already linked EOA reveals nothing new, any other EOA gets publicly linked to it.
+ */
+type SafeFeePayerLinks = {
+  /** The Safe's owners on the transaction's chain */
+  owners: string[]
+  /** EOAs that already paid a fee for the Safe on this chain, excluding the owners */
+  linked: string[]
+  /** The EOA that paid the Safe's latest fee on this chain (an owner or a linked one), if any */
+  lastUsed: string | null
+}
+
 type HardwareWalletSigningRequest = {
   type: 'raw-transaction' | 'eip-712' | 'eip-7702-authorization' | 'message'
   data: unknown
@@ -92,4 +112,10 @@ enum TraceCallDiscoveryStatus {
 }
 
 export { TraceCallDiscoveryStatus }
-export type { HardwareWalletSigningRequest, SignAccountOpBanner, SignAccountOpError, Warning }
+export type {
+  HardwareWalletSigningRequest,
+  SafeFeePayerLinks,
+  SignAccountOpBanner,
+  SignAccountOpError,
+  Warning
+}

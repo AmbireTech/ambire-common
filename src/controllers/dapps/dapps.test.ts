@@ -2850,4 +2850,155 @@ describe('DappsController', () => {
       nowSpy.mockRestore()
     })
   })
+
+  // Auto-login signs while an app's status reads LOADING, so a catalog rebuild - which recreates
+  // every catalog app as LOADING - must not leave a window where a request can see that status.
+  describe('scam check during an app catalog rebuild', () => {
+    const SCAM_CHECKER_URL = 'https://cena.ambire.com/api/v3/scamchecker'
+    const AAVE_ID = 'aave.com'
+
+    // CI runs with IS_TESTING, which makes the phishing check skip both the local list and the
+    // scam checker and answer VERIFIED - the very path these tests are about would not run
+    let isTestingEnv: string | undefined
+    beforeEach(() => {
+      isTestingEnv = process.env.IS_TESTING
+      delete process.env.IS_TESTING
+    })
+    afterEach(() => {
+      if (isTestingEnv === undefined) return
+      process.env.IS_TESTING = isTestingEnv
+    })
+
+    /**
+     * Records the status `getStatus` returns after every microtask until stopped. Any `await`
+     * inside the rebuild is a point where other code - e.g. an incoming sign-in request - could
+     * run, so a status the sampler never sees is one no such code can see either.
+     */
+    const startStatusSampler = (getStatus: () => Dapp['blacklisted'] | undefined) => {
+      const seenStatuses = new Set<Dapp['blacklisted'] | undefined>()
+      let isStopped = false
+      const samplingPromise = (async () => {
+        let iteration = 0
+        while (!isStopped) {
+          seenStatuses.add(getStatus())
+          iteration++
+          // Yield to the event loop now and then, so timers and I/O are not starved
+          await (iteration % 100
+            ? Promise.resolve()
+            : new Promise((resolve) => {
+                setImmediate(resolve)
+              }))
+        }
+      })()
+
+      return {
+        seenStatuses,
+        stop: async () => {
+          isStopped = true
+          await samplingPromise
+        }
+      }
+    }
+
+    const rebuildCatalogWhileSampling = async (localPhishingDomains: string[]) => {
+      const scamCheckerRequestedUrls: string[] = []
+      const { controller, mainCtrl } = await prepareTest(
+        async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', [
+            ...predefinedDapps,
+            makeDapp({
+              id: AAVE_ID,
+              name: 'AAVE',
+              url: 'https://aave.com',
+              blacklisted: 'BLACKLISTED'
+            })
+          ])
+          // Differs from the app version, so loading rebuilds the catalog
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+          if (localPhishingDomains.length) {
+            await storageCtrl.set('phishing', {
+              version: 1,
+              updatedAt: Date.now(),
+              domains: localPhishingDomains,
+              addresses: []
+            })
+          }
+        },
+        async (url: string) => {
+          if (url === 'https://api.llama.fi/protocols') {
+            return { ok: true, status: 200, json: async () => mockDapps }
+          }
+          if (url === 'https://api.llama.fi/v2/chains') {
+            return { ok: true, status: 200, json: async () => mockChains }
+          }
+          if (url.startsWith(SCAM_CHECKER_URL)) {
+            scamCheckerRequestedUrls.push(url)
+            // A real network round trip, during which other code gets to run
+            await new Promise((resolve) => {
+              setTimeout(resolve, 20)
+            })
+            // The public phishing list, which has the app on it
+            return {
+              ok: true,
+              status: 200,
+              url,
+              json: async () => ({ version: 1, domains: [AAVE_ID], addresses: [] })
+            }
+          }
+
+          return { ok: false, status: 500, json: async () => ({}) }
+        },
+        true
+      )
+
+      // makeMainController stubs the list update out, but with no stored list it is what answers
+      if (!localPhishingDomains.length) {
+        ;(
+          mainCtrl.phishing.continuouslyUpdatePhishing as unknown as jest.SpiedFunction<
+            typeof mainCtrl.phishing.continuouslyUpdatePhishing
+          >
+        ).mockRestore()
+      }
+
+      const sampler = startStatusSampler(() => controller.getDapp(AAVE_ID)?.blacklisted)
+      // The local phishing list is read from storage long before the catalog finishes downloading
+      await mainCtrl.phishing.init()
+      await controller.init()
+      await controller.fetchAndUpdatePromise
+      // The checks that waited for the downloaded list finish after the catalog does
+      await mainCtrl.phishing.updatePhishingInterval.promise
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve)
+      })
+      await sampler.stop()
+      mainCtrl.phishing.updatePhishingInterval.stop()
+
+      return { controller, seenStatuses: sampler.seenStatuses, scamCheckerRequestedUrls }
+    }
+
+    test('an app checked against the local phishing list is never seen as LOADING', async () => {
+      const { controller, seenStatuses, scamCheckerRequestedUrls } =
+        await rebuildCatalogWhileSampling([AAVE_ID])
+
+      // The catalog was really rebuilt from the downloaded list
+      expect(controller.dapps.some((d) => d.name === 'Lido')).toBe(true)
+      expect(scamCheckerRequestedUrls).toEqual([])
+      expect(seenStatuses.has('LOADING')).toBe(false)
+      expect(controller.getDapp(AAVE_ID)?.blacklisted).toBe('BLACKLISTED')
+    })
+
+    // Control: proves the sampler does catch LOADING when there is a window to catch
+    test('an app is seen as LOADING until the phishing list is downloaded, and its domain is never sent', async () => {
+      const { controller, seenStatuses, scamCheckerRequestedUrls } =
+        await rebuildCatalogWhileSampling([])
+
+      // Only the public list was downloaded
+      expect(scamCheckerRequestedUrls).toEqual([`${SCAM_CHECKER_URL}/data`])
+      expect(seenStatuses.has('LOADING')).toBe(true)
+      expect(controller.getDapp(AAVE_ID)?.blacklisted).toBe('BLACKLISTED')
+      expect(
+        controller.dapps.every((dapp) => dapp.blacklisted !== 'LOADING' || dapp.isConnected)
+      ).toBe(true)
+    })
+  })
 })

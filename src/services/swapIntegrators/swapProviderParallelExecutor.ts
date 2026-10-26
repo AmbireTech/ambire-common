@@ -239,7 +239,7 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
   }: {
     fromChainId: number
     toChainId: number
-    onUpdate?: (tokens: SwapAndBridgeToToken[]) => void
+    onUpdate?: (tokens: SwapAndBridgeToToken[], loadingProviderNames: string[]) => void
   }): Promise<SwapAndBridgeToToken[]> {
     const supportedProviders = this.#getEnabledProviders().filter((provider) => {
       if (provider.areChainsSupported) {
@@ -260,7 +260,11 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
       )
     }
 
+    // Kept per provider to merge in registration order, not answer order
+    const tokenListsByProvider = new Map<SwapProvider, SwapAndBridgeToToken[]>()
+    const loadingProviders = new Set(supportedProviders)
     let toTokenList: SwapAndBridgeToToken[] = []
+
     const requests = supportedProviders.map(async (provider) => {
       const waitPromise = waitWithAbort(GET_TO_TOKEN_LIST_TIMEOUT)
 
@@ -274,10 +278,19 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
           waitPromise.promise.then(() => new Error('Get to token list timeout'))
         ])
 
-        if (result instanceof Error) return result
+        loadingProviders.delete(provider)
+        if (!(result instanceof Error)) tokenListsByProvider.set(provider, result)
 
-        toTokenList = this.#removeDuplicateTokens([...toTokenList, ...result])
-        onUpdate?.(toTokenList)
+        // Nothing to report until a provider returns tokens
+        if (tokenListsByProvider.size) {
+          toTokenList = this.#mergeTokenLists(
+            supportedProviders.map((p) => tokenListsByProvider.get(p) || [])
+          )
+          onUpdate?.(
+            toTokenList,
+            [...loadingProviders].map(({ name }) => name)
+          )
+        }
 
         return result
       } finally {
@@ -296,12 +309,18 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
     return toTokenList
   }
 
-  #removeDuplicateTokens(toTokenList: SwapAndBridgeToToken[]) {
-    return [
-      ...new Map(
-        toTokenList.map((item: SwapAndBridgeToToken) => [`${item.chainId}-${item.address}`, item])
-      ).values()
-    ]
+  /** A duplicate token keeps the position and data of the first provider. */
+  #mergeTokenLists(tokenLists: SwapAndBridgeToToken[][]) {
+    const tokensById = new Map<string, SwapAndBridgeToToken>()
+
+    tokenLists.forEach((tokens) => {
+      tokens.forEach((token) => {
+        const tokenId = `${token.chainId}-${token.address}`
+        if (!tokensById.has(tokenId)) tokensById.set(tokenId, token)
+      })
+    })
+
+    return [...tokensById.values()]
   }
 
   async getToken({

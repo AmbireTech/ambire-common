@@ -15,7 +15,7 @@ import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimat
 import { FeePaymentOption, FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
-import { getIsViewOnly } from '../../utils/accounts'
+import { canPayFeeForOtherAccounts } from '../../utils/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { EstimationFailure, EstimationFailureKind, EstimationStatus } from './types'
 
@@ -245,14 +245,16 @@ export class EstimationController extends EventEmitter {
     // we're excluding the view only accounts from the natives to check
     // in all cases EXCEPT the case where we're making an estimation for
     // the view only account itself. In all other, view only accounts options
-    // should not be present as the user cannot pay the fee with them (no key)
+    // should not be present as the user cannot pay the fee with them (no key).
+    // The same goes for accounts whose keys can't sign a plain transaction
+    // (PQ1), see canPayFeeForOtherAccounts
     const nativeToCheck = baseAcc.canBroadcastByOtherEOA()
       ? this.#accounts.accounts
           .filter(
             (acc) =>
               !isSmartAccount(acc) &&
               (acc.addr === op.accountAddr ||
-                !getIsViewOnly(this.#keystore.keys, acc.associatedKeys))
+                canPayFeeForOtherAccounts(this.#keystore.keys, acc.associatedKeys))
           )
           // internal keys first
           .sort((a, b) => {
@@ -338,7 +340,7 @@ export class EstimationController extends EventEmitter {
     ) {
       // continue on error here as the flags are more like app helpers
       this.#accounts
-        .updateAccountState(op.accountAddr, 'pending', [op.chainId])
+        .updateAccountState(op.accountAddr, 'pending', [op.chainId], true)
 
         .catch((e) => console.error(e))
     }
