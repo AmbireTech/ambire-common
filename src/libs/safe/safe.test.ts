@@ -8,6 +8,8 @@ import {
   Interface,
   keccak256,
   solidityPacked,
+  toUtf8Bytes,
+  Wallet,
   ZeroAddress,
   zeroPadValue
 } from 'ethers'
@@ -18,7 +20,13 @@ import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
 import {
   canHotOwnersMeetSafeThreshold,
   findDeployData,
+  getAlreadySignedOwners,
   getSafeAccountByOwner,
+  getSafeApprovedHashSignature,
+  getSafeApproveHashCall,
+  getSigs,
+  isSafeHashApproved,
+  sortSigs,
   getSafeDeploymentCall,
   hasCompleteSafeCreationData,
   normalizeSafeGlobalMessage,
@@ -751,5 +759,78 @@ describe('canHotOwnersMeetSafeThreshold', () => {
 
   test('is false when there are no imported owners', () => {
     expect(canHotOwnersMeetSafeThreshold([], 1)).toBe(false)
+  })
+})
+
+describe('Safe owner approvals (approveHash)', () => {
+  const SAFE_TX_HASH = keccak256(toUtf8Bytes('safe transaction'))
+  const ownerKey = new Wallet(keccak256(toUtf8Bytes('owner key')))
+  const SMART_ACCOUNT_OWNER = '0x4C71d299f23eFC660b3295D1f631724693aE22Ac'
+  const ecdsaSignature = ownerKey.signingKey.sign(SAFE_TX_HASH).serialized as Hex
+
+  test('an approved hash signature is the owner in r, an empty s and v = 1', () => {
+    const signature = getSafeApprovedHashSignature(SMART_ACCOUNT_OWNER.toLowerCase())
+
+    expect(getBytes(signature)).toHaveLength(65)
+    expect(signature).toBe(
+      concat([zeroPadValue(SMART_ACCOUNT_OWNER, 32), zeroPadValue('0x', 32), '0x01']).toLowerCase()
+    )
+  })
+
+  test('recovers the owner of an approved hash signature next to ECDSA ones', () => {
+    const approvedSignature = getSafeApprovedHashSignature(SMART_ACCOUNT_OWNER)
+    const combined = sortSigs([approvedSignature, ecdsaSignature], SAFE_TX_HASH)
+    const expectedOrder =
+      BigInt(SMART_ACCOUNT_OWNER) < BigInt(ownerKey.address)
+        ? [SMART_ACCOUNT_OWNER, ownerKey.address]
+        : [ownerKey.address, SMART_ACCOUNT_OWNER]
+
+    expect(getAlreadySignedOwners(combined, SAFE_TX_HASH)).toEqual(expectedOrder)
+    expect(getSigs(combined)).toHaveLength(2)
+    expect(getSigs(combined)).toContain(approvedSignature)
+  })
+
+  test('does not take the r of an ECDSA signature as its owner', () => {
+    expect(getAlreadySignedOwners(ecdsaSignature, SAFE_TX_HASH)).toEqual([ownerKey.address])
+  })
+
+  test('builds the approveHash call to the Safe', () => {
+    const call = getSafeApproveHashCall(SAFE_ADDRESS, SAFE_TX_HASH)
+
+    expect(call.to).toBe(getAddress(SAFE_ADDRESS))
+    expect(call.value).toBe(0n)
+    expect(
+      new Interface(['function approveHash(bytes32)']).decodeFunctionData('approveHash', call.data)[0]
+    ).toBe(SAFE_TX_HASH)
+  })
+
+  test('reads whether an owner approved the hash onchain', async () => {
+    const approvedHashesInterface = new Interface([
+      'function approvedHashes(address, bytes32) view returns (uint256)'
+    ])
+    const getProvider = (approved: bigint) => {
+      const call = jest.fn(async () =>
+        approvedHashesInterface.encodeFunctionResult('approvedHashes', [approved])
+      )
+      return { provider: { call } as unknown as RPCProvider, call }
+    }
+
+    const approved = getProvider(1n)
+    await expect(
+      isSafeHashApproved(SAFE_ADDRESS, SMART_ACCOUNT_OWNER, SAFE_TX_HASH, approved.provider)
+    ).resolves.toBe(true)
+    expect(approved.call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: approvedHashesInterface.encodeFunctionData('approvedHashes', [
+          SMART_ACCOUNT_OWNER,
+          SAFE_TX_HASH
+        ])
+      })
+    )
+
+    const notApproved = getProvider(0n)
+    await expect(
+      isSafeHashApproved(SAFE_ADDRESS, SMART_ACCOUNT_OWNER, SAFE_TX_HASH, notApproved.provider)
+    ).resolves.toBe(false)
   })
 })

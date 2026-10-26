@@ -1237,6 +1237,8 @@ export class MainController extends EventEmitter implements IMainController {
     // Only the dapp calls request path shares a mutable SignAccountOpController
     // that a second dapp request can append to before signing starts.
     let isDappCallsRequest = false
+    // The Safe request whose smart account owner approval is being sent, see initSafeOwnerApproval
+    let safeOwnerApprovalParent: ISignAccountOpController | null = null
 
     if (
       type === 'one-click-swap-and-bridge' &&
@@ -1250,6 +1252,14 @@ export class MainController extends EventEmitter implements IMainController {
       this.transfer.signAccountOpController.fromRequestId === fromRequestId
     ) {
       signAccountOp = this.transfer.signAccountOpController
+    } else if (
+      type === 'safe-owner-approval' &&
+      this.requests.currentUserRequest?.kind === 'calls' &&
+      this.requests.currentUserRequest.signAccountOp.safeOwnerApproval?.fromRequestId ===
+        fromRequestId
+    ) {
+      safeOwnerApprovalParent = this.requests.currentUserRequest.signAccountOp
+      signAccountOp = safeOwnerApprovalParent.safeOwnerApproval
     } else if (
       this.requests.currentUserRequest?.kind === 'calls' &&
       this.requests.currentUserRequest.signAccountOp.fromRequestId === fromRequestId
@@ -1329,7 +1339,11 @@ export class MainController extends EventEmitter implements IMainController {
       })
     }
 
-    await signAccountOp.signAndBroadcast().catch(() => {
+    // the Safe request checks its approval is still for the Safe transaction before sending it
+    const signAndBroadcast = safeOwnerApprovalParent
+      ? safeOwnerApprovalParent.signAndBroadcastSafeOwnerApproval()
+      : signAccountOp.signAndBroadcast()
+    await signAndBroadcast.catch(() => {
       // intentionally ignored - handled inside signAccountOp
     })
   }
