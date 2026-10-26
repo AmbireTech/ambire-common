@@ -1,6 +1,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 
 import EmittableError from '@/classes/EmittableError'
+import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '@/consts/activity'
 import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
 import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
@@ -122,8 +123,10 @@ import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
+import { getReceiptBlockNumberByChainId } from '@/utils/nonce'
 import { generateUuid } from '@/utils/uuid'
 import wait from '@/utils/wait'
+import { waitForBlockNumber } from '@/utils/waitForBlockNumber'
 
 type AccountsUpdate = {
   accountsToAdd: Account[]
@@ -848,20 +851,34 @@ export class MainController extends EventEmitter implements IMainController {
       if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
     })
 
-    this.ui.uiEvent.on('viewFocus', () => {
+    this.ui.uiEvent.on('viewFocus', (view: View) => {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.#fetchAllSafesPending()
+      // The mobile view is added once, so a return to the app refreshes here instead. The
+      // extension refreshes when a popup is added, as its views get focus far more often
+      if (view.type === 'mobile') this.#refreshSelectedAccountOnOpen()
     })
   }
 
   /**
    * - Updates the selected account's account state, portfolio and defi positions
    * - Calls batchReverseLookup for all accounts
+   * - Marks the view as ready
    *
    * It's not a problem to call it many times consecutively as all methods have internal
    * caching mechanisms to prevent unnecessary calls.
    */
   async onPopupOpen(viewId: string) {
+    this.#refreshSelectedAccountOnOpen()
+
+    this.ui.updateView(viewId, { isReady: true })
+  }
+
+  /**
+   * Refreshes what the user sees first when the wallet opens: the selected account's account
+   * state, portfolio and defi positions, and the account names. Cheap to repeat, see onPopupOpen.
+   */
+  #refreshSelectedAccountOnOpen() {
     const selectedAccountAddr = this.selectedAccount.account?.addr
 
     if (selectedAccountAddr) {
@@ -893,8 +910,6 @@ export class MainController extends EventEmitter implements IMainController {
 
       this.accounts.updateAccountState(selectedAccountAddr)
     }
-
-    this.ui.updateView(viewId, { isReady: true })
   }
 
   async #load(): Promise<void> {
@@ -1769,62 +1784,82 @@ export class MainController extends EventEmitter implements IMainController {
               op.status !== AccountOpStatus.Pending &&
               op.status !== AccountOpStatus.BroadcastedButNotConfirmed
           )
+          const blockNumberByChainId = getReceiptBlockNumberByChainId(finalizedAccountOps)
 
           const networks = this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
 
-          if (networks.length) {
-            // The account state must be updated before the portfolio
-            // as the portfolio has internal checks whether the nonce has changed
-            // to decide if to force refetch certain data
-            await this.accounts.updateAccountState(
-              accountAddr,
-              'latest',
-              networks.map((net) => net.chainId),
-              true
-            )
+          // Nothing awaits this callback, so a failure is reported here
+          try {
+            // A lagging RPC would return the balances and the nonce from before the confirmation
+            await Promise.all(
+              Object.entries(blockNumberByChainId).map(([chainId, blockNumber]) => {
+                const provider = this.providers.providers[chainId]
+                if (!provider) return undefined
 
-            // Schedule an update that will refetch new defi positions (if any)
-            chainsToUpdate.forEach((chainId) => {
-              this.portfolio.scheduleUpdate({
-                accountId: accountAddr,
-                chainId,
-                bypassServerSideCache: true
+                return waitForBlockNumber(provider, blockNumber, CONFIRMED_BLOCK_WAIT_TIMEOUT_MS)
               })
-            })
-          }
-
-          // Discard the simulation (that also updates the portfolio, but doesn't force update defi).
-          // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
-          // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
-          if (finalizedAccountOps.length) {
-            await this.portfolio.discardSimulation(finalizedAccountOps)
-          }
-
-          if (networks.length) {
-            // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
-            this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
-              accountAddr,
-              updatedAccountsOps
             )
 
-            // The update above may have been served by an RPC that doesn't have the confirmed
-            // block yet, so it's retried shortly instead of waiting for the scheduled update
-            this.portfolio
-              .refreshPortfolioBehindConfirmedAccountOps(accountAddr, updatedAccountsOps)
-              .catch((error) => {
-                this.emitError({
-                  level: 'silent',
-                  message: 'Failed to refresh the portfolio after a confirmed transaction.',
-                  error: error instanceof Error ? error : new Error(String(error))
+            if (networks.length) {
+              // The account state must be updated before the portfolio
+              // as the portfolio has internal checks whether the nonce has changed
+              // to decide if to force refetch certain data
+              await this.accounts.updateAccountState(
+                accountAddr,
+                'latest',
+                networks.map((net) => net.chainId),
+                true
+              )
+
+              // Schedule an update that will refetch new defi positions (if any)
+              chainsToUpdate.forEach((chainId) => {
+                this.portfolio.scheduleUpdate({
+                  accountId: accountAddr,
+                  chainId,
+                  bypassServerSideCache: true
                 })
               })
+            }
 
-            Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
-              // eslint-disable-next-line @typescript-eslint/no-floating-promises
-              this.portfolio.updateSelectedAccount(
+            const otherAccountsToUpdate = networks.length ? Object.entries(portfoliosToUpdate) : []
+
+            // The other accounts have their own portfolio queues, so they don't wait for the
+            // sender's read
+            await Promise.all([
+              // Discard the simulation (that also updates the portfolio, but doesn't force update defi).
+              // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
+              // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
+              finalizedAccountOps.length
+                ? this.portfolio.discardSimulation(finalizedAccountOps)
+                : undefined,
+              ...otherAccountsToUpdate.map(async ([portfolioAccountAddr, chainIds]) => {
+                // A fee payer has a new nonce and a recipient a new balance, and the
+                // account state goes first for the same reason as above
+                await this.accounts.updateAccountState(
+                  portfolioAccountAddr,
+                  'latest',
+                  chainIds,
+                  true
+                )
+                await this.portfolio.updateSelectedAccount(
+                  portfolioAccountAddr,
+                  this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+                )
+              })
+            ])
+
+            if (networks.length) {
+              // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
+              this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
                 accountAddr,
-                this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+                updatedAccountsOps
               )
+            }
+          } catch (error) {
+            this.emitError({
+              level: 'silent',
+              message: `Failed to refresh ${accountAddr} after its transactions were confirmed.`,
+              error: error instanceof Error ? error : new Error(String(error))
             })
           }
         }
