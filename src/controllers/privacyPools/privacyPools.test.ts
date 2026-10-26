@@ -2719,6 +2719,42 @@ describe('PrivacyPoolsController', () => {
       await expect(builtFor([{ ...reclaim, data: '0x12345678' }])).rejects.toThrow(message)
     })
 
+    it('waits for the running sync before proving, as the SDK syncs the same plugin', async () => {
+      const { controller, protocol } = await prepareSynced()
+      const syncing = controller.syncChain('1')
+      // Taken back elsewhere, which only the running sync learns
+      notesBySeed['seed-a'] = notesBySeed['seed-a']!.filter(({ label }) => label !== 6n)
+
+      const building3 = buildRagequit(controller, 3n)
+      const building6 = buildRagequit(controller, 6n)
+      await waitUntil(() => runningSyncs.length > 0)
+      await flush()
+      expect(protocol.ragequitLabels).toEqual([])
+
+      await releaseSync('seed-a')
+      await syncing
+      await expect(building3).resolves.toMatchObject({ accountAddr: DEPOSITOR })
+      await expect(building6).rejects.toThrow(
+        'This deposit can no longer be taken back. It may have been verified or taken back already.'
+      )
+      expect(protocol.ragequitLabels).toEqual([[3n]])
+    })
+
+    it('hands nothing over once the wallet was locked while waiting for a sync', async () => {
+      const { controller, keystore, protocol } = await prepareSynced()
+      const syncing = controller.syncChain('1')
+
+      const building = buildRagequit(controller, 3n)
+      await waitUntil(() => runningSyncs.length > 0)
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      await releaseSync('seed-a')
+      await syncing
+
+      await expect(building).rejects.toThrow('Please unlock your wallet to use Privacy Pools.')
+      expect(protocol.ragequitLabels).toEqual([])
+    })
+
     it('hands nothing over once the wallet was locked while proving', async () => {
       const { controller, keystore } = await prepareSynced()
       ragequitGate = createDeferred()

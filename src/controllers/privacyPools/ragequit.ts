@@ -63,6 +63,11 @@ export class PrivacyPoolsRagequit {
     label: bigint
   }): Promise<{ accountAddr: Hex; calls: Call[] }> {
     const generation = this.#ctx.lock.current
+    // The SDK syncs before proving, outside the queue, so wait for this account's sync of the
+    // chain rather than run beside it on the same plugin, as a withdrawal does
+    await (this.#sync.getRunningSync(seedId, chainId) || Promise.resolve())
+    if (!this.#ctx.lock.isCurrent(generation)) throw privacyPoolsErrors.locked()
+
     const note = this.#getPendingNotes(seedId, chainId).find((n) => n.label === label)
     if (!note) throw privacyPoolsErrors.ragequitDepositNotFound()
 
