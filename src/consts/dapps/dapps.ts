@@ -449,6 +449,17 @@ export const predefinedDapps: Dapp[] = [
       'Non-custodial anonymous transactions on Ethereum. Opens the same official app, but your browser checks every file itself, so you do not have to trust a middleman server. Slower to load.',
     twitter: 'TornadoCash',
     category: 'Privacy'
+  },
+  // DefiLlama lists RAILGUN only with its info website (railgun.org), not the staking app
+  {
+    id: 'stakerail.fi',
+    url: 'https://stakerail.fi',
+    name: 'RAILGUN Staking',
+    icon: 'https://icons.llamao.fi/icons/protocols/railgun',
+    description: 'Stake RAIL to secure the protocol and collect rewards.',
+    chainIds: [1],
+    twitter: 'railgun_project',
+    category: 'Staking'
   }
 ]
 
