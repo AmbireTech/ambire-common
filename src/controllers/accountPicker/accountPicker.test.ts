@@ -389,6 +389,35 @@ describe('AccountPicker', () => {
       expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-empty', ok: true, res: 0 })
     })
 
+    test('should list the accounts a flow without a key iterator removes', async () => {
+      const { mainCtrl } = await makeMainController()
+      const controller = mainCtrl.accountPicker
+      // Only accounts in the wallet can be removed, the others are dropped from the list
+      const accountToRemove = {
+        ...basicAccount,
+        addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      }
+      await mainCtrl.accounts.addAccounts([accountToRemove])
+
+      await controller.prepareAccounts({ accounts: [], accountsToRemove: [accountToRemove] })
+
+      expect(controller.readyToAddAccounts).toEqual([])
+      expect(controller.readyToRemoveAccounts).toEqual([accountToRemove])
+    })
+
+    test('should not list the removals of an earlier flow', async () => {
+      const { controller } = await prepareTest()
+      const accountToRemove = {
+        ...basicAccount,
+        addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      }
+      await controller.prepareAccounts({ accounts: [], accountsToRemove: [accountToRemove] })
+
+      await controller.prepareAccounts({ accounts: [basicAccount] })
+
+      expect(controller.readyToRemoveAccounts).toEqual([])
+    })
+
     test('should keep accounts a flow prepared already', async () => {
       const { controller } = await prepareTest()
       await controller.prepareAccounts({ accounts: [basicAccount] })

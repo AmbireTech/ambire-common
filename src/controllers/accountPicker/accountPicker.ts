@@ -135,7 +135,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    */
   readyToAddAccounts: Account[] = []
 
-  // Accounts that were selected in a previous session but are now deselected in the current one
+  /**
+   * Accounts that were selected in a previous session but are now deselected in the current
+   * one, or handed in by `prepareAccounts`. The personalize step lists them as being removed.
+   */
   readyToRemoveAccounts: Account[] = []
 
   /**
@@ -1020,6 +1023,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     await this.reset()
 
     this.readyToAddAccounts = accounts
+    this.readyToRemoveAccounts = accountsToRemove
     this.#preparedAccountsToRemove = accountsToRemove
     this.#readyToAddKeys = keys
     this.#preparedSelection = []
