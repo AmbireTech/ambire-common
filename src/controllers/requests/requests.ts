@@ -83,6 +83,7 @@ import {
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getAccountOpNonce, isSafeRejectionCall } from '../../libs/accountOp/accountOp'
+import { toCancelAccountOp } from '../../libs/accountOp/cancel'
 import { getSafeNonceAfterPendingAccountOps } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
@@ -127,6 +128,7 @@ import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
+import { SpeedUp } from '../signAccountOp/speedUp'
 
 import type { EIP712TypedData } from '@safe-global/types-kit'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -146,6 +148,19 @@ const SAFE_DEPLOYMENT_STUCK_MESSAGE =
 
 const MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR =
   "This app asked to sign a message with an account that isn't in your wallet."
+
+/** Whether both lists make the same calls, ignoring the ids the wallet gives them */
+const haveSameCalls = (calls: Call[], otherCalls: Call[]): boolean =>
+  calls.length === otherCalls.length &&
+  calls.every((call, i) => {
+    const otherCall = otherCalls[i]!
+
+    return (
+      call.to?.toLowerCase() === otherCall.to?.toLowerCase() &&
+      BigInt(call.value) === BigInt(otherCall.value) &&
+      call.data.toLowerCase() === otherCall.data.toLowerCase()
+    )
+  })
 
 type SafeDeploymentRequestResult =
   | { success: false; error: SafeDeploymentRequestError }
@@ -261,6 +276,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #dappRequestQueues = new Map<string, DappRequestQueueItem[]>()
 
   #safeDeploymentRequestsInFlight = new Map<string, Promise<SafeDeploymentRequestResult>>()
+
+  /**
+   * Speed ups still being built, keyed by the chain and the pending transaction they replace.
+   * Building one waits on the network, and it's in `userRequests` only once that's done, so
+   * without this, pressing Speed up again meanwhile would build a second speed up
+   */
+  #speedUpsBeingBuilt = new Set<string>()
 
   /**
    * Requests that have been built and are about to be added. Prevents opening and closing
@@ -597,7 +619,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // otherwise wait for the fetch to complete (no matter how long it takes).
         // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
         const accountState = await Promise.race([
-          this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
+          this.#accounts
+            .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
+            .then(() => this.#accounts.accountStates[meta.accountAddr]?.[meta.chainId.toString()]),
           // Fallback to the old account state if it exists and the fetch takes too long
           accountStateBefore
             ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
@@ -770,6 +794,85 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.requestWindow.openWindowPromise
   }
 
+  /**
+   * An open request that already speeds up (or cancels) the same pending transaction. Pressing
+   * Speed up (or Cancel) again reopens it, as a second one would compete with it for the same
+   * nonce. A speed up and a cancel of the same transaction are different requests, so pressing
+   * Cancel never reopens a speed up and the other way around
+   */
+  #findOpenSpeedUpRequest(accountOp: AccountOp): CallsUserRequest | undefined {
+    const replacedIdentifier = accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier
+    if (!replacedIdentifier) return undefined
+    const isCancel = SpeedUp.isCancel(accountOp)
+
+    return this.userRequests.find(
+      (r): r is CallsUserRequest =>
+        r.kind === 'calls' &&
+        r.signAccountOp.isSpeedUpTransaction &&
+        r.meta.chainId === accountOp.chainId &&
+        r.signAccountOp.accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier ===
+          replacedIdentifier &&
+        SpeedUp.isCancel(r.signAccountOp.accountOp) === isCancel
+    )
+  }
+
+  /**
+   * An open Safe cancel (see `toCancelAccountOp`) of the Safe transaction with this hash. Other
+   * owners sign it through the Safe API, so their signatures are added to it from there
+   */
+  #findOpenSafeCancelRequest(safeTxnHash: string): CallsUserRequest | undefined {
+    return this.userRequests.find(
+      (r): r is CallsUserRequest =>
+        r.kind === 'calls' &&
+        !!r.signAccountOp.account.safeCreation &&
+        SpeedUp.isCancel(r.signAccountOp.accountOp) &&
+        r.signAccountOp.accountOp.txnId === safeTxnHash
+    )
+  }
+
+  /**
+   * Identifies the pending transaction a speed up replaces, the same way as
+   * `#findOpenSpeedUpRequest` does. Undefined for anything that isn't a speed up
+   */
+  #getSpeedUpKey(accountOp: AccountOp | undefined): string | undefined {
+    if (!accountOp || !SpeedUp.isSpeedUp(accountOp)) return undefined
+    const replacedIdentifier = accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier
+    if (!replacedIdentifier) return undefined
+    const replacementType = SpeedUp.isCancel(accountOp) ? 'cancel' : 'speedUp'
+
+    return `${accountOp.chainId.toString()}:${replacedIdentifier}:${replacementType}`
+  }
+
+  /**
+   * Whether a Safe transaction from the Safe API is already being sent: it's open as a speed up,
+   * or it was broadcast and is waiting to get onchain. The Safe API keeps it pending until then,
+   * so without this it would also show up in the queue as a transaction waiting to be signed.
+   * Matched by the Safe nonce and the calls, as the Safe transaction hash isn't kept after
+   * broadcasting. Another transaction on the same nonce (e.g. a rejection) still shows up
+   */
+  #isSafeTxnBeingSent(
+    calls: Call[],
+    { accountAddr, chainId }: CallsUserRequest['meta'],
+    safeNonce: bigint
+  ): boolean {
+    const isSameSafeTxn = (accountOp: AccountOp) =>
+      accountOp.chainId === chainId &&
+      getAccountOpNonce(accountOp) === safeNonce &&
+      haveSameCalls(accountOp.calls, calls)
+
+    const isOpenAsSpeedUp = this.userRequests.some(
+      (r) =>
+        r.kind === 'calls' &&
+        r.signAccountOp.isSpeedUpTransaction &&
+        r.meta.accountAddr === accountAddr &&
+        isSameSafeTxn(r.signAccountOp.accountOp)
+    )
+    if (isOpenAsSpeedUp) return true
+
+    const broadcastOps = this.#activity.broadcastedButNotConfirmed[accountAddr] ?? []
+    return broadcastOps.some(isSameSafeTxn)
+  }
+
   #getSafeDeployRequest(accountAddr: string, chainId: bigint): CallsUserRequest | undefined {
     return this.userRequests.find(
       (r): r is CallsUserRequest =>
@@ -784,13 +887,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   /**
    * Safs can't be opened until their Safe is deployed. If the known account state says the Safe
    * isn't deployed yet, it gets refreshed first, as the deployment may have just been confirmed.
+   * Uses the 'latest' state, as a deployment that isn't mined yet can still fail.
    */
   async #confirmSafeDeploymentBeforeOpening(
     accountAddr: string,
     chainId: bigint
   ): Promise<boolean> {
     try {
-      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId])
+      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId], true)
 
       const accountState = this.#accounts.accountStates[accountAddr]?.[chainId.toString()]
 
@@ -1609,7 +1713,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!isDefinitelyNotDeployed && !isMaybeDeployed) return
 
     try {
-      if (isMaybeDeployed && (await this.#isSafeDeployedOnChain(op.accountAddr, op.chainId))) return
+      if (isMaybeDeployed && (await this.#isSafeDeployedOnChain(op.accountAddr, op.chainId, true)))
+        return
 
       const errorMessage =
         op.status === AccountOpStatus.BroadcastButStuck
@@ -1629,10 +1734,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * Refreshes the account state and checks if the Safe is deployed.
    * If the check fails, the Safe is treated as not deployed, so the requests
    * waiting for it don't hang forever (the deployment op is no longer tracked).
+   * Pass `force` when the deployment status may have just changed. Uses the 'latest' state, so a
+   * deployment that isn't mined yet counts as not deployed.
    */
-  async #isSafeDeployedOnChain(accountAddr: string, chainId: bigint): Promise<boolean> {
+  async #isSafeDeployedOnChain(
+    accountAddr: string,
+    chainId: bigint,
+    force = false
+  ): Promise<boolean> {
     try {
-      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId])
+      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId], force)
     } catch (error) {
       this.emitError({
         level: 'silent',
@@ -1764,7 +1875,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         return { success: false, error: 'unavailable' }
       }
 
-      const accountState = await this.#accounts.forceFetchPendingState(accountAddr, chainId)
+      // 'pending' also counts a deployment that isn't mined yet, so a second one isn't sent
+      await this.#accounts.updateAccountState(accountAddr, 'pending', [chainId])
+      const accountState = this.#accounts.accountStates[accountAddr]?.[chainId.toString()]
+      if (!accountState) {
+        return { success: false, error: 'preparation-failed' }
+      }
       if (accountState.isDeployed) {
         return { success: true, alreadyDeployed: true }
       }
@@ -2696,7 +2812,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     recipientAddress,
     recipientDomain,
     selectedToken,
-    executionType = 'open-request-window'
+    executionType = 'open-request-window',
+    privacyPoolsSeedId
   }: {
     amount: string
     amountInFiat: bigint
@@ -2704,6 +2821,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     recipientDomain: string | undefined
     selectedToken: TokenResult
     executionType: RequestExecutionType
+    privacyPoolsSeedId?: string
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -2735,15 +2853,30 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.#featureFlags.isFeatureEnabled('eip7702')
     )
 
-    const callsRequestParams = getTransferRequestParams({
-      selectedAccount: this.#selectedAccount.account.addr,
-      amount,
-      amountInFiat,
-      selectedToken,
-      recipientAddress,
-      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
-      recipientDomain
-    })
+    const paymasterService = getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+    // A transfer to a Privacy Pools account is a deposit
+    const callsRequestParams = privacyPoolsSeedId
+      ? {
+          calls: await this.#transfer.buildPrivacyPoolsDepositCalls({
+            seedId: privacyPoolsSeedId,
+            selectedToken,
+            amount
+          }),
+          meta: {
+            chainId: selectedToken.chainId,
+            accountAddr: this.#selectedAccount.account.addr,
+            paymasterService
+          }
+        }
+      : getTransferRequestParams({
+          selectedAccount: this.#selectedAccount.account.addr,
+          amount,
+          amountInFiat,
+          selectedToken,
+          recipientAddress,
+          paymasterService,
+          recipientDomain
+        })
 
     if (!callsRequestParams) {
       this.emitError({
@@ -3178,7 +3311,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * request to switch to it instead, so they never join a batch the user isn't looking at.
    */
   async #addCallsUserRequest(
-    params: CallsUserRequestParams,
+    requestParams: CallsUserRequestParams,
     {
       executionType,
       allowAccountSwitch = false,
@@ -3190,6 +3323,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       skipFocus?: boolean
     } = {}
   ) {
+    // A cancel comes in as the pending transaction it replaces. Its calls are swapped for empty
+    // ones here, whatever calls it came with, so a cancel never runs anything
+    const cancelAccountOp =
+      requestParams.accountOp && SpeedUp.isCancel(requestParams.accountOp)
+        ? toCancelAccountOp(requestParams.accountOp)
+        : undefined
+    const params: CallsUserRequestParams = cancelAccountOp
+      ? { ...requestParams, calls: cancelAccountOp.calls, accountOp: cancelAccountOp }
+      : requestParams
+
     if (allowAccountSwitch && params.meta.accountAddr !== this.#selectedAccount.account?.addr) {
       // Checked again against the batch they join once the user switches, but a request that
       // is over the cap on its own is turned away now rather than after the user has switched
@@ -3203,8 +3346,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    const userRequest = await this.#createOrUpdateCallsUserRequest(params, executionType)
-    if (userRequest) await this.addUserRequests([userRequest], { executionType, ...addOptions })
+    // The speed up being built opens once it's ready, so pressing Speed up again meanwhile
+    // has nothing to add
+    const speedUpKey = this.#getSpeedUpKey(params.accountOp)
+    if (speedUpKey && this.#speedUpsBeingBuilt.has(speedUpKey)) return
+    if (speedUpKey) this.#speedUpsBeingBuilt.add(speedUpKey)
+
+    try {
+      const userRequest = await this.#createOrUpdateCallsUserRequest(params, executionType)
+      if (userRequest) await this.addUserRequests([userRequest], { executionType, ...addOptions })
+    } finally {
+      if (speedUpKey) this.#speedUpsBeingBuilt.delete(speedUpKey)
+    }
   }
 
   /**
@@ -3247,35 +3400,59 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     let callUserRequest: CallsUserRequest | undefined
     const isSafeAccount = !!this.#accounts.accounts.find((a) => a.addr === meta.accountAddr)
       ?.safeCreation
-    // A Safe accountOp built in advance (speeding up or cancelling an already sent transaction)
-    // is pinned to that transaction's nonce, so it must always be a request of its own instead
+    // A speed up replaces one pending transaction as it is, so it's always a request of its own:
+    // it's never added to a batch and nothing gets added to it. Otherwise its calls would be
+    // sent again as a new transaction instead of replacing the pending one. A speed up of the
+    // same transaction that is already open is reopened instead of building another one
+    const isSpeedUpRequest = !!providedAccountOp && SpeedUp.isSpeedUp(providedAccountOp)
+
+    // A Safe accountOp built in advance (e.g. resending an already sent transaction or cancelling
+    // it) is pinned to that transaction's nonce, so it must always be a request of its own instead
     // of getting its calls merged into whatever request is already open
     const isPrebuiltSafeAccountOp = isSafeAccount && !!providedAccountOp
-    const existingUserRequest = this.userRequests.find(
-      (r) =>
-        !isPrebuiltSafeAccountOp &&
-        r.kind === 'calls' &&
-        // done like this so 1) a safe onchain rejection tx is not bundled with a normal batch
-        // 2) a fetched rejection is bundled with the current local present rejection.
-        // Only for Safes - any other account would get a second request under the same id as
-        // its batch, which replaces the batch and drops what was in it
-        (!isSafeAccount ||
-          isSafeRejectionCall(calls, meta.accountAddr) ===
-            isSafeRejectionCall(r.signAccountOp.accountOp.calls, meta.accountAddr)) &&
-        !!r.meta.isSafeDeploy === !!meta.isSafeDeploy &&
-        r.meta.accountAddr === meta.accountAddr &&
-        r.meta.chainId === meta.chainId &&
-        (accountOpNonce === undefined ||
-          (!r.signAccountOp.accountOp.signature &&
-            getAccountOpNonce(r.signAccountOp.accountOp) === accountOpNonce)) &&
-        // find an accountOp with no txnId, if the meta does not have a Safe
-        // txnId. If it has, it should not get the existingUserRequest
-        ((!meta.safeTxnProps?.txnId && !r.signAccountOp.accountOp.txnId) ||
-          // if meta has txnId, the accountOp should have the same txnId
-          (meta.safeTxnProps?.txnId &&
-            r.signAccountOp.accountOp.txnId &&
-            meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId))
-    ) as CallsUserRequest | undefined
+
+    const openSafeCancelRequest =
+      meta.safeTxnProps && this.#findOpenSafeCancelRequest(meta.safeTxnProps.txnId)
+    if (meta.safeTxnProps && openSafeCancelRequest) {
+      // The rest is the same Safe transaction (same hash). The cancel takes the signatures of
+      // owners who haven't signed it yet, compared by owner rather than by signature length
+      openSafeCancelRequest.signAccountOp.update({
+        accountOpData: { signature: meta.safeTxnProps.signature, safeTx: meta.safeTx }
+      })
+      return
+    }
+
+    if (meta.safeTxnProps && this.#isSafeTxnBeingSent(calls, meta, meta.safeTxnProps.nonce)) return
+
+    const existingUserRequest =
+      isSpeedUpRequest && providedAccountOp
+        ? this.#findOpenSpeedUpRequest(providedAccountOp)
+        : (this.userRequests.find(
+            (r) =>
+              !isPrebuiltSafeAccountOp &&
+              r.kind === 'calls' &&
+              !r.signAccountOp.isSpeedUpTransaction &&
+              // done like this so 1) a safe onchain rejection tx is not bundled with a normal batch
+              // 2) a fetched rejection is bundled with the current local present rejection.
+              // Only for Safes - any other account would get a second request under the same id as
+              // its batch, which replaces the batch and drops what was in it
+              (!isSafeAccount ||
+                isSafeRejectionCall(calls, meta.accountAddr) ===
+                  isSafeRejectionCall(r.signAccountOp.accountOp.calls, meta.accountAddr)) &&
+              !!r.meta.isSafeDeploy === !!meta.isSafeDeploy &&
+              r.meta.accountAddr === meta.accountAddr &&
+              r.meta.chainId === meta.chainId &&
+              (accountOpNonce === undefined ||
+                (!r.signAccountOp.accountOp.signature &&
+                  getAccountOpNonce(r.signAccountOp.accountOp) === accountOpNonce)) &&
+              // find an accountOp with no txnId, if the meta does not have a Safe
+              // txnId. If it has, it should not get the existingUserRequest
+              ((!meta.safeTxnProps?.txnId && !r.signAccountOp.accountOp.txnId) ||
+                // if meta has txnId, the accountOp should have the same txnId
+                (meta.safeTxnProps?.txnId &&
+                  r.signAccountOp.accountOp.txnId &&
+                  meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId))
+          ) as CallsUserRequest | undefined)
 
     // A Safe is deployed once per chain, so a pending deployment is reused as it is. Adding
     // the deployment to it a second time would make the whole transaction fail
@@ -3338,7 +3515,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           // if we're updating a signAccountOp with external data (txnId / signature),
           // we do not wish to continue any further down as race conditions may happen
           return
-        } else {
+        } else if (!existingUserRequest.signAccountOp.isSpeedUpTransaction) {
           existingUserRequest.signAccountOp.update({
             accountOpData: {
               calls: [
@@ -3389,15 +3566,30 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
       // otherwise wait for the fetch to complete (no matter how long it takes).
       // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
-      const accountState = (await Promise.race([
-        this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
+      const accountState = await Promise.race([
+        this.#accounts
+          .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
+          .then(() => this.#accounts.accountStates[meta.accountAddr]?.[meta.chainId.toString()]),
         // Fallback to the old account state if it exists and the fetch takes too long
         accountStateBefore
-          ? new Promise((res) => {
+          ? new Promise<AccountOnchainState>((res) => {
               setTimeout(() => res(accountStateBefore), 2000)
             })
-          : new Promise(() => {}) // Explicitly never-resolving promise
-      ])) as any
+          : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
+      ])
+
+      if (!accountState) {
+        this.emitError({
+          level: 'major',
+          message:
+            "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support.",
+          error: new Error(
+            `requestsController error: accountState for ${meta.accountAddr} is undefined on network with id ${meta.chainId}`
+          )
+        })
+        dappPromises.forEach((p) => p.reject(ethErrors.rpc.internal()))
+        return
+      }
 
       // do not build requests for expired Safe txns
       if (meta.safeTxnProps && meta.safeTxnProps.nonce < accountState.nonce) return
@@ -3405,16 +3597,23 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
       const baseRequestId = `${meta.accountAddr}-${meta.chainId}${meta.safeTxnProps?.txnId ? `-${meta.safeTxnProps.txnId}` : ''}`
-      // add a unique id for safe requests as we want to make sure
-      // new requests do not replace already existing ones
-      const requestId = !!account.safeCreation
-        ? `${baseRequestId}-${generateUuid()}`
-        : baseRequestId
+      // add a unique id for safe and speed up requests as we want to make sure
+      // new requests do not replace already existing ones (e.g. the batch on the same chain)
+      const requestId =
+        !!account.safeCreation || isSpeedUpRequest
+          ? `${baseRequestId}-${generateUuid()}`
+          : baseRequestId
+      // A Safe accountOp built in advance (a speed up, a cancel or a resend) keeps the Safe nonce
+      // of the transaction it replaces: the Safe transaction is built from it and its signatures,
+      // if reused, are for that nonce.
+      // Other accounts don't put the account nonce in the broadcast (the EOA nonce, eoaNonce,
+      // is kept separately), and their simulation runs on the pending block, where the replaced
+      // transaction has already raised the nonce. Keeping the old one there makes it fail
       const prebuiltSafeNonce =
         isSafeAccount && providedAccountOp && providedAccountOp.nonce !== null
           ? providedAccountOp.nonce
           : undefined
-      const pinnedNonce = accountOpNonce ?? prebuiltSafeNonce
+      const pinnedNonce = prebuiltSafeNonce ?? accountOpNonce
       const initialNonce =
         account.safeCreation && !meta.safeTxnProps && pinnedNonce === undefined
           ? this.#getFirstFreeNonce(meta.accountAddr, meta.chainId, accountState.nonce)
@@ -3445,7 +3644,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           contractInfo: this.#contractInfo,
           fromRequestId: requestId,
           accountOp: providedAccountOp
-            ? { ...providedAccountOp, nonce: initialNonce }
+            ? {
+                ...providedAccountOp,
+                // A speed up is a transaction of its own, so it gets its own id. The activity
+                // stores account ops by id, so a shared one would overwrite the replaced one
+                ...(isSpeedUpRequest && { id: generateUuid() }),
+                nonce: initialNonce
+              }
             : {
                 id: generateUuid(),
                 accountAddr: meta.accountAddr,
@@ -3476,7 +3681,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             await this.#portfolio.updateSelectedAccount(account.addr, [network])
           },
           onBroadcastSuccess: this.#onBroadcastSuccess,
-          onBroadcastFailed: this.#onBroadcastFailed
+          onBroadcastFailed: this.#onBroadcastFailed,
+          speedUp:
+            providedAccountOp && isSpeedUpRequest
+              ? new SpeedUp({ accountOp: providedAccountOp, activity: this.#activity })
+              : undefined
         }),
 
         dappPromises

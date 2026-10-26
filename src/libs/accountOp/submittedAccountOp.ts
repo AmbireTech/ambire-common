@@ -131,6 +131,32 @@ export interface SubmittedAccountOpLike
 }
 
 /**
+ * Adds to each call of a batch broadcast as one txn per call (`MultipleTxns`) the hash
+ * of its txn. Calls without a txn were not sent (e.g. rejected on the hardware wallet
+ * midway through the batch), so they are marked as rejected.
+ */
+export function getCallsWithTxnIds(
+  submittedAccountOp: SubmittedAccountOp
+): SubmittedAccountOp['calls'] {
+  const txnIds = submittedAccountOp.identifiedBy.identifier.split('-')
+
+  return submittedAccountOp.calls.map((oneCall, i) => {
+    const localCall = { ...oneCall }
+
+    // if there's no tx id, we set it to Rejected and continue.
+    // it means broadcast has failed
+    if (!(i in txnIds)) {
+      localCall.status = AccountOpStatus.Rejected
+      return localCall
+    }
+
+    localCall.txnId = txnIds[i] as Hex
+    localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
+    return localCall
+  })
+}
+
+/**
  * Rebuilds a full `AccountOp` from a `SubmittedAccountOpLike` - e.g. to re-run `humanizeAccountOp`
  * against a past activity item, which only carries the looser `SubmittedAccountOpLike` shape.
  * Fields absent from `SubmittedAccountOpLike` (because they were optional on

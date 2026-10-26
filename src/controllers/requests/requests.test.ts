@@ -12,7 +12,6 @@ import {
   DAPP_SILENCE_DURATION,
   MAX_DAPP_CALLS_PER_REQUEST
 } from '../../consts/safeguards/dappRequestSpam'
-import { AccountOnchainState } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { Platform } from '../../interfaces/platform'
@@ -32,6 +31,7 @@ import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 import type { AccountOp } from '../../libs/accountOp/accountOp'
+import type { Call } from '../../libs/accountOp/types'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
@@ -337,6 +337,20 @@ const DAPP_CONNECT_REQUEST: DappConnectRequest = {
     }
   ]
 }
+
+const APP_WINDOW_ID = 2
+const OTHER_WINDOW_ID = 3
+
+const getDappConnectRequestFromWindow = (windowId: number): DappConnectRequest => ({
+  ...DAPP_CONNECT_REQUEST,
+  id: `dapp-connect-from-window-${windowId}`,
+  dappPromises: [
+    {
+      ...DAPP_CONNECT_REQUEST.dappPromises[0]!,
+      session: new Session({ tabId: 1, windowId, url: 'https://test-dApp.com' })
+    }
+  ]
+})
 
 /** A message to sign for the selected account, from the test app. */
 const makeMessageRequest = (
@@ -654,6 +668,180 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest?.id).toBe('arrived-request')
     expect(controller.requestWindow.windowProps).not.toBe(null)
   })
+  describe('speed ups', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const replacedAccountOpId = 'replaced-account-op-id'
+    const call = { to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143', value: 1n, data: '0x' }
+
+    const buildBatchRequest = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: { calls: [call], meta: { accountAddr, chainId: 1n } }
+        }
+      })
+
+    const buildSpeedUpRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      { replacedTxnId, nonce = 0n }: { replacedTxnId?: string; nonce?: bigint } = {}
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [call],
+            meta: { accountAddr, chainId: 1n },
+            accountOp: {
+              id: replacedAccountOpId,
+              accountAddr,
+              chainId: 1n,
+              signingKeyAddr: null,
+              signingKeyType: null,
+              gasLimit: null,
+              gasFeePayment: null,
+              nonce,
+              signature: null,
+              calls: [{ ...call, id: 'replaced-call-id' }],
+              meta: {
+                speedUp: {
+                  enabled: true,
+                  ...(replacedTxnId && {
+                    replacedIdentifiedBy: { type: 'Transaction', identifier: replacedTxnId }
+                  })
+                }
+              }
+            } as AccountOp
+          }
+        }
+      })
+
+    const getCallsRequests = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.userRequests.filter((r) => r.kind === 'calls')
+
+    test('a speed up is not added to the batch already open on the same chain', async () => {
+      const { controller } = await prepareTest()
+      await buildBatchRequest(controller)
+      await buildSpeedUpRequest(controller)
+
+      const [batch, speedUp] = getCallsRequests(controller)
+      expect(getCallsRequests(controller)).toHaveLength(2)
+      expect(batch!.signAccountOp.isSpeedUpTransaction).toBe(false)
+      expect(batch!.signAccountOp.accountOp.calls).toHaveLength(1)
+      expect(speedUp!.signAccountOp.isSpeedUpTransaction).toBe(true)
+      expect(speedUp!.id).not.toBe(batch!.id)
+    })
+
+    test('new calls are not added to an open speed up', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller)
+      await buildBatchRequest(controller)
+
+      const speedUp = getCallsRequests(controller).find((r) => r.signAccountOp.isSpeedUpTransaction)
+      expect(getCallsRequests(controller)).toHaveLength(2)
+      expect(speedUp!.signAccountOp.accountOp.calls).toHaveLength(1)
+    })
+
+    test('a speed up gets an account op id of its own', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller)
+
+      const [speedUp] = getCallsRequests(controller)
+      expect(speedUp!.signAccountOp.accountOp.id).toBeTruthy()
+      expect(speedUp!.signAccountOp.accountOp.id).not.toBe(replacedAccountOpId)
+    })
+
+    test('batching normal calls still works next to an open speed up', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller)
+      await buildBatchRequest(controller)
+      await buildBatchRequest(controller)
+
+      const batch = getCallsRequests(controller).find((r) => !r.signAccountOp.isSpeedUpTransaction)
+      expect(getCallsRequests(controller)).toHaveLength(2)
+      expect(batch!.signAccountOp.accountOp.calls).toHaveLength(2)
+    })
+
+    test('pressing Speed up again reopens the open speed up of that transaction', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller, { replacedTxnId: `0x${'aa'.repeat(32)}` })
+      await buildSpeedUpRequest(controller, { replacedTxnId: `0x${'aa'.repeat(32)}` })
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      expect(getCallsRequests(controller)[0]!.signAccountOp.accountOp.calls).toHaveLength(1)
+    })
+
+    test('speed ups of different transactions are separate requests', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller, { replacedTxnId: `0x${'aa'.repeat(32)}` })
+      await buildSpeedUpRequest(controller, { replacedTxnId: `0x${'bb'.repeat(32)}` })
+
+      expect(getCallsRequests(controller)).toHaveLength(2)
+    })
+
+    test('pressing Speed up twice while the first is still being built adds one speed up', async () => {
+      const { controller } = await prepareTest()
+      const replacedTxnId = `0x${'aa'.repeat(32)}`
+
+      // Neither is awaited before the other starts, the same as two quick presses
+      await Promise.all([
+        buildSpeedUpRequest(controller, { replacedTxnId }),
+        buildSpeedUpRequest(controller, { replacedTxnId })
+      ])
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+    })
+
+    test('speed ups of different transactions built at the same time are both added', async () => {
+      const { controller } = await prepareTest()
+
+      await Promise.all([
+        buildSpeedUpRequest(controller, { replacedTxnId: `0x${'aa'.repeat(32)}` }),
+        buildSpeedUpRequest(controller, { replacedTxnId: `0x${'bb'.repeat(32)}` })
+      ])
+
+      expect(getCallsRequests(controller)).toHaveLength(2)
+    })
+
+    test('a speed up can be built again after the previous one was closed', async () => {
+      const { controller } = await prepareTest()
+      const replacedTxnId = `0x${'aa'.repeat(32)}`
+      await buildSpeedUpRequest(controller, { replacedTxnId })
+      await controller.removeUserRequests([getCallsRequests(controller)[0]!.id])
+
+      await buildSpeedUpRequest(controller, { replacedTxnId })
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+    })
+
+    // The replaced transaction is still pending, so the pending account state is one nonce ahead
+    const mockPendingNonce = (
+      accountsCtrl: Awaited<ReturnType<typeof prepareTest>>['accountsCtrl']
+    ) => {
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+      accountsCtrl.accountStates[accountAddr]!['1']!.nonce = 8n
+    }
+
+    test('a Safe speed up keeps the nonce of the transaction it replaces', async () => {
+      const { controller, accountsCtrl } = await prepareTest(false, true)
+      mockPendingNonce(accountsCtrl)
+      await buildSpeedUpRequest(controller, { nonce: 7n })
+
+      // The Safe transaction is built from this nonce, and its signatures are for it
+      expect(getCallsRequests(controller)[0]!.signAccountOp.accountOp.nonce).toBe(7n)
+    })
+
+    test('a smart account speed up uses the pending nonce, so it can be simulated', async () => {
+      const { controller, accountsCtrl } = await prepareTest()
+      mockPendingNonce(accountsCtrl)
+      await buildSpeedUpRequest(controller, { nonce: 7n })
+
+      // The simulation runs on the pending block, where the replaced transaction raised it to 8
+      expect(getCallsRequests(controller)[0]!.signAccountOp.accountOp.nonce).toBe(8n)
+    })
+  })
+
   describe('closing the side panel', () => {
     /** Requests show up in the panel, which has no window of its own. */
     const prepareSidePanelTest = async () => {
@@ -850,7 +1038,7 @@ describe('RequestsController ', () => {
     const chainId = 1n
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.threshold = 2
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const txnId = SAFE_TX_HASH
     const firstSigner = new Wallet(`0x${'1'.repeat(64)}`)
     const secondSigner = new Wallet(`0x${'2'.repeat(64)}`)
@@ -1485,11 +1673,8 @@ describe('RequestsController ', () => {
     const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
-    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue({
-      ...accountState,
-      nonce: 1n
-    })
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 1n
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const buildSafeRequest = (nonce: bigint, txnId: Hex) =>
       controller.build({
         type: 'calls',
@@ -1522,6 +1707,124 @@ describe('RequestsController ', () => {
     expect(safeRequests.map((request) => request.signAccountOp.accountOp.nonce)).toEqual([1n, 5n])
 
     safeRequests.forEach((request) => request.signAccountOp.destroy())
+  })
+  describe('a Safe transaction from the Safe API that is already being sent', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const safeNonce = 7n
+    const call = { to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143', value: 1n, data: '0x' }
+
+    const buildSafeApiRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      { calls = [call], nonce = safeNonce }: { calls?: Call[]; nonce?: bigint } = {}
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls,
+            meta: {
+              accountAddr,
+              chainId,
+              safeTxnProps: { txnId: `0x${'cd'.repeat(32)}`, signature: '0x', nonce }
+            }
+          }
+        }
+      })
+
+    const addBroadcastOp = (
+      activityCtrl: Awaited<ReturnType<typeof prepareTest>>['activityCtrl'],
+      status = AccountOpStatus.BroadcastedButNotConfirmed
+    ) =>
+      activityCtrl.addAccountOp({
+        ...getActivityAccountOp(accountAddr, chainId, safeNonce),
+        // The id the wallet gives a call doesn't make it another transaction
+        calls: [{ ...call, to: call.to.toLowerCase(), id: 'call-id' }],
+        status
+      })
+
+    const prepareSafeTest = async () => {
+      const test = await prepareTest(false, true)
+      test.accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = safeNonce
+      jest.spyOn(test.accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+      return test
+    }
+
+    const getCallsRequests = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.userRequests.filter(
+        (request): request is CallsUserRequest => request.kind === 'calls'
+      )
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    test('is not queued while it waits to get onchain', async () => {
+      const { controller, activityCtrl } = await prepareSafeTest()
+      await addBroadcastOp(activityCtrl)
+
+      await buildSafeApiRequest(controller)
+
+      expect(getCallsRequests(controller)).toHaveLength(0)
+    })
+
+    test('is not queued while it is open as a speed up', async () => {
+      const { controller } = await prepareSafeTest()
+      await controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [call],
+            meta: { accountAddr, chainId },
+            accountOp: {
+              id: 'replaced-account-op-id',
+              accountAddr,
+              chainId,
+              signingKeyAddr: null,
+              signingKeyType: null,
+              gasLimit: null,
+              gasFeePayment: null,
+              nonce: safeNonce,
+              signature: null,
+              calls: [{ ...call, id: 'replaced-call-id' }],
+              meta: { speedUp: { enabled: true } }
+            } as AccountOp
+          }
+        }
+      })
+      expect(getCallsRequests(controller)).toHaveLength(1)
+
+      await buildSafeApiRequest(controller)
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      expect(getCallsRequests(controller)[0]!.signAccountOp.isSpeedUpTransaction).toBe(true)
+      getCallsRequests(controller).forEach((request) => request.signAccountOp.destroy())
+    })
+
+    test('is queued again once the broadcast did not get onchain', async () => {
+      const { controller, activityCtrl } = await prepareSafeTest()
+      await addBroadcastOp(activityCtrl, AccountOpStatus.BroadcastButStuck)
+
+      await buildSafeApiRequest(controller)
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      getCallsRequests(controller).forEach((request) => request.signAccountOp.destroy())
+    })
+
+    test.each([
+      ['another transaction on the same nonce', { calls: [{ ...call, value: 2n }] }],
+      ['the same calls on another nonce', { nonce: safeNonce + 1n }]
+    ])('still queues %s', async (_, overrides) => {
+      const { controller, activityCtrl } = await prepareSafeTest()
+      await addBroadcastOp(activityCtrl)
+
+      await buildSafeApiRequest(controller, overrides)
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      getCallsRequests(controller).forEach((request) => request.signAccountOp.destroy())
+    })
   })
   test('build contract deployment dapp request', async () => {
     const { controller } = await prepareTest(true)
@@ -1568,7 +1871,7 @@ describe('RequestsController ', () => {
     }
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
@@ -1635,7 +1938,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -1682,7 +1985,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -1710,7 +2013,7 @@ describe('RequestsController ', () => {
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     jest
-      .spyOn(accountsCtrl, 'forceFetchPendingState')
+      .spyOn(accountsCtrl, 'updateAccountState')
       .mockRejectedValue(new Error('The network did not respond'))
     const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
     const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
@@ -1746,7 +2049,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const deploymentCall = {
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -1805,12 +2108,12 @@ describe('RequestsController ', () => {
     const chainId = 1n
     const safeAccount = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
     safeAccount.safeCreation!.setupData = '0x1234'
-    await selectedAccountCtrl.setAccount(
-      accountsCtrl.accounts.find((candidate) => candidate.addr !== accountAddr)!
-    )
+    await selectedAccountCtrl.select({
+      account: accountsCtrl.accounts.find((candidate) => candidate.addr !== accountAddr)!
+    })
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -1832,7 +2135,7 @@ describe('RequestsController ', () => {
     await controller.buildSafeDeploymentRequest(accountAddr, chainId)
     expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(2)
 
-    await selectedAccountCtrl.setAccount(safeAccount)
+    await selectedAccountCtrl.select({ account: safeAccount })
     const switchAccountRequests = controller.userRequests.filter(
       (request) => request.kind === 'switchAccount'
     )
@@ -1875,12 +2178,11 @@ describe('RequestsController ', () => {
     const stateFetchStarted = new Promise<void>((resolve) => {
       signalStateFetchStarted = resolve
     })
-    const forceFetchPendingStateSpy = jest
-      .spyOn(accountsCtrl, 'forceFetchPendingState')
+    const updateAccountStateSpy = jest
+      .spyOn(accountsCtrl, 'updateAccountState')
       .mockImplementation(async () => {
         signalStateFetchStarted()
         await stateFetchGate
-        return accountState
       })
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
@@ -1903,7 +2205,7 @@ describe('RequestsController ', () => {
     )
 
     await stateFetchStarted
-    expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(1)
+    expect(updateAccountStateSpy).toHaveBeenCalledTimes(1)
     releaseStateFetch()
 
     await expect(Promise.all([firstRequest, secondRequest])).resolves.toEqual([true, true])
@@ -1934,7 +2236,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValueOnce(null)
@@ -1982,7 +2284,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue(null)
     const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
 
@@ -2002,8 +2304,7 @@ describe('RequestsController ', () => {
     const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
-    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
     const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
 
@@ -2026,12 +2327,12 @@ describe('RequestsController ', () => {
     const chainId = 1n
     const safeAccount = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
     safeAccount.safeCreation!.setupData = '0x1234'
-    await selectedAccountCtrl.setAccount(
-      accountsCtrl.accounts.find((candidate) => candidate.addr !== accountAddr)!
-    )
+    await selectedAccountCtrl.select({
+      account: accountsCtrl.accounts.find((candidate) => candidate.addr !== accountAddr)!
+    })
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -2071,7 +2372,7 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest).toBe(switchAccountRequest)
     expect(openRequestWindowSpy).toHaveBeenCalledTimes(1)
 
-    await selectedAccountCtrl.setAccount(safeAccount)
+    await selectedAccountCtrl.select({ account: safeAccount })
     await controller.resolveUserRequest(null, switchAccountRequest!.id)
 
     expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
@@ -2092,7 +2393,7 @@ describe('RequestsController ', () => {
     account.safeCreation = { ...account.safeCreation!, setupData: '0x1234' }
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -2264,7 +2565,7 @@ describe('RequestsController ', () => {
 
         await controller.handleSafeDeployStatusUpdate(makeSafeDeployOp(status))
 
-        expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], true)
         expect(rejectSpy).not.toHaveBeenCalled()
       }
     )
@@ -2395,7 +2696,7 @@ describe('RequestsController ', () => {
       const accountState = accountsCtrl.accountStates[accountAddr]![1]!
       accountState.isSmarterEoa = true
       accountState.delegatedContract = '0x1234567890123456789012345678901234567890'
-      jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
       const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
       const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
 
@@ -2432,7 +2733,7 @@ describe('RequestsController ', () => {
 
     await controller.resolveUserRequest({}, benzinRequest.id)
 
-    expect(updateAccountStateSpy).toHaveBeenCalledWith(accountAddr, 'latest', [chainId])
+    expect(updateAccountStateSpy).toHaveBeenCalledWith(accountAddr, 'latest', [chainId], true)
     expect(controller.userRequests).toEqual([transactionRequest])
     expect(controller.currentUserRequest).toBe(transactionRequest)
     expect(resumeSpy).toHaveBeenCalledTimes(1)
@@ -2505,8 +2806,7 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
 
     const recoveredSafeCreation = {
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
@@ -2571,8 +2871,7 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'findDeployData').mockResolvedValue({
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
       singleton: '0x2345678901234567890123456789012345678901' as Hex,
@@ -2628,8 +2927,7 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const incompleteSafeCreation = {
       factoryAddr: '0x' as Hex,
       singleton: '0x' as Hex,
@@ -2684,7 +2982,7 @@ describe('RequestsController ', () => {
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue(null)
     const reject = jest.fn()
 
@@ -2780,7 +3078,6 @@ describe('RequestsController ', () => {
       account.safeCreation = { ...account.safeCreation!, setupData: '0x1234' }
       const accountState = accountsCtrl.accountStates[safeAccountAddr]![1]!
       accountState.isDeployed = false
-      jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
       // the onchain check confirms the Safe is still not deployed
       const updateAccountStateSpy = jest
         .spyOn(accountsCtrl, 'updateAccountState')
@@ -2805,7 +3102,7 @@ describe('RequestsController ', () => {
 
       await controller.addUserRequests([messageRequest])
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], false)
       expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
       const [deploymentRequest, addedMessageRequest] = controller.userRequests
       if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a deployment request')
@@ -2915,7 +3212,7 @@ describe('RequestsController ', () => {
 
       await controller.addUserRequests([messageRequest])
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], false)
       expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
       expect(controller.userRequests).toEqual([messageRequest])
     })
@@ -3045,7 +3342,7 @@ describe('RequestsController ', () => {
 
       await controller.resolveUserRequest({}, benzinRequest.id)
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], true)
       expect(controller.userRequests).toEqual([benzinRequest, messageRequest])
       expect(controller.currentUserRequest).toBe(benzinRequest)
     })
@@ -3222,9 +3519,9 @@ describe('RequestsController ', () => {
       expect(controller.userRequestsWaitingAccountSwitch[0]).not.toHaveProperty('signAccountOp')
 
       await controller.rejectUserRequests('User rejected', [switchAccountRequest!.id])
-      await selectedAccountCtrl.setAccount(
-        accountsCtrl.accounts.find((a) => a.addr === OTHER_ACCOUNT_ADDR)!
-      )
+      await selectedAccountCtrl.select({
+        account: accountsCtrl.accounts.find((a) => a.addr === OTHER_ACCOUNT_ADDR)!
+      })
 
       expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
       expect(controller.userRequests).toHaveLength(0)
@@ -3242,9 +3539,9 @@ describe('RequestsController ', () => {
       const switchAccountRequest = controller.userRequests.find((r) => r.kind === 'switchAccount')
       expect(switchAccountRequest).toBeDefined()
 
-      await selectedAccountCtrl.setAccount(
-        accountsCtrl.accounts.find((a) => a.addr === OTHER_ACCOUNT_ADDR)!
-      )
+      await selectedAccountCtrl.select({
+        account: accountsCtrl.accounts.find((a) => a.addr === OTHER_ACCOUNT_ADDR)!
+      })
       await controller.resolveUserRequest(null, switchAccountRequest!.id)
 
       const otherAccountBatches = controller.userRequests.filter((r) => r.kind === 'calls')
@@ -3336,7 +3633,7 @@ describe('RequestsController ', () => {
     await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
 
     expect(controller.visibleUserRequests).toHaveLength(2)
-    await selectedAccountCtrl.setAccount(accounts[0]! as any)
+    await selectedAccountCtrl.select({ account: accounts[0]! as any })
     expect(controller.visibleUserRequests).toHaveLength(1)
   })
   test('should select request by id', async () => {
@@ -3405,6 +3702,45 @@ describe('RequestsController ', () => {
     await controller.addUserRequests([DAPP_CONNECT_REQUEST])
 
     expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
+    expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should ask whether the panel is open in the window of the app that made the request', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    const isOpen = jest.fn(() => true)
+    uiCtrl.panel = { isOpen }
+
+    await controller.addUserRequests([getDappConnectRequestFromWindow(APP_WINDOW_ID)])
+
+    expect(isOpen).toHaveBeenCalledWith(APP_WINDOW_ID)
+  })
+  test('should open a request window when the panel is open only in another window', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: (windowId) => windowId === OTHER_WINDOW_ID }
+    const request = getDappConnectRequestFromWindow(APP_WINDOW_ID)
+
+    await controller.addUserRequests([request])
+
+    expect(controller.currentUserRequest).toBe(request)
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+  })
+  test('should show the request in the panel open in the window of the app', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: (windowId) => windowId === APP_WINDOW_ID }
+    const request = getDappConnectRequestFromWindow(APP_WINDOW_ID)
+
+    await controller.addUserRequests([request])
+
+    expect(controller.currentUserRequest).toBe(request)
+    expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should ask about any window when the request has no app window', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    const isOpen = jest.fn(() => true)
+    uiCtrl.panel = { isOpen }
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+
+    expect(isOpen).toHaveBeenCalledWith(undefined)
     expect(controller.requestWindow.windowProps).toBe(null)
   })
   test('should move the request from its window into the panel once the panel is open', async () => {
@@ -3833,15 +4169,7 @@ describe('RequestsController ', () => {
 
       // No cached state to fall back on and nothing to fetch, so this one cannot be prepared
       delete accountsCtrl.accountStates[ACCOUNT_ADDR]!['10']
-      jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
-        .mockImplementation(async (_addr: string, chainId: bigint) =>
-          // The real method reads the state from a map, so it resolves with `undefined` when
-          // nothing was fetched, even though its signature doesn't say so
-          chainId === 10n
-            ? (undefined as unknown as AccountOnchainState)
-            : accountsCtrl.accountStates[ACCOUNT_ADDR]![chainId.toString()]!
-        )
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
 
       await controller.addUserRequests([unfetchable, fine])
 
@@ -3891,7 +4219,7 @@ describe('RequestsController ', () => {
     ) => sendTransaction(controller, dappPromise, MOCK_SESSION, { from: OTHER_ACCOUNT_ADDR })
 
     const selectAccount = ({ accountsCtrl, selectedAccountCtrl }: TestContext, addr: string) =>
-      selectedAccountCtrl.setAccount(accountsCtrl.accounts.find((a) => a.addr === addr)!)
+      selectedAccountCtrl.select({ account: accountsCtrl.accounts.find((a) => a.addr === addr)! })
 
     const getSwitchAccountRequests = (controller: TestContext['controller']) =>
       controller.userRequests.filter((r) => r.kind === 'switchAccount')

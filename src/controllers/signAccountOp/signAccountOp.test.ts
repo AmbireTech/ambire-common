@@ -8,7 +8,8 @@ import {
   MaxUint256,
   parseEther,
   toBeHex,
-  verifyMessage
+  verifyMessage,
+  Wallet
 } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -32,12 +33,13 @@ import {
   verifiedDapp
 } from '../../../test/helpers/dapps'
 import { mockUiManager } from '../../../test/helpers/ui'
+import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { FeatureFlags } from '../../consts/featureFlags'
-import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
+import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
@@ -51,6 +53,7 @@ import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../libs/decodeCall'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
@@ -111,6 +114,7 @@ import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
 import { FeeSpeed, MAX_REESTIMATES, SignAccountOpController, SigningStatus } from './signAccountOp'
 import { SignAccountOpPreferenceController } from './signAccountOpPreference'
 import { SignAccountOpTesterController } from './signAccountOpTester'
+import { SpeedUp } from './speedUp'
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
 
@@ -477,6 +481,7 @@ const init = async (
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
     externalSignerControllers?: ExternalSignerControllers
     onBroadcastSuccess?: (params: any) => Promise<void>
+    onPartialBroadcast?: (sentAccountOp: any) => Promise<void>
     featureFlags?: Partial<FeatureFlags>
     contractInfoFetch?: Fetch
     // Lets several controllers share one, like the requests of a real wallet do
@@ -487,6 +492,8 @@ const init = async (
      * get to run. For tests that drive those intervals themselves.
      */
     pauseOnInit?: boolean
+    /** Builds the SpeedUp passed to the controller, for tests of speeding up a transaction */
+    createSpeedUp?: (activity: ActivityController) => SpeedUp
   }
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -682,7 +689,8 @@ const init = async (
     networks: networksCtrl,
     providers: providersCtrl,
     storage: storageCtrl,
-    accounts: accountsCtrl
+    accounts: accountsCtrl,
+    keystore
   })
   const activity = new ActivityController(
     storageCtrl,
@@ -798,6 +806,8 @@ const init = async (
     shouldSimulate: false,
     onUpdateAfterTraceCallSuccess: options?.onUpdateAfterTraceCallSuccess,
     onBroadcastSuccess: options?.onBroadcastSuccess || (async () => {}),
+    onPartialBroadcast: options?.onPartialBroadcast,
+    speedUp: options?.createSpeedUp?.(activity),
     estimateController: estimationController,
     gasPriceController
   })
@@ -823,7 +833,8 @@ const initDappVerificationBannerTest = async (
     sessions,
     contractInfoFetch,
     contractInfo,
-    initialSetStorage
+    initialSetStorage,
+    type
   }: {
     isPermit2?: boolean
     calls?: AccountOp['calls']
@@ -833,6 +844,7 @@ const initDappVerificationBannerTest = async (
     contractInfoFetch?: Fetch
     contractInfo?: ContractInfoController
     initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
+    type?: SignAccountOpType
   } = {}
 ) => {
   const accountOp = createEOAAccountOp(eoaAccount)
@@ -917,7 +929,8 @@ const initDappVerificationBannerTest = async (
       sessions,
       contractInfoFetch,
       contractInfo,
-      initialSetStorage
+      initialSetStorage,
+      type
     }
   )
 }
@@ -1002,7 +1015,22 @@ describe('SignAccountOp Controller ', () => {
     return { controller, storageCtrl, accountsCtrl }
   }
 
-  const initSafeNonce = async (signed: string[] = [], estimatedAccountNonce = 3) => {
+  const initSafeNonce = async (
+    signed: string[] = [],
+    {
+      isSpeedUp = false,
+      isCancel = false,
+      signature,
+      txnId,
+      estimatedAccountNonce = 3
+    }: {
+      isSpeedUp?: boolean
+      isCancel?: boolean
+      signature?: string
+      txnId?: string
+      estimatedAccountNonce?: number
+    } = {}
+  ) => {
     const feePaymentOptions = getDefaultFeeSelectionOptions().map((option) => ({
       ...option,
       paidBy: safeAccount.addr
@@ -1010,6 +1038,14 @@ describe('SignAccountOp Controller ', () => {
     const accountOp = createAccountOp(safeAccount, 1n)
     accountOp.op.nonce = 3n
     accountOp.op.signed = signed
+    if (isSpeedUp) {
+      accountOp.op.meta = {
+        ...accountOp.op.meta,
+        speedUp: { enabled: true, ...(isCancel && { isCancel }) }
+      }
+    }
+    if (signature) accountOp.op.signature = signature
+    if (txnId) accountOp.op.txnId = txnId
 
     return init(
       safeAccount,
@@ -1030,48 +1066,47 @@ describe('SignAccountOp Controller ', () => {
         flags: {},
         updatedAt: Date.now()
       },
-      defaultFeeSelectionGasPrices
+      defaultFeeSelectionGasPrices,
+      false,
+      {
+        createSpeedUp: isSpeedUp
+          ? (activity) => new SpeedUp({ accountOp: accountOp.op, activity })
+          : undefined
+      }
     )
   }
 
   describe('refetchAccountState', () => {
     test('refreshes the account state and clears the loading state', async () => {
       const { controller, accountsCtrl } = await initDefaultFeeSelection()
-      const accountState =
-        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
-          controller.accountOp.chainId.toString()
-        ]!
-      const forceFetchPendingStateSpy = jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
-        .mockResolvedValue(accountState)
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
+        .mockResolvedValue(undefined)
 
       await expect(controller.refetchAccountState()).resolves.toBeUndefined()
 
-      expect(forceFetchPendingStateSpy).toHaveBeenCalledWith(
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(
         controller.accountOp.accountAddr,
-        controller.accountOp.chainId
+        'pending',
+        [controller.accountOp.chainId],
+        true
       )
       expect(controller.isRefetchingAccountState).toBe(false)
     })
 
     test('ignores concurrent refresh attempts', async () => {
       const { controller, accountsCtrl } = await initDefaultFeeSelection()
-      const accountState =
-        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
-          controller.accountOp.chainId.toString()
-        ]!
       const pendingRefresh = createDeferred<void>()
-      const forceFetchPendingStateSpy = jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
         .mockImplementation(async () => {
           await pendingRefresh.promise
-          return accountState
         })
 
       const firstRefresh = controller.refetchAccountState()
       await controller.refetchAccountState()
 
-      expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(1)
+      expect(updateAccountStateSpy).toHaveBeenCalledTimes(1)
       expect(controller.isRefetchingAccountState).toBe(true)
 
       pendingRefresh.resolve()
@@ -1083,15 +1118,11 @@ describe('SignAccountOp Controller ', () => {
     test('emits fetch errors without rejecting and allows retrying', async () => {
       const { restore } = suppressConsole()
       const { controller, accountsCtrl } = await initDefaultFeeSelection()
-      const accountState =
-        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
-          controller.accountOp.chainId.toString()
-        ]!
       const fetchError = new Error('RPC timeout')
-      const forceFetchPendingStateSpy = jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
         .mockRejectedValueOnce(fetchError)
-        .mockResolvedValueOnce(accountState)
+        .mockResolvedValueOnce(undefined)
       const onError = jest.fn()
       controller.onError(onError)
 
@@ -1106,7 +1137,7 @@ describe('SignAccountOp Controller ', () => {
 
       await expect(controller.refetchAccountState()).resolves.toBeUndefined()
 
-      expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(2)
+      expect(updateAccountStateSpy).toHaveBeenCalledTimes(2)
       expect(controller.isRefetchingAccountState).toBe(false)
       restore()
     })
@@ -1189,6 +1220,164 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.canBroadcast).toBe(false)
   })
 
+  test('does not block a Safe speed up for keeping the nonce of the transaction it replaces', async () => {
+    const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress], {
+      isSpeedUp: true
+    })
+    const accountState =
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!
+
+    controller.update({ accountOpData: { nonce: accountState.nonce + 1n } })
+
+    expect(controller.errors).not.toContainEqual(
+      expect.objectContaining({
+        title:
+          'Earlier transactions need to go through first. Send them, or wait for the ones already sent to be confirmed.'
+      })
+    )
+  })
+
+  describe('Safe cancel signatures from the Safe API', () => {
+    const safeTxnHash = `0x${'5a'.repeat(32)}`
+    const ownerA = new Wallet(`0x${'a1'.repeat(32)}`)
+    const ownerB = new Wallet(`0x${'b2'.repeat(32)}`)
+    const sign = (owner: Wallet) => owner.signingKey.sign(safeTxnHash).serialized
+    const joinSigs = (...sigs: string[]) => `0x${sigs.map((sig) => sig.slice(2)).join('')}`
+    const ownersOf = (controller: SignAccountOpController) =>
+      (controller.accountOp.signed ?? []).map((addr) => addr.toLowerCase()).sort()
+
+    // A new cancel whose Safe transaction hash is known, as after its first signature
+    const initNewSafeCancel = () =>
+      initSafeNonce([], { isSpeedUp: true, isCancel: true, txnId: safeTxnHash })
+
+    test('takes the signature of an owner who has not signed yet', async () => {
+      const { controller } = await initNewSafeCancel()
+
+      controller.update({ accountOpData: { signature: sign(ownerA) } })
+
+      expect(ownersOf(controller)).toEqual([ownerA.address.toLowerCase()])
+    })
+
+    test('adds an owner even when the Safe API returns as many signatures as collected', async () => {
+      const { controller } = await initNewSafeCancel()
+      controller.update({ accountOpData: { signature: sign(ownerA) } })
+
+      // The Safe API never got owner A's signature, only owner B's: same length, other owner
+      controller.update({ accountOpData: { signature: sign(ownerB) } })
+
+      expect(ownersOf(controller)).toEqual(
+        [ownerA.address, ownerB.address].map((addr) => addr.toLowerCase()).sort()
+      )
+      expect(controller.accountOp.signature!.length).toBe(2 + 130 * 2)
+    })
+
+    test('never counts an owner twice', async () => {
+      const { controller } = await initNewSafeCancel()
+      controller.update({ accountOpData: { signature: sign(ownerA) } })
+
+      controller.update({ accountOpData: { signature: joinSigs(sign(ownerA), sign(ownerB)) } })
+      controller.update({ accountOpData: { signature: joinSigs(sign(ownerB), sign(ownerA)) } })
+
+      expect(ownersOf(controller)).toHaveLength(2)
+      expect(controller.accountOp.signature!.length).toBe(2 + 130 * 2)
+    })
+
+    test('keeps the collected signatures when the Safe API has none of them', async () => {
+      const { controller } = await initNewSafeCancel()
+      controller.update({ accountOpData: { signature: joinSigs(sign(ownerA), sign(ownerB)) } })
+      const collectedSignature = controller.accountOp.signature
+
+      controller.update({ accountOpData: { signature: sign(ownerB) } })
+
+      expect(controller.accountOp.signature).toBe(collectedSignature)
+    })
+  })
+
+  describe('Safe speed up', () => {
+    // Two owners' ECDSA signatures, as the executed Safe transaction carried them
+    const ownersSignature = `0x${'11'.repeat(64)}1b${'22'.repeat(64)}1c`
+    // The txnId of an executed transaction is its onchain hash, not the Safe transaction hash
+    const executedTxnHash = `0x${'ab'.repeat(32)}`
+    const setAccountStateNonce = (
+      accountsCtrl: AccountsController,
+      controller: SignAccountOpController,
+      nonce: bigint
+    ) => {
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!.nonce = nonce
+    }
+
+    test('is ready to broadcast with the signatures of the transaction it replaces', async () => {
+      const { controller } = await initSafeNonce([], {
+        isSpeedUp: true,
+        signature: ownersSignature,
+        txnId: executedTxnHash
+      })
+
+      expect(controller.canBroadcast).toBe(true)
+      expect(controller.status?.type).not.toBe(SigningStatus.Queued)
+    })
+
+    test('does not read owners from signatures checked against the onchain hash', async () => {
+      const owners = [eoaSigner.keyPublicAddress]
+      const { controller } = await initSafeNonce(owners, {
+        isSpeedUp: true,
+        signature: ownersSignature,
+        txnId: executedTxnHash
+      })
+
+      expect(controller.accountOp.signed).toEqual(owners)
+    })
+
+    test('can broadcast even when the account state has moved past its nonce', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([], {
+        isSpeedUp: true,
+        signature: ownersSignature,
+        txnId: executedTxnHash
+      })
+
+      setAccountStateNonce(accountsCtrl, controller, 4n)
+
+      expect(controller.canBroadcast).toBe(true)
+    })
+
+    test('a signed Safe transaction that is not a speed up still waits for its nonce', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+
+      setAccountStateNonce(accountsCtrl, controller, 4n)
+
+      expect(controller.canBroadcast).toBe(false)
+    })
+
+    test('speeding up a pending Safe cancel reuses its signatures, ready to broadcast', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([], {
+        isSpeedUp: true,
+        isCancel: true,
+        signature: ownersSignature,
+        txnId: executedTxnHash
+      })
+
+      setAccountStateNonce(accountsCtrl, controller, 4n)
+
+      expect(controller.canBroadcast).toBe(true)
+      expect(controller.status?.type).not.toBe(SigningStatus.Queued)
+    })
+
+    test('a Safe cancel is a new Safe transaction, so it is not ready without signatures', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([], {
+        isSpeedUp: true,
+        isCancel: true
+      })
+
+      setAccountStateNonce(accountsCtrl, controller, 4n)
+
+      expect(controller.canBroadcast).toBe(false)
+    })
+  })
+
   test('does not change the nonce of a non-Safe or already-signed transaction', async () => {
     const { controller: nonSafeController } = await initDefaultFeeSelection()
     const { controller: signedSafeController } = await initSafeNonce([eoaSigner.keyPublicAddress])
@@ -1211,7 +1400,7 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('lets the estimation update the Safe nonce unless the user picked one', async () => {
-    const { controller } = await initSafeNonce([], 7)
+    const { controller } = await initSafeNonce([], { estimatedAccountNonce: 7 })
 
     controller.update({ hasNewEstimation: true })
     expect(controller.accountOp.nonce).toBe(7n)
@@ -1252,11 +1441,11 @@ describe('SignAccountOp Controller ', () => {
   test('uses the saved fee speed as the default for a new signing request', async () => {
     const { controller } = await initDefaultFeeSelection(undefined, {
       initialSetStorage: async (storageCtrl) => {
-        await storageCtrl.set('signAccountOpFeeSpeedPreference', { '1': FeeSpeed.Medium })
+        await storageCtrl.set('signAccountOpFeeSpeedPreference', { '1': FeeSpeed.Ape })
       }
     })
 
-    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Ape)
   })
 
   test('ignores a saved fee speed belonging to another chain', async () => {
@@ -1266,7 +1455,8 @@ describe('SignAccountOp Controller ', () => {
       }
     })
 
-    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Fast)
+    // falls back to the default speed
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
   })
 
   test('persists a user selected fee speed right away, for the current chain only', async () => {
@@ -1911,8 +2101,8 @@ describe('SignAccountOp Controller ', () => {
           maxPriorityFeePerGas: toBeHex(1000000000n) as Hex
         },
         medium: {
-          maxFeePerGas: toBeHex(4000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(2000000000n) as Hex
+          maxFeePerGas: toBeHex(10000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
         },
         fast: {
           maxFeePerGas: toBeHex(10000000000n) as Hex,
@@ -1930,6 +2120,8 @@ describe('SignAccountOp Controller ', () => {
       paidBy: smartAccount.addr,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal',
+      // the $1 USDC fee expected below is calculated with the medium gas price
+      speed: FeeSpeed.Fast,
       hasNewEstimation: true
     })
 
@@ -1967,6 +2159,8 @@ describe('SignAccountOp Controller ', () => {
     expect(eoaAccount.addr).toEqual(signerAddr)
     // If signing is successful, we expect controller's status to be done
     expect(controller.status).toEqual({ type: 'done' })
+    // The relayer broadcasts without a key, so no device prompt should stay open
+    expect(controller.activeSigningKeyType).toBeNull()
 
     // USDC decimals 6, that's why we divide by 1e6
     const fee = controller.accountOp!.gasFeePayment!.amount / BigInt(1e6)
@@ -2387,8 +2581,9 @@ describe('Negative cases', () => {
       '0x0000000000000000000000000000000000000000'
     )
     expect(controller.accountOp.gasFeePayment!.feeTokenChainId).toEqual(137n)
-    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(300n)
-    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(600n)
+    // the default speed is medium
+    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(200n)
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(400n)
 
     const typedData = getTypedData(
       network.chainId,
@@ -2412,6 +2607,10 @@ describe('Negative cases', () => {
 
     // If signing is successful, we expect controller's status to be done
     expect(controller.status).toEqual({ type: 'done' })
+    // The fee payer signs the broadcast right after, so the key stays set until then
+    // and the device prompt doesn't close and reopen in between
+    expect(controller.activeSigningKeyType).toBe(controller.accountOp.signingKeyType)
+    expect(controller.activeSigningKeyType).not.toBeNull()
   })
 })
 
@@ -3258,6 +3457,53 @@ describe('ERC-7730 humanization', () => {
 })
 
 describe('significant balance decrease banners', () => {
+  test.each(['one-click-transfer', 'one-click-swap-and-bridge'] as const)(
+    'is not shown in the %s flow, where the user entered the amount themselves',
+    async (type) => {
+      const { controller, portfolio } = await initDappVerificationBannerTest(verifiedDapp, {
+        type
+      })
+      const portfolioState = portfolio.getAccountPortfolioState(eoaAccount.addr)
+
+      try {
+        controller.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
+        portfolioState['1'] = buildPortfolioState({
+          amountBeforeSimulation: 5000n,
+          amountPostSimulation: 3000n,
+          isLoading: false
+        })['1']
+
+        expect(
+          controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+        ).toBeUndefined()
+      } finally {
+        controller.destroy()
+      }
+    }
+  )
+
+  test('is shown for the same balance decrease outside of the one-click flows', async () => {
+    const { controller, portfolio } = await initDappVerificationBannerTest(verifiedDapp, {
+      type: 'default'
+    })
+    const portfolioState = portfolio.getAccountPortfolioState(eoaAccount.addr)
+
+    try {
+      controller.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
+      portfolioState['1'] = buildPortfolioState({
+        amountBeforeSimulation: 5000n,
+        amountPostSimulation: 3000n,
+        isLoading: false
+      })['1']
+
+      expect(
+        controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+      ).toBeDefined()
+    } finally {
+      controller.destroy()
+    }
+  })
+
   test('keeps the previous banner while refreshing and recalculates when the result changes', async () => {
     const { controller, portfolio } = await initDappVerificationBannerTest(verifiedDapp)
     const portfolioState = portfolio.getAccountPortfolioState(eoaAccount.addr)
@@ -3991,8 +4237,13 @@ describe('broadcasting a batch one transaction at a time', () => {
     return batch
   }
 
-  const initBatch = async (overrides?: { callRelayer?: any }) => {
+  const initBatch = async (overrides?: {
+    callRelayer?: any
+    type?: SignAccountOpType
+    onPartialBroadcast?: (sentAccountOp: any) => Promise<void>
+  }) => {
     const submittedAccountOps: any[] = []
+    const sentAccountOps: any[] = []
     const broadcastStatusesOnSuccess: SignAccountOpTesterController['broadcastStatus'][] = []
     let broadcastingController: SignAccountOpTesterController | undefined
     const feePaymentOptions = [
@@ -4020,17 +4271,23 @@ describe('broadcasting a batch one transaction at a time', () => {
         // sends the whole batch as one transaction and takes a single signature.
         featureFlags: { eip7702: false },
         callRelayer: overrides?.callRelayer || ((async () => ({})) as any),
+        type: overrides?.type,
         onBroadcastSuccess: async ({ submittedAccountOp }: any) => {
           submittedAccountOps.push(submittedAccountOp)
           if (broadcastingController) {
             broadcastStatusesOnSuccess.push(broadcastingController.broadcastStatus)
           }
-        }
+        },
+        onPartialBroadcast:
+          overrides?.onPartialBroadcast ||
+          (async (sentAccountOp: any) => {
+            sentAccountOps.push(sentAccountOp)
+          })
       }
     )
     broadcastingController = controller
 
-    return { controller, submittedAccountOps, broadcastStatusesOnSuccess }
+    return { controller, submittedAccountOps, sentAccountOps, broadcastStatusesOnSuccess }
   }
 
   /**
@@ -4169,6 +4426,40 @@ describe('broadcasting a batch one transaction at a time', () => {
     expect(getPartialBroadcastError(controller)).toBeUndefined()
   })
 
+  test('keeps the fee payer key active between the signatures and clears it after the batch', async () => {
+    const { controller } = await initBatch()
+    const { broadcastTransaction } = mockBroadcastChain(null)
+    const activeKeyTypesBetweenSignatures: (string | null)[] = []
+    broadcastTransaction.mockImplementation(async () => {
+      activeKeyTypesBetweenSignatures.push(controller.activeSigningKeyType)
+
+      return { hash: `0xhash${activeKeyTypesBetweenSignatures.length}` } as any
+    })
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Clearing it between the signatures would make the device prompt in the UI
+    // close and reopen for every transaction in the batch
+    const feePayerKeyType = controller.accountOp.gasFeePayment?.paidByKeyType
+    expect(feePayerKeyType).toBeTruthy()
+    expect(activeKeyTypesBetweenSignatures).toEqual([
+      feePayerKeyType,
+      feePayerKeyType,
+      feePayerKeyType
+    ])
+    expect(controller.activeSigningKeyType).toBeNull()
+  })
+
+  test('clears the active signing key type when a signature in the batch is refused', async () => {
+    const { controller } = await initBatch()
+    mockBroadcastChain(1)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Otherwise the UI keeps asking to confirm on a device that waits for nothing
+    expect(controller.activeSigningKeyType).toBeNull()
+  })
+
   test('reports a plain failure, not a partial success, when nothing was sent', async () => {
     const { controller, submittedAccountOps } = await initBatch()
     mockBroadcastChain(0)
@@ -4179,6 +4470,104 @@ describe('broadcasting a batch one transaction at a time', () => {
     // failure is the whole story.
     expect(submittedAccountOps).toHaveLength(0)
     expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+
+  test('records a partly sent batch as broadcast, without reporting a partial broadcast', async () => {
+    const { controller, submittedAccountOps, sentAccountOps } = await initBatch()
+    mockBroadcastChain(1)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Outside the built-in swap the sent part is the result of the broadcast, so it
+    // goes through the regular success handler
+    expect(submittedAccountOps).toHaveLength(1)
+    expect(sentAccountOps).toHaveLength(0)
+  })
+
+  describe('in the built-in swap', () => {
+    const initSwapBatch = (onPartialBroadcast?: (sentAccountOp: any) => Promise<void>) =>
+      initBatch({ type: 'one-click-swap-and-bridge', onPartialBroadcast })
+
+    test('reports the sent part and fails, without recording it as a successful broadcast', async () => {
+      const { controller, submittedAccountOps, sentAccountOps } = await initSwapBatch()
+      mockBroadcastChain(1)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      // The swap can't be shown as sent, as the user has to retry the rest of it
+      expect(submittedAccountOps).toHaveLength(0)
+      expect(getPartialBroadcastError(controller)).toBeUndefined()
+      expect(controller.emittedErrors.some((e: any) => e.level === 'major')).toBe(true)
+
+      expect(sentAccountOps).toHaveLength(1)
+      const [sentAccountOp] = sentAccountOps
+      expect(sentAccountOp.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+      expect(sentAccountOp.identifiedBy).toEqual({ type: 'MultipleTxns', identifier: '0xhash1' })
+      expect(sentAccountOp.txnId).toBe('0xhash1')
+      // The calls that were not sent are kept, so they can be marked as such
+      expect(sentAccountOp.calls).toHaveLength(3)
+      // The nonce of the first sent txn, as the activity uses it to detect replaced txns
+      expect(sentAccountOp.eoaNonce).toBe(7n)
+    })
+
+    test('names every sent txn in the reported part', async () => {
+      const { controller, sentAccountOps } = await initSwapBatch()
+      mockBroadcastChain(2)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(sentAccountOps).toHaveLength(1)
+      expect(sentAccountOps[0].identifiedBy.identifier).toBe('0xhash1-0xhash2')
+      expect(sentAccountOps[0].txnId).toBe('0xhash2')
+    })
+
+    test('forgets the nonce after a partial send, so a retry reads it from the network', async () => {
+      const { controller } = await initSwapBatch()
+      mockBroadcastChain(1)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      // Keeping the nonce would make a retry send the already sent txns again
+      // or replace them while still pending
+      expect(controller.accountOp.eoaNonce).toBeUndefined()
+    })
+
+    test('reports nothing when nothing was sent', async () => {
+      const { controller, submittedAccountOps, sentAccountOps } = await initSwapBatch()
+      mockBroadcastChain(0)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(sentAccountOps).toHaveLength(0)
+      expect(submittedAccountOps).toHaveLength(0)
+    })
+
+    test('reports nothing when the whole batch was sent', async () => {
+      const { controller, submittedAccountOps, sentAccountOps } = await initSwapBatch()
+      mockBroadcastChain(null)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(sentAccountOps).toHaveLength(0)
+      expect(submittedAccountOps).toHaveLength(1)
+    })
+
+    test('still shows why the batch stopped when reporting the sent part fails', async () => {
+      const { controller } = await initSwapBatch(async () => {
+        throw new Error('activity is unavailable')
+      })
+      mockBroadcastChain(1)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      const reportError = controller.emittedErrors.find((e: any) =>
+        e.message.startsWith('Failed to report the sent part')
+      )
+      expect(reportError).toBeDefined()
+      expect(reportError.level).toBe('silent')
+      expect(controller.emittedErrors.some((e: any) => e.level === 'major')).toBe(true)
+      expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
+    })
   })
 })
 
@@ -5251,5 +5640,483 @@ describe('RPC gas prices with a bundler fallback', () => {
     ).toBe(BigInt(bundlerGasPrices.slow.maxFeePerGas))
     controller.update({ feeToken: nativeFeeTokenPolygon, paidBy: eoaAccount.addr })
     expect(controller.selectedOptionGasPrices).toEqual(bundlerGasPrices)
+  })
+})
+
+describe('speed up of a pending transaction', () => {
+  const replacedIdentifiedBy = {
+    type: 'Transaction' as const,
+    identifier: `0x${'ab'.repeat(32)}`
+  }
+  const speedUpGasPrices: GasSpeeds = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+
+  const initSpeedUp = async ({
+    isSpeedUp = true,
+    isCancel = false,
+    replacedPaidBy
+  }: {
+    isSpeedUp?: boolean
+    // Cancels the pending transaction instead of speeding it up
+    isCancel?: boolean
+    // Who paid for the pending transaction; unknown when not set
+    replacedPaidBy?: string
+  } = {}) => {
+    const accountOp = createEOAAccountOp(eoaAccount)
+    ;(accountOp.op.calls as any) = [
+      { to: '0x0000000000000000000000000000000000000000', value: 1n, data: '0x' }
+    ]
+    if (replacedPaidBy) {
+      ;(accountOp.op.gasFeePayment as any) = {
+        paidBy: replacedPaidBy,
+        inToken: '0x0000000000000000000000000000000000000000',
+        feeTokenChainId: 1n,
+        isGasTank: false,
+        amount: 1000n,
+        gasPrice: 100n,
+        maxPriorityFeePerGas: 10n,
+        simulatedGasLimit: 21000n,
+        broadcastOption: 'bySelf',
+        paidByKeyType: 'internal'
+      }
+    }
+    if (isSpeedUp) {
+      accountOp.op.meta = {
+        ...accountOp.op.meta,
+        speedUp: { enabled: true, replacedIdentifiedBy, ...(isCancel && { isCancel }) }
+      }
+    }
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: parseEther('1'),
+          symbol: 'ETH',
+          name: 'Ether',
+          chainId: 1n,
+          decimals: 18,
+          priceIn: [],
+          marketDataIn: [],
+          flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: true, isFeeToken: true }
+        }
+      }
+    ]
+
+    return init(
+      eoaAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      speedUpGasPrices,
+      false,
+      {
+        createSpeedUp: isSpeedUp
+          ? (activity) => new SpeedUp({ accountOp: accountOp.op, activity })
+          : undefined
+      }
+    )
+  }
+
+  /** The callback the controller subscribed to activity updates with */
+  const getActivityUpdateCallback = (onUpdateSpy: { mock: { calls: any[][] } }) =>
+    onUpdateSpy.mock.calls.find(
+      ([, id]) => typeof id === 'string' && id.startsWith('sign-account-op-speed-up')
+    )?.[0] as (() => void) | undefined
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  describe('signing key', () => {
+    const otherKeyAddr = '0x714fD3Db837e72bD49B8edA02B8f4D53DfdDe5ce'
+
+    test('a speed up keeps the signer of the pending transaction it reuses the signature of', async () => {
+      jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+      const { controller } = await initSpeedUp()
+      const originalSigner = controller.accountOp.signingKeyAddr
+
+      controller.update({ signingKeyAddr: otherKeyAddr, signingKeyType: 'internal' })
+
+      expect(controller.accountOp.signingKeyAddr).toBe(originalSigner)
+      expect(controller.accountOp.signingKeyAddr).not.toBe(otherKeyAddr)
+    })
+
+    test('a cancel is signed again, so another key (e.g. another Safe owner) can sign it', async () => {
+      jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+      const { controller } = await initSpeedUp({ isCancel: true })
+
+      controller.update({ signingKeyAddr: otherKeyAddr, signingKeyType: 'internal' })
+
+      expect(controller.accountOp.signingKeyAddr).toBe(otherKeyAddr)
+      expect(controller.accountOp.signingKeyType).toBe('internal')
+    })
+  })
+
+  test.each([
+    AccountOpStatus.Success,
+    AccountOpStatus.Failure,
+    AccountOpStatus.UnknownButPastNonce
+  ])(
+    'stops when the original transaction gets the %s status while signing is pending',
+    async (status) => {
+      const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+      const findSpy = jest
+        .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+        .mockReturnValue(undefined)
+      const { controller } = await initSpeedUp()
+      expect(controller.status?.type).not.toBe(SigningStatus.SpeedUpNotNeeded)
+
+      findSpy.mockReturnValue({ status } as any)
+      getActivityUpdateCallback(onUpdateSpy)?.()
+
+      expect(findSpy).toHaveBeenCalledWith(replacedIdentifiedBy, eoaAccount.addr, 1n)
+      expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+      expect(controller.readyToSign).toBe(false)
+    }
+  )
+
+  test('does not ask how to pay for a speed up that is no longer needed', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue({ status: AccountOpStatus.Success } as any)
+    // The original way of paying isn't available anymore, which would be an error while the
+    // speed up is still needed. Other errors (e.g. of the estimation) are still shown
+    const { controller } = await initSpeedUp({
+      replacedPaidBy: '0x1111111111111111111111111111111111111111'
+    })
+
+    expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+    expect(controller.errors.some((e) => e.title.includes("can't be sped up"))).toBe(false)
+  })
+
+  test('stops right away when the original transaction was processed before opening', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue({ status: AccountOpStatus.Success } as any)
+    const { controller } = await initSpeedUp()
+
+    expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+  })
+
+  test.each([AccountOpStatus.BroadcastedButNotConfirmed, AccountOpStatus.BroadcastButStuck])(
+    'keeps going while the original transaction has the %s status',
+    async (status) => {
+      const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+      jest
+        .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+        .mockReturnValue({ status } as any)
+      const { controller } = await initSpeedUp()
+
+      getActivityUpdateCallback(onUpdateSpy)?.()
+
+      expect(controller.status?.type).not.toBe(SigningStatus.SpeedUpNotNeeded)
+    }
+  )
+
+  test('blocks signing when the original way of paying is not available anymore', async () => {
+    jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+    const { controller } = await initSpeedUp({
+      replacedPaidBy: '0x1111111111111111111111111111111111111111'
+    })
+
+    expect(controller.errors).toHaveLength(1)
+    expect(controller.errors[0]!.title).toContain("can't be sped up right now")
+    expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
+    expect(controller.readyToSign).toBe(false)
+  })
+
+  test('allows signing when the original way of paying is available', async () => {
+    jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+    const { controller } = await initSpeedUp({ replacedPaidBy: eoaAccount.addr })
+
+    expect(controller.errors.some((e) => e.title.includes("can't be sped up"))).toBe(false)
+    expect(controller.accountOp.gasFeePayment?.paidBy).toBe(eoaAccount.addr)
+  })
+
+  test('stops without an error toast when the original got processed while signing and the broadcast failed', async () => {
+    const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+    const findSpy = jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue(undefined)
+    const { controller } = await initSpeedUp()
+    const onError = jest.fn()
+    controller.onError(onError)
+    controller.updateStatus(SigningStatus.InProgress)
+
+    findSpy.mockReturnValue({ status: AccountOpStatus.Success } as any)
+    getActivityUpdateCallback(onUpdateSpy)?.()
+    expect(controller.status?.type).toBe(SigningStatus.InProgress)
+
+    // No further activity update comes: going back to ReadyToSign must check again
+    expect(() => controller.throwBroadcastAccountOp({ message: 'nonce too low' })).toThrow()
+
+    expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'silent' }))
+  })
+
+  test('stops when the broadcast fails after the activity was no longer watched', async () => {
+    const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+    const findSpy = jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue(undefined)
+    const { controller } = await initSpeedUp()
+    // Signed and being broadcast, so the activity update ends the watching
+    controller.updateStatus(SigningStatus.Done)
+
+    findSpy.mockReturnValue({ status: AccountOpStatus.Success } as any)
+    getActivityUpdateCallback(onUpdateSpy)?.()
+
+    expect(() => controller.throwBroadcastAccountOp({ message: 'nonce too low' })).toThrow()
+
+    expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+  })
+
+  test('shows the broadcast error when the original is still pending', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue({ status: AccountOpStatus.BroadcastedButNotConfirmed } as any)
+    const { controller } = await initSpeedUp()
+    const onError = jest.fn()
+    controller.onError(onError)
+    controller.updateStatus(SigningStatus.InProgress)
+
+    expect(() => controller.throwBroadcastAccountOp({ message: 'Broadcast failed' })).toThrow()
+
+    expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'major' }))
+  })
+
+  test('a failed broadcast does not bring back a speed up that was stopped', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue({ status: AccountOpStatus.Success } as any)
+    const { controller } = await initSpeedUp()
+    expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+
+    controller.updateStatus(SigningStatus.ReadyToSign)
+
+    expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+  })
+
+  test('does not override the status once signing has started', async () => {
+    const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+    const findSpy = jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue(undefined)
+    const { controller } = await initSpeedUp()
+    controller.updateStatus(SigningStatus.InProgress)
+
+    findSpy.mockReturnValue({ status: AccountOpStatus.Success } as any)
+    getActivityUpdateCallback(onUpdateSpy)?.()
+
+    expect(controller.status?.type).toBe(SigningStatus.InProgress)
+  })
+
+  test('stays stopped after later updates', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue({ status: AccountOpStatus.Success } as any)
+    const { controller } = await initSpeedUp()
+
+    controller.updateStatus()
+    controller.update({ hasNewEstimation: true })
+
+    expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+  })
+
+  test('stays stopped after a reset of the status', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue({ status: AccountOpStatus.Success } as any)
+    const { controller } = await initSpeedUp()
+
+    controller.resetStatus()
+
+    expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+  })
+
+  test('does not restart refetching when resumed', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue({ status: AccountOpStatus.Success } as any)
+    const { controller } = await initSpeedUp()
+    const startSpy = jest.spyOn(RecurringTimeout.prototype, 'start')
+    const restartSpy = jest.spyOn(RecurringTimeout.prototype, 'restart')
+
+    controller.resume()
+
+    expect(startSpy).not.toHaveBeenCalled()
+    expect(restartSpy).not.toHaveBeenCalled()
+  })
+
+  test('does not watch the activity when no SpeedUp is passed', async () => {
+    const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+    const findSpy = jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+    await initSpeedUp({ isSpeedUp: false })
+
+    expect(getActivityUpdateCallback(onUpdateSpy)).toBeUndefined()
+    expect(findSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('gas price refresh failures', () => {
+  suppressConsoleBeforeEach(true)
+  const refreshGasPrices = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+  afterEach(() => {
+    jest.restoreAllMocks()
+    jest.useRealTimers()
+  })
+
+  /** Runs the gas price refresh loop once and returns the error levels it asked for */
+  const getRefreshErrorLevels = async (type: SignAccountOpType) => {
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: nativeFeeToken
+      }
+    ]
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 25000n, feePaymentOptions },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      refreshGasPrices,
+      false,
+      { type, pauseOnInit: true }
+    )
+    const fetch = jest.spyOn(controller.gasPrice, 'fetch').mockImplementation(async () => {})
+    // The estimate loop is not under test and would otherwise hit the network
+    jest.spyOn(controller.estimation, 'estimate').mockImplementation(async () => {})
+
+    // Hand the loop over to the fake clock, as it was scheduled on the real one
+    jest.useFakeTimers()
+    controller.pause()
+    controller.resume()
+    fetch.mockClear()
+    await jest.advanceTimersByTimeAsync(GAS_PRICE_UPDATE_INTERVAL)
+
+    return fetch.mock.calls.map(([level]) => level)
+  }
+
+  test('keeps them silent on the swap screen, where users often just browse quotes', async () => {
+    const levels = await getRefreshErrorLevels('one-click-swap-and-bridge')
+
+    // Signing errors still show there, as they no longer get silenced along with these
+    expect(levels).toContain('silent')
+    expect(levels).not.toContain('major')
+  })
+
+  test('shows them everywhere else', async () => {
+    const levels = await getRefreshErrorLevels('default')
+
+    expect(levels).toContain('major')
+  })
+})
+
+describe('speed up of a smart account transaction sent by another account', () => {
+  // An Ambire signature: 65 bytes followed by the 1-byte signature type, so it can't be split
+  // into 65-byte owner signatures like a Safe's
+  const ambireSignature = `0x${'11'.repeat(32)}${'22'.repeat(32)}1b01`
+  const pendingTxnHash = `0x${'cd'.repeat(32)}`
+  const gasPrices: GasSpeeds = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+  const feePaymentOptions = [
+    {
+      paidBy: eoaSigner.keyPublicAddress,
+      availableAmount: 1000000000000000000n,
+      gasUsed: 0n,
+      addedNative: 5000n,
+      token: {
+        address: '0x0000000000000000000000000000000000000000',
+        amount: parseEther('1'),
+        symbol: 'ETH',
+        name: 'Ether',
+        chainId: 1n,
+        decimals: 18,
+        priceIn: [],
+        marketDataIn: [],
+        flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: true, isFeeToken: true }
+      }
+    }
+  ]
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  test('opens with the signature of the pending transaction, which is not read as Safe owners', async () => {
+    jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+    const accountOp = createAccountOp(smartAccount)
+    accountOp.op.signature = ambireSignature
+    accountOp.op.txnId = pendingTxnHash
+    accountOp.op.signingKeyAddr = eoaSigner.keyPublicAddress
+    accountOp.op.signingKeyType = 'internal'
+    accountOp.op.meta = {
+      speedUp: {
+        enabled: true,
+        replacedIdentifiedBy: { type: 'Transaction', identifier: pendingTxnHash }
+      }
+    }
+
+    const { controller } = await init(
+      smartAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      gasPrices,
+      false,
+      { createSpeedUp: (activity) => new SpeedUp({ accountOp: accountOp.op, activity }) }
+    )
+
+    expect(controller.isSpeedUpTransaction).toBe(true)
+    expect(controller.accountOp.signature).toBe(ambireSignature)
+    expect(controller.accountOp.signed).toBeUndefined()
+    expect(controller.status?.type).not.toBe(SigningStatus.Queued)
   })
 })

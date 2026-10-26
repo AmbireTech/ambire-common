@@ -1,6 +1,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 
 import EmittableError from '@/classes/EmittableError'
+import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '@/consts/activity'
 import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
 import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
@@ -33,6 +34,7 @@ import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
+import { PrivacyPoolsController } from '@/controllers/privacyPools/privacyPools'
 import { ProvidersController } from '@/controllers/providers/providers'
 import { RequestsController } from '@/controllers/requests/requests'
 import { SafeController } from '@/controllers/safe/safe'
@@ -79,8 +81,8 @@ import { IMainController, STATUS_WRAPPED_METHODS } from '@/interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '@/interfaces/network'
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
-import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { IPortfolioController } from '@/interfaces/portfolio'
+import { IPrivacyPoolsController } from '@/interfaces/privacyPools'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
 import { ISafeController } from '@/interfaces/safe'
@@ -100,14 +102,16 @@ import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
 import {
+  getCallsWithTxnIds,
   getDappIdentifier,
   isIdentifiedByUserOpHash,
   SubmittedAccountOp
 } from '@/libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
-import { KeyIterator } from '@/libs/keyIterator/keyIterator'
+import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
+import { PrivacyPoolsProverFactory } from '@/libs/privacyPools/prover'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
@@ -115,11 +119,14 @@ import { CowSwapAPI } from '@/services/cowswap/api'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketV3API } from '@/services/socketv3/api'
+import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
+import { getReceiptBlockNumberByChainId } from '@/utils/nonce'
 import { generateUuid } from '@/utils/uuid'
 import wait from '@/utils/wait'
+import { waitForBlockNumber } from '@/utils/waitForBlockNumber'
 
 type AccountsUpdate = {
   accountsToAdd: Account[]
@@ -209,6 +216,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   selectedAccount: ISelectedAccountController
 
+  privacyPools: IPrivacyPoolsController
+
   requests: IRequestsController
 
   banner: IBannerController
@@ -253,6 +262,8 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners,
     externalSignerControllers,
     uiManager,
+    privacyPoolsCircuitsBaseUrl,
+    privacyPoolsProverFactory,
     idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -270,6 +281,10 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
+    /** Base URL of the Privacy Pools circuit artifacts, a build asset only the platform knows. */
+    privacyPoolsCircuitsBaseUrl: string
+    /** Where to generate Privacy Pools proofs if not here - see `PrivacyPoolsController`. */
+    privacyPoolsProverFactory?: PrivacyPoolsProverFactory
     idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
@@ -354,7 +369,8 @@ export class MainController extends EventEmitter implements IMainController {
       relayerUrl,
       this.fetch,
       eventEmitterRegistry,
-      this.featureFlags
+      this.featureFlags,
+      this.ui.message.sendUiMessage
     )
     this.autoLogin = new AutoLoginController(
       this.storage,
@@ -371,7 +387,8 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       providers: this.providers,
       storage: this.storage,
-      accounts: this.accounts
+      accounts: this.accounts,
+      keystore: this.keystore
     })
 
     this.survey = new SurveyController({
@@ -423,6 +440,21 @@ export class MainController extends EventEmitter implements IMainController {
       autoLogin: this.autoLogin,
       banner: this.banner,
       ui: this.ui
+    })
+
+    this.privacyPools = new PrivacyPoolsController({
+      eventEmitterRegistry,
+      keystore: this.keystore,
+      featureFlags: this.featureFlags,
+      networks: this.networks,
+      providers: this.providers,
+      selectedAccount: this.selectedAccount,
+      storage: this.storage,
+      ui: this.ui,
+      fetch: this.fetch,
+      circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
+      proverFactory: privacyPoolsProverFactory,
+      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
     })
 
     this.portfolio = new PortfolioController(
@@ -658,6 +690,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.erc7730,
       this.contractInfo,
       platform,
+      this.privacyPools,
       eventEmitterRegistry
     )
     this.domains = new DomainsController({
@@ -802,26 +835,50 @@ export class MainController extends EventEmitter implements IMainController {
             await this.keystore.updateKeystoreKeys()
           }
         )
+        // A view added or focused while the wallet was locked fetched nothing for the other
+        // Safes. The other operations that set this status are cheap here, as recently
+        // fetched Safes are skipped.
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchAllSafesPending()
       }
     })
 
     this.ui.uiEvent.on('addView', async (view: View) => {
+      if (this.keystore.isUnlocked) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchAllSafesPending()
+      }
       if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
     })
 
-    this.ui.uiEvent.on('viewFocus', () => {
-      this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
+    this.ui.uiEvent.on('viewFocus', (view: View) => {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#fetchAllSafesPending()
+      // The mobile view is added once, so a return to the app refreshes here instead. The
+      // extension refreshes when a popup is added, as its views get focus far more often
+      if (view.type === 'mobile') this.#refreshSelectedAccountOnOpen()
     })
   }
 
   /**
    * - Updates the selected account's account state, portfolio and defi positions
    * - Calls batchReverseLookup for all accounts
+   * - Marks the view as ready
    *
    * It's not a problem to call it many times consecutively as all methods have internal
    * caching mechanisms to prevent unnecessary calls.
    */
   async onPopupOpen(viewId: string) {
+    this.#refreshSelectedAccountOnOpen()
+
+    this.ui.updateView(viewId, { isReady: true })
+  }
+
+  /**
+   * Refreshes what the user sees first when the wallet opens: the selected account's account
+   * state, portfolio and defi positions, and the account names. Cheap to repeat, see onPopupOpen.
+   */
+  #refreshSelectedAccountOnOpen() {
     const selectedAccountAddr = this.selectedAccount.account?.addr
 
     if (selectedAccountAddr) {
@@ -851,12 +908,8 @@ export class MainController extends EventEmitter implements IMainController {
         })
       }
 
-      if (!this.accounts.areAccountStatesLoading) {
-        this.accounts.updateAccountState(selectedAccountAddr)
-      }
+      this.accounts.updateAccountState(selectedAccountAddr)
     }
-
-    this.ui.updateView(viewId, { isReady: true })
   }
 
   async #load(): Promise<void> {
@@ -901,6 +954,13 @@ export class MainController extends EventEmitter implements IMainController {
 
     await this.survey.initialLoadPromise
 
+    await this.privacyPools.initialLoadPromise
+    // The restored Privacy Pools account may be gone, removed with its recovery phrase mid-load
+    const { privacyPoolsAccountId } = this.selectedAccount
+    if (privacyPoolsAccountId && !this.#hasPrivacyPoolsAccount(privacyPoolsAccountId)) {
+      await this.#selectFallbackAccount()
+    }
+
     this.isReady = true
     this.emitUpdate()
   }
@@ -921,14 +981,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
   }
 
-  async #selectAccount(toAccountAddr: string | null) {
-    if (!toAccountAddr) {
-      await this.selectedAccount.setAccount(null)
-
-      this.emitUpdate()
-      return
-    }
-
+  async #selectAccount(toAccountAddr: string) {
     const accountToSelect = this.accounts.accounts.find((acc) => acc.addr === toAccountAddr)
     if (!accountToSelect) {
       console.error(`Account with address ${toAccountAddr} does not exist`)
@@ -936,20 +989,8 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     this.isOffline = false
-    // call closeRequestWindow while still on the currently selected account to allow proper
-    // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
-    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
-      // Switching accounts is the user acting on the wallet, not refusing the apps that
-      // happened to be waiting, so it must not count towards the spam detection.
-      await this.requests.closeRequestWindow({ isUserInitiated: false })
-    }
-    const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
-      ({ kind }) => kind === 'swapAndBridge'
-    )
-    if (swapAndBridgeSigningRequest) {
-      await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
-    }
-    await this.selectedAccount.setAccount(accountToSelect)
+    await this.#leaveSelectedAccount()
+    await this.selectedAccount.select({ account: accountToSelect })
     // Update reverse lookup data and ENS expiry
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.domains.reverseLookup(toAccountAddr, true, {
@@ -972,15 +1013,142 @@ export class MainController extends EventEmitter implements IMainController {
       maxDataAgeMsUnused: 60 * 60 * 1000
     })
 
+    await this.#forceEmitSelectedAccountUpdates(toAccountAddr)
+  }
+
+  /** Pushes the selected account's getters to the UI. `accountAddr` is null for a Privacy Pools one. */
+  async #forceEmitSelectedAccountUpdates(accountAddr: string | null) {
+    const accountScopedUpdates = accountAddr
+      ? [
+          this.activity.onSelectedAccountChange(accountAddr),
+          this.dapps.onSelectedAccountChange(accountAddr)
+        ]
+      : [this.activity.forceEmitUpdate()]
+
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
-      this.activity.onSelectedAccountChange(toAccountAddr),
+      ...accountScopedUpdates,
       this.requests.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.swapAndBridge.forceEmitUpdate(),
-      this.dapps.onSelectedAccountChange(toAccountAddr),
       this.forceEmitUpdate()
     ])
+  }
+
+  /** Cleans up after the selected account, before another one of either kind is selected. */
+  async #leaveSelectedAccount() {
+    // call closeRequestWindow while still on the currently selected account to allow proper
+    // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
+    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
+      // Switching accounts is the user acting on the wallet, not refusing the apps that
+      // happened to be waiting, so it must not count towards the spam detection.
+      await this.requests.closeRequestWindow({ isUserInitiated: false })
+    }
+    const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
+      ({ kind }) => kind === 'swapAndBridge'
+    )
+    if (swapAndBridgeSigningRequest) {
+      await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
+    }
+  }
+
+  #hasPrivacyPoolsAccount(seedId: string) {
+    return this.privacyPools.accounts.some((account) => account.seedId === seedId)
+  }
+
+  /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
+  async addPrivacyPoolsAccount(seedId: string) {
+    await this.initialLoadPromise
+
+    // Wrapped as a whole, so a refused account is shown to the user
+    await this.withStatus(
+      'selectAccount',
+      async () => {
+        await this.privacyPools.addAccount(seedId)
+        await this.#selectPrivacyPoolsAccount(seedId)
+      },
+      true
+    )
+  }
+
+  /**
+   * Creates a recovery phrase with only a Privacy Pools account on it, and selects it. The phrase
+   * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
+   */
+  async addPrivacyPoolsAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'selectAccount',
+      async () => {
+        const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
+        await this.privacyPools.addAccount(seedId)
+        await this.#selectPrivacyPoolsAccount(seedId)
+      },
+      true
+    )
+  }
+
+  async selectPrivacyPoolsAccount(seedId: string) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'selectAccount',
+      async () => this.#selectPrivacyPoolsAccount(seedId),
+      true
+    )
+  }
+
+  /**
+   * Selects a Privacy Pools account, leaving no regular account selected. Apps are not told: what
+   * they should see then is undecided, so they keep their account.
+   */
+  async #selectPrivacyPoolsAccount(seedId: string) {
+    if (!this.#hasPrivacyPoolsAccount(seedId)) {
+      this.emitError({
+        level: 'major',
+        message: 'The account you selected could not be found. Please select another account.',
+        error: new Error('main: the Privacy Pools account to select does not exist')
+      })
+      return
+    }
+
+    await this.#leaveSelectedAccount()
+    await this.selectedAccount.select({ privacyPoolsSeedId: seedId })
+    this.swapAndBridge.reset()
+    this.transfer.reset({ destroyAccountOp: true })
+
+    await this.#forceEmitSelectedAccountUpdates(null)
+  }
+
+  /**
+   * Once the selected account is gone, selects the first regular account, else the first Privacy
+   * Pools account, else nothing (signed out).
+   */
+  async #selectFallbackAccount() {
+    const [firstAccount] = this.accounts.accounts
+    if (firstAccount) {
+      await this.#selectAccount(firstAccount.addr)
+      return
+    }
+
+    const [firstPrivacyPoolsAccount] = this.privacyPools.accounts
+    if (firstPrivacyPoolsAccount) {
+      await this.#selectPrivacyPoolsAccount(firstPrivacyPoolsAccount.seedId)
+      return
+    }
+
+    await this.selectedAccount.select(null)
+    this.emitUpdate()
+  }
+
+  async #onPrivacyPoolsAccountsRemoved(seedIds: string[]) {
+    const { privacyPoolsAccountId } = this.selectedAccount
+    if (!privacyPoolsAccountId || !seedIds.includes(privacyPoolsAccountId)) return
+    // Still loading: `#load` makes the same check once ready
+    if (!this.isReady) return
+
+    await this.#selectFallbackAccount()
   }
 
   async #onAccountPickerSuccess() {
@@ -1022,23 +1190,7 @@ export class MainController extends EventEmitter implements IMainController {
     const isBasicAccountBroadcastingMultiple =
       submittedAccountOp.identifiedBy.type === 'MultipleTxns'
     if (isBasicAccountBroadcastingMultiple) {
-      const txnIds = submittedAccountOp.identifiedBy.identifier.split('-')
-      const calls = submittedAccountOp.calls.map((oneCall, i) => {
-        const localCall = { ...oneCall }
-
-        // if there's no tx id, we set it to Rejected and continue.
-        // it means broadcast has failed
-        if (!(i in txnIds)) {
-          localCall.status = AccountOpStatus.Rejected
-          return localCall
-        }
-
-        localCall.txnId = txnIds[i] as Hex
-        localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
-        return localCall
-      })
-
-      submittedAccountOp.calls = calls
+      submittedAccountOp.calls = getCallsWithTxnIds(submittedAccountOp)
     }
 
     if (accountOp.meta?.swapTxn) {
@@ -1070,6 +1222,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.activity.addAccountOp(submittedAccountOp)
+    // Every deposit into a Privacy Pools account, however signed, is broadcast through here
+    this.privacyPools.onAccountOpBroadcast(submittedAccountOp)
     await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple
@@ -1378,7 +1532,7 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
       const { walletSDK } = trezorCtrl
-      await this.accountPicker.setInitParams({
+      this.accountPicker.setInitParams({
         keyIterator: new TrezorKeyIterator({ walletSDK }),
         hdPathTemplate,
         pageSize: 5,
@@ -1398,6 +1552,43 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  async #handleAccountPickerInitOneKey(
+    OneKeyKeyIterator: any, // TODO: KeyIterator type mismatch
+    preferredDeviceId?: string
+  ) {
+    try {
+      const oneKeyCtrl = this.#externalSignerControllers.onekey
+
+      if (!oneKeyCtrl?.connect) {
+        const message =
+          'Could not initialize connection with your OneKey device. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      await oneKeyCtrl.connect(preferredDeviceId)
+
+      const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
+      await this.accountPicker.setInitParams({
+        keyIterator: new OneKeyKeyIterator({ controller: oneKeyCtrl }),
+        hdPathTemplate,
+        pageSize: 5,
+        shouldAddNextAccountAutomatically: false
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not unlock the OneKey device. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountPickerInitOneKey(
+    OneKeyKeyIterator: any, // TODO: KeyIterator type mismatch
+    preferredDeviceId?: string
+  ) {
+    await this.withStatus('handleAccountPickerInitOneKey', async () =>
+      this.#handleAccountPickerInitOneKey(OneKeyKeyIterator, preferredDeviceId)
+    )
+  }
+
   async #handleAccountPickerInitLattice(
     LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
   ) {
@@ -1411,7 +1602,7 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
 
-      await this.accountPicker.setInitParams({
+      this.accountPicker.setInitParams({
         keyIterator: new LatticeKeyIterator({ controller: latticeCtrl }),
         hdPathTemplate,
         pageSize: 5,
@@ -1593,49 +1784,82 @@ export class MainController extends EventEmitter implements IMainController {
               op.status !== AccountOpStatus.Pending &&
               op.status !== AccountOpStatus.BroadcastedButNotConfirmed
           )
+          const blockNumberByChainId = getReceiptBlockNumberByChainId(finalizedAccountOps)
 
           const networks = this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
 
-          if (networks.length) {
-            // The account state must be updated before the portfolio
-            // as the portfolio has internal checks whether the nonce has changed
-            // to decide if to force refetch certain data
-            await this.accounts.updateAccountState(
-              accountAddr,
-              'latest',
-              networks.map((net) => net.chainId)
-            )
+          // Nothing awaits this callback, so a failure is reported here
+          try {
+            // A lagging RPC would return the balances and the nonce from before the confirmation
+            await Promise.all(
+              Object.entries(blockNumberByChainId).map(([chainId, blockNumber]) => {
+                const provider = this.providers.providers[chainId]
+                if (!provider) return undefined
 
-            // Schedule an update that will refetch new defi positions (if any)
-            chainsToUpdate.forEach((chainId) => {
-              this.portfolio.scheduleUpdate({
-                accountId: accountAddr,
-                chainId,
-                bypassServerSideCache: true
+                return waitForBlockNumber(provider, blockNumber, CONFIRMED_BLOCK_WAIT_TIMEOUT_MS)
               })
-            })
-          }
-
-          // Discard the simulation (that also updates the portfolio, but doesn't force update defi).
-          // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
-          // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
-          if (finalizedAccountOps.length) {
-            await this.portfolio.discardSimulation(finalizedAccountOps)
-          }
-
-          if (networks.length) {
-            // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
-            this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
-              accountAddr,
-              updatedAccountsOps
             )
 
-            Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
-              // eslint-disable-next-line @typescript-eslint/no-floating-promises
-              this.portfolio.updateSelectedAccount(
+            if (networks.length) {
+              // The account state must be updated before the portfolio
+              // as the portfolio has internal checks whether the nonce has changed
+              // to decide if to force refetch certain data
+              await this.accounts.updateAccountState(
                 accountAddr,
-                this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+                'latest',
+                networks.map((net) => net.chainId),
+                true
               )
+
+              // Schedule an update that will refetch new defi positions (if any)
+              chainsToUpdate.forEach((chainId) => {
+                this.portfolio.scheduleUpdate({
+                  accountId: accountAddr,
+                  chainId,
+                  bypassServerSideCache: true
+                })
+              })
+            }
+
+            const otherAccountsToUpdate = networks.length ? Object.entries(portfoliosToUpdate) : []
+
+            // The other accounts have their own portfolio queues, so they don't wait for the
+            // sender's read
+            await Promise.all([
+              // Discard the simulation (that also updates the portfolio, but doesn't force update defi).
+              // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
+              // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
+              finalizedAccountOps.length
+                ? this.portfolio.discardSimulation(finalizedAccountOps)
+                : undefined,
+              ...otherAccountsToUpdate.map(async ([portfolioAccountAddr, chainIds]) => {
+                // A fee payer has a new nonce and a recipient a new balance, and the
+                // account state goes first for the same reason as above
+                await this.accounts.updateAccountState(
+                  portfolioAccountAddr,
+                  'latest',
+                  chainIds,
+                  true
+                )
+                await this.portfolio.updateSelectedAccount(
+                  portfolioAccountAddr,
+                  this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+                )
+              })
+            ])
+
+            if (networks.length) {
+              // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
+              this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+                accountAddr,
+                updatedAccountsOps
+              )
+            }
+          } catch (error) {
+            this.emitError({
+              level: 'silent',
+              message: `Failed to refresh ${accountAddr} after its transactions were confirmed.`,
+              error: error instanceof Error ? error : new Error(String(error))
             })
           }
         }
@@ -1693,7 +1917,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.dapps.removeAccountData(address)
 
       if (this.selectedAccount.account?.addr === address) {
-        await this.#selectAccount(this.accounts.accounts[0]?.addr ?? null)
+        await this.#selectFallbackAccount()
       }
 
       this.emitUpdate()
@@ -1759,13 +1983,8 @@ export class MainController extends EventEmitter implements IMainController {
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
       // it's very likely that the account state is already in the process of being updated.
-      // If we try to run the same action, `withStatus` validation will throw an error.
-      // So, we perform this safety check to prevent the error.
-      // However, even if we don't trigger an update here, it's not a big problem,
-      // as the account state will be updated anyway, and its update will be very recent.
-      !this.accounts.areAccountStatesLoading && this.selectedAccount.account?.addr
-        ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds)
-        : Promise.resolve(),
+      // That fetch is reused, so this causes no extra fetch.
+      this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
@@ -1793,6 +2012,19 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     return this.#fetchSafeTxnsPromise
+  }
+
+  /**
+   * Fetches the pending txns of the selected Safe, and then the pending counts of the other
+   * Safes, one after the other so they don't compete for the Safe API's rate limit
+   */
+  async #fetchAllSafesPending() {
+    await this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
+
+    // do not make Safe requests for the other Safes if the wallet is locked
+    if (!this.keystore.isUnlocked) return
+
+    await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
   }
 
   async refreshSafeTxns() {
@@ -2139,7 +2371,48 @@ export class MainController extends EventEmitter implements IMainController {
   }) {
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
     const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
-    await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+    this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+  }
+
+  async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
+    if (!privateKeys.length) {
+      const message = 'Please enter at least one private key.'
+      throw new EmittableError({ message, level: 'major', error: new Error(message) })
+    }
+
+    if (privateKeys.length > MAX_BULK_PRIVATE_KEYS) {
+      const message = `You can import up to ${MAX_BULK_PRIVATE_KEYS} private keys at once. Please remove some and try again.`
+      throw new EmittableError({ message, level: 'major', error: new Error(message) })
+    }
+
+    let keyIterator: KeyIterator
+    try {
+      // Trims the keys, strips the 0x prefix and drops duplicates before validating them
+      keyIterator = new KeyIterator(privateKeys)
+    } catch (error: any) {
+      // The original error never includes the keys, so it is safe to report it
+      const message =
+        'One or more of the private keys you entered is not valid. Please check them and try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+
+    this.accountPicker.setInitParams({
+      keyIterator,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+  }
+
+  /**
+   * Prepares the account picker with a list of private keys (bulk import). The key at position N
+   * in the list is listed as the account at index N. Duplicates are dropped and the list is
+   * limited to `MAX_BULK_PRIVATE_KEYS` keys.
+   */
+  async accountPickerSetInitParamsFromPrivateKeys({ privateKeys }: { privateKeys: string[] }) {
+    await this.withStatus(
+      'accountPickerSetInitParamsFromPrivateKeys',
+      async () => this.#accountPickerSetInitParamsFromPrivateKeys(privateKeys),
+      true
+    )
   }
 
   /**

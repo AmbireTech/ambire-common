@@ -22,22 +22,62 @@ import {
   SafeAccountCreation
 } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
-import { Fetch } from '../../interfaces/fetch'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
+import { Fetch } from '../../interfaces/fetch'
 import { dedicatedToOneSAPriv, IKeystoreController } from '../../interfaces/keystore'
-import { INetworksController } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { UiManager } from '../../interfaces/ui'
 import { getUniqueAccountsArray, isAmbireV2Account } from '../../libs/account/account'
 import { normalizeIdentityResponse } from '../../libs/accountPicker/accountPicker'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
   addAccounts: 'INITIAL'
 } as const
 
+type AccountStateBlockTag = 'latest' | 'pending'
+
+/** The queued jobs and fetches of one account on one chain. Deleted when its last job ends. */
+type AccountStateFetchTracker = {
+  /** The last queued job. A new call for the account waits for it. */
+  lastJob: Promise<void>
+  /** The sequence number of the last fetch that started, by block tag. */
+  lastFetchStarted: { [blockTag in AccountStateBlockTag]?: number }
+  /** The fetch that runs now, if any. */
+  runningFetch?: { startedAt: number; blockTag: AccountStateBlockTag }
+}
+
+/**
+ * An account in a queued job. Any fetch that starts at or after `coveredFrom` makes its fetch
+ * unnecessary.
+ */
+type QueuedAccountStateFetch = {
+  addr: Account['addr']
+  tracker: AccountStateFetchTracker
+  coveredFrom: number
+}
+
+/** Whether a fetch with `fetchBlockTag` also gives the state a `blockTag` call asks for. */
+const isBlockTagCovered = (
+  fetchBlockTag: AccountStateBlockTag,
+  blockTag: AccountStateBlockTag
+): boolean => fetchBlockTag === 'pending' || blockTag === 'latest'
+
+/**
+ * Stores the wallet accounts and fetches their on-chain state.
+ *
+ * State fetches run in one queue per account and chain. Calls for different accounts never wait
+ * for each other.
+ * Calls for the same account run in call order, so an older fetch can't overwrite a newer result.
+ * A call without `force` reuses the fetch that runs for its account when the block tag fits, so
+ * repeated calls cause no extra RPC load. A call with `force` waits for a fetch that starts after
+ * it.
+ */
 export class AccountsController extends EventEmitter implements IAccountsController {
   #storage: IStorageController
 
@@ -50,6 +90,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   #callRelayer: Function
 
   #featureFlags?: IFeatureFlagsController
+
+  /** Replies to a UI request, so the UI can await the outcome of a method */
+  #sendUiMessage?: UiManager['message']['sendUiMessage']
 
   /**
    * Creating Ambire smart account identity is needed but not critical, user
@@ -70,9 +113,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   accountStates: AccountStates = {}
 
-  accountStatesLoadingState: {
-    [chainId: string]: Promise<AccountOnchainState[]> | undefined
-  } = {}
+  #fetchTrackers: { [chainId: string]: { [addr: string]: AccountStateFetchTracker } } = {}
+
+  /** Orders calls and fetches, so a job can tell which fetches started after a call. */
+  #sequence = 0
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -101,7 +145,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     relayerUrl: string,
     fetch: Fetch,
     eventEmitterRegistry?: IEventEmitterRegistryController,
-    featureFlags?: IFeatureFlagsController
+    featureFlags?: IFeatureFlagsController,
+    sendUiMessage?: UiManager['message']['sendUiMessage']
   ) {
     super(eventEmitterRegistry)
     this.#storage = storage
@@ -113,6 +158,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.#onAccountStateUpdate = onAccountStateUpdate
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#featureFlags = featureFlags
+    this.#sendUiMessage = sendUiMessage
 
     this.#viewOnlyAccountGetIdentityInterval = new RecurringTimeout(
       this.setViewOnlyAccountIdentitiesIfNeeded.bind(this),
@@ -177,22 +223,35 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.#smartAccountIdentityCreateInterval.restart({ runImmediately: true })
   }
 
+  /**
+   * Fetches the on-chain state of one account.
+   * - Use `'pending'` when the result must count
+   * transactions that are not mined yet, such as the nonce for a new op or a check that stops a
+   * second Safe deployment.
+   * - Use `'latest'` for background refreshes and for facts that must already
+   * be mined. `'pending'` differs from `'latest'` only on Ethereum, see
+   * `getPendingBlockTagIfSupported`.
+   * - Pass `force` when a transaction or a nonce error changed the
+   * state, so a fetch that started before the call is not enough.
+   */
   async updateAccountState(
     accountAddr: Account['addr'],
-    blockTag: 'pending' | 'latest' = 'latest',
-    networks: bigint[] = []
+    blockTag: AccountStateBlockTag = 'latest',
+    networks: bigint[] = [],
+    force = false
   ) {
     await this.initialLoadPromise
 
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
     if (!accountData) return
-    await this.updateAccountStates([accountData], blockTag, networks)
+    await this.updateAccountStates([accountData], blockTag, networks, force)
   }
 
   private async updateAccountStates(
     accounts: Account[],
-    blockTag: string | number = 'latest',
-    updateOnlyNetworksWithIds: bigint[] = []
+    blockTag: AccountStateBlockTag = 'latest',
+    updateOnlyNetworksWithIds: bigint[] = [],
+    force = false
   ) {
     if (!accounts.length) return
 
@@ -203,84 +262,170 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
       return updateOnlyNetworksWithIds.includes(network.chainId)
     })
-
-    this.emitUpdate()
+    const addrs = accounts.map(({ addr }) => addr)
 
     let readyNetworks = 0
 
-    await Promise.all(
-      networksToUpdate.map(async (network) => {
-        try {
-          if (this.accountStatesLoadingState[network.chainId.toString()]) {
-            await this.accountStatesLoadingState[network.chainId.toString()]
+    const networkUpdates = networksToUpdate.map(async (network) => {
+      await this.#queueFetchJob(network, addrs, blockTag, force)
+      readyNetworks++
 
-            return
-          }
+      const areAllReady = readyNetworks === networksToUpdate.length
+      // Prevent spamming updates as users may have dozens of networks and updating
+      // every tick causes a lot of rerenders in the UI
+      this.emitUpdate({ throttleMs: areAllReady ? 0 : 200 })
+    })
+    // After the jobs are queued, so areAccountStatesLoading is already true
+    this.emitUpdate()
 
-          const provider = this.#providers.providers[network.chainId.toString()]
-          if (!provider) {
-            const error = new Error(`Provider not found for network ${network.chainId.toString()}`)
-            this.emitError({
-              message: error.message,
-              level: 'silent',
-              sendCrashReport: true,
-              error
-            })
-            return
-          }
-
-          this.accountStatesLoadingState[network.chainId.toString()] = getAccountState(
-            provider,
-            network,
-            accounts,
-            this.#keystore.keys,
-            blockTag
-          )
-          const networkAccountStates =
-            await this.accountStatesLoadingState[network.chainId.toString()]!
-
-          this.#updateProviderIsWorking(network.chainId, true)
-
-          networkAccountStates.forEach((accountState) => {
-            const addr = accountState.accountAddr
-            if (!this.accountStates[addr]) this.accountStates[addr] = {}
-
-            // if the block tag is pending & we have a fetched latest state,
-            // we check each nonce against the latest state.
-            // if the pending nonce is lower than the latest state, we override the res
-            // also, we check isDeployed, isSmarterEoa & isEOA
-            // we do this because rogue RPCs sometimes mess up the pending state
-            if (blockTag === 'pending') {
-              const current = this.accountStates[addr][network.chainId.toString()]
-              const toState =
-                current && current.currentBlock >= accountState.currentBlock
-                  ? current
-                  : accountState
-              this.accountStates[addr][network.chainId.toString()] = toState
-            } else {
-              this.accountStates[addr][network.chainId.toString()] = accountState
-            }
-          })
-        } catch (err: any) {
-          this.emitError({
-            level: 'silent',
-            message: `Failed to update account state for ${network.name}`,
-            error: err
-          })
-          this.#updateProviderIsWorking(network.chainId, false)
-        } finally {
-          readyNetworks++
-          this.accountStatesLoadingState[network.chainId.toString()] = undefined
-        }
-
-        const areAllReady = readyNetworks === networksToUpdate.length
-        // Prevent spamming updates as users may have dozens of networks and updating
-        // every tick causes a lot of rerenders in the UI
-        this.emitUpdate({ throttleMs: areAllReady ? 0 : 200 })
-      })
-    )
+    await Promise.all(networkUpdates)
 
     this.#onAccountStateUpdate()
+  }
+
+  /**
+   * Fetches the states of `addrs` on `network` after the earlier jobs of the same accounts.
+   * Jobs for other accounts run at the same time. Never rejects, as a rejected job would also
+   * reject every later job of the same accounts.
+   */
+  async #queueFetchJob(
+    network: Network,
+    addrs: Account['addr'][],
+    requestedBlockTag: AccountStateBlockTag,
+    force: boolean
+  ) {
+    const chainIdKey = network.chainId.toString()
+    const calledAt = ++this.#sequence
+    const blockTag =
+      requestedBlockTag === 'pending' ? getPendingBlockTagIfSupported(network) : 'latest'
+
+    if (!this.#fetchTrackers[chainIdKey]) this.#fetchTrackers[chainIdKey] = {}
+    const chainTrackers = this.#fetchTrackers[chainIdKey]
+    const queuedAccounts: QueuedAccountStateFetch[] = addrs.map((addr) => {
+      if (!chainTrackers[addr]) {
+        chainTrackers[addr] = { lastJob: Promise.resolve(), lastFetchStarted: {} }
+      }
+      const tracker = chainTrackers[addr]
+      // Without force, the fetch that runs now is enough. With force, only a later fetch is.
+      const runningFetch = tracker.runningFetch
+      const canUseRunningFetch =
+        !force && !!runningFetch && isBlockTagCovered(runningFetch.blockTag, blockTag)
+
+      return { addr, tracker, coveredFrom: canUseRunningFetch ? runningFetch.startedAt : calledAt }
+    })
+
+    const previousJobs = queuedAccounts.map(({ tracker }) => tracker.lastJob)
+    const job = Promise.all(previousJobs).then(() =>
+      this.#runFetchJob(network, blockTag, queuedAccounts)
+    )
+    queuedAccounts.forEach(({ tracker }) => {
+      tracker.lastJob = job
+    })
+
+    await job
+
+    queuedAccounts.forEach(({ addr, tracker }) => {
+      if (tracker.lastJob !== job) return
+      delete chainTrackers[addr]
+    })
+    if (!Object.keys(chainTrackers).length) delete this.#fetchTrackers[chainIdKey]
+  }
+
+  async #runFetchJob(
+    network: Network,
+    blockTag: AccountStateBlockTag,
+    queuedAccounts: QueuedAccountStateFetch[]
+  ) {
+    const chainIdKey = network.chainId.toString()
+    // Read the accounts now, as the keys or the Safe data may have changed while the job waited
+    const accountsByAddr = new Map(this.accounts.map((account) => [account.addr, account]))
+    const accountsToFetch = queuedAccounts.flatMap((queuedAccount) => {
+      const account = accountsByAddr.get(queuedAccount.addr)
+      if (!account) return []
+      if (this.#isCoveredByStartedFetch(queuedAccount, blockTag)) return []
+
+      return [{ ...queuedAccount, account }]
+    })
+    if (!accountsToFetch.length) return
+
+    const provider = this.#providers.providers[chainIdKey]
+    if (!provider) {
+      const error = new Error(`Provider not found for network ${chainIdKey}`)
+      this.emitError({
+        message: error.message,
+        level: 'silent',
+        sendCrashReport: true,
+        error
+      })
+      return
+    }
+
+    const startedAt = ++this.#sequence
+    accountsToFetch.forEach(({ tracker }) => {
+      tracker.lastFetchStarted[blockTag] = startedAt
+      tracker.runningFetch = { startedAt, blockTag }
+    })
+
+    try {
+      const networkAccountStates = await getAccountState(
+        provider,
+        network,
+        accountsToFetch.map(({ account }) => account),
+        this.#keystore.keys,
+        blockTag
+      )
+
+      this.#updateProviderIsWorking(network.chainId, true)
+
+      networkAccountStates.forEach((accountState) =>
+        this.#saveAccountState(chainIdKey, blockTag, accountState)
+      )
+    } catch (err: any) {
+      this.emitError({
+        level: 'silent',
+        message: `Failed to update account state for ${network.name}`,
+        error: err
+      })
+      this.#updateProviderIsWorking(network.chainId, false)
+    } finally {
+      accountsToFetch.forEach(({ tracker }) => {
+        tracker.runningFetch = undefined
+      })
+    }
+  }
+
+  /** A failed fetch also covers the account, so queued calls don't each wait for a down RPC. */
+  #isCoveredByStartedFetch(
+    { tracker, coveredFrom }: QueuedAccountStateFetch,
+    blockTag: AccountStateBlockTag
+  ): boolean {
+    const { latest = 0, pending = 0 } = tracker.lastFetchStarted
+    const lastCoveringFetchStart = blockTag === 'pending' ? pending : Math.max(latest, pending)
+
+    return lastCoveringFetchStart >= coveredFrom
+  }
+
+  #saveAccountState(
+    chainIdKey: string,
+    blockTag: AccountStateBlockTag,
+    accountState: AccountOnchainState
+  ) {
+    const addr = accountState.accountAddr
+    // The account was removed while its state was being fetched
+    if (!this.accounts.some((account) => account.addr === addr)) return
+    if (!this.accountStates[addr]) this.accountStates[addr] = {}
+
+    // if the block tag is pending & we already have a state from a newer block,
+    // we keep it. We do this because rogue RPCs sometimes mess up the pending state.
+    // A pending result from the same block is saved, as the pending block can change
+    // without a new block number.
+    // Other results need no block check, as the queue saves them in call order
+    const current = this.accountStates[addr][chainIdKey]
+    if (blockTag === 'pending' && current && current.currentBlock > accountState.currentBlock) {
+      return
+    }
+
+    this.accountStates[addr][chainIdKey] = accountState
   }
 
   async #addAccounts(accounts: Account[] = []) {
@@ -341,18 +486,60 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.emitUpdate()
   }
 
-  async updateAccountPreferences(accounts: { addr: string; preferences: AccountPreferences }[]) {
-    this.accounts = this.accounts.map((acc) => {
-      const account = accounts.find((a) => a.addr === acc.addr)
-      if (!account) return acc
-      if (isAddress(account.preferences.pfp)) {
-        account.preferences.pfp = getAddress(account.preferences.pfp)
-      }
-      return { ...acc, preferences: account.preferences }
-    })
+  /**
+   * Updates the preferences (label, pfp) of the given accounts and saves them.
+   * If saving fails, the previous preferences are restored and the error is emitted.
+   * When called with a `requestId` (via `dispatchAndWait` in the UI), it also replies
+   * once they are saved or failed to save, and the error is emitted silently, as the
+   * UI that asked tells the user instead.
+   */
+  async updateAccountPreferences(
+    accounts: { addr: string; preferences: AccountPreferences }[],
+    requestId?: string
+  ) {
+    const previousPreferences = new Map(
+      this.accounts.map((acc) => [acc.addr, acc.preferences] as const)
+    )
 
-    this.emitUpdate()
-    await this.#storage.set('accounts', this.accounts)
+    try {
+      this.accounts = this.accounts.map((acc) => {
+        const account = accounts.find((a) => a.addr === acc.addr)
+        if (!account) return acc
+        if (isAddress(account.preferences.pfp)) {
+          account.preferences.pfp = getAddress(account.preferences.pfp)
+        }
+        return { ...acc, preferences: account.preferences }
+      })
+
+      this.emitUpdate()
+      await this.#storage.set('accounts', this.accounts)
+
+      if (requestId) this.#sendUiMessage?.({ requestId, ok: true })
+    } catch (error: any) {
+      // Restores only the accounts this call changed, so the wallet doesn't show names
+      // that were never saved, without undoing other changes made in the meantime
+      this.accounts = this.accounts.map((acc) => {
+        const previous = previousPreferences.get(acc.addr)
+        const wasChanged = accounts.some((a) => a.addr === acc.addr)
+        return wasChanged && previous ? { ...acc, preferences: previous } : acc
+      })
+      this.emitUpdate()
+
+      const canReply = !!requestId && !!this.#sendUiMessage
+      this.emitError({
+        level: canReply ? 'silent' : 'major',
+        message: "Couldn't save the account changes. Please try again.",
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+
+      if (canReply) {
+        this.#sendUiMessage?.({
+          requestId,
+          ok: false,
+          error: error?.message || 'updateAccountPreferences failed'
+        })
+      }
+    }
   }
 
   /** Saves recovered Safe creation data on an imported account. */
@@ -394,7 +581,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   }
 
   get areAccountStatesLoading() {
-    return Object.values(this.accountStatesLoadingState).some((isLoading) => isLoading)
+    return Object.keys(this.#fetchTrackers).length > 0
   }
 
   // Get the account states or in the rare case of it being undefined,
@@ -428,11 +615,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   resetAccountsNewlyAddedState() {
     this.accounts = this.accounts.map((a) => ({ ...a, newlyAdded: false }))
     this.emitUpdate()
-  }
-
-  async forceFetchPendingState(addr: string, chainId: bigint): Promise<AccountOnchainState> {
-    await this.updateAccountState(addr, 'pending', [chainId])
-    return this.accountStates[addr][chainId.toString()]
   }
 
   async setViewOnlyAccountIdentitiesIfNeeded(): Promise<void> {
