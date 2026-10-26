@@ -834,8 +834,11 @@ describe('SignMessageController', () => {
       return { mockSigner, getSignerRequested: requested.promise, release: gate.resolve }
     }
 
+    // Not jest.restoreAllMocks(), which also removes the stubs that makeMainController
+    // put on the shared controllers
     afterEach(() => {
-      jest.restoreAllMocks()
+      jest.spyOn(keystoreCtrl, 'getSigner').mockRestore()
+      jest.spyOn(accountsCtrl, 'getOrFetchAccountOnChainState').mockRestore()
     })
 
     test('is not signed when it arrives while the signer is being loaded', async () => {
@@ -878,17 +881,55 @@ describe('SignMessageController', () => {
       expect(mockSigner.signMessage).not.toHaveBeenCalled()
       expect(signMessageController.signedMessage).toBeNull()
     })
+
+    test('is not signed when it arrives while the account state is being loaded', async () => {
+      const { mockSigner, release } = mockGatedSigner()
+      release()
+      const accountStateWithKey = {
+        ...accountOnchainState,
+        importedAccountKeys: [mockSigner.key]
+      } as AccountOnchainState
+      const getAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'getOrFetchAccountOnChainState')
+        .mockResolvedValue(accountStateWithKey)
+
+      await signMessageController.init({ messageToSign: r1 })
+      signMessageController.setSigners([signingKey])
+
+      // Approval for R1 starts and blocks while it loads the account state
+      const accountStateRequested = createDeferred<void>()
+      const accountStateGate = createDeferred<void>()
+      getAccountStateSpy.mockImplementationOnce(async () => {
+        accountStateRequested.resolve()
+        await accountStateGate.promise
+        return accountStateWithKey
+      })
+      const signPromise = signMessageController.sign()
+      await accountStateRequested.promise
+
+      await signMessageController.init({ messageToSign: r2 })
+      accountStateGate.resolve()
+      await signPromise
+
+      // The stale R1 operation must abort quietly, without an error about R2
+      expect(mockSigner.signMessage).not.toHaveBeenCalled()
+      expect(signMessageController.signedMessage).toBeNull()
+      expect(signMessageController.emittedErrors).toEqual([])
+    })
   })
 
   test('selects no signer for an account without imported keys', async () => {
-    jest
+    const getAccountStateSpy = jest
       .spyOn(accountsCtrl, 'getOrFetchAccountOnChainState')
       .mockResolvedValue({ ...accountOnchainState, importedAccountKeys: [] })
 
-    await signMessageController.init({ messageToSign })
+    try {
+      await signMessageController.init({ messageToSign })
 
-    expect(signMessageController.signers).toBeUndefined()
-    jest.restoreAllMocks()
+      expect(signMessageController.signers).toBeUndefined()
+    } finally {
+      getAccountStateSpy.mockRestore()
+    }
   })
 
   test('should expose hardware wallet EIP-712 data while signing a typed message', async () => {

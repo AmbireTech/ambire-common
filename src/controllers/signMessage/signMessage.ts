@@ -542,6 +542,7 @@ export class SignMessageController
         this.#account.addr,
         this.network.chainId
       )
+      if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
       if (!accountState) {
         throw new Error(`Account details missing. Please try again`)
       }
