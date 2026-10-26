@@ -147,7 +147,7 @@ export const privacyPoolsErrors = {
     majorError(
       'Could not load your deposits that are being verified. Please try again.',
       cause,
-      'reading the depositors failed'
+      'listing the pending deposits failed'
     ),
   ragequitPreparationFailed: (cause: unknown) =>
     majorError(

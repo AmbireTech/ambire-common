@@ -633,8 +633,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * The selected account's deposits of a token that are still being verified, each with the
-   * account it was made from - the only one that can take it back. From the last sync and this
-   * device's copy of the pools' history, so nothing about them is asked of the network.
+   * account it was made from - the only one that can take it back. From the last sync, so nothing
+   * about them is asked of the network.
    */
   async getRagequitDeposits(
     chainId: string,

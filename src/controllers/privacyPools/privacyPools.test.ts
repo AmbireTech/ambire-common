@@ -92,22 +92,6 @@ const encodeRagequit = (amount: bigint, label: bigint) =>
     }
   ])
 
-/** The SDK's persisted public state of a chain, with only what the depositors are read from. */
-const toStoredState = (deposits: { label: bigint; depositor: string }[]) =>
-  JSON.stringify({
-    deposits: {
-      depositsTuples: deposits.map(({ label, depositor }) => [
-        `0x${label.toString(16).padStart(2, '0')}`,
-        {
-          label: `0x${label.toString(16)}`,
-          depositor: `0x${BigInt(depositor).toString(16)}`,
-          // Later labels landed later, ten blocks apart
-          blockNumber: `0x${(label * 10n).toString(16)}`
-        }
-      ])
-    }
-  })
-
 const toFakeProof = (withdrawnValue: bigint) => ({
   pA: [1n, 2n],
   pB: [
@@ -254,19 +238,21 @@ const getPrecommitment = (seedId: string) =>
 const protocols: FakeProtocol[] = []
 let runningSyncs: RunningSync[] = []
 let notesBySeed: {
-  [seedId: string]: { label: bigint; amount: bigint; approved: boolean; assetAddress?: bigint }[]
+  [seedId: string]: {
+    label: bigint
+    amount: bigint
+    approved: boolean
+    assetAddress?: bigint
+    /** `DEPOSITOR` when not set. */
+    depositor?: string
+    /** The account's deposit number, 0 when not set. */
+    deposit?: number
+  }[]
 } = {}
-/**
- * The depositor of each deposit, by label, that a sync persists the way the SDK does: in the
- * chain's public state. Null to persist a placeholder instead, as most tests need nothing of it.
- */
-let storedDepositors: { label: bigint; depositor: string }[] | null = null
 /** What `ragequit` returns instead of a call for every note asked for, when set. */
 let ragequitTxns: { to: string; data: string; value: bigint }[] | null = null
 /** Holds `ragequit` until the test releases it, when set. */
 let ragequitGate: Deferred | null = null
-/** The chain's latest block, or null for the read to fail. */
-let latestBlockNumber: number | null = 100
 /** What `prepareUnshield` returns, or null for it to fail like proving did. */
 let preparedWithdrawal: ReturnType<typeof buildPreparedWithdrawal> | null = null
 /** What `prepareUnshield` throws instead, when set - the SDK's thunks throw plain objects, not `Error`s. */
@@ -316,11 +302,7 @@ class FakeProtocol {
 
     // What the real plugin does at the end of every sync: persist the chain's public history
     const config = getPrivacyPoolsChainConfig(chainId)
-    if (config)
-      await this.host.storage.set(
-        getPrivacyPoolsStoreKey(config),
-        storedDepositors ? toStoredState(storedDepositors) : `synced-${Date.now()}`
-      )
+    if (config) await this.host.storage.set(getPrivacyPoolsStoreKey(config), `synced-${Date.now()}`)
   }
 
   ragequitLabels: bigint[][] = []
@@ -387,7 +369,9 @@ class FakeProtocol {
       label: note.label,
       assetAddress: note.assetAddress ?? 0n,
       balance: note.amount,
-      approved: note.approved
+      approved: note.approved,
+      depositor: BigInt(note.depositor ?? DEPOSITOR),
+      deposit: note.deposit ?? 0
     }))
   }
 }
@@ -531,11 +515,6 @@ const createFakeProvider = (chainId: bigint) => ({
   getNetwork: async () => ({ chainId }),
   call: fakeProviderCall,
   getBlock: async () => ({ baseFeePerGas: latestBaseFee }),
-  getBlockNumber: async () => {
-    if (latestBlockNumber === null) throw new Error('FakeProvider: the node is down')
-
-    return latestBlockNumber
-  },
   send: jest.fn(async (method: string) => {
     if (method === 'eth_simulateV1') return simulateWithdrawal()
 
@@ -669,10 +648,8 @@ describe('PrivacyPoolsController', () => {
       'seed-a': [{ label: 1n, amount: 10n, approved: true }],
       'seed-b': [{ label: 2n, amount: 20n, approved: false }]
     }
-    storedDepositors = null
     ragequitTxns = null
     ragequitGate = null
-    latestBlockNumber = 100
   })
 
   describe('accounts', () => {
@@ -2589,31 +2566,28 @@ describe('PrivacyPoolsController', () => {
     beforeEach(() => {
       notesBySeed = {
         'seed-a': [
-          { label: 1n, amount: 10n, approved: true },
-          { label: 3n, amount: 30n, approved: false },
+          { label: 1n, amount: 10n, approved: true, deposit: 0 },
+          // Made after label 6, as labels say nothing of the order
+          { label: 3n, amount: 30n, approved: false, deposit: 4 },
           // Spent in full: nothing left to take back
-          { label: 4n, amount: 0n, approved: false },
-          { label: 5n, amount: 5n, approved: false, assetAddress: BigInt(USDC) },
-          { label: 6n, amount: 60n, approved: false }
+          { label: 4n, amount: 0n, approved: false, deposit: 1 },
+          {
+            label: 5n,
+            amount: 5n,
+            approved: false,
+            assetAddress: BigInt(USDC),
+            depositor: OTHER_DEPOSITOR,
+            deposit: 2
+          },
+          { label: 6n, amount: 60n, approved: false, depositor: OTHER_DEPOSITOR, deposit: 3 }
         ],
         'seed-b': [{ label: 2n, amount: 20n, approved: false }]
       }
-      storedDepositors = [
-        { label: 1n, depositor: DEPOSITOR },
-        { label: 2n, depositor: DEPOSITOR },
-        { label: 3n, depositor: DEPOSITOR },
-        { label: 4n, depositor: DEPOSITOR },
-        { label: 5n, depositor: OTHER_DEPOSITOR },
-        { label: 6n, depositor: OTHER_DEPOSITOR }
-      ]
     })
 
     afterEach(() => {
       jest.restoreAllMocks()
     })
-
-    const NOW = 1_800_000_000_000
-    const BLOCK_TIME_MS = 12_000
 
     const prove = jest.fn(async () => ({}) as any)
 
@@ -2630,46 +2604,28 @@ describe('PrivacyPoolsController', () => {
     const buildRagequit = (controller: PrivacyPoolsController, label: bigint) =>
       controller.buildRagequitCalls({ chainId: '1', label })
 
-    it("lists the token's deposits still being verified, newest first, with their account and age", async () => {
+    it("lists the token's deposits still being verified, newest first, with their account", async () => {
       const { controller } = await prepareSynced()
-      jest.spyOn(Date, 'now').mockReturnValue(NOW)
 
-      // The latest block is 100; label 3 landed at 30, label 6 at 60
       await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).resolves.toEqual([
-        {
-          label: 6n,
-          amount: 60n,
-          depositorAddr: OTHER_DEPOSITOR,
-          depositedAt: NOW - 40 * BLOCK_TIME_MS
-        },
-        { label: 3n, amount: 30n, depositorAddr: DEPOSITOR, depositedAt: NOW - 70 * BLOCK_TIME_MS }
+        { label: 3n, amount: 30n, depositorAddr: DEPOSITOR },
+        { label: 6n, amount: 60n, depositorAddr: OTHER_DEPOSITOR }
       ])
       await expect(controller.getRagequitDeposits('1', USDC.toUpperCase())).resolves.toEqual([
-        { label: 5n, amount: 5n, depositorAddr: OTHER_DEPOSITOR, depositedAt: expect.any(Number) }
+        { label: 5n, amount: 5n, depositorAddr: OTHER_DEPOSITOR }
       ])
     })
 
-    it('still lists them when the latest block cannot be read, only undated', async () => {
+    it('keeps the depositor checksummed, as the SDK reports it as a number', async () => {
       const { controller } = await prepareSynced()
-      latestBlockNumber = null
-
-      const deposits = await controller.getRagequitDeposits('1', ZERO_ADDRESS)
-
-      expect(deposits.map(({ depositedAt }) => depositedAt)).toEqual([null, null])
-      expect(controller.emittedErrors.at(-1)?.level).toBe('silent')
-    })
-
-    it('never dates a deposit in the future, when the latest block read is behind it', async () => {
-      const { controller } = await prepareSynced()
-      jest.spyOn(Date, 'now').mockReturnValue(NOW)
-      latestBlockNumber = 50
 
       const [newest] = await controller.getRagequitDeposits('1', ZERO_ADDRESS)
 
-      expect(newest?.depositedAt).toBe(NOW)
+      expect(newest?.depositorAddr).toBe(DEPOSITOR)
+      expect(newest?.depositorAddr).not.toBe(DEPOSITOR.toLowerCase())
     })
 
-    it('asks the network only for its latest block to list them, and does not sync again', async () => {
+    it('asks the network nothing to list them, and does not sync again', async () => {
       const { controller, protocol, providers } = await prepareSynced()
       const syncCount = protocol.syncCount
 
@@ -2697,8 +2653,8 @@ describe('PrivacyPoolsController', () => {
         requestId: 'request-1',
         ok: true,
         res: [
-          expect.objectContaining({ label: 6n }),
-          expect.objectContaining({ label: 3n, amount: 30n, depositorAddr: DEPOSITOR })
+          expect.objectContaining({ label: 3n, amount: 30n, depositorAddr: DEPOSITOR }),
+          expect.objectContaining({ label: 6n })
         ]
       })
       expect(ui.message.sendUiMessage).toHaveBeenNthCalledWith(2, {
@@ -2711,25 +2667,6 @@ describe('PrivacyPoolsController', () => {
       )
     })
 
-    it('fails clearly when the stored history is not what it reads', async () => {
-      // Synced with a placeholder where the chain's public state goes
-      storedDepositors = null
-      const { controller } = await prepareSynced()
-
-      await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).rejects.toThrow(
-        'Could not load your deposits that are being verified. Please try again.'
-      )
-    })
-
-    it('fails clearly when a deposit is missing from the stored history', async () => {
-      storedDepositors = [{ label: 1n, depositor: DEPOSITOR }]
-      const { controller } = await prepareSynced()
-
-      await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).rejects.toThrow(
-        'Could not load your deposits that are being verified. Please try again.'
-      )
-    })
-
     it('builds the reclaim as a call of the account the deposit came from', async () => {
       const { controller, protocol } = await prepareSynced()
 
@@ -2737,7 +2674,11 @@ describe('PrivacyPoolsController', () => {
         accountAddr: DEPOSITOR,
         calls: [{ to: ETHEREUM_ETH_POOL, value: 0n, data: encodeRagequit(30n, 3n) }]
       })
-      expect(protocol.ragequitLabels).toEqual([[3n]])
+      await expect(buildRagequit(controller, 6n)).resolves.toEqual({
+        accountAddr: OTHER_DEPOSITOR,
+        calls: [{ to: ETHEREUM_ETH_POOL, value: 0n, data: encodeRagequit(60n, 6n) }]
+      })
+      expect(protocol.ragequitLabels).toEqual([[3n], [6n]])
     })
 
     it('never takes back a verified deposit, one spent in full, or one it does not know', async () => {
