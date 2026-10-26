@@ -369,7 +369,8 @@ export class MainController extends EventEmitter implements IMainController {
       relayerUrl,
       this.fetch,
       eventEmitterRegistry,
-      this.featureFlags
+      this.featureFlags,
+      this.ui.message.sendUiMessage
     )
     this.autoLogin = new AutoLoginController(
       this.storage,
