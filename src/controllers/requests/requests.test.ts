@@ -5,6 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
+import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
 import { SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE } from '../../consts/safe'
 import {
@@ -1018,22 +1019,35 @@ describe('RequestsController ', () => {
       ])
     })
 
-    test('adds nothing for an account that is not the selected one', async () => {
+    // Thrown, so the caller's status reports it as failed rather than done
+    test('throws and adds nothing for an account that is not the selected one', async () => {
       const { controller } = await prepareTest()
-      const onError = jest.fn()
-      controller.onError(onError)
 
-      await controller.build({
-        type: 'privacyPoolsRagequitRequest',
-        params: {
-          accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-          chainId: 1n,
-          calls: [RAGEQUIT_CALL]
-        }
-      })
+      await expect(
+        controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: {
+            accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+            chainId: 1n,
+            calls: [RAGEQUIT_CALL]
+          }
+        })
+      ).rejects.toThrow('Could not prepare taking back this deposit. Please try again.')
 
       expect(controller.userRequests).toHaveLength(0)
-      expect(onError).toHaveBeenCalled()
+    })
+
+    test('throws and adds nothing on a network the wallet does not have', async () => {
+      const { controller } = await prepareTest()
+
+      await expect(
+        controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: { accountAddr: DEPOSITOR, chainId: 424242n, calls: [RAGEQUIT_CALL] }
+        })
+      ).rejects.toThrow(EmittableError)
+
+      expect(controller.userRequests).toHaveLength(0)
     })
   })
 

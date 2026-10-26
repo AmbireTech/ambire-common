@@ -3002,20 +3002,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     calls: Call[]
   }) {
     const { account } = this.#selectedAccount
-    // Selected first by the caller, as the call only works from the account that deposited
+    // Selected first by the caller, as the call only works from the account that deposited.
+    // Thrown rather than emitted, so the caller's status does not report it as done
     if (account?.addr !== accountAddr) {
-      this.emitError({
+      throw new EmittableError({
         level: 'major',
         message: 'Could not prepare taking back this deposit. Please try again.',
         error: new Error('requestsController: the ragequit depositor is not the selected account')
       })
-      return
     }
 
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(accountAddr, chainId)
     const network = this.#networks.networks.find((net) => net.chainId === chainId)
     if (!accountState || !network) {
-      this.emitError({
+      throw new EmittableError({
         level: 'major',
         message:
           "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support.",
@@ -3023,7 +3023,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           `requestsController error: accountState for ${accountAddr} is undefined on network with id ${chainId}`
         )
       })
-      return
     }
 
     const baseAcc = getBaseAccount(

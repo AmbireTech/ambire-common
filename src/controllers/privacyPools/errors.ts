@@ -165,6 +165,11 @@ export const privacyPoolsErrors = {
       'This deposit was made from an account that is not in your wallet. Add that account to take the deposit back.',
       'the depositor is not a wallet account'
     ),
+  ragequitDepositorStateUnavailable: () =>
+    expectedError(
+      'Could not load the account this deposit was made from. Please try again.',
+      "the depositor's network or account state is unavailable"
+    ),
   ragequitDepositorViewOnly: () =>
     expectedError(
       'This deposit was made from an account you can only view. Import its key to take the deposit back.',

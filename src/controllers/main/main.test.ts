@@ -1,5 +1,6 @@
 import { toBeHex, Wallet } from 'ethers'
 
+import EmittableError from '@/classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
 import { AccountOnchainState } from '@/interfaces/account'
@@ -1305,11 +1306,16 @@ describe('Main Controller ', () => {
       jest
         .spyOn(mainCtrl.privacyPools, 'buildRagequitCalls')
         .mockResolvedValue({ accountAddr: depositorAddr, calls: [RAGEQUIT_CALL] })
+      jest
+        .spyOn(mainCtrl.accounts, 'getOrFetchAccountOnChainState')
+        .mockResolvedValue({} as AccountOnchainState)
       jest.spyOn(mainCtrl.requests, 'build').mockResolvedValue(undefined)
       const errors: ErrorRef[] = []
       mainCtrl.onError((error) => errors.push(error))
+      const statuses: string[] = []
+      mainCtrl.onUpdate(() => statuses.push(mainCtrl.statuses.privacyPoolsRagequit))
 
-      return { mainCtrl, errors }
+      return { mainCtrl, errors, statuses }
     }
 
     test('selects the account the deposit came from and adds the call for it to sign', async () => {
@@ -1344,6 +1350,50 @@ describe('Main Controller ', () => {
       ])
       expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
       expect(mainCtrl.requests.build).not.toHaveBeenCalled()
+    })
+
+    test("switches nothing when the depositor's account cannot be loaded", async () => {
+      const { mainCtrl, errors, statuses } = await setupController({
+        depositorAddr: depositor!.addr
+      })
+      jest.spyOn(mainCtrl.accounts, 'getOrFetchAccountOnChainState').mockResolvedValue(undefined)
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors.map(({ message }) => message)).toEqual([
+        'Could not load the account this deposit was made from. Please try again.'
+      ])
+      expect(statuses).toContain('ERROR')
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
+      expect(mainCtrl.requests.build).not.toHaveBeenCalled()
+    })
+
+    test('switches nothing on a network the wallet does not have', async () => {
+      const { mainCtrl, errors } = await setupController({ depositorAddr: depositor!.addr })
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '424242', label: 3n })
+
+      expect(errors.map(({ message }) => message)).toEqual([
+        'Could not load the account this deposit was made from. Please try again.'
+      ])
+      expect(mainCtrl.accounts.getOrFetchAccountOnChainState).not.toHaveBeenCalled()
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
+    })
+
+    test('reports a request it could not add as failed, not done', async () => {
+      const { mainCtrl, errors, statuses } = await setupController({
+        depositorAddr: depositor!.addr
+      })
+      const message = 'Could not prepare taking back this deposit. Please try again.'
+      jest
+        .spyOn(mainCtrl.requests, 'build')
+        .mockRejectedValue(new EmittableError({ level: 'major', message }))
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors.map((error) => error.message)).toEqual([message])
+      expect(statuses).toContain('ERROR')
+      expect(statuses).not.toContain('SUCCESS')
     })
 
     test('adds nothing for a view-only account, which could not sign it', async () => {

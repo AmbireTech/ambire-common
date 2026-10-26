@@ -1145,6 +1145,15 @@ export class MainController extends EventEmitter implements IMainController {
         if (getIsViewOnly(this.keystore.keys, depositor.associatedKeys))
           throw privacyPoolsErrors.ragequitDepositorViewOnly()
 
+        // What the request is built from, loaded before the account is switched, so a failure
+        // leaves the user on the Privacy Pools account rather than on another one with nothing
+        // to sign
+        const network = this.networks.networks.find((net) => net.chainId === BigInt(chainId))
+        const accountState =
+          network &&
+          (await this.accounts.getOrFetchAccountOnChainState(depositor.addr, network.chainId))
+        if (!accountState) throw privacyPoolsErrors.ragequitDepositorStateUnavailable()
+
         if (this.selectedAccount.account?.addr !== depositor.addr)
           await this.#selectAccount(depositor.addr)
 
