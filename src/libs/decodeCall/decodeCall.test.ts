@@ -2,7 +2,6 @@ import { Interface } from 'ethers'
 
 import { DecodedCall } from '@/interfaces/decodeCall'
 
-import { suppressConsole } from '../../../test/helpers/console'
 import { IrCall } from '../humanizer/interfaces'
 import {
   CALLDATA_SELECTOR_HEX_LENGTH,
@@ -280,7 +279,6 @@ describe('decodeCallDataRecursively', () => {
   })
 
   test('returns null when the only known signature does not match the data', () => {
-    const { restore } = suppressConsole(true)
     const { decodedCall, selectors } = decodeCallDataRecursively(
       transferData,
       makeGetSignatures({ [selectorOf(transferData)]: 'transfer(bytes4[9],bytes5[6],int48[11])' })
@@ -288,7 +286,6 @@ describe('decodeCallDataRecursively', () => {
 
     expect(decodedCall).toBeNull()
     expect(selectors).toEqual([selectorOf(transferData)])
-    restore()
   })
 })
 

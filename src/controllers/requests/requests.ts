@@ -2471,7 +2471,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             })
           }
 
-          console.log(
+          this.debugLog(
+            'autoLogin',
             `SIWE auto-login with dapp ${request.session.origin} and account ${msgAddress} succeeded.`
           )
 
