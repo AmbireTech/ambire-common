@@ -47,7 +47,6 @@ export function reconcileSchema(
       if (store.indexNames.contains(idx.name)) continue
 
       store.createIndex(idx.name, idx.keyPath, { multiEntry: idx.multiEntry ?? false })
-      console.log(`[AmbireIdb] created index "${idx.name}" on "${storeDef.storeName}"`)
     }
   }
 }
@@ -69,9 +68,7 @@ export type MigrationHandler = (db: AmbireIdbDatabase, tx: AmbireIdbUpgradeTrans
 export const migrationHandlers: Record<number, MigrationHandler> = {
   // v0 → v1: initial schema. reconcileSchema() creates accountsOps and its
   // indexes; there is no pre-existing data to transform.
-  1: () => {
-    console.log('[AmbireIdb] v1: initial schema applied')
-  }
+  1: () => {}
 }
 
 /**
@@ -136,9 +133,12 @@ export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
   const rawOpen = openDB<AmbireIdbSchema>(AMBIRE_IDB_SCHEMA.dbName, AMBIRE_IDB_SCHEMA.dbVersion, {
     upgrade(db, oldVersion, newVersion, tx) {
       const targetVersion = newVersion ?? AMBIRE_IDB_SCHEMA.dbVersion
-      console.log(
-        `[AmbireIdb] Upgrading "${AMBIRE_IDB_SCHEMA.dbName}" v${oldVersion} → v${targetVersion}`
-      )
+      const isFreshInstall = oldVersion === 0
+      if (!isFreshInstall) {
+        console.log(
+          `[AmbireIdb] Upgrading "${AMBIRE_IDB_SCHEMA.dbName}" v${oldVersion} → v${targetVersion}`
+        )
+      }
 
       applyMigrations(db, tx, oldVersion, targetVersion)
     },
