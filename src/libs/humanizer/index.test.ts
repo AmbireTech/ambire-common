@@ -2865,7 +2865,6 @@ describe('ERC-7730 descriptors', () => {
 
   test('falls back to the built-in calldata descriptor when the relayer index fails', async () => {
     const { restore } = suppressConsole()
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     const call = transactions.erc20[1]!
     const fallbackAccountOp: AccountOp = {
       ...accountOp,
@@ -2881,9 +2880,8 @@ describe('ERC-7730 descriptors', () => {
       expect(Object.keys(descriptors)).toEqual(['0'])
       expect(descriptors[0]?.path).toBe('built-in/erc20-approve')
     } finally {
-      consoleErrorSpy.mockRestore()
+      restore()
     }
-    restore()
   })
 
   test('resolves Safe execTransaction through the Safe singleton and humanizes inner calls only', async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, jest, test } from '@jest/globals'
+import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
@@ -912,7 +912,6 @@ describe('StorageController', () => {
     // left the rest of the data impossible to migrate and the next run corrupted it.
     test('completes on the next boot when interrupted in the middle', async () => {
       const { restore } = suppressConsole()
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
       const inner = produceMemoryStore()
       let shouldInterrupt = true
       const interruptedStore: Storage = {
@@ -938,7 +937,6 @@ describe('StorageController', () => {
       const next = new StorageController(inner)
       expect(await readMigratedValues(next)).toEqual(expectedMigratedValues)
       expect(await next.get('passedMigrations', [])).toContain(MIGRATION_KEY)
-      consoleErrorSpy.mockRestore()
       restore()
     })
   })

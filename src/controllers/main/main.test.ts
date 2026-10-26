@@ -128,7 +128,7 @@ describe('Main Controller ', () => {
     await magicLinkAnswered
     controller.emailVault?.cancelEmailConfirmation()
     await upload
-    jest.restoreAllMocks()
+    jest.spyOn(magicLinkLib, 'requestMagicLink').mockRestore()
     restore()
   })
 
@@ -155,7 +155,6 @@ describe('Main Controller ', () => {
     await mainCtrl.handleSignMessage()
 
     expect(signSpy).not.toHaveBeenCalled()
-    jest.restoreAllMocks()
   })
 
   test('refreshes Safe transactions once while a manual refresh is in progress', async () => {
