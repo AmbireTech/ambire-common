@@ -14,6 +14,7 @@ import {
   getLabel,
   getToken,
   isHexCall,
+  mergeWarnings,
   padCallData,
   getLegacyVisualization
 } from '../../utils'
@@ -252,11 +253,15 @@ const Bundler3Module: HumanizerCallModule = (accOp: AccountOp, call: IrCall): Ir
       const decodedBundle = decodeGeneralAdapter(accOp.accountAddr, bundle)
       const bundleVisualization = decodedBundle.map((c) => c.fullVisualization?.intent || []).flat()
       if (bundleVisualization.length) bundleVisualization.shift()
+      // Only the intent of each action is shown, but its warnings (e.g. an action for another
+      // address than the account) are about the whole bundle, so they are kept
+      const bundleWarnings = decodedBundle.flatMap((c) => c.warnings || [])
       return {
         ...call,
         fullVisualization: bundleVisualization.length
           ? getLegacyVisualization(bundleVisualization)
-          : undefined
+          : undefined,
+        warnings: mergeWarnings(call.warnings, bundleWarnings)
       }
     }
   }
