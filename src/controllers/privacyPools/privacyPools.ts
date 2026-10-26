@@ -29,6 +29,7 @@ import { IUiController, View } from '../../interfaces/ui'
 import { Call } from '../../libs/accountOp/types'
 import { createKohakuStorage } from '../../libs/kohaku/host'
 import { fetchPrivacyPoolsPrices, getPrivacyPoolsPriceKey } from '../../libs/privacyPools/prices'
+import { getPrivateAccountSeedId } from '../../libs/privateAccount/privateAccount'
 import {
   createProverFactory,
   PrivacyPoolsProverFactory,
@@ -220,7 +221,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * on only when they can change what this reports, as selected account and networks update often.
    */
   #subscribeToDependencies() {
-    this.#selectedAccountId = this.#selectedAccount.privacyPoolsAccountId
+    this.#selectedAccountId = getPrivateAccountSeedId(
+      this.#selectedAccount.privateAccount,
+      'privacyPools'
+    )
 
     this.#unsubscribers.push(
       this.#keystore.onUpdate((forceEmit) => {
@@ -236,7 +240,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       // Switching accounts drops nothing: each phrase keeps its plugins and notes, and a running
       // sync of the previous one still warms the chain's history
       this.#selectedAccount.onUpdate((forceEmit) => {
-        const selectedAccountId = this.#selectedAccount.privacyPoolsAccountId
+        const selectedAccountId = getPrivateAccountSeedId(
+          this.#selectedAccount.privateAccount,
+          'privacyPools'
+        )
         if (selectedAccountId === this.#selectedAccountId) return
 
         this.#selectedAccountId = selectedAccountId
@@ -374,7 +381,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /** The selected Privacy Pools account's phrase, or null if none or its account/phrase is gone. */
   #getSelectedSeedId(): string | null {
-    const seedId = this.#selectedAccount.privacyPoolsAccountId
+    const seedId = getPrivateAccountSeedId(this.#selectedAccount.privateAccount, 'privacyPools')
     if (!seedId) return null
     if (!this.accounts.some((account) => account.seedId === seedId)) return null
     if (!this.#keystore.seeds.some((seed) => seed.id === seedId)) return null

@@ -82,7 +82,9 @@ describe('AddressBookController', () => {
     expect(getContactFromName(DEFAULT_ACCOUNT_LABEL)?.isWalletAccount).toBeTruthy()
   })
   it('every wallet account is in contacts while a Privacy Pools account is selected', async () => {
-    await selectedAccountCtrl.select({ privacyPoolsSeedId: 'privacy-pools-seed' })
+    await selectedAccountCtrl.select({
+      privateAccount: { providerId: 'privacyPools', seedId: 'privacy-pools-seed' }
+    })
 
     expect(selectedAccountCtrl.account).toBeNull()
     MOCK_ACCOUNTS.forEach(({ addr }) => {

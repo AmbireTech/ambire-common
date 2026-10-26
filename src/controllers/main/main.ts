@@ -34,6 +34,7 @@ import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
 import { PrivacyPoolsController } from '@/controllers/privacyPools/privacyPools'
+import { TornadoCashController } from '@/controllers/tornadoCash/tornadoCash'
 import { ProvidersController } from '@/controllers/providers/providers'
 import { RequestsController } from '@/controllers/requests/requests'
 import { SafeController } from '@/controllers/safe/safe'
@@ -82,6 +83,7 @@ import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
 import { IPortfolioController } from '@/interfaces/portfolio'
 import { IPrivacyPoolsController } from '@/interfaces/privacyPools'
+import { ITornadoCashController, TornadoCashPluginFactory } from '@/interfaces/tornadoCash'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
 import { ISafeController } from '@/interfaces/safe'
@@ -93,6 +95,7 @@ import { ISurveyController } from '@/interfaces/survey'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces/swapAndBridge'
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
+import { PrivacyProviderId, PrivateAccountRef } from '@/interfaces/privateAccount'
 import { ITransfersScannerController } from '@/interfaces/transferScanner'
 import { isExtensionOverlayView, IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
@@ -215,6 +218,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   privacyPools: IPrivacyPoolsController
 
+  tornadoCash: ITornadoCashController
+
   requests: IRequestsController
 
   banner: IBannerController
@@ -261,6 +266,7 @@ export class MainController extends EventEmitter implements IMainController {
     uiManager,
     privacyPoolsCircuitsBaseUrl,
     privacyPoolsProverFactory,
+    tornadoCashPluginFactory,
     idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -282,6 +288,8 @@ export class MainController extends EventEmitter implements IMainController {
     privacyPoolsCircuitsBaseUrl: string
     /** Where to generate Privacy Pools proofs if not here - see `PrivacyPoolsController`. */
     privacyPoolsProverFactory?: PrivacyPoolsProverFactory
+    /** Where the Tornado Cash SDK runs; absent where it cannot - see `TornadoCashController`. */
+    tornadoCashPluginFactory?: TornadoCashPluginFactory
     idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
@@ -451,7 +459,20 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
-      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
+      onAccountsRemoved: (seedIds) => this.#onPrivateAccountsRemoved('privacyPools', seedIds)
+    })
+
+    this.tornadoCash = new TornadoCashController({
+      eventEmitterRegistry,
+      keystore: this.keystore,
+      featureFlags: this.featureFlags,
+      networks: this.networks,
+      providers: this.providers,
+      selectedAccount: this.selectedAccount,
+      storage: this.storage,
+      fetch: this.fetch,
+      pluginFactory: tornadoCashPluginFactory,
+      onAccountsRemoved: (seedIds) => this.#onPrivateAccountsRemoved('tornadoCash', seedIds)
     })
 
     this.portfolio = new PortfolioController(
@@ -688,6 +709,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.contractInfo,
       platform,
       this.privacyPools,
+      this.tornadoCash,
       eventEmitterRegistry
     )
     this.domains = new DomainsController({
@@ -940,9 +962,10 @@ export class MainController extends EventEmitter implements IMainController {
     await this.survey.initialLoadPromise
 
     await this.privacyPools.initialLoadPromise
-    // The restored Privacy Pools account may be gone, removed with its recovery phrase mid-load
-    const { privacyPoolsAccountId } = this.selectedAccount
-    if (privacyPoolsAccountId && !this.#hasPrivacyPoolsAccount(privacyPoolsAccountId)) {
+    await this.tornadoCash.initialLoadPromise
+    // The restored private account may be gone, removed with its recovery phrase mid-load
+    const { privateAccount } = this.selectedAccount
+    if (privateAccount && !this.#hasPrivateAccount(privateAccount)) {
       await this.#selectFallbackAccount()
     }
 
@@ -1001,7 +1024,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.#forceEmitSelectedAccountUpdates(toAccountAddr)
   }
 
-  /** Pushes the selected account's getters to the UI. `accountAddr` is null for a Privacy Pools one. */
+  /** Pushes the selected account's getters to the UI. `accountAddr` is null for a private one. */
   async #forceEmitSelectedAccountUpdates(accountAddr: string | null) {
     const accountScopedUpdates = accountAddr
       ? [
@@ -1037,69 +1060,90 @@ export class MainController extends EventEmitter implements IMainController {
     }
   }
 
-  #hasPrivacyPoolsAccount(seedId: string) {
-    return this.privacyPools.accounts.some((account) => account.seedId === seedId)
+  /** The seed ids of a privacy provider's accounts, in the order they were added. */
+  #getPrivateAccountSeedIds(providerId: PrivacyProviderId): string[] {
+    if (providerId === 'privacyPools') return this.privacyPools.accounts.map(({ seedId }) => seedId)
+    if (providerId === 'tornadoCash') return this.tornadoCash.accounts.map(({ seedId }) => seedId)
+
+    return []
   }
 
-  /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
-  async addPrivacyPoolsAccount(seedId: string) {
+  #hasPrivateAccount({ providerId, seedId }: PrivateAccountRef) {
+    return this.#getPrivateAccountSeedIds(providerId).includes(seedId)
+  }
+
+  /** The controller that holds a privacy provider's accounts. */
+  #getPrivacyProviderController(providerId: PrivacyProviderId) {
+    return providerId === 'tornadoCash' ? this.tornadoCash : this.privacyPools
+  }
+
+  /** Adds the private account of a stored recovery phrase and selects it. */
+  async addPrivateAccount(privateAccount: PrivateAccountRef) {
     await this.initialLoadPromise
 
     // Wrapped as a whole, so a refused account is shown to the user
     await this.withStatus(
       'selectAccount',
       async () => {
-        await this.privacyPools.addAccount(seedId)
-        await this.#selectPrivacyPoolsAccount(seedId)
+        await this.#getPrivacyProviderController(privateAccount.providerId).addAccount(
+          privateAccount.seedId
+        )
+        await this.#selectPrivateAccount(privateAccount)
       },
       true
     )
   }
 
   /**
-   * Creates a recovery phrase with only a Privacy Pools account on it, and selects it. The phrase
-   * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
+   * Creates a recovery phrase with only a private account on it, and selects it. The phrase is
+   * stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
    */
-  async addPrivacyPoolsAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+  async addPrivateAccountFromNewSeed({
+    providerId,
+    extraEntropy
+  }: {
+    providerId: PrivacyProviderId
+    extraEntropy?: string
+  }) {
     await this.initialLoadPromise
 
     await this.withStatus(
       'selectAccount',
       async () => {
         const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
-        await this.privacyPools.addAccount(seedId)
-        await this.#selectPrivacyPoolsAccount(seedId)
+        await this.#getPrivacyProviderController(providerId).addAccount(seedId)
+        await this.#selectPrivateAccount({ providerId, seedId })
       },
       true
     )
   }
 
-  async selectPrivacyPoolsAccount(seedId: string) {
+  async selectPrivateAccount(privateAccount: PrivateAccountRef) {
     await this.initialLoadPromise
 
     await this.withStatus(
       'selectAccount',
-      async () => this.#selectPrivacyPoolsAccount(seedId),
+      async () => this.#selectPrivateAccount(privateAccount),
       true
     )
   }
 
   /**
-   * Selects a Privacy Pools account, leaving no regular account selected. Apps are not told: what
-   * they should see then is undecided, so they keep their account.
+   * Selects a private account, leaving no regular account selected. Apps are not told: what they
+   * should see then is undecided, so they keep their account.
    */
-  async #selectPrivacyPoolsAccount(seedId: string) {
-    if (!this.#hasPrivacyPoolsAccount(seedId)) {
+  async #selectPrivateAccount(privateAccount: PrivateAccountRef) {
+    if (!this.#hasPrivateAccount(privateAccount)) {
       this.emitError({
         level: 'major',
         message: 'The account you selected could not be found. Please select another account.',
-        error: new Error('main: the Privacy Pools account to select does not exist')
+        error: new Error('main: the private account to select does not exist')
       })
       return
     }
 
     await this.#leaveSelectedAccount()
-    await this.selectedAccount.select({ privacyPoolsSeedId: seedId })
+    await this.selectedAccount.select({ privateAccount })
     this.swapAndBridge.reset()
     this.transfer.reset({ destroyAccountOp: true })
 
@@ -1107,8 +1151,8 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Once the selected account is gone, selects the first regular account, else the first Privacy
-   * Pools account, else nothing (signed out).
+   * Once the selected account is gone, selects the first regular account, else the first private
+   * account (Privacy Pools ones first), else nothing (signed out).
    */
   async #selectFallbackAccount() {
     const [firstAccount] = this.accounts.accounts
@@ -1117,19 +1161,23 @@ export class MainController extends EventEmitter implements IMainController {
       return
     }
 
-    const [firstPrivacyPoolsAccount] = this.privacyPools.accounts
-    if (firstPrivacyPoolsAccount) {
-      await this.#selectPrivacyPoolsAccount(firstPrivacyPoolsAccount.seedId)
-      return
+    const providerIds: PrivacyProviderId[] = ['privacyPools', 'tornadoCash']
+    for (const providerId of providerIds) {
+      const [firstSeedId] = this.#getPrivateAccountSeedIds(providerId)
+      if (firstSeedId) {
+        await this.#selectPrivateAccount({ providerId, seedId: firstSeedId })
+        return
+      }
     }
 
     await this.selectedAccount.select(null)
     this.emitUpdate()
   }
 
-  async #onPrivacyPoolsAccountsRemoved(seedIds: string[]) {
-    const { privacyPoolsAccountId } = this.selectedAccount
-    if (!privacyPoolsAccountId || !seedIds.includes(privacyPoolsAccountId)) return
+  async #onPrivateAccountsRemoved(providerId: PrivacyProviderId, seedIds: string[]) {
+    const { privateAccount } = this.selectedAccount
+    if (privateAccount?.providerId !== providerId || !seedIds.includes(privateAccount.seedId))
+      return
     // Still loading: `#load` makes the same check once ready
     if (!this.isReady) return
 
@@ -1209,6 +1257,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.activity.addAccountOp(submittedAccountOp)
     // Every deposit into a Privacy Pools account, however signed, is broadcast through here
     this.privacyPools.onAccountOpBroadcast(submittedAccountOp)
+    this.tornadoCash.onAccountOpBroadcast(submittedAccountOp)
     await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple

@@ -38,6 +38,7 @@ import traderJoeModule from './modules/TraderJoe'
 import TrustlessManifestoModule from './modules/TrustlessManifesto'
 import { uniswapHumanizer } from './modules/Uniswap'
 import privacyPoolsModule from './modules/PrivacyPools'
+import tornadoCashModule from './modules/TornadoCash'
 import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
 
@@ -51,6 +52,7 @@ const singleCallHumanizerModules: HumanizerCallModule[] = [
   LidoModule,
   gasTankModule,
   privacyPoolsModule,
+  tornadoCashModule,
   airdropsModule,
   uniswapHumanizer,
   curveModule,

@@ -24,6 +24,8 @@ import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
 import { PrivacyPoolsAccount } from './privacyPools'
+import { PrivateAccountRef } from './privateAccount'
+import { TornadoCashAccount } from './tornadoCash'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 import type { FeeSpeed } from './signAccountOp'
@@ -84,7 +86,12 @@ export type StorageProps = {
   // Selected account
   dismissedBanners: (string | number)[]
   selectedAccount: string | null
-  /** Seed id of the selected Privacy Pools account. Exclusive with `selectedAccount`. */
+  /** The selected private account. Exclusive with `selectedAccount`. */
+  selectedPrivateAccount: PrivateAccountRef | null
+  /**
+   * Legacy: seed id of the selected Privacy Pools account, before `selectedPrivateAccount`. Only
+   * read as a fallback, and removed on the next selection.
+   */
   selectedPrivacyPoolsAccount: string | null
   selectedAccountDismissedBannerIds: { [key: string]: string[] }
   // Email vault
@@ -120,6 +127,11 @@ export type StorageProps = {
   privacyPoolsState: { [key: string]: string }
   /** The wallet's Privacy Pools accounts, at most one per stored recovery phrase. */
   privacyPoolsAccounts: PrivacyPoolsAccount[]
+  // Tornado Cash
+  /** The wallet's Tornado Cash accounts, at most one per stored recovery phrase. */
+  tornadoCashAccounts: TornadoCashAccount[]
+  /** Whether this device has read the pools' history once. Public data, the same for every account. */
+  tornadoCashInitialSyncDone: boolean
   // Other
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'
