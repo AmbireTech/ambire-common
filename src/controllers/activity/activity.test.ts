@@ -182,6 +182,12 @@ describe('Activity Controller ', () => {
     await mainCtrl.selectedAccount.select({ account: ACCOUNTS[1]! })
   })
 
+  // Confirmed transactions work out their balance changes in the background. Against the live
+  // RPCs that work can outlast its test and fail in a later one, so every test gets zero balances.
+  beforeEach(() => {
+    mockTokenBalancesOnBlock()
+  })
+
   // Clear activity storage after each test
   // but keep accounts, providers etc.
   afterEach(async () => {
@@ -632,7 +638,6 @@ describe('Activity Controller ', () => {
       jest
         .spyOn(provider, 'getTransactionReceipt')
         .mockImplementation(async () => buildMockReceipt({ status: 1 }))
-      mockTokenBalancesOnBlock()
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -990,7 +995,6 @@ describe('Activity Controller ', () => {
           .mockImplementation(async (txnId: string) =>
             txnIdsInMempool.includes(txnId) ? ({ hash: txnId } as any) : null
           )
-        mockTokenBalancesOnBlock()
 
         const previousOp = buildSubmittedAccountOp({
           status: AccountOpStatus.Success,

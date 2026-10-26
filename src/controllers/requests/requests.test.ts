@@ -27,13 +27,17 @@ import {
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import * as safeLib from '../../libs/safe/safe'
 import { generateUuid } from '../../utils/uuid'
+import { EstimationController } from '../estimation/estimation'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 import type { AccountOp } from '../../libs/accountOp/accountOp'
 import type { Call } from '../../libs/accountOp/types'
+import type { IRequestsController } from '../../interfaces/requests'
+import type { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
 const NOW = 1_700_000_000_000
 const SAFE_TX_HASH = `0x${'1'.repeat(64)}` as Hex
@@ -147,9 +151,19 @@ const getActivityAccountOp = (
  * refreshing gas prices after its test ends, so its logs land in later tests.
  */
 const createdSignAccountOps: SignAccountOpController[] = []
+/** The requests controller of every test, for the batches it built and still holds. */
+const createdRequestsControllers: IRequestsController[] = []
 
 afterEach(() => {
-  createdSignAccountOps.splice(0).forEach((signAccountOp) => signAccountOp.destroy())
+  const signAccountOpsLeftRunning = new Set<ISignAccountOpController>(
+    createdSignAccountOps.splice(0)
+  )
+  createdRequestsControllers.splice(0).forEach(({ userRequests }) => {
+    userRequests.forEach((request) => {
+      if (request.kind === 'calls') signAccountOpsLeftRunning.add(request.signAccountOp)
+    })
+  })
+  signAccountOpsLeftRunning.forEach((signAccountOp) => signAccountOp.destroy())
 })
 
 const prepareTest = async (
@@ -272,9 +286,6 @@ const prepareTest = async (
       onBroadcastFailed: () => {}
     })
     createdSignAccountOps.push(signAccountOp)
-    // Prevent the recurring estimation timer from reaching V1.getAvailableFeeOptions
-    // (which throws for accounts with no ETH on the test networks).
-    jest.spyOn(signAccountOp.estimation, 'estimate').mockResolvedValue(undefined)
     return signAccountOp
   }
 
@@ -301,6 +312,12 @@ const prepareTest = async (
       ]
     } as CallsUserRequest
   }
+
+  createdRequestsControllers.push(mainCtrl.requests)
+  // Keeps the recurring estimation of every batch away from V1.getAvailableFeeOptions (which
+  // throws for accounts with no ETH on the test networks) and from the live RPCs, where the calls
+  // of these tests fail at random. The tests here are about routing requests, not fees.
+  jest.spyOn(EstimationController.prototype, 'estimate').mockResolvedValue(undefined)
 
   return {
     mainCtrl,
@@ -3296,7 +3313,6 @@ describe('RequestsController ', () => {
     expect(rejectMock).not.toHaveBeenCalled()
   })
   test('reject user request', async () => {
-    const { restore } = suppressConsole()
     const { controller, getCallsRequest } = await prepareTest()
 
     const resolveMock = jest.fn()
@@ -3320,7 +3336,6 @@ describe('RequestsController ', () => {
     expect(controller.visibleUserRequests.length).toBe(0)
     expect(rejectMock).toHaveBeenCalled()
     expect(resolveMock).not.toHaveBeenCalled()
-    restore()
   })
   test('finds same-nonce Safe alternatives by their immutable Safe nonce and scope', async () => {
     const { controller, getCallsRequest } = await prepareTest(false, true)

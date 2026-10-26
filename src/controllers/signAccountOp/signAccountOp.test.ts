@@ -514,6 +514,8 @@ const init = async (
     createSpeedUp?: (activity: ActivityController) => SpeedUp
   }
 ) => {
+  // Its own, as the listeners of the controllers built here would pile up on a shared one
+  const ui = new UiController({ uiManager })
   const storage: Storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   await storageCtrl.set('accounts', [account])
@@ -525,12 +527,7 @@ const init = async (
     await storageCtrl.set('dappsV2', options.dapps)
     await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
   }
-  const keystore = new KeystoreController(
-    'default',
-    storageCtrl,
-    { internal: KeystoreSigner },
-    uiCtrl
-  )
+  const keystore = new KeystoreController('default', storageCtrl, { internal: KeystoreSigner }, ui)
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
 
@@ -563,7 +560,7 @@ const init = async (
   providersCtrl = new ProvidersController({
     storage: storageCtrl,
     getNetworks: () => networksCtrl.allNetworks,
-    sendUiMessage: () => uiCtrl.message.sendUiMessage
+    sendUiMessage: () => ui.message.sendUiMessage
   })
   const accountsCtrl = new AccountsController(
     storageCtrl,
@@ -589,7 +586,7 @@ const init = async (
     fetch,
     relayerUrl,
     storage: storageCtrl,
-    ui: uiCtrl,
+    ui,
     dismissBanner: () => {}
   })
   const bannerCtrl = new BannerController(
@@ -603,7 +600,7 @@ const init = async (
     accounts: accountsCtrl,
     autoLogin: autoLoginCtrl,
     banner: bannerCtrl,
-    ui: uiCtrl
+    ui: ui
   })
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   await accountsCtrl.initialLoadPromise
@@ -627,7 +624,7 @@ const init = async (
     velcroUrl,
     bannerCtrl,
     featureFlagsCtrl,
-    uiCtrl
+    ui
   )
   const continuouslyUpdatePhishingSpy = options?.dapps
     ? jest
@@ -640,7 +637,7 @@ const init = async (
     fetch,
     storage: storageCtrl,
     addressBook: addressBookCtrl,
-    ui: uiCtrl,
+    ui,
     featureFlags: featureFlagsCtrl
   })
   if (options?.dapps) {
@@ -775,7 +772,7 @@ const init = async (
       storage: storageCtrl,
       networks: networksCtrl,
       phishing,
-      ui: uiCtrl,
+      ui,
       selectedAccount: selectedAccountCtrl,
       featureFlags: featureFlagsCtrl
     })
@@ -796,7 +793,7 @@ const init = async (
     storage: storageCtrl,
     callRelayer,
     featureFlags: featureFlagsCtrl,
-    ui: uiCtrl
+    ui: ui
   })
   const contractInfo =
     options?.contractInfo ||
@@ -804,7 +801,7 @@ const init = async (
       fetch: options?.contractInfoFetch || fetch,
       storage: storageCtrl,
       featureFlags: featureFlagsCtrl,
-      ui: uiCtrl
+      ui: ui
     })
   await contractInfo.initialLoadPromise
   const controller = new SignAccountOpTesterController({
