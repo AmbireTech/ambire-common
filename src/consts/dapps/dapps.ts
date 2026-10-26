@@ -460,6 +460,16 @@ export const predefinedDapps: Dapp[] = [
     chainIds: [1],
     twitter: 'railgun_project',
     category: 'Staking'
+  },
+  // DefiLlama lists Relay with its docs website (docs.relay.link) and no networks, so it gets filtered out
+  {
+    id: 'relay.link',
+    url: 'https://relay.link/bridge',
+    name: 'Relay',
+    icon: 'https://icons.llamao.fi/icons/protocols/relay',
+    description: 'Fast and low-cost moving and swapping of tokens between networks.',
+    twitter: 'RelayProtocol',
+    category: 'Cross Chain Bridge'
   }
 ]
 
