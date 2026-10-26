@@ -96,6 +96,25 @@ const accounts = [
   }
 ]
 
+/**
+ * A Safe transaction with every field its signing data needs. The nonce can also be a number,
+ * so tests can check that nonces are compared by value.
+ */
+const getSafeTx = (nonce: string | number) =>
+  ({
+    safe: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+    to: ZeroAddress,
+    value: '0',
+    data: '0x',
+    operation: 0,
+    gasToken: ZeroAddress,
+    safeTxGas: '0',
+    baseGas: '0',
+    gasPrice: '0',
+    refundReceiver: ZeroAddress,
+    nonce
+  }) as unknown as AccountOp['safeTx']
+
 const updateAccountOp = (request: CallsUserRequest, accountOpData: Partial<AccountOp>) => {
   request.signAccountOp.update({ accountOpData })
 }
@@ -158,6 +177,9 @@ const prepareTest = async (
       saltNonce: '0x00',
       setupData: '0x'
     }
+    // This Safe has no real factory, so fetching its state from the network always fails.
+    // The tests use the account states set below.
+    jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockResolvedValue(undefined)
   }
 
   // Mock account states for all accounts
@@ -1049,7 +1071,6 @@ describe('RequestsController ', () => {
     const chainId = 1n
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.threshold = 2
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const txnId = SAFE_TX_HASH
     const firstSigner = new Wallet(`0x${'1'.repeat(64)}`)
     const secondSigner = new Wallet(`0x${'2'.repeat(64)}`)
@@ -1371,7 +1392,7 @@ describe('RequestsController ', () => {
     await controller.setCurrentUserRequestById(request.id)
     updateAccountOp(request, {
       nonce: 99n,
-      safeTx: { nonce: '0x07' } as any,
+      safeTx: getSafeTx('0x07'),
       signed: [SAFE_OWNER],
       txnId: SAFE_TX_HASH
     })
@@ -1578,7 +1599,6 @@ describe('RequestsController ', () => {
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 1n
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const buildSafeRequest = (nonce: bigint, txnId: Hex) =>
       controller.build({
         type: 'calls',
@@ -1651,7 +1671,6 @@ describe('RequestsController ', () => {
     const prepareSafeTest = async () => {
       const test = await prepareTest(false, true)
       test.accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = safeNonce
-      jest.spyOn(test.accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
       return test
     }
 
@@ -1775,7 +1794,6 @@ describe('RequestsController ', () => {
     }
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
@@ -1842,7 +1860,6 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -1889,7 +1906,6 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -1955,7 +1971,6 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const deploymentCall = {
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -2019,7 +2034,6 @@ describe('RequestsController ', () => {
     })
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -2142,7 +2156,6 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValueOnce(null)
@@ -2192,7 +2205,6 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue(null)
     const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
 
@@ -2209,10 +2221,9 @@ describe('RequestsController ', () => {
   })
 
   test('does not build a deployment request when the Safe is already deployed', async () => {
-    const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
+    const { controller, uiCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
     const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
 
@@ -2240,7 +2251,6 @@ describe('RequestsController ', () => {
     })
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -2301,7 +2311,6 @@ describe('RequestsController ', () => {
     account.safeCreation = { ...account.safeCreation!, setupData: '0x1234' }
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -2653,9 +2662,7 @@ describe('RequestsController ', () => {
 
   test('keeps Benzin open while the Safe deployment is not confirmed', async () => {
     const { restore } = suppressConsole()
-    const { accountsCtrl, benzinRequest, controller, transactionRequest } =
-      await prepareSafeDeploymentHandoff()
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+    const { benzinRequest, controller, transactionRequest } = await prepareSafeDeploymentHandoff()
     const onError = jest.fn()
     controller.onError(onError)
     const resumeSpy = jest.spyOn(transactionRequest.signAccountOp, 'resume')
@@ -2720,7 +2727,6 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
 
     const recoveredSafeCreation = {
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
@@ -2785,7 +2791,6 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'findDeployData').mockResolvedValue({
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
       singleton: '0x2345678901234567890123456789012345678901' as Hex,
@@ -2842,7 +2847,6 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const incompleteSafeCreation = {
       factoryAddr: '0x' as Hex,
       singleton: '0x' as Hex,
@@ -2898,7 +2902,6 @@ describe('RequestsController ', () => {
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue(null)
     const reject = jest.fn()
 
@@ -3332,10 +3335,10 @@ describe('RequestsController ', () => {
     nextNonceRequest.id = 'next-nonce-request'
     otherNetworkRequest.id = 'other-network-request'
 
-    updateAccountOp(broadcastRequest, { nonce: 8n, safeTx: { nonce: 7 } as any })
-    updateAccountOp(sameNonceRequest, { nonce: 8n, safeTx: { nonce: '7' } as any })
-    updateAccountOp(nextNonceRequest, { nonce: 8n, safeTx: { nonce: 8 } as any })
-    updateAccountOp(otherNetworkRequest, { nonce: 8n, safeTx: { nonce: 7 } as any })
+    updateAccountOp(broadcastRequest, { nonce: 8n, safeTx: getSafeTx(7) })
+    updateAccountOp(sameNonceRequest, { nonce: 8n, safeTx: getSafeTx('7') })
+    updateAccountOp(nextNonceRequest, { nonce: 8n, safeTx: getSafeTx(8) })
+    updateAccountOp(otherNetworkRequest, { nonce: 8n, safeTx: getSafeTx(7) })
     controller.userRequests = [
       broadcastRequest,
       sameNonceRequest,
@@ -3362,17 +3365,17 @@ describe('RequestsController ', () => {
     updateAccountOp(broadcastRequest, {
       txnId: '0xbroadcast',
       nonce: 8n,
-      safeTx: { nonce: 7 } as any
+      safeTx: getSafeTx(7)
     })
     updateAccountOp(sameNonceRequest, {
       txnId: '0xalternative',
       nonce: 8n,
-      safeTx: { nonce: 7 } as any
+      safeTx: getSafeTx(7)
     })
     updateAccountOp(nextNonceRequest, {
       txnId: '0xnext',
       nonce: 8n,
-      safeTx: { nonce: 8 } as any
+      safeTx: getSafeTx(8)
     })
     controller.userRequests = [broadcastRequest, sameNonceRequest, nextNonceRequest]
     await controller.setCurrentUserRequestById(broadcastRequest.id)
@@ -3397,7 +3400,7 @@ describe('RequestsController ', () => {
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const request = await getCallsRequest({ addr: accountAddr, chainId: 1n })
 
-    updateAccountOp(request, { txnId: '0xzero', nonce: 0n, safeTx: { nonce: 0 } as any })
+    updateAccountOp(request, { txnId: '0xzero', nonce: 0n, safeTx: getSafeTx(0) })
     controller.userRequests = [request]
     const destroySpy = jest.spyOn(request.signAccountOp, 'destroy')
 

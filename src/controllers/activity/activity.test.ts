@@ -4,6 +4,7 @@ import fetch from 'node-fetch'
 import { generateUuid } from '@/utils/uuid'
 import { describe, expect } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks as predefinedNetworks } from '../../consts/networks'
@@ -11,6 +12,7 @@ import { IMainController } from '../../interfaces/main'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import * as submittedAccountOp from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { TokenError, TokenResult } from '../../libs/portfolio/interfaces'
 import { ActivityController } from './activity'
 import { SignedMessage } from './types'
 
@@ -112,6 +114,20 @@ const SIGNED_MESSAGE: SignedMessage = {
 let mainCtrl: IMainController
 let storageCtrl: IStorageController
 let storage: Storage
+
+/**
+ * Returns a zero balance for every token asked for, on any block, so a confirmed transaction can
+ * work out its balance changes.
+ */
+const mockTokenBalancesOnBlock = () =>
+  jest
+    .spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock')
+    .mockImplementation(async (_accountId, _chainId, tokenAddrs) =>
+      tokenAddrs.map((address): [TokenError, TokenResult] => [
+        '0x',
+        { address, symbol: 'TKN', amount: 0n } as TokenResult
+      ])
+    )
 
 const buildMockReceipt = (overrides: Partial<any> = {}) =>
   ({
@@ -616,7 +632,7 @@ describe('Activity Controller ', () => {
       jest
         .spyOn(provider, 'getTransactionReceipt')
         .mockImplementation(async () => buildMockReceipt({ status: 1 }))
-      jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([])
+      mockTokenBalancesOnBlock()
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -815,6 +831,7 @@ describe('Activity Controller ', () => {
     })
 
     test('expires unresolved account ops only after 30 minutes', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest()
       const provider = mainCtrl.providers.providers['1']!
       jest
@@ -841,6 +858,7 @@ describe('Activity Controller ', () => {
       expect(accountOps.find(({ id }) => id === expiredAccountOp.id)?.status).toBe(
         AccountOpStatus.BroadcastButStuck
       )
+      restore()
     })
 
     test('expires an old transaction that remains pending without a receipt', async () => {
@@ -876,6 +894,7 @@ describe('Activity Controller ', () => {
     })
 
     test('checks old pending account ops even when 50 newer operations are finalized', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest()
       const provider = mainCtrl.providers.providers['1']!
       jest
@@ -904,9 +923,11 @@ describe('Activity Controller ', () => {
       expect(accountOps.find(({ id }) => id === expiredAccountOp.id)?.status).toBe(
         AccountOpStatus.BroadcastButStuck
       )
+      restore()
     })
 
     test('expires every unresolved call in an old multiple-transaction account op', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest()
       const provider = mainCtrl.providers.providers['1']!
       jest
@@ -943,6 +964,7 @@ describe('Activity Controller ', () => {
         AccountOpStatus.BroadcastButStuck,
         AccountOpStatus.BroadcastButStuck
       ])
+      restore()
     })
 
     describe('Replaced by fee (same eoaNonce as a confirmed op)', () => {
@@ -968,7 +990,7 @@ describe('Activity Controller ', () => {
           .mockImplementation(async (txnId: string) =>
             txnIdsInMempool.includes(txnId) ? ({ hash: txnId } as any) : null
           )
-        jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([])
+        mockTokenBalancesOnBlock()
 
         const previousOp = buildSubmittedAccountOp({
           status: AccountOpStatus.Success,

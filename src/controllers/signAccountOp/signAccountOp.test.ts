@@ -360,6 +360,10 @@ const smartAccount: Account = {
   }
 }
 
+/**
+ * Not a real Safe. Fetching its state fails on every network where the address has no contract,
+ * and the failure gets logged.
+ */
 const safeAccount: Account = {
   ...smartAccount,
   creation: null,
@@ -1008,7 +1012,7 @@ describe('SignAccountOp Controller ', () => {
     feePaymentOptions = getDefaultFeeSelectionOptions(),
     options?: Parameters<typeof init>[6]
   ) => {
-    const { controller, storageCtrl, accountsCtrl } = await init(
+    const { controller, storageCtrl, accountsCtrl, portfolio } = await init(
       smartAccount,
       createAccountOp(smartAccount, 1n),
       eoaSigner,
@@ -1034,7 +1038,7 @@ describe('SignAccountOp Controller ', () => {
 
     await wait(1)
 
-    return { controller, storageCtrl, accountsCtrl }
+    return { controller, storageCtrl, accountsCtrl, portfolio }
   }
 
   const initSafeNonce = async (signed: string[] = [], { isSpeedUp = false } = {}) => {
@@ -1080,7 +1084,9 @@ describe('SignAccountOp Controller ', () => {
 
   describe('refetchAccountState', () => {
     test('refreshes the account state and clears the loading state', async () => {
-      const { controller, accountsCtrl } = await initDefaultFeeSelection()
+      const { controller, accountsCtrl, portfolio } = await initDefaultFeeSelection()
+      // A refresh simulates the transaction again, which the network rejects for this account
+      jest.spyOn(portfolio, 'simulateAccountOp').mockResolvedValue(undefined)
       const updateAccountStateSpy = jest
         .spyOn(accountsCtrl, 'updateAccountState')
         .mockResolvedValue(undefined)
@@ -1097,7 +1103,8 @@ describe('SignAccountOp Controller ', () => {
     })
 
     test('ignores concurrent refresh attempts', async () => {
-      const { controller, accountsCtrl } = await initDefaultFeeSelection()
+      const { controller, accountsCtrl, portfolio } = await initDefaultFeeSelection()
+      jest.spyOn(portfolio, 'simulateAccountOp').mockResolvedValue(undefined)
       const pendingRefresh = createDeferred<void>()
       const updateAccountStateSpy = jest
         .spyOn(accountsCtrl, 'updateAccountState')
@@ -1146,6 +1153,7 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('sets a custom Safe nonce and refreshes its EIP-712 data', async () => {
+    const { restore } = suppressConsole()
     const { controller, accountsCtrl } = await initSafeNonce()
     const initialSafeEip712Data = controller.safeEip712Data
     const accountState =
@@ -1166,9 +1174,11 @@ describe('SignAccountOp Controller ', () => {
 
     controller.update({ hasNewEstimation: true })
     expect(controller.accountOp.nonce).toBe(42n)
+    restore()
   })
 
   test('does not allow broadcasting an imported Safe transaction with a future nonce', async () => {
+    const { restore } = suppressConsole()
     const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
     const accountState =
       accountsCtrl.accountStates[controller.accountOp.accountAddr]![
@@ -1188,9 +1198,11 @@ describe('SignAccountOp Controller ', () => {
       action: 'refetch-account-state'
     })
     expect(controller.canBroadcast).toBe(false)
+    restore()
   })
 
   test('does not block a Safe speed up for keeping the nonce of the transaction it replaces', async () => {
+    const { restore } = suppressConsole()
     const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress], {
       isSpeedUp: true
     })
@@ -1206,6 +1218,7 @@ describe('SignAccountOp Controller ', () => {
         title: 'You need to broadcast pending transactions before this one.'
       })
     )
+    restore()
   })
 
   test('does not change the nonce of a non-Safe or already-signed transaction', async () => {
@@ -4624,7 +4637,12 @@ describe('SignAccountOp signing authentication', () => {
     return controller
   }
 
-  const erc20 = new Interface(['function transfer(address to, uint256 amount)'])
+  const erc20 = new Interface([
+    'function transfer(address to, uint256 amount)',
+    'function approve(address spender, uint256 amount)'
+  ])
+  // Approving zero is a contract interaction that the network accepts from any account
+  const approveData = erc20.encodeFunctionData('approve', [BOB, 0n]) as Hex
 
   test('a recipient the account has never sent to has to be confirmed', async () => {
     const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x' }])
@@ -4665,14 +4683,14 @@ describe('SignAccountOp signing authentication', () => {
   })
 
   test('a contract interaction on its own needs no recipient confirmation', async () => {
-    const controller = await initSigningAuth([{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex }])
+    const controller = await initSigningAuth([{ to: USDC, value: 0n, data: approveData }])
 
     expect(controller.signingAuthRequirement).toBe(null)
   })
 
   test('a dapp that has not been authenticated for signing has to be confirmed', async () => {
     const controller = await initSigningAuth(
-      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      [{ to: USDC, value: 0n, data: approveData, dapp: dappA }],
       { dapps: [dappA] }
     )
 
@@ -4684,7 +4702,7 @@ describe('SignAccountOp signing authentication', () => {
 
   test('an already authenticated dapp does not have to be confirmed again', async () => {
     const controller = await initSigningAuth(
-      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      [{ to: USDC, value: 0n, data: approveData, dapp: dappA }],
       { dapps: [{ ...dappA, signingAuthenticated: true }] }
     )
 
@@ -4694,9 +4712,9 @@ describe('SignAccountOp signing authentication', () => {
   test('a batch lists every unauthenticated dapp once', async () => {
     const controller = await initSigningAuth(
       [
-        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA },
-        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappB },
-        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }
+        { to: USDC, value: 0n, data: approveData, dapp: dappA },
+        { to: USDC, value: 0n, data: approveData, dapp: dappB },
+        { to: USDC, value: 0n, data: approveData, dapp: dappA }
       ],
       { dapps: [dappA, dappB] }
     )
@@ -4709,7 +4727,7 @@ describe('SignAccountOp signing authentication', () => {
 
   test('a dapp the catalog does not know is skipped, as the confirmation cannot be remembered', async () => {
     const controller = await initSigningAuth(
-      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      [{ to: USDC, value: 0n, data: approveData, dapp: dappA }],
       { dapps: [dappB] }
     )
 
@@ -5039,6 +5057,7 @@ describe('Call data decoding', () => {
   })
 
   test('a newer humanization ignores the selectors an older one was still waiting for', async () => {
+    const { restore } = suppressConsole()
     const api = makeSelectorsApi(API_SIGNATURES, { holdResponses: true })
     const { controller, contractInfo, releaseHumanization } = await initWithCalls([depositCall], {
       contractInfoFetch: api.fetch,
@@ -5072,9 +5091,11 @@ describe('Call data decoding', () => {
 
     api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
     controller.destroy()
+    restore()
   })
 
   test('calls arriving in the same tick, across ticks and a second later are each fetched once and all decoded', async () => {
+    const { restore } = suppressConsole()
     const api = makeSelectorsApi(API_SIGNATURES)
     const { controller, releaseHumanization } = await initWithCalls([depositCall], {
       contractInfoFetch: api.fetch
@@ -5118,6 +5139,7 @@ describe('Call data decoding', () => {
     ])
 
     controller.destroy()
+    restore()
   })
 
   test('a request switched away from keeps decoding in the background, and shows it once switched back to', async () => {
