@@ -2253,6 +2253,7 @@ describe('DappsController', () => {
     // Stored after the storage migrations ran, so this is a record the missing-ids migration
     // never saw. It used to make #load throw and leave the controller loading forever.
     test('skips and reports a stored dapp without an id instead of failing the load', async () => {
+      const { restore } = suppressConsole()
       const valid = makeDapp({
         id: 'valid-dapp.com',
         name: 'Valid Dapp',
@@ -2287,6 +2288,7 @@ describe('DappsController', () => {
       expect(loadErrors).toHaveLength(1)
       expect(loadErrors[0]!.level).toBe('silent')
       expect(loadErrors[0]!.error!.message).toContain('skipped 1 stored dapp(s)')
+      restore()
     })
 
     test('disconnectDappSource removes only the targeted source', async () => {
@@ -2743,15 +2745,24 @@ describe('DappsController', () => {
         expect(Number.isFinite(token.priceUSD)).toBe(true)
       })
 
-      // The market data and the icon the trending list and the token-details screen render must
-      // arrive for the first (most trending) token at the very least.
+      // The icon and the price the trending list renders must arrive for the first (most
+      // trending) token at the very least.
       const [topToken] = controller.trendingTokens
       expect(topToken!.icon.startsWith('http')).toBe(true)
       expect(topToken!.priceUSD).toBeGreaterThan(0)
-      expect(topToken!.priceChange24hUSD).not.toBeNull()
-      expect(topToken!.marketCapUSD).not.toBeNull()
-      expect(topToken!.totalVolumeUSD).not.toBeNull()
-      expect(topToken!.marketCapRank).not.toBeNull()
+
+      // CoinGecko has no market data yet for some newly listed tokens, so any single token can
+      // miss it. A field missing on every token means the response structure changed.
+      const marketDataFields = [
+        'priceChange24hUSD',
+        'marketCapUSD',
+        'totalVolumeUSD',
+        'marketCapRank'
+      ] as const
+      const missingMarketDataFields = marketDataFields.filter((field) =>
+        controller.trendingTokens.every((token) => token[field] === null)
+      )
+      expect(missingMarketDataFields).toEqual([])
     }, 40000)
   })
   describe('deferred init', () => {

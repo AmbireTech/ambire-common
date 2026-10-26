@@ -58,7 +58,10 @@ import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../libs/decodeCall'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
-import { ERC7730_DESCRIPTOR_WAIT_MS } from '../../libs/humanizer/erc7730/consts'
+import {
+  ERC7730_CALLDATA_INDEX_RELAYER_PATH,
+  ERC7730_DESCRIPTOR_WAIT_MS
+} from '../../libs/humanizer/erc7730/consts'
 import { HumanizerWarning } from '../../libs/humanizer/interfaces'
 import { hasErc7730Humanization, UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -460,6 +463,18 @@ const gasTankToken: TokenResult = {
 
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
+
+/**
+ * Every controller built by `init`. A controller left alive keeps its estimate and gas price
+ * loops running into the next tests, and a test that switches to fake timers then drives
+ * all of them at once, which made the reestimation loop tests time out in CI.
+ */
+const initializedControllers: SignAccountOpTesterController[] = []
+
+afterEach(() => {
+  initializedControllers.splice(0).forEach((controller) => controller.destroy())
+})
+
 const init = async (
   account: Account,
   accountOp: {
@@ -683,7 +698,14 @@ const init = async (
     featureFlagsCtrl.isFeatureEnabled('eip7702')
   )
 
-  const callRelayer = options?.callRelayer || relayerCall.bind({ url: '', fetch })
+  const unreachableRelayer = relayerCall.bind({ url: '', fetch })
+  // An empty ERC-7730 registry gives the same default view as a failed lookup, without the
+  // failure. Every other relayer call stays unreachable.
+  const emptyErc7730Relayer: BindedRelayerCall = async (path, ...args) =>
+    path === ERC7730_CALLDATA_INDEX_RELAYER_PATH
+      ? { success: true, data: {}, errorState: [] }
+      : unreachableRelayer(path, ...args)
+  const callRelayer = options?.callRelayer || emptyErc7730Relayer
   const safe = new SafeController({
     networks: networksCtrl,
     providers: providersCtrl,
@@ -810,6 +832,7 @@ const init = async (
     estimateController: estimationController,
     gasPriceController
   })
+  initializedControllers.push(controller)
   controller.update({
     hasNewEstimation: true,
     gasPrices: gasPricesOrMock
@@ -1186,6 +1209,7 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('does not change the nonce of a non-Safe or already-signed transaction', async () => {
+    const { restore } = suppressConsole()
     const { controller: nonSafeController } = await initDefaultFeeSelection()
     const { controller: signedSafeController } = await initSafeNonce([eoaSigner.keyPublicAddress])
 
@@ -1194,9 +1218,11 @@ describe('SignAccountOp Controller ', () => {
 
     expect(nonSafeController.accountOp.nonce).toBe(0n)
     expect(signedSafeController.accountOp.nonce).toBe(3n)
+    restore()
   })
 
   test('rejects Safe nonces outside the uint256 range', async () => {
+    const { restore } = suppressConsole()
     const { controller } = await initSafeNonce()
 
     controller.setSafeNonce(-1n)
@@ -1204,15 +1230,18 @@ describe('SignAccountOp Controller ', () => {
 
     controller.setSafeNonce(1n << 256n)
     expect(controller.accountOp.nonce).toBe(3n)
+    restore()
   })
 
   test('does not change a Safe nonce while signing is in progress', async () => {
+    const { restore } = suppressConsole()
     const { controller } = await initSafeNonce()
     controller.updateStatus(SigningStatus.InProgress)
 
     controller.setSafeNonce(42n)
 
     expect(controller.accountOp.nonce).toBe(3n)
+    restore()
   })
 
   test('defaults fee payment to the network-native token before gas tank or ERC-20', async () => {
@@ -3909,12 +3938,8 @@ describe('unlimited approval warnings', () => {
   const spender = '0x46705dfff24256421a05d056c29e81bdc09723b8'
   const approveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
 
-  // no ERC-7730 registry is reachable here, so every approval falls back to the built-in
+  // the ERC-7730 registry of `init` is empty, so every approval falls back to the built-in
   // descriptor - the path a real approval takes as well
-  const failingErc7730Relayer = jest.fn(async (path: string) => {
-    throw new Error(`No ERC-7730 registry in this test: ${path}`)
-  })
-
   const approveCall = (amount: bigint, dapp?: Dapp) => ({
     to: usdt,
     value: 0n,
@@ -3924,8 +3949,7 @@ describe('unlimited approval warnings', () => {
 
   const humanizeApproval = async (amount: bigint, dapp: Dapp, includeDappOnCall = true) => {
     const { controller } = await initDappVerificationBannerTest(dapp, {
-      calls: [approveCall(amount, includeDappOnCall ? dapp : undefined)] as AccountOp['calls'],
-      callRelayer: failingErc7730Relayer as any
+      calls: [approveCall(amount, includeDappOnCall ? dapp : undefined)] as AccountOp['calls']
     })
     await wait(0)
 
@@ -4444,6 +4468,7 @@ describe('reestimation loop', () => {
     })
 
   test('stops asking once the failure cannot be fixed by asking again', async () => {
+    const { restore } = suppressConsole()
     const controller = await initLoop()
     const estimate = mockFailingEstimate(controller, EstimationFailureKind.Permanent)
 
@@ -4453,9 +4478,11 @@ describe('reestimation loop', () => {
     // The account is gone or the network is off - the answer will not change,
     // so there is no reason to keep the user's providers busy
     expect(estimate).toHaveBeenCalledTimes(1)
+    restore()
   })
 
   test('keeps asking while the failure may resolve on its own', async () => {
+    const { restore } = suppressConsole()
     const controller = await initLoop()
     const estimate = mockFailingEstimate(controller, EstimationFailureKind.Retriable)
 
@@ -4465,9 +4492,11 @@ describe('reestimation loop', () => {
     // A connection that came back would produce a different answer, so the loop
     // keeps going until it hits the give-up limit
     expect(estimate).toHaveBeenCalledTimes(MAX_REESTIMATES + 1)
+    restore()
   })
 
   test('gives up on a request the user left open', async () => {
+    const { restore } = suppressConsole()
     const controller = await initLoop()
     const estimate = jest
       .spyOn(controller.estimation, 'estimate')
@@ -4483,6 +4512,7 @@ describe('reestimation loop', () => {
 
     // Confirms it really stopped rather than merely slowed down
     expect(estimate.mock.calls.length).toBe(callsAfterGivingUp)
+    restore()
   })
 
   test('retry resumes a loop that had stopped refetching', async () => {
@@ -4963,6 +4993,7 @@ describe('Call data decoding', () => {
   })
 
   test('stops showing a call as loading after the loading deadline, and does not emit when its selector then turns out to be unknown', async () => {
+    const { restore } = suppressConsole()
     const unknownCall = toCall(`0xdeadbeef${'00'.repeat(32)}`)
     const { api, controller, contractInfo, startedAt } = await showWithHeldSelectors(unknownCall)
 
@@ -4984,9 +5015,11 @@ describe('Call data decoding', () => {
     expect([...emittedHumanizations].filter((h) => h !== afterDeadlineHumanization)).toEqual([])
 
     controller.destroy()
+    restore()
   })
 
   test('decodes a call whose selector arrives after the loading deadline', async () => {
+    const { restore } = suppressConsole()
     const { api, controller } = await showWithHeldSelectors(claimCall)
 
     await advanceUntil(() => !controller.humanization[1]!.isDecodingCall, 'the call stops loading')
@@ -5002,6 +5035,7 @@ describe('Call data decoding', () => {
     expect(controller.humanization[1]!.isDecodingCall).toBeUndefined()
 
     controller.destroy()
+    restore()
   })
 
   test('a newer humanization ignores the selectors an older one was still waiting for', async () => {
@@ -5087,6 +5121,7 @@ describe('Call data decoding', () => {
   })
 
   test('a request switched away from keeps decoding in the background, and shows it once switched back to', async () => {
+    const { restore } = suppressConsole()
     const api = makeSelectorsApi(API_SIGNATURES, { holdResponses: true })
     const sharedStorage = new StorageController(produceMemoryStore())
     const sharedContractInfo = new ContractInfoController({
@@ -5151,6 +5186,7 @@ describe('Call data decoding', () => {
 
     first.controller.destroy()
     second.controller.destroy()
+    restore()
   })
 
   test('shows a call with an ERC-7730 descriptor without waiting for its selectors, and decodes it once they arrive', async () => {
@@ -5621,6 +5657,7 @@ describe('speed up of a pending transaction', () => {
   })
 
   test('stops without an error toast when the original got processed while signing and the broadcast failed', async () => {
+    const { restore } = suppressConsole()
     const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
     const findSpy = jest
       .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
@@ -5639,9 +5676,11 @@ describe('speed up of a pending transaction', () => {
 
     expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'silent' }))
+    restore()
   })
 
   test('stops when the broadcast fails after the activity was no longer watched', async () => {
+    const { restore } = suppressConsole()
     const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
     const findSpy = jest
       .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
@@ -5656,9 +5695,11 @@ describe('speed up of a pending transaction', () => {
     expect(() => controller.throwBroadcastAccountOp({ message: 'nonce too low' })).toThrow()
 
     expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+    restore()
   })
 
   test('shows the broadcast error when the original is still pending', async () => {
+    const { restore } = suppressConsole()
     jest
       .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
       .mockReturnValue({ status: AccountOpStatus.BroadcastedButNotConfirmed } as any)
@@ -5671,6 +5712,7 @@ describe('speed up of a pending transaction', () => {
 
     expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'major' }))
+    restore()
   })
 
   test('a failed broadcast does not bring back a speed up that was stopped', async () => {
@@ -5723,6 +5765,7 @@ describe('speed up of a pending transaction', () => {
   })
 
   test('does not restart refetching when resumed', async () => {
+    const { restore } = suppressConsole()
     jest
       .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
       .mockReturnValue({ status: AccountOpStatus.Success } as any)
@@ -5734,6 +5777,7 @@ describe('speed up of a pending transaction', () => {
 
     expect(startSpy).not.toHaveBeenCalled()
     expect(restartSpy).not.toHaveBeenCalled()
+    restore()
   })
 
   test('does not watch the activity when no SpeedUp is passed', async () => {

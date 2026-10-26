@@ -1,8 +1,9 @@
 import { errorCodes } from 'eth-rpc-errors'
 import { Wallet, ZeroAddress } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { afterEach, describe, expect, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
@@ -33,7 +34,6 @@ import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 import type { AccountOp } from '../../libs/accountOp/accountOp'
 import type { Call } from '../../libs/accountOp/types'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
 const NOW = 1_700_000_000_000
 const SAFE_TX_HASH = `0x${'1'.repeat(64)}` as Hex
@@ -121,6 +121,16 @@ const getActivityAccountOp = (
     identifier: `activity-account-op-${nonce.toString()}`
   },
   timestamp
+})
+
+/**
+ * Every SignAccountOp built by `getSignAccountOp`. One left alive keeps humanizing and
+ * refreshing gas prices after its test ends, so its logs land in later tests.
+ */
+const createdSignAccountOps: SignAccountOpController[] = []
+
+afterEach(() => {
+  createdSignAccountOps.splice(0).forEach((signAccountOp) => signAccountOp.destroy())
 })
 
 const prepareTest = async (
@@ -239,6 +249,7 @@ const prepareTest = async (
       onBroadcastSuccess: async () => {},
       onBroadcastFailed: () => {}
     })
+    createdSignAccountOps.push(signAccountOp)
     // Prevent the recurring estimation timer from reaching V1.getAvailableFeeOptions
     // (which throws for accounts with no ETH on the test networks).
     jest.spyOn(signAccountOp.estimation, 'estimate').mockResolvedValue(undefined)
@@ -1902,6 +1913,7 @@ describe('RequestsController ', () => {
   })
 
   test('asks to try again when preparing the Safe deployment fails unexpectedly', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
@@ -1932,6 +1944,7 @@ describe('RequestsController ', () => {
     )
 
     unsubscribe()
+    restore()
   })
 
   test('does not add a second deployment call to a deployment an app transaction queued meanwhile', async () => {
@@ -2151,6 +2164,7 @@ describe('RequestsController ', () => {
   })
 
   test('does not build a Safe deployment request for a non-Safe account', async () => {
+    const { restore } = suppressConsole()
     const { controller, uiCtrl } = await prepareTest()
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
@@ -2167,6 +2181,7 @@ describe('RequestsController ', () => {
       ok: false,
       error: 'unavailable'
     })
+    restore()
   })
 
   test('reports when a Safe deployment request cannot be prepared', async () => {
@@ -2492,6 +2507,7 @@ describe('RequestsController ', () => {
     })
 
     test('rejects the safs when the on-chain check fails', async () => {
+      const { restore } = suppressConsole()
       const { controller, rejectSpy, updateAccountStateSpy } = await setup(true)
       updateAccountStateSpy.mockRejectedValue(new Error('RPC down'))
 
@@ -2500,6 +2516,7 @@ describe('RequestsController ', () => {
       )
 
       expect(rejectSpy).toHaveBeenCalledTimes(1)
+      restore()
     })
 
     test('does nothing on success or for non-deploy ops', async () => {
@@ -2635,6 +2652,7 @@ describe('RequestsController ', () => {
   })
 
   test('keeps Benzin open while the Safe deployment is not confirmed', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, benzinRequest, controller, transactionRequest } =
       await prepareSafeDeploymentHandoff()
     jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
@@ -2656,9 +2674,11 @@ describe('RequestsController ', () => {
     )
 
     transactionRequest.signAccountOp.destroy()
+    restore()
   })
 
   test('keeps Benzin open when refreshing the Safe state after its deployment fails', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, benzinRequest, controller, transactionRequest } =
       await prepareSafeDeploymentHandoff()
     jest
@@ -2682,6 +2702,7 @@ describe('RequestsController ', () => {
     )
 
     transactionRequest.signAccountOp.destroy()
+    restore()
   })
 
   test('recovers and stores incomplete Safe deployment data before building the deployment', async () => {
@@ -2806,6 +2827,7 @@ describe('RequestsController ', () => {
   })
 
   test('rejects a Safe deployment when incomplete creation data cannot be recovered', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, controller } = await prepareTest(true, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
@@ -2868,6 +2890,7 @@ describe('RequestsController ', () => {
           "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
       })
     )
+    restore()
   })
 
   test('rejects the app transaction without creating requests when the Safe cannot be deployed', async () => {
@@ -3126,6 +3149,7 @@ describe('RequestsController ', () => {
     })
 
     test('rejects the message without adding requests when the Safe cannot be deployed', async () => {
+      const { restore } = suppressConsole()
       const { controller, getSafeDeploymentCallSpy } = await prepareUndeployedSafe()
       getSafeDeploymentCallSpy.mockResolvedValue(null)
       const onError = jest.fn()
@@ -3144,6 +3168,7 @@ describe('RequestsController ', () => {
         })
       )
       expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'expected' }))
+      restore()
     })
 
     test('rejects the message when incomplete Safe creation data cannot be recovered', async () => {
@@ -3209,6 +3234,7 @@ describe('RequestsController ', () => {
     })
 
     test('keeps Benzin open while the Safe deployment a message waits for is not confirmed', async () => {
+      const { restore } = suppressConsole()
       const { accountsCtrl, controller } = await prepareTest(false, true)
       accountsCtrl.accountStates[safeAccountAddr]![1]!.isDeployed = false
       const updateAccountStateSpy = jest
@@ -3238,6 +3264,7 @@ describe('RequestsController ', () => {
       expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], true)
       expect(controller.userRequests).toEqual([benzinRequest, messageRequest])
       expect(controller.currentUserRequest).toBe(benzinRequest)
+      restore()
     })
   })
 
@@ -3266,6 +3293,7 @@ describe('RequestsController ', () => {
     expect(rejectMock).not.toHaveBeenCalled()
   })
   test('reject user request', async () => {
+    const { restore } = suppressConsole()
     const { controller, getCallsRequest } = await prepareTest()
 
     const resolveMock = jest.fn()
@@ -3289,6 +3317,7 @@ describe('RequestsController ', () => {
     expect(controller.visibleUserRequests.length).toBe(0)
     expect(rejectMock).toHaveBeenCalled()
     expect(resolveMock).not.toHaveBeenCalled()
+    restore()
   })
   test('finds same-nonce Safe alternatives by their immutable Safe nonce and scope', async () => {
     const { controller, getCallsRequest } = await prepareTest(false, true)
@@ -3905,6 +3934,7 @@ describe('RequestsController ', () => {
     })
 
     test('a malformed transaction in the batch costs only the app that sent it', async () => {
+      const { restore } = suppressConsole()
       const { controller, uiCtrl } = await prepareTest(true)
       const sideEffects = watchSideEffects(uiCtrl)
       const promises = makeRejectMocks(10)
@@ -3938,9 +3968,11 @@ describe('RequestsController ', () => {
       expect(sideEffects.closeCount()).toBe(0)
 
       callsRequests[0]!.signAccountOp.destroy()
+      restore()
     })
 
     test('a transaction with no parameters does not take its batch down with it', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
       const sendRaw = (dappPromise: { id: string; reject: (err: any) => void }, params: any[]) =>
         controller.build({
@@ -3974,9 +4006,11 @@ describe('RequestsController ', () => {
       expect(noFromReason.message).not.toBe(noParamsReason.message)
 
       expect(controller.userRequests.filter((r) => r.kind === 'calls')).toHaveLength(0)
+      restore()
     })
 
     test('every transaction turned away for one already signing is answered', async () => {
+      const { restore } = suppressConsole()
       const { controller, getCallsRequest } = await prepareTest()
       const inProgress = await getCallsRequest({ addr: FROM, chainId: 1n })
 
@@ -4001,6 +4035,7 @@ describe('RequestsController ', () => {
       inProgress.signAccountOp.destroy()
       second.signAccountOp.destroy()
       third.signAccountOp.destroy()
+      restore()
     })
 
     test('supersedes every message fired at once down to exactly one', async () => {
@@ -4052,6 +4087,7 @@ describe('RequestsController ', () => {
     })
 
     test('one request that cannot be prepared does not abandon the others', async () => {
+      const { restore } = suppressConsole()
       const { controller, accountsCtrl, getCallsRequest } = await prepareTest()
       const unfetchable = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 10n })
       const fine = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 1n })
@@ -4074,6 +4110,7 @@ describe('RequestsController ', () => {
 
       unfetchable.signAccountOp.destroy()
       fine.signAccountOp.destroy()
+      restore()
     })
 
     test('an empty transaction to the account itself joins the batch it already has', async () => {
@@ -4261,6 +4298,7 @@ describe('RequestsController ', () => {
       })
 
       test('turns away a transaction from an account that is not in the wallet', async () => {
+        const { restore } = suppressConsole()
         const { controller } = await prepareTest(true)
         const [unknownAccountPromise] = makeRejectMocks(1)
 
@@ -4272,9 +4310,11 @@ describe('RequestsController ', () => {
 
         expect(controller.userRequests).toHaveLength(0)
         expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+        restore()
       })
 
       test('answers an app connected only to the selected account as if the other one is not in the wallet', async () => {
+        const { restore } = suppressConsole()
         const { controller, dappsCtrl } = await prepareTest(true)
         jest.spyOn(dappsCtrl, 'getDapp').mockReturnValue({
           ...TEST_DAPP,
@@ -4305,9 +4345,11 @@ describe('RequestsController ', () => {
 
         expect(controller.userRequests).toHaveLength(0)
         expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+        restore()
       })
 
       test('turns away too many transactions for another account before asking to switch', async () => {
+        const { restore } = suppressConsole()
         const { controller } = await prepareTest(true)
         const reject = jest.fn()
 
@@ -4337,6 +4379,7 @@ describe('RequestsController ', () => {
           expect.objectContaining({ code: errorCodes.rpc.limitExceeded })
         )
         expect(getSwitchAccountRequests(controller)).toHaveLength(0)
+        restore()
       })
     })
 
@@ -4670,28 +4713,34 @@ describe('RequestsController ', () => {
       })
 
     test('rejects eth_sendTransaction with odd-length hex data', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
 
       await expect(
         buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0', data: '0x1' })
       ).rejects.toThrow('A call has uneven number of character in the hex data.')
+      restore()
     })
 
     test('rejects eth_sendTransaction with non-hex data (even length, no 0x prefix)', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
 
       // Even length so it passes the odd-length check; no 0x prefix so isHex returns false
       await expect(
         buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0', data: 'aabbccdd' })
       ).rejects.toThrow('A call has invalid data.')
+      restore()
     })
 
     test('rejects eth_sendTransaction with invalid "to" address', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
 
       await expect(
         buildEthSendTx(controller, { from: FROM, to: 'not-an-address', value: '0x0' })
       ).rejects.toThrow('A call has invalid "to" field ')
+      restore()
     })
 
     test('accepts eth_sendTransaction without a "to" field (contract deployment)', async () => {
@@ -4760,6 +4809,7 @@ describe('RequestsController ', () => {
     })
 
     test('rejects wallet_sendCalls when any call has odd-length hex data', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
 
       await expect(
@@ -4768,9 +4818,11 @@ describe('RequestsController ', () => {
           { to: VALID_TO, value: '0x0', data: '0x1' }
         ])
       ).rejects.toThrow('A call has uneven number of character in the hex data.')
+      restore()
     })
 
     test('rejects wallet_sendCalls when any call has an invalid "to" address', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
 
       await expect(
@@ -4779,6 +4831,7 @@ describe('RequestsController ', () => {
           { to: 'bad-address', value: '0x0' }
         ])
       ).rejects.toThrow('A call has invalid "to" field ')
+      restore()
     })
 
     test('accepts wallet_sendCalls where a call omits "to" (contract deployment within batch)', async () => {
@@ -4841,6 +4894,7 @@ describe('RequestsController ', () => {
       })
 
     test('rejects when primaryType is missing from types', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
       const typedData = {
         ...VALID_TYPED_DATA,
@@ -4849,9 +4903,11 @@ describe('RequestsController ', () => {
       await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
         'The primary data type is missing from the provided types'
       )
+      restore()
     })
 
     test('rejects when message contents do not match the declared types', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
       const typedData = {
         ...VALID_TYPED_DATA,
@@ -4864,6 +4920,7 @@ describe('RequestsController ', () => {
       await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
         'The message contents did not match the provided types.'
       )
+      restore()
     })
 
     test('accepts valid typed data and creates a typedMessage user request', async () => {
@@ -4874,6 +4931,7 @@ describe('RequestsController ', () => {
     })
 
     test('rejects when domain.chainId does not match the current network chainId', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
       const typedData = {
         ...VALID_TYPED_DATA,
@@ -4882,6 +4940,7 @@ describe('RequestsController ', () => {
       await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
         'The domain chainId (999) does not match the current network chainId (1)'
       )
+      restore()
     })
 
     test('replaces domain.chainId with current network chainId when domain.chainId is 0', async () => {
@@ -4945,14 +5004,17 @@ describe('RequestsController ', () => {
     }
 
     test('rejects AmbireOperation typed data for the selected account', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
       await expect(
         buildSignTypedDataRequest(controller, AMBIRE_OPERATION_TYPED_DATA, SELECTED_ACCOUNT)
       ).rejects.toThrow('Signing an AmbireOperation is not allowed')
       expect(controller.userRequests.length).toBe(0)
+      restore()
     })
 
     test('rejects AmbireOperation typed data for a non-selected account', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
       const otherAccountTypedData = {
         ...AMBIRE_OPERATION_TYPED_DATA,
@@ -4971,6 +5033,7 @@ describe('RequestsController ', () => {
       ).rejects.toThrow('Signing an AmbireOperation is not allowed')
       expect(controller.userRequests.length).toBe(0)
       expect(controller.userRequestsWaitingAccountSwitch.length).toBe(0)
+      restore()
     })
   })
 })
