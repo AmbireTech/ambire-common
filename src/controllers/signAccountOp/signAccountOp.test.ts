@@ -5,6 +5,7 @@ import {
   getAddress,
   hexlify,
   Interface,
+  makeError,
   MaxUint256,
   parseEther,
   toBeHex,
@@ -2963,6 +2964,107 @@ describe('throwBroadcastAccountOp', () => {
 
     const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
     expect(lastError?.level).toBe('major')
+  })
+  it('a bundler error that is not about the fee shows an error toast instead of the gas fee updated confirmation', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      }
+    )
+
+    // ethers puts the request payload in the message, so it always contains the
+    // user operation's maxFeePerGas and maxPriorityFeePerGas
+    const userOpPayload = {
+      method: 'eth_sendUserOperation',
+      params: [{ sender: eoaAccount.addr, maxFeePerGas: '0x258', maxPriorityFeePerGas: '0x12c' }]
+    }
+    const error = makeError('could not coalesce error', 'UNKNOWN_ERROR', {
+      error: { code: -32500, message: "AA21 didn't pay prefund" },
+      payload: userOpPayload
+    })
+
+    expect(() => controller.throwBroadcastAccountOp({ error })).toThrow("AA21 didn't pay prefund")
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+    expect(controller.previousFee).toBe(null)
+    // The user is brought back to the initial signing step
+    expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
+
+    const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
+    expect(lastError?.level).toBe('major')
+  })
+  it('a bundler error about the fee shows the gas fee updated confirmation', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      }
+    )
+
+    // ethers puts the request payload in the message, so it always contains the
+    // user operation's maxFeePerGas and maxPriorityFeePerGas
+    const userOpPayload = {
+      method: 'eth_sendUserOperation',
+      params: [{ sender: eoaAccount.addr, maxFeePerGas: '0x258', maxPriorityFeePerGas: '0x12c' }]
+    }
+    const error = makeError('could not coalesce error', 'UNKNOWN_ERROR', {
+      error: {
+        code: -32602,
+        message:
+          'maxFeePerGas must be at least 1200 (current maxFeePerGas: 600) - use pimlico_getUserOperationGasPrice to get the current gas price'
+      },
+      payload: userOpPayload
+    })
+
+    expect(() => controller.throwBroadcastAccountOp({ error })).toThrow(
+      'Transaction fees changed. Please try again'
+    )
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(true)
+
+    const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
+    expect(lastError?.level).toBe('silent')
   })
 })
 
