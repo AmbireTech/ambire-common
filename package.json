@@ -1,5 +1,9 @@
 {
+<<<<<<< HEAD
   "version": "2.113.0",
+=======
+  "version": "2.112.4",
+>>>>>>> b694713c36b5f00d353315ed4ebaaad98ff99c45
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {

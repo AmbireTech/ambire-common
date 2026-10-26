@@ -4856,3 +4856,55 @@ describe('SIWE auto-login and signing authentication', () => {
     jest.restoreAllMocks()
   })
 })
+
+describe('a request that arrives while the request window is closing', () => {
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  /**
+   * Mirrors the mobile request bottom sheet: opening and closing it animates, and once the close
+   * animation ends `remove()` resolves and `windowRemoved` is emitted in the same tick, as the
+   * controllers run in the same JS realm as the UI.
+   */
+  const mockMobileRequestSheet = (uiCtrl: Awaited<ReturnType<typeof prepareTest>>['uiCtrl']) => {
+    const sheet = { isOpen: false }
+    let nextWindowId = 100
+
+    uiCtrl.window.open = async () => {
+      await wait(20)
+      sheet.isOpen = true
+      return { id: nextWindowId++, focused: true } as any
+    }
+    uiCtrl.window.focus = async (windowProps: any) => windowProps
+    uiCtrl.window.remove = async (winId: any) => {
+      if (winId === 'popup') return
+
+      await new Promise<void>((resolve) => {
+        setTimeout(() => {
+          sheet.isOpen = false
+          resolve()
+          uiCtrl.window.event.emit('windowRemoved', winId)
+        }, 100)
+      })
+    }
+
+    return sheet
+  }
+
+  test('shows a message the app asked to sign right after connecting, instead of rejecting it', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    const sheet = mockMobileRequestSheet(uiCtrl)
+
+    await controller.addUserRequests([{ ...DAPP_CONNECT_REQUEST }])
+    await controller.resolveUserRequest(null, DAPP_CONNECT_REQUEST.id)
+    // The connect request is removed 300ms after it is resolved, which starts closing the sheet
+    await wait(320)
+
+    const rejectMessage = jest.fn()
+    await controller.addUserRequests([makeMessageRequest('message-after-connect', rejectMessage)])
+    await wait(300)
+
+    expect(rejectMessage).not.toHaveBeenCalled()
+    expect(controller.currentUserRequest?.id).toBe('message-after-connect')
+    expect(sheet.isOpen).toBe(true)
+  })
+})
