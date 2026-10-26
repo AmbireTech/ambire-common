@@ -48,6 +48,7 @@ export type StorageProps = {
   avatarType: string
   logLevel: string
   crashAnalyticsEnabledV2: boolean
+  crashReportId: string
   autoLockTime: number
   // Activity
   accountsOps: { [key: string]: { [key: string]: SubmittedAccountOp[] } }
