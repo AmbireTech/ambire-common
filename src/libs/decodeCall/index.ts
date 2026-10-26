@@ -120,9 +120,10 @@ export function decodeCall(
           decoded: result
         }
       }
-    } catch {
+    } catch (e: any) {
       // The data does not fit this signature. That is expected, as other signatures can share
       // the selector and the data may not be a function call at all (e.g. a contract deployment)
+      console.warn(`decodeCall: ${e.message}`)
     }
   }
   // this is just a false positive MITIGATION
