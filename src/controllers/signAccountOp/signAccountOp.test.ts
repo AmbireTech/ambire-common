@@ -3004,7 +3004,7 @@ describe('throwBroadcastAccountOp', () => {
       payload: userOpPayload
     })
 
-    await expect(controller.throwBroadcastAccountOp({ error })).rejects.toThrow()
+    expect(() => controller.throwBroadcastAccountOp({ error })).toThrow("AA21 didn't pay prefund")
 
     expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
     expect(controller.previousFee).toBe(null)
@@ -3057,7 +3057,7 @@ describe('throwBroadcastAccountOp', () => {
       payload: userOpPayload
     })
 
-    await expect(controller.throwBroadcastAccountOp({ error })).rejects.toThrow(
+    expect(() => controller.throwBroadcastAccountOp({ error })).toThrow(
       'Transaction fees changed. Please try again'
     )
 
