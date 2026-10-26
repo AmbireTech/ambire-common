@@ -1427,6 +1427,60 @@ describe('RequestsController ', () => {
     })
   })
 
+  test.each([
+    ['resend', [{ to: ZeroAddress, value: 2n, data: '0x' }], { isResend: true }],
+    ['cancel', [{ to: ZeroAddress, value: 0n, data: '0x' }], undefined]
+  ])(
+    'reopens the open Safe %s of a pending transaction instead of opening another one',
+    async (_, prebuiltCalls, prebuiltMeta) => {
+      const { controller, accountsCtrl } = await prepareTest(false, true)
+      const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      const chainId = 1n
+      accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+
+      // Built anew on every press, as the sign screen does (see getResendAccountOp and
+      // getSafeCancellationAccountOp in the app)
+      const buildPrebuiltRequest = () => {
+        const calls = prebuiltCalls.map((call) => ({ ...call, id: generateUuid() }))
+
+        return controller.build({
+          type: 'calls',
+          params: {
+            executionType: 'queue',
+            userRequestParams: {
+              calls,
+              meta: { accountAddr, chainId },
+              accountOp: {
+                id: generateUuid(),
+                accountAddr,
+                chainId,
+                signingKeyAddr: null,
+                signingKeyType: null,
+                nonce: 119n,
+                calls,
+                gasLimit: null,
+                signature: null,
+                gasFeePayment: null,
+                ...(prebuiltMeta && { meta: prebuiltMeta })
+              }
+            }
+          }
+        })
+      }
+
+      await buildPrebuiltRequest()
+      await buildPrebuiltRequest()
+
+      expect(controller.userRequests).toHaveLength(1)
+      const request = controller.userRequests[0]
+      if (request?.kind !== 'calls') throw new Error('Expected calls request')
+      // reopened as it is, without the calls of the second press added to it
+      expect(request.signAccountOp.accountOp.calls).toHaveLength(1)
+      expect(request.signAccountOp.accountOp.nonce).toBe(119n)
+      request.signAccountOp.destroy()
+    }
+  )
+
   test('keeps the nonce when adding calls to an existing Safe request', async () => {
     const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'

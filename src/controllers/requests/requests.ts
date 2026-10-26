@@ -817,6 +817,27 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   /**
+   * An open request that already resends or cancels the same pending Safe transaction with a
+   * Safe accountOp built in advance: same Safe nonce and same calls. Pressing the button again
+   * reopens it, as a second one would compete with it for the same nonce. A cancel is an empty
+   * call, so an open onchain rejection at that nonce is reopened for it too, as it's the same
+   */
+  #findOpenPrebuiltSafeRequest(accountOp: AccountOp): CallsUserRequest | undefined {
+    const safeNonce = getAccountOpNonce(accountOp)
+    if (safeNonce === null) return undefined
+
+    return this.userRequests.find(
+      (r): r is CallsUserRequest =>
+        r.kind === 'calls' &&
+        !r.signAccountOp.isSpeedUpTransaction &&
+        r.meta.accountAddr === accountOp.accountAddr &&
+        r.meta.chainId === accountOp.chainId &&
+        getAccountOpNonce(r.signAccountOp.accountOp) === safeNonce &&
+        haveSameCalls(r.signAccountOp.accountOp.calls, accountOp.calls)
+    )
+  }
+
+  /**
    * An open Safe cancel (see `toCancelAccountOp`) of the Safe transaction with this hash. Other
    * owners sign it through the Safe API, so their signatures are added to it from there
    */
@@ -3408,7 +3429,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     // A Safe accountOp built in advance (e.g. resending an already sent transaction or cancelling
     // it) is pinned to that transaction's nonce, so it must always be a request of its own instead
-    // of getting its calls merged into whatever request is already open
+    // of getting its calls merged into whatever request is already open. One that already
+    // resends or cancels the same transaction is reopened instead of building another one
     const isPrebuiltSafeAccountOp = isSafeAccount && !!providedAccountOp
 
     const openSafeCancelRequest =
@@ -3424,12 +3446,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (meta.safeTxnProps && this.#isSafeTxnBeingSent(calls, meta, meta.safeTxnProps.nonce)) return
 
+    // A speed up / cancel or a Safe accountOp built in advance replaces one pending transaction
+    const findOpenReplacementRequest = (accountOp: AccountOp) =>
+      isSpeedUpRequest
+        ? this.#findOpenSpeedUpRequest(accountOp)
+        : this.#findOpenPrebuiltSafeRequest(accountOp)
     const existingUserRequest =
-      isSpeedUpRequest && providedAccountOp
-        ? this.#findOpenSpeedUpRequest(providedAccountOp)
+      (isSpeedUpRequest || isPrebuiltSafeAccountOp) && providedAccountOp
+        ? findOpenReplacementRequest(providedAccountOp)
         : (this.userRequests.find(
             (r) =>
-              !isPrebuiltSafeAccountOp &&
               r.kind === 'calls' &&
               !r.signAccountOp.isSpeedUpTransaction &&
               // done like this so 1) a safe onchain rejection tx is not bundled with a normal batch
@@ -3515,7 +3541,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           // if we're updating a signAccountOp with external data (txnId / signature),
           // we do not wish to continue any further down as race conditions may happen
           return
-        } else if (!existingUserRequest.signAccountOp.isSpeedUpTransaction) {
+        } else if (
+          !existingUserRequest.signAccountOp.isSpeedUpTransaction &&
+          !isPrebuiltSafeAccountOp
+        ) {
           existingUserRequest.signAccountOp.update({
             accountOpData: {
               calls: [
