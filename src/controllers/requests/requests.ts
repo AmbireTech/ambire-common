@@ -83,6 +83,7 @@ import {
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getAccountOpNonce, isSafeRejectionCall } from '../../libs/accountOp/accountOp'
+import { toCancelAccountOp } from '../../libs/accountOp/cancel'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
   getAccountOpBanners,
@@ -784,12 +785,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   /**
-   * An open request that already speeds up the same pending transaction. Pressing Speed up
-   * again reopens it, as a second one would compete with it for the same nonce
+   * An open request that already speeds up (or cancels) the same pending transaction. Pressing
+   * Speed up (or Cancel) again reopens it, as a second one would compete with it for the same
+   * nonce. A speed up and a cancel of the same transaction are different requests, so pressing
+   * Cancel never reopens a speed up and the other way around
    */
   #findOpenSpeedUpRequest(accountOp: AccountOp): CallsUserRequest | undefined {
     const replacedIdentifier = accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier
     if (!replacedIdentifier) return undefined
+    const isCancel = SpeedUp.isCancel(accountOp)
 
     return this.userRequests.find(
       (r): r is CallsUserRequest =>
@@ -797,7 +801,22 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         r.signAccountOp.isSpeedUpTransaction &&
         r.meta.chainId === accountOp.chainId &&
         r.signAccountOp.accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier ===
-          replacedIdentifier
+          replacedIdentifier &&
+        SpeedUp.isCancel(r.signAccountOp.accountOp) === isCancel
+    )
+  }
+
+  /**
+   * An open Safe cancel (see `toCancelAccountOp`) of the Safe transaction with this hash. Other
+   * owners sign it through the Safe API, so their signatures are added to it from there
+   */
+  #findOpenSafeCancelRequest(safeTxnHash: string): CallsUserRequest | undefined {
+    return this.userRequests.find(
+      (r): r is CallsUserRequest =>
+        r.kind === 'calls' &&
+        !!r.signAccountOp.account.safeCreation &&
+        SpeedUp.isCancel(r.signAccountOp.accountOp) &&
+        r.signAccountOp.accountOp.txnId === safeTxnHash
     )
   }
 
@@ -809,8 +828,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!accountOp || !SpeedUp.isSpeedUp(accountOp)) return undefined
     const replacedIdentifier = accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier
     if (!replacedIdentifier) return undefined
+    const replacementType = SpeedUp.isCancel(accountOp) ? 'cancel' : 'speedUp'
 
-    return `${accountOp.chainId.toString()}:${replacedIdentifier}`
+    return `${accountOp.chainId.toString()}:${replacedIdentifier}:${replacementType}`
   }
 
   /**
@@ -3281,7 +3301,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * request to switch to it instead, so they never join a batch the user isn't looking at.
    */
   async #addCallsUserRequest(
-    params: CallsUserRequestParams,
+    requestParams: CallsUserRequestParams,
     {
       executionType,
       allowAccountSwitch = false,
@@ -3293,6 +3313,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       skipFocus?: boolean
     } = {}
   ) {
+    // A cancel comes in as the pending transaction it replaces. Its calls are swapped for empty
+    // ones here, whatever calls it came with, so a cancel never runs anything
+    const cancelAccountOp =
+      requestParams.accountOp && SpeedUp.isCancel(requestParams.accountOp)
+        ? toCancelAccountOp(requestParams.accountOp)
+        : undefined
+    const params: CallsUserRequestParams = cancelAccountOp
+      ? { ...requestParams, calls: cancelAccountOp.calls, accountOp: cancelAccountOp }
+      : requestParams
+
     if (allowAccountSwitch && params.meta.accountAddr !== this.#selectedAccount.account?.addr) {
       // Checked again against the batch they join once the user switches, but a request that
       // is over the cap on its own is turned away now rather than after the user has switched
@@ -3365,6 +3395,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // sent again as a new transaction instead of replacing the pending one. A speed up of the
     // same transaction that is already open is reopened instead of building another one
     const isSpeedUpRequest = !!providedAccountOp && SpeedUp.isSpeedUp(providedAccountOp)
+
+    const openSafeCancelRequest =
+      meta.safeTxnProps && this.#findOpenSafeCancelRequest(meta.safeTxnProps.txnId)
+    if (meta.safeTxnProps && openSafeCancelRequest) {
+      // The rest is the same Safe transaction (same hash). The cancel takes the signatures of
+      // owners who haven't signed it yet, compared by owner rather than by signature length
+      openSafeCancelRequest.signAccountOp.update({
+        accountOpData: { signature: meta.safeTxnProps.signature, safeTx: meta.safeTx }
+      })
+      return
+    }
+
     if (meta.safeTxnProps && this.#isSafeTxnBeingSent(calls, meta, meta.safeTxnProps.nonce)) return
 
     const existingUserRequest =

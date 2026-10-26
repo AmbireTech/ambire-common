@@ -1,5 +1,6 @@
 import { IActivityController } from '../../interfaces/activity'
 import { AccountOp, GasFeePayment } from '../../libs/accountOp/accountOp'
+import { isCancelAccountOp } from '../../libs/accountOp/cancel'
 import { AccountOpIdentifiedBy } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
@@ -26,7 +27,9 @@ type ReplacedFeePayment = Pick<
  * Holds what a speed up does differently from a normal transaction: the replacement keeps
  * the pending transaction's calls, nonce and fee payment, pays at least the minimum fee the
  * network accepts for a replacement, and has nothing to sign once the pending transaction
- * gets processed first.
+ * gets processed first. A cancel is a speed up whose calls are swapped for empty ones
+ * (see `toCancelAccountOp`), so it has to be signed again, unless it's a pending cancel
+ * being sped up, which keeps its signatures.
  *
  * Passed to SignAccountOpController only when speeding up, so its absence means a normal
  * transaction. Not a controller: it has no state of its own for the UI, the data it works with
@@ -46,6 +49,23 @@ export class SpeedUp {
   /** Captured when created, as the account op's own `gasFeePayment` gets replaced later */
   #replacedFeePayment: ReplacedFeePayment | null
 
+  /**
+   * The account nonce of the pending transaction. Taken from `meta.speedUp.replacedNonce`, where
+   * a cancel records it (see `toCancelAccountOp`), or captured when created, as the account op's
+   * own nonce is set to the next one to simulate on the pending block (see RequestsController)
+   */
+  readonly replacedNonce: AccountOp['nonce']
+
+  /** Whether it cancels the pending transaction instead of speeding it up */
+  readonly isCancel: boolean
+
+  /**
+   * A cancel that is signed anew: made from the pending transaction it cancels, whose
+   * signatures don't apply to its empty calls (see `toCancelAccountOp`). A speed up of a
+   * pending cancel isn't one, as it reuses the signatures of that cancel
+   */
+  readonly isNewCancel: boolean
+
   #unsubscribeFromActivity?: () => void
 
   /** Set by watchReplacedTransaction, see checkReplacedTransaction */
@@ -56,12 +76,20 @@ export class SpeedUp {
     return !!accountOp.meta?.speedUp?.enabled
   }
 
+  /** Whether the account op is a speed up that cancels the pending transaction */
+  static isCancel(accountOp: AccountOp): boolean {
+    return isCancelAccountOp(accountOp)
+  }
+
   constructor({ accountOp, activity }: { accountOp: AccountOp; activity: IActivityController }) {
     this.#activity = activity
     this.#accountAddr = accountOp.accountAddr
     this.#chainId = accountOp.chainId
     this.#replacedFees = accountOp.meta?.speedUp?.replacedFees
     this.#replacedIdentifiedBy = accountOp.meta?.speedUp?.replacedIdentifiedBy
+    this.replacedNonce = accountOp.meta?.speedUp?.replacedNonce ?? accountOp.nonce
+    this.isCancel = SpeedUp.isCancel(accountOp)
+    this.isNewCancel = this.isCancel && !accountOp.signature
     this.#replacedFeePayment = accountOp.gasFeePayment
       ? {
           paidBy: accountOp.gasFeePayment.paidBy,
