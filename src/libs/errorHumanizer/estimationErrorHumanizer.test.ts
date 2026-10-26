@@ -76,6 +76,31 @@ describe('Estimation errors are humanized', () => {
       }
     })
 
+    it('ERC721A custom error TransferToNonERC721ReceiverImplementer() (0xd1a57ed6)', () => {
+      const error = new MockCustomError(
+        'CALL_EXCEPTION',
+        '0xd1a57ed6',
+        'Error: execution reverted (unknown custom error) '
+      )
+
+      const humanizedError = getHumanReadableEstimationError(error)
+
+      expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
+      expect(humanizedError.isFallbackMessage).toBe(false)
+    })
+
+    it('Solmate revert reason', async () => {
+      try {
+        await contract.revertWithReason('UNSAFE_RECIPIENT')
+        throw new Error('Expected a revert')
+      } catch (error: any) {
+        const humanizedError = getHumanReadableEstimationError(error)
+
+        expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
+        expect(humanizedError.isFallbackMessage).toBe(false)
+      }
+    })
+
     it('OpenZeppelin v5 custom error ERC721InvalidReceiver(address) (0x64a0ae92)', () => {
       const receiverWord = '000000000000000000000000a07d75aacefd11b425af7181958f0f85c312f143'
       const error = new MockCustomError(
@@ -89,6 +114,19 @@ describe('Estimation errors are humanized', () => {
       expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
       expect(humanizedError.isFallbackMessage).toBe(false)
     })
+  })
+  it('Soulbound NFT that cannot be transferred', async () => {
+    try {
+      await contract.revertWithReason('Soulbound: cannot transfer nft')
+      throw new Error('Expected a revert')
+    } catch (error: any) {
+      const humanizedError = getHumanReadableEstimationError(error)
+
+      expect(humanizedError.message).toBe(
+        `${MESSAGE_PREFIX} this NFT is tied to your account and can't be sent to anyone else.`
+      )
+      expect(humanizedError.isFallbackMessage).toBe(false)
+    }
   })
   it('Random error humanized to fallback message', () => {
     const error: DecodedError = {

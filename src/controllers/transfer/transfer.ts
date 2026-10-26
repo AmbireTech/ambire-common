@@ -41,9 +41,7 @@ import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import {
-  Erc721InterfaceSupport,
-  getAssetCacheKey,
-  getErc721InterfaceSupport,
+  getCollectibleCacheKey,
   getTokenAmount,
   sortTokensByBalanceInUSD
 } from '../../libs/portfolio/helpers'
@@ -53,6 +51,7 @@ import {
   getSanitizedAmount
 } from '../../libs/transfer/amount'
 import { getAmountsFromFieldValue } from '../../libs/transfer/fieldAmounts'
+import { getNftParamsFromSearchParams } from '../../libs/transfer/nftSearchParams'
 import {
   getNftTransferRequestParams,
   getTransferRequestParams
@@ -96,40 +95,8 @@ const DEFAULT_VALIDATION_FORM_MSGS: {
 }
 
 const HARD_CODED_CURRENCY = 'usd'
-// The least time between two checks of an NFT collection that failed because of a network
-// problem, so typing in the form doesn't fire a request on every keystroke
-const NFT_COLLECTION_CHECK_RETRY_DELAY = 5 * 1000
 const isTransfer = (route: string | undefined) => {
   return route === 'transfer' || route === 'top-up-gas-tank'
-}
-
-/**
- * Reads the NFT to send from the transfer route search params
- * (`?address=<collection>&chainId=<chainId>&tokenId=<tokenId>`).
- * Returns `null` if the params don't describe a valid NFT.
- */
-const getNftParamsFromSearchParams = (
-  searchParams: View['searchParams']
-): Pick<TransferNft, 'address' | 'chainId' | 'tokenId'> | null => {
-  if (!searchParams?.address || !searchParams.chainId || searchParams.tokenId === undefined)
-    return null
-
-  const address = String(searchParams.address)
-  const rawTokenId = String(searchParams.tokenId).trim()
-  const rawChainId = String(searchParams.chainId).trim()
-  // BigInt('') is 0n, so an empty value must be rejected explicitly
-  if (!isAddress(address) || !rawTokenId || !rawChainId) return null
-
-  try {
-    const tokenId = BigInt(rawTokenId)
-    const chainId = BigInt(rawChainId)
-    if (tokenId < 0n || chainId <= 0n) return null
-
-    return { address, chainId, tokenId }
-  } catch {
-    // Not a number - the params were not produced by the app
-    return null
-  }
 }
 
 type SignAccountOpControllerMethods = {
@@ -160,17 +127,6 @@ export class TransferController extends EventEmitter implements ITransferControl
    * selected token and no amount, and the NFT itself is transferred.
    */
   selectedNft: TransferNft | null = null
-
-  /**
-   * Whether the collections of the NFTs picked for sending declare the ERC-721 standard, keyed
-   * by collection and chain. Only those can be sent safely (see `getErc721InterfaceSupport`).
-   * The answer doesn't change for a contract, so it's kept - except for network problems,
-   * which are checked again.
-   */
-  #nftCollectionSupport = new Map<string, Erc721InterfaceSupport | 'checking'>()
-
-  // When the check of each collection last failed because of a network problem
-  #nftCollectionNetworkErrorAt = new Map<string, number>()
 
   #selectedAccount: ISelectedAccountController
 
@@ -376,7 +332,6 @@ export class TransferController extends EventEmitter implements ITransferControl
 
       if (this.selectedNft) {
         this.#syncSelectedNftCollectionName()
-        this.#checkSelectedNftCollectionSupport()
       } else if (this.#selectedAccount.portfolio.isReadyToVisualize && !this.selectedToken) {
         this.#setDefaultSelectedToken()
 
@@ -438,6 +393,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     // Top ups are always made with tokens
     const nftParams = nextIsTopUp ? null : getNftParamsFromSearchParams(searchParams)
     const prevChainId = this.selectedChainId
+    const prevNftKey = this.#getSelectedNftKey()
 
     this.isTopUp = nextIsTopUp
     this.#setTokens()
@@ -448,8 +404,12 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#setDefaultSelectedToken(tokenParams)
     }
 
-    if (prevChainId !== undefined && prevChainId !== this.selectedChainId) {
-      // The SignAccountOp controller is bound to the previous chain
+    const hasChainChanged = prevChainId !== undefined && prevChainId !== this.selectedChainId
+    // Switching to another NFT, or between an NFT and a token, leaves the calls of the previous
+    // asset in the controller until the form is valid again, so it's rebuilt instead
+    const hasNftChanged = prevNftKey !== this.#getSelectedNftKey()
+    if (hasChainChanged || hasNftChanged) {
+      // The SignAccountOp controller is bound to the previous chain and calls
       this.destroySignAccountOp()
     }
     // The recipient may be validated against a chain it wasn't checked on yet
@@ -469,92 +429,13 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.selectedToken = null
     this.selectedNft = { ...nft, collectionName: '' }
     this.#syncSelectedNftCollectionName()
-    this.#checkSelectedNftCollectionSupport()
   }
 
-  #getSelectedNftCollectionSupport(): Erc721InterfaceSupport | 'checking' | null {
+  #getSelectedNftKey() {
     if (!this.selectedNft) return null
+    const { address, chainId, tokenId } = this.selectedNft
 
-    const key = getAssetCacheKey(this.selectedNft.address, this.selectedNft.chainId)
-
-    return this.#nftCollectionSupport.get(key) || 'checking'
-  }
-
-  /**
-   * Checks whether the collection of the selected NFT can be sent, unless it's already known
-   * or being checked. Fire and forget - the form waits for the answer through its validation.
-   */
-  #checkSelectedNftCollectionSupport() {
-    // An NFT that isn't in the account can't be sent anyway. It may also be on a disabled
-    // network, which has no provider. Portfolio updates run this again once it shows up.
-    if (!this.selectedNft || !this.#getSelectedNftCollection()) return
-
-    const { address, chainId } = this.selectedNft
-    const key = getAssetCacheKey(address, chainId)
-    const knownSupport = this.#nftCollectionSupport.get(key)
-    if (knownSupport && knownSupport !== 'network-error') return
-    const lastNetworkErrorAt = this.#nftCollectionNetworkErrorAt.get(key)
-    if (lastNetworkErrorAt && Date.now() - lastNetworkErrorAt < NFT_COLLECTION_CHECK_RETRY_DELAY)
-      return
-
-    // The NFT is in the account, so its network is enabled and should have a provider. If it
-    // doesn't (yet), the form says so and the next update checks again.
-    const provider = this.#providers.providers[chainId.toString()]
-    if (!provider) {
-      this.#setNftCollectionNetworkError(key)
-      return
-    }
-
-    this.#nftCollectionSupport.set(key, 'checking')
-
-    getErc721InterfaceSupport(address, provider)
-      .then(async (support) => {
-        if (support !== 'network-error') {
-          this.#nftCollectionSupport.set(key, support)
-          this.#nftCollectionNetworkErrorAt.delete(key)
-        } else {
-          this.#setNftCollectionNetworkError(key)
-          const message = `Network problem while checking the NFT collection ${address} (${chainId}).`
-          // Only logged: it's temporary, retried on later updates and already shown in the form,
-          // so a toast or a crash report on each retry would just be noise
-          this.emitError({
-            level: 'silent',
-            sendCrashReport: false,
-            message,
-            error: new Error(message)
-          })
-        }
-
-        // The answer may come after the user picked something else
-        const selectedNft = this.selectedNft
-        if (!selectedNft || getAssetCacheKey(selectedNft.address, selectedNft.chainId) !== key)
-          return
-
-        // The form may have become valid, so the transaction can be prepared now. The UI is
-        // updated either way, so the new state of the check shows even if that fails.
-        try {
-          await this.syncSignAccountOp()
-        } finally {
-          this.emitUpdate()
-        }
-      })
-      .catch((error: unknown) => {
-        // Not expected - neither the check nor preparing the transfer should throw. If the check
-        // did, the form says so and the next update checks again, instead of waiting forever.
-        if (this.#nftCollectionSupport.get(key) === 'checking') {
-          this.#setNftCollectionNetworkError(key)
-        }
-        this.emitError({
-          level: 'silent',
-          message: `Unexpected error while checking the NFT collection ${address} (${chainId}).`,
-          error: error instanceof Error ? error : new Error(String(error))
-        })
-      })
-  }
-
-  #setNftCollectionNetworkError(key: string) {
-    this.#nftCollectionSupport.set(key, 'network-error')
-    this.#nftCollectionNetworkErrorAt.set(key, Date.now())
+    return getCollectibleCacheKey(address, chainId, tokenId)
   }
 
   /** The collection of the selected NFT, but only if the account still owns the NFT */
@@ -619,26 +500,6 @@ export class TransferController extends EventEmitter implements ITransferControl
         message: 'This NFT is already being sent in a pending transaction.'
       }
     }
-
-    const collectionSupport = this.#getSelectedNftCollectionSupport()
-
-    if (collectionSupport === 'unsupported') {
-      return {
-        severity: 'error',
-        message: "This NFT collection uses an older format that can't be sent from Ambire yet."
-      }
-    }
-
-    if (collectionSupport === 'network-error') {
-      return {
-        severity: 'error',
-        message:
-          "We couldn't check this NFT because of a network problem. We'll try again automatically."
-      }
-    }
-
-    // Still checking - the form can't be submitted yet, but there is nothing to tell the user
-    if (collectionSupport !== 'supported') return { severity: 'error', message: '' }
 
     return { severity: 'success', message: '' }
   }
@@ -1060,9 +921,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
     }
-
-    // Retries a check of the NFT collection that failed because of a network problem
-    this.#checkSelectedNftCollectionSupport()
 
     if (amountFieldMode) {
       this.amountFieldMode = amountFieldMode

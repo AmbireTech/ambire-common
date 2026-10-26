@@ -1,6 +1,6 @@
 import { formatUnits, getAddress, Interface, ZeroAddress } from 'ethers'
 
-import { afterEach, beforeEach, expect, jest } from '@jest/globals'
+import { expect, jest } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
 import EmittableError from '../../classes/EmittableError'
@@ -8,7 +8,6 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { CollectionResult, TokenResult } from '../../libs/portfolio'
-import * as portfolioHelpersModule from '../../libs/portfolio/helpers'
 import * as ensDomainsModule from '../../services/ensDomains/ensDomains'
 import {
   safeTokenAmountAndNumberMultiplication,
@@ -1172,28 +1171,8 @@ describe('Transfer Controller NFT mode', () => {
     isDomainResolving: false
   })
 
-  // Lets the async check of the NFT collection finish
+  // Lets the updates triggered by the controller's listeners finish
   const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0))
-
-  // Moves the clock past the wait between two checks that failed because of a network problem
-  const skipRetryDelay = () => {
-    const now = Date.now()
-    return jest.spyOn(Date, 'now').mockReturnValue(now + 6000)
-  }
-
-  let collectionSupportSpy: jest.SpiedFunction<
-    typeof portfolioHelpersModule.getErc721InterfaceSupport
-  >
-
-  beforeEach(() => {
-    collectionSupportSpy = jest
-      .spyOn(portfolioHelpersModule, 'getErc721InterfaceSupport')
-      .mockResolvedValue('supported')
-  })
-
-  afterEach(() => {
-    collectionSupportSpy.mockRestore()
-  })
 
   const enterTransfer = async (
     searchParams: Record<string, string> = nftSearchParams,
@@ -1225,205 +1204,6 @@ describe('Transfer Controller NFT mode', () => {
 
     return ctx
   }
-
-  describe('collection standard check', () => {
-    const UNSUPPORTED_MESSAGE =
-      "This NFT collection uses an older format that can't be sent from Ambire yet."
-
-    test('should check the collection once and cache the answer', async () => {
-      const { transferController, uiCtrl } = await enterTransfer()
-
-      expect(collectionSupportSpy).toHaveBeenCalledTimes(1)
-      expect(collectionSupportSpy.mock.calls[0]![0]).toBe(NFT_ADDRESS)
-
-      // Re-entering with the same collection, e.g. for another NFT of it
-      uiCtrl.updateView('popup', {
-        currentRoute: 'transfer',
-        isReady: true,
-        searchParams: { ...nftSearchParams, tokenId: '43' }
-      })
-      await transferController.update({ addressState: recipientState(PLACEHOLDER_RECIPIENT) })
-      await flushPromises()
-
-      expect(collectionSupportSpy).toHaveBeenCalledTimes(1)
-    })
-
-    test('should not allow sending an NFT of a collection that is not ERC-721', async () => {
-      collectionSupportSpy.mockResolvedValue('unsupported')
-      const { transferController } = await enterTransfer()
-      const signAccountOpUpdate = jest.fn()
-      ;(transferController as any).signAccountOpController = { update: signAccountOpUpdate }
-
-      await transferController.update({ addressState: recipientState(PLACEHOLDER_RECIPIENT) })
-
-      expect(transferController.validationFormMsgs.amount).toEqual({
-        severity: 'error',
-        message: UNSUPPORTED_MESSAGE
-      })
-      expect(transferController.isFormValid).toBe(false)
-      expect(signAccountOpUpdate).not.toHaveBeenCalled()
-    })
-
-    test('should wait without a message while the collection is being checked', async () => {
-      let answer: (support: portfolioHelpersModule.Erc721InterfaceSupport) => void = () => {}
-      collectionSupportSpy.mockReturnValue(
-        new Promise((resolve) => {
-          answer = resolve
-        })
-      )
-      const { transferController } = await enterTransfer()
-
-      expect(transferController.validationFormMsgs.amount).toEqual({
-        severity: 'error',
-        message: ''
-      })
-      expect(transferController.isFormValid).toBe(false)
-
-      answer('supported')
-      await flushPromises()
-
-      expect(transferController.validationFormMsgs.amount.severity).toBe('success')
-    })
-
-    test('should prepare the transfer as soon as the collection turns out to be supported', async () => {
-      let answer: (support: portfolioHelpersModule.Erc721InterfaceSupport) => void = () => {}
-      collectionSupportSpy.mockReturnValue(
-        new Promise((resolve) => {
-          answer = resolve
-        })
-      )
-      const { transferController } = await enterTransfer()
-      const signAccountOpUpdate = jest.fn()
-      ;(transferController as any).signAccountOpController = {
-        update: signAccountOpUpdate,
-        accountOp: { meta: {} }
-      }
-      await transferController.update({ addressState: recipientState(PLACEHOLDER_RECIPIENT) })
-      expect(signAccountOpUpdate).not.toHaveBeenCalled()
-
-      answer('supported')
-      await flushPromises()
-
-      expect(signAccountOpUpdate).toHaveBeenCalled()
-    })
-
-    test('should report a network problem and check again on the next update', async () => {
-      collectionSupportSpy.mockResolvedValue('network-error')
-      const { transferController } = await enterTransfer()
-
-      expect(transferController.validationFormMsgs.amount).toEqual({
-        severity: 'error',
-        message:
-          "We couldn't check this NFT because of a network problem. We'll try again automatically."
-      })
-
-      collectionSupportSpy.mockResolvedValue('supported')
-      const dateSpy = skipRetryDelay()
-      await transferController.update({ addressState: recipientState(PLACEHOLDER_RECIPIENT) })
-      await flushPromises()
-      dateSpy.mockRestore()
-
-      // Account updates retry it too, so only that a retry happened is asserted, not how many
-      expect(collectionSupportSpy.mock.calls.length).toBeGreaterThan(1)
-      expect(transferController.validationFormMsgs.amount.severity).toBe('success')
-    })
-
-    test('should not check again right after a network problem', async () => {
-      collectionSupportSpy.mockResolvedValue('network-error')
-      const { transferController } = await enterTransfer()
-      const callsAfterFailure = collectionSupportSpy.mock.calls.length
-
-      // e.g. typing the recipient, which updates the form on every keystroke
-      await transferController.update({ addressState: recipientState('0x1') })
-      await transferController.update({ addressState: recipientState('0x12') })
-      await flushPromises()
-
-      expect(collectionSupportSpy).toHaveBeenCalledTimes(callsAfterFailure)
-    })
-
-    test('should not wait forever if the check throws unexpectedly', async () => {
-      collectionSupportSpy.mockRejectedValue(new Error('Unexpected'))
-      const { transferController } = await enterTransfer()
-
-      expect(transferController.validationFormMsgs.amount.message).toBe(
-        "We couldn't check this NFT because of a network problem. We'll try again automatically."
-      )
-
-      collectionSupportSpy.mockResolvedValue('supported')
-      const dateSpy = skipRetryDelay()
-      await transferController.update({ addressState: recipientState(PLACEHOLDER_RECIPIENT) })
-      await flushPromises()
-      dateSpy.mockRestore()
-
-      expect(transferController.validationFormMsgs.amount.severity).toBe('success')
-    })
-
-    test('should still show the result of the check if preparing the transfer fails', async () => {
-      let answer: (support: portfolioHelpersModule.Erc721InterfaceSupport) => void = () => {}
-      collectionSupportSpy.mockReturnValue(
-        new Promise((resolve) => {
-          answer = resolve
-        })
-      )
-      const { transferController } = await enterTransfer()
-      jest
-        .spyOn(transferController, 'syncSignAccountOp')
-        .mockRejectedValueOnce(new Error('Failed to prepare'))
-      const emitUpdateSpy = jest.spyOn(transferController as any, 'emitUpdate')
-
-      answer('supported')
-      await flushPromises()
-
-      expect(emitUpdateSpy).toHaveBeenCalled()
-      expect(transferController.validationFormMsgs.amount.severity).toBe('success')
-    })
-
-    test('should ignore an answer that comes after the user switched to a token', async () => {
-      let answer: (support: portfolioHelpersModule.Erc721InterfaceSupport) => void = () => {}
-      collectionSupportSpy.mockReturnValue(
-        new Promise((resolve) => {
-          answer = resolve
-        })
-      )
-      const { transferController, tokens } = await enterTransfer()
-      const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)
-      await transferController.update({ selectedToken: nativeToken, amount: '0.001' })
-
-      answer('unsupported')
-      await flushPromises()
-
-      expect(transferController.selectedNft).toBeNull()
-      expect(transferController.validationFormMsgs.amount.severity).toBe('success')
-    })
-
-    test('should check the collection only once the NFT is in the account', async () => {
-      // e.g. an NFT on a disabled network, which has no provider to check it with
-      const { transferController, selectedAccountCtrl } = await enterTransfer(nftSearchParams, {
-        collections: []
-      })
-
-      expect(collectionSupportSpy).not.toHaveBeenCalled()
-
-      selectedAccountCtrl.portfolio = {
-        ...selectedAccountCtrl.portfolio,
-        collections: [getCollection()]
-      }
-      await selectedAccountCtrl.forceEmitUpdate()
-      await flushPromises()
-
-      expect(collectionSupportSpy).toHaveBeenCalledTimes(1)
-      expect(transferController.validationFormMsgs.amount.severity).toBe('success')
-    })
-
-    test('should still report a missing NFT before the collection check', async () => {
-      collectionSupportSpy.mockResolvedValue('unsupported')
-      const { transferController } = await enterTransfer(nftSearchParams, { collections: [] })
-
-      expect(transferController.validationFormMsgs.amount.message).toBe(
-        "This NFT is no longer in your account, so it can't be sent."
-      )
-    })
-  })
 
   test('should enter NFT mode from the route search params', async () => {
     const { transferController } = await enterTransfer()
@@ -1537,11 +1317,30 @@ describe('Transfer Controller NFT mode', () => {
     expect(transferController.signAccountOpController).toBeNull()
   })
 
-  test('should keep the transaction setup when the route switches to a token on the same chain', async () => {
+  test('should start a new transaction setup when the route switches to another NFT on the same chain', async () => {
+    const otherTokenId = NFT_TOKEN_ID + 1n
+    const { transferController, uiCtrl } = await enterTransfer(nftSearchParams, {
+      collections: [getCollection({ collectibles: [NFT_TOKEN_ID, otherTokenId] })]
+    })
+    const destroy = jest.fn()
+    ;(transferController as any).signAccountOpController = { destroy }
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: { ...nftSearchParams, tokenId: String(otherTokenId) }
+    })
+
+    expect(transferController.selectedNft?.tokenId).toBe(otherTokenId)
+    // Otherwise the calls of the previous NFT could be signed while the form shows this one
+    expect(destroy).toHaveBeenCalled()
+    expect(transferController.signAccountOpController).toBeNull()
+  })
+
+  test('should start a new transaction setup when the route switches from an NFT to a token on the same chain', async () => {
     const { transferController, uiCtrl } = await enterTransfer()
     const destroy = jest.fn()
-    const signAccountOpController = { destroy }
-    ;(transferController as any).signAccountOpController = signAccountOpController
+    ;(transferController as any).signAccountOpController = { destroy }
 
     uiCtrl.updateView('popup', {
       currentRoute: 'transfer',
@@ -1549,7 +1348,27 @@ describe('Transfer Controller NFT mode', () => {
       searchParams: { address: ZeroAddress, chainId: '1' }
     })
 
-    expect(transferController.selectedChainId).toBe(1n)
+    expect(transferController.selectedNft).toBeNull()
+    expect(destroy).toHaveBeenCalled()
+  })
+
+  test('should keep the transaction setup when the route switches to another token on the same chain', async () => {
+    const { transferController, uiCtrl } = await enterTransfer({
+      address: ZeroAddress,
+      chainId: '1'
+    })
+    const destroy = jest.fn()
+    const signAccountOpController = { destroy }
+    ;(transferController as any).signAccountOpController = signAccountOpController
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: { address: STK_WALLET_ADDRESS, chainId: '1' }
+    })
+
+    expect(transferController.selectedToken?.address).toBe(STK_WALLET_ADDRESS)
+    // The token calls are replaced on the next sync, so there is nothing stale to rebuild
     expect(destroy).not.toHaveBeenCalled()
     expect(transferController.signAccountOpController).toBe(signAccountOpController)
   })
