@@ -1,7 +1,7 @@
 import { ZeroAddress } from 'ethers'
 
 import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
-import { describe, expect, jest, test } from '@jest/globals'
+import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
 import {
   blacklistedDapp,
@@ -801,56 +801,94 @@ describe('SignMessageController', () => {
 
   // Regression: a same-kind request replacing the installed message via init()
   // while signing awaits getSigner() must NOT be signed under the previous approval.
-  test('does not sign a replacement request installed mid-signing', async () => {
-    const signingKeyAddr = account.addr
-    const dummySignature =
-      '0x5b2dce98c7179051d21407be04bcd088243cd388ed51c4c64ccae115ca8787d85cff933dcde45220c3adfcc40f7958305e195dbd4c54580dfbf61e43438cbe9a1c'
-
+  describe('a request that replaces the one being signed', () => {
     const r1 = messageToSign
     const r2: Message = {
       ...messageToSign,
       fromRequestId: 99,
       content: { kind: 'message', message: '0x6576696c' } // "evil"
     }
+    const signingKey = { addr: account.addr, type: 'internal' as const }
 
-    const mockSigner = {
-      // @ts-expect-error for mocking purposes only
-      signMessage: jest.fn().mockResolvedValue(dummySignature),
-      key: { addr: signingKeyAddr, type: 'internal', dedicatedToOneSA: true, meta: {} }
+    /** A signer whose `getSigner()` call waits until `release` is called. */
+    const mockGatedSigner = () => {
+      const mockSigner = {
+        signMessage: jest
+          .fn<() => Promise<string>>()
+          .mockResolvedValue(
+            '0x5b2dce98c7179051d21407be04bcd088243cd388ed51c4c64ccae115ca8787d85cff933dcde45220c3adfcc40f7958305e195dbd4c54580dfbf61e43438cbe9a1c'
+          ),
+        key: { ...signingKey, dedicatedToOneSA: true, meta: {} }
+      }
+      const gate = createDeferred<void>()
+      const requested = createDeferred<void>()
+      jest
+        .spyOn(keystoreCtrl, 'getSigner')
+        // @ts-expect-error mocked signer shape
+        .mockImplementation(async () => {
+          requested.resolve()
+          await gate.promise
+          return mockSigner
+        })
+
+      return { mockSigner, getSignerRequested: requested.promise, release: gate.resolve }
     }
 
-    // Pause getSigner() so the replacement can be installed during its await - this is
-    // the exact async boundary the exploit relies on.
-    let releaseGetSigner!: () => void
-    const getSignerGate = new Promise<void>((resolve) => {
-      releaseGetSigner = resolve
+    afterEach(() => {
+      jest.restoreAllMocks()
     })
-    const getSignerSpy = jest
-      .spyOn(keystoreCtrl, 'getSigner')
-      // @ts-expect-error mocked signer shape
-      .mockImplementation(async () => {
-        await getSignerGate
-        return mockSigner
-      })
 
-    await accountsCtrl.updateAccountState(r1.accountAddr, 'latest')
-    await signMessageController.init({ messageToSign: r1 })
-    signMessageController.setSigners([{ addr: signingKeyAddr, type: 'internal' }])
+    test('is not signed when it arrives while the signer is being loaded', async () => {
+      const { mockSigner, getSignerRequested, release } = mockGatedSigner()
 
-    // Approval for R1 starts and blocks inside getSigner().
-    const signPromise = signMessageController.sign()
+      await accountsCtrl.updateAccountState(r1.accountAddr, 'latest')
+      await signMessageController.init({ messageToSign: r1 })
+      signMessageController.setSigners([signingKey])
 
-    // Attacker races R2 onto the same controller before getSigner() resolves.
-    await signMessageController.init({ messageToSign: r2 })
+      // Approval for R1 starts and blocks inside getSigner()
+      const signPromise = signMessageController.sign()
+      await getSignerRequested
 
-    releaseGetSigner()
-    await signPromise
+      await signMessageController.init({ messageToSign: r2 })
+      release()
+      await signPromise
 
-    // The stale R1 operation must abort: nothing signed, no message resolved.
-    expect(mockSigner.signMessage).not.toHaveBeenCalled()
-    expect(signMessageController.signedMessage).toBeNull()
+      // The stale R1 operation must abort: nothing signed, no message resolved
+      expect(mockSigner.signMessage).not.toHaveBeenCalled()
+      expect(signMessageController.signedMessage).toBeNull()
+    })
 
-    getSignerSpy.mockRestore()
+    test('is not signed when it arrives before signing starts', async () => {
+      const { mockSigner, release } = mockGatedSigner()
+      release()
+      // R2 comes with an account that has a key, so nothing else stops it from being signed
+      jest.spyOn(accountsCtrl, 'getOrFetchAccountOnChainState').mockResolvedValue({
+        ...accountOnchainState,
+        importedAccountKeys: [mockSigner.key]
+      } as AccountOnchainState)
+
+      await signMessageController.init({ messageToSign: r1 })
+      signMessageController.setSigners([signingKey])
+
+      // The approval of R1, then R2 lands before the controller gets to sign
+      const signPromise = signMessageController.sign()
+      await signMessageController.init({ messageToSign: r2 })
+      await signPromise
+
+      expect(mockSigner.signMessage).not.toHaveBeenCalled()
+      expect(signMessageController.signedMessage).toBeNull()
+    })
+  })
+
+  test('selects no signer for an account without imported keys', async () => {
+    jest
+      .spyOn(accountsCtrl, 'getOrFetchAccountOnChainState')
+      .mockResolvedValue({ ...accountOnchainState, importedAccountKeys: [] })
+
+    await signMessageController.init({ messageToSign })
+
+    expect(signMessageController.signers).toBeUndefined()
+    jest.restoreAllMocks()
   })
 
   test('should expose hardware wallet EIP-712 data while signing a typed message', async () => {
