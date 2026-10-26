@@ -68,7 +68,10 @@ import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import {
+  getSafeNonceAfterPendingAccountOps,
+  SubmittedAccountOp
+} from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getIntentBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
@@ -3630,7 +3633,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      nonce: accountState.nonce,
+      // A Safe transaction is queued after the ones already sent but not confirmed yet, instead
+      // of taking (and replacing) the nonce of one of them
+      nonce: account.safeCreation
+        ? getSafeNonceAfterPendingAccountOps(
+            accountState.nonce,
+            this.#activity.broadcastedButNotConfirmed[account.addr] || [],
+            network.chainId
+          )
+        : accountState.nonce,
       signature: null,
       calls,
       meta: {

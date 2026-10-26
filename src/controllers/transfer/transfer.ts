@@ -33,6 +33,7 @@ import {
 import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { getSafeNonceAfterPendingAccountOps } from '../../libs/accountOp/submittedAccountOp'
 import { Call } from '../../libs/accountOp/types'
 import { AssetType } from '../../libs/defiPositions/types'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
@@ -1376,7 +1377,15 @@ export class TransferController extends EventEmitter implements ITransferControl
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      nonce: accountState.nonce,
+      // A Safe transaction is queued after the ones already sent but not confirmed yet, instead
+      // of taking (and replacing) the nonce of one of them
+      nonce: this.#selectedAccount.account.safeCreation
+        ? getSafeNonceAfterPendingAccountOps(
+            accountState.nonce,
+            this.#activity.broadcastedButNotConfirmed[this.#selectedAccount.account.addr] || [],
+            network.chainId
+          )
+        : accountState.nonce,
       signature: null,
       calls,
       meta: {
