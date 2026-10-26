@@ -51,7 +51,8 @@ export class PrivacyPoolsRagequit {
   /**
    * Proves the deposit's reclaim and returns it as a call of the account that made it, for the
    * regular signing flow. The call is checked against the deposit before it is handed over, as
-   * the SDK picks the pool and leaves out a deposit it could not prove for.
+   * the SDK picks the pool and leaves out a deposit it could not prove for. Then the deposit is
+   * read again, as it may have been verified while it was proved.
    */
   async buildCalls({
     seedId,
@@ -80,8 +81,7 @@ export class PrivacyPoolsRagequit {
     }
 
     // Built from the phrase's secrets, so not handed over once they are gone
-    if (!this.#ctx.lock.isCurrent(generation)) throw privacyPoolsErrors.locked()
-    if (!this.#ctx.hasAccount(seedId)) throw privacyPoolsErrors.depositAccountRemoved(seedId)
+    this.#assertSecretsHeld(seedId, generation)
 
     const [txn] = txns
     if (!txn || txns.length !== 1)
@@ -102,7 +102,31 @@ export class PrivacyPoolsRagequit {
         new Error('privacyPools: the SDK built a ragequit call not matching the deposit')
       )
 
+    // The SDK synced before proving, so the deposit may have been verified since our last sync.
+    // It would then go back publicly although it could be sent privately, so it is read again,
+    // through the queue so that read never runs beside another sync of the plugin
+    const epoch = this.#sync.getEpoch(chainId, seedId)
+    await this.#sync.queue(chainId, seedId)
+    this.#assertSecretsHeld(seedId, generation)
+    // The queue never rejects: a failed sync leaves the notes as they were, unread
+    if (this.#sync.getEpoch(chainId, seedId) === epoch)
+      throw privacyPoolsErrors.ragequitPreparationFailed(
+        new Error('privacyPools: the deposit could not be read again after proving its ragequit')
+      )
+
+    const syncedNote = (this.#sync.getAccountChainStates(seedId)[chainId]?.notes || []).find(
+      (n) => n.label === label
+    )
+    if (syncedNote?.approval === 'approved') throw privacyPoolsErrors.ragequitDepositVerified()
+    if (syncedNote?.amount !== note.amount) throw privacyPoolsErrors.ragequitDepositNotFound()
+
     return { accountAddr: note.depositorAddr, calls: [{ to: txn.to, value: 0n, data: txn.data }] }
+  }
+
+  /** Throws once the wallet was locked or the account removed since `generation` was read. */
+  #assertSecretsHeld(seedId: string, generation: number) {
+    if (!this.#ctx.lock.isCurrent(generation)) throw privacyPoolsErrors.locked()
+    if (!this.#ctx.hasAccount(seedId)) throw privacyPoolsErrors.depositAccountRemoved(seedId)
   }
 
   /** The account's deposits on the chain still being verified, with something left in them. */

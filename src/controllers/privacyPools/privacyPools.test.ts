@@ -2604,6 +2604,14 @@ describe('PrivacyPoolsController', () => {
     const buildRagequit = (controller: PrivacyPoolsController, label: bigint) =>
       controller.buildRagequitCalls({ chainId: '1', label })
 
+    /** Builds it and lets through the sync that reads the deposit again once it is proved. */
+    const buildRagequitAfterSync = async (controller: PrivacyPoolsController, label: bigint) => {
+      const building = buildRagequit(controller, label)
+      await releaseSync('seed-a')
+
+      return building
+    }
+
     it("lists the token's deposits still being verified, newest first, with their account", async () => {
       const { controller } = await prepareSynced()
 
@@ -2670,11 +2678,11 @@ describe('PrivacyPoolsController', () => {
     it('builds the reclaim as a call of the account the deposit came from', async () => {
       const { controller, protocol } = await prepareSynced()
 
-      await expect(buildRagequit(controller, 3n)).resolves.toEqual({
+      await expect(buildRagequitAfterSync(controller, 3n)).resolves.toEqual({
         accountAddr: DEPOSITOR,
         calls: [{ to: ETHEREUM_ETH_POOL, value: 0n, data: encodeRagequit(30n, 3n) }]
       })
-      await expect(buildRagequit(controller, 6n)).resolves.toEqual({
+      await expect(buildRagequitAfterSync(controller, 6n)).resolves.toEqual({
         accountAddr: OTHER_DEPOSITOR,
         calls: [{ to: ETHEREUM_ETH_POOL, value: 0n, data: encodeRagequit(60n, 6n) }]
       })
@@ -2731,12 +2739,16 @@ describe('PrivacyPoolsController', () => {
       await flush()
       expect(protocol.ragequitLabels).toEqual([])
 
-      await releaseSync('seed-a')
-      await syncing
-      await expect(building3).resolves.toMatchObject({ accountAddr: DEPOSITOR })
-      await expect(building6).rejects.toThrow(
+      // Refused once the sync it waited for is done, so caught before that
+      const refusing6 = expect(building6).rejects.toThrow(
         'This deposit can no longer be taken back. It may have been verified or taken back already.'
       )
+      await releaseSync('seed-a')
+      await syncing
+      await refusing6
+      // The read once it is proved
+      await releaseSync('seed-a')
+      await expect(building3).resolves.toMatchObject({ accountAddr: DEPOSITOR })
       expect(protocol.ragequitLabels).toEqual([[3n]])
     })
 
@@ -2755,6 +2767,60 @@ describe('PrivacyPoolsController', () => {
       expect(protocol.ragequitLabels).toEqual([])
     })
 
+    it('refuses a deposit verified while it was proved, as it can now be sent privately', async () => {
+      const { controller, protocol } = await prepareSynced()
+      // Seen by the SDK's sync before proving, not by the controller's last one
+      notesBySeed['seed-a'] = notesBySeed['seed-a']!.map((note) =>
+        note.label === 3n ? { ...note, approved: true } : note
+      )
+
+      await expect(buildRagequitAfterSync(controller, 3n)).rejects.toThrow(
+        'This deposit was just verified, so it can now be sent privately. Use Send to move it.'
+      )
+      expect(protocol.ragequitLabels).toEqual([[3n]])
+      // The read refreshed what the account shows as well
+      await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).resolves.toEqual([
+        expect.objectContaining({ label: 6n })
+      ])
+    })
+
+    it('refuses a deposit taken back elsewhere once it was proved', async () => {
+      const { controller } = await prepareSynced()
+      // Proved from what the SDK's sync read, then taken back before the deposit is read again
+      ragequitTxns = [{ to: ETHEREUM_ETH_POOL, value: 0n, data: encodeRagequit(30n, 3n) }]
+      notesBySeed['seed-a'] = notesBySeed['seed-a']!.map((note) =>
+        note.label === 3n ? { ...note, amount: 0n } : note
+      )
+
+      await expect(buildRagequitAfterSync(controller, 3n)).rejects.toThrow(
+        'This deposit can no longer be taken back. It may have been verified or taken back already.'
+      )
+    })
+
+    it('refuses the deposit when it cannot be read again once proved', async () => {
+      const { controller } = await prepareSynced()
+
+      const building = buildRagequit(controller, 3n)
+      const running = await takeRunningSync('seed-a', 1n)
+      running.gate.reject(new Error('the node is down'))
+
+      await expect(building).rejects.toThrow(
+        'Could not prepare taking back this deposit. Please try again.'
+      )
+    })
+
+    it('hands nothing over once the wallet was locked while the deposit was read again', async () => {
+      const { controller, keystore } = await prepareSynced()
+
+      const building = buildRagequit(controller, 3n)
+      const running = await takeRunningSync('seed-a', 1n)
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      running.gate.resolve()
+
+      await expect(building).rejects.toThrow('Please unlock your wallet to use Privacy Pools.')
+    })
+
     it('hands nothing over once the wallet was locked while proving', async () => {
       const { controller, keystore } = await prepareSynced()
       ragequitGate = createDeferred()
@@ -2771,7 +2837,7 @@ describe('PrivacyPoolsController', () => {
     it("proves with no cancel signal, which only a withdrawal's proofs get", async () => {
       const { controller } = await prepareSynced()
 
-      await buildRagequit(controller, 3n)
+      await buildRagequitAfterSync(controller, 3n)
 
       expect(prove).toHaveBeenLastCalledWith('commitment', { value: 1n }, { signal: undefined })
     })

@@ -143,6 +143,11 @@ export const privacyPoolsErrors = {
       'This deposit can no longer be taken back. It may have been verified or taken back already.',
       'no pending note with that label'
     ),
+  ragequitDepositVerified: () =>
+    expectedError(
+      'This deposit was just verified, so it can now be sent privately. Use Send to move it.',
+      'the note was approved while its ragequit was proved'
+    ),
   ragequitDepositsReadFailed: (cause: unknown) =>
     majorError(
       'Could not load your deposits that are being verified. Please try again.',
