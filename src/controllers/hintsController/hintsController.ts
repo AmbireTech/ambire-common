@@ -524,13 +524,7 @@ export class HintsController extends EventEmitter {
 
           const tokenId = BigInt(tokenIdString)
           // An NFT with this id is already added to toBeLearned or learnedAssets
-          if (
-            learnedErc721s[id] ||
-            (tokenId &&
-              toBeLearnedAssets[collectionAddress] &&
-              toBeLearnedAssets[collectionAddress].includes(BigInt(tokenId)))
-          )
-            return
+          if (learnedErc721s[id] || toBeLearnedAssets[collectionAddress]?.includes(tokenId)) return
 
           if (!added) {
             added = true
@@ -540,7 +534,7 @@ export class HintsController extends EventEmitter {
             toBeLearnedAssets[collectionAddress] = []
           }
 
-          if (tokenId) toBeLearnedAssets[collectionAddress].push(tokenId)
+          toBeLearnedAssets[collectionAddress].push(tokenId)
 
           this.debugLog('learning', `${chainId.toString()}: Added ERC-721 to be learned`, () => ({
             collectionAddress,

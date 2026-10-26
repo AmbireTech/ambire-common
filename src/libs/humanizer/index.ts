@@ -64,7 +64,7 @@ const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOpt
   if (options?.erc7730Descriptors) {
     currentCalls = currentCalls.map((call, index) => {
       const resolvedDescriptor = options.erc7730Descriptors?.[index]
-      if (!resolvedDescriptor) return call
+      if (!resolvedDescriptor || call.preferredOverErc7730) return call
 
       try {
         const originalCall = accountOp.calls[index]

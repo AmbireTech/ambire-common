@@ -5,6 +5,7 @@ import {
   computeOrderUid,
   ethFlowInterface,
   getApiNetwork,
+  getCowSwapOrderStruct,
   getOutputValueInUsd,
   getProtocolFeeAmount,
   getWrappedNativeTokenAddress,
@@ -92,7 +93,9 @@ export class CowSwapAPI implements SwapProvider {
   }
 
   areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
-    return !!getApiNetwork(fromChainId) && !!getApiNetwork(toChainId)
+    // CoW Swap orders settle on a single network, so a different destination chain would
+    // silently turn into a swap for the destination token address on the source chain
+    return fromChainId === toChainId && !!getApiNetwork(fromChainId)
   }
 
   #getApiUrl(chainId: number, path: string, version: 'v1' | 'v2' = 'v1') {
@@ -499,6 +502,7 @@ export class CowSwapAPI implements SwapProvider {
       // sorting compares the amount after it against other providers' after-gas values.
       // The gas of the user's own setPreSignature / ETH-flow createOrder tx is not included
       outputValueAfterGasInUsd: outputValueAfterNetworkCostInUsd,
+      networkFeeInToToken: networkFeeInBuyToken.toString(),
       serviceTime,
       rawRoute,
       toToken: {
@@ -637,7 +641,8 @@ export class CowSwapAPI implements SwapProvider {
       txTarget: COWSWAP_SETTLEMENT_ADDRESS,
       userTxIndex: 0,
       value: '0',
-      txData: settlementInterface.encodeFunctionData('setPreSignature', [route.routeId, true])
+      txData: settlementInterface.encodeFunctionData('setPreSignature', [route.routeId, true]),
+      cowSwapOrder: getCowSwapOrderStruct(rawRoute.order)
     }
   }
 

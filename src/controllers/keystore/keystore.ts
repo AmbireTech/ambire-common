@@ -5,7 +5,16 @@ import {
   encryptWithPublicKey,
   publicKeyByPrivateKey
 } from 'eth-crypto'
-import { computeAddress, concat, getBytes, hexlify, keccak256, Mnemonic, Wallet } from 'ethers'
+import {
+  computeAddress,
+  concat,
+  getBytes,
+  HDNodeWallet,
+  hexlify,
+  keccak256,
+  Mnemonic,
+  Wallet
+} from 'ethers'
 
 import {
   CIPHER,
@@ -30,8 +39,10 @@ import {
   DERIVATION_OPTIONS,
   HD_PATH_TEMPLATE_TYPE
 } from '../../consts/derivation'
+import { PRIVACY_POOLS_SIGNING_KEY_PATH } from '../../consts/privacyPools'
 import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { Hex } from '../../interfaces/hex'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   AESGCMEncrypted,
@@ -56,7 +67,7 @@ import {
 import { Platform } from '../../interfaces/platform'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
-import { AccountsSyncPayload } from '../../libs/accountsSync/accountsSync'
+import { AppDataSyncPayload } from '../../libs/appDataSync/appDataSync'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
@@ -116,6 +127,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   #storage: IStorageController
 
   #keystoreSeeds: StoredKeystoreSeed[] = []
+
+  /**
+   * Whether the stored recovery phrases have been read. False if reading failed, when `seeds` may
+   * be wrongly empty, so nothing may be dropped for a phrase missing from it.
+   */
+  areSeedsLoaded = false
 
   #tempSeed: KeystoreTempSeed | null = null
 
@@ -193,6 +210,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         // of the extension supported only one saved seed which lacked id and label props.
         return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' }
       })
+      this.areSeedsLoaded = true
       this.#keystoreKeys = keystoreKeys
     } catch (e: any) {
       this.emitError({
@@ -408,7 +426,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Unwraps the main key of another device from a scanned accounts sync payload, with the
+   * Unwraps the main key of another device from a scanned app data sync payload, with the
    * same wrong password handling as unlocking this device.
    */
   async #unwrapSyncedMainKey(
@@ -766,18 +784,38 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * without the phrase ever reaching the UI.
    */
   async generateTempSeed({ extraEntropy }: { extraEntropy?: string }): Promise<KeystoreTempSeed> {
-    const entropyGenerator = new EntropyGenerator()
-    const seed = entropyGenerator.generateRandomMnemonic(12, extraEntropy || '').phrase
-
-    this.#tempSeed = {
-      seed,
-      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-      notBackedUp: true
-    }
+    this.#tempSeed = this.#generateNotBackedUpSeed(extraEntropy)
 
     this.emitUpdate()
 
     return this.#tempSeed
+  }
+
+  /**
+   * Generates and stores a recovery phrase flagged as not backed up, returning its id. For a
+   * Privacy Pools-only phrase: unlike `generateTempSeed`, it never touches the temp seed another
+   * flow may be holding.
+   */
+  async addGeneratedSeed({ extraEntropy }: { extraEntropy?: string }): Promise<string> {
+    const [seedId] = await this.#addSeeds([this.#generateNotBackedUpSeed(extraEntropy)])
+    if (!seedId)
+      throw new EmittableError({
+        message: 'The new recovery phrase could not be saved. Please try again.',
+        level: 'major',
+        error: new Error('keystore: the generated seed was not stored')
+      })
+
+    return seedId
+  }
+
+  /**
+   * Generates a new 12-word phrase on the standard derivation path, flagged as not backed up
+   * since the user has not seen it yet.
+   */
+  #generateNotBackedUpSeed(extraEntropy?: string): KeystoreTempSeed {
+    const seed = new EntropyGenerator().generateRandomMnemonic(12, extraEntropy || '').phrase
+
+    return { seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE, notBackedUp: true }
   }
 
   deleteTempSeed(shouldUpdate = true) {
@@ -796,7 +834,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   /**
    * Adds seeds to the keystore in a single storage write and returns the ids they are
    * stored with, in the order they were passed. An `id` can be passed per seed to
-   * preserve the id it already had on another device (accounts sync), so that the
+   * preserve the id it already had on another device (app data sync), so that the
    * synced keys' `meta.fromSeedId` keeps pointing to it.
    */
   async #addSeeds(
@@ -1308,11 +1346,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * `includeSeeds` is what the user chose on the confirmation screen: with it off the
    * keys still travel (so the accounts can sign on the other device), but the recovery
    * phrases they were derived from stay on this device.
+   *
+   * The main key goes along even when nothing encrypted is exported (hardware wallet keys
+   * only, or no keys at all), so the other device always asks for this device's password.
    */
   async exportForSync(
     keyAddrs: Key['addr'][],
     includeSeeds: boolean = true
-  ): Promise<Pick<AccountsSyncPayload, 'secret' | 'keys' | 'seeds'>> {
+  ): Promise<Pick<AppDataSyncPayload, 'secret' | 'keys' | 'seeds'>> {
     await this.initialLoadPromise
 
     const secret = this.#keystoreSecrets.find((s) => s.id === 'password')
@@ -1365,8 +1406,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * Intentionally not wrapped in `withStatus` and lets errors propagate, because the
    * MainController orchestrates the whole migration (and must not add the accounts if
    * this fails).
+   *
+   * The password is required even without anything encrypted in the payload (hardware
+   * wallet keys only, or no keys at all), as unwrapping the main key is how the user
+   * confirms the sync came from their other device.
    */
-  async importFromSync(payload: AccountsSyncPayload, password: string) {
+  async importFromSync(payload: AppDataSyncPayload, password: string) {
     await this.initialLoadPromise
 
     const { secret, keys, seeds } = payload
@@ -1503,6 +1548,30 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     return { ...keystoreSeed, seed, seedPassphrase }
   }
 
+  /**
+   * Derives a recovery phrase's Privacy Pools signing key, so the phrase never reaches
+   * `@kohaku-eth/privacy-pools`, whose bundled keystore would keep it.
+   *
+   * The path check is the security boundary: the SDK chooses the paths, so without it a bug or a
+   * malicious bump could get the user's EVM keys. Only `PRIVACY_POOLS_SIGNING_KEY_PATH` passes.
+   *
+   * Not cached here: each call decrypts the phrase and runs a PBKDF2, so callers keep the key while
+   * unlocked - see `createKohakuKeystore`.
+   */
+  async derivePrivacyPoolsKey(seedId: KeystoreSeed['id'], path: string): Promise<Hex> {
+    await this.initialLoadPromise
+
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+
+    if (path !== PRIVACY_POOLS_SIGNING_KEY_PATH)
+      throw new Error(`keystore: refusing to derive a key outside Privacy Pools' paths (${path})`)
+
+    const { seed, seedPassphrase } = await this.getSavedSeed(seedId)
+
+    return HDNodeWallet.fromMnemonic(Mnemonic.fromPhrase(seed, seedPassphrase), path)
+      .privateKey as Hex
+  }
+
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
     await this.initialLoadPromise
 
@@ -1603,7 +1672,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     paidByKeyType?: Key['type']
   ): Key | Error {
     const feePayerKeys = this.keys.filter((key) => key.addr === paidByKeyAddr)
-    let feePayerKey = feePayerKeys[0]
+    // A private key pays on its own, so it is the default, like it is for signing
+    let feePayerKey = feePayerKeys.find((key) => key.type === 'internal') ?? feePayerKeys[0]
 
     if (paidByKeyType) {
       feePayerKey = feePayerKeys.find((key) => key.type === paidByKeyType) || feePayerKey

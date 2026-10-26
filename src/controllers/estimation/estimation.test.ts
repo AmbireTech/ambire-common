@@ -68,6 +68,7 @@ const accountState: AccountOnchainState = {
   delegatedContract: null,
   delegatedContractName: null,
   threshold: 1,
+  safeVersion: null,
   updatedAt: Date.now()
 }
 
@@ -116,12 +117,13 @@ const successfulEstimation: FullEstimation = {
  * exactly one of them and nothing else.
  */
 const getController = (overrides?: {
+  keystore?: Partial<IKeystoreController>
   accounts?: Partial<IAccountsController>
   networks?: Partial<INetworksController>
   portfolio?: Partial<IPortfolioController>
 }) =>
   new EstimationController(
-    { keys: [] } as unknown as IKeystoreController,
+    { keys: [], ...overrides?.keystore } as unknown as IKeystoreController,
     {
       accounts: [account],
       accountStates: { [ACCOUNT_ADDR]: { [CHAIN_ID.toString()]: accountState } },
@@ -570,6 +572,49 @@ describe('EstimationController', () => {
 
       restore()
       expect(controller.isInitialized()).toBe(true)
+    })
+  })
+
+  describe('accounts offered to pay the fee of a smart account', () => {
+    const SMART_ACCOUNT_ADDR = '0x2222222222222222222222222222222222222222'
+    const PQ1_ACCOUNT_ADDR = '0x3333333333333333333333333333333333333333'
+
+    const smartAccount: Account = {
+      ...account,
+      addr: SMART_ACCOUNT_ADDR,
+      associatedKeys: [ACCOUNT_ADDR],
+      creation: { factoryAddr: ZeroAddress, bytecode: '0x00', salt: `0x${'00'.repeat(32)}` }
+    }
+    const pq1Account: Account = {
+      ...account,
+      addr: PQ1_ACCOUNT_ADDR,
+      associatedKeys: [PQ1_ACCOUNT_ADDR]
+    }
+    const smartAccountState: AccountOnchainState = {
+      ...accountState,
+      accountAddr: SMART_ACCOUNT_ADDR,
+      isEOA: false,
+      isV2: true
+    }
+
+    test('leave out a PQ1 account, which cannot sign a plain transaction', async () => {
+      const controller = getController({
+        keystore: {
+          keys: [
+            { addr: ACCOUNT_ADDR, type: 'internal' },
+            { addr: PQ1_ACCOUNT_ADDR, type: 'pq1' }
+          ] as IKeystoreController['keys']
+        },
+        accounts: {
+          accounts: [smartAccount, account, pq1Account],
+          getOrFetchAccountOnChainState: async () => smartAccountState
+        }
+      })
+
+      await controller.estimate({ ...accountOp, accountAddr: SMART_ACCOUNT_ADDR })
+
+      const nativeToCheck = getEstimationMock.mock.calls[0]![6]
+      expect(nativeToCheck).toEqual([ACCOUNT_ADDR])
     })
   })
 })

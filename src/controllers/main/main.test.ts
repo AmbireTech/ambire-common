@@ -1,8 +1,11 @@
+import { toBeHex, Wallet } from 'ethers'
+
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
 import { AccountOnchainState } from '@/interfaces/account'
+import { ErrorRef } from '@/interfaces/eventEmitter'
 import { AccountOpStatus } from '@/libs/accountOp/types'
-import { KeyIterator } from '@/libs/keyIterator/keyIterator'
+import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
 import wait from '@/utils/wait'
 import { describe, expect, jest, test } from '@jest/globals'
 import { makeMainController } from '@test/helpers/mainController'
@@ -19,6 +22,10 @@ describe('Main Controller ', () => {
         bytecode:
           '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
       }
     },
     {
@@ -29,6 +36,10 @@ describe('Main Controller ', () => {
         bytecode:
           '0x7f1e7646e4695bead8bb0596679b0caf3a7ff6c4e04d2ad79103c8fa61fb6337f47fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd'
       }
     },
     {
@@ -39,6 +50,10 @@ describe('Main Controller ', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
       }
     }
   ]
@@ -119,6 +134,98 @@ describe('Main Controller ', () => {
     fetchSafeTxnsSpy.mockRestore()
   })
 
+  test('fetches the other Safes pending counts after the selected Safe on focus, only when unlocked', async () => {
+    const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
+    const updateOtherSafesSpy = jest
+      .spyOn(controller.safe, 'updateOtherSafesPendingCounts')
+      .mockResolvedValue()
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get')
+    const view = { id: 'focus-test-view', type: 'popup' } as any
+
+    try {
+      isUnlockedSpy.mockReturnValue(false)
+      controller.ui.uiEvent.emit('viewFocus', view)
+      await wait(0)
+
+      expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([])
+      expect(updateOtherSafesSpy).not.toHaveBeenCalled()
+
+      isUnlockedSpy.mockReturnValue(true)
+      controller.ui.uiEvent.emit('viewFocus', view)
+      await wait(0)
+
+      expect(updateOtherSafesSpy).toHaveBeenCalledTimes(1)
+      expect(updateOtherSafesSpy).toHaveBeenCalledWith(controller.selectedAccount.account?.addr)
+    } finally {
+      fetchSafeTxnsSpy.mockRestore()
+      updateOtherSafesSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('fetches the other Safes pending counts when a view is added, only when unlocked', async () => {
+    const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
+    const updateOtherSafesSpy = jest
+      .spyOn(controller.safe, 'updateOtherSafesPendingCounts')
+      .mockResolvedValue()
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get')
+    // Not an overlay view, so that the popup open flow stays out of the test
+    const view = { id: 'add-view-test-view', type: 'tab' } as any
+
+    try {
+      isUnlockedSpy.mockReturnValue(false)
+      controller.ui.uiEvent.emit('addView', view)
+      await wait(0)
+
+      expect(fetchSafeTxnsSpy).not.toHaveBeenCalled()
+      expect(updateOtherSafesSpy).not.toHaveBeenCalled()
+
+      isUnlockedSpy.mockReturnValue(true)
+      controller.ui.uiEvent.emit('addView', view)
+      await wait(0)
+
+      expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([])
+      expect(updateOtherSafesSpy).toHaveBeenCalledWith(controller.selectedAccount.account?.addr)
+    } finally {
+      fetchSafeTxnsSpy.mockRestore()
+      updateOtherSafesSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('fetches the other Safes pending counts when the wallet gets unlocked', async () => {
+    const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
+    const updateOtherSafesSpy = jest
+      .spyOn(controller.safe, 'updateOtherSafesPendingCounts')
+      .mockResolvedValue()
+    const migrationSpy = jest
+      .spyOn(controller.storage, 'associateAccountKeysWithLegacySavedSeedMigration')
+      .mockResolvedValue()
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get')
+    const originalUnlockStatus = controller.keystore.statuses.unlockWithSecret
+
+    try {
+      isUnlockedSpy.mockReturnValue(true)
+      // An update that is not an unlock fetches nothing
+      await controller.keystore.forceEmitUpdate()
+      await wait(0)
+      expect(updateOtherSafesSpy).not.toHaveBeenCalled()
+
+      controller.keystore.statuses.unlockWithSecret = 'SUCCESS'
+      await controller.keystore.forceEmitUpdate()
+      await wait(0)
+
+      expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([])
+      expect(updateOtherSafesSpy).toHaveBeenCalledWith(controller.selectedAccount.account?.addr)
+    } finally {
+      controller.keystore.statuses.unlockWithSecret = originalUnlockStatus
+      fetchSafeTxnsSpy.mockRestore()
+      updateOtherSafesSpy.mockRestore()
+      migrationSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
+    }
+  })
+
   test('tracks the Safe pending transaction API fetch while it is in progress', async () => {
     const originalSelectedAccount = controller.selectedAccount.account
     const account = controller.accounts.accounts[0]
@@ -131,8 +238,7 @@ describe('Main Controller ', () => {
         factoryAddr: '0x1',
         singleton: '0x1',
         saltNonce: '0x00',
-        setupData: '0x',
-        version: '1.4.1'
+        setupData: '0x'
       }
     }
 
@@ -154,6 +260,7 @@ describe('Main Controller ', () => {
       delegatedContract: null,
       delegatedContractName: null,
       threshold: 2,
+      safeVersion: '1.4.1',
       updatedAt: 0
     }
     const getAccountStatesSpy = jest
@@ -284,6 +391,130 @@ describe('Main Controller ', () => {
     expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
       '0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'
     )
+  })
+
+  describe('accountPickerSetInitParamsFromPrivateKeys', () => {
+    const toPrivateKey = (n: number) => toBeHex(n, 32)
+    const getAddresses = (privateKeys: string[]) =>
+      privateKeys.map((privateKey) => new Wallet(privateKey).address)
+
+    const setInitParamsFromPrivateKeys = async (privateKeys: string[]) => {
+      const setInitParamsSpy = jest.spyOn(controller.accountPicker, 'setInitParams')
+      const emittedErrors: ErrorRef[] = []
+      const unsubscribe = controller.onError((error) => emittedErrors.push(error))
+
+      await controller.accountPickerSetInitParamsFromPrivateKeys({ privateKeys })
+
+      unsubscribe()
+      const initParams = setInitParamsSpy.mock.calls[0]?.[0]
+      setInitParamsSpy.mockRestore()
+      controller.accountPicker.setInitParams({
+        keyIterator: null,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      return { initParams, emittedErrors }
+    }
+
+    test('prepares the account picker with every private key in order', async () => {
+      const privateKeys = [1, 2, 3].map(toPrivateKey)
+
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys(privateKeys)
+
+      expect(emittedErrors).toEqual([])
+      expect(initParams?.hdPathTemplate).toBe(BIP44_STANDARD_DERIVATION_TEMPLATE)
+      expect(initParams?.keyIterator?.subType).toBe('private-key')
+      const addresses = await initParams?.keyIterator?.retrieve(
+        [{ from: 0, to: 9 }],
+        BIP44_STANDARD_DERIVATION_TEMPLATE
+      )
+      expect(addresses).toEqual(getAddresses(privateKeys))
+      expect(controller.statuses.accountPickerSetInitParamsFromPrivateKeys).toBe('INITIAL')
+    })
+
+    test('drops duplicates that differ only by the 0x prefix, letter case or spaces', async () => {
+      const privateKey = toPrivateKey(0xabc)
+      const privateKeys = [
+        privateKey,
+        privateKey.slice(2),
+        ` 0x${privateKey.slice(2).toUpperCase()} `,
+        toPrivateKey(2)
+      ]
+
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys(privateKeys)
+
+      expect(emittedErrors).toEqual([])
+      const addresses = await initParams?.keyIterator?.retrieve(
+        [{ from: 0, to: 9 }],
+        BIP44_STANDARD_DERIVATION_TEMPLATE
+      )
+      expect(addresses).toEqual(getAddresses([privateKey, toPrivateKey(2)]))
+    })
+
+    test('accepts exactly the maximum number of private keys', async () => {
+      const privateKeys = Array.from({ length: MAX_BULK_PRIVATE_KEYS }, (_, i) =>
+        toPrivateKey(i + 1)
+      )
+
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys(privateKeys)
+
+      expect(emittedErrors).toEqual([])
+      expect(initParams?.keyIterator).toBeTruthy()
+    })
+
+    test('rejects more private keys than the maximum', async () => {
+      const privateKeys = Array.from({ length: MAX_BULK_PRIVATE_KEYS + 1 }, (_, i) =>
+        toPrivateKey(i + 1)
+      )
+
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys(privateKeys)
+
+      expect(initParams).toBeUndefined()
+      expect(emittedErrors).toHaveLength(1)
+      expect(emittedErrors[0]!.message).toBe(
+        `You can import up to ${MAX_BULK_PRIVATE_KEYS} private keys at once. Please remove some and try again.`
+      )
+      expect(emittedErrors[0]!.level).toBe('major')
+    })
+
+    test('rejects an empty list', async () => {
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([])
+
+      expect(initParams).toBeUndefined()
+      expect(emittedErrors.map((e) => e.message)).toEqual([
+        'Please enter at least one private key.'
+      ])
+    })
+
+    test('rejects the whole list if any private key is invalid, without exposing the keys', async () => {
+      const validPrivateKey = toPrivateKey(1)
+      const invalidPrivateKey = `${toPrivateKey(2).slice(0, -1)}z`
+
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([
+        validPrivateKey,
+        invalidPrivateKey
+      ])
+
+      expect(initParams).toBeUndefined()
+      expect(emittedErrors).toHaveLength(1)
+      expect(emittedErrors[0]!.message).toBe(
+        'One or more of the private keys you entered is not valid. Please check them and try again.'
+      )
+      const reportedError = `${emittedErrors[0]!.message} ${emittedErrors[0]!.error?.message}`
+      expect(reportedError).not.toContain(validPrivateKey.slice(2))
+      expect(reportedError).not.toContain(invalidPrivateKey.slice(2))
+    })
+
+    test('rejects a recovery phrase passed as one of the private keys', async () => {
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([
+        toPrivateKey(1),
+        process.env.SEED!
+      ])
+
+      expect(initParams).toBeUndefined()
+      expect(emittedErrors).toHaveLength(1)
+      expect(emittedErrors[0]!.error?.message).not.toContain(process.env.SEED!)
+    })
   })
 
   describe('updateAccounts', () => {
@@ -475,6 +706,43 @@ describe('Main Controller ', () => {
       expect(scheduleUpdateSpy).not.toHaveBeenCalled()
     })
 
+    test('removes the safs of the Safe on the same chain when an internal deployment fails', async () => {
+      const mainCtrl = await setupController()
+      const rejectSafRequestsSpy = jest
+        .spyOn(mainCtrl.requests, 'rejectSameChainNotSignedSafeRequest')
+        .mockResolvedValue(undefined)
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'safe-deploy-op', calls: [] } as any] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: false,
+          chainsToUpdate: [],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [
+            {
+              id: 'safe-deploy-op',
+              accountAddr: senderAccount,
+              chainId: 1n,
+              status: AccountOpStatus.Failure,
+              calls: [],
+              meta: { isSafeDeploy: true }
+            } as any
+          ]
+        }
+      })
+      await mainCtrl.updateAccountsOpsStatuses()
+
+      expect(rejectSafRequestsSpy).toHaveBeenCalledWith(
+        senderAccount,
+        1n,
+        "Activating your Safe account failed, so this request can't be completed."
+      )
+    })
+
     test('should update account state for account address and discard finalized simulations', async () => {
       const mainCtrl = await setupController()
 
@@ -521,7 +789,7 @@ describe('Main Controller ', () => {
       await mainCtrl.updateAccountsOpsStatuses()
       await flushAsyncUpdates()
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
       expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
       // A cache-busting update is scheduled for the updated chain.
       expect(scheduleUpdateSpy).toHaveBeenCalledTimes(1)
@@ -530,6 +798,89 @@ describe('Main Controller ', () => {
         chainId: 1n,
         bypassServerSideCache: true
       })
+    })
+
+    // Ops finalized without a receipt: activity leaves chainsToUpdate empty for them.
+    test.each([
+      AccountOpStatus.UnknownButPastNonce,
+      AccountOpStatus.Rejected,
+      AccountOpStatus.BroadcastButStuck
+    ])(
+      'discards the simulation of an op finalized as %s even without chainsToUpdate',
+      async (status) => {
+        const mainCtrl = await setupController()
+
+        const finalizedAccountOp = {
+          id: 'finalized-without-receipt',
+          accountAddr: senderAccount,
+          chainId: 1n,
+          status,
+          calls: []
+        } as any
+
+        jest
+          .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+          .mockReturnValue({ [senderAccount]: [finalizedAccountOp] })
+        jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+          [senderAccount]: {
+            shouldEmitUpdate: true,
+            chainsToUpdate: [],
+            portfoliosToUpdate: {},
+            shouldFetchSafeTxns: false,
+            newestOpTimestamp: Date.now(),
+            updatedAccountsOps: [finalizedAccountOp]
+          }
+        })
+        jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockResolvedValue(undefined)
+        jest.spyOn(mainCtrl.portfolio, 'scheduleUpdate').mockImplementation(() => {})
+        const discardSimulationSpy = jest
+          .spyOn(mainCtrl.portfolio, 'discardSimulation')
+          .mockResolvedValue(undefined)
+
+        await mainCtrl.updateAccountsOpsStatuses()
+        await flushAsyncUpdates()
+
+        // Otherwise the pending simulation stays on the dashboard until the app restarts
+        expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+      }
+    )
+
+    test('discards the simulation even when the updated chain is no longer among the networks', async () => {
+      const mainCtrl = await setupController()
+
+      const finalizedAccountOp = {
+        id: 'finalized-on-removed-network',
+        accountAddr: senderAccount,
+        chainId: 999999n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [finalizedAccountOp] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [999999n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [finalizedAccountOp]
+        }
+      })
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(updateAccountStateSpy).not.toHaveBeenCalled()
+      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
     })
 
     test('should call updateSelectedAccount for recipient accounts from portfoliosToUpdate', async () => {
@@ -578,7 +929,7 @@ describe('Main Controller ', () => {
     test('should update account state and discard simulation even when selected account is different', async () => {
       const mainCtrl = await setupController()
 
-      await mainCtrl.selectedAccount.setAccount(mainCtrl.accounts.accounts[1]!)
+      await mainCtrl.selectedAccount.select({ account: mainCtrl.accounts.accounts[1]! })
 
       const finalizedAccountOp = {
         id: 'finalized-op',
@@ -618,7 +969,7 @@ describe('Main Controller ', () => {
       await flushAsyncUpdates()
 
       expect(mainCtrl.selectedAccount.account?.addr).toBe(selectedAccountAddr)
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
       expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
       // Scheduling targets the tx account, not the selected one.
       expect(scheduleUpdateSpy).toHaveBeenCalledWith({
@@ -665,7 +1016,7 @@ describe('Main Controller ', () => {
       await mainCtrl.updateAccountsOpsStatuses()
       await flushAsyncUpdates()
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n, 10n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n, 10n], true)
       expect(scheduleUpdateSpy).toHaveBeenCalledTimes(2)
       expect(scheduleUpdateSpy).toHaveBeenCalledWith({
         accountId: senderAccount,
@@ -719,6 +1070,93 @@ describe('Main Controller ', () => {
       expect(scheduleUpdateSpy.mock.invocationCallOrder[0]!).toBeLessThan(
         discardSimulationSpy.mock.invocationCallOrder[0]!
       )
+    })
+  })
+  describe('commonHandlerForBroadcastSuccess for swaps', () => {
+    const SIGNED_ROUTE_ID = 'signed-route'
+    const TXN_ID = '0x8d94395e374c50feaaf22f940a18b85717609c667e9ff45368c45b3f2ee1b06f'
+
+    const createQuote = (routeId: string) => {
+      const route = { routeId, providerId: 'lifi', steps: [], userTxs: [] }
+
+      return {
+        fromAsset: { address: '0x0000000000000000000000000000000000000000', symbol: 'ETH' },
+        toAsset: { address: '0x431D5dfF03120AFA4bDf332c61A6e1766eF37BDB', symbol: 'JPYC' },
+        selectedRoute: route,
+        routes: [route]
+      } as any
+    }
+
+    const createSwapAccountOps = (meta: Record<string, unknown> = {}) => {
+      const accountOp = {
+        accountAddr: accounts[0]!.addr,
+        chainId: 1n,
+        calls: [],
+        meta: { swapTxn: { activeRouteId: SIGNED_ROUTE_ID, userTxIndex: 0, chainId: 1 }, ...meta }
+      } as any
+      const submittedAccountOp = {
+        ...accountOp,
+        // The sign controller passes a shallow copy of the meta
+        meta: { ...accountOp.meta },
+        txnId: TXN_ID,
+        identifiedBy: { type: 'Transaction', identifier: TXN_ID }
+      } as any
+
+      return { accountOp, submittedAccountOp }
+    }
+
+    const setupController = async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+      jest
+        .spyOn(mainCtrl.swapAndBridge, 'handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate')
+        .mockImplementation(() => {})
+      jest.spyOn(mainCtrl.activity, 'addAccountOp').mockImplementation(async () => {})
+      jest.spyOn(mainCtrl.ui.notification, 'create').mockImplementation(async () => {})
+
+      return mainCtrl
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    test('should add the active route from the quote the swap was built from', async () => {
+      const mainCtrl = await setupController()
+      mainCtrl.swapAndBridge.quote = createQuote(SIGNED_ROUTE_ID)
+
+      await mainCtrl.commonHandlerForBroadcastSuccess(createSwapAccountOps())
+
+      const [activeRoute] = mainCtrl.swapAndBridge.activeRoutes
+      expect(mainCtrl.swapAndBridge.activeRoutes).toHaveLength(1)
+      expect(activeRoute!.activeRouteId).toBe(SIGNED_ROUTE_ID)
+      expect(activeRoute!.routeStatus).toBe('in-progress')
+      expect(activeRoute!.userTxHash).toBe(TXN_ID)
+    })
+
+    test('should not add an active route from a quote that is not the signed one', async () => {
+      const mainCtrl = await setupController()
+      // e.g. the form refreshed the quote while the user was confirming on a hardware wallet
+      mainCtrl.swapAndBridge.quote = createQuote('refreshed-route')
+
+      await mainCtrl.commonHandlerForBroadcastSuccess(createSwapAccountOps())
+
+      expect(mainCtrl.swapAndBridge.activeRoutes).toHaveLength(0)
+    })
+
+    test('should not store the quote of a Safe batch swap in the activity', async () => {
+      const mainCtrl = await setupController()
+      // Safe accounts pass the quote along with the swap when adding it to the batch
+      const accountOps = createSwapAccountOps({ quote: createQuote(SIGNED_ROUTE_ID) })
+
+      await mainCtrl.commonHandlerForBroadcastSuccess(accountOps)
+
+      // The quote is still used to add the active route before it's deleted
+      expect(mainCtrl.swapAndBridge.activeRoutes).toHaveLength(1)
+      const [storedAccountOp] = jest.mocked(mainCtrl.activity.addAccountOp).mock.calls[0]!
+      expect(storedAccountOp.meta).not.toHaveProperty('quote')
+      expect(storedAccountOp.meta?.swapTxn?.activeRouteId).toBe(SIGNED_ROUTE_ID)
     })
   })
 })

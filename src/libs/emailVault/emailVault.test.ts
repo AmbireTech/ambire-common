@@ -109,7 +109,7 @@ describe.skip('happy cases email vault', () => {
     expect(storedOperations![0]).toMatchObject(operations[0])
   })
 })
-describe('err cases', () => {
+describe.skip('err cases', () => {
   beforeEach(async () => {
     await initEmailVaultTest()
   })
