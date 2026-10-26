@@ -4,7 +4,20 @@ import AmbireAccount from '../../contracts/compiled/AmbireAccount.json'
 import { IActivityController } from '../interfaces/activity'
 import { RPCProvider } from '../interfaces/provider'
 import { AccountOp } from '../libs/accountOp/accountOp'
+import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../libs/accountOp/types'
+
+/** The highest receipt block per chain of the finalized ops, as `{ [chainId]: blockNumber }`. */
+export const getReceiptBlockNumberByChainId = (ops: SubmittedAccountOp[]) =>
+  ops.reduce<{ [chainId: string]: number }>((blockNumberByChainId, op) => {
+    if (op.blockNumber === undefined) return blockNumberByChainId
+
+    const chainId = op.chainId.toString()
+    const current = blockNumberByChainId[chainId]
+    if (current === undefined || op.blockNumber > current)
+      blockNumberByChainId[chainId] = op.blockNumber
+    return blockNumberByChainId
+  }, {})
 
 export async function getRelayerNonce(
   activity: IActivityController,
