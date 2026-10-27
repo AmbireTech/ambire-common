@@ -135,5 +135,44 @@ export const privacyPoolsErrors = {
       error: sdkError
     }),
   withdrawalNotReady: () =>
-    expectedError('There is no transfer ready to send.', 'no prepared withdrawal')
+    expectedError('There is no transfer ready to send.', 'no prepared withdrawal'),
+
+  // Rage quit
+  ragequitDepositNotFound: () =>
+    expectedError(
+      'This deposit can no longer be taken back. It may have been verified or taken back already.',
+      'no pending note with that label'
+    ),
+  ragequitDepositVerified: () =>
+    expectedError(
+      'This deposit was just verified, so it can now be sent privately. Use Send to move it.',
+      'the note was approved while its ragequit was proved'
+    ),
+  ragequitDepositsReadFailed: (cause: unknown) =>
+    majorError(
+      'Could not load your deposits that are being verified. Please try again.',
+      cause,
+      'listing the pending deposits failed'
+    ),
+  ragequitPreparationFailed: (cause: unknown) =>
+    majorError(
+      'Could not prepare taking back this deposit. Please try again.',
+      cause,
+      'ragequit preparation failed'
+    ),
+  ragequitDepositorNotInWallet: () =>
+    expectedError(
+      'This deposit was made from an account that is not in your wallet. Add that account to take the deposit back.',
+      'the depositor is not a wallet account'
+    ),
+  ragequitDepositorStateUnavailable: () =>
+    expectedError(
+      'Could not load the account this deposit was made from. Please try again.',
+      "the depositor's network or account state is unavailable"
+    ),
+  ragequitDepositorViewOnly: () =>
+    expectedError(
+      'This deposit was made from an account you can only view. Import its key to take the deposit back.',
+      'the depositor is view-only'
+    )
 }

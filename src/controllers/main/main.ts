@@ -34,6 +34,7 @@ import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
+import { privacyPoolsErrors } from '@/controllers/privacyPools/errors'
 import { PrivacyPoolsController } from '@/controllers/privacyPools/privacyPools'
 import { ProvidersController } from '@/controllers/providers/providers'
 import { RequestsController } from '@/controllers/requests/requests'
@@ -122,6 +123,7 @@ import { SocketV3API } from '@/services/socketv3/api'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
+import { getIsViewOnly } from '@/utils/accounts'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
 import { getReceiptBlockNumberByChainId } from '@/utils/nonce'
 import { generateUuid } from '@/utils/uuid'
@@ -1119,6 +1121,50 @@ export class MainController extends EventEmitter implements IMainController {
     this.transfer.reset({ destroyAccountOp: true })
 
     await this.#forceEmitSelectedAccountUpdates(null)
+  }
+
+  /**
+   * Takes back a deposit of the selected Privacy Pools account that is still being verified:
+   * publicly and in full, to the account that made it. Only that account can, so it is selected
+   * and the call is added to its requests for the user to sign.
+   */
+  async privacyPoolsRagequit({ chainId, label }: { chainId: string; label: bigint }) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'privacyPoolsRagequit',
+      async () => {
+        const { accountAddr, calls } = await this.privacyPools.buildRagequitCalls({
+          chainId,
+          label
+        })
+        const depositor = this.accounts.accounts.find(
+          ({ addr }) => addr.toLowerCase() === accountAddr.toLowerCase()
+        )
+        if (!depositor) throw privacyPoolsErrors.ragequitDepositorNotInWallet()
+        if (getIsViewOnly(this.keystore.keys, depositor.associatedKeys))
+          throw privacyPoolsErrors.ragequitDepositorViewOnly()
+
+        // What the request is built from, loaded before the account is switched, so a failure
+        // leaves the user on the Privacy Pools account rather than on another one with nothing
+        // to sign
+        const network = this.networks.networks.find((net) => net.chainId === BigInt(chainId))
+        const accountState =
+          network &&
+          (await this.accounts.getOrFetchAccountOnChainState(depositor.addr, network.chainId))
+        if (!accountState) throw privacyPoolsErrors.ragequitDepositorStateUnavailable()
+
+        if (this.selectedAccount.account?.addr !== depositor.addr)
+          await this.#selectAccount(depositor.addr)
+
+        await this.requests.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: { accountAddr: depositor.addr, chainId: BigInt(chainId), calls }
+        })
+      },
+      // As `selectAccount`, which it runs
+      true
+    )
   }
 
   /**

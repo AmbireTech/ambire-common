@@ -1,4 +1,7 @@
+import { getAddress, toBeHex } from 'ethers'
+
 import { fromPrivacyPoolsAssetAddress, getPrivacyPoolsChainConfig } from '../../consts/privacyPools'
+import { Hex } from '../../interfaces/hex'
 import {
   PrivacyPoolsAccountChainState,
   PrivacyPoolsChainState
@@ -251,7 +254,9 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
           label: note.label,
           tokenAddress: fromPrivacyPoolsAssetAddress(note.assetAddress),
           amount: note.balance,
-          approval: note.approved ? 'approved' : 'pending'
+          approval: note.approved ? 'approved' : 'pending',
+          depositorAddr: getAddress(toBeHex(note.depositor, 20)) as Hex,
+          depositIndex: note.deposit
         }))
       })
       if (!isWritten) return

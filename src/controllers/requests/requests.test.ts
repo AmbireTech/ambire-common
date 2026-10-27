@@ -5,6 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
+import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
 import { SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE } from '../../consts/safe'
 import {
@@ -990,6 +991,64 @@ describe('RequestsController ', () => {
 
     expect(controller.userRequests.length).toBe(1)
     expect(controller.userRequests[0]!.kind).toBe('calls')
+  })
+
+  describe('build Privacy Pools ragequit request', () => {
+    const DEPOSITOR = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const RAGEQUIT_CALL = {
+      to: '0xF241d57C6DebAe225c0F2e6eA1529373C9A9C9fB',
+      value: 0n,
+      data: '0x1234'
+    }
+
+    test('adds the call for the selected account, which made the deposit', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.build({
+        type: 'privacyPoolsRagequitRequest',
+        params: { accountAddr: DEPOSITOR, chainId: 1n, calls: [RAGEQUIT_CALL] }
+      })
+
+      const [request] = controller.userRequests
+      expect(request?.kind).toBe('calls')
+      if (request?.kind !== 'calls') return
+      expect(request.meta.accountAddr).toBe(DEPOSITOR)
+      expect(request.meta.chainId).toBe(1n)
+      expect(request.signAccountOp.accountOp.calls).toEqual([
+        expect.objectContaining(RAGEQUIT_CALL)
+      ])
+    })
+
+    // Thrown, so the caller's status reports it as failed rather than done
+    test('throws and adds nothing for an account that is not the selected one', async () => {
+      const { controller } = await prepareTest()
+
+      await expect(
+        controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: {
+            accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+            chainId: 1n,
+            calls: [RAGEQUIT_CALL]
+          }
+        })
+      ).rejects.toThrow('Could not prepare taking back this deposit. Please try again.')
+
+      expect(controller.userRequests).toHaveLength(0)
+    })
+
+    test('throws and adds nothing on a network the wallet does not have', async () => {
+      const { controller } = await prepareTest()
+
+      await expect(
+        controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: { accountAddr: DEPOSITOR, chainId: 424242n, calls: [RAGEQUIT_CALL] }
+        })
+      ).rejects.toThrow(EmittableError)
+
+      expect(controller.userRequests).toHaveLength(0)
+    })
   })
 
   test('emits the updated calls when adding another request to a queued batch', async () => {

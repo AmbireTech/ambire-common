@@ -18,6 +18,7 @@ import {
   PrivacyPoolsChainState,
   PrivacyPoolsDepositAssetConfig,
   PrivacyPoolsOperation,
+  PrivacyPoolsRagequitDeposit,
   PrivacyPoolsSendForm,
   PrivacyPoolsTokenBalance,
   PrivacyPoolsUnavailableReason
@@ -39,6 +40,7 @@ import { LockGeneration, PhraseScopedModule, PrivacyPoolsContext } from './conte
 import { PrivacyPoolsDepositParams, PrivacyPoolsDeposits } from './deposits'
 import { privacyPoolsErrors } from './errors'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
+import { PrivacyPoolsRagequit } from './ragequit'
 import { PrivacyPoolsSendFormState } from './sendForm'
 import { PrivacyPoolsSync } from './sync'
 import { PrivacyPoolsWithdrawal, PrivacyPoolsWithdrawalParams } from './withdrawal'
@@ -85,6 +87,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #deposits: PrivacyPoolsDeposits
 
   #withdrawal: PrivacyPoolsWithdrawal
+
+  #ragequit: PrivacyPoolsRagequit
 
   #sendForm: PrivacyPoolsSendFormState
 
@@ -180,14 +184,16 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
     const cancellableProverFactory = withCancellableProving(
       proverFactory ?? createProverFactory(circuitsBaseUrl),
-      // Read when a proof starts, by which time the withdrawal module exists
-      () => this.#withdrawal.provingSignal
+      // Read when a proof starts, by which time the withdrawal module exists. Only withdrawals
+      // prove the 'withdraw' circuit; a ragequit's short 'commitment' proof is not cancelled.
+      (circuit) => (circuit === 'withdraw' ? this.#withdrawal.provingSignal : null)
     )
 
     this.#registry = new PrivacyPoolsProtocolRegistry(ctx, cancellableProverFactory)
     this.#sync = new PrivacyPoolsSync(ctx, this.#registry)
     this.#deposits = new PrivacyPoolsDeposits(ctx, this.#registry, this.#sync)
     this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
+    this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
     this.#phraseScopedModules = [this.#withdrawal, this.#deposits, this.#sync, this.#registry]
 
@@ -623,6 +629,58 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     // Picks up the spent note and its change note
     await this.syncChain(operation.chainId)
+  }
+
+  /**
+   * The selected account's deposits of a token that are still being verified, each with the
+   * account it was made from - the only one that can take it back. From the last sync, so nothing
+   * about them is asked of the network.
+   */
+  async getRagequitDeposits(
+    chainId: string,
+    tokenAddress: string
+  ): Promise<PrivacyPoolsRagequitDeposit[]> {
+    const seedId = this.#assertAvailableAndGetSeedId()
+
+    return this.#ragequit.getDeposits({ seedId, chainId, tokenAddress })
+  }
+
+  /** `getRagequitDeposits` for `dispatchAndWait`, as only the Rage quit sheet needs them. */
+  async getRagequitDepositsAndSendResToUi(
+    chainId: string,
+    tokenAddress: string,
+    requestId: string
+  ) {
+    try {
+      const deposits = await this.getRagequitDeposits(chainId, tokenAddress)
+
+      this.#ui.message.sendUiMessage({ requestId, ok: true, res: deposits })
+    } catch (error: any) {
+      const emittableError =
+        error instanceof EmittableError
+          ? error
+          : privacyPoolsErrors.ragequitDepositsReadFailed(error)
+
+      this.#ui.message.sendUiMessage({ requestId, ok: false, error: emittableError.message })
+      this.emitError(emittableError)
+    }
+  }
+
+  /**
+   * Proves taking back one of the selected account's deposits still being verified, as a call of
+   * the account that made it. For `MainController.privacyPoolsRagequit`, which selects that
+   * account and adds the call for the user to sign. Throws an `EmittableError` otherwise.
+   */
+  async buildRagequitCalls({
+    chainId,
+    label
+  }: {
+    chainId: string
+    label: bigint
+  }): Promise<{ accountAddr: string; calls: Call[] }> {
+    const seedId = this.#assertAvailableAndGetSeedId()
+
+    return this.#ragequit.buildCalls({ seedId, chainId, label })
   }
 
   /** Adds a stored phrase's Privacy Pools account. Nothing is derived or synced until opened. */

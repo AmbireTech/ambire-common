@@ -55,6 +55,12 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
         '0xb419c2867ab3cbc78921660cb95150d95a94ce86': '0x841E8F12FDbB2c55c9E054B4c6d07c2743E09cFC'
       }
     },
+    // As the entrypoint's `assetConfig` lists them
+    pools: {
+      '0xf241d57c6debae225c0f2e6ea1529373c9a9c9fb': ZERO_ADDRESS as Hex,
+      '0xb419c2867ab3cbc78921660cb95150d95a94ce86': '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      '0xe859c0bd25f260baee534fb52e307d3b64d24572': '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+    },
     assets: [
       {
         address: ZERO_ADDRESS as Hex,
