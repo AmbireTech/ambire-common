@@ -622,16 +622,16 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       return
     }
 
-    // Filter: we only fetch for ones that are missing or stale
-    const addressesToFetch = addresses.filter((addr) => {
+    // The addresses are never sent to a server. Without the local list an address can only be
+    // resolved once the list is downloaded, so it stays LOADING until then.
+    const addressesAwaitingList = addresses.filter((addr) => {
       const status = this.#addressesBlacklistedStatus.get(addr)
       if (!status) return true
       if (['FAILED_TO_GET', 'LOADING'].includes(status)) return true
       return false
     })
 
-    // Mark only the ones we will fetch as LOADING
-    addressesToFetch.forEach((addr) => {
+    addressesAwaitingList.forEach((addr) => {
       this.#addressesBlacklistedStatus.set(addr, 'LOADING')
     })
 
@@ -643,39 +643,16 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       )
     this.emitUpdate()
 
-    if (!addressesToFetch.length) return // there will be addressesToFetch only if this.#addresses is still empty
+    if (!addressesAwaitingList.length) return // there will be addressesAwaitingList only if this.#addresses is still empty
 
-    const res = await fetchWithTimeout(
-      this.#fetch,
-      `${SCAMCHECKER_BASE_URL}/addresses`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ addresses: addressesToFetch })
-      },
-      5000
-    )
+    await this.#waitForListToSettle()
 
-    if (!res.ok || res.status !== 200) {
-      addressesToFetch.forEach((addr) => {
-        this.#addressesBlacklistedStatus.set(addr, 'FAILED_TO_GET')
-      })
-      throw new Error(
-        `Failed to fetch addresses blacklisted data (status: ${res.status}, url: ${res.url})`
-      )
-    }
-
-    const addressesBlacklistedStatus: Record<string, boolean> = await res.json()
-
-    addressesToFetch.forEach((addr) => {
+    // A list that still is not here (the download failed or timed out) leaves the address
+    // unchecked, which is reported as FAILED_TO_GET rather than left LOADING forever.
+    addressesAwaitingList.forEach((addr) => {
       this.#addressesBlacklistedStatus.set(
         addr,
-
-        !addressesBlacklistedStatus || addressesBlacklistedStatus[addr] === undefined
-          ? 'FAILED_TO_GET'
-          : addressesBlacklistedStatus[addr]
-            ? 'BLACKLISTED'
-            : 'VERIFIED'
+        this.getAddressBlacklistedStatus(addr) || 'FAILED_TO_GET'
       )
     })
 
