@@ -5702,6 +5702,7 @@ describe('speed up of a pending transaction', () => {
       jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
       const { controller } = await initSpeedUp()
       const originalSigner = controller.accountOp.signingKeyAddr
+      expect(controller.canChangeSigningKey).toBe(false)
 
       controller.update({ signingKeyAddr: otherKeyAddr, signingKeyType: 'internal' })
 
@@ -5712,6 +5713,7 @@ describe('speed up of a pending transaction', () => {
     test('a cancel is signed again, so another key (e.g. another Safe owner) can sign it', async () => {
       jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
       const { controller } = await initSpeedUp({ isCancel: true })
+      expect(controller.canChangeSigningKey).toBe(true)
 
       controller.update({ signingKeyAddr: otherKeyAddr, signingKeyType: 'internal' })
 
