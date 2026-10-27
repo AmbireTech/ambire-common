@@ -18,6 +18,13 @@ export class FeatureFlagsController extends EventEmitter implements IFeatureFlag
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
+  /**
+   * Whether the flags saved by the user are loaded. Until then the flags hold
+   * only the defaults, so a privacy sensitive feature must wait for this
+   * instead of acting on a default the user may have changed.
+   */
+  isReady: boolean = false
+
   constructor(
     featureFlags: Partial<FeatureFlags>,
     storage: IStorageController,
@@ -36,6 +43,7 @@ export class FeatureFlagsController extends EventEmitter implements IFeatureFlag
   async #load(): Promise<void> {
     const features = await this.#storage.get('flags', {})
     this.#flags = { ...this.#flags, ...(features || {}) }
+    this.isReady = true
     this.emitUpdate()
   }
 

@@ -51,10 +51,11 @@ export interface FeatureFlags {
    */
   walletStakingWithdrawalsLookup: boolean
   /**
-   * Off by default for privacy: the NFT image CDN receives the IP address of the
+   * Load and display the NFT images. The NFT image CDN receives the IP address of the
    * user together with the chain, collection address and id of every NFT it is asked
-   * to display, which links the IP to the owner of the NFT. When enabled, the NFT
-   * images are loaded and displayed.
+   * to display, which links the IP to the owner of the NFT, so the user can opt out.
+   * The images must not be requested before the saved flags are loaded
+   * (see `FeatureFlagsController.isReady`).
    */
   nftImages: boolean
   /** Resolve Namoshi names (.btc, .citrea) on Citrea. */
@@ -82,7 +83,7 @@ export const defaultFeatureFlags: FeatureFlags = {
   swapAndBridgeTokenInfo: true,
   ledgerSigningReports: false,
   walletStakingWithdrawalsLookup: true,
-  nftImages: false,
+  nftImages: true,
   // @TODO: Introduce a setting and flip to false
   namoshiDomains: true,
   gnsDomains: true
