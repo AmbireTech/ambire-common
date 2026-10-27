@@ -367,6 +367,22 @@ describe('Humanizer main function', () => {
     compareRichVisualizations(irCalls, expectedVisualizations)
   })
 
+  test('a Lido stake shows the staked amount and no row or warning for the coin it sends', async () => {
+    const lido = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
+    accountOp.calls = [{ to: lido, value: 10n ** 18n, data: `0xa1903eab${'0'.repeat(64)}` }]
+
+    const [irCall] = humanizeAccountOp(accountOp, { nativeAssetSymbol: 'ETH' })
+
+    expect(irCall!.fullVisualization).toMatchObject({
+      intent: [
+        expect.objectContaining({ type: 'action', content: 'Stake' }),
+        expect.objectContaining({ type: 'token', address: lido.toLowerCase(), value: 10n ** 18n })
+      ],
+      fields: []
+    })
+    expect(irCall!.warnings).toBeUndefined()
+  })
+
   test('setApprovalForAll on the Uniswap V3 Position Manager keeps the NFT approval humanization', async () => {
     // The Uniswap V3 NonfungiblePositionManager is an ERC-721 contract (LP positions are NFTs),
     // but it's also in the Uniswap module's address list. setApprovalForAll isn't one of the

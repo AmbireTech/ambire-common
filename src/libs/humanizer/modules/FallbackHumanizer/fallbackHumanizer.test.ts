@@ -14,6 +14,7 @@ import {
   getWarning,
   NATIVE_VALUE_WARNING_CODE
 } from '../../utils'
+import { ST_ETH_ADDRESS } from '../Lido'
 import { fallbackHumanizer } from './fallBackHumanizer'
 
 const accountOp: AccountOp = {
@@ -260,5 +261,54 @@ describe('fallbackHumanizer', () => {
         expect(result.warnings).toBeUndefined()
       }
     )
+  })
+
+  describe('staking on Lido', () => {
+    const lidoStakeData = `0xa1903eab${'0'.repeat(64)}`
+    const stakeVisualization = getRichVisualization('Stake', [])
+    const getStakeCall = (to: string, value = ETH) =>
+      ({ to, value, data: lidoStakeData, fullVisualization: stakeVisualization }) as IrCall
+
+    test('adds no row and no warning for the coin, the stake already is the coin sent', () => {
+      const result = fallbackHumanizer(
+        accountOp,
+        getStakeCall(ST_ETH_ADDRESS),
+        humanizerInfo as HumanizerMeta
+      )
+
+      expect(result.fullVisualization?.fields).toEqual([])
+      expect(result.warnings).toBeUndefined()
+    })
+
+    test('does the same when the address is in another letter case', () => {
+      const result = fallbackHumanizer(
+        accountOp,
+        getStakeCall(ST_ETH_ADDRESS.toLowerCase()),
+        humanizerInfo as HumanizerMeta
+      )
+
+      expect(result.fullVisualization?.fields).toEqual([])
+    })
+
+    test('still adds the row and the warning for a stake on another contract', () => {
+      const result = fallbackHumanizer(accountOp, getStakeCall(TO), humanizerInfo as HumanizerMeta)
+
+      expect(result.fullVisualization?.fields).toHaveLength(1)
+      expect(result.warnings?.map((warning) => warning.code)).toEqual([NATIVE_VALUE_WARNING_CODE])
+    })
+
+    test('still adds the row and the warning for another action on the Lido contract', () => {
+      const call = {
+        to: ST_ETH_ADDRESS,
+        value: ETH,
+        data: DATA,
+        fullVisualization: getRichVisualization('Approve', [])
+      } as IrCall
+
+      const result = fallbackHumanizer(accountOp, call, humanizerInfo as HumanizerMeta)
+
+      expect(result.fullVisualization?.fields).toHaveLength(1)
+      expect(result.warnings?.map((warning) => warning.code)).toEqual([NATIVE_VALUE_WARNING_CODE])
+    })
   })
 })

@@ -13,6 +13,7 @@ import {
   mergeWarnings,
   showNativeValueOfCall
 } from '../../utils'
+import { ST_ETH_ADDRESS } from '../Lido'
 
 export const fallbackHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -82,9 +83,15 @@ export const fallbackHumanizer: HumanizerCallModule = (
         ...(call.fullVisualization ?? getLegacyVisualization(fullVisualization)),
         intent: fullVisualization
       }
+      // Staking on Lido is sending the coin, so a row and a warning for the coin would only repeat
+      // the action (the intent shows the staked amount)
+      const isLidoStake =
+        fullVisualization[0]?.content === 'Stake' &&
+        call.to?.toLowerCase() === ST_ETH_ADDRESS.toLowerCase()
       // The coin the call sends is a row of its own, so the intent keeps describing the action
       const shouldShowNativeValue =
         !!call.value &&
+        !isLidoStake &&
         !['Swap', 'Bridge', 'Swap/Bridge', 'Supply', 'Deposit', 'Supply to vault', 'Wrap'].includes(
           fullVisualization[0]?.content || ''
         )
