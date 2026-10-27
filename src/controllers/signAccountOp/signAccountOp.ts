@@ -283,6 +283,9 @@ export type SafeOwnerApprovalUiMethod =
 /** How often to check the Safe for the onchain approval of a smart account owner */
 const SAFE_OWNER_APPROVAL_CHECK_INTERVAL_MS = 3000
 
+/** Time limit for one check of the Safe, so a stuck RPC can't hold up the next one */
+const SAFE_OWNER_APPROVAL_CHECK_TIMEOUT_MS = 15000
+
 /** How long to wait for a sent approval of a smart account owner to be onchain */
 const SAFE_OWNER_APPROVAL_CONFIRMATION_TIMEOUT_MS = 3 * 60 * 1000
 
@@ -3593,11 +3596,12 @@ export class SignAccountOpController
       Date.now() - startedAt < SAFE_OWNER_APPROVAL_CONFIRMATION_TIMEOUT_MS
     ) {
       try {
-        isApproved = await isSafeHashApproved(
-          this.account.addr,
-          ownerAddr,
-          safeTxnHash,
-          this.provider
+        isApproved = await withTimeout(
+          () => isSafeHashApproved(this.account.addr, ownerAddr, safeTxnHash, this.provider),
+          {
+            timeoutMs: SAFE_OWNER_APPROVAL_CHECK_TIMEOUT_MS,
+            message: `Checking the Safe owner approval timed out after ${SAFE_OWNER_APPROVAL_CHECK_TIMEOUT_MS}ms`
+          }
         )
       } catch (error: any) {
         // e.g. the RPC is down for a moment, it's asked again on the next check
