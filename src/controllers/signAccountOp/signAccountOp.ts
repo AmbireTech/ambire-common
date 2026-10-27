@@ -141,7 +141,6 @@ import {
   getImportedSignersThatHaveNotSigned,
   getNonce,
   getSafeApprovedHashSignature,
-  getSafeApproveHashCall,
   getSafeTxnHash,
   getSigs,
   isSafeHashApproved,
@@ -182,7 +181,6 @@ import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
-import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
 import { SELECTOR_LOADING_DEADLINE_MS } from '../contractInfo/contractInfo'
 import { EstimationController } from '../estimation/estimation'
@@ -205,7 +203,14 @@ import {
   SignAccountOpFeeTokenPreference,
   SignAccountOpPreferenceController
 } from './signAccountOpPreference'
+import {
+  getSafeOwnerApprovalAccountOp,
+  getSafeOwnerApprovalFailureMessage,
+  getSafeSmartAccountOwners,
+  waitForSafeOwnerApproval
+} from './safeOwnerApproval'
 import { SpeedUp } from './speedUp'
+import { SafeOwnerApprovalUiMethod } from './types'
 
 import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
 // Re-exporting for backwards compatibility with existing importers
@@ -270,27 +275,6 @@ export type OnBroadcastFailed = (accountOp: AccountOp) => void
  * Receives the sent part, so it can be recorded and tracked until confirmed.
  */
 export type OnPartialBroadcast = (sentAccountOp: SubmittedAccountOp) => Promise<void>
-
-/** The methods of safeOwnerApproval the UI can call, see callSafeOwnerApprovalMethod */
-export type SafeOwnerApprovalUiMethod =
-  | 'update'
-  | 'updateStatus'
-  | 'dismissGasFeeChangedConfirmation'
-  | 'enableErc4337AndReestimate'
-  | 'retry'
-  | 'cancelSignReq'
-
-/** How often to check the Safe for the onchain approval of a smart account owner */
-const SAFE_OWNER_APPROVAL_CHECK_INTERVAL_MS = 3000
-
-/** Time limit for one check of the Safe, so a stuck RPC can't hold up the next one */
-const SAFE_OWNER_APPROVAL_CHECK_TIMEOUT_MS = 15000
-
-/** How long to wait for a sent approval of a smart account owner to be onchain */
-const SAFE_OWNER_APPROVAL_CONFIRMATION_TIMEOUT_MS = 3 * 60 * 1000
-
-/** Statuses of a sent approval after which it will never be onchain */
-const FAILED_SAFE_OWNER_APPROVAL_STATUSES = [AccountOpStatus.Failure, AccountOpStatus.Rejected]
 
 export class SignAccountOpController
   extends HumanizationController
@@ -3334,11 +3318,7 @@ export class SignAccountOpController
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
     if (!state) return []
 
-    return state.associatedKeys.filter((owner) =>
-      this.#accounts.accounts.some(
-        (account) => account.addr.toLowerCase() === owner.toLowerCase() && isSmartAccount(account)
-      )
-    )
+    return getSafeSmartAccountOwners(state.associatedKeys, this.#accounts.accounts)
   }
 
   /** The smart account owners that can still approve, i.e. haven't approved or sent one yet */
@@ -3466,18 +3446,13 @@ export class SignAccountOpController
       contractInfo: this.#contractInfo,
       // not a request of its own, so broadcasting it doesn't resolve any request
       fromRequestId: `${this.fromRequestId}-safe-owner-approval-${owner.addr}`,
-      accountOp: {
-        id: generateUuid(),
-        accountAddr: owner.addr,
+      accountOp: getSafeOwnerApprovalAccountOp({
+        ownerAddr: owner.addr,
         chainId: this.accountOp.chainId,
-        signingKeyAddr: null,
-        signingKeyType: null,
-        gasLimit: null,
-        gasFeePayment: null,
         nonce: ownerState.nonce,
-        signature: null,
-        calls: [{ ...getSafeApproveHashCall(this.account.addr, safeTxnHash), id: generateUuid() }]
-      },
+        safeAddr: this.account.addr,
+        safeTxnHash
+      }),
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
         await this.#onBroadcastSuccess(props)
@@ -3616,42 +3591,25 @@ export class SignAccountOpController
     safeTxnHash: string,
     submittedAccountOp: SubmittedAccountOp
   ) {
-    const startedAt = Date.now()
-    let isApproved = false
-    let hasFailed = false
-    while (
-      !this.#isDestroyed &&
-      Date.now() - startedAt < SAFE_OWNER_APPROVAL_CONFIRMATION_TIMEOUT_MS
-    ) {
-      try {
-        isApproved = await withTimeout(
-          () => isSafeHashApproved(this.account.addr, ownerAddr, safeTxnHash, this.provider),
-          {
-            timeoutMs: SAFE_OWNER_APPROVAL_CHECK_TIMEOUT_MS,
-            message: `Checking the Safe owner approval timed out after ${SAFE_OWNER_APPROVAL_CHECK_TIMEOUT_MS}ms`
-          }
-        )
-      } catch (error: any) {
-        // e.g. the RPC is down for a moment, it's asked again on the next check
+    const { isApproved, hasFailed } = await waitForSafeOwnerApproval({
+      safeAddr: this.account.addr,
+      ownerAddr,
+      safeTxnHash,
+      provider: this.provider,
+      getSentApprovalStatus: () =>
+        this.#activity.findByIdentifiedBy(
+          submittedAccountOp.identifiedBy,
+          submittedAccountOp.accountAddr,
+          submittedAccountOp.chainId
+        )?.status,
+      shouldStop: () => this.#isDestroyed,
+      onCheckError: (error) =>
         this.emitError({
           level: 'silent',
           message: 'Checking the Safe owner approval onchain failed',
           error
         })
-      }
-      if (isApproved) break
-
-      const sentApproval = this.#activity.findByIdentifiedBy(
-        submittedAccountOp.identifiedBy,
-        submittedAccountOp.accountAddr,
-        submittedAccountOp.chainId
-      )
-      hasFailed =
-        !!sentApproval?.status && FAILED_SAFE_OWNER_APPROVAL_STATUSES.includes(sentApproval.status)
-      if (hasFailed) break
-
-      await wait(SAFE_OWNER_APPROVAL_CHECK_INTERVAL_MS)
-    }
+    })
     if (this.#isDestroyed) return
 
     let isRecorded = false
@@ -3674,27 +3632,13 @@ export class SignAccountOpController
     if (!isRecorded) {
       this.emitError({
         level: 'major',
-        message: this.#getSafeOwnerApprovalFailureMessage({ isApproved, hasFailed }),
+        message: getSafeOwnerApprovalFailureMessage({ isApproved, hasFailed }),
         error: new Error(
           `confirmSafeOwnerApproval: not recorded. Approved: ${isApproved}. Failed: ${hasFailed}`
         )
       })
     }
     this.emitUpdate()
-  }
-
-  #getSafeOwnerApprovalFailureMessage({
-    isApproved,
-    hasFailed
-  }: {
-    isApproved: boolean
-    hasFailed: boolean
-  }): string {
-    if (hasFailed) return "The approval didn't go through. Please try again."
-    // approved, but the Safe transaction changed in the meantime, e.g. its nonce
-    if (isApproved) return 'The transaction changed after it was approved. Please approve it again.'
-
-    return "The approval isn't confirmed yet. Check its status in your activity before approving again."
   }
 
   /**
