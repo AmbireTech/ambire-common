@@ -736,6 +736,15 @@ export class SignAccountOpController
   }
 
   /**
+   * Whether `update()` accepts a different signing key. A speed up reuses the signatures of
+   * the pending transaction, so its signer can't change. A cancel is signed again, so any of
+   * the account's keys (e.g. another Safe owner) can sign
+   */
+  get canChangeSigningKey(): boolean {
+    return !this.isSpeedUpTransaction || this.#isNewCancel
+  }
+
+  /**
    * A Safe speed up reuses the owners' signatures of the Safe transaction it replaces. Those
    * are complete, as that transaction was executed with them, so it's ready to execute again
    * as it is, without collecting signatures. Not a new cancel, which is a new Safe transaction
@@ -2396,8 +2405,7 @@ export class SignAccountOpController
 
       // A speed up reuses the signatures of the pending transaction, so its signer can't change.
       // A cancel is signed again, so any of the account's keys (e.g. another Safe owner) can sign
-      const canChangeSigningKey = !isSpeedUpTransaction || this.#isNewCancel
-      if (signingKeyAddr && signingKeyType && this.isInitialized && canChangeSigningKey) {
+      if (signingKeyAddr && signingKeyType && this.isInitialized && this.canChangeSigningKey) {
         this.#updateAccountOp({ signingKeyAddr, signingKeyType })
 
         // If the fee is paid by the signer, then we should set the fee payer
@@ -5110,6 +5118,7 @@ export class SignAccountOpController
       canEnableErc4337: this.canEnableErc4337,
       threshold: this.threshold,
       canBroadcast: this.canBroadcast,
+      canChangeSigningKey: this.canChangeSigningKey,
       isFeePayerNotLinkedToSafe: this.isFeePayerNotLinkedToSafe,
       isSafeFeePayerChoiceRequired: this.isSafeFeePayerChoiceRequired,
       hasSafeApiFailed: this.hasSafeApiFailed,
