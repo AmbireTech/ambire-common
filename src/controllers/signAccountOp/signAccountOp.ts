@@ -1,5 +1,6 @@
 import {
   AbiCoder,
+  concat,
   formatEther,
   formatUnits,
   getAddress,
@@ -676,7 +677,17 @@ export class SignAccountOpController
     this.#speedUp = speedUp
     this.#updateSafeEip712Data()
 
-    if (this.#accountOp.signature && this.#accountOp.txnId) {
+    // Only a Safe's signature is made of its owners' signatures, signed over the Safe
+    // transaction hash (txnId). Another account can also come with a signature and a txnId,
+    // e.g. a smart account speed up reusing the signature of the transaction it replaces, but
+    // its signature isn't one to split into owners. Neither is a Safe speed up's: the txnId of
+    // the executed transaction it replaces is the onchain hash, not the Safe transaction hash
+    if (
+      this.account.safeCreation &&
+      !this.#isSignedSafeSpeedUp &&
+      this.#accountOp.signature &&
+      this.#accountOp.txnId
+    ) {
       this.#accountOp.signed = getAlreadySignedOwners(
         this.#accountOp.signature,
         this.#accountOp.txnId,
@@ -767,6 +778,29 @@ export class SignAccountOpController
 
   get isSpeedUpTransaction(): boolean {
     return !!this.#speedUp
+  }
+
+  /**
+   * A cancel that is signed anew, with empty calls in place of the pending transaction's
+   * (see `SpeedUp.isNewCancel`). A speed up of a pending cancel reuses its signatures instead
+   */
+  get #isNewCancel(): boolean {
+    return !!this.#speedUp?.isNewCancel
+  }
+
+  /**
+   * A Safe speed up reuses the owners' signatures of the Safe transaction it replaces. Those
+   * are complete, as that transaction was executed with them, so it's ready to execute again
+   * as it is, without collecting signatures. Not a new cancel, which is a new Safe transaction
+   */
+  get #isSignedSafeSpeedUp(): boolean {
+    return (
+      !!this.account.safeCreation &&
+      this.isSpeedUpTransaction &&
+      !this.#isNewCancel &&
+      !!this.accountOp.signature &&
+      this.accountOp.signature !== '0x'
+    )
   }
 
   #updateAccountOp(accountOp: Partial<AccountOp>) {
@@ -882,6 +916,61 @@ export class SignAccountOpController
     this.selectedFeeSpeed = FeeSpeed.Medium
     this.feeSpeeds = {}
     this.#updateAccountOp({ gasFeePayment: null })
+  }
+
+  /**
+   * Takes the Safe signatures collected so far (e.g. by other owners, through the Safe API):
+   * sorts them by owner, as the Safe requires, and adds their owners to the ones who signed
+   *
+   * @param safeTx the Safe transaction the signatures were made for, to recover the owners of
+   * signatures that aren't a plain ECDSA one (e.g. a contract owner's)
+   */
+  #mergeSafeSignatures(signature: string, safeTx = this.accountOp.safeTx) {
+    const { txnId } = this.accountOp
+    if (!txnId) return
+
+    const newlySigned = getAlreadySignedOwners(signature, txnId, safeTx)
+    this.#updateAccountOp({
+      signature: sortSigs(getSigs(signature), txnId, safeTx?.confirmations),
+      signed: [...new Set([...(this.accountOp.signed ?? []), ...newlySigned])]
+    })
+  }
+
+  /**
+   * Adds the signatures other Safe owners made for this Safe cancel through the Safe API.
+   * Only the signatures (and the Safe transaction they were made for) are taken.
+   *
+   * Merged per owner: every signature collected so far stays (one may have never reached the
+   * Safe API), and a signature is added only for an owner who hasn't signed yet, so no owner
+   * is ever counted twice (the Safe rejects a repeated owner)
+   */
+  #addSafeCancelSignatures({
+    signature,
+    safeTx
+  }: NonNullable<SignAccountOpUpdateProps['accountOpData']>) {
+    const { txnId } = this.accountOp
+    if (!signature || !txnId) return
+    // The Safe transaction must be the one being signed, otherwise its signatures don't apply
+    if (safeTx && safeTx.safeTxHash.toLowerCase() !== txnId.toLowerCase()) return
+
+    const ownersSafeTx = safeTx ?? this.accountOp.safeTx
+    const getSignaturesByOwner = (signatures: string) => {
+      const owners = getAlreadySignedOwners(signatures, txnId, ownersSafeTx)
+
+      return getSigs(signatures).map((sig, i) => ({ sig, owner: owners[i]!.toLowerCase() }))
+    }
+    const collected = getSignaturesByOwner(this.accountOp.signature ?? '0x')
+    const collectedOwners = new Set(collected.map(({ owner }) => owner))
+    const added = getSignaturesByOwner(signature).filter(({ owner }) => {
+      if (collectedOwners.has(owner)) return false
+      collectedOwners.add(owner)
+      return true
+    })
+
+    if (safeTx) this.#updateAccountOp({ safeTx })
+    if (!added.length) return
+
+    this.#mergeSafeSignatures(concat([...collected, ...added].map(({ sig }) => sig)), ownersSafeTx)
   }
 
   #updateNonce(nonce: bigint) {
@@ -2256,27 +2345,16 @@ export class SignAccountOpController
         }
       }
 
-      if (accountOpData && !isSpeedUpTransaction) {
+      // A speed up keeps the pending transaction as it is
+      if (accountOpData && this.#isNewCancel) {
+        // A cancel is new, so it takes the signatures other Safe owners add to it (see
+        // RequestsController). Nothing else changes: its empty calls take the place of every
+        // pending transaction, so removing one would let that transaction go through
+        this.#addSafeCancelSignatures(accountOpData)
+      } else if (accountOpData && !isSpeedUpTransaction) {
         const { calls, signature, ...rest } = accountOpData
 
-        if (signature && this.accountOp.txnId) {
-          const newlySigned = getAlreadySignedOwners(
-            signature,
-            this.accountOp.txnId,
-            this.accountOp.safeTx
-          )
-          const signed = this.accountOp.signed
-            ? [...new Set(...this.accountOp.signed, ...newlySigned)]
-            : newlySigned
-          this.#updateAccountOp({
-            signature: sortSigs(
-              getSigs(signature),
-              this.accountOp.txnId,
-              this.accountOp.safeTx?.confirmations
-            ),
-            signed
-          })
-        }
+        if (signature) this.#mergeSafeSignatures(signature)
 
         // update all properties except calls
         // calls are handled separately below
@@ -2370,7 +2448,10 @@ export class SignAccountOpController
         }
       }
 
-      if (signingKeyAddr && signingKeyType && this.isInitialized && !isSpeedUpTransaction) {
+      // A speed up reuses the signatures of the pending transaction, so its signer can't change.
+      // A cancel is signed again, so any of the account's keys (e.g. another Safe owner) can sign
+      const canChangeSigningKey = !isSpeedUpTransaction || this.#isNewCancel
+      if (signingKeyAddr && signingKeyType && this.isInitialized && canChangeSigningKey) {
         this.#updateAccountOp({ signingKeyAddr, signingKeyType })
 
         // If the fee is paid by the signer, then we should set the fee payer
@@ -2482,8 +2563,13 @@ export class SignAccountOpController
     }
 
     // change the status to SigningStatus.Queued if there are no
-    // available signers to sign
-    if (this.#accountOp.signature && this.#accountOp.txnId) {
+    // available signers to sign. Only for a Safe that collects signatures (see the constructor)
+    if (
+      this.account.safeCreation &&
+      !this.#isSignedSafeSpeedUp &&
+      this.#accountOp.signature &&
+      this.#accountOp.txnId
+    ) {
       this.#accountOp.signed = getAlreadySignedOwners(
         this.#accountOp.signature,
         this.#accountOp.txnId,
@@ -3596,10 +3682,11 @@ export class SignAccountOpController
 
   /**
    * Before the first signature of a Safe transaction, fetches the latest Safe nonce,
-   * unless the user picked one for this transaction
+   * unless the user picked one for this transaction.
+   * A cancel keeps the nonce of the transaction it replaces, as that's what it cancels
    */
   async #resolveSafeNonceBeforeSigning() {
-    if (this.accountOp.safeTx || this.#customSafeNonce !== null) return
+    if (this.accountOp.safeTx || this.#customSafeNonce !== null || this.#isNewCancel) return
 
     const latestNonce = await getNonce(this.accountOp.accountAddr, this.provider).catch((e) => {
       console.log('failed to retrieve the latest nonce for Safe')
@@ -4050,6 +4137,7 @@ export class SignAccountOpController
     const isCollectingSafeSignature =
       !!this.account.safeCreation &&
       !isSafeDeploy &&
+      !this.#isSignedSafeSpeedUp &&
       (this.accountOp.signed?.length || 0) < this.threshold
     const isImmediatelyWaitingForPaymaster =
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
@@ -4101,8 +4189,8 @@ export class SignAccountOpController
       } else if (
         this.account.safeCreation &&
         !isSafeDeploy &&
-        this.#accountOp.signed &&
-        this.#accountOp.signed.length >= this.threshold &&
+        (this.#isSignedSafeSpeedUp ||
+          (!!this.#accountOp.signed && this.#accountOp.signed.length >= this.threshold)) &&
         broadcastOption !== BROADCAST_OPTIONS.byBundler
       ) {
         // all's good, proceed to broadcast
@@ -4181,13 +4269,18 @@ export class SignAccountOpController
         this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
         // SA, EOA pays fee. execute() needs a signature
-        if (!this.isSpeedUpTransaction) {
-          // fetch the nonce if needed
-          const nonce = await this.baseAccount.getBroadcastNonce(
-            this.#activity,
-            this.accountOp,
-            this.provider
-          )
+        // A speed up reuses the signature of the pending transaction, a cancel has new calls
+        if (!this.isSpeedUpTransaction || this.#isNewCancel) {
+          // fetch the nonce if needed. A cancel signs with the nonce of the pending transaction
+          // it replaces, so only one of the two can go through
+          const replacedNonce = this.#isNewCancel ? (this.#speedUp?.replacedNonce ?? null) : null
+          const nonce =
+            replacedNonce ??
+            (await this.baseAccount.getBroadcastNonce(
+              this.#activity,
+              this.accountOp,
+              this.provider
+            ))
           if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
 
           const signer = await this.#getDefaultSigner()
@@ -5427,6 +5520,9 @@ export class SignAccountOpController
   get canBroadcast() {
     if (!this.account.safeCreation) return true
     if (this.accountOp.meta?.isSafeDeploy) return true
+    // Fully signed already. It keeps the nonce of the transaction it replaces on purpose,
+    // even if the account state has already moved past it
+    if (this.#isSignedSafeSpeedUp) return true
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
