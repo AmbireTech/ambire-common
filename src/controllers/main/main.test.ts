@@ -1,5 +1,6 @@
 import { toBeHex, Wallet } from 'ethers'
 
+import EmittableError from '@/classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
 import { AccountOnchainState } from '@/interfaces/account'
@@ -160,6 +161,27 @@ describe('Main Controller ', () => {
       fetchSafeTxnsSpy.mockRestore()
       updateOtherSafesSpy.mockRestore()
       isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('refreshes the selected account when the mobile app gets focus, but not for a popup', async () => {
+    if (!controller.selectedAccount.account)
+      await controller.selectedAccount.select({ account: controller.accounts.accounts[0]! })
+    jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
+    const updateAccountStateSpy = jest
+      .spyOn(controller.accounts, 'updateAccountState')
+      .mockResolvedValue(undefined)
+
+    try {
+      controller.ui.uiEvent.emit('viewFocus', { id: 'focus-popup', type: 'popup' } as any)
+      await wait(0)
+      expect(updateAccountStateSpy).not.toHaveBeenCalled()
+
+      controller.ui.uiEvent.emit('viewFocus', { id: 'focus-mobile', type: 'mobile' } as any)
+      await wait(0)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(controller.selectedAccount.account!.addr)
+    } finally {
+      jest.restoreAllMocks()
     }
   })
 
@@ -926,6 +948,107 @@ describe('Main Controller ', () => {
       )
     })
 
+    test('waits for the RPC to reach the confirmed block before the sender and the recipients are refreshed', async () => {
+      const mainCtrl = await setupController()
+
+      const confirmedAccountOp = {
+        id: 'confirmed-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        blockNumber: 123,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: { [recipientAccount]: [1n] },
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [confirmedAccountOp]
+        }
+      })
+      // The RPC is one block behind, then fails once on a node of its load balancer
+      const getBlockNumberSpy = jest
+        .spyOn(mainCtrl.providers.providers['1']!, 'getBlockNumber')
+        .mockResolvedValueOnce(122)
+        .mockRejectedValueOnce(new Error('rpc node down'))
+        .mockResolvedValue(123)
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+      const blockNumberReadsBeforeRefresh: number[] = []
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockImplementation(async () => {
+          blockNumberReadsBeforeRefresh.push(getBlockNumberSpy.mock.calls.length)
+        })
+      jest.spyOn(mainCtrl.portfolio, 'scheduleUpdate').mockImplementation(() => {})
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+      const updateSelectedAccountSpy = jest
+        .spyOn(mainCtrl.portfolio, 'updateSelectedAccount')
+        .mockResolvedValue(undefined)
+
+      try {
+        await mainCtrl.updateAccountsOpsStatuses()
+        // The reads are 250ms and then 500ms apart
+        await wait(1000)
+        await flushAsyncUpdates()
+
+        expect(blockNumberReadsBeforeRefresh).toEqual([3, 3])
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(recipientAccount, 'latest', [1n], true)
+        expect(discardSimulationSpy).toHaveBeenCalledWith([confirmedAccountOp])
+        expect(updateSelectedAccountSpy).toHaveBeenCalledWith(
+          recipientAccount,
+          expect.arrayContaining([expect.objectContaining({ chainId: 1n })])
+        )
+      } finally {
+        consoleErrorSpy.mockRestore()
+      }
+    })
+
+    test('reports a failed refresh instead of leaving an unhandled rejection', async () => {
+      const mainCtrl = await setupController()
+      const confirmedAccountOp = {
+        id: 'confirmed-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        blockNumber: 123,
+        calls: []
+      } as any
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [confirmedAccountOp]
+        }
+      })
+      jest.spyOn(mainCtrl.providers.providers['1']!, 'getBlockNumber').mockResolvedValue(123)
+      jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockRejectedValue(new Error('rpc down'))
+      const errors: string[] = []
+      mainCtrl.onError((error) => errors.push(error.message))
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(
+        errors.some((message) => message.includes('after its transactions were confirmed'))
+      ).toBe(true)
+    })
+
     test('should update account state and discard simulation even when selected account is different', async () => {
       const mainCtrl = await setupController()
 
@@ -1183,11 +1306,16 @@ describe('Main Controller ', () => {
       jest
         .spyOn(mainCtrl.privacyPools, 'buildRagequitCalls')
         .mockResolvedValue({ accountAddr: depositorAddr, calls: [RAGEQUIT_CALL] })
+      jest
+        .spyOn(mainCtrl.accounts, 'getOrFetchAccountOnChainState')
+        .mockResolvedValue({} as AccountOnchainState)
       jest.spyOn(mainCtrl.requests, 'build').mockResolvedValue(undefined)
       const errors: ErrorRef[] = []
       mainCtrl.onError((error) => errors.push(error))
+      const statuses: string[] = []
+      mainCtrl.onUpdate(() => statuses.push(mainCtrl.statuses.privacyPoolsRagequit))
 
-      return { mainCtrl, errors }
+      return { mainCtrl, errors, statuses }
     }
 
     test('selects the account the deposit came from and adds the call for it to sign', async () => {
@@ -1222,6 +1350,50 @@ describe('Main Controller ', () => {
       ])
       expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
       expect(mainCtrl.requests.build).not.toHaveBeenCalled()
+    })
+
+    test("switches nothing when the depositor's account cannot be loaded", async () => {
+      const { mainCtrl, errors, statuses } = await setupController({
+        depositorAddr: depositor!.addr
+      })
+      jest.spyOn(mainCtrl.accounts, 'getOrFetchAccountOnChainState').mockResolvedValue(undefined)
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors.map(({ message }) => message)).toEqual([
+        'Could not load the account this deposit was made from. Please try again.'
+      ])
+      expect(statuses).toContain('ERROR')
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
+      expect(mainCtrl.requests.build).not.toHaveBeenCalled()
+    })
+
+    test('switches nothing on a network the wallet does not have', async () => {
+      const { mainCtrl, errors } = await setupController({ depositorAddr: depositor!.addr })
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '424242', label: 3n })
+
+      expect(errors.map(({ message }) => message)).toEqual([
+        'Could not load the account this deposit was made from. Please try again.'
+      ])
+      expect(mainCtrl.accounts.getOrFetchAccountOnChainState).not.toHaveBeenCalled()
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
+    })
+
+    test('reports a request it could not add as failed, not done', async () => {
+      const { mainCtrl, errors, statuses } = await setupController({
+        depositorAddr: depositor!.addr
+      })
+      const message = 'Could not prepare taking back this deposit. Please try again.'
+      jest
+        .spyOn(mainCtrl.requests, 'build')
+        .mockRejectedValue(new EmittableError({ level: 'major', message }))
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors.map((error) => error.message)).toEqual([message])
+      expect(statuses).toContain('ERROR')
+      expect(statuses).not.toContain('SUCCESS')
     })
 
     test('adds nothing for a view-only account, which could not sign it', async () => {

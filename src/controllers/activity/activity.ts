@@ -44,6 +44,7 @@ import {
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { recordFeePayer } from '../../libs/activity/feePayersHistory'
+import { collapseReplacedAccountOps } from '../../libs/activity/replacements'
 import { recordRecipient } from '../../libs/activity/sentToHistory'
 import { getTransferLogNfts, getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { filterStaticBlacklistedAddrs } from '../../libs/portfolio/blacklist'
@@ -51,6 +52,7 @@ import { ScamFilter } from '../../libs/scamFilter'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import { getAddressCaught } from '../../utils/getAddressCaught'
+import isSameAddr from '../../utils/isSameAddr'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { FeePayersHistory, InternalSignedMessages, SentToHistory, SignedMessage } from './types'
@@ -128,6 +130,13 @@ const getPreviousBlockNumber = (blockNumber: number) => (blockNumber > 0 ? block
 const normalizeTxnId = (txnId?: string | null) => txnId?.toLowerCase()
 
 const ACCOUNT_OP_PENDING_TIMEOUT_MINS = 30
+
+/**
+ * How many times a page may load more account ops to make up for the ones merged with their
+ * speed ups. One is almost always enough; the cap only guards against a history made of
+ * almost nothing but replaced transactions
+ */
+const MAX_EXTRA_LOADS_FOR_REPLACED_OPS = 5
 
 /**
  * Take all txnIds from the account op
@@ -516,6 +525,28 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
   }
 
+  /**
+   * Loads enough account ops to fill the rows up to `rowsNeeded`. A transaction and its speed
+   * ups are merged into one row (see collapseReplacedAccountOps), so every merged op needs one
+   * more op loaded. Otherwise the page would be short, and the next one, which starts where a
+   * full page would end, would skip the rows in between
+   */
+  async #loadRowsForPage(accountKey: string, rowsNeeded: number, chainIds: string[]) {
+    let limit = rowsNeeded
+    for (let extraLoads = 0; extraLoads <= MAX_EXTRA_LOADS_FOR_REPLACED_OPS; extraLoads++) {
+      await this.#persistence.ensureRecentLoaded(accountKey, limit, chainIds)
+
+      const loadedOps = chainIds.flatMap(
+        (chainId) => this.#accountsOps[accountKey]?.[chainId] ?? []
+      )
+      const mergedOpsCount = loadedOps.length - collapseReplacedAccountOps(loadedOps).length
+      const nextLimit = rowsNeeded + mergedOpsCount
+      // Nothing was merged, or nothing more is stored, so the loaded ops fill the rows
+      if (nextLimit <= limit) return
+      limit = nextLimit
+    }
+  }
+
   async filterAccountsOps(
     sessionId: string,
     filters: Filters,
@@ -548,7 +579,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // Enough for this page, per chain: an account-wide read would spend the budget on disabled
     // networks and render a short page. Pending and external ops are already in memory.
     const pageEnd = (pagination.fromPage + 1) * pagination.itemsPerPage
-    await this.#persistence.ensureRecentLoaded(accountKey, pageEnd, chainIdsToRender)
+    await this.#loadRowsForPage(accountKey, pageEnd, chainIdsToRender)
     internalAccountOpsByChain = this.#accountsOps[accountKey] || internalAccountOpsByChain
 
     const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
@@ -602,6 +633,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
       )
     }
 
+    // A transaction and its speed ups are shown as one row, the one that got (or will get)
+    // onchain. Not for benzin, which looks up one specific transaction
+    const visibleItems = filters.identifiedBy
+      ? filteredItems
+      : collapseReplacedAccountOps(filteredItems)
+    const replacedOpsCount = filteredItems.length - visibleItems.length
+    filteredItems = visibleItems
+
     // Scoped to the rendered chains; an identifiedBy filter has no stored count, so items are it.
     const storedTotal = filters.identifiedBy
       ? 0
@@ -619,8 +658,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
       filteredItems,
       pagination.fromPage,
       pagination.itemsPerPage,
-      // Floored at what is already loaded, because a failed count returns 0.
-      Math.max(storedTotal + externalTotal, filteredItems.length)
+      // Floored at what is already loaded, because a failed count returns 0. The stored count
+      // includes the replaced ops hidden above, so they are taken out of it
+      Math.max(storedTotal + externalTotal - replacedOpsCount, filteredItems.length)
     )
 
     this.setDashboardBannersSeen(sessionId, filters.account)
@@ -1697,6 +1737,18 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     this.#accounts.accounts.map((a) => a.addr)
                   ).map((recipient) => recipient.address)
 
+                  // Another account of the wallet that paid the fee has a new balance too
+                  const paidBy = accountOp.gasFeePayment?.paidBy
+                  const feePayer =
+                    paidBy && !isSameAddr(paidBy, accountOp.accountAddr)
+                      ? this.#accounts.accounts.find((a) => isSameAddr(a.addr, paidBy))
+                      : undefined
+                  if (
+                    feePayer &&
+                    !accountOpRecipients.some((addr) => isSameAddr(addr, feePayer.addr))
+                  )
+                    accountOpRecipients.push(feePayer.addr)
+
                   accountOpRecipients.forEach((accAddr) => {
                     if (!portfoliosToUpdate[accAddr]) portfoliosToUpdate[accAddr] = []
 
@@ -2053,7 +2105,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         .sort((a, b) => b.timestamp - a.timestamp)
         .slice(0, 10)
 
-      const pendingOps = latestOps.filter(
+      // A transaction and its pending speed ups are one transaction for the user
+      const pendingOps = collapseReplacedAccountOps(latestOps).filter(
         (op) =>
           op.status === AccountOpStatus.Pending ||
           op.status === AccountOpStatus.BroadcastedButNotConfirmed

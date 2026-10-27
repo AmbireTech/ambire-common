@@ -143,11 +143,16 @@ export const privacyPoolsErrors = {
       'This deposit can no longer be taken back. It may have been verified or taken back already.',
       'no pending note with that label'
     ),
+  ragequitDepositVerified: () =>
+    expectedError(
+      'This deposit was just verified, so it can now be sent privately. Use Send to move it.',
+      'the note was approved while its ragequit was proved'
+    ),
   ragequitDepositsReadFailed: (cause: unknown) =>
     majorError(
       'Could not load your deposits that are being verified. Please try again.',
       cause,
-      'reading the depositors failed'
+      'listing the pending deposits failed'
     ),
   poolStatsReadFailed: (cause: unknown) =>
     new EmittableError({
@@ -167,6 +172,11 @@ export const privacyPoolsErrors = {
     expectedError(
       'This deposit was made from an account that is not in your wallet. Add that account to take the deposit back.',
       'the depositor is not a wallet account'
+    ),
+  ragequitDepositorStateUnavailable: () =>
+    expectedError(
+      'Could not load the account this deposit was made from. Please try again.',
+      "the depositor's network or account state is unavailable"
     ),
   ragequitDepositorViewOnly: () =>
     expectedError(

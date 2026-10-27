@@ -91,6 +91,7 @@ import {
   AccountOp,
   GasFeePayment,
   getAccountOpNonce,
+  getPq1BroadcastBlocker,
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
 import {
@@ -198,6 +199,7 @@ import {
   SignAccountOpFeeTokenPreference,
   SignAccountOpPreferenceController
 } from './signAccountOpPreference'
+import { SpeedUp } from './speedUp'
 
 import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
 // Re-exporting for backwards compatibility with existing importers
@@ -215,6 +217,17 @@ const SLOWED_DOWN_REESTIMATE_STEP = 10000
 
 /** After this many reestimates the loop gives up and stops refetching. */
 export const MAX_REESTIMATES = 20
+
+/**
+ * Broadcast options that build a raw transaction and sign it with the fee payer key.
+ * The others (bundler, relayer) only submit what's already signed, without a key.
+ */
+const RAW_TXN_BROADCAST_OPTIONS = [
+  BROADCAST_OPTIONS.bySelf,
+  BROADCAST_OPTIONS.bySelf7702,
+  BROADCAST_OPTIONS.byOtherEOA,
+  BROADCAST_OPTIONS.delegation
+]
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
@@ -397,6 +410,13 @@ export class SignAccountOpController
 
   hardwareWalletSigningRequest: HardwareWalletSigningRequest | null = null
 
+  /**
+   * The type of the key whose signature the current sign and broadcast flow is on,
+   * or null when no key is needed anymore. The UI uses it to show the "confirm on
+   * your device" prompt only while a device is actually involved.
+   */
+  activeSigningKeyType: Key['type'] | null = null
+
   safeEip712Data: unknown | null = null
 
   // We track the status of token discovery logic (main.traceCall)
@@ -508,6 +528,9 @@ export class SignAccountOpController
 
   #onDappsUpdateUnsubscribe?: () => void
 
+  /** Set only when speeding up a pending transaction, see SpeedUp */
+  #speedUp?: SpeedUp
+
   constructor({
     eventEmitterRegistry,
     type,
@@ -534,7 +557,8 @@ export class SignAccountOpController
     onUpdateAfterTraceCallSuccess,
     onBroadcastSuccess,
     onBroadcastFailed,
-    onPartialBroadcast
+    onPartialBroadcast,
+    speedUp
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
@@ -562,6 +586,8 @@ export class SignAccountOpController
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
     onPartialBroadcast?: OnPartialBroadcast
+    /** Pass only when speeding up a pending transaction */
+    speedUp?: SpeedUp
   }) {
     super(eventEmitterRegistry, false)
     this.#type = type || 'default'
@@ -594,8 +620,8 @@ export class SignAccountOpController
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
+    this.#speedUp = speedUp
     this.#updateSafeEip712Data()
-    this.#setSpeedUpGasPrices()
 
     if (this.#accountOp.signature && this.#accountOp.txnId) {
       this.#accountOp.signed = getAlreadySignedOwners(
@@ -687,7 +713,7 @@ export class SignAccountOpController
   }
 
   get isSpeedUpTransaction(): boolean {
-    return !!this.#accountOp.meta?.speedUp?.enabled
+    return !!this.#speedUp
   }
 
   #updateAccountOp(accountOp: Partial<AccountOp>) {
@@ -949,11 +975,23 @@ export class SignAccountOpController
     this.emitUpdate()
   }
 
+  /**
+   * Runs a signing step and marks `keyType` as the active signing key type.
+   * It intentionally stays set after the step, so the device prompt in the UI
+   * doesn't close and reopen between two device signatures in a row. It's
+   * cleared when sign() or the whole sign and broadcast flow no longer needs a key.
+   */
   async #withHardwareWalletSigningRequest<T>(
     request: HardwareWalletSigningRequest | null,
-    sign: () => Promise<T>
+    sign: () => Promise<T>,
+    keyType: Key['type'] | null = this.accountOp.signingKeyType
   ) {
-    if (!request) return sign()
+    this.activeSigningKeyType = keyType
+
+    if (!request) {
+      this.emitUpdate()
+      return sign()
+    }
 
     this.#setHardwareWalletSigningRequest(request)
 
@@ -964,45 +1002,27 @@ export class SignAccountOpController
     }
   }
 
-  #syncSpeedUpFeeSelectionFromEstimation() {
-    if (
-      !this.isSpeedUpTransaction ||
-      this.estimation.status !== EstimationStatus.Success ||
-      !this.accountOp.gasFeePayment
-    ) {
-      return
-    }
+  /** A speed up must be paid the same way as the pending transaction it replaces */
+  #selectSpeedUpFeeOption() {
+    if (!this.#speedUp || this.estimation.status !== EstimationStatus.Success) return
 
-    const selectedOption = this.estimation.availableFeeOptions.find(
-      (option) =>
-        option.paidBy === this.accountOp.gasFeePayment?.paidBy &&
-        option.token.address === this.accountOp.gasFeePayment?.inToken &&
-        (!this.accountOp.gasFeePayment?.feeTokenChainId ||
-          option.token.chainId === this.accountOp.gasFeePayment?.feeTokenChainId) &&
-        option.token.flags.onGasTank === this.accountOp.gasFeePayment?.isGasTank
+    const replacedFeeOption = this.#speedUp.findReplacedFeeOption(
+      this.estimation.availableFeeOptions
     )
+    if (!replacedFeeOption) return
 
-    if (!selectedOption) return
-
-    this.#paidBy = selectedOption.paidBy
-    this.feeTokenResult = selectedOption.token
-    this.selectedOption = selectedOption
+    this.#paidBy = replacedFeeOption.paidBy
+    this.feeTokenResult = replacedFeeOption.token
+    this.selectedOption = replacedFeeOption
   }
 
-  #setSpeedUpGasPrices() {
-    const gasFeePayment = this.accountOp.gasFeePayment
-    if (!this.isSpeedUpTransaction || !gasFeePayment) return
-
-    const maxFeePerGas = toBeHex(gasFeePayment.gasPrice) as Hex
-    const maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas || 0n) as Hex
-
-    this.gasPrices = {
-      slow: { maxFeePerGas, maxPriorityFeePerGas },
-      medium: { maxFeePerGas, maxPriorityFeePerGas },
-      fast: { maxFeePerGas, maxPriorityFeePerGas },
-      ape: { maxFeePerGas, maxPriorityFeePerGas }
-    }
-    this.hasCustomGasPrices = true
+  /**
+   * When speeding up a pending transaction, raises the gas prices of every speed
+   * to the minimum the network needs to accept the replacement. The estimation keeps
+   * running, so speeds that are already above that minimum are used as they are
+   */
+  #applySpeedUpMinFees(gasPrices?: GasSpeeds): GasSpeeds | undefined {
+    return this.#speedUp ? this.#speedUp.applyMinFees(gasPrices) : gasPrices
   }
 
   async #getDefaultSigner() {
@@ -1143,6 +1163,46 @@ export class SignAccountOpController
       timeout: ESTIMATE_UPDATE_INTERVAL
     })
     this.#gasPriceInterval.start({ runImmediately: true, timeout: GAS_PRICE_UPDATE_INTERVAL })
+
+    // Started after the intervals, so they can be stopped if the pending transaction
+    // was already processed while the request was opening
+    this.#speedUp?.watchReplacedTransaction(() => this.#stopSpeedUp())
+  }
+
+  /**
+   * During a speed up, the pending transaction that is being replaced may get processed before
+   * the speed up is signed. Its place (nonce) is then taken, so there's nothing left to sign.
+   * Returns whether it's done with the speed up, so the activity no longer needs to be watched
+   */
+  #stopSpeedUp(): boolean {
+    // Signing is in progress, so this is checked again on the next activity update, or once
+    // the status goes back to ReadyToSign (see #checkSpeedUpStillNeeded)
+    if (
+      this.status?.type === SigningStatus.InProgress ||
+      this.status?.type === SigningStatus.WaitingForPaymaster
+    )
+      return false
+    // Already broadcast or already stopped
+    if (
+      this.status?.type === SigningStatus.Done ||
+      this.status?.type === SigningStatus.SpeedUpNotNeeded
+    )
+      return true
+
+    this.#stopIntervals()
+    this.updateStatus(SigningStatus.SpeedUpNotNeeded)
+    return true
+  }
+
+  /**
+   * Checks again whether the transaction being sped up was processed, once back to ReadyToSign.
+   * It may have been processed while signing, so the broadcast fails as its place (nonce) is
+   * taken, and with nothing left pending the activity may never update again
+   */
+  #checkSpeedUpStillNeeded() {
+    if (this.status?.type !== SigningStatus.ReadyToSign) return
+
+    this.#speedUp?.checkReplacedTransaction()
   }
 
   #withDecodedCalls(humanization: IrCall[]) {
@@ -1628,6 +1688,25 @@ export class SignAccountOpController
      */
     if (!this.isInitialized) return []
 
+    // A speed up must be paid the same way as the pending transaction it replaces. Paid any
+    // other way, it's sent as a new transaction and the same calls could run twice. The other
+    // fee errors would be about a way of paying that can't be used, so they are not shown.
+    // Checked once the fee options are known, and not only after a successful estimation, as
+    // the options are kept while the estimation reloads and the error must not flicker away
+    if (
+      this.canBroadcast &&
+      this.estimation.availableFeeOptions.length > 0 &&
+      this.status?.type !== SigningStatus.SpeedUpNotNeeded &&
+      this.#speedUp?.isReplacedFeeOptionMissing(this.estimation.availableFeeOptions)
+    ) {
+      return [
+        {
+          title:
+            "This transaction can't be sped up right now. The speed up has to be paid the same way as the original transaction, but that option isn't available anymore (for example, there isn't enough left to cover the fee). Add funds or wait for the original transaction to complete."
+        }
+      ]
+    }
+
     const areGasPricesLoading = typeof this.gasPrices === 'undefined'
 
     if (!areGasPricesLoading && !this.gasPrices && this.canBroadcast) {
@@ -1806,10 +1885,13 @@ export class SignAccountOpController
       }
     }
 
-    // Safe txn, signed, with a future nonce: display an error
+    // Safe txn, signed, with a future nonce: display an error.
+    // Not for a speed up, which keeps the nonce of the pending transaction it replaces on
+    // purpose. If that transaction gets processed first, the speed up is stopped instead
     if (
       !!this.account.safeCreation &&
       !this.accountOp.meta?.isSafeDeploy &&
+      !this.#speedUp &&
       accountState &&
       this.accountOp.nonce &&
       this.accountOp.nonce !== accountState.nonce &&
@@ -2205,8 +2287,6 @@ export class SignAccountOpController
           : null
       }
 
-      this.#syncSpeedUpFeeSelectionFromEstimation()
-
       if (feeToken && paidBy && !isSpeedUpTransaction) {
         this.#paidBy = paidBy
         this.feeTokenResult = feeToken
@@ -2224,7 +2304,7 @@ export class SignAccountOpController
         }
       }
 
-      if (speed && this.isInitialized && !isSpeedUpTransaction) {
+      if (speed && this.isInitialized) {
         this.selectedFeeSpeed = speed
         // Only an explicitly picked speed becomes the default for the network.
         // Speeds set while switching the fee token are a fallback, not a choice
@@ -2249,7 +2329,8 @@ export class SignAccountOpController
 
       // Set defaults, if some of the optional params are omitted
       this.#setDefaults()
-      if (isSpeedUpTransaction) this.#syncSpeedUpFeeSelectionFromEstimation()
+      // After the defaults, so the default fee option gets replaced with the pending transaction's
+      this.#selectSpeedUpFeeOption()
 
       if (
         this.estimation.status === EstimationStatus.Success &&
@@ -2313,10 +2394,15 @@ export class SignAccountOpController
   }
 
   updateStatus(forceStatusChange?: SigningStatus, replacementFeeLow = false) {
+    // final, the speed up can't go through anymore. Checked before the forced change too, as
+    // a failed broadcast forces ReadyToSign, which would bring back a speed up that was stopped
+    if (this.status?.type === SigningStatus.SpeedUpNotNeeded) return
+
     // use this to go back to ReadyToSign when a broadcasting error is emitted
     if (forceStatusChange) {
       this.status = { type: forceStatusChange }
       this.emitUpdate()
+      this.#checkSpeedUpStillNeeded()
       return
     }
 
@@ -2371,6 +2457,7 @@ export class SignAccountOpController
       // do not reset this once triggered
       if (replacementFeeLow) this.replacementFeeLow = replacementFeeLow
       this.emitUpdate()
+      this.#checkSpeedUpStillNeeded()
       return
     }
 
@@ -2392,6 +2479,7 @@ export class SignAccountOpController
     this.gasPrice.destroy()
     this.#onDappsUpdateUnsubscribe?.()
     this.#onDappsUpdateUnsubscribe = undefined
+    this.#speedUp?.destroy()
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
@@ -2466,6 +2554,9 @@ export class SignAccountOpController
    * That is because they may be stopped (after inactivity).
    */
   #resumeIntervals(opts?: { haveCallsChanged?: boolean }) {
+    // Nothing is left to estimate once the transaction being sped up was processed
+    if (this.status?.type === SigningStatus.SpeedUpNotNeeded) return
+
     const { haveCallsChanged = false } = opts || {}
 
     // we want to restart the interval if signAccountOp is for a Safe.
@@ -2517,6 +2608,9 @@ export class SignAccountOpController
   }
 
   resetStatus() {
+    // Final, the speed up can't go through anymore no matter what is reset
+    if (this.status?.type === SigningStatus.SpeedUpNotNeeded) return
+
     this.status = null
     this.emitUpdate()
   }
@@ -2836,7 +2930,9 @@ export class SignAccountOpController
 
       const nativeRatio = this.#getNativeToFeeTokenRatio(option.token)
       const shouldUseRpcGasPrices = this.#shouldUseRpcGasPrices(broadcastOption)
-      const gasPrices = shouldUseRpcGasPrices ? this.rpcGasPrices : this.gasPrices
+      const gasPrices = this.#applySpeedUpMinFees(
+        shouldUseRpcGasPrices ? this.rpcGasPrices : this.gasPrices
+      )
       // the RPC gas prices are used only for broadcasts outside erc-4337,
       // so they should not be increased
       const increasedGasPrices = shouldUseRpcGasPrices
@@ -3915,6 +4011,14 @@ export class SignAccountOpController
       )
         this.status = { type: SigningStatus.Done }
 
+      // Only a raw transaction broadcast asks for one more signature (from the fee payer).
+      // Otherwise (Safe signature collected, bundler, relayer) no key is needed anymore
+      const willBroadcastNeedSignature =
+        this.status.type === SigningStatus.Done &&
+        !!broadcastOption &&
+        RAW_TXN_BROADCAST_OPTIONS.includes(broadcastOption)
+      if (!willBroadcastNeedSignature) this.activeSigningKeyType = null
+
       this.emitUpdate()
     } catch (error: any) {
       const { message } = getHumanReadableBroadcastError(error)
@@ -4004,13 +4108,7 @@ export class SignAccountOpController
     } | null = null
     // broadcasting by EOA is quite the same:
     // 1) build a rawTxn 2) sign 3) broadcast
-    // we have one handle, just a diff rawTxn for each case
-    const rawTxnBroadcast = [
-      BROADCAST_OPTIONS.bySelf,
-      BROADCAST_OPTIONS.bySelf7702,
-      BROADCAST_OPTIONS.byOtherEOA,
-      BROADCAST_OPTIONS.delegation
-    ]
+    // we have one handle, just a diff rawTxn for each case (RAW_TXN_BROADCAST_OPTIONS)
 
     // PQ1 is a smart-contract-only signer that cannot produce a raw EOA
     // transaction. The signer packages the calls into a 4337 UserOperation,
@@ -4025,20 +4123,17 @@ export class SignAccountOpController
     //   2. Device interaction runs inside #withHardwareWalletSigningRequest
     //      so the "confirm on your device" UI shows while the PQ1 waits
     //      for its physical confirmation.
+    // The UserOperation is sent from the PQ1 wallet itself, so an op for any
+    // other account the PQ1 key can sign for (e.g. a Safe it is an owner of)
+    // is refused up front as well, instead of running its calls from the PQ1
+    // wallet. Both refusals come from `getPq1BroadcastBlocker`.
     if (accountOp.signingKeyType === 'pq1' && accountOp.signingKeyAddr) {
       try {
-        const { gasFeePayment } = accountOp
-        if (
-          gasFeePayment.isGasTank ||
-          gasFeePayment.paidBy !== accountOp.accountAddr ||
-          gasFeePayment.inToken !== ZeroAddress
-        ) {
-          return this.throwBroadcastAccountOp({
-            message:
-              'PQ1 accounts pay gas with the native token from the account itself. Please select the native-token fee option paid by this account and try again.',
-            accountState
-          })
+        const pq1BroadcastBlocker = getPq1BroadcastBlocker(accountOp)
+        if (pq1BroadcastBlocker) {
+          return this.throwBroadcastAccountOp({ message: pq1BroadcastBlocker, accountState })
         }
+        const { gasFeePayment } = accountOp
         const signer = await this.#keystore.getSigner(
           accountOp.signingKeyAddr,
           accountOp.signingKeyType
@@ -4082,7 +4177,7 @@ export class SignAccountOpController
       } catch (error: any) {
         return this.throwBroadcastAccountOp({ error, accountState })
       }
-    } else if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
+    } else if (RAW_TXN_BROADCAST_OPTIONS.includes(accountOp.gasFeePayment.broadcastOption)) {
       const multipleTxnsBroadcastRes = []
       const senderAddr =
         accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
@@ -4144,7 +4239,8 @@ export class SignAccountOpController
                     txnRequest: rawTxn,
                     eip7702Auth: accountOp.meta!.delegation!
                   })
-                : signer.signRawTransaction(rawTxn)
+                : signer.signRawTransaction(rawTxn),
+            gasFeePayment.paidByKeyType
           )
 
           if (isDelegationBroadcast) {
@@ -4455,6 +4551,11 @@ export class SignAccountOpController
     })().finally(() => {
       this.signAndBroadcastPromise = undefined
       this.#endPinSessions()
+
+      if (this.activeSigningKeyType) {
+        this.activeSigningKeyType = null
+        this.emitUpdate()
+      }
     })
 
     await this.signAndBroadcastPromise
@@ -4482,6 +4583,7 @@ export class SignAccountOpController
 
   #hwCleanup() {
     this.hardwareWalletSigningRequest = null
+    this.activeSigningKeyType = null
 
     const paidByKeyType = this.accountOp.gasFeePayment?.paidByKeyType
     const uniqueSigningKeys = [...new Set([this.accountOp.signingKeyType, paidByKeyType])]
@@ -4619,6 +4721,9 @@ export class SignAccountOpController
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
     this.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
+    // The transaction being sped up was processed meanwhile, which is why the broadcast failed.
+    // The status already tells the user there's no need to speed up, so the error isn't shown
+    const isSpeedUpNotNeeded = this.status?.type === SigningStatus.SpeedUpNotNeeded
 
     if (this.#onBroadcastFailed) {
       this.#onBroadcastFailed(this.#accountOp)
@@ -4626,8 +4731,9 @@ export class SignAccountOpController
 
     this.emitError({
       // Keep the report for Sentry/logging, but don't show a toast when we're
-      // handling this softly via the "Gas fee updated" confirmation modal.
-      level: softFeeUpdateConfirmation ? 'silent' : 'major',
+      // handling this softly via the "Gas fee updated" confirmation modal
+      // or when the speed up is no longer needed.
+      level: softFeeUpdateConfirmation || isSpeedUpNotNeeded ? 'silent' : 'major',
       message,
       error: _err || new Error(message),
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
@@ -4767,11 +4873,17 @@ export class SignAccountOpController
     const dappVerificationBanner = this.#getDappVerificationBanner()
     if (dappVerificationBanner) banners.push(dappVerificationBanner)
 
-    const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
-      this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr),
-      this.accountOp.chainId,
-      this.traceCallDiscoveryStatus
-    )
+    // In the one-click transfer and swap & bridge flows the user entered the amount in the wallet
+    // themselves, so the warning tells them nothing new. Bridging is also where it's least accurate
+    const isOneClickFlow =
+      this.#type === 'one-click-transfer' || this.#type === 'one-click-swap-and-bridge'
+    const significantBalanceDecreaseWarning = isOneClickFlow
+      ? null
+      : getSignificantBalanceDecreaseWarning(
+          this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr),
+          this.accountOp.chainId,
+          this.traceCallDiscoveryStatus
+        )
     if (significantBalanceDecreaseWarning) {
       banners.push({
         id: significantBalanceDecreaseWarning.id,
@@ -4815,14 +4927,17 @@ export class SignAccountOpController
    * (see BaseAccount.getGasPriceFetchStrategy)
    */
   get selectedOptionGasPrices(): GasSpeeds | undefined {
-    if (!this.selectedOption) return this.gasPrices
+    if (!this.selectedOption) return this.#applySpeedUpMinFees(this.gasPrices)
 
     const broadcastOption = this.baseAccount.getBroadcastOption(this.selectedOption, {
       op: this.accountOp,
       isSponsored: this.isSponsored
     })
 
-    return this.#shouldUseRpcGasPrices(broadcastOption) ? this.rpcGasPrices : this.gasPrices
+    // Raised like the fee speeds, so the advanced options don't start below the speed up minimum
+    return this.#applySpeedUpMinFees(
+      this.#shouldUseRpcGasPrices(broadcastOption) ? this.rpcGasPrices : this.gasPrices
+    )
   }
 
   get canSetCustomGasPrices(): boolean {
@@ -4903,6 +5018,7 @@ export class SignAccountOpController
       isSafeFeePayerChoiceRequired: this.isSafeFeePayerChoiceRequired,
       hasSafeApiFailed: this.hasSafeApiFailed,
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
+      activeSigningKeyType: this.activeSigningKeyType,
       safeEip712Data: this.safeEip712Data,
       gasFeeChangedConfirmationRequired: this.gasFeeChangedConfirmationRequired,
       previousFee: this.previousFee,

@@ -97,6 +97,10 @@ export type PrivacyPoolsNote = {
   tokenAddress: string
   amount: bigint
   approval: PrivacyPoolsApprovalStatus
+  /** The address the deposit was made from, the only one that can take it back (ragequit). */
+  depositorAddr: Hex
+  /** The account's deposits are numbered in the order they were made, so a higher one is newer. */
+  depositIndex: number
 }
 
 /**

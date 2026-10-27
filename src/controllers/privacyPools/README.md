@@ -84,8 +84,10 @@ Updates are sent from one place, so the same rules hold for every module:
 
 A deposit still being verified can only be taken back publicly, in full, by the account that made it (the pool checks `msg.sender`). Verified deposits are sent from the Privacy Pools account instead, so they are never offered.
 
-- **Depositors are read locally.** `readPrivacyPoolsDepositors` reads them from the chain's persisted public state, which holds every deposit in the pools as synced in bulk. Never use the SDK's `history()` or the pool's `depositors(label)`: both ask the network about single deposits, which tells it which ones are the user's.
+- **Depositors are read locally.** Each note's `depositor` (and its deposit index, which orders them newest first) comes with `notes()` in `sync.ts`, from the pools' history synced in bulk. Never use the SDK's `history()` or the pool's `depositors(label)`: both ask the network about single deposits, which tells it which ones are the user's.
+- **No deposit dates.** `INote` has no block, and asking for a deposit's block or its time would single it out. Once Kohaku exposes the block on `INote`, the Rage quit sheet can show when each deposit was made again.
 - **The SDK's call is checked** against the deposit (label, amount, and a pool in `PrivacyPoolsChainConfig.pools` holding its token), as the SDK picks the pool and drops a deposit it could not prove for with only a warning.
+- **The SDK syncs before proving**, outside the queue, so a ragequit waits for the running sync first, as a withdrawal does. Then the deposit is read again through the queue: if it was verified while being proved, it is refused, as it can now be sent privately instead of going back publicly. A failed read refuses it too.
 - **The account is switched by `MainController.privacyPoolsRagequit`**, which selects the depositor (refusing one not in the wallet or view-only) and adds the call as a regular request.
 
 ## Pool stats
