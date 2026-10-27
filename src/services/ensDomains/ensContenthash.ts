@@ -155,14 +155,14 @@ const findFirstChangedBlock = async (
 
 /**
  * Returns the block numbers `latestBlock - 1`, `latestBlock - 2`, `latestBlock - 4`, ... down to
- * the ENS registry deployment. Checking them first finds recent changes in few steps.
+ * `oldestBlock`. Checking them first finds recent changes in few steps.
  */
-const getExponentiallyOlderBlocks = (latestBlock: number) => {
+const getExponentiallyOlderBlocks = (latestBlock: number, oldestBlock: number) => {
   const blocks: number[] = []
-  for (let distance = 1; latestBlock - distance > ENS_REGISTRY_DEPLOYMENT_BLOCK; distance *= 2) {
+  for (let distance = 1; latestBlock - distance > oldestBlock; distance *= 2) {
     blocks.push(latestBlock - distance)
   }
-  blocks.push(ENS_REGISTRY_DEPLOYMENT_BLOCK)
+  blocks.push(oldestBlock)
   return blocks
 }
 
@@ -180,6 +180,22 @@ const getBlocksBetween = (olderBlock: number, newerBlock: number) => {
 export type EnsWebsiteContentUpdate = {
   /** When the ENS name started pointing to the content it serves now, in ms. */
   updatedAt: number
+  /** The content the ENS name points to. */
+  contenthash: Hex
+  /** The latest block the ENS name was confirmed to still point to `contenthash` at. */
+  checkedAtBlock: number
+}
+
+/** Thrown when the search is stopped through its abort signal (e.g. it took too long). */
+export class EnsWebsiteContentUpdateAbortedError extends Error {
+  constructor() {
+    super('The search for when the ENS website was last updated was stopped')
+    this.name = 'EnsWebsiteContentUpdateAbortedError'
+  }
+}
+
+const throwIfAborted = (signal?: AbortSignal | null) => {
+  if (signal?.aborted) throw new EnsWebsiteContentUpdateAbortedError()
 }
 
 /**
@@ -190,29 +206,55 @@ export type EnsWebsiteContentUpdate = {
  * Starts from the latest block and checks exponentially older ones until the content differs,
  * then narrows down the exact moment between the last two checks.
  *
+ * Only the checked blocks are compared, so a switch to other content and back that happens entirely
+ * between two of them is not noticed.
+ *
+ * Pass the result of a previous search for the same name as `previousUpdate` to only check the
+ * blocks after it, as long as the name still points to the same content.
+ *
+ * `signal` stops the search before its next step, rejecting with `EnsWebsiteContentUpdateAbortedError`.
+ *
  * Returns null when the name doesn't point to IPFS content (no content, or a kind that can change
  * without an on-chain record, like IPNS - a date would mislead the user there).
  */
 export async function getEnsWebsiteContentUpdate(
   provider: RPCProvider,
-  ensName: string
+  ensName: string,
+  {
+    previousUpdate,
+    signal
+  }: { previousUpdate?: EnsWebsiteContentUpdate | null; signal?: AbortSignal | null } = {}
 ): Promise<EnsWebsiteContentUpdate | null> {
   const node = namehash(normalize(ensName))
   const latestBlock = await provider.getBlockNumber()
+  throwIfAborted(signal)
   const currentContenthash = await getContenthashAtBlock(provider, node, latestBlock)
+  throwIfAborted(signal)
 
   if (!currentContenthash.startsWith(IPFS_CONTENTHASH_PREFIX)) return null
+
+  const reusablePreviousUpdate =
+    previousUpdate?.contenthash === currentContenthash ? previousUpdate : null
+  // Min, in case the RPC answering now is a few blocks behind the one that answered the last time
+  const oldestBlockToCheck = reusablePreviousUpdate
+    ? Math.min(reusablePreviousUpdate.checkedAtBlock, latestBlock)
+    : ENS_REGISTRY_DEPLOYMENT_BLOCK
 
   let { changedBlock, unchangedBlock } = await findFirstChangedBlock(
     provider,
     node,
     currentContenthash,
-    getExponentiallyOlderBlocks(latestBlock),
+    getExponentiallyOlderBlocks(latestBlock, oldestBlockToCheck),
     latestBlock
   )
+  throwIfAborted(signal)
 
-  // The name has pointed to this content since before the registry migration
-  if (changedBlock === null) changedBlock = ENS_REGISTRY_DEPLOYMENT_BLOCK
+  if (changedBlock === null) {
+    // Nothing changed since the previous search, so its date is still the right one
+    if (reusablePreviousUpdate) return { ...reusablePreviousUpdate, checkedAtBlock: latestBlock }
+    // The name has pointed to this content since before the registry migration
+    changedBlock = ENS_REGISTRY_DEPLOYMENT_BLOCK
+  }
 
   while (unchangedBlock - changedBlock > SEARCH_PRECISION_IN_BLOCKS) {
     const step = await findFirstChangedBlock(
@@ -225,10 +267,15 @@ export async function getEnsWebsiteContentUpdate(
     // When none of the checked blocks differ, the change is between the oldest one and `changedBlock`
     unchangedBlock = step.unchangedBlock
     if (step.changedBlock !== null) changedBlock = step.changedBlock
+    throwIfAborted(signal)
   }
 
   const block = await provider.getBlock(unchangedBlock)
   if (!block) throw new Error(`Block ${unchangedBlock} not found`)
 
-  return { updatedAt: block.timestamp * 1000 }
+  return {
+    updatedAt: block.timestamp * 1000,
+    contenthash: currentContenthash,
+    checkedAtBlock: latestBlock
+  }
 }

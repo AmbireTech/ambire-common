@@ -65,14 +65,22 @@ import {
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
 import {
+  EnsWebsiteContentUpdate,
   getEnsNameFromGatewayUrl,
   getEnsWebsiteContentUpdate
 } from '../../services/ensDomains/ensContenthash'
 import { fetchWithTimeout } from '../../utils/fetch'
+import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { canBeTrustedByUser } from '../phishing/phishing'
 
 const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
+
+/**
+ * How long to look for when the website of the app to connect was last updated, before showing
+ * the user that it couldn't be checked instead of loading for as long as the RPC takes.
+ */
+export const WEBSITE_CONTENT_UPDATE_TIMEOUT_MS = 30000
 
 // Indexed once, because the `dapps` getter asks this per dapp and it runs on every
 // update of this controller.
@@ -146,6 +154,12 @@ export class DappsController extends EventEmitter implements IDappsController {
    * name over IPFS (e.g. `tornadocash.eth.limo`).
    */
   dappToConnectWebsiteContentUpdate: DappWebsiteContentUpdate | null = null
+
+  /**
+   * The last found website update of each ENS name, so connecting to the same app again only
+   * checks the blocks since then. Not persisted, as it's cheap to rebuild.
+   */
+  #ensWebsiteContentUpdates = new Map<string, EnsWebsiteContentUpdate>()
 
   isReadyToDisplayDapps: boolean = true
 
@@ -1474,10 +1488,26 @@ export class DappsController extends EventEmitter implements IDappsController {
       const provider = this.#providers.providers['1']
       if (!provider) throw new Error('No Ethereum provider to read the ENS records with')
 
-      const contentUpdate = await getEnsWebsiteContentUpdate(provider, ensName)
-      websiteContentUpdate = contentUpdate
-        ? { status: 'LOADED', updatedAt: contentUpdate.updatedAt }
-        : null
+      const contentUpdate = await withTimeout(
+        ({ signal } = {}) =>
+          getEnsWebsiteContentUpdate(provider, ensName, {
+            previousUpdate: this.#ensWebsiteContentUpdates.get(ensName),
+            signal
+          }),
+        {
+          timeoutMs: WEBSITE_CONTENT_UPDATE_TIMEOUT_MS,
+          message: `Checking when ${ensName} was last updated timed out`,
+          useAbort: true
+        }
+      )
+
+      if (contentUpdate) {
+        this.#ensWebsiteContentUpdates.set(ensName, contentUpdate)
+        websiteContentUpdate = { status: 'LOADED', updatedAt: contentUpdate.updatedAt }
+      } else {
+        this.#ensWebsiteContentUpdates.delete(ensName)
+        websiteContentUpdate = null
+      }
     } catch (err: any) {
       websiteContentUpdate = { status: 'FAILED' }
       this.emitError({

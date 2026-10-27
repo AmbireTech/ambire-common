@@ -15,6 +15,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import {
   ENS_REGISTRY,
   ENS_REGISTRY_DEPLOYMENT_BLOCK,
+  EnsWebsiteContentUpdateAbortedError,
   getEnsNameFromGatewayUrl,
   getEnsWebsiteContentUpdate
 } from './ensContenthash'
@@ -309,5 +310,123 @@ describe('getEnsWebsiteContentUpdate', () => {
     })
 
     await expect(getEnsWebsiteContentUpdate(provider, ENS_NAME)).rejects.toThrow('rate limited')
+  })
+
+  it('returns what it found along with the checked content and block', async () => {
+    const { provider } = createHistoricalProvider({
+      resolverHistory: [{ fromBlock: 10_000_000, value: RESOLVER }],
+      contenthashHistory: { [RESOLVER]: [{ fromBlock: 10_000_000, value: IPFS_CONTENT_A }] }
+    })
+
+    const result = await getEnsWebsiteContentUpdate(provider, ENS_NAME)
+
+    expect(result).toEqual({
+      updatedAt: expect.any(Number),
+      contenthash: IPFS_CONTENT_A,
+      checkedAtBlock: LATEST_BLOCK
+    })
+  })
+
+  describe('with the result of a previous search', () => {
+    const previousCheckBlock = LATEST_BLOCK - 100_000
+    const previousUpdate = {
+      updatedAt: getBlockTimestampInSeconds(12_000_000) * 1000,
+      contenthash: IPFS_CONTENT_A,
+      checkedAtBlock: previousCheckBlock
+    }
+
+    it('only checks the blocks after it when the content is the same', async () => {
+      const { provider, calls } = createHistoricalProvider({
+        resolverHistory: [{ fromBlock: 10_000_000, value: RESOLVER }],
+        contenthashHistory: { [RESOLVER]: [{ fromBlock: 12_000_000, value: IPFS_CONTENT_A }] }
+      })
+
+      const result = await getEnsWebsiteContentUpdate(provider, ENS_NAME, { previousUpdate })
+
+      expect(result).toEqual({ ...previousUpdate, checkedAtBlock: LATEST_BLOCK })
+      expect(calls.every(({ blockTag }) => blockTag >= previousCheckBlock)).toBe(true)
+      expect(calls.length).toBeLessThan(50)
+    })
+
+    it('searches again when the content changed since', async () => {
+      const changeBlock = LATEST_BLOCK - 5_000
+      const { provider } = createHistoricalProvider({
+        resolverHistory: [{ fromBlock: 10_000_000, value: RESOLVER }],
+        contenthashHistory: {
+          [RESOLVER]: [
+            { fromBlock: 12_000_000, value: IPFS_CONTENT_A },
+            { fromBlock: changeBlock, value: IPFS_CONTENT_B }
+          ]
+        }
+      })
+
+      const result = await getEnsWebsiteContentUpdate(provider, ENS_NAME, { previousUpdate })
+
+      expectUpdatedAround(result?.updatedAt, changeBlock)
+      expect(result?.contenthash).toBe(IPFS_CONTENT_B)
+    })
+
+    it('SECURITY: finds a switch to other content and back that happened since', async () => {
+      // The owner served other content for a while, then switched back to the old one
+      const switchBackBlock = LATEST_BLOCK - 20_000
+      const { provider } = createHistoricalProvider({
+        resolverHistory: [{ fromBlock: 10_000_000, value: RESOLVER }],
+        contenthashHistory: {
+          [RESOLVER]: [
+            { fromBlock: 12_000_000, value: IPFS_CONTENT_A },
+            { fromBlock: LATEST_BLOCK - 60_000, value: IPFS_CONTENT_B },
+            { fromBlock: switchBackBlock, value: IPFS_CONTENT_A }
+          ]
+        }
+      })
+
+      const result = await getEnsWebsiteContentUpdate(provider, ENS_NAME, { previousUpdate })
+
+      expectUpdatedAround(result?.updatedAt, switchBackBlock)
+    })
+
+    it('does not check blocks newer than the latest one when the RPC is behind', async () => {
+      const { provider, calls } = createHistoricalProvider({
+        resolverHistory: [{ fromBlock: 10_000_000, value: RESOLVER }],
+        contenthashHistory: { [RESOLVER]: [{ fromBlock: 12_000_000, value: IPFS_CONTENT_A }] }
+      })
+
+      const result = await getEnsWebsiteContentUpdate(provider, ENS_NAME, {
+        previousUpdate: { ...previousUpdate, checkedAtBlock: LATEST_BLOCK + 3 }
+      })
+
+      expect(result?.updatedAt).toBe(previousUpdate.updatedAt)
+      expect(calls.every(({ blockTag }) => blockTag <= LATEST_BLOCK)).toBe(true)
+    })
+  })
+
+  it('stops the search once it is aborted', async () => {
+    const history = {
+      resolverHistory: [{ fromBlock: 10_000_000, value: RESOLVER }],
+      contenthashHistory: {
+        [RESOLVER]: [
+          { fromBlock: 10_000_000, value: IPFS_CONTENT_A },
+          { fromBlock: 12_345_678, value: IPFS_CONTENT_B }
+        ]
+      }
+    }
+    const { provider: fullSearchProvider, calls: fullSearchCalls } =
+      createHistoricalProvider(history)
+    await getEnsWebsiteContentUpdate(fullSearchProvider, ENS_NAME)
+
+    const { provider, calls } = createHistoricalProvider(history)
+    const abortController = new AbortController()
+    const originalCall = provider.call.bind(provider)
+    provider.call = async (tx) => {
+      // Aborted while the first step of the search is in progress
+      if (calls.length === 10) abortController.abort()
+      return originalCall(tx)
+    }
+
+    await expect(
+      getEnsWebsiteContentUpdate(provider, ENS_NAME, { signal: abortController.signal })
+    ).rejects.toThrow(EnsWebsiteContentUpdateAbortedError)
+    // Only the step that was in progress completes
+    expect(calls.length).toBeLessThan(fullSearchCalls.length / 2)
   })
 })
