@@ -7,7 +7,8 @@ import {
   getDappIdFromUrl,
   getNormalizedHostnameFromUrl,
   getUnauthenticatedDapps,
-  normalizeHostname
+  normalizeHostname,
+  withoutUnusedAccountPreferences
 } from './helpers'
 
 describe('dapps helpers', () => {
@@ -205,6 +206,50 @@ describe('dapps helpers', () => {
     it('follows the wallet account without preferences', () => {
       expect(getAccountsForDapp(undefined, WALLET)).toEqual([WALLET])
       expect(getAccountsForDapp(undefined, undefined)).toEqual([])
+    })
+  })
+
+  describe('withoutUnusedAccountPreferences', () => {
+    const PICKED = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const OTHER = '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6'
+
+    it('drops preferences that let the dapp see every account without pinning one', () => {
+      expect(
+        withoutUnusedAccountPreferences({
+          enabled: false,
+          selectedAccount: PICKED,
+          accounts: [PICKED, OTHER]
+        })
+      ).toBeUndefined()
+      expect(
+        withoutUnusedAccountPreferences({
+          enabled: false,
+          selectedAccount: PICKED,
+          accounts: [PICKED],
+          isSelectedAccountPinned: false
+        })
+      ).toBeUndefined()
+    })
+
+    it('keeps preferences that limit the accounts the dapp may see', () => {
+      const preferences = { enabled: true, selectedAccount: PICKED, accounts: [PICKED] }
+
+      expect(withoutUnusedAccountPreferences(preferences)).toBe(preferences)
+    })
+
+    it('keeps preferences that pin an account for a dapp that may see every account', () => {
+      const preferences = {
+        enabled: false,
+        selectedAccount: PICKED,
+        accounts: [PICKED],
+        isSelectedAccountPinned: true
+      }
+
+      expect(withoutUnusedAccountPreferences(preferences)).toBe(preferences)
+    })
+
+    it('returns undefined without preferences', () => {
+      expect(withoutUnusedAccountPreferences(undefined)).toBeUndefined()
     })
   })
 })

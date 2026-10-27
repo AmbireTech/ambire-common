@@ -60,7 +60,8 @@ import {
   normalizeHostname,
   normalizeTrendingTokens,
   sortDapps,
-  unifyDefiLlamaDappUrl
+  unifyDefiLlamaDappUrl,
+  withoutUnusedAccountPreferences
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
 import { fetchWithTimeout } from '../../utils/fetch'
@@ -1061,8 +1062,12 @@ export class DappsController extends EventEmitter implements IDappsController {
         return
       }
 
+      dappPropsToUpdate.accountPreferences = withoutUnusedAccountPreferences(
+        accountPreferencesToUpdate
+      )
+
       const newAccounts = getAccountsForDapp(
-        accountPreferencesToUpdate,
+        dappPropsToUpdate.accountPreferences,
         this.#selectedAccount.account?.addr
       )
 
@@ -1101,6 +1106,11 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     this.dappToConnect = { ...this.dappToConnect, ...data }
+    if ('accountPreferences' in data) {
+      this.dappToConnect.accountPreferences = withoutUnusedAccountPreferences(
+        data.accountPreferences
+      )
+    }
     this.emitUpdate()
   }
 
@@ -1139,7 +1149,10 @@ export class DappsController extends EventEmitter implements IDappsController {
       hasUnpinned = true
       this.#dapps.set(dapp.id, {
         ...dapp,
-        accountPreferences: { ...dapp.accountPreferences, isSelectedAccountPinned: false }
+        accountPreferences: withoutUnusedAccountPreferences({
+          ...dapp.accountPreferences,
+          isSelectedAccountPinned: false
+        })
       })
     })
 
@@ -1180,6 +1193,18 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       const newAccounts = dapp.accountPreferences.accounts.filter((a) => a !== address)
       const isSelectedAccountRemoved = dapp.accountPreferences.selectedAccount === address
+
+      // A dapp that may see every account keeps its connection, and follows the wallet again
+      // once the account picked for it is gone
+      if (!dapp.accountPreferences.enabled) {
+        this.#dapps.set(dapp.id, {
+          ...dapp,
+          accountPreferences: isSelectedAccountRemoved
+            ? undefined
+            : withoutUnusedAccountPreferences({ ...dapp.accountPreferences, accounts: newAccounts })
+        })
+        return
+      }
 
       this.#dapps.set(dapp.id, {
         ...dapp,

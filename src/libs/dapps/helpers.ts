@@ -247,6 +247,18 @@ export function getAccountsForDapp(
 }
 
 /**
+ * Drops account preferences that neither limit the accounts a dapp may see nor pin one for it,
+ * so the dapp follows the wallet again and also sees the accounts added later.
+ */
+export function withoutUnusedAccountPreferences(
+  preferences: Dapp['accountPreferences']
+): Dapp['accountPreferences'] {
+  if (!preferences || preferences.enabled || preferences.isSelectedAccountPinned) return preferences
+
+  return undefined
+}
+
+/**
  * Whether a dapp may send requests for the account. A dapp the user connected to only some
  * accounts may use only those. Any other dapp follows the selected account, so it may ask for
  * any account in the wallet.
