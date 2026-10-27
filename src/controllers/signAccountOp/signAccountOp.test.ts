@@ -32,6 +32,7 @@ import {
   verifiedDapp
 } from '../../../test/helpers/dapps'
 import { mockUiManager } from '../../../test/helpers/ui'
+import { mockBundlerRequestsBeforeEach } from '../../../test/mocks/bundler'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -439,6 +440,18 @@ const gasTankToken: TokenResult = {
 
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
+
+// None of the tests here assert on real bundler results
+mockBundlerRequestsBeforeEach()
+
+// Every controller built by init keeps estimating and fetching gas prices on intervals.
+// Left running, they pile up through the file and a test that fast-forwards fake timers
+// runs all of them at once
+const controllersToDestroy: SignAccountOpTesterController[] = []
+afterEach(() => {
+  controllersToDestroy.splice(0).forEach((controller) => controller.destroy())
+})
+
 const init = async (
   account: Account,
   accountOp: {
@@ -789,6 +802,7 @@ const init = async (
     estimateController: estimationController,
     gasPriceController
   })
+  controllersToDestroy.push(controller)
   controller.update({
     hasNewEstimation: true,
     gasPrices: gasPricesOrMock
@@ -5247,6 +5261,7 @@ describe('speed up of a pending transaction', () => {
       jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
       const { controller } = await initSpeedUp()
       const originalSigner = controller.accountOp.signingKeyAddr
+      expect(controller.canChangeSigningKey).toBe(false)
 
       controller.update({ signingKeyAddr: otherKeyAddr, signingKeyType: 'internal' })
 
@@ -5257,6 +5272,7 @@ describe('speed up of a pending transaction', () => {
     test('a cancel is signed again, so another key (e.g. another Safe owner) can sign it', async () => {
       jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
       const { controller } = await initSpeedUp({ isCancel: true })
+      expect(controller.canChangeSigningKey).toBe(true)
 
       controller.update({ signingKeyAddr: otherKeyAddr, signingKeyType: 'internal' })
 
