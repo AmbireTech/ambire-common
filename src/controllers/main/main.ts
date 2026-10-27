@@ -1,7 +1,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 
 import EmittableError from '@/classes/EmittableError'
-import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '@/consts/activity'
+import { ACCOUNT_OP_PENDING_TIMEOUT_MS, CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '@/consts/activity'
 import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
 import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
@@ -100,7 +100,7 @@ import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
 import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
-import { AccountOp } from '@/libs/accountOp/accountOp'
+import { AccountOp, isSameChainAndSender } from '@/libs/accountOp/accountOp'
 import {
   getCallsWithTxnIds,
   getDappIdentifier,
@@ -1304,11 +1304,12 @@ export class MainController extends EventEmitter implements IMainController {
 
     let isSignAndBroadcastInProgressOnThisAccountAndChain = false
 
+    // All accounts are checked, as another account can share the fee payer of this op
     if (
-      this.requests.visibleUserRequests.some(
+      this.requests.userRequests.some(
         (r) =>
           r.kind === 'calls' &&
-          r.signAccountOp.accountOp.chainId === signAccountOp.accountOp.chainId &&
+          isSameChainAndSender(r.signAccountOp.accountOp, signAccountOp.accountOp) &&
           r.signAccountOp.isSignAndBroadcastInProgress
       )
     ) {
@@ -1316,19 +1317,20 @@ export class MainController extends EventEmitter implements IMainController {
     } else if (
       type !== 'one-click-swap-and-bridge' &&
       this.swapAndBridge.signAccountOpController &&
-      this.swapAndBridge.signAccountOpController.accountOp.accountAddr ===
-        signAccountOp.accountOp.accountAddr &&
-      this.swapAndBridge.signAccountOpController.accountOp.chainId ===
-        signAccountOp.accountOp.chainId &&
+      isSameChainAndSender(
+        this.swapAndBridge.signAccountOpController.accountOp,
+        signAccountOp.accountOp
+      ) &&
       this.swapAndBridge.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true
     } else if (
       type !== 'one-click-transfer' &&
       this.transfer.signAccountOpController &&
-      this.transfer.signAccountOpController.accountOp.accountAddr ===
-        signAccountOp.accountOp.accountAddr &&
-      this.transfer.signAccountOpController.accountOp.chainId === signAccountOp.accountOp.chainId &&
+      isSameChainAndSender(
+        this.transfer.signAccountOpController.accountOp,
+        signAccountOp.accountOp
+      ) &&
       this.transfer.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true
@@ -1724,9 +1726,19 @@ export class MainController extends EventEmitter implements IMainController {
   async updateAccountsOpsStatuses() {
     await this.initialLoadPromise
 
-    const addressesWithPendingOps = Object.entries(this.activity.broadcastedButNotConfirmed)
+    const pendingOpsByAccount = this.activity.broadcastedButNotConfirmed
+    const addressesWithPendingOps = Object.entries(pendingOpsByAccount)
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
+
+    // The nonces of a pending op stay reserved for as long as it is pending, so one whose op is
+    // gone would otherwise block the next txn forever
+    await this.accounts.dropOrphanedNonceReservations(
+      Object.values(pendingOpsByAccount)
+        .flat()
+        .map(({ id }) => id),
+      Date.now() - ACCOUNT_OP_PENDING_TIMEOUT_MS
+    )
 
     const updatedAccountsOpsByAccount =
       await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
@@ -1784,6 +1796,10 @@ export class MainController extends EventEmitter implements IMainController {
               op.status !== AccountOpStatus.Pending &&
               op.status !== AccountOpStatus.BroadcastedButNotConfirmed
           )
+          // A dropped op has no receipt but still frees its nonces. Nonces the ops used stay
+          // reserved until the latest reads below count them. A slow RPC only keeps them reserved
+          // longer, so there is no need to read again until it catches up
+          await this.accounts.settleNonceReservations(finalizedAccountOps)
           const blockNumberByChainId = getReceiptBlockNumberByChainId(finalizedAccountOps)
 
           const networks = this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))

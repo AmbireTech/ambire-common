@@ -95,7 +95,11 @@ const createController = (
     storage as any,
     jest.fn() as any,
     callRelayer,
-    { initialLoadPromise: Promise.resolve(), accounts: [] } as any,
+    {
+      initialLoadPromise: Promise.resolve(),
+      accounts: [],
+      dropOrphanedNonceReservations: () => {}
+    } as any,
     { initialLoadPromise: Promise.resolve(), account: { addr: accountAddr } } as any,
     { providers: { [chainId.toString()]: provider } } as any,
     { networks: [{ chainId }], isInitialized: true } as any,

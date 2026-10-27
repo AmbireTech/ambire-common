@@ -72,6 +72,7 @@ function legacyBlob(ops: ReturnType<typeof makeOp>[]) {
 }
 
 const alreadyLoaded = { initialLoadPromise: Promise.resolve() } as any
+const accountsStub = { dropOrphanedNonceReservations: () => {} }
 
 // filterAccountsOps reads #networks.networks, so anything exercising the filtered
 // views needs real-looking chain ids here.
@@ -89,7 +90,7 @@ function makeController(storage: IStorageController, idb?: AmbireIdbDatabase, pr
     storage,
     (() => {}) as any,
     (() => {}) as any,
-    { ...alreadyLoaded, accounts: [{ addr: ACC }] } as any, // accounts
+    { ...alreadyLoaded, ...accountsStub, accounts: [{ addr: ACC }] } as any, // accounts
     alreadyLoaded, // selectedAccount
     providers,
     networksStub, // networks
@@ -814,7 +815,7 @@ describe('ActivityController — the startup read covers every account', () => {
       storage,
       (() => {}) as any,
       (() => {}) as any,
-      { ...alreadyLoaded, accounts: [{ addr: ACC }, { addr: OTHER }] } as any,
+      { ...alreadyLoaded, ...accountsStub, accounts: [{ addr: ACC }, { addr: OTHER }] } as any,
       { ...alreadyLoaded, account: { addr: selectedAddr } } as any,
       {} as any,
       networksStub,
@@ -911,7 +912,7 @@ describe('ActivityController — the startup window is deeper for the selected a
       storage,
       (() => {}) as any,
       (() => {}) as any,
-      { ...alreadyLoaded, accounts: [{ addr: ACC }, { addr: OTHER }] } as any,
+      { ...alreadyLoaded, ...accountsStub, accounts: [{ addr: ACC }, { addr: OTHER }] } as any,
       { ...alreadyLoaded, account: { addr: selectedAddr } } as any,
       {} as any,
       networksStub,

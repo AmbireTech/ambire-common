@@ -90,7 +90,8 @@ function makeController(
     callRelayer,
     {
       initialLoadPromise: Promise.resolve(),
-      accounts: [{ addr: ACC_A }, { addr: ACC_B }]
+      accounts: [{ addr: ACC_A }, { addr: ACC_B }],
+      dropOrphanedNonceReservations: () => {}
     } as any,
     Object.assign(selectedAccount, { initialLoadPromise: Promise.resolve() }) as any, // same ref, so a test can switch account
     providers,
