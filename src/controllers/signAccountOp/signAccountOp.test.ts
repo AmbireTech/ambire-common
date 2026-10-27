@@ -8,7 +8,8 @@ import {
   MaxUint256,
   parseEther,
   toBeHex,
-  verifyMessage
+  verifyMessage,
+  Wallet
 } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -1014,7 +1015,15 @@ describe('SignAccountOp Controller ', () => {
     return { controller, storageCtrl, accountsCtrl }
   }
 
-  const initSafeNonce = async (signed: string[] = [], { isSpeedUp = false } = {}) => {
+  const initSafeNonce = async (
+    signed: string[] = [],
+    {
+      isSpeedUp = false,
+      isCancel = false,
+      signature,
+      txnId
+    }: { isSpeedUp?: boolean; isCancel?: boolean; signature?: string; txnId?: string } = {}
+  ) => {
     const feePaymentOptions = getDefaultFeeSelectionOptions().map((option) => ({
       ...option,
       paidBy: safeAccount.addr
@@ -1023,8 +1032,13 @@ describe('SignAccountOp Controller ', () => {
     accountOp.op.nonce = 3n
     accountOp.op.signed = signed
     if (isSpeedUp) {
-      accountOp.op.meta = { ...accountOp.op.meta, speedUp: { enabled: true } }
+      accountOp.op.meta = {
+        ...accountOp.op.meta,
+        speedUp: { enabled: true, ...(isCancel && { isCancel }) }
+      }
     }
+    if (signature) accountOp.op.signature = signature
+    if (txnId) accountOp.op.txnId = txnId
 
     return init(
       safeAccount,
@@ -1183,6 +1197,145 @@ describe('SignAccountOp Controller ', () => {
         title: 'You need to broadcast pending transactions before this one.'
       })
     )
+  })
+
+  describe('Safe cancel signatures from the Safe API', () => {
+    const safeTxnHash = `0x${'5a'.repeat(32)}`
+    const ownerA = new Wallet(`0x${'a1'.repeat(32)}`)
+    const ownerB = new Wallet(`0x${'b2'.repeat(32)}`)
+    const sign = (owner: Wallet) => owner.signingKey.sign(safeTxnHash).serialized
+    const joinSigs = (...sigs: string[]) => `0x${sigs.map((sig) => sig.slice(2)).join('')}`
+    const ownersOf = (controller: SignAccountOpController) =>
+      (controller.accountOp.signed ?? []).map((addr) => addr.toLowerCase()).sort()
+
+    // A new cancel whose Safe transaction hash is known, as after its first signature
+    const initNewSafeCancel = () =>
+      initSafeNonce([], { isSpeedUp: true, isCancel: true, txnId: safeTxnHash })
+
+    test('takes the signature of an owner who has not signed yet', async () => {
+      const { controller } = await initNewSafeCancel()
+
+      controller.update({ accountOpData: { signature: sign(ownerA) } })
+
+      expect(ownersOf(controller)).toEqual([ownerA.address.toLowerCase()])
+    })
+
+    test('adds an owner even when the Safe API returns as many signatures as collected', async () => {
+      const { controller } = await initNewSafeCancel()
+      controller.update({ accountOpData: { signature: sign(ownerA) } })
+
+      // The Safe API never got owner A's signature, only owner B's: same length, other owner
+      controller.update({ accountOpData: { signature: sign(ownerB) } })
+
+      expect(ownersOf(controller)).toEqual(
+        [ownerA.address, ownerB.address].map((addr) => addr.toLowerCase()).sort()
+      )
+      expect(controller.accountOp.signature!.length).toBe(2 + 130 * 2)
+    })
+
+    test('never counts an owner twice', async () => {
+      const { controller } = await initNewSafeCancel()
+      controller.update({ accountOpData: { signature: sign(ownerA) } })
+
+      controller.update({ accountOpData: { signature: joinSigs(sign(ownerA), sign(ownerB)) } })
+      controller.update({ accountOpData: { signature: joinSigs(sign(ownerB), sign(ownerA)) } })
+
+      expect(ownersOf(controller)).toHaveLength(2)
+      expect(controller.accountOp.signature!.length).toBe(2 + 130 * 2)
+    })
+
+    test('keeps the collected signatures when the Safe API has none of them', async () => {
+      const { controller } = await initNewSafeCancel()
+      controller.update({ accountOpData: { signature: joinSigs(sign(ownerA), sign(ownerB)) } })
+      const collectedSignature = controller.accountOp.signature
+
+      controller.update({ accountOpData: { signature: sign(ownerB) } })
+
+      expect(controller.accountOp.signature).toBe(collectedSignature)
+    })
+  })
+
+  describe('Safe speed up', () => {
+    // Two owners' ECDSA signatures, as the executed Safe transaction carried them
+    const ownersSignature = `0x${'11'.repeat(64)}1b${'22'.repeat(64)}1c`
+    // The txnId of an executed transaction is its onchain hash, not the Safe transaction hash
+    const executedTxnHash = `0x${'ab'.repeat(32)}`
+    const setAccountStateNonce = (
+      accountsCtrl: AccountsController,
+      controller: SignAccountOpController,
+      nonce: bigint
+    ) => {
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!.nonce = nonce
+    }
+
+    test('is ready to broadcast with the signatures of the transaction it replaces', async () => {
+      const { controller } = await initSafeNonce([], {
+        isSpeedUp: true,
+        signature: ownersSignature,
+        txnId: executedTxnHash
+      })
+
+      expect(controller.canBroadcast).toBe(true)
+      expect(controller.status?.type).not.toBe(SigningStatus.Queued)
+    })
+
+    test('does not read owners from signatures checked against the onchain hash', async () => {
+      const owners = [eoaSigner.keyPublicAddress]
+      const { controller } = await initSafeNonce(owners, {
+        isSpeedUp: true,
+        signature: ownersSignature,
+        txnId: executedTxnHash
+      })
+
+      expect(controller.accountOp.signed).toEqual(owners)
+    })
+
+    test('can broadcast even when the account state has moved past its nonce', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([], {
+        isSpeedUp: true,
+        signature: ownersSignature,
+        txnId: executedTxnHash
+      })
+
+      setAccountStateNonce(accountsCtrl, controller, 4n)
+
+      expect(controller.canBroadcast).toBe(true)
+    })
+
+    test('a signed Safe transaction that is not a speed up still waits for its nonce', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+
+      setAccountStateNonce(accountsCtrl, controller, 4n)
+
+      expect(controller.canBroadcast).toBe(false)
+    })
+
+    test('speeding up a pending Safe cancel reuses its signatures, ready to broadcast', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([], {
+        isSpeedUp: true,
+        isCancel: true,
+        signature: ownersSignature,
+        txnId: executedTxnHash
+      })
+
+      setAccountStateNonce(accountsCtrl, controller, 4n)
+
+      expect(controller.canBroadcast).toBe(true)
+      expect(controller.status?.type).not.toBe(SigningStatus.Queued)
+    })
+
+    test('a Safe cancel is a new Safe transaction, so it is not ready without signatures', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([], {
+        isSpeedUp: true,
+        isCancel: true
+      })
+
+      setAccountStateNonce(accountsCtrl, controller, 4n)
+
+      expect(controller.canBroadcast).toBe(false)
+    })
   })
 
   test('does not change the nonce of a non-Safe or already-signed transaction', async () => {
@@ -5453,9 +5606,12 @@ describe('speed up of a pending transaction', () => {
 
   const initSpeedUp = async ({
     isSpeedUp = true,
+    isCancel = false,
     replacedPaidBy
   }: {
     isSpeedUp?: boolean
+    // Cancels the pending transaction instead of speeding it up
+    isCancel?: boolean
     // Who paid for the pending transaction; unknown when not set
     replacedPaidBy?: string
   } = {}) => {
@@ -5480,7 +5636,7 @@ describe('speed up of a pending transaction', () => {
     if (isSpeedUp) {
       accountOp.op.meta = {
         ...accountOp.op.meta,
-        speedUp: { enabled: true, replacedIdentifiedBy }
+        speedUp: { enabled: true, replacedIdentifiedBy, ...(isCancel && { isCancel }) }
       }
     }
     const feePaymentOptions = [
@@ -5537,6 +5693,31 @@ describe('speed up of a pending transaction', () => {
 
   afterEach(() => {
     jest.restoreAllMocks()
+  })
+
+  describe('signing key', () => {
+    const otherKeyAddr = '0x714fD3Db837e72bD49B8edA02B8f4D53DfdDe5ce'
+
+    test('a speed up keeps the signer of the pending transaction it reuses the signature of', async () => {
+      jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+      const { controller } = await initSpeedUp()
+      const originalSigner = controller.accountOp.signingKeyAddr
+
+      controller.update({ signingKeyAddr: otherKeyAddr, signingKeyType: 'internal' })
+
+      expect(controller.accountOp.signingKeyAddr).toBe(originalSigner)
+      expect(controller.accountOp.signingKeyAddr).not.toBe(otherKeyAddr)
+    })
+
+    test('a cancel is signed again, so another key (e.g. another Safe owner) can sign it', async () => {
+      jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+      const { controller } = await initSpeedUp({ isCancel: true })
+
+      controller.update({ signingKeyAddr: otherKeyAddr, signingKeyType: 'internal' })
+
+      expect(controller.accountOp.signingKeyAddr).toBe(otherKeyAddr)
+      expect(controller.accountOp.signingKeyType).toBe('internal')
+    })
   })
 
   test.each([
@@ -5809,5 +5990,82 @@ describe('gas price refresh failures', () => {
     const levels = await getRefreshErrorLevels('default')
 
     expect(levels).toContain('major')
+  })
+})
+
+describe('speed up of a smart account transaction sent by another account', () => {
+  // An Ambire signature: 65 bytes followed by the 1-byte signature type, so it can't be split
+  // into 65-byte owner signatures like a Safe's
+  const ambireSignature = `0x${'11'.repeat(32)}${'22'.repeat(32)}1b01`
+  const pendingTxnHash = `0x${'cd'.repeat(32)}`
+  const gasPrices: GasSpeeds = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+  const feePaymentOptions = [
+    {
+      paidBy: eoaSigner.keyPublicAddress,
+      availableAmount: 1000000000000000000n,
+      gasUsed: 0n,
+      addedNative: 5000n,
+      token: {
+        address: '0x0000000000000000000000000000000000000000',
+        amount: parseEther('1'),
+        symbol: 'ETH',
+        name: 'Ether',
+        chainId: 1n,
+        decimals: 18,
+        priceIn: [],
+        marketDataIn: [],
+        flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: true, isFeeToken: true }
+      }
+    }
+  ]
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  test('opens with the signature of the pending transaction, which is not read as Safe owners', async () => {
+    jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+    const accountOp = createAccountOp(smartAccount)
+    accountOp.op.signature = ambireSignature
+    accountOp.op.txnId = pendingTxnHash
+    accountOp.op.signingKeyAddr = eoaSigner.keyPublicAddress
+    accountOp.op.signingKeyType = 'internal'
+    accountOp.op.meta = {
+      speedUp: {
+        enabled: true,
+        replacedIdentifiedBy: { type: 'Transaction', identifier: pendingTxnHash }
+      }
+    }
+
+    const { controller } = await init(
+      smartAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      gasPrices,
+      false,
+      { createSpeedUp: (activity) => new SpeedUp({ accountOp: accountOp.op, activity }) }
+    )
+
+    expect(controller.isSpeedUpTransaction).toBe(true)
+    expect(controller.accountOp.signature).toBe(ambireSignature)
+    expect(controller.accountOp.signed).toBeUndefined()
+    expect(controller.status?.type).not.toBe(SigningStatus.Queued)
   })
 })
