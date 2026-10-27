@@ -3402,6 +3402,11 @@ export class SignAccountOpController
     // already approved or on its way
     if (this.accountOp.signed?.includes(owner.addr)) return
     if (this.pendingSafeOwnerApprovals.includes(owner.addr)) return
+    // the approval being sent is shown again; picking another owner has to wait for it
+    if (this.safeOwnerApproval?.isSignAndBroadcastInProgress) {
+      if (this.safeOwnerApproval.account.addr !== owner.addr) this.#refuseToReplaceSentApproval()
+      return
+    }
 
     // the approval is for one exact Safe transaction, so settle its nonce like signing does
     await this.#resolveSafeNonceBeforeSigning()
@@ -3431,6 +3436,10 @@ export class SignAccountOpController
     )
     if (initId !== this.#safeOwnerApprovalInitId) return
     if (!ownerState) throw new Error('initSafeOwnerApproval: missing the owner account state')
+    if (this.safeOwnerApproval?.isSignAndBroadcastInProgress) {
+      this.#refuseToReplaceSentApproval()
+      return
+    }
 
     this.#destroySafeOwnerApproval()
     await this.#signAccountOpPreference.initialLoadPromise
@@ -3472,7 +3481,13 @@ export class SignAccountOpController
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
         await this.#onBroadcastSuccess(props)
-        this.#onSafeOwnerApprovalBroadcast(owner.addr, safeTxnHash, props.submittedAccountOp)
+        // this approval, even if another one took its place in the meantime
+        this.#onSafeOwnerApprovalBroadcast(
+          approval,
+          owner.addr,
+          safeTxnHash,
+          props.submittedAccountOp
+        )
       },
       onBroadcastFailed: this.#onBroadcastFailed
     })
@@ -3482,6 +3497,18 @@ export class SignAccountOpController
     this.safeOwnerApproval = approval
     this.#safeOwnerApprovalHash = safeTxnHash
     this.emitUpdate()
+  }
+
+  /**
+   * safeOwnerApproval can't be replaced while it's being signed or sent, as its send goes on
+   * regardless and would be left without the controller that tracks it
+   */
+  #refuseToReplaceSentApproval() {
+    this.emitError({
+      level: 'major',
+      message: 'Wait until the approval in progress is sent, then try again.',
+      error: new Error('initSafeOwnerApproval: the current approval is being signed or sent')
+    })
   }
 
   #destroySafeOwnerApproval() {
@@ -3550,6 +3577,7 @@ export class SignAccountOpController
   }
 
   #onSafeOwnerApprovalBroadcast(
+    approval: SignAccountOpController,
     ownerAddr: string,
     safeTxnHash: string,
     submittedAccountOp: SubmittedAccountOp
@@ -3559,7 +3587,7 @@ export class SignAccountOpController
       ownerAddr
     ]
     // sent, so nothing is left to estimate
-    this.safeOwnerApproval?.pause()
+    approval.pause()
     this.emitUpdate()
 
     void this.#confirmSafeOwnerApproval(ownerAddr, safeTxnHash, submittedAccountOp).catch(

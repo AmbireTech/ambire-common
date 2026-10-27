@@ -1472,6 +1472,33 @@ describe('SignAccountOp Controller ', () => {
       controller.destroy()
     })
 
+    test('does not replace an approval while it is being signed or sent', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const approval = controller.safeOwnerApproval!
+      jest.spyOn(approval, 'isSignAndBroadcastInProgress', 'get').mockReturnValue(true)
+      const destroySpy = jest.spyOn(approval, 'destroy')
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      // the same owner gets the approval being sent back, with no error
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr, 'same-owner')
+      expect(onError).not.toHaveBeenCalled()
+
+      await controller.initSafeOwnerApproval(anotherSmartAccountOwner.addr, 'another-owner')
+
+      expect(destroySpy).not.toHaveBeenCalled()
+      expect(controller.safeOwnerApproval).toBe(approval)
+      // done, so the UI stops waiting for an approval of the other owner
+      expect(controller.safeOwnerApprovalRequestId).toBe('another-owner')
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Wait until the approval in progress is sent, then try again.'
+        })
+      )
+      controller.destroy()
+    })
+
     test('does not prepare an approval for an owner that is not a smart account', async () => {
       const { controller } = await initSafeWithSmartAccountOwners()
       const onError = jest.fn()
