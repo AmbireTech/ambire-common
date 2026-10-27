@@ -9,7 +9,8 @@ import {
   parseEther,
   toBeHex,
   verifyMessage,
-  Wallet
+  Wallet,
+  ZeroAddress
 } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -1378,6 +1379,7 @@ describe('SignAccountOp Controller ', () => {
         .spyOn(safeLib, 'isSafeHashApproved')
         .mockResolvedValue(isApprovedOnchain)
       const proposeSpy = jest.spyOn(safeLib, 'propose').mockResolvedValue(undefined)
+      const confirmSpy = jest.spyOn(safeLib, 'confirm').mockResolvedValue(undefined as never)
 
       const result = await initSafeNonce()
       const { controller, accountsCtrl } = result
@@ -1400,7 +1402,7 @@ describe('SignAccountOp Controller ', () => {
         }
       })
 
-      return { ...result, isSafeHashApprovedSpy, proposeSpy }
+      return { ...result, isSafeHashApprovedSpy, proposeSpy, confirmSpy }
     }
 
     test('lists the owners that are imported smart accounts', async () => {
@@ -1505,6 +1507,83 @@ describe('SignAccountOp Controller ', () => {
         e2esmartAccount.addr,
         safeLib.getSafeApprovedHashSignature(e2esmartAccount.addr),
         controller.accountOp.txnId
+      )
+      controller.destroy()
+    })
+
+    test('confirms instead of proposing a Safe transaction that came from Safe Global', async () => {
+      const { controller, proposeSpy, confirmSpy } = await initSafeWithSmartAccountOwners({
+        isApprovedOnchain: true
+      })
+      // e.g. proposed by a delegate, so it has no signatures yet
+      controller.update({
+        accountOpData: {
+          safeTx: {
+            to: ZeroAddress,
+            value: '0',
+            data: '0x',
+            operation: 0,
+            safeTxGas: '0',
+            baseGas: '0',
+            gasPrice: '0',
+            gasToken: ZeroAddress,
+            refundReceiver: ZeroAddress,
+            nonce: '3',
+            confirmations: []
+          } as unknown as AccountOp['safeTx']
+        }
+      })
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+
+      expect(controller.accountOp.signed).toEqual([e2esmartAccount.addr])
+      expect(proposeSpy).not.toHaveBeenCalled()
+      expect(confirmSpy).toHaveBeenCalledWith(
+        controller.accountOp.chainId,
+        safeLib.getSafeApprovedHashSignature(e2esmartAccount.addr),
+        controller.accountOp.txnId
+      )
+      controller.destroy()
+    })
+
+    test('reports an error instead of throwing when calling the approval fails', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const retryError = new Error('retry failed')
+      jest.spyOn(controller.safeOwnerApproval!, 'retry').mockRejectedValue(retryError)
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await expect(
+        controller.callSafeOwnerApprovalMethod('retry', ['simulate'])
+      ).resolves.toBeUndefined()
+
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ level: 'major', error: retryError })
+      )
+      controller.destroy()
+    })
+
+    test('reports an error when the Safe state cannot be read before sending the approval', async () => {
+      const { controller, accountsCtrl } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const approval = controller.safeOwnerApproval!
+      const signAndBroadcastSpy = jest
+        .spyOn(approval, 'signAndBroadcast')
+        .mockResolvedValue(undefined)
+      const fetchError = new Error('RPC timeout')
+      jest.spyOn(accountsCtrl, 'getOrFetchAccountOnChainState').mockRejectedValueOnce(fetchError)
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await expect(controller.signAndBroadcastSafeOwnerApproval()).resolves.toBeUndefined()
+
+      expect(signAndBroadcastSpy).not.toHaveBeenCalled()
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Unable to send the approval. Please try again.',
+          error: fetchError
+        })
       )
       controller.destroy()
     })

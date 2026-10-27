@@ -3494,7 +3494,15 @@ export class SignAccountOpController
   ) {
     if (!this.safeOwnerApproval) return
 
-    await (this.safeOwnerApproval[method] as (...a: unknown[]) => unknown)(...args)
+    try {
+      await (this.safeOwnerApproval[method] as (...a: unknown[]) => unknown)(...args)
+    } catch (error: any) {
+      this.emitError({
+        level: 'major',
+        message: 'Something went wrong with the approval. Please try again.',
+        error
+      })
+    }
   }
 
   /**
@@ -3505,13 +3513,23 @@ export class SignAccountOpController
     const approval = this.safeOwnerApproval
     if (!approval) return
 
-    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
-      this.account.addr,
-      this.accountOp.chainId
-    )
-    const isForCurrentTxn =
-      !!accountState &&
-      this.#getSafeSigningData(accountState).safeTxnHash === this.#safeOwnerApprovalHash
+    let isForCurrentTxn: boolean
+    try {
+      const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+        this.account.addr,
+        this.accountOp.chainId
+      )
+      isForCurrentTxn =
+        !!accountState &&
+        this.#getSafeSigningData(accountState).safeTxnHash === this.#safeOwnerApprovalHash
+    } catch (error: any) {
+      this.emitError({
+        level: 'major',
+        message: 'Unable to send the approval. Please try again.',
+        error
+      })
+      return
+    }
     if (isForCurrentTxn) {
       await approval.signAndBroadcast()
       return
@@ -3664,7 +3682,7 @@ export class SignAccountOpController
       safeTxnHash,
       owner: ownerAddr as Hex,
       signature,
-      isFirstSignature: !prevSignedSigs.length
+      shouldPropose: this.#shouldProposeSafeTxn(prevSignedSigs)
     })
 
     this.#updateAccountOp({
@@ -3699,23 +3717,32 @@ export class SignAccountOpController
   }
 
   /**
+   * Whether the next owner signature proposes the Safe transaction to the Safe Transaction
+   * Service. Not when it came from there, even if it has no signatures yet, e.g. one proposed
+   * by a delegate - it exists already, so the signature is a confirmation
+   */
+  #shouldProposeSafeTxn(prevSignedSigs: Hex[]): boolean {
+    return !prevSignedSigs.length && !this.accountOp.safeTx
+  }
+
+  /**
    * Sends an owner signature to the Safe Transaction Service, so the other owners see it.
-   * The first one proposes the Safe transaction. Failures don't stop signing
+   * With `shouldPropose` it proposes the Safe transaction. Failures don't stop signing
    */
   async #shareSafeSignature({
     safeTxn,
     safeTxnHash,
     owner,
     signature,
-    isFirstSignature
+    shouldPropose
   }: {
     safeTxn: SafeTx
     safeTxnHash: string
     owner: Hex
     signature: Hex
-    isFirstSignature: boolean
+    shouldPropose: boolean
   }) {
-    if (isFirstSignature) {
+    if (shouldPropose) {
       // propose the txn to Safe Global upon first entry
       await withTimeout(
         () =>
@@ -4232,7 +4259,7 @@ export class SignAccountOpController
             safeTxnHash,
             owner: this.#accountOp.signingKeyAddr as Hex,
             signature,
-            isFirstSignature: !prevSignedSigs.length
+            shouldPropose: this.#shouldProposeSafeTxn(prevSignedSigs)
           })
 
           this.status = { type: SigningStatus.Queued }
