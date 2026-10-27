@@ -39,7 +39,10 @@ const WARNINGS: Record<
   }
 }
 
+/** The code of the error that blocks sending while an earlier transaction is still pending. */
+const EARLIER_PENDING_TRANSACTION_ERROR_CODE = 'EARLIER_PENDING_TRANSACTION'
+
 const RETRY_TO_INIT_ACCOUNT_OP_MSG =
   'Please attempt to initiate the transaction again or contact Ambire support.'
 
-export { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG, WARNINGS }
+export { EARLIER_PENDING_TRANSACTION_ERROR_CODE, ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG, WARNINGS }

@@ -1,5 +1,6 @@
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
-import { AccountOp } from './accountOp'
+import { FeePaymentOption } from '../estimate/interfaces'
+import { AccountOp, GasFeePayment } from './accountOp'
 import { isCancelAccountOp } from './cancel'
 import { SubmittedAccountOpLike } from './submittedAccountOp'
 import { AccountOpStatus } from './types'
@@ -153,4 +154,30 @@ export const getReplacementAccountOp = (
       }
     }
   }
+}
+
+/** How the pending transaction was paid, which its replacement must match. */
+export type ReplacedFeePayment = Pick<
+  GasFeePayment,
+  'paidBy' | 'inToken' | 'feeTokenChainId' | 'isGasTank'
+>
+
+/**
+ * The fee option the pending transaction was paid with, as its replacement must use it too.
+ * Undefined when that option is not among `feeOptions`, or the fee payment is unknown.
+ */
+export const findReplacedFeeOption = (
+  replacedFeePayment: ReplacedFeePayment | null | undefined,
+  feeOptions: FeePaymentOption[]
+): FeePaymentOption | undefined => {
+  if (!replacedFeePayment) return undefined
+
+  return feeOptions.find(
+    (option) =>
+      option.paidBy === replacedFeePayment.paidBy &&
+      option.token.address === replacedFeePayment.inToken &&
+      (!replacedFeePayment.feeTokenChainId ||
+        option.token.chainId === replacedFeePayment.feeTokenChainId) &&
+      option.token.flags.onGasTank === replacedFeePayment.isGasTank
+  )
 }

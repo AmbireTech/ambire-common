@@ -1,11 +1,13 @@
 import { IActivityController } from '../../interfaces/activity'
-import { AccountOp, GasFeePayment } from '../../libs/accountOp/accountOp'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 import { isCancelAccountOp } from '../../libs/accountOp/cancel'
+import { findReplacedFeeOption, ReplacedFeePayment } from '../../libs/accountOp/replacement'
 import { AccountOpIdentifiedBy } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { getSpeedUpGasPrices } from '../../libs/gasPrice/speedUp'
 import { GasSpeeds } from '../../services/bundlers/types'
+import isSameAddr from '../../utils/isSameAddr'
 import { generateUuid } from '../../utils/uuid'
 
 /**
@@ -18,27 +20,32 @@ const REPLACED_TXN_PROCESSED_STATUSES = [
   AccountOpStatus.UnknownButPastNonce
 ]
 
-type ReplacedFeePayment = Pick<
-  GasFeePayment,
-  'paidBy' | 'inToken' | 'feeTokenChainId' | 'isGasTank'
->
+/**
+ * How a transaction takes the place (nonce) of a pending one:
+ * `speedUp` sends the same calls with a higher fee, `cancel` sends empty calls instead (see
+ * `toCancelAccountOp`), and `newCalls` sends the calls of a new request instead (see
+ * `SignAccountOpController.replacePendingAccountOp`).
+ */
+export type TxnReplacementKind = 'speedUp' | 'cancel' | 'newCalls'
 
 /**
- * Holds what a speed up does differently from a normal transaction: the replacement keeps
- * the pending transaction's calls, nonce and fee payment, pays at least the minimum fee the
- * network accepts for a replacement, and has nothing to sign once the pending transaction
- * gets processed first. A cancel is a speed up whose calls are swapped for empty ones
- * (see `toCancelAccountOp`), so it has to be signed again, unless it's a pending cancel
- * being sped up, which keeps its signatures.
+ * Holds what a replacement of a pending transaction does differently from a normal
+ * transaction: it keeps the pending transaction's nonce and fee payment, pays at least the
+ * minimum fee the network accepts for a replacement, and has nothing to replace once the
+ * pending transaction gets processed first. A speed up also keeps the calls and the
+ * signatures. A cancel swaps the calls for empty ones, so it has to be signed again, unless
+ * it's a pending cancel being sped up, which keeps its signatures. A `newCalls` replacement
+ * sends the calls of a new request and is signed like a normal transaction.
  *
- * Passed to SignAccountOpController only when speeding up, so its absence means a normal
+ * Passed to SignAccountOpController only when replacing, so its absence means a normal
  * transaction. Not a controller: it has no state of its own for the UI, the data it works with
  * travels with the request in `accountOp.meta.speedUp`.
  */
-export class SpeedUp {
+export class TxnReplacement {
   #activity: IActivityController
 
-  #accountAddr: AccountOp['accountAddr']
+  /** The account that sent the pending transaction */
+  readonly accountAddr: AccountOp['accountAddr']
 
   #chainId: AccountOp['chainId']
 
@@ -56,8 +63,7 @@ export class SpeedUp {
    */
   readonly replacedNonce: AccountOp['nonce']
 
-  /** Whether it cancels the pending transaction instead of speeding it up */
-  readonly isCancel: boolean
+  readonly kind: TxnReplacementKind
 
   /**
    * A cancel that is signed anew: made from the pending transaction it cancels, whose
@@ -81,15 +87,28 @@ export class SpeedUp {
     return isCancelAccountOp(accountOp)
   }
 
-  constructor({ accountOp, activity }: { accountOp: AccountOp; activity: IActivityController }) {
+  /**
+   * @param accountOp the replacement account op (see `getReplacementAccountOp`)
+   * @param withNewCalls whether a new request's calls replace the pending ones (`newCalls`)
+   */
+  constructor({
+    accountOp,
+    activity,
+    withNewCalls = false
+  }: {
+    accountOp: AccountOp
+    activity: IActivityController
+    withNewCalls?: boolean
+  }) {
     this.#activity = activity
-    this.#accountAddr = accountOp.accountAddr
+    this.accountAddr = accountOp.accountAddr
     this.#chainId = accountOp.chainId
     this.#replacedFees = accountOp.meta?.speedUp?.replacedFees
     this.#replacedIdentifiedBy = accountOp.meta?.speedUp?.replacedIdentifiedBy
     this.replacedNonce = accountOp.meta?.speedUp?.replacedNonce ?? accountOp.nonce
-    this.isCancel = SpeedUp.isCancel(accountOp)
-    this.isNewCancel = this.isCancel && !accountOp.signature
+    if (withNewCalls) this.kind = 'newCalls'
+    else this.kind = TxnReplacement.isCancel(accountOp) ? 'cancel' : 'speedUp'
+    this.isNewCancel = this.kind === 'cancel' && !accountOp.signature
     this.#replacedFeePayment = accountOp.gasFeePayment
       ? {
           paidBy: accountOp.gasFeePayment.paidBy,
@@ -112,17 +131,15 @@ export class SpeedUp {
 
   /** The fee option the pending transaction was paid with, as the replacement must use it too */
   findReplacedFeeOption(feeOptions: FeePaymentOption[]): FeePaymentOption | undefined {
-    const replacedFeePayment = this.#replacedFeePayment
-    if (!replacedFeePayment) return undefined
+    return findReplacedFeeOption(this.#replacedFeePayment, feeOptions)
+  }
 
-    return feeOptions.find(
-      (option) =>
-        option.paidBy === replacedFeePayment.paidBy &&
-        option.token.address === replacedFeePayment.inToken &&
-        (!replacedFeePayment.feeTokenChainId ||
-          option.token.chainId === replacedFeePayment.feeTokenChainId) &&
-        option.token.flags.onGasTank === replacedFeePayment.isGasTank
-    )
+  /**
+   * Whether `senderAddr` is the account that paid the pending transaction, whose nonce the
+   * replacement takes. True when nothing was captured to compare with.
+   */
+  isSentBySameAccountAsReplaced(senderAddr: string): boolean {
+    return !this.#replacedFeePayment || isSameAddr(this.#replacedFeePayment.paidBy, senderAddr)
   }
 
   /**
@@ -173,7 +190,7 @@ export class SpeedUp {
 
     const replacedAccountOp = this.#activity.findByIdentifiedBy(
       this.#replacedIdentifiedBy,
-      this.#accountAddr,
+      this.accountAddr,
       this.#chainId
     )
 
