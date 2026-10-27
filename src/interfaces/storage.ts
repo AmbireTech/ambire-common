@@ -5,6 +5,7 @@ import { EmailVaultData } from '@/interfaces/emailVault'
 import { FeatureFlags } from '../consts/featureFlags'
 import { FeePayersHistory, SentToHistory, SignedMessage } from '../controllers/activity/types'
 import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/submittedAccountOp'
+import { NonceReservation } from '../utils/nonce'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { Erc7730PersistedRegistryCache } from '../libs/humanizer/erc7730/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
@@ -129,6 +130,12 @@ export type StorageProps = {
   }
   networks: { [key: string]: Network }
   accounts: Account[]
+  /**
+   * Saved, so a restart doesn't reuse the nonce of a pending op. Held for as long as the op is
+   * pending in Activity. A reservation whose op was never saved is dropped by the status updates
+   * once it is older than ACCOUNT_OP_PENDING_TIMEOUT_MINS, so it can't hold a nonce forever.
+   */
+  nonceReservations: { [accountOpId: string]: NonceReservation }
   networkPreferences: { [key: string]: Partial<Network> }
   accountPreferences: { [key: AccountId]: AccountPreferences }
   lastDappsUpdateVersion: string | null

@@ -1,0 +1,303 @@
+import { describe, expect, it } from '@jest/globals'
+
+import { Account } from '../interfaces/account'
+import { AccountOp } from '../libs/accountOp/accountOp'
+import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../libs/accountOp/types'
+import { BROADCAST_OPTIONS } from '../libs/broadcast/broadcast'
+import {
+  getNonceKeys,
+  getReceiptBlockNumberByChainId,
+  getNoncesToReserve,
+  NonceKey,
+  ReservedNonce
+} from './nonce'
+
+const ACCOUNT = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+const PAYER = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+
+const makeAccountOp = (
+  broadcastOption: string,
+  overrides: Partial<AccountOp> = {}
+): Pick<AccountOp, 'accountAddr' | 'nonce' | 'safeTx' | 'gasFeePayment' | 'meta'> => ({
+  accountAddr: ACCOUNT,
+  nonce: 3n,
+  gasFeePayment: {
+    paidBy: PAYER,
+    paidByKeyType: 'internal',
+    broadcastOption,
+    isGasTank: false,
+    inToken: '0x0000000000000000000000000000000000000000',
+    feeTokenChainId: 1n,
+    amount: 1n,
+    simulatedGasLimit: 1n,
+    gasPrice: 1n
+  },
+  ...overrides
+})
+
+const makeOp = (status: AccountOpStatus, overrides: Partial<SubmittedAccountOp> = {}) =>
+  ({
+    id: `${status}-${Math.random()}`,
+    accountAddr: ACCOUNT,
+    chainId: 8453n,
+    nonce: 0n,
+    status,
+    timestamp: 0,
+    ...overrides
+  }) as SubmittedAccountOp
+
+const makeAccount = (type: 'eoa' | 'ambire' | 'safe'): Account => ({
+  addr: ACCOUNT,
+  associatedKeys: [PAYER],
+  initialPrivileges: [],
+  creation:
+    type === 'ambire'
+      ? { factoryAddr: PAYER, bytecode: '0x00', salt: `0x${'0'.repeat(64)}` }
+      : null,
+  ...(type === 'safe' && {
+    safeCreation: { factoryAddr: PAYER, singleton: PAYER, saltNonce: '0x00', setupData: '0x' }
+  }),
+  preferences: { label: 'Account', pfp: ACCOUNT }
+})
+
+const sender = (nonce: bigint, addr = ACCOUNT): ReservedNonce => ({ kind: 'sender', addr, nonce })
+const account = (nonce: bigint, addr = ACCOUNT): ReservedNonce => ({ kind: 'account', addr, nonce })
+
+describe('utils/nonce', () => {
+  describe('getNoncesToReserve', () => {
+    const rawSender = { addr: ACCOUNT, firstNonce: 7n, sentTxnCount: 1 }
+    const cases: {
+      name: string
+      args: Parameters<typeof getNoncesToReserve>[0]
+      expected: ReservedNonce[]
+    }[] = [
+      {
+        name: 'bySelf: one sender nonce per sent txn',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.bySelf),
+          isSafe: false,
+          sender: rawSender
+        },
+        expected: [sender(7n)]
+      },
+      {
+        name: 'bySelf batch of 3 with 2 sent: only the sent nonces',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.bySelf),
+          isSafe: false,
+          sender: { ...rawSender, sentTxnCount: 2 }
+        },
+        expected: [sender(7n), sender(8n)]
+      },
+      {
+        name: 'bySelf7702: sender nonce only',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.bySelf7702),
+          isSafe: false,
+          sender: rawSender
+        },
+        expected: [sender(7n)]
+      },
+      {
+        name: 'self delegation: the txn nonce and the authorization nonce',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.delegation),
+          isSafe: false,
+          sender: rawSender
+        },
+        expected: [sender(7n), sender(8n)]
+      },
+      {
+        name: 'delegation with nothing sent: nothing',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.delegation),
+          isSafe: false,
+          sender: { ...rawSender, sentTxnCount: 0 }
+        },
+        expected: []
+      },
+      {
+        name: 'Ambire account paid by another EOA: payer and account nonce',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byOtherEOA),
+          isSafe: false,
+          sender: { ...rawSender, addr: PAYER }
+        },
+        expected: [sender(7n, PAYER), account(3n)]
+      },
+      {
+        name: 'relayer: account nonce only',
+        args: { accountOp: makeAccountOp(BROADCAST_OPTIONS.byRelayer), isSafe: false },
+        expected: [account(3n)]
+      },
+      {
+        name: 'Ambire bundler op: nothing, as its nonce is the userOp nonce',
+        args: { accountOp: makeAccountOp(BROADCAST_OPTIONS.byBundler), isSafe: false },
+        expected: []
+      },
+      {
+        name: 'EOA7702 bundler op with an authorization: the authorization nonce',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byBundler),
+          isSafe: false,
+          bundlerAuthorizationNonce: 5n
+        },
+        expected: [sender(5n)]
+      },
+      {
+        name: 'Safe through a bundler: the Safe nonce',
+        args: { accountOp: makeAccountOp(BROADCAST_OPTIONS.byBundler), isSafe: true },
+        expected: [account(3n)]
+      },
+      {
+        name: 'Safe: safeTx.nonce wins over nonce',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byOtherEOA, {
+            safeTx: { nonce: '9' } as AccountOp['safeTx']
+          }),
+          isSafe: true,
+          sender: { ...rawSender, addr: PAYER }
+        },
+        expected: [sender(7n, PAYER), account(9n)]
+      },
+      {
+        name: 'Safe deploy: no Safe nonce, as a deploy only calls the factory',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byOtherEOA, { meta: { isSafeDeploy: true } }),
+          isSafe: true,
+          sender: { ...rawSender, addr: PAYER }
+        },
+        expected: [sender(7n, PAYER)]
+      },
+      {
+        name: 'null nonce: no account entry',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byRelayer, { nonce: null }),
+          isSafe: false
+        },
+        expected: []
+      }
+    ]
+
+    it.each(cases)('$name', ({ args, expected }) => {
+      expect(getNoncesToReserve(args)).toEqual(expected)
+    })
+  })
+
+  describe('getNonceKeys', () => {
+    const senderKey = (addr = ACCOUNT): NonceKey => ({ kind: 'sender', addr })
+    const accountKey: NonceKey = { kind: 'account', addr: ACCOUNT }
+    const cases: {
+      name: string
+      args: Parameters<typeof getNonceKeys>[0]
+      expected: NonceKey[]
+    }[] = [
+      {
+        name: 'an EOA sends by itself',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.bySelf, { gasFeePayment: null }),
+          account: makeAccount('eoa')
+        },
+        expected: [senderKey()]
+      },
+      {
+        name: 'a 7702 delegation is sent by the account',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.delegation),
+          account: makeAccount('eoa')
+        },
+        expected: [senderKey()]
+      },
+      {
+        name: 'a smart account paid by an EOA takes the payer nonce and its own',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byOtherEOA),
+          account: makeAccount('ambire')
+        },
+        expected: [senderKey(PAYER), accountKey]
+      },
+      {
+        name: 'a smart account through the Relayer takes its own nonce',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byRelayer),
+          account: makeAccount('ambire')
+        },
+        expected: [accountKey]
+      },
+      {
+        name: 'a smart account through a bundler takes no wallet nonce',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byBundler),
+          account: makeAccount('ambire')
+        },
+        expected: []
+      },
+      {
+        name: 'an EOA through a bundler takes its own txn nonce when it signs the 7702 authorization',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byBundler),
+          account: makeAccount('eoa'),
+          signsBundlerAuthorization: true
+        },
+        expected: [senderKey()]
+      },
+      {
+        name: 'a smart account without a fee option yet takes no wallet nonce',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byOtherEOA, { gasFeePayment: null }),
+          account: makeAccount('ambire')
+        },
+        expected: []
+      },
+      {
+        name: 'a Safe through a bundler still takes its Safe nonce',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byBundler),
+          account: makeAccount('safe')
+        },
+        expected: [accountKey]
+      },
+      {
+        name: 'a Safe executed by an EOA takes the payer nonce and the Safe nonce',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byOtherEOA),
+          account: makeAccount('safe')
+        },
+        expected: [senderKey(PAYER), accountKey]
+      },
+      {
+        name: 'a Safe without a fee option yet takes its Safe nonce',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byOtherEOA, { gasFeePayment: null }),
+          account: makeAccount('safe')
+        },
+        expected: [accountKey]
+      },
+      {
+        name: 'a Safe deploy takes no Safe nonce',
+        args: {
+          accountOp: makeAccountOp(BROADCAST_OPTIONS.byBundler, { meta: { isSafeDeploy: true } }),
+          account: makeAccount('safe')
+        },
+        expected: []
+      }
+    ]
+
+    it.each(cases)('$name', ({ args, expected }) => {
+      expect(getNonceKeys(args)).toEqual(expected)
+    })
+  })
+
+  describe('getReceiptBlockNumberByChainId', () => {
+    it('keeps the highest receipt block per chain and skips ops without a receipt', () => {
+      const ops = [
+        makeOp(AccountOpStatus.Success, { chainId: 1n, blockNumber: 10 }),
+        makeOp(AccountOpStatus.Success, { chainId: 1n, blockNumber: 12 }),
+        makeOp(AccountOpStatus.Failure, { chainId: 8453n, blockNumber: 0 }),
+        makeOp(AccountOpStatus.Rejected, { chainId: 10n })
+      ]
+      expect(getReceiptBlockNumberByChainId(ops)).toEqual({ '1': 12, '8453': 0 })
+    })
+  })
+})

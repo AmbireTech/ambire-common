@@ -16,7 +16,10 @@ import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { UiManager } from '../../interfaces/ui'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import * as accountStateLib from '../../libs/accountState/accountState'
+import { ACCOUNT_OP_PENDING_TIMEOUT_MS } from '../../consts/activity'
 import { StorageController } from '../storage/storage'
 import { AccountsController } from './accounts'
 
@@ -146,8 +149,16 @@ const track = (promise: Promise<unknown>) => {
  * `fetches` lists every `getAccountState` call, which the test settles by hand.
  */
 const makeAccountsController = async ({
-  sendUiMessage
-}: { sendUiMessage?: UiManager['message']['sendUiMessage'] } = {}) => {
+  sendUiMessage,
+  storage = new StorageController(produceMemoryStore()),
+  shouldWaitForLoad = true
+}: {
+  sendUiMessage?: UiManager['message']['sendUiMessage']
+  /** Pass the storage of an earlier controller to start it again on the same data */
+  storage?: StorageController
+  /** Pass false to call the controller while it still loads */
+  shouldWaitForLoad?: boolean
+} = {}) => {
   const fetches: AccountStateFetch[] = []
   jest
     .spyOn(accountStateLib, 'getAccountState')
@@ -163,8 +174,7 @@ const makeAccountsController = async ({
       })
     })
 
-  const storage = new StorageController(produceMemoryStore())
-  await storage.set('accounts', accounts)
+  if (!(await storage.get('accounts', [])).length) await storage.set('accounts', accounts)
   const updateProviderIsWorking = jest.fn()
   const accountsCtrl = new AccountsController(
     storage,
@@ -190,8 +200,10 @@ const makeAccountsController = async ({
     } as unknown as IFeatureFlagsController,
     sendUiMessage
   )
-  await accountsCtrl.initialLoadPromise
-  await accountsCtrl.accountStateInitialLoadPromise
+  if (shouldWaitForLoad) {
+    await accountsCtrl.initialLoadPromise
+    await accountsCtrl.accountStateInitialLoadPromise
+  }
   const errors: string[] = []
   accountsCtrl.onError((error) => errors.push(error.message))
 
@@ -399,6 +411,317 @@ describe('AccountsController account state fetching', () => {
     fetches[0]!.resolve([makeAccountState(ADDR_A, 10n)])
     await update
     expect(loadingStates.at(-1)).toBe(false)
+  })
+
+  describe('getLatestAccountNonce', () => {
+    test('reads the nonce on the latest block, not from the saved states', async () => {
+      const { accountsCtrl, fetches } = ctrl
+      // A pending state counts txns that are not mined, so it must not answer for the latest one
+      const updatePending = accountsCtrl.updateAccountState(ADDR_A, 'pending', [ETHEREUM.chainId])
+      await flushPromises()
+      fetches[0]!.resolve([makeAccountState(ADDR_A, 11n)])
+      await updatePending
+
+      const nonce = accountsCtrl.getLatestAccountNonce(ADDR_A, ETHEREUM.chainId)
+      await flushPromises()
+      expect(fetches[1]?.blockTag).toBe('latest')
+      fetches[1]!.resolve([makeAccountState(ADDR_A, 10n)])
+
+      expect(await nonce).toBe(10n)
+      // Only a state fetch of its own saves a state
+      expect(accountsCtrl.accountStates[ADDR_A]?.[ETHEREUM.chainId.toString()]?.nonce).toBe(11n)
+    })
+
+    test('is null, with a silent error, when the RPC fails', async () => {
+      const { accountsCtrl, fetches, errors } = ctrl
+      const nonce = accountsCtrl.getLatestAccountNonce(ADDR_A, BASE.chainId)
+      await flushPromises()
+      fetches[0]!.reject(new Error('RPC is down'))
+
+      expect(await nonce).toBeNull()
+      expect(errors).toEqual([`Failed to read the account nonce on ${BASE.name}.`])
+    })
+
+    test('is null for an account that is not in the wallet or a network that is not enabled', async () => {
+      const { accountsCtrl, fetches } = ctrl
+
+      expect(await accountsCtrl.getLatestAccountNonce(ADDR_A, 12345n)).toBeNull()
+      expect(
+        await accountsCtrl.getLatestAccountNonce(
+          '0x0000000000000000000000000000000000000001',
+          BASE.chainId
+        )
+      ).toBeNull()
+      expect(fetches).toHaveLength(0)
+    })
+  })
+})
+
+describe('AccountsController nonce reservations', () => {
+  let ctrl: Awaited<ReturnType<typeof makeAccountsController>>
+  const CHAIN = BASE.chainId
+  const RESERVATION_TIMEOUT_MS = ACCOUNT_OP_PENDING_TIMEOUT_MS
+  const op = (id: string, status: AccountOpStatus, overrides: Partial<SubmittedAccountOp> = {}) =>
+    ({
+      id,
+      status,
+      accountAddr: ADDR_A,
+      chainId: CHAIN,
+      calls: [],
+      identifiedBy: { type: 'Transaction', identifier: '0x01' },
+      ...overrides
+    }) as SubmittedAccountOp
+  const sender = (nonce: bigint, addr = ADDR_A) => ({ kind: 'sender' as const, addr, nonce })
+  const account = (nonce: bigint, addr = ADDR_A) => ({ kind: 'account' as const, addr, nonce })
+  /** Runs a state read of `addr` on CHAIN and answers it with `nonce` as both of its nonces */
+  const readState = async (
+    addr: string,
+    nonce: bigint,
+    blockTag: 'latest' | 'pending' = 'latest'
+  ) => {
+    const read = ctrl.accountsCtrl.updateAccountState(addr, blockTag, [CHAIN], true)
+    await flushPromises()
+    ctrl.fetches.at(-1)!.resolve([makeAccountState(addr, nonce)])
+    await read
+  }
+
+  const useFakeTimers = () => jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] })
+  /**
+   * Starts a new controller on the storage of the current one. Built with real timers, as its
+   * identity intervals are not part of what these tests check.
+   */
+  const restart = async () => {
+    const now = Date.now()
+    jest.useRealTimers()
+    jest.spyOn(Date, 'now').mockReturnValue(now)
+    const restarted = await makeAccountsController({ storage: ctrl.storage })
+    await flushPromises()
+    return restarted.accountsCtrl
+  }
+
+  beforeEach(async () => {
+    ctrl = await makeAccountsController()
+    useFakeTimers()
+  })
+
+  afterEach(() => {
+    const pendingTimerCount = jest.getTimerCount()
+    jest.useRealTimers()
+    jest.restoreAllMocks()
+    expect(pendingTimerCount).toBe(0)
+  })
+
+  test('a new op skips the reserved nonces of its sender, kind and chain only', async () => {
+    const { accountsCtrl } = ctrl
+    await accountsCtrl.reserveNonces('a', CHAIN, [sender(7n), sender(8n)])
+    await accountsCtrl.reserveNonces('b', CHAIN, [account(3n), sender(20n, ADDR_B)])
+    await accountsCtrl.reserveNonces('c', ETHEREUM.chainId, [sender(30n)])
+
+    expect(accountsCtrl.getNextNonce(ADDR_A.toLowerCase(), CHAIN, 'sender', 7n)).toBe(9n)
+    // The RPC already counts the reserved nonces
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 10n)).toBe(10n)
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'account', 3n)).toBe(4n)
+    expect(accountsCtrl.getNextNonce(ADDR_A, ETHEREUM.chainId, 'sender', 7n)).toBe(31n)
+    expect(accountsCtrl.getNextNonce(ADDR_B, ETHEREUM.chainId, 'sender', 5n)).toBe(5n)
+  })
+
+  test('keeps the nonce of a confirmed op until a latest read counts it', async () => {
+    const { accountsCtrl } = ctrl
+    await accountsCtrl.reserveNonces('a', CHAIN, [sender(7n)])
+    await accountsCtrl.settleNonceReservations([op('a', AccountOpStatus.Success)])
+
+    // A lagging RPC still returns the nonce from before the op
+    await readState(ADDR_A, 7n)
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(8n)
+
+    // A pending state can count a txn that is dropped later, so it frees nothing
+    await readState(ADDR_A, 8n, 'pending')
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(8n)
+
+    await readState(ADDR_A, 8n)
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(7n)
+  })
+
+  test('a latest read that counts a nonce does not free the reservation of a pending op', async () => {
+    const { accountsCtrl } = ctrl
+    await accountsCtrl.reserveNonces('pending', CHAIN, [sender(7n)])
+
+    await readState(ADDR_A, 8n)
+
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 6n)).toBe(8n)
+    expect(
+      accountsCtrl.getPendingNonceReservations(CHAIN, [{ kind: 'sender', addr: ADDR_A }])
+    ).toEqual([{ accountOpId: 'pending', reserved: sender(7n) }])
+  })
+
+  test.each([AccountOpStatus.Rejected, AccountOpStatus.BroadcastButStuck])(
+    'an op that becomes %s frees its nonces at once, without a read',
+    async (status) => {
+      const { accountsCtrl, fetches } = ctrl
+      await accountsCtrl.reserveNonces('a', CHAIN, [sender(7n), account(3n)])
+
+      await accountsCtrl.settleNonceReservations([op('a', status)])
+
+      expect(fetches).toHaveLength(0)
+      expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(7n)
+      expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'account', 3n)).toBe(3n)
+    }
+  )
+
+  test('a failed op frees the account nonce its revert undid and keeps the sender nonce', async () => {
+    const { accountsCtrl } = ctrl
+    await accountsCtrl.reserveNonces('a', CHAIN, [sender(7n, ADDR_B), account(3n)])
+
+    await accountsCtrl.settleNonceReservations([op('a', AccountOpStatus.Failure)])
+
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'account', 3n)).toBe(3n)
+    expect(accountsCtrl.getNextNonce(ADDR_B, CHAIN, 'sender', 7n)).toBe(8n)
+    // Settled, so it no longer holds a new op back
+    expect(
+      accountsCtrl.getPendingNonceReservations(CHAIN, [{ kind: 'sender', addr: ADDR_B }])
+    ).toEqual([])
+
+    await readState(ADDR_B, 8n)
+    expect(accountsCtrl.getNextNonce(ADDR_B, CHAIN, 'sender', 7n)).toBe(7n)
+  })
+
+  test('a batch sent one txn at a time keeps only the nonces of its mined txns', async () => {
+    const { accountsCtrl } = ctrl
+    await accountsCtrl.reserveNonces('a', CHAIN, [sender(7n), sender(8n), sender(9n)])
+    const minedCall = { to: ADDR_B, value: 0n, data: '0x', status: AccountOpStatus.Success }
+    const droppedCall = { ...minedCall, status: AccountOpStatus.Rejected }
+    // The batch takes the status of its last txn, though its first one was mined
+    const batch = op('a', AccountOpStatus.Rejected, {
+      identifiedBy: { type: 'MultipleTxns', identifier: '0x01-0x02-0x03' },
+      calls: [minedCall, droppedCall, droppedCall]
+    })
+
+    await accountsCtrl.settleNonceReservations([batch])
+
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(8n)
+    await readState(ADDR_A, 8n)
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(7n)
+  })
+
+  test('removing an account frees its nonces', async () => {
+    const { accountsCtrl } = ctrl
+    await accountsCtrl.reserveNonces('a', CHAIN, [sender(7n), sender(20n, ADDR_B)])
+
+    accountsCtrl.removeAccountData(ADDR_A)
+
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(7n)
+    expect(accountsCtrl.getNextNonce(ADDR_B, CHAIN, 'sender', 20n)).toBe(21n)
+  })
+
+  test('the reservations survive a restart', async () => {
+    const { accountsCtrl } = ctrl
+    await accountsCtrl.reserveNonces('pending', CHAIN, [sender(7n)])
+    await accountsCtrl.reserveNonces('confirmed', CHAIN, [account(3n)])
+    await accountsCtrl.settleNonceReservations([op('confirmed', AccountOpStatus.Success)])
+    await flushPromises()
+
+    const restartedCtrl = await restart()
+
+    expect(restartedCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(8n)
+    expect(restartedCtrl.getNextNonce(ADDR_A, CHAIN, 'account', 3n)).toBe(4n)
+    // Only the unsettled reservation holds a new op back
+    expect(
+      restartedCtrl.getPendingNonceReservations(CHAIN, [
+        { kind: 'sender', addr: ADDR_A },
+        { kind: 'account', addr: ADDR_A }
+      ])
+    ).toEqual([{ accountOpId: 'pending', reserved: sender(7n) }])
+  })
+
+  test('a reservation made while the controller loads is kept with the saved ones', async () => {
+    await ctrl.accountsCtrl.reserveNonces('saved', CHAIN, [sender(7n)])
+    await flushPromises()
+    jest.useRealTimers()
+
+    const { accountsCtrl } = await makeAccountsController({
+      storage: ctrl.storage,
+      shouldWaitForLoad: false
+    })
+    const reservingDuringLoad = accountsCtrl.reserveNonces('sent-during-load', CHAIN, [sender(8n)])
+    await accountsCtrl.initialLoadPromise
+    await reservingDuringLoad
+    await flushPromises()
+
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(9n)
+    expect(Object.keys(await ctrl.storage.get('nonceReservations', {})).sort()).toEqual([
+      'saved',
+      'sent-during-load'
+    ])
+  })
+
+  test('a reservation of a pending op holds its nonce for as long as the op is pending', async () => {
+    const { accountsCtrl } = ctrl
+    await accountsCtrl.reserveNonces('a', CHAIN, [sender(7n)])
+    await flushPromises()
+
+    jest.advanceTimersByTime(RESERVATION_TIMEOUT_MS * 4)
+
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(8n)
+    expect(
+      accountsCtrl.getPendingNonceReservations(CHAIN, [{ kind: 'sender', addr: ADDR_A }])
+    ).toEqual([{ accountOpId: 'a', reserved: sender(7n) }])
+  })
+
+  test('a settled reservation is ignored after the timeout from the settle, and dropped on the next load', async () => {
+    const { accountsCtrl, storage } = ctrl
+    await accountsCtrl.reserveNonces('a', CHAIN, [sender(7n)])
+    // The op was pending for longer than the timeout, but a lagging RPC can still be behind it
+    jest.advanceTimersByTime(RESERVATION_TIMEOUT_MS * 2)
+    await accountsCtrl.settleNonceReservations([op('a', AccountOpStatus.Success)])
+    await flushPromises()
+
+    jest.advanceTimersByTime(RESERVATION_TIMEOUT_MS - 1)
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(8n)
+
+    jest.advanceTimersByTime(1)
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(7n)
+
+    await restart()
+    expect(await storage.get('nonceReservations', {})).toEqual({})
+  })
+
+  test('drops the unsettled reservations whose op is not pending, and saves that', async () => {
+    const { accountsCtrl, storage } = ctrl
+    await accountsCtrl.reserveNonces('pending', CHAIN, [sender(7n)])
+    await accountsCtrl.reserveNonces('untracked', CHAIN, [sender(8n)])
+    await accountsCtrl.reserveNonces('confirmed', CHAIN, [account(3n)])
+    await accountsCtrl.settleNonceReservations([op('confirmed', AccountOpStatus.Success)])
+    jest.advanceTimersByTime(1)
+    const loadStartedAt = Date.now()
+    // Sent while Activity loads, so it is not in Activity yet
+    await accountsCtrl.reserveNonces('sent-during-load', CHAIN, [sender(20n, ADDR_B)])
+
+    await accountsCtrl.dropOrphanedNonceReservations(['pending'], loadStartedAt)
+    await flushPromises()
+
+    // Without the drop, the next op would take 9 and wait behind 8, which is never sent
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'sender', 7n)).toBe(8n)
+    // A settled reservation only waits for a read to count its nonce
+    expect(accountsCtrl.getNextNonce(ADDR_A, CHAIN, 'account', 3n)).toBe(4n)
+    expect(Object.keys(await storage.get('nonceReservations', {})).sort()).toEqual([
+      'confirmed',
+      'pending',
+      'sent-during-load'
+    ])
+  })
+
+  test('a reservation of an account removed from storage is dropped on load', async () => {
+    const { accountsCtrl, storage } = ctrl
+    await accountsCtrl.reserveNonces('a', CHAIN, [sender(7n), sender(20n, ADDR_B)])
+    await flushPromises()
+    await storage.set('accounts', [accounts[1]!])
+
+    const restartedCtrl = await restart()
+
+    expect(restartedCtrl.getNextNonce(ADDR_B, CHAIN, 'sender', 20n)).toBe(21n)
+    expect(await storage.get('nonceReservations', {})).toEqual({
+      a: expect.objectContaining({ nonces: [sender(20n, ADDR_B)] })
+    })
   })
 })
 
