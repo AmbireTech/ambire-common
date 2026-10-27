@@ -1,43 +1,25 @@
-import { Interface, JsonRpcProvider, solidityPackedKeccak256 } from 'ethers'
+import { solidityPackedKeccak256 } from 'ethers'
 
 import { PrivacyPoolsPoolStats } from '../../interfaces/privacyPools'
-
-/**
- * How long 0xBow takes at most to verify a deposit. One still not verified after this is taken as
- * declined: on chain it looks the same as one waiting, but 0xBow no longer counts it as pending.
- */
-const PENDING_REVIEW_DAYS = 7n
 
 /** The field the pools reduce labels into, BN254's scalar field. */
 const SNARK_SCALAR_FIELD =
   21888242871839275222246405745257275088548364400416034343698204186575808495617n
 
-const POOL_INTERFACE = new Interface([
-  'function SCOPE() view returns (uint256)',
-  'function nonce() view returns (uint256)'
-])
-const ERC20_INTERFACE = new Interface(['function balanceOf(address) view returns (uint256)'])
-
-/** A pool event as the SDK persists it, its numbers as hex strings. */
-type StoredPoolEvent = { label?: bigint; value: bigint; blockNumber: bigint }
+/** An event of a pool as the SDK persists it: what it moved and when. */
+type StoredPoolEvent = { value: bigint; blockNumber: bigint }
 
 /** One pool's part of the SDK's persisted public state of its chain. */
 export type PrivacyPoolsPoolHistory = {
   lastSyncedBlock: bigint
+  /** What each deposit's label is derived from - see `getPrivacyPoolsPoolLabels`. */
+  scope: bigint
+  /** Every deposit, as the entrypoint reported it, each one's value after the vetting fee. */
   deposits: StoredPoolEvent[]
   withdrawals: StoredPoolEvent[]
   ragequits: StoredPoolEvent[]
   /** Labels of the verified deposits, of all the entrypoint's pools. */
   approvedLabels: Set<bigint>
-}
-
-/** What a pool's numbers need from the chain, as the persisted state can't be trusted for them. */
-export type PrivacyPoolsPoolOnchainState = {
-  scope: bigint
-  /** What the pool holds. */
-  balance: bigint
-  /** Deposits ever made: each one's label is derived from it, see `getPrivacyPoolsPoolLabels`. */
-  depositsCount: bigint
 }
 
 const readBigInt = (value: unknown, field: string): bigint => {
@@ -47,65 +29,82 @@ const readBigInt = (value: unknown, field: string): bigint => {
   return BigInt(value)
 }
 
-/** A slice's events of one pool. Each tuple is `[key, event]`, the event tagged with its pool. */
+/** A slice's entries. Each tuple is `[key, entry]`. */
+const readEntries = (tuples: unknown, sliceName: string): any[] => {
+  if (!Array.isArray(tuples)) throw new Error(`privacyPools: the stored state has no ${sliceName}`)
+
+  return tuples.map((tuple: unknown) => {
+    const entry = Array.isArray(tuple) ? tuple[1] : null
+    if (!entry) throw new Error(`privacyPools: a stored ${sliceName} entry is malformed`)
+
+    return entry
+  })
+}
+
+/** A slice's events of one pool, each tagged with its pool in `poolField`. */
 const readPoolEvents = (
   tuples: unknown,
   sliceName: string,
+  poolField: 'pool' | 'poolAddress',
   poolAddress: bigint
-): StoredPoolEvent[] => {
-  if (!Array.isArray(tuples)) throw new Error(`privacyPools: the stored state has no ${sliceName}`)
-
-  return tuples.flatMap((tuple: unknown) => {
-    const event = Array.isArray(tuple) ? tuple[1] : null
-    if (!event) throw new Error(`privacyPools: a stored ${sliceName} entry is malformed`)
-    if (readBigInt(event.pool, `${sliceName} pool`) !== poolAddress) return []
+): StoredPoolEvent[] =>
+  readEntries(tuples, sliceName).flatMap((event) => {
+    if (readBigInt(event[poolField], `${sliceName} pool`) !== poolAddress) return []
 
     return [
       {
-        label:
-          event.label === undefined ? undefined : readBigInt(event.label, `${sliceName} label`),
         value: readBigInt(event.value, `${sliceName} value`),
         blockNumber: readBigInt(event.blockNumber, `${sliceName} block`)
       }
     ]
   })
-}
 
 const sumValues = (events: StoredPoolEvent[]) =>
   events.reduce((total, { value }) => total + value, 0n)
 
 /**
  * A pool's history from the SDK's persisted public state of its chain (stored under
- * `getPrivacyPoolsStoreKey`): every deposit, withdrawal and taken-back deposit in the pool, and the
- * labels of the verified deposits, as synced in bulk. So nothing is asked of the network, not
- * even which pool the user looks at.
+ * `getPrivacyPoolsStoreKey`): its scope, every deposit, withdrawal and taken-back deposit in the
+ * pool, and the labels of the verified deposits, as synced in bulk. So nothing is asked of the
+ * network, not even which pool the user looks at.
  *
- * Its deposits are incomplete: the SDK keys them by precommitment, which some deposits share, and
- * keeps only the last of each. So what the pool holds and how many deposits are verified are read
- * from the chain instead - see `getPrivacyPoolsPoolStats`.
+ * Deposits are the entrypoint's, keyed by commitment, not the pool's, which the SDK keys by
+ * precommitment: some deposits share one (822 in the Ethereum ETH pool, from 2025), and only the
+ * last of each is kept.
  *
- * Null before the chain's first sync. Throws if the state is not the shape it reads, so an SDK
+ * Null before the chain's first sync (no state, or one not synced yet). Throws if the state is not the shape it reads, so an SDK
  * that changes it fails clearly instead of reporting an empty pool.
  */
 export const readPrivacyPoolsPoolHistory = (
-  storedState: string | null,
+  /** The persisted state, parsed once for all the chain's pools. */
+  state: any,
   poolAddress: string
 ): PrivacyPoolsPoolHistory | null => {
-  if (!storedState) return null
+  if (!state) return null
 
-  const state = JSON.parse(storedState)
   const lastSyncedBlock = readBigInt(state?.sync?.lastSyncedBlock, 'last synced block')
   if (lastSyncedBlock === 0n) return null
 
   const pool = BigInt(poolAddress)
+  const registeredPool = readEntries(state.pools?.poolsTuples, 'pools').find(
+    ({ address }) => readBigInt(address, 'pool address') === pool
+  )
+  if (!registeredPool) throw new Error(`privacyPools: the stored state has no pool ${poolAddress}`)
+
   const aspLeaves: unknown = state.asp?.leaves
   if (!Array.isArray(aspLeaves)) throw new Error('privacyPools: the stored state has no ASP tree')
 
   return {
     lastSyncedBlock,
-    deposits: readPoolEvents(state.deposits?.depositsTuples, 'deposits', pool),
-    withdrawals: readPoolEvents(state.withdrawals?.withdrawalsTuples, 'withdrawals', pool),
-    ragequits: readPoolEvents(state.ragequits?.ragequitsTuples, 'ragequits', pool),
+    scope: readBigInt(registeredPool.scope, 'pool scope'),
+    deposits: readPoolEvents(
+      state.entrypointDeposits?.entrypointDepositsTuples,
+      'entrypoint deposits',
+      'poolAddress',
+      pool
+    ),
+    withdrawals: readPoolEvents(state.withdrawals?.withdrawalsTuples, 'withdrawals', 'pool', pool),
+    ragequits: readPoolEvents(state.ragequits?.ragequitsTuples, 'ragequits', 'pool', pool),
     // One tree for all the entrypoint's pools, but labels are unique across them
     approvedLabels: new Set(aspLeaves.map((leaf) => readBigInt(leaf, 'ASP leaf')))
   }
@@ -113,8 +112,8 @@ export const readPrivacyPoolsPoolHistory = (
 
 /**
  * The labels of a pool's deposits from `fromNonce` (1 for the first deposit) to `toNonce`, as the
- * pool derives them: `keccak256(abi.encodePacked(SCOPE, nonce)) % SNARK_SCALAR_FIELD`. Complete,
- * unlike the deposits the SDK persists.
+ * pool derives them: `keccak256(abi.encodePacked(SCOPE, nonce)) % SNARK_SCALAR_FIELD`. A pool's
+ * nonce is its deposits count, so its labels are those up to `deposits.length`.
  */
 export const getPrivacyPoolsPoolLabels = (
   scope: bigint,
@@ -131,83 +130,28 @@ export const getPrivacyPoolsPoolLabels = (
   return labels
 }
 
-/** Reads what a pool's numbers need from the chain. */
-export const readPrivacyPoolsPoolOnchainState = async ({
-  provider,
-  poolAddress,
-  assetAddress,
-  isNative
-}: {
-  provider: JsonRpcProvider
-  poolAddress: string
-  assetAddress: string
-  isNative: boolean
-}): Promise<PrivacyPoolsPoolOnchainState> => {
-  const callPool = async (method: 'SCOPE' | 'nonce') =>
-    BigInt(
-      POOL_INTERFACE.decodeFunctionResult(
-        method,
-        await provider.call({ to: poolAddress, data: POOL_INTERFACE.encodeFunctionData(method) })
-      )[0]
-    )
-  const readBalance = async () => {
-    if (isNative) return provider.getBalance(poolAddress)
-
-    const data = await provider.call({
-      to: assetAddress,
-      data: ERC20_INTERFACE.encodeFunctionData('balanceOf', [poolAddress])
-    })
-
-    return BigInt(ERC20_INTERFACE.decodeFunctionResult('balanceOf', data)[0])
-  }
-
-  const [scope, depositsCount, balance] = await Promise.all([
-    callPool('SCOPE'),
-    callPool('nonce'),
-    readBalance()
-  ])
-
-  return { scope, depositsCount, balance }
-}
-
 /**
- * A pool's numbers. What it holds is its balance, and verified deposits are counted over the
- * labels derived from the chain, as the persisted deposits miss some (see
- * `readPrivacyPoolsPoolHistory`). The rest comes from the persisted history, as of its last synced
- * block, which also stands in for "now" for the last day's activity: the deposits it misses are
- * old ones, from 2025.
+ * A pool's numbers, as of the history's last synced block, which also stands in for "now" for
+ * the last day's activity. What it holds is what was deposited less what left it, so it misses
+ * only tokens sent to the pool directly, outside any deposit.
  */
 export const getPrivacyPoolsPoolStats = ({
   history,
   blocksPerDay,
-  poolBalance,
   poolLabels
 }: {
   history: PrivacyPoolsPoolHistory
   blocksPerDay: bigint
-  poolBalance: bigint
+  /** The labels of all the pool's deposits - see `getPrivacyPoolsPoolLabels`. */
   poolLabels: bigint[]
 }): PrivacyPoolsPoolStats => {
   const { lastSyncedBlock, deposits, withdrawals, ragequits, approvedLabels } = history
-  const ragequitLabels = new Set(ragequits.map(({ label }) => label))
-  const isApproved = ({ label }: StoredPoolEvent) =>
-    label !== undefined && approvedLabels.has(label)
-
-  const reviewStartBlock = lastSyncedBlock - blocksPerDay * PENDING_REVIEW_DAYS
-  const pendingDeposits = deposits.filter(
-    (deposit) =>
-      deposit.blockNumber > reviewStartBlock &&
-      !isApproved(deposit) &&
-      !ragequitLabels.has(deposit.label)
-  )
   const lastDayStartBlock = lastSyncedBlock - blocksPerDay
   const isInLastDay = ({ blockNumber }: StoredPoolEvent) => blockNumber > lastDayStartBlock
 
   return {
-    totalAmount: poolBalance,
+    totalAmount: sumValues(deposits) - sumValues(withdrawals) - sumValues(ragequits),
     approvedDepositsCount: poolLabels.filter((label) => approvedLabels.has(label)).length,
-    pendingDepositsCount: pendingDeposits.length,
-    pendingAmount: sumValues(pendingDeposits),
     depositsCount24h: deposits.filter(isInLastDay).length,
     withdrawalsCount24h: withdrawals.filter(isInLastDay).length
   }

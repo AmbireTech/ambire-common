@@ -124,11 +124,19 @@ export type PrivacyPoolsPoolStats = {
   totalAmount: bigint
   /** Deposits ever verified. The more there are, the harder a withdrawal is to tell apart. */
   approvedDepositsCount: number
-  /** Deposits still waiting to be verified, and what they hold. */
-  pendingDepositsCount: number
-  pendingAmount: bigint
   depositsCount24h: number
   withdrawalsCount24h: number
+}
+
+/**
+ * A chain's pool numbers, computed after each sync of its history - see
+ * `PrivacyPoolsController.poolStats`.
+ */
+export type PrivacyPoolsChainPoolStats = {
+  /** By the pool's token address, in lowercase. Empty when they could not be read. */
+  byToken: { [tokenAddress: string]: PrivacyPoolsPoolStats }
+  /** Why they could not be read, or null. */
+  error: string | null
 }
 
 /** Notes summed per token. Only `approvedAmount` can be withdrawn. */

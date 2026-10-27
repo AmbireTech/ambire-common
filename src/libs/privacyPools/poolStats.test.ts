@@ -6,6 +6,7 @@ import {
 
 const POOL = '0xf241d57c6debae225c0f2e6ea1529373c9a9c9fb'
 const OTHER_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
+const SCOPE = 42n
 const BLOCKS_PER_DAY = 100n
 const LAST_SYNCED_BLOCK = 10_000n
 
@@ -18,20 +19,16 @@ const ETH_POOL_FIRST_LABELS = [
 
 const hex = (value: bigint) => `0x${value.toString(16)}`
 
-type Event = { label?: bigint; value: bigint; blockNumber: bigint; pool?: string }
+type Event = { value: bigint; blockNumber: bigint; pool?: string }
 
-const tuples = (events: Event[]) =>
-  events.map(({ label, value, blockNumber, pool = POOL }, i) => [
+/** Events keyed by tuple, numbers as hex strings, each tagged with its pool in `poolField`. */
+const tuples = (events: Event[], poolField: 'pool' | 'poolAddress') =>
+  events.map(({ value, blockNumber, pool = POOL }, i) => [
     hex(BigInt(i + 1)),
-    {
-      ...(label === undefined ? {} : { label: hex(label) }),
-      value: hex(value),
-      blockNumber: hex(blockNumber),
-      pool: hex(BigInt(pool))
-    }
+    { value: hex(value), blockNumber: hex(blockNumber), [poolField]: hex(BigInt(pool)) }
   ])
 
-/** The SDK's persisted public state: events keyed by tuple, numbers as hex strings. */
+/** The SDK's persisted public state, as it stores it, parsed. */
 const storeState = ({
   deposits = [],
   withdrawals = [],
@@ -44,23 +41,26 @@ const storeState = ({
   ragequits?: Event[]
   approvedLabels?: bigint[]
   lastSyncedBlock?: bigint
-}) =>
-  JSON.stringify({
-    deposits: { depositsTuples: tuples(deposits) },
-    withdrawals: { withdrawalsTuples: tuples(withdrawals) },
-    ragequits: { ragequitsTuples: tuples(ragequits) },
-    asp: { leaves: approvedLabels.map(hex), aspTreeRoot: '0x01', blockNumber: '0x01' },
-    sync: { lastSyncedBlock: hex(lastSyncedBlock) }
-  })
+}) => ({
+  pools: {
+    poolsTuples: [
+      [POOL, { address: POOL, scope: hex(SCOPE) }],
+      [OTHER_POOL, { address: OTHER_POOL, scope: hex(SCOPE + 1n) }]
+    ]
+  },
+  entrypointDeposits: { entrypointDepositsTuples: tuples(deposits, 'poolAddress') },
+  // The pool's own deposits are incomplete, so nothing is read of them
+  deposits: { depositsTuples: [] },
+  withdrawals: { withdrawalsTuples: tuples(withdrawals, 'pool') },
+  ragequits: { ragequitsTuples: tuples(ragequits, 'pool') },
+  asp: { leaves: approvedLabels.map(hex), aspTreeRoot: '0x01', blockNumber: '0x01' },
+  sync: { lastSyncedBlock: hex(lastSyncedBlock) }
+})
 
-const getStats = (
-  storedState: string,
-  { poolBalance = 0n, poolLabels = [] }: { poolBalance?: bigint; poolLabels?: bigint[] } = {}
-) =>
+const getStats = (state: object, poolLabels: bigint[] = []) =>
   getPrivacyPoolsPoolStats({
-    history: readPrivacyPoolsPoolHistory(storedState, POOL)!,
+    history: readPrivacyPoolsPoolHistory(state, POOL)!,
     blocksPerDay: BLOCKS_PER_DAY,
-    poolBalance,
     poolLabels
   })
 
@@ -76,14 +76,15 @@ describe('getPrivacyPoolsPoolLabels', () => {
 })
 
 describe('readPrivacyPoolsPoolHistory', () => {
-  test('reads only the pool asked for', () => {
+  test("reads only the pool asked for, its deposits from the entrypoint's", () => {
     const history = readPrivacyPoolsPoolHistory(
       storeState({
         deposits: [
-          { label: 1n, value: 100n, blockNumber: 5n },
-          { label: 2n, value: 999n, blockNumber: 6n, pool: OTHER_POOL }
+          { value: 100n, blockNumber: 5n },
+          { value: 999n, blockNumber: 6n, pool: OTHER_POOL }
         ],
         withdrawals: [{ value: 9n, blockNumber: 7n, pool: OTHER_POOL }],
+        ragequits: [{ value: 3n, blockNumber: 8n }],
         approvedLabels: [1n, 2n]
       }),
       POOL
@@ -91,9 +92,10 @@ describe('readPrivacyPoolsPoolHistory', () => {
 
     expect(history).toEqual({
       lastSyncedBlock: LAST_SYNCED_BLOCK,
-      deposits: [{ label: 1n, value: 100n, blockNumber: 5n }],
+      scope: SCOPE,
+      deposits: [{ value: 100n, blockNumber: 5n }],
       withdrawals: [],
-      ragequits: [],
+      ragequits: [{ value: 3n, blockNumber: 8n }],
       approvedLabels: new Set([1n, 2n])
     })
   })
@@ -104,69 +106,48 @@ describe('readPrivacyPoolsPoolHistory', () => {
   })
 
   test('throws on a state it cannot read rather than reporting an empty pool', () => {
-    const valid = JSON.parse(storeState({ deposits: [{ label: 1n, value: 1n, blockNumber: 1n }] }))
-    const read = (state: object) => () => readPrivacyPoolsPoolHistory(JSON.stringify(state), POOL)
+    const valid = storeState({ deposits: [{ value: 1n, blockNumber: 1n }] })
+    const read = (state: object) => () => readPrivacyPoolsPoolHistory(state, POOL)
 
     expect(read({ ...valid, asp: {} })).toThrow('no ASP tree')
     expect(read({ ...valid, withdrawals: {} })).toThrow('no withdrawals')
+    expect(read({ ...valid, entrypointDeposits: {} })).toThrow('no entrypoint deposits')
     expect(read({ ...valid, sync: {} })).toThrow('last synced block')
-    expect(read({ ...valid, deposits: { depositsTuples: [['0x01', null]] } })).toThrow('malformed')
+    expect(read({ ...valid, pools: { poolsTuples: [] } })).toThrow(`no pool ${POOL}`)
+    expect(read({ ...valid, ragequits: { ragequitsTuples: [['0x01', null]] } })).toThrow(
+      'malformed'
+    )
     expect(
       read({
         ...valid,
-        deposits: { depositsTuples: [['0x01', { pool: hex(BigInt(POOL)), value: 5 }]] }
+        entrypointDeposits: {
+          entrypointDepositsTuples: [['0x01', { poolAddress: hex(BigInt(POOL)), value: 5 }]]
+        }
       })
-    ).toThrow('deposits value')
+    ).toThrow('entrypoint deposits value')
   })
 })
 
 describe('getPrivacyPoolsPoolStats', () => {
-  test("holds the pool's balance, not what the stored deposits add up to", () => {
-    const stats = getStats(
-      storeState({ deposits: [{ label: 1n, value: 100n, blockNumber: 1n }] }),
-      {
-        poolBalance: 422n
-      }
-    )
-
-    expect(stats.totalAmount).toBe(422n)
-  })
-
-  test("counts verified deposits over the pool's labels, also the ones missing from the history", () => {
-    const stats = getStats(
-      storeState({
-        // The SDK kept only one of the deposits sharing a precommitment
-        deposits: [{ label: 1n, value: 100n, blockNumber: 1n }],
-        // Another pool's verified deposit is in the same tree
-        approvedLabels: [1n, 2n, 9n]
-      }),
-      { poolLabels: [1n, 2n, 3n] }
-    )
-
-    expect(stats.approvedDepositsCount).toBe(2)
-  })
-
-  test('counts as pending only unverified deposits made within the review window', () => {
-    const reviewStartBlock = LAST_SYNCED_BLOCK - BLOCKS_PER_DAY * 7n
+  test('holds what was deposited less what was withdrawn and taken back', () => {
     const stats = getStats(
       storeState({
         deposits: [
-          { label: 1n, value: 10n, blockNumber: LAST_SYNCED_BLOCK },
-          { label: 2n, value: 20n, blockNumber: reviewStartBlock + 1n },
-          // Too old to still be reviewed: declined, not pending
-          { label: 3n, value: 40n, blockNumber: reviewStartBlock },
-          // Verified
-          { label: 4n, value: 80n, blockNumber: LAST_SYNCED_BLOCK },
-          // Taken back before it was verified
-          { label: 5n, value: 160n, blockNumber: LAST_SYNCED_BLOCK }
+          { value: 100n, blockNumber: 1n },
+          { value: 50n, blockNumber: 2n }
         ],
-        ragequits: [{ label: 5n, value: 160n, blockNumber: LAST_SYNCED_BLOCK }],
-        approvedLabels: [4n]
+        withdrawals: [{ value: 30n, blockNumber: 3n }],
+        ragequits: [{ value: 50n, blockNumber: 4n }]
       })
     )
 
-    expect(stats.pendingDepositsCount).toBe(2)
-    expect(stats.pendingAmount).toBe(30n)
+    expect(stats.totalAmount).toBe(70n)
+  })
+
+  test("counts verified deposits over the pool's labels, not other pools' in the same tree", () => {
+    const stats = getStats(storeState({ approvedLabels: [1n, 2n, 9n] }), [1n, 2n, 3n])
+
+    expect(stats.approvedDepositsCount).toBe(2)
   })
 
   test('counts the deposits and withdrawals of the last day of blocks', () => {
@@ -174,15 +155,14 @@ describe('getPrivacyPoolsPoolStats', () => {
     const stats = getStats(
       storeState({
         deposits: [
-          { label: 1n, value: 1n, blockNumber: lastDayStartBlock },
-          { label: 2n, value: 1n, blockNumber: lastDayStartBlock + 1n },
-          { label: 3n, value: 1n, blockNumber: LAST_SYNCED_BLOCK }
+          { value: 1n, blockNumber: lastDayStartBlock },
+          { value: 1n, blockNumber: lastDayStartBlock + 1n },
+          { value: 1n, blockNumber: LAST_SYNCED_BLOCK }
         ],
         withdrawals: [
           { value: 1n, blockNumber: lastDayStartBlock },
           { value: 1n, blockNumber: LAST_SYNCED_BLOCK }
-        ],
-        approvedLabels: [1n, 2n, 3n]
+        ]
       })
     )
 
@@ -194,8 +174,6 @@ describe('getPrivacyPoolsPoolStats', () => {
     expect(getStats(storeState({}))).toEqual({
       totalAmount: 0n,
       approvedDepositsCount: 0,
-      pendingDepositsCount: 0,
-      pendingAmount: 0n,
       depositsCount24h: 0,
       withdrawalsCount24h: 0
     })

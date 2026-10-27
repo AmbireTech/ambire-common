@@ -13,7 +13,7 @@ The controller is the only `EventEmitter`. The work is done by plain classes tha
 | `deposits.ts` | Deposit requirements, the next deposit's precommitment, and prepared and broadcast deposits |
 | `withdrawal.ts` | The operation, the proved-but-unsent withdrawal, and the preparation queue and its cancellation |
 | `ragequit.ts` | Nothing of its own. Lists the deposits still being verified with the account each came from, and builds their public reclaim |
-| `poolStats.ts` | The pools' chain state per sync, and their deposits' labels. Computes a pool's numbers for a token's details |
+| `poolStats.ts` | The pools' deposits' labels. Computes a pool's numbers for a token's details from the synced history |
 | `sendForm.ts` | The Send form, and which view changes leave it |
 | `errors.ts` | The errors the actions throw |
 
@@ -51,7 +51,7 @@ Some state is kept on purpose, because none of it comes from a phrase, or becaus
 | --- | --- |
 | The first read of each chain (`sync.ts`), chain versions (`protocolRegistry.ts`) | The chain's shared state, the same for every phrase. It takes minutes to read the first time |
 | Prepared and broadcast deposits (`deposits.ts`) | A deposit made before a lock may be sent or land after it. It must still be recognised, and still block another deposit from reusing its precommitment |
-| Deposit requirements, prices, the account list, the Send form | Not derived from a phrase |
+| Deposit requirements, prices, pool numbers, the account list, the Send form | Not derived from a phrase |
 
 A new module that holds anything derived from a phrase must implement `PhraseScopedModule` and be added to `#phraseScopedModules`.
 
@@ -92,8 +92,9 @@ A deposit still being verified can only be taken back publicly, in full, by the 
 
 ## Pool stats
 
-A token's details show its pool's numbers (what it holds, verified and pending deposits, the last day's deposits and withdrawals), from `getPoolStats` through `dispatchAndWait`.
+A token's details show its pool's numbers (what it holds, verified deposits, the last day's deposits and withdrawals) from the public `poolStats`, so they are there as soon as the screen opens.
 
-- **Mostly read locally.** `getPrivacyPoolsPoolStats` computes them from the chain's persisted public state, as of its last synced block, so they are as fresh as the last sync. Never ask 0xBow's API for them: it would learn which pool the user looks at, and its numbers are off-chain.
-- **What the pool holds and its verified deposits come from the pool.** The SDK keys persisted deposits by precommitment, which some deposits share (822 in the Ethereum ETH pool, from 2025), and keeps only the last of each. So the balance is read from the chain, and verified deposits are counted over every label the pool gave out, derived from its `SCOPE()` and `nonce()` (see `getPrivacyPoolsPoolLabels`). Read once per sync; the labels are kept and only new ones derived.
-- **Pending means unverified for at most 7 days.** On chain a declined deposit looks the same as one waiting, so older unverified deposits are left out, as 0xBow does.
+- **Computed when the controller loads and after each sync.** `PrivacyPoolsSync` calls back once the plugin has persisted a chain's shared state, whichever account synced it, and the controller recomputes all of the chain's pools, parsing the history once. A recompute that finishes after a newer one writes nothing.
+- **Read locally, nothing asked of the network.** `getPrivacyPoolsPoolStats` computes them from the chain's persisted public state, as of its last synced block, so they are as fresh as the last sync. Never ask 0xBow's API for them: it would learn which pool the user looks at, and its numbers are off-chain.
+- **Deposits are the entrypoint's.** The SDK keys the pool's persisted deposits by precommitment, which some deposits share (822 in the Ethereum ETH pool, from 2025), and keeps only the last of each. The entrypoint's are keyed by commitment and complete: their count is the pool's `nonce()` and what was deposited less what left is the pool's balance (checked on Ethereum, October 2026: equal for ETH, a few cents of tokens sent directly for USDC and USDT). Verified deposits are counted over every label the pool gave out, derived from its scope and nonce (see `getPrivacyPoolsPoolLabels`); the labels are kept and only new ones derived.
+- **The persisted state is the SDK's internal one.** Its shape is not part of its API, so `readPrivacyPoolsPoolHistory` throws on anything unexpected instead of reporting an empty pool. To be replaced by a public read of the pool's numbers once the SDK has one.
