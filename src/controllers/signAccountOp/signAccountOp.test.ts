@@ -33,6 +33,7 @@ import {
 } from '../../../test/helpers/dapps'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { mockBundlerRequestsBeforeEach } from '../../../test/mocks/bundler'
+import { noErc7730DescriptorsRelayer } from '../../../test/mocks/erc7730Relayer'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -760,7 +761,8 @@ const init = async (
   // descriptor caching, which is exactly what this controller owns.
   const erc7730 = new Erc7730Controller({
     storage: storageCtrl,
-    callRelayer,
+    // The default relayer isn't bound, so every descriptor lookup would fail and log an error
+    callRelayer: options?.callRelayer || noErc7730DescriptorsRelayer,
     featureFlags: featureFlagsCtrl,
     ui: uiCtrl
   })
@@ -2208,6 +2210,8 @@ describe('Negative cases', () => {
   })
 
   test('Signing [one-click transfer]: transferred token cannot reserve the fee', async () => {
+    // An EOA, as a smart account that isn't switched over to ERC-4337 yet can no longer pay
+    // the fee by itself, and one that is would need a bundler estimation
     const network = networks.find((n) => n.chainId === 137n)!
     const token = {
       ...nativeFeeTokenPolygon,
@@ -2215,14 +2219,14 @@ describe('Negative cases', () => {
     }
     const feePaymentOptions = [
       {
-        paidBy: smartAccount.addr,
+        paidBy: eoaAccount.addr,
         availableAmount: 0n,
         gasUsed: 0n,
         addedNative: 5000n,
         token
       }
     ]
-    const accountOp = createAccountOp(smartAccount, network.chainId)
+    const accountOp = createAccountOp(eoaAccount, network.chainId)
     accountOp.op.calls = [
       {
         to: FEE_COLLECTOR,
@@ -2236,20 +2240,13 @@ describe('Negative cases', () => {
     accountOp.feeTokens = [token]
 
     const { controller } = await init(
-      smartAccount,
+      eoaAccount,
       accountOp,
       eoaSigner,
       {
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
-        },
-        ambireEstimation: {
-          deploymentGas: 0n,
-          gasUsed: 10000n,
-          feePaymentOptions,
-          ambireAccountNonce: 0,
-          flags: {}
         },
         flags: {},
         updatedAt: Date.now()
@@ -2281,7 +2278,7 @@ describe('Negative cases', () => {
     controller.update({
       hasNewEstimation: true,
       feeToken: token,
-      paidBy: smartAccount.addr,
+      paidBy: eoaAccount.addr,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal'
     })
@@ -3621,12 +3618,6 @@ describe('unlimited approval warnings', () => {
   const spender = '0x46705dfff24256421a05d056c29e81bdc09723b8'
   const approveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
 
-  // no ERC-7730 registry is reachable here, so every approval falls back to the built-in
-  // descriptor - the path a real approval takes as well
-  const failingErc7730Relayer = jest.fn(async (path: string) => {
-    throw new Error(`No ERC-7730 registry in this test: ${path}`)
-  })
-
   const approveCall = (amount: bigint, dapp?: Dapp) => ({
     to: usdt,
     value: 0n,
@@ -3637,7 +3628,9 @@ describe('unlimited approval warnings', () => {
   const humanizeApproval = async (amount: bigint, dapp: Dapp, includeDappOnCall = true) => {
     const { controller } = await initDappVerificationBannerTest(dapp, {
       calls: [approveCall(amount, includeDappOnCall ? dapp : undefined)] as AccountOp['calls'],
-      callRelayer: failingErc7730Relayer as any
+      // the ERC-7730 registry has no descriptor here, so every approval falls back to the
+      // built-in descriptor - the path a real approval takes as well
+      callRelayer: noErc7730DescriptorsRelayer
     })
     await wait(0)
 
