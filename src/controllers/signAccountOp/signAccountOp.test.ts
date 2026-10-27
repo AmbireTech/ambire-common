@@ -2210,6 +2210,8 @@ describe('Negative cases', () => {
   })
 
   test('Signing [one-click transfer]: transferred token cannot reserve the fee', async () => {
+    // An EOA, as a smart account that isn't switched over to ERC-4337 yet can no longer pay
+    // the fee by itself, and one that is would need a bundler estimation
     const network = networks.find((n) => n.chainId === 137n)!
     const token = {
       ...nativeFeeTokenPolygon,
@@ -2217,14 +2219,14 @@ describe('Negative cases', () => {
     }
     const feePaymentOptions = [
       {
-        paidBy: smartAccount.addr,
+        paidBy: eoaAccount.addr,
         availableAmount: 0n,
         gasUsed: 0n,
         addedNative: 5000n,
         token
       }
     ]
-    const accountOp = createAccountOp(smartAccount, network.chainId)
+    const accountOp = createAccountOp(eoaAccount, network.chainId)
     accountOp.op.calls = [
       {
         to: FEE_COLLECTOR,
@@ -2238,20 +2240,13 @@ describe('Negative cases', () => {
     accountOp.feeTokens = [token]
 
     const { controller } = await init(
-      smartAccount,
+      eoaAccount,
       accountOp,
       eoaSigner,
       {
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
-        },
-        ambireEstimation: {
-          deploymentGas: 0n,
-          gasUsed: 10000n,
-          feePaymentOptions,
-          ambireAccountNonce: 0,
-          flags: {}
         },
         flags: {},
         updatedAt: Date.now()
@@ -2283,7 +2278,7 @@ describe('Negative cases', () => {
     controller.update({
       hasNewEstimation: true,
       feeToken: token,
-      paidBy: smartAccount.addr,
+      paidBy: eoaAccount.addr,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal'
     })
