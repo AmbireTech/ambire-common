@@ -50,6 +50,13 @@ export interface FeatureFlags {
    * the user enters.
    */
   walletStakingWithdrawalsLookup: boolean
+  /**
+   * Off by default for privacy: the NFT image CDN receives the IP address of the
+   * user together with the chain, collection address and id of every NFT it is asked
+   * to display, which links the IP to the owner of the NFT. When enabled, the NFT
+   * images are loaded and displayed.
+   */
+  nftImages: boolean
   /** Resolve Namoshi names (.btc, .citrea) on Citrea. */
   namoshiDomains: boolean
   /** Resolve GNS names (.gwei) on Ethereum. */
@@ -75,6 +82,7 @@ export const defaultFeatureFlags: FeatureFlags = {
   swapAndBridgeTokenInfo: true,
   ledgerSigningReports: false,
   walletStakingWithdrawalsLookup: true,
+  nftImages: false,
   // @TODO: Introduce a setting and flip to false
   namoshiDomains: true,
   gnsDomains: true
@@ -104,6 +112,7 @@ export const featureFlagScopes = {
   swapAndBridgeTokenInfo: 'user',
   ledgerSigningReports: 'user',
   walletStakingWithdrawalsLookup: 'user',
+  nftImages: 'user',
   namoshiDomains: 'internal',
   gnsDomains: 'internal'
 } as const satisfies Record<keyof FeatureFlags, 'user' | 'internal'>
