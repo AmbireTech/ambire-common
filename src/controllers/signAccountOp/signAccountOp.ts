@@ -3559,7 +3559,21 @@ export class SignAccountOpController
     this.safeOwnerApproval?.pause()
     this.emitUpdate()
 
-    void this.#confirmSafeOwnerApproval(ownerAddr, safeTxnHash, submittedAccountOp)
+    void this.#confirmSafeOwnerApproval(ownerAddr, safeTxnHash, submittedAccountOp).catch(
+      (error: any) => {
+        // never leave the owner pending, it couldn't approve again for this transaction
+        this.pendingSafeOwnerApprovals = this.pendingSafeOwnerApprovals.filter(
+          (owner) => owner !== ownerAddr
+        )
+        this.emitError({
+          level: 'major',
+          message:
+            "The approval isn't confirmed yet. Check its status in your activity before approving again.",
+          error
+        })
+        this.emitUpdate()
+      }
+    )
   }
 
   /**
