@@ -18,6 +18,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IUiController, View } from '../../interfaces/ui'
 import { IrCall } from '../../libs/humanizer/interfaces'
+import { getPrivacyPoolsPoolLabels } from '../../libs/privacyPools/poolStats'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
@@ -249,6 +250,52 @@ let notesBySeed: {
     deposit?: number
   }[]
 } = {}
+/** Scope of a chain's first pool. Each next one in the config has the next number. */
+const FIRST_POOL_SCOPE = 42n
+
+/** A pool's event, for `toStoredPoolState`. */
+type StoredPoolEventInput = { pool: string; value: bigint }
+
+/**
+ * A chain's public history as the SDK persists it, synced up to block 1000: every pool of the
+ * chain registered (see `FIRST_POOL_SCOPE`), with these events, all made in that block.
+ */
+const toStoredPoolState = ({
+  deposits = [],
+  withdrawals = [],
+  aspLeaves = []
+}: {
+  deposits?: StoredPoolEventInput[]
+  withdrawals?: StoredPoolEventInput[]
+  aspLeaves?: bigint[]
+} = {}) => {
+  const hex = (value: bigint) => `0x${value.toString(16)}`
+  const toTuples = (events: StoredPoolEventInput[], poolField: 'pool' | 'poolAddress') =>
+    events.map(({ pool, value }, index) => [
+      hex(BigInt(index + 1)),
+      { value: hex(value), blockNumber: hex(1000n), [poolField]: hex(BigInt(pool)) }
+    ])
+
+  return JSON.stringify({
+    pools: {
+      poolsTuples: Object.keys(getPrivacyPoolsChainConfig(1n)!.pools).map((address, index) => [
+        address,
+        { address, scope: hex(FIRST_POOL_SCOPE + BigInt(index)) }
+      ])
+    },
+    entrypointDeposits: { entrypointDepositsTuples: toTuples(deposits, 'poolAddress') },
+    withdrawals: { withdrawalsTuples: toTuples(withdrawals, 'pool') },
+    ragequits: { ragequitsTuples: [] },
+    asp: { leaves: aspLeaves.map(hex) },
+    sync: { lastSyncedBlock: hex(1000n) }
+  })
+}
+
+/**
+ * The chain's public history a sync persists the way the SDK does, when set. Pools with no events
+ * otherwise, as most tests need nothing of it.
+ */
+let storedPoolState: string | null = null
 /** What `ragequit` returns instead of a call for every note asked for, when set. */
 let ragequitTxns: { to: string; data: string; value: bigint }[] | null = null
 /** Holds `ragequit` until the test releases it, when set. */
@@ -302,7 +349,11 @@ class FakeProtocol {
 
     // What the real plugin does at the end of every sync: persist the chain's public history
     const config = getPrivacyPoolsChainConfig(chainId)
-    if (config) await this.host.storage.set(getPrivacyPoolsStoreKey(config), `synced-${Date.now()}`)
+    if (config)
+      await this.host.storage.set(
+        getPrivacyPoolsStoreKey(config),
+        storedPoolState ?? toStoredPoolState()
+      )
   }
 
   ragequitLabels: bigint[][] = []
@@ -648,6 +699,7 @@ describe('PrivacyPoolsController', () => {
       'seed-a': [{ label: 1n, amount: 10n, approved: true }],
       'seed-b': [{ label: 2n, amount: 20n, approved: false }]
     }
+    storedPoolState = null
     ragequitTxns = null
     ragequitGate = null
   })
@@ -771,6 +823,7 @@ describe('PrivacyPoolsController', () => {
           'isAvailableForSelectedAccount',
           'name',
           'operation',
+          'poolStats',
           'prices',
           'sendForm',
           'sendFormResetCounter',
@@ -2840,6 +2893,131 @@ describe('PrivacyPoolsController', () => {
       await buildRagequitAfterSync(controller, 3n)
 
       expect(prove).toHaveBeenLastCalledWith('commitment', { value: 1n }, { signal: undefined })
+    })
+  })
+
+  describe("a pool's numbers", () => {
+    const USDC_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
+    // The ETH pool's first three deposits. It is the first pool, so it has the first scope
+    const [LABEL_1, , LABEL_3] = getPrivacyPoolsPoolLabels(FIRST_POOL_SCOPE, 1n, 3n) as [
+      bigint,
+      bigint,
+      bigint
+    ]
+    /** The ETH pool's first `count` deposits of 100, 30 and 400, and one in the USDC pool. */
+    const toEthPoolState = (count: number) =>
+      toStoredPoolState({
+        deposits: [
+          ...[100n, 30n, 400n].slice(0, count).map((value) => ({ pool: ETHEREUM_ETH_POOL, value })),
+          { pool: USDC_POOL, value: 7n }
+        ],
+        withdrawals: [{ pool: ETHEREUM_ETH_POOL, value: 40n }],
+        // Verified: the first and third ETH deposits, and one of another pool
+        aspLeaves: [LABEL_1, LABEL_3, 99n]
+      })
+
+    beforeEach(() => {
+      storedPoolState = toEthPoolState(3)
+    })
+
+    const syncAs = async (
+      { controller, selectedAccount }: Awaited<ReturnType<typeof prepareTest>>,
+      seedId: string
+    ) => {
+      selectedAccount.select(seedId)
+      const syncing = controller.syncChain('1')
+      await releaseSync(seedId)
+      await syncing
+    }
+
+    const prepareSynced = async () => {
+      const prepared = await prepareTest()
+      const call = jest.fn()
+      const getBalance = jest.fn()
+      Object.assign(prepared.providers.providers['1'], { call, getBalance })
+      await syncAs(prepared, 'seed-a')
+
+      return { ...prepared, call, getBalance }
+    }
+
+    it('computes them with a sync, from the synced history alone, asking the network nothing', async () => {
+      const { controller, providers, call, getBalance } = await prepareSynced()
+
+      expect(controller.poolStats['1']).toEqual({
+        byToken: expect.objectContaining({
+          [ZERO_ADDRESS]: {
+            totalAmount: 490n,
+            approvedDepositsCount: 2,
+            depositsCount24h: 3,
+            withdrawalsCount24h: 1
+          },
+          // By the token address in lowercase
+          [USDC]: {
+            totalAmount: 7n,
+            approvedDepositsCount: 0,
+            depositsCount24h: 1,
+            withdrawalsCount24h: 0
+          }
+        }),
+        error: null
+      })
+      expect(call).not.toHaveBeenCalled()
+      expect(getBalance).not.toHaveBeenCalled()
+      expect(providers.providers['1'].send).not.toHaveBeenCalled()
+    })
+
+    it("counts the deposits made since, whichever account's sync read them", async () => {
+      storedPoolState = toEthPoolState(2)
+      const prepared = await prepareSynced()
+      expect(prepared.controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({
+        approvedDepositsCount: 1
+      })
+
+      storedPoolState = toEthPoolState(3)
+      await syncAs(prepared, 'seed-b')
+
+      expect(prepared.controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({
+        approvedDepositsCount: 2
+      })
+    })
+
+    it('keeps them with no selected account, as they are the same for all', async () => {
+      const { controller, selectedAccount } = await prepareSynced()
+      selectedAccount.select(null)
+
+      expect(controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({
+        totalAmount: 490n
+      })
+    })
+
+    it('computes them on load from the history already on this device', async () => {
+      const { storage } = await prepareSynced()
+
+      const { controller } = await prepareTest({ storage })
+      await flush()
+
+      expect(controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({
+        totalAmount: 490n
+      })
+    })
+
+    it('has none before the first sync, which is not an error', async () => {
+      const { controller } = await prepareTest()
+      await flush()
+
+      expect(controller.poolStats).toEqual({})
+      expect(controller.emittedErrors).toEqual([])
+    })
+
+    it('says so when the stored history is not what it reads, without a toast', async () => {
+      storedPoolState = 'not a stored state'
+      const { controller } = await prepareSynced()
+
+      expect(controller.poolStats['1']).toEqual({
+        byToken: {},
+        error: 'Could not load the numbers of this pool.'
+      })
+      expect(controller.emittedErrors.at(-1)?.level).toBe('silent')
     })
   })
 
