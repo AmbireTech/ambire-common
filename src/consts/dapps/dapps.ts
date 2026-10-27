@@ -76,7 +76,6 @@ export const dappIdsToBeRemoved = new Set([
 ])
 
 export const featuredDapps = new Set([
-  'rewards.ambire.com',
   'snapshot.box/#/s:ambire.eth',
   'lido.fi',
   'bitrefill.com',
