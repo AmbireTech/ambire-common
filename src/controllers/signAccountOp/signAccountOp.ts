@@ -2871,6 +2871,13 @@ export class SignAccountOpController
     // have changed on 1, but the simulation from 2 will persist as sadly,
     // the simulation is account based, not accountOp based
     const isSafe = !!this.account.safeCreation
+    // Same for any account, once another op on this network was simulated meanwhile, e.g. a
+    // speed up or a cancel of the earlier pending transaction, signed in its own request
+    const simulatedAccountOps = this.#portfolio.getAccountPortfolioState(
+      this.accountOp.accountAddr
+    )?.[this.accountOp.chainId.toString()]?.accountOps
+    const isAnotherOpSimulated =
+      this.#shouldSimulate && !simulatedAccountOps?.some(({ id }) => id === this.accountOp.id)
 
     this.#stopRefetching = false
     this.#reestimateCounter = 0
@@ -2880,7 +2887,7 @@ export class SignAccountOpController
         !this.gasPrice.updatedAt || Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
     })
 
-    if (haveCallsChanged || isSafe) {
+    if (haveCallsChanged || isSafe || isAnotherOpSimulated) {
       // The simulateAndEstimateOrSimulateInterval must be restarted if the calls have changed
       // as that forces an immediate reestimation. start() does nothing
       // if the interval is already running.
