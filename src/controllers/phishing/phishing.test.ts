@@ -483,8 +483,13 @@ describe('PhishingController', () => {
 
     const prepareNoListTest = async ({
       isListDownloadFailing = false,
-      storedDomains = []
-    }: { isListDownloadFailing?: boolean; storedDomains?: string[] } = {}) => {
+      storedDomains = [],
+      storedAddresses = [SCAM_ADDRESS]
+    }: {
+      isListDownloadFailing?: boolean
+      storedDomains?: string[]
+      storedAddresses?: string[]
+    } = {}) => {
       const scamcheckerRequests: { url: string; body?: string }[] = []
       const mockFetch = jest.fn((url: string, options?: any) => {
         if (!url.startsWith(SCAMCHECKER_BASE_URL)) return (fetch as any)(url, options)
@@ -508,7 +513,7 @@ describe('PhishingController', () => {
             // Recent, so the update does not run again and the stored list is all there is
             updatedAt: Date.now(),
             domains: storedDomains,
-            addresses: storedDomains.length ? [SCAM_ADDRESS] : []
+            addresses: storedAddresses
           })
         },
         { skipDappsAndPhishingInit: true, overrides: { fetch: mockFetch } }
@@ -707,6 +712,24 @@ describe('PhishingController', () => {
       expect(callback).toHaveBeenCalledTimes(1)
       expect(callback).toHaveBeenCalledWith({
         [SCAM_ADDRESS]: 'BLACKLISTED',
+        [SAFE_ADDRESS]: 'VERIFIED'
+      })
+      expect(scamcheckerRequests).toHaveLength(0)
+
+      cleanup()
+    })
+
+    test('a stored list with domains and no addresses resolves addresses as VERIFIED', async () => {
+      const { controller, callback, scamcheckerRequests, cleanup } = await prepareNoListTest({
+        storedDomains: [SCAM_DOMAIN],
+        storedAddresses: []
+      })
+
+      await controller.init()
+      await controller.updateAddressesBlacklistedStatus(addresses, callback)
+
+      expect(callback).toHaveBeenLastCalledWith({
+        [SCAM_ADDRESS]: 'VERIFIED',
         [SAFE_ADDRESS]: 'VERIFIED'
       })
       expect(scamcheckerRequests).toHaveLength(0)

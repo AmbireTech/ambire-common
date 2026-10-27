@@ -288,17 +288,22 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.isReady = true
     // A list read from storage answers the checks that were waiting for it right away. An empty
     // one is waited for until the update that init() started has downloaded it.
-    if (this.#domains.length) this.#notifyListSettled()
+    if (this.#isListLoaded) this.#notifyListSettled()
     this.emitUpdate()
   }
 
+  /** The local list is loaded when it has at least one domain or one address. */
+  get #isListLoaded(): boolean {
+    return !!(this.#domains.length || this.#addresses.length)
+  }
+
   /**
-   * Resolves once the local list can answer a domain check: it was read from storage, or the
-   * update that downloads it has finished (or failed). Also resolves after
+   * Resolves once the local list can answer a domain or address check: it was read from storage, or
+   * the update that downloads it has finished (or failed). Also resolves after
    * PHISHING_LIST_WAIT_TIMEOUT, so a check never stays LOADING if no update ever runs.
    */
   #waitForListToSettle(): Promise<void> {
-    if (this.#domains.length) return Promise.resolve()
+    if (this.#isListLoaded) return Promise.resolve()
 
     return new Promise((resolve) => {
       const settle = () => {
@@ -730,7 +735,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
    * "not blacklisted" apart from "not checked yet".
    */
   getAddressBlacklistedStatus(address: string): BlacklistedStatus | undefined {
-    if (!this.#addresses.length) return undefined
+    if (!this.#isListLoaded) return undefined
 
     return sortedIncludes(this.#addresses, address.toLowerCase()) ? 'BLACKLISTED' : 'VERIFIED'
   }
