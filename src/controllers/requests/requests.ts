@@ -2912,6 +2912,29 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           throw new EmittableError({ message: error.message, level: 'major', error })
         }
 
+        // The active route is matched to the transaction by its route id, so it must be created
+        // from the quote the transaction is built from. Both are read now, as the form quote can
+        // change during the calls below. Copied, as selecting a route changes it in place
+        const shouldAddActiveRoute =
+          this.#swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit
+        const formQuote = this.#swapAndBridge.quote
+        const transactionQuote =
+          formQuote?.selectedRoute?.routeId === transaction.activeRouteId
+            ? { ...formQuote }
+            : undefined
+
+        // The user selected another route and its transaction is still being prepared. The form
+        // is not ready to submit then, but the screen may not show that yet. Adding it now would
+        // add the previously selected route instead of the one the user picked
+        if (!activeRouteId && !transactionQuote) {
+          const message = 'The selected route is still loading. Please try again in a moment.'
+          throw new EmittableError({
+            message,
+            level: 'major',
+            error: new SwapAndBridgeError(message)
+          })
+        }
+
         // learn the receiving token
         if (this.#swapAndBridge.toSelectedToken && this.#swapAndBridge.toChainId) {
           this.#addTokensToBeLearned(
@@ -2964,8 +2987,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           })
         }
 
-        if (this.#swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
+        if (shouldAddActiveRoute && transactionQuote) {
           this.#swapAndBridge.addActiveRoute({
+            quote: transactionQuote,
             userTxIndex: transaction.userTxIndex
           })
         }

@@ -29,6 +29,7 @@ import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { ContractInfoController } from '../contractInfo/contractInfo'
 import { Erc7730Controller } from '../erc7730/erc7730'
+import { EstimationStatus } from '../estimation/types'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
@@ -1362,6 +1363,27 @@ describe('SwapAndBridge Controller', () => {
     // e.g. the user rejected on the device
     isSigningSpy.mockReturnValue(false)
     expect(swapAndBridgeController.formStatus).not.toBe(SwapAndBridgeFormStatus.Proceeded)
+  })
+  test('should not be ready to submit while the transaction of a newly selected route is being prepared', () => {
+    const selectedRouteId = swapAndBridgeController.quote!.selectedRoute!.routeId
+    // A real sign controller can't be built here, as estimating the swap needs the network
+    const signAccountOpControllerSpy = jest.spyOn(
+      swapAndBridgeController,
+      'signAccountOpController',
+      'get'
+    )
+    const mockSignAccountOpControllerBuiltFor = (activeRouteId: string) =>
+      signAccountOpControllerSpy.mockReturnValue({
+        accountOp: { meta: { swapTxn: { activeRouteId } } },
+        estimation: { status: EstimationStatus.Success }
+      } as any)
+
+    mockSignAccountOpControllerBuiltFor(selectedRouteId)
+    expect(swapAndBridgeController.formStatus).toBe(SwapAndBridgeFormStatus.ReadyToSubmit)
+
+    // The estimation that succeeded is the one of the previously selected route
+    mockSignAccountOpControllerBuiltFor('previously-selected-route')
+    expect(swapAndBridgeController.formStatus).toBe(SwapAndBridgeFormStatus.ReadyToEstimate)
   })
   describe('continuous quote updates', () => {
     beforeEach(() => {
