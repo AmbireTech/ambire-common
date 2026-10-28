@@ -362,22 +362,23 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
   }): Promise<SwapAndBridgeToToken | null> {
     if (!this.#fetch) return null
 
-    const supportChecks = this.#getEnabledProviders().flatMap((provider) =>
-      provider.isTokenSupported ? [provider.isTokenSupported({ address, chainId })] : []
-    )
-    if (!supportChecks.length) return null
+    // A single provider confirming support is enough, so there is no need to wait for the
+    // slower ones. A check that fails or finds the token unsupported rejects, and is ignored.
+    // The async wrapper turns a synchronous throw of a provider into a rejection too, so none
+    // of the checks can end up as an unhandled rejection
+    const supportChecks = this.#getEnabledProviders().map(async (provider) => {
+      const isSupported = await provider.isTokenSupported?.({ address, chainId })
+      if (!isSupported) throw new Error(`${provider.name} does not support the token`)
+    })
 
-    const supportResults = await Promise.allSettled(supportChecks)
-    if (supportResults.some((result) => result.status === 'fulfilled' && result.value))
-      return getTokenByAddress({ fetch: this.#fetch, address, chainId })
+    try {
+      await Promise.any(supportChecks)
+    } catch {
+      // No provider confirmed support
+      return null
+    }
 
-    const failedCheck = supportResults.find(
-      (result): result is PromiseRejectedResult => result.status === 'rejected'
-    )
-    // No provider confirmed support, but a failed check means "unknown", not "unsupported"
-    if (failedCheck) throw failedCheck.reason
-
-    return null
+    return getTokenByAddress({ fetch: this.#fetch, address, chainId })
   }
 
   async startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest> {

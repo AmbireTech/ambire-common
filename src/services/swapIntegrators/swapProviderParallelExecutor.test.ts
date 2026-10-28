@@ -645,7 +645,7 @@ describe('Swap Provider Parallel execution', () => {
       )
     })
 
-    it('Throws instead of reporting "unsupported" when a check failed and none confirmed support', async () => {
+    it('Ignores failed checks and returns null when no provider confirmed support', async () => {
       const fetch = makeCenaFetch()
       const executor = new SwapProviderParallelExecutor(
         [
@@ -658,10 +658,56 @@ describe('Swap Provider Parallel execution', () => {
         fetch
       )
 
-      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).rejects.toThrow(
-        'check failed'
-      )
+      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toBeNull()
       expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('Ignores a provider that throws synchronously while checking support', async () => {
+      const fetch = makeCenaFetch()
+      const executor = new SwapProviderParallelExecutor(
+        [
+          createTokenProvider({
+            id: 'throwing',
+            isTokenSupported: jest.fn(() => {
+              throw new Error('sync throw')
+            })
+          }),
+          createTokenProvider({
+            id: 'supporting',
+            isTokenSupported: jest.fn().mockResolvedValue(true)
+          })
+        ],
+        undefined,
+        undefined,
+        fetch
+      )
+
+      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toMatchObject(
+        { symbol: 'custom' }
+      )
+    })
+
+    it('Does not wait for a slow provider once another one confirmed support', async () => {
+      const fetch = makeCenaFetch()
+      const executor = new SwapProviderParallelExecutor(
+        [
+          createTokenProvider({
+            id: 'slow',
+            isTokenSupported: jest.fn(() => new Promise(() => {}))
+          }),
+          createTokenProvider({
+            id: 'supporting',
+            isTokenSupported: jest.fn().mockResolvedValue(true)
+          })
+        ],
+        undefined,
+        undefined,
+        fetch
+      )
+
+      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toMatchObject(
+        { symbol: 'custom' }
+      )
     })
   })
 })
