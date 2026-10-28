@@ -9,6 +9,7 @@ import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
+import { noErc7730DescriptorsRelayer } from '../../../test/mocks/erc7730Relayer'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -232,7 +233,8 @@ const callRelayer = relayerCall.bind({ url: '', fetch })
 const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
 const erc7730Ctrl = new Erc7730Controller({
   storage: storageCtrl,
-  callRelayer,
+  // callRelayer isn't bound, so every descriptor lookup would fail and log an error
+  callRelayer: noErc7730DescriptorsRelayer,
   featureFlags: featureFlagsCtrl,
   providers: providersCtrl,
   ui: uiCtrl

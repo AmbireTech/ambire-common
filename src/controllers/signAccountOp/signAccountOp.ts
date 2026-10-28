@@ -98,15 +98,15 @@ import {
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
 import {
+  getEarlierPendingAccountOp,
+  getEarlierPendingReplacementAccountOp
+} from '../../libs/accountOp/earlierPendingAccountOp'
+import {
   AccountOpIdentifiedBy,
   getAccountOpRecipients,
   getSubmittedAccountOpNonce,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
-import {
-  getEarlierPendingAccountOp,
-  getEarlierPendingReplacementAccountOp
-} from '../../libs/accountOp/earlierPendingAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
 import {
@@ -134,7 +134,7 @@ import {
   hasErc7730Humanization,
   UNLIMITED_APPROVAL_WARNING_CODE
 } from '../../libs/humanizer/utils'
-import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
+import { hasRelayerSupport } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
 import { getSafeFeePayerRank, isUnlinkedSafeFeePayer } from '../../libs/safe/feePayerLinks'
@@ -774,6 +774,15 @@ export class SignAccountOpController
    */
   get #isNewCancel(): boolean {
     return !!this.#replacement?.isNewCancel
+  }
+
+  /**
+   * Whether `update()` accepts a different signing key. A speed up reuses the signatures of
+   * the pending transaction, so its signer can't change. A cancel is signed again, so any of
+   * the account's keys (e.g. another Safe owner) can sign
+   */
+  get canChangeSigningKey(): boolean {
+    return !this.isSpeedUpTransaction || this.#isNewCancel
   }
 
   /**
@@ -1967,7 +1976,8 @@ export class SignAccountOpController
       })
     }
 
-    // this error should never happen as availableFeeOptions should always have the native option
+    // happens when the fee can be paid only by another wallet of the user (v1 accounts and
+    // v2 accounts not yet switched over to ERC-4337) and none of them has enough funds
     if (!this.isSponsored && !this.estimation.availableFeeOptions.length && this.canBroadcast)
       errors.push({
         title: 'Insufficient funds to cover the fee.'
@@ -2611,8 +2621,7 @@ export class SignAccountOpController
 
       // A speed up reuses the signatures of the pending transaction, so its signer can't change.
       // A cancel is signed again, so any of the account's keys (e.g. another Safe owner) can sign
-      const canChangeSigningKey = !isSpeedUpTransaction || this.#isNewCancel
-      if (signingKeyAddr && signingKeyType && this.isInitialized && canChangeSigningKey) {
+      if (signingKeyAddr && signingKeyType && this.isInitialized && this.canChangeSigningKey) {
         this.#updateAccountOp({ signingKeyAddr, signingKeyType })
 
         // If the fee is paid by the signer, then we should set the fee payer
@@ -4290,34 +4299,9 @@ export class SignAccountOpController
 
         this.#updateAccountOp({ asUserOperation: userOperation })
       } else {
-        const signer = await this.#getDefaultSigner()
-
-        // Relayer
-        this.#addFeePayment()
-
-        // fetch the nonce if needed. The op is sent right away, so it skips the nonces of the
-        // ops this device sent that the RPC may not count yet
-        const nonce = this.#getAccountNextNonce(
-          await this.baseAccount.getBroadcastNonce(this.#activity, this.accountOp, this.provider)
-        )
-        if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
-
-        this.#updateAccountOp({
-          signature: await this.#withHardwareWalletSigningRequest(
-            getExecuteSigningRequest({
-              accountOp: this.accountOp,
-              accountState,
-              network: this.#network
-            }),
-            () =>
-              getExecuteSignature(
-                this.#network,
-                this.accountOp,
-                accountState,
-                signer,
-                this.provider
-              )
-          )
+        return this.#emitSigningErrorAndResetToReadyToSign({
+          message: `Unable to sign the transaction because the selected way of paying the fee is not supported. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`,
+          accountState
         })
       }
 
@@ -4329,7 +4313,7 @@ export class SignAccountOpController
         this.status = { type: SigningStatus.Done }
 
       // Only a raw transaction broadcast asks for one more signature (from the fee payer).
-      // Otherwise (Safe signature collected, bundler, relayer) no key is needed anymore
+      // Otherwise (Safe signature collected, bundler) no key is needed anymore
       const willBroadcastNeedSignature =
         this.status.type === SigningStatus.Done &&
         !!broadcastOption &&
@@ -4390,7 +4374,7 @@ export class SignAccountOpController
   }
 
   /**
-   * There are 4 ways to broadcast an AccountOp:
+   * There are 3 ways to broadcast an AccountOp:
    *   1. For EOAs, there is only one way to do that. After
    *   signing the transaction, the serialized signed transaction object gets
    *   send to the network.
@@ -4399,7 +4383,6 @@ export class SignAccountOpController
    *   second one is the signature of the transaction that will be executed
    *   by the smart account.
    *   3. For smart accounts that broadcast the ERC-4337 way.
-   *   4. for smart accounts, when the Relayer does the broadcast.
    *
    */
   async #broadcast() {
@@ -4773,40 +4756,12 @@ export class SignAccountOpController
         }
       }
     }
-    // Smart account, the Relayer way
+    // Should not happen as every broadcast option is handled above
     else {
-      try {
-        const body = {
-          gasLimit: Number(accountOp.gasFeePayment!.simulatedGasLimit),
-          txns: getSignableCalls(accountOp),
-          signature: accountOp.signature,
-          signer: { address: accountOp.signingKeyAddr },
-          nonce: Number(accountOp.nonce)
-        }
-        const additionalRelayerNetwork = relayerAdditionalNetworks.find(
-          (net) => net.chainId === this.#network.chainId
-        )
-        const relayerChainId = additionalRelayerNetwork
-          ? additionalRelayerNetwork.chainId
-          : accountOp.chainId
-        const response = await this.#callRelayer(
-          `/identity/${accountOp.accountAddr}/${relayerChainId}/submit`,
-          'POST',
-          body
-        )
-        if (!response.success) throw new Error(response.message)
-
-        transactionRes = {
-          txnId: response.txId,
-          nonce: Number(accountOp.nonce),
-          identifiedBy: {
-            type: 'Relayer',
-            identifier: response.id
-          }
-        }
-      } catch (error: any) {
-        return this.throwBroadcastAccountOp({ error, accountState, isRelayer: true })
-      }
+      return this.throwBroadcastAccountOp({
+        message: `The selected way of paying the fee is not supported. ${contactSupportPrompt}`,
+        accountState
+      })
     }
 
     if (!transactionRes)
@@ -5006,14 +4961,12 @@ export class SignAccountOpController
     message: humanReadableMessage,
     error: _err,
     accountState,
-    isRelayer = false,
     provider = undefined,
     network = undefined
   }: {
     message?: string
     error?: Error | EmittableError | ExternalSignerError
     accountState?: AccountOnchainState
-    isRelayer?: boolean
     provider?: RPCProvider
     network?: Network
   }) {
@@ -5072,9 +5025,6 @@ export class SignAccountOpController
           // toast. Ask them to confirm the new fee and continue instead.
           softFeeUpdateConfirmation = true
         }
-      } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
-        message =
-          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA account'
       } else if (
         originalMessage.includes('INVALID_ACCOUNT_NONCE') ||
         originalMessage.includes('user nonce') ||
@@ -5412,6 +5362,7 @@ export class SignAccountOpController
       canEnableErc4337: this.canEnableErc4337,
       threshold: this.threshold,
       canBroadcast: this.canBroadcast,
+      canChangeSigningKey: this.canChangeSigningKey,
       isFeePayerNotLinkedToSafe: this.isFeePayerNotLinkedToSafe,
       isSafeFeePayerChoiceRequired: this.isSafeFeePayerChoiceRequired,
       hasSafeApiFailed: this.hasSafeApiFailed,

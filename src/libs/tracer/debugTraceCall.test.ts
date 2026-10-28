@@ -128,7 +128,7 @@ describe('Debug tracecall detection for transactions', () => {
       gasLimit: null,
       gasFeePayment: {
         paidBy: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        broadcastOption: BROADCAST_OPTIONS.byRelayer,
+        broadcastOption: BROADCAST_OPTIONS.byOtherEOA,
         isGasTank: false,
         inToken: '0x0000000000000000000000000000000000000000',
         amount: 5205038755874012n,

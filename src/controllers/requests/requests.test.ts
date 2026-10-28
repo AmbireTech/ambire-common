@@ -5,6 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
+import { mockBundlerRequestsBeforeEach } from '../../../test/mocks/bundler'
 import { Session } from '../../classes/session'
 import { SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE } from '../../consts/safe'
 import {
@@ -371,6 +372,9 @@ describe('RequestsController ', () => {
   beforeEach(() => {
     jest.restoreAllMocks()
   })
+  // Registered after the restoreAllMocks above, so it's not undone right away. The requests
+  // build signAccountOps that estimate in the background, nothing here asserts on the bundler
+  mockBundlerRequestsBeforeEach()
 
   test('Add and then remove a user request', async () => {
     const { controller, getCallsRequest } = await prepareTest()
