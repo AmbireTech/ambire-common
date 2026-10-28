@@ -5,7 +5,7 @@ import { describe } from '@jest/globals'
 import { LiFiAPI } from '../lifi/api'
 import { SocketAPI } from '../socket/api'
 import { SwapProviderParallelExecutor } from './swapProviderParallelExecutor'
-import { SwapAndBridgeToToken, SwapProvider } from '../../interfaces/swapAndBridge'
+import { SwapProvider } from '../../interfaces/swapAndBridge'
 
 const socketApi = new SocketAPI({ fetch, apiKey: '' })
 const lifiApi = new LiFiAPI({
@@ -490,243 +490,129 @@ describe('Swap Provider Parallel execution', () => {
     ])
   })
 
-  describe('getToken fallback to the shared token source', () => {
+  describe('isTokenSupported', () => {
     const tokenAddress = '0x1111111111111111111111111111111111111111'
-    const makeResponse = (body: any, ok = true, status = ok ? 200 : 400) => ({
-      ok,
-      status,
-      json: async () => body
-    })
-    const makeCenaFetch = () =>
-      (jest.fn() as any).mockResolvedValueOnce(
-        makeResponse({
-          decimals: { ethereum: 18 },
-          name: 'Custom token',
-          platformId: 'ethereum',
-          platforms: { ethereum: tokenAddress },
-          symbol: 'custom'
-        })
-      )
-    const createTokenProvider = ({
+    const createSupportProvider = ({
       id = 'test-provider',
-      token = null,
       isTokenSupported
     }: {
       id?: string
-      token?: SwapAndBridgeToToken | null
       isTokenSupported?: SwapProvider['isTokenSupported']
-    }) =>
-      ({
-        ...createProvider(async () => []),
-        id,
-        getToken: jest.fn().mockResolvedValue(token),
-        isTokenSupported
-      }) as SwapProvider
+    }) => ({ ...createProvider(async () => []), id, isTokenSupported }) as SwapProvider
 
-    it('Fetches the token from the shared source when a provider supports it but none lists it', async () => {
-      const fetch = makeCenaFetch()
+    it('Is true when a provider confirms support', async () => {
       const isTokenSupported = jest.fn().mockResolvedValue(true)
-      const executor = new SwapProviderParallelExecutor(
-        [createTokenProvider({ isTokenSupported })],
-        undefined,
-        undefined,
-        fetch
-      )
+      const executor = new SwapProviderParallelExecutor([
+        createSupportProvider({ isTokenSupported })
+      ])
 
-      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toEqual({
-        address: tokenAddress,
-        chainId: 1,
-        decimals: 18,
-        icon: '',
-        name: 'Custom token',
-        symbol: 'custom'
-      })
+      await expect(executor.isTokenSupported({ address: tokenAddress, chainId: 1 })).resolves.toBe(
+        true
+      )
       expect(isTokenSupported).toHaveBeenCalledWith({ address: tokenAddress, chainId: 1 })
     })
 
-    it('Does not use the shared source when a provider already found the token', async () => {
-      const fetch = makeCenaFetch()
-      const listedToken: SwapAndBridgeToToken = {
-        address: tokenAddress,
-        chainId: 10,
-        decimals: 18,
-        name: 'LISTED',
-        symbol: 'LISTED'
-      }
+    it('Is false when no provider supports the token', async () => {
+      const executor = new SwapProviderParallelExecutor([
+        createSupportProvider({ isTokenSupported: jest.fn().mockResolvedValue(false) })
+      ])
+
+      await expect(executor.isTokenSupported({ address: tokenAddress, chainId: 1 })).resolves.toBe(
+        false
+      )
+    })
+
+    it('Is false when there are no providers that can check it', async () => {
+      const executor = new SwapProviderParallelExecutor([createSupportProvider({})])
+
+      await expect(executor.isTokenSupported({ address: tokenAddress, chainId: 1 })).resolves.toBe(
+        false
+      )
+    })
+
+    it('Does not ask a disabled provider', async () => {
       const isTokenSupported = jest.fn().mockResolvedValue(true)
-      const executor = new SwapProviderParallelExecutor(
-        [
-          createTokenProvider({ id: 'first', token: listedToken }),
-          createTokenProvider({ id: 'second', isTokenSupported })
-        ],
-        undefined,
-        undefined,
-        fetch
+      const provider = createSupportProvider({ isTokenSupported })
+      const executor = new SwapProviderParallelExecutor([provider], undefined, () => [provider.id])
+
+      await expect(executor.isTokenSupported({ address: tokenAddress, chainId: 1 })).resolves.toBe(
+        false
       )
-
-      await expect(executor.getToken({ address: tokenAddress, chainId: 10 })).resolves.toEqual(
-        listedToken
-      )
-      expect(isTokenSupported).not.toHaveBeenCalled()
-      expect(fetch).not.toHaveBeenCalled()
-    })
-
-    it('Does not use the shared source when no provider can trade the token', async () => {
-      const fetch = makeCenaFetch()
-      const executor = new SwapProviderParallelExecutor(
-        [createTokenProvider({ isTokenSupported: jest.fn().mockResolvedValue(false) })],
-        undefined,
-        undefined,
-        fetch
-      )
-
-      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toBeNull()
-      expect(fetch).not.toHaveBeenCalled()
-    })
-
-    it('Does not use the shared source when no provider can check if it trades the token', async () => {
-      const fetch = makeCenaFetch()
-      const executor = new SwapProviderParallelExecutor(
-        [createTokenProvider({})],
-        undefined,
-        undefined,
-        fetch
-      )
-
-      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toBeNull()
-      expect(fetch).not.toHaveBeenCalled()
-    })
-
-    it('Does not check support of a disabled provider', async () => {
-      const fetch = makeCenaFetch()
-      const isTokenSupported = jest.fn().mockResolvedValue(true)
-      const provider = createTokenProvider({ isTokenSupported })
-      const executor = new SwapProviderParallelExecutor(
-        [provider],
-        undefined,
-        () => [provider.id],
-        fetch
-      )
-
-      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).rejects.toThrow()
-      expect(isTokenSupported).not.toHaveBeenCalled()
-      expect(fetch).not.toHaveBeenCalled()
-    })
-
-    it('Returns null without a fetch function to use the shared source', async () => {
-      const isTokenSupported = jest.fn().mockResolvedValue(true)
-      const executor = new SwapProviderParallelExecutor([createTokenProvider({ isTokenSupported })])
-
-      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toBeNull()
       expect(isTokenSupported).not.toHaveBeenCalled()
     })
 
-    it('Uses the shared source if another provider confirms support, despite a failed check', async () => {
-      const fetch = makeCenaFetch()
-      const executor = new SwapProviderParallelExecutor(
-        [
-          createTokenProvider({
-            id: 'failing',
-            isTokenSupported: jest.fn().mockRejectedValue(new Error('check failed'))
-          }),
-          createTokenProvider({
-            id: 'supporting',
-            isTokenSupported: jest.fn().mockResolvedValue(true)
-          })
-        ],
-        undefined,
-        undefined,
-        fetch
-      )
+    it('Skips a provider that cannot check support while another one confirms it', async () => {
+      const executor = new SwapProviderParallelExecutor([
+        createSupportProvider({ id: 'without-check' }),
+        createSupportProvider({
+          id: 'supporting',
+          isTokenSupported: jest.fn().mockResolvedValue(true)
+        })
+      ])
 
-      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toMatchObject(
-        { symbol: 'custom' }
+      await expect(executor.isTokenSupported({ address: tokenAddress, chainId: 1 })).resolves.toBe(
+        true
       )
     })
 
-    it('Ignores failed checks and returns null when no provider confirmed support', async () => {
-      const fetch = makeCenaFetch()
-      const executor = new SwapProviderParallelExecutor(
-        [
-          createTokenProvider({
-            isTokenSupported: jest.fn().mockRejectedValue(new Error('check failed'))
-          })
-        ],
-        undefined,
-        undefined,
-        fetch
-      )
+    it('Ignores a failed check, and is false when no provider confirmed support', async () => {
+      const executor = new SwapProviderParallelExecutor([
+        createSupportProvider({
+          isTokenSupported: jest.fn().mockRejectedValue(new Error('check failed'))
+        })
+      ])
 
-      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toBeNull()
-      expect(fetch).not.toHaveBeenCalled()
+      await expect(executor.isTokenSupported({ address: tokenAddress, chainId: 1 })).resolves.toBe(
+        false
+      )
     })
 
-    it('Ignores a provider that throws synchronously while checking support', async () => {
-      const fetch = makeCenaFetch()
-      const executor = new SwapProviderParallelExecutor(
-        [
-          createTokenProvider({
-            id: 'throwing',
-            isTokenSupported: jest.fn(() => {
-              throw new Error('sync throw')
-            })
-          }),
-          createTokenProvider({
-            id: 'supporting',
-            isTokenSupported: jest.fn().mockResolvedValue(true)
+    it('Ignores a provider that throws synchronously while another one confirms support', async () => {
+      const executor = new SwapProviderParallelExecutor([
+        createSupportProvider({
+          id: 'throwing',
+          isTokenSupported: jest.fn(() => {
+            throw new Error('sync throw')
           })
-        ],
-        undefined,
-        undefined,
-        fetch
-      )
+        }),
+        createSupportProvider({
+          id: 'supporting',
+          isTokenSupported: jest.fn().mockResolvedValue(true)
+        })
+      ])
 
-      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toMatchObject(
-        { symbol: 'custom' }
+      await expect(executor.isTokenSupported({ address: tokenAddress, chainId: 1 })).resolves.toBe(
+        true
       )
     })
 
     it('Does not wait for a slow provider once another one confirmed support', async () => {
-      const fetch = makeCenaFetch()
-      const executor = new SwapProviderParallelExecutor(
-        [
-          createTokenProvider({
-            id: 'slow',
-            isTokenSupported: jest.fn(() => new Promise(() => {}))
-          }),
-          createTokenProvider({
-            id: 'supporting',
-            isTokenSupported: jest.fn().mockResolvedValue(true)
-          })
-        ],
-        undefined,
-        undefined,
-        fetch
-      )
+      const executor = new SwapProviderParallelExecutor([
+        createSupportProvider({
+          id: 'slow',
+          isTokenSupported: jest.fn(() => new Promise(() => {}))
+        }),
+        createSupportProvider({
+          id: 'supporting',
+          isTokenSupported: jest.fn().mockResolvedValue(true)
+        })
+      ])
 
-      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toMatchObject(
-        { symbol: 'custom' }
+      await expect(executor.isTokenSupported({ address: tokenAddress, chainId: 1 })).resolves.toBe(
+        true
       )
     })
 
-    it('Skips a provider that cannot check support while another one confirms it', async () => {
-      const fetch = makeCenaFetch()
-      const executor = new SwapProviderParallelExecutor(
-        [
-          createTokenProvider({ id: 'without-check' }),
-          createTokenProvider({
-            id: 'supporting',
-            isTokenSupported: jest.fn().mockResolvedValue(true)
-          })
-        ],
-        undefined,
-        undefined,
-        fetch
-      )
+    it('Is not used by getToken, which only asks the providers for tokens in their lists', async () => {
+      const isTokenSupported = jest.fn().mockResolvedValue(true)
+      const provider = {
+        ...createSupportProvider({ isTokenSupported }),
+        getToken: jest.fn().mockResolvedValue(null)
+      } as SwapProvider
+      const executor = new SwapProviderParallelExecutor([provider])
 
-      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toMatchObject(
-        { symbol: 'custom' }
-      )
+      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toBeNull()
+      expect(isTokenSupported).not.toHaveBeenCalled()
     })
   })
 })

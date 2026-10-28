@@ -1,5 +1,4 @@
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
-import { Fetch } from '../../interfaces/fetch'
 import {
   ProviderQuoteParams,
   SwapAndBridgeQuote,
@@ -13,7 +12,6 @@ import {
   SwapProviderInfo
 } from '../../interfaces/swapAndBridge'
 import wait, { waitWithAbort } from '../../utils/wait'
-import { getTokenByAddress } from '../cena/getTokenByAddress'
 
 const GET_SUPPORTED_CHAINS_TIMEOUT = 10000
 const GET_TO_TOKEN_LIST_TIMEOUT = 30000
@@ -31,22 +29,17 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
 
   #getDisabledProviders: () => string[]
 
-  /** Needed only for the shared token lookup that `getToken` falls back to */
-  #fetch?: Fetch
-
   // Added for compatibility with the type
   supportedChains: SwapProvider['supportedChains'] = []
 
   constructor(
     providers: SwapProvider[],
     getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[],
-    getDisabledProviders: () => string[] = () => [],
-    fetch?: Fetch
+    getDisabledProviders: () => string[] = () => []
   ) {
     this.#providers = providers
     this.#getFallbackSupportedChains = getFallbackSupportedChains
     this.#getDisabledProviders = getDisabledProviders
-    this.#fetch = fetch
   }
 
   /** Returns serializable metadata without exposing the private provider instances. */
@@ -341,27 +334,20 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
       (provider: SwapProvider) => provider.getToken({ address, chainId }).catch((e) => e),
       { chainIds: [chainId] }
     )
-    const foundToken = toTokens.find((t) => t)
-    if (foundToken) return foundToken
-
-    return this.#getTokenFromSharedSource({ address, chainId })
+    return toTokens.find((t) => t) || null
   }
 
   /**
-   * Fallback for a token that none of the providers found in their own lists. Fetches the
-   * token metadata from a shared source, but only if at least one enabled provider
-   * reports that it can trade the token (otherwise the user could select a token that
-   * cannot be swapped).
+   * Whether at least one enabled provider can trade the token, even if the token is missing
+   * from the token lists of the providers.
    */
-  async #getTokenFromSharedSource({
+  async isTokenSupported({
     address,
     chainId
   }: {
     address: string
     chainId: number
-  }): Promise<SwapAndBridgeToToken | null> {
-    if (!this.#fetch) return null
-
+  }): Promise<boolean> {
     // A single provider confirming support is enough, so there is no need to wait for the
     // slower ones. Providers that cannot check it are skipped. Promise.any also resolves for a
     // check that completed with false, so that case (and a failed check) rejects instead and is
@@ -378,10 +364,10 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
       await Promise.any(supportChecks)
     } catch {
       // No provider confirmed support
-      return null
+      return false
     }
 
-    return getTokenByAddress({ fetch: this.#fetch, address, chainId })
+    return true
   }
 
   async startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest> {

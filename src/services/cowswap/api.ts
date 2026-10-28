@@ -242,9 +242,9 @@ export class CowSwapAPI implements SwapProvider {
     )
     if (listedToken) return normalizeCowSwapToken(listedToken)
 
-    // The metadata of tokens missing from the CoW Swap token list is not available here.
-    // The swap provider executor falls back to a shared lookup, for tokens that
-    // CoW Swap reports as supported via `isTokenSupported`
+    // The data of tokens missing from the CoW Swap token list is not available here. For the
+    // ones that CoW Swap can trade (see `isTokenSupported`), the swap controller reads it from
+    // the chain
     return null
   }
 
