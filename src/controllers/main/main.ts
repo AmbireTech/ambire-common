@@ -1095,7 +1095,14 @@ export class MainController extends EventEmitter implements IMainController {
           else await this.keystore.storePrivacyPoolsKey(seedId, seedPassphrase)
         }
 
-        await this.privacyPools.addAccount(seedId)
+        try {
+          await this.privacyPools.addAccount(seedId)
+        } catch (error) {
+          // Drops the key stored above, unless an account already uses it (a double submit)
+          if (!this.#hasPrivacyPoolsAccount(seedId))
+            await this.keystore.removePrivacyPoolsKey(seedId)
+          throw error
+        }
         await this.#selectPrivacyPoolsAccount(seedId)
       },
       true

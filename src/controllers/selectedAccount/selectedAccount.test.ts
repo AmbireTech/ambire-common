@@ -451,6 +451,53 @@ describe('SelectedAccount Controller', () => {
       expect(mainCtrl.accounts.accounts).toHaveLength(accounts.length)
     })
 
+    describe('adding one from a phrase whose passphrase is not saved', () => {
+      const PASSPHRASE = 'extra word'
+
+      const prepareUnsavedPassphraseSeed = async () => {
+        const { mainCtrl } = await preparePrivacyPoolsTest({
+          privacyPoolsSeedIds: [],
+          withStoredSeed: false
+        })
+        await mainCtrl.keystore.addSecret('password', 'password', '', false)
+        await mainCtrl.keystore.unlockWithSecret('password', 'password')
+        await mainCtrl.keystore.addTempSeed({
+          seed: process.env.SEED,
+          seedPassphrase: PASSPHRASE,
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+        })
+        await mainCtrl.keystore.persistTempSeed()
+
+        return { mainCtrl, seedId: mainCtrl.keystore.seeds[0]!.id }
+      }
+
+      const getStoredKey = async (mainCtrl: any, seedId: string) =>
+        (await mainCtrl.storage.get('keystoreSeeds', [])).find(({ id }: any) => id === seedId)
+          ?.privacyPoolsSigningKey
+
+      it('stores no key when the account could not be added', async () => {
+        const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()
+        jest
+          .spyOn(mainCtrl.privacyPools, 'addAccount')
+          .mockRejectedValueOnce(new Error('could not add'))
+
+        await mainCtrl.addPrivacyPoolsAccount(seedId, { seedPassphrase: PASSPHRASE })
+
+        expect(mainCtrl.privacyPools.accounts).toHaveLength(0)
+        expect(await getStoredKey(mainCtrl, seedId)).toBeUndefined()
+      })
+
+      it('keeps the key of an account that is already added', async () => {
+        const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()
+        await mainCtrl.addPrivacyPoolsAccount(seedId, { seedPassphrase: PASSPHRASE })
+
+        await mainCtrl.addPrivacyPoolsAccount(seedId, { seedPassphrase: PASSPHRASE })
+
+        expect(mainCtrl.privacyPools.accounts).toHaveLength(1)
+        expect(await getStoredKey(mainCtrl, seedId)).toBeDefined()
+      })
+    })
+
     it('removing the only account of either kind leaves nothing selected', async () => {
       const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest({
         storedAccounts: [],
