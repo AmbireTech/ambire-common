@@ -583,7 +583,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       }
     })
 
-    await this.#persistMigratedKeystoreData({ seeds: namedSeeds })
+    // In memory first, with no await since the seeds were read, so a write made meanwhile isn't lost
+    this.#keystoreSeeds = namedSeeds
+    this.emitUpdate()
+    await this.#storage.set('keystoreSeeds', namedSeeds)
   }
 
   /**

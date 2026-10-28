@@ -852,6 +852,43 @@ describe('KeystoreController recovery phrase passphrases', () => {
     expect(await addPhrase(PASSPHRASE)).toBe(first)
     expect(keystoreCtrl.seeds).toHaveLength(3)
   })
+
+  test('keeps a change to the seeds made while the passphrases are being numbered', async () => {
+    const seedId = await addPhrase(PASSPHRASE, true)
+    const storedSeeds = await storageCtrl.get('keystoreSeeds', [])
+    await storageCtrl.set(
+      'keystoreSeeds',
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      storedSeeds.map(({ passphraseLabel, passphraseFingerprint, ...seed }: any) => seed)
+    )
+    keystoreCtrl = new KeystoreController(
+      'default',
+      storageCtrl,
+      keystoreSigners,
+      new UiController({ uiManager })
+    )
+    // Renames the phrase while the numbered seeds are still being written
+    const set = storageCtrl.set.bind(storageCtrl)
+    let isRenamed = false
+    const setSpy = jest.spyOn(storageCtrl, 'set').mockImplementation(async (key, value) => {
+      if (key === 'keystoreSeeds' && !isRenamed) {
+        isRenamed = true
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        keystoreCtrl.updateSeed({ id: seedId, label: 'Renamed' })
+        await wait(10)
+      }
+
+      return set(key, value)
+    })
+
+    await keystoreCtrl.unlockWithSecret('password', pass)
+    await wait(20)
+    setSpy.mockRestore()
+
+    expect(seedById(seedId)).toMatchObject({ label: 'Renamed', passphraseLabel: '1' })
+    const [storedSeed] = await storageCtrl.get('keystoreSeeds', [])
+    expect(storedSeed).toMatchObject({ label: 'Renamed', passphraseLabel: '1' })
+  })
 })
 
 describe('KeystoreController signing authentication', () => {
