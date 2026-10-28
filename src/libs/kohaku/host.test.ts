@@ -1,7 +1,7 @@
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { Hex } from '../../interfaces/hex'
-import { createKohakuKeystore, createKohakuProvider } from './host'
+import { createKohakuKeystore, createKohakuMemoryStorage, createKohakuProvider } from './host'
 
 const SIGNING_KEY_PATH = "m/28784'/1'/0'"
 const KEY: Hex = `0x${'11'.repeat(32)}`
@@ -105,5 +105,19 @@ describe('createKohakuProvider', () => {
     const provider = { getTransactionReceipt: jest.fn(async () => null) }
 
     expect(await createKohakuProvider(provider as any).getTransactionReceipt(TX_HASH)).toBeNull()
+  })
+})
+
+describe('createKohakuMemoryStorage', () => {
+  test('keeps what is saved, apart per instance', async () => {
+    const storage = createKohakuMemoryStorage()
+    const other = createKohakuMemoryStorage()
+
+    expect(await storage.get('key')).toBeNull()
+    await storage.set('key', 'first')
+    await storage.set('key', 'second')
+
+    expect(await storage.get('key')).toBe('second')
+    expect(await other.get('key')).toBeNull()
   })
 })

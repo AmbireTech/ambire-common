@@ -82,6 +82,22 @@ export const createKohakuStorage = ({
 }
 
 /**
+ * A plugin storage kept in memory only, e.g. to build a store that replaces the persisted one only
+ * once complete. Nothing is left behind if the build is cut short.
+ */
+export const createKohakuMemoryStorage = (): Storage => {
+  const values = new Map<string, string>()
+
+  return {
+    _brand: 'Storage',
+    get: async (key: string) => values.get(key) ?? null,
+    async set(key: string, value: string) {
+      values.set(key, value)
+    }
+  }
+}
+
+/**
  * Derives plugin keys without giving the plugin the recovery phrase, unlike the SDK's
  * `MnemonicKeystore`. `deriveKey` must whitelist its paths - see
  * `KeystoreController.derivePrivacyPoolsKey`.

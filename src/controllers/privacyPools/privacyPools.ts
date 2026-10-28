@@ -222,7 +222,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       ctx,
       this.#registry,
       (chainId) => this.#refreshPoolStats(chainId),
-      (seedId) => this.#isHistoryWanted(seedId)
+      (seedId) => this.#isHistoryWanted(seedId),
+      (chainId) => this.#onStoreReplaced(chainId)
     )
     this.#deposits = new PrivacyPoolsDeposits(ctx, this.#registry, this.#sync)
     this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
@@ -638,6 +639,19 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #isHistoryWanted(seedId: string): boolean {
     return !!Object.keys(this.#historySessions).length && seedId === this.#getSelectedSeedId()
+  }
+
+  /** Reads a shown history of the chain again, now with links to its transactions. */
+  #onStoreReplaced(chainId: string) {
+    this.emitUpdate()
+
+    const isChainShown = Object.values(this.#historySessions).some(({ filters }) =>
+      this.#getHistoryChainIds(filters).includes(chainId)
+    )
+    if (!isChainShown) return
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#loadHistory({ chainId })
   }
 
   #getHistoryChainIds({ chainId }: PrivacyPoolsHistoryFilters): string[] {
