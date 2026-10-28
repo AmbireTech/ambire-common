@@ -511,4 +511,173 @@ describe('Swap Provider Parallel execution', () => {
       'uniswap'
     ])
   })
+
+  describe('getToken fallback to the shared token source', () => {
+    const tokenAddress = '0x1111111111111111111111111111111111111111'
+    const makeResponse = (body: any, ok = true, status = ok ? 200 : 400) => ({
+      ok,
+      status,
+      json: async () => body
+    })
+    const makeCenaFetch = () =>
+      (jest.fn() as any)
+        .mockResolvedValueOnce(makeResponse({ platformId: 'ethereum' }))
+        .mockResolvedValueOnce(
+          makeResponse({
+            decimals: { ethereum: 18 },
+            name: 'Custom token',
+            platforms: { ethereum: tokenAddress },
+            symbol: 'custom'
+          })
+        )
+    const createTokenProvider = ({
+      id = 'test-provider',
+      token = null,
+      isTokenSupported
+    }: {
+      id?: string
+      token?: SwapAndBridgeToToken | null
+      isTokenSupported?: SwapProvider['isTokenSupported']
+    }) =>
+      ({
+        ...createProvider(async () => []),
+        id,
+        getToken: jest.fn().mockResolvedValue(token),
+        isTokenSupported
+      }) as SwapProvider
+
+    it('Fetches the token from the shared source when a provider supports it but none lists it', async () => {
+      const fetch = makeCenaFetch()
+      const isTokenSupported = jest.fn().mockResolvedValue(true)
+      const executor = new SwapProviderParallelExecutor(
+        [createTokenProvider({ isTokenSupported })],
+        undefined,
+        undefined,
+        fetch
+      )
+
+      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toEqual({
+        address: tokenAddress,
+        chainId: 1,
+        decimals: 18,
+        icon: '',
+        name: 'Custom token',
+        symbol: 'custom'
+      })
+      expect(isTokenSupported).toHaveBeenCalledWith({ address: tokenAddress, chainId: 1 })
+    })
+
+    it('Does not use the shared source when a provider already found the token', async () => {
+      const fetch = makeCenaFetch()
+      const listedToken = createOptimismToken(tokenAddress, 'LISTED')
+      const isTokenSupported = jest.fn().mockResolvedValue(true)
+      const executor = new SwapProviderParallelExecutor(
+        [
+          createTokenProvider({ id: 'first', token: listedToken }),
+          createTokenProvider({ id: 'second', isTokenSupported })
+        ],
+        undefined,
+        undefined,
+        fetch
+      )
+
+      await expect(executor.getToken({ address: tokenAddress, chainId: 10 })).resolves.toEqual(
+        listedToken
+      )
+      expect(isTokenSupported).not.toHaveBeenCalled()
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('Does not use the shared source when no provider can trade the token', async () => {
+      const fetch = makeCenaFetch()
+      const executor = new SwapProviderParallelExecutor(
+        [createTokenProvider({ isTokenSupported: jest.fn().mockResolvedValue(false) })],
+        undefined,
+        undefined,
+        fetch
+      )
+
+      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toBeNull()
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('Does not use the shared source when no provider can check if it trades the token', async () => {
+      const fetch = makeCenaFetch()
+      const executor = new SwapProviderParallelExecutor(
+        [createTokenProvider({})],
+        undefined,
+        undefined,
+        fetch
+      )
+
+      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toBeNull()
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('Does not check support of a disabled provider', async () => {
+      const fetch = makeCenaFetch()
+      const isTokenSupported = jest.fn().mockResolvedValue(true)
+      const provider = createTokenProvider({ isTokenSupported })
+      const executor = new SwapProviderParallelExecutor(
+        [provider],
+        undefined,
+        () => [provider.id],
+        fetch
+      )
+
+      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).rejects.toThrow()
+      expect(isTokenSupported).not.toHaveBeenCalled()
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('Returns null without a fetch function to use the shared source', async () => {
+      const isTokenSupported = jest.fn().mockResolvedValue(true)
+      const executor = new SwapProviderParallelExecutor([createTokenProvider({ isTokenSupported })])
+
+      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toBeNull()
+      expect(isTokenSupported).not.toHaveBeenCalled()
+    })
+
+    it('Uses the shared source if another provider confirms support, despite a failed check', async () => {
+      const fetch = makeCenaFetch()
+      const executor = new SwapProviderParallelExecutor(
+        [
+          createTokenProvider({
+            id: 'failing',
+            isTokenSupported: jest.fn().mockRejectedValue(new Error('check failed'))
+          }),
+          createTokenProvider({
+            id: 'supporting',
+            isTokenSupported: jest.fn().mockResolvedValue(true)
+          })
+        ],
+        undefined,
+        undefined,
+        fetch
+      )
+
+      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toMatchObject(
+        { symbol: 'custom' }
+      )
+    })
+
+    it('Throws instead of reporting "unsupported" when a check failed and none confirmed support', async () => {
+      const fetch = makeCenaFetch()
+      const executor = new SwapProviderParallelExecutor(
+        [
+          createTokenProvider({
+            isTokenSupported: jest.fn().mockRejectedValue(new Error('check failed'))
+          })
+        ],
+        undefined,
+        undefined,
+        fetch
+      )
+
+      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).rejects.toThrow(
+        'check failed'
+      )
+      expect(fetch).not.toHaveBeenCalled()
+    })
+  })
 })

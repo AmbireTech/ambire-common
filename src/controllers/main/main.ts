@@ -622,7 +622,8 @@ export class MainController extends EventEmitter implements IMainController {
       swapProvider: new SwapProviderParallelExecutor(
         [LiFiProvider, SocketProvider, UniswapProvider, CowSwapProvider],
         () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) })),
-        () => this.swapAndBridge?.getDisabledSwapProviderIds() ?? []
+        () => this.swapAndBridge?.getDisabledSwapProviderIds() ?? [],
+        fetch
       ),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
