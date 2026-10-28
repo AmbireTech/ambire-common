@@ -52,6 +52,7 @@ import {
   COWSWAP_ORDER_VALIDITY_SECONDS,
   COWSWAP_SETTLEMENT_ADDRESS,
   COWSWAP_SUPPORTED_CHAINS,
+  COWSWAP_TOKEN_LIST_CACHE_MS,
   COWSWAP_TOKEN_LIST_URL,
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from './constants'
@@ -71,6 +72,12 @@ export class CowSwapAPI implements SwapProvider {
   #apiHeaders: RequestInitWithCustomHeaders['headers']
 
   #requestTimeoutMs = 15000
+
+  /** The last successfully fetched token list, kept in memory only */
+  #tokenListCache: { fetchedAt: number; tokens: CowSwapTokenListEntry[] } | null = null
+
+  /** The token list request in progress, so that simultaneous callers share one request */
+  #tokenListRequest: Promise<CowSwapTokenListEntry[]> | null = null
 
   isHealthy: boolean | null = null
 
@@ -168,6 +175,28 @@ export class CowSwapAPI implements SwapProvider {
   }
 
   async #getTokenList(): Promise<CowSwapTokenListEntry[]> {
+    if (
+      this.#tokenListCache &&
+      Date.now() - this.#tokenListCache.fetchedAt < COWSWAP_TOKEN_LIST_CACHE_MS
+    )
+      return this.#tokenListCache.tokens
+
+    if (!this.#tokenListRequest) {
+      // Failed requests are not cached, the next call tries again
+      this.#tokenListRequest = this.#fetchTokenList()
+        .then((tokens) => {
+          this.#tokenListCache = { fetchedAt: Date.now(), tokens }
+          return tokens
+        })
+        .finally(() => {
+          this.#tokenListRequest = null
+        })
+    }
+
+    return this.#tokenListRequest
+  }
+
+  async #fetchTokenList(): Promise<CowSwapTokenListEntry[]> {
     const response = await this.#parseResponse<{ tokens?: unknown }>(
       await this.#fetchWithTimeout(COWSWAP_TOKEN_LIST_URL, { headers: this.#headers }),
       'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
