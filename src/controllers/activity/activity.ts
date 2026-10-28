@@ -52,6 +52,7 @@ import { ScamFilter } from '../../libs/scamFilter'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import { getAddressCaught } from '../../utils/getAddressCaught'
+import { getPage, Pagination, PaginationResult } from '../../utils/paginate'
 import isSameAddr from '../../utils/isSameAddr'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -60,17 +61,7 @@ import { FeePayersHistory, InternalSignedMessages, SentToHistory, SignedMessage 
 import type { BalanceChangesReceipt } from '../../libs/accountOp/balanceChanges'
 
 // TODO: Move all of these types and helpers to separate files!
-export interface Pagination {
-  fromPage: number
-  itemsPerPage: number
-}
-
-interface PaginationResult<T> {
-  items: T[]
-  itemsTotal: number
-  currentPage: number
-  maxPages: number
-}
+export type { Pagination }
 
 type AccountsOps = PaginationResult<SubmittedAccountOpLike>
 
@@ -108,21 +99,6 @@ const trim = <T>(items: T[], maxSize: number): T | undefined => {
   if (items.length <= maxSize) return undefined
 
   return items.pop()
-}
-
-/** `itemsTotal` is overridable: a caller holding one page cannot derive it, and navigation gates on it. */
-const paginate = (
-  items: any[],
-  fromPage: number,
-  itemsPerPage: number,
-  itemsTotal = items.length
-) => {
-  return {
-    items: items.slice(fromPage * itemsPerPage, fromPage * itemsPerPage + itemsPerPage),
-    itemsTotal,
-    currentPage: fromPage, // zero/index based
-    maxPages: Math.ceil(itemsTotal / itemsPerPage)
-  }
 }
 
 const getPreviousBlockNumber = (blockNumber: number) => (blockNumber > 0 ? blockNumber - 1 : 0)
@@ -654,7 +630,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           0
         )
 
-    const result = paginate(
+    const result = getPage(
       filteredItems,
       pagination.fromPage,
       pagination.itemsPerPage,
@@ -841,7 +817,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const messagesKey = getAccountOpsAccountKey(this.#signedMessages, filters.account)
     const filteredItems = (messagesKey && this.#signedMessages[messagesKey]) || []
 
-    const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
+    const result = getPage(filteredItems, pagination.fromPage, pagination.itemsPerPage)
 
     this.signedMessages[sessionId] = {
       result,
