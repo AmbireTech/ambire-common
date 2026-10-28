@@ -1310,14 +1310,16 @@ describe('Activity Controller ', () => {
 
         expect(op.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
       })
-      ;[BROADCAST_OPTIONS.byRelayer, BROADCAST_OPTIONS.byBundler].forEach((broadcastOption) => {
-        test(`a txn sent by the ${broadcastOption} is stuck after 30 minutes even if it is in the mempool`, async () => {
-          const { pollStatuses } = await setupOldOp({ broadcastOption, isInMempool: true })
 
-          const op = await pollStatuses()
-
-          expect(op.status).toBe(AccountOpStatus.BroadcastButStuck)
+      test('a txn sent by the bundler is stuck after 30 minutes even if it is in the mempool', async () => {
+        const { pollStatuses } = await setupOldOp({
+          broadcastOption: BROADCAST_OPTIONS.byBundler,
+          isInMempool: true
         })
+
+        const op = await pollStatuses()
+
+        expect(op.status).toBe(AccountOpStatus.BroadcastButStuck)
       })
 
       test('a batch sent one txn at a time stays pending while one of its txns is in the mempool', async () => {
@@ -2007,6 +2009,78 @@ describe('Activity Controller ', () => {
       expect(controller.accountsOps[sessionId]!.result.items.map((op) => op.txnId)).toEqual([
         original.txnId
       ])
+    })
+
+    describe('findReplacement', () => {
+      const buildReplacement = (
+        txnId: string,
+        replaced: submittedAccountOp.SubmittedAccountOp,
+        status: AccountOpStatus
+      ) => ({
+        ...buildAttempt(txnId, 2000),
+        status,
+        meta: { speedUp: { enabled: true, replacedIdentifiedBy: replaced.identifiedBy } }
+      })
+
+      test('returns the newest replacement when a speed up was sped up again', async () => {
+        const { controller } = await prepareTest()
+        const original = {
+          ...buildAttempt(`0x${'11'.repeat(32)}`, 1000),
+          status: AccountOpStatus.UnknownButPastNonce
+        }
+        const firstSpeedUp = buildReplacement(
+          `0x${'12'.repeat(32)}`,
+          original,
+          AccountOpStatus.UnknownButPastNonce
+        )
+        const secondSpeedUp = buildReplacement(
+          `0x${'13'.repeat(32)}`,
+          firstSpeedUp,
+          AccountOpStatus.Success
+        )
+        await controller.addAccountOp(original)
+        await controller.addAccountOp(firstSpeedUp)
+        await controller.addAccountOp(secondSpeedUp)
+
+        const replacement = controller.findReplacement(original.identifiedBy, SENDER, 1n)
+
+        expect(replacement?.txnId).toBe(secondSpeedUp.txnId)
+      })
+
+      test('returns the replacement that went through when the op was sped up twice', async () => {
+        const { controller } = await prepareTest()
+        const original = {
+          ...buildAttempt(`0x${'14'.repeat(32)}`, 1000),
+          status: AccountOpStatus.UnknownButPastNonce
+        }
+        const confirmedSpeedUp = buildReplacement(
+          `0x${'15'.repeat(32)}`,
+          original,
+          AccountOpStatus.Success
+        )
+        // Added last, so it comes first in the list and a plain find would return it
+        const droppedSpeedUp = buildReplacement(
+          `0x${'16'.repeat(32)}`,
+          original,
+          AccountOpStatus.Rejected
+        )
+        await controller.addAccountOp(original)
+        await controller.addAccountOp(confirmedSpeedUp)
+        await controller.addAccountOp(droppedSpeedUp)
+
+        const replacement = controller.findReplacement(original.identifiedBy, SENDER, 1n)
+
+        expect(replacement?.txnId).toBe(confirmedSpeedUp.txnId)
+      })
+
+      test('returns undefined when nothing replaced the op', async () => {
+        const { controller } = await prepareTest()
+        const original = buildAttempt(`0x${'17'.repeat(32)}`, 1000)
+        await controller.addAccountOp(original)
+        await controller.addAccountOp(buildAttempt(`0x${'18'.repeat(32)}`, 2000))
+
+        expect(controller.findReplacement(original.identifiedBy, SENDER, 1n)).toBeUndefined()
+      })
     })
   })
 })

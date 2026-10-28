@@ -2209,6 +2209,42 @@ export class ActivityController extends EventEmitter implements IActivityControl
     )
   }
 
+  /**
+   * The speed up or cancel that took the place of the given op. When it was replaced again, this
+   * is the newest replacement. Undefined when nothing replaced it.
+   */
+  findReplacement(
+    identifiedBy: AccountOpIdentifiedBy,
+    accountAddr: string,
+    chainId: bigint
+  ): SubmittedAccountOp | undefined {
+    const ops = this.#accountsOps[accountAddr]?.[chainId.toString()]
+    if (!ops) return undefined
+
+    let replacement: SubmittedAccountOp | undefined
+    let replacedIdentifier = identifiedBy.identifier
+    // Bounded by the number of ops, so replacements that point at each other can't loop forever
+    for (let i = 0; i < ops.length; i++) {
+      const replacements = ops.filter(
+        (op) => op.meta?.speedUp?.replacedIdentifiedBy?.identifier === replacedIdentifier
+      )
+      if (!replacements.length) break
+
+      // The same op may have been sped up more than once, but only one of them can go through
+      replacement =
+        replacements.find(
+          (op) =>
+            op.status !== AccountOpStatus.UnknownButPastNonce &&
+            op.status !== AccountOpStatus.Rejected
+        ) ?? replacements[0]!
+      if (replacement.status !== AccountOpStatus.UnknownButPastNonce) break
+
+      replacedIdentifier = replacement.identifiedBy.identifier
+    }
+
+    return replacement
+  }
+
   get banners() {
     if (!this.#networks.isInitialized) {
       return Array.from(this.#bannersByAccount.values()).flat()
