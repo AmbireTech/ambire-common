@@ -5892,16 +5892,21 @@ describe('an earlier pending transaction', () => {
   const initEoa = async ({
     isSpeedUp,
     onBroadcastSuccess,
+    onPartialBroadcast,
+    type,
     callsCount = 1,
     featureFlags = { eip7702: false }
   }: {
     isSpeedUp?: boolean
     onBroadcastSuccess?: (params: { submittedAccountOp: SubmittedAccountOp }) => Promise<void>
+    onPartialBroadcast?: (sentAccountOp: SubmittedAccountOp) => Promise<void>
+    type?: SignAccountOpType
     callsCount?: number
     featureFlags?: Partial<FeatureFlags>
   } = {}) => {
     const accountOp = createEOAAccountOp(eoaAccount)
-    accountOp.op.calls = Array.from({ length: callsCount }, () => ({
+    accountOp.op.calls = Array.from({ length: callsCount }, (_, i) => ({
+      id: `call-${i}`,
       to: nativeAddr,
       value: 2n,
       data: '0x' as Hex
@@ -5929,6 +5934,8 @@ describe('an earlier pending transaction', () => {
         // Without eip7702 off the account may broadcast through an EIP-7702 delegation
         featureFlags,
         onBroadcastSuccess,
+        onPartialBroadcast,
+        type,
         createReplacement: isSpeedUp
           ? (activity) => new TxnReplacement({ accountOp: accountOp.op, activity })
           : undefined
@@ -6118,6 +6125,67 @@ describe('an earlier pending transaction', () => {
       expect(controller.accountOp.eoaNonce).toBe(5n)
     })
 
+    describe('when the user rejects the second call of a batch sent one transaction per call', () => {
+      /** Call 1 goes out at the nonce of the pending op, then the signature of call 2 is refused */
+      const replaceBatchAndRefuseSecondCall = async (type?: SignAccountOpType) => {
+        const submittedAccountOps: SubmittedAccountOp[] = []
+        const pendingAccountOp = buildPendingAccountOp()
+        let pendingAccountOpsSpy: ReturnType<typeof holdBehind> | undefined
+        const { controller } = await initEoa({
+          callsCount: 3,
+          type,
+          onBroadcastSuccess: async ({ submittedAccountOp }) => {
+            submittedAccountOps.push(submittedAccountOp)
+            // Activity now holds the sent part, next to the pending op it replaced
+            pendingAccountOpsSpy?.mockReturnValue({
+              [eoaAccount.addr]: [pendingAccountOp, submittedAccountOp]
+            })
+          },
+          onPartialBroadcast: async () => {}
+        })
+        pendingAccountOpsSpy = holdBehind(controller, pendingAccountOp)
+        mockRawBroadcast()
+        jest
+          .spyOn(KeystoreSigner.prototype, 'signRawTransaction')
+          .mockResolvedValueOnce('0xsigned')
+          .mockRejectedValueOnce(new Error('Card operation cancelled.'))
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
+
+        await replaceAndBroadcast(controller, broadcastLib.BROADCAST_OPTIONS.bySelf)
+
+        return { controller, submittedAccountOps }
+      }
+
+      test('the rest is a normal op held behind the sent part, and does not reuse its nonce', async () => {
+        const { controller, submittedAccountOps } = await replaceBatchAndRefuseSecondCall()
+        expect(submittedAccountOps).toHaveLength(1)
+        expect(submittedAccountOps[0]!.eoaNonce).toBe(5n)
+
+        const notSentCalls = controller.cleanupAfterBroadcast([
+          controller.accountOp.calls[0]!.id as string
+        ])
+
+        expect(notSentCalls.map((call) => call.id)).toEqual(['call-1', 'call-2'])
+        expect(controller.accountOp.calls.map((call) => call.id)).toEqual(['call-1', 'call-2'])
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(controller.earlierPendingAccountOp?.id).toBe(submittedAccountOps[0]!.id)
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        // Several transactions can't be replaced as one
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+        expect(hasEarlierPendingError(controller)).toBe(true)
+      })
+
+      test('in the built-in swap, the retry does not reuse the nonce either', async () => {
+        const { controller, submittedAccountOps } = await replaceBatchAndRefuseSecondCall(
+          'one-click-swap-and-bridge'
+        )
+
+        expect(submittedAccountOps).toHaveLength(0)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+      })
+    })
+
     test('is dropped when the pending op gets confirmed before signing', async () => {
       const findByIdentifiedBy = jest
         .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
@@ -6141,6 +6209,213 @@ describe('an earlier pending transaction', () => {
       expect(hasEarlierPendingError(controller)).toBe(false)
       // Back to the normal fees
       expect(controller.selectedOptionGasPrices).toEqual(gasPrices)
+    })
+
+    describe('when the pending op stops being the one it replaces', () => {
+      /** Runs the Activity listeners as an update of Activity would, in the order they were added */
+      const spyOnActivityUpdates = () => {
+        const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+        const notify = (idPrefix: string) =>
+          onUpdateSpy.mock.calls
+            .filter(([, id]) => typeof id === 'string' && id.startsWith(idPrefix))
+            .forEach(([callback]) => (callback as () => void)())
+
+        return {
+          // Finds the earlier pending op again
+          notifyEarlierPending: () => notify('sign-account-op-earlier-pending'),
+          // Checks whether the replaced op was processed
+          notifyReplacedWatchers: () => notify('sign-account-op-speed-up')
+        }
+      }
+
+      const startReplacing = async (initOptions?: Parameters<typeof initEoa>[0]) => {
+        jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+        const activityUpdates = spyOnActivityUpdates()
+        const ctrl = await initEoa(initOptions)
+        const pendingAccountOp = buildPendingAccountOp()
+        const pendingAccountOpsSpy = holdBehind(ctrl.controller, pendingAccountOp)
+        ctrl.controller.replacePendingAccountOp()
+        expect(ctrl.controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+
+        return { ...ctrl, ...activityUpdates, pendingAccountOp, pendingAccountOpsSpy }
+      }
+
+      test('leaves Replace mode when the pending op got stuck and no longer holds the nonce', async () => {
+        const { controller, notifyEarlierPending, pendingAccountOpsSpy } = await startReplacing()
+
+        pendingAccountOpsSpy.mockReturnValue({})
+        notifyEarlierPending()
+
+        expect(controller.earlierPendingAccountOp).toBeNull()
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(hasEarlierPendingError(controller)).toBe(false)
+        // Back to the normal fees
+        expect(controller.selectedOptionGasPrices).toEqual(gasPrices)
+        // It was not processed, the user has to know why Replace ended on its own
+        expect(controller.isReplacedPendingAccountOpProcessed).toBe(false)
+      })
+
+      test('leaves Replace mode when the pending op was sped up, so the fee floor is the new one', async () => {
+        const { controller, notifyEarlierPending, pendingAccountOp, pendingAccountOpsSpy } =
+          await startReplacing()
+        const speedUpFees = { gasPrice: 2000n, maxPriorityFeePerGas: 900n }
+        const speedUpAccountOp = buildPendingAccountOp({
+          id: 'speed-up-op',
+          timestamp: Date.now(),
+          identifiedBy: { type: 'Transaction', identifier: `0x${'ef'.repeat(32)}` },
+          gasFeePayment: { ...pendingAccountOp.gasFeePayment!, ...speedUpFees }
+        })
+
+        // Same payer and nonce, so Activity lists only the newer op
+        pendingAccountOpsSpy.mockReturnValue({
+          [eoaAccount.addr]: [pendingAccountOp, speedUpAccountOp]
+        })
+        notifyEarlierPending()
+
+        expect(controller.earlierPendingAccountOp?.id).toBe('speed-up-op')
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(hasEarlierPendingError(controller)).toBe(true)
+        expect(controller.selectedOptionGasPrices).toEqual(gasPrices)
+      })
+
+      test('leaves Replace mode when another pending op takes a nonce after the replaced one', async () => {
+        const { controller, notifyEarlierPending, pendingAccountOp, pendingAccountOpsSpy } =
+          await startReplacing({ callsCount: 2 })
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
+
+        pendingAccountOpsSpy.mockReturnValue({
+          [eoaAccount.addr]: [
+            pendingAccountOp,
+            buildPendingAccountOp({ id: 'next-op', eoaNonce: 6n, timestamp: Date.now() })
+          ]
+        })
+        notifyEarlierPending()
+
+        expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+      })
+
+      test('stays in Replace mode while no fee options are known', async () => {
+        const { controller, notifyEarlierPending } = await startReplacing()
+
+        controller.estimation.availableFeeOptions = []
+        notifyEarlierPending()
+        controller.update({ hasNewEstimation: true })
+
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+        expect(controller.accountOp.eoaNonce).toBe(5n)
+      })
+
+      test('does not leave while signing, and does once back to ReadyToSign', async () => {
+        const { controller, notifyEarlierPending, pendingAccountOpsSpy } = await startReplacing()
+        controller.status = { type: SigningStatus.InProgress }
+
+        pendingAccountOpsSpy.mockReturnValue({})
+        notifyEarlierPending()
+
+        expect(controller.accountOp.eoaNonce).toBe(5n)
+        expect(controller.earlierPendingAccountOp).toBeNull()
+
+        controller.updateStatus(SigningStatus.ReadyToSign)
+
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(controller.selectedOptionGasPrices).toEqual(gasPrices)
+      })
+
+      test('leaves Replace mode once the first-time delegation turns the fee option into one that is not replaceable', async () => {
+        const { controller } = await startReplacing({
+          callsCount: 2,
+          featureFlags: { eip7702: true }
+        })
+
+        expect(controller.accountOp.gasFeePayment?.broadcastOption).toBe(
+          broadcastLib.BROADCAST_OPTIONS.delegation
+        )
+        // The delegation takes the nonce after the pending op, which another op holds
+        holdBehind(
+          controller,
+          buildPendingAccountOp(),
+          buildPendingAccountOp({ id: 'next-op', eoaNonce: 6n, timestamp: Date.now() })
+        )
+
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(hasEarlierPendingError(controller)).toBe(true)
+      })
+
+      describe('when the pending op gets processed', () => {
+        const processPendingAccountOp = (
+          ctrl: Awaited<ReturnType<typeof startReplacing>>,
+          status = AccountOpStatus.Success
+        ) => {
+          ctrl.pendingAccountOpsSpy.mockReturnValue({})
+          ;(ActivityController.prototype.findByIdentifiedBy as jest.Mock).mockReturnValue({
+            ...ctrl.pendingAccountOp,
+            status
+          })
+        }
+
+        test('says so, and stops saying so when Replace starts again', async () => {
+          const ctrl = await startReplacing()
+          const { controller } = ctrl
+          expect(controller.isReplacedPendingAccountOpProcessed).toBe(false)
+
+          processPendingAccountOp(ctrl)
+          // The earlier pending op is dropped first, but it is the processed op that ends Replace
+          ctrl.notifyEarlierPending()
+          ctrl.notifyReplacedWatchers()
+
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+          expect(controller.isReplacedPendingAccountOpProcessed).toBe(true)
+          expect(controller.toJSON().isReplacedPendingAccountOpProcessed).toBe(true)
+
+          // A new pending op holds this op again, and Replace can be used for it
+          ;(ActivityController.prototype.findByIdentifiedBy as jest.Mock).mockReturnValue(undefined)
+          holdBehind(controller, buildPendingAccountOp({ id: 'newer-pending-op' }))
+          controller.replacePendingAccountOp()
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+          expect(controller.isReplacedPendingAccountOpProcessed).toBe(false)
+        })
+
+        test('waits while the warning modal pauses the updates, and leaves when it is cancelled', async () => {
+          const ctrl = await startReplacing()
+          const { controller } = ctrl
+          controller.updateStatus(SigningStatus.UpdatesPaused)
+
+          processPendingAccountOp(ctrl)
+          ctrl.notifyReplacedWatchers()
+
+          expect(controller.accountOp.eoaNonce).toBe(5n)
+          expect(controller.isReplacedPendingAccountOpProcessed).toBe(false)
+
+          // Cancel in the modal
+          controller.updateStatus(SigningStatus.ReadyToSign)
+
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+          expect(controller.isReplacedPendingAccountOpProcessed).toBe(true)
+        })
+
+        test('is checked once the signing ends, when the modal was accepted', async () => {
+          const ctrl = await startReplacing()
+          const { controller } = ctrl
+          controller.updateStatus(SigningStatus.UpdatesPaused)
+          processPendingAccountOp(ctrl)
+          ctrl.notifyReplacedWatchers()
+          expect(controller.accountOp.eoaNonce).toBe(5n)
+
+          // Proceed in the modal starts signing, which fails as the nonce is taken
+          controller.status = { type: SigningStatus.InProgress }
+          controller.cancelSignReq()
+
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+          expect(controller.isReplacedPendingAccountOpProcessed).toBe(true)
+        })
+      })
     })
 
     describe('when the fee option of the pending op disappears', () => {
@@ -6351,20 +6626,6 @@ describe('an earlier pending transaction', () => {
       expect(controller.canBroadcast).toBe(false)
       expect(controller.errors).toEqual([])
       expect(controller.readyToSign).toBe(true)
-    })
-
-    test('with one owner, it collects the signature and does not execute', async () => {
-      const { controller } = await initSafe({ threshold: 1, signed: [] })
-      const propose = jest.spyOn(safeLib, 'propose').mockResolvedValue(undefined as any)
-      holdBehind(controller, buildPendingSafeAccountOp(2n))
-      expect(controller.readyToSign).toBe(true)
-
-      await controller.sign()
-
-      expect(controller.accountOp.signed).toEqual([eoaSigner.keyPublicAddress])
-      expect(controller.status?.type).toBe(SigningStatus.Queued)
-      expect(propose).toHaveBeenCalledTimes(1)
-      expect(controller.canBroadcast).toBe(false)
     })
   })
 

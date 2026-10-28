@@ -554,6 +554,8 @@ export class SignAccountOpController
 
   #onActivityUpdateUnsubscribe?: () => void
 
+  #isReplacedPendingAccountOpProcessed = false
+
   constructor({
     eventEmitterRegistry,
     type,
@@ -766,6 +768,14 @@ export class SignAccountOpController
       canReplace: !!this.#earlierPending.replacementAccountOp,
       isReplacing: this.#replacement?.kind === 'newCalls'
     }
+  }
+
+  /**
+   * Whether replace mode ended because the earlier pending op was processed, so the UI can tell
+   * it from the user stopping the replacement. Set to false when replace mode starts again.
+   */
+  get isReplacedPendingAccountOpProcessed(): boolean {
+    return this.#isReplacedPendingAccountOpProcessed
   }
 
   /**
@@ -1299,7 +1309,9 @@ export class SignAccountOpController
 
     // Unique, as unsubscribing removes every listener with the same id
     this.#onActivityUpdateUnsubscribe = this.#activity.onUpdate((forceEmit) => {
-      if (!this.#updateEarlierPendingAccountOp()) return
+      const hasEarlierPendingChanged = this.#updateEarlierPendingAccountOp()
+      const hasLeftReplaceMode = this.#leaveReplaceModeIfStale()
+      if (!hasEarlierPendingChanged && !hasLeftReplaceMode) return
       this.updateStatus()
       this.propagateUpdate(forceEmit)
     }, `sign-account-op-earlier-pending-${generateUuid()}`)
@@ -1323,11 +1335,13 @@ export class SignAccountOpController
    * Returns whether it's done with the replacement, so the activity no longer needs to be watched
    */
   #onReplacedTransactionProcessed(): boolean {
-    // Signing is in progress, so this is checked again on the next activity update, or once
-    // the status goes back to ReadyToSign (see #checkReplacementStillNeeded)
+    // Signing is in progress or paused for the user to review a warning, so this is checked again
+    // on the next activity update, or once the status goes back to ReadyToSign
+    // (see #checkReplacementStillNeeded)
     if (
       this.status?.type === SigningStatus.InProgress ||
-      this.status?.type === SigningStatus.WaitingForPaymaster
+      this.status?.type === SigningStatus.WaitingForPaymaster ||
+      this.status?.type === SigningStatus.UpdatesPaused
     )
       return false
     // Already broadcast or already stopped
@@ -1339,6 +1353,7 @@ export class SignAccountOpController
 
     if (this.#replacement?.kind === 'newCalls') {
       this.#leaveReplaceMode()
+      this.#isReplacedPendingAccountOpProcessed = true
       this.update({ hasNewEstimation: true })
       return true
     }
@@ -1362,14 +1377,41 @@ export class SignAccountOpController
   }
 
   /**
-   * Checks again whether the transaction being replaced was processed, once back to ReadyToSign.
-   * It may have been processed while signing, so the broadcast fails as its place (nonce) is
-   * taken, and with nothing left pending the activity may never update again
+   * Leaves replace mode (`newCalls`) when the earlier pending op is no longer the one this op
+   * replaces, or can't be replaced anymore. The op is gone when it got stuck or stopped holding
+   * this op's nonces, and a different one holds them when it was sped up or cancelled, or a newer
+   * one took over. Without fee options, replacing may only fail for a moment, so it stays. A
+   * processed op is left to `#onReplacedTransactionProcessed`. Does nothing while the controller
+   * can't update, as the nonce must not change under the user.
+   * Returns whether it left, after it estimates again.
+   */
+  #leaveReplaceModeIfStale(): boolean {
+    const replacement = this.#replacement
+    if (replacement?.kind !== 'newCalls' || !this.canUpdate()) return false
+    if (replacement.isReplacedTransactionProcessed()) return false
+
+    const isReplacedOpHoldingThisOp =
+      this.#earlierPending?.accountOp.id === replacement.replacedAccountOpId
+    const canNoLongerReplace =
+      !this.#earlierPending?.replacementAccountOp && this.estimation.availableFeeOptions.length > 0
+    if (isReplacedOpHoldingThisOp && !canNoLongerReplace) return false
+
+    this.#leaveReplaceMode()
+    this.update({ hasNewEstimation: true })
+    return true
+  }
+
+  /**
+   * Checks again whether the transaction being replaced was processed or can't be replaced
+   * anymore, once back to ReadyToSign. It may have been processed while signing, so the broadcast
+   * fails as its place (nonce) is taken, and with nothing left pending the activity may never
+   * update again
    */
   #checkReplacementStillNeeded() {
     if (this.status?.type !== SigningStatus.ReadyToSign) return
 
     this.#replacement?.checkReplacedTransaction()
+    this.#leaveReplaceModeIfStale()
   }
 
   /**
@@ -1440,6 +1482,7 @@ export class SignAccountOpController
       activity: this.#activity,
       withNewCalls: true
     })
+    this.#isReplacedPendingAccountOpProcessed = false
     this.#updateAccountOp({ eoaNonce: replacementAccountOp.eoaNonce })
     this.#replacement.watchReplacedTransaction(() => this.#onReplacedTransactionProcessed())
     this.update({ hasNewEstimation: true })
@@ -2689,6 +2732,8 @@ export class SignAccountOpController
       this.#setGasFeePayment(paidByKeyType)
       // The fee payer decides which nonces the op takes
       this.#updateEarlierPendingAccountOp()
+      // It estimates again by itself, which also takes care of the status and the warnings
+      if (this.#leaveReplaceModeIfStale()) return
       this.updateStatus()
       this.calculateWarnings()
     } catch (e: any) {
@@ -3559,6 +3604,7 @@ export class SignAccountOpController
     this.status = { type: SigningStatus.ReadyToSign }
 
     this.emitUpdate()
+    this.#checkReplacementStillNeeded()
   }
 
   #addFeePayment() {
@@ -4636,7 +4682,8 @@ export class SignAccountOpController
         console.error('Error broadcasting', error)
 
         // reset the eoaNonce on error, except for a speed-up or a Replace, which must keep the
-        // nonce it replaces
+        // nonce it replaces. A Replace that sent part of its batch leaves replace mode once
+        // Activity knows the sent part (see cleanupAfterBroadcast)
         if (!this.#replacement) this.#updateAccountOp({ eoaNonce: undefined })
 
         // for multiple txn cases
@@ -4696,6 +4743,8 @@ export class SignAccountOpController
               })
             }
           }
+          // The sent part took the nonce of a Replace, so a retry must not reuse it
+          if (multipleTxnsBroadcastRes.length) this.#leaveReplaceMode()
 
           return this.throwBroadcastAccountOp({ error, accountState })
         }
@@ -5132,6 +5181,7 @@ export class SignAccountOpController
   cancelSignReq() {
     this.#resetToReadyToSign()
     this.emitUpdate()
+    this.#checkReplacementStillNeeded()
   }
 
   /**
@@ -5154,7 +5204,13 @@ export class SignAccountOpController
       return notSentCalls
     }
 
-    this.update({ accountOpData: { calls: notSentCalls } })
+    // Part of a Replace went out, so Activity holds the nonce it took. Sending the rest with the
+    // same nonce would collide with it, so the rest is a normal op held behind the sent part
+    const hasSentPartOfReplace =
+      this.#replacement?.kind === 'newCalls' && notSentCalls.length < this.accountOp.calls.length
+    if (hasSentPartOfReplace) this.#leaveReplaceMode()
+
+    this.update({ accountOpData: { calls: notSentCalls }, hasNewEstimation: hasSentPartOfReplace })
 
     return notSentCalls
   }
@@ -5355,6 +5411,7 @@ export class SignAccountOpController
       banners: this.banners,
       canAccountBroadcastByItself: this.canAccountBroadcastByItself,
       earlierPendingAccountOp: this.earlierPendingAccountOp,
+      isReplacedPendingAccountOpProcessed: this.isReplacedPendingAccountOpProcessed,
       selectedOptionGasPrices: this.selectedOptionGasPrices,
       canSetCustomGasPrices: this.canSetCustomGasPrices,
       canSetCustomGas: this.canSetCustomGas,

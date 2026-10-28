@@ -66,6 +66,13 @@ export class TxnReplacement {
   readonly kind: TxnReplacementKind
 
   /**
+   * The id of the pending op that a `newCalls` replacement takes the place of, as the Activity
+   * lists it (see `getReplacementAccountOp`). Undefined for a speed up or a cancel, whose request
+   * gets an id of its own.
+   */
+  readonly replacedAccountOpId?: AccountOp['id']
+
+  /**
    * A cancel that is signed anew: made from the pending transaction it cancels, whose
    * signatures don't apply to its empty calls (see `toCancelAccountOp`). A speed up of a
    * pending cancel isn't one, as it reuses the signatures of that cancel
@@ -106,8 +113,10 @@ export class TxnReplacement {
     this.#replacedFees = accountOp.meta?.speedUp?.replacedFees
     this.#replacedIdentifiedBy = accountOp.meta?.speedUp?.replacedIdentifiedBy
     this.replacedNonce = accountOp.meta?.speedUp?.replacedNonce ?? accountOp.nonce
-    if (withNewCalls) this.kind = 'newCalls'
-    else this.kind = TxnReplacement.isCancel(accountOp) ? 'cancel' : 'speedUp'
+    if (withNewCalls) {
+      this.kind = 'newCalls'
+      this.replacedAccountOpId = accountOp.id
+    } else this.kind = TxnReplacement.isCancel(accountOp) ? 'cancel' : 'speedUp'
     this.isNewCancel = this.kind === 'cancel' && !accountOp.signature
     this.#replacedFeePayment = accountOp.gasFeePayment
       ? {
@@ -176,7 +185,7 @@ export class TxnReplacement {
    * processed while the speed up was being signed, so nothing is left pending
    */
   checkReplacedTransaction() {
-    if (!this.#onReplacedTransactionProcessed || !this.#isReplacedTransactionProcessed()) return
+    if (!this.#onReplacedTransactionProcessed || !this.isReplacedTransactionProcessed()) return
     if (this.#onReplacedTransactionProcessed()) this.#stopWatchingReplacedTransaction()
   }
 
@@ -185,7 +194,8 @@ export class TxnReplacement {
     this.#unsubscribeFromActivity = undefined
   }
 
-  #isReplacedTransactionProcessed(): boolean {
+  /** Whether the pending transaction was processed, so its place (nonce) is taken */
+  isReplacedTransactionProcessed(): boolean {
     if (!this.#replacedIdentifiedBy) return false
 
     const replacedAccountOp = this.#activity.findByIdentifiedBy(
