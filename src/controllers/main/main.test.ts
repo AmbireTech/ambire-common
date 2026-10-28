@@ -540,6 +540,78 @@ describe('Main Controller ', () => {
     })
   })
 
+  describe('accountPickerSetInitParamsFromSavedSeed', () => {
+    const PASSPHRASE = 'extra word'
+
+    const prepareSeedWithUnsavedPassphrase = async () => {
+      const { mainCtrl } = await makeMainController()
+      await mainCtrl.initialLoadPromise
+      await mainCtrl.keystore.addSecret('password', 'password', '', false)
+      await mainCtrl.keystore.unlockWithSecret('password', 'password')
+      await mainCtrl.keystore.addTempSeed({
+        seed: process.env.SEED!,
+        seedPassphrase: PASSPHRASE,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      await mainCtrl.keystore.persistTempSeed()
+
+      return { mainCtrl, seedId: mainCtrl.keystore.seeds[0]!.id }
+    }
+
+    const setInitParamsFromSavedSeed = async (
+      mainCtrl: MainController,
+      params: { id: string; seedPassphrase?: string }
+    ) => {
+      const setInitParamsSpy = jest.spyOn(mainCtrl.accountPicker, 'setInitParams')
+      const emittedErrors: ErrorRef[] = []
+      const statuses: string[] = []
+      const unsubscribeErrors = mainCtrl.onError((error) => emittedErrors.push(error))
+      const unsubscribeUpdates = mainCtrl.onUpdate(() =>
+        statuses.push(mainCtrl.statuses.accountPickerSetInitParamsFromSavedSeed)
+      )
+
+      await mainCtrl.accountPickerSetInitParamsFromSavedSeed(params)
+
+      unsubscribeErrors()
+      unsubscribeUpdates()
+      const initParams = setInitParamsSpy.mock.calls[0]?.[0]
+      setInitParamsSpy.mockRestore()
+
+      return { initParams, emittedErrors, statuses }
+    }
+
+    test('prepares the account picker with the entered passphrase', async () => {
+      const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
+
+      const { initParams, emittedErrors, statuses } = await setInitParamsFromSavedSeed(mainCtrl, {
+        id: seedId,
+        seedPassphrase: PASSPHRASE
+      })
+
+      expect(emittedErrors).toEqual([])
+      expect(statuses).toContain('SUCCESS')
+      expect(initParams?.keyIterator?.subType).toBe('seed')
+      expect(mainCtrl.statuses.accountPickerSetInitParamsFromSavedSeed).toBe('INITIAL')
+    })
+
+    test('reports a wrong passphrase to the user instead of throwing', async () => {
+      const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
+
+      const { initParams, emittedErrors, statuses } = await setInitParamsFromSavedSeed(mainCtrl, {
+        id: seedId,
+        seedPassphrase: 'another word'
+      })
+
+      expect(initParams).toBeUndefined()
+      expect(emittedErrors).toEqual([
+        expect.objectContaining({ message: 'Wrong passphrase.', level: 'expected' })
+      ])
+      expect(statuses).toContain('ERROR')
+      expect(statuses).not.toContain('SUCCESS')
+      expect(mainCtrl.statuses.accountPickerSetInitParamsFromSavedSeed).toBe('INITIAL')
+    })
+  })
+
   describe('updateAccounts', () => {
     const getAccount = (addr: string) => ({
       addr,

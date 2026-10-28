@@ -2425,24 +2425,30 @@ export class MainController extends EventEmitter implements IMainController {
     seedPassphrase?: string | null
     shouldSavePassphrase?: boolean
   }) {
-    const savedSeed = await this.keystore.getSavedSeed(id)
-    const passphrase = savedSeed.seedPassphrase || seedPassphrase || null
+    await this.withStatus(
+      'accountPickerSetInitParamsFromSavedSeed',
+      async () => {
+        const savedSeed = await this.keystore.getSavedSeed(id)
+        const passphrase = savedSeed.seedPassphrase || seedPassphrase || null
 
-    // Another passphrase would open other accounts, which this phrase's entry doesn't hold
-    if (!(await this.keystore.isSeedPassphraseCorrect(id, passphrase)))
-      throw new EmittableError({
-        level: 'expected',
-        message: 'Wrong passphrase.',
-        error: new Error('main: wrong passphrase for a saved recovery phrase')
-      })
+        // Another passphrase would open other accounts, which this phrase's entry doesn't hold
+        if (!(await this.keystore.isSeedPassphraseCorrect(id, passphrase)))
+          throw new EmittableError({
+            level: 'expected',
+            message: 'Wrong passphrase.',
+            error: new Error('main: wrong passphrase for a saved recovery phrase')
+          })
 
-    if (shouldSavePassphrase && passphrase && !savedSeed.seedPassphrase)
-      await this.keystore.saveSeedPassphrase(id, passphrase)
+        if (shouldSavePassphrase && passphrase && !savedSeed.seedPassphrase)
+          await this.keystore.saveSeedPassphrase(id, passphrase)
 
-    this.accountPicker.setInitParams({
-      keyIterator: new KeyIterator(savedSeed.seed, passphrase),
-      hdPathTemplate: savedSeed.hdPathTemplate
-    })
+        this.accountPicker.setInitParams({
+          keyIterator: new KeyIterator(savedSeed.seed, passphrase),
+          hdPathTemplate: savedSeed.hdPathTemplate
+        })
+      },
+      true
+    )
   }
 
   async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
