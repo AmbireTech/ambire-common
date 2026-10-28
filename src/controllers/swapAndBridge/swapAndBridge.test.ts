@@ -452,7 +452,7 @@ describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {
     await storage.set('accounts', accounts)
     await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(accounts[0]!)
+    await selectedAccountCtrl.select({ account: accounts[0]! })
 
     expect(swapAndBridgeController).toBeDefined()
     // TODO: move these in beforeEach with an exception for the continuous updates tests where mocks are not needed
@@ -2042,7 +2042,7 @@ describe('SwapAndBridge Controller: to token market data', () => {
 
     ctrl = buildController(marketDataFetch)
     await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(accounts[0]!)
+    await selectedAccountCtrl.select({ account: accounts[0]! })
   })
 
   afterEach(() => {

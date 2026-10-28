@@ -21,6 +21,11 @@ export interface KeyIterator {
    * off it. Undefined means every path is available.
    */
   derivableHdPathTemplates?: HD_PATH_TEMPLATE_TYPE[]
+  /**
+   * How many keys the iterator can serve, when that number is limited (e.g. a list of
+   * private keys). Undefined means keys can be retrieved at any index.
+   */
+  keysCount?: number
   /** Retrieves the the public addresses (accounts) from specific indexes */
   retrieve: (
     fromToArr: { from: number; to: number }[],
