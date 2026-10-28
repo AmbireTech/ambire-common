@@ -13,18 +13,17 @@ const makeResponse = (body: any, ok = true, status = ok ? 200 : 400) => ({
 })
 
 describe('getTokenByAddress', () => {
-  it('returns the Cena metadata of a token', async () => {
-    const fetch = (jest.fn() as any)
-      .mockResolvedValueOnce(makeResponse({ platformId: 'ethereum' }))
-      .mockResolvedValueOnce(
-        makeResponse({
-          decimals: { ethereum: 18 },
-          image: { small: 'https://cena.ambire.com/custom.png' },
-          name: 'Custom token',
-          platforms: { ethereum: tokenAddress },
-          symbol: 'custom'
-        })
-      )
+  it('returns the Cena metadata of a token, with one request that uses the chain id', async () => {
+    const fetch = (jest.fn() as any).mockResolvedValueOnce(
+      makeResponse({
+        decimals: { ethereum: 18 },
+        image: { small: 'https://cena.ambire.com/custom.png' },
+        name: 'Custom token',
+        platformId: 'ethereum',
+        platforms: { ethereum: tokenAddress },
+        symbol: 'custom'
+      })
+    )
 
     await expect(getTokenByAddress({ fetch, address: tokenAddress, chainId: 1 })).resolves.toEqual({
       address: getAddress(tokenAddress),
@@ -35,9 +34,27 @@ describe('getTokenByAddress', () => {
       symbol: 'custom'
     })
     expect(fetch.mock.calls.map(([url]: [string]) => url)).toEqual([
-      'https://cena.ambire.com/api/v3/platform/1',
-      `https://cena.ambire.com/api/v3/coins/ethereum/contract/${getAddress(tokenAddress)}`
+      `https://cena.ambire.com/api/v3/coins/1/contract/${getAddress(tokenAddress)}`
     ])
+  })
+
+  it('uses the decimals of the platform that Cena matched, when the address is on several', async () => {
+    const response = {
+      decimals: { monad: 6, mantle: 18 },
+      name: 'Multi-chain token',
+      platforms: { monad: tokenAddress, mantle: tokenAddress },
+      symbol: 'multi'
+    }
+    const fetch = (jest.fn() as any)
+      .mockResolvedValueOnce(makeResponse({ ...response, platformId: 'monad' }))
+      .mockResolvedValueOnce(makeResponse({ ...response, platformId: 'mantle' }))
+
+    await expect(
+      getTokenByAddress({ fetch, address: tokenAddress, chainId: 143 })
+    ).resolves.toMatchObject({ decimals: 6 })
+    await expect(
+      getTokenByAddress({ fetch, address: tokenAddress, chainId: 5000 })
+    ).resolves.toMatchObject({ decimals: 18 })
   })
 
   it('does not call Cena for an invalid address', async () => {
@@ -49,7 +66,7 @@ describe('getTokenByAddress', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('returns null when Cena does not know the network', async () => {
+  it('returns null when Cena does not know the token', async () => {
     const fetch = (jest.fn() as any).mockResolvedValueOnce(makeResponse({}, false, 404))
 
     await expect(
@@ -57,10 +74,15 @@ describe('getTokenByAddress', () => {
     ).resolves.toBeNull()
   })
 
-  it('returns null when Cena does not know the token', async () => {
-    const fetch = (jest.fn() as any)
-      .mockResolvedValueOnce(makeResponse({ platformId: 'ethereum' }))
-      .mockResolvedValueOnce(makeResponse({}, false, 404))
+  it('returns null when Cena does not say which platform it matched', async () => {
+    const fetch = (jest.fn() as any).mockResolvedValueOnce(
+      makeResponse({
+        decimals: { ethereum: 18 },
+        name: 'Custom token',
+        platforms: { ethereum: tokenAddress },
+        symbol: 'custom'
+      })
+    )
 
     await expect(
       getTokenByAddress({ fetch, address: tokenAddress, chainId: 1 })
@@ -68,16 +90,15 @@ describe('getTokenByAddress', () => {
   })
 
   it('does not trust Cena metadata for a different contract', async () => {
-    const fetch = (jest.fn() as any)
-      .mockResolvedValueOnce(makeResponse({ platformId: 'ethereum' }))
-      .mockResolvedValueOnce(
-        makeResponse({
-          decimals: { ethereum: 18 },
-          name: 'Wrong token',
-          platforms: { ethereum: '0x2222222222222222222222222222222222222222' },
-          symbol: 'wrong'
-        })
-      )
+    const fetch = (jest.fn() as any).mockResolvedValueOnce(
+      makeResponse({
+        decimals: { ethereum: 18 },
+        name: 'Wrong token',
+        platformId: 'ethereum',
+        platforms: { ethereum: '0x2222222222222222222222222222222222222222' },
+        symbol: 'wrong'
+      })
+    )
 
     await expect(
       getTokenByAddress({ fetch, address: tokenAddress, chainId: 1 })
@@ -91,17 +112,16 @@ describe('getTokenByAddress', () => {
     ['with out of range decimals', { decimals: { ethereum: 300 } }],
     ['without a symbol', { symbol: '' }]
   ])('rejects a token %s', async (_, override) => {
-    const fetch = (jest.fn() as any)
-      .mockResolvedValueOnce(makeResponse({ platformId: 'ethereum' }))
-      .mockResolvedValueOnce(
-        makeResponse({
-          decimals: { ethereum: 18 },
-          name: 'Custom token',
-          platforms: { ethereum: tokenAddress },
-          symbol: 'custom',
-          ...override
-        })
-      )
+    const fetch = (jest.fn() as any).mockResolvedValueOnce(
+      makeResponse({
+        decimals: { ethereum: 18 },
+        name: 'Custom token',
+        platformId: 'ethereum',
+        platforms: { ethereum: tokenAddress },
+        symbol: 'custom',
+        ...override
+      })
+    )
 
     await expect(
       getTokenByAddress({ fetch, address: tokenAddress, chainId: 1 })

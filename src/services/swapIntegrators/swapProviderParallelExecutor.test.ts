@@ -498,16 +498,15 @@ describe('Swap Provider Parallel execution', () => {
       json: async () => body
     })
     const makeCenaFetch = () =>
-      (jest.fn() as any)
-        .mockResolvedValueOnce(makeResponse({ platformId: 'ethereum' }))
-        .mockResolvedValueOnce(
-          makeResponse({
-            decimals: { ethereum: 18 },
-            name: 'Custom token',
-            platforms: { ethereum: tokenAddress },
-            symbol: 'custom'
-          })
-        )
+      (jest.fn() as any).mockResolvedValueOnce(
+        makeResponse({
+          decimals: { ethereum: 18 },
+          name: 'Custom token',
+          platformId: 'ethereum',
+          platforms: { ethereum: tokenAddress },
+          symbol: 'custom'
+        })
+      )
     const createTokenProvider = ({
       id = 'test-provider',
       token = null,

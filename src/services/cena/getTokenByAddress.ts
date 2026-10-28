@@ -11,10 +11,6 @@ const CENA_REQUEST_TIMEOUT_MS = 15000
 
 const ERROR_PREFIX = 'Unable to retrieve token information by address.'
 
-type CenaPlatformResponse = {
-  platformId?: string
-}
-
 type CenaTokenResponse = {
   blacklist?: boolean
   decimals?: Record<string, number>
@@ -24,6 +20,8 @@ type CenaTokenResponse = {
     thumb?: string
   }
   name?: string
+  /** The platform that Cena matched the requested chain to */
+  platformId?: string
   platforms?: Record<string, string>
   removed?: boolean
   symbol?: string
@@ -74,7 +72,7 @@ const parseResponse = async <T>(response: CustomResponse): Promise<T> => {
 }
 
 /**
- * Looks up the metadata (name, symbol, decimals, icon) of a token by its address in Cena.
+ * Looks up the metadata (name, symbol, decimals, icon) of a token by its address and chain in Cena.
  * Returns null when Cena does not know the token or the response cannot be trusted
  * (blacklisted or removed token, or a contract that differs from the requested one).
  */
@@ -91,22 +89,17 @@ export const getTokenByAddress = async ({
 
   const normalizedAddress = getAddress(address)
 
-  const platformResponse = await fetchFromCena(
-    fetch,
-    `${CENA_API_BASE_URL}/api/v3/platform/${chainId}`
-  )
-  if (platformResponse.status === 404) return null
-  const { platformId } = await parseResponse<CenaPlatformResponse>(platformResponse)
-  if (typeof platformId !== 'string' || !platformId) return null
-
   const tokenResponse = await fetchFromCena(
     fetch,
-    `${CENA_API_BASE_URL}/api/v3/coins/${encodeURIComponent(
-      platformId
-    )}/contract/${normalizedAddress}`
+    `${CENA_API_BASE_URL}/api/v3/coins/${chainId}/contract/${normalizedAddress}`
   )
   if (tokenResponse.status === 404) return null
   const token = await parseResponse<CenaTokenResponse>(tokenResponse)
+  // A coin can have the same address on several platforms, with different decimals. The
+  // decimals must be the ones of the platform that Cena matched to the requested chain
+  const { platformId } = token
+  if (typeof platformId !== 'string' || !platformId) return null
+
   const platformAddress = token.platforms?.[platformId]
   const decimals = token.decimals?.[platformId]
 
