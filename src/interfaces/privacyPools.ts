@@ -222,6 +222,11 @@ export type PrivacyPoolsHistoryEntry = {
   counterpartyAddr: Hex | null
   /** A deposit still being verified: it cannot be sent privately yet. */
   isUnderReview: boolean
+  /**
+   * A deposit the checks approved, so it could be sent privately. Neither this nor
+   * `isUnderReview` for one taken back, or one newer than the notes of the sync.
+   */
+  isApproved: boolean
 }
 
 /** What a history page is narrowed to. */

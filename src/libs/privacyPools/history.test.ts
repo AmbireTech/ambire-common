@@ -56,7 +56,8 @@ const entry = (id: string, timestamp: number): PrivacyPoolsHistoryEntry => ({
   timestamp,
   txnId: null,
   counterpartyAddr: null,
-  isUnderReview: false
+  isUnderReview: false,
+  isApproved: false
 })
 
 describe('toPrivacyPoolsHistoryEntries', () => {
@@ -71,7 +72,8 @@ describe('toPrivacyPoolsHistoryEntries', () => {
         timestamp: 1_700_000_000_000,
         txnId: TX_HASH,
         counterpartyAddr: DEPOSITOR,
-        isUnderReview: false
+        isUnderReview: false,
+        isApproved: true
       }
     ])
   })
@@ -136,6 +138,33 @@ describe('toPrivacyPoolsHistoryEntries', () => {
       const entries = toEntries([withdrawal(), ragequit()], [1n])
 
       expect(entries.map(({ isUnderReview }) => isUnderReview)).toEqual([false, false])
+    })
+  })
+
+  describe('an approved deposit', () => {
+    it('is one the plugin reports approved, whatever the notes say', () => {
+      const [listed, spent] = toEntries(
+        [
+          deposit({ aspStatus: 'approved', label: 7n } as any),
+          deposit({ aspStatus: 'approved', label: 8n, blockNumber: 99n } as any)
+        ],
+        [7n]
+      )
+
+      expect(listed!.isApproved).toBe(true)
+      expect(spent!.isApproved).toBe(true)
+    })
+
+    it('is neither approved nor under review when taken back while pending', () => {
+      const [entry0] = toEntries([deposit({ aspStatus: 'pending', label: 7n } as any)], [])
+
+      expect(entry0).toMatchObject({ isApproved: false, isUnderReview: false })
+    })
+
+    it('is never a withdrawal or a deposit taken back', () => {
+      const entries = toEntries([withdrawal(), ragequit()])
+
+      expect(entries.map(({ isApproved }) => isApproved)).toEqual([false, false])
     })
   })
 

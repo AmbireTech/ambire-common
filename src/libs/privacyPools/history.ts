@@ -48,7 +48,8 @@ export const toPrivacyPoolsHistoryEntries = ({
             ? toAddress(event.ragequitter)
             : null,
       isUnderReview:
-        event.type === 'deposit' && event.aspStatus === 'pending' && pendingLabels.has(event.label)
+        event.type === 'deposit' && event.aspStatus === 'pending' && pendingLabels.has(event.label),
+      isApproved: event.type === 'deposit' && event.aspStatus === 'approved'
     }
   })
 }
