@@ -305,10 +305,7 @@ describe('appDataSync payload', () => {
     const withUnsavedPassphrase = () => {
       const payload: any = buildPayload()
       payload.v = getAppDataSyncPayloadVersion([{ passphraseFingerprint: '0x1234abcd' }])
-      Object.assign(payload.seeds[0], {
-        passphraseFingerprint: '0x1234abcd',
-        privacyPoolsSigningKey: gcmPayload(32)
-      })
+      Object.assign(payload.seeds[0], { passphraseFingerprint: '0x1234abcd' })
 
       return payload
     }
@@ -330,22 +327,6 @@ describe('appDataSync payload', () => {
         ...buildPayload(),
         v: 2
       })
-    })
-
-    it('accepts one without a Privacy Pools key, kept only once its account is added', () => {
-      const payload = withUnsavedPassphrase()
-      delete payload.seeds[0].privacyPoolsSigningKey
-
-      expect(serializeAndParse(payload)).toEqual(payload)
-    })
-
-    it('rejects a Privacy Pools key that is not AES-GCM encrypted', () => {
-      const payload = withUnsavedPassphrase()
-      payload.seeds[0].privacyPoolsSigningKey = `0x${'ab'.repeat(32)}`
-
-      expect(() => serializeAndParse(payload)).toThrow(
-        'Privacy Pools key of seed seed-1 is not encrypted with AES-GCM'
-      )
     })
 
     it('rejects a fingerprint that is not 4 bytes of hex', () => {

@@ -80,12 +80,11 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 /**
  * A seed to store. One synced from another device without its passphrase brings the passphrase's
- * fingerprint and the Privacy Pools key derived with it instead.
+ * fingerprint instead.
  */
 type SeedToAdd = KeystoreTempSeed & {
   id?: StoredKeystoreSeed['id']
   passphraseFingerprint?: string
-  privacyPoolsSigningKey?: Hex
 }
 
 const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
@@ -995,17 +994,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
               s.id === existingEntry.id ? { ...s, seedPassphrase: savedPassphrase } : s
             )
           }
-          // Another device added the phrase's Privacy Pools account, which this one may sync too
-          if (seedToAdd.privacyPoolsSigningKey && !existingEntry.privacyPoolsSigningKey) {
-            const privacyPoolsSigningKey = await encryptWithKey(
-              mainKey,
-              getBytes(seedToAdd.privacyPoolsSigningKey)
-            )
-            this.#keystoreSeeds = this.#keystoreSeeds.map((s) =>
-              s.id === existingEntry.id ? { ...s, privacyPoolsSigningKey } : s
-            )
-          }
-
           ids.push(existingEntry.id)
           continue
         }
@@ -1025,14 +1013,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
           newEntry.passphraseFingerprint =
             seedToAdd.passphraseFingerprint ?? getMasterNode().fingerprint
           newEntry.passphraseLabel = getNextPassphraseLabel(entriesOfSamePhrase)
-
-          // Stored by another device on adding the phrase's Privacy Pools account
-          if (seedToAdd.privacyPoolsSigningKey) {
-            newEntry.privacyPoolsSigningKey = await encryptWithKey(
-              mainKey,
-              getBytes(seedToAdd.privacyPoolsSigningKey)
-            )
-          }
         }
 
         this.#keystoreSeeds.push(newEntry)
@@ -1627,7 +1607,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr))
     const seedIds = new Set(keys.map((key) => key.meta?.fromSeedId).filter(Boolean))
-    const seeds = includeSeeds ? this.#keystoreSeeds.filter((seed) => seedIds.has(seed.id)) : []
+    // Without the Privacy Pools key: Privacy Pools accounts don't sync, and the other device stores
+    // the key itself once the user adds the account there
+    const seeds = includeSeeds
+      ? this.#keystoreSeeds
+          .filter((seed) => seedIds.has(seed.id))
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          .map(({ privacyPoolsSigningKey, ...seed }) => seed)
+      : []
 
     // Keys and seeds are migrated to GCM on unlock, so this should never happen. If it
     // does, fail here rather than on the other device, which would reject the payload
@@ -1638,8 +1625,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       seeds.some(
         (seed) =>
           !isEncryptedWithGCM(seed.seed) ||
-          (!!seed.seedPassphrase && !isEncryptedWithGCM(seed.seedPassphrase)) ||
-          (!!seed.privacyPoolsSigningKey && !isEncryptedWithGCM(seed.privacyPoolsSigningKey))
+          (!!seed.seedPassphrase && !isEncryptedWithGCM(seed.seedPassphrase))
       )
 
     if (hasNotMigratedPayload)
@@ -1686,19 +1672,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
           seed
         )
 
-        // A passphrase that isn't saved doesn't travel, so its fingerprint and key come instead
-        const privacyPoolsSigningKey = seed.privacyPoolsSigningKey
-          ? (hexlify(await decryptWithKey(exportedMainKey, seed.privacyPoolsSigningKey)) as Hex)
-          : undefined
-
         syncedSeedIds[seed.id] = await this.#storeSyncedSeed({
           id: seed.id,
           seed: decryptedSeed,
           seedPassphrase,
           // Saved on the other device, so it stays saved
           shouldSavePassphrase: !!seedPassphrase,
+          // A passphrase that isn't saved doesn't travel, so its fingerprint comes instead
           passphraseFingerprint: seed.passphraseFingerprint,
-          privacyPoolsSigningKey,
           hdPathTemplate: seed.hdPathTemplate,
           notBackedUp: seed.notBackedUp
         })

@@ -201,8 +201,6 @@ const validateSeeds = (seeds: any) => {
     if (!seed?.id) throw new Error('appDataSync: invalid seed id')
     requireGcmPayload(seed.seed, `seed ${seed.id}`)
     if (seed.seedPassphrase) requireGcmPayload(seed.seedPassphrase, `seed passphrase ${seed.id}`)
-    if (seed.privacyPoolsSigningKey)
-      requireGcmPayload(seed.privacyPoolsSigningKey, `Privacy Pools key of seed ${seed.id}`)
 
     if (seed.passphraseFingerprint === undefined) return
     // A BIP32 fingerprint is 4 bytes

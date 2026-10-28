@@ -1211,13 +1211,15 @@ describe('app data sync between two devices', () => {
       return seedId
     }
 
-    test('arrives without its passphrase when it is not saved, keeping its Privacy Pools key', async () => {
+    test('arrives without its passphrase or Privacy Pools key when the passphrase is not saved', async () => {
       const seedId = await addPassphrasePhraseWithKey(false)
       await exportingKeystore.storePrivacyPoolsKey(seedId, PASSPHRASE)
       await importingKeystore.addSecret('password', importingPass, '', true)
 
-      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
+      const payload = await buildPayload([passphraseKeyAddr])
+      await importingKeystore.importFromSync(payload, exportingPass)
 
+      expect(payload.seeds[0]).not.toHaveProperty('privacyPoolsSigningKey')
       expect(importingKeystore.seeds).toEqual([
         expect.objectContaining({ id: seedId, withPassphrase: true, isPassphraseSaved: false })
       ])
@@ -1225,23 +1227,12 @@ describe('app data sync between two devices', () => {
       const syncedSeed = await importingKeystore.getSavedSeed(seedId)
       expect(syncedSeed.seedPassphrase).toBeNull()
       expect(await importingKeystore.isSeedPassphraseCorrect(seedId, PASSPHRASE)).toBe(true)
-      expect(
-        await importingKeystore.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
-      ).toBe(await exportingKeystore.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH))
-    })
-
-    test('arrives without a Privacy Pools key when its account was not added', async () => {
-      const seedId = await addPassphrasePhraseWithKey(false)
-      await importingKeystore.addSecret('password', importingPass, '', true)
-
-      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
-
       await expect(
         importingKeystore.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
       ).rejects.toThrow('no Privacy Pools key is stored')
     })
 
-    test('keeps a synced Privacy Pools key for a phrase this device already has', async () => {
+    test('adds no Privacy Pools key to a phrase this device already has', async () => {
       const seedId = await addPassphrasePhraseWithKey(false)
       await exportingKeystore.storePrivacyPoolsKey(seedId, PASSPHRASE)
       await importingKeystore.addSecret('password', importingPass, '', true)
@@ -1256,12 +1247,9 @@ describe('app data sync between two devices', () => {
       await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
 
       expect(importingKeystore.seeds).toHaveLength(1)
-      expect(
-        await importingKeystore.derivePrivacyPoolsKey(
-          existingSeedId,
-          PRIVACY_POOLS_SIGNING_KEY_PATH
-        )
-      ).toBe(await exportingKeystore.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH))
+      await expect(
+        importingKeystore.derivePrivacyPoolsKey(existingSeedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
+      ).rejects.toThrow('no Privacy Pools key is stored')
     })
 
     test('stays saved when it was saved on the other device', async () => {
