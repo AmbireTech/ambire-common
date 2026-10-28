@@ -5,7 +5,6 @@ import {
   IRecurringTimeout,
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
-import { ACCOUNT_OP_PENDING_TIMEOUT_MS } from '../../consts/activity'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
   SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
@@ -32,20 +31,10 @@ import { IStorageController } from '../../interfaces/storage'
 import { UiManager } from '../../interfaces/ui'
 import { getUniqueAccountsArray, isAmbireV2Account } from '../../libs/account/account'
 import { normalizeIdentityResponse } from '../../libs/accountPicker/accountPicker'
-import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 import isSameAddr from '../../utils/isSameAddr'
-import {
-  isMinedStatus,
-  isNonceCounted,
-  NonceKey,
-  NonceReservation,
-  PendingNonceReservation,
-  ReservedNonce
-} from '../../utils/nonce'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
@@ -130,15 +119,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   /** Orders calls and fetches, so a job can tell which fetches started after a call. */
   #sequence = 0
 
-  /**
-   * The nonces of the ops this device sent, by op id. A new op skips them while the RPC may not
-   * count them yet.
-   */
-  #nonceReservations: { [accountOpId: string]: NonceReservation } = {}
-
-  /** The last write of `#nonceReservations`, so writes never run in parallel. */
-  #nonceReservationsWrite: Promise<void> = Promise.resolve()
-
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   #onAddAccounts: (accounts: Account[]) => void
@@ -215,8 +195,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     const accounts = await this.#storage.get('accounts', [])
     const initialSelectedAccountAddr = await this.#storage.get('selectedAccount', null)
     this.accounts = getUniqueAccountsArray(accounts)
-    this.#nonceReservations = await this.#storage.get('nonceReservations', {})
-    if (this.#pruneNonceReservations()) this.#saveNonceReservations()
 
     // Emit an update before updating account states as the first state update may take some time
     this.emitUpdate()
@@ -302,192 +280,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     }
   }
 
-  /**
-   * Reserves the nonces a just sent op takes, until `settleNonceReservations` and a latest read
-   * free them.
-   */
-  async reserveNonces(accountOpId: string, chainId: bigint, nonces: ReservedNonce[]) {
-    await this.initialLoadPromise
-    if (!nonces.length) return
-
-    this.#nonceReservations[accountOpId] = {
-      chainId,
-      nonces,
-      isSettled: false,
-      createdAt: Date.now()
-    }
-    this.#saveNonceReservations()
-  }
-
-  /**
-   * The nonce for a new op of `addr`: `chainNonce`, raised past the nonces this wallet sent that
-   * the RPC may not count yet. A reservation outlives the op's confirmation until a latest read counts
-   * its nonce, as a lagging RPC can still return the nonce from before it. `chainNonce` must
-   * already be the next nonce (a txn count or a contract nonce).
-   */
-  getNextNonce(
-    addr: string,
-    chainId: bigint,
-    kind: ReservedNonce['kind'],
-    chainNonce: bigint
-  ): bigint {
-    return this.#getActiveNonceReservations()
-      .filter(([, reservation]) => reservation.chainId === chainId)
-      .flatMap(([, reservation]) => reservation.nonces)
-      .filter((reserved) => reserved.kind === kind && isSameAddr(reserved.addr, addr))
-      .reduce((next, reserved) => (reserved.nonce >= next ? reserved.nonce + 1n : next), chainNonce)
-  }
-
-  /**
-   * The nonces on `chainId` held by ops that are still waiting for a final status, for any of
-   * `keys`. Empty when nothing holds them.
-   */
-  getPendingNonceReservations(chainId: bigint, keys: NonceKey[]): PendingNonceReservation[] {
-    return this.#getActiveNonceReservations()
-      .filter(([, reservation]) => reservation.chainId === chainId && !reservation.isSettled)
-      .flatMap(([accountOpId, reservation]) =>
-        reservation.nonces
-          .filter((reserved) =>
-            keys.some((key) => key.kind === reserved.kind && isSameAddr(key.addr, reserved.addr))
-          )
-          .map((reserved) => ({ accountOpId, reserved }))
-      )
-  }
-
-  /** Call after ops get a final status. Frees the nonces they did not use. */
-  async settleNonceReservations(ops: SubmittedAccountOp[]) {
-    await this.initialLoadPromise
-    const hasSettled = ops.map((op) => this.#settleNonceReservation(op)).some(Boolean)
-    if (hasSettled) this.#saveNonceReservations()
-  }
-
-  /**
-   * Drops the reservations that never got a final status and whose op is not pending in Activity, e.g.
-   * when the app closed between sending an op and saving it. A reservation of a pending op never
-   * expires by time, so without this drop the next transaction would wait behind a nonce nothing
-   * uses. Reservations created at or after `createdBefore` are kept, as an op sent since then may not
-   * be in Activity yet.
-   */
-  async dropOrphanedNonceReservations(pendingAccountOpIds: string[], createdBefore: number) {
-    await this.initialLoadPromise
-    const untrackedIds = Object.keys(this.#nonceReservations).filter((opId) => {
-      const reservation = this.#nonceReservations[opId]!
-      return (
-        !reservation.isSettled &&
-        reservation.createdAt < createdBefore &&
-        !pendingAccountOpIds.includes(opId)
-      )
-    })
-    if (!untrackedIds.length) return
-
-    untrackedIds.forEach((opId) => delete this.#nonceReservations[opId])
-    this.#saveNonceReservations()
-  }
-
-  /**
-   * Only a settled reservation expires by time, as a reservation of a pending op is held for as
-   * long as the op is pending. A settled one is a safety net for a read that never counts its
-   * nonce, e.g. when the RPC is down or the chain reorganized.
-   */
-  #isNonceReservationExpired(reservation: NonceReservation) {
-    return (
-      reservation.isSettled && Date.now() - reservation.createdAt >= ACCOUNT_OP_PENDING_TIMEOUT_MS
-    )
-  }
-
-  #getActiveNonceReservations(): [string, NonceReservation][] {
-    return Object.entries(this.#nonceReservations).filter(
-      ([, reservation]) => !this.#isNonceReservationExpired(reservation)
-    )
-  }
-
-  /**
-   * Drops the expired reservations and the nonces of accounts that are no longer in the wallet. Returns
-   * whether anything was dropped.
-   */
-  #pruneNonceReservations(): boolean {
-    let hasPruned = false
-    Object.entries(this.#nonceReservations).forEach(([opId, reservation]) => {
-      const nonceCount = reservation.nonces.length
-      reservation.nonces = reservation.nonces.filter((reserved) =>
-        this.accounts.some((acc) => isSameAddr(acc.addr, reserved.addr))
-      )
-      if (reservation.nonces.length !== nonceCount) hasPruned = true
-      if (!reservation.nonces.length || this.#isNonceReservationExpired(reservation)) {
-        delete this.#nonceReservations[opId]
-        hasPruned = true
-      }
-    })
-    return hasPruned
-  }
-
-  #saveNonceReservations() {
-    this.#pruneNonceReservations()
-    const nonceReservations = { ...this.#nonceReservations }
-    this.#nonceReservationsWrite = this.#nonceReservationsWrite
-      .then(() => this.#storage.set('nonceReservations', nonceReservations))
-      .catch((error) => {
-        this.emitError({
-          level: 'silent',
-          message: 'Failed to save the pending transaction nonces.',
-          error: error instanceof Error ? error : new Error(String(error))
-        })
-      })
-  }
-
-  /**
-   * Frees the nonces a finalized op did not use, and lets a state read free the rest. Returns
-   * whether the op had a reservation.
-   */
-  #settleNonceReservation(op: SubmittedAccountOp): boolean {
-    const reservation = this.#nonceReservations[op.id]
-    if (!reservation) return false
-
-    // A batch sent one txn at a time takes the status of its last txn, and its txns are mined in
-    // nonce order, so its mined txns hold its lowest sender nonces
-    const minedTxnCount =
-      op.identifiedBy.type === 'MultipleTxns'
-        ? op.calls.filter((call) => isMinedStatus(call.status)).length
-        : undefined
-    const senderNonces = reservation.nonces.filter((reserved) => reserved.kind === 'sender')
-
-    reservation.isSettled = true
-    // The op may have been pending for long, but the RPC can lag behind its confirmation
-    // just the same, so the timeout of a settled reservation starts now
-    reservation.createdAt = Date.now()
-    reservation.nonces = reservation.nonces.filter((reserved) => {
-      // A mined txn always raises the sender nonce, while a reverted call undoes the account nonce raise
-      if (reserved.kind === 'account') return op.status === AccountOpStatus.Success
-      if (minedTxnCount === undefined) return isMinedStatus(op.status)
-
-      const lowerNonceCount = senderNonces.filter((other) => other.nonce < reserved.nonce).length
-      return lowerNonceCount < minedTxnCount
-    })
-    if (!reservation.nonces.length) delete this.#nonceReservations[op.id]
-    return true
-  }
-
-  /** Frees the settled nonces the saved states count. A nonce of a removed account is freed too. */
-  #freeCountedNonces() {
-    let hasFreed = false
-    Object.keys(this.#nonceReservations).forEach((opId) => {
-      const reservation = this.#nonceReservations[opId]
-      if (!reservation?.isSettled) return
-
-      const nonceCount = reservation.nonces.length
-      reservation.nonces = reservation.nonces.filter((reserved) => {
-        const account = this.accounts.find((acc) => isSameAddr(acc.addr, reserved.addr))
-        if (!account) return false
-
-        const state = this.accountStates[account.addr]?.[reservation.chainId.toString()]
-        return !state || !isNonceCounted(state, reserved)
-      })
-      if (reservation.nonces.length !== nonceCount) hasFreed = true
-      if (!reservation.nonces.length) delete this.#nonceReservations[opId]
-    })
-    if (hasFreed) this.#saveNonceReservations()
-  }
-
   private async updateAccountStates(
     accounts: Account[],
     blockTag: AccountStateBlockTag = 'latest',
@@ -521,8 +313,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     await Promise.all(networkUpdates)
 
-    // A pending state may count a txn that is dropped later
-    if (blockTag === 'latest') this.#freeCountedNonces()
     this.#onAccountStateUpdate()
   }
 
@@ -723,13 +513,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.accounts = this.accounts.filter((acc) => acc.addr !== address)
 
     delete this.accountStates[address]
-    Object.entries(this.#nonceReservations).forEach(([opId, reservation]) => {
-      reservation.nonces = reservation.nonces.filter(
-        (reserved) => !isSameAddr(reserved.addr, address)
-      )
-      if (!reservation.nonces.length) delete this.#nonceReservations[opId]
-    })
-    this.#saveNonceReservations()
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('accounts', this.accounts)

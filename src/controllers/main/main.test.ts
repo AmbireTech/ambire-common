@@ -2,7 +2,6 @@ import { toBeHex, Wallet } from 'ethers'
 
 import { Session } from '@/classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
-import { ACCOUNT_OP_PENDING_TIMEOUT_MS } from '@/consts/activity'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
 import { AccountOnchainState } from '@/interfaces/account'
 import { ErrorRef } from '@/interfaces/eventEmitter'
@@ -680,35 +679,6 @@ describe('Main Controller ', () => {
       return mainCtrl
     }
 
-    test('keeps the nonces of a pending op past the timeout and drops the ones of ops that are gone', async () => {
-      const mainCtrl = await setupController()
-      const CHAIN_ID = 1n
-      const reserve = (opId: string, nonce: bigint) =>
-        mainCtrl.accounts.reserveNonces(opId, CHAIN_ID, [
-          { kind: 'sender', addr: senderAccount, nonce }
-        ])
-      const sentAt = Date.now() - 2 * ACCOUNT_OP_PENDING_TIMEOUT_MS
-      const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(sentAt)
-      await reserve('pending-op', 7n)
-      await reserve('gone-op', 8n)
-      nowSpy.mockRestore()
-      await reserve('just-sent-op', 9n)
-
-      jest
-        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
-        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
-      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({})
-
-      await mainCtrl.updateAccountsOpsStatuses()
-
-      expect(
-        mainCtrl.accounts
-          .getPendingNonceReservations(CHAIN_ID, [{ kind: 'sender', addr: senderAccount }])
-          .map(({ accountOpId }) => accountOpId)
-          .sort()
-      ).toEqual(['just-sent-op', 'pending-op'])
-    })
-
     test('should fetch safe txns when shouldEmitUpdate is false and shouldFetchSafeTxns is true', async () => {
       const mainCtrl = await setupController()
 
@@ -794,47 +764,6 @@ describe('Main Controller ', () => {
         1n,
         "Activating your Safe account failed, so this request can't be completed."
       )
-    })
-
-    test('frees the nonces of a dropped op, which has no receipt, and keeps those of a pending op', async () => {
-      const mainCtrl = await setupController()
-      const sender = (nonce: bigint) => ({ kind: 'sender' as const, addr: senderAccount, nonce })
-      await mainCtrl.accounts.reserveNonces('dropped-op', 1n, [sender(7n)])
-      await mainCtrl.accounts.reserveNonces('pending-op', 1n, [sender(8n)])
-      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
-        [senderAccount]: {
-          shouldEmitUpdate: true,
-          chainsToUpdate: [],
-          portfoliosToUpdate: {},
-          shouldFetchSafeTxns: false,
-          newestOpTimestamp: Date.now(),
-          updatedAccountsOps: [
-            {
-              id: 'dropped-op',
-              accountAddr: senderAccount,
-              chainId: 1n,
-              status: AccountOpStatus.Rejected,
-              identifiedBy: { type: 'Transaction', identifier: '0x01' },
-              calls: []
-            } as any,
-            {
-              id: 'pending-op',
-              accountAddr: senderAccount,
-              chainId: 1n,
-              status: AccountOpStatus.BroadcastedButNotConfirmed,
-              identifiedBy: { type: 'Transaction', identifier: '0x02' },
-              calls: []
-            } as any
-          ]
-        }
-      })
-
-      await mainCtrl.updateAccountsOpsStatuses()
-      await flushAsyncUpdates()
-
-      expect(
-        mainCtrl.accounts.getPendingNonceReservations(1n, [{ kind: 'sender', addr: senderAccount }])
-      ).toEqual([{ accountOpId: 'pending-op', reserved: sender(8n) }])
     })
 
     test('should update account state for account address and discard finalized simulations', async () => {

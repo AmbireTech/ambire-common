@@ -1,14 +1,17 @@
 import { describe, expect, it } from '@jest/globals'
 
+import { CONFIRMED_NONCE_SETTLE_MS } from '../consts/activity'
 import { Account } from '../interfaces/account'
 import { AccountOp } from '../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../libs/accountOp/types'
 import { BROADCAST_OPTIONS } from '../libs/broadcast/broadcast'
 import {
+  getNextNonce,
   getNonceKeys,
+  getPendingNonceReservations,
   getReceiptBlockNumberByChainId,
-  getNoncesToReserve,
+  getSubmittedAccountOpNonces,
   NonceKey,
   ReservedNonce
 } from './nonce'
@@ -61,127 +64,226 @@ const makeAccount = (type: 'eoa' | 'ambire' | 'safe'): Account => ({
   preferences: { label: 'Account', pfp: ACCOUNT }
 })
 
+/** A pending op of ACCOUNT on chain 8453 whose first raw txn took the sender nonce 7 */
+const makeSentOp = (broadcastOption: string, overrides: Partial<SubmittedAccountOp> = {}) =>
+  makeOp(AccountOpStatus.BroadcastedButNotConfirmed, {
+    nonce: 3n,
+    gasFeePayment: makeAccountOp(broadcastOption).gasFeePayment,
+    eoaNonce: 7n,
+    identifiedBy: { type: 'Transaction', identifier: '0x01' },
+    ...overrides
+  })
+
 const sender = (nonce: bigint, addr = ACCOUNT): ReservedNonce => ({ kind: 'sender', addr, nonce })
 const account = (nonce: bigint, addr = ACCOUNT): ReservedNonce => ({ kind: 'account', addr, nonce })
 
 describe('utils/nonce', () => {
-  describe('getNoncesToReserve', () => {
-    const rawSender = { addr: ACCOUNT, firstNonce: 7n, sentTxnCount: 1 }
+  describe('getSubmittedAccountOpNonces', () => {
     const cases: {
       name: string
-      args: Parameters<typeof getNoncesToReserve>[0]
+      op: SubmittedAccountOp
+      accountType: 'eoa' | 'ambire' | 'safe'
       expected: ReservedNonce[]
     }[] = [
       {
-        name: 'bySelf: one sender nonce per sent txn',
-        args: {
-          accountOp: makeAccountOp(BROADCAST_OPTIONS.bySelf),
-          isSafe: false,
-          sender: rawSender
-        },
+        name: 'bySelf: the sender nonce of its txn',
+        op: makeSentOp(BROADCAST_OPTIONS.bySelf),
+        accountType: 'eoa',
         expected: [sender(7n)]
       },
       {
-        name: 'bySelf batch of 3 with 2 sent: only the sent nonces',
-        args: {
-          accountOp: makeAccountOp(BROADCAST_OPTIONS.bySelf),
-          isSafe: false,
-          sender: { ...rawSender, sentTxnCount: 2 }
-        },
+        name: 'bySelf batch of 3 with 2 sent: only the nonces of the sent txns',
+        op: makeSentOp(BROADCAST_OPTIONS.bySelf, {
+          identifiedBy: { type: 'MultipleTxns', identifier: '0x01-0x02' }
+        }),
+        accountType: 'eoa',
         expected: [sender(7n), sender(8n)]
       },
       {
         name: 'bySelf7702: sender nonce only',
-        args: {
-          accountOp: makeAccountOp(BROADCAST_OPTIONS.bySelf7702),
-          isSafe: false,
-          sender: rawSender
-        },
+        op: makeSentOp(BROADCAST_OPTIONS.bySelf7702),
+        accountType: 'eoa',
         expected: [sender(7n)]
       },
       {
         name: 'self delegation: the txn nonce and the authorization nonce',
-        args: {
-          accountOp: makeAccountOp(BROADCAST_OPTIONS.delegation),
-          isSafe: false,
-          sender: rawSender
-        },
+        op: makeSentOp(BROADCAST_OPTIONS.delegation),
+        accountType: 'eoa',
         expected: [sender(7n), sender(8n)]
       },
       {
-        name: 'delegation with nothing sent: nothing',
-        args: {
-          accountOp: makeAccountOp(BROADCAST_OPTIONS.delegation),
-          isSafe: false,
-          sender: { ...rawSender, sentTxnCount: 0 }
-        },
-        expected: []
-      },
-      {
         name: 'Ambire account paid by another EOA: payer and account nonce',
-        args: {
-          accountOp: makeAccountOp(BROADCAST_OPTIONS.byOtherEOA),
-          isSafe: false,
-          sender: { ...rawSender, addr: PAYER }
-        },
+        op: makeSentOp(BROADCAST_OPTIONS.byOtherEOA),
+        accountType: 'ambire',
         expected: [sender(7n, PAYER), account(3n)]
       },
       {
+        name: 'a raw txn without a saved sender nonce: no sender nonce',
+        op: makeSentOp(BROADCAST_OPTIONS.byOtherEOA, { eoaNonce: undefined }),
+        accountType: 'ambire',
+        expected: [account(3n)]
+      },
+      {
         name: 'relayer: account nonce only',
-        args: { accountOp: makeAccountOp(BROADCAST_OPTIONS.byRelayer), isSafe: false },
+        op: makeSentOp(BROADCAST_OPTIONS.byRelayer),
+        accountType: 'ambire',
         expected: [account(3n)]
       },
       {
         name: 'Ambire bundler op: nothing, as its nonce is the userOp nonce',
-        args: { accountOp: makeAccountOp(BROADCAST_OPTIONS.byBundler), isSafe: false },
+        op: makeSentOp(BROADCAST_OPTIONS.byBundler),
+        accountType: 'ambire',
         expected: []
       },
       {
         name: 'EOA7702 bundler op with an authorization: the authorization nonce',
-        args: {
-          accountOp: makeAccountOp(BROADCAST_OPTIONS.byBundler),
-          isSafe: false,
-          bundlerAuthorizationNonce: 5n
-        },
+        op: makeSentOp(BROADCAST_OPTIONS.byBundler, {
+          asUserOperation: {
+            eip7702Auth: { nonce: '0x5' }
+          } as unknown as SubmittedAccountOp['asUserOperation']
+        }),
+        accountType: 'eoa',
         expected: [sender(5n)]
       },
       {
         name: 'Safe through a bundler: the Safe nonce',
-        args: { accountOp: makeAccountOp(BROADCAST_OPTIONS.byBundler), isSafe: true },
+        op: makeSentOp(BROADCAST_OPTIONS.byBundler),
+        accountType: 'safe',
         expected: [account(3n)]
       },
       {
         name: 'Safe: safeTx.nonce wins over nonce',
-        args: {
-          accountOp: makeAccountOp(BROADCAST_OPTIONS.byOtherEOA, {
-            safeTx: { nonce: '9' } as AccountOp['safeTx']
-          }),
-          isSafe: true,
-          sender: { ...rawSender, addr: PAYER }
-        },
+        op: makeSentOp(BROADCAST_OPTIONS.byOtherEOA, {
+          safeTx: { nonce: '9' } as AccountOp['safeTx']
+        }),
+        accountType: 'safe',
         expected: [sender(7n, PAYER), account(9n)]
       },
       {
         name: 'Safe deploy: no Safe nonce, as a deploy only calls the factory',
-        args: {
-          accountOp: makeAccountOp(BROADCAST_OPTIONS.byOtherEOA, { meta: { isSafeDeploy: true } }),
-          isSafe: true,
-          sender: { ...rawSender, addr: PAYER }
-        },
+        op: makeSentOp(BROADCAST_OPTIONS.byOtherEOA, { meta: { isSafeDeploy: true } }),
+        accountType: 'safe',
         expected: [sender(7n, PAYER)]
       },
       {
         name: 'null nonce: no account entry',
-        args: {
-          accountOp: makeAccountOp(BROADCAST_OPTIONS.byRelayer, { nonce: null }),
-          isSafe: false
-        },
+        op: makeSentOp(BROADCAST_OPTIONS.byRelayer, { nonce: null as unknown as bigint }),
+        accountType: 'ambire',
         expected: []
       }
     ]
 
-    it.each(cases)('$name', ({ args, expected }) => {
-      expect(getNoncesToReserve(args)).toEqual(expected)
+    it.each(cases)('$name', ({ op, accountType, expected }) => {
+      expect(getSubmittedAccountOpNonces(op, makeAccount(accountType))).toEqual(expected)
+    })
+  })
+
+  describe('getPendingNonceReservations and getNextNonce', () => {
+    const OTHER = '0x1111111111111111111111111111111111111111'
+    const otherAccount: Account = { ...makeAccount('ambire'), addr: OTHER }
+    const accounts = [makeAccount('eoa'), otherAccount]
+    const chainId = 8453n
+    const NOW = 1_700_000_000_000
+    const nextNonce = (
+      key: NonceKey,
+      chainNonce: bigint,
+      accountOps: SubmittedAccountOp[],
+      now = Date.now()
+    ) => getNextNonce({ ...key, chainId, chainNonce, accountOps, now, accounts })
+
+    it('is the chain nonce when nothing is pending', () => {
+      expect(nextNonce({ kind: 'sender', addr: ACCOUNT }, 7n, [])).toBe(7n)
+    })
+
+    it('goes past a pending txn the RPC does not count, so it is not replaced by accident', () => {
+      const stuck = makeSentOp(BROADCAST_OPTIONS.bySelf)
+      expect(nextNonce({ kind: 'sender', addr: ACCOUNT }, 7n, [stuck])).toBe(8n)
+    })
+
+    it('goes past every txn of a pending batch', () => {
+      const batch = makeSentOp(BROADCAST_OPTIONS.bySelf, {
+        identifiedBy: { type: 'MultipleTxns', identifier: '0x01-0x02-0x03' }
+      })
+      expect(nextNonce({ kind: 'sender', addr: ACCOUNT }, 7n, [batch])).toBe(10n)
+    })
+
+    it('keeps the chain nonce when the chain is already past the pending ops', () => {
+      const mined = makeSentOp(BROADCAST_OPTIONS.bySelf)
+      expect(nextNonce({ kind: 'sender', addr: ACCOUNT }, 12n, [mined])).toBe(12n)
+    })
+
+    it('counts the txns an EOA sends for another account, as they take its nonce too', () => {
+      // OTHER is a smart account whose txn the EOA PAYER pays for and sends
+      const sentByPayer = makeSentOp(BROADCAST_OPTIONS.byOtherEOA, { accountAddr: OTHER })
+
+      expect(nextNonce({ kind: 'sender', addr: PAYER }, 7n, [sentByPayer])).toBe(8n)
+      expect(
+        getPendingNonceReservations({
+          chainId,
+          keys: [{ kind: 'sender', addr: PAYER }],
+          pendingAccountOps: [sentByPayer],
+          accounts
+        })
+      ).toEqual([{ accountOpId: sentByPayer.id, reserved: sender(7n, PAYER) }])
+    })
+
+    it('ignores ops of another kind, sender, chain, or of an account not in the wallet', () => {
+      const pendingAccountOps = [
+        makeSentOp(BROADCAST_OPTIONS.bySelf, { eoaNonce: 20n }),
+        makeSentOp(BROADCAST_OPTIONS.bySelf, { eoaNonce: 30n, chainId: 1n }),
+        makeSentOp(BROADCAST_OPTIONS.byOtherEOA, {
+          accountAddr: '0x2222222222222222222222222222222222222222',
+          eoaNonce: 40n
+        })
+      ]
+
+      expect(nextNonce({ kind: 'account', addr: ACCOUNT }, 7n, pendingAccountOps)).toBe(7n)
+      expect(nextNonce({ kind: 'sender', addr: OTHER }, 7n, pendingAccountOps)).toBe(7n)
+      expect(nextNonce({ kind: 'sender', addr: PAYER }, 7n, pendingAccountOps)).toBe(7n)
+      expect(nextNonce({ kind: 'sender', addr: ACCOUNT }, 7n, pendingAccountOps)).toBe(21n)
+    })
+
+    it('holds the nonce of a mined op until the settle time has passed', () => {
+      const mined = makeSentOp(BROADCAST_OPTIONS.bySelf, {
+        status: AccountOpStatus.Success,
+        confirmedAt: NOW
+      })
+      const key: NonceKey = { kind: 'sender', addr: ACCOUNT }
+
+      expect(nextNonce(key, 7n, [mined], NOW + CONFIRMED_NONCE_SETTLE_MS - 1000)).toBe(8n)
+      expect(nextNonce(key, 7n, [mined], NOW + CONFIRMED_NONCE_SETTLE_MS)).toBe(7n)
+    })
+
+    it('holds only the payer nonce of a reverted op, as the account nonce is not raised', () => {
+      const reverted = makeSentOp(BROADCAST_OPTIONS.byOtherEOA, {
+        accountAddr: OTHER,
+        status: AccountOpStatus.Failure,
+        confirmedAt: NOW
+      })
+
+      expect(nextNonce({ kind: 'sender', addr: PAYER }, 7n, [reverted], NOW)).toBe(8n)
+      expect(nextNonce({ kind: 'account', addr: OTHER }, 3n, [reverted], NOW)).toBe(3n)
+    })
+
+    it('holds only the lowest nonces of a batch when its last txn was never mined', () => {
+      const batch = makeSentOp(BROADCAST_OPTIONS.bySelf, {
+        status: AccountOpStatus.Failure,
+        confirmedAt: NOW,
+        identifiedBy: { type: 'MultipleTxns', identifier: '0x01-0x02-0x03' },
+        calls: [
+          { status: AccountOpStatus.Success },
+          { status: AccountOpStatus.Failure },
+          { status: AccountOpStatus.BroadcastedButNotConfirmed }
+        ] as SubmittedAccountOp['calls']
+      })
+
+      expect(nextNonce({ kind: 'sender', addr: ACCOUNT }, 7n, [batch], NOW)).toBe(9n)
+    })
+
+    it('holds nothing for a mined op without a confirmation time', () => {
+      const mined = makeSentOp(BROADCAST_OPTIONS.bySelf, { status: AccountOpStatus.Success })
+
+      expect(nextNonce({ kind: 'sender', addr: ACCOUNT }, 7n, [mined], NOW)).toBe(7n)
     })
   })
 

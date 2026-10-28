@@ -57,7 +57,14 @@ import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import { getAddressCaught } from '../../utils/getAddressCaught'
 import isSameAddr from '../../utils/isSameAddr'
-import { getNonceKeys } from '../../utils/nonce'
+import {
+  getNextNonce,
+  getNonceKeys,
+  getPendingNonceReservations,
+  NonceKey,
+  PendingNonceReservation,
+  ReservedNonce
+} from '../../utils/nonce'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { FeePayersHistory, InternalSignedMessages, SentToHistory, SignedMessage } from './types'
@@ -429,7 +436,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   async #load(): Promise<void> {
-    const loadStartedAt = Date.now()
     await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
@@ -454,14 +460,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.#signedMessages = signedMessages
     this.#sentToHistory = sentToHistory
     this.#feePayersHistory = feePayersHistory
-    // Every op sent before the load started is loaded by now. An op sent during the load is
-    // saved after it, as saving waits for the load
-    await this.#accounts.dropOrphanedNonceReservations(
-      Object.values(this.broadcastedButNotConfirmed)
-        .flat()
-        .map(({ id }) => id),
-      loadStartedAt
-    )
 
     this.emitUpdate()
 
@@ -1783,6 +1781,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   // if it's not an userOp or it is, but isSuccess was not found
                   if (isSuccess === undefined) isSuccess = !!receipt.status
 
+                  accountOp.confirmedAt = Date.now()
                   const updatedOpIfAny = updateOpStatus(
                     accountOp,
                     isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
@@ -2098,6 +2097,53 @@ export class ActivityController extends EventEmitter implements IActivityControl
         return [acc.addr, ops]
       })
     )
+  }
+
+  /** The pending ops of every account, as an EOA may send the txns of another account. */
+  #getPendingAccountOps(): SubmittedAccountOp[] {
+    return Object.values(this.broadcastedButNotConfirmed).flat()
+  }
+
+  /** The ops of every account, whatever their status. */
+  #getAllAccountOps(): SubmittedAccountOp[] {
+    return this.#accounts.accounts.flatMap((acc) =>
+      Object.values(this.#accountsOps[acc.addr] ?? {}).flat()
+    )
+  }
+
+  /**
+   * The nonce for a new op of `addr`. It is `chainNonce`, raised past the nonces of the pending
+   * ops of the wallet and of the ops mined less than `CONFIRMED_NONCE_SETTLE_MS` ago, because the
+   * RPC may not count them yet. See `getNextNonce` in `utils/nonce`.
+   */
+  getNextNonce(
+    addr: string,
+    chainId: bigint,
+    kind: ReservedNonce['kind'],
+    chainNonce: bigint
+  ): bigint {
+    return getNextNonce({
+      addr,
+      kind,
+      chainId,
+      chainNonce,
+      accountOps: this.#getAllAccountOps(),
+      now: Date.now(),
+      accounts: this.#accounts.accounts
+    })
+  }
+
+  /**
+   * The nonces on `chainId` held by ops this wallet still waits for, for any of `keys`. Empty
+   * when nothing holds them.
+   */
+  getPendingNonceReservations(chainId: bigint, keys: NonceKey[]): PendingNonceReservation[] {
+    return getPendingNonceReservations({
+      chainId,
+      keys,
+      pendingAccountOps: this.#getPendingAccountOps(),
+      accounts: this.#accounts.accounts
+    })
   }
 
   async findMessage(account: string, filter: (item: SignedMessage) => boolean) {

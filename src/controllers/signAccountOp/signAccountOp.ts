@@ -182,7 +182,7 @@ import { GasSpeeds } from '../../services/bundlers/types'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
-import { getNonceKeys, getNoncesToReserve, ReservedNonce } from '../../utils/nonce'
+import { getNonceKeys } from '../../utils/nonce'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import { withTimeout } from '../../utils/with-timeout'
@@ -1381,7 +1381,7 @@ export class SignAccountOpController
     const prev = this.earlierPendingAccountOp
     const reservations = this.isSpeedUpTransaction
       ? []
-      : this.#accounts.getPendingNonceReservations(
+      : this.#activity.getPendingNonceReservations(
           this.#network.chainId,
           getNonceKeys({
             accountOp: this.accountOp,
@@ -4346,9 +4346,9 @@ export class SignAccountOpController
     return replacement.replacedNonce
   }
 
-  /** The account nonce for a new op: `chainNonce`, raised past the nonces of the ops this device sent. */
+  /** The account nonce for a new op: `chainNonce`, raised past the nonces of the pending ops. */
   #getAccountNextNonce(chainNonce: bigint): bigint {
-    return this.#accounts.getNextNonce(
+    return this.#activity.getNextNonce(
       this.accountOp.accountAddr,
       this.#network.chainId,
       'account',
@@ -4358,14 +4358,14 @@ export class SignAccountOpController
 
   /**
    * The txn nonce for a new txn of `senderAddr` (or a 7702 authorization it signs). Raised past
-   * the nonces of the ops this device sent, as the RPC may not count them yet.
+   * the nonces of the pending ops in Activity, as the RPC may not count them (yet).
    */
   async #getEoaBroadcastNonce(senderAddr: string): Promise<bigint> {
     const chainNonce = await this.provider.getTransactionCount(
       senderAddr,
       getPendingBlockTagIfSupported(this.#network)
     )
-    return this.#accounts.getNextNonce(
+    return this.#activity.getNextNonce(
       senderAddr,
       this.#network.chainId,
       'sender',
@@ -4450,10 +4450,7 @@ export class SignAccountOpController
     // broadcasting by EOA is quite the same:
     // 1) build a rawTxn 2) sign 3) broadcast
     // we have one handle, just a diff rawTxn for each case (RAW_TXN_BROADCAST_OPTIONS)
-    // Written by the branch that sends, as only it knows which nonces went out
-    let reservedNonces: ReservedNonce[] = []
     let sentEoaNonce: bigint | undefined
-    const isSafe = !!account.safeCreation
 
     // PQ1 is a smart-contract-only signer that cannot produce a raw EOA
     // transaction. The signer packages the calls into a 4337 UserOperation,
@@ -4553,16 +4550,6 @@ export class SignAccountOpController
       }
 
       const firstSentNonce = BigInt(senderNonce)
-      const getSentReservedNonces = () =>
-        getNoncesToReserve({
-          accountOp,
-          isSafe,
-          sender: {
-            addr: senderAddr,
-            firstNonce: firstSentNonce,
-            sentTxnCount: multipleTxnsBroadcastRes.length
-          }
-        })
 
       try {
         const { gasFeePayment } = accountOp
@@ -4634,7 +4621,6 @@ export class SignAccountOpController
         }
 
         sentEoaNonce = firstSentNonce
-        reservedNonces = getSentReservedNonces()
         transactionRes = {
           nonce:
             accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
@@ -4661,7 +4647,6 @@ export class SignAccountOpController
         // unless it's the build-in swap - we want to throw an error and
         // allow the user to retry in this case. The swap is told what was sent, so
         // the retry is built only after the sent txns are confirmed
-        const sentReservedNonces = getSentReservedNonces()
         const sentTransactionRes = {
           nonce: senderNonce,
           identifiedBy: {
@@ -4674,7 +4659,6 @@ export class SignAccountOpController
           transactionRes = sentTransactionRes
           // this.accountOp.eoaNonce may have been reset above, so keep the nonce of the sent part
           sentEoaNonce = firstSentNonce
-          reservedNonces = sentReservedNonces
 
           // The part that went out is reported as broadcast, so without saying this
           // the rest of the batch looks sent when it never was.
@@ -4700,11 +4684,6 @@ export class SignAccountOpController
                 account,
                 sentTransactionRes,
                 firstSentNonce
-              )
-              await this.#accounts.reserveNonces(
-                sentAccountOp.id,
-                this.#network.chainId,
-                sentReservedNonces
               )
               await this.#onPartialBroadcast(sentAccountOp)
             } catch (e: any) {
@@ -4768,13 +4747,6 @@ export class SignAccountOpController
         })
       }
 
-      reservedNonces = getNoncesToReserve({
-        accountOp,
-        isSafe,
-        bundlerAuthorizationNonce: userOperation.eip7702Auth
-          ? BigInt(userOperation.eip7702Auth.nonce)
-          : undefined
-      })
       transactionRes = {
         nonce: Number(userOperation.nonce),
         identifiedBy: {
@@ -4803,7 +4775,6 @@ export class SignAccountOpController
       transactionRes,
       sentEoaNonce ?? this.accountOp.eoaNonce
     )
-    await this.#accounts.reserveNonces(submittedAccountOp.id, this.#network.chainId, reservedNonces)
 
     await this.#onBroadcastSuccess({
       submittedAccountOp,

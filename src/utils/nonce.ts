@@ -1,7 +1,8 @@
 import { Interface } from 'ethers'
 
 import AmbireAccount from '../../contracts/compiled/AmbireAccount.json'
-import { Account, AccountOnchainState } from '../interfaces/account'
+import { CONFIRMED_NONCE_SETTLE_MS } from '../consts/activity'
+import { Account } from '../interfaces/account'
 import { IActivityController } from '../interfaces/activity'
 import { RPCProvider } from '../interfaces/provider'
 import { isSmartAccount } from '../libs/account/account'
@@ -11,7 +12,11 @@ import { AccountOpStatus } from '../libs/accountOp/types'
 import { BROADCAST_OPTIONS } from '../libs/broadcast/broadcast'
 import isSameAddr from './isSameAddr'
 
-/** A nonce an op takes on its chain, recorded when the op is sent. */
+/**
+ * A nonce a sent op takes on its chain, worked out from what Activity saved of the op. An op can
+ * take more than one, e.g. an SA op paid by an EOA (`byOtherEOA`) takes the `sender` nonce of the
+ * `paidBy` EOA and the `account` nonce of the SA.
+ */
 export type ReservedNonce = {
   /**
    * `sender` is the txn nonce of an EOA, used by a raw txn it sends or by a 7702 authorization
@@ -22,33 +27,11 @@ export type ReservedNonce = {
   nonce: bigint
 }
 
-/** The nonces one sent op takes on its chain, held until the RPC counts them. */
-export type NonceReservation = {
-  chainId: bigint
-  nonces: ReservedNonce[]
-  /** Set once the op has a final status, so a latest state read that counts a nonce frees it. */
-  isSettled: boolean
-  /**
-   * When the reservation was made, in ms. It is reset when the op is settled, and the reservation
-   * expires ACCOUNT_OP_PENDING_TIMEOUT_MINS after that. While the op is pending in Activity it
-   * does not expire.
-   */
-  createdAt: number
-}
-
-/** A reserved nonce of an op that is still waiting for a final status. */
+/** A nonce held by an op that Activity still waits for. */
 export type PendingNonceReservation = { accountOpId: string; reserved: ReservedNonce }
 
-/** A nonce an op would take, without its value. Used to find the reservations that hold it back. */
+/** A nonce an op would take, without its value. Used to find the pending ops that hold it. */
 export type NonceKey = Pick<ReservedNonce, 'kind' | 'addr'>
-
-/** Whether a txn with this status was mined, so it raised the sender nonce. */
-export const isMinedStatus = (status?: AccountOpStatus) =>
-  status === AccountOpStatus.Success || status === AccountOpStatus.Failure
-
-/** Whether `state` already counts the reserved nonce, i.e. its next nonce is past it. */
-export const isNonceCounted = (state: AccountOnchainState, { kind, nonce }: ReservedNonce) =>
-  kind === 'sender' ? state.eoaNonce !== null && state.eoaNonce > nonce : state.nonce > nonce
 
 type NonceOpFields = Pick<AccountOp, 'accountAddr' | 'nonce' | 'safeTx' | 'gasFeePayment' | 'meta'>
 
@@ -114,62 +97,163 @@ export function getNonceKeys({
 }
 
 /**
- * The nonces an op takes on its chain. `sender` describes the raw txns that went out, if any.
- * `bundlerAuthorizationNonce` is the nonce of a 7702 authorization that a bundler sends.
+ * How many raw txns of the op went out. A batch sent one txn at a time saves the hashes of the
+ * txns that went out, joined by `-`, so a partly sent batch counts only those.
  */
-export function getNoncesToReserve({
-  accountOp,
-  isSafe,
-  sender,
-  bundlerAuthorizationNonce
-}: {
-  accountOp: NonceOpFields
-  isSafe: boolean
-  sender?: { addr: string; firstNonce: bigint; sentTxnCount: number }
-  bundlerAuthorizationNonce?: bigint
-}): ReservedNonce[] {
-  const reservedNonces: ReservedNonce[] = []
-  const broadcastOption = accountOp.gasFeePayment?.broadcastOption
+const getSentTxnCount = ({ identifiedBy }: SubmittedAccountOp) =>
+  identifiedBy.type === 'MultipleTxns' ? identifiedBy.identifier.split('-').length : 1
 
-  if (sender) {
-    for (let i = 0; i < sender.sentTxnCount; i++) {
-      reservedNonces.push({
-        kind: 'sender',
-        addr: sender.addr,
-        nonce: sender.firstNonce + BigInt(i)
-      })
+/**
+ * The nonces a sent op takes on its chain, worked out from what Activity saved of it: the txn
+ * nonces of the EOA that sent its raw txns (`eoaNonce` onwards), the nonce of a 7702
+ * authorization, and the nonce of the account itself (an Ambire account or a Safe).
+ */
+export function getSubmittedAccountOpNonces(
+  op: SubmittedAccountOp,
+  account: Account
+): ReservedNonce[] {
+  const nonces: ReservedNonce[] = []
+  const isSafe = !!account.safeCreation
+  const broadcastOption = op.gasFeePayment?.broadcastOption
+  const senderAddr = getRawTxnSenderAddr(op)
+
+  if (senderAddr && op.eoaNonce !== null && op.eoaNonce !== undefined) {
+    const sentTxnCount = getSentTxnCount(op)
+    for (let i = 0; i < sentTxnCount; i++) {
+      nonces.push({ kind: 'sender', addr: senderAddr, nonce: op.eoaNonce + BigInt(i) })
     }
 
     // A self-sent delegation raises the nonce once more for its authorization
-    if (
-      broadcastOption === BROADCAST_OPTIONS.delegation &&
-      isSameAddr(sender.addr, accountOp.accountAddr) &&
-      sender.sentTxnCount > 0
-    ) {
-      reservedNonces.push({
-        kind: 'sender',
-        addr: sender.addr,
-        nonce: sender.firstNonce + BigInt(sender.sentTxnCount)
-      })
-    }
+    if (broadcastOption === BROADCAST_OPTIONS.delegation && isSameAddr(senderAddr, op.accountAddr))
+      nonces.push({ kind: 'sender', addr: senderAddr, nonce: op.eoaNonce + BigInt(sentTxnCount) })
   }
 
-  if (bundlerAuthorizationNonce !== undefined) {
-    reservedNonces.push({
+  const bundlerAuthorization = op.asUserOperation?.eip7702Auth
+  if (broadcastOption === BROADCAST_OPTIONS.byBundler && bundlerAuthorization) {
+    nonces.push({
       kind: 'sender',
-      addr: accountOp.accountAddr,
-      nonce: bundlerAuthorizationNonce
+      addr: op.accountAddr,
+      nonce: BigInt(bundlerAuthorization.nonce)
     })
   }
 
-  let accountNonce: bigint | null = null
-  if (takesAccountNonce(accountOp, isSafe))
-    accountNonce = isSafe ? getAccountOpNonce(accountOp) : accountOp.nonce
-  if (accountNonce !== null) {
-    reservedNonces.push({ kind: 'account', addr: accountOp.accountAddr, nonce: accountNonce })
-  }
+  if (!takesAccountNonce(op, isSafe)) return nonces
 
-  return reservedNonces
+  const accountNonce = isSafe ? getAccountOpNonce(op) : op.nonce
+  if (accountNonce !== null)
+    nonces.push({ kind: 'account', addr: op.accountAddr, nonce: accountNonce })
+  return nonces
+}
+
+/**
+ * The nonces on `chainId` that the pending ops hold, for any of `keys`. `pendingAccountOps` are
+ * the ops Activity waits for, of every account, as an EOA may send the txns of another account.
+ * Empty when nothing holds them.
+ */
+export function getPendingNonceReservations({
+  chainId,
+  keys,
+  pendingAccountOps,
+  accounts
+}: {
+  chainId: bigint
+  keys: NonceKey[]
+  pendingAccountOps: SubmittedAccountOp[]
+  accounts: Account[]
+}): PendingNonceReservation[] {
+  return pendingAccountOps
+    .filter((op) => op.chainId === chainId)
+    .flatMap((op) => {
+      const account = accounts.find((acc) => isSameAddr(acc.addr, op.accountAddr))
+      if (!account) return []
+
+      return getSubmittedAccountOpNonces(op, account)
+        .filter((reserved) =>
+          keys.some((key) => key.kind === reserved.kind && isSameAddr(key.addr, reserved.addr))
+        )
+        .map((reserved) => ({ accountOpId: op.id, reserved }))
+    })
+}
+
+/**
+ * Whether a txn with this status is in a block. A reverted txn (`Failure`) is mined too, so it
+ * still used up the nonce of the EOA that sent it.
+ */
+export const isMinedStatus = (status?: AccountOpStatus) =>
+  status === AccountOpStatus.Success || status === AccountOpStatus.Failure
+
+/**
+ * The nonces a mined op really used up, out of the ones it took when it was sent. When an SA op
+ * paid by an EOA (`paidBy`) reverts, the EOA nonce is used up, but the revert also undoes the
+ * raise of the SA nonce. So the SA nonce counts only on `Success`. A batch that an EOA sends one
+ * txn at a time takes the status of its last txn, and only its mined txns used their nonces. The
+ * chain mines them in nonce order, so if 2 of the txns with nonces 7, 8 and 9 were mined, the
+ * batch used 7 and 8.
+ */
+const getUsedNonces = (op: SubmittedAccountOp, account: Account): ReservedNonce[] => {
+  const nonces = getSubmittedAccountOpNonces(op, account)
+  const minedTxnCount =
+    op.identifiedBy.type === 'MultipleTxns'
+      ? op.calls.filter((call) => isMinedStatus(call.status)).length
+      : undefined
+  const senderNonces = nonces.filter((reserved) => reserved.kind === 'sender')
+
+  return nonces.filter((reserved) => {
+    if (reserved.kind === 'account') return op.status === AccountOpStatus.Success
+    if (minedTxnCount === undefined) return isMinedStatus(op.status)
+
+    const lowerNonceCount = senderNonces.filter((other) => other.nonce < reserved.nonce).length
+    return lowerNonceCount < minedTxnCount
+  })
+}
+
+/**
+ * The nonces that a new op must skip because of `op` at `now`. A pending op holds all the nonces
+ * it took. A mined op holds only the ones it used, and only for `CONFIRMED_NONCE_SETTLE_MS` after
+ * its receipt. Any other op, like a stuck or dropped one, holds none.
+ */
+const getHeldNonces = (op: SubmittedAccountOp, account: Account, now: number): ReservedNonce[] => {
+  if (op.status === AccountOpStatus.BroadcastedButNotConfirmed)
+    return getSubmittedAccountOpNonces(op, account)
+
+  const isSettling =
+    isMinedStatus(op.status) &&
+    op.confirmedAt !== undefined &&
+    now - op.confirmedAt < CONFIRMED_NONCE_SETTLE_MS
+  return isSettling ? getUsedNonces(op, account) : []
+}
+
+/**
+ * The nonce for a new op of `addr`. It is `chainNonce`, raised past every nonce that the ops in
+ * `accountOps` still hold (see `getHeldNonces`). The RPC can miss those nonces, e.g. when its node
+ * dropped a stuck txn or has not seen the latest block yet. Reusing one would replace a pending op
+ * or give a txn that is never mined. Say an EOA has pending txns with nonces 5 and 6 and the RPC
+ * says 5, the result is 7. Pass the ops of every account, because an EOA can pay for the ops of
+ * an SA (`paidBy`). `chainNonce` must already be the next nonce (a txn count or a contract nonce).
+ */
+export function getNextNonce({
+  addr,
+  kind,
+  chainId,
+  chainNonce,
+  accountOps,
+  now,
+  accounts
+}: NonceKey & {
+  chainId: bigint
+  chainNonce: bigint
+  accountOps: SubmittedAccountOp[]
+  now: number
+  accounts: Account[]
+}): bigint {
+  return accountOps
+    .filter((op) => op.chainId === chainId)
+    .flatMap((op) => {
+      const account = accounts.find((acc) => isSameAddr(acc.addr, op.accountAddr))
+      return account ? getHeldNonces(op, account, now) : []
+    })
+    .filter((held) => held.kind === kind && isSameAddr(held.addr, addr))
+    .reduce((next, held) => (held.nonce >= next ? held.nonce + 1n : next), chainNonce)
 }
 
 /** The highest receipt block per chain of the finalized ops, as `{ [chainId]: blockNumber }`. */

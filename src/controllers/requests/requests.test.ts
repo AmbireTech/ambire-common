@@ -1324,18 +1324,18 @@ describe('RequestsController ', () => {
     expect(request.signAccountOp.accountOp.nonce).toBe(119n)
     request.signAccountOp.destroy()
   })
-  test('queues a new Safe request after the transactions this device sent that are not counted yet', async () => {
-    const { controller, accountsCtrl } = await prepareTest(false, true)
+  test('queues a new Safe request after the pending transactions the RPC does not count yet', async () => {
+    const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
     // sent, but not counted by the RPC yet - the new request must not reuse (and replace) these nonces
-    await accountsCtrl.reserveNonces('sent-119', chainId, [
-      { kind: 'account', addr: accountAddr, nonce: 119n }
-    ])
-    await accountsCtrl.reserveNonces('sent-120', chainId, [
-      { kind: 'account', addr: accountAddr, nonce: 120n }
-    ])
+    const sentAccountOp = (nonce: bigint): SubmittedAccountOp => ({
+      ...getActivityAccountOp(accountAddr, chainId, nonce),
+      status: AccountOpStatus.BroadcastedButNotConfirmed
+    })
+    await activityCtrl.addAccountOp(sentAccountOp(119n))
+    await activityCtrl.addAccountOp(sentAccountOp(120n))
 
     await controller.build({
       type: 'calls',
@@ -1364,9 +1364,6 @@ describe('RequestsController ', () => {
       status: AccountOpStatus.BroadcastedButNotConfirmed
     }
     await activityCtrl.addAccountOp(pendingAccountOp)
-    await accountsCtrl.reserveNonces(pendingAccountOp.id, chainId, [
-      { kind: 'account', addr: accountAddr, nonce: 119n }
-    ])
 
     // an unrelated request, queued after the pending transaction
     await controller.build({

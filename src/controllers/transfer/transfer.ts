@@ -1379,7 +1379,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       // A Safe transaction is queued after the ones this device sent that the RPC may not count
       // yet, instead of taking (and replacing) the nonce of one of them
       nonce: this.#selectedAccount.account.safeCreation
-        ? this.#accounts.getNextNonce(
+        ? this.#activity.getNextNonce(
             this.#selectedAccount.account.addr,
             network.chainId,
             'account',
