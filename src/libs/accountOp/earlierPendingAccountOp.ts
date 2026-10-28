@@ -63,9 +63,9 @@ export const getEarlierPendingAccountOp = ({
  * pending op (see `getReplacementAccountOp`). Null when the new op can't replace it: the pending
  * op was sent through the Relayer or a bundler, as they hold the transaction, or as one
  * transaction per call, or the new op takes the nonces of another pending op too, as only the
- * replaced one would be replaced and the rest would still run. Not for a Safe either, where
- * Cancel already makes a new Safe transaction at that nonce. And not when the new op can't be
- * paid the same way, as no replacement would happen then.
+ * replaced one would be replaced and the rest would still run. And not when the new op can't be
+ * paid the same way, as no replacement would happen then. A Safe op replaces it too: sent by the
+ * same EOA with its EOA nonce, at the Safe nonce of the pending op when it's of the same Safe.
  *
  * @param takesNoncesAfterReplaced whether the new op takes the EOA nonces after the replaced one
  * too, as one transaction per call or a delegation that signs an authorization does. They must
@@ -73,20 +73,17 @@ export const getEarlierPendingAccountOp = ({
  */
 export const getEarlierPendingReplacementAccountOp = ({
   earlierPendingAccountOp,
-  isSafe,
   takesNoncesAfterReplaced,
   reservations,
   pendingAccountOps,
   feeOptions
 }: {
   earlierPendingAccountOp: SubmittedAccountOp
-  isSafe: boolean
   takesNoncesAfterReplaced: boolean
   reservations: PendingNonceReservation[]
   pendingAccountOps: SubmittedAccountOp[]
   feeOptions: FeePaymentOption[]
 }): AccountOp | null => {
-  if (isSafe) return null
   if (getReplacementBlocker(earlierPendingAccountOp, true) !== null) return null
   if (earlierPendingAccountOp.identifiedBy.type === 'MultipleTxns') return null
 

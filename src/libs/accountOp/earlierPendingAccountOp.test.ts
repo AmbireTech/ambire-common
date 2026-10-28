@@ -206,7 +206,6 @@ describe('getEarlierPendingReplacementAccountOp', () => {
   const getReplacement = (takesNoncesAfterReplaced: boolean) =>
     getEarlierPendingReplacementAccountOp({
       earlierPendingAccountOp: pending,
-      isSafe: false,
       takesNoncesAfterReplaced,
       reservations: [
         senderReservation('pending'),
@@ -228,7 +227,6 @@ describe('getEarlierPendingReplacementAccountOp', () => {
   test('a new op that takes nonces after the replaced one replaces the pending op when only its speed ups hold nonces', () => {
     const replacement = getEarlierPendingReplacementAccountOp({
       earlierPendingAccountOp: pending,
-      isSafe: false,
       takesNoncesAfterReplaced: true,
       reservations: [senderReservation('pending'), senderReservation('speed-up')],
       pendingAccountOps: [pending, pendingSpeedUp],
@@ -236,5 +234,46 @@ describe('getEarlierPendingReplacementAccountOp', () => {
     })
 
     expect(replacement?.eoaNonce).toBe(5n)
+  })
+
+  test('a Safe op replaces a pending Safe op sent by an EOA, at its Safe nonce and EOA nonce', () => {
+    const pendingSafeOp = { ...buildSentByEoa('safe-op', 1000), nonce: 308n }
+    const replacement = getEarlierPendingReplacementAccountOp({
+      earlierPendingAccountOp: pendingSafeOp,
+      takesNoncesAfterReplaced: false,
+      reservations: [senderReservation('safe-op'), safeReservation('safe-op', 308n)],
+      pendingAccountOps: [pendingSafeOp],
+      feeOptions
+    })
+
+    expect(replacement?.nonce).toBe(308n)
+    expect(replacement?.eoaNonce).toBe(5n)
+  })
+
+  test('a pending op sent through a bundler is not replaced, as the bundler holds it', () => {
+    const sentByBundler = buildPendingAccountOp('bundler', {
+      gasFeePayment: { ...pending.gasFeePayment!, broadcastOption: BROADCAST_OPTIONS.byBundler }
+    })
+    const replacement = getEarlierPendingReplacementAccountOp({
+      earlierPendingAccountOp: sentByBundler,
+      takesNoncesAfterReplaced: false,
+      reservations: [safeReservation('bundler', 8n)],
+      pendingAccountOps: [sentByBundler],
+      feeOptions
+    })
+
+    expect(replacement).toBeNull()
+  })
+
+  test('a pending op is not replaced when the new op cannot be paid the same way', () => {
+    const replacement = getEarlierPendingReplacementAccountOp({
+      earlierPendingAccountOp: pending,
+      takesNoncesAfterReplaced: false,
+      reservations: [senderReservation('pending')],
+      pendingAccountOps: [pending],
+      feeOptions: []
+    })
+
+    expect(replacement).toBeNull()
   })
 })

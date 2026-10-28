@@ -182,6 +182,7 @@ import { GasSpeeds } from '../../services/bundlers/types'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
+import isSameAddr from '../../utils/isSameAddr'
 import { getNonceKeys } from '../../utils/nonce'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
@@ -754,7 +755,8 @@ export class SignAccountOpController
 
   /**
    * The earlier pending op that holds this op back, see `#earlierPending`. `canReplace` tells
-   * whether this op can take its place, and `isReplacing` whether it does.
+   * whether this op can take its place, or stop doing so, and `isReplacing` whether it does.
+   * Neither once a Safe owner signed, as the signature is for the Safe nonce it has.
    */
   get earlierPendingAccountOp(): {
     id: string
@@ -765,7 +767,7 @@ export class SignAccountOpController
 
     return {
       id: this.#earlierPending.accountOp.id,
-      canReplace: !!this.#earlierPending.replacementAccountOp,
+      canReplace: !!this.#earlierPending.replacementAccountOp && !this.#isSignedBySafeOwner,
       isReplacing: this.#replacement?.kind === 'newCalls'
     }
   }
@@ -1004,7 +1006,7 @@ export class SignAccountOpController
       })
       return
     }
-    if (this.accountOp.signed?.length || this.accountOp.safeTx?.confirmations?.length) {
+    if (this.#isSignedBySafeOwner) {
       const message = 'Nonce cannot be set as the transaction is already signed'
       this.emitError({
         message,
@@ -1450,7 +1452,6 @@ export class SignAccountOpController
       accountOp: earlierPendingAccountOp,
       replacementAccountOp: getEarlierPendingReplacementAccountOp({
         earlierPendingAccountOp,
-        isSafe,
         takesNoncesAfterReplaced:
           this.baseAccount.shouldBroadcastCallsSeparately(this.accountOp) ||
           // The authorization of a first-time delegation takes the nonce after the txn
@@ -1474,8 +1475,9 @@ export class SignAccountOpController
   replacePendingAccountOp() {
     const replacementAccountOp = this.#earlierPending?.replacementAccountOp
     if (!replacementAccountOp || this.#replacement) return
-    // Swapping the nonce while signing would send something other than what was signed
-    if (!this.canUpdate()) return
+    // Swapping the nonce while signing, or once signed, would send something other than what
+    // was signed
+    if (!this.canUpdate() || this.#isSignedBySafeOwner) return
 
     this.#replacement = new TxnReplacement({
       accountOp: replacementAccountOp,
@@ -1484,20 +1486,43 @@ export class SignAccountOpController
     })
     this.#isReplacedPendingAccountOpProcessed = false
     this.#updateAccountOp({ eoaNonce: replacementAccountOp.eoaNonce })
+    // A Safe op only goes through in place of a pending op of the same Safe at its Safe nonce
+    const replacedSafeNonce = getAccountOpNonce(replacementAccountOp)
+    if (
+      this.account.safeCreation &&
+      isSameAddr(replacementAccountOp.accountAddr, this.account.addr) &&
+      replacedSafeNonce !== null &&
+      replacedSafeNonce !== getAccountOpNonce(this.accountOp)
+    )
+      this.setSafeNonce(replacedSafeNonce)
     this.#replacement.watchReplacedTransaction(() => this.#onReplacedTransactionProcessed())
     this.update({ hasNewEstimation: true })
   }
 
   /**
    * Stops sending in place of the earlier pending op, so this op is a normal one again and the
-   * pending op holds it back. Does nothing when it is not replacing, or while signing.
+   * pending op holds it back, at the next free Safe nonce for a Safe. Does nothing when it is not
+   * replacing, while signing, or once a Safe owner signed.
    */
   stopReplacingPendingAccountOp() {
     if (this.#replacement?.kind !== 'newCalls') return
-    if (!this.canUpdate()) return
+    if (!this.canUpdate() || this.#isSignedBySafeOwner) return
 
+    const wasReplacingOwnSafeOp =
+      !!this.account.safeCreation && isSameAddr(this.#replacement.accountAddr, this.account.addr)
     this.#leaveReplaceMode()
+    // Back to a new Safe transaction, after the pending one
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (wasReplacingOwnSafeOp && accountState)
+      this.setSafeNonce(this.#getAccountNextNonce(accountState.nonce))
     this.update({ hasNewEstimation: true })
+  }
+
+  /** Whether an owner signed the Safe transaction, so its Safe nonce can't change anymore */
+  get #isSignedBySafeOwner(): boolean {
+    if (!this.account.safeCreation) return false
+    return !!this.accountOp.signed?.length || !!this.accountOp.safeTx?.confirmations?.length
   }
 
   #withDecodedCalls(humanization: IrCall[]) {
@@ -1832,7 +1857,11 @@ export class SignAccountOpController
    * pending transaction, where the owner only signs and executing waits for that one.
    */
   get #canSafeQuickBroadcast(): boolean {
-    return this.threshold === 1 && this.accountKeyStoreKeys.length === 1 && !this.#earlierPending
+    return (
+      this.threshold === 1 &&
+      this.accountKeyStoreKeys.length === 1 &&
+      (!this.#earlierPending || this.#replacement?.kind === 'newCalls')
+    )
   }
 
   /**
@@ -2215,8 +2244,9 @@ export class SignAccountOpController
       this.#accountOp.signed &&
       this.#accountOp.signed.length >= this.threshold
     ) {
-      // The earlier pending transaction box explains it, and a refresh would not help
-      if (this.#earlierPending) {
+      // The earlier pending transaction box explains it, and a refresh would not help.
+      // Not while replacing that transaction, as this one goes through in its place
+      if (this.#earlierPending && this.#replacement?.kind !== 'newCalls') {
         errors.push({
           title: 'A transaction you sent earlier is still waiting to be confirmed.',
           code: EARLIER_PENDING_TRANSACTION_ERROR_CODE
@@ -5391,8 +5421,9 @@ export class SignAccountOpController
     )
       return false
     // The owners can still sign behind a pending transaction, only executing waits for it.
-    // On Ethereum the state is read at the pending block, so the nonce check above can pass
-    if (this.#earlierPending) return false
+    // On Ethereum the state is read at the pending block, so the nonce check above can pass.
+    // Not while replacing that transaction, as this one goes through in its place
+    if (this.#earlierPending && this.#replacement?.kind !== 'newCalls') return false
 
     // if the threshold is 1 and there's only 1 imported key, allow quick broadcast
     if (this.#canSafeQuickBroadcast) return true

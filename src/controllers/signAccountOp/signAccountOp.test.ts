@@ -6601,11 +6601,24 @@ describe('an earlier pending transaction', () => {
         eoaNonce: null
       })
 
-    /** A Safe op at nonce 3 that `threshold` owners must sign, `signed` of them already did */
-    const initSafe = async ({ threshold, signed }: { threshold: number; signed: string[] }) => {
-      const feePaymentOptions = [nativeFeeOption(safeAccount.addr)]
+    /**
+     * A Safe op at `nonce` that `threshold` owners must sign, `signed` of them already did. Its
+     * fee is paid by `paidBy`, the Safe itself by default
+     */
+    const initSafe = async ({
+      threshold,
+      signed,
+      nonce = 3n,
+      paidBy = safeAccount.addr
+    }: {
+      threshold: number
+      signed: string[]
+      nonce?: bigint
+      paidBy?: string
+    }) => {
+      const feePaymentOptions = [nativeFeeOption(paidBy)]
       const accountOp = createAccountOp(safeAccount, chainId)
-      accountOp.op.nonce = 3n
+      accountOp.op.nonce = nonce
       accountOp.op.signed = signed
       jest.spyOn(EstimationController.prototype, 'estimate').mockResolvedValue(undefined)
 
@@ -6625,7 +6638,12 @@ describe('an earlier pending transaction', () => {
           flags: {},
           updatedAt: Date.now()
         },
-        gasPrices
+        gasPrices,
+        false,
+        {
+          // The paying EOA is an account of the wallet too
+          initialSetStorage: (storageCtrl) => storageCtrl.set('accounts', [safeAccount, eoaAccount])
+        }
       )
       // On Ethereum the state is read at the pending block, so it can count the pending op
       const accountState = ctrl.accountsCtrl.accountStates[safeAccount.addr]![chainId.toString()]!
@@ -6651,7 +6669,7 @@ describe('an earlier pending transaction', () => {
       expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
       expect(controller.canBroadcast).toBe(false)
       expect(hasEarlierPendingError(controller)).toBe(true)
-      // Cancel already makes a new Safe transaction at that nonce
+      // Sent through a bundler, which holds the transaction, so it can't be replaced
       expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
     })
 
@@ -6664,6 +6682,73 @@ describe('an earlier pending transaction', () => {
       expect(controller.canBroadcast).toBe(false)
       expect(controller.errors).toEqual([])
       expect(controller.readyToSign).toBe(true)
+    })
+
+    describe('paid by the EOA that sent the pending Safe transaction', () => {
+      const payerAddr = eoaSigner.keyPublicAddress
+      // The pending Safe transaction took Safe nonce 3 and the payer's EOA nonce 5
+      const buildPendingSentByEoa = () =>
+        buildPendingAccountOp({
+          accountAddr: safeAccount.addr,
+          paidBy: payerAddr,
+          broadcastOption: broadcastLib.BROADCAST_OPTIONS.byOtherEOA,
+          nonce: 3n,
+          eoaNonce: 5n
+        })
+
+      test('not signed yet, Replace takes the pending Safe nonce', async () => {
+        const { controller } = await initSafe({
+          threshold: 2,
+          signed: [],
+          nonce: 4n,
+          paidBy: payerAddr
+        })
+        holdBehind(controller, buildPendingSentByEoa())
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
+
+        controller.replacePendingAccountOp()
+
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+        expect(controller.accountOp.nonce).toBe(3n)
+        expect(controller.accountOp.eoaNonce).toBe(5n)
+      })
+
+      test("Don't replace takes the Safe nonce of a new transaction, after the pending one", async () => {
+        const { controller } = await initSafe({ threshold: 2, signed: [], paidBy: payerAddr })
+        holdBehind(controller, buildPendingSentByEoa())
+        controller.replacePendingAccountOp()
+        expect(controller.accountOp.nonce).toBe(3n)
+        const getNextNonce = jest
+          .spyOn(ActivityController.prototype, 'getNextNonce')
+          .mockReturnValue(4n)
+
+        controller.stopReplacingPendingAccountOp()
+
+        expect(getNextNonce).toHaveBeenCalledWith(safeAccount.addr, chainId, 'account', 3n)
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        expect(controller.accountOp.nonce).toBe(4n)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+      })
+
+      test('signed by an owner, it is not offered to replace, as the signature is for its Safe nonce', async () => {
+        const { controller } = await initSafe({
+          threshold: 2,
+          signed: [owners[0]!],
+          nonce: 4n,
+          paidBy: payerAddr
+        })
+        holdBehind(controller, buildPendingSentByEoa())
+
+        expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+
+        controller.replacePendingAccountOp()
+
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(controller.accountOp.nonce).toBe(4n)
+        expect(controller.accountOp.signed).toEqual([owners[0]])
+      })
     })
   })
 
