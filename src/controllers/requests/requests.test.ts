@@ -996,6 +996,69 @@ describe('RequestsController ', () => {
     expect(controller.userRequests[0]!.kind).toBe('calls')
   })
 
+  describe('build NFT transfer request', () => {
+    const nft = {
+      address: '0x59468516a8259058baD1cA5F8f4BFF190d30E066',
+      chainId: 1n,
+      tokenId: 42n,
+      collectionName: 'Test Collection'
+    }
+    const recipientAddress = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+
+    test('adds a calls request with a safeTransferFrom of the NFT', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.build({
+        type: 'nftTransferRequest',
+        params: {
+          nft,
+          recipientAddress,
+          recipientDomain: 'recipient.eth',
+          executionType: 'queue'
+        }
+      })
+
+      expect(controller.userRequests.length).toBe(1)
+      const request = controller.userRequests[0]!
+      if (request.kind !== 'calls') throw new Error('Expected a calls request')
+
+      const { calls, chainId } = request.signAccountOp.accountOp
+      expect(chainId).toBe(nft.chainId)
+      expect(calls).toHaveLength(1)
+      expect(calls[0]!.to).toBe(nft.address)
+      expect(calls[0]!.value).toBe(0n)
+      // safeTransferFrom(address,address,uint256)
+      expect(calls[0]!.data.startsWith('0x42842e0e')).toBe(true)
+      expect(calls[0]!.recipientDomain).toBe('recipient.eth')
+
+      request.signAccountOp.destroy()
+    })
+
+    test('refuses to send the NFT to its own collection and tells the user', async () => {
+      const { controller } = await prepareTest()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await controller.build({
+        type: 'nftTransferRequest',
+        params: {
+          nft,
+          recipientAddress: nft.address,
+          recipientDomain: undefined,
+          executionType: 'queue'
+        }
+      })
+
+      expect(controller.userRequests.length).toBe(0)
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          level: 'major',
+          message: "We couldn't prepare the NFT transfer. Please check the recipient and try again."
+        })
+      )
+    })
+  })
+
   test('emits the updated calls when adding another request to a queued batch', async () => {
     const { controller } = await prepareTest()
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
