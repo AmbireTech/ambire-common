@@ -1,10 +1,11 @@
 import { toBeHex, Wallet } from 'ethers'
 
+import { Session } from '@/classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
 import { AccountOnchainState } from '@/interfaces/account'
 import { ErrorRef } from '@/interfaces/eventEmitter'
-import { Message } from '@/interfaces/userRequest'
+import { DappConnectRequest, Message, PlainTextMessageUserRequest } from '@/interfaces/userRequest'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
 import * as magicLinkLib from '@/libs/magicLink/magicLink'
@@ -213,6 +214,27 @@ describe('Main Controller ', () => {
       fetchSafeTxnsSpy.mockRestore()
       updateOtherSafesSpy.mockRestore()
       isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('refreshes the selected account when the mobile app gets focus, but not for a popup', async () => {
+    if (!controller.selectedAccount.account)
+      await controller.selectedAccount.select({ account: controller.accounts.accounts[0]! })
+    jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
+    const updateAccountStateSpy = jest
+      .spyOn(controller.accounts, 'updateAccountState')
+      .mockResolvedValue(undefined)
+
+    try {
+      controller.ui.uiEvent.emit('viewFocus', { id: 'focus-popup', type: 'popup' } as any)
+      await wait(0)
+      expect(updateAccountStateSpy).not.toHaveBeenCalled()
+
+      controller.ui.uiEvent.emit('viewFocus', { id: 'focus-mobile', type: 'mobile' } as any)
+      await wait(0)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(controller.selectedAccount.account!.addr)
+    } finally {
+      jest.restoreAllMocks()
     }
   })
 
@@ -987,6 +1009,107 @@ describe('Main Controller ', () => {
       )
     })
 
+    test('waits for the RPC to reach the confirmed block before the sender and the recipients are refreshed', async () => {
+      const mainCtrl = await setupController()
+
+      const confirmedAccountOp = {
+        id: 'confirmed-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        blockNumber: 123,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: { [recipientAccount]: [1n] },
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [confirmedAccountOp]
+        }
+      })
+      // The RPC is one block behind, then fails once on a node of its load balancer
+      const getBlockNumberSpy = jest
+        .spyOn(mainCtrl.providers.providers['1']!, 'getBlockNumber')
+        .mockResolvedValueOnce(122)
+        .mockRejectedValueOnce(new Error('rpc node down'))
+        .mockResolvedValue(123)
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+      const blockNumberReadsBeforeRefresh: number[] = []
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockImplementation(async () => {
+          blockNumberReadsBeforeRefresh.push(getBlockNumberSpy.mock.calls.length)
+        })
+      jest.spyOn(mainCtrl.portfolio, 'scheduleUpdate').mockImplementation(() => {})
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+      const updateSelectedAccountSpy = jest
+        .spyOn(mainCtrl.portfolio, 'updateSelectedAccount')
+        .mockResolvedValue(undefined)
+
+      try {
+        await mainCtrl.updateAccountsOpsStatuses()
+        // The reads are 250ms and then 500ms apart
+        await wait(1000)
+        await flushAsyncUpdates()
+
+        expect(blockNumberReadsBeforeRefresh).toEqual([3, 3])
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(recipientAccount, 'latest', [1n], true)
+        expect(discardSimulationSpy).toHaveBeenCalledWith([confirmedAccountOp])
+        expect(updateSelectedAccountSpy).toHaveBeenCalledWith(
+          recipientAccount,
+          expect.arrayContaining([expect.objectContaining({ chainId: 1n })])
+        )
+      } finally {
+        consoleErrorSpy.mockRestore()
+      }
+    })
+
+    test('reports a failed refresh instead of leaving an unhandled rejection', async () => {
+      const mainCtrl = await setupController()
+      const confirmedAccountOp = {
+        id: 'confirmed-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        blockNumber: 123,
+        calls: []
+      } as any
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [confirmedAccountOp]
+        }
+      })
+      jest.spyOn(mainCtrl.providers.providers['1']!, 'getBlockNumber').mockResolvedValue(123)
+      jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockRejectedValue(new Error('rpc down'))
+      const errors: string[] = []
+      mainCtrl.onError((error) => errors.push(error.message))
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(
+        errors.some((message) => message.includes('after its transactions were confirmed'))
+      ).toBe(true)
+    })
+
     test('should update account state and discard simulation even when selected account is different', async () => {
       const mainCtrl = await setupController()
 
@@ -1133,6 +1256,101 @@ describe('Main Controller ', () => {
       )
     })
   })
+
+  describe('selectAccount while a request is open', () => {
+    const session = new Session({ tabId: 1, url: 'https://test-dApp.com' })
+    const [fromAccount, toAccount] = accounts
+
+    const prepareSwitchTest = async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set(
+          'accounts',
+          accounts.map((acc) => ({
+            ...acc,
+            initialPrivileges: [],
+            preferences: { label: '', pfp: '' }
+          }))
+        )
+        await storageCtrl.set('selectedAccount', fromAccount!.addr)
+      })
+      return mainCtrl
+    }
+
+    const makeConnectRequest = (reject: (err: any) => void): DappConnectRequest => ({
+      id: 'connect-request',
+      kind: 'dappConnect',
+      meta: {},
+      dappPromises: [{ id: 'connect-request', resolve: () => {}, reject, session, meta: {} }]
+    })
+
+    const makeMessageRequest = (
+      id: string,
+      accountAddr: string,
+      reject: (err: any) => void
+    ): PlainTextMessageUserRequest => ({
+      id,
+      kind: 'message',
+      meta: { params: { message: '0x48656c6c6f' }, accountAddr, chainId: 1n },
+      dappPromises: [{ id, resolve: () => {}, reject, session, meta: {} }]
+    })
+
+    test('keeps the connect request open for the newly selected account', async () => {
+      const mainCtrl = await prepareSwitchTest()
+      const connectReject = jest.fn()
+      await mainCtrl.requests.addUserRequests([makeConnectRequest(connectReject)])
+      const windowId = mainCtrl.requests.requestWindow.windowProps?.id
+      expect(windowId).toBeDefined()
+
+      await mainCtrl.selectAccount(toAccount!.addr)
+
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(toAccount!.addr)
+      expect(connectReject).not.toHaveBeenCalled()
+      expect(mainCtrl.requests.currentUserRequest?.id).toBe('connect-request')
+      expect(mainCtrl.requests.visibleUserRequests.map((r) => r.id)).toEqual(['connect-request'])
+      expect(mainCtrl.requests.requestWindow.windowProps?.id).toBe(windowId)
+    })
+
+    test('still rejects a message request of the previous account', async () => {
+      const mainCtrl = await prepareSwitchTest()
+      const messageReject = jest.fn()
+      await mainCtrl.requests.addUserRequests([
+        makeMessageRequest('message-request', fromAccount!.addr, messageReject)
+      ])
+      expect(mainCtrl.requests.currentUserRequest?.id).toBe('message-request')
+
+      await mainCtrl.selectAccount(toAccount!.addr)
+
+      expect(messageReject).toHaveBeenCalledTimes(1)
+      expect(mainCtrl.requests.userRequests).toHaveLength(0)
+      expect(mainCtrl.requests.requestWindow.windowProps).toBe(null)
+    })
+
+    test('keeps a message of the previous account queued behind the connect request', async () => {
+      const mainCtrl = await prepareSwitchTest()
+      const connectReject = jest.fn()
+      const messageReject = jest.fn()
+      await mainCtrl.requests.addUserRequests([
+        makeConnectRequest(connectReject),
+        makeMessageRequest('message-request', fromAccount!.addr, messageReject)
+      ])
+      expect(mainCtrl.requests.currentUserRequest?.id).toBe('connect-request')
+
+      await mainCtrl.selectAccount(toAccount!.addr)
+
+      expect(connectReject).not.toHaveBeenCalled()
+      expect(messageReject).not.toHaveBeenCalled()
+      // The message belongs to the previous account, so it is hidden until it is selected again
+      expect(mainCtrl.requests.visibleUserRequests.map((r) => r.id)).toEqual(['connect-request'])
+
+      await mainCtrl.selectAccount(fromAccount!.addr)
+
+      expect(mainCtrl.requests.visibleUserRequests.map((r) => r.id)).toEqual([
+        'connect-request',
+        'message-request'
+      ])
+    })
+  })
+
   describe('commonHandlerForBroadcastSuccess for swaps', () => {
     const SIGNED_ROUTE_ID = 'signed-route'
     const TXN_ID = '0x8d94395e374c50feaaf22f940a18b85717609c667e9ff45368c45b3f2ee1b06f'

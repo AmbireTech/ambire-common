@@ -4,6 +4,7 @@ import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
+import { mockBundlerRequests } from '../../../test/mocks/bundler'
 import { SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
@@ -167,13 +168,19 @@ describe('Networks Controller', () => {
 
   test('should work in testnet mode', async () => {
     skipBeforeEach = true
-    const { mainCtrl } = await makeMainController(undefined, {
-      overrides: { featureFlags: { testnetMode: true } }
-    })
+    // Loading the testnets checks whether the bundler supports them, which isn't under test
+    const { restore: restoreBundlerRequests } = mockBundlerRequests()
+    try {
+      const { mainCtrl } = await makeMainController(undefined, {
+        overrides: { featureFlags: { testnetMode: true } }
+      })
 
-    await mainCtrl.networks.initialLoadPromise
-    expect(mainCtrl.networks.networks.find((n) => n.chainId === 1n)).toBe(undefined)
-    expect(mainCtrl.networks.networks.find((n) => n.chainId === 11155111n)).not.toBe(undefined)
+      await mainCtrl.networks.initialLoadPromise
+      expect(mainCtrl.networks.networks.find((n) => n.chainId === 1n)).toBe(undefined)
+      expect(mainCtrl.networks.networks.find((n) => n.chainId === 11155111n)).not.toBe(undefined)
+    } finally {
+      restoreBundlerRequests()
+    }
   })
 
   // TODO: Refactor Fantom test as well

@@ -221,6 +221,18 @@ export function getAccountsForDapp(
   preferences: Dapp['accountPreferences'],
   extensionSelectedAccountAddr: string | undefined
 ): string[] {
+  // An account the user picked for the dapp comes first while the dapp may see it
+  if (
+    preferences?.isSelectedAccountPinned &&
+    isAccountAllowedForDapp(preferences, preferences.selectedAccount)
+  ) {
+    const otherAccounts = preferences.enabled
+      ? preferences.accounts.filter((acc) => acc !== preferences.selectedAccount)
+      : []
+
+    return [preferences.selectedAccount, ...otherAccounts]
+  }
+
   // Always prioritize the extension-selected account if it's in the dapp's allowed accounts, or if no account is currently selected in the dapp
   if (preferences?.enabled) {
     const selectedAccount = preferences.accounts.includes(extensionSelectedAccountAddr || '')
@@ -232,6 +244,18 @@ export function getAccountsForDapp(
   }
 
   return extensionSelectedAccountAddr ? [extensionSelectedAccountAddr] : []
+}
+
+/**
+ * Drops account preferences that neither limit the accounts a dapp may see nor pin one for it,
+ * so the dapp follows the wallet again and also sees the accounts added later.
+ */
+export function withoutUnusedAccountPreferences(
+  preferences: Dapp['accountPreferences']
+): Dapp['accountPreferences'] {
+  if (!preferences || preferences.enabled || preferences.isSelectedAccountPinned) return preferences
+
+  return undefined
 }
 
 /**

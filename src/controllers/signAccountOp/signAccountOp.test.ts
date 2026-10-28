@@ -1,14 +1,15 @@
 /* eslint no-console: "off" */
 
 import {
-  AbiCoder,
   getAddress,
   hexlify,
   Interface,
+  makeError,
   MaxUint256,
   parseEther,
   toBeHex,
-  verifyMessage
+  verifyMessage,
+  Wallet
 } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -32,6 +33,8 @@ import {
   verifiedDapp
 } from '../../../test/helpers/dapps'
 import { mockUiManager } from '../../../test/helpers/ui'
+import { mockBundlerRequestsBeforeEach } from '../../../test/mocks/bundler'
+import { noErc7730DescriptorsRelayer } from '../../../test/mocks/erc7730Relayer'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -375,27 +378,6 @@ const safeAccount: Account = {
   }
 }
 
-const e2esmartAccount: Account = {
-  addr: '0x4C71d299f23eFC660b3295D1f631724693aE22Ac',
-  associatedKeys: ['0xa18fe725A4a0E25A02411Ab28073E4F35D32d8e2'],
-  creation: {
-    factoryAddr: '0x26cE6745A633030A6faC5e64e41D21fb6246dc2d',
-    bytecode:
-      '0x7f00000000000000000000000000000000000000000000000000000000000000027fca32523c64c36083b1291dd9ad1e268d3731e36174438cb702336b275ccb8295553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
-    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
-  },
-  initialPrivileges: [
-    [
-      '0xa18fe725A4a0E25A02411Ab28073E4F35D32d8e2',
-      '0x0000000000000000000000000000000000000000000000000000000000000001'
-    ]
-  ],
-  preferences: {
-    label: DEFAULT_ACCOUNT_LABEL,
-    pfp: '0x4C71d299f23eFC660b3295D1f631724693aE22Ac'
-  }
-}
-
 const nativeFeeToken: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
   symbol: 'ETH',
@@ -468,15 +450,15 @@ const gasTankToken: TokenResult = {
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
 
-/**
- * Every controller built by `init`. A controller left alive keeps its estimate and gas price
- * loops running into the next tests, and a test that switches to fake timers then drives
- * all of them at once, which made the reestimation loop tests time out in CI.
- */
-const initializedControllers: SignAccountOpTesterController[] = []
+// None of the tests here assert on real bundler results
+mockBundlerRequestsBeforeEach()
 
+// Every controller built by init keeps estimating and fetching gas prices on intervals.
+// Left running, they pile up through the file and a test that fast-forwards fake timers
+// runs all of them at once
+const controllersToDestroy: SignAccountOpTesterController[] = []
 afterEach(() => {
-  initializedControllers.splice(0).forEach((controller) => controller.destroy())
+  controllersToDestroy.splice(0).forEach((controller) => controller.destroy())
 })
 
 const init = async (
@@ -791,7 +773,8 @@ const init = async (
   // descriptor caching, which is exactly what this controller owns.
   const erc7730 = new Erc7730Controller({
     storage: storageCtrl,
-    callRelayer,
+    // The default relayer isn't bound, so every descriptor lookup would fail and log an error
+    callRelayer: options?.callRelayer || noErc7730DescriptorsRelayer,
     featureFlags: featureFlagsCtrl,
     ui: ui
   })
@@ -833,7 +816,7 @@ const init = async (
     estimateController: estimationController,
     gasPriceController
   })
-  initializedControllers.push(controller)
+  controllersToDestroy.push(controller)
   controller.update({
     hasNewEstimation: true,
     gasPrices: gasPricesOrMock
@@ -1038,7 +1021,15 @@ describe('SignAccountOp Controller ', () => {
     return { controller, storageCtrl, accountsCtrl, portfolio }
   }
 
-  const initSafeNonce = async (signed: string[] = [], { isSpeedUp = false } = {}) => {
+  const initSafeNonce = async (
+    signed: string[] = [],
+    {
+      isSpeedUp = false,
+      isCancel = false,
+      signature,
+      txnId
+    }: { isSpeedUp?: boolean; isCancel?: boolean; signature?: string; txnId?: string } = {}
+  ) => {
     const feePaymentOptions = getDefaultFeeSelectionOptions().map((option) => ({
       ...option,
       paidBy: safeAccount.addr
@@ -1047,8 +1038,13 @@ describe('SignAccountOp Controller ', () => {
     accountOp.op.nonce = 3n
     accountOp.op.signed = signed
     if (isSpeedUp) {
-      accountOp.op.meta = { ...accountOp.op.meta, speedUp: { enabled: true } }
+      accountOp.op.meta = {
+        ...accountOp.op.meta,
+        speedUp: { enabled: true, ...(isCancel && { isCancel }) }
+      }
     }
+    if (signature) accountOp.op.signature = signature
+    if (txnId) accountOp.op.txnId = txnId
 
     return init(
       safeAccount,
@@ -1216,6 +1212,145 @@ describe('SignAccountOp Controller ', () => {
       })
     )
     restore()
+  })
+
+  describe('Safe cancel signatures from the Safe API', () => {
+    const safeTxnHash = `0x${'5a'.repeat(32)}`
+    const ownerA = new Wallet(`0x${'a1'.repeat(32)}`)
+    const ownerB = new Wallet(`0x${'b2'.repeat(32)}`)
+    const sign = (owner: Wallet) => owner.signingKey.sign(safeTxnHash).serialized
+    const joinSigs = (...sigs: string[]) => `0x${sigs.map((sig) => sig.slice(2)).join('')}`
+    const ownersOf = (controller: SignAccountOpController) =>
+      (controller.accountOp.signed ?? []).map((addr) => addr.toLowerCase()).sort()
+
+    // A new cancel whose Safe transaction hash is known, as after its first signature
+    const initNewSafeCancel = () =>
+      initSafeNonce([], { isSpeedUp: true, isCancel: true, txnId: safeTxnHash })
+
+    test('takes the signature of an owner who has not signed yet', async () => {
+      const { controller } = await initNewSafeCancel()
+
+      controller.update({ accountOpData: { signature: sign(ownerA) } })
+
+      expect(ownersOf(controller)).toEqual([ownerA.address.toLowerCase()])
+    })
+
+    test('adds an owner even when the Safe API returns as many signatures as collected', async () => {
+      const { controller } = await initNewSafeCancel()
+      controller.update({ accountOpData: { signature: sign(ownerA) } })
+
+      // The Safe API never got owner A's signature, only owner B's: same length, other owner
+      controller.update({ accountOpData: { signature: sign(ownerB) } })
+
+      expect(ownersOf(controller)).toEqual(
+        [ownerA.address, ownerB.address].map((addr) => addr.toLowerCase()).sort()
+      )
+      expect(controller.accountOp.signature!.length).toBe(2 + 130 * 2)
+    })
+
+    test('never counts an owner twice', async () => {
+      const { controller } = await initNewSafeCancel()
+      controller.update({ accountOpData: { signature: sign(ownerA) } })
+
+      controller.update({ accountOpData: { signature: joinSigs(sign(ownerA), sign(ownerB)) } })
+      controller.update({ accountOpData: { signature: joinSigs(sign(ownerB), sign(ownerA)) } })
+
+      expect(ownersOf(controller)).toHaveLength(2)
+      expect(controller.accountOp.signature!.length).toBe(2 + 130 * 2)
+    })
+
+    test('keeps the collected signatures when the Safe API has none of them', async () => {
+      const { controller } = await initNewSafeCancel()
+      controller.update({ accountOpData: { signature: joinSigs(sign(ownerA), sign(ownerB)) } })
+      const collectedSignature = controller.accountOp.signature
+
+      controller.update({ accountOpData: { signature: sign(ownerB) } })
+
+      expect(controller.accountOp.signature).toBe(collectedSignature)
+    })
+  })
+
+  describe('Safe speed up', () => {
+    // Two owners' ECDSA signatures, as the executed Safe transaction carried them
+    const ownersSignature = `0x${'11'.repeat(64)}1b${'22'.repeat(64)}1c`
+    // The txnId of an executed transaction is its onchain hash, not the Safe transaction hash
+    const executedTxnHash = `0x${'ab'.repeat(32)}`
+    const setAccountStateNonce = (
+      accountsCtrl: AccountsController,
+      controller: SignAccountOpController,
+      nonce: bigint
+    ) => {
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!.nonce = nonce
+    }
+
+    test('is ready to broadcast with the signatures of the transaction it replaces', async () => {
+      const { controller } = await initSafeNonce([], {
+        isSpeedUp: true,
+        signature: ownersSignature,
+        txnId: executedTxnHash
+      })
+
+      expect(controller.canBroadcast).toBe(true)
+      expect(controller.status?.type).not.toBe(SigningStatus.Queued)
+    })
+
+    test('does not read owners from signatures checked against the onchain hash', async () => {
+      const owners = [eoaSigner.keyPublicAddress]
+      const { controller } = await initSafeNonce(owners, {
+        isSpeedUp: true,
+        signature: ownersSignature,
+        txnId: executedTxnHash
+      })
+
+      expect(controller.accountOp.signed).toEqual(owners)
+    })
+
+    test('can broadcast even when the account state has moved past its nonce', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([], {
+        isSpeedUp: true,
+        signature: ownersSignature,
+        txnId: executedTxnHash
+      })
+
+      setAccountStateNonce(accountsCtrl, controller, 4n)
+
+      expect(controller.canBroadcast).toBe(true)
+    })
+
+    test('a signed Safe transaction that is not a speed up still waits for its nonce', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+
+      setAccountStateNonce(accountsCtrl, controller, 4n)
+
+      expect(controller.canBroadcast).toBe(false)
+    })
+
+    test('speeding up a pending Safe cancel reuses its signatures, ready to broadcast', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([], {
+        isSpeedUp: true,
+        isCancel: true,
+        signature: ownersSignature,
+        txnId: executedTxnHash
+      })
+
+      setAccountStateNonce(accountsCtrl, controller, 4n)
+
+      expect(controller.canBroadcast).toBe(true)
+      expect(controller.status?.type).not.toBe(SigningStatus.Queued)
+    })
+
+    test('a Safe cancel is a new Safe transaction, so it is not ready without signatures', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([], {
+        isSpeedUp: true,
+        isCancel: true
+      })
+
+      setAccountStateNonce(accountsCtrl, controller, 4n)
+
+      expect(controller.canBroadcast).toBe(false)
+    })
   })
 
   test('does not change the nonce of a non-Safe or already-signed transaction', async () => {
@@ -1829,444 +1964,11 @@ describe('SignAccountOp Controller ', () => {
 
     expect(errorCount).toBe(1)
   })
-
-  test('Signing [Relayer]: Smart account paying with ERC-20 token.', async () => {
-    const chainId = 137n
-    const feePaymentOptions = [
-      {
-        paidBy: smartAccount.addr,
-        availableAmount: 500000000n,
-        gasUsed: 25000n,
-        addedNative: 0n,
-        token: {
-          address: '0x0000000000000000000000000000000000000000',
-          amount: 1n,
-          symbol: 'POL',
-          name: 'Polygon Ecosystem Token',
-          chainId: 137n,
-          decimals: 18,
-          priceIn: [],
-          marketDataIn: [],
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            canTopUpGasTank: true,
-            isFeeToken: true
-          }
-        }
-      },
-      {
-        paidBy: smartAccount.addr,
-        availableAmount: 500000000n,
-        gasUsed: 50000n,
-        addedNative: 0n,
-        token: {
-          address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-          amount: 1n,
-          symbol: 'usdt',
-          name: 'USD Token',
-          chainId: 137n,
-          decimals: 6,
-          priceIn: [
-            {
-              baseCurrency: 'usd',
-              price: 1
-            }
-          ],
-          marketDataIn: [],
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            canTopUpGasTank: true,
-            isFeeToken: true
-          }
-        }
-      },
-      {
-        paidBy: smartAccount.addr,
-        availableAmount: 500000000n,
-        gasUsed: 25000n,
-        addedNative: 0n,
-        token: {
-          address: usdcFeeToken.address,
-          amount: 1n,
-          symbol: 'usdc',
-          name: 'USD Coin',
-          chainId: 137n,
-          decimals: 6,
-          priceIn: [
-            {
-              baseCurrency: 'usd',
-              price: 1
-            }
-          ],
-          marketDataIn: [],
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            canTopUpGasTank: true,
-            isFeeToken: true
-          }
-        }
-      }
-    ]
-    const network = networks.find((n) => n.chainId === chainId)!
-    const { controller } = await init(
-      smartAccount,
-      createAccountOp(smartAccount, network.chainId),
-      eoaSigner,
-      {
-        providerEstimation: {
-          gasUsed: 50000n,
-          feePaymentOptions
-        },
-        ambireEstimation: {
-          deploymentGas: 0n,
-          gasUsed: 50000n,
-          feePaymentOptions,
-          ambireAccountNonce: 0,
-          flags: {}
-        },
-        flags: {},
-        updatedAt: Date.now()
-      },
-      {
-        slow: {
-          maxFeePerGas: toBeHex(2000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(1000000000n) as Hex
-        },
-        medium: {
-          maxFeePerGas: toBeHex(10000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
-        },
-        fast: {
-          maxFeePerGas: toBeHex(10000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
-        },
-        ape: {
-          maxFeePerGas: toBeHex(14000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(7000000000n) as Hex
-        }
-      }
-    )
-
-    controller.update({
-      feeToken: usdcFeeToken,
-      paidBy: smartAccount.addr,
-      signingKeyAddr: eoaSigner.keyPublicAddress,
-      signingKeyType: 'internal',
-      // the $1 USDC fee expected below is calculated with the medium gas price
-      speed: FeeSpeed.Fast,
-      hasNewEstimation: true
-    })
-
-    expect(controller.estimation.availableFeeOptions.length).toBe(3)
-    controller.estimation.availableFeeOptions.forEach((option) => {
-      const identifier = getFeeSpeedIdentifier(option, smartAccount.addr)
-      expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
-      expect(controller.feeSpeeds[identifier]!.length).not.toBe(0)
-    })
-
-    await controller.sign()
-
-    if (!controller.accountOp?.signature) {
-      console.log('Signing errors:', controller.errors)
-      throw new Error('Signing failed!')
-    }
-
-    expect(controller.accountOp!.gasFeePayment?.paidBy).toBe(smartAccount.addr)
-
-    const typedData = getTypedData(
-      network.chainId,
-      controller.accountOp.accountAddr,
-      hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
-    )
-    const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = getAddress(
-      recoverTypedSignature({
-        data: adaptTypedMessageForMetaMaskSigUtil(typedData),
-        signature: unwrappedSig,
-        version: SignTypedDataVersion.V4
-      })
-    )
-
-    // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
-    expect(eoaAccount.addr).toEqual(signerAddr)
-    // If signing is successful, we expect controller's status to be done
-    expect(controller.status).toEqual({ type: 'done' })
-    // The relayer broadcasts without a key, so no device prompt should stay open
-    expect(controller.activeSigningKeyType).toBeNull()
-
-    // USDC decimals 6, that's why we divide by 1e6
-    const fee = controller.accountOp!.gasFeePayment!.amount / BigInt(1e6)
-
-    // We expect fee of $1 USDC
-    expect(fee.toString()).toEqual('1')
-
-    // We expect the fee payment call to be added.
-    // TODO: here we can extend the validation a bit.
-    expect(controller.accountOp.feeCall!.to).toEqual(controller.accountOp.gasFeePayment!.inToken)
-
-    // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
-    expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
-  })
 })
 
 describe('Negative cases', () => {
   suppressConsoleBeforeEach()
 
-  test('Signing [Relayer]: should return an error if paying with ERC-20 token but no priceIn | nativeRatio available.', async () => {
-    const chainId = 137n
-    const network = networks.find((n) => n.chainId === chainId)!
-    const feeTokenResult = {
-      address: usdcFeeToken.address,
-      amount: 1n,
-      symbol: 'usdc',
-      name: 'USD Coin',
-      chainId: 137n,
-      decimals: 6,
-      marketDataIn: [],
-      // we make the priceIn empty for this test
-      priceIn: [],
-      flags: {
-        onGasTank: false,
-        rewardsType: null,
-        canTopUpGasTank: true,
-        isFeeToken: true
-      }
-    }
-    const feePaymentOptions = [
-      {
-        paidBy: smartAccount.addr,
-        availableAmount: 500000000n,
-        gasUsed: 50000n,
-        addedNative: 0n,
-        token: feeTokenResult
-      }
-    ]
-    const { controller } = await init(
-      smartAccount,
-      createAccountOp(smartAccount, network.chainId),
-      eoaSigner,
-      {
-        providerEstimation: {
-          gasUsed: 50000n,
-          feePaymentOptions
-        },
-        ambireEstimation: {
-          deploymentGas: 0n,
-          gasUsed: 50000n,
-          feePaymentOptions,
-          ambireAccountNonce: 0,
-          flags: {}
-        },
-        flags: {},
-        updatedAt: Date.now()
-      },
-      {
-        slow: {
-          maxFeePerGas: toBeHex(2000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(1000000000n) as Hex
-        },
-        medium: {
-          maxFeePerGas: toBeHex(4000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(2000000000n) as Hex
-        },
-        fast: {
-          maxFeePerGas: toBeHex(10000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
-        },
-        ape: {
-          maxFeePerGas: toBeHex(14000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(7000000000n) as Hex
-        }
-      }
-    )
-
-    controller.update({
-      hasNewEstimation: true,
-      feeToken: feeTokenResult,
-      paidBy: smartAccount.addr,
-      signingKeyAddr: eoaSigner.keyPublicAddress,
-      signingKeyType: 'internal'
-    })
-
-    expect(controller.estimation.availableFeeOptions.length).toBe(1)
-    const identifier = getFeeSpeedIdentifier(
-      controller.estimation.availableFeeOptions[0]!,
-      smartAccount.addr
-    )
-    expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
-    expect(controller.feeSpeeds[identifier]!.length).toBe(0)
-
-    const errors = controller.errors
-    expect(errors.length).toBe(1)
-    expect(errors[0]!.title).toBe(
-      `Currently, ${
-        controller.estimation.availableFeeOptions[0]!.token.symbol
-      } is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
-    )
-    expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
-    await controller.sign()
-
-    expect(controller.accountOp?.signature).toBe(null)
-  })
-  test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
-    const chainId = 1n
-    const network = networks.find((n) => n.chainId === chainId)!
-    const feePaymentOptions = [
-      {
-        paidBy: e2esmartAccount.addr,
-        availableAmount: 500000000000000000000n,
-        gasUsed: 25000n,
-        addedNative: 0n,
-        token: {
-          address: '0x0000000000000000000000000000000000000000',
-          amount: 1n,
-          symbol: 'ETH',
-          name: 'ETH',
-          chainId: 1n,
-          decimals: 18,
-          priceIn: [],
-          marketDataIn: [],
-          flags: {
-            onGasTank: true,
-            rewardsType: null,
-            canTopUpGasTank: true,
-            isFeeToken: true
-          }
-        }
-      },
-      {
-        paidBy: e2esmartAccount.addr,
-        availableAmount: 500000000n,
-        gasUsed: 50000n,
-        addedNative: 0n,
-        token: {
-          address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-          amount: 1n,
-          symbol: 'usdt',
-          name: 'USD Token',
-          chainId: 1n,
-          decimals: 6,
-          priceIn: [],
-          marketDataIn: [],
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            canTopUpGasTank: true,
-            isFeeToken: true
-          }
-        }
-      },
-      {
-        paidBy: e2esmartAccount.addr,
-        availableAmount: 500000000n,
-        gasUsed: 25000n,
-        addedNative: 0n,
-        token: {
-          address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-          amount: 1n,
-          symbol: 'usdc',
-          name: 'USD Coin',
-          chainId: 137n,
-          decimals: 6,
-          priceIn: [],
-          marketDataIn: [],
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            canTopUpGasTank: true,
-            isFeeToken: true
-          }
-        }
-      }
-    ]
-    const { controller } = await init(
-      e2esmartAccount,
-      createAccountOp(e2esmartAccount, network.chainId),
-      eoaSigner,
-      {
-        providerEstimation: {
-          gasUsed: 50000n,
-          feePaymentOptions
-        },
-        ambireEstimation: {
-          deploymentGas: 0n,
-          gasUsed: 50000n,
-          feePaymentOptions,
-          ambireAccountNonce: 0,
-          flags: {}
-        },
-        flags: {},
-        updatedAt: Date.now()
-      },
-      {
-        slow: {
-          maxFeePerGas: toBeHex(2000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(1000000000n) as Hex
-        },
-        medium: {
-          maxFeePerGas: toBeHex(4000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(2000000000n) as Hex
-        },
-        fast: {
-          maxFeePerGas: toBeHex(10000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
-        },
-        ape: {
-          maxFeePerGas: toBeHex(14000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(7000000000n) as Hex
-        }
-      },
-      true
-    )
-    controller.update({
-      hasNewEstimation: true,
-      feeToken: gasTankToken,
-      paidBy: e2esmartAccount.addr,
-      signingKeyAddr: eoaSigner.keyPublicAddress,
-      signingKeyType: 'internal'
-    })
-    await controller.sign()
-
-    if (!controller.accountOp?.signature) {
-      console.log('Signing errors:', controller.errors)
-      throw new Error('Signing failed!')
-    }
-    const typedData = getTypedData(
-      network.chainId,
-      controller.accountOp.accountAddr,
-      hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
-    )
-    const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = getAddress(
-      recoverTypedSignature({
-        data: adaptTypedMessageForMetaMaskSigUtil(typedData),
-        signature: unwrappedSig,
-        version: SignTypedDataVersion.V4
-      })
-    )
-
-    // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
-    expect(eoaAccount.addr).toEqual(signerAddr)
-    // If signing is successful, we expect controller's status to be done
-    expect(controller.status).toEqual({ type: 'done' })
-
-    // We expect the fee payment call to be added.
-    const abiCoder = new AbiCoder()
-    expect(controller.accountOp.feeCall!.to).toEqual(FEE_COLLECTOR)
-    expect(controller.accountOp.feeCall!.value).toEqual(0n)
-    expect(controller.accountOp.feeCall!.data).toEqual(
-      abiCoder.encode(
-        ['string', 'uint256', 'string'],
-        ['gasTank', controller.accountOp!.gasFeePayment!.amount, 'ETH']
-      )
-    )
-
-    // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
-    expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
-  })
   test('Signing [SA with EOA payment]: working case + 2 feePaymentOptions and 2 feeSpeeds', async () => {
     const network = networks.find((n) => n.chainId === 137n)!
     const feePaymentOptions = [
@@ -2535,6 +2237,8 @@ describe('Negative cases', () => {
   })
 
   test('Signing [one-click transfer]: transferred token cannot reserve the fee', async () => {
+    // An EOA, as a smart account that isn't switched over to ERC-4337 yet can no longer pay
+    // the fee by itself, and one that is would need a bundler estimation
     const network = networks.find((n) => n.chainId === 137n)!
     const token = {
       ...nativeFeeTokenPolygon,
@@ -2542,14 +2246,14 @@ describe('Negative cases', () => {
     }
     const feePaymentOptions = [
       {
-        paidBy: smartAccount.addr,
+        paidBy: eoaAccount.addr,
         availableAmount: 0n,
         gasUsed: 0n,
         addedNative: 5000n,
         token
       }
     ]
-    const accountOp = createAccountOp(smartAccount, network.chainId)
+    const accountOp = createAccountOp(eoaAccount, network.chainId)
     accountOp.op.calls = [
       {
         to: FEE_COLLECTOR,
@@ -2563,20 +2267,13 @@ describe('Negative cases', () => {
     accountOp.feeTokens = [token]
 
     const { controller } = await init(
-      smartAccount,
+      eoaAccount,
       accountOp,
       eoaSigner,
       {
         providerEstimation: {
           gasUsed: 10000n,
           feePaymentOptions
-        },
-        ambireEstimation: {
-          deploymentGas: 0n,
-          gasUsed: 10000n,
-          feePaymentOptions,
-          ambireAccountNonce: 0,
-          flags: {}
         },
         flags: {},
         updatedAt: Date.now()
@@ -2608,7 +2305,7 @@ describe('Negative cases', () => {
     controller.update({
       hasNewEstimation: true,
       feeToken: token,
-      paidBy: smartAccount.addr,
+      paidBy: eoaAccount.addr,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal'
     })
@@ -3043,6 +2740,107 @@ describe('throwBroadcastAccountOp', () => {
 
     const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
     expect(lastError?.level).toBe('major')
+  })
+  it('a bundler error that is not about the fee shows an error toast instead of the gas fee updated confirmation', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      }
+    )
+
+    // ethers puts the request payload in the message, so it always contains the
+    // user operation's maxFeePerGas and maxPriorityFeePerGas
+    const userOpPayload = {
+      method: 'eth_sendUserOperation',
+      params: [{ sender: eoaAccount.addr, maxFeePerGas: '0x258', maxPriorityFeePerGas: '0x12c' }]
+    }
+    const error = makeError('could not coalesce error', 'UNKNOWN_ERROR', {
+      error: { code: -32500, message: "AA21 didn't pay prefund" },
+      payload: userOpPayload
+    })
+
+    expect(() => controller.throwBroadcastAccountOp({ error })).toThrow("AA21 didn't pay prefund")
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+    expect(controller.previousFee).toBe(null)
+    // The user is brought back to the initial signing step
+    expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
+
+    const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
+    expect(lastError?.level).toBe('major')
+  })
+  it('a bundler error about the fee shows the gas fee updated confirmation', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      }
+    )
+
+    // ethers puts the request payload in the message, so it always contains the
+    // user operation's maxFeePerGas and maxPriorityFeePerGas
+    const userOpPayload = {
+      method: 'eth_sendUserOperation',
+      params: [{ sender: eoaAccount.addr, maxFeePerGas: '0x258', maxPriorityFeePerGas: '0x12c' }]
+    }
+    const error = makeError('could not coalesce error', 'UNKNOWN_ERROR', {
+      error: {
+        code: -32602,
+        message:
+          'maxFeePerGas must be at least 1200 (current maxFeePerGas: 600) - use pimlico_getUserOperationGasPrice to get the current gas price'
+      },
+      payload: userOpPayload
+    })
+
+    expect(() => controller.throwBroadcastAccountOp({ error })).toThrow(
+      'Transaction fees changed. Please try again'
+    )
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(true)
+
+    const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
+    expect(lastError?.level).toBe('silent')
   })
 })
 
@@ -3948,8 +3746,6 @@ describe('unlimited approval warnings', () => {
   const spender = '0x46705dfff24256421a05d056c29e81bdc09723b8'
   const approveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
 
-  // the ERC-7730 registry of `init` is empty, so every approval falls back to the built-in
-  // descriptor - the path a real approval takes as well
   const approveCall = (amount: bigint, dapp?: Dapp) => ({
     to: usdt,
     value: 0n,
@@ -3959,7 +3755,10 @@ describe('unlimited approval warnings', () => {
 
   const humanizeApproval = async (amount: bigint, dapp: Dapp, includeDappOnCall = true) => {
     const { controller } = await initDappVerificationBannerTest(dapp, {
-      calls: [approveCall(amount, includeDappOnCall ? dapp : undefined)] as AccountOp['calls']
+      calls: [approveCall(amount, includeDappOnCall ? dapp : undefined)] as AccountOp['calls'],
+      // the ERC-7730 registry has no descriptor here, so every approval falls back to the
+      // built-in descriptor - the path a real approval takes as well
+      callRelayer: noErc7730DescriptorsRelayer
     })
     await wait(0)
 
@@ -5508,9 +5307,12 @@ describe('speed up of a pending transaction', () => {
 
   const initSpeedUp = async ({
     isSpeedUp = true,
+    isCancel = false,
     replacedPaidBy
   }: {
     isSpeedUp?: boolean
+    // Cancels the pending transaction instead of speeding it up
+    isCancel?: boolean
     // Who paid for the pending transaction; unknown when not set
     replacedPaidBy?: string
   } = {}) => {
@@ -5535,7 +5337,7 @@ describe('speed up of a pending transaction', () => {
     if (isSpeedUp) {
       accountOp.op.meta = {
         ...accountOp.op.meta,
-        speedUp: { enabled: true, replacedIdentifiedBy }
+        speedUp: { enabled: true, replacedIdentifiedBy, ...(isCancel && { isCancel }) }
       }
     }
     const feePaymentOptions = [
@@ -5592,6 +5394,33 @@ describe('speed up of a pending transaction', () => {
 
   afterEach(() => {
     jest.restoreAllMocks()
+  })
+
+  describe('signing key', () => {
+    const otherKeyAddr = '0x714fD3Db837e72bD49B8edA02B8f4D53DfdDe5ce'
+
+    test('a speed up keeps the signer of the pending transaction it reuses the signature of', async () => {
+      jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+      const { controller } = await initSpeedUp()
+      const originalSigner = controller.accountOp.signingKeyAddr
+      expect(controller.canChangeSigningKey).toBe(false)
+
+      controller.update({ signingKeyAddr: otherKeyAddr, signingKeyType: 'internal' })
+
+      expect(controller.accountOp.signingKeyAddr).toBe(originalSigner)
+      expect(controller.accountOp.signingKeyAddr).not.toBe(otherKeyAddr)
+    })
+
+    test('a cancel is signed again, so another key (e.g. another Safe owner) can sign it', async () => {
+      jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+      const { controller } = await initSpeedUp({ isCancel: true })
+      expect(controller.canChangeSigningKey).toBe(true)
+
+      controller.update({ signingKeyAddr: otherKeyAddr, signingKeyType: 'internal' })
+
+      expect(controller.accountOp.signingKeyAddr).toBe(otherKeyAddr)
+      expect(controller.accountOp.signingKeyType).toBe('internal')
+    })
   })
 
   test.each([
@@ -5872,5 +5701,82 @@ describe('gas price refresh failures', () => {
     const levels = await getRefreshErrorLevels('default')
 
     expect(levels).toContain('major')
+  })
+})
+
+describe('speed up of a smart account transaction sent by another account', () => {
+  // An Ambire signature: 65 bytes followed by the 1-byte signature type, so it can't be split
+  // into 65-byte owner signatures like a Safe's
+  const ambireSignature = `0x${'11'.repeat(32)}${'22'.repeat(32)}1b01`
+  const pendingTxnHash = `0x${'cd'.repeat(32)}`
+  const gasPrices: GasSpeeds = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+  const feePaymentOptions = [
+    {
+      paidBy: eoaSigner.keyPublicAddress,
+      availableAmount: 1000000000000000000n,
+      gasUsed: 0n,
+      addedNative: 5000n,
+      token: {
+        address: '0x0000000000000000000000000000000000000000',
+        amount: parseEther('1'),
+        symbol: 'ETH',
+        name: 'Ether',
+        chainId: 1n,
+        decimals: 18,
+        priceIn: [],
+        marketDataIn: [],
+        flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: true, isFeeToken: true }
+      }
+    }
+  ]
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  test('opens with the signature of the pending transaction, which is not read as Safe owners', async () => {
+    jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+    const accountOp = createAccountOp(smartAccount)
+    accountOp.op.signature = ambireSignature
+    accountOp.op.txnId = pendingTxnHash
+    accountOp.op.signingKeyAddr = eoaSigner.keyPublicAddress
+    accountOp.op.signingKeyType = 'internal'
+    accountOp.op.meta = {
+      speedUp: {
+        enabled: true,
+        replacedIdentifiedBy: { type: 'Transaction', identifier: pendingTxnHash }
+      }
+    }
+
+    const { controller } = await init(
+      smartAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      gasPrices,
+      false,
+      { createSpeedUp: (activity) => new SpeedUp({ accountOp: accountOp.op, activity }) }
+    )
+
+    expect(controller.isSpeedUpTransaction).toBe(true)
+    expect(controller.accountOp.signature).toBe(ambireSignature)
+    expect(controller.accountOp.signed).toBeUndefined()
+    expect(controller.status?.type).not.toBe(SigningStatus.Queued)
   })
 })

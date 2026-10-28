@@ -112,7 +112,6 @@ describe('BaseAccount.shouldUseRpcGasPrices', () => {
     BROADCAST_OPTIONS.bySelf,
     BROADCAST_OPTIONS.bySelf7702,
     BROADCAST_OPTIONS.byOtherEOA,
-    BROADCAST_OPTIONS.byRelayer,
     BROADCAST_OPTIONS.delegation
   ])('uses the RPC gas prices for a "%s" broadcast', (broadcastOption) => {
     expect(safe.shouldUseRpcGasPrices(broadcastOption)).toBe(true)

@@ -395,3 +395,80 @@ describe('SpeedUp', () => {
     })
   })
 })
+
+describe('SpeedUp of a cancel', () => {
+  test('is a cancel only when the speed up is marked as one', () => {
+    const cancel = createAccountOp({
+      meta: { speedUp: { enabled: true, isCancel: true, replacedIdentifiedBy } }
+    })
+
+    expect(SpeedUp.isCancel(cancel)).toBe(true)
+    expect(SpeedUp.isCancel(createAccountOp())).toBe(false)
+    expect(new SpeedUp({ accountOp: cancel, activity: createActivity().activity }).isCancel).toBe(
+      true
+    )
+  })
+
+  test('takes the nonce of the pending transaction from what the cancel recorded', () => {
+    const cancel = createAccountOp({
+      nonce: 8n,
+      meta: { speedUp: { enabled: true, isCancel: true, replacedNonce: 7n, replacedIdentifiedBy } }
+    })
+
+    const speedUp = new SpeedUp({ accountOp: cancel, activity: createActivity().activity })
+
+    expect(speedUp.replacedNonce).toBe(7n)
+  })
+
+  test('falls back to the account op nonce when nothing was recorded', () => {
+    const speedUp = new SpeedUp({
+      accountOp: createAccountOp({ nonce: 8n }),
+      activity: createActivity().activity
+    })
+
+    expect(speedUp.replacedNonce).toBe(8n)
+  })
+
+  test('keeps a recorded nonce of 0', () => {
+    const cancel = createAccountOp({
+      nonce: 1n,
+      meta: { speedUp: { enabled: true, isCancel: true, replacedNonce: 0n, replacedIdentifiedBy } }
+    })
+
+    const speedUp = new SpeedUp({ accountOp: cancel, activity: createActivity().activity })
+
+    expect(speedUp.replacedNonce).toBe(0n)
+  })
+})
+
+describe('SpeedUp of a new cancel', () => {
+  const cancelMeta = { speedUp: { enabled: true, isCancel: true, replacedIdentifiedBy } }
+
+  test('a cancel without signatures is signed anew', () => {
+    const speedUp = new SpeedUp({
+      accountOp: createAccountOp({ signature: null, meta: cancelMeta }),
+      activity: createActivity().activity
+    })
+
+    expect(speedUp.isNewCancel).toBe(true)
+  })
+
+  test('a pending cancel being sped up keeps its signatures', () => {
+    const speedUp = new SpeedUp({
+      accountOp: createAccountOp({ signature: '0xcancelsignature', meta: cancelMeta }),
+      activity: createActivity().activity
+    })
+
+    expect(speedUp.isCancel).toBe(true)
+    expect(speedUp.isNewCancel).toBe(false)
+  })
+
+  test('a speed up that is not a cancel is not a new cancel', () => {
+    const speedUp = new SpeedUp({
+      accountOp: createAccountOp({ signature: null }),
+      activity: createActivity().activity
+    })
+
+    expect(speedUp.isNewCancel).toBe(false)
+  })
+})

@@ -1,4 +1,4 @@
-import { formatUnits, getAddress, ZeroAddress } from 'ethers'
+import { formatUnits, getAddress, Interface, ZeroAddress } from 'ethers'
 
 import { expect, jest } from '@jest/globals'
 
@@ -7,7 +7,7 @@ import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
-import { TokenResult } from '../../libs/portfolio'
+import { CollectionResult, TokenResult } from '../../libs/portfolio'
 import * as ensDomainsModule from '../../services/ensDomains/ensDomains'
 import {
   safeTokenAmountAndNumberMultiplication,
@@ -1139,6 +1139,337 @@ describe('Transfer Controller defaults logic', () => {
 
     expect(transferController.selectedToken).toBeNull()
     expect(transferController.areDefaultsSet).toBe(true)
+  })
+})
+
+describe('Transfer Controller NFT mode', () => {
+  const NFT_ADDRESS = '0x59468516a8259058baD1cA5F8f4BFF190d30E066'
+  const NFT_TOKEN_ID = 42n
+  const nftSearchParams = { address: NFT_ADDRESS, chainId: '1', tokenId: String(NFT_TOKEN_ID) }
+  const erc721Interface = new Interface([
+    'function safeTransferFrom(address from, address to, uint256 tokenId)'
+  ])
+
+  const getCollection = (overrides: Partial<CollectionResult> = {}): CollectionResult => ({
+    address: NFT_ADDRESS,
+    chainId: 1n,
+    name: 'Test Collection',
+    symbol: 'TEST',
+    decimals: 1,
+    amount: 1n,
+    collectibles: [NFT_TOKEN_ID],
+    flags: { isHidden: false },
+    priceIn: [],
+    marketDataIn: [],
+    ...overrides
+  })
+
+  const recipientState = (fieldValue: string) => ({
+    fieldValue,
+    resolvedAddress: '',
+    resolvedAddressType: null,
+    isDomainResolving: false
+  })
+
+  // Lets the updates triggered by the controller's listeners finish
+  const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  const enterTransfer = async (
+    searchParams: Record<string, string> = nftSearchParams,
+    portfolioOverrides: Record<string, unknown> = {},
+    route = 'transfer'
+  ) => {
+    const ctx = await prepareTest()
+    // The real portfolio updates in the background and would replace the one set below
+    jest
+      .spyOn(ctx.selectedAccountCtrl, 'updateSelectedAccountPortfolio')
+      .mockImplementation(() => {})
+    ctx.selectedAccountCtrl.portfolio = {
+      ...ctx.selectedAccountCtrl.portfolio,
+      tokens: getTokens(),
+      collections: [getCollection()],
+      isReadyToVisualize: true,
+      isAllReady: true,
+      ...portfolioOverrides
+    }
+    ctx.uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    ctx.uiCtrl.updateView('popup', { currentRoute: route, isReady: true, searchParams })
+    await flushPromises()
+
+    return ctx
+  }
+
+  test('should enter NFT mode from the route search params', async () => {
+    const { transferController } = await enterTransfer()
+
+    expect(transferController.selectedNft).toEqual({
+      address: NFT_ADDRESS,
+      chainId: 1n,
+      tokenId: NFT_TOKEN_ID,
+      collectionName: 'Test Collection'
+    })
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.selectedChainId).toBe(1n)
+    expect(transferController.areDefaultsSet).toBe(true)
+    expect(transferController.validationFormMsgs.amount.severity).toBe('success')
+  })
+
+  test.each([
+    ['a non-numeric token id', { ...nftSearchParams, tokenId: 'abc' }],
+    ['a negative token id', { ...nftSearchParams, tokenId: '-1' }],
+    ['an empty token id', { ...nftSearchParams, tokenId: '' }],
+    ['an invalid collection address', { ...nftSearchParams, address: '0x123' }],
+    ['an invalid chain id', { ...nftSearchParams, chainId: 'mainnet' }]
+  ])('should stay in token mode for %s', async (_, searchParams) => {
+    const { transferController } = await enterTransfer(searchParams)
+
+    expect(transferController.selectedNft).toBeNull()
+    expect(transferController.selectedToken).not.toBeNull()
+  })
+
+  test('should ignore the NFT params on the top up route', async () => {
+    const { transferController } = await enterTransfer(nftSearchParams, {}, 'top-up-gas-tank')
+
+    expect(transferController.isTopUp).toBe(true)
+    expect(transferController.selectedNft).toBeNull()
+  })
+
+  test('should fill in the collection name once the portfolio loads', async () => {
+    const { transferController, selectedAccountCtrl } = await enterTransfer(nftSearchParams, {
+      collections: [],
+      isAllReady: false
+    })
+
+    expect(transferController.selectedNft?.collectionName).toBe('')
+    // still loading - no error message yet, but the form can't be submitted
+    expect(transferController.validationFormMsgs.amount).toEqual({ severity: 'error', message: '' })
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      collections: [getCollection()],
+      isAllReady: true
+    }
+    await selectedAccountCtrl.forceEmitUpdate()
+    await flushPromises()
+
+    expect(transferController.selectedNft?.collectionName).toBe('Test Collection')
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.validationFormMsgs.amount.severity).toBe('success')
+  })
+
+  test('should not allow sending an NFT that is already being sent in a pending transaction', async () => {
+    const { transferController } = await enterTransfer(nftSearchParams, {
+      collections: [getCollection({ postSimulation: { sending: [NFT_TOKEN_ID] } })]
+    })
+
+    expect(transferController.validationFormMsgs.amount).toEqual({
+      severity: 'error',
+      message: 'This NFT is already being sent in a pending transaction.'
+    })
+    expect(transferController.isFormValid).toBe(false)
+  })
+
+  test.each([
+    ['is not in the account', { collections: [getCollection({ collectibles: [1n] })] }],
+    ['is on another chain', { collections: [getCollection({ chainId: 137n })] }]
+  ])('should not allow sending an NFT that %s', async (_, portfolioOverrides) => {
+    const { transferController } = await enterTransfer(nftSearchParams, portfolioOverrides)
+
+    expect(transferController.validationFormMsgs.amount).toEqual({
+      severity: 'error',
+      message: "This NFT is no longer in your account, so it can't be sent."
+    })
+    expect(transferController.isFormValid).toBe(false)
+  })
+
+  test('should explain in NFT terms why a known app contract is not a valid recipient', async () => {
+    const { transferController } = await enterTransfer()
+
+    await transferController.update({ addressState: recipientState(XWALLET_ADDRESS) })
+
+    expect(transferController.validationFormMsgs.recipientAddress).toEqual({
+      severity: 'error',
+      message:
+        'This address belongs to an app, not a wallet. An NFT sent to it would likely be lost.'
+    })
+  })
+
+  test('should start a new transaction setup when the route switches to a token on another chain', async () => {
+    const { transferController, uiCtrl } = await enterTransfer()
+    const destroy = jest.fn()
+    ;(transferController as any).signAccountOpController = { destroy }
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: { address: ZeroAddress, chainId: '137' }
+    })
+
+    expect(transferController.selectedNft).toBeNull()
+    expect(transferController.selectedChainId).toBe(137n)
+    expect(destroy).toHaveBeenCalled()
+    expect(transferController.signAccountOpController).toBeNull()
+  })
+
+  test('should start a new transaction setup when the route switches to another NFT on the same chain', async () => {
+    const otherTokenId = NFT_TOKEN_ID + 1n
+    const { transferController, uiCtrl } = await enterTransfer(nftSearchParams, {
+      collections: [getCollection({ collectibles: [NFT_TOKEN_ID, otherTokenId] })]
+    })
+    const destroy = jest.fn()
+    ;(transferController as any).signAccountOpController = { destroy }
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: { ...nftSearchParams, tokenId: String(otherTokenId) }
+    })
+
+    expect(transferController.selectedNft?.tokenId).toBe(otherTokenId)
+    // Otherwise the calls of the previous NFT could be signed while the form shows this one
+    expect(destroy).toHaveBeenCalled()
+    expect(transferController.signAccountOpController).toBeNull()
+  })
+
+  test('should start a new transaction setup when the route switches from an NFT to a token on the same chain', async () => {
+    const { transferController, uiCtrl } = await enterTransfer()
+    const destroy = jest.fn()
+    ;(transferController as any).signAccountOpController = { destroy }
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: { address: ZeroAddress, chainId: '1' }
+    })
+
+    expect(transferController.selectedNft).toBeNull()
+    expect(destroy).toHaveBeenCalled()
+  })
+
+  test('should keep the transaction setup when the route switches to another token on the same chain', async () => {
+    const { transferController, uiCtrl } = await enterTransfer({
+      address: ZeroAddress,
+      chainId: '1'
+    })
+    const destroy = jest.fn()
+    const signAccountOpController = { destroy }
+    ;(transferController as any).signAccountOpController = signAccountOpController
+
+    uiCtrl.updateView('popup', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: { address: STK_WALLET_ADDRESS, chainId: '1' }
+    })
+
+    expect(transferController.selectedToken?.address).toBe(STK_WALLET_ADDRESS)
+    // The token calls are replaced on the next sync, so there is nothing stale to rebuild
+    expect(destroy).not.toHaveBeenCalled()
+    expect(transferController.signAccountOpController).toBe(signAccountOpController)
+  })
+
+  test('should not allow sending an NFT to a Privacy Pools account', async () => {
+    const { transferController } = await enterTransfer()
+
+    await transferController.update({ privacyPoolsRecipient: 'privacy-pools-seed' })
+
+    expect(transferController.selectedNft).not.toBeNull()
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.validationFormMsgs.recipientAddress).toEqual({
+      severity: 'error',
+      message: "NFTs can't be sent to a Privacy Pools account. Choose a different recipient."
+    })
+    expect(transferController.isFormValid).toBe(false)
+  })
+
+  test('should block sending the NFT to its own collection contract', async () => {
+    const { transferController } = await enterTransfer()
+    const signAccountOpUpdate = jest.fn()
+    ;(transferController as any).signAccountOpController = { update: signAccountOpUpdate }
+
+    await transferController.update({ addressState: recipientState(NFT_ADDRESS.toLowerCase()) })
+
+    expect(transferController.validationFormMsgs.recipientAddress).toEqual({
+      severity: 'error',
+      message: "This address is the NFT collection itself. NFTs sent to it can't be recovered."
+    })
+    expect(transferController.isFormValid).toBe(false)
+    expect(signAccountOpUpdate).not.toHaveBeenCalled()
+  })
+
+  test('should prepare a safeTransferFrom of the NFT for a valid recipient', async () => {
+    const { transferController } = await enterTransfer()
+    const signAccountOpUpdate = jest.fn()
+    ;(transferController as any).signAccountOpController = {
+      update: signAccountOpUpdate,
+      accountOp: { meta: {} }
+    }
+
+    await transferController.update({ addressState: recipientState(PLACEHOLDER_RECIPIENT) })
+
+    expect(transferController.isFormValid).toBe(true)
+    expect(signAccountOpUpdate).toHaveBeenCalled()
+    const [{ accountOpData }] = signAccountOpUpdate.mock.calls.at(-1) as any
+    expect(accountOpData.calls).toHaveLength(1)
+    expect(accountOpData.calls[0].to).toBe(NFT_ADDRESS)
+    expect(accountOpData.calls[0].value).toBe(0n)
+    const decoded = erc721Interface.parseTransaction({ data: accountOpData.calls[0].data })
+    expect(decoded?.args[0]).toBe(account.addr)
+    expect(decoded?.args[1]).toBe(PLACEHOLDER_RECIPIENT)
+    expect(decoded?.args[2]).toBe(NFT_TOKEN_ID)
+  })
+
+  test('should ignore amount updates in NFT mode', async () => {
+    const { transferController } = await enterTransfer()
+
+    await transferController.update({ amount: '5', shouldSetMaxAmount: true })
+
+    expect(transferController.amount).toBe('')
+    expect(transferController.selectedNft).not.toBeNull()
+  })
+
+  test('should leave NFT mode when a token is selected', async () => {
+    const { transferController, tokens } = await enterTransfer()
+    const polygonNative = tokens.find((t) => t.address === ZeroAddress && t.chainId === 137n)
+
+    await transferController.update({ selectedToken: polygonNative })
+
+    expect(transferController.selectedNft).toBeNull()
+    expect(transferController.selectedToken?.chainId).toBe(137n)
+    expect(transferController.selectedChainId).toBe(137n)
+  })
+
+  test('should go back to sending tokens after resetForm (e.g. after the NFT was queued)', async () => {
+    const { transferController } = await enterTransfer()
+
+    transferController.resetForm()
+
+    expect(transferController.selectedNft).toBeNull()
+    expect(transferController.selectedToken).not.toBeNull()
+  })
+
+  test('should clear the NFT on reset without selecting a token', async () => {
+    const { transferController } = await enterTransfer()
+
+    transferController.reset()
+
+    expect(transferController.selectedNft).toBeNull()
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.areDefaultsSet).toBe(false)
+  })
+
+  test('should expose the NFT state in toJSON()', async () => {
+    const { transferController } = await enterTransfer()
+    const json = transferController.toJSON()
+
+    expect(json.selectedNft?.tokenId).toBe(NFT_TOKEN_ID)
+    expect(json.selectedChainId).toBe(1n)
+    expect(json.latestBroadcastedNft).toBeNull()
   })
 })
 

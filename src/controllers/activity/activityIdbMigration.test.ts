@@ -366,6 +366,158 @@ describe('ActivityController — key-value path (no IDB)', () => {
 // from existing history once — otherwise known recipients read as first-time.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Fee payer backfill
+//
+// getFeePayers answers from feePayersHistory plus the ops in memory. The index is only written
+// on broadcast and the startup read is only a window, so a payer that paid before the index
+// existed, outside that window, would read as "not linked yet" without the one-time backfill.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ActivityController — fee payers backfilled from the whole history', () => {
+  const OLD_PAYER = '0x1111111111111111111111111111111111111111'
+  const RECENT_PAYER = '0x2222222222222222222222222222222222222222'
+  const REJECTED_PAYER = '0x3333333333333333333333333333333333333333'
+
+  const makePaidOp = (id: string, timestamp: number, paidBy: string, status?: AccountOpStatus) => ({
+    ...makeOp(id, timestamp, status),
+    gasFeePayment: { paidBy } as any
+  })
+
+  const STUCK_PAYER = '0x4444444444444444444444444444444444444444'
+
+  // The oldest op is the only one OLD_PAYER paid for, and it is well outside the startup window.
+  // The rejected, stuck and unknown ones never confirmed on-chain, so their payers are not linked.
+  const history = () => [
+    makePaidOp('old', 1000, OLD_PAYER),
+    makePaidOp('rejected', 1500, REJECTED_PAYER, AccountOpStatus.Rejected),
+    makePaidOp('stuck', 1600, STUCK_PAYER, AccountOpStatus.BroadcastButStuck),
+    makePaidOp('unknown', 1700, STUCK_PAYER, AccountOpStatus.UnknownButPastNonce),
+    ...Array.from({ length: 30 }, (_, i) => makePaidOp(`recent-${i}`, 2000 + i, RECENT_PAYER))
+  ]
+
+  test('IDB: a payer outside the startup window is indexed, once, and the flag is set', async () => {
+    await new ActivityIdbStorage(db).migrateFromStorage(legacyBlob(history()) as any)
+    await storage.set('activityStorageBackend', 'idb')
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    // The startup window does not reach the oldest op, so only the backfill can know OLD_PAYER
+    expect(
+      controller.getAccountOpsForAccount({ accountAddr: ACC }).map((op) => op.id)
+    ).not.toContain('old')
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER, OLD_PAYER])
+    expect(await storage.get('feePayersHistory', {})).toEqual({
+      [ACC]: { '1': { [RECENT_PAYER]: 2029, [OLD_PAYER]: 1000 } }
+    })
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(true)
+  })
+
+  test('IDB: does not run again once the flag is set', async () => {
+    await new ActivityIdbStorage(db).migrateFromStorage(legacyBlob(history()) as any)
+    await storage.set('activityStorageBackend', 'idb')
+    await storage.set('feePayersHistoryBackfilled', true)
+    const forEachOpSpy = jest.spyOn(ActivityIdbStorage.prototype, 'forEachOp')
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    expect(forEachOpSpy).not.toHaveBeenCalled()
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER])
+  })
+
+  test('IDB: a failed read leaves the flag unset, so the pass is retried on the next start', async () => {
+    await new ActivityIdbStorage(db).migrateFromStorage(legacyBlob(history()) as any)
+    await storage.set('activityStorageBackend', 'idb')
+    jest
+      .spyOn(ActivityIdbStorage.prototype, 'forEachOp')
+      .mockRejectedValueOnce(new Error('read failed'))
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(false)
+    expect(controller.emittedErrors.length).toBeGreaterThan(0)
+    // Still answers from the ops in memory
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER])
+
+    const retried = makeController(storage, db)
+    await awaitLoadOnly(retried)
+
+    expect(retried.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER, OLD_PAYER])
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(true)
+  })
+
+  test('a payer is linked once its op is confirmed, not when it is broadcast', async () => {
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    const pendingOp = makePaidOp(
+      'pending',
+      3000,
+      OLD_PAYER,
+      AccountOpStatus.BroadcastedButNotConfirmed
+    ) as any
+    await controller.addAccountOp(pendingOp)
+
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([])
+    expect(await storage.get('feePayersHistory', {})).toEqual({})
+
+    // What a status update does: mutate the op in memory, then persist the changed ops
+    const opInMemory = controller
+      .getAccountOpsForAccount({ accountAddr: ACC })
+      .find((op) => op.id === 'pending')!
+    opInMemory.status = AccountOpStatus.Success
+    await (controller as any).persistAccountsOps([opInMemory])
+
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([OLD_PAYER])
+    expect(await storage.get('feePayersHistory', {})).toEqual({
+      [ACC]: { '1': { [OLD_PAYER]: 3000 } }
+    })
+  })
+
+  // A cold browser start can leave IDB unopened after the history already moved there. The
+  // key-value copy is frozen at that move, so indexing it and setting the flag would skip the
+  // payers that only exist in IDB for good.
+  test('the frozen key-value copy is not treated as the whole history', async () => {
+    await new ActivityIdbStorage(db).migrateFromStorage(legacyBlob(history()) as any)
+    await storage.set('activityStorageBackend', 'idb')
+    // The frozen copy only holds part of what IDB has
+    await storage.set(
+      'accountsOps',
+      legacyBlob([makePaidOp('recent-0', 2000, RECENT_PAYER)]) as any
+    )
+
+    const withoutIdb = makeController(storage, undefined)
+    await awaitLoadOnly(withoutIdb)
+
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(false)
+    expect(await storage.get('feePayersHistory', {})).toEqual({})
+
+    // The next session reaches IDB (the recorded backend is 'keyValue' now, as the session above
+    // left it) and runs the pass over the whole history
+    expect(await getActiveBackend(storage)).toBe('keyValue')
+    const withIdb = makeController(storage, db)
+    await awaitLoadOnly(withIdb)
+
+    expect(withIdb.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER, OLD_PAYER])
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(true)
+  })
+
+  test('key-value: the payers of the whole stored history are indexed', async () => {
+    await storage.set('accountsOps', legacyBlob(history()) as any)
+
+    const controller = makeController(storage, undefined)
+    await awaitLoadOnly(controller)
+
+    expect(await storage.get('feePayersHistory', {})).toEqual({
+      [ACC]: { '1': { [RECENT_PAYER]: 2029, [OLD_PAYER]: 1000 } }
+    })
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(true)
+  })
+})
+
 describe('ActivityController — recipients indexed by the storage migration', () => {
   const OLD_RECIPIENT = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
 

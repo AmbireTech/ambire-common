@@ -95,7 +95,7 @@ export abstract class BaseAccount {
   abstract canUseReceivingNativeForFee(amount: bigint): boolean
 
   // when using the ambire estimation, the broadcast gas is not included
-  // so smart accounts that broadacast with EOAs/relayer do not have the
+  // so smart accounts that broadacast with EOAs do not have the
   // additional broadcast gas included
   //
   // Additionally, 7702 EOAs that use the ambire estimation suffer from
@@ -178,7 +178,7 @@ export abstract class BaseAccount {
    * When the account uses the `rpcWithBundlerFallback` strategy (see getGasPriceFetchStrategy),
    * a bundler broadcast (the account itself paying in a token or native via userOp)
    * should use the bundler gas prices and every other broadcast (by self,
-   * by another EOA, by the relayer) - the RPC ones
+   * by another EOA) - the RPC ones
    */
   shouldUseRpcGasPrices(broadcastOption: string): boolean {
     return broadcastOption !== BROADCAST_OPTIONS.byBundler
