@@ -1081,16 +1081,14 @@ export class MainController extends EventEmitter implements IMainController {
       async () => {
         const seed = this.keystore.seeds.find(({ id }) => id === seedId)
         if (seed?.withPassphrase && !seed.isPassphraseSaved) {
-          if (
-            !seedPassphrase ||
-            !(await this.keystore.isSeedPassphraseCorrect(seedId, seedPassphrase))
-          )
+          if (!seedPassphrase)
             throw new EmittableError({
               level: 'expected',
               message: 'Wrong passphrase.',
-              error: new Error('main: wrong passphrase for a Privacy Pools account')
+              error: new Error('main: no passphrase for a Privacy Pools account')
             })
 
+          // Both check the passphrase before keeping anything
           if (shouldSavePassphrase) await this.keystore.saveSeedPassphrase(seedId, seedPassphrase)
           else await this.keystore.storePrivacyPoolsKey(seedId, seedPassphrase)
         }
@@ -2431,16 +2429,16 @@ export class MainController extends EventEmitter implements IMainController {
         const savedSeed = await this.keystore.getSavedSeed(id)
         const passphrase = savedSeed.seedPassphrase || seedPassphrase || null
 
-        // Another passphrase would open other accounts, which this phrase's entry doesn't hold
-        if (!(await this.keystore.isSeedPassphraseCorrect(id, passphrase)))
+        // Another passphrase would open other accounts, which this phrase's entry doesn't hold.
+        // Saving it checks it too, so it isn't checked twice
+        if (shouldSavePassphrase && passphrase && !savedSeed.seedPassphrase)
+          await this.keystore.saveSeedPassphrase(id, passphrase)
+        else if (!(await this.keystore.isSeedPassphraseCorrect(id, passphrase)))
           throw new EmittableError({
             level: 'expected',
             message: 'Wrong passphrase.',
             error: new Error('main: wrong passphrase for a saved recovery phrase')
           })
-
-        if (shouldSavePassphrase && passphrase && !savedSeed.seedPassphrase)
-          await this.keystore.saveSeedPassphrase(id, passphrase)
 
         this.accountPicker.setInitParams({
           keyIterator: new KeyIterator(savedSeed.seed, passphrase),

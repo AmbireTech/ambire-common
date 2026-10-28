@@ -740,7 +740,7 @@ describe('KeystoreController recovery phrase passphrases', () => {
     const seedId = await addPhrase(PASSPHRASE)
 
     await expect(keystoreCtrl.saveSeedPassphrase(seedId, OTHER_PASSPHRASE)).rejects.toThrow(
-      'not the passphrase the phrase was added with'
+      'Wrong passphrase.'
     )
     expect(seedById(seedId).isPassphraseSaved).toBe(false)
 
@@ -762,7 +762,7 @@ describe('KeystoreController recovery phrase passphrases', () => {
       keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
     ).rejects.toThrow('the passphrase is not saved and no Privacy Pools key is stored')
     await expect(keystoreCtrl.storePrivacyPoolsKey(seedId, OTHER_PASSPHRASE)).rejects.toThrow(
-      'not the passphrase the phrase was added with'
+      'Wrong passphrase.'
     )
 
     await keystoreCtrl.storePrivacyPoolsKey(seedId, PASSPHRASE)

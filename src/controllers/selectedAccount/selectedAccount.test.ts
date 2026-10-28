@@ -8,6 +8,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { defiPositionsOnDisabledNetworksBannerId } from '../../libs/banners/banners'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
+import * as keystoreLib from '../../libs/keystore/keystore'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { stringify } from '../../libs/richJson/richJson'
 import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO } from '../../libs/selectedAccount/selectedAccount'
@@ -495,6 +496,26 @@ describe('SelectedAccount Controller', () => {
 
         expect(mainCtrl.privacyPools.accounts).toHaveLength(1)
         expect(await getStoredKey(mainCtrl, seedId)).toBeDefined()
+      })
+
+      it('derives from the passphrase only once, checking it and keeping the key', async () => {
+        const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()
+        const getSeedMasterNodeSpy = jest.spyOn(keystoreLib, 'getSeedMasterNode')
+
+        await mainCtrl.addPrivacyPoolsAccount(seedId, { seedPassphrase: PASSPHRASE })
+
+        expect(getSeedMasterNodeSpy).toHaveBeenCalledTimes(1)
+        getSeedMasterNodeSpy.mockRestore()
+        expect(await getStoredKey(mainCtrl, seedId)).toBeDefined()
+      })
+
+      it('stores no key for a wrong passphrase', async () => {
+        const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()
+
+        await mainCtrl.addPrivacyPoolsAccount(seedId, { seedPassphrase: 'another word' })
+
+        expect(mainCtrl.privacyPools.accounts).toHaveLength(0)
+        expect(await getStoredKey(mainCtrl, seedId)).toBeUndefined()
       })
     })
 

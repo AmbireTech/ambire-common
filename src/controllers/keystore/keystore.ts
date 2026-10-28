@@ -89,6 +89,14 @@ type SeedToAdd = KeystoreTempSeed & {
   isSynced?: boolean
 }
 
+/** Thrown when a passphrase is not the one its recovery phrase was added with */
+const getWrongPassphraseError = () =>
+  new EmittableError({
+    level: 'expected',
+    message: 'Wrong passphrase.',
+    error: new Error('keystore: not the passphrase the phrase was added with')
+  })
+
 const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
   'Keystore unexpected error. If the problem persists, please contact support.'
 
@@ -1176,8 +1184,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   /** Saves the passphrase of a phrase added without saving it, once the user chooses to */
   async saveSeedPassphrase(id: KeystoreSeed['id'], seedPassphrase: string) {
-    if (!(await this.isSeedPassphraseCorrect(id, seedPassphrase)))
-      throw new Error('keystore: not the passphrase the phrase was added with')
+    if (!(await this.isSeedPassphraseCorrect(id, seedPassphrase))) throw getWrongPassphraseError()
     if (!this.#mainKey) throw new Error('keystore: not unlocked')
 
     const savedPassphrase = await encryptWithKey(
@@ -1197,17 +1204,16 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * user entered, as the phrase alone can't derive it again. Called on adding its Privacy Pools account.
    */
   async storePrivacyPoolsKey(id: KeystoreSeed['id'], seedPassphrase: string) {
-    if (!(await this.isSeedPassphraseCorrect(id, seedPassphrase)))
-      throw new Error('keystore: not the passphrase the phrase was added with')
+    const { seed, passphraseFingerprint } = await this.getSavedSeed(id)
+    // Derived once, as it is slow: its fingerprint checks the passphrase and the key comes from it
+    const masterNode = getSeedMasterNode(seed, seedPassphrase)
+    if (!passphraseFingerprint || masterNode.fingerprint !== passphraseFingerprint)
+      throw getWrongPassphraseError()
     if (!this.#mainKey) throw new Error('keystore: not unlocked')
 
-    const { seed } = await this.getSavedSeed(id)
     const privacyPoolsSigningKey = await encryptWithKey(
       this.#mainKey,
-      getBytes(
-        getSeedMasterNode(seed, seedPassphrase).derivePath(PRIVACY_POOLS_SIGNING_KEY_PATH)
-          .privateKey
-      )
+      getBytes(masterNode.derivePath(PRIVACY_POOLS_SIGNING_KEY_PATH).privateKey)
     )
     this.#keystoreSeeds = this.#keystoreSeeds.map((s) =>
       s.id === id ? { ...s, privacyPoolsSigningKey } : s

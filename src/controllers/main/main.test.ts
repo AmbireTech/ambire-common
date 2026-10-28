@@ -560,7 +560,7 @@ describe('Main Controller ', () => {
 
     const setInitParamsFromSavedSeed = async (
       mainCtrl: MainController,
-      params: { id: string; seedPassphrase?: string }
+      params: { id: string; seedPassphrase?: string; shouldSavePassphrase?: boolean }
     ) => {
       const setInitParamsSpy = jest.spyOn(mainCtrl.accountPicker, 'setInitParams')
       const emittedErrors: ErrorRef[] = []
@@ -609,6 +609,39 @@ describe('Main Controller ', () => {
       expect(statuses).toContain('ERROR')
       expect(statuses).not.toContain('SUCCESS')
       expect(mainCtrl.statuses.accountPickerSetInitParamsFromSavedSeed).toBe('INITIAL')
+    })
+
+    test('checks the passphrase only once when saving it', async () => {
+      const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
+      const isSeedPassphraseCorrectSpy = jest.spyOn(mainCtrl.keystore, 'isSeedPassphraseCorrect')
+
+      const { initParams, emittedErrors } = await setInitParamsFromSavedSeed(mainCtrl, {
+        id: seedId,
+        seedPassphrase: PASSPHRASE,
+        shouldSavePassphrase: true
+      })
+
+      expect(isSeedPassphraseCorrectSpy).toHaveBeenCalledTimes(1)
+      isSeedPassphraseCorrectSpy.mockRestore()
+      expect(emittedErrors).toEqual([])
+      expect(initParams?.keyIterator?.subType).toBe('seed')
+      expect(mainCtrl.keystore.seeds[0]!.isPassphraseSaved).toBe(true)
+    })
+
+    test('neither saves a wrong passphrase nor opens the picker with it', async () => {
+      const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
+
+      const { initParams, emittedErrors } = await setInitParamsFromSavedSeed(mainCtrl, {
+        id: seedId,
+        seedPassphrase: 'another word',
+        shouldSavePassphrase: true
+      })
+
+      expect(initParams).toBeUndefined()
+      expect(emittedErrors).toEqual([
+        expect.objectContaining({ message: 'Wrong passphrase.', level: 'expected' })
+      ])
+      expect(mainCtrl.keystore.seeds[0]!.isPassphraseSaved).toBe(false)
     })
   })
 
