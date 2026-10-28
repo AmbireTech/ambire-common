@@ -61,11 +61,11 @@ export const getEarlierPendingAccountOp = ({
 /**
  * The account op to build a replacement from, for sending a new op in place of the earlier
  * pending op (see `getReplacementAccountOp`). Null when the new op can't replace it: the pending
- * op was sent through the Relayer or a bundler, as they hold the transaction, or the new op
- * takes more nonces than the replaced one, as only the first would be replaced and the rest
- * would still run. Not for a Safe either, where Cancel already makes a new Safe transaction at
- * that nonce. And not when the new op can't be paid the same way, as no replacement would
- * happen then.
+ * op was sent through the Relayer or a bundler, as they hold the transaction, or as one
+ * transaction per call, or the new op takes the nonces of another pending op too, as only the
+ * replaced one would be replaced and the rest would still run. Not for a Safe either, where
+ * Cancel already makes a new Safe transaction at that nonce. And not when the new op can't be
+ * paid the same way, as no replacement would happen then.
  *
  * @param takesNoncesAfterReplaced whether the new op takes the EOA nonces after the replaced one
  * too, as one transaction per call or a delegation that signs an authorization does. They must
@@ -96,10 +96,11 @@ export const getEarlierPendingReplacementAccountOp = ({
   if (!takesNoncesAfterReplaced) return replacementAccountOp
 
   const replacementKey = getReplacementKey(earlierPendingAccountOp)
-  const takesOnlyReplacedNonces = reservations.every(({ accountOpId }) => {
-    const holder = pendingAccountOps.find((op) => op.id === accountOpId)
-    return !holder || getReplacementKey(holder) === replacementKey
-  })
+  const takesOnlyReplacedNonces = reservations.every(({ accountOpId }) =>
+    pendingAccountOps.some(
+      (op) => op.id === accountOpId && getReplacementKey(op) === replacementKey
+    )
+  )
   return takesOnlyReplacedNonces ? replacementAccountOp : null
 }
 

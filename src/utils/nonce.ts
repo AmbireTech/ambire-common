@@ -120,7 +120,7 @@ export function getSubmittedAccountOpNonces(
     }
 
     // A self-sent delegation raises the nonce once more for its authorization
-    if (broadcastOption === BROADCAST_OPTIONS.delegation && isSameAddr(senderAddr, op.accountAddr))
+    if (broadcastOption === BROADCAST_OPTIONS.delegation)
       nonces.push({ kind: 'sender', addr: senderAddr, nonce: op.eoaNonce + BigInt(sentTxnCount) })
   }
 
