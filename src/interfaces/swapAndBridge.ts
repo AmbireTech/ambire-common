@@ -711,6 +711,12 @@ export interface SwapProvider {
     address: string
     chainId: number
   }): Promise<SwapAndBridgeToToken | null>
+  /**
+   * Whether the provider can trade a token that is missing from its own token list.
+   * Providers that can look up any token via `getToken` do not need to implement it.
+   * Used to decide if the token metadata can be fetched from a shared source instead.
+   */
+  isTokenSupported?({ address, chainId }: { address: string; chainId: number }): Promise<boolean>
   startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest>
   quote({
     fromAsset,

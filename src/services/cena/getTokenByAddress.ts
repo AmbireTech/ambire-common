@@ -1,0 +1,140 @@
+import { getAddress, isAddress } from 'ethers'
+
+import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
+import { CustomResponse, Fetch } from '../../interfaces/fetch'
+import { SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
+import { waitWithAbort } from '../../utils/wait'
+
+export const CENA_API_BASE_URL = 'https://cena.ambire.com'
+
+const CENA_REQUEST_TIMEOUT_MS = 15000
+
+const ERROR_PREFIX = 'Unable to retrieve token information by address.'
+
+type CenaPlatformResponse = {
+  platformId?: string
+}
+
+type CenaTokenResponse = {
+  blacklist?: boolean
+  decimals?: Record<string, number>
+  image?: {
+    large?: string
+    small?: string
+    thumb?: string
+  }
+  name?: string
+  platforms?: Record<string, string>
+  removed?: boolean
+  symbol?: string
+}
+
+const fetchWithTimeout = async (fetch: Fetch, url: string): Promise<CustomResponse> => {
+  const { promise: timeoutPromise, abort } = waitWithAbort(CENA_REQUEST_TIMEOUT_MS)
+
+  try {
+    return await Promise.race([
+      fetch(url, { headers: { Accept: 'application/json', 'Content-Type': 'application/json' } }),
+      timeoutPromise.then(() => {
+        throw new SwapAndBridgeProviderApiError(
+          `${ERROR_PREFIX} Our token information service is temporarily unavailable or your internet connection is too slow.`
+        )
+      })
+    ])
+  } catch (error: any) {
+    if (error instanceof SwapAndBridgeProviderApiError) throw error
+
+    throw new SwapAndBridgeProviderApiError(
+      `${ERROR_PREFIX} Our token information service could not be reached. Error details: <${
+        error?.message || 'no message'
+      }>`
+    )
+  } finally {
+    abort()
+  }
+}
+
+const parseResponse = async <T>(response: CustomResponse): Promise<T> => {
+  let body: T
+  try {
+    body = await response.json()
+  } catch (error: any) {
+    throw new SwapAndBridgeProviderApiError(
+      `${ERROR_PREFIX} Our token information service returned an unexpected response. Error details: <${
+        error?.message || 'no message'
+      }>`
+    )
+  }
+
+  if (!response.ok) {
+    throw new SwapAndBridgeProviderApiError(
+      `${ERROR_PREFIX} Our token information service responded with an error (${response.status}).`
+    )
+  }
+
+  return body
+}
+
+/**
+ * Looks up the metadata (name, symbol, decimals, icon) of a token by its address in Cena.
+ * Returns null when Cena does not know the token or the response cannot be trusted
+ * (blacklisted or removed token, or a contract that differs from the requested one).
+ */
+export const getTokenByAddress = async ({
+  fetch,
+  address,
+  chainId
+}: {
+  fetch: Fetch
+  address: string
+  chainId: number
+}): Promise<SwapAndBridgeToToken | null> => {
+  if (!isAddress(address)) return null
+
+  const normalizedAddress = getAddress(address)
+
+  const platformResponse = await fetchWithTimeout(
+    fetch,
+    `${CENA_API_BASE_URL}/api/v3/platform/${chainId}`
+  )
+  if (platformResponse.status === 404) return null
+  const { platformId } = await parseResponse<CenaPlatformResponse>(platformResponse)
+  if (typeof platformId !== 'string' || !platformId) return null
+
+  const tokenResponse = await fetchWithTimeout(
+    fetch,
+    `${CENA_API_BASE_URL}/api/v3/coins/${encodeURIComponent(
+      platformId
+    )}/contract/${normalizedAddress}`
+  )
+  if (tokenResponse.status === 404) return null
+  const token = await parseResponse<CenaTokenResponse>(tokenResponse)
+  const platformAddress = token.platforms?.[platformId]
+  const decimals = token.decimals?.[platformId]
+
+  if (
+    token.blacklist ||
+    token.removed ||
+    !platformAddress ||
+    !isAddress(platformAddress) ||
+    platformAddress.toLowerCase() !== normalizedAddress.toLowerCase() ||
+    !Number.isInteger(decimals) ||
+    decimals === undefined ||
+    decimals < 0 ||
+    decimals > 255 ||
+    typeof token.name !== 'string' ||
+    !token.name ||
+    typeof token.symbol !== 'string' ||
+    !token.symbol
+  )
+    return null
+
+  return {
+    address: normalizedAddress,
+    chainId,
+    decimals,
+    icon: token.image?.large || token.image?.small || token.image?.thumb || '',
+    name: token.name,
+    symbol: token.symbol
+  }
+}

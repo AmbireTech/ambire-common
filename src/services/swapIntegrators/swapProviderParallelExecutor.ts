@@ -1,4 +1,5 @@
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
+import { Fetch } from '../../interfaces/fetch'
 import {
   ProviderQuoteParams,
   SwapAndBridgeQuote,
@@ -12,6 +13,7 @@ import {
   SwapProviderInfo
 } from '../../interfaces/swapAndBridge'
 import wait, { waitWithAbort } from '../../utils/wait'
+import { getTokenByAddress } from '../cena/getTokenByAddress'
 
 const GET_SUPPORTED_CHAINS_TIMEOUT = 10000
 const GET_TO_TOKEN_LIST_TIMEOUT = 30000
@@ -29,17 +31,22 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
 
   #getDisabledProviders: () => string[]
 
+  /** Needed only for the shared token lookup that `getToken` falls back to */
+  #fetch?: Fetch
+
   // Added for compatibility with the type
   supportedChains: SwapProvider['supportedChains'] = []
 
   constructor(
     providers: SwapProvider[],
     getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[],
-    getDisabledProviders: () => string[] = () => []
+    getDisabledProviders: () => string[] = () => [],
+    fetch?: Fetch
   ) {
     this.#providers = providers
     this.#getFallbackSupportedChains = getFallbackSupportedChains
     this.#getDisabledProviders = getDisabledProviders
+    this.#fetch = fetch
   }
 
   /** Returns serializable metadata without exposing the private provider instances. */
@@ -334,7 +341,43 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
       (provider: SwapProvider) => provider.getToken({ address, chainId }).catch((e) => e),
       { chainIds: [chainId] }
     )
-    return toTokens.find((t) => t) || null
+    const foundToken = toTokens.find((t) => t)
+    if (foundToken) return foundToken
+
+    return this.#getTokenFromSharedSource({ address, chainId })
+  }
+
+  /**
+   * Fallback for a token that none of the providers found in their own lists. Fetches the
+   * token metadata from a shared source, but only if at least one enabled provider
+   * reports that it can trade the token (otherwise the user could select a token that
+   * cannot be swapped).
+   */
+  async #getTokenFromSharedSource({
+    address,
+    chainId
+  }: {
+    address: string
+    chainId: number
+  }): Promise<SwapAndBridgeToToken | null> {
+    if (!this.#fetch) return null
+
+    const supportChecks = this.#getEnabledProviders().flatMap((provider) =>
+      provider.isTokenSupported ? [provider.isTokenSupported({ address, chainId })] : []
+    )
+    if (!supportChecks.length) return null
+
+    const supportResults = await Promise.allSettled(supportChecks)
+    if (supportResults.some((result) => result.status === 'fulfilled' && result.value))
+      return getTokenByAddress({ fetch: this.#fetch, address, chainId })
+
+    const failedCheck = supportResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    )
+    // No provider confirmed support, but a failed check means "unknown", not "unsupported"
+    if (failedCheck) throw failedCheck.reason
+
+    return null
   }
 
   async startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest> {

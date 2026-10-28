@@ -15,8 +15,6 @@ import {
   settlementInterface
 } from '@/services/cowswap/helper'
 import {
-  CenaPlatformResponse,
-  CenaTokenResponse,
   CowSwapErrorResponse,
   CowSwapOrderResponse,
   CowSwapTokenListEntry,
@@ -49,7 +47,6 @@ import {
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
 import {
-  CENA_API_BASE_URL,
   COWSWAP_API_BASE_URL,
   COWSWAP_ETH_FLOW_ADDRESS,
   COWSWAP_ORDER_VALIDITY_SECONDS,
@@ -216,66 +213,36 @@ export class CowSwapAPI implements SwapProvider {
     )
     if (listedToken) return normalizeCowSwapToken(listedToken)
 
+    // The metadata of tokens missing from the CoW Swap token list is not available here.
+    // The swap provider executor falls back to a shared lookup, for tokens that
+    // CoW Swap reports as supported via `isTokenSupported`
+    return null
+  }
+
+  /**
+   * Whether CoW Swap can trade the token, even if the token is missing from the CoW Swap token
+   * list. CoW Swap can trade a token only if it can price it.
+   */
+  async isTokenSupported({
+    address,
+    chainId
+  }: {
+    address: string
+    chainId: number
+  }): Promise<boolean> {
+    if (!getApiNetwork(chainId) || !isAddress(address)) return false
+
     const nativePriceResponse = await this.#fetchWithTimeout(
-      this.#getApiUrl(chainId, `/token/${normalizedAddress}/native_price`),
+      this.#getApiUrl(chainId, `/token/${getAddress(address)}/native_price`),
       { headers: this.#apiHeaders }
     )
-    if (nativePriceResponse.status === 404) return null
+    if (nativePriceResponse.status === 404) return false
     await this.#parseResponse(
       nativePriceResponse,
       'Unable to check whether the token is supported.'
     )
 
-    const platformResponse = await this.#fetchWithTimeout(
-      `${CENA_API_BASE_URL}/api/v3/platform/${chainId}`,
-      { headers: this.#headers }
-    )
-    if (platformResponse.status === 404) return null
-    const { platformId } = await this.#parseResponse<CenaPlatformResponse>(
-      platformResponse,
-      'Unable to retrieve token information by address.'
-    )
-    if (typeof platformId !== 'string' || !platformId) return null
-
-    const tokenResponse = await this.#fetchWithTimeout(
-      `${CENA_API_BASE_URL}/api/v3/coins/${encodeURIComponent(
-        platformId
-      )}/contract/${normalizedAddress}`,
-      { headers: this.#headers }
-    )
-    if (tokenResponse.status === 404) return null
-    const token = await this.#parseResponse<CenaTokenResponse>(
-      tokenResponse,
-      'Unable to retrieve token information by address.'
-    )
-    const platformAddress = token.platforms?.[platformId]
-    const decimals = token.decimals?.[platformId]
-
-    if (
-      token.blacklist ||
-      token.removed ||
-      !platformAddress ||
-      !isAddress(platformAddress) ||
-      platformAddress.toLowerCase() !== normalizedAddress.toLowerCase() ||
-      !Number.isInteger(decimals) ||
-      decimals === undefined ||
-      decimals < 0 ||
-      decimals > 255 ||
-      typeof token.name !== 'string' ||
-      !token.name ||
-      typeof token.symbol !== 'string' ||
-      !token.symbol
-    )
-      return null
-
-    return {
-      address: normalizedAddress,
-      chainId,
-      decimals,
-      icon: token.image?.large || token.image?.small || token.image?.thumb || '',
-      name: token.name,
-      symbol: token.symbol
-    }
+    return true
   }
 
   async quote({
