@@ -85,6 +85,8 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 type SeedToAdd = KeystoreTempSeed & {
   id?: StoredKeystoreSeed['id']
   passphraseFingerprint?: string
+  /** Synced from another device, so a phrase this device already has keeps its saved state */
+  isSynced?: boolean
 }
 
 const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
@@ -987,8 +989,9 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
           getMasterNode
         )
         if (existingEntry) {
-          // The user entered a passphrase that isn't saved yet and chose to save it this time
-          if (passphraseToSave && !existingEntry.seedPassphrase) {
+          // The user entered a passphrase that isn't saved yet and chose to save it this time.
+          // Not on sync: the other device's choice doesn't override this one's
+          if (passphraseToSave && !existingEntry.seedPassphrase && !seedToAdd.isSynced) {
             const savedPassphrase = await encryptPassphrase(passphraseToSave)
             this.#keystoreSeeds = this.#keystoreSeeds.map((s) =>
               s.id === existingEntry.id ? { ...s, seedPassphrase: savedPassphrase } : s
@@ -1680,6 +1683,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
           shouldSavePassphrase: !!seedPassphrase,
           // A passphrase that isn't saved doesn't travel, so its fingerprint comes instead
           passphraseFingerprint: seed.passphraseFingerprint,
+          isSynced: true,
           hdPathTemplate: seed.hdPathTemplate,
           notBackedUp: seed.notBackedUp
         })

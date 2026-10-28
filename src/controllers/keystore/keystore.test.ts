@@ -1262,6 +1262,25 @@ describe('app data sync between two devices', () => {
       expect((await importingKeystore.getSavedSeed(seedId)).seedPassphrase).toBe(PASSPHRASE)
     })
 
+    test('stays not saved on a device that has it without saving the passphrase', async () => {
+      await addPassphrasePhraseWithKey(true)
+      await importingKeystore.addSecret('password', importingPass, '', true)
+      await importingKeystore.addTempSeed({
+        seed: process.env.SEED,
+        seedPassphrase: PASSPHRASE,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      await importingKeystore.persistTempSeed()
+      const existingSeedId = importingKeystore.seeds[0]!.id
+
+      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
+
+      expect(importingKeystore.seeds).toEqual([
+        expect.objectContaining({ id: existingSeedId, isPassphraseSaved: false })
+      ])
+      expect((await importingKeystore.getSavedSeed(existingSeedId)).seedPassphrase).toBeNull()
+    })
+
     test('is queued with its fingerprint when synced before the device password is set', async () => {
       const seedId = await addPassphrasePhraseWithKey(false)
 
