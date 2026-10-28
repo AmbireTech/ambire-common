@@ -363,13 +363,16 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
     if (!this.#fetch) return null
 
     // A single provider confirming support is enough, so there is no need to wait for the
-    // slower ones. A check that fails or finds the token unsupported rejects, and is ignored.
-    // The async wrapper turns a synchronous throw of a provider into a rejection too, so none
-    // of the checks can end up as an unhandled rejection
-    const supportChecks = this.#getEnabledProviders().map(async (provider) => {
-      const isSupported = await provider.isTokenSupported?.({ address, chainId })
-      if (!isSupported) throw new Error(`${provider.name} does not support the token`)
-    })
+    // slower ones. Providers that cannot check it are skipped. Promise.any also resolves for a
+    // check that completed with false, so that case (and a failed check) rejects instead and is
+    // ignored. The async wrapper turns a synchronous throw of a provider into a rejection too,
+    // so none of the checks can end up as an unhandled rejection
+    const supportChecks = this.#getEnabledProviders()
+      .filter((provider) => provider.isTokenSupported)
+      .map(async (provider) => {
+        const isSupported = await provider.isTokenSupported?.({ address, chainId })
+        if (!isSupported) throw new Error(`${provider.name} does not support the token`)
+      })
 
     try {
       await Promise.any(supportChecks)

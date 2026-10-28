@@ -708,5 +708,25 @@ describe('Swap Provider Parallel execution', () => {
         { symbol: 'custom' }
       )
     })
+
+    it('Skips a provider that cannot check support while another one confirms it', async () => {
+      const fetch = makeCenaFetch()
+      const executor = new SwapProviderParallelExecutor(
+        [
+          createTokenProvider({ id: 'without-check' }),
+          createTokenProvider({
+            id: 'supporting',
+            isTokenSupported: jest.fn().mockResolvedValue(true)
+          })
+        ],
+        undefined,
+        undefined,
+        fetch
+      )
+
+      await expect(executor.getToken({ address: tokenAddress, chainId: 1 })).resolves.toMatchObject(
+        { symbol: 'custom' }
+      )
+    })
   })
 })
