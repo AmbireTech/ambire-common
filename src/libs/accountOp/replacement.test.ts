@@ -116,7 +116,8 @@ describe('isReplaceableBroadcast', () => {
   })
 
   test.each([
-    ['the relayer', BROADCAST_OPTIONS.byRelayer],
+    // relayer broadcasts are no longer made, but older ones stay in the activity
+    ['the relayer', 'relayer'],
     ['a bundler', BROADCAST_OPTIONS.byBundler]
   ])('a transaction sent by %s cannot be replaced', (_, broadcastOption) => {
     expect(isReplaceableBroadcast(withBroadcastOption(broadcastOption))).toBe(false)
@@ -138,7 +139,8 @@ describe('getReplacementBlocker', () => {
   })
 
   test.each([
-    ['the relayer', BROADCAST_OPTIONS.byRelayer],
+    // relayer broadcasts are no longer made, but older ones stay in the activity
+    ['the relayer', 'relayer'],
     ['a bundler', BROADCAST_OPTIONS.byBundler]
   ])('a transaction sent by %s cannot be replaced', (_, broadcastOption) => {
     expect(getReplacementBlocker(withBroadcastOption(broadcastOption), true)).toBe('notReplaceable')
