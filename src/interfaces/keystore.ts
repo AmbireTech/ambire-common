@@ -257,7 +257,8 @@ export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> &
   seedPassphrase?: KeystoreEncryptedPayload | null
   /**
    * The Privacy Pools signing key, kept for phrases whose passphrase is not saved, as it can't be
-   * derived again without the passphrase. Derived when the phrase is added.
+   * derived again without the passphrase. Stored when the phrase's Privacy Pools account is added,
+   * and dropped when it is removed.
    */
   privacyPoolsSigningKey?: KeystoreEncryptedPayload
 }

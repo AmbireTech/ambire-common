@@ -1813,8 +1813,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * malicious bump could get the user's EVM keys. Only `PRIVACY_POOLS_SIGNING_KEY_PATH` passes.
    *
    * A phrase whose passphrase isn't saved has the key stored instead (see `storePrivacyPoolsKey`),
-   * as the phrase alone can't derive it. Not cached here: each other call decrypts the phrase and runs a PBKDF2, so callers
-   * keep the key while unlocked - see `createKohakuKeystore`.
+   * as the phrase alone can't derive it. Not cached here: any other call decrypts the phrase and
+   * runs a PBKDF2, so callers keep the key while unlocked - see `createKohakuKeystore`.
    */
   async derivePrivacyPoolsKey(seedId: KeystoreSeed['id'], path: string): Promise<Hex> {
     await this.initialLoadPromise
