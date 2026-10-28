@@ -5144,6 +5144,183 @@ describe('RPC gas prices with a bundler fallback', () => {
   })
 })
 
+describe('Safe fee payer after the payers get funded', () => {
+  suppressConsoleBeforeEach()
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  const gasPrices: GasSpeeds = {
+    slow: { maxFeePerGas: toBeHex(1000n) as Hex, maxPriorityFeePerGas: toBeHex(500n) as Hex },
+    medium: { maxFeePerGas: toBeHex(2000n) as Hex, maxPriorityFeePerGas: toBeHex(1000n) as Hex },
+    fast: { maxFeePerGas: toBeHex(3000n) as Hex, maxPriorityFeePerGas: toBeHex(1500n) as Hex },
+    ape: { maxFeePerGas: toBeHex(4000n) as Hex, maxPriorityFeePerGas: toBeHex(2000n) as Hex }
+  }
+  // Neither an owner of the Safe nor one that has paid for it
+  const unlinkedPayer = '0x2222222222222222222222222222222222222222'
+  const funded = 1000000000000000000n
+
+  const feeOption = (paidBy: string, availableAmount: bigint) => ({
+    paidBy,
+    availableAmount,
+    gasUsed: 25000n,
+    addedNative: 0n,
+    token: nativeFeeToken
+  })
+
+  /**
+   * A Safe that can't pay the fee by itself, so the payer is picked from `payers`.
+   * `lastFeePayer` has paid for the Safe before, which links it to the Safe
+   */
+  const initSafe = async (
+    payers: { addr: string; availableAmount: bigint }[],
+    lastFeePayer?: string
+  ) => {
+    jest.spyOn(GasPriceController.prototype, 'fetch').mockResolvedValue(undefined)
+    jest
+      .spyOn(ActivityController.prototype, 'getFeePayers')
+      .mockReturnValue(lastFeePayer ? [lastFeePayer] : [])
+    const feePaymentOptions = [
+      feeOption(safeAccount.addr, 0n),
+      ...payers.map(({ addr, availableAmount }) => feeOption(addr, availableAmount))
+    ]
+    const paymaster = {
+      isUsable: () => false,
+      isSponsored: () => false,
+      getEstimationData: () => null
+    } as unknown as AbstractPaymaster
+
+    const { controller } = await init(
+      safeAccount,
+      createAccountOp(safeAccount),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 25000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 25000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        bundlerEstimation: {
+          callGasLimit: toBeHex(30000n),
+          preVerificationGas: toBeHex(50000n),
+          verificationGasLimit: toBeHex(100000n),
+          paymasterVerificationGasLimit: toBeHex(0n),
+          paymasterPostOpGasLimit: toBeHex(0n),
+          gasPrice: gasPrices,
+          paymaster,
+          flags: {}
+        },
+        bundlerGasPrices: gasPrices,
+        flags: {},
+        updatedAt: Date.now()
+      },
+      gasPrices,
+      false,
+      // otherwise a real estimation runs right away and replaces the mocked one
+      { pauseOnInit: true }
+    )
+
+    return controller
+  }
+
+  /** A new estimation, as one would come after the payers' balances change */
+  const estimateAgain = (
+    controller: SignAccountOpController,
+    payers: { addr: string; availableAmount: bigint }[]
+  ) => {
+    controller.estimation.availableFeeOptions = [
+      feeOption(safeAccount.addr, 0n),
+      ...payers.map(({ addr, availableAmount }) => feeOption(addr, availableAmount))
+    ]
+    controller.update({ hasNewEstimation: true })
+  }
+
+  test("picks a payer that already paid for the Safe once it's funded, instead of the Safe's own native", async () => {
+    const controller = await initSafe(
+      [{ addr: eoaAccount.addr, availableAmount: 0n }],
+      eoaAccount.addr
+    )
+    // Nothing can pay, so the Safe's own native is selected, which the Safe can't pay with
+    expect(controller.selectedOption?.paidBy).toBe(safeAccount.addr)
+
+    estimateAgain(controller, [{ addr: eoaAccount.addr, availableAmount: funded }])
+
+    expect(controller.selectedOption?.paidBy).toBe(eoaAccount.addr)
+    expect(controller.selectedOption?.availableAmount).toBe(funded)
+    expect(controller.accountOp.gasFeePayment?.paidBy).toBe(eoaAccount.addr)
+    expect(controller.isSafeFeePayerChoiceRequired).toBe(false)
+  })
+
+  test("asks the user to choose when the funded payer would get linked to the Safe, instead of keeping the Safe's own native", async () => {
+    const controller = await initSafe([{ addr: unlinkedPayer, availableAmount: 0n }])
+    expect(controller.selectedOption?.paidBy).toBe(safeAccount.addr)
+
+    estimateAgain(controller, [{ addr: unlinkedPayer, availableAmount: funded }])
+
+    // Linking a new account to the Safe is the user's call, so it's never picked for them
+    expect(controller.selectedOption).toBeUndefined()
+    expect(controller.accountOp.gasFeePayment).toBeNull()
+    expect(controller.isSafeFeePayerChoiceRequired).toBe(true)
+  })
+
+  test("keeps the Safe's own native while no other payer can pay", async () => {
+    const controller = await initSafe(
+      [{ addr: eoaAccount.addr, availableAmount: 0n }],
+      eoaAccount.addr
+    )
+
+    estimateAgain(controller, [{ addr: eoaAccount.addr, availableAmount: 0n }])
+
+    expect(controller.selectedOption?.paidBy).toBe(safeAccount.addr)
+    expect(controller.accountOp.gasFeePayment?.paidBy).toBe(safeAccount.addr)
+  })
+
+  test('never replaces a payer the user picked while it can still pay', async () => {
+    const controller = await initSafe(
+      [
+        { addr: eoaAccount.addr, availableAmount: funded },
+        { addr: unlinkedPayer, availableAmount: funded }
+      ],
+      eoaAccount.addr
+    )
+    controller.update({ feeToken: nativeFeeToken, paidBy: unlinkedPayer })
+    expect(controller.selectedOption?.paidBy).toBe(unlinkedPayer)
+
+    estimateAgain(controller, [
+      { addr: eoaAccount.addr, availableAmount: funded },
+      { addr: unlinkedPayer, availableAmount: funded }
+    ])
+
+    expect(controller.selectedOption?.paidBy).toBe(unlinkedPayer)
+    expect(controller.accountOp.gasFeePayment?.paidBy).toBe(unlinkedPayer)
+  })
+
+  test('keeps the fee token the user wants as a default only when the fee is still paid with it', async () => {
+    const linkedController = await initSafe(
+      [{ addr: eoaAccount.addr, availableAmount: 0n }],
+      eoaAccount.addr
+    )
+    linkedController.update({ pendingFeeTokenPreference: nativeFeeToken })
+
+    estimateAgain(linkedController, [{ addr: eoaAccount.addr, availableAmount: funded }])
+
+    // Another payer, but the same token
+    expect(linkedController.pendingFeeTokenPreference).toEqual({ '1': nativeFeeToken.address })
+
+    const unlinkedController = await initSafe([{ addr: unlinkedPayer, availableAmount: 0n }])
+    unlinkedController.update({ pendingFeeTokenPreference: nativeFeeToken })
+
+    estimateAgain(unlinkedController, [{ addr: unlinkedPayer, availableAmount: funded }])
+
+    // Nothing is paid with it until the user picks a payer, so it isn't saved on signing
+    expect(unlinkedController.pendingFeeTokenPreference).toBeNull()
+  })
+})
+
 describe('speed up of a pending transaction', () => {
   const replacedIdentifiedBy = {
     type: 'Transaction' as const,
