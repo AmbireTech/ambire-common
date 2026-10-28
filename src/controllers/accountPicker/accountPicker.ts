@@ -58,6 +58,13 @@ const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true
 const DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY = true
 
 /**
+ * Whether the account on the page is a basic (non-linked, non-smart) account
+ * that is not imported yet with the same keys - the kind that gets added automatically.
+ */
+const isNewBasicAccount = ({ isLinked, account, importStatus }: AccountOnPage) =>
+  importStatus !== ImportStatus.ImportedWithTheSameKeys && !isLinked && !isSmartAccount(account)
+
+/**
  * Account Picker Controller
  * is responsible for listing accounts that can be selected for adding.
  * It uses a KeyIterator interface allow iterating all the keys in a specific
@@ -474,7 +481,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
 
     if (shouldAddNextAccountAutomatically) {
-      await this.selectNextAccount()
+      // Every key the user entered gets imported, when their number is limited (private keys)
+      if (this.keyIterator.keysCount === undefined) await this.selectNextAccount()
+      else await this.#selectAllNewAccounts(this.keyIterator.keysCount)
       await this.addAccounts()
     } else {
       await this.forceEmitUpdate()
@@ -494,14 +503,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   /**
-   * The last page that has accounts on it, when the key iterator can only retrieve the
-   * accounts the wallet exported. Undefined when there is no such limit.
+   * The last page that has accounts on it, when the key iterator has a limited number of
+   * keys. Undefined when there is no such limit.
    */
   get maxPage() {
-    const retrievableKeysCount = this.keyIterator?.retrievableKeysCount
-    if (retrievableKeysCount === undefined) return undefined
+    const keysCount = this.keyIterator?.keysCount
+    if (keysCount === undefined) return undefined
 
-    return Math.ceil(retrievableKeysCount / this.pageSize)
+    return Math.ceil(keysCount / this.pageSize)
   }
 
   async reset(resetInitParams: boolean = true) {
@@ -858,12 +867,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           (acc) => acc.account.usedOnNetworks?.length
         )
 
-        // If at least one account is used - preselect all accounts on the page
-        // (except the linked ones). Usually there are are two accounts
-        // (since the private key flow gas `pageSize` of 1)
-        if (usedAccounts.length) {
-          accountsOnPageWithoutTheLinked.forEach((acc) => this.selectAccount(acc.account))
-        }
+        // Preselect every used account on the page (except the linked ones). Each private key
+        // gets its own account, so an unused key is not selected just because another one on
+        // the same page (bulk import) is used.
+        usedAccounts.forEach((acc) => this.selectAccount(acc.account))
       }
     } catch (e: any) {
       if (this.#isSetPageRequestCancelled(requestId, page)) return
@@ -998,6 +1005,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const deviceIds: { [key in ExternalKey['type']]: string } = {
         ledger: this.#externalSignerControllers.ledger?.deviceId || '',
         trezor: this.#externalSignerControllers.trezor?.deviceId || '',
+        onekey: this.#externalSignerControllers.onekey?.deviceId || '',
         lattice: this.#externalSignerControllers?.lattice?.deviceId || '',
         qr: this.#externalSignerControllers.qr?.deviceId || '',
         nfc: this.#externalSignerControllers.nfc?.deviceId || '',
@@ -1007,6 +1015,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const deviceModels: { [key in ExternalKey['type']]: string } = {
         ledger: this.#externalSignerControllers.ledger?.deviceModel || '',
         trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
+        onekey: this.#externalSignerControllers.onekey?.deviceModel || '',
         lattice: this.#externalSignerControllers.lattice?.deviceModel || '',
         qr: this.#externalSignerControllers.qr?.deviceModel || '',
         nfc: this.#externalSignerControllers.nfc?.deviceModel || '',
@@ -1118,24 +1127,24 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         })
       }
 
-      nextAccount = this.accountsOnPage.find(
-        ({ isLinked, account, importStatus }) =>
-          importStatus !== ImportStatus.ImportedWithTheSameKeys &&
-          !isLinked &&
-          !isSmartAccount(account)
-      )?.account
+      nextAccount = this.accountsOnPage.find(isNewBasicAccount)?.account
 
       if (nextAccount) {
         this.selectAccount(nextAccount)
         break
       }
 
+      // A key iterator with a limited number of keys (e.g. a list of private keys) returns an
+      // empty page after its last key, so there is no next account to look for
+      if (!this.accountsOnPage.length) break
+
       // If no account found on the page, move to the next page
       currentPage++
     }
 
-    // Should never happen
-    if (!nextAccount) {
+    // Should never happen, unless every key of a key iterator with a limited number
+    // of keys (e.g. a list of private keys) is already imported
+    if (!nextAccount && this.keyIterator.keysCount === undefined) {
       const message = 'accountPicker: selectNextAccount called, but no next account found.'
       this.emitError({ message, level: 'silent', error: new Error(message) })
     }
@@ -1145,6 +1154,30 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     this.selectNextAccountStatus = 'INITIAL'
     await this.forceEmitUpdate()
+  }
+
+  /**
+   * Selects every account that is not imported yet, out of a key iterator with
+   * a limited number of keys (e.g. a list of private keys), all loaded on one page.
+   */
+  async #selectAllNewAccounts(keysCount: number) {
+    await this.setPage({
+      page: DEFAULT_PAGE,
+      pageSize: keysCount,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: false
+    })
+    if (this.pageError) {
+      throw new EmittableError({
+        message: this.pageError,
+        level: 'major',
+        error: new Error(this.pageError)
+      })
+    }
+
+    this.accountsOnPage
+      .filter(isNewBasicAccount)
+      .forEach(({ account }) => this.selectAccount(account))
   }
 
   async createAndAddEmailAccount(selectedAccount: SelectedAccountForImport) {

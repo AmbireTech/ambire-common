@@ -22,12 +22,11 @@ export interface KeyIterator {
    */
   derivableHdPathTemplates?: HD_PATH_TEMPLATE_TYPE[]
   /**
-   * How many keys there are to retrieve, when the wallet exported a list of accounts
-   * instead of a key to derive them from (e.g. a QR wallet exporting the Ledger Live
-   * path) - only the accounts in that export can be retrieved. Undefined means there is
-   * no limit.
+   * How many keys the iterator can serve, when that number is limited (e.g. a list of
+   * private keys, or a QR wallet exporting its Ledger Live accounts one by one).
+   * Undefined means keys can be retrieved at any index.
    */
-  retrievableKeysCount?: number
+  keysCount?: number
   /** Retrieves the the public addresses (accounts) from specific indexes */
   retrieve: (
     fromToArr: { from: number; to: number }[],

@@ -1,7 +1,7 @@
 import { hashMessage } from 'ethers'
 import { ethers } from 'hardhat'
 
-import { getExecute712Data, wrapEIP712, wrapEthSign, wrapTypedData } from '../ambireSign'
+import { getExecute712Data, wrapEIP712, wrapEthSign, wrapTypedData } from '../../ambireSign'
 import {
   abiCoder,
   addressFour,
@@ -12,9 +12,9 @@ import {
   chainId,
   expect,
   provider
-} from '../config'
-import { getPriviledgeTxn, getTimelockData, sendFunds } from '../helpers'
-import { deployAmbireAccountHardhatNetwork } from '../implementations'
+} from '../../config'
+import { getPriviledgeTxn, getTimelockData, sendFunds } from '../../helpers'
+import { deployAmbireAccountHardhatNetwork } from '../../implementations'
 
 let ambireAccountAddress: string
 

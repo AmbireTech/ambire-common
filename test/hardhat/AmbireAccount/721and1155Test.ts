@@ -1,7 +1,7 @@
 import { ethers } from 'hardhat'
 
-import { addressOne, addressTwo, AmbireAccount, expect } from '../config'
-import { deployAmbireAccountHardhatNetwork } from '../implementations'
+import { addressOne, addressTwo, AmbireAccount, expect } from '../../config'
+import { deployAmbireAccountHardhatNetwork } from '../../implementations'
 
 let ambireAccountAddress: string
 

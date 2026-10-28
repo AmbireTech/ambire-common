@@ -337,6 +337,20 @@ const DAPP_CONNECT_REQUEST: DappConnectRequest = {
   ]
 }
 
+const APP_WINDOW_ID = 2
+const OTHER_WINDOW_ID = 3
+
+const getDappConnectRequestFromWindow = (windowId: number): DappConnectRequest => ({
+  ...DAPP_CONNECT_REQUEST,
+  id: `dapp-connect-from-window-${windowId}`,
+  dappPromises: [
+    {
+      ...DAPP_CONNECT_REQUEST.dappPromises[0]!,
+      session: new Session({ tabId: 1, windowId, url: 'https://test-dApp.com' })
+    }
+  ]
+})
+
 /** A message to sign for the selected account, from the test app. */
 const makeMessageRequest = (
   id: string,
@@ -1694,9 +1708,9 @@ describe('RequestsController ', () => {
     const chainId = 1n
     const safeAccount = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
     safeAccount.safeCreation!.setupData = '0x1234'
-    await selectedAccountCtrl.setAccount(
-      accountsCtrl.accounts.find((candidate) => candidate.addr !== accountAddr)!
-    )
+    await selectedAccountCtrl.select({
+      account: accountsCtrl.accounts.find((candidate) => candidate.addr !== accountAddr)!
+    })
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
     jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
@@ -1721,7 +1735,7 @@ describe('RequestsController ', () => {
     await controller.buildSafeDeploymentRequest(accountAddr, chainId)
     expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(2)
 
-    await selectedAccountCtrl.setAccount(safeAccount)
+    await selectedAccountCtrl.select({ account: safeAccount })
     const switchAccountRequests = controller.userRequests.filter(
       (request) => request.kind === 'switchAccount'
     )
@@ -1913,9 +1927,9 @@ describe('RequestsController ', () => {
     const chainId = 1n
     const safeAccount = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
     safeAccount.safeCreation!.setupData = '0x1234'
-    await selectedAccountCtrl.setAccount(
-      accountsCtrl.accounts.find((candidate) => candidate.addr !== accountAddr)!
-    )
+    await selectedAccountCtrl.select({
+      account: accountsCtrl.accounts.find((candidate) => candidate.addr !== accountAddr)!
+    })
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
     jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
@@ -1958,7 +1972,7 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest).toBe(switchAccountRequest)
     expect(openRequestWindowSpy).toHaveBeenCalledTimes(1)
 
-    await selectedAccountCtrl.setAccount(safeAccount)
+    await selectedAccountCtrl.select({ account: safeAccount })
     await controller.resolveUserRequest(null, switchAccountRequest!.id)
 
     expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
@@ -3105,9 +3119,9 @@ describe('RequestsController ', () => {
       expect(controller.userRequestsWaitingAccountSwitch[0]).not.toHaveProperty('signAccountOp')
 
       await controller.rejectUserRequests('User rejected', [switchAccountRequest!.id])
-      await selectedAccountCtrl.setAccount(
-        accountsCtrl.accounts.find((a) => a.addr === OTHER_ACCOUNT_ADDR)!
-      )
+      await selectedAccountCtrl.select({
+        account: accountsCtrl.accounts.find((a) => a.addr === OTHER_ACCOUNT_ADDR)!
+      })
 
       expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
       expect(controller.userRequests).toHaveLength(0)
@@ -3125,9 +3139,9 @@ describe('RequestsController ', () => {
       const switchAccountRequest = controller.userRequests.find((r) => r.kind === 'switchAccount')
       expect(switchAccountRequest).toBeDefined()
 
-      await selectedAccountCtrl.setAccount(
-        accountsCtrl.accounts.find((a) => a.addr === OTHER_ACCOUNT_ADDR)!
-      )
+      await selectedAccountCtrl.select({
+        account: accountsCtrl.accounts.find((a) => a.addr === OTHER_ACCOUNT_ADDR)!
+      })
       await controller.resolveUserRequest(null, switchAccountRequest!.id)
 
       const otherAccountBatches = controller.userRequests.filter((r) => r.kind === 'calls')
@@ -3219,7 +3233,7 @@ describe('RequestsController ', () => {
     await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
 
     expect(controller.visibleUserRequests).toHaveLength(2)
-    await selectedAccountCtrl.setAccount(accounts[0]! as any)
+    await selectedAccountCtrl.select({ account: accounts[0]! as any })
     expect(controller.visibleUserRequests).toHaveLength(1)
   })
   test('should select request by id', async () => {
@@ -3288,6 +3302,45 @@ describe('RequestsController ', () => {
     await controller.addUserRequests([DAPP_CONNECT_REQUEST])
 
     expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
+    expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should ask whether the panel is open in the window of the app that made the request', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    const isOpen = jest.fn(() => true)
+    uiCtrl.panel = { isOpen }
+
+    await controller.addUserRequests([getDappConnectRequestFromWindow(APP_WINDOW_ID)])
+
+    expect(isOpen).toHaveBeenCalledWith(APP_WINDOW_ID)
+  })
+  test('should open a request window when the panel is open only in another window', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: (windowId) => windowId === OTHER_WINDOW_ID }
+    const request = getDappConnectRequestFromWindow(APP_WINDOW_ID)
+
+    await controller.addUserRequests([request])
+
+    expect(controller.currentUserRequest).toBe(request)
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+  })
+  test('should show the request in the panel open in the window of the app', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: (windowId) => windowId === APP_WINDOW_ID }
+    const request = getDappConnectRequestFromWindow(APP_WINDOW_ID)
+
+    await controller.addUserRequests([request])
+
+    expect(controller.currentUserRequest).toBe(request)
+    expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should ask about any window when the request has no app window', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    const isOpen = jest.fn(() => true)
+    uiCtrl.panel = { isOpen }
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+
+    expect(isOpen).toHaveBeenCalledWith(undefined)
     expect(controller.requestWindow.windowProps).toBe(null)
   })
   test('should move the request from its window into the panel once the panel is open', async () => {
@@ -3766,7 +3819,7 @@ describe('RequestsController ', () => {
     ) => sendTransaction(controller, dappPromise, MOCK_SESSION, { from: OTHER_ACCOUNT_ADDR })
 
     const selectAccount = ({ accountsCtrl, selectedAccountCtrl }: TestContext, addr: string) =>
-      selectedAccountCtrl.setAccount(accountsCtrl.accounts.find((a) => a.addr === addr)!)
+      selectedAccountCtrl.select({ account: accountsCtrl.accounts.find((a) => a.addr === addr)! })
 
     const getSwitchAccountRequests = (controller: TestContext['controller']) =>
       controller.userRequests.filter((r) => r.kind === 'switchAccount')
