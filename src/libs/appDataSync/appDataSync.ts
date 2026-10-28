@@ -208,9 +208,6 @@ const validateSeeds = (seeds: any) => {
     // A BIP32 fingerprint is 4 bytes
     if (!isHexString(seed.passphraseFingerprint, 4))
       throw new Error(`appDataSync: invalid passphrase fingerprint of seed ${seed.id}`)
-    // Without its passphrase, the phrase can't derive its Privacy Pools key on the other device
-    if (!seed.seedPassphrase && !seed.privacyPoolsSigningKey)
-      throw new Error(`appDataSync: seed ${seed.id} has no Privacy Pools key`)
   })
 }
 

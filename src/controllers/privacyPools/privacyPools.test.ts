@@ -365,6 +365,8 @@ class FakeKeystore extends EventEmitter {
   // The fake plugin learns its phrase from the "key" it derives
   derivePrivacyPoolsKey = jest.fn(async (seedId: string) => seedId)
 
+  removePrivacyPoolsKey = jest.fn(async () => {})
+
   fireUpdate() {
     this.emitUpdate()
   }
@@ -627,6 +629,15 @@ describe('PrivacyPoolsController', () => {
 
       expect(controller.accounts.map((account) => account.seedId)).toEqual(['seed-b'])
       expect(onAccountsRemoved).toHaveBeenCalledWith(['seed-a'])
+    })
+
+    it("drops a removed account's stored key, so re-adding it asks for the passphrase", async () => {
+      const { controller, keystore } = await prepareTest()
+
+      await controller.removeAccount('seed-a')
+
+      expect(keystore.removePrivacyPoolsKey).toHaveBeenCalledTimes(1)
+      expect(keystore.removePrivacyPoolsKey).toHaveBeenCalledWith('seed-a')
     })
 
     it('removes the account of a deleted recovery phrase', async () => {

@@ -511,6 +511,8 @@ describe('KeystoreController recovery phrase backup state', () => {
     await keystoreCtrl.addTempSeed({
       seed,
       seedPassphrase,
+      // Derives with the saved passphrase, as for phrases added before saving became optional
+      shouldSavePassphrase: true,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
     await keystoreCtrl.persistTempSeed()
@@ -748,13 +750,24 @@ describe('KeystoreController recovery phrase passphrases', () => {
     expect((await keystoreCtrl.getSavedSeed(seedId)).seedPassphrase).toBe(PASSPHRASE)
   })
 
-  test('keeps the Privacy Pools key of a passphrase that is not saved, across locks', async () => {
+  test('keeps the Privacy Pools key of a passphrase that is not saved only once asked, across locks', async () => {
     const seedId = await addPhrase(PASSPHRASE)
     const expectedKey = ethers.HDNodeWallet.fromMnemonic(
       ethers.Mnemonic.fromPhrase(process.env.SEED, PASSPHRASE),
       PRIVACY_POOLS_SIGNING_KEY_PATH
     ).privateKey
 
+    // Nothing is derived on adding the phrase, only on adding its Privacy Pools account
+    await expect(
+      keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
+    ).rejects.toThrow('the passphrase is not saved and no Privacy Pools key is stored')
+    await expect(keystoreCtrl.storePrivacyPoolsKey(seedId, OTHER_PASSPHRASE)).rejects.toThrow(
+      'not the passphrase the phrase was added with'
+    )
+
+    await keystoreCtrl.storePrivacyPoolsKey(seedId, PASSPHRASE)
+
+    expect(seedById(seedId).isPassphraseSaved).toBe(false)
     expect(await keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)).toBe(
       expectedKey
     )
@@ -769,6 +782,33 @@ describe('KeystoreController recovery phrase passphrases', () => {
     await expect(keystoreCtrl.derivePrivacyPoolsKey(seedId, "m/44'/60'/0'/0/0")).rejects.toThrow(
       "refusing to derive a key outside Privacy Pools' paths"
     )
+  })
+
+  test('removes the stored Privacy Pools key, keeping the phrase', async () => {
+    const seedId = await addPhrase(PASSPHRASE)
+    const otherSeedId = await addPhrase(OTHER_PASSPHRASE)
+    await keystoreCtrl.storePrivacyPoolsKey(seedId, PASSPHRASE)
+    await keystoreCtrl.storePrivacyPoolsKey(otherSeedId, OTHER_PASSPHRASE)
+
+    await keystoreCtrl.removePrivacyPoolsKey(seedId)
+    keystoreCtrl.lock()
+    await keystoreCtrl.unlockWithSecret('password', pass)
+
+    await expect(
+      keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
+    ).rejects.toThrow('no Privacy Pools key is stored')
+    expect(seedById(seedId)).toMatchObject({ withPassphrase: true, isPassphraseSaved: false })
+    // Only that phrase's key is removed
+    expect(
+      await keystoreCtrl.derivePrivacyPoolsKey(otherSeedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
+    ).toBe(
+      ethers.HDNodeWallet.fromMnemonic(
+        ethers.Mnemonic.fromPhrase(process.env.SEED, OTHER_PASSPHRASE),
+        PRIVACY_POOLS_SIGNING_KEY_PATH
+      ).privateKey
+    )
+    // A phrase without a stored key is left as it is
+    await expect(keystoreCtrl.removePrivacyPoolsKey(seedId)).resolves.toBeUndefined()
   })
 
   test('links accounts to the entry of the passphrase they were derived with', async () => {
@@ -1173,6 +1213,7 @@ describe('app data sync between two devices', () => {
 
     test('arrives without its passphrase when it is not saved, keeping its Privacy Pools key', async () => {
       const seedId = await addPassphrasePhraseWithKey(false)
+      await exportingKeystore.storePrivacyPoolsKey(seedId, PASSPHRASE)
       await importingKeystore.addSecret('password', importingPass, '', true)
 
       await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
@@ -1186,6 +1227,40 @@ describe('app data sync between two devices', () => {
       expect(await importingKeystore.isSeedPassphraseCorrect(seedId, PASSPHRASE)).toBe(true)
       expect(
         await importingKeystore.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
+      ).toBe(await exportingKeystore.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH))
+    })
+
+    test('arrives without a Privacy Pools key when its account was not added', async () => {
+      const seedId = await addPassphrasePhraseWithKey(false)
+      await importingKeystore.addSecret('password', importingPass, '', true)
+
+      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
+
+      await expect(
+        importingKeystore.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
+      ).rejects.toThrow('no Privacy Pools key is stored')
+    })
+
+    test('keeps a synced Privacy Pools key for a phrase this device already has', async () => {
+      const seedId = await addPassphrasePhraseWithKey(false)
+      await exportingKeystore.storePrivacyPoolsKey(seedId, PASSPHRASE)
+      await importingKeystore.addSecret('password', importingPass, '', true)
+      await importingKeystore.addTempSeed({
+        seed: process.env.SEED,
+        seedPassphrase: PASSPHRASE,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      await importingKeystore.persistTempSeed()
+      const existingSeedId = importingKeystore.seeds[0]!.id
+
+      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
+
+      expect(importingKeystore.seeds).toHaveLength(1)
+      expect(
+        await importingKeystore.derivePrivacyPoolsKey(
+          existingSeedId,
+          PRIVACY_POOLS_SIGNING_KEY_PATH
+        )
       ).toBe(await exportingKeystore.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH))
     })
 

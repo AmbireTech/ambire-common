@@ -1062,14 +1062,39 @@ export class MainController extends EventEmitter implements IMainController {
     return this.privacyPools.accounts.some((account) => account.seedId === seedId)
   }
 
-  /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
-  async addPrivacyPoolsAccount(seedId: string) {
+  /**
+   * Adds the Privacy Pools account of a stored recovery phrase and selects it. A phrase whose
+   * passphrase isn't saved needs it, to save it or to keep the account's key.
+   */
+  async addPrivacyPoolsAccount(
+    seedId: string,
+    {
+      seedPassphrase,
+      shouldSavePassphrase
+    }: { seedPassphrase?: string; shouldSavePassphrase?: boolean } = {}
+  ) {
     await this.initialLoadPromise
 
     // Wrapped as a whole, so a refused account is shown to the user
     await this.withStatus(
       'selectAccount',
       async () => {
+        const seed = this.keystore.seeds.find(({ id }) => id === seedId)
+        if (seed?.withPassphrase && !seed.isPassphraseSaved) {
+          if (
+            !seedPassphrase ||
+            !(await this.keystore.isSeedPassphraseCorrect(seedId, seedPassphrase))
+          )
+            throw new EmittableError({
+              level: 'expected',
+              message: 'Wrong passphrase.',
+              error: new Error('main: wrong passphrase for a Privacy Pools account')
+            })
+
+          if (shouldSavePassphrase) await this.keystore.saveSeedPassphrase(seedId, seedPassphrase)
+          else await this.keystore.storePrivacyPoolsKey(seedId, seedPassphrase)
+        }
+
         await this.privacyPools.addAccount(seedId)
         await this.#selectPrivacyPoolsAccount(seedId)
       },

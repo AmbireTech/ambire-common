@@ -332,11 +332,11 @@ describe('appDataSync payload', () => {
       })
     })
 
-    it('rejects one without its Privacy Pools key, which the phrase alone cannot derive', () => {
+    it('accepts one without a Privacy Pools key, kept only once its account is added', () => {
       const payload = withUnsavedPassphrase()
       delete payload.seeds[0].privacyPoolsSigningKey
 
-      expect(() => serializeAndParse(payload)).toThrow('seed seed-1 has no Privacy Pools key')
+      expect(serializeAndParse(payload)).toEqual(payload)
     })
 
     it('rejects a Privacy Pools key that is not AES-GCM encrypted', () => {
