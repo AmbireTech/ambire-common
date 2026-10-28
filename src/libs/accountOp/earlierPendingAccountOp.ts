@@ -1,5 +1,4 @@
 import { PendingNonceReservation } from '../../utils/nonce'
-import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { collapseReplacedAccountOps, getReplacementKey } from '../activity/replacements'
 import { FeePaymentOption } from '../estimate/interfaces'
 import { AccountOp, getAccountOpNonce } from './accountOp'
@@ -10,9 +9,6 @@ import {
 } from './replacement'
 import { SubmittedAccountOp } from './submittedAccountOp'
 
-const isSentByRelayer = (op: Pick<AccountOp, 'gasFeePayment'>) =>
-  op.gasFeePayment?.broadcastOption === BROADCAST_OPTIONS.byRelayer
-
 /**
  * The earliest sent op that is not confirmed yet and holds a nonce the op being signed needs.
  * Null when nothing holds it back. `reservations` are the pending nonce reservations that match
@@ -21,8 +17,7 @@ const isSentByRelayer = (op: Pick<AccountOp, 'gasFeePayment'>) =>
  *
  * Sending behind a pending transaction is blocked for now. Blocks are fast and every account
  * type can batch, so the user waits or decides what to do with the pending one. Nodes also
- * refuse a second pending transaction from a delegated EOA. Ops that both go through the Relayer
- * don't hold each other back, as the Relayer orders them by nonce.
+ * refuse a second pending transaction from a delegated EOA.
  */
 export const getEarlierPendingAccountOp = ({
   accountOp,
@@ -51,12 +46,7 @@ export const getEarlierPendingAccountOp = ({
   )
   // A pending op and its speed ups replace each other, so they count as one, the newest
   const holdingOps = collapseReplacedAccountOps(
-    pendingAccountOps.filter(
-      (op) =>
-        holderIds.has(op.id) &&
-        op.id !== accountOp.id &&
-        !(isSentByRelayer(accountOp) && isSentByRelayer(op))
-    )
+    pendingAccountOps.filter((op) => holderIds.has(op.id) && op.id !== accountOp.id)
   )
   // A speed up holds the place of the op it replaces, so it's ordered by when that one was sent
   const getFirstSentAt = (op: SubmittedAccountOp) =>

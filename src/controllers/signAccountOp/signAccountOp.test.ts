@@ -2001,113 +2001,6 @@ describe('SignAccountOp Controller ', () => {
   })
 })
 
-describe('Relayer nonce reservation', () => {
-  suppressConsoleBeforeEach()
-  afterEach(() => {
-    jest.restoreAllMocks()
-  })
-
-  const chainId = 137n
-  const chainNonce = 0n
-
-  const initRelayerSign = async () => {
-    const feePaymentOptions = [
-      {
-        paidBy: smartAccount.addr,
-        availableAmount: 500000000n,
-        gasUsed: 25000n,
-        addedNative: 0n,
-        token: {
-          ...nativeFeeToken,
-          address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
-          symbol: 'USDC',
-          name: 'USD Coin',
-          decimals: 6,
-          amount: 500000000n,
-          chainId,
-          priceIn: [{ baseCurrency: 'usd', price: 1 }]
-        }
-      }
-    ]
-    const gasPrice = {
-      maxFeePerGas: toBeHex(10000000000n) as Hex,
-      maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
-    }
-    const { controller, accountsCtrl } = await init(
-      smartAccount,
-      createAccountOp(smartAccount, chainId),
-      eoaSigner,
-      {
-        providerEstimation: { gasUsed: 50000n, feePaymentOptions },
-        ambireEstimation: {
-          deploymentGas: 0n,
-          gasUsed: 50000n,
-          feePaymentOptions,
-          ambireAccountNonce: Number(chainNonce),
-          flags: {}
-        },
-        flags: {},
-        updatedAt: Date.now()
-      },
-      { slow: gasPrice, medium: gasPrice, fast: gasPrice, ape: gasPrice }
-    )
-    controller.update({
-      feeToken: feePaymentOptions[0]!.token,
-      paidBy: smartAccount.addr,
-      signingKeyAddr: eoaSigner.keyPublicAddress,
-      signingKeyType: 'internal',
-      speed: FeeSpeed.Fast,
-      hasNewEstimation: true
-    })
-    jest.spyOn(controller.baseAccount, 'getBroadcastNonce').mockResolvedValue(chainNonce)
-
-    return { controller, accountsCtrl }
-  }
-
-  /** Makes Activity wait for a Relayer op of the account that took the chain nonce */
-  const mockPendingRelayerOp = (controller: SignAccountOpController) => {
-    const pendingAccountOp: SubmittedAccountOp = {
-      ...controller.accountOp,
-      id: 'pending-op',
-      nonce: chainNonce,
-      status: AccountOpStatus.BroadcastedButNotConfirmed,
-      identifiedBy: { type: 'Relayer', identifier: 'pending-relayer-id' },
-      timestamp: Date.now() - 1000
-    }
-    jest
-      .spyOn(ActivityController.prototype, 'broadcastedButNotConfirmed', 'get')
-      .mockReturnValue({ [smartAccount.addr]: [pendingAccountOp] })
-  }
-
-  test('a V2 account skips the account nonce of its own pending Relayer op', async () => {
-    const { controller } = await initRelayerSign()
-    expect(controller.accountOp.gasFeePayment?.broadcastOption).toBe(
-      broadcastLib.BROADCAST_OPTIONS.byRelayer
-    )
-    mockPendingRelayerOp(controller)
-
-    await controller.sign()
-
-    expect(controller.status).toEqual({ type: 'done' })
-    expect(controller.accountOp.nonce).toBe(chainNonce + 1n)
-  })
-
-  test('a Relayer op is not held back by its own pending Relayer op and queues behind it', async () => {
-    const { controller } = await initRelayerSign()
-    mockPendingRelayerOp(controller)
-    controller.update({ hasNewEstimation: true })
-
-    expect(controller.earlierPendingAccountOp).toBeNull()
-    expect(controller.errors.some((e) => e.code === EARLIER_PENDING_TRANSACTION_ERROR_CODE)).toBe(
-      false
-    )
-    await controller.sign()
-
-    expect(controller.status).toEqual({ type: 'done' })
-    expect(controller.accountOp.nonce).toBe(chainNonce + 1n)
-  })
-})
-
 describe('Negative cases', () => {
   suppressConsoleBeforeEach()
 
@@ -6067,7 +5960,7 @@ describe('an earlier pending transaction', () => {
           id: 'other-account',
           accountAddr: smartAccount.addr,
           paidBy: smartAccount.addr,
-          broadcastOption: broadcastLib.BROADCAST_OPTIONS.byRelayer
+          broadcastOption: broadcastLib.BROADCAST_OPTIONS.byBundler
         }),
         buildPendingAccountOp({ id: 'other-chain', chainId: 10n })
       )
@@ -6356,8 +6249,16 @@ describe('an earlier pending transaction', () => {
     test.each<
       [string, Partial<SubmittedAccountOp> & { paidBy?: string; broadcastOption?: string }]
     >([
-      ['sent through the Relayer', { broadcastOption: broadcastLib.BROADCAST_OPTIONS.byRelayer }],
-      ['sent through a bundler', { broadcastOption: broadcastLib.BROADCAST_OPTIONS.byBundler }],
+      [
+        'sent through a bundler',
+        {
+          broadcastOption: broadcastLib.BROADCAST_OPTIONS.byBundler,
+          // Only the 7702 authorization takes a nonce of the EOA, so it holds this op back
+          asUserOperation: {
+            eip7702Auth: { nonce: '0x5' }
+          } as unknown as SubmittedAccountOp['asUserOperation']
+        }
+      ],
       [
         'sent as several transactions',
         { identifiedBy: { type: 'MultipleTxns', identifier: '0x01-0x02' } }

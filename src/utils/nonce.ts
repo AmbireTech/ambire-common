@@ -55,11 +55,7 @@ const takesAccountNonce = ({ gasFeePayment, meta }: NonceOpFields, isSafe: boole
   // A Safe deploy only calls the factory, so it doesn't use the Safe nonce
   if (isSafe) return !meta?.isSafeDeploy
 
-  const broadcastOption = gasFeePayment?.broadcastOption
-  return (
-    broadcastOption === BROADCAST_OPTIONS.byOtherEOA ||
-    broadcastOption === BROADCAST_OPTIONS.byRelayer
-  )
+  return gasFeePayment?.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
 }
 
 /**

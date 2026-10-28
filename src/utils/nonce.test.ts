@@ -124,12 +124,6 @@ describe('utils/nonce', () => {
         expected: [account(3n)]
       },
       {
-        name: 'relayer: account nonce only',
-        op: makeSentOp(BROADCAST_OPTIONS.byRelayer),
-        accountType: 'ambire',
-        expected: [account(3n)]
-      },
-      {
         name: 'Ambire bundler op: nothing, as its nonce is the userOp nonce',
         op: makeSentOp(BROADCAST_OPTIONS.byBundler),
         accountType: 'ambire',
@@ -167,9 +161,9 @@ describe('utils/nonce', () => {
       },
       {
         name: 'null nonce: no account entry',
-        op: makeSentOp(BROADCAST_OPTIONS.byRelayer, { nonce: null as unknown as bigint }),
+        op: makeSentOp(BROADCAST_OPTIONS.byOtherEOA, { nonce: null as unknown as bigint }),
         accountType: 'ambire',
-        expected: []
+        expected: [sender(7n, PAYER)]
       }
     ]
 
@@ -318,14 +312,6 @@ describe('utils/nonce', () => {
           account: makeAccount('ambire')
         },
         expected: [senderKey(PAYER), accountKey]
-      },
-      {
-        name: 'a smart account through the Relayer takes its own nonce',
-        args: {
-          accountOp: makeAccountOp(BROADCAST_OPTIONS.byRelayer),
-          account: makeAccount('ambire')
-        },
-        expected: [accountKey]
       },
       {
         name: 'a smart account through a bundler takes no wallet nonce',

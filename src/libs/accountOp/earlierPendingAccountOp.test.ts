@@ -107,39 +107,6 @@ describe('getEarlierPendingAccountOp', () => {
     expect(result).toBeNull()
   })
 
-  describe('ops sent through the Relayer', () => {
-    const byOption = (broadcastOption: string) => ({
-      ...buildSentByEoa('pending', 1000).gasFeePayment!,
-      broadcastOption
-    })
-    const accountReservation = { ...safeReservation('pending', 8n) }
-    const getResult = (newOpOption: string, pendingOption: string) =>
-      getEarlierPendingAccountOp({
-        accountOp: buildAccountOp({ gasFeePayment: byOption(newOpOption) }),
-        isSafe: false,
-        reservations: [accountReservation],
-        pendingAccountOps: [
-          buildPendingAccountOp('pending', { gasFeePayment: byOption(pendingOption) })
-        ]
-      })
-
-    test('a Relayer op queues behind a pending Relayer op', () => {
-      expect(getResult(BROADCAST_OPTIONS.byRelayer, BROADCAST_OPTIONS.byRelayer)).toBeNull()
-    })
-
-    test('a Relayer op is still held back by a pending op paid by an EOA', () => {
-      expect(getResult(BROADCAST_OPTIONS.byRelayer, BROADCAST_OPTIONS.byOtherEOA)?.id).toBe(
-        'pending'
-      )
-    })
-
-    test('an op paid by an EOA is still held back by a pending Relayer op', () => {
-      expect(getResult(BROADCAST_OPTIONS.byOtherEOA, BROADCAST_OPTIONS.byRelayer)?.id).toBe(
-        'pending'
-      )
-    })
-  })
-
   describe('replaced ops', () => {
     test('counts an op and its speed up as one, the newest', () => {
       const result = getEarlierPendingAccountOp({
