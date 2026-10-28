@@ -84,6 +84,12 @@ export interface SubmittedAccountOp extends AccountOp {
   blockNumber?: number
   blockHash?: string
   gasUsed?: string
+  /**
+   * When Activity got the receipt of the op, in ms. Unset while the op is pending. Its nonces stay
+   * taken for `CONFIRMED_NONCE_SETTLE_MS` from this time. The send time is not used, because a txn
+   * can wait in the mempool for minutes before it is mined.
+   */
+  confirmedAt?: number
   balanceChanges?: BalanceChange[]
   nftBalanceChanges?: NftBalanceChange[]
   balanceChangesFetchRetryCount?: number

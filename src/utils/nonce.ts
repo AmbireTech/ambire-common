@@ -1,6 +1,7 @@
 import { Interface } from 'ethers'
 
 import AmbireAccount from '../../contracts/compiled/AmbireAccount.json'
+import { CONFIRMED_NONCE_SETTLE_MS } from '../consts/activity'
 import { Account } from '../interfaces/account'
 import { IActivityController } from '../interfaces/activity'
 import { RPCProvider } from '../interfaces/provider'
@@ -11,7 +12,11 @@ import { AccountOpStatus } from '../libs/accountOp/types'
 import { BROADCAST_OPTIONS } from '../libs/broadcast/broadcast'
 import isSameAddr from './isSameAddr'
 
-/** A nonce a sent op takes on its chain, worked out from what Activity saved of the op. */
+/**
+ * A nonce a sent op takes on its chain, worked out from what Activity saved of the op. An op can
+ * take more than one, e.g. an SA op paid by an EOA (`byOtherEOA`) takes the `sender` nonce of the
+ * `paidBy` EOA and the `account` nonce of the SA.
+ */
 export type ReservedNonce = {
   /**
    * `sender` is the txn nonce of an EOA, used by a raw txn it sends or by a 7702 authorization
@@ -171,33 +176,84 @@ export function getPendingNonceReservations({
 }
 
 /**
- * The nonce for a new op of `addr`: `chainNonce`, raised past the nonces the pending ops hold, as
- * the RPC may not count them (e.g. a stuck txn dropped by the node the RPC asked). Taking one of
- * them would replace that pending op without the user choosing to. `chainNonce` must already be
- * the next nonce (a txn count or a contract nonce).
+ * Whether a txn with this status is in a block. A reverted txn (`Failure`) is mined too, so it
+ * still used up the nonce of the EOA that sent it.
+ */
+export const isMinedStatus = (status?: AccountOpStatus) =>
+  status === AccountOpStatus.Success || status === AccountOpStatus.Failure
+
+/**
+ * The nonces a mined op really used up, out of the ones it took when it was sent. When an SA op
+ * paid by an EOA (`paidBy`) reverts, the EOA nonce is used up, but the revert also undoes the
+ * raise of the SA nonce. So the SA nonce counts only on `Success`. A batch that an EOA sends one
+ * txn at a time takes the status of its last txn, and only its mined txns used their nonces. The
+ * chain mines them in nonce order, so if 2 of the txns with nonces 7, 8 and 9 were mined, the
+ * batch used 7 and 8.
+ */
+const getUsedNonces = (op: SubmittedAccountOp, account: Account): ReservedNonce[] => {
+  const nonces = getSubmittedAccountOpNonces(op, account)
+  const minedTxnCount =
+    op.identifiedBy.type === 'MultipleTxns'
+      ? op.calls.filter((call) => isMinedStatus(call.status)).length
+      : undefined
+  const senderNonces = nonces.filter((reserved) => reserved.kind === 'sender')
+
+  return nonces.filter((reserved) => {
+    if (reserved.kind === 'account') return op.status === AccountOpStatus.Success
+    if (minedTxnCount === undefined) return isMinedStatus(op.status)
+
+    const lowerNonceCount = senderNonces.filter((other) => other.nonce < reserved.nonce).length
+    return lowerNonceCount < minedTxnCount
+  })
+}
+
+/**
+ * The nonces that a new op must skip because of `op` at `now`. A pending op holds all the nonces
+ * it took. A mined op holds only the ones it used, and only for `CONFIRMED_NONCE_SETTLE_MS` after
+ * its receipt. Any other op, like a stuck or dropped one, holds none.
+ */
+const getHeldNonces = (op: SubmittedAccountOp, account: Account, now: number): ReservedNonce[] => {
+  if (op.status === AccountOpStatus.BroadcastedButNotConfirmed)
+    return getSubmittedAccountOpNonces(op, account)
+
+  const isSettling =
+    isMinedStatus(op.status) &&
+    op.confirmedAt !== undefined &&
+    now - op.confirmedAt < CONFIRMED_NONCE_SETTLE_MS
+  return isSettling ? getUsedNonces(op, account) : []
+}
+
+/**
+ * The nonce for a new op of `addr`. It is `chainNonce`, raised past every nonce that the ops in
+ * `accountOps` still hold (see `getHeldNonces`). The RPC can miss those nonces, e.g. when its node
+ * dropped a stuck txn or has not seen the latest block yet. Reusing one would replace a pending op
+ * or give a txn that is never mined. Say an EOA has pending txns with nonces 5 and 6 and the RPC
+ * says 5, the result is 7. Pass the ops of every account, because an EOA can pay for the ops of
+ * an SA (`paidBy`). `chainNonce` must already be the next nonce (a txn count or a contract nonce).
  */
 export function getNextNonce({
   addr,
   kind,
   chainId,
   chainNonce,
-  pendingAccountOps,
+  accountOps,
+  now,
   accounts
 }: NonceKey & {
   chainId: bigint
   chainNonce: bigint
-  pendingAccountOps: SubmittedAccountOp[]
+  accountOps: SubmittedAccountOp[]
+  now: number
   accounts: Account[]
 }): bigint {
-  return getPendingNonceReservations({
-    chainId,
-    keys: [{ kind, addr }],
-    pendingAccountOps,
-    accounts
-  }).reduce(
-    (next, { reserved }) => (reserved.nonce >= next ? reserved.nonce + 1n : next),
-    chainNonce
-  )
+  return accountOps
+    .filter((op) => op.chainId === chainId)
+    .flatMap((op) => {
+      const account = accounts.find((acc) => isSameAddr(acc.addr, op.accountAddr))
+      return account ? getHeldNonces(op, account, now) : []
+    })
+    .filter((held) => held.kind === kind && isSameAddr(held.addr, addr))
+    .reduce((next, held) => (held.nonce >= next ? held.nonce + 1n : next), chainNonce)
 }
 
 /** The highest receipt block per chain of the finalized ops, as `{ [chainId]: blockNumber }`. */

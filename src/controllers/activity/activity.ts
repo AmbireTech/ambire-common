@@ -1781,6 +1781,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   // if it's not an userOp or it is, but isSuccess was not found
                   if (isSuccess === undefined) isSuccess = !!receipt.status
 
+                  accountOp.confirmedAt = Date.now()
                   const updatedOpIfAny = updateOpStatus(
                     accountOp,
                     isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
@@ -2103,9 +2104,17 @@ export class ActivityController extends EventEmitter implements IActivityControl
     return Object.values(this.broadcastedButNotConfirmed).flat()
   }
 
+  /** The ops of every account, whatever their status. */
+  #getAllAccountOps(): SubmittedAccountOp[] {
+    return this.#accounts.accounts.flatMap((acc) =>
+      Object.values(this.#accountsOps[acc.addr] ?? {}).flat()
+    )
+  }
+
   /**
-   * The nonce for a new op of `addr`: `chainNonce`, raised past the nonces of the ops this
-   * wallet still waits for. See `getNextNonce` in `utils/nonce`.
+   * The nonce for a new op of `addr`. It is `chainNonce`, raised past the nonces of the pending
+   * ops of the wallet and of the ops mined less than `CONFIRMED_NONCE_SETTLE_MS` ago, because the
+   * RPC may not count them yet. See `getNextNonce` in `utils/nonce`.
    */
   getNextNonce(
     addr: string,
@@ -2118,7 +2127,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
       kind,
       chainId,
       chainNonce,
-      pendingAccountOps: this.#getPendingAccountOps(),
+      accountOps: this.#getAllAccountOps(),
+      now: Date.now(),
       accounts: this.#accounts.accounts
     })
   }

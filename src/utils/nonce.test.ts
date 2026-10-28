@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals'
 
+import { CONFIRMED_NONCE_SETTLE_MS } from '../consts/activity'
 import { Account } from '../interfaces/account'
 import { AccountOp } from '../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
@@ -182,11 +183,13 @@ describe('utils/nonce', () => {
     const otherAccount: Account = { ...makeAccount('ambire'), addr: OTHER }
     const accounts = [makeAccount('eoa'), otherAccount]
     const chainId = 8453n
+    const NOW = 1_700_000_000_000
     const nextNonce = (
       key: NonceKey,
       chainNonce: bigint,
-      pendingAccountOps: SubmittedAccountOp[]
-    ) => getNextNonce({ ...key, chainId, chainNonce, pendingAccountOps, accounts })
+      accountOps: SubmittedAccountOp[],
+      now = Date.now()
+    ) => getNextNonce({ ...key, chainId, chainNonce, accountOps, now, accounts })
 
     it('is the chain nonce when nothing is pending', () => {
       expect(nextNonce({ kind: 'sender', addr: ACCOUNT }, 7n, [])).toBe(7n)
@@ -238,6 +241,49 @@ describe('utils/nonce', () => {
       expect(nextNonce({ kind: 'sender', addr: OTHER }, 7n, pendingAccountOps)).toBe(7n)
       expect(nextNonce({ kind: 'sender', addr: PAYER }, 7n, pendingAccountOps)).toBe(7n)
       expect(nextNonce({ kind: 'sender', addr: ACCOUNT }, 7n, pendingAccountOps)).toBe(21n)
+    })
+
+    it('holds the nonce of a mined op until the settle time has passed', () => {
+      const mined = makeSentOp(BROADCAST_OPTIONS.bySelf, {
+        status: AccountOpStatus.Success,
+        confirmedAt: NOW
+      })
+      const key: NonceKey = { kind: 'sender', addr: ACCOUNT }
+
+      expect(nextNonce(key, 7n, [mined], NOW + CONFIRMED_NONCE_SETTLE_MS - 1000)).toBe(8n)
+      expect(nextNonce(key, 7n, [mined], NOW + CONFIRMED_NONCE_SETTLE_MS)).toBe(7n)
+    })
+
+    it('holds only the payer nonce of a reverted op, as the account nonce is not raised', () => {
+      const reverted = makeSentOp(BROADCAST_OPTIONS.byOtherEOA, {
+        accountAddr: OTHER,
+        status: AccountOpStatus.Failure,
+        confirmedAt: NOW
+      })
+
+      expect(nextNonce({ kind: 'sender', addr: PAYER }, 7n, [reverted], NOW)).toBe(8n)
+      expect(nextNonce({ kind: 'account', addr: OTHER }, 3n, [reverted], NOW)).toBe(3n)
+    })
+
+    it('holds only the lowest nonces of a batch when its last txn was never mined', () => {
+      const batch = makeSentOp(BROADCAST_OPTIONS.bySelf, {
+        status: AccountOpStatus.Failure,
+        confirmedAt: NOW,
+        identifiedBy: { type: 'MultipleTxns', identifier: '0x01-0x02-0x03' },
+        calls: [
+          { status: AccountOpStatus.Success },
+          { status: AccountOpStatus.Failure },
+          { status: AccountOpStatus.BroadcastedButNotConfirmed }
+        ] as SubmittedAccountOp['calls']
+      })
+
+      expect(nextNonce({ kind: 'sender', addr: ACCOUNT }, 7n, [batch], NOW)).toBe(9n)
+    })
+
+    it('holds nothing for a mined op without a confirmation time', () => {
+      const mined = makeSentOp(BROADCAST_OPTIONS.bySelf, { status: AccountOpStatus.Success })
+
+      expect(nextNonce({ kind: 'sender', addr: ACCOUNT }, 7n, [mined], NOW)).toBe(7n)
     })
   })
 
