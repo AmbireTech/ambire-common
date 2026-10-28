@@ -493,6 +493,17 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     return this.keyIterator?.derivableHdPathTemplates
   }
 
+  /**
+   * The last page that has accounts on it, when the key iterator can only retrieve the
+   * accounts the wallet exported. Undefined when there is no such limit.
+   */
+  get maxPage() {
+    const retrievableKeysCount = this.keyIterator?.retrievableKeysCount
+    if (retrievableKeysCount === undefined) return undefined
+
+    return Math.ceil(retrievableKeysCount / this.pageSize)
+  }
+
   async reset(resetInitParams: boolean = true) {
     this.#setPageRequestId++
     await this.addAccountsPromise
@@ -1639,7 +1650,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
       type: this.type,
       subType: this.subType,
-      derivableHdPathTemplates: this.derivableHdPathTemplates
+      derivableHdPathTemplates: this.derivableHdPathTemplates,
+      maxPage: this.maxPage
     }
   }
 }

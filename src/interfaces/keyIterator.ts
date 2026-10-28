@@ -21,6 +21,13 @@ export interface KeyIterator {
    * off it. Undefined means every path is available.
    */
   derivableHdPathTemplates?: HD_PATH_TEMPLATE_TYPE[]
+  /**
+   * How many keys there are to retrieve, when the wallet exported a list of accounts
+   * instead of a key to derive them from (e.g. a QR wallet exporting the Ledger Live
+   * path) - only the accounts in that export can be retrieved. Undefined means there is
+   * no limit.
+   */
+  retrievableKeysCount?: number
   /** Retrieves the the public addresses (accounts) from specific indexes */
   retrieve: (
     fromToArr: { from: number; to: number }[],
