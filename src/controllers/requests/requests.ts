@@ -445,6 +445,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // When windowManager.focus is called, it may close and reopen the request window as part of its fallback logic.
       // To avoid prematurely running the cleanup logic during that transition, we wait for focusWindowPromise to resolve.
       await this.requestWindow.focusWindowPromise
+      // When the wallet closes the window itself, `closeRequestWindow` handles the close with the
+      // requests it snapshotted when it started. The event can arrive before that close resolves
+      // (on mobile it is dispatched in the same tick), and handling it here first would sweep in
+      // the requests that arrived while the window was closing (e.g. connect, then sign message).
+      await this.requestWindow.closeWindowPromise
 
       await this.#handleRequestWindowClose(winId)
     })
