@@ -75,6 +75,7 @@ import {
   SignUserRequest,
   SiweMessageUserRequest,
   SwapAndBridgeRequest,
+  SwitchAccountRequest,
   TransferRequest,
   TypedMessageUserRequest,
   UserRequest,
@@ -1370,6 +1371,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const safeRejectIds: string[] = []
     let didRemoveCurrentUserRequest = false
     let didRemoveSkipQueueRequest = false
+    let switchBackRequest: SwitchAccountRequest | undefined
 
     ids.forEach((id) => {
       const req = this.userRequests.find((uReq) => uReq.id === id)
@@ -1398,6 +1400,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
 
         req.signAccountOp.destroy()
+
+        switchBackRequest ??= this.#buildSwitchBackRequest(meta)
       }
       if (kind === 'switchAccount') {
         const requestsToAddOrRemove = this.userRequestsWaitingAccountSwitch.filter(
@@ -1437,6 +1441,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
     })
 
+    // Added straight to the list because `addUserRequests` drops the benzin request, which has
+    // to stay open when this removal comes from a sent transaction
+    if (switchBackRequest) this.userRequests.push(switchBackRequest)
+
     // reject all Safe txns so they do not appear by accident again
     if (safeRejectIds.length) await this.#safe.rejectTxnId(safeRejectIds)
 
@@ -1458,6 +1466,36 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } else {
       this.emitUpdate()
     }
+  }
+
+  /**
+   * The request that takes the user back to the account they came from, once a request that made
+   * the wallet switch accounts is done. Undefined when there is none to go back to. The user may
+   * have picked another account in the meantime, or removed the one they came from, and neither
+   * is overridden.
+   */
+  #buildSwitchBackRequest({
+    accountAddr,
+    switchBackToAccountAddr
+  }: CallsUserRequest['meta']): SwitchAccountRequest | undefined {
+    if (!switchBackToAccountAddr) return undefined
+    if (this.#selectedAccount.account?.addr !== accountAddr) return undefined
+    if (!this.#accounts.accounts.some((a) => a.addr === switchBackToAccountAddr)) return undefined
+
+    const isAlreadyQueued = this.userRequests.some(
+      (r) => r.kind === 'switchAccount' && r.meta.switchToAccountAddr === switchBackToAccountAddr
+    )
+    if (isAlreadyQueued) return undefined
+
+    const hasCallsWaiting = this.userRequests.some(
+      (r) => r.kind === 'calls' && r.meta.accountAddr === switchBackToAccountAddr
+    )
+
+    return buildSwitchAccountUserRequest({
+      switchToAccountAddr: switchBackToAccountAddr,
+      nextRequestKind: hasCallsWaiting ? 'calls' : undefined,
+      dappPromises: []
+    })
   }
 
   async resolveUserRequest(data: any, requestId: UserRequest['id']) {
@@ -3066,8 +3104,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async #addSwitchAccountUserRequest(req: UserRequestWaitingAccountSwitch) {
     const switchAccountUserRequest = buildSwitchAccountUserRequest({
-      nextUserRequest: req,
-      selectedAccountAddr: req.meta.accountAddr,
+      switchToAccountAddr: req.meta.accountAddr,
+      nextRequestKind: req.kind,
       dappPromises: req.dappPromises
     })
     req.meta.switchAccountRequestId = switchAccountUserRequest.id
@@ -3361,8 +3399,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // is over the cap on its own is turned away now rather than after the user has switched
       if (this.#rejectDappCallsOverCap(params.calls.length, params.dappPromises ?? [])) return
 
+      // A speed up or cancel is started from the account that has the pending alert, so the user
+      // is taken back there once it is done. Other requests are what the user came to switch for
+      const startingAccountAddr = this.#selectedAccount.account?.addr
+      const shouldSwitchBack =
+        !!startingAccountAddr && !!params.accountOp && TxnReplacement.isSpeedUp(params.accountOp)
+
       await this.#addSwitchAccountUserRequest({
         ...params,
+        meta: shouldSwitchBack
+          ? { ...params.meta, switchBackToAccountAddr: startingAccountAddr }
+          : params.meta,
         kind: 'calls',
         dappPromises: params.dappPromises ?? []
       })
