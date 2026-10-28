@@ -108,7 +108,8 @@ function getTransferRequestParams({
 
   // if the request is a top up, the recipient is the relayer
   const recipientAddress = _recipientAddress?.toLowerCase()
-  const isTopUp = recipientAddress.toLowerCase() === FEE_COLLECTOR.toLowerCase()
+  const isRecipientFeeCollector = recipientAddress.toLowerCase() === FEE_COLLECTOR.toLowerCase()
+  const isNativeToken = Number(selectedToken.address) === 0
   const sanitizedAmount = getSanitizedAmount(amount, selectedToken.decimals)
 
   const bigNumberHexAmount = `0x${parseUnits(
@@ -118,18 +119,17 @@ function getTransferRequestParams({
 
   // if the top up is a native one, we should wrap the native before sending it
   // as otherwise a Transfer event is not emitted and the top up will not be
-  // recorded
-  const isNativeTopUp = Number(selectedToken.address) === 0 && isTopUp
+  // recorded. Wrapping is possible only on predefined networks with a wrapped addr
+  const wrappedAddr =
+    isNativeToken && isRecipientFeeCollector
+      ? networks.find((n) => n.chainId === selectedToken.chainId)?.wrappedAddr
+      : undefined
+  // a native transfer to the fee collector that can't be wrapped (e.g. on a custom network)
+  // is sent as a regular transfer. It isn't recorded as a top up, so it shouldn't count
+  // towards the gas tank balance
+  const isTopUp = isRecipientFeeCollector && (!isNativeToken || !!wrappedAddr)
 
-  if (isNativeTopUp) {
-    // if not predefined network, we cannot make a native top up
-    const network = networks.find((n) => n.chainId === selectedToken.chainId)
-    if (!network) return null
-
-    // if a wrapped addr is not specified, we cannot make a native top up
-    const wrappedAddr = network.wrappedAddr
-    if (!wrappedAddr) return null
-
+  if (wrappedAddr) {
     const wrapped = new Interface(WETH)
     const deposit = wrapped.encodeFunctionData('deposit')
 
