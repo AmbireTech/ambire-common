@@ -767,7 +767,10 @@ export class SignAccountOpController
 
     return {
       id: this.#earlierPending.accountOp.id,
-      canReplace: !!this.#earlierPending.replacementAccountOp && !this.#isSignedBySafeOwner,
+      // While replacing, it can always stop, even when replacing fails for a moment
+      canReplace:
+        !this.#isSignedBySafeOwner &&
+        (this.#replacement?.kind === 'newCalls' || !!this.#earlierPending.replacementAccountOp),
       isReplacing: this.#replacement?.kind === 'newCalls'
     }
   }
@@ -1367,14 +1370,23 @@ export class SignAccountOpController
 
   /**
    * Goes back from sending in place of the earlier pending op (`newCalls`) to a normal op, which
-   * the pending op holds back again. The caller updates the controller after it.
+   * the pending op holds back again. A Safe op that took the Safe nonce of the replaced op moves
+   * to the next free one, unless an owner signed it. The caller updates the controller after it.
    */
   #leaveReplaceMode() {
     if (this.#replacement?.kind !== 'newCalls') return
 
+    const wasReplacingOwnSafeOp =
+      !!this.account.safeCreation && isSameAddr(this.#replacement.accountAddr, this.account.addr)
     this.#replacement.destroy()
     this.#replacement = undefined
     this.#updateAccountOp({ eoaNonce: undefined })
+    // Back to a new Safe transaction, after the pending one, or after it once it's confirmed.
+    // A signed one keeps its Safe nonce, as the signature is for it
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (wasReplacingOwnSafeOp && !this.#isSignedBySafeOwner && accountState)
+      this.setSafeNonce(this.#getAccountNextNonce(accountState.nonce))
     this.#updateEarlierPendingAccountOp()
   }
 
@@ -1508,14 +1520,7 @@ export class SignAccountOpController
     if (this.#replacement?.kind !== 'newCalls') return
     if (!this.canUpdate() || this.#isSignedBySafeOwner) return
 
-    const wasReplacingOwnSafeOp =
-      !!this.account.safeCreation && isSameAddr(this.#replacement.accountAddr, this.account.addr)
     this.#leaveReplaceMode()
-    // Back to a new Safe transaction, after the pending one
-    const accountState =
-      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-    if (wasReplacingOwnSafeOp && accountState)
-      this.setSafeNonce(this.#getAccountNextNonce(accountState.nonce))
     this.update({ hasNewEstimation: true })
   }
 

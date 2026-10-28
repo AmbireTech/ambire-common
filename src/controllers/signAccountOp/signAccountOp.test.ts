@@ -6486,6 +6486,8 @@ describe('an earlier pending transaction', () => {
 
         expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
         expect(controller.accountOp.eoaNonce).toBe(5n)
+        // So Don't replace stays
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
       })
     })
 
@@ -6728,6 +6730,22 @@ describe('an earlier pending transaction', () => {
         expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
         expect(controller.accountOp.nonce).toBe(4n)
         expect(controller.accountOp.eoaNonce).toBeUndefined()
+      })
+
+      test('when Replace ends on its own, it moves past the Safe nonce of the replaced transaction', async () => {
+        const { controller } = await initSafe({ threshold: 2, signed: [], paidBy: payerAddr })
+        const pendingAccountOpsSpy = holdBehind(controller, buildPendingSentByEoa())
+        controller.replacePendingAccountOp()
+        expect(controller.accountOp.nonce).toBe(3n)
+        // Confirmed, so Activity counts its Safe nonce while the chain may not yet
+        jest.spyOn(ActivityController.prototype, 'getNextNonce').mockReturnValue(4n)
+
+        pendingAccountOpsSpy.mockReturnValue({})
+        controller.update({ hasNewEstimation: true })
+
+        expect(controller.earlierPendingAccountOp).toBeNull()
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(controller.accountOp.nonce).toBe(4n)
       })
 
       test('signed by an owner, it is not offered to replace, as the signature is for its Safe nonce', async () => {
