@@ -45,9 +45,6 @@ export const extractEntropyFromSeed = (seed: string): Uint8Array => {
 }
 
 /**
- * Reconstructs a BIP39 seed phrase from entropy and optional passphrase.
- */
-/**
  * The BIP32 master node of a phrase with its passphrase. Its `fingerprint` tells passphrases apart
  * without storing them, and helps guess one no more than the addresses kept next to it do.
  */
@@ -66,6 +63,9 @@ export const getNextPassphraseLabel = (
   return String(number)
 }
 
+/**
+ * Reconstructs a BIP39 seed phrase from entropy and optional passphrase.
+ */
 export const reconstructSeedFromEntropy = (
   entropy: Uint8Array,
   passphrase?: string | null
