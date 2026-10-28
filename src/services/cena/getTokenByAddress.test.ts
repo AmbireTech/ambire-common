@@ -123,4 +123,44 @@ describe('getTokenByAddress', () => {
       'network down'
     )
   })
+
+  it('gives up on a Cena request that takes too long and aborts it', async () => {
+    jest.useFakeTimers()
+
+    try {
+      let capturedSignal: AbortSignal | undefined
+      const fetch = jest.fn((_url: string, init: any) => {
+        capturedSignal = init.signal
+        // Never settles on its own
+        return new Promise(() => {})
+      })
+
+      const tokenPromise = getTokenByAddress({
+        fetch: fetch as any,
+        address: tokenAddress,
+        chainId: 1
+      })
+      const assertion = expect(tokenPromise).rejects.toThrow(
+        'temporarily unavailable or your internet connection is too slow'
+      )
+
+      await jest.advanceTimersByTimeAsync(15000)
+      await assertion
+      expect(capturedSignal?.aborted).toBe(true)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it('does not abort a Cena request that finished in time', async () => {
+    let capturedSignal: AbortSignal | undefined
+    const fetch = jest.fn((_url: string, init: any) => {
+      capturedSignal = init.signal
+      return Promise.resolve(makeResponse({}, false, 404))
+    })
+
+    await getTokenByAddress({ fetch: fetch as any, address: tokenAddress, chainId: 1 })
+
+    expect(capturedSignal?.aborted).toBe(false)
+  })
 })

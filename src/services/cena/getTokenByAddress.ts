@@ -3,7 +3,7 @@ import { getAddress, isAddress } from 'ethers'
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { CustomResponse, Fetch } from '../../interfaces/fetch'
 import { SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
-import { waitWithAbort } from '../../utils/wait'
+import { fetchWithTimeout } from '../../utils/fetch'
 
 export const CENA_API_BASE_URL = 'https://cena.ambire.com'
 
@@ -29,28 +29,26 @@ type CenaTokenResponse = {
   symbol?: string
 }
 
-const fetchWithTimeout = async (fetch: Fetch, url: string): Promise<CustomResponse> => {
-  const { promise: timeoutPromise, abort } = waitWithAbort(CENA_REQUEST_TIMEOUT_MS)
-
+const fetchFromCena = async (fetch: Fetch, url: string): Promise<CustomResponse> => {
   try {
-    return await Promise.race([
-      fetch(url, { headers: { Accept: 'application/json', 'Content-Type': 'application/json' } }),
-      timeoutPromise.then(() => {
-        throw new SwapAndBridgeProviderApiError(
-          `${ERROR_PREFIX} Our token information service is temporarily unavailable or your internet connection is too slow.`
-        )
-      })
-    ])
+    return await fetchWithTimeout(
+      fetch,
+      url,
+      { headers: { Accept: 'application/json', 'Content-Type': 'application/json' } },
+      CENA_REQUEST_TIMEOUT_MS
+    )
   } catch (error: any) {
-    if (error instanceof SwapAndBridgeProviderApiError) throw error
+    if (error?.message === 'request-timeout') {
+      throw new SwapAndBridgeProviderApiError(
+        `${ERROR_PREFIX} Our token information service is temporarily unavailable or your internet connection is too slow.`
+      )
+    }
 
     throw new SwapAndBridgeProviderApiError(
       `${ERROR_PREFIX} Our token information service could not be reached. Error details: <${
         error?.message || 'no message'
       }>`
     )
-  } finally {
-    abort()
   }
 }
 
@@ -93,7 +91,7 @@ export const getTokenByAddress = async ({
 
   const normalizedAddress = getAddress(address)
 
-  const platformResponse = await fetchWithTimeout(
+  const platformResponse = await fetchFromCena(
     fetch,
     `${CENA_API_BASE_URL}/api/v3/platform/${chainId}`
   )
@@ -101,7 +99,7 @@ export const getTokenByAddress = async ({
   const { platformId } = await parseResponse<CenaPlatformResponse>(platformResponse)
   if (typeof platformId !== 'string' || !platformId) return null
 
-  const tokenResponse = await fetchWithTimeout(
+  const tokenResponse = await fetchFromCena(
     fetch,
     `${CENA_API_BASE_URL}/api/v3/coins/${encodeURIComponent(
       platformId
