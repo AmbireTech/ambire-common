@@ -8,8 +8,8 @@ The controller is the only `EventEmitter`. The work is done by plain classes tha
 
 | Module | Holds |
 | --- | --- |
-| `protocolRegistry.ts` | The SDK plugins, one per chain and phrase, their keystores, and the chain versions |
-| `sync.ts` | The sync queue, the first read of each chain's shared state, account states (notes), and sync epochs |
+| `protocolRegistry.ts` | The SDK plugins, one per chain and phrase, their keystores, the chain versions, and the version of each chain's stored state |
+| `sync.ts` | The sync queue, the first read of each chain's shared state, the one-time rebuild of an outdated one, account states (notes, and the history while a screen shows it), and sync epochs |
 | `deposits.ts` | Deposit requirements, the next deposit's precommitment, and prepared and broadcast deposits |
 | `withdrawal.ts` | The operation, the proved-but-unsent withdrawal, and the preparation queue and its cancellation |
 | `ragequit.ts` | Nothing of its own. Lists the deposits still being verified with the account each came from, and builds their public reclaim |
@@ -78,13 +78,28 @@ Updates are sent from one place, so the same rules hold for every module:
 
 - **The account list** is stored under `PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY`.
 - **The plugins' state** (pool history and notes) is stored by the SDK under `privacyPoolsState`. All plugins share one storage adapter (`kohakuStorage`). Adapters per plugin would overwrite each other's progress.
+- **The version of each chain's stored state** sits beside it in `privacyPoolsState`, under our own `ambire-` key. See History.
 - **Deposits and withdrawals are not persisted**, as a local log would link a deposit to its withdrawal.
+
+## History
+
+The account's deposits, withdrawals and deposits taken back, for its Activity screens. Read with the SDK's `history()`, from this device's copy of the pools' history.
+
+- **Never ship it on the SDK up to 0.1.0-alpha.33.** Those versions fetch the block of each of the user's events from the network, which tells it which events are the user's, and store the result unencrypted. From 0.1.0-alpha.34 (kohaku#362) the transaction comes from the bulk sync instead, and the time is estimated from blocks fetched at fixed intervals, the same for every account.
+- **Transaction hashes come with the bulk sync.** The CDN's `/v2` publication (`PRIVACY_POOLS_SAGA_SYNC_URL`) has them, unlike its root one, and so do the provider's logs (`createKohakuProvider`). An event without one is listed without a link.
+- **Stores read before hashes were kept are rebuilt once.** A stored state with no version beside it (`STORE_VERSION` in `protocolRegistry.ts`) has no hash for any event before the upgrade. After a sync of the chain, `sync.ts` reads the chain from scratch into memory with a plugin of its own, from the CDN (about 18 s), while the old state keeps serving the balances. It is then saved over the old one, and the chain's plugins are dropped and retired: what a plugin built before saves, e.g. one syncing for a withdrawal, is ignored, as it would write the old state back. A shown history is read again. A failed rebuild leaves the old state, and is tried again on a later sync, up to 3 times a run. A chain read from scratch by this version gets the version at its first sync.
+- **Read only while a screen shows it.** `history()` syncs the plugin first, which costs seconds even with no new blocks. A screen opens a session with `filterHistory` and closes it with `resetHistoryFilters`. While one is open, each sync of the selected account reads the history right after the notes, in the same turn of the queue, so the plugin never syncs twice at once. The balances are shown before the history is read.
+- **A stale list is kept.** A sync with no screen open leaves the history marked as not current. The next screen shows it at once, and reads it again.
+- **Paged here, not by the SDK.** The SDK returns the whole history per chain, newest first. The controller merges the chains newest first and serves each session one page in `history`, in the same shape as `ActivityController`'s.
+- **Under review comes from the notes.** The SDK keeps a deposit taken back as 'pending', so a deposit is under review only while a note with its label is still pending.
+- **No recipient for withdrawals.** The pool's records do not say where a withdrawal went, and asking for its transaction would single it out.
+- **Phrase-derived.** It lives in the account states of `sync.ts`, so a lock or the account's removal drops it with the notes. The sessions hold only filters and pages, so they are kept.
 
 ## Ragequit
 
 A deposit still being verified can only be taken back publicly, in full, by the account that made it (the pool checks `msg.sender`). Verified deposits are sent from the Privacy Pools account instead, so they are never offered.
 
-- **Depositors are read locally.** Each note's `depositor` (and its deposit index, which orders them newest first) comes with `notes()` in `sync.ts`, from the pools' history synced in bulk. Never use the SDK's `history()` or the pool's `depositors(label)`: both ask the network about single deposits, which tells it which ones are the user's.
+- **Depositors are read locally.** Each note's `depositor` (and its deposit index, which orders them newest first) comes with `notes()` in `sync.ts`, from the pools' history synced in bulk. Never use the pool's `depositors(label)`: it asks the network about a single deposit, which tells it which one is the user's. The same holds for the SDK's `history()` up to 0.1.0-alpha.33 - see History.
 - **No deposit dates.** `INote` has no block, and asking for a deposit's block or its time would single it out. Once Kohaku exposes the block on `INote`, the Rage quit sheet can show when each deposit was made again.
 - **The SDK's call is checked** against the deposit (label, amount, and a pool in `PrivacyPoolsChainConfig.pools` holding its token), as the SDK picks the pool and drops a deposit it could not prove for with only a warning.
 - **The SDK syncs before proving**, outside the queue, so a ragequit waits for the running sync first, as a withdrawal does. Then the deposit is read again through the queue: if it was verified while being proved, it is refused, as it can now be sent privately instead of going back publicly. A failed read refuses it too.
