@@ -1,10 +1,14 @@
+import { makeError } from 'ethers'
+
 import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import {
+  getBroadcastServiceErrorMessage,
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
-  getSafeGasRefundWarning
+  getSafeGasRefundWarning,
+  isUnderpriced
 } from './helper'
 
 const buildSafeTxFixture = (
@@ -159,5 +163,65 @@ describe('getSafeGasRefundWarning', () => {
 
   test('does not warn when accountOp.safeTx is not set', () => {
     expect(getSafeGasRefundWarning(accountOp)).toBeNull()
+  })
+})
+
+describe('getBroadcastServiceErrorMessage', () => {
+  const userOpPayload = {
+    method: 'eth_sendUserOperation',
+    params: [{ sender: '0x01', maxFeePerGas: '0x3b9aca00', maxPriorityFeePerGas: '0x3b9aca00' }]
+  }
+
+  test('returns only the bundler message of an ethers error, not the request payload', () => {
+    const error = makeError('could not coalesce error', 'UNKNOWN_ERROR', {
+      error: { code: -32500, message: 'AA23 reverted: not enough balance' },
+      payload: userOpPayload
+    })
+
+    // The full ethers message echoes the user operation and its fee fields
+    expect(isUnderpriced(error.message)).toBe(true)
+    expect(getBroadcastServiceErrorMessage(error)).toBe('AA23 reverted: not enough balance')
+    expect(isUnderpriced(getBroadcastServiceErrorMessage(error))).toBe(false)
+  })
+
+  test('keeps a real fee change reported by the bundler', () => {
+    const bundlerMessage =
+      'maxFeePerGas must be at least 1200 (current maxFeePerGas: 1000) - use pimlico_getUserOperationGasPrice to get the current gas price'
+    const error = makeError('could not coalesce error', 'UNKNOWN_ERROR', {
+      error: { code: -32602, message: bundlerMessage },
+      payload: userOpPayload
+    })
+
+    expect(getBroadcastServiceErrorMessage(error)).toBe(bundlerMessage)
+    expect(isUnderpriced(getBroadcastServiceErrorMessage(error))).toBe(true)
+  })
+
+  test('reads the service message nested under info', () => {
+    const error = makeError('unsupported operation', 'UNSUPPORTED_OPERATION', {
+      operation: 'eth_sendUserOperation',
+      info: { error: { message: 'the method does not exist' }, payload: userOpPayload }
+    })
+
+    expect(getBroadcastServiceErrorMessage(error)).toBe('the method does not exist')
+  })
+
+  test('falls back to the short message when ethers has no service error', () => {
+    const error = makeError('timeout', 'TIMEOUT', {
+      operation: 'eth_sendUserOperation',
+      info: { payload: userOpPayload }
+    })
+
+    expect(getBroadcastServiceErrorMessage(error)).toBe('timeout')
+    expect(isUnderpriced(getBroadcastServiceErrorMessage(error))).toBe(false)
+  })
+
+  test('returns the message of a non-ethers error as it is', () => {
+    const message = 'Transaction fee underpriced. Please select a higher fee and try again'
+
+    expect(getBroadcastServiceErrorMessage(new Error(message))).toBe(message)
+  })
+
+  test('returns an empty string when there is no error', () => {
+    expect(getBroadcastServiceErrorMessage()).toBe('')
   })
 })

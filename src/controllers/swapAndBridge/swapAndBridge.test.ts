@@ -9,6 +9,7 @@ import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
+import { noErc7730DescriptorsRelayer } from '../../../test/mocks/erc7730Relayer'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -232,7 +233,8 @@ const callRelayer = relayerCall.bind({ url: '', fetch })
 const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
 const erc7730Ctrl = new Erc7730Controller({
   storage: storageCtrl,
-  callRelayer,
+  // callRelayer isn't bound, so every descriptor lookup would fail and log an error
+  callRelayer: noErc7730DescriptorsRelayer,
   featureFlags: featureFlagsCtrl,
   providers: providersCtrl,
   ui: uiCtrl
@@ -1201,6 +1203,106 @@ describe('SwapAndBridge Controller', () => {
       expect(swapAndBridgeController.fromChainId).toEqual(Number(fromTokenOnAnotherChain.chainId))
       expect(swapAndBridgeController.toChainId).toEqual(toChainId)
       expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+    })
+  })
+  describe('preselected to token when the form is kept from a previous screen', () => {
+    const toChainId = 8453
+    const toTokenAddr = '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58' // USDT
+    const keptToTokenAddr = '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22' // cbETH
+    let controller: SwapAndBridgeController
+    let portfolioReplacement: { restore: () => void }
+
+    const openScreenWithKeptToToken = async (sessionId: string) => {
+      await controller.initForm(sessionId)
+      await controller.updateForm(
+        { toChainId, toSelectedTokenAddr: keptToTokenAddr },
+        { isToSelectionByUser: true }
+      )
+      expect(controller.toSelectedToken?.address).toEqual(keptToTokenAddr)
+    }
+
+    beforeEach(() => {
+      controller = buildSwapAndBridgeController()
+      // initForm reads the "from" tokens from the selected account's portfolio
+      portfolioReplacement = jest.replaceProperty(selectedAccountCtrl, 'portfolio', {
+        ...selectedAccountCtrl.portfolio,
+        tokens: PORTFOLIO_TOKENS
+      })
+    })
+
+    afterEach(() => {
+      ;[...controller.sessionIds].forEach((sessionId) => controller.unloadScreen(sessionId, true))
+      portfolioReplacement.restore()
+    })
+
+    test('is selected when the popup session kept the previous form', async () => {
+      await openScreenWithKeptToToken('popup')
+      // The popup keeps a filled form when the user leaves the screen
+      controller.unloadScreen('popup')
+      expect(controller.sessionIds).toEqual(['popup'])
+
+      await controller.initForm('popup', {
+        preselectedToToken: { address: toTokenAddr, chainId: BigInt(toChainId) }
+      })
+
+      expect(controller.sessionIds).toEqual(['popup'])
+      expect(controller.toChainId).toEqual(toChainId)
+      expect(controller.toSelectedToken?.address).toEqual(toTokenAddr)
+    })
+
+    test('is selected when another open screen keeps the form', async () => {
+      await openScreenWithKeptToToken('first-screen')
+      const keptFromTokenAddr = controller.fromSelectedToken?.address
+
+      await controller.initForm('second-screen', {
+        preselectedToToken: { address: toTokenAddr, chainId: BigInt(toChainId) }
+      })
+
+      expect(controller.sessionIds).toEqual(['first-screen', 'second-screen'])
+      expect(controller.fromSelectedToken?.address).toEqual(keptFromTokenAddr)
+      expect(controller.toSelectedToken?.address).toEqual(toTokenAddr)
+    })
+
+    test('replaces the kept to token when the from token was switched from a to token', async () => {
+      await openScreenWithKeptToToken('first-screen')
+      await controller.switchFromAndToTokens()
+      expect(controller.fromSelectedToken?.isSwitchedToToken).toBe(true)
+
+      await controller.initForm('second-screen', {
+        preselectedToToken: { address: toTokenAddr, chainId: BigInt(toChainId) }
+      })
+
+      expect(controller.fromSelectedToken?.isSwitchedToToken).toBeFalsy()
+      expect(controller.toSelectedToken?.address).toEqual(toTokenAddr)
+    })
+
+    test('does not keep the previous to token as the to token of a preselected from token', async () => {
+      const fromToken = PORTFOLIO_TOKENS[1]! // cbBTC on Base, also in the mocked to token list
+      await controller.initForm('popup')
+      await controller.updateForm(
+        { toChainId: Number(fromToken.chainId), toSelectedTokenAddr: fromToken.address },
+        { isToSelectionByUser: true }
+      )
+      expect(controller.toSelectedToken?.address).toEqual(fromToken.address)
+      controller.unloadScreen('popup')
+
+      await controller.initForm('popup', {
+        preselectedFromToken: { address: fromToken.address, chainId: fromToken.chainId }
+      })
+
+      expect(controller.fromSelectedToken?.address).toEqual(fromToken.address)
+      expect(controller.toSelectedToken).toBeNull()
+      expect(controller.toChainId).toEqual(Number(fromToken.chainId))
+    })
+
+    test('keeps the form when an open session is opened again without a preselected token', async () => {
+      await openScreenWithKeptToToken('popup')
+      controller.unloadScreen('popup')
+
+      await controller.initForm('popup')
+
+      expect(controller.sessionIds).toEqual(['popup'])
+      expect(controller.toSelectedToken?.address).toEqual(keptToTokenAddr)
     })
   })
   test('should update toChainId', (done) => {
