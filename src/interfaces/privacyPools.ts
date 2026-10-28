@@ -1,5 +1,6 @@
 import { IrCall } from '../libs/humanizer/interfaces'
 import { ControllerInterface } from './controller'
+import { Pagination, PaginationResult } from '../utils/paginate'
 import { Hex } from './hex'
 
 export type IPrivacyPoolsController = ControllerInterface<
@@ -174,11 +175,70 @@ export type PrivacyPoolsChainState = {
   lastSyncDuration: number | null
 }
 
-/** The part that belongs to one account: its sync of the chain, and its notes in the chain's pools. */
+/**
+ * The part that belongs to one account: its sync of the chain, its notes in the chain's pools, and
+ * its history there when asked for (see `PrivacyPoolsController.filterHistory`).
+ */
 export type PrivacyPoolsAccountChainState = Pick<
   PrivacyPoolsChainState,
   'syncStatus' | 'syncStartedAt' | 'error' | 'lastSyncedAt' | 'lastSyncDuration'
-> & { notes: PrivacyPoolsNote[] }
+> & {
+  notes: PrivacyPoolsNote[]
+  /** Newest first. Null until read: it is read only while the UI shows it. */
+  history: PrivacyPoolsHistoryEntry[] | null
+  /** Whether `history` was read by the sync that read `notes`. Kept, though stale, until reread. */
+  isHistoryCurrent: boolean
+  /** Why the last read of the history failed, or null. */
+  historyError: string | null
+}
+
+/** A deposit into the account, a withdrawal from it, or a deposit taken back (ragequit). */
+export type PrivacyPoolsHistoryEntryType = 'deposit' | 'withdrawal' | 'ragequit'
+
+/**
+ * One event of the account's history, read from this device's copy of the pools' history, so
+ * nothing about it is asked of the network.
+ */
+export type PrivacyPoolsHistoryEntry = {
+  /** Unique within the account's history and the same across reads, for list keys. */
+  id: string
+  type: PrivacyPoolsHistoryEntryType
+  chainId: string
+  /** In the wallet's form - `ZERO_ADDRESS` for native. */
+  tokenAddress: string
+  /**
+   * What the event moved: a deposit's amount after the pool's fee, the whole amount a withdrawal
+   * took out (its fee included), or all of a deposit taken back.
+   */
+  amount: bigint
+  /** In ms. Estimated from the blocks around it, so it can be off by a minute or two. */
+  timestamp: number
+  /** Null when this device's copy of the history did not record it. */
+  txnId: Hex | null
+  /**
+   * The public address on the other side: the one a deposit came from, or a deposit taken back
+   * went to. Null for a withdrawal, as where it went is not in the pool's records.
+   */
+  counterpartyAddr: Hex | null
+  /** A deposit still being verified: it cannot be sent privately yet. */
+  isUnderReview: boolean
+}
+
+/** What a history page is narrowed to. */
+export type PrivacyPoolsHistoryFilters = {
+  /** One network, or all of them when left out. */
+  chainId?: string
+}
+
+/** A page of the selected account's history, as one screen (session) shows it. */
+export type PrivacyPoolsHistorySession = {
+  filters: PrivacyPoolsHistoryFilters
+  pagination: Pagination
+  /** Null until every network shown has been read once, so an empty page means no activity. */
+  result: PaginationResult<PrivacyPoolsHistoryEntry> | null
+  /** Why a network shown could not be read, or null. What was read before is still in `result`. */
+  error: string | null
+}
 
 /**
  * A prepared withdrawal's cost. The fee is decoded from the signed userOp, not taken from the SDK

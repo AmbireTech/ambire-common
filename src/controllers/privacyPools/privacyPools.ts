@@ -18,6 +18,8 @@ import {
   PrivacyPoolsChainPoolStats,
   PrivacyPoolsChainState,
   PrivacyPoolsDepositAssetConfig,
+  PrivacyPoolsHistoryFilters,
+  PrivacyPoolsHistorySession,
   PrivacyPoolsOperation,
   PrivacyPoolsRagequitDeposit,
   PrivacyPoolsSendForm,
@@ -30,12 +32,14 @@ import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
 import { Call } from '../../libs/accountOp/types'
 import { createKohakuStorage } from '../../libs/kohaku/host'
+import { getPrivacyPoolsHistoryPage } from '../../libs/privacyPools/history'
 import { fetchPrivacyPoolsPrices, getPrivacyPoolsPriceKey } from '../../libs/privacyPools/prices'
 import {
   createProverFactory,
   PrivacyPoolsProverFactory,
   withCancellableProving
 } from '../../libs/privacyPools/prover'
+import { Pagination } from '../../utils/paginate'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { LockGeneration, PhraseScopedModule, PrivacyPoolsContext } from './context'
 import { PrivacyPoolsDepositParams, PrivacyPoolsDeposits } from './deposits'
@@ -51,6 +55,8 @@ const PRICES_MAX_AGE_MS = 5 * 60 * 1000
 
 /** A chain read more recently than this is not read again when the account is opened. */
 const SYNC_MAX_AGE_MS = 10 * 60 * 1000
+
+const DEFAULT_HISTORY_PAGINATION: Pagination = { fromPage: 0, itemsPerPage: 10 }
 
 /**
  * Privacy Pools state: one plugin per (chain, recovery phrase) and its notes. Scoped by phrase, as note secrets are derived from it - accounts without one (hardware,
@@ -98,6 +104,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #poolStatsRefreshIds: { [chainId: string]: number } = {}
 
   #sendForm: PrivacyPoolsSendFormState
+
+  /**
+   * Per screen (session) showing the selected account's history: what it is narrowed to and which
+   * page. Not derived from a phrase, so kept through a lock. See `filterHistory`.
+   */
+  #historySessions: {
+    [sessionId: string]: Pick<PrivacyPoolsHistorySession, 'filters' | 'pagination'>
+  } = {}
 
   /** In teardown order: a withdrawal being proved is cancelled before its plugin is dropped. */
   #phraseScopedModules: PhraseScopedModule[]
@@ -204,8 +218,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     )
 
     this.#registry = new PrivacyPoolsProtocolRegistry(ctx, cancellableProverFactory)
-    this.#sync = new PrivacyPoolsSync(ctx, this.#registry, (chainId) =>
-      this.#refreshPoolStats(chainId)
+    this.#sync = new PrivacyPoolsSync(
+      ctx,
+      this.#registry,
+      (chainId) => this.#refreshPoolStats(chainId),
+      (seedId) => this.#isHistoryWanted(seedId)
     )
     this.#deposits = new PrivacyPoolsDeposits(ctx, this.#registry, this.#sync)
     this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
@@ -415,6 +432,38 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     )
   }
 
+  /**
+   * The selected account's history, one page per screen showing it. Read only while a screen shows
+   * it, along with each sync - see `filterHistory`.
+   */
+  get history(): { [sessionId: string]: PrivacyPoolsHistorySession } {
+    const accountChains = this.#getSelectedAccountStates()
+
+    return Object.fromEntries(
+      Object.entries(this.#historySessions).map(([sessionId, { filters, pagination }]) => {
+        const chainStates = this.#getHistoryChainIds(filters).map(
+          (chainId) => accountChains[chainId]
+        )
+        // A failed read settles the chain too, so the page shows what was read rather than load
+        const isEveryChainSettled = chainStates.every(
+          (state) => !!state && (!!state.history || !!state.historyError || !!state.error)
+        )
+        const histories = chainStates.flatMap((state) => (state?.history ? [state.history] : []))
+        const failedState = chainStates.find((state) => state?.historyError || state?.error)
+
+        return [
+          sessionId,
+          {
+            filters,
+            pagination,
+            result: isEveryChainSettled ? getPrivacyPoolsHistoryPage(histories, pagination) : null,
+            error: failedState?.historyError || failedState?.error || null
+          }
+        ]
+      })
+    )
+  }
+
   /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase), read once. */
   get depositAssetConfigs(): { [key: string]: PrivacyPoolsDepositAssetConfig } {
     return this.#deposits.assetConfigs
@@ -555,6 +604,66 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       })
 
       await Promise.all(staleChainIds.map((chainId) => this.syncChain(chainId)))
+    } catch (error: any) {
+      this.#emitSyncError(error)
+    }
+  }
+
+  /**
+   * Opens a screen's page of the selected account's history, or moves it to another page or
+   * network. Reads the history of the networks shown that have not read it since their last sync,
+   * which syncs them, as the plugin reads it only after syncing. The page arrives in `history`.
+   * The screen closes it with `resetHistoryFilters`.
+   */
+  async filterHistory(
+    sessionId: string,
+    filters: PrivacyPoolsHistoryFilters = {},
+    pagination: Pagination = DEFAULT_HISTORY_PAGINATION
+  ): Promise<void> {
+    this.#historySessions = { ...this.#historySessions, [sessionId]: { filters, pagination } }
+    this.emitUpdate()
+
+    await this.#loadHistory(filters)
+  }
+
+  /** Closes a screen's page of the history. Syncs stop reading it once no screen shows it. */
+  resetHistoryFilters(sessionId: string) {
+    if (!this.#historySessions[sessionId]) return
+
+    const historySessions = { ...this.#historySessions }
+    delete historySessions[sessionId]
+    this.#historySessions = historySessions
+    this.emitUpdate()
+  }
+
+  #isHistoryWanted(seedId: string): boolean {
+    return !!Object.keys(this.#historySessions).length && seedId === this.#getSelectedSeedId()
+  }
+
+  #getHistoryChainIds({ chainId }: PrivacyPoolsHistoryFilters): string[] {
+    if (!chainId) return this.supportedChainIds
+
+    return this.supportedChainIds.filter((supportedChainId) => supportedChainId === chainId)
+  }
+
+  async #loadHistory(filters: PrivacyPoolsHistoryFilters) {
+    const seedId = this.#getSelectedSeedId()
+    if (!seedId || !this.isAvailableForSelectedAccount) return
+    // Like `syncIfStale`: the first read waits for the phrase to be backed up
+    if (this.#keystore.seeds.find(({ id }) => id === seedId)?.notBackedUp) return
+
+    try {
+      await Promise.all(
+        this.#getHistoryChainIds(filters).map(async (chainId) => {
+          // It may have checked whether to read the history before this screen asked for it
+          await this.#sync.getRunningSync(seedId, chainId)
+
+          const state = this.#sync.getAccountChainStates(seedId)[chainId]
+          if (state?.history && state.isHistoryCurrent) return
+
+          await this.syncChain(chainId)
+        })
+      )
     } catch (error: any) {
       this.#emitSyncError(error)
     }
@@ -838,6 +947,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       hasSyncedAnyChain: this.hasSyncedAnyChain,
       operation: this.operation,
       depositAssetConfigs: this.depositAssetConfigs,
+      history: this.history,
       sendForm: this.sendForm,
       sendFormResetCounter: this.sendFormResetCounter,
       hasPersistedSendForm: this.hasPersistedSendForm

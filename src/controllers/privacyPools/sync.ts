@@ -4,8 +4,10 @@ import { fromPrivacyPoolsAssetAddress, getPrivacyPoolsChainConfig } from '../../
 import { Hex } from '../../interfaces/hex'
 import {
   PrivacyPoolsAccountChainState,
-  PrivacyPoolsChainState
+  PrivacyPoolsChainState,
+  PrivacyPoolsNote
 } from '../../interfaces/privacyPools'
+import { toPrivacyPoolsHistoryEntries } from '../../libs/privacyPools/history'
 import { PhraseScopedModule, PrivacyPoolsContext } from './context'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 
@@ -16,7 +18,10 @@ const IDLE_ACCOUNT_CHAIN_STATE: PrivacyPoolsAccountChainState = {
   error: null,
   lastSyncedAt: null,
   lastSyncDuration: null,
-  notes: []
+  notes: [],
+  history: null,
+  isHistoryCurrent: false,
+  historyError: null
 }
 
 /**
@@ -75,14 +80,19 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
   /** Called once the plugin has persisted a chain's shared state. Must not reject. */
   #onSharedStateSynced: (chainId: string) => Promise<unknown>
 
+  /** Whether a sync of the account also reads its history - only while the UI shows it. */
+  #isHistoryWanted: (seedId: string) => boolean
+
   constructor(
     ctx: PrivacyPoolsContext,
     registry: PrivacyPoolsProtocolRegistry,
-    onSharedStateSynced: (chainId: string) => Promise<unknown>
+    onSharedStateSynced: (chainId: string) => Promise<unknown>,
+    isHistoryWanted: (seedId: string) => boolean
   ) {
     this.#ctx = ctx
     this.#registry = registry
     this.#onSharedStateSynced = onSharedStateSynced
+    this.#isHistoryWanted = isHistoryWanted
   }
 
   getAccountChainStates(seedId: string): { [chainId: string]: PrivacyPoolsAccountChainState } {
@@ -253,6 +263,14 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
       if (isChainCold)
         this.#writeInitialChainSync(chainId, { isDone: true, durationMs: syncDuration })
 
+      const syncedNotes: PrivacyPoolsNote[] = notes.map((note) => ({
+        label: note.label,
+        tokenAddress: fromPrivacyPoolsAssetAddress(note.assetAddress),
+        amount: note.balance,
+        approval: note.approved ? 'approved' : 'pending',
+        depositorAddr: getAddress(toBeHex(note.depositor, 20)) as Hex,
+        depositIndex: note.deposit
+      }))
       // Nothing derived from the phrase is written back after a lock or account removal
       const isWritten = this.#writeAccountState(seedId, chainId, generation, {
         syncStatus: 'ready',
@@ -260,14 +278,9 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
         error: null,
         lastSyncedAt: Date.now(),
         lastSyncDuration: syncDuration,
-        notes: notes.map((note) => ({
-          label: note.label,
-          tokenAddress: fromPrivacyPoolsAssetAddress(note.assetAddress),
-          amount: note.balance,
-          approval: note.approved ? 'approved' : 'pending',
-          depositorAddr: getAddress(toBeHex(note.depositor, 20)) as Hex,
-          depositIndex: note.deposit
-        }))
+        notes: syncedNotes,
+        // Kept, as a stale list beats a blank one, until the history is read again
+        isHistoryCurrent: false
       })
       if (!isWritten) return
 
@@ -278,6 +291,13 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
       }
 
       this.#registry.markChainSynced(chainId, seedId)
+
+      // In the same turn of the queue, as the plugin syncs before reading it and must not do so
+      // beside another sync of the account. The balances are shown meanwhile.
+      if (this.#isHistoryWanted(seedId)) {
+        this.#ctx.emitUpdate()
+        await this.#readHistory({ chainId, seedId, generation, notes: syncedNotes })
+      }
     } catch (error: any) {
       // Still not on this device: the next sync reads it again
       if (initialRead && isChainCold) {
@@ -301,6 +321,50 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
       // Settled on every path, as the chain's other syncs wait for it. A no-op once settled.
       initialRead?.resolve()
       this.#ctx.emitUpdate()
+    }
+  }
+
+  /**
+   * Reads the account's history on the chain right after its notes. From the registry again, as
+   * the plugin that read the notes may have been dropped since - see `markChainSynced`. A failure
+   * keeps the notes, and the history read before. Never rejects.
+   */
+  async #readHistory({
+    chainId,
+    seedId,
+    generation,
+    notes
+  }: {
+    chainId: string
+    seedId: string
+    generation: number
+    notes: PrivacyPoolsNote[]
+  }): Promise<void> {
+    try {
+      const protocol = await this.#registry.getProtocol(chainId, seedId)
+      // The plugin syncs first, so a block newer than the notes may add a deposit they lack. It is
+      // then not shown as under review until the next sync.
+      const events = await protocol.history()
+      const pendingLabels = new Set(
+        notes.filter(({ approval }) => approval === 'pending').map(({ label }) => label)
+      )
+
+      this.#writeAccountState(seedId, chainId, generation, {
+        history: toPrivacyPoolsHistoryEntries({ chainId, events, pendingLabels }),
+        isHistoryCurrent: true,
+        historyError: null
+      })
+    } catch (error: any) {
+      if (!this.#ctx.lock.isCurrent(generation)) return
+
+      this.#ctx.emitError({
+        message: 'Could not load your Privacy Pools activity. Please try again.',
+        level: 'silent',
+        error: error instanceof Error ? error : new Error('privacyPools: history read failed')
+      })
+      this.#writeAccountState(seedId, chainId, generation, {
+        historyError: 'Could not load your activity on this network. Please try again.'
+      })
     }
   }
 
