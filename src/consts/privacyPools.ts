@@ -28,9 +28,10 @@ export const PRIVACY_POOLS_SIGNING_KEY_PATH = `m/28784'/1'/${PRIVACY_POOLS_ACCOU
 /**
  * fatlabs' CDN of the entrypoint's and the pools' event history as signed, content-addressed
  * files, against thousands of `eth_getLogs` calls: a chain's first read takes about 18 s. Only
- * Ethereum is published. Every file is checked against the signed manifest before use.
+ * Ethereum is published. Every file is checked against the signed manifest before use. The `/v2`
+ * publication, as only it has each event's transaction hash, which the activity links to.
  */
-export const PRIVACY_POOLS_SAGA_SYNC_URL = 'https://saga.fatsolutions.xyz'
+export const PRIVACY_POOLS_SAGA_SYNC_URL = 'https://saga.fatsolutions.xyz/v2'
 
 /**
  * Ethereum only: Sepolia has no paymaster, so nothing could be withdrawn there. Other chains
