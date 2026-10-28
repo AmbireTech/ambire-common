@@ -1,7 +1,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 
 import EmittableError from '@/classes/EmittableError'
-import { ACCOUNT_OP_PENDING_TIMEOUT_MS, CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '@/consts/activity'
+import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '@/consts/activity'
 import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
 import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
@@ -1726,19 +1726,9 @@ export class MainController extends EventEmitter implements IMainController {
   async updateAccountsOpsStatuses() {
     await this.initialLoadPromise
 
-    const pendingOpsByAccount = this.activity.broadcastedButNotConfirmed
-    const addressesWithPendingOps = Object.entries(pendingOpsByAccount)
+    const addressesWithPendingOps = Object.entries(this.activity.broadcastedButNotConfirmed)
       .filter(([, ops]) => ops.length > 0)
       .map(([addr]) => addr)
-
-    // The nonces of a pending op stay reserved for as long as it is pending, so one whose op is
-    // gone would otherwise block the next txn forever
-    await this.accounts.dropOrphanedNonceReservations(
-      Object.values(pendingOpsByAccount)
-        .flat()
-        .map(({ id }) => id),
-      Date.now() - ACCOUNT_OP_PENDING_TIMEOUT_MS
-    )
 
     const updatedAccountsOpsByAccount =
       await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
@@ -1796,10 +1786,6 @@ export class MainController extends EventEmitter implements IMainController {
               op.status !== AccountOpStatus.Pending &&
               op.status !== AccountOpStatus.BroadcastedButNotConfirmed
           )
-          // A dropped op has no receipt but still frees its nonces. Nonces the ops used stay
-          // reserved until the latest reads below count them. A slow RPC only keeps them reserved
-          // longer, so there is no need to read again until it catches up
-          await this.accounts.settleNonceReservations(finalizedAccountOps)
           const blockNumberByChainId = getReceiptBlockNumberByChainId(finalizedAccountOps)
 
           const networks = this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))

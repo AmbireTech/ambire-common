@@ -1703,23 +1703,28 @@ describe('Activity Controller ', () => {
       expect(controllerAccountsOps[sessionId]!.result!.items[999]!.nonce).toEqual(500n)
     })
 
-    test('on load, drops the nonce reservations of sent ops that were never saved', async () => {
+    test('the next nonce goes past the nonces of the pending ops only', async () => {
       const { controller } = await prepareTest()
-      const pendingAccountOp = buildSubmittedAccountOp()
+      const senderKey = { kind: 'sender' as const, addr: SUBMITTED_ACCOUNT_OP.accountAddr }
+      const sentBySelf = (overrides: Partial<submittedAccountOp.SubmittedAccountOp>) =>
+        buildSubmittedAccountOp({
+          gasFeePayment: {
+            ...SUBMITTED_ACCOUNT_OP.gasFeePayment!,
+            broadcastOption: BROADCAST_OPTIONS.bySelf
+          },
+          ...overrides
+        })
+      const pendingAccountOp = sentBySelf({ eoaNonce: 225n })
       await controller.addAccountOp(pendingAccountOp)
-      const sender = { kind: 'sender' as const, addr: pendingAccountOp.accountAddr }
-      // Sent in an earlier session. The app closed after sending 'never-saved' and before saving it
-      const earlierSession = jest.spyOn(Date, 'now').mockReturnValue(Date.now() - 1000)
-      await mainCtrl.accounts.reserveNonces(pendingAccountOp.id, 1n, [{ ...sender, nonce: 225n }])
-      await mainCtrl.accounts.reserveNonces('never-saved', 1n, [{ ...sender, nonce: 226n }])
-      earlierSession.mockRestore()
+      await controller.addAccountOp(sentBySelf({ eoaNonce: 300n, status: AccountOpStatus.Success }))
 
-      await prepareTest()
-
-      expect(mainCtrl.accounts.getPendingNonceReservations(1n, [sender])).toEqual([
-        { accountOpId: pendingAccountOp.id, reserved: { ...sender, nonce: 225n } }
+      expect(controller.getPendingNonceReservations(1n, [senderKey])).toEqual([
+        { accountOpId: pendingAccountOp.id, reserved: { ...senderKey, nonce: 225n } }
       ])
-      await mainCtrl.accounts.dropOrphanedNonceReservations([], Infinity)
+      expect(controller.getNextNonce(senderKey.addr, 1n, 'sender', 225n)).toBe(226n)
+      // Another chain, or a chain that already counts the pending txn
+      expect(controller.getNextNonce(senderKey.addr, 10n, 'sender', 225n)).toBe(225n)
+      expect(controller.getNextNonce(senderKey.addr, 1n, 'sender', 230n)).toBe(230n)
     })
   })
 

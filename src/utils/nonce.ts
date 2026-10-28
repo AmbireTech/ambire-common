@@ -1,7 +1,7 @@
 import { Interface } from 'ethers'
 
 import AmbireAccount from '../../contracts/compiled/AmbireAccount.json'
-import { Account, AccountOnchainState } from '../interfaces/account'
+import { Account } from '../interfaces/account'
 import { IActivityController } from '../interfaces/activity'
 import { RPCProvider } from '../interfaces/provider'
 import { isSmartAccount } from '../libs/account/account'
@@ -11,7 +11,7 @@ import { AccountOpStatus } from '../libs/accountOp/types'
 import { BROADCAST_OPTIONS } from '../libs/broadcast/broadcast'
 import isSameAddr from './isSameAddr'
 
-/** A nonce an op takes on its chain, recorded when the op is sent. */
+/** A nonce a sent op takes on its chain, worked out from what Activity saved of the op. */
 export type ReservedNonce = {
   /**
    * `sender` is the txn nonce of an EOA, used by a raw txn it sends or by a 7702 authorization
@@ -22,33 +22,11 @@ export type ReservedNonce = {
   nonce: bigint
 }
 
-/** The nonces one sent op takes on its chain, held until the RPC counts them. */
-export type NonceReservation = {
-  chainId: bigint
-  nonces: ReservedNonce[]
-  /** Set once the op has a final status, so a latest state read that counts a nonce frees it. */
-  isSettled: boolean
-  /**
-   * When the reservation was made, in ms. It is reset when the op is settled, and the reservation
-   * expires ACCOUNT_OP_PENDING_TIMEOUT_MINS after that. While the op is pending in Activity it
-   * does not expire.
-   */
-  createdAt: number
-}
-
-/** A reserved nonce of an op that is still waiting for a final status. */
+/** A nonce held by an op that Activity still waits for. */
 export type PendingNonceReservation = { accountOpId: string; reserved: ReservedNonce }
 
-/** A nonce an op would take, without its value. Used to find the reservations that hold it back. */
+/** A nonce an op would take, without its value. Used to find the pending ops that hold it. */
 export type NonceKey = Pick<ReservedNonce, 'kind' | 'addr'>
-
-/** Whether a txn with this status was mined, so it raised the sender nonce. */
-export const isMinedStatus = (status?: AccountOpStatus) =>
-  status === AccountOpStatus.Success || status === AccountOpStatus.Failure
-
-/** Whether `state` already counts the reserved nonce, i.e. its next nonce is past it. */
-export const isNonceCounted = (state: AccountOnchainState, { kind, nonce }: ReservedNonce) =>
-  kind === 'sender' ? state.eoaNonce !== null && state.eoaNonce > nonce : state.nonce > nonce
 
 type NonceOpFields = Pick<AccountOp, 'accountAddr' | 'nonce' | 'safeTx' | 'gasFeePayment' | 'meta'>
 
@@ -114,62 +92,112 @@ export function getNonceKeys({
 }
 
 /**
- * The nonces an op takes on its chain. `sender` describes the raw txns that went out, if any.
- * `bundlerAuthorizationNonce` is the nonce of a 7702 authorization that a bundler sends.
+ * How many raw txns of the op went out. A batch sent one txn at a time saves the hashes of the
+ * txns that went out, joined by `-`, so a partly sent batch counts only those.
  */
-export function getNoncesToReserve({
-  accountOp,
-  isSafe,
-  sender,
-  bundlerAuthorizationNonce
-}: {
-  accountOp: NonceOpFields
-  isSafe: boolean
-  sender?: { addr: string; firstNonce: bigint; sentTxnCount: number }
-  bundlerAuthorizationNonce?: bigint
-}): ReservedNonce[] {
-  const reservedNonces: ReservedNonce[] = []
-  const broadcastOption = accountOp.gasFeePayment?.broadcastOption
+const getSentTxnCount = ({ identifiedBy }: SubmittedAccountOp) =>
+  identifiedBy.type === 'MultipleTxns' ? identifiedBy.identifier.split('-').length : 1
 
-  if (sender) {
-    for (let i = 0; i < sender.sentTxnCount; i++) {
-      reservedNonces.push({
-        kind: 'sender',
-        addr: sender.addr,
-        nonce: sender.firstNonce + BigInt(i)
-      })
+/**
+ * The nonces a sent op takes on its chain, worked out from what Activity saved of it: the txn
+ * nonces of the EOA that sent its raw txns (`eoaNonce` onwards), the nonce of a 7702
+ * authorization, and the nonce of the account itself (an Ambire account or a Safe).
+ */
+export function getSubmittedAccountOpNonces(
+  op: SubmittedAccountOp,
+  account: Account
+): ReservedNonce[] {
+  const nonces: ReservedNonce[] = []
+  const isSafe = !!account.safeCreation
+  const broadcastOption = op.gasFeePayment?.broadcastOption
+  const senderAddr = getRawTxnSenderAddr(op)
+
+  if (senderAddr && op.eoaNonce !== null && op.eoaNonce !== undefined) {
+    const sentTxnCount = getSentTxnCount(op)
+    for (let i = 0; i < sentTxnCount; i++) {
+      nonces.push({ kind: 'sender', addr: senderAddr, nonce: op.eoaNonce + BigInt(i) })
     }
 
     // A self-sent delegation raises the nonce once more for its authorization
-    if (
-      broadcastOption === BROADCAST_OPTIONS.delegation &&
-      isSameAddr(sender.addr, accountOp.accountAddr) &&
-      sender.sentTxnCount > 0
-    ) {
-      reservedNonces.push({
-        kind: 'sender',
-        addr: sender.addr,
-        nonce: sender.firstNonce + BigInt(sender.sentTxnCount)
-      })
-    }
+    if (broadcastOption === BROADCAST_OPTIONS.delegation && isSameAddr(senderAddr, op.accountAddr))
+      nonces.push({ kind: 'sender', addr: senderAddr, nonce: op.eoaNonce + BigInt(sentTxnCount) })
   }
 
-  if (bundlerAuthorizationNonce !== undefined) {
-    reservedNonces.push({
+  const bundlerAuthorization = op.asUserOperation?.eip7702Auth
+  if (broadcastOption === BROADCAST_OPTIONS.byBundler && bundlerAuthorization) {
+    nonces.push({
       kind: 'sender',
-      addr: accountOp.accountAddr,
-      nonce: bundlerAuthorizationNonce
+      addr: op.accountAddr,
+      nonce: BigInt(bundlerAuthorization.nonce)
     })
   }
 
-  let accountNonce: bigint | null = null
-  if (takesAccountNonce(accountOp, isSafe))
-    accountNonce = isSafe ? getAccountOpNonce(accountOp) : accountOp.nonce
-  if (accountNonce !== null) {
-    reservedNonces.push({ kind: 'account', addr: accountOp.accountAddr, nonce: accountNonce })
-  }
+  if (!takesAccountNonce(op, isSafe)) return nonces
 
-  return reservedNonces
+  const accountNonce = isSafe ? getAccountOpNonce(op) : op.nonce
+  if (accountNonce !== null)
+    nonces.push({ kind: 'account', addr: op.accountAddr, nonce: accountNonce })
+  return nonces
+}
+
+/**
+ * The nonces on `chainId` that the pending ops hold, for any of `keys`. `pendingAccountOps` are
+ * the ops Activity waits for, of every account, as an EOA may send the txns of another account.
+ * Empty when nothing holds them.
+ */
+export function getPendingNonceReservations({
+  chainId,
+  keys,
+  pendingAccountOps,
+  accounts
+}: {
+  chainId: bigint
+  keys: NonceKey[]
+  pendingAccountOps: SubmittedAccountOp[]
+  accounts: Account[]
+}): PendingNonceReservation[] {
+  return pendingAccountOps
+    .filter((op) => op.chainId === chainId)
+    .flatMap((op) => {
+      const account = accounts.find((acc) => isSameAddr(acc.addr, op.accountAddr))
+      if (!account) return []
+
+      return getSubmittedAccountOpNonces(op, account)
+        .filter((reserved) =>
+          keys.some((key) => key.kind === reserved.kind && isSameAddr(key.addr, reserved.addr))
+        )
+        .map((reserved) => ({ accountOpId: op.id, reserved }))
+    })
+}
+
+/**
+ * The nonce for a new op of `addr`: `chainNonce`, raised past the nonces the pending ops hold, as
+ * the RPC may not count them (e.g. a stuck txn dropped by the node the RPC asked). Taking one of
+ * them would replace that pending op without the user choosing to. `chainNonce` must already be
+ * the next nonce (a txn count or a contract nonce).
+ */
+export function getNextNonce({
+  addr,
+  kind,
+  chainId,
+  chainNonce,
+  pendingAccountOps,
+  accounts
+}: NonceKey & {
+  chainId: bigint
+  chainNonce: bigint
+  pendingAccountOps: SubmittedAccountOp[]
+  accounts: Account[]
+}): bigint {
+  return getPendingNonceReservations({
+    chainId,
+    keys: [{ kind, addr }],
+    pendingAccountOps,
+    accounts
+  }).reduce(
+    (next, { reserved }) => (reserved.nonce >= next ? reserved.nonce + 1n : next),
+    chainNonce
+  )
 }
 
 /** The highest receipt block per chain of the finalized ops, as `{ [chainId]: blockNumber }`. */

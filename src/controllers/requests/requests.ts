@@ -313,7 +313,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * yet, nor by another queued (not yet sent) request.
    */
   #getFirstFreeNonce(accountAddr: string, chainId: bigint, accountStateNonce: bigint): bigint {
-    const startNonce = this.#accounts.getNextNonce(
+    const startNonce = this.#activity.getNextNonce(
       accountAddr,
       chainId,
       'account',

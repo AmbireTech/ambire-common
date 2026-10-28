@@ -16,7 +16,7 @@ const isSentByRelayer = (op: Pick<AccountOp, 'gasFeePayment'>) =>
 /**
  * The earliest sent op that is not confirmed yet and holds a nonce the op being signed needs.
  * Null when nothing holds it back. `reservations` are the pending nonce reservations that match
- * the op's nonces (see `AccountsController.getPendingNonceReservations`), and `pendingAccountOps` the ops
+ * the op's nonces (see `ActivityController.getPendingNonceReservations`), and `pendingAccountOps` the ops
  * Activity waits for, of every account.
  *
  * Sending behind a pending transaction is blocked for now. Blocks are fast and every account
