@@ -10,6 +10,7 @@ import {
   AppDataSyncNewerVersionError,
   AppDataSyncPayload,
   getAppDataSyncKeyAddrs,
+  getAppDataSyncPayloadVersion,
   parseAppDataSyncPayload,
   serializeAppDataSyncPayload
 } from './appDataSync'
@@ -146,9 +147,9 @@ describe('appDataSync payload', () => {
   })
 
   it('tells a payload from a newer app apart, so the user is asked to update', () => {
-    expect(() => serializeAndParse({ ...buildPayload(), v: 3 })).toThrow(
-      AppDataSyncNewerVersionError
-    )
+    expect(() =>
+      serializeAndParse({ ...buildPayload(), v: APP_DATA_SYNC_PAYLOAD_VERSION + 1 } as any)
+    ).toThrow(AppDataSyncNewerVersionError)
   })
 
   it('still reads the accounts-only payload that the released apps export', () => {
@@ -298,6 +299,65 @@ describe('appDataSync payload', () => {
     expect(() => serializeAndParse(payload)).toThrow(
       'seed passphrase seed-1 is not encrypted with AES-GCM'
     )
+  })
+
+  describe('a seed added with a passphrase that is not saved', () => {
+    const withUnsavedPassphrase = () => {
+      const payload: any = buildPayload()
+      payload.v = getAppDataSyncPayloadVersion([{ passphraseFingerprint: '0x1234abcd' }])
+      Object.assign(payload.seeds[0], {
+        passphraseFingerprint: '0x1234abcd',
+        privacyPoolsSigningKey: gcmPayload(32)
+      })
+
+      return payload
+    }
+
+    it('is synced with a version older apps refuse, as they would drop the passphrase', () => {
+      expect(withUnsavedPassphrase().v).toBe(APP_DATA_SYNC_PAYLOAD_VERSION)
+      expect(serializeAndParse(withUnsavedPassphrase())).toEqual(withUnsavedPassphrase())
+    })
+
+    it('leaves the version older apps read when every passphrase is saved', () => {
+      const savedPassphrase = {
+        seedPassphrase: gcmPayload(16),
+        passphraseFingerprint: '0x1234abcd'
+      }
+
+      expect(getAppDataSyncPayloadVersion([savedPassphrase, { seedPassphrase: null }])).toBe(2)
+      expect(getAppDataSyncPayloadVersion([])).toBe(2)
+      expect(serializeAndParse({ ...buildPayload(), v: 2 as const })).toEqual({
+        ...buildPayload(),
+        v: 2
+      })
+    })
+
+    it('rejects one without its Privacy Pools key, which the phrase alone cannot derive', () => {
+      const payload = withUnsavedPassphrase()
+      delete payload.seeds[0].privacyPoolsSigningKey
+
+      expect(() => serializeAndParse(payload)).toThrow('seed seed-1 has no Privacy Pools key')
+    })
+
+    it('rejects a Privacy Pools key that is not AES-GCM encrypted', () => {
+      const payload = withUnsavedPassphrase()
+      payload.seeds[0].privacyPoolsSigningKey = `0x${'ab'.repeat(32)}`
+
+      expect(() => serializeAndParse(payload)).toThrow(
+        'Privacy Pools key of seed seed-1 is not encrypted with AES-GCM'
+      )
+    })
+
+    it('rejects a fingerprint that is not 4 bytes of hex', () => {
+      ;['0x1234', '1234abcd', '0x1234abcdef', 'not hex', 42].forEach((passphraseFingerprint) => {
+        const payload = withUnsavedPassphrase()
+        payload.seeds[0].passphraseFingerprint = passphraseFingerprint
+
+        expect(() => serializeAndParse(payload)).toThrow(
+          'invalid passphrase fingerprint of seed seed-1'
+        )
+      })
+    })
   })
 
   it('accepts a payload with no keys and no seeds (view-only accounts)', () => {

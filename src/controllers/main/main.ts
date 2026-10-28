@@ -2380,6 +2380,39 @@ export class MainController extends EventEmitter implements IMainController {
     this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
   }
 
+  /**
+   * Opens the account picker on a saved recovery phrase. One whose passphrase isn't saved needs it
+   * from the user, and has it saved if they chose to.
+   */
+  async accountPickerSetInitParamsFromSavedSeed({
+    id,
+    seedPassphrase,
+    shouldSavePassphrase
+  }: {
+    id: string
+    seedPassphrase?: string | null
+    shouldSavePassphrase?: boolean
+  }) {
+    const savedSeed = await this.keystore.getSavedSeed(id)
+    const passphrase = savedSeed.seedPassphrase || seedPassphrase || null
+
+    // Another passphrase would open other accounts, which this phrase's entry doesn't hold
+    if (!(await this.keystore.isSeedPassphraseCorrect(id, passphrase)))
+      throw new EmittableError({
+        level: 'expected',
+        message: 'Wrong passphrase.',
+        error: new Error('main: wrong passphrase for a saved recovery phrase')
+      })
+
+    if (shouldSavePassphrase && passphrase && !savedSeed.seedPassphrase)
+      await this.keystore.saveSeedPassphrase(id, passphrase)
+
+    this.accountPicker.setInitParams({
+      keyIterator: new KeyIterator(savedSeed.seed, passphrase),
+      hdPathTemplate: savedSeed.hdPathTemplate
+    })
+  }
+
   async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
     if (!privateKeys.length) {
       const message = 'Please enter at least one private key.'

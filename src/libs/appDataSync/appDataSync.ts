@@ -29,10 +29,16 @@ import { parse, stringify } from '../richJson/richJson'
 export const APP_DATA_SYNC_UR_TYPE = 'ambire-account-sync'
 
 /**
+ * 3 may carry a recovery phrase whose passphrase is not saved, known by its fingerprint, which an
+ * older app would take for a phrase without a passphrase. Used only when such a phrase is synced,
+ * so an older app keeps syncing everything else - see `getAppDataSyncPayloadVersion`.
+ */
+export const APP_DATA_SYNC_PAYLOAD_VERSION = 3
+/**
  * 2 added the settings, networks and contacts and allowed syncing no accounts at all. An older
  * app rejects it rather than taking the accounts and silently dropping the rest.
  */
-export const APP_DATA_SYNC_PAYLOAD_VERSION = 2
+const SAVED_PASSPHRASES_ONLY_PAYLOAD_VERSION = 2
 /** Accounts and their keys only, which every version of the payload still holds the same way */
 const ACCOUNTS_ONLY_PAYLOAD_VERSION = 1
 
@@ -73,7 +79,10 @@ export type AppDataSyncExportOptions = {
  * re-encrypts everything with its own main key.
  */
 export type AppDataSyncPayload = {
-  v: typeof APP_DATA_SYNC_PAYLOAD_VERSION | typeof ACCOUNTS_ONLY_PAYLOAD_VERSION
+  v:
+    | typeof APP_DATA_SYNC_PAYLOAD_VERSION
+    | typeof SAVED_PASSPHRASES_ONLY_PAYLOAD_VERSION
+    | typeof ACCOUNTS_ONLY_PAYLOAD_VERSION
   /**
    * Always present, even with nothing encrypted to sync, because unlocking it is how the
    * importing device confirms the user knows the exporting device's password
@@ -192,6 +201,16 @@ const validateSeeds = (seeds: any) => {
     if (!seed?.id) throw new Error('appDataSync: invalid seed id')
     requireGcmPayload(seed.seed, `seed ${seed.id}`)
     if (seed.seedPassphrase) requireGcmPayload(seed.seedPassphrase, `seed passphrase ${seed.id}`)
+    if (seed.privacyPoolsSigningKey)
+      requireGcmPayload(seed.privacyPoolsSigningKey, `Privacy Pools key of seed ${seed.id}`)
+
+    if (seed.passphraseFingerprint === undefined) return
+    // A BIP32 fingerprint is 4 bytes
+    if (!isHexString(seed.passphraseFingerprint, 4))
+      throw new Error(`appDataSync: invalid passphrase fingerprint of seed ${seed.id}`)
+    // Without its passphrase, the phrase can't derive its Privacy Pools key on the other device
+    if (!seed.seedPassphrase && !seed.privacyPoolsSigningKey)
+      throw new Error(`appDataSync: seed ${seed.id} has no Privacy Pools key`)
   })
 }
 
@@ -276,6 +295,14 @@ const decompress = (bytes: Uint8Array): Uint8Array => {
   return decompressed
 }
 
+/** The lowest version that holds the synced seeds, so that older apps can still read the rest */
+export const getAppDataSyncPayloadVersion = (
+  seeds: Pick<StoredKeystoreSeed, 'seedPassphrase' | 'passphraseFingerprint'>[]
+): AppDataSyncPayload['v'] =>
+  seeds.some((seed) => !!seed.passphraseFingerprint && !seed.seedPassphrase)
+    ? APP_DATA_SYNC_PAYLOAD_VERSION
+    : SAVED_PASSPHRASES_ONLY_PAYLOAD_VERSION
+
 /**
  * Serializes the payload to the hex encoded bytes carried by the animated QR codes.
  * Gzipped first, because JSON full of hex strings compresses 3x or better, and every
@@ -304,7 +331,11 @@ export const parseAppDataSyncPayload = (bytes: Uint8Array): AppDataSyncPayload =
 
   if (Number.isInteger(payload?.v) && payload.v > APP_DATA_SYNC_PAYLOAD_VERSION)
     throw new AppDataSyncNewerVersionError(payload.v)
-  if (payload?.v !== APP_DATA_SYNC_PAYLOAD_VERSION && payload?.v !== ACCOUNTS_ONLY_PAYLOAD_VERSION)
+  if (
+    payload?.v !== APP_DATA_SYNC_PAYLOAD_VERSION &&
+    payload?.v !== SAVED_PASSPHRASES_ONLY_PAYLOAD_VERSION &&
+    payload?.v !== ACCOUNTS_ONLY_PAYLOAD_VERSION
+  )
     throw new Error(`appDataSync: unsupported payload version ${payload?.v}`)
 
   validateAccounts(payload.accounts)
