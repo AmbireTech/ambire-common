@@ -477,6 +477,24 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
   }
 
   /**
+   * Walks the whole store with one cursor in one readonly transaction. `visit` must stay
+   * synchronous: awaiting anything else between two cursor steps would let the transaction
+   * auto-commit and the next step throw.
+   */
+  async forEachOp(
+    visit: (accountAddr: string, op: SubmittedAccountOp | SubmittedAccountOpLike) => void
+  ): Promise<void> {
+    const tx = await this.#openTx('readonly')
+
+    let cursor = await tx.objectStore(this.#storeName).openCursor()
+    while (cursor) {
+      visit(cursor.value.accountAddr, cursor.value.op)
+
+      cursor = await cursor.continue()
+    }
+  }
+
+  /**
    * Whether the account already stores an op carrying this txnId.
    *
    * A point lookup on by-txn-id, reading KEYS only: the primary key is
@@ -684,6 +702,15 @@ export class ActivityKeyValueStorage implements IActivityOpsBackend {
           (id) => id?.toLowerCase() === wanted
         )
       )
+    )
+  }
+
+  // The cache is the whole history on this backend, so it is walked instead of the stored blob.
+  async forEachOp(
+    visit: (accountAddr: string, op: SubmittedAccountOp | SubmittedAccountOpLike) => void
+  ): Promise<void> {
+    Object.entries(this.#getOps()).forEach(([accountAddr, byChain]) =>
+      Object.values(byChain).forEach((ops) => (ops ?? []).forEach((op) => visit(accountAddr, op)))
     )
   }
 
