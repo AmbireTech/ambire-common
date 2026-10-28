@@ -1427,14 +1427,14 @@ describe('SwapAndBridge Controller', () => {
       jest.spyOn(socketAPIMock, 'getToken').mockResolvedValue(null as never)
       isTokenSupported = jest.fn<() => Promise<boolean>>().mockResolvedValue(isSupported)
       Object.assign(socketAPIMock, { isTokenSupported })
-      return jest.spyOn(portfolioCtrl, 'getTokenBalancesOnBlock').mockResolvedValue(chainResult)
+      return jest.spyOn(portfolioCtrl, 'getTokensInfo').mockResolvedValue(chainResult)
     }
     const getSearchedAddresses = () =>
       swapAndBridgeController.toTokenSearchResults.map(({ address }) => address)
 
     afterEach(() => {
       jest.mocked(socketAPIMock.getToken).mockRestore()
-      jest.mocked(portfolioCtrl.getTokenBalancesOnBlock).mockRestore()
+      jest.mocked(portfolioCtrl.getTokensInfo).mockRestore()
       delete (socketAPIMock as any).isTokenSupported
     })
 
@@ -1449,9 +1449,7 @@ describe('SwapAndBridge Controller', () => {
 
       expect(isTokenSupported).toHaveBeenCalledTimes(1)
       expect(readSpy).toHaveBeenCalledTimes(1)
-      expect(readSpy.mock.calls[0]![1]).toBe(BigInt(swapAndBridgeController.toChainId!))
-      expect(readSpy.mock.calls[0]![2]).toEqual([address])
-      expect(readSpy.mock.calls[0]![3]).toBe('latest')
+      expect(readSpy).toHaveBeenCalledWith(BigInt(swapAndBridgeController.toChainId!), [address])
       expect(getSearchedAddresses()).toEqual([address])
       expect(swapAndBridgeController.toTokenSearchResults[0]).toMatchObject({
         symbol: 'ONCHAIN',

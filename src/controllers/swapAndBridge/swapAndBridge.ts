@@ -2271,15 +2271,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const providerToken = await this.#serviceProviderAPI.getToken({ address, chainId })
     if (providerToken) return providerToken
 
-    const accountId = this.#selectedAccount.account?.addr
-    if (!accountId) return null
-
     const isSupported = await this.#serviceProviderAPI.isTokenSupported?.({ address, chainId })
     if (!isSupported) return null
 
     const token = await getTokenInfoFromChain({
-      getTokenBalancesOnBlock: this.#portfolio.getTokenBalancesOnBlock.bind(this.#portfolio),
-      accountId,
+      getTokensInfo: this.#portfolio.getTokensInfo.bind(this.#portfolio),
       chainId: BigInt(chainId),
       address
     })
