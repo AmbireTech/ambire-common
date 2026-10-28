@@ -1244,6 +1244,44 @@ describe('SignAccountOp Controller ', () => {
     )
   })
 
+  describe('Safe nonce right after a confirmation', () => {
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    test('allows a signed Safe transaction whose nonce the chain does not count yet', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+      const accountState =
+        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+          controller.accountOp.chainId.toString()
+        ]!
+      // Activity knows that a transaction with the chain nonce was just confirmed
+      const getNextNonce = jest
+        .spyOn(ActivityController.prototype, 'getNextNonce')
+        .mockReturnValue(accountState.nonce + 1n)
+      const futureNonceError = expect.objectContaining({
+        title:
+          'Earlier transactions need to go through first. Send them, or wait for the ones already sent to be confirmed.'
+      })
+
+      controller.update({ accountOpData: { nonce: accountState.nonce + 1n } })
+
+      expect(controller.errors).not.toContainEqual(futureNonceError)
+      expect(controller.canBroadcast).toBe(true)
+      expect(getNextNonce).toHaveBeenCalledWith(
+        controller.accountOp.accountAddr,
+        controller.accountOp.chainId,
+        'account',
+        accountState.nonce
+      )
+
+      controller.update({ accountOpData: { nonce: accountState.nonce + 2n } })
+
+      expect(controller.errors).toContainEqual(futureNonceError)
+      expect(controller.canBroadcast).toBe(false)
+    })
+  })
+
   describe('Safe cancel signatures from the Safe API', () => {
     const safeTxnHash = `0x${'5a'.repeat(32)}`
     const ownerA = new Wallet(`0x${'a1'.repeat(32)}`)

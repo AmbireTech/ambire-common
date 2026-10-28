@@ -2203,7 +2203,7 @@ export class SignAccountOpController
       })
     }
 
-    // Safe txn, signed, with a nonce other than the onchain one: display an error.
+    // Safe txn, signed, with a nonce it can't be executed with now: display an error.
     // Not for a speed up, which keeps the nonce of the pending transaction it replaces on
     // purpose. If that transaction gets processed first, the speed up is stopped instead
     if (
@@ -2212,7 +2212,6 @@ export class SignAccountOpController
       !this.isSpeedUpTransaction &&
       accountState &&
       this.accountOp.nonce !== null &&
-      (this.accountOp.nonce !== accountState.nonce || !!this.#earlierPending) &&
       this.#accountOp.signed &&
       this.#accountOp.signed.length >= this.threshold
     ) {
@@ -2228,7 +2227,7 @@ export class SignAccountOpController
           title:
             'Another transaction from this account was already confirmed in its place, so this one can no longer go through. You can reject it.'
         })
-      } else {
+      } else if (this.#isSafeNonceAhead(this.accountOp.nonce, accountState.nonce)) {
         // A future nonce: the earlier transactions may be either not sent yet or sent and
         // still waiting to be confirmed
         errors.push({
@@ -4403,6 +4402,16 @@ export class SignAccountOpController
   }
 
   /**
+   * Whether `nonce` is past the next Safe nonce, so earlier Safe transactions must be executed
+   * first. The chain nonce alone is not enough, as it lags for a few seconds after a
+   * confirmation, while Activity already knows the nonce the confirmed transaction used.
+   */
+  #isSafeNonceAhead(nonce: bigint, chainNonce: bigint): boolean {
+    // The chain nonce is checked first, so the Activity ops are read only when it's behind
+    return nonce > chainNonce && nonce > this.#getAccountNextNonce(chainNonce)
+  }
+
+  /**
    * The txn nonce for a new txn of `senderAddr` (or a 7702 authorization it signs). Raised past
    * the nonces of the pending ops in Activity, as the RPC may not count them (yet).
    */
@@ -5373,7 +5382,14 @@ export class SignAccountOpController
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-    if (this.accountOp.nonce !== null && this.accountOp.nonce !== accountState?.nonce) return false
+    const { nonce } = this.accountOp
+    if (
+      nonce !== null &&
+      (!accountState ||
+        nonce < accountState.nonce ||
+        this.#isSafeNonceAhead(nonce, accountState.nonce))
+    )
+      return false
     // The owners can still sign behind a pending transaction, only executing waits for it.
     // On Ethereum the state is read at the pending block, so the nonce check above can pass
     if (this.#earlierPending) return false
