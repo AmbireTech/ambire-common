@@ -2264,7 +2264,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    * of the user (nothing is sent to an Ambire service). The icon is left empty, as for the
    * portfolio tokens, and the UI discovers it.
    */
-  async #getToTokenByAddress(
+  async #getSupportedToTokenByAddress(
     address: string,
     chainId: number
   ): Promise<SwapAndBridgeToToken | null> {
@@ -2296,7 +2296,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!fromChainId || !toChainId || !tokenList || !isAddress(address)) return null
 
     try {
-      const token = await this.#getToTokenByAddress(address, toChainId)
+      const token = await this.#getSupportedToTokenByAddress(address, toChainId)
 
       if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return null
 
@@ -2336,7 +2336,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     let token: SwapAndBridgeToToken | null
     try {
-      token = await this.#getToTokenByAddress(address, toChainId)
+      token = await this.#getSupportedToTokenByAddress(address, toChainId)
 
       if (!token)
         throw new SwapAndBridgeError(
