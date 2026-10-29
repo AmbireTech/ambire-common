@@ -211,8 +211,9 @@ describe('validateSendTransferAddress - address poisoning', () => {
     })
 
     expect(result.severity).toBe('warning')
-    expect(result.message.startsWith('This address is almost the same as')).toBe(true)
-    expect(result.message).toContain('Only 1 character is different')
+    expect(result.message).toBe(
+      'Looks like a typo: only 1 character differs from an address you have sent to before.'
+    )
     expect(result.shouldHold).toBe(true)
   })
 

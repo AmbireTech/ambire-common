@@ -79,11 +79,9 @@ const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_DEFAULT = 6
 const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_EXTENDED = 8
 const getAddressPoisoningWarningMessage = (matchedAddress: string) =>
   `Possible address poisoning: this new address looks similar to ${matchedAddress} that you have interacted with before. Proceed with caution.`
-const getNearIdenticalAddressWarningMessage = (
-  matchedAddress: string,
-  differingCharsCount: number
-) =>
-  `This address is almost the same as ${matchedAddress}, which you have sent to before. Only ${differingCharsCount} ${differingCharsCount === 1 ? 'character is' : 'characters are'} different, so it may be a typo. Double-check it before you send.`
+// Kept short because the UI shows a "Use <address>" button next to it
+const getNearIdenticalAddressWarningMessage = (differingCharsCount: number) =>
+  `Looks like a typo: only ${differingCharsCount} ${differingCharsCount === 1 ? 'character differs' : 'characters differ'} from an address you have sent to before.`
 
 const formatAddressPoisoningMatchForMessage = ({
   matchedAddress,
@@ -215,15 +213,12 @@ const validateSendTransferAddress = (
     () => {
       if (!addressPoisoningMatch) return undefined
 
-      const matchedAddressPreview = formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
-
       return {
         message: isNearIdenticalAddressMatch(addressPoisoningMatch)
-          ? getNearIdenticalAddressWarningMessage(
-              matchedAddressPreview,
-              addressPoisoningMatch.differingCharsCount
-            )
-          : getAddressPoisoningWarningMessage(matchedAddressPreview),
+          ? getNearIdenticalAddressWarningMessage(addressPoisoningMatch.differingCharsCount)
+          : getAddressPoisoningWarningMessage(
+              formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
+            ),
         severity: 'warning',
         shouldHold: true
       }
