@@ -2,7 +2,9 @@ import {
   AbiCoder,
   concat,
   Contract,
+  dataSlice,
   getAddress,
+  getBytes,
   getCreate2Address,
   hexlify,
   id,
@@ -763,11 +765,56 @@ function getOwnerFromSafeTx(
   return confirmations?.find((c) => c.signature === sig)?.owner
 }
 
+/** The `v` of an approved hash signature, see getSafeApprovedHashSignature */
+const SAFE_APPROVED_HASH_SIGNATURE_V = 1
+
+/**
+ * The signature of an owner that approved the Safe transaction hash onchain, with
+ * `approveHash`, instead of signing it: {owner as r}{empty s}{v = 1}.
+ * The Safe accepts it if `approvedHashes(owner, safeTxHash)` is set when it executes
+ */
+export function getSafeApprovedHashSignature(owner: string): Hex {
+  return concat([
+    zeroPadValue(getAddress(owner), 32),
+    zeroPadValue('0x', 32),
+    toBeHex(SAFE_APPROVED_HASH_SIGNATURE_V, 1)
+  ]) as Hex
+}
+
+const isSafeApprovedHashSignature = (sig: string): boolean =>
+  getBytes(sig)[64] === SAFE_APPROVED_HASH_SIGNATURE_V
+
+const safeInterface = new Interface(SafeAbi)
+
+/** The call that approves a Safe transaction hash onchain on behalf of the caller (an owner) */
+export function getSafeApproveHashCall(safeAddr: string, safeTxHash: string): Call {
+  return {
+    to: getAddress(safeAddr),
+    value: 0n,
+    data: safeInterface.encodeFunctionData('approveHash', [safeTxHash]) as Hex
+  }
+}
+
+/** Whether the owner has approved the Safe transaction hash onchain, see getSafeApproveHashCall */
+export async function isSafeHashApproved(
+  safeAddr: string,
+  owner: string,
+  safeTxHash: string,
+  provider: RPCProvider
+): Promise<boolean> {
+  const safe = new Contract(safeAddr, SafeAbi, provider) as any
+  const approved: bigint = await safe.approvedHashes(owner, safeTxHash)
+  return approved !== 0n
+}
+
 function recoverOwner(
   sig: string,
   hash: string,
   confirmations?: { owner: string; signature: string }[]
 ) {
+  // approved hash signatures carry the owner in `r`
+  if (isSafeApprovedHashSignature(sig)) return getAddress(dataSlice(sig, 12, 32))
+
   // a transaction from Safe Global may have signatures that are not
   // ecdsa; therefore, we cannot extract the owner from them by using
   // a plain recoverAddress. We rely on the Safe Global information
