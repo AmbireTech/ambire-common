@@ -443,20 +443,14 @@ export class DappsController extends EventEmitter implements IDappsController {
     // const lastDappsUpdateVersion = 'debug-force-fetch'
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) {
-      const endBlacklistSweepSpan = startPerfSpan('dapps.blacklistSweep')
-      const dappsWithoutBlacklistedStatus = Array.from(this.#dapps.values()).filter(
-        (d) =>
-          !d.blacklisted ||
-          ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted) ||
-          // Re-check dApps stored with a non-SUSPICIOUS_HOSTING status that now match the
-          // suspicious hosting pattern, so existing entries are migrated on startup.
-          (d.blacklisted !== 'SUSPICIOUS_HOSTING' &&
-            this.#phishing.getDomainBlacklistedStatus(d.url) === 'SUSPICIOUS_HOSTING')
-      )
-      endBlacklistSweepSpan()
       // IMPORTANT: Do NOT await this call — we want `isReadyToDisplayDapps` to resolve immediately
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.#updateDappsBlacklistedStatus(dappsWithoutBlacklistedStatus)
+      this.#recheckStoredDappsBlacklistedStatus().catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the scam status of the apps',
+          error
+        })
+      )
       return
     }
 
@@ -637,6 +631,32 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
     await this.#storage.set('dappsV2', Array.from(dappsMap.values()))
     await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
+  }
+
+  /**
+   * Checks the stored apps that have no final scam status yet against the phishing list, along
+   * with the ones that now match the suspicious hosting pattern.
+   */
+  async #recheckStoredDappsBlacklistedStatus() {
+    const dappsWithoutBlacklistedStatus: Dapp[] = []
+    // In slices, as the catalog holds thousands of apps and the thread is shared with the UI on
+    // mobile
+    await forEachInSlices(
+      Array.from(this.#dapps.values()),
+      (d) => {
+        const shouldRecheck =
+          !d.blacklisted ||
+          ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted) ||
+          // Re-check dApps stored with a non-SUSPICIOUS_HOSTING status that now match the
+          // suspicious hosting pattern, so existing entries are migrated on startup.
+          (d.blacklisted !== 'SUSPICIOUS_HOSTING' &&
+            this.#phishing.getDomainBlacklistedStatus(d.url) === 'SUSPICIOUS_HOSTING')
+        if (shouldRecheck) dappsWithoutBlacklistedStatus.push(d)
+      },
+      { perfSpanName: 'dapps.blacklistSweep' }
+    )
+
+    await this.#updateDappsBlacklistedStatus(dappsWithoutBlacklistedStatus)
   }
 
   /**
