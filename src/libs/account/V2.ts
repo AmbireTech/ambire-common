@@ -53,6 +53,14 @@ export class V2 extends BaseAccount {
     feePaymentOptions: FeePaymentOption[],
     op: AccountOp
   ): FeePaymentOption[] {
+    // until the account is switched over to ERC-4337, it cannot pay
+    // the fee by itself so it can be paid only by another wallet of the user
+    if (this.#isTransitioningTo4337()) {
+      return feePaymentOptions.filter(
+        (opt) => opt.paidBy !== this.account.addr && opt.availableAmount > 0n
+      )
+    }
+
     if (!this.isErc4337Enabled) {
       return feePaymentOptions.filter(
         (opt) =>
@@ -110,12 +118,10 @@ export class V2 extends BaseAccount {
       op: AccountOp
     }
   ): string {
+    // the transition transaction (when the account is deployed but it
+    // doesn't have the entry point as a signer) is always paid by another
+    // wallet (see getAvailableFeeOptions)
     if (feeOption.paidBy !== this.getAccount().addr) return BROADCAST_OPTIONS.byOtherEOA
-
-    // keep the relayer only for the transition transaction
-    // when the account is deployed but it doesn't have the entry point
-    // as a signer
-    if (this.#isTransitioningTo4337()) return BROADCAST_OPTIONS.byRelayer
 
     return BROADCAST_OPTIONS.byBundler
   }

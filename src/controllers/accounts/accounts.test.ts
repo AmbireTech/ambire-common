@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
 
 import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -290,6 +291,7 @@ describe('AccountsController account state fetching', () => {
   })
 
   test('a forced call still fetches when the running fetch fails', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, fetches, errors } = ctrl
     const running = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId])
     await flushPromises()
@@ -304,9 +306,11 @@ describe('AccountsController account state fetching', () => {
     fetches[1]!.resolve([makeAccountState(ADDR_A, 11n)])
     await forced
     expect(accountsCtrl.accountStates[ADDR_A]?.[BASE.chainId.toString()]?.currentBlock).toBe(11n)
+    restore()
   })
 
   test('a failed forced fetch resolves every forced call it covers without another fetch', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, fetches, updateProviderIsWorking } = ctrl
     const running = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId])
     await flushPromises()
@@ -323,6 +327,7 @@ describe('AccountsController account state fetching', () => {
     expect(fetches).toHaveLength(2)
     expect(updateProviderIsWorking).toHaveBeenLastCalledWith(BASE.chainId, false)
     expect(accountsCtrl.accountStates[ADDR_A]?.[BASE.chainId.toString()]?.currentBlock).toBe(10n)
+    restore()
   })
 
   test('a pending result from an older block does not replace the stored state', async () => {
@@ -436,6 +441,7 @@ describe('AccountsController updateAccountPreferences replies', () => {
     ctrl.accounts.find((a) => a.addr === ADDR)?.preferences.label
 
   test('replies with the error and emits it silently when saving fails', async () => {
+    const { restore } = suppressConsole()
     const sendUiMessage = jest.fn()
     const { accountsCtrl, storage } = await makeAccountsController({ sendUiMessage })
     const emittedErrors: ErrorRef[] = []
@@ -456,9 +462,11 @@ describe('AccountsController updateAccountPreferences replies', () => {
     expect(emittedErrors).toHaveLength(1)
     expect(emittedErrors[0]!.level).toBe('silent')
     expect(emittedErrors[0]!.error.message).toBe('Storage is full')
+    restore()
   })
 
   test('restores the previous preferences when saving fails', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, storage } = await makeAccountsController({ sendUiMessage: jest.fn() })
     const otherAddr = accounts[1]!.addr
     jest.spyOn(storage, 'set').mockRejectedValueOnce(new Error('Storage is full'))
@@ -470,9 +478,11 @@ describe('AccountsController updateAccountPreferences replies', () => {
     expect(accountsCtrl.accounts.find((a) => a.addr === otherAddr)?.preferences.label).toBe(
       DEFAULT_ACCOUNT_LABEL
     )
+    restore()
   })
 
   test('shows the error when saving fails and there is no request to reply to', async () => {
+    const { restore } = suppressConsole()
     const sendUiMessage = jest.fn()
     const { accountsCtrl, storage } = await makeAccountsController({ sendUiMessage })
     const emittedErrors: ErrorRef[] = []
@@ -487,9 +497,11 @@ describe('AccountsController updateAccountPreferences replies', () => {
     expect(getLabel(accountsCtrl)).toBe(DEFAULT_ACCOUNT_LABEL)
     expect(emittedErrors).toHaveLength(1)
     expect(emittedErrors[0]!.level).toBe('major')
+    restore()
   })
 
   test('shows the error when saving fails and there is no way to reply', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, storage } = await makeAccountsController()
     const emittedErrors: ErrorRef[] = []
     accountsCtrl.onError((error) => emittedErrors.push(error))
@@ -502,6 +514,7 @@ describe('AccountsController updateAccountPreferences replies', () => {
     expect(getLabel(accountsCtrl)).toBe(DEFAULT_ACCOUNT_LABEL)
     expect(emittedErrors).toHaveLength(1)
     expect(emittedErrors[0]!.level).toBe('major')
+    restore()
   })
 
   test('saves without replying when no way to reply was given', async () => {

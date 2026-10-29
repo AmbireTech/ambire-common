@@ -1,6 +1,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 
 import EmittableError from '@/classes/EmittableError'
+import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '@/consts/activity'
 import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
 import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
@@ -9,7 +10,10 @@ import {
 import { FeatureFlags } from '@/consts/featureFlags'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
 import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
-import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
+import {
+  AccountPickerController,
+  PreparedAccounts
+} from '@/controllers/accountPicker/accountPicker'
 import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
 import { SignedMessage } from '@/controllers/activity/types'
@@ -122,8 +126,10 @@ import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
+import { getReceiptBlockNumberByChainId } from '@/utils/nonce'
 import { generateUuid } from '@/utils/uuid'
 import wait from '@/utils/wait'
+import { waitForBlockNumber } from '@/utils/waitForBlockNumber'
 
 type AccountsUpdate = {
   accountsToAdd: Account[]
@@ -493,14 +499,10 @@ export class MainController extends EventEmitter implements IMainController {
       sendUiMessage: this.ui.message.sendUiMessage,
       /**
        * callback that gets triggered as a finalization step of adding new
-       * accounts via the AccountPickerController.
-       *
-       * VIEW-ONLY ACCOUNTS: In case of changes in this method, make sure these
-       * changes are reflected for view-only accounts as well. Because the
-       * view-only accounts import flow bypasses the AccountPicker, this method
-       * won't click for them.
+       * accounts via the AccountPickerController - for every flow, including the
+       * ones without a key iterator (view-only, Safe, account JSON).
        */
-      onAddAccountsSuccessCallback: this.#onAccountPickerSuccess.bind(this)
+      onAddPreparedAccounts: this.#onAccountPickerSuccess.bind(this)
     })
     this.addressBook = new AddressBookController(
       this.storage,
@@ -825,7 +827,7 @@ export class MainController extends EventEmitter implements IMainController {
               fetch: this.fetch,
               featureFlags: this.featureFlags,
               sendUiMessage: this.ui.message.sendUiMessage,
-              onAddAccountsSuccessCallback: async () => {}
+              onAddPreparedAccounts: async () => {}
             }),
           this.keystore,
           async () => {
@@ -848,20 +850,34 @@ export class MainController extends EventEmitter implements IMainController {
       if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
     })
 
-    this.ui.uiEvent.on('viewFocus', () => {
+    this.ui.uiEvent.on('viewFocus', (view: View) => {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.#fetchAllSafesPending()
+      // The mobile view is added once, so a return to the app refreshes here instead. The
+      // extension refreshes when a popup is added, as its views get focus far more often
+      if (view.type === 'mobile') this.#refreshSelectedAccountOnOpen()
     })
   }
 
   /**
    * - Updates the selected account's account state, portfolio and defi positions
    * - Calls batchReverseLookup for all accounts
+   * - Marks the view as ready
    *
    * It's not a problem to call it many times consecutively as all methods have internal
    * caching mechanisms to prevent unnecessary calls.
    */
   async onPopupOpen(viewId: string) {
+    this.#refreshSelectedAccountOnOpen()
+
+    this.ui.updateView(viewId, { isReady: true })
+  }
+
+  /**
+   * Refreshes what the user sees first when the wallet opens: the selected account's account
+   * state, portfolio and defi positions, and the account names. Cheap to repeat, see onPopupOpen.
+   */
+  #refreshSelectedAccountOnOpen() {
     const selectedAccountAddr = this.selectedAccount.account?.addr
 
     if (selectedAccountAddr) {
@@ -893,8 +909,6 @@ export class MainController extends EventEmitter implements IMainController {
 
       this.accounts.updateAccountState(selectedAccountAddr)
     }
-
-    this.ui.updateView(viewId, { isReady: true })
   }
 
   async #load(): Promise<void> {
@@ -974,7 +988,9 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     this.isOffline = false
-    await this.#leaveSelectedAccount()
+    // A connect request isn't tied to an account - it connects whichever one is selected when
+    // approved - so it stays open and the user can pick the account to connect with.
+    await this.#leaveSelectedAccount({ keepsDappConnectRequest: true })
     await this.selectedAccount.select({ account: accountToSelect })
     // Update reverse lookup data and ENS expiry
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -1021,10 +1037,14 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /** Cleans up after the selected account, before another one of either kind is selected. */
-  async #leaveSelectedAccount() {
+  async #leaveSelectedAccount({ keepsDappConnectRequest = false } = {}) {
     // call closeRequestWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
-    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
+    const currentRequestKind = this.requests.currentUserRequest?.kind
+    const keepsCurrentRequest =
+      currentRequestKind === 'switchAccount' ||
+      (keepsDappConnectRequest && currentRequestKind === 'dappConnect')
+    if (!keepsCurrentRequest) {
       // Switching accounts is the user acting on the wallet, not refusing the apps that
       // happened to be waiting, so it must not count towards the spam detection.
       await this.requests.closeRequestWindow({ isUserInitiated: false })
@@ -1136,33 +1156,36 @@ export class MainController extends EventEmitter implements IMainController {
     await this.#selectFallbackAccount()
   }
 
-  async #onAccountPickerSuccess() {
+  /** Writes what the account picker prepared, once the user proceeds from the personalize step. */
+  async #onAccountPickerSuccess({
+    accounts,
+    keys,
+    accountsToRemove,
+    hdPathTemplate
+  }: PreparedAccounts) {
     if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator))
       await this.keystore.persistTempSeed()
 
+    let internalKeys = keys.internal
     const storedSeed = await this.keystore.getKeystoreSeed(this.accountPicker.keyIterator)
     if (storedSeed) {
-      await this.keystore.updateSeed({
-        id: storedSeed.id,
-        hdPathTemplate: this.accountPicker.hdPathTemplate
-      })
+      await this.keystore.updateSeed({ id: storedSeed.id, hdPathTemplate })
 
-      this.accountPicker.readyToAddKeys.internal = this.accountPicker.readyToAddKeys.internal.map(
-        (key) => ({ ...key, meta: { ...key.meta, fromSeedId: storedSeed.id } })
-      )
+      internalKeys = internalKeys.map((key) => ({
+        ...key,
+        meta: { ...key.meta, fromSeedId: storedSeed.id }
+      }))
     }
 
     // Should be separate (not combined in Promise.all, since firing multiple
     // keystore actions is not possible (the #wrapKeystoreAction listens for the
     // first one to finish and skips the parallel one, if one is requested).
-    await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
-    await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
+    await this.keystore.addKeys(internalKeys)
+    await this.keystore.addKeysExternallyStored(keys.external)
 
     await this.#updateAccounts({
-      accountsToAdd: this.accountPicker.readyToAddAccounts,
-      accountAddressesToRemove: this.accountPicker.readyToRemoveAccounts.map(
-        (account) => account.addr
-      )
+      accountsToAdd: accounts,
+      accountAddressesToRemove: accountsToRemove.map((account) => account.addr)
     })
   }
 
@@ -1412,14 +1435,18 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleSignMessage() {
-    const accountAddr = this.signMessage.messageToSign?.accountAddr
-    const chainId = this.signMessage.messageToSign?.chainId
+    const approvedMessage = this.signMessage.messageToSign
+    const accountAddr = approvedMessage?.accountAddr
+    const chainId = approvedMessage?.chainId
 
     // Could (rarely) happen if not even a single account state is fetched yet
     const shouldForceUpdateAndWaitForAccountState =
       accountAddr && chainId && !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]
-    if (shouldForceUpdateAndWaitForAccountState)
+    if (shouldForceUpdateAndWaitForAccountState) {
       await this.accounts.updateAccountState(accountAddr, 'latest', [chainId])
+      // A request that replaced the message during the fetch was never approved
+      if (this.signMessage.messageToSign !== approvedMessage) return
+    }
 
     const isAccountStateStillMissing =
       !accountAddr || !chainId || !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]
@@ -1483,11 +1510,11 @@ export class MainController extends EventEmitter implements IMainController {
       }
 
       const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator,
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false
+        shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Ledger device. Please try again.'
@@ -1496,10 +1523,13 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleAccountPickerInitLedger(
-    LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */
+    LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitLedger', async () =>
-      this.#handleAccountPickerInitLedger(LedgerKeyIterator)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitLedger',
+      () => this.#handleAccountPickerInitLedger(LedgerKeyIterator),
+      requestId
     )
   }
 
@@ -1517,11 +1547,11 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
       const { walletSDK } = trezorCtrl
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator: new TrezorKeyIterator({ walletSDK }),
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false
+        shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Trezor device. Please try again.'
@@ -1530,10 +1560,13 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleAccountPickerInitTrezor(
-    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */
+    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitTrezor', async () =>
-      this.#handleAccountPickerInitTrezor(TrezorKeyIterator)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitTrezor',
+      () => this.#handleAccountPickerInitTrezor(TrezorKeyIterator),
+      requestId
     )
   }
 
@@ -1557,7 +1590,7 @@ export class MainController extends EventEmitter implements IMainController {
         keyIterator: new OneKeyKeyIterator({ controller: oneKeyCtrl }),
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false
+        shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the OneKey device. Please try again.'
@@ -1567,10 +1600,13 @@ export class MainController extends EventEmitter implements IMainController {
 
   async handleAccountPickerInitOneKey(
     OneKeyKeyIterator: any, // TODO: KeyIterator type mismatch
-    preferredDeviceId?: string
+    preferredDeviceId?: string,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitOneKey', async () =>
-      this.#handleAccountPickerInitOneKey(OneKeyKeyIterator, preferredDeviceId)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitOneKey',
+      () => this.#handleAccountPickerInitOneKey(OneKeyKeyIterator, preferredDeviceId),
+      requestId
     )
   }
 
@@ -1587,11 +1623,11 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
 
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator: new LatticeKeyIterator({ controller: latticeCtrl }),
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false
+        shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.'
@@ -1600,10 +1636,13 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleAccountPickerInitLattice(
-    LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
+    LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitLattice', async () =>
-      this.#handleAccountPickerInitLattice(LatticeKeyIterator)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitLattice',
+      () => this.#handleAccountPickerInitLattice(LatticeKeyIterator),
+      requestId
     )
   }
 
@@ -1640,11 +1679,11 @@ export class MainController extends EventEmitter implements IMainController {
       // In the rare case of migration (ledger -> qr -> has created a linked account),
       // The user should instead go to the web wallet and migrate his funds instead.
       // v1 accounts are generally deprecated and we don't encourage users to use them.
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator,
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false,
+        shouldSelectNextAccountAutomatically: false,
         shouldSearchForLinkedAccounts: false
       })
     } catch (error: any) {
@@ -1656,10 +1695,13 @@ export class MainController extends EventEmitter implements IMainController {
 
   async handleAccountPickerInitQr(
     QrKeyIterator: any, // TODO: KeyIterator type mismatch
-    payload: string | Uint8Array
+    payload: string | Uint8Array,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitQr', async () =>
-      this.#handleAccountPickerInitQr(QrKeyIterator, payload)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitQr',
+      () => this.#handleAccountPickerInitQr(QrKeyIterator, payload),
+      requestId
     )
   }
 
@@ -1684,11 +1726,11 @@ export class MainController extends EventEmitter implements IMainController {
 
       // v1 accounts have never supported NFC cards, so there is nothing to look
       // for on the relayer (same reasoning as the QR flow).
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator,
         hdPathTemplate: keyIterator.hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false,
+        shouldSelectNextAccountAutomatically: false,
         shouldSearchForLinkedAccounts: false
       })
     } catch (error: any) {
@@ -1699,10 +1741,35 @@ export class MainController extends EventEmitter implements IMainController {
 
   async handleAccountPickerInitNfc(
     NfcKeyIterator: any, // TODO: KeyIterator type mismatch
-    payload: { extendedPublicKey: string; hdPath: string }
+    payload: { extendedPublicKey: string; hdPath: string },
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitNfc', async () =>
-      this.#handleAccountPickerInitNfc(NfcKeyIterator, payload)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitNfc',
+      () => this.#handleAccountPickerInitNfc(NfcKeyIterator, payload),
+      requestId
+    )
+  }
+
+  /**
+   * Sets the account picker up for a hardware wallet under the method's status, and replies
+   * to `requestId` once done, so the connect screen moves on only then - the status alone
+   * is transient and can be missed.
+   */
+  async #setUpPickerForHardwareWallet(
+    callName: keyof typeof STATUS_WRAPPED_METHODS,
+    setUp: () => Promise<void>,
+    requestId?: string
+  ) {
+    let isSetUp = false
+    await this.withStatus(callName, async () => {
+      await setUp()
+      isSetUp = true
+    })
+
+    this.#replyToRequest(
+      requestId,
+      isSetUp ? undefined : 'The hardware wallet could not be connected'
     )
   }
 
@@ -1769,50 +1836,82 @@ export class MainController extends EventEmitter implements IMainController {
               op.status !== AccountOpStatus.Pending &&
               op.status !== AccountOpStatus.BroadcastedButNotConfirmed
           )
+          const blockNumberByChainId = getReceiptBlockNumberByChainId(finalizedAccountOps)
 
           const networks = this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
 
-          if (networks.length) {
-            // The account state must be updated before the portfolio
-            // as the portfolio has internal checks whether the nonce has changed
-            // to decide if to force refetch certain data
-            await this.accounts.updateAccountState(
-              accountAddr,
-              'latest',
-              networks.map((net) => net.chainId),
-              true
-            )
+          // Nothing awaits this callback, so a failure is reported here
+          try {
+            // A lagging RPC would return the balances and the nonce from before the confirmation
+            await Promise.all(
+              Object.entries(blockNumberByChainId).map(([chainId, blockNumber]) => {
+                const provider = this.providers.providers[chainId]
+                if (!provider) return undefined
 
-            // Schedule an update that will refetch new defi positions (if any)
-            chainsToUpdate.forEach((chainId) => {
-              this.portfolio.scheduleUpdate({
-                accountId: accountAddr,
-                chainId,
-                bypassServerSideCache: true
+                return waitForBlockNumber(provider, blockNumber, CONFIRMED_BLOCK_WAIT_TIMEOUT_MS)
               })
-            })
-          }
-
-          // Discard the simulation (that also updates the portfolio, but doesn't force update defi).
-          // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
-          // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
-          if (finalizedAccountOps.length) {
-            await this.portfolio.discardSimulation(finalizedAccountOps)
-          }
-
-          if (networks.length) {
-            // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
-            this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
-              accountAddr,
-              updatedAccountsOps
             )
 
-            Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
-              // eslint-disable-next-line @typescript-eslint/no-floating-promises
-              this.portfolio.updateSelectedAccount(
+            if (networks.length) {
+              // The account state must be updated before the portfolio
+              // as the portfolio has internal checks whether the nonce has changed
+              // to decide if to force refetch certain data
+              await this.accounts.updateAccountState(
                 accountAddr,
-                this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+                'latest',
+                networks.map((net) => net.chainId),
+                true
               )
+
+              // Schedule an update that will refetch new defi positions (if any)
+              chainsToUpdate.forEach((chainId) => {
+                this.portfolio.scheduleUpdate({
+                  accountId: accountAddr,
+                  chainId,
+                  bypassServerSideCache: true
+                })
+              })
+            }
+
+            const otherAccountsToUpdate = networks.length ? Object.entries(portfoliosToUpdate) : []
+
+            // The other accounts have their own portfolio queues, so they don't wait for the
+            // sender's read
+            await Promise.all([
+              // Discard the simulation (that also updates the portfolio, but doesn't force update defi).
+              // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
+              // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
+              finalizedAccountOps.length
+                ? this.portfolio.discardSimulation(finalizedAccountOps)
+                : undefined,
+              ...otherAccountsToUpdate.map(async ([portfolioAccountAddr, chainIds]) => {
+                // A fee payer has a new nonce and a recipient a new balance, and the
+                // account state goes first for the same reason as above
+                await this.accounts.updateAccountState(
+                  portfolioAccountAddr,
+                  'latest',
+                  chainIds,
+                  true
+                )
+                await this.portfolio.updateSelectedAccount(
+                  portfolioAccountAddr,
+                  this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+                )
+              })
+            ])
+
+            if (networks.length) {
+              // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
+              this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+                accountAddr,
+                updatedAccountsOps
+              )
+            }
+          } catch (error) {
+            this.emitError({
+              level: 'silent',
+              message: `Failed to refresh ${accountAddr} after its transactions were confirmed.`,
+              error: error instanceof Error ? error : new Error(String(error))
             })
           }
         }
@@ -2315,16 +2414,25 @@ export class MainController extends EventEmitter implements IMainController {
     this.emitUpdate()
   }
 
-  async accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
-    privKeyOrSeed,
-    seedPassphrase
-  }: {
-    privKeyOrSeed: string
-    seedPassphrase?: string | null
-  }) {
+  /**
+   * Sets the account picker up with a recovery phrase or private key, for the personalize
+   * step to select and prepare its next account (`init`) - nothing is written yet. Replies
+   * to `requestId` once set up.
+   */
+  async accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase(
+    {
+      privKeyOrSeed,
+      seedPassphrase
+    }: {
+      privKeyOrSeed: string
+      seedPassphrase?: string | null
+    },
+    requestId?: string
+  ) {
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
     const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
-    this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+    await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+    this.#replyToRequest(requestId)
   }
 
   async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
@@ -2349,7 +2457,7 @@ export class MainController extends EventEmitter implements IMainController {
       throw new EmittableError({ message, level: 'major', error })
     }
 
-    this.accountPicker.setInitParams({
+    await this.accountPicker.setInitParams({
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
@@ -2358,22 +2466,54 @@ export class MainController extends EventEmitter implements IMainController {
   /**
    * Prepares the account picker with a list of private keys (bulk import). The key at position N
    * in the list is listed as the account at index N. Duplicates are dropped and the list is
-   * limited to `MAX_BULK_PRIVATE_KEYS` keys.
+   * limited to `MAX_BULK_PRIVATE_KEYS` keys. Replies to `requestId` once set up - the
+   * personalize step selects and prepares every key's account.
    */
-  async accountPickerSetInitParamsFromPrivateKeys({ privateKeys }: { privateKeys: string[] }) {
+  async accountPickerSetInitParamsFromPrivateKeys(
+    { privateKeys }: { privateKeys: string[] },
+    requestId?: string
+  ) {
+    let isSetUp = false
     await this.withStatus(
       'accountPickerSetInitParamsFromPrivateKeys',
-      async () => this.#accountPickerSetInitParamsFromPrivateKeys(privateKeys),
+      async () => {
+        await this.#accountPickerSetInitParamsFromPrivateKeys(privateKeys)
+        isSetUp = true
+      },
       true
     )
+
+    this.#replyToRequest(requestId, isSetUp ? undefined : 'Importing the private keys failed')
   }
 
   /**
-   * Creates a brand new recovery phrase and prepares the account picker with it, all
-   * in the background. The phrase is never sent to the UI - the user gets prompted to
+   * Sets the account picker up with a recovery phrase the user already saved, for the
+   * personalize step to select and prepare its next account. Replies to `requestId` once
+   * set up.
+   */
+  async accountPickerSetInitParamsFromSavedSeed(seedId: string, requestId?: string) {
+    const savedSeed = await this.keystore.getSavedSeed(seedId)
+    if (!savedSeed) return this.#replyToRequest(requestId, 'The recovery phrase was not found')
+
+    const keyIterator = new KeyIterator(savedSeed.seed, savedSeed.seedPassphrase)
+    await this.accountPicker.setInitParams({
+      keyIterator,
+      hdPathTemplate: savedSeed.hdPathTemplate
+    })
+    this.#replyToRequest(requestId)
+  }
+
+  /**
+   * Creates a brand new recovery phrase and sets the account picker up with it, for the
+   * personalize step to prepare its first account - nothing is written until the user
+   * proceeds from there. The phrase is never sent to the UI - the user gets prompted to
    * write it down later, once the account holds funds.
    */
-  async accountPickerSetInitParamsFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+  async accountPickerSetInitParamsFromNewSeed(
+    { extraEntropy }: { extraEntropy?: string },
+    requestId?: string
+  ) {
+    let isSetUp = false
     await this.withStatus(
       'accountPickerSetInitParamsFromNewSeed',
       async () => {
@@ -2382,9 +2522,24 @@ export class MainController extends EventEmitter implements IMainController {
         await this.accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
           privKeyOrSeed: tempSeed.seed
         })
+        isSetUp = true
       },
       true
     )
+
+    // Replies to the UI directly: a screen that is not subscribed at that moment (e.g.
+    // mid-transition on mobile) would miss the transient status and wait forever.
+    this.#replyToRequest(requestId, isSetUp ? undefined : 'Creating the new account failed')
+  }
+
+  /**
+   * Replies to the UI request behind a call (if there is one), so the UI can await it
+   * instead of watching a transient status.
+   */
+  #replyToRequest(requestId?: string, error?: string) {
+    if (!requestId) return
+
+    this.ui.message.sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
   }
 
   // includes the getters in the stringified instance

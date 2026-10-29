@@ -1,5 +1,6 @@
 import {
   AbiCoder,
+  concat,
   formatEther,
   formatUnits,
   getAddress,
@@ -127,7 +128,7 @@ import {
   hasErc7730Humanization,
   UNLIMITED_APPROVAL_WARNING_CODE
 } from '../../libs/humanizer/utils'
-import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
+import { hasRelayerSupport } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
 import { getSafeFeePayerRank, isUnlinkedSafeFeePayer } from '../../libs/safe/feePayerLinks'
@@ -185,6 +186,7 @@ import { GasPriceController } from '../gasPrice/gasPrice'
 import HumanizationController from '../humanization/humanization'
 import { discoverTxnTokens } from './discoverTxnTokens'
 import {
+  getBroadcastServiceErrorMessage,
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
@@ -623,7 +625,17 @@ export class SignAccountOpController
     this.#speedUp = speedUp
     this.#updateSafeEip712Data()
 
-    if (this.#accountOp.signature && this.#accountOp.txnId) {
+    // Only a Safe's signature is made of its owners' signatures, signed over the Safe
+    // transaction hash (txnId). Another account can also come with a signature and a txnId,
+    // e.g. a smart account speed up reusing the signature of the transaction it replaces, but
+    // its signature isn't one to split into owners. Neither is a Safe speed up's: the txnId of
+    // the executed transaction it replaces is the onchain hash, not the Safe transaction hash
+    if (
+      this.account.safeCreation &&
+      !this.#isSignedSafeSpeedUp &&
+      this.#accountOp.signature &&
+      this.#accountOp.txnId
+    ) {
       this.#accountOp.signed = getAlreadySignedOwners(
         this.#accountOp.signature,
         this.#accountOp.txnId,
@@ -714,6 +726,38 @@ export class SignAccountOpController
 
   get isSpeedUpTransaction(): boolean {
     return !!this.#speedUp
+  }
+
+  /**
+   * A cancel that is signed anew, with empty calls in place of the pending transaction's
+   * (see `SpeedUp.isNewCancel`). A speed up of a pending cancel reuses its signatures instead
+   */
+  get #isNewCancel(): boolean {
+    return !!this.#speedUp?.isNewCancel
+  }
+
+  /**
+   * Whether `update()` accepts a different signing key. A speed up reuses the signatures of
+   * the pending transaction, so its signer can't change. A cancel is signed again, so any of
+   * the account's keys (e.g. another Safe owner) can sign
+   */
+  get canChangeSigningKey(): boolean {
+    return !this.isSpeedUpTransaction || this.#isNewCancel
+  }
+
+  /**
+   * A Safe speed up reuses the owners' signatures of the Safe transaction it replaces. Those
+   * are complete, as that transaction was executed with them, so it's ready to execute again
+   * as it is, without collecting signatures. Not a new cancel, which is a new Safe transaction
+   */
+  get #isSignedSafeSpeedUp(): boolean {
+    return (
+      !!this.account.safeCreation &&
+      this.isSpeedUpTransaction &&
+      !this.#isNewCancel &&
+      !!this.accountOp.signature &&
+      this.accountOp.signature !== '0x'
+    )
   }
 
   #updateAccountOp(accountOp: Partial<AccountOp>) {
@@ -829,6 +873,61 @@ export class SignAccountOpController
     this.selectedFeeSpeed = FeeSpeed.Medium
     this.feeSpeeds = {}
     this.#updateAccountOp({ gasFeePayment: null })
+  }
+
+  /**
+   * Takes the Safe signatures collected so far (e.g. by other owners, through the Safe API):
+   * sorts them by owner, as the Safe requires, and adds their owners to the ones who signed
+   *
+   * @param safeTx the Safe transaction the signatures were made for, to recover the owners of
+   * signatures that aren't a plain ECDSA one (e.g. a contract owner's)
+   */
+  #mergeSafeSignatures(signature: string, safeTx = this.accountOp.safeTx) {
+    const { txnId } = this.accountOp
+    if (!txnId) return
+
+    const newlySigned = getAlreadySignedOwners(signature, txnId, safeTx)
+    this.#updateAccountOp({
+      signature: sortSigs(getSigs(signature), txnId, safeTx?.confirmations),
+      signed: [...new Set([...(this.accountOp.signed ?? []), ...newlySigned])]
+    })
+  }
+
+  /**
+   * Adds the signatures other Safe owners made for this Safe cancel through the Safe API.
+   * Only the signatures (and the Safe transaction they were made for) are taken.
+   *
+   * Merged per owner: every signature collected so far stays (one may have never reached the
+   * Safe API), and a signature is added only for an owner who hasn't signed yet, so no owner
+   * is ever counted twice (the Safe rejects a repeated owner)
+   */
+  #addSafeCancelSignatures({
+    signature,
+    safeTx
+  }: NonNullable<SignAccountOpUpdateProps['accountOpData']>) {
+    const { txnId } = this.accountOp
+    if (!signature || !txnId) return
+    // The Safe transaction must be the one being signed, otherwise its signatures don't apply
+    if (safeTx && safeTx.safeTxHash.toLowerCase() !== txnId.toLowerCase()) return
+
+    const ownersSafeTx = safeTx ?? this.accountOp.safeTx
+    const getSignaturesByOwner = (signatures: string) => {
+      const owners = getAlreadySignedOwners(signatures, txnId, ownersSafeTx)
+
+      return getSigs(signatures).map((sig, i) => ({ sig, owner: owners[i]!.toLowerCase() }))
+    }
+    const collected = getSignaturesByOwner(this.accountOp.signature ?? '0x')
+    const collectedOwners = new Set(collected.map(({ owner }) => owner))
+    const added = getSignaturesByOwner(signature).filter(({ owner }) => {
+      if (collectedOwners.has(owner)) return false
+      collectedOwners.add(owner)
+      return true
+    })
+
+    if (safeTx) this.#updateAccountOp({ safeTx })
+    if (!added.length) return
+
+    this.#mergeSafeSignatures(concat([...collected, ...added].map(({ sig }) => sig)), ownersSafeTx)
   }
 
   #updateNonce(nonce: bigint) {
@@ -1716,7 +1815,8 @@ export class SignAccountOpController
       })
     }
 
-    // this error should never happen as availableFeeOptions should always have the native option
+    // happens when the fee can be paid only by another wallet of the user (v1 accounts and
+    // v2 accounts not yet switched over to ERC-4337) and none of them has enough funds
     if (!this.isSponsored && !this.estimation.availableFeeOptions.length && this.canBroadcast)
       errors.push({
         title: 'Insufficient funds to cover the fee.'
@@ -2202,27 +2302,16 @@ export class SignAccountOpController
         }
       }
 
-      if (accountOpData && !isSpeedUpTransaction) {
+      // A speed up keeps the pending transaction as it is
+      if (accountOpData && this.#isNewCancel) {
+        // A cancel is new, so it takes the signatures other Safe owners add to it (see
+        // RequestsController). Nothing else changes: its empty calls take the place of every
+        // pending transaction, so removing one would let that transaction go through
+        this.#addSafeCancelSignatures(accountOpData)
+      } else if (accountOpData && !isSpeedUpTransaction) {
         const { calls, signature, ...rest } = accountOpData
 
-        if (signature && this.accountOp.txnId) {
-          const newlySigned = getAlreadySignedOwners(
-            signature,
-            this.accountOp.txnId,
-            this.accountOp.safeTx
-          )
-          const signed = this.accountOp.signed
-            ? [...new Set(...this.accountOp.signed, ...newlySigned)]
-            : newlySigned
-          this.#updateAccountOp({
-            signature: sortSigs(
-              getSigs(signature),
-              this.accountOp.txnId,
-              this.accountOp.safeTx?.confirmations
-            ),
-            signed
-          })
-        }
+        if (signature) this.#mergeSafeSignatures(signature)
 
         // update all properties except calls
         // calls are handled separately below
@@ -2316,7 +2405,9 @@ export class SignAccountOpController
         }
       }
 
-      if (signingKeyAddr && signingKeyType && this.isInitialized && !isSpeedUpTransaction) {
+      // A speed up reuses the signatures of the pending transaction, so its signer can't change.
+      // A cancel is signed again, so any of the account's keys (e.g. another Safe owner) can sign
+      if (signingKeyAddr && signingKeyType && this.isInitialized && this.canChangeSigningKey) {
         this.#updateAccountOp({ signingKeyAddr, signingKeyType })
 
         // If the fee is paid by the signer, then we should set the fee payer
@@ -2428,8 +2519,13 @@ export class SignAccountOpController
     }
 
     // change the status to SigningStatus.Queued if there are no
-    // available signers to sign
-    if (this.#accountOp.signature && this.#accountOp.txnId) {
+    // available signers to sign. Only for a Safe that collects signatures (see the constructor)
+    if (
+      this.account.safeCreation &&
+      !this.#isSignedSafeSpeedUp &&
+      this.#accountOp.signature &&
+      this.#accountOp.txnId
+    ) {
       this.#accountOp.signed = getAlreadySignedOwners(
         this.#accountOp.signature,
         this.#accountOp.txnId,
@@ -3557,6 +3653,7 @@ export class SignAccountOpController
     const isCollectingSafeSignature =
       !!this.account.safeCreation &&
       !isSafeDeploy &&
+      !this.#isSignedSafeSpeedUp &&
       (this.accountOp.signed?.length || 0) < this.threshold
     const isImmediatelyWaitingForPaymaster =
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
@@ -3608,8 +3705,8 @@ export class SignAccountOpController
       } else if (
         this.account.safeCreation &&
         !isSafeDeploy &&
-        this.#accountOp.signed &&
-        this.#accountOp.signed.length >= this.threshold &&
+        (this.#isSignedSafeSpeedUp ||
+          (!!this.#accountOp.signed && this.#accountOp.signed.length >= this.threshold)) &&
         broadcastOption !== BROADCAST_OPTIONS.byBundler
       ) {
         // all's good, proceed to broadcast
@@ -3620,7 +3717,8 @@ export class SignAccountOpController
       ) {
         // If the Safe txn is not already signed, fetch the latest nonce unless
         // the user explicitly selected one for this transaction.
-        if (!this.accountOp.safeTx && this.#customSafeNonce === null) {
+        // A cancel keeps the nonce of the transaction it replaces, as that's what it cancels
+        if (!this.accountOp.safeTx && this.#customSafeNonce === null && !this.#isNewCancel) {
           const latestNonce = await getNonce(this.accountOp.accountAddr, this.provider).catch(
             (e) => {
               console.log('failed to retrieve the latest nonce for Safe')
@@ -3724,13 +3822,18 @@ export class SignAccountOpController
         this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
         // SA, EOA pays fee. execute() needs a signature
-        if (!this.isSpeedUpTransaction) {
-          // fetch the nonce if needed
-          const nonce = await this.baseAccount.getBroadcastNonce(
-            this.#activity,
-            this.accountOp,
-            this.provider
-          )
+        // A speed up reuses the signature of the pending transaction, a cancel has new calls
+        if (!this.isSpeedUpTransaction || this.#isNewCancel) {
+          // fetch the nonce if needed. A cancel signs with the nonce of the pending transaction
+          // it replaces, so only one of the two can go through
+          const replacedNonce = this.#isNewCancel ? (this.#speedUp?.replacedNonce ?? null) : null
+          const nonce =
+            replacedNonce ??
+            (await this.baseAccount.getBroadcastNonce(
+              this.#activity,
+              this.accountOp,
+              this.provider
+            ))
           if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
 
           const signer = await this.#getDefaultSigner()
@@ -3972,35 +4075,9 @@ export class SignAccountOpController
 
         this.#updateAccountOp({ asUserOperation: userOperation })
       } else {
-        const signer = await this.#getDefaultSigner()
-
-        // Relayer
-        this.#addFeePayment()
-
-        // fetch the nonce if needed
-        const nonce = await this.baseAccount.getBroadcastNonce(
-          this.#activity,
-          this.accountOp,
-          this.provider
-        )
-        if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
-
-        this.#updateAccountOp({
-          signature: await this.#withHardwareWalletSigningRequest(
-            getExecuteSigningRequest({
-              accountOp: this.accountOp,
-              accountState,
-              network: this.#network
-            }),
-            () =>
-              getExecuteSignature(
-                this.#network,
-                this.accountOp,
-                accountState,
-                signer,
-                this.provider
-              )
-          )
+        return this.#emitSigningErrorAndResetToReadyToSign({
+          message: `Unable to sign the transaction because the selected way of paying the fee is not supported. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`,
+          accountState
         })
       }
 
@@ -4012,7 +4089,7 @@ export class SignAccountOpController
         this.status = { type: SigningStatus.Done }
 
       // Only a raw transaction broadcast asks for one more signature (from the fee payer).
-      // Otherwise (Safe signature collected, bundler, relayer) no key is needed anymore
+      // Otherwise (Safe signature collected, bundler) no key is needed anymore
       const willBroadcastNeedSignature =
         this.status.type === SigningStatus.Done &&
         !!broadcastOption &&
@@ -4032,7 +4109,7 @@ export class SignAccountOpController
   }
 
   /**
-   * There are 4 ways to broadcast an AccountOp:
+   * There are 3 ways to broadcast an AccountOp:
    *   1. For EOAs, there is only one way to do that. After
    *   signing the transaction, the serialized signed transaction object gets
    *   send to the network.
@@ -4041,7 +4118,6 @@ export class SignAccountOpController
    *   second one is the signature of the transaction that will be executed
    *   by the smart account.
    *   3. For smart accounts that broadcast the ERC-4337 way.
-   *   4. for smart accounts, when the Relayer does the broadcast.
    *
    */
   async #broadcast() {
@@ -4392,40 +4468,12 @@ export class SignAccountOpController
         }
       }
     }
-    // Smart account, the Relayer way
+    // Should not happen as every broadcast option is handled above
     else {
-      try {
-        const body = {
-          gasLimit: Number(accountOp.gasFeePayment!.simulatedGasLimit),
-          txns: getSignableCalls(accountOp),
-          signature: accountOp.signature,
-          signer: { address: accountOp.signingKeyAddr },
-          nonce: Number(accountOp.nonce)
-        }
-        const additionalRelayerNetwork = relayerAdditionalNetworks.find(
-          (net) => net.chainId === this.#network.chainId
-        )
-        const relayerChainId = additionalRelayerNetwork
-          ? additionalRelayerNetwork.chainId
-          : accountOp.chainId
-        const response = await this.#callRelayer(
-          `/identity/${accountOp.accountAddr}/${relayerChainId}/submit`,
-          'POST',
-          body
-        )
-        if (!response.success) throw new Error(response.message)
-
-        transactionRes = {
-          txnId: response.txId,
-          nonce: Number(accountOp.nonce),
-          identifiedBy: {
-            type: 'Relayer',
-            identifier: response.id
-          }
-        }
-      } catch (error: any) {
-        return this.throwBroadcastAccountOp({ error, accountState, isRelayer: true })
-      }
+      return this.throwBroadcastAccountOp({
+        message: `The selected way of paying the fee is not supported. ${contactSupportPrompt}`,
+        accountState
+      })
     }
 
     if (!transactionRes)
@@ -4625,14 +4673,12 @@ export class SignAccountOpController
     message: humanReadableMessage,
     error: _err,
     accountState,
-    isRelayer = false,
     provider = undefined,
     network = undefined
   }: {
     message?: string
     error?: Error | EmittableError | ExternalSignerError
     accountState?: AccountOnchainState
-    isRelayer?: boolean
     provider?: RPCProvider
     network?: Network
   }) {
@@ -4666,7 +4712,10 @@ export class SignAccountOpController
           .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
-      } else if (isUnderpriced(originalMessage)) {
+      } else if (isUnderpriced(getBroadcastServiceErrorMessage(_err))) {
+        // Checked against the service's own message only, so a bundler error that merely
+        // echoes the user operation (with its fee fields) isn't mistaken for a fee change
+        // and the user isn't stuck in a "Gas fee updated" loop for an error a retry can't fix
         if (!this.hasCustomGasPrices) message = 'Transaction fees changed. Please try again'
         else message = originalMessage
 
@@ -4682,9 +4731,6 @@ export class SignAccountOpController
           // toast. Ask them to confirm the new fee and continue instead.
           softFeeUpdateConfirmation = true
         }
-      } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
-        message =
-          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA account'
       } else if (
         originalMessage.includes('INVALID_ACCOUNT_NONCE') ||
         originalMessage.includes('user nonce')
@@ -4970,6 +5016,9 @@ export class SignAccountOpController
   get canBroadcast() {
     if (!this.account.safeCreation) return true
     if (this.accountOp.meta?.isSafeDeploy) return true
+    // Fully signed already. It keeps the nonce of the transaction it replaces on purpose,
+    // even if the account state has already moved past it
+    if (this.#isSignedSafeSpeedUp) return true
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
@@ -5014,6 +5063,7 @@ export class SignAccountOpController
       canEnableErc4337: this.canEnableErc4337,
       threshold: this.threshold,
       canBroadcast: this.canBroadcast,
+      canChangeSigningKey: this.canChangeSigningKey,
       isFeePayerNotLinkedToSafe: this.isFeePayerNotLinkedToSafe,
       isSafeFeePayerChoiceRequired: this.isSafeFeePayerChoiceRequired,
       hasSafeApiFailed: this.hasSafeApiFailed,

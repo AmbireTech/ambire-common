@@ -22,6 +22,7 @@ import 'fake-indexeddb/auto'
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { IStorageController } from '../../interfaces/storage'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
@@ -213,6 +214,7 @@ describe('ActivityController — IDB migration on load', () => {
   })
 
   test('an unusable legacy op does not block the rest of the history', async () => {
+    const { restore } = suppressConsole(true)
     await seedLegacyOps({
       [ACC]: {
         '1': [
@@ -230,9 +232,11 @@ describe('ActivityController — IDB migration on load', () => {
     expect(ids).toEqual(['good-2', 'good-1'])
     // Migration completed despite the bad row, so the flag is recorded
     expect(await getActiveBackend(storage)).toBe('idb')
+    restore()
   })
 
   test('a failed migration keeps the legacy key so the next start can retry', async () => {
+    const { restore } = suppressConsole()
     await storage.set('accountsOps', legacyBlob([makeOp('legacy-1', 1000)]) as any)
 
     // Break the legacy read so ensureMigrated rejects before writing anything
@@ -250,12 +254,14 @@ describe('ActivityController — IDB migration on load', () => {
     expect(await new ActivityIdbStorage(db).isEmpty()).toBe(true)
     expect(await storage.get('accountsOps', {})).not.toEqual({})
     expect(await getActiveBackend(storage)).toBe('keyValue')
+    restore()
   })
 
   test('a failed migration still shows history, read from the retained legacy blob', async () => {
     // The IDB write fails, so IDB is left empty. Reading the startup set from IDB
     // would show an empty history for the whole session even though the legacy copy
     // is intact — the fallback is what keeping that copy is for.
+    const { restore } = suppressConsole()
     const RECIPIENT = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
     await seedLegacyOps(legacyBlob([makeOpTo('legacy-op', 1000, RECIPIENT)]))
 
@@ -273,12 +279,14 @@ describe('ActivityController — IDB migration on load', () => {
     expect(controller.emittedErrors.map((e) => e.level)).toContain('silent')
 
     spy.mockRestore()
+    restore()
   })
 
   test('a failed startup read leaves the controller usable rather than rejecting forever', async () => {
     // #load() runs from the constructor and is assigned to #initialLoadPromise,
     // which every public method awaits. If it rejects, the controller is bricked
     // for the session and the rejection is unhandled.
+    const { restore } = suppressConsole()
     const spy = jest
       .spyOn(ActivityIdbStorage.prototype, 'loadStartupOps')
       .mockRejectedValue(new Error('idb read failed') as never)
@@ -289,11 +297,13 @@ describe('ActivityController — IDB migration on load', () => {
     expect(controller.emittedErrors.length).toBeGreaterThan(0)
 
     spy.mockRestore()
+    restore()
   })
 
   test('init survives when both the migration and the fallback read fail', async () => {
     // The legacy read itself is what broke, so the fallback throws too. Init must
     // still complete rather than leaving the controller permanently unloaded.
+    const { restore } = suppressConsole()
     const failing: IStorageController = Object.create(storage)
     failing.get = (async (key: string, defaultValue?: any) => {
       if (key === 'accountsOps') throw new Error('storage read failed')
@@ -304,6 +314,7 @@ describe('ActivityController — IDB migration on load', () => {
 
     await expect(awaitLoad(controller)).resolves.toBeUndefined()
     expect(controller.emittedErrors.length).toBeGreaterThan(0)
+    restore()
   })
 })
 
@@ -323,6 +334,7 @@ describe('ActivityController — key-value path (no IDB)', () => {
   test('reports stranded history when IDB is missing after it was written to', async () => {
     // A previous session wrote to IDB; this one cannot open it, so everything written since
     // the migration is unreachable and the retained legacy blob is frozen at migration time.
+    const { restore } = suppressConsole()
     await storage.set('activityStorageBackend', 'idb')
     await storage.set('accountsOps', legacyBlob([makeOp('kv-1', 1000)]) as any)
 
@@ -335,6 +347,7 @@ describe('ActivityController — key-value path (no IDB)', () => {
     ])
     // ...but the user is told, because what they see is missing everything written since
     expect(controller.emittedErrors.length).toBeGreaterThan(0)
+    restore()
   })
 
   test('stays quiet when IDB is missing and no migration ever ran', async () => {
@@ -352,6 +365,158 @@ describe('ActivityController — key-value path (no IDB)', () => {
 // sentToHistory.recipients. The startup read is only a window, so the map has to be seeded
 // from existing history once — otherwise known recipients read as first-time.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fee payer backfill
+//
+// getFeePayers answers from feePayersHistory plus the ops in memory. The index is only written
+// on broadcast and the startup read is only a window, so a payer that paid before the index
+// existed, outside that window, would read as "not linked yet" without the one-time backfill.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ActivityController — fee payers backfilled from the whole history', () => {
+  const OLD_PAYER = '0x1111111111111111111111111111111111111111'
+  const RECENT_PAYER = '0x2222222222222222222222222222222222222222'
+  const REJECTED_PAYER = '0x3333333333333333333333333333333333333333'
+
+  const makePaidOp = (id: string, timestamp: number, paidBy: string, status?: AccountOpStatus) => ({
+    ...makeOp(id, timestamp, status),
+    gasFeePayment: { paidBy } as any
+  })
+
+  const STUCK_PAYER = '0x4444444444444444444444444444444444444444'
+
+  // The oldest op is the only one OLD_PAYER paid for, and it is well outside the startup window.
+  // The rejected, stuck and unknown ones never confirmed on-chain, so their payers are not linked.
+  const history = () => [
+    makePaidOp('old', 1000, OLD_PAYER),
+    makePaidOp('rejected', 1500, REJECTED_PAYER, AccountOpStatus.Rejected),
+    makePaidOp('stuck', 1600, STUCK_PAYER, AccountOpStatus.BroadcastButStuck),
+    makePaidOp('unknown', 1700, STUCK_PAYER, AccountOpStatus.UnknownButPastNonce),
+    ...Array.from({ length: 30 }, (_, i) => makePaidOp(`recent-${i}`, 2000 + i, RECENT_PAYER))
+  ]
+
+  test('IDB: a payer outside the startup window is indexed, once, and the flag is set', async () => {
+    await new ActivityIdbStorage(db).migrateFromStorage(legacyBlob(history()) as any)
+    await storage.set('activityStorageBackend', 'idb')
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    // The startup window does not reach the oldest op, so only the backfill can know OLD_PAYER
+    expect(
+      controller.getAccountOpsForAccount({ accountAddr: ACC }).map((op) => op.id)
+    ).not.toContain('old')
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER, OLD_PAYER])
+    expect(await storage.get('feePayersHistory', {})).toEqual({
+      [ACC]: { '1': { [RECENT_PAYER]: 2029, [OLD_PAYER]: 1000 } }
+    })
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(true)
+  })
+
+  test('IDB: does not run again once the flag is set', async () => {
+    await new ActivityIdbStorage(db).migrateFromStorage(legacyBlob(history()) as any)
+    await storage.set('activityStorageBackend', 'idb')
+    await storage.set('feePayersHistoryBackfilled', true)
+    const forEachOpSpy = jest.spyOn(ActivityIdbStorage.prototype, 'forEachOp')
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    expect(forEachOpSpy).not.toHaveBeenCalled()
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER])
+  })
+
+  test('IDB: a failed read leaves the flag unset, so the pass is retried on the next start', async () => {
+    await new ActivityIdbStorage(db).migrateFromStorage(legacyBlob(history()) as any)
+    await storage.set('activityStorageBackend', 'idb')
+    jest
+      .spyOn(ActivityIdbStorage.prototype, 'forEachOp')
+      .mockRejectedValueOnce(new Error('read failed'))
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(false)
+    expect(controller.emittedErrors.length).toBeGreaterThan(0)
+    // Still answers from the ops in memory
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER])
+
+    const retried = makeController(storage, db)
+    await awaitLoadOnly(retried)
+
+    expect(retried.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER, OLD_PAYER])
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(true)
+  })
+
+  test('a payer is linked once its op is confirmed, not when it is broadcast', async () => {
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    const pendingOp = makePaidOp(
+      'pending',
+      3000,
+      OLD_PAYER,
+      AccountOpStatus.BroadcastedButNotConfirmed
+    ) as any
+    await controller.addAccountOp(pendingOp)
+
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([])
+    expect(await storage.get('feePayersHistory', {})).toEqual({})
+
+    // What a status update does: mutate the op in memory, then persist the changed ops
+    const opInMemory = controller
+      .getAccountOpsForAccount({ accountAddr: ACC })
+      .find((op) => op.id === 'pending')!
+    opInMemory.status = AccountOpStatus.Success
+    await (controller as any).persistAccountsOps([opInMemory])
+
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([OLD_PAYER])
+    expect(await storage.get('feePayersHistory', {})).toEqual({
+      [ACC]: { '1': { [OLD_PAYER]: 3000 } }
+    })
+  })
+
+  // A cold browser start can leave IDB unopened after the history already moved there. The
+  // key-value copy is frozen at that move, so indexing it and setting the flag would skip the
+  // payers that only exist in IDB for good.
+  test('the frozen key-value copy is not treated as the whole history', async () => {
+    await new ActivityIdbStorage(db).migrateFromStorage(legacyBlob(history()) as any)
+    await storage.set('activityStorageBackend', 'idb')
+    // The frozen copy only holds part of what IDB has
+    await storage.set(
+      'accountsOps',
+      legacyBlob([makePaidOp('recent-0', 2000, RECENT_PAYER)]) as any
+    )
+
+    const withoutIdb = makeController(storage, undefined)
+    await awaitLoadOnly(withoutIdb)
+
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(false)
+    expect(await storage.get('feePayersHistory', {})).toEqual({})
+
+    // The next session reaches IDB (the recorded backend is 'keyValue' now, as the session above
+    // left it) and runs the pass over the whole history
+    expect(await getActiveBackend(storage)).toBe('keyValue')
+    const withIdb = makeController(storage, db)
+    await awaitLoadOnly(withIdb)
+
+    expect(withIdb.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER, OLD_PAYER])
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(true)
+  })
+
+  test('key-value: the payers of the whole stored history are indexed', async () => {
+    await storage.set('accountsOps', legacyBlob(history()) as any)
+
+    const controller = makeController(storage, undefined)
+    await awaitLoadOnly(controller)
+
+    expect(await storage.get('feePayersHistory', {})).toEqual({
+      [ACC]: { '1': { [RECENT_PAYER]: 2029, [OLD_PAYER]: 1000 } }
+    })
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(true)
+  })
+})
 
 describe('ActivityController — recipients indexed by the storage migration', () => {
   const OLD_RECIPIENT = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
@@ -475,6 +640,7 @@ describe('ActivityController — method interactions', () => {
     // Regression: on migration failure the session read the legacy blob but kept the
     // IDB backend, so the first write put one row into the empty store. isEmpty() was
     // then false forever and the real history was stranded permanently.
+    const { restore } = suppressConsole()
     await storage.set('accountsOps', legacyBlob([makeOp('legacy-1', 1000)]) as any)
 
     const spy = jest
@@ -495,6 +661,7 @@ describe('ActivityController — method interactions', () => {
     expect(blobIds).toContain('written-after-failure')
 
     spy.mockRestore()
+    restore()
   })
 
   test('pending ops pushing a group past the window do not block the lazy-load', async () => {
@@ -555,6 +722,7 @@ describe('ActivityController — method interactions', () => {
     //
     // IDB must have ops for this to bite: #recordActiveBackend returns early on an empty
     // store, so without seeding, the key is never read and the guard is never exercised.
+    const { restore } = suppressConsole()
     await new ActivityIdbStorage(db).putMultiple([
       { accountAddr: ACC, chainId: CHAIN_1, ops: [makeOp('some-op', 1000) as any] }
     ])
@@ -569,6 +737,7 @@ describe('ActivityController — method interactions', () => {
 
     await expect(awaitLoad(controller)).resolves.toBeUndefined()
     expect(controller.emittedErrors.length).toBeGreaterThan(0)
+    restore()
   })
 
   test('a failed startup read does not permanently stop later page loads', async () => {
@@ -576,6 +745,7 @@ describe('ActivityController — method interactions', () => {
     // failed startup read that is every account, so the poisoning scan silently had nothing
     // to search for the rest of the session
     // even though IDB held the full history.
+    const { restore } = suppressConsole()
     await new ActivityIdbStorage(db).putMultiple([
       { accountAddr: ACC, chainId: CHAIN_1, ops: [makeOpTo('old-recipient', 1, RECIPIENT) as any] }
     ])
@@ -593,6 +763,7 @@ describe('ActivityController — method interactions', () => {
     await controller.filterAccountsOps('session-1', { account: ACC, chainId: CHAIN_1 })
     const ids = controller.getAccountOpsForAccount({ accountAddr: ACC }).map((op) => op.id)
     expect(ids).toContain('old-recipient')
+    restore()
   })
 })
 
@@ -608,6 +779,7 @@ describe('ActivityController — merge-not-replace on lazy-load', () => {
     // Isolates the persistence-layer merge. If persisting fails the op exists ONLY in memory,
     // so a lazy-load that replaced the group with IDB content would erase it from the
     // UI on top of having failed to save it.
+    const { restore } = suppressConsole()
     await new ActivityIdbStorage(db).putMultiple([
       { accountAddr: ACC, chainId: CHAIN_1, ops: [makeOp('persisted', 1000) as any] }
     ])
@@ -627,6 +799,7 @@ describe('ActivityController — merge-not-replace on lazy-load', () => {
     const ids = controller.getAccountOpsForAccount({ accountAddr: ACC }).map((op) => op.id)
     expect(ids).toContain('memory-only')
     expect(ids).toContain('persisted')
+    restore()
   })
 
   test('merging keeps in-memory object identity so in-flight mutations stick', async () => {
@@ -694,6 +867,7 @@ describe('ActivityController — the recorded backend is read, not just written'
     // The value earns its place here: 'idb' recorded last session and key-value this one means
     // the history is in a store we cannot open, and the retained blob is frozen at migration
     // time — so what renders is missing everything written since.
+    const { restore } = suppressConsole()
     await storage.set('activityStorageBackend', 'idb')
     await seedLegacyOps(legacyBlob([makeOp('kv-1', 1000)]))
 
@@ -702,6 +876,7 @@ describe('ActivityController — the recorded backend is read, not just written'
 
     expect(controller.emittedErrors.some((e) => e.level === 'silent')).toBe(true)
     expect(await getActiveBackend(storage)).toBe('keyValue')
+    restore()
   })
 
   test('stays quiet when the backend has not changed', async () => {
@@ -979,6 +1154,7 @@ describe('ActivityController — the startup window is deeper for the selected a
   })
 
   test('the top-up never rejects, so selectAccount cannot be broken by a failed read', async () => {
+    const { restore } = suppressConsole()
     await seedDeepHistories()
 
     const controller = makeControllerWithSelected(ACC)
@@ -991,6 +1167,7 @@ describe('ActivityController — the startup window is deeper for the selected a
     await expect(controller.onSelectedAccountChange(OTHER)).resolves.toBeUndefined()
     // The short window survives, so the readers are no worse off than before the switch.
     expect(loadedCount(controller, OTHER)).toBe(10)
+    restore()
   })
 })
 
@@ -1103,6 +1280,7 @@ describe('ActivityController — paginated reads', () => {
   test('a failed lookup skips the op rather than risking a stored duplicate', async () => {
     // Absence cannot be proven when the read fails, and the two outcomes are not symmetric:
     // a stored duplicate is permanent, while a skipped op is re-offered on the next scan.
+    const { restore } = suppressConsole()
     const spy = jest
       .spyOn(ActivityIdbStorage.prototype, 'hasOpWithTxnId')
       .mockRejectedValue(new Error('idb unavailable') as never)
@@ -1119,6 +1297,7 @@ describe('ActivityController — paginated reads', () => {
     expect(await storage.get('externalAccountOps', {})).toEqual({})
     expect(controller.emittedErrors.length).toBeGreaterThan(0)
     spy.mockRestore()
+    restore()
   })
 
   test('the lookup matches the account case-insensitively', async () => {

@@ -115,10 +115,11 @@ export class RecurringTimeout implements IRecurringTimeout {
       await this.promise
     } catch (err: any) {
       if (!this.promise) return
-      console.error('Recurring task error:', err)
       if (this.#emitError) {
         // set level to silent as we don't want the user to see 'Recurring task failed'
         this.#emitError({ error: err, message: 'Recurring task failed', level: 'silent' })
+      } else {
+        console.error('Recurring task error:', err)
       }
     } finally {
       // If fnExecutionsCount has changed, it means `restart` was called during the execution of fn,

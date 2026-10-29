@@ -2,6 +2,7 @@ import { Survey } from '@/interfaces/survey'
 import { getNextQuestionForAnswers } from '@/utils/survey'
 import { expect } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { BannerController } from '../banner/banner'
 import { ANSWERED_SURVEYS_STORAGE_KEY } from './survey'
@@ -297,6 +298,7 @@ describe('SurveyController', () => {
     })()
   })
   test('Retry mechanism', async () => {
+    const { restore } = suppressConsole()
     let i = 0
     mockFetch.mockImplementation(async (url: string, ...args) => {
       if (url.includes('promotions/survey')) {
@@ -324,5 +326,6 @@ describe('SurveyController', () => {
     expect(surveyController.status).toBe('error-submitting')
     await surveyController.sendResponse('instanceId', 'address')
     expect(surveyController.status).toBe('success-submitted')
+    restore()
   })
 })
