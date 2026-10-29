@@ -135,6 +135,12 @@ export interface AccountOp {
       isCancel?: boolean
     }
     /**
+     * Set on an accountOp that sends an already signed and already sent transaction again, to
+     * get it confirmed sooner. It isn't a new transaction, so it's kept out of the Safe queue and
+     * rejecting it simply drops it, instead of cancelling the transaction onchain.
+     */
+    isResend?: boolean
+    /**
      * @deprecated No longer written or read anywhere. Used to hold the descriptor-backed
      * humanization output, persisted so activity/history/Benzin could redisplay a past op without
      * re-humanizing it. Removed because it coupled storage to the humanizer's internal, frequently
@@ -153,7 +159,28 @@ export interface AccountOp {
   dappSessionId?: string
 }
 
-export const getAccountOpNonce = (accountOp: AccountOp): bigint | null => {
+const getAccountOpSenders = (op: Pick<AccountOp, 'accountAddr' | 'gasFeePayment'>) =>
+  [op.accountAddr, op.gasFeePayment?.paidBy]
+    .filter((addr): addr is string => !!addr)
+    .map((addr) => addr.toLowerCase())
+
+/**
+ * Whether two ops on the same chain can use the same txn or account nonce: they share the
+ * account or the fee payer, e.g. a smart account paid by EOA E and E itself.
+ */
+export const isSameChainAndSender = (
+  one: Pick<AccountOp, 'accountAddr' | 'chainId' | 'gasFeePayment'>,
+  two: Pick<AccountOp, 'accountAddr' | 'chainId' | 'gasFeePayment'>
+): boolean => {
+  if (one.chainId !== two.chainId) return false
+
+  const twoSenders = getAccountOpSenders(two)
+  return getAccountOpSenders(one).some((sender) => twoSenders.includes(sender))
+}
+
+export const getAccountOpNonce = (
+  accountOp: Pick<AccountOp, 'safeTx' | 'nonce'>
+): bigint | null => {
   const nonce = accountOp.safeTx?.nonce ?? accountOp.nonce
 
   return nonce === null || typeof nonce === 'undefined' ? null : BigInt(nonce)

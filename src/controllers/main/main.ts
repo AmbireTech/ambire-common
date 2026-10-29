@@ -103,7 +103,7 @@ import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
 import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
-import { AccountOp } from '@/libs/accountOp/accountOp'
+import { AccountOp, isSameChainAndSender } from '@/libs/accountOp/accountOp'
 import {
   getCallsWithTxnIds,
   getDappIdentifier,
@@ -1312,11 +1312,12 @@ export class MainController extends EventEmitter implements IMainController {
 
     let isSignAndBroadcastInProgressOnThisAccountAndChain = false
 
+    // All accounts are checked, as another account can share the fee payer of this op
     if (
-      this.requests.visibleUserRequests.some(
+      this.requests.userRequests.some(
         (r) =>
           r.kind === 'calls' &&
-          r.signAccountOp.accountOp.chainId === signAccountOp.accountOp.chainId &&
+          isSameChainAndSender(r.signAccountOp.accountOp, signAccountOp.accountOp) &&
           r.signAccountOp.isSignAndBroadcastInProgress
       )
     ) {
@@ -1324,19 +1325,20 @@ export class MainController extends EventEmitter implements IMainController {
     } else if (
       type !== 'one-click-swap-and-bridge' &&
       this.swapAndBridge.signAccountOpController &&
-      this.swapAndBridge.signAccountOpController.accountOp.accountAddr ===
-        signAccountOp.accountOp.accountAddr &&
-      this.swapAndBridge.signAccountOpController.accountOp.chainId ===
-        signAccountOp.accountOp.chainId &&
+      isSameChainAndSender(
+        this.swapAndBridge.signAccountOpController.accountOp,
+        signAccountOp.accountOp
+      ) &&
       this.swapAndBridge.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true
     } else if (
       type !== 'one-click-transfer' &&
       this.transfer.signAccountOpController &&
-      this.transfer.signAccountOpController.accountOp.accountAddr ===
-        signAccountOp.accountOp.accountAddr &&
-      this.transfer.signAccountOpController.accountOp.chainId === signAccountOp.accountOp.chainId &&
+      isSameChainAndSender(
+        this.transfer.signAccountOpController.accountOp,
+        signAccountOp.accountOp
+      ) &&
       this.transfer.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true

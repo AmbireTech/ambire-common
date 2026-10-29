@@ -34,6 +34,7 @@ import { normalizeIdentityResponse } from '../../libs/accountPicker/accountPicke
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
+import isSameAddr from '../../utils/isSameAddr'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
@@ -245,6 +246,38 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
     if (!accountData) return
     await this.updateAccountStates([accountData], blockTag, networks, force)
+  }
+
+  /**
+   * The account nonce (an Ambire account or a Safe) on the latest block, read from the chain now
+   * and not from the saved states, as these may come from the pending block. Null if it can't be
+   * read, e.g. when the RPC is down.
+   */
+  async getLatestAccountNonce(accountAddr: string, chainId: bigint): Promise<bigint | null> {
+    await this.initialLoadPromise
+
+    const account = this.accounts.find(({ addr }) => isSameAddr(addr, accountAddr))
+    const network = this.#networks.networks.find((net) => net.chainId === chainId)
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!account || !network || !provider) return null
+
+    try {
+      const [accountState] = await getAccountState(
+        provider,
+        network,
+        [account],
+        this.#keystore.keys,
+        'latest'
+      )
+      return accountState?.nonce ?? null
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: `Failed to read the account nonce on ${network.name}.`,
+        error
+      })
+      return null
+    }
   }
 
   private async updateAccountStates(

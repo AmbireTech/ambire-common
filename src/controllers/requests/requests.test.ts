@@ -20,6 +20,7 @@ import { Platform } from '../../interfaces/platform'
 import {
   BenzinUserRequest,
   CallsUserRequest,
+  SwitchAccountRequest,
   DappConnectRequest,
   PlainTextMessageUserRequest,
   TypedMessageUserRequest,
@@ -1436,6 +1437,156 @@ describe('RequestsController ', () => {
     expect(request.signAccountOp.accountOp.nonce).toBe(119n)
     request.signAccountOp.destroy()
   })
+  test('queues a new Safe request after the pending transactions the RPC does not count yet', async () => {
+    const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    // sent, but not counted by the RPC yet - the new request must not reuse (and replace) these nonces
+    const sentAccountOp = (nonce: bigint): SubmittedAccountOp => ({
+      ...getActivityAccountOp(accountAddr, chainId, nonce),
+      status: AccountOpStatus.BroadcastedButNotConfirmed
+    })
+    await activityCtrl.addAccountOp(sentAccountOp(119n))
+    await activityCtrl.addAccountOp(sentAccountOp(120n))
+
+    await controller.build({
+      type: 'calls',
+      params: {
+        executionType: 'queue',
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, value: 1n, data: '0x' }],
+          meta: { accountAddr, chainId }
+        }
+      }
+    })
+
+    const request = controller.userRequests[0]
+    if (request?.kind !== 'calls') throw new Error('Expected calls request')
+    expect(request.signAccountOp.accountOp.nonce).toBe(121n)
+    request.signAccountOp.destroy()
+  })
+
+  test('keeps the pending transaction nonce for a Safe speed up and opens it separately', async () => {
+    const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    const pendingAccountOp: SubmittedAccountOp = {
+      ...getActivityAccountOp(accountAddr, chainId, 119n),
+      status: AccountOpStatus.BroadcastedButNotConfirmed
+    }
+    await activityCtrl.addAccountOp(pendingAccountOp)
+
+    // an unrelated request, queued after the pending transaction
+    await controller.build({
+      type: 'calls',
+      params: {
+        executionType: 'queue',
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, value: 1n, data: '0x' }],
+          meta: { accountAddr, chainId }
+        }
+      }
+    })
+
+    const speedUpCalls = [{ id: generateUuid(), to: ZeroAddress, value: 2n, data: '0x' }]
+    await controller.build({
+      type: 'calls',
+      params: {
+        executionType: 'queue',
+        userRequestParams: {
+          calls: speedUpCalls,
+          meta: { accountAddr, chainId },
+          accountOp: {
+            id: pendingAccountOp.id,
+            accountAddr,
+            chainId,
+            signingKeyAddr: null,
+            signingKeyType: null,
+            nonce: 119n,
+            eoaNonce: 5n,
+            calls: speedUpCalls,
+            gasLimit: null,
+            signature: null,
+            gasFeePayment: null,
+            meta: { speedUp: { enabled: true } }
+          }
+        }
+      }
+    })
+
+    expect(controller.userRequests).toHaveLength(2)
+    const callsRequests = controller.userRequests as CallsUserRequest[]
+    const speedUpRequest = callsRequests.find(
+      (request) => request.signAccountOp.accountOp.meta?.speedUp?.enabled
+    )
+    const queuedRequest = callsRequests.find((request) => request !== speedUpRequest)
+    // the speed up must not get merged into the request that is already open
+    expect(queuedRequest?.signAccountOp.accountOp.calls).toHaveLength(1)
+    expect(queuedRequest?.signAccountOp.accountOp.nonce).toBe(120n)
+    expect(speedUpRequest?.signAccountOp.accountOp.nonce).toBe(119n)
+    expect(speedUpRequest?.signAccountOp.accountOp.eoaNonce).toBe(5n)
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
+
+  test.each([
+    ['resend', [{ to: ZeroAddress, value: 2n, data: '0x' }], { isResend: true }],
+    ['cancel', [{ to: ZeroAddress, value: 0n, data: '0x' }], undefined]
+  ])(
+    'reopens the open Safe %s of a pending transaction instead of opening another one',
+    async (_, prebuiltCalls, prebuiltMeta) => {
+      const { controller, accountsCtrl } = await prepareTest(false, true)
+      const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      const chainId = 1n
+      accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+
+      // Built anew on every press, as the sign screen does (see getResendAccountOp and
+      // getSafeCancellationAccountOp in the app)
+      const buildPrebuiltRequest = () => {
+        const calls = prebuiltCalls.map((call) => ({ ...call, id: generateUuid() }))
+
+        return controller.build({
+          type: 'calls',
+          params: {
+            executionType: 'queue',
+            userRequestParams: {
+              calls,
+              meta: { accountAddr, chainId },
+              accountOp: {
+                id: generateUuid(),
+                accountAddr,
+                chainId,
+                signingKeyAddr: null,
+                signingKeyType: null,
+                nonce: 119n,
+                calls,
+                gasLimit: null,
+                signature: null,
+                gasFeePayment: null,
+                ...(prebuiltMeta && { meta: prebuiltMeta })
+              }
+            }
+          }
+        })
+      }
+
+      await buildPrebuiltRequest()
+      await buildPrebuiltRequest()
+
+      expect(controller.userRequests).toHaveLength(1)
+      const request = controller.userRequests[0]
+      if (request?.kind !== 'calls') throw new Error('Expected calls request')
+      // reopened as it is, without the calls of the second press added to it
+      expect(request.signAccountOp.accountOp.calls).toHaveLength(1)
+      expect(request.signAccountOp.accountOp.nonce).toBe(119n)
+      request.signAccountOp.destroy()
+    }
+  )
+
   test('keeps the nonce when adding calls to an existing Safe request', async () => {
     const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -3557,6 +3708,316 @@ describe('RequestsController ', () => {
       expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
 
       existingBatch.signAccountOp.destroy()
+    })
+  })
+
+  describe('speed up or cancel of a pending transaction of another account', () => {
+    const STARTING_ACCOUNT_ADDR = accounts[2]!.addr
+    const PENDING_ACCOUNT_ADDR = accounts[0]!.addr
+    const THIRD_ACCOUNT_ADDR = accounts[1]!.addr
+    const REPLACED_TXN_ID = '0x1111111111111111111111111111111111111111111111111111111111111111'
+    const PENDING_CALL = { to: ZeroAddress, value: 1n, data: '0x' as const }
+
+    type TestSetup = Awaited<ReturnType<typeof prepareTest>>
+
+    const buildReplacementForPendingAccount = (
+      { controller }: TestSetup,
+      { isCancel = false, chainId = 1n }: { isCancel?: boolean; chainId?: bigint } = {}
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          allowAccountSwitch: true,
+          userRequestParams: {
+            calls: [PENDING_CALL],
+            meta: { accountAddr: PENDING_ACCOUNT_ADDR, chainId },
+            accountOp: {
+              id: 'replaced-account-op-id',
+              accountAddr: PENDING_ACCOUNT_ADDR,
+              chainId,
+              signingKeyAddr: null,
+              signingKeyType: null,
+              gasLimit: null,
+              gasFeePayment: null,
+              nonce: 7n,
+              signature: null,
+              calls: [{ ...PENDING_CALL, id: 'replaced-call-id' }],
+              meta: {
+                speedUp: {
+                  enabled: true,
+                  ...(isCancel && { isCancel: true }),
+                  replacedIdentifiedBy: { type: 'Transaction', identifier: REPLACED_TXN_ID }
+                }
+              }
+            } as AccountOp
+          }
+        }
+      })
+
+    const selectAccountAddr = (setup: TestSetup) => setup.selectedAccountCtrl.account?.addr
+
+    const getSwitchAccountRequest = ({ controller }: TestSetup) =>
+      controller.userRequests.find((r) => r.kind === 'switchAccount')
+
+    /**
+     * The user is on the starting account with a request of its own open, presses Speed up (or
+     * Cancel) of a pending transaction of another account, and goes through the switch screen.
+     */
+    const startReplacementFromStartingAccount = async (
+      setup: TestSetup,
+      options?: { isCancel?: boolean; chainId?: bigint }
+    ) => {
+      const { mainCtrl, controller, getCallsRequest } = setup
+      const startingAccountRequest = await getCallsRequest({
+        addr: STARTING_ACCOUNT_ADDR,
+        chainId: 10n
+      })
+      await controller.addUserRequests([startingAccountRequest], { executionType: 'queue' })
+      expect(selectAccountAddr(setup)).toBe(STARTING_ACCOUNT_ADDR)
+
+      await buildReplacementForPendingAccount(setup, options)
+      const switchAccountRequest = getSwitchAccountRequest(setup)
+      expect(switchAccountRequest?.kind).toBe('switchAccount')
+
+      await mainCtrl.selectAccount(PENDING_ACCOUNT_ADDR)
+      await controller.resolveUserRequest(null, switchAccountRequest!.id)
+
+      const replacementRequest = controller.userRequests.find(
+        (r): r is CallsUserRequest =>
+          r.kind === 'calls' && r.signAccountOp.accountOp.accountAddr === PENDING_ACCOUNT_ADDR
+      )
+
+      return { startingAccountRequest, replacementRequest }
+    }
+
+    test('a speed up opens as a speed up of the same transaction after the switch', async () => {
+      const setup = await prepareTest()
+
+      const { replacementRequest } = await startReplacementFromStartingAccount(setup)
+
+      expect(selectAccountAddr(setup)).toBe(PENDING_ACCOUNT_ADDR)
+      expect(replacementRequest).toBeDefined()
+      const { accountOp, isSpeedUpTransaction } = replacementRequest!.signAccountOp
+      expect(isSpeedUpTransaction).toBe(true)
+      expect(accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier).toBe(REPLACED_TXN_ID)
+      expect(accountOp.calls.map(({ to, value }) => ({ to, value }))).toEqual([
+        { to: PENDING_CALL.to, value: PENDING_CALL.value }
+      ])
+    })
+
+    test('a cancel keeps its empty call after the switch, although it is made a cancel twice', async () => {
+      const setup = await prepareTest()
+
+      const { replacementRequest } = await startReplacementFromStartingAccount(setup, {
+        isCancel: true
+      })
+
+      expect(replacementRequest).toBeDefined()
+      const { accountOp } = replacementRequest!.signAccountOp
+      expect(accountOp.meta?.speedUp).toMatchObject({
+        enabled: true,
+        isCancel: true,
+        replacedNonce: 7n,
+        replacedIdentifiedBy: { identifier: REPLACED_TXN_ID }
+      })
+      expect(accountOp.calls).toHaveLength(1)
+      expect(accountOp.calls[0]).toMatchObject({ to: ZeroAddress, value: 0n, data: '0x' })
+    })
+
+    const getSwitchBackRequests = ({ controller }: TestSetup) =>
+      controller.userRequests.filter(
+        (r): r is SwitchAccountRequest =>
+          r.kind === 'switchAccount' && r.meta.switchToAccountAddr === STARTING_ACCOUNT_ADDR
+      )
+
+    const sendReplacement = (
+      { mainCtrl }: TestSetup,
+      replacementRequest: CallsUserRequest | undefined
+    ) =>
+      mainCtrl.resolveAccountOpRequest(
+        {
+          ...getActivityAccountOp(PENDING_ACCOUNT_ADDR, 1n, 7n),
+          calls: replacementRequest!.signAccountOp.accountOp.calls
+        },
+        replacementRequest!.id
+      )
+
+    test('a switch request to the starting account opens once the speed up is rejected', async () => {
+      const setup = await prepareTest()
+      const { startingAccountRequest, replacementRequest } =
+        await startReplacementFromStartingAccount(setup)
+      const { controller } = setup
+
+      await controller.rejectUserRequests('User rejected', [replacementRequest!.id])
+
+      const [switchBackRequest] = getSwitchBackRequests(setup)
+      expect(switchBackRequest).toBeDefined()
+      expect(switchBackRequest!.meta.nextRequestKind).toBe('calls')
+      expect(controller.currentUserRequest).toBe(switchBackRequest)
+      expect(controller.requestWindow.windowProps).not.toBe(null)
+      // The user is not moved until they accept
+      expect(selectAccountAddr(setup)).toBe(PENDING_ACCOUNT_ADDR)
+      expect(controller.userRequests).not.toContain(replacementRequest)
+      expect(controller.userRequests).toContain(startingAccountRequest)
+
+      startingAccountRequest.signAccountOp.destroy()
+    })
+
+    test('the transaction page stays open after a speed up is sent and the switch request is next', async () => {
+      const setup = await prepareTest()
+      const { startingAccountRequest, replacementRequest } =
+        await startReplacementFromStartingAccount(setup)
+      const { controller } = setup
+
+      await sendReplacement(setup, replacementRequest)
+
+      const [switchBackRequest] = getSwitchBackRequests(setup)
+      expect(switchBackRequest).toBeDefined()
+      expect(controller.visibleUserRequests.map((r) => r.kind)).toEqual(['benzin', 'switchAccount'])
+      expect(controller.currentUserRequest?.kind).toBe('benzin')
+      expect(controller.requestWindow.windowProps).not.toBe(null)
+      expect(selectAccountAddr(setup)).toBe(PENDING_ACCOUNT_ADDR)
+      expect(controller.userRequests).not.toContain(replacementRequest)
+
+      const benzinRequest = controller.currentUserRequest!
+      await controller.resolveUserRequest(null, benzinRequest.id)
+
+      expect(controller.currentUserRequest).toBe(switchBackRequest)
+      expect(controller.requestWindow.windowProps).not.toBe(null)
+
+      startingAccountRequest.signAccountOp.destroy()
+    })
+
+    test('rejecting the switch request keeps the user on the account with the speed up and the starting request queued', async () => {
+      const setup = await prepareTest()
+      const { startingAccountRequest, replacementRequest } =
+        await startReplacementFromStartingAccount(setup)
+      const { controller, mainCtrl } = setup
+      const onError = jest.fn()
+      controller.onError(onError)
+      mainCtrl.onError(onError)
+      await controller.rejectUserRequests('User rejected', [replacementRequest!.id])
+      const [switchBackRequest] = getSwitchBackRequests(setup)
+
+      await controller.rejectUserRequests('User rejected', [switchBackRequest!.id])
+
+      expect(selectAccountAddr(setup)).toBe(PENDING_ACCOUNT_ADDR)
+      expect(getSwitchBackRequests(setup)).toEqual([])
+      expect(controller.userRequests).toEqual([startingAccountRequest])
+      expect(controller.visibleUserRequests).toEqual([])
+      expect(controller.currentUserRequest).toBe(null)
+      expect(onError).not.toHaveBeenCalled()
+
+      startingAccountRequest.signAccountOp.destroy()
+    })
+
+    test('accepting the switch request keeps the window open and opens the starting account request in it', async () => {
+      const setup = await prepareTest()
+      const { startingAccountRequest, replacementRequest } =
+        await startReplacementFromStartingAccount(setup)
+      const { controller, mainCtrl } = setup
+      await sendReplacement(setup, replacementRequest)
+      const [switchBackRequest] = getSwitchBackRequests(setup)
+      await controller.resolveUserRequest(null, controller.currentUserRequest!.id)
+      expect(controller.currentUserRequest).toBe(switchBackRequest)
+      const windowId = controller.requestWindow.windowProps?.id
+      expect(windowId).toBeDefined()
+
+      // What the UI does: select the account, then resolve the switch request once it is selected
+      await mainCtrl.selectAccount(STARTING_ACCOUNT_ADDR)
+      expect(controller.requestWindow.windowProps?.id).toBe(windowId)
+      expect(controller.currentUserRequest).toBe(switchBackRequest)
+      await controller.resolveUserRequest(null, switchBackRequest!.id)
+
+      expect(selectAccountAddr(setup)).toBe(STARTING_ACCOUNT_ADDR)
+      expect(controller.requestWindow.windowProps?.id).toBe(windowId)
+      expect(controller.currentUserRequest).toBe(startingAccountRequest)
+      expect(getSwitchBackRequests(setup)).toEqual([])
+
+      startingAccountRequest.signAccountOp.destroy()
+    })
+
+    test('one switch request is enough for speed ups of two transactions of the account', async () => {
+      const setup = await prepareTest()
+      const { mainCtrl, controller, getCallsRequest } = setup
+      const startingAccountRequest = await getCallsRequest({
+        addr: STARTING_ACCOUNT_ADDR,
+        chainId: 10n
+      })
+      await controller.addUserRequests([startingAccountRequest], { executionType: 'queue' })
+      await buildReplacementForPendingAccount(setup, { chainId: 1n })
+      await buildReplacementForPendingAccount(setup, { chainId: 56n })
+      const switchRequestIds = controller.userRequests
+        .filter((r) => r.kind === 'switchAccount')
+        .map((r) => r.id)
+      expect(switchRequestIds).toHaveLength(2)
+      await mainCtrl.selectAccount(PENDING_ACCOUNT_ADDR)
+      await controller.resolveUserRequest(null, switchRequestIds[0]!)
+      const replacementRequestIds = controller.userRequests
+        .filter((r) => r.kind === 'calls' && r.meta.accountAddr === PENDING_ACCOUNT_ADDR)
+        .map((r) => r.id)
+      expect(replacementRequestIds).toHaveLength(2)
+
+      await controller.rejectUserRequests('User rejected', [replacementRequestIds[0]!])
+      await controller.rejectUserRequests('User rejected', [replacementRequestIds[1]!])
+
+      expect(getSwitchBackRequests(setup)).toHaveLength(1)
+
+      startingAccountRequest.signAccountOp.destroy()
+    })
+
+    test('no switch request is added if the user picked another account in between', async () => {
+      const setup = await prepareTest()
+      const { startingAccountRequest, replacementRequest } =
+        await startReplacementFromStartingAccount(setup)
+      const { controller, mainCtrl } = setup
+      await mainCtrl.selectAccount(THIRD_ACCOUNT_ADDR)
+
+      await controller.rejectUserRequests('User rejected', [replacementRequest!.id])
+
+      expect(selectAccountAddr(setup)).toBe(THIRD_ACCOUNT_ADDR)
+      expect(getSwitchBackRequests(setup)).toEqual([])
+
+      startingAccountRequest.signAccountOp.destroy()
+    })
+
+    test('no switch request is added if the starting account was removed', async () => {
+      const setup = await prepareTest()
+      const { replacementRequest } = await startReplacementFromStartingAccount(setup)
+      const { controller, mainCtrl } = setup
+      await mainCtrl.removeAccount(STARTING_ACCOUNT_ADDR)
+      expect(mainCtrl.accounts.accounts.map((a) => a.addr)).not.toContain(STARTING_ACCOUNT_ADDR)
+
+      await controller.rejectUserRequests('User rejected', [replacementRequest!.id])
+
+      expect(getSwitchBackRequests(setup)).toEqual([])
+      expect(selectAccountAddr(setup)).toBe(PENDING_ACCOUNT_ADDR)
+    })
+
+    test('calls that are not a speed up leave the user on the account they switched to', async () => {
+      const setup = await prepareTest()
+      const { controller, mainCtrl } = setup
+
+      await controller.build({
+        type: 'calls',
+        params: {
+          allowAccountSwitch: true,
+          userRequestParams: {
+            calls: [PENDING_CALL],
+            meta: { accountAddr: PENDING_ACCOUNT_ADDR, chainId: 1n }
+          }
+        }
+      })
+      const switchAccountRequest = getSwitchAccountRequest(setup)
+      await mainCtrl.selectAccount(PENDING_ACCOUNT_ADDR)
+      await controller.resolveUserRequest(null, switchAccountRequest!.id)
+      const callsRequest = controller.userRequests.find((r) => r.kind === 'calls')
+      expect(callsRequest).toBeDefined()
+
+      await controller.rejectUserRequests('User rejected', [callsRequest!.id])
+
+      expect(selectAccountAddr(setup)).toBe(PENDING_ACCOUNT_ADDR)
+      expect(controller.userRequests.some((r) => r.kind === 'switchAccount')).toBe(false)
     })
   })
 

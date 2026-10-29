@@ -4,8 +4,11 @@ import {
   getAddress,
   hexlify,
   Interface,
+  JsonRpcProvider,
+  keccak256,
   makeError,
   MaxUint256,
+  Network as EthersNetwork,
   parseEther,
   toBeHex,
   verifyMessage,
@@ -13,8 +16,7 @@ import {
 } from 'ethers'
 import fetch from 'node-fetch'
 
-import { WARNINGS } from '@/consts/signAccountOp/errorHandling'
-import { afterEach, describe, expect, jest, test } from '@jest/globals'
+import { afterAll, afterEach, describe, expect, jest, test } from '@jest/globals'
 import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
 
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
@@ -43,6 +45,10 @@ import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { FeatureFlags } from '../../consts/featureFlags'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
+import {
+  EARLIER_PENDING_TRANSACTION_ERROR_CODE,
+  WARNINGS
+} from '../../consts/signAccountOp/errorHandling'
 import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { DecodedCall } from '../../interfaces/decodeCall'
@@ -55,12 +61,15 @@ import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
+import { getReplacementAccountOp } from '../../libs/accountOp/replacement'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../libs/decodeCall'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
+import { getMinReplacementFees } from '../../libs/gasPrice/speedUp'
 import {
   ERC7730_CALLDATA_INDEX_RELAYER_PATH,
   ERC7730_DESCRIPTOR_WAIT_MS
@@ -73,6 +82,7 @@ import { TokenResult } from '../../libs/portfolio'
 import { AccountState } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_STATE } from '../../libs/portfolio/testData'
 import { BindedRelayerCall, relayerCall, RelayerError } from '../../libs/relayerCall/relayerCall'
+import * as safeLib from '../../libs/safe/safe'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
   getTypedData
@@ -85,6 +95,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import { getRpcProvider } from '../../services/provider'
+import { getSubmittedAccountOpNonces } from '../../utils/nonce'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
@@ -119,7 +130,7 @@ import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
 import { FeeSpeed, MAX_REESTIMATES, SignAccountOpController, SigningStatus } from './signAccountOp'
 import { SignAccountOpPreferenceController } from './signAccountOpPreference'
 import { SignAccountOpTesterController } from './signAccountOpTester'
-import { SpeedUp } from './speedUp'
+import { TxnReplacement } from './txnReplacement'
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
 
@@ -178,7 +189,8 @@ const createEOAAccountOp = (account: Account) => {
     chainId: 1n,
     nonce: null, // does not matter when estimating
     calls: [{ to, value: BigInt(1), data }],
-    signature: null
+    signature: null,
+    meta: {}
   }
 
   return { op, nativeToCheck, feeTokens }
@@ -364,15 +376,23 @@ const smartAccount: Account = {
 }
 
 /**
- * Not a real Safe. Fetching its state fails on every network where the address has no contract,
- * and the failure gets logged.
+ * Not a real Safe, so its address must have no contract on any network: reading a Safe's owners
+ * from another contract (like the Ambire account deployed at `smartAccount.addr` on some
+ * networks) reverts and fails the account state fetch. Without a contract it reads as an
+ * undeployed Safe everywhere.
  */
+const safeAccountAddr = '0x5aFE000000000000000000000000000000000001'
 const safeAccount: Account = {
   ...smartAccount,
+  addr: safeAccountAddr,
   creation: null,
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: safeAccountAddr
+  },
   safeCreation: {
-    factoryAddr: smartAccount.addr as Hex,
-    singleton: smartAccount.addr as Hex,
+    factoryAddr: safeAccountAddr,
+    singleton: safeAccountAddr,
     saltNonce: '0x00',
     setupData: '0x'
   }
@@ -492,8 +512,8 @@ const init = async (
      * get to run. For tests that drive those intervals themselves.
      */
     pauseOnInit?: boolean
-    /** Builds the SpeedUp passed to the controller, for tests of speeding up a transaction */
-    createSpeedUp?: (activity: ActivityController) => SpeedUp
+    /** Builds the TxnReplacement passed to the controller, for tests of speeding up a transaction */
+    createReplacement?: (activity: ActivityController) => TxnReplacement
   }
 ) => {
   // Its own, as the listeners of the controllers built here would pile up on a shared one
@@ -812,7 +832,7 @@ const init = async (
     onUpdateAfterTraceCallSuccess: options?.onUpdateAfterTraceCallSuccess,
     onBroadcastSuccess: options?.onBroadcastSuccess || (async () => {}),
     onPartialBroadcast: options?.onPartialBroadcast,
-    speedUp: options?.createSpeedUp?.(activity),
+    replacement: options?.createReplacement?.(activity),
     estimateController: estimationController,
     gasPriceController
   })
@@ -1027,8 +1047,15 @@ describe('SignAccountOp Controller ', () => {
       isSpeedUp = false,
       isCancel = false,
       signature,
-      txnId
-    }: { isSpeedUp?: boolean; isCancel?: boolean; signature?: string; txnId?: string } = {}
+      txnId,
+      estimatedAccountNonce = 3
+    }: {
+      isSpeedUp?: boolean
+      isCancel?: boolean
+      signature?: string
+      txnId?: string
+      estimatedAccountNonce?: number
+    } = {}
   ) => {
     const feePaymentOptions = getDefaultFeeSelectionOptions().map((option) => ({
       ...option,
@@ -1059,7 +1086,7 @@ describe('SignAccountOp Controller ', () => {
           deploymentGas: 0n,
           gasUsed: 25000n,
           feePaymentOptions,
-          ambireAccountNonce: 3,
+          ambireAccountNonce: estimatedAccountNonce,
           flags: {}
         },
         flags: {},
@@ -1068,8 +1095,8 @@ describe('SignAccountOp Controller ', () => {
       defaultFeeSelectionGasPrices,
       false,
       {
-        createSpeedUp: isSpeedUp
-          ? (activity) => new SpeedUp({ accountOp: accountOp.op, activity })
+        createReplacement: isSpeedUp
+          ? (activity) => new TxnReplacement({ accountOp: accountOp.op, activity })
           : undefined
       }
     )
@@ -1187,11 +1214,43 @@ describe('SignAccountOp Controller ', () => {
     controller.update({ accountOpData: { nonce: accountState.nonce + 1n } })
 
     expect(controller.errors).toContainEqual({
-      title: 'You need to broadcast pending transactions before this one.',
+      title:
+        'Earlier transactions need to go through first. Send them, or wait for the ones already sent to be confirmed.',
       action: 'refetch-account-state'
     })
     expect(controller.canBroadcast).toBe(false)
     restore()
+  })
+
+  test('explains that a signed Safe transaction with an already used nonce can no longer go through', async () => {
+    const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+    const accountState =
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!
+
+    accountState.nonce = 5n
+
+    controller.update({ accountOpData: { nonce: 4n } })
+
+    expect(controller.errors).toContainEqual({
+      title:
+        'Another transaction from this account was already confirmed in its place, so this one can no longer go through. You can reject it.'
+    })
+    expect(controller.canBroadcast).toBe(false)
+  })
+
+  test('checks the nonce of a signed Safe transaction even when it is 0', async () => {
+    const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+    const accountState =
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!
+    accountState.nonce = 1n
+
+    controller.update({ accountOpData: { nonce: 0n } })
+
+    expect(controller.canBroadcast).toBe(false)
   })
 
   test('does not block a Safe speed up for keeping the nonce of the transaction it replaces', async () => {
@@ -1208,10 +1267,49 @@ describe('SignAccountOp Controller ', () => {
 
     expect(controller.errors).not.toContainEqual(
       expect.objectContaining({
-        title: 'You need to broadcast pending transactions before this one.'
+        title:
+          'Earlier transactions need to go through first. Send them, or wait for the ones already sent to be confirmed.'
       })
     )
     restore()
+  })
+
+  describe('Safe nonce right after a confirmation', () => {
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    test('allows a signed Safe transaction whose nonce the chain does not count yet', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+      const accountState =
+        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+          controller.accountOp.chainId.toString()
+        ]!
+      // Activity knows that a transaction with the chain nonce was just confirmed
+      const getNextNonce = jest
+        .spyOn(ActivityController.prototype, 'getNextNonce')
+        .mockReturnValue(accountState.nonce + 1n)
+      const futureNonceError = expect.objectContaining({
+        title:
+          'Earlier transactions need to go through first. Send them, or wait for the ones already sent to be confirmed.'
+      })
+
+      controller.update({ accountOpData: { nonce: accountState.nonce + 1n } })
+
+      expect(controller.errors).not.toContainEqual(futureNonceError)
+      expect(controller.canBroadcast).toBe(true)
+      expect(getNextNonce).toHaveBeenCalledWith(
+        controller.accountOp.accountAddr,
+        controller.accountOp.chainId,
+        'account',
+        accountState.nonce
+      )
+
+      controller.update({ accountOpData: { nonce: accountState.nonce + 2n } })
+
+      expect(controller.errors).toContainEqual(futureNonceError)
+      expect(controller.canBroadcast).toBe(false)
+    })
   })
 
   describe('Safe cancel signatures from the Safe API', () => {
@@ -1376,6 +1474,17 @@ describe('SignAccountOp Controller ', () => {
     controller.setSafeNonce(1n << 256n)
     expect(controller.accountOp.nonce).toBe(3n)
     restore()
+  })
+
+  test('lets the estimation update the Safe nonce unless the user picked one', async () => {
+    const { controller } = await initSafeNonce([], { estimatedAccountNonce: 7 })
+
+    controller.update({ hasNewEstimation: true })
+    expect(controller.accountOp.nonce).toBe(7n)
+
+    controller.setSafeNonce(42n)
+    controller.update({ hasNewEstimation: true })
+    expect(controller.accountOp.nonce).toBe(42n)
   })
 
   test('does not change a Safe nonce while signing is in progress', async () => {
@@ -4113,6 +4222,119 @@ describe('broadcasting a batch one transaction at a time', () => {
     expect(sentAccountOps).toHaveLength(0)
   })
 
+  describe('nonces', () => {
+    test('the saved sent part of a batch holds only the nonces of its sent txns', async () => {
+      const { controller, submittedAccountOps } = await initBatch()
+      mockBroadcastChain(2)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(submittedAccountOps).toHaveLength(1)
+      // The error path resets this.accountOp.eoaNonce, which must not reach the saved op
+      expect(submittedAccountOps[0].eoaNonce).toBe(7n)
+      expect(getSubmittedAccountOpNonces(submittedAccountOps[0], eoaAccount)).toEqual([
+        { kind: 'sender', addr: eoaAccount.addr, nonce: 7n },
+        { kind: 'sender', addr: eoaAccount.addr, nonce: 8n }
+      ])
+    })
+
+    test('skips the nonce of a pending txn that the RPC does not count yet', async () => {
+      const { controller, submittedAccountOps } = await initBatch()
+      ;(controller.accountOp as any).eoaNonce = undefined
+      jest.spyOn(controller.provider, 'getTransactionCount').mockResolvedValue(7)
+      // Another pending op holds nonce 7
+      const getNextNonce = jest
+        .spyOn(ActivityController.prototype, 'getNextNonce')
+        .mockReturnValue(8n)
+      mockBroadcastChain(null)
+      const buildRawTransaction = jest.mocked(broadcastLib.buildRawTransaction)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(getNextNonce).toHaveBeenCalledWith(eoaAccount.addr, 1n, 'sender', 7n)
+      expect(buildRawTransaction.mock.calls.map((call) => call[5])).toEqual([8, 9, 10])
+      expect(submittedAccountOps[0].eoaNonce).toBe(8n)
+    })
+
+    test('a node that already has the txn counts it as sent', async () => {
+      const { controller, submittedAccountOps } = await initBatch()
+      jest
+        .spyOn(broadcastLib, 'buildRawTransaction')
+        .mockImplementation(async () => ({ to: '0x', value: 0n }) as any)
+      let signedCount = 0
+      jest.spyOn(KeystoreSigner.prototype, 'signRawTransaction').mockImplementation(async () => {
+        signedCount += 1
+        return `0x0${signedCount}`
+      })
+      jest.spyOn(broadcastLib, 'broadcastTransaction').mockImplementation(async () => {
+        if (signedCount === 2) {
+          throw new Error(
+            'could not coalesce error (error={ "code": -32000, "message": "already known" })'
+          )
+        }
+        return { hash: `0xhash${signedCount}` } as any
+      })
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(submittedAccountOps).toHaveLength(1)
+      expect(submittedAccountOps[0].identifiedBy.identifier.split('-')).toEqual([
+        '0xhash1',
+        keccak256('0x02'),
+        '0xhash3'
+      ])
+      expect(getPartialBroadcastError(controller)).toBeUndefined()
+    })
+  })
+
+  describe('broadcast refusals', () => {
+    const rpcProvider = new JsonRpcProvider('http://127.0.0.1:1', EthersNetwork.from(1), {
+      staticNetwork: EthersNetwork.from(1)
+    })
+    afterAll(() => rpcProvider.destroy())
+
+    // Built the way ethers builds them from a node answer to eth_sendRawTransaction
+    const nodeError = (message: string) =>
+      rpcProvider.getRpcError(
+        { method: 'eth_sendRawTransaction', params: ['0x00'], id: 1, jsonrpc: '2.0' },
+        { id: 1, error: { code: -32000, message } }
+      )
+
+    const initRawTxn = async () => {
+      const { controller } = await initBatch()
+      ;(controller.accountOp as any).gasFeePayment = {
+        ...controller.accountOp.gasFeePayment,
+        broadcastOption: broadcastLib.BROADCAST_OPTIONS.bySelf
+      }
+      return controller
+    }
+
+    test('a txn of another app that holds the nonce gets a plain message and no fee change', async () => {
+      const controller = await initRawTxn()
+
+      expect(() =>
+        controller.throwBroadcastAccountOp({
+          error: nodeError('replacement transaction underpriced')
+        })
+      ).toThrow(
+        'Another transaction from this account is still waiting to be confirmed. Wait for it to finish, then try again.'
+      )
+      expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+    })
+
+    test('a nonce that is already used refreshes the account state', async () => {
+      const controller = await initRawTxn()
+      const updateAccountState = jest
+        .spyOn(AccountsController.prototype, 'updateAccountState')
+        .mockResolvedValue(undefined)
+
+      expect(() =>
+        controller.throwBroadcastAccountOp({ error: nodeError('nonce too low') })
+      ).toThrow('Pending transaction detected. Please try again in a few seconds')
+      expect(updateAccountState).toHaveBeenCalledWith(eoaAccount.addr, 'pending', [1n], true)
+    })
+  })
+
   describe('in the built-in swap', () => {
     const initSwapBatch = (onPartialBroadcast?: (sentAccountOp: any) => Promise<void>) =>
       initBatch({ type: 'one-click-swap-and-bridge', onPartialBroadcast })
@@ -4193,7 +4415,7 @@ describe('broadcasting a batch one transaction at a time', () => {
         e.message.startsWith('Failed to report the sent part')
       )
       expect(reportError).toBeDefined()
-      expect(reportError.level).toBe('silent')
+      expect(reportError?.level).toBe('silent')
       expect(controller.emittedErrors.some((e: any) => e.level === 'major')).toBe(true)
       expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
     })
@@ -5293,6 +5515,219 @@ describe('RPC gas prices with a bundler fallback', () => {
   })
 })
 
+describe('Safe fee payer after the payers get funded', () => {
+  suppressConsoleBeforeEach()
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  const gasPrices: GasSpeeds = {
+    slow: { maxFeePerGas: toBeHex(1000n) as Hex, maxPriorityFeePerGas: toBeHex(500n) as Hex },
+    medium: { maxFeePerGas: toBeHex(2000n) as Hex, maxPriorityFeePerGas: toBeHex(1000n) as Hex },
+    fast: { maxFeePerGas: toBeHex(3000n) as Hex, maxPriorityFeePerGas: toBeHex(1500n) as Hex },
+    ape: { maxFeePerGas: toBeHex(4000n) as Hex, maxPriorityFeePerGas: toBeHex(2000n) as Hex }
+  }
+  // Neither an owner of the Safe nor one that has paid for it
+  const unlinkedPayer = '0x2222222222222222222222222222222222222222'
+  const funded = 1000000000000000000n
+
+  const feeOption = (paidBy: string, availableAmount: bigint) => ({
+    paidBy,
+    availableAmount,
+    gasUsed: 25000n,
+    addedNative: 0n,
+    token: nativeFeeToken
+  })
+
+  /**
+   * A Safe that can't pay the fee by itself, so the payer is picked from `payers`.
+   * `lastFeePayer` has paid for the Safe before, which links it to the Safe
+   */
+  const initSafe = async (
+    payers: { addr: string; availableAmount: bigint }[],
+    lastFeePayer?: string
+  ) => {
+    jest.spyOn(GasPriceController.prototype, 'fetch').mockResolvedValue(undefined)
+    jest
+      .spyOn(ActivityController.prototype, 'getFeePayers')
+      .mockReturnValue(lastFeePayer ? [lastFeePayer] : [])
+    const feePaymentOptions = [
+      feeOption(safeAccount.addr, 0n),
+      ...payers.map(({ addr, availableAmount }) => feeOption(addr, availableAmount))
+    ]
+    const paymaster = {
+      isUsable: () => false,
+      isSponsored: () => false,
+      getEstimationData: () => null
+    } as unknown as AbstractPaymaster
+
+    const { controller } = await init(
+      safeAccount,
+      createAccountOp(safeAccount),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 25000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 25000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        bundlerEstimation: {
+          callGasLimit: toBeHex(30000n),
+          preVerificationGas: toBeHex(50000n),
+          verificationGasLimit: toBeHex(100000n),
+          paymasterVerificationGasLimit: toBeHex(0n),
+          paymasterPostOpGasLimit: toBeHex(0n),
+          gasPrice: gasPrices,
+          paymaster,
+          flags: {}
+        },
+        bundlerGasPrices: gasPrices,
+        flags: {},
+        updatedAt: Date.now()
+      },
+      gasPrices,
+      false,
+      // otherwise a real estimation runs right away and replaces the mocked one
+      { pauseOnInit: true }
+    )
+
+    return controller
+  }
+
+  /** A new estimation, as one would come after the payers' balances change */
+  const estimateAgain = (
+    controller: SignAccountOpController,
+    payers: { addr: string; availableAmount: bigint }[]
+  ) => {
+    controller.estimation.availableFeeOptions = [
+      feeOption(safeAccount.addr, 0n),
+      ...payers.map(({ addr, availableAmount }) => feeOption(addr, availableAmount))
+    ]
+    controller.update({ hasNewEstimation: true })
+  }
+
+  test("picks a payer that already paid for the Safe once it's funded, instead of the Safe's own native", async () => {
+    const controller = await initSafe(
+      [{ addr: eoaAccount.addr, availableAmount: 0n }],
+      eoaAccount.addr
+    )
+    // Nothing can pay, so the Safe's own native is selected, which the Safe can't pay with
+    expect(controller.selectedOption?.paidBy).toBe(safeAccount.addr)
+
+    estimateAgain(controller, [{ addr: eoaAccount.addr, availableAmount: funded }])
+
+    expect(controller.selectedOption?.paidBy).toBe(eoaAccount.addr)
+    expect(controller.selectedOption?.availableAmount).toBe(funded)
+    expect(controller.accountOp.gasFeePayment?.paidBy).toBe(eoaAccount.addr)
+    expect(controller.isSafeFeePayerChoiceRequired).toBe(false)
+  })
+
+  test("asks the user to choose when the funded payer would get linked to the Safe, instead of keeping the Safe's own native", async () => {
+    const controller = await initSafe([{ addr: unlinkedPayer, availableAmount: 0n }])
+    expect(controller.selectedOption?.paidBy).toBe(safeAccount.addr)
+
+    estimateAgain(controller, [{ addr: unlinkedPayer, availableAmount: funded }])
+
+    // Linking a new account to the Safe is the user's call, so it's never picked for them
+    expect(controller.selectedOption).toBeUndefined()
+    expect(controller.accountOp.gasFeePayment).toBeNull()
+    expect(controller.isSafeFeePayerChoiceRequired).toBe(true)
+  })
+
+  test("keeps the Safe's own native while no other payer can pay", async () => {
+    const controller = await initSafe(
+      [{ addr: eoaAccount.addr, availableAmount: 0n }],
+      eoaAccount.addr
+    )
+
+    estimateAgain(controller, [{ addr: eoaAccount.addr, availableAmount: 0n }])
+
+    expect(controller.selectedOption?.paidBy).toBe(safeAccount.addr)
+    expect(controller.accountOp.gasFeePayment?.paidBy).toBe(safeAccount.addr)
+  })
+
+  test('never replaces a payer the user picked while it can still pay', async () => {
+    const controller = await initSafe(
+      [
+        { addr: eoaAccount.addr, availableAmount: funded },
+        { addr: unlinkedPayer, availableAmount: funded }
+      ],
+      eoaAccount.addr
+    )
+    controller.update({ feeToken: nativeFeeToken, paidBy: unlinkedPayer })
+    expect(controller.selectedOption?.paidBy).toBe(unlinkedPayer)
+
+    estimateAgain(controller, [
+      { addr: eoaAccount.addr, availableAmount: funded },
+      { addr: unlinkedPayer, availableAmount: funded }
+    ])
+
+    expect(controller.selectedOption?.paidBy).toBe(unlinkedPayer)
+    expect(controller.accountOp.gasFeePayment?.paidBy).toBe(unlinkedPayer)
+  })
+
+  test("keeps the payer when a custom gas price it can't afford is set, so the user can lower it", async () => {
+    // Enough for the regular prices, but not for the custom ones below
+    const lowAmount = 1000000000000n
+    const controller = await initSafe(
+      [
+        { addr: eoaAccount.addr, availableAmount: lowAmount },
+        { addr: unlinkedPayer, availableAmount: funded }
+      ],
+      eoaAccount.addr
+    )
+    expect(controller.selectedOption?.paidBy).toBe(eoaAccount.addr)
+
+    const unaffordablePrice = toBeHex(10000000000n) as Hex
+    const customGasPrices: GasSpeeds = {
+      slow: { maxFeePerGas: unaffordablePrice, maxPriorityFeePerGas: unaffordablePrice },
+      medium: { maxFeePerGas: unaffordablePrice, maxPriorityFeePerGas: unaffordablePrice },
+      fast: { maxFeePerGas: unaffordablePrice, maxPriorityFeePerGas: unaffordablePrice },
+      ape: { maxFeePerGas: unaffordablePrice, maxPriorityFeePerGas: unaffordablePrice }
+    }
+    controller.update({ customGasPrices })
+
+    expect(controller.hasCustomGasPrices).toBe(true)
+    expect(controller.selectedOption?.paidBy).toBe(eoaAccount.addr)
+    expect(controller.accountOp.gasFeePayment?.paidBy).toBe(eoaAccount.addr)
+    expect(controller.isSafeFeePayerChoiceRequired).toBe(false)
+
+    // A new estimation keeps it too, while the custom prices are set
+    estimateAgain(controller, [
+      { addr: eoaAccount.addr, availableAmount: lowAmount },
+      { addr: unlinkedPayer, availableAmount: funded }
+    ])
+
+    expect(controller.selectedOption?.paidBy).toBe(eoaAccount.addr)
+    expect(controller.isSafeFeePayerChoiceRequired).toBe(false)
+  })
+
+  test('keeps the fee token the user wants as a default only when the fee is still paid with it', async () => {
+    const linkedController = await initSafe(
+      [{ addr: eoaAccount.addr, availableAmount: 0n }],
+      eoaAccount.addr
+    )
+    linkedController.update({ pendingFeeTokenPreference: nativeFeeToken })
+
+    estimateAgain(linkedController, [{ addr: eoaAccount.addr, availableAmount: funded }])
+
+    // Another payer, but the same token
+    expect(linkedController.pendingFeeTokenPreference).toEqual({ '1': nativeFeeToken.address })
+
+    const unlinkedController = await initSafe([{ addr: unlinkedPayer, availableAmount: 0n }])
+    unlinkedController.update({ pendingFeeTokenPreference: nativeFeeToken })
+
+    estimateAgain(unlinkedController, [{ addr: unlinkedPayer, availableAmount: funded }])
+
+    // Nothing is paid with it until the user picks a payer, so it isn't saved on signing
+    expect(unlinkedController.pendingFeeTokenPreference).toBeNull()
+  })
+})
+
 describe('speed up of a pending transaction', () => {
   const replacedIdentifiedBy = {
     type: 'Transaction' as const,
@@ -5379,8 +5814,8 @@ describe('speed up of a pending transaction', () => {
       speedUpGasPrices,
       false,
       {
-        createSpeedUp: isSpeedUp
-          ? (activity) => new SpeedUp({ accountOp: accountOp.op, activity })
+        createReplacement: isSpeedUp
+          ? (activity) => new TxnReplacement({ accountOp: accountOp.op, activity })
           : undefined
       }
     )
@@ -5628,7 +6063,7 @@ describe('speed up of a pending transaction', () => {
     restore()
   })
 
-  test('does not watch the activity when no SpeedUp is passed', async () => {
+  test('does not watch the activity when no TxnReplacement is passed', async () => {
     const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
     const findSpy = jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy')
     await initSpeedUp({ isSpeedUp: false })
@@ -5771,12 +6206,1189 @@ describe('speed up of a smart account transaction sent by another account', () =
       } as any,
       gasPrices,
       false,
-      { createSpeedUp: (activity) => new SpeedUp({ accountOp: accountOp.op, activity }) }
+      { createReplacement: (activity) => new TxnReplacement({ accountOp: accountOp.op, activity }) }
     )
 
     expect(controller.isSpeedUpTransaction).toBe(true)
     expect(controller.accountOp.signature).toBe(ambireSignature)
     expect(controller.accountOp.signed).toBeUndefined()
     expect(controller.status?.type).not.toBe(SigningStatus.Queued)
+  })
+})
+
+describe('an earlier pending transaction', () => {
+  suppressConsoleBeforeEach(true)
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  const chainId = 1n
+  const nativeAddr = '0x0000000000000000000000000000000000000000'
+  const gasPrices: GasSpeeds = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+  // Above every speed, so a replacement must raise them all
+  const pendingFees = { gasPrice: 1000n, maxPriorityFeePerGas: 500n }
+  const nativeFeeOption = (paidBy: string) => ({
+    paidBy,
+    availableAmount: 1000000000000000000n,
+    gasUsed: 0n,
+    addedNative: 5000n,
+    token: { ...nativeFeeToken, amount: parseEther('1') }
+  })
+
+  /** A sent op that is not confirmed yet, paid in native by `paidBy` from its own EOA nonce */
+  const buildPendingAccountOp = ({
+    id = 'pending-op',
+    accountAddr = eoaAccount.addr,
+    paidBy = eoaAccount.addr,
+    broadcastOption = broadcastLib.BROADCAST_OPTIONS.bySelf,
+    nonce = 0n,
+    eoaNonce = 5n,
+    ...overrides
+  }: Partial<SubmittedAccountOp> & {
+    paidBy?: string
+    broadcastOption?: string
+  } = {}): SubmittedAccountOp => ({
+    id,
+    accountAddr,
+    chainId,
+    signingKeyAddr: eoaSigner.keyPublicAddress,
+    signingKeyType: 'internal',
+    nonce,
+    eoaNonce,
+    calls: [{ to: nativeAddr, value: 1n, data: '0x' }],
+    gasLimit: 21000,
+    signature: '0x',
+    gasFeePayment: {
+      paidBy,
+      paidByKeyType: 'internal',
+      broadcastOption,
+      isGasTank: false,
+      inToken: nativeAddr,
+      feeTokenChainId: chainId,
+      amount: 21000n * pendingFees.gasPrice,
+      simulatedGasLimit: 21000n,
+      ...pendingFees
+    },
+    status: AccountOpStatus.BroadcastedButNotConfirmed,
+    identifiedBy: { type: 'Transaction', identifier: `0x${'ab'.repeat(32)}` },
+    timestamp: Date.now() - 1000,
+    ...overrides
+  })
+
+  /**
+   * Makes `pendingAccountOps` pending in Activity, which holds the nonces they took, and lets
+   * the controller see them. Returns the spy of the pending ops, to confirm them later.
+   */
+  const holdBehind = (
+    controller: SignAccountOpController,
+    ...pendingAccountOps: SubmittedAccountOp[]
+  ) => {
+    const pendingAccountOpsSpy = jest
+      .spyOn(ActivityController.prototype, 'broadcastedButNotConfirmed', 'get')
+      .mockReturnValue(
+        pendingAccountOps.reduce<{ [accountAddr: string]: SubmittedAccountOp[] }>(
+          (byAccount, op) => ({
+            ...byAccount,
+            [op.accountAddr]: [...(byAccount[op.accountAddr] ?? []), op]
+          }),
+          {}
+        )
+      )
+    controller.update({ hasNewEstimation: true })
+    return pendingAccountOpsSpy
+  }
+
+  const hasEarlierPendingError = (controller: SignAccountOpController) =>
+    controller.errors.some((error) => error.code === EARLIER_PENDING_TRANSACTION_ERROR_CODE)
+
+  const initEoa = async ({
+    isSpeedUp,
+    onBroadcastSuccess,
+    onPartialBroadcast,
+    type,
+    callsCount = 1,
+    featureFlags = { eip7702: false }
+  }: {
+    isSpeedUp?: boolean
+    onBroadcastSuccess?: (params: { submittedAccountOp: SubmittedAccountOp }) => Promise<void>
+    onPartialBroadcast?: (sentAccountOp: SubmittedAccountOp) => Promise<void>
+    type?: SignAccountOpType
+    callsCount?: number
+    featureFlags?: Partial<FeatureFlags>
+  } = {}) => {
+    const accountOp = createEOAAccountOp(eoaAccount)
+    accountOp.op.calls = Array.from({ length: callsCount }, (_, i) => ({
+      id: `call-${i}`,
+      to: nativeAddr,
+      value: 2n,
+      data: '0x' as Hex
+    }))
+    if (isSpeedUp) {
+      const pendingAccountOp = buildPendingAccountOp()
+      Object.assign(accountOp.op, getReplacementAccountOp(pendingAccountOp, 'speedUp'))
+    }
+    const feePaymentOptions = [nativeFeeOption(eoaAccount.addr)]
+    // Keeps the mocked estimation, as a real one would reload it in the background
+    jest.spyOn(EstimationController.prototype, 'estimate').mockResolvedValue(undefined)
+
+    return init(
+      eoaAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 21000n, feePaymentOptions },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      gasPrices,
+      false,
+      {
+        // Without eip7702 off the account may broadcast through an EIP-7702 delegation
+        featureFlags,
+        onBroadcastSuccess,
+        onPartialBroadcast,
+        type,
+        createReplacement: isSpeedUp
+          ? (activity) => new TxnReplacement({ accountOp: accountOp.op, activity })
+          : undefined
+      }
+    )
+  }
+
+  describe('an EOA', () => {
+    test('is held back, and signing stops', async () => {
+      const { controller } = await initEoa()
+      expect(hasEarlierPendingError(controller)).toBe(false)
+
+      holdBehind(controller, buildPendingAccountOp())
+
+      expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+      expect(hasEarlierPendingError(controller)).toBe(true)
+      expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
+      await controller.sign()
+      expect(controller.status?.type).not.toBe(SigningStatus.Done)
+      expect(controller.accountOp.signature).toBeFalsy()
+    })
+
+    test('is not held back by a pending op of another account or another network', async () => {
+      const { controller } = await initEoa()
+
+      holdBehind(
+        controller,
+        buildPendingAccountOp({
+          id: 'other-account',
+          accountAddr: smartAccount.addr,
+          paidBy: smartAccount.addr,
+          broadcastOption: broadcastLib.BROADCAST_OPTIONS.byBundler
+        }),
+        buildPendingAccountOp({ id: 'other-chain', chainId: 10n })
+      )
+
+      expect(controller.earlierPendingAccountOp).toBeNull()
+      expect(hasEarlierPendingError(controller)).toBe(false)
+    })
+
+    test('a speed up of the pending op is not held back', async () => {
+      jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+      const { controller } = await initEoa({ isSpeedUp: true })
+
+      // An earlier speed up of the same txn, sent under its own id, holds the same nonce
+      holdBehind(controller, buildPendingAccountOp({ id: 'earlier-speed-up' }))
+
+      expect(controller.isSpeedUpTransaction).toBe(true)
+      expect(controller.earlierPendingAccountOp).toBeNull()
+      expect(hasEarlierPendingError(controller)).toBe(false)
+    })
+
+    test('a first-time delegation takes the nonce after the pending one, so Replace is not offered when another op holds it', async () => {
+      const { controller } = await initEoa({
+        callsCount: 2,
+        featureFlags: { eip7702: true }
+      })
+      expect(controller.accountOp.gasFeePayment?.broadcastOption).toBe(
+        broadcastLib.BROADCAST_OPTIONS.delegation
+      )
+      holdBehind(
+        controller,
+        buildPendingAccountOp(),
+        buildPendingAccountOp({ id: 'next-op', eoaNonce: 6n })
+      )
+
+      expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+      expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+    })
+
+    test('is released and emits once Activity confirms the pending op', async () => {
+      const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+      const { controller } = await initEoa()
+      const pendingAccountOp = buildPendingAccountOp()
+      const pendingAccountOpsSpy = holdBehind(controller, pendingAccountOp)
+      const onActivityUpdate = onUpdateSpy.mock.calls.find(
+        ([, id]) => typeof id === 'string' && id.startsWith('sign-account-op-earlier-pending')
+      )?.[0] as (() => void) | undefined
+      const onControllerUpdate = jest.fn()
+      controller.onUpdate(onControllerUpdate)
+
+      // Activity updates for other reasons while it's still pending
+      onActivityUpdate?.()
+      expect(onControllerUpdate).not.toHaveBeenCalled()
+
+      pendingAccountOpsSpy.mockReturnValue({})
+      onActivityUpdate?.()
+
+      expect(onActivityUpdate).toBeDefined()
+      expect(controller.earlierPendingAccountOp).toBeNull()
+      expect(hasEarlierPendingError(controller)).toBe(false)
+      expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
+      expect(onControllerUpdate).toHaveBeenCalled()
+    })
+  })
+
+  /** Stands in for the network, and records the nonce and fees of every sent txn */
+  const mockRawBroadcast = ({ fail = false }: { fail?: boolean } = {}) => {
+    const buildRawTransaction = jest
+      .spyOn(broadcastLib, 'buildRawTransaction')
+      .mockImplementation(async () => ({ to: '0x', value: 0n }) as any)
+    jest
+      .spyOn(KeystoreSigner.prototype, 'signRawTransaction')
+      .mockImplementation(async () => '0xsigned')
+    // An instance field, so it's replaced on each signer the keystore hands out
+    const getSigner = KeystoreController.prototype.getSigner
+    jest.spyOn(KeystoreController.prototype, 'getSigner').mockImplementation(async function (
+      this: KeystoreController,
+      ...args
+    ) {
+      const signer = await getSigner.apply(this, args)
+      signer.signTransactionTypeFour = async () => '0xsigned'
+      return signer
+    })
+    jest.spyOn(broadcastLib, 'broadcastTransaction').mockImplementation(async () => {
+      if (fail) throw new Error('could not coalesce error (error={ "message": "network down" })')
+      return { hash: `0x${'cd'.repeat(32)}` } as any
+    })
+    return buildRawTransaction
+  }
+
+  describe('Replace', () => {
+    const replaceAndBroadcast = async (
+      controller: SignAccountOpController,
+      broadcastOption: string
+    ) => {
+      controller.replacePendingAccountOp()
+      // How the account sends depends on its delegation, which these tests don't set up
+      ;(controller.accountOp as any).gasFeePayment = {
+        ...controller.accountOp.gasFeePayment,
+        broadcastOption
+      }
+      await controller.signAndBroadcast().catch(() => {})
+    }
+
+    test.each([
+      broadcastLib.BROADCAST_OPTIONS.bySelf,
+      broadcastLib.BROADCAST_OPTIONS.bySelf7702,
+      broadcastLib.BROADCAST_OPTIONS.delegation
+    ])(
+      '%s: sends with the nonce of the pending op and a fee high enough to replace it',
+      async (broadcastOption) => {
+        const submittedAccountOps: SubmittedAccountOp[] = []
+        const { controller } = await initEoa({
+          onBroadcastSuccess: async ({ submittedAccountOp }) => {
+            submittedAccountOps.push(submittedAccountOp)
+          }
+        })
+        const pendingAccountOp = buildPendingAccountOp({ broadcastOption })
+        holdBehind(controller, pendingAccountOp)
+        // The chain and the pending op both point past the pending nonce
+        jest.spyOn(controller.provider, 'getTransactionCount').mockResolvedValue(6)
+        const buildRawTransaction = mockRawBroadcast()
+        // A delegation goes out through eth_sendRawTransaction directly
+        jest.spyOn(controller.provider, 'send').mockResolvedValue(`0x${'cd'.repeat(32)}`)
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
+
+        await replaceAndBroadcast(controller, broadcastOption)
+
+        const minFees = getMinReplacementFees(pendingFees)
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+        expect(hasEarlierPendingError(controller)).toBe(false)
+        expect(buildRawTransaction.mock.calls.map((call) => call[5])).toEqual([5])
+        expect(submittedAccountOps).toHaveLength(1)
+        expect(submittedAccountOps[0]!.eoaNonce).toBe(5n)
+        expect(submittedAccountOps[0]!.gasFeePayment!.gasPrice).toBeGreaterThanOrEqual(
+          minFees.maxFeePerGas
+        )
+        expect(submittedAccountOps[0]!.gasFeePayment!.maxPriorityFeePerGas).toBeGreaterThanOrEqual(
+          minFees.maxPriorityFeePerGas
+        )
+        if (broadcastOption === broadcastLib.BROADCAST_OPTIONS.delegation) {
+          // The authorization comes after the txn, so it takes the next nonce
+          expect(controller.accountOp.meta?.delegation?.nonce).toBe(toBeHex(6n))
+        }
+      }
+    )
+
+    test('a failed broadcast keeps the nonce of the pending op', async () => {
+      const { controller } = await initEoa()
+      holdBehind(controller, buildPendingAccountOp())
+      mockRawBroadcast({ fail: true })
+
+      await replaceAndBroadcast(controller, broadcastLib.BROADCAST_OPTIONS.bySelf)
+
+      expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+      expect(controller.accountOp.eoaNonce).toBe(5n)
+    })
+
+    describe('when the user rejects the second call of a batch sent one transaction per call', () => {
+      /** Call 1 goes out at the nonce of the pending op, then the signature of call 2 is refused */
+      const replaceBatchAndRefuseSecondCall = async (type?: SignAccountOpType) => {
+        const submittedAccountOps: SubmittedAccountOp[] = []
+        const pendingAccountOp = buildPendingAccountOp()
+        let pendingAccountOpsSpy: ReturnType<typeof holdBehind> | undefined
+        const { controller } = await initEoa({
+          callsCount: 3,
+          type,
+          onBroadcastSuccess: async ({ submittedAccountOp }) => {
+            submittedAccountOps.push(submittedAccountOp)
+            // Activity now holds the sent part, next to the pending op it replaced
+            pendingAccountOpsSpy?.mockReturnValue({
+              [eoaAccount.addr]: [pendingAccountOp, submittedAccountOp]
+            })
+          },
+          onPartialBroadcast: async () => {}
+        })
+        pendingAccountOpsSpy = holdBehind(controller, pendingAccountOp)
+        mockRawBroadcast()
+        jest
+          .spyOn(KeystoreSigner.prototype, 'signRawTransaction')
+          .mockResolvedValueOnce('0xsigned')
+          .mockRejectedValueOnce(new Error('Card operation cancelled.'))
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
+
+        await replaceAndBroadcast(controller, broadcastLib.BROADCAST_OPTIONS.bySelf)
+
+        return { controller, submittedAccountOps }
+      }
+
+      test('the rest is a normal op held behind the sent part, and does not reuse its nonce', async () => {
+        const { controller, submittedAccountOps } = await replaceBatchAndRefuseSecondCall()
+        expect(submittedAccountOps).toHaveLength(1)
+        expect(submittedAccountOps[0]!.eoaNonce).toBe(5n)
+
+        const notSentCalls = controller.cleanupAfterBroadcast([
+          controller.accountOp.calls[0]!.id as string
+        ])
+
+        expect(notSentCalls.map((call) => call.id)).toEqual(['call-1', 'call-2'])
+        expect(controller.accountOp.calls.map((call) => call.id)).toEqual(['call-1', 'call-2'])
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(controller.earlierPendingAccountOp?.id).toBe(submittedAccountOps[0]!.id)
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        // Several transactions can't be replaced as one
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+        expect(hasEarlierPendingError(controller)).toBe(true)
+      })
+
+      test('in the built-in swap, the retry does not reuse the nonce either', async () => {
+        const { controller, submittedAccountOps } = await replaceBatchAndRefuseSecondCall(
+          'one-click-swap-and-bridge'
+        )
+
+        expect(submittedAccountOps).toHaveLength(0)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+      })
+    })
+
+    test('is dropped when the pending op gets confirmed before signing', async () => {
+      const findByIdentifiedBy = jest
+        .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+        .mockReturnValue(undefined)
+      const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+      const { controller } = await initEoa()
+      const pendingAccountOp = buildPendingAccountOp()
+      const pendingAccountOpsSpy = holdBehind(controller, pendingAccountOp)
+      controller.replacePendingAccountOp()
+      expect(controller.accountOp.eoaNonce).toBe(5n)
+
+      pendingAccountOpsSpy.mockReturnValue({})
+      findByIdentifiedBy.mockReturnValue({ ...pendingAccountOp, status: AccountOpStatus.Success })
+      onUpdateSpy.mock.calls
+        .filter(([, id]) => typeof id === 'string' && id.startsWith('sign-account-op-speed-up'))
+        .forEach(([callback]) => (callback as () => void)())
+
+      expect(controller.accountOp.eoaNonce).toBeUndefined()
+      // Null also means it no longer replaces the pending op
+      expect(controller.earlierPendingAccountOp).toBeNull()
+      expect(hasEarlierPendingError(controller)).toBe(false)
+      // Back to the normal fees
+      expect(controller.selectedOptionGasPrices).toEqual(gasPrices)
+    })
+
+    describe('when the pending op stops being the one it replaces', () => {
+      /** Runs the Activity listeners as an update of Activity would, in the order they were added */
+      const spyOnActivityUpdates = () => {
+        const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+        const notify = (idPrefix: string) =>
+          onUpdateSpy.mock.calls
+            .filter(([, id]) => typeof id === 'string' && id.startsWith(idPrefix))
+            .forEach(([callback]) => (callback as () => void)())
+
+        return {
+          // Finds the earlier pending op again
+          notifyEarlierPending: () => notify('sign-account-op-earlier-pending'),
+          // Checks whether the replaced op was processed
+          notifyReplacedWatchers: () => notify('sign-account-op-speed-up')
+        }
+      }
+
+      const startReplacing = async (initOptions?: Parameters<typeof initEoa>[0]) => {
+        jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+        const activityUpdates = spyOnActivityUpdates()
+        const ctrl = await initEoa(initOptions)
+        const pendingAccountOp = buildPendingAccountOp()
+        const pendingAccountOpsSpy = holdBehind(ctrl.controller, pendingAccountOp)
+        ctrl.controller.replacePendingAccountOp()
+        expect(ctrl.controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+
+        return { ...ctrl, ...activityUpdates, pendingAccountOp, pendingAccountOpsSpy }
+      }
+
+      test('leaves Replace mode when the pending op got stuck and no longer holds the nonce', async () => {
+        const { controller, notifyEarlierPending, pendingAccountOpsSpy } = await startReplacing()
+
+        pendingAccountOpsSpy.mockReturnValue({})
+        notifyEarlierPending()
+
+        expect(controller.earlierPendingAccountOp).toBeNull()
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(hasEarlierPendingError(controller)).toBe(false)
+        // Back to the normal fees
+        expect(controller.selectedOptionGasPrices).toEqual(gasPrices)
+        // It was not processed, the user has to know why Replace ended on its own
+        expect(controller.isReplacedPendingAccountOpProcessed).toBe(false)
+      })
+
+      test('leaves Replace mode when the pending op was sped up, so the fee floor is the new one', async () => {
+        const { controller, notifyEarlierPending, pendingAccountOp, pendingAccountOpsSpy } =
+          await startReplacing()
+        const speedUpFees = { gasPrice: 2000n, maxPriorityFeePerGas: 900n }
+        const speedUpAccountOp = buildPendingAccountOp({
+          id: 'speed-up-op',
+          timestamp: Date.now(),
+          identifiedBy: { type: 'Transaction', identifier: `0x${'ef'.repeat(32)}` },
+          gasFeePayment: { ...pendingAccountOp.gasFeePayment!, ...speedUpFees }
+        })
+
+        // Same payer and nonce, so Activity lists only the newer op
+        pendingAccountOpsSpy.mockReturnValue({
+          [eoaAccount.addr]: [pendingAccountOp, speedUpAccountOp]
+        })
+        notifyEarlierPending()
+
+        expect(controller.earlierPendingAccountOp?.id).toBe('speed-up-op')
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(hasEarlierPendingError(controller)).toBe(true)
+        expect(controller.selectedOptionGasPrices).toEqual(gasPrices)
+      })
+
+      test('leaves Replace mode when another pending op takes a nonce after the replaced one', async () => {
+        const { controller, notifyEarlierPending, pendingAccountOp, pendingAccountOpsSpy } =
+          await startReplacing({ callsCount: 2 })
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
+
+        pendingAccountOpsSpy.mockReturnValue({
+          [eoaAccount.addr]: [
+            pendingAccountOp,
+            buildPendingAccountOp({ id: 'next-op', eoaNonce: 6n, timestamp: Date.now() })
+          ]
+        })
+        notifyEarlierPending()
+
+        expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+      })
+
+      test('stays in Replace mode while no fee options are known', async () => {
+        const { controller, notifyEarlierPending } = await startReplacing()
+
+        controller.estimation.availableFeeOptions = []
+        notifyEarlierPending()
+        controller.update({ hasNewEstimation: true })
+
+        // No replacement can be built without fee options, but Don't replace stays
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+        expect(controller.accountOp.eoaNonce).toBe(5n)
+      })
+
+      test('does not leave while signing, and does once back to ReadyToSign', async () => {
+        const { controller, notifyEarlierPending, pendingAccountOpsSpy } = await startReplacing()
+        controller.status = { type: SigningStatus.InProgress }
+
+        pendingAccountOpsSpy.mockReturnValue({})
+        notifyEarlierPending()
+
+        expect(controller.accountOp.eoaNonce).toBe(5n)
+        expect(controller.earlierPendingAccountOp).toBeNull()
+
+        controller.updateStatus(SigningStatus.ReadyToSign)
+
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(controller.selectedOptionGasPrices).toEqual(gasPrices)
+      })
+
+      test('leaves Replace mode once the first-time delegation turns the fee option into one that is not replaceable', async () => {
+        const { controller } = await startReplacing({
+          callsCount: 2,
+          featureFlags: { eip7702: true }
+        })
+
+        expect(controller.accountOp.gasFeePayment?.broadcastOption).toBe(
+          broadcastLib.BROADCAST_OPTIONS.delegation
+        )
+        // The delegation takes the nonce after the pending op, which another op holds
+        holdBehind(
+          controller,
+          buildPendingAccountOp(),
+          buildPendingAccountOp({ id: 'next-op', eoaNonce: 6n, timestamp: Date.now() })
+        )
+
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(hasEarlierPendingError(controller)).toBe(true)
+      })
+
+      describe('when the pending op gets processed', () => {
+        const processPendingAccountOp = (
+          ctrl: Awaited<ReturnType<typeof startReplacing>>,
+          status = AccountOpStatus.Success
+        ) => {
+          ctrl.pendingAccountOpsSpy.mockReturnValue({})
+          ;(ActivityController.prototype.findByIdentifiedBy as jest.Mock).mockReturnValue({
+            ...ctrl.pendingAccountOp,
+            status
+          })
+        }
+
+        test('says so, and stops saying so when Replace starts again', async () => {
+          const ctrl = await startReplacing()
+          const { controller } = ctrl
+          expect(controller.isReplacedPendingAccountOpProcessed).toBe(false)
+
+          processPendingAccountOp(ctrl)
+          // The earlier pending op is dropped first, but it is the processed op that ends Replace
+          ctrl.notifyEarlierPending()
+          ctrl.notifyReplacedWatchers()
+
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+          expect(controller.isReplacedPendingAccountOpProcessed).toBe(true)
+          expect(controller.toJSON().isReplacedPendingAccountOpProcessed).toBe(true)
+
+          // A new pending op holds this op again, and Replace can be used for it
+          ;(ActivityController.prototype.findByIdentifiedBy as jest.Mock).mockReturnValue(undefined)
+          holdBehind(controller, buildPendingAccountOp({ id: 'newer-pending-op' }))
+          controller.replacePendingAccountOp()
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+          expect(controller.isReplacedPendingAccountOpProcessed).toBe(false)
+        })
+
+        test('waits while the warning modal pauses the updates, and leaves when it is cancelled', async () => {
+          const ctrl = await startReplacing()
+          const { controller } = ctrl
+          controller.updateStatus(SigningStatus.UpdatesPaused)
+
+          processPendingAccountOp(ctrl)
+          ctrl.notifyReplacedWatchers()
+
+          expect(controller.accountOp.eoaNonce).toBe(5n)
+          expect(controller.isReplacedPendingAccountOpProcessed).toBe(false)
+
+          // Cancel in the modal
+          controller.updateStatus(SigningStatus.ReadyToSign)
+
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+          expect(controller.isReplacedPendingAccountOpProcessed).toBe(true)
+        })
+
+        test('is checked once the signing ends, when the modal was accepted', async () => {
+          const ctrl = await startReplacing()
+          const { controller } = ctrl
+          controller.updateStatus(SigningStatus.UpdatesPaused)
+          processPendingAccountOp(ctrl)
+          ctrl.notifyReplacedWatchers()
+          expect(controller.accountOp.eoaNonce).toBe(5n)
+
+          // Proceed in the modal starts signing, which fails as the nonce is taken
+          controller.status = { type: SigningStatus.InProgress }
+          controller.cancelSignReq()
+
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+          expect(controller.isReplacedPendingAccountOpProcessed).toBe(true)
+        })
+      })
+    })
+
+    describe('when the fee option of the pending op disappears', () => {
+      const startReplacing = async () => {
+        const ctrl = await initEoa()
+        holdBehind(ctrl.controller, buildPendingAccountOp())
+        ctrl.controller.replacePendingAccountOp()
+        expect(ctrl.controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+        return ctrl
+      }
+
+      test('goes back to a normal op that the pending op blocks, and picks another payer', async () => {
+        const { controller } = await startReplacing()
+
+        controller.estimation.availableFeeOptions = [nativeFeeOption(smartAccount.addr)]
+        controller.update({ hasNewEstimation: true })
+
+        expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(hasEarlierPendingError(controller)).toBe(true)
+        expect(controller.accountOp.gasFeePayment?.paidBy).toBe(smartAccount.addr)
+      })
+
+      test('stays in Replace mode while the options are empty, e.g. during a reload', async () => {
+        const { controller } = await startReplacing()
+
+        controller.estimation.availableFeeOptions = []
+        controller.update({ hasNewEstimation: true })
+
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+        expect(controller.accountOp.eoaNonce).toBe(5n)
+        // So Don't replace stays
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
+      })
+    })
+
+    test('keeps the payer of the pending op when another one is picked', async () => {
+      const { controller } = await initEoa()
+      holdBehind(controller, buildPendingAccountOp())
+      controller.replacePendingAccountOp()
+      const otherOption = nativeFeeOption(smartAccount.addr)
+      controller.estimation.availableFeeOptions = [
+        ...controller.estimation.availableFeeOptions,
+        otherOption
+      ]
+
+      // The options are kept while the estimation reloads, but the paid way is not restored then
+      controller.estimation.status = EstimationStatus.Loading
+
+      controller.update({ feeToken: otherOption.token, paidBy: otherOption.paidBy })
+
+      expect(controller.accountOp.gasFeePayment?.paidBy).toBe(eoaAccount.addr)
+      expect(controller.selectedOption?.paidBy).toBe(eoaAccount.addr)
+    })
+
+    describe('stopReplacingPendingAccountOp', () => {
+      test('goes back to a normal op that the pending op blocks', async () => {
+        const { controller } = await initEoa()
+        holdBehind(controller, buildPendingAccountOp())
+        controller.replacePendingAccountOp()
+        expect(hasEarlierPendingError(controller)).toBe(false)
+
+        controller.stopReplacingPendingAccountOp()
+
+        expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(hasEarlierPendingError(controller)).toBe(true)
+        expect(controller.selectedOptionGasPrices).toEqual(gasPrices)
+      })
+
+      test('can replace again afterwards', async () => {
+        const { controller } = await initEoa()
+        holdBehind(controller, buildPendingAccountOp())
+        controller.replacePendingAccountOp()
+        controller.stopReplacingPendingAccountOp()
+
+        controller.replacePendingAccountOp()
+
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+        expect(controller.accountOp.eoaNonce).toBe(5n)
+      })
+
+      test('does nothing while signing', async () => {
+        const { controller } = await initEoa()
+        holdBehind(controller, buildPendingAccountOp())
+        controller.replacePendingAccountOp()
+        controller.status = { type: SigningStatus.InProgress }
+
+        controller.stopReplacingPendingAccountOp()
+
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+        expect(controller.accountOp.eoaNonce).toBe(5n)
+      })
+
+      test('does not stop a speed up', async () => {
+        jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+        const { controller } = await initEoa({ isSpeedUp: true })
+
+        controller.stopReplacingPendingAccountOp()
+
+        expect(controller.isSpeedUpTransaction).toBe(true)
+      })
+    })
+
+    test.each<
+      [string, Partial<SubmittedAccountOp> & { paidBy?: string; broadcastOption?: string }]
+    >([
+      [
+        'sent through a bundler',
+        {
+          broadcastOption: broadcastLib.BROADCAST_OPTIONS.byBundler,
+          // Only the 7702 authorization takes a nonce of the EOA, so it holds this op back
+          asUserOperation: {
+            eip7702Auth: { nonce: '0x5' }
+          } as unknown as SubmittedAccountOp['asUserOperation']
+        }
+      ],
+      [
+        'sent as several transactions',
+        { identifiedBy: { type: 'MultipleTxns', identifier: '0x01-0x02' } }
+      ],
+      ['paid by an account this op can not be paid by', { paidBy: smartAccount.addr }]
+    ])('is not offered for a pending op %s', async (_, overrides) => {
+      const { controller } = await initEoa()
+
+      holdBehind(controller, buildPendingAccountOp(overrides))
+      controller.replacePendingAccountOp()
+
+      expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+      expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+      expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+      expect(hasEarlierPendingError(controller)).toBe(true)
+    })
+  })
+
+  describe('a Safe', () => {
+    const owners = [eoaSigner.keyPublicAddress, safeAccount.associatedKeys[0]!]
+    const buildPendingSafeAccountOp = (nonce: bigint) =>
+      buildPendingAccountOp({
+        accountAddr: safeAccount.addr,
+        paidBy: safeAccount.addr,
+        broadcastOption: broadcastLib.BROADCAST_OPTIONS.byBundler,
+        nonce,
+        eoaNonce: null
+      })
+
+    /**
+     * A Safe op at `nonce` that `threshold` owners must sign, `signed` of them already did. Its
+     * fee is paid by `paidBy`, the Safe itself by default
+     */
+    const initSafe = async ({
+      threshold,
+      signed,
+      nonce = 3n,
+      paidBy = safeAccount.addr
+    }: {
+      threshold: number
+      signed: string[]
+      nonce?: bigint
+      paidBy?: string
+    }) => {
+      const feePaymentOptions = [nativeFeeOption(paidBy)]
+      const accountOp = createAccountOp(safeAccount, chainId)
+      accountOp.op.nonce = nonce
+      accountOp.op.signed = signed
+      jest.spyOn(EstimationController.prototype, 'estimate').mockResolvedValue(undefined)
+
+      const ctrl = await init(
+        safeAccount,
+        accountOp,
+        eoaSigner,
+        {
+          providerEstimation: { gasUsed: 25000n, feePaymentOptions },
+          ambireEstimation: {
+            deploymentGas: 0n,
+            gasUsed: 25000n,
+            feePaymentOptions,
+            // A Safe is estimated with a state override, which returns the op's own nonce
+            ambireAccountNonce: Number(nonce),
+            flags: {}
+          },
+          flags: {},
+          updatedAt: Date.now()
+        },
+        gasPrices,
+        false,
+        {
+          // The paying EOA is an account of the wallet too
+          initialSetStorage: (storageCtrl) => storageCtrl.set('accounts', [safeAccount, eoaAccount])
+        }
+      )
+      // On Ethereum the state is read at the pending block, so it can count the pending op
+      const accountState = ctrl.accountsCtrl.accountStates[safeAccount.addr]![chainId.toString()]!
+      accountState.nonce = 3n
+      accountState.threshold = threshold
+      accountState.safeVersion = '1.4.1'
+      accountState.isDeployed = true
+      accountState.associatedKeys = owners
+      // Only the first owner's key is in this wallet
+      accountState.importedAccountKeys = [
+        { addr: eoaSigner.keyPublicAddress, type: 'internal', label: 'Key 1' } as any
+      ]
+      ctrl.controller.update({ hasNewEstimation: true })
+      return ctrl
+    }
+
+    test('signed by every owner, it cannot execute while a lower Safe nonce is pending', async () => {
+      const { controller } = await initSafe({ threshold: 2, signed: owners })
+      expect(controller.canBroadcast).toBe(true)
+
+      holdBehind(controller, buildPendingSafeAccountOp(2n))
+
+      expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+      expect(controller.canBroadcast).toBe(false)
+      expect(hasEarlierPendingError(controller)).toBe(true)
+      // Sent through a bundler, which holds the transaction, so it can't be replaced
+      expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+    })
+
+    test('the owners can still sign behind a pending transaction', async () => {
+      const { controller } = await initSafe({ threshold: 2, signed: [] })
+
+      holdBehind(controller, buildPendingSafeAccountOp(2n))
+
+      expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+      expect(controller.canBroadcast).toBe(false)
+      expect(controller.errors).toEqual([])
+      expect(controller.readyToSign).toBe(true)
+    })
+
+    describe('paid by the EOA that sent the pending Safe transaction', () => {
+      const payerAddr = eoaSigner.keyPublicAddress
+      // The pending Safe transaction took Safe nonce 3 and the payer's EOA nonce 5
+      const buildPendingSentByEoa = () =>
+        buildPendingAccountOp({
+          accountAddr: safeAccount.addr,
+          paidBy: payerAddr,
+          broadcastOption: broadcastLib.BROADCAST_OPTIONS.byOtherEOA,
+          nonce: 3n,
+          eoaNonce: 5n
+        })
+
+      test('not signed yet, Replace takes the pending Safe nonce', async () => {
+        const { controller } = await initSafe({
+          threshold: 2,
+          signed: [],
+          nonce: 4n,
+          paidBy: payerAddr
+        })
+        holdBehind(controller, buildPendingSentByEoa())
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
+
+        controller.replacePendingAccountOp()
+
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+        expect(controller.accountOp.nonce).toBe(3n)
+        expect(controller.accountOp.eoaNonce).toBe(5n)
+      })
+
+      test('a 1/1 Safe with its only key here executes a Replace right after signing', async () => {
+        const { controller } = await initSafe({
+          threshold: 1,
+          signed: [],
+          nonce: 4n,
+          paidBy: payerAddr
+        })
+        controller.update({ signingKeyAddr: payerAddr, signingKeyType: 'internal' })
+        holdBehind(controller, buildPendingSentByEoa())
+        controller.replacePendingAccountOp()
+        // A new transaction would take Safe nonce 4, after the pending one
+        jest.spyOn(ActivityController.prototype, 'getNextNonce').mockReturnValue(4n)
+        const propose = jest.spyOn(safeLib, 'propose').mockResolvedValue(undefined)
+
+        await controller.sign()
+
+        expect(controller.accountOp.nonce).toBe(3n)
+        expect(controller.accountOp.signed).toEqual([payerAddr])
+        expect(propose).not.toHaveBeenCalled()
+        expect(controller.status?.type).toBe(SigningStatus.Done)
+      })
+
+      describe('picking the Safe nonce', () => {
+        const initHeldBack = async () => {
+          const ctrl = await initSafe({ threshold: 2, signed: [], nonce: 4n, paidBy: payerAddr })
+          holdBehind(ctrl.controller, buildPendingSentByEoa())
+          expect(ctrl.controller.earlierPendingAccountOp?.canReplace).toBe(true)
+          return ctrl
+        }
+
+        test('the pending Safe nonce replaces the pending transaction, as Replace pending does', async () => {
+          const { controller } = await initHeldBack()
+
+          controller.setSafeNonce(3n)
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+          expect(controller.accountOp.nonce).toBe(3n)
+          expect(controller.accountOp.eoaNonce).toBe(5n)
+        })
+
+        test('a later Safe nonce stops replacing, keeping the picked nonce', async () => {
+          const { controller } = await initHeldBack()
+          controller.replacePendingAccountOp()
+
+          controller.setSafeNonce(6n)
+
+          expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+          expect(controller.accountOp.nonce).toBe(6n)
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+        })
+
+        test('a later Safe nonce is kept as a later transaction, without replacing', async () => {
+          const { controller } = await initHeldBack()
+
+          controller.setSafeNonce(6n)
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+          expect(controller.accountOp.nonce).toBe(6n)
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+        })
+
+        test('Replace pending takes the pending Safe nonce over a picked one', async () => {
+          const { controller } = await initHeldBack()
+          controller.setSafeNonce(6n)
+
+          controller.replacePendingAccountOp()
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+          expect(controller.accountOp.nonce).toBe(3n)
+          expect(controller.accountOp.eoaNonce).toBe(5n)
+        })
+
+        test("Replace, a later Safe nonce, Replace again and Don't replace, one after another", async () => {
+          const { controller } = await initHeldBack()
+          controller.replacePendingAccountOp()
+          controller.setSafeNonce(6n)
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+
+          controller.replacePendingAccountOp()
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+          expect(controller.accountOp.nonce).toBe(3n)
+          // A new transaction takes Safe nonce 4, after the pending one
+          jest.spyOn(ActivityController.prototype, 'getNextNonce').mockReturnValue(4n)
+
+          controller.stopReplacingPendingAccountOp()
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+          expect(controller.accountOp.nonce).toBe(4n)
+        })
+
+        test("picking the pending Safe nonce again after Don't replace replaces it again", async () => {
+          const { controller } = await initHeldBack()
+          controller.replacePendingAccountOp()
+          controller.stopReplacingPendingAccountOp()
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+
+          controller.setSafeNonce(3n)
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+          expect(controller.accountOp.nonce).toBe(3n)
+        })
+
+        test('the Safe nonce of a pending transaction it cannot replace is only set', async () => {
+          const { controller } = await initSafe({ threshold: 2, signed: [], nonce: 4n })
+          // Sent through a bundler, which holds the transaction
+          holdBehind(controller, buildPendingSafeAccountOp(3n))
+          expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+
+          controller.setSafeNonce(3n)
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+          expect(controller.accountOp.nonce).toBe(3n)
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+        })
+
+        test('signed by an owner, the pending Safe nonce neither replaces nor changes the nonce', async () => {
+          const { controller } = await initSafe({
+            threshold: 2,
+            signed: [owners[0]!],
+            nonce: 4n,
+            paidBy: payerAddr
+          })
+          holdBehind(controller, buildPendingSentByEoa())
+
+          controller.setSafeNonce(3n)
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+          expect(controller.accountOp.nonce).toBe(4n)
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+        })
+      })
+
+      test("Don't replace takes the Safe nonce of a new transaction, after the pending one", async () => {
+        const { controller } = await initSafe({ threshold: 2, signed: [], paidBy: payerAddr })
+        holdBehind(controller, buildPendingSentByEoa())
+        controller.replacePendingAccountOp()
+        expect(controller.accountOp.nonce).toBe(3n)
+        const getNextNonce = jest
+          .spyOn(ActivityController.prototype, 'getNextNonce')
+          .mockReturnValue(4n)
+
+        controller.stopReplacingPendingAccountOp()
+
+        expect(getNextNonce).toHaveBeenCalledWith(safeAccount.addr, chainId, 'account', 3n)
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        expect(controller.accountOp.nonce).toBe(4n)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+      })
+
+      test('when Replace ends on its own, it moves past the Safe nonce of the replaced transaction', async () => {
+        const { controller } = await initSafe({ threshold: 2, signed: [], paidBy: payerAddr })
+        const pendingAccountOpsSpy = holdBehind(controller, buildPendingSentByEoa())
+        controller.replacePendingAccountOp()
+        expect(controller.accountOp.nonce).toBe(3n)
+        // Confirmed, so Activity counts its Safe nonce while the chain may not yet
+        jest.spyOn(ActivityController.prototype, 'getNextNonce').mockReturnValue(4n)
+
+        pendingAccountOpsSpy.mockReturnValue({})
+        controller.update({ hasNewEstimation: true })
+
+        expect(controller.earlierPendingAccountOp).toBeNull()
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(controller.accountOp.nonce).toBe(4n)
+      })
+
+      test('signed by an owner, it is not offered to replace, as the signature is for its Safe nonce', async () => {
+        const { controller } = await initSafe({
+          threshold: 2,
+          signed: [owners[0]!],
+          nonce: 4n,
+          paidBy: payerAddr
+        })
+        holdBehind(controller, buildPendingSentByEoa())
+
+        expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+
+        controller.replacePendingAccountOp()
+
+        expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+        expect(controller.accountOp.eoaNonce).toBeUndefined()
+        expect(controller.accountOp.nonce).toBe(4n)
+        expect(controller.accountOp.signed).toEqual([owners[0]])
+      })
+    })
+  })
+
+  describe('a smart account paid by an EOA', () => {
+    const initPaidByEoa = async () => {
+      const feePaymentOptions = [nativeFeeOption(eoaSigner.keyPublicAddress)]
+      const accountOp = createAccountOp(smartAccount, chainId)
+      accountOp.op.signingKeyAddr = eoaSigner.keyPublicAddress
+      accountOp.op.signingKeyType = 'internal'
+      jest.spyOn(EstimationController.prototype, 'estimate').mockResolvedValue(undefined)
+
+      return init(
+        smartAccount,
+        accountOp,
+        eoaSigner,
+        {
+          providerEstimation: { gasUsed: 25000n, feePaymentOptions },
+          ambireEstimation: {
+            deploymentGas: 0n,
+            gasUsed: 25000n,
+            feePaymentOptions,
+            ambireAccountNonce: 5,
+            flags: {}
+          },
+          flags: {},
+          updatedAt: Date.now()
+        },
+        gasPrices,
+        false,
+        {
+          // The paying EOA is an account of the wallet too
+          initialSetStorage: (storageCtrl) =>
+            storageCtrl.set('accounts', [smartAccount, eoaAccount])
+        }
+      )
+    }
+
+    test('is held back while the paying EOA has its own transaction pending', async () => {
+      const { controller } = await initPaidByEoa()
+      expect(controller.accountOp.gasFeePayment?.broadcastOption).toBe(
+        broadcastLib.BROADCAST_OPTIONS.byOtherEOA
+      )
+
+      // Stored under the EOA, not the account being signed
+      holdBehind(controller, buildPendingAccountOp())
+
+      expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+      expect(hasEarlierPendingError(controller)).toBe(true)
+    })
+
+    test('Replace refuses to send from an account other than the one that paid the pending op', async () => {
+      const { controller } = await initPaidByEoa()
+      const pendingAccountOp = buildPendingAccountOp({
+        accountAddr: smartAccount.addr,
+        paidBy: eoaSigner.keyPublicAddress,
+        broadcastOption: broadcastLib.BROADCAST_OPTIONS.byOtherEOA,
+        nonce: 4n
+      })
+      holdBehind(controller, pendingAccountOp)
+      jest.spyOn(controller.baseAccount, 'getBroadcastNonce').mockResolvedValue(5n)
+      jest.spyOn(controller.provider, 'getTransactionCount').mockResolvedValue(6)
+      const buildRawTransaction = mockRawBroadcast()
+      const broadcastTransaction = jest.spyOn(broadcastLib, 'broadcastTransaction')
+      controller.replacePendingAccountOp()
+      // Another account pays at broadcast time, as if the payer of the pending op was dropped.
+      // Signing keeps the payer, so it is swapped once signed
+      const otherPayerAddr = '0x1111111111111111111111111111111111111111'
+      const getAccountState = AccountsController.prototype.getOrFetchAccountOnChainState
+      jest
+        .spyOn(AccountsController.prototype, 'getOrFetchAccountOnChainState')
+        .mockImplementation(async function (this: AccountsController, ...args) {
+          const { gasFeePayment } = controller.accountOp
+          if (gasFeePayment) gasFeePayment.paidBy = otherPayerAddr
+          return getAccountState.apply(this, args)
+        })
+
+      const throwBroadcastAccountOp = jest.spyOn(controller, 'throwBroadcastAccountOp')
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(throwBroadcastAccountOp.mock.calls[0]?.[0].message).toContain(
+        'paid from a different account'
+      )
+      expect(buildRawTransaction).not.toHaveBeenCalled()
+      expect(broadcastTransaction).not.toHaveBeenCalled()
+    })
+
+    test('Replace signs with the account nonce of the pending op and its EOA nonce', async () => {
+      const { controller } = await initPaidByEoa()
+      // The pending op of the same account took account nonce 4 and the payer's nonce 5
+      const pendingAccountOp = buildPendingAccountOp({
+        accountAddr: smartAccount.addr,
+        paidBy: eoaSigner.keyPublicAddress,
+        broadcastOption: broadcastLib.BROADCAST_OPTIONS.byOtherEOA,
+        nonce: 4n
+      })
+      holdBehind(controller, pendingAccountOp)
+      // The chain already counts it, as the pending block does on Ethereum
+      jest.spyOn(controller.baseAccount, 'getBroadcastNonce').mockResolvedValue(5n)
+      expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
+
+      controller.replacePendingAccountOp()
+      await controller.sign()
+
+      expect(controller.status?.type).toBe(SigningStatus.Done)
+      expect(controller.accountOp.nonce).toBe(4n)
+      expect(controller.accountOp.eoaNonce).toBe(5n)
+    })
   })
 })
