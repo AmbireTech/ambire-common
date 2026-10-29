@@ -5,6 +5,7 @@ import { Account, AccountStates } from '@/interfaces/account'
 import { Network } from '@/interfaces/network'
 import { AddressPoisoningMatch } from '@/interfaces/transfer'
 import { getSupportedNetworks } from '@/libs/networks/networks'
+import { isNearIdenticalAddressMatch } from '@/libs/transfer/address-poisoning'
 
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
@@ -78,6 +79,11 @@ const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_DEFAULT = 6
 const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_EXTENDED = 8
 const getAddressPoisoningWarningMessage = (matchedAddress: string) =>
   `Possible address poisoning: this new address looks similar to ${matchedAddress} that you have interacted with before. Proceed with caution.`
+const getNearIdenticalAddressWarningMessage = (
+  matchedAddress: string,
+  differingCharsCount: number
+) =>
+  `This address is almost the same as ${matchedAddress}, which you have sent to before. Only ${differingCharsCount} ${differingCharsCount === 1 ? 'character is' : 'characters are'} different, so it may be a typo. Double-check it before you send.`
 
 const formatAddressPoisoningMatchForMessage = ({
   matchedAddress,
@@ -205,14 +211,19 @@ const validateSendTransferAddress = (
         shouldHold: true
       }
     },
-    // poisoning detected - require hold-to-proceed as an additional safety step
+    // poisoning or a likely typo detected - require hold-to-proceed as an additional safety step
     () => {
       if (!addressPoisoningMatch) return undefined
 
+      const matchedAddressPreview = formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
+
       return {
-        message: getAddressPoisoningWarningMessage(
-          formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
-        ),
+        message: isNearIdenticalAddressMatch(addressPoisoningMatch)
+          ? getNearIdenticalAddressWarningMessage(
+              matchedAddressPreview,
+              addressPoisoningMatch.differingCharsCount
+            )
+          : getAddressPoisoningWarningMessage(matchedAddressPreview),
         severity: 'warning',
         shouldHold: true
       }
