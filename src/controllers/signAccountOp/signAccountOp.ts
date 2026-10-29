@@ -991,7 +991,52 @@ export class SignAccountOpController
     this.#updateAccountOp({ nonce })
   }
 
+  /**
+   * Sets the Safe nonce the user picked. The Safe nonce of the pending transaction this one can
+   * replace starts replacing it, as Replace pending does, and any other nonce stops replacing it,
+   * so this one becomes a later transaction at the picked nonce.
+   */
   setSafeNonce(nonce: bigint) {
+    const pendingSafeNonce = this.#getPendingSafeNonceToReplace()
+    const isReplacing = this.#replacement?.kind === 'newCalls'
+
+    if (nonce === pendingSafeNonce && !isReplacing) {
+      this.replacePendingAccountOp()
+      // Replacing sets the nonce. When it can't start, the nonce is set as any other
+      if (this.#replacement?.kind === 'newCalls') return
+    }
+
+    const isLeavingReplaceMode =
+      nonce !== pendingSafeNonce &&
+      isReplacing &&
+      pendingSafeNonce !== null &&
+      this.canUpdate() &&
+      !this.#isSignedBySafeOwner
+    if (isLeavingReplaceMode) this.#leaveReplaceMode()
+
+    if (!this.#setCustomSafeNonce(nonce) || !isLeavingReplaceMode) return
+    this.update({ hasNewEstimation: true })
+  }
+
+  /**
+   * The Safe nonce of the pending transaction of this Safe that this one replaces, or can
+   * replace. Null when there's none, e.g. when it's a transaction of the account paying the fee
+   */
+  #getPendingSafeNonceToReplace(): bigint | null {
+    if (!this.account.safeCreation) return null
+    if (this.#replacement?.kind === 'newCalls') return this.#getReplacedAccountNonce()
+
+    const replacementAccountOp = this.#earlierPending?.replacementAccountOp
+    if (!replacementAccountOp || !isSameAddr(replacementAccountOp.accountAddr, this.account.addr))
+      return null
+    return getAccountOpNonce(replacementAccountOp)
+  }
+
+  /**
+   * Sets the Safe nonce as it is, without starting or stopping a Replace.
+   * Returns whether it was set.
+   */
+  #setCustomSafeNonce(nonce: bigint): boolean {
     if (!this.account.safeCreation) {
       const message = 'Nonce could not be set, Safe account data is missing'
       this.emitError({
@@ -999,7 +1044,7 @@ export class SignAccountOpController
         error: new Error(message),
         level: 'minor'
       })
-      return
+      return false
     }
     if (this.status?.type && noStateUpdateStatuses.includes(this.status.type)) {
       const message = 'Nonce cannot be set as the transaction is in a signing state'
@@ -1008,7 +1053,7 @@ export class SignAccountOpController
         error: new Error(message),
         level: 'minor'
       })
-      return
+      return false
     }
     if (this.#isSignedBySafeOwner) {
       const message = 'Nonce cannot be set as the transaction is already signed'
@@ -1017,7 +1062,7 @@ export class SignAccountOpController
         error: new Error(message),
         level: 'minor'
       })
-      return
+      return false
     }
     if (nonce < 0n || nonce > maxUint256) {
       const message = `Invalid nonce: ${nonce.toString()}`
@@ -1026,7 +1071,7 @@ export class SignAccountOpController
         error: new Error(message),
         level: 'minor'
       })
-      return
+      return false
     }
 
     this.#customSafeNonce = nonce
@@ -1043,6 +1088,7 @@ export class SignAccountOpController
       asUserOperation: undefined
     })
     this.emitUpdate()
+    return true
   }
 
   async refetchAccountState() {
@@ -1387,7 +1433,7 @@ export class SignAccountOpController
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
     if (wasReplacingOwnSafeOp && !this.#isSignedBySafeOwner && accountState)
-      this.setSafeNonce(this.#getAccountNextNonce(accountState.nonce))
+      this.#setCustomSafeNonce(this.#getAccountNextNonce(accountState.nonce))
     this.#updateEarlierPendingAccountOp()
   }
 
@@ -1507,7 +1553,7 @@ export class SignAccountOpController
       replacedSafeNonce !== null &&
       replacedSafeNonce !== getAccountOpNonce(this.accountOp)
     )
-      this.setSafeNonce(replacedSafeNonce)
+      this.#setCustomSafeNonce(replacedSafeNonce)
     this.#replacement.watchReplacedTransaction(() => this.#onReplacedTransactionProcessed())
     this.update({ hasNewEstimation: true })
   }

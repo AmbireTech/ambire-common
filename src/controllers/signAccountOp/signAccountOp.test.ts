@@ -7110,6 +7110,118 @@ describe('an earlier pending transaction', () => {
         expect(controller.status?.type).toBe(SigningStatus.Done)
       })
 
+      describe('picking the Safe nonce', () => {
+        const initHeldBack = async () => {
+          const ctrl = await initSafe({ threshold: 2, signed: [], nonce: 4n, paidBy: payerAddr })
+          holdBehind(ctrl.controller, buildPendingSentByEoa())
+          expect(ctrl.controller.earlierPendingAccountOp?.canReplace).toBe(true)
+          return ctrl
+        }
+
+        test('the pending Safe nonce replaces the pending transaction, as Replace pending does', async () => {
+          const { controller } = await initHeldBack()
+
+          controller.setSafeNonce(3n)
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+          expect(controller.accountOp.nonce).toBe(3n)
+          expect(controller.accountOp.eoaNonce).toBe(5n)
+        })
+
+        test('a later Safe nonce stops replacing, keeping the picked nonce', async () => {
+          const { controller } = await initHeldBack()
+          controller.replacePendingAccountOp()
+
+          controller.setSafeNonce(6n)
+
+          expect(controller.earlierPendingAccountOp?.id).toBe('pending-op')
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+          expect(controller.accountOp.nonce).toBe(6n)
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+        })
+
+        test('a later Safe nonce is kept as a later transaction, without replacing', async () => {
+          const { controller } = await initHeldBack()
+
+          controller.setSafeNonce(6n)
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+          expect(controller.accountOp.nonce).toBe(6n)
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+        })
+
+        test('Replace pending takes the pending Safe nonce over a picked one', async () => {
+          const { controller } = await initHeldBack()
+          controller.setSafeNonce(6n)
+
+          controller.replacePendingAccountOp()
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+          expect(controller.accountOp.nonce).toBe(3n)
+          expect(controller.accountOp.eoaNonce).toBe(5n)
+        })
+
+        test("Replace, a later Safe nonce, Replace again and Don't replace, one after another", async () => {
+          const { controller } = await initHeldBack()
+          controller.replacePendingAccountOp()
+          controller.setSafeNonce(6n)
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+
+          controller.replacePendingAccountOp()
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+          expect(controller.accountOp.nonce).toBe(3n)
+          // A new transaction takes Safe nonce 4, after the pending one
+          jest.spyOn(ActivityController.prototype, 'getNextNonce').mockReturnValue(4n)
+
+          controller.stopReplacingPendingAccountOp()
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+          expect(controller.accountOp.nonce).toBe(4n)
+        })
+
+        test("picking the pending Safe nonce again after Don't replace replaces it again", async () => {
+          const { controller } = await initHeldBack()
+          controller.replacePendingAccountOp()
+          controller.stopReplacingPendingAccountOp()
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+
+          controller.setSafeNonce(3n)
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
+          expect(controller.accountOp.nonce).toBe(3n)
+        })
+
+        test('the Safe nonce of a pending transaction it cannot replace is only set', async () => {
+          const { controller } = await initSafe({ threshold: 2, signed: [], nonce: 4n })
+          // Sent through a bundler, which holds the transaction
+          holdBehind(controller, buildPendingSafeAccountOp(3n))
+          expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+
+          controller.setSafeNonce(3n)
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+          expect(controller.accountOp.nonce).toBe(3n)
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+        })
+
+        test('signed by an owner, the pending Safe nonce neither replaces nor changes the nonce', async () => {
+          const { controller } = await initSafe({
+            threshold: 2,
+            signed: [owners[0]!],
+            nonce: 4n,
+            paidBy: payerAddr
+          })
+          holdBehind(controller, buildPendingSentByEoa())
+
+          controller.setSafeNonce(3n)
+
+          expect(controller.earlierPendingAccountOp?.isReplacing).toBe(false)
+          expect(controller.accountOp.nonce).toBe(4n)
+          expect(controller.accountOp.eoaNonce).toBeUndefined()
+        })
+      })
+
       test("Don't replace takes the Safe nonce of a new transaction, after the pending one", async () => {
         const { controller } = await initSafe({ threshold: 2, signed: [], paidBy: payerAddr })
         holdBehind(controller, buildPendingSentByEoa())
