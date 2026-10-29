@@ -774,6 +774,7 @@ const init = async (
       storage: storageCtrl,
       networks: networksCtrl,
       phishing,
+      providers: providersCtrl,
       ui,
       selectedAccount: selectedAccountCtrl,
       featureFlags: featureFlagsCtrl

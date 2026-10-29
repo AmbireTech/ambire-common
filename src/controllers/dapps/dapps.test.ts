@@ -15,7 +15,10 @@ import { DAPP_SILENCE_DURATION } from '../../consts/safeguards/dappRequestSpam'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp'
 import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
+import * as ensContenthashModule from '../../services/ensDomains/ensContenthash'
+import { EnsWebsiteContentUpdate } from '../../services/ensDomains/ensContenthash'
 import { PhishingController } from '../phishing/phishing'
+import { WEBSITE_CONTENT_UPDATE_TIMEOUT_MS } from './dapps'
 
 const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
 const NOW = 1_700_000_000_000
@@ -3276,6 +3279,232 @@ describe('DappsController', () => {
       expect(
         controller.dapps.every((dapp) => dapp.blacklisted !== 'LOADING' || dapp.isConnected)
       ).toBe(true)
+    })
+  })
+
+  describe('website content update of the app to connect', () => {
+    const makeConnectRequest = (url: string, tabId = 1): DappConnectRequest => ({
+      id: tabId,
+      kind: 'dappConnect',
+      meta: { params: {} },
+      dappPromises: [
+        {
+          id: '',
+          resolve: () => {},
+          reject: () => {},
+          meta: {},
+          session: new Session({ tabId, url })
+        }
+      ]
+    })
+
+    const prepareContentUpdateTest = async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.initialLoadPromise
+      return controller
+    }
+
+    const makeContentUpdate = (updatedAt: number): EnsWebsiteContentUpdate => ({
+      updatedAt,
+      contenthash: '0xe30101701220aaaa',
+      checkedAtBlock: 25_000_000
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+      jest.useRealTimers()
+    })
+
+    test('loads when the website of an app served from an ENS name was last updated', async () => {
+      const updatedAt = NOW - 2 * 24 * 60 * 60 * 1000
+      let resolveContentUpdate: (value: EnsWebsiteContentUpdate) => void = () => {}
+      const contentUpdateSpy = jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveContentUpdate = resolve
+            })
+        )
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({ status: 'LOADING' })
+      expect(contentUpdateSpy).toHaveBeenCalledWith(expect.anything(), 'tornadocash.eth', {
+        previousUpdate: undefined,
+        signal: expect.any(AbortSignal)
+      })
+
+      resolveContentUpdate(makeContentUpdate(updatedAt))
+      await wait(1)
+
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({ status: 'LOADED', updatedAt })
+      // Not part of the app record, so it never gets persisted with it on connect
+      expect(controller.dappToConnect).not.toHaveProperty('websiteContentUpdate')
+    })
+
+    test('stays empty for apps not served from an ENS name', async () => {
+      const contentUpdateSpy = jest.spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://app.uniswap.org'))
+      await wait(1)
+
+      expect(controller.dappToConnectWebsiteContentUpdate).toBeNull()
+      expect(contentUpdateSpy).not.toHaveBeenCalled()
+    })
+
+    test('stays empty when the ENS name does not point to content with a known update time', async () => {
+      jest.spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate').mockResolvedValue(null)
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://app.uniswap.eth.limo'))
+      await wait(1)
+
+      expect(controller.dappToConnectWebsiteContentUpdate).toBeNull()
+    })
+
+    test('reports a failure without breaking the connection request', async () => {
+      const { restore } = suppressConsole(true)
+      jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockRejectedValue(new Error('rate limited'))
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await wait(1)
+
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({ status: 'FAILED' })
+      expect(controller.dappToConnect?.id).toBe('tornadocash.eth.limo')
+      restore()
+    })
+
+    test('SECURITY: a late result for a previous app never shows on the next app', async () => {
+      let resolveFirstContentUpdate: (value: EnsWebsiteContentUpdate) => void = () => {}
+      jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirstContentUpdate = resolve
+            })
+        )
+        .mockImplementationOnce(() => new Promise(() => {}))
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await controller.setDappToConnectIfNeeded(null)
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://vitalik.eth.limo', 2))
+
+      // The old app's content has not changed in years, the new app's is still loading
+      resolveFirstContentUpdate(makeContentUpdate(0))
+      await wait(1)
+
+      expect(controller.dappToConnect?.id).toBe('vitalik.eth.limo')
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({ status: 'LOADING' })
+    })
+
+    test('is cleared once there is no app to connect', async () => {
+      jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockResolvedValue(makeContentUpdate(NOW))
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await wait(1)
+      await controller.setDappToConnectIfNeeded(null)
+
+      expect(controller.dappToConnectWebsiteContentUpdate).toBeNull()
+    })
+
+    test('continues from the previous result when connecting to the same app again', async () => {
+      const firstUpdate = makeContentUpdate(NOW - 1000)
+      const contentUpdateSpy = jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockResolvedValueOnce(firstUpdate)
+        .mockResolvedValueOnce({ ...firstUpdate, checkedAtBlock: 25_000_100 })
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await wait(1)
+      await controller.setDappToConnectIfNeeded(null)
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await wait(1)
+
+      expect(contentUpdateSpy).toHaveBeenLastCalledWith(expect.anything(), 'tornadocash.eth', {
+        previousUpdate: firstUpdate,
+        signal: expect.any(AbortSignal)
+      })
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({
+        status: 'LOADED',
+        updatedAt: firstUpdate.updatedAt
+      })
+    })
+
+    test('never passes the previous result of one app to another', async () => {
+      const contentUpdateSpy = jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockResolvedValue(makeContentUpdate(NOW))
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await wait(1)
+      await controller.setDappToConnectIfNeeded(null)
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://vitalik.eth.limo', 2))
+      await wait(1)
+
+      expect(contentUpdateSpy).toHaveBeenLastCalledWith(expect.anything(), 'vitalik.eth', {
+        previousUpdate: undefined,
+        signal: expect.any(AbortSignal)
+      })
+    })
+
+    test('forgets the previous result once the app no longer has a known update time', async () => {
+      const contentUpdateSpy = jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockResolvedValueOnce(makeContentUpdate(NOW))
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+      const controller = await prepareContentUpdateTest()
+
+      for (let i = 0; i < 3; i++) {
+        await controller.setDappToConnectIfNeeded(
+          makeConnectRequest('https://tornadocash.eth.limo')
+        )
+        await wait(1)
+        await controller.setDappToConnectIfNeeded(null)
+      }
+
+      expect(contentUpdateSpy).toHaveBeenLastCalledWith(expect.anything(), 'tornadocash.eth', {
+        previousUpdate: undefined,
+        signal: expect.any(AbortSignal)
+      })
+    })
+
+    test('shows that it could not check and stops the search once it takes too long', async () => {
+      const { restore } = suppressConsole(true)
+      let searchSignal: AbortSignal | null | undefined
+      jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockImplementation((_provider, _ensName, { signal } = {}) => {
+          searchSignal = signal
+          return new Promise(() => {})
+        })
+      const controller = await prepareContentUpdateTest()
+      jest.useFakeTimers()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await jest.advanceTimersByTimeAsync(WEBSITE_CONTENT_UPDATE_TIMEOUT_MS - 1)
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({ status: 'LOADING' })
+
+      await jest.advanceTimersByTimeAsync(1)
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({ status: 'FAILED' })
+      expect(searchSignal?.aborted).toBe(true)
+      restore()
     })
   })
 })
