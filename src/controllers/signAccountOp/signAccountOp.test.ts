@@ -6714,7 +6714,8 @@ describe('an earlier pending transaction', () => {
         notifyEarlierPending()
         controller.update({ hasNewEstimation: true })
 
-        expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+        // No replacement can be built without fee options, but Don't replace stays
+        expect(controller.earlierPendingAccountOp?.canReplace).toBe(true)
         expect(controller.earlierPendingAccountOp?.isReplacing).toBe(true)
         expect(controller.accountOp.eoaNonce).toBe(5n)
       })
@@ -7005,7 +7006,8 @@ describe('an earlier pending transaction', () => {
             deploymentGas: 0n,
             gasUsed: 25000n,
             feePaymentOptions,
-            ambireAccountNonce: 3,
+            // A Safe is estimated with a state override, which returns the op's own nonce
+            ambireAccountNonce: Number(nonce),
             flags: {}
           },
           flags: {},
