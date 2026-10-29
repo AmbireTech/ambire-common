@@ -74,7 +74,7 @@ import { getIntentBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
-import { getTokenInfoFromChain } from '../../libs/portfolio/getTokenInfoFromChain'
+import { getTokenMetaViaRPC } from '../../libs/portfolio/getTokenMetaViaRPC'
 import { convertApiTokenDataToTokenDataCache, getTokenAmount } from '../../libs/portfolio/helpers'
 import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
@@ -2274,11 +2274,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const isSupported = await this.#serviceProviderAPI.isTokenSupported?.({ address, chainId })
     if (!isSupported) return null
 
-    const token = await getTokenInfoFromChain({
-      getTokenInfo: this.#portfolio.getTokenInfo.bind(this.#portfolio),
-      chainId: BigInt(chainId),
-      address
-    })
+    const network = this.#networks.networks.find((n) => Number(n.chainId) === chainId)
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!network || !provider) return null
+
+    const token = await getTokenMetaViaRPC({ provider, network, address })
 
     return token ? convertPortfolioTokenToSwapAndBridgeToToken(token, chainId) : null
   }

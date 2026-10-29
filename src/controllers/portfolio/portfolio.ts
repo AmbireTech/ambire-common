@@ -65,7 +65,6 @@ import { Portfolio } from '../../libs/portfolio'
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import { PortfolioDebugFlow } from '../../libs/portfolio/debug'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
-import { getTokenInfo, TokenInfo } from '../../libs/portfolio/getTokenInfo'
 import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
@@ -1237,22 +1236,6 @@ export class PortfolioController
     if (!portfolioLib) return []
 
     return portfolioLib.getTokensByAddresses(accountAddr, tokenAddrs, { blockTag })
-  }
-
-  /**
-   * Reads the name, symbol and decimals of a token from the chain, for no account in particular.
-   * It is used for tokens that are not in the portfolio. Returns null if the address is not a token.
-   */
-  async getTokenInfo(chainId: bigint, address: string): Promise<TokenInfo | null> {
-    const network = this.#networks.networks.find((x) => x.chainId === chainId)
-
-    if (!network) throw new Error(`Network with chainId ${chainId} not found`)
-
-    const provider = this.#providers.providers[chainId.toString()]
-
-    if (!provider) throw new Error(`Provider for chainId ${chainId} not found`)
-
-    return getTokenInfo({ provider, network, address })
   }
 
   async getTemporaryTokens(accountId: AccountId, chainId: bigint, additionalHint: string) {

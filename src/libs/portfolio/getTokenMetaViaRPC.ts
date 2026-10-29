@@ -4,9 +4,9 @@ import {
   prepareBlacklistPatterns,
   STATIC_BLACKLIST
 } from './blacklist'
-import type { TokenInfo } from './getTokenInfo'
-
-type GetTokenInfo = (chainId: bigint, address: string) => Promise<TokenInfo | null>
+import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
+import { getTokenInfo, TokenInfo } from './getTokenInfo'
 
 const STATIC_BLACKLIST_PATTERNS = prepareBlacklistPatterns(STATIC_BLACKLIST.blacklistBySymbols)
 
@@ -18,18 +18,18 @@ const STATIC_BLACKLIST_PATTERNS = prepareBlacklistPatterns(STATIC_BLACKLIST.blac
  * static blacklist (by address, or by symbol and name).
  * The data comes from the token contract itself, so it can say anything about the token.
  */
-export const getTokenInfoFromChain = async ({
-  getTokenInfo,
-  chainId,
+export const getTokenMetaViaRPC = async ({
+  provider,
+  network,
   address
 }: {
-  getTokenInfo: GetTokenInfo
-  chainId: bigint
+  provider: RPCProvider
+  network: Network
   address: string
 }): Promise<TokenInfo | null> => {
-  if (!filterStaticBlacklistedAddrs([address], chainId).length) return null
+  if (!filterStaticBlacklistedAddrs([address], network.chainId).length) return null
 
-  const token = await getTokenInfo(chainId, address)
+  const token = await getTokenInfo({ provider, network, address })
   if (!token?.symbol) return null
 
   const isBlacklisted = isBlacklistedAsset({

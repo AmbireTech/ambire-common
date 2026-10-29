@@ -19,7 +19,7 @@ import { IRequestsController } from '../../interfaces/requests'
 import { Storage } from '../../interfaces/storage'
 import { SocketAPIToken } from '../../interfaces/swapAndBridge'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
-import { TokenInfo } from '../../libs/portfolio/getTokenInfo'
+import { getTokenInfo, TokenInfo } from '../../libs/portfolio/getTokenInfo'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
@@ -137,6 +137,8 @@ const getSubmittedAccountOp = (
 
 const storage: Storage = produceMemoryStore()
 const storageCtrl = new StorageController(storage)
+jest.mock('../../libs/portfolio/getTokenInfo')
+
 let providersCtrl: IProvidersController
 const networksCtrl = new NetworksController({
   storage: storageCtrl,
@@ -1421,14 +1423,14 @@ describe('SwapAndBridge Controller', () => {
       jest.spyOn(socketAPIMock, 'getToken').mockResolvedValue(null as never)
       isTokenSupported = jest.fn<() => Promise<boolean>>().mockResolvedValue(isSupported)
       Object.assign(socketAPIMock, { isTokenSupported })
-      return jest.spyOn(portfolioCtrl, 'getTokenInfo').mockResolvedValue(chainResult)
+      return jest.mocked(getTokenInfo).mockReset().mockResolvedValue(chainResult)
     }
     const getSearchedAddresses = () =>
       swapAndBridgeController.toTokenSearchResults.map(({ address }) => address)
 
     afterEach(() => {
       jest.mocked(socketAPIMock.getToken).mockRestore()
-      jest.mocked(portfolioCtrl.getTokenInfo).mockRestore()
+      jest.mocked(getTokenInfo).mockReset()
       delete (socketAPIMock as any).isTokenSupported
     })
 
@@ -1443,7 +1445,12 @@ describe('SwapAndBridge Controller', () => {
 
       expect(isTokenSupported).toHaveBeenCalledTimes(1)
       expect(readSpy).toHaveBeenCalledTimes(1)
-      expect(readSpy).toHaveBeenCalledWith(BigInt(swapAndBridgeController.toChainId!), address)
+      expect(readSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          address,
+          network: expect.objectContaining({ chainId: BigInt(swapAndBridgeController.toChainId!) })
+        })
+      )
       expect(getSearchedAddresses()).toEqual([address])
       expect(swapAndBridgeController.toTokenSearchResults[0]).toMatchObject({
         symbol: 'ONCHAIN',
