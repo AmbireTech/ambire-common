@@ -1455,7 +1455,8 @@ describe('SwapAndBridge Controller', () => {
       expect(swapAndBridgeController.toTokenSearchResults[0]).toMatchObject({
         symbol: 'ONCHAIN',
         decimals: 6,
-        icon: ''
+        icon: '',
+        unverified: true
       })
     })
 
@@ -1512,6 +1513,7 @@ describe('SwapAndBridge Controller', () => {
       expect(readSpy).not.toHaveBeenCalled()
       expect(getSearchedAddresses()).toEqual([address])
       expect(swapAndBridgeController.toTokenSearchResults[0]).toMatchObject({ symbol: 'LISTED' })
+      expect(swapAndBridgeController.toTokenSearchResults[0]?.unverified).toBeUndefined()
     })
   })
   test('should switch from and to tokens', async () => {

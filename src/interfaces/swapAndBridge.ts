@@ -33,6 +33,11 @@ export interface SwapAndBridgeToToken {
   icon?: string
   decimals: number
   priceUSD?: string
+  /**
+   * True for a token that none of the swap providers lists. Its data was read from the chain,
+   * so it is not verified by any provider.
+   */
+  unverified?: boolean
 }
 
 /**

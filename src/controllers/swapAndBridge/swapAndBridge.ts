@@ -2280,7 +2280,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const token = await getTokenMetaViaRPC({ provider, network, address })
 
-    return token ? convertPortfolioTokenToSwapAndBridgeToToken(token, chainId) : null
+    return token
+      ? { ...convertPortfolioTokenToSwapAndBridgeToToken(token, chainId), unverified: true }
+      : null
   }
 
   /**
