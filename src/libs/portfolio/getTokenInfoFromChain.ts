@@ -4,9 +4,9 @@ import {
   prepareBlacklistPatterns,
   STATIC_BLACKLIST
 } from './blacklist'
-import type { TokenError, TokenResult } from './interfaces'
+import type { TokenInfo } from './getTokenInfo'
 
-type GetTokensInfo = (chainId: bigint, tokenAddrs: string[]) => Promise<[TokenError, TokenResult][]>
+type GetTokenInfo = (chainId: bigint, address: string) => Promise<TokenInfo | null>
 
 const STATIC_BLACKLIST_PATTERNS = prepareBlacklistPatterns(STATIC_BLACKLIST.blacklistBySymbols)
 
@@ -14,26 +14,23 @@ const STATIC_BLACKLIST_PATTERNS = prepareBlacklistPatterns(STATIC_BLACKLIST.blac
  * Reads the name, symbol and decimals of a token from the chain, through the RPC of the user.
  * Nothing is sent to an Ambire service, unlike a lookup in an API.
  *
- * Returns null if the address is not a token (same rule as the portfolio: no error and a
- * symbol), or if the token is on the static blacklist (by address, or by symbol and name).
+ * Returns null if the address is not a token (it has no symbol), or if the token is on the
+ * static blacklist (by address, or by symbol and name).
  * The data comes from the token contract itself, so it can say anything about the token.
  */
 export const getTokenInfoFromChain = async ({
-  getTokensInfo,
+  getTokenInfo,
   chainId,
   address
 }: {
-  getTokensInfo: GetTokensInfo
+  getTokenInfo: GetTokenInfo
   chainId: bigint
   address: string
-}): Promise<TokenResult | null> => {
+}): Promise<TokenInfo | null> => {
   if (!filterStaticBlacklistedAddrs([address], chainId).length) return null
 
-  const [tokenWithError] = await getTokensInfo(chainId, [address])
-  if (!tokenWithError) return null
-
-  const [error, token] = tokenWithError
-  if (error !== '0x' || !token.symbol) return null
+  const token = await getTokenInfo(chainId, address)
+  if (!token?.symbol) return null
 
   const isBlacklisted = isBlacklistedAsset({
     symbol: token.symbol,

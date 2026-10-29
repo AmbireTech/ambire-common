@@ -2275,7 +2275,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!isSupported) return null
 
     const token = await getTokenInfoFromChain({
-      getTokensInfo: this.#portfolio.getTokensInfo.bind(this.#portfolio),
+      getTokenInfo: this.#portfolio.getTokenInfo.bind(this.#portfolio),
       chainId: BigInt(chainId),
       address
     })

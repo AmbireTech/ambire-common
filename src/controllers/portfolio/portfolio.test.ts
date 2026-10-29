@@ -826,22 +826,6 @@ describe('Portfolio Controller ', () => {
       expect(state1.result?.lastExternalApiUpdateData).toBeTruthy()
     })
 
-    test('The info of tokens is read from the chain without an account', async () => {
-      const { controller } = await prepareTest()
-      const apeAddr = '0x4d224452801ACEd8B2F0aebE155379bb5D594381'
-      // Not a token: the CoW Swap settlement contract
-      const notATokenAddr = '0x9008D19f58AAbD9eD0D60971565AA8510560ab41'
-
-      const [apeResult, notATokenResult] = await controller.getTokensInfo(1n, [
-        apeAddr,
-        notATokenAddr
-      ])
-
-      expect(apeResult![0]).toBe('0x')
-      expect(apeResult![1]).toMatchObject({ symbol: 'APE', name: 'ApeCoin', decimals: 18 })
-      expect(notATokenResult![0]).not.toBe('0x')
-    })
-
     test('Tokens are fetched only once in a short period of time (20s maxDataAgeMs)', async () => {
       const { controller } = await prepareTest()
 

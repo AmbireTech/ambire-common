@@ -65,6 +65,7 @@ import { Portfolio } from '../../libs/portfolio'
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import { PortfolioDebugFlow } from '../../libs/portfolio/debug'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
+import { getTokenInfo, TokenInfo } from '../../libs/portfolio/getTokenInfo'
 import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
@@ -121,8 +122,6 @@ const TOKEN_PRICE_CACHE_TTL = 5 * 60 * 1000
 export const EXCHANGE_LIST_URL = 'https://cena.ambire.com/api/v3/exchanges'
 const EXCHANGE_LIST_MAX_RETRIES = 5
 const EXCHANGE_LIST_RETRY_DELAY = 10 * 60 * 1000
-// Not an account of the user, so reading tokens with `getTokensInfo` does not link them to one
-const TOKENS_INFO_ACCOUNT_ADDR = '0x0000000000000000000000000000000000000001'
 
 /**
  * Strips the exchange list down to the fields the UI shows, so the rest of the
@@ -1241,12 +1240,19 @@ export class PortfolioController
   }
 
   /**
-   * Reads the name, symbol and decimals of tokens from the chain, for no account in particular
-   * (the balances in the result are meaningless). It is used for tokens that are not in the
-   * portfolio. The latest block is always read, as `getTokenBalancesOnBlock` needs a block tag.
+   * Reads the name, symbol and decimals of a token from the chain, for no account in particular.
+   * It is used for tokens that are not in the portfolio. Returns null if the address is not a token.
    */
-  async getTokensInfo(chainId: bigint, tokenAddrs: string[]): Promise<[TokenError, TokenResult][]> {
-    return this.getTokenBalancesOnBlock(TOKENS_INFO_ACCOUNT_ADDR, chainId, tokenAddrs, 'latest')
+  async getTokenInfo(chainId: bigint, address: string): Promise<TokenInfo | null> {
+    const network = this.#networks.networks.find((x) => x.chainId === chainId)
+
+    if (!network) throw new Error(`Network with chainId ${chainId} not found`)
+
+    const provider = this.#providers.providers[chainId.toString()]
+
+    if (!provider) throw new Error(`Provider for chainId ${chainId} not found`)
+
+    return getTokenInfo({ provider, network, address })
   }
 
   async getTemporaryTokens(accountId: AccountId, chainId: bigint, additionalHint: string) {
