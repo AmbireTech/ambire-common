@@ -4,6 +4,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
+import * as uiHelpers from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -60,6 +61,19 @@ const prepareTest = async () => {
   }
 }
 
+// The picker keeps the `sendUiMessage` it was built with, so the spy goes in before that
+const prepareTestWithUiMessages = async () => {
+  const sendUiMessage = jest.fn()
+  const { mockUiManager } = uiHelpers
+  jest.spyOn(uiHelpers, 'mockUiManager').mockImplementationOnce(() => {
+    const mocked = mockUiManager()
+    mocked.uiManager.message.sendUiMessage = sendUiMessage
+    return mocked
+  })
+
+  return { ...(await prepareTest()), sendUiMessage }
+}
+
 describe('AccountPicker', () => {
   test('should initialize', async () => {
     const { controller } = await prepareTest()
@@ -71,6 +85,8 @@ describe('AccountPicker', () => {
     expect(controller.pageSize).toEqual(DEFAULT_PAGE_SIZE)
     expect(controller.isInitialized).toBeTruthy()
     expect(controller.selectedAccounts.length).toEqual(1)
+    // Selected and prepared for the personalize step, but not added
+    expect(controller.readyToAddAccounts).toHaveLength(1)
     expect(controller.hdPathTemplate).toEqual(hdPathTemplate)
     expect(controller.shouldGetAccountsUsedOnNetworks).toBeFalsy()
     expect(controller.shouldSearchForLinkedAccounts).toBeFalsy()
@@ -95,7 +111,7 @@ describe('AccountPicker', () => {
       await controller.setPage({ page: 1 })
       controller.selectAccount(basicAccount)
       controller.deselectAccount(basicAccount)
-      await controller.addAccounts()
+      controller.prepareSelectedAccounts()
 
       await wait(500) // wait a bit for the errors to be emitted
 
@@ -135,7 +151,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false,
       shouldSearchForLinkedAccounts: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     await controller.setPage({ page: 1 })
@@ -173,7 +189,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false,
       shouldSearchForLinkedAccounts: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
 
@@ -220,7 +236,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false,
       shouldSearchForLinkedAccounts: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     const { restore } = suppressConsole()
@@ -263,7 +279,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false,
       shouldSearchForLinkedAccounts: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
 
@@ -279,6 +295,239 @@ describe('AccountPicker', () => {
     expect(controller.accountsOnPage).toHaveLength(0)
   })
 
+  describe('initIfNotStarted', () => {
+    test('should select and prepare the next account of a picker that was only set up', async () => {
+      const { controller } = await prepareTest()
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      await controller.initIfNotStarted()
+
+      expect(controller.isInitialized).toBe(true)
+      expect(controller.readyToAddAccounts).toHaveLength(1)
+    })
+
+    test('should do nothing without init params', async () => {
+      const { controller } = await prepareTest()
+      const initSpy = jest.spyOn(controller, 'init')
+
+      await controller.initIfNotStarted()
+
+      expect(initSpy).not.toHaveBeenCalled()
+      expect(controller.isInitialized).toBe(false)
+      expect(controller.readyToAddAccounts).toHaveLength(0)
+    })
+
+    test('should keep a started picker as it is, even with nothing prepared', async () => {
+      const { controller } = await prepareTest()
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        shouldSelectNextAccountAutomatically: false,
+        shouldGetAccountsUsedOnNetworks: false,
+        shouldSearchForLinkedAccounts: false
+      })
+      await controller.init()
+      const initSpy = jest.spyOn(controller, 'init')
+
+      await controller.initIfNotStarted()
+
+      expect(initSpy).not.toHaveBeenCalled()
+      expect(controller.isInitialized).toBe(true)
+      expect(controller.readyToAddAccounts).toHaveLength(0)
+    })
+
+    test('should drop the accounts of an abandoned flow when another one is set up', async () => {
+      const { controller } = await prepareTest()
+      const viewOnlyAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      // A view-only flow left without a reset, then a recovery phrase is imported
+      await controller.prepareAccounts({
+        accounts: [{ ...basicAccount, addr: viewOnlyAddr, associatedKeys: [] }]
+      })
+      await controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      await controller.initIfNotStarted()
+
+      expect(controller.readyToAddAccounts.map(({ addr }) => addr)).toEqual([basicAccount.addr])
+    })
+
+    test('should reply with the number of accounts it prepared', async () => {
+      const { controller, sendUiMessage } = await prepareTestWithUiMessages()
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      await controller.initIfNotStarted('request-prepared')
+
+      expect(sendUiMessage).toHaveBeenCalledWith({
+        requestId: 'request-prepared',
+        ok: true,
+        res: 1
+      })
+    })
+
+    test('should reply with the number of accounts a flow prepared already', async () => {
+      const { controller, sendUiMessage } = await prepareTestWithUiMessages()
+      await controller.prepareAccounts({ accounts: [basicAccount] })
+
+      await controller.initIfNotStarted('request-kept')
+
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-kept', ok: true, res: 1 })
+    })
+
+    test('should reply that nothing is prepared without init params', async () => {
+      const { controller, sendUiMessage } = await prepareTestWithUiMessages()
+
+      await controller.initIfNotStarted('request-empty')
+
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-empty', ok: true, res: 0 })
+    })
+
+    test('should list the accounts a flow without a key iterator removes', async () => {
+      const { mainCtrl } = await makeMainController()
+      const controller = mainCtrl.accountPicker
+      // Only accounts in the wallet can be removed, the others are dropped from the list
+      const accountToRemove = {
+        ...basicAccount,
+        addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      }
+      await mainCtrl.accounts.addAccounts([accountToRemove])
+
+      await controller.prepareAccounts({ accounts: [], accountsToRemove: [accountToRemove] })
+
+      expect(controller.readyToAddAccounts).toEqual([])
+      expect(controller.readyToRemoveAccounts).toEqual([accountToRemove])
+    })
+
+    test('should not list the removals of an earlier flow', async () => {
+      const { controller } = await prepareTest()
+      const accountToRemove = {
+        ...basicAccount,
+        addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      }
+      await controller.prepareAccounts({ accounts: [], accountsToRemove: [accountToRemove] })
+
+      await controller.prepareAccounts({ accounts: [basicAccount] })
+
+      expect(controller.readyToRemoveAccounts).toEqual([])
+    })
+
+    test('should keep accounts a flow prepared already', async () => {
+      const { controller } = await prepareTest()
+      await controller.prepareAccounts({ accounts: [basicAccount] })
+      const initSpy = jest.spyOn(controller, 'init')
+
+      await controller.initIfNotStarted()
+
+      expect(initSpy).not.toHaveBeenCalled()
+      expect(controller.readyToAddAccounts).toEqual([basicAccount])
+    })
+  })
+
+  describe('resetAccountsSelection', () => {
+    test('should keep the prepared account selected after leaving the picker to add more', async () => {
+      const { controller } = await prepareTest()
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      await controller.initIfNotStarted()
+      const preparedAddr = controller.readyToAddAccounts[0]!.addr
+
+      // Going back from the picker (opened for more accounts) to the personalize step
+      controller.resetAccountsSelection()
+
+      expect(controller.readyToAddAccounts.map(({ addr }) => addr)).toEqual([preparedAddr])
+      expect(controller.selectedAccounts.map(({ account }) => account.addr)).toContain(preparedAddr)
+    })
+
+    test('should drop the selection changes made since preparing when leaving the picker', async () => {
+      const { controller } = await prepareTest()
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      await controller.initIfNotStarted()
+      await controller.setPage({ page: 1, pageSize: 5 })
+      const prepared = controller.selectedAccounts[0]!.account
+      const another = controller.accountsOnPage.find(
+        ({ account, isLinked }) =>
+          account.addr !== prepared.addr && !isLinked && !isSmartAccount(account)
+      )!.account
+
+      controller.deselectAccount(prepared)
+      controller.selectAccount(another)
+      controller.resetAccountsSelection()
+
+      expect(controller.selectedAccounts.map(({ account }) => account.addr)).toEqual([
+        prepared.addr
+      ])
+    })
+
+    test('should clear the selection when leaving the picker with nothing prepared', async () => {
+      const { controller } = await prepareTest()
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        shouldSelectNextAccountAutomatically: false,
+        shouldGetAccountsUsedOnNetworks: false,
+        shouldSearchForLinkedAccounts: false
+      })
+      await controller.init()
+      await controller.setPage({ page: 1 })
+      controller.selectAccount(controller.accountsOnPage[0]!.account)
+
+      controller.resetAccountsSelection()
+
+      expect(controller.selectedAccounts).toHaveLength(0)
+    })
+  })
+
+  test('should stop preparing the next account automatically when reset mid-selection', async () => {
+    const { controller } = await prepareTest()
+    const keyIterator = new KeyIterator(process.env.SEED)
+    const retrieve = keyIterator.retrieve.bind(keyIterator)
+    let releaseRetrieve: () => void = () => {}
+    const retrieveReleased = new Promise<void>((resolve) => {
+      releaseRetrieve = resolve
+    })
+    let isRetrieveCalled = false
+
+    jest.spyOn(keyIterator, 'retrieve').mockImplementation(async (indices, hdPathTemplate) => {
+      isRetrieveCalled = true
+      await retrieveReleased
+      return retrieve(indices, hdPathTemplate)
+    })
+
+    controller.setInitParams({
+      keyIterator,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: false
+    })
+    const initPromise = controller.init()
+    while (!isRetrieveCalled) await wait(0)
+
+    const resetPromise = controller.reset()
+    releaseRetrieve()
+    await Promise.all([initPromise, resetPromise])
+
+    const notInitializedErrors = controller.emittedErrors.filter(
+      (e) =>
+        e.error.message ===
+        'accountPicker: requested a method of the AccountPicker controller, but the controller was not initialized'
+    )
+    expect(notInitializedErrors).toHaveLength(0)
+    expect(controller.isInitialized).toBe(false)
+    expect(controller.readyToAddAccounts).toHaveLength(0)
+  })
+
   test('should find linked accounts', async () => {
     const { controller } = await prepareTest()
     const keyIterator = new KeyIterator(process.env.SEED)
@@ -287,7 +536,7 @@ describe('AccountPicker', () => {
       pageSize: 3,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     await controller.setPage({ page: 1 })
@@ -322,7 +571,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     await controller.setPage({ page: 1 })
@@ -344,7 +593,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     await controller.setPage({ page: 1 })
@@ -366,7 +615,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     await controller.setPage({ page: 1 })
@@ -388,7 +637,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     await controller.setPage({ page: 1 })
@@ -447,18 +696,18 @@ describe('AccountPicker', () => {
     const initWithPrivateKeys = async (
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
       privateKeys: string | string[],
-      { pageSize, shouldAddNextAccountAutomatically = false } = {} as {
+      { pageSize, shouldSelectNextAccountAutomatically = false } = {} as {
         pageSize?: number
-        shouldAddNextAccountAutomatically?: boolean
+        shouldSelectNextAccountAutomatically?: boolean
       }
     ) => {
-      controller.setInitParams({
+      await controller.setInitParams({
         keyIterator: new KeyIterator(privateKeys),
         pageSize,
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
         shouldGetAccountsUsedOnNetworks: false,
         shouldSearchForLinkedAccounts: false,
-        shouldAddNextAccountAutomatically
+        shouldSelectNextAccountAutomatically
       })
       await controller.init()
     }
@@ -484,43 +733,41 @@ describe('AccountPicker', () => {
       expect(controller.accountsOnPage).toEqual([])
     })
 
-    test('should automatically import every private key from the list', async () => {
+    test('should prepare every private key from the list, and add them all on proceeding', async () => {
       const { mainCtrl, controller } = await prepareTestWithImportedPrivateKeys([])
 
       await initWithPrivateKeys(controller, bulkPrivateKeys, {
-        shouldAddNextAccountAutomatically: true
+        shouldSelectNextAccountAutomatically: true
       })
+      expect(controller.readyToAddAccounts.map((a) => a.addr)).toEqual(bulkAddresses)
+
+      await controller.addPreparedAccounts()
 
       const importedAddresses = mainCtrl.accounts.accounts.map((a) => a.addr)
       expect(importedAddresses).toEqual(expect.arrayContaining(bulkAddresses))
-      expect(controller.addedAccountsFromCurrentSession.map((a) => a.addr)).toEqual(bulkAddresses)
       const keystoreAddresses = mainCtrl.keystore.keys.map((k) => k.addr)
       expect(keystoreAddresses).toEqual(expect.arrayContaining(bulkAddresses))
     })
 
-    test('should automatically import only the private keys that are not imported yet', async () => {
+    test('should prepare only the private keys that are not imported yet', async () => {
       const alreadyImportedPrivateKeys = bulkPrivateKeys.slice(0, 2)
       const { controller } = await prepareTestWithImportedPrivateKeys(alreadyImportedPrivateKeys)
 
       await initWithPrivateKeys(controller, bulkPrivateKeys.slice(0, 4), {
-        shouldAddNextAccountAutomatically: true
+        shouldSelectNextAccountAutomatically: true
       })
 
-      expect(controller.addedAccountsFromCurrentSession.map((a) => a.addr)).toEqual(
-        bulkAddresses.slice(2, 4)
-      )
+      expect(controller.readyToAddAccounts.map((a) => a.addr)).toEqual(bulkAddresses.slice(2, 4))
     })
 
-    test('should automatically import a single private key, as before', async () => {
+    test('should prepare a single private key, as before', async () => {
       const { controller } = await prepareTestWithImportedPrivateKeys([])
 
       await initWithPrivateKeys(controller, bulkPrivateKeys[0]!, {
-        shouldAddNextAccountAutomatically: true
+        shouldSelectNextAccountAutomatically: true
       })
 
-      expect(controller.addedAccountsFromCurrentSession.map((a) => a.addr)).toEqual([
-        bulkAddresses[0]
-      ])
+      expect(controller.readyToAddAccounts.map((a) => a.addr)).toEqual([bulkAddresses[0]])
     })
 
     test('should stop looking for the next account after the last private key when all are imported', async () => {
@@ -552,7 +799,7 @@ describe('AccountPicker', () => {
       pageSize,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
 

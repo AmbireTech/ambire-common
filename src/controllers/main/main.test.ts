@@ -1,15 +1,24 @@
 import { toBeHex, Wallet } from 'ethers'
 
+import { Session } from '@/classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
-import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
+import {
+  BIP44_STANDARD_DERIVATION_TEMPLATE,
+  LEGACY_POPULAR_DERIVATION_TEMPLATE
+} from '@/consts/derivation'
 import { AccountOnchainState } from '@/interfaces/account'
 import { ErrorRef } from '@/interfaces/eventEmitter'
+import { DappConnectRequest, Message, PlainTextMessageUserRequest } from '@/interfaces/userRequest'
+import { isSmartAccount } from '@/libs/account/account'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
+import * as magicLinkLib from '@/libs/magicLink/magicLink'
+import { stringify } from '@/libs/richJson/richJson'
 import wait from '@/utils/wait'
 import { describe, expect, jest, test } from '@jest/globals'
 import { makeMainController } from '@test/helpers/mainController'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { MainController } from './main'
 
 describe('Main Controller ', () => {
@@ -23,6 +32,7 @@ describe('Main Controller ', () => {
           '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
       },
+      initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
         pfp: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
@@ -37,6 +47,7 @@ describe('Main Controller ', () => {
           '0x7f1e7646e4695bead8bb0596679b0caf3a7ff6c4e04d2ad79103c8fa61fb6337f47fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
       },
+      initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
         pfp: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd'
@@ -51,6 +62,7 @@ describe('Main Controller ', () => {
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
       },
+      initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
         pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -87,7 +99,20 @@ describe('Main Controller ', () => {
   // })
 
   test('backup keyStore secret emailVault', async () => {
-    void controller.emailVault?.uploadKeyStoreSecret('unufri@ambire.com')
+    // Nobody confirms the magic link here, and the relayer often refuses to send one because of
+    // its rate limit. Both end in an error that is expected.
+    const { restore } = suppressConsole()
+    const { requestMagicLink } = magicLinkLib
+    let magicLinkAnswered: Promise<unknown> | undefined
+    const magicLinkRequested = new Promise<void>((resolve) => {
+      jest.spyOn(magicLinkLib, 'requestMagicLink').mockImplementation((...args) => {
+        const request = requestMagicLink(...args)
+        magicLinkAnswered = request.catch(() => {})
+        resolve()
+        return request
+      })
+    })
+    const upload = controller.emailVault?.uploadKeyStoreSecret('unufri@ambire.com')
 
     await new Promise((resolve) => {
       if (controller.emailVault) {
@@ -102,6 +127,40 @@ describe('Main Controller ', () => {
     // Assert the emailVault sub-controller is present and its status was updated
     expect(controller.emailVault).not.toBeNull()
     expect(controller.emailVault?.statuses).toBeDefined()
+
+    // Stops the wait for the confirmation, which would otherwise poll for 3 minutes. Only once the
+    // magic link request is answered, as the polling that follows resets the stop.
+    await magicLinkRequested
+    await magicLinkAnswered
+    controller.emailVault?.cancelEmailConfirmation()
+    await upload
+    jest.spyOn(magicLinkLib, 'requestMagicLink').mockRestore()
+    restore()
+  })
+
+  test('does not sign a message that replaced the approved one while its account state loads', async () => {
+    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
+    })
+    const accountAddr = accounts[0]!.addr
+    const approvedMessage: Message = {
+      fromRequestId: 1,
+      content: { kind: 'message', message: '0x74657374' },
+      accountAddr,
+      chainId: 1n,
+      signature: null
+    }
+    mainCtrl.signMessage.messageToSign = approvedMessage
+    delete mainCtrl.accounts.accountStates[accountAddr]
+    jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockImplementation(async () => {
+      mainCtrl.accounts.accountStates[accountAddr] = { '1': {} as AccountOnchainState }
+      mainCtrl.signMessage.messageToSign = { ...approvedMessage, fromRequestId: 2 }
+    })
+    const signSpy = jest.spyOn(mainCtrl.signMessage, 'sign').mockResolvedValue(undefined)
+
+    await mainCtrl.handleSignMessage()
+
+    expect(signSpy).not.toHaveBeenCalled()
   })
 
   test('refreshes Safe transactions once while a manual refresh is in progress', async () => {
@@ -160,6 +219,27 @@ describe('Main Controller ', () => {
       fetchSafeTxnsSpy.mockRestore()
       updateOtherSafesSpy.mockRestore()
       isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('refreshes the selected account when the mobile app gets focus, but not for a popup', async () => {
+    if (!controller.selectedAccount.account)
+      await controller.selectedAccount.select({ account: controller.accounts.accounts[0]! })
+    jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
+    const updateAccountStateSpy = jest
+      .spyOn(controller.accounts, 'updateAccountState')
+      .mockResolvedValue(undefined)
+
+    try {
+      controller.ui.uiEvent.emit('viewFocus', { id: 'focus-popup', type: 'popup' } as any)
+      await wait(0)
+      expect(updateAccountStateSpy).not.toHaveBeenCalled()
+
+      controller.ui.uiEvent.emit('viewFocus', { id: 'focus-mobile', type: 'mobile' } as any)
+      await wait(0)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(controller.selectedAccount.account!.addr)
+    } finally {
+      jest.restoreAllMocks()
     }
   })
 
@@ -327,7 +407,7 @@ describe('Main Controller ', () => {
     controller.accountPicker.setInitParams({
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
 
     await controller.accountPicker.init()
@@ -346,8 +426,290 @@ describe('Main Controller ', () => {
 
     const accToSelect = controller.accountPicker.accountsOnPage[0]!.account
     controller.accountPicker.selectAccount(controller.accountPicker.accountsOnPage[0]!.account)
-    await controller.accountPicker.addAccounts().catch(console.error)
+    controller.accountPicker.prepareSelectedAccounts()
+    await controller.accountPicker.addPreparedAccounts()
     expect(controller.accounts.accounts.map((a) => a.addr)).toContain(accToSelect.addr)
+  })
+
+  describe('account picker: accounts are prepared, then added only on proceeding', () => {
+    const prepareNewSeedFlow = async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+      await mainCtrl.initialLoadPromise
+      await mainCtrl.keystore.addSecret('password', '12345678', '', true)
+      await mainCtrl.accountPickerSetInitParamsFromNewSeed({})
+
+      const snapshot = () => ({
+        accounts: mainCtrl.accounts.accounts.map((account) => account.addr),
+        keys: mainCtrl.keystore.keys.map((key) => `${key.addr}:${key.type}`),
+        seeds: mainCtrl.keystore.seeds.map((seed) => seed.id)
+      })
+
+      return { mainCtrl, picker: mainCtrl.accountPicker, snapshot }
+    }
+
+    test('init selects and prepares the next account, but writes nothing', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+
+      await picker.init()
+
+      expect(picker.readyToAddAccounts).toHaveLength(1)
+      expect(snapshot()).toEqual(before)
+      expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(true)
+    })
+
+    test('adds the prepared account, its key and the new recovery phrase on proceeding', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      await picker.init()
+      const [prepared] = picker.readyToAddAccounts
+
+      await picker.addPreparedAccounts([
+        { addr: prepared!.addr, preferences: { ...prepared!.preferences, label: 'Savings' } }
+      ])
+
+      const after = snapshot()
+      expect(after.accounts).toEqual([...before.accounts, prepared!.addr])
+      expect(after.keys).toHaveLength(before.keys.length + 1)
+      expect(after.seeds).toHaveLength(before.seeds.length + 1)
+      expect(
+        mainCtrl.accounts.accounts.find((a) => a.addr === prepared!.addr)?.preferences.label
+      ).toBe('Savings')
+      // The flow is done
+      expect(picker.isInitialized).toBe(false)
+      expect(picker.readyToAddAccounts).toHaveLength(0)
+    })
+
+    test('going back (reset) writes nothing and drops the generated recovery phrase', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      await picker.init()
+
+      await picker.reset()
+
+      expect(snapshot()).toEqual(before)
+      expect(picker.readyToAddAccounts).toHaveLength(0)
+      expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(false)
+    })
+
+    test('adding more accounts prepares the whole selection again', async () => {
+      const { picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      await picker.init()
+
+      // Back on the picker, a second account is selected and prepared
+      await picker.setPage({ page: 1, pageSize: 5 })
+      const secondAccount = picker.accountsOnPage.find(
+        ({ account, isLinked }) =>
+          !isLinked &&
+          !isSmartAccount(account) &&
+          !picker.readyToAddAccounts.some((prepared) => prepared.addr === account.addr)
+      )!.account
+      picker.selectAccount(secondAccount)
+      picker.prepareSelectedAccounts()
+      expect(picker.readyToAddAccounts).toHaveLength(2)
+
+      await picker.addPreparedAccounts()
+      expect(snapshot().accounts).toHaveLength(before.accounts.length + 2)
+    })
+
+    test('adds the accounts prepared by a flow without keys (view-only)', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      const viewOnlyAccount = {
+        addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        associatedKeys: [],
+        initialPrivileges: [],
+        creation: null,
+        preferences: { label: 'Watched', pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' }
+      }
+
+      await picker.prepareAccounts({ accounts: [viewOnlyAccount] })
+      expect(picker.readyToAddAccounts).toEqual([viewOnlyAccount])
+      // The new recovery phrase of the abandoned flow went with the reset
+      expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(false)
+      expect(snapshot()).toEqual(before)
+
+      await picker.addPreparedAccounts()
+      expect(snapshot().accounts).toContain(viewOnlyAccount.addr)
+      expect(snapshot().keys).toEqual(before.keys)
+    })
+
+    test('adds the key of the prepared account after another derivation path was browsed', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      await picker.init()
+      const [prepared] = picker.readyToAddAccounts
+
+      // "Add more" - the picker switches the derivation path, then the user goes back
+      await picker.setHDPathTemplateAndPage({
+        hdPathTemplate: LEGACY_POPULAR_DERIVATION_TEMPLATE,
+        page: 2
+      })
+      picker.resetAccountsSelection()
+      await picker.addPreparedAccounts()
+
+      const keyAddrs = mainCtrl.keystore.keys.map((key) => key.addr)
+      expect(prepared!.associatedKeys.some((addr) => keyAddrs.includes(addr))).toBe(true)
+    })
+
+    test('adds the key of the prepared account on its own path, even while the picker is on another', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      await picker.init()
+      const [prepared] = picker.readyToAddAccounts
+
+      // Added while the picker still shows another derivation path (no going back first)
+      await picker.setHDPathTemplateAndPage({
+        hdPathTemplate: LEGACY_POPULAR_DERIVATION_TEMPLATE,
+        page: 2
+      })
+      await picker.addPreparedAccounts()
+
+      const keyAddrs = mainCtrl.keystore.keys.map((key) => key.addr)
+      expect(prepared!.associatedKeys.some((addr) => keyAddrs.includes(addr))).toBe(true)
+      const newSeed = mainCtrl.keystore.seeds.find(({ id }) => !before.seeds.includes(id))
+      expect(newSeed?.hdPathTemplate).toBe(BIP44_STANDARD_DERIVATION_TEMPLATE)
+    })
+
+    test('a flow set up over an abandoned one prepares its own accounts', async () => {
+      const { picker } = await prepareNewSeedFlow()
+      await picker.init()
+      const [abandoned] = picker.readyToAddAccounts
+      // Going back was missed (no reset), then a recovery phrase is imported
+      const keyIterator = new KeyIterator(process.env.SEED)
+      await picker.setInitParams({
+        keyIterator,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      await picker.initIfNotStarted()
+
+      expect(picker.keyIterator).toBe(keyIterator)
+      expect(picker.readyToAddAccounts.map(({ addr }) => addr)).not.toContain(abandoned!.addr)
+    })
+
+    test('keeps a re-entered recovery phrase when its abandoned flow was not reset', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      await picker.reset()
+      const enterPhrase = async () => {
+        await mainCtrl.keystore.addTempSeed({
+          seed: process.env.SEED!,
+          seedPassphrase: null,
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+        })
+        await picker.setInitParams({
+          keyIterator: new KeyIterator(process.env.SEED),
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+        })
+        await picker.initIfNotStarted()
+      }
+
+      await enterPhrase()
+      await enterPhrase()
+
+      expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(true)
+    })
+
+    test('never sends the private keys of the prepared accounts to the UI', async () => {
+      const { picker } = await prepareNewSeedFlow()
+      await picker.init()
+      const privateKeys = picker
+        .retrieveInternalKeysOfSelectedAccounts()
+        .map((key) => key.privateKey)
+      expect(privateKeys.length).toBeGreaterThan(0)
+
+      // Every state the UI receives, while prepared and while being added
+      const serializedStates = [stringify(picker.toJSON())]
+      const unsubscribe = picker.onUpdate(() => serializedStates.push(stringify(picker.toJSON())))
+      await picker.addPreparedAccounts()
+      unsubscribe()
+
+      serializedStates.forEach((serializedState) =>
+        privateKeys.forEach((privateKey) => expect(serializedState).not.toContain(privateKey))
+      )
+    })
+  })
+
+  describe('accountPickerSetInitParamsFromNewSeed', () => {
+    test('prepares the account picker with a new seed and replies to the UI request', async () => {
+      const { mainCtrl } = await makeMainController()
+      await mainCtrl.initialLoadPromise
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+
+      await mainCtrl.accountPickerSetInitParamsFromNewSeed({}, 'request-1')
+
+      expect(mainCtrl.accountPicker.initParams?.keyIterator?.subType).toBe('seed')
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-1', ok: true })
+    })
+
+    test('replies with an error when the call is refused', async () => {
+      const { mainCtrl } = await makeMainController()
+      await mainCtrl.initialLoadPromise
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+      // A previous call that is still running makes `withStatus` refuse this one. The
+      // statuses object is shared between instances, so it is restored for the next test.
+      mainCtrl.statuses.accountPickerSetInitParamsFromNewSeed = 'LOADING'
+      try {
+        await mainCtrl.accountPickerSetInitParamsFromNewSeed({}, 'request-2')
+      } finally {
+        mainCtrl.statuses.accountPickerSetInitParamsFromNewSeed = 'INITIAL'
+      }
+
+      expect(mainCtrl.accountPicker.initParams).toBeNull()
+      expect(sendUiMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: 'request-2', ok: false })
+      )
+    })
+
+    test('does not reply without a request id', async () => {
+      const { mainCtrl } = await makeMainController()
+      await mainCtrl.initialLoadPromise
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+
+      await mainCtrl.accountPickerSetInitParamsFromNewSeed({})
+
+      expect(mainCtrl.accountPicker.initParams).not.toBeNull()
+      expect(sendUiMessage).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('hardware wallet account picker set up', () => {
+    // The key iterator is environment specific, the picker only keeps it
+    class FakeTrezorKeyIterator {
+      type = 'trezor'
+
+      subType = 'hw'
+    }
+
+    test('sets the picker up and replies to the UI request', async () => {
+      const { mainCtrl } = await makeMainController(undefined, {
+        overrides: { externalSignerControllers: { trezor: { walletSDK: {} } as any } }
+      })
+      await mainCtrl.initialLoadPromise
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+
+      await mainCtrl.handleAccountPickerInitTrezor(FakeTrezorKeyIterator, 'request-hw-1')
+
+      expect(mainCtrl.accountPicker.initParams?.keyIterator).toBeInstanceOf(FakeTrezorKeyIterator)
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-hw-1', ok: true })
+    })
+
+    test('replies with an error when the wallet cannot be set up', async () => {
+      // No Trezor signer in this environment, so setting it up throws
+      const { mainCtrl } = await makeMainController()
+      await mainCtrl.initialLoadPromise
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+
+      await mainCtrl.handleAccountPickerInitTrezor(FakeTrezorKeyIterator, 'request-hw-2')
+
+      expect(mainCtrl.accountPicker.initParams).toBeNull()
+      expect(sendUiMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: 'request-hw-2', ok: false })
+      )
+      expect(mainCtrl.statuses.handleAccountPickerInitTrezor).toBe('INITIAL')
+    })
   })
 
   test('should add accounts and merge the associated keys of the already added accounts', async () => {
@@ -408,7 +770,7 @@ describe('Main Controller ', () => {
       unsubscribe()
       const initParams = setInitParamsSpy.mock.calls[0]?.[0]
       setInitParamsSpy.mockRestore()
-      controller.accountPicker.setInitParams({
+      await controller.accountPicker.setInitParams({
         keyIterator: null,
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
       })
@@ -463,6 +825,7 @@ describe('Main Controller ', () => {
     })
 
     test('rejects more private keys than the maximum', async () => {
+      const { restore } = suppressConsole()
       const privateKeys = Array.from({ length: MAX_BULK_PRIVATE_KEYS + 1 }, (_, i) =>
         toPrivateKey(i + 1)
       )
@@ -475,18 +838,22 @@ describe('Main Controller ', () => {
         `You can import up to ${MAX_BULK_PRIVATE_KEYS} private keys at once. Please remove some and try again.`
       )
       expect(emittedErrors[0]!.level).toBe('major')
+      restore()
     })
 
     test('rejects an empty list', async () => {
+      const { restore } = suppressConsole()
       const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([])
 
       expect(initParams).toBeUndefined()
       expect(emittedErrors.map((e) => e.message)).toEqual([
         'Please enter at least one private key.'
       ])
+      restore()
     })
 
     test('rejects the whole list if any private key is invalid, without exposing the keys', async () => {
+      const { restore } = suppressConsole()
       const validPrivateKey = toPrivateKey(1)
       const invalidPrivateKey = `${toPrivateKey(2).slice(0, -1)}z`
 
@@ -503,9 +870,11 @@ describe('Main Controller ', () => {
       const reportedError = `${emittedErrors[0]!.message} ${emittedErrors[0]!.error?.message}`
       expect(reportedError).not.toContain(validPrivateKey.slice(2))
       expect(reportedError).not.toContain(invalidPrivateKey.slice(2))
+      restore()
     })
 
     test('rejects a recovery phrase passed as one of the private keys', async () => {
+      const { restore } = suppressConsole()
       const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([
         toPrivateKey(1),
         process.env.SEED!
@@ -514,6 +883,7 @@ describe('Main Controller ', () => {
       expect(initParams).toBeUndefined()
       expect(emittedErrors).toHaveLength(1)
       expect(emittedErrors[0]!.error?.message).not.toContain(process.env.SEED!)
+      restore()
     })
   })
 
@@ -926,6 +1296,107 @@ describe('Main Controller ', () => {
       )
     })
 
+    test('waits for the RPC to reach the confirmed block before the sender and the recipients are refreshed', async () => {
+      const mainCtrl = await setupController()
+
+      const confirmedAccountOp = {
+        id: 'confirmed-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        blockNumber: 123,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: { [recipientAccount]: [1n] },
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [confirmedAccountOp]
+        }
+      })
+      // The RPC is one block behind, then fails once on a node of its load balancer
+      const getBlockNumberSpy = jest
+        .spyOn(mainCtrl.providers.providers['1']!, 'getBlockNumber')
+        .mockResolvedValueOnce(122)
+        .mockRejectedValueOnce(new Error('rpc node down'))
+        .mockResolvedValue(123)
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+      const blockNumberReadsBeforeRefresh: number[] = []
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockImplementation(async () => {
+          blockNumberReadsBeforeRefresh.push(getBlockNumberSpy.mock.calls.length)
+        })
+      jest.spyOn(mainCtrl.portfolio, 'scheduleUpdate').mockImplementation(() => {})
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+      const updateSelectedAccountSpy = jest
+        .spyOn(mainCtrl.portfolio, 'updateSelectedAccount')
+        .mockResolvedValue(undefined)
+
+      try {
+        await mainCtrl.updateAccountsOpsStatuses()
+        // The reads are 250ms and then 500ms apart
+        await wait(1000)
+        await flushAsyncUpdates()
+
+        expect(blockNumberReadsBeforeRefresh).toEqual([3, 3])
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(recipientAccount, 'latest', [1n], true)
+        expect(discardSimulationSpy).toHaveBeenCalledWith([confirmedAccountOp])
+        expect(updateSelectedAccountSpy).toHaveBeenCalledWith(
+          recipientAccount,
+          expect.arrayContaining([expect.objectContaining({ chainId: 1n })])
+        )
+      } finally {
+        consoleErrorSpy.mockRestore()
+      }
+    })
+
+    test('reports a failed refresh instead of leaving an unhandled rejection', async () => {
+      const mainCtrl = await setupController()
+      const confirmedAccountOp = {
+        id: 'confirmed-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        blockNumber: 123,
+        calls: []
+      } as any
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [confirmedAccountOp]
+        }
+      })
+      jest.spyOn(mainCtrl.providers.providers['1']!, 'getBlockNumber').mockResolvedValue(123)
+      jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockRejectedValue(new Error('rpc down'))
+      const errors: string[] = []
+      mainCtrl.onError((error) => errors.push(error.message))
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(
+        errors.some((message) => message.includes('after its transactions were confirmed'))
+      ).toBe(true)
+    })
+
     test('should update account state and discard simulation even when selected account is different', async () => {
       const mainCtrl = await setupController()
 
@@ -1072,6 +1543,101 @@ describe('Main Controller ', () => {
       )
     })
   })
+
+  describe('selectAccount while a request is open', () => {
+    const session = new Session({ tabId: 1, url: 'https://test-dApp.com' })
+    const [fromAccount, toAccount] = accounts
+
+    const prepareSwitchTest = async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set(
+          'accounts',
+          accounts.map((acc) => ({
+            ...acc,
+            initialPrivileges: [],
+            preferences: { label: '', pfp: '' }
+          }))
+        )
+        await storageCtrl.set('selectedAccount', fromAccount!.addr)
+      })
+      return mainCtrl
+    }
+
+    const makeConnectRequest = (reject: (err: any) => void): DappConnectRequest => ({
+      id: 'connect-request',
+      kind: 'dappConnect',
+      meta: {},
+      dappPromises: [{ id: 'connect-request', resolve: () => {}, reject, session, meta: {} }]
+    })
+
+    const makeMessageRequest = (
+      id: string,
+      accountAddr: string,
+      reject: (err: any) => void
+    ): PlainTextMessageUserRequest => ({
+      id,
+      kind: 'message',
+      meta: { params: { message: '0x48656c6c6f' }, accountAddr, chainId: 1n },
+      dappPromises: [{ id, resolve: () => {}, reject, session, meta: {} }]
+    })
+
+    test('keeps the connect request open for the newly selected account', async () => {
+      const mainCtrl = await prepareSwitchTest()
+      const connectReject = jest.fn()
+      await mainCtrl.requests.addUserRequests([makeConnectRequest(connectReject)])
+      const windowId = mainCtrl.requests.requestWindow.windowProps?.id
+      expect(windowId).toBeDefined()
+
+      await mainCtrl.selectAccount(toAccount!.addr)
+
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(toAccount!.addr)
+      expect(connectReject).not.toHaveBeenCalled()
+      expect(mainCtrl.requests.currentUserRequest?.id).toBe('connect-request')
+      expect(mainCtrl.requests.visibleUserRequests.map((r) => r.id)).toEqual(['connect-request'])
+      expect(mainCtrl.requests.requestWindow.windowProps?.id).toBe(windowId)
+    })
+
+    test('still rejects a message request of the previous account', async () => {
+      const mainCtrl = await prepareSwitchTest()
+      const messageReject = jest.fn()
+      await mainCtrl.requests.addUserRequests([
+        makeMessageRequest('message-request', fromAccount!.addr, messageReject)
+      ])
+      expect(mainCtrl.requests.currentUserRequest?.id).toBe('message-request')
+
+      await mainCtrl.selectAccount(toAccount!.addr)
+
+      expect(messageReject).toHaveBeenCalledTimes(1)
+      expect(mainCtrl.requests.userRequests).toHaveLength(0)
+      expect(mainCtrl.requests.requestWindow.windowProps).toBe(null)
+    })
+
+    test('keeps a message of the previous account queued behind the connect request', async () => {
+      const mainCtrl = await prepareSwitchTest()
+      const connectReject = jest.fn()
+      const messageReject = jest.fn()
+      await mainCtrl.requests.addUserRequests([
+        makeConnectRequest(connectReject),
+        makeMessageRequest('message-request', fromAccount!.addr, messageReject)
+      ])
+      expect(mainCtrl.requests.currentUserRequest?.id).toBe('connect-request')
+
+      await mainCtrl.selectAccount(toAccount!.addr)
+
+      expect(connectReject).not.toHaveBeenCalled()
+      expect(messageReject).not.toHaveBeenCalled()
+      // The message belongs to the previous account, so it is hidden until it is selected again
+      expect(mainCtrl.requests.visibleUserRequests.map((r) => r.id)).toEqual(['connect-request'])
+
+      await mainCtrl.selectAccount(fromAccount!.addr)
+
+      expect(mainCtrl.requests.visibleUserRequests.map((r) => r.id)).toEqual([
+        'connect-request',
+        'message-request'
+      ])
+    })
+  })
+
   describe('commonHandlerForBroadcastSuccess for swaps', () => {
     const SIGNED_ROUTE_ID = 'signed-route'
     const TXN_ID = '0x8d94395e374c50feaaf22f940a18b85717609c667e9ff45368c45b3f2ee1b06f'

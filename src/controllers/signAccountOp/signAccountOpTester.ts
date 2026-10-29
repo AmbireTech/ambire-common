@@ -1,3 +1,5 @@
+import { TxnReplacement } from '@/controllers/signAccountOp/txnReplacement'
+
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IContractInfoController } from '../../interfaces/contractInfo'
@@ -52,11 +54,11 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     fromRequestId: UserRequest['id']
     accountOp: AccountOp
     shouldSimulate: boolean
-    traceCall?: Function
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
     onPartialBroadcast?: OnPartialBroadcast
+    replacement?: TxnReplacement
     estimateController: EstimationController
     gasPriceController: GasPriceController
     phishing: IPhishingController

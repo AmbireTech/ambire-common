@@ -95,7 +95,13 @@ function makeController(
     Object.assign(selectedAccount, { initialLoadPromise: Promise.resolve() }) as any, // same ref, so a test can switch account
     providers,
     { networks: [{ chainId: 1n }] } as any,
-    { addTokensToBeLearned: () => {}, addErc721sToBeLearned: () => {} } as any,
+    {
+      addTokensToBeLearned: () => {},
+      addErc721sToBeLearned: () => {},
+      // A confirmed transaction starts a balance changes backfill, which reads the balances
+      getTokenBalancesOnBlock: async (_accountId: string, _chainId: bigint, tokenAddrs: string[]) =>
+        tokenAddrs.map((address) => ['0x', { address, symbol: 'TKN', amount: 0n }])
+    } as any,
     {} as any,
     { isFeatureEnabled: () => undefined } as any, // featureFlags
     async () => {},
@@ -405,5 +411,76 @@ describe('repeated page reads [idb]', () => {
 
     expect(recentReads).not.toHaveBeenCalled()
     expect(counts).not.toHaveBeenCalled()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regression: a transaction and its speed up are merged into one row after a page's worth of
+// ops is loaded, so the page came out short and the next page, which starts where a full page
+// would end, skipped the rows in between
+// ─────────────────────────────────────────────────────────────────────────────
+describe.each(BACKENDS)('pages with sped up transactions [%s]', (backend) => {
+  const PAGE_SIZE = 10
+  const OPS_COUNT = 40
+  // Index pairs (newer first) of a speed up and the transaction it replaced. One is in the
+  // startup window and two are beyond it, so the later pages have to load more to fill up
+  const REPLACED_PAIRS: [number, number][] = [
+    [3, 4],
+    [19, 20],
+    [27, 28]
+  ]
+
+  const buildHistory = () => {
+    const replacedIndexes = new Set(REPLACED_PAIRS.map(([, replaced]) => replaced))
+    const nonceByIndex = new Map<number, bigint>()
+    REPLACED_PAIRS.forEach(([speedUp, replaced], pairIndex) => {
+      nonceByIndex.set(speedUp, BigInt(1000 + pairIndex))
+      nonceByIndex.set(replaced, BigInt(1000 + pairIndex))
+    })
+
+    const ops = Array.from({ length: OPS_COUNT }, (_, i) =>
+      makeOp(ACC_A, `op${i}`, 5000 - i, {
+        // Every op gets its own nonce, except the pairs, which share one
+        eoaNonce: nonceByIndex.get(i) ?? BigInt(i),
+        gasFeePayment: {
+          paidBy: ACC_A,
+          isGasTank: false,
+          inToken: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          simulatedGasLimit: 1n,
+          gasPrice: 1n
+        },
+        status: replacedIndexes.has(i)
+          ? AccountOpStatus.UnknownButPastNonce
+          : AccountOpStatus.Success
+      })
+    )
+    const expectedIds = ops.filter((_, i) => !replacedIndexes.has(i)).map(({ id }) => id)
+
+    return { ops, expectedIds }
+  }
+
+  test('every transaction shows up exactly once and only the last page is short', async () => {
+    const { ops, expectedIds } = buildHistory()
+    await seedLegacyOps({ [ACC_A]: { '1': ops } })
+    const controller = makeController(backend, { selectedAccount: { account: { addr: ACC_A } } })
+    await awaitLoad(controller)
+
+    const shownIds: string[] = []
+    const pageSizes: number[] = []
+    const pagesCount = Math.ceil(expectedIds.length / PAGE_SIZE)
+    for (let fromPage = 0; fromPage < pagesCount; fromPage++) {
+      await controller.filterAccountsOps(
+        's1',
+        { account: ACC_A, chainId: 1n },
+        { fromPage, itemsPerPage: PAGE_SIZE }
+      )
+      const { items } = controller.accountsOps.s1!.result
+      pageSizes.push(items.length)
+      shownIds.push(...items.map(({ id }) => id))
+    }
+
+    expect(shownIds).toEqual(expectedIds)
+    expect(pageSizes.slice(0, -1).every((size) => size === PAGE_SIZE)).toBe(true)
   })
 })

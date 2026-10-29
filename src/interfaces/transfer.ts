@@ -7,8 +7,22 @@ export type ITransferController = ControllerInterface<
   InstanceType<typeof import('../controllers/transfer/transfer').TransferController>
 >
 
+/**
+ * An NFT (ERC-721) picked for sending in the transfer form. While it is set, the form
+ * sends this NFT instead of a token, so there is no amount to enter.
+ */
+export type TransferNft = {
+  /** The address of the NFT collection (contract) */
+  address: string
+  chainId: bigint
+  tokenId: bigint
+  /** The name of the collection, used to show the user what is being sent */
+  collectionName: string
+}
+
 export interface TransferUpdate {
   humanizerInfo?: HumanizerMeta
+  /** Selecting a token switches the form out of NFT mode, if it was in it */
   selectedToken?: TokenResult
   amount?: string
   shouldSetMaxAmount?: boolean

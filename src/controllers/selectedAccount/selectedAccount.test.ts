@@ -1,5 +1,6 @@
 import { expect } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
@@ -385,12 +386,14 @@ describe('SelectedAccount Controller', () => {
     })
 
     it('does not select a Privacy Pools account that does not exist', async () => {
+      const { restore } = suppressConsole()
       const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest()
 
       await mainCtrl.selectPrivacyPoolsAccount('unknown-seed')
 
       expect(selectedAccountCtrl.account?.addr).toBe(accounts[0]!.addr)
       expect(selectedAccountCtrl.privacyPoolsAccountId).toBeNull()
+      restore()
     })
 
     it('is restored as selected on the next start', async () => {

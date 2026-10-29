@@ -4,6 +4,7 @@ import fetch from 'node-fetch'
 import { generateUuid } from '@/utils/uuid'
 import { describe, expect } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks as predefinedNetworks } from '../../consts/networks'
@@ -11,6 +12,8 @@ import { IMainController } from '../../interfaces/main'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import * as submittedAccountOp from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
+import { TokenError, TokenResult } from '../../libs/portfolio/interfaces'
 import { ActivityController } from './activity'
 import { SignedMessage } from './types'
 
@@ -113,6 +116,20 @@ let mainCtrl: IMainController
 let storageCtrl: IStorageController
 let storage: Storage
 
+/**
+ * Returns a zero balance for every token asked for, on any block, so a confirmed transaction can
+ * work out its balance changes.
+ */
+const mockTokenBalancesOnBlock = () =>
+  jest
+    .spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock')
+    .mockImplementation(async (_accountId, _chainId, tokenAddrs) =>
+      tokenAddrs.map((address): [TokenError, TokenResult] => [
+        '0x',
+        { address, symbol: 'TKN', amount: 0n } as TokenResult
+      ])
+    )
+
 const buildMockReceipt = (overrides: Partial<any> = {}) =>
   ({
     status: 1,
@@ -164,6 +181,12 @@ describe('Activity Controller ', () => {
       )
     }))
     await mainCtrl.selectedAccount.select({ account: ACCOUNTS[1]! })
+  })
+
+  // Confirmed transactions work out their balance changes in the background. Against the live
+  // RPCs that work can outlast its test and fail in a later one, so every test gets zero balances.
+  beforeEach(() => {
+    mockTokenBalancesOnBlock()
   })
 
   // Clear activity storage after each test
@@ -616,7 +639,6 @@ describe('Activity Controller ', () => {
       jest
         .spyOn(provider, 'getTransactionReceipt')
         .mockImplementation(async () => buildMockReceipt({ status: 1 }))
-      jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([])
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -815,6 +837,7 @@ describe('Activity Controller ', () => {
     })
 
     test('expires unresolved account ops only after 30 minutes', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest()
       const provider = mainCtrl.providers.providers['1']!
       jest
@@ -841,6 +864,7 @@ describe('Activity Controller ', () => {
       expect(accountOps.find(({ id }) => id === expiredAccountOp.id)?.status).toBe(
         AccountOpStatus.BroadcastButStuck
       )
+      restore()
     })
 
     test('expires an old transaction that remains pending without a receipt', async () => {
@@ -876,6 +900,7 @@ describe('Activity Controller ', () => {
     })
 
     test('checks old pending account ops even when 50 newer operations are finalized', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest()
       const provider = mainCtrl.providers.providers['1']!
       jest
@@ -904,9 +929,11 @@ describe('Activity Controller ', () => {
       expect(accountOps.find(({ id }) => id === expiredAccountOp.id)?.status).toBe(
         AccountOpStatus.BroadcastButStuck
       )
+      restore()
     })
 
     test('expires every unresolved call in an old multiple-transaction account op', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest()
       const provider = mainCtrl.providers.providers['1']!
       jest
@@ -943,6 +970,7 @@ describe('Activity Controller ', () => {
         AccountOpStatus.BroadcastButStuck,
         AccountOpStatus.BroadcastButStuck
       ])
+      restore()
     })
 
     describe('Replaced by fee (same eoaNonce as a confirmed op)', () => {
@@ -968,7 +996,6 @@ describe('Activity Controller ', () => {
           .mockImplementation(async (txnId: string) =>
             txnIdsInMempool.includes(txnId) ? ({ hash: txnId } as any) : null
           )
-        jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([])
 
         const previousOp = buildSubmittedAccountOp({
           status: AccountOpStatus.Success,
@@ -1074,6 +1101,292 @@ describe('Activity Controller ', () => {
         const { pendingOp } = await pollStatuses()
 
         expect(pendingOp?.status).toBe(AccountOpStatus.Failure)
+      })
+    })
+
+    describe('Replaced by a txn the wallet did not record under this account', () => {
+      const PENDING_TXN_ID = `0x${'cc'.repeat(32)}`
+      const PAYER_ADDR = '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'
+      const PAYER_NONCE = 5n
+      const ACCOUNT_NONCE = 225n
+
+      const setupOp = async ({
+        broadcastOption = BROADCAST_OPTIONS.byOtherEOA,
+        payerTxnCount = Number(PAYER_NONCE),
+        accountNonce = ACCOUNT_NONCE as bigint | null,
+        receipts = [null] as any[],
+        isInMempool = false
+      }: {
+        broadcastOption?: string
+        /** What the RPC counts for the payer on the latest block */
+        payerTxnCount?: number
+        /** What the chain counts for the account, or null when it can't be read */
+        accountNonce?: bigint | null
+        /** The answers to successive receipt lookups, the last one repeats */
+        receipts?: any[]
+        isInMempool?: boolean
+      } = {}) => {
+        const { controller } = await prepareTest()
+        const provider = mainCtrl.providers.providers['1']!
+        const receiptLookup = jest.spyOn(provider, 'getTransactionReceipt')
+        receipts.forEach((receipt, i) => {
+          if (i < receipts.length - 1) receiptLookup.mockResolvedValueOnce(receipt)
+          else receiptLookup.mockResolvedValue(receipt)
+        })
+        jest
+          .spyOn(provider, 'getTransaction')
+          .mockResolvedValue(isInMempool ? ({ hash: PENDING_TXN_ID } as any) : null)
+        const payerTxnCountLookup = jest
+          .spyOn(provider, 'getTransactionCount')
+          .mockResolvedValue(payerTxnCount)
+        const accountNonceLookup = jest
+          .spyOn(mainCtrl.accounts, 'getLatestAccountNonce')
+          .mockResolvedValue(accountNonce)
+        jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([])
+
+        const pendingOp = buildSubmittedAccountOp({
+          eoaNonce: PAYER_NONCE,
+          nonce: ACCOUNT_NONCE,
+          txnId: PENDING_TXN_ID,
+          identifiedBy: { type: 'Transaction', identifier: PENDING_TXN_ID },
+          gasFeePayment: {
+            ...SUBMITTED_ACCOUNT_OP.gasFeePayment!,
+            paidBy: PAYER_ADDR,
+            broadcastOption
+          }
+        })
+        await controller.addAccountOp(pendingOp)
+
+        const pollStatuses = async () => {
+          await controller.updateAccountsOpsStatuses([pendingOp.accountAddr])
+          return controller
+            .getAccountOpsForAccount({ accountAddr: pendingOp.accountAddr })
+            .find(({ id }) => id === pendingOp.id)
+        }
+
+        return { pollStatuses, payerTxnCountLookup, accountNonceLookup, provider }
+      }
+
+      test('an op paid by an EOA is replaced when that EOA sends another txn at its nonce', async () => {
+        // e.g. the EOA sent a Replace from its own account, so the account has no op for it
+        const { pollStatuses, payerTxnCountLookup } = await setupOp({
+          payerTxnCount: Number(PAYER_NONCE) + 1
+        })
+
+        const op = await pollStatuses()
+
+        expect(payerTxnCountLookup).toHaveBeenCalledWith(PAYER_ADDR, 'latest')
+        expect(op?.status).toBe(AccountOpStatus.UnknownButPastNonce)
+      })
+
+      test('an op is replaced when the chain used its account nonce, e.g. from another device', async () => {
+        const { pollStatuses } = await setupOp({ accountNonce: ACCOUNT_NONCE + 1n })
+
+        const op = await pollStatuses()
+
+        expect(op?.status).toBe(AccountOpStatus.UnknownButPastNonce)
+      })
+
+      test('an op stays pending while the chain has not used its nonces yet', async () => {
+        const { pollStatuses, accountNonceLookup } = await setupOp()
+
+        const op = await pollStatuses()
+
+        expect(accountNonceLookup).toHaveBeenCalled()
+        expect(op?.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+      })
+
+      test('an op stays pending when the account nonce can not be read', async () => {
+        const { pollStatuses } = await setupOp({ accountNonce: null })
+
+        const op = await pollStatuses()
+
+        expect(op?.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+      })
+
+      test('an op stays pending when the txn count of its payer can not be read', async () => {
+        const { pollStatuses, payerTxnCountLookup } = await setupOp({
+          accountNonce: ACCOUNT_NONCE + 1n
+        })
+        payerTxnCountLookup.mockRejectedValue(new Error('RPC is down'))
+
+        const op = await pollStatuses()
+
+        expect(op?.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+      })
+
+      test('an op with a receipt is Success and the nonces are not read', async () => {
+        const { pollStatuses, payerTxnCountLookup, accountNonceLookup } = await setupOp({
+          payerTxnCount: Number(PAYER_NONCE) + 1,
+          accountNonce: ACCOUNT_NONCE + 1n,
+          receipts: [buildMockReceipt()]
+        })
+
+        const op = await pollStatuses()
+
+        expect(op?.status).toBe(AccountOpStatus.Success)
+        expect(payerTxnCountLookup).not.toHaveBeenCalled()
+        expect(accountNonceLookup).not.toHaveBeenCalled()
+      })
+
+      test('an op mined while its nonces were read is not marked as replaced', async () => {
+        // The nonce is counted because the op itself was mined, so it is not replaced
+        const { pollStatuses } = await setupOp({
+          payerTxnCount: Number(PAYER_NONCE) + 1,
+          receipts: [null, buildMockReceipt()]
+        })
+
+        const op = await pollStatuses()
+
+        expect(op?.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+      })
+
+      test('an op still in the mempool does not read the nonces', async () => {
+        const { pollStatuses, payerTxnCountLookup, accountNonceLookup } = await setupOp({
+          payerTxnCount: Number(PAYER_NONCE) + 1,
+          accountNonce: ACCOUNT_NONCE + 1n,
+          isInMempool: true
+        })
+
+        const op = await pollStatuses()
+
+        expect(op?.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+        expect(payerTxnCountLookup).not.toHaveBeenCalled()
+        expect(accountNonceLookup).not.toHaveBeenCalled()
+      })
+
+      test('an op sent by a bundler does not use the nonces of the wallet', async () => {
+        const { pollStatuses, payerTxnCountLookup, accountNonceLookup } = await setupOp({
+          broadcastOption: BROADCAST_OPTIONS.byBundler,
+          payerTxnCount: Number(PAYER_NONCE) + 1,
+          accountNonce: ACCOUNT_NONCE + 1n
+        })
+
+        const op = await pollStatuses()
+
+        expect(op?.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+        expect(payerTxnCountLookup).not.toHaveBeenCalled()
+        expect(accountNonceLookup).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('Pending for more than 30 minutes', () => {
+      const PENDING_TXN_ID = `0x${'dd'.repeat(32)}` as const
+      const PENDING_FOR_MS = 31 * 60 * 1000
+
+      const setupOldOp = async ({
+        broadcastOption = BROADCAST_OPTIONS.bySelf,
+        isInMempool,
+        identifiedBy = { type: 'Transaction', identifier: PENDING_TXN_ID },
+        calls
+      }: {
+        broadcastOption?: string
+        isInMempool: boolean
+        identifiedBy?: submittedAccountOp.SubmittedAccountOp['identifiedBy']
+        calls?: submittedAccountOp.SubmittedAccountOp['calls']
+      }) => {
+        const { controller } = await prepareTest()
+        const provider = mainCtrl.providers.providers['1']!
+        jest.spyOn(provider, 'getTransactionReceipt').mockResolvedValue(null)
+        jest
+          .spyOn(provider, 'getTransaction')
+          .mockResolvedValue(isInMempool ? ({ hash: PENDING_TXN_ID } as any) : null)
+        jest.spyOn(provider, 'getTransactionCount').mockResolvedValue(0)
+        jest.spyOn(mainCtrl.accounts, 'getLatestAccountNonce').mockResolvedValue(0n)
+
+        const accountOp = buildSubmittedAccountOp({
+          eoaNonce: 5n,
+          txnId: PENDING_TXN_ID,
+          identifiedBy,
+          timestamp: Date.now() - PENDING_FOR_MS,
+          gasFeePayment: { ...SUBMITTED_ACCOUNT_OP.gasFeePayment!, broadcastOption },
+          ...(calls && { calls })
+        })
+        await controller.addAccountOp(accountOp)
+
+        const pollStatuses = async () => {
+          await controller.updateAccountsOpsStatuses([accountOp.accountAddr])
+          return controller.getAccountOpsForAccount({ accountAddr: accountOp.accountAddr })[0]!
+        }
+
+        return { pollStatuses, controller, provider, accountOp }
+      }
+
+      test('a txn the account sent stays pending while it is in the mempool', async () => {
+        const { pollStatuses } = await setupOldOp({ isInMempool: true })
+
+        const op = await pollStatuses()
+
+        expect(op.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+      })
+
+      test('a txn the account sent is stuck once it is gone from the mempool and not mined', async () => {
+        const { pollStatuses } = await setupOldOp({ isInMempool: false })
+
+        const op = await pollStatuses()
+
+        expect(op.status).toBe(AccountOpStatus.BroadcastButStuck)
+      })
+
+      test('a txn the account sent stays pending when the lookup fails, as it may still be mined', async () => {
+        const { pollStatuses, provider } = await setupOldOp({ isInMempool: false })
+        jest.spyOn(provider, 'getTransactionReceipt').mockRejectedValue(new Error('RPC is down'))
+
+        const op = await pollStatuses()
+
+        expect(op.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+      })
+
+      test('a txn sent by the bundler is stuck after 30 minutes even if it is in the mempool', async () => {
+        const { pollStatuses } = await setupOldOp({
+          broadcastOption: BROADCAST_OPTIONS.byBundler,
+          isInMempool: true
+        })
+
+        const op = await pollStatuses()
+
+        expect(op.status).toBe(AccountOpStatus.BroadcastButStuck)
+      })
+
+      test('a batch sent one txn at a time stays pending while one of its txns is in the mempool', async () => {
+        const MEMPOOL_TXN_ID = `0x${'ee'.repeat(32)}` as const
+        const { pollStatuses, provider } = await setupOldOp({
+          isInMempool: false,
+          identifiedBy: {
+            type: 'MultipleTxns',
+            identifier: `${PENDING_TXN_ID}-${MEMPOOL_TXN_ID}`
+          },
+          calls: [PENDING_TXN_ID, MEMPOOL_TXN_ID].map((txnId) => ({
+            ...SUBMITTED_ACCOUNT_OP.calls[0]!,
+            txnId,
+            status: AccountOpStatus.BroadcastedButNotConfirmed
+          }))
+        })
+        jest
+          .spyOn(provider, 'getTransaction')
+          .mockImplementation(async (txnId: string) =>
+            txnId === MEMPOOL_TXN_ID ? ({ hash: txnId } as any) : null
+          )
+
+        const op = await pollStatuses()
+
+        expect(op.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+        expect(op.calls.map(({ status }) => status)).toEqual([
+          AccountOpStatus.BroadcastedButNotConfirmed,
+          AccountOpStatus.BroadcastedButNotConfirmed
+        ])
+      })
+
+      test('a txn the account sent is stuck after 30 minutes when its provider is unavailable', async () => {
+        const { controller, accountOp } = await setupOldOp({ isInMempool: true })
+        // Nothing can say if it is still in the mempool, so only the time counts
+        jest.spyOn(mainCtrl.providers, 'providers', 'get').mockReturnValue({})
+
+        await controller.updateAccountsOpsStatuses([accountOp.accountAddr])
+
+        expect(
+          controller.getAccountOpsForAccount({ accountAddr: accountOp.accountAddr })[0]?.status
+        ).toBe(AccountOpStatus.BroadcastButStuck)
       })
     })
 
@@ -1417,6 +1730,30 @@ describe('Activity Controller ', () => {
       expect(controllerAccountsOps[sessionId]!.result!.items[0]!.nonce).toEqual(1499n)
       expect(controllerAccountsOps[sessionId]!.result!.items[999]!.nonce).toEqual(500n)
     })
+
+    test('the next nonce goes past the nonces of the pending ops only', async () => {
+      const { controller } = await prepareTest()
+      const senderKey = { kind: 'sender' as const, addr: SUBMITTED_ACCOUNT_OP.accountAddr }
+      const sentBySelf = (overrides: Partial<submittedAccountOp.SubmittedAccountOp>) =>
+        buildSubmittedAccountOp({
+          gasFeePayment: {
+            ...SUBMITTED_ACCOUNT_OP.gasFeePayment!,
+            broadcastOption: BROADCAST_OPTIONS.bySelf
+          },
+          ...overrides
+        })
+      const pendingAccountOp = sentBySelf({ eoaNonce: 225n })
+      await controller.addAccountOp(pendingAccountOp)
+      await controller.addAccountOp(sentBySelf({ eoaNonce: 300n, status: AccountOpStatus.Success }))
+
+      expect(controller.getPendingNonceReservations(1n, [senderKey])).toEqual([
+        { accountOpId: pendingAccountOp.id, reserved: { ...senderKey, nonce: 225n } }
+      ])
+      expect(controller.getNextNonce(senderKey.addr, 1n, 'sender', 225n)).toBe(226n)
+      // Another chain, or a chain that already counts the pending txn
+      expect(controller.getNextNonce(senderKey.addr, 10n, 'sender', 225n)).toBe(225n)
+      expect(controller.getNextNonce(senderKey.addr, 1n, 'sender', 230n)).toBe(230n)
+    })
   })
 
   describe('SignedMessages', () => {
@@ -1635,6 +1972,141 @@ describe('Activity Controller ', () => {
 
       expect(recipientsForAccount![getAddress(recipientLower)]).toBe(SENT_AT_LATER)
       expect(recipientsForAccount![recipientLower]).toBeUndefined()
+    })
+  })
+
+  describe('Speed ups', () => {
+    const SENDER = SUBMITTED_ACCOUNT_OP.accountAddr
+    const buildAttempt = (txnId: string, timestamp: number, eoaNonce: bigint | null = 5n) =>
+      buildSubmittedAccountOp({
+        txnId,
+        identifiedBy: { type: 'Transaction', identifier: txnId },
+        timestamp,
+        eoaNonce
+      })
+
+    test('shows a transaction and its speed up as a single row, the newest one while pending', async () => {
+      const { controller, sessionId } = await prepareTest()
+      const original = buildAttempt(`0x${'01'.repeat(32)}`, 1000)
+      const speedUp = buildAttempt(`0x${'02'.repeat(32)}`, 2000)
+      await controller.addAccountOp(original)
+      await controller.addAccountOp(speedUp)
+
+      await controller.filterAccountsOps(sessionId, { account: SENDER, chainId: 1n })
+
+      const { result } = controller.accountsOps[sessionId]!
+      expect(result.items.map((op) => op.txnId)).toEqual([speedUp.txnId])
+      expect(result.itemsTotal).toBe(1)
+    })
+
+    test('keeps transactions with different nonces as separate rows', async () => {
+      const { controller, sessionId } = await prepareTest()
+      await controller.addAccountOp(buildAttempt(`0x${'03'.repeat(32)}`, 1000, 5n))
+      await controller.addAccountOp(buildAttempt(`0x${'04'.repeat(32)}`, 2000, 6n))
+
+      await controller.filterAccountsOps(sessionId, { account: SENDER, chainId: 1n })
+
+      expect(controller.accountsOps[sessionId]!.result.items).toHaveLength(2)
+    })
+
+    test('keeps transactions without a known nonce as separate rows', async () => {
+      const { controller, sessionId } = await prepareTest()
+      // null, as passing undefined would fall back to the default nonce
+      await controller.addAccountOp(buildAttempt(`0x${'05'.repeat(32)}`, 1000, null))
+      await controller.addAccountOp(buildAttempt(`0x${'06'.repeat(32)}`, 2000, null))
+
+      await controller.filterAccountsOps(sessionId, { account: SENDER, chainId: 1n })
+
+      expect(controller.accountsOps[sessionId]!.result.items).toHaveLength(2)
+    })
+
+    test('still finds a replaced transaction when looking it up directly', async () => {
+      const { controller, sessionId } = await prepareTest()
+      const original = buildAttempt(`0x${'07'.repeat(32)}`, 1000)
+      await controller.addAccountOp(original)
+      await controller.addAccountOp(buildAttempt(`0x${'08'.repeat(32)}`, 2000))
+
+      await controller.filterAccountsOps(sessionId, {
+        account: SENDER,
+        chainId: 1n,
+        identifiedBy: original.identifiedBy
+      })
+
+      expect(controller.accountsOps[sessionId]!.result.items.map((op) => op.txnId)).toEqual([
+        original.txnId
+      ])
+    })
+
+    describe('findReplacement', () => {
+      const buildReplacement = (
+        txnId: string,
+        replaced: submittedAccountOp.SubmittedAccountOp,
+        status: AccountOpStatus
+      ) => ({
+        ...buildAttempt(txnId, 2000),
+        status,
+        meta: { speedUp: { enabled: true, replacedIdentifiedBy: replaced.identifiedBy } }
+      })
+
+      test('returns the newest replacement when a speed up was sped up again', async () => {
+        const { controller } = await prepareTest()
+        const original = {
+          ...buildAttempt(`0x${'11'.repeat(32)}`, 1000),
+          status: AccountOpStatus.UnknownButPastNonce
+        }
+        const firstSpeedUp = buildReplacement(
+          `0x${'12'.repeat(32)}`,
+          original,
+          AccountOpStatus.UnknownButPastNonce
+        )
+        const secondSpeedUp = buildReplacement(
+          `0x${'13'.repeat(32)}`,
+          firstSpeedUp,
+          AccountOpStatus.Success
+        )
+        await controller.addAccountOp(original)
+        await controller.addAccountOp(firstSpeedUp)
+        await controller.addAccountOp(secondSpeedUp)
+
+        const replacement = controller.findReplacement(original.identifiedBy, SENDER, 1n)
+
+        expect(replacement?.txnId).toBe(secondSpeedUp.txnId)
+      })
+
+      test('returns the replacement that went through when the op was sped up twice', async () => {
+        const { controller } = await prepareTest()
+        const original = {
+          ...buildAttempt(`0x${'14'.repeat(32)}`, 1000),
+          status: AccountOpStatus.UnknownButPastNonce
+        }
+        const confirmedSpeedUp = buildReplacement(
+          `0x${'15'.repeat(32)}`,
+          original,
+          AccountOpStatus.Success
+        )
+        // Added last, so it comes first in the list and a plain find would return it
+        const droppedSpeedUp = buildReplacement(
+          `0x${'16'.repeat(32)}`,
+          original,
+          AccountOpStatus.Rejected
+        )
+        await controller.addAccountOp(original)
+        await controller.addAccountOp(confirmedSpeedUp)
+        await controller.addAccountOp(droppedSpeedUp)
+
+        const replacement = controller.findReplacement(original.identifiedBy, SENDER, 1n)
+
+        expect(replacement?.txnId).toBe(confirmedSpeedUp.txnId)
+      })
+
+      test('returns undefined when nothing replaced the op', async () => {
+        const { controller } = await prepareTest()
+        const original = buildAttempt(`0x${'17'.repeat(32)}`, 1000)
+        await controller.addAccountOp(original)
+        await controller.addAccountOp(buildAttempt(`0x${'18'.repeat(32)}`, 2000))
+
+        expect(controller.findReplacement(original.identifiedBy, SENDER, 1n)).toBeUndefined()
+      })
     })
   })
 })

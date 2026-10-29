@@ -1,6 +1,8 @@
 import { AbiCoder } from 'ethers'
+
 import { describe, expect, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { networks } from '../../consts/networks'
 import {
   erc721CollectionToLearnedAssetKeys,
@@ -9,15 +11,15 @@ import {
   getErc721Validity,
   getHintsError,
   getSpecialHints,
-  getVisibleCollectibles,
-  validateCollectibleOwnership,
-  validateERC721Token,
-  mergeCollectionHints,
   getTotal,
+  getVisibleCollectibles,
   learnedErc721sToHints,
+  mergeCollectionHints,
   mergeERC721s,
   planAssetMetadata,
-  TOKEN_METADATA_MAX_AGE_MS
+  TOKEN_METADATA_MAX_AGE_MS,
+  validateCollectibleOwnership,
+  validateERC721Token
 } from './helpers'
 import { ERC721s, ExternalHintsAPIResponse, GetOptions, ToBeLearnedAssets } from './interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
@@ -559,10 +561,12 @@ describe('Portfolio helpers', () => {
       })
 
       it('rejects an address with no contract at it', async () => {
+        const { restore } = suppressConsole()
         const result = await validate(getProvider(() => undefined, '0x'))
 
         expect(result.isValid).toBe(false)
         expect(result.error.reason).toBe('not-a-collection')
+        restore()
       })
 
       it('rejects a token, which answers decimals', async () => {
@@ -631,18 +635,22 @@ describe('Portfolio helpers', () => {
 
       // ownerOf reverts for an id that was never minted or was burned
       it('rejects a collectible that does not exist', async () => {
+        const { restore } = suppressConsole()
         const result = await validateOwnership(getProvider(() => undefined))
 
         expect(result.isValid).toBe(false)
         expect(result.error.reason).toBe('collectible-not-found')
+        restore()
       })
 
       it('reports a network problem instead of blaming the collectible', async () => {
+        const { restore } = suppressConsole()
         const result = await validateOwnership(getProvider(() => networkError()))
 
         expect(result.isValid).toBe(false)
         expect(result.error.reason).toBe('network-problem')
         expect(result.error.type).toBe('network')
+        restore()
       })
     })
   })

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface, ZeroAddress } from 'ethers'
+import { Interface } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -32,21 +32,11 @@ export class V1 extends BaseAccount {
     estimation: FullEstimationSummary,
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[] {
-    const options = feePaymentOptions.filter(
+    // the fee can be paid only by another wallet of the user
+    // as v1 accounts cannot pay it by themselves
+    return feePaymentOptions.filter(
       (opt) => opt.paidBy !== this.account.addr && opt.availableAmount > 0n
     )
-    if (options.length) return options
-
-    // return the native only to display errors
-    const native = feePaymentOptions.find(
-      (opt) =>
-        opt.paidBy === this.account.addr &&
-        opt.token.address === ZeroAddress &&
-        !opt.token.flags.onGasTank
-    )
-    if (!native) throw new Error('no native fee payment option, it should not happen')
-    native.availableAmount = 0n
-    return [native]
   }
 
   getGasUsed(
@@ -78,8 +68,8 @@ export class V1 extends BaseAccount {
       op: AccountOp
     }
   ): string {
-    if (feeOption.paidBy !== this.getAccount().addr) return BROADCAST_OPTIONS.byOtherEOA
-    return BROADCAST_OPTIONS.byRelayer
+    // the fee is always paid by another wallet (see getAvailableFeeOptions)
+    return BROADCAST_OPTIONS.byOtherEOA
   }
 
   canUseReceivingNativeForFee(): boolean {
