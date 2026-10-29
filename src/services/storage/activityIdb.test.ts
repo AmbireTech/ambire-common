@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto'
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { beforeEach, describe, expect, jest, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { SubmittedAccountOpLike } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { ActivityIdbStorage, ActivityKeyValueStorage } from './activityIdb'
@@ -293,6 +294,7 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('silently skips ops with no valid id', async () => {
+      const { restore } = suppressConsole(true)
       const store = new ActivityIdbStorage(db)
       const validOp = makeOp('valid', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
       const invalidOp = { ...makeOp('', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000) }
@@ -302,6 +304,7 @@ describe('ActivityIdbStorage', () => {
       const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.id).toBe('valid')
+      restore()
     })
 
     test('deduplicates ops with the same id — last occurrence wins', async () => {
@@ -626,6 +629,7 @@ describe('ActivityIdbStorage', () => {
       // before it still committed, so IDB became non-empty, the isEmpty() guard
       // skipped every future retry, and everything after the bad row was stranded
       // in the legacy key forever. Unusable rows are now filtered out up front.
+      const { restore } = suppressConsole(true)
       const store = new ActivityIdbStorage(db)
       const legacy: any = {
         [ACC_A]: {
@@ -645,9 +649,11 @@ describe('ActivityIdbStorage', () => {
       expect(ids).not.toContain('no-timestamp')
       // Migration completed, so the legacy key is cleaned up rather than retried
       expect(removeSpy).toHaveBeenCalledTimes(1)
+      restore()
     })
 
     test('a legacy op missing status is dropped without failing the batch', async () => {
+      const { restore } = suppressConsole(true)
       const store = new ActivityIdbStorage(db)
       const legacy: any = {
         [ACC_A]: {
@@ -665,6 +671,7 @@ describe('ActivityIdbStorage', () => {
 
       const ids = (await storedGroup(ACC_A, '1'))?.map((op) => op.id)
       expect(ids).toEqual(['good'])
+      restore()
     })
 
     test('concurrent ensureMigrated calls converge on the same migrated data', async () => {
@@ -1236,6 +1243,7 @@ describe('ActivityIdbStorage', () => {
     // resolves to the dead connection, so recovery failed in production while the
     // tests passed.
     test('a write after the connection closes reopens and succeeds', async () => {
+      const { restore } = suppressConsole(true)
       const store = new ActivityIdbStorage(db)
       await store.putSingleOp(
         ACC_A,
@@ -1255,9 +1263,11 @@ describe('ActivityIdbStorage', () => {
       // the adapter: the test db handle is closed, and the adapter holds the reopened one.
       const ids = (await store.getRecentOps(ACC_A, 100, CHAIN_1)).map((op) => op.id)
       expect(ids).toEqual(['after', 'before'])
+      restore()
     })
 
     test('a read after the connection closes reopens and returns the data', async () => {
+      const { restore } = suppressConsole(true)
       const store = new ActivityIdbStorage(db)
       await store.putMultiple([
         {
@@ -1272,9 +1282,11 @@ describe('ActivityIdbStorage', () => {
       // A history read through the adapter — the path whose reconnect this test is about.
       expect((await store.getRecentOps(ACC_A, 100, CHAIN_1))[0]?.id).toBe('persisted')
       expect(await store.isEmpty()).toBe(false)
+      restore()
     })
 
     test('loadStartupOps recovers from a closed connection', async () => {
+      const { restore } = suppressConsole(true)
       const store = new ActivityIdbStorage(db)
       await store.putMultiple([
         {
@@ -1288,6 +1300,7 @@ describe('ActivityIdbStorage', () => {
 
       const result = await store.loadStartupOps()
       expect(result[ACC_A]?.['1']).toHaveLength(1)
+      restore()
     })
 
     test('errors unrelated to a dead connection are not retried', async () => {

@@ -1435,14 +1435,18 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleSignMessage() {
-    const accountAddr = this.signMessage.messageToSign?.accountAddr
-    const chainId = this.signMessage.messageToSign?.chainId
+    const approvedMessage = this.signMessage.messageToSign
+    const accountAddr = approvedMessage?.accountAddr
+    const chainId = approvedMessage?.chainId
 
     // Could (rarely) happen if not even a single account state is fetched yet
     const shouldForceUpdateAndWaitForAccountState =
       accountAddr && chainId && !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]
-    if (shouldForceUpdateAndWaitForAccountState)
+    if (shouldForceUpdateAndWaitForAccountState) {
       await this.accounts.updateAccountState(accountAddr, 'latest', [chainId])
+      // A request that replaced the message during the fetch was never approved
+      if (this.signMessage.messageToSign !== approvedMessage) return
+    }
 
     const isAccountStateStillMissing =
       !accountAddr || !chainId || !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]

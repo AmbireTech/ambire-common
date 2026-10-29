@@ -15,8 +15,10 @@ const fetchWithTimeout = async (
       fetch(url, { ...options, signal: controller.signal }),
       new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
-          controller.abort()
+          // Rejected before the abort, as a fetch that honours the signal rejects as soon as it
+          // is aborted and would otherwise win the race with its own AbortError
           reject(new Error('request-timeout'))
+          controller.abort()
         }, timeout)
       })
     ])

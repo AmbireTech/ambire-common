@@ -3,20 +3,22 @@ import { toBeHex, Wallet } from 'ethers'
 import { Session } from '@/classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import {
-  LEGACY_POPULAR_DERIVATION_TEMPLATE,
-  BIP44_STANDARD_DERIVATION_TEMPLATE
+  BIP44_STANDARD_DERIVATION_TEMPLATE,
+  LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '@/consts/derivation'
 import { AccountOnchainState } from '@/interfaces/account'
 import { ErrorRef } from '@/interfaces/eventEmitter'
-import { DappConnectRequest, PlainTextMessageUserRequest } from '@/interfaces/userRequest'
-import { AccountOpStatus } from '@/libs/accountOp/types'
+import { DappConnectRequest, Message, PlainTextMessageUserRequest } from '@/interfaces/userRequest'
 import { isSmartAccount } from '@/libs/account/account'
+import { AccountOpStatus } from '@/libs/accountOp/types'
 import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
+import * as magicLinkLib from '@/libs/magicLink/magicLink'
 import { stringify } from '@/libs/richJson/richJson'
 import wait from '@/utils/wait'
 import { describe, expect, jest, test } from '@jest/globals'
 import { makeMainController } from '@test/helpers/mainController'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { MainController } from './main'
 
 describe('Main Controller ', () => {
@@ -30,6 +32,7 @@ describe('Main Controller ', () => {
           '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
       },
+      initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
         pfp: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
@@ -44,6 +47,7 @@ describe('Main Controller ', () => {
           '0x7f1e7646e4695bead8bb0596679b0caf3a7ff6c4e04d2ad79103c8fa61fb6337f47fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
       },
+      initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
         pfp: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd'
@@ -58,6 +62,7 @@ describe('Main Controller ', () => {
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
       },
+      initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
         pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -94,7 +99,20 @@ describe('Main Controller ', () => {
   // })
 
   test('backup keyStore secret emailVault', async () => {
-    void controller.emailVault?.uploadKeyStoreSecret('unufri@ambire.com')
+    // Nobody confirms the magic link here, and the relayer often refuses to send one because of
+    // its rate limit. Both end in an error that is expected.
+    const { restore } = suppressConsole()
+    const { requestMagicLink } = magicLinkLib
+    let magicLinkAnswered: Promise<unknown> | undefined
+    const magicLinkRequested = new Promise<void>((resolve) => {
+      jest.spyOn(magicLinkLib, 'requestMagicLink').mockImplementation((...args) => {
+        const request = requestMagicLink(...args)
+        magicLinkAnswered = request.catch(() => {})
+        resolve()
+        return request
+      })
+    })
+    const upload = controller.emailVault?.uploadKeyStoreSecret('unufri@ambire.com')
 
     await new Promise((resolve) => {
       if (controller.emailVault) {
@@ -109,6 +127,40 @@ describe('Main Controller ', () => {
     // Assert the emailVault sub-controller is present and its status was updated
     expect(controller.emailVault).not.toBeNull()
     expect(controller.emailVault?.statuses).toBeDefined()
+
+    // Stops the wait for the confirmation, which would otherwise poll for 3 minutes. Only once the
+    // magic link request is answered, as the polling that follows resets the stop.
+    await magicLinkRequested
+    await magicLinkAnswered
+    controller.emailVault?.cancelEmailConfirmation()
+    await upload
+    jest.spyOn(magicLinkLib, 'requestMagicLink').mockRestore()
+    restore()
+  })
+
+  test('does not sign a message that replaced the approved one while its account state loads', async () => {
+    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
+    })
+    const accountAddr = accounts[0]!.addr
+    const approvedMessage: Message = {
+      fromRequestId: 1,
+      content: { kind: 'message', message: '0x74657374' },
+      accountAddr,
+      chainId: 1n,
+      signature: null
+    }
+    mainCtrl.signMessage.messageToSign = approvedMessage
+    delete mainCtrl.accounts.accountStates[accountAddr]
+    jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockImplementation(async () => {
+      mainCtrl.accounts.accountStates[accountAddr] = { '1': {} as AccountOnchainState }
+      mainCtrl.signMessage.messageToSign = { ...approvedMessage, fromRequestId: 2 }
+    })
+    const signSpy = jest.spyOn(mainCtrl.signMessage, 'sign').mockResolvedValue(undefined)
+
+    await mainCtrl.handleSignMessage()
+
+    expect(signSpy).not.toHaveBeenCalled()
   })
 
   test('refreshes Safe transactions once while a manual refresh is in progress', async () => {
@@ -773,6 +825,7 @@ describe('Main Controller ', () => {
     })
 
     test('rejects more private keys than the maximum', async () => {
+      const { restore } = suppressConsole()
       const privateKeys = Array.from({ length: MAX_BULK_PRIVATE_KEYS + 1 }, (_, i) =>
         toPrivateKey(i + 1)
       )
@@ -785,18 +838,22 @@ describe('Main Controller ', () => {
         `You can import up to ${MAX_BULK_PRIVATE_KEYS} private keys at once. Please remove some and try again.`
       )
       expect(emittedErrors[0]!.level).toBe('major')
+      restore()
     })
 
     test('rejects an empty list', async () => {
+      const { restore } = suppressConsole()
       const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([])
 
       expect(initParams).toBeUndefined()
       expect(emittedErrors.map((e) => e.message)).toEqual([
         'Please enter at least one private key.'
       ])
+      restore()
     })
 
     test('rejects the whole list if any private key is invalid, without exposing the keys', async () => {
+      const { restore } = suppressConsole()
       const validPrivateKey = toPrivateKey(1)
       const invalidPrivateKey = `${toPrivateKey(2).slice(0, -1)}z`
 
@@ -813,9 +870,11 @@ describe('Main Controller ', () => {
       const reportedError = `${emittedErrors[0]!.message} ${emittedErrors[0]!.error?.message}`
       expect(reportedError).not.toContain(validPrivateKey.slice(2))
       expect(reportedError).not.toContain(invalidPrivateKey.slice(2))
+      restore()
     })
 
     test('rejects a recovery phrase passed as one of the private keys', async () => {
+      const { restore } = suppressConsole()
       const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([
         toPrivateKey(1),
         process.env.SEED!
@@ -824,6 +883,7 @@ describe('Main Controller ', () => {
       expect(initParams).toBeUndefined()
       expect(emittedErrors).toHaveLength(1)
       expect(emittedErrors[0]!.error?.message).not.toContain(process.env.SEED!)
+      restore()
     })
   })
 

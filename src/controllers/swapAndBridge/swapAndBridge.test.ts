@@ -336,7 +336,14 @@ const dappsControllerMock = {
   onUpdate: () => () => {}
 } as any
 
-const buildSwapAndBridgeController = (controllerStorage: StorageController = storageCtrl) =>
+/**
+ * Each controller gets its own UI controller by default, as the listeners of all the controllers
+ * built here would otherwise pile up on the shared one
+ */
+const buildSwapAndBridgeController = (
+  controllerStorage: StorageController = storageCtrl,
+  ui: UiController = new UiController({ uiManager })
+) =>
   new SwapAndBridgeController({
     callRelayer: async () => ({}),
     fetch: fetch as any,
@@ -362,10 +369,10 @@ const buildSwapAndBridgeController = (controllerStorage: StorageController = sto
     getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
     onBroadcastSuccess: () => Promise.resolve(),
     onBroadcastFailed: () => {},
-    ui: uiCtrl
+    ui
   })
 
-const swapAndBridgeController = buildSwapAndBridgeController()
+const swapAndBridgeController = buildSwapAndBridgeController(storageCtrl, uiCtrl)
 
 const createDeferred = <T>() => {
   let resolve!: (value: T) => void
@@ -1718,6 +1725,9 @@ describe('SwapAndBridge Controller', () => {
   }) // end describe('continuous active-route updates')
 
   test('should check for route status', async () => {
+    // The route is a bridge, so a completed status records its receipt in Activity. That has
+    // tests of its own below, and the receipt of this made up hash cannot be found.
+    jest.spyOn(swapAndBridgeController, 'recordIntentActivity').mockResolvedValue()
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     swapAndBridgeController.updateActiveRoute(
       swapAndBridgeController.activeRoutes[0]!.activeRouteId,
@@ -2024,7 +2034,7 @@ describe('SwapAndBridge Controller: to token market data', () => {
       getVisibleUserRequests: () => [],
       onBroadcastSuccess: () => Promise.resolve(),
       onBroadcastFailed: () => {},
-      ui: uiCtrl
+      ui: new UiController({ uiManager })
     })
 
   const initFormAndTokenList = async () => {

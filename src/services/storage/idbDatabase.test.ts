@@ -2,12 +2,14 @@ import 'fake-indexeddb/auto'
 
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { IDBPDatabase, openDB } from 'idb'
+
 import { beforeEach, describe, expect, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
-import { AMBIRE_IDB_SCHEMA, IdbAccountOpRow } from './idbSchema'
 import { openAmbireIdb, resetAmbireIdbForTesting } from './idbDatabase'
+import { AMBIRE_IDB_SCHEMA, IdbAccountOpRow } from './idbSchema'
 
 beforeEach(() => {
   resetAmbireIdbForTesting()
@@ -47,6 +49,7 @@ describe('openAmbireIdb', () => {
     // reachable by nothing — blocking() cannot find it once the singleton is cleared — so if
     // it is not closed here it holds the database for the life of the context and every later
     // upgrade is blocked by it. That is what this asserts, via the consequence.
+    const { restore } = suppressConsole(true)
     const openRaw = (version: number) =>
       new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open(AMBIRE_IDB_SCHEMA.dbName, version)
@@ -82,6 +85,7 @@ describe('openAmbireIdb', () => {
         // Already closed above on the happy path.
       }
     }
+    restore()
   }, 20000)
 
   test('returns the same promise on repeated calls (singleton)', async () => {
@@ -105,6 +109,7 @@ describe('openAmbireIdb', () => {
     // Regression guard: the handler used to drop the cached promise without ever
     // calling db.close(), so an upgrade from a newer app version stayed blocked
     // indefinitely and the user had to reload by hand.
+    const { restore } = suppressConsole(true)
     const held = await openAmbireIdb()
     expect(held.version).toBe(AMBIRE_IDB_SCHEMA.dbVersion)
 
@@ -114,6 +119,7 @@ describe('openAmbireIdb', () => {
 
     expect(upgraded.version).toBe(AMBIRE_IDB_SCHEMA.dbVersion + 1)
     upgraded.close()
+    restore()
   })
 
   test('a fresh install ends up with every store in the manifest', async () => {
