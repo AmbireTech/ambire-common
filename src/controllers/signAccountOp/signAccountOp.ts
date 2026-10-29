@@ -4041,11 +4041,16 @@ export class SignAccountOpController
           ? this.accountOp.signed.concat([signingKeyAddr!])
           : [signingKeyAddr!]
 
-        // The first free nonce, past this device's own pending txns, still goes out in one click
+        // The first free nonce, past this device's own pending txns, still goes out in one click.
+        // So does a Replace, which takes the nonce of the pending txn to go through in its place
+        const isReplacingWithPendingNonce =
+          this.#replacement?.kind === 'newCalls' &&
+          this.#customSafeNonce === this.#getReplacedAccountNonce()
         const isQuickBroadcast =
           this.#canSafeQuickBroadcast &&
           (!this.#customSafeNonce ||
-            this.#customSafeNonce === this.#getAccountNextNonce(accountState.nonce))
+            this.#customSafeNonce === this.#getAccountNextNonce(accountState.nonce) ||
+            isReplacingWithPendingNonce)
         if (!isQuickBroadcast) {
           if (!prevSignedSigs.length) {
             // propose the txn to Safe Global upon first entry

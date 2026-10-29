@@ -6715,6 +6715,28 @@ describe('an earlier pending transaction', () => {
         expect(controller.accountOp.eoaNonce).toBe(5n)
       })
 
+      test('a 1/1 Safe with its only key here executes a Replace right after signing', async () => {
+        const { controller } = await initSafe({
+          threshold: 1,
+          signed: [],
+          nonce: 4n,
+          paidBy: payerAddr
+        })
+        controller.update({ signingKeyAddr: payerAddr, signingKeyType: 'internal' })
+        holdBehind(controller, buildPendingSentByEoa())
+        controller.replacePendingAccountOp()
+        // A new transaction would take Safe nonce 4, after the pending one
+        jest.spyOn(ActivityController.prototype, 'getNextNonce').mockReturnValue(4n)
+        const propose = jest.spyOn(safeLib, 'propose').mockResolvedValue(undefined)
+
+        await controller.sign()
+
+        expect(controller.accountOp.nonce).toBe(3n)
+        expect(controller.accountOp.signed).toEqual([payerAddr])
+        expect(propose).not.toHaveBeenCalled()
+        expect(controller.status?.type).toBe(SigningStatus.Done)
+      })
+
       test("Don't replace takes the Safe nonce of a new transaction, after the pending one", async () => {
         const { controller } = await initSafe({ threshold: 2, signed: [], paidBy: payerAddr })
         holdBehind(controller, buildPendingSentByEoa())
