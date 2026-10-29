@@ -1061,15 +1061,45 @@ export class MainController extends EventEmitter implements IMainController {
     return this.privacyPools.accounts.some((account) => account.seedId === seedId)
   }
 
-  /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
-  async addPrivacyPoolsAccount(seedId: string) {
+  /**
+   * Adds the Privacy Pools account of a stored recovery phrase and selects it. A phrase whose
+   * passphrase isn't saved needs it, to save it or to keep the account's key.
+   */
+  async addPrivacyPoolsAccount(
+    seedId: string,
+    {
+      seedPassphrase,
+      shouldSavePassphrase
+    }: { seedPassphrase?: string; shouldSavePassphrase?: boolean } = {}
+  ) {
     await this.initialLoadPromise
 
     // Wrapped as a whole, so a refused account is shown to the user
     await this.withStatus(
       'selectAccount',
       async () => {
-        await this.privacyPools.addAccount(seedId)
+        const seed = this.keystore.seeds.find(({ id }) => id === seedId)
+        if (seed?.withPassphrase && !seed.isPassphraseSaved) {
+          if (!seedPassphrase)
+            throw new EmittableError({
+              level: 'expected',
+              message: 'Wrong passphrase.',
+              error: new Error('main: no passphrase for a Privacy Pools account')
+            })
+
+          // Both check the passphrase before keeping anything
+          if (shouldSavePassphrase) await this.keystore.saveSeedPassphrase(seedId, seedPassphrase)
+          else await this.keystore.storePrivacyPoolsKey(seedId, seedPassphrase)
+        }
+
+        try {
+          await this.privacyPools.addAccount(seedId)
+        } catch (error) {
+          // Drops the key stored above, unless an account already uses it (a double submit)
+          if (!this.#hasPrivacyPoolsAccount(seedId))
+            await this.keystore.removePrivacyPoolsKey(seedId)
+          throw error
+        }
         await this.#selectPrivacyPoolsAccount(seedId)
       },
       true
@@ -2431,6 +2461,56 @@ export class MainController extends EventEmitter implements IMainController {
     this.#replyToRequest(requestId)
   }
 
+  /**
+   * Sets the account picker up with a recovery phrase the user already saved, for the
+   * personalize step to select and prepare its next account. One whose passphrase isn't saved
+   * needs it from the user, and has it saved if they chose to. Replies to `requestId` once set up.
+   */
+  async accountPickerSetInitParamsFromSavedSeed(
+    {
+      id,
+      seedPassphrase,
+      shouldSavePassphrase
+    }: {
+      id: string
+      seedPassphrase?: string | null
+      shouldSavePassphrase?: boolean
+    },
+    requestId?: string
+  ) {
+    let isSetUp = false
+    await this.withStatus(
+      'accountPickerSetInitParamsFromSavedSeed',
+      async () => {
+        const savedSeed = await this.keystore.getSavedSeed(id)
+        const passphrase = savedSeed.seedPassphrase || seedPassphrase || null
+
+        // Another passphrase would open other accounts, which this phrase's entry doesn't hold.
+        // Saving it checks it too, so it isn't checked twice
+        if (shouldSavePassphrase && passphrase && !savedSeed.seedPassphrase)
+          await this.keystore.saveSeedPassphrase(id, passphrase)
+        else if (!(await this.keystore.isSeedPassphraseCorrect(id, passphrase)))
+          throw new EmittableError({
+            level: 'expected',
+            message: 'Wrong passphrase.',
+            error: new Error('main: wrong passphrase for a saved recovery phrase')
+          })
+
+        await this.accountPicker.setInitParams({
+          keyIterator: new KeyIterator(savedSeed.seed, passphrase),
+          hdPathTemplate: savedSeed.hdPathTemplate
+        })
+        isSetUp = true
+      },
+      true
+    )
+
+    this.#replyToRequest(
+      requestId,
+      isSetUp ? undefined : 'Adding accounts from the recovery phrase failed'
+    )
+  }
+
   async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
     if (!privateKeys.length) {
       const message = 'Please enter at least one private key.'
@@ -2480,23 +2560,6 @@ export class MainController extends EventEmitter implements IMainController {
     )
 
     this.#replyToRequest(requestId, isSetUp ? undefined : 'Importing the private keys failed')
-  }
-
-  /**
-   * Sets the account picker up with a recovery phrase the user already saved, for the
-   * personalize step to select and prepare its next account. Replies to `requestId` once
-   * set up.
-   */
-  async accountPickerSetInitParamsFromSavedSeed(seedId: string, requestId?: string) {
-    const savedSeed = await this.keystore.getSavedSeed(seedId)
-    if (!savedSeed) return this.#replyToRequest(requestId, 'The recovery phrase was not found')
-
-    const keyIterator = new KeyIterator(savedSeed.seed, savedSeed.seedPassphrase)
-    await this.accountPicker.setInitParams({
-      keyIterator,
-      hdPathTemplate: savedSeed.hdPathTemplate
-    })
-    this.#replyToRequest(requestId)
   }
 
   /**

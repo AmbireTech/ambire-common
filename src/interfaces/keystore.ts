@@ -236,7 +236,15 @@ export type KeystoreSeed = {
   id: string
   label: string
   seed: string
+  /** Set only when the user chose to save the passphrase on this device */
   seedPassphrase?: string | null
+  /**
+   * The BIP32 master fingerprint of the phrase with its passphrase, set for phrases added with
+   * a passphrase since it became optional to save. Tells the passphrase apart without storing it.
+   */
+  passphraseFingerprint?: string
+  /** What follows "Passphrase" in the name of a phrase added with a passphrase, e.g. "1" */
+  passphraseLabel?: string
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   notBackedUp?: boolean
 }
@@ -247,11 +255,19 @@ export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> &
    */
   seed: KeystoreEncryptedPayload
   seedPassphrase?: KeystoreEncryptedPayload | null
+  /**
+   * The Privacy Pools signing key, kept for phrases whose passphrase is not saved, as it can't be
+   * derived again without the passphrase. Stored when the phrase's Privacy Pools account is added,
+   * and dropped when it is removed.
+   */
+  privacyPoolsSigningKey?: KeystoreEncryptedPayload
 }
 
 export type KeystoreTempSeed = {
   seed: string
   seedPassphrase?: string | null
+  /** Saves `seedPassphrase` on this device. Off unless the user turns it on */
+  shouldSavePassphrase?: boolean
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   notBackedUp?: boolean
 }

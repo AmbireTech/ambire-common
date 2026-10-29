@@ -647,6 +647,17 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.emitUpdate()
     await this.#persistAccounts()
     await this.#onAccountsRemoved([seedId])
+
+    try {
+      await this.#keystore.removePrivacyPoolsKey(seedId)
+    } catch (error: any) {
+      this.emitError({
+        message: 'Could not fully remove the Privacy Pools account. Please try again.',
+        level: 'silent',
+        error:
+          error instanceof Error ? error : new Error('privacyPools: removing the stored key failed')
+      })
+    }
   }
 
   /** Drops an account and everything derived for it. */
