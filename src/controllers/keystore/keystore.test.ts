@@ -15,6 +15,7 @@ import {
 import { PRIVACY_POOLS_SIGNING_KEY_PATH } from '../../consts/privacyPools'
 import { ExternalKey, IKeystoreController, InternalKey } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
+import * as keystoreLib from '../../libs/keystore/keystore'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import wait from '../../utils/wait'
 import { StorageController } from '../storage/storage'
@@ -734,6 +735,76 @@ describe('KeystoreController recovery phrase passphrases', () => {
     expect(await keystoreCtrl.isSeedPassphraseCorrect(saved, PASSPHRASE)).toBe(false)
     expect(await keystoreCtrl.isSeedPassphraseCorrect(standard, null)).toBe(true)
     expect(await keystoreCtrl.isSeedPassphraseCorrect(standard, PASSPHRASE)).toBe(false)
+  })
+
+  describe("reusing the UI's passphrase check", () => {
+    const checkInUi = (id: string, passphrase: string) =>
+      keystoreCtrl.isSeedPassphraseCorrectAndSendResToUi(id, passphrase, 'request-id')
+
+    const countDerivations = async (action: () => Promise<unknown>) => {
+      const getSeedMasterNodeSpy = jest.spyOn(keystoreLib, 'getSeedMasterNode')
+      await action()
+      const count = getSeedMasterNodeSpy.mock.calls.length
+      getSeedMasterNodeSpy.mockRestore()
+      return count
+    }
+
+    test('the action it was checked for derives nothing again', async () => {
+      const seedId = await addPhrase(PASSPHRASE)
+      await checkInUi(seedId, PASSPHRASE)
+
+      expect(
+        await countDerivations(() => keystoreCtrl.storePrivacyPoolsKey(seedId, PASSPHRASE))
+      ).toBe(0)
+      expect(await keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)).toBe(
+        ethers.HDNodeWallet.fromMnemonic(
+          ethers.Mnemonic.fromPhrase(process.env.SEED, PASSPHRASE),
+          PRIVACY_POOLS_SIGNING_KEY_PATH
+        ).privateKey
+      )
+    })
+
+    test('is used only once', async () => {
+      const seedId = await addPhrase(PASSPHRASE)
+      await checkInUi(seedId, PASSPHRASE)
+
+      const isCorrect = () => keystoreCtrl.isSeedPassphraseCorrect(seedId, PASSPHRASE)
+      expect(await countDerivations(isCorrect)).toBe(0)
+      expect(await countDerivations(isCorrect)).toBe(1)
+    })
+
+    test('is not used for another phrase entry, and never for a wrong passphrase', async () => {
+      const seedId = await addPhrase(PASSPHRASE)
+      const otherSeedId = await addPhrase(OTHER_PASSPHRASE)
+
+      await checkInUi(seedId, PASSPHRASE)
+      expect(
+        await countDerivations(() =>
+          keystoreCtrl.storePrivacyPoolsKey(otherSeedId, OTHER_PASSPHRASE)
+        )
+      ).toBe(1)
+
+      await checkInUi(seedId, OTHER_PASSPHRASE)
+      expect(
+        await countDerivations(() =>
+          expect(keystoreCtrl.storePrivacyPoolsKey(seedId, OTHER_PASSPHRASE)).rejects.toThrow(
+            'Wrong passphrase.'
+          )
+        )
+      ).toBe(1)
+    })
+
+    test('is dropped on lock', async () => {
+      const seedId = await addPhrase(PASSPHRASE)
+      await checkInUi(seedId, PASSPHRASE)
+
+      keystoreCtrl.lock()
+      await keystoreCtrl.unlockWithSecret('password', pass)
+
+      expect(
+        await countDerivations(() => keystoreCtrl.storePrivacyPoolsKey(seedId, PASSPHRASE))
+      ).toBe(1)
+    })
   })
 
   test('saves a passphrase later only if it is the one the phrase was added with', async () => {

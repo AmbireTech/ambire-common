@@ -157,6 +157,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   #tempSeed: KeystoreTempSeed | null = null
 
+  /**
+   * The master node the UI's passphrase check derived, as it is slow, so the action it was checked
+   * for doesn't derive it again. Taken by the next use of a passphrase and dropped on lock.
+   */
+  #checkedPassphrase: { id: string; seedPassphrase: string; masterNode: HDNodeWallet } | null = null
+
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
   #keystoreKeys: StoredKey[] = []
@@ -259,6 +265,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   lock() {
     this.#mainKey = null
+    this.#checkedPassphrase = null
     if (this.#tempSeed) this.deleteTempSeed(false)
 
     this.#seedsToAddOnKeystoreReady = []
@@ -1153,26 +1160,46 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * Lets the user be told on the spot when they mistype a passphrase that isn't saved.
    */
   async isSeedPassphraseCorrect(id: KeystoreSeed['id'], seedPassphrase: string | null) {
-    const savedSeed = await this.getSavedSeed(id)
-
-    if (savedSeed.seedPassphrase) return savedSeed.seedPassphrase === seedPassphrase
-    if (!savedSeed.passphraseFingerprint) return !seedPassphrase
-
-    return (
-      !!seedPassphrase &&
-      getSeedMasterNode(savedSeed.seed, seedPassphrase).fingerprint ===
-        savedSeed.passphraseFingerprint
-    )
+    return (await this.#checkSeedPassphrase(id, seedPassphrase)).isCorrect
   }
 
-  /** `isSeedPassphraseCorrect` for the UI, which waits for the answer to show it inline */
+  /** The master node is set only when the check had to derive it */
+  async #checkSeedPassphrase(
+    id: KeystoreSeed['id'],
+    seedPassphrase: string | null
+  ): Promise<{ isCorrect: boolean; masterNode?: HDNodeWallet }> {
+    const savedSeed = await this.getSavedSeed(id)
+
+    if (savedSeed.seedPassphrase) return { isCorrect: savedSeed.seedPassphrase === seedPassphrase }
+    if (!savedSeed.passphraseFingerprint) return { isCorrect: !seedPassphrase }
+    if (!seedPassphrase) return { isCorrect: false }
+
+    const masterNode = this.#getMasterNode(id, savedSeed.seed, seedPassphrase)
+    return { isCorrect: masterNode.fingerprint === savedSeed.passphraseFingerprint, masterNode }
+  }
+
+  /** Takes the master node the UI's check derived for this passphrase, or derives it */
+  #getMasterNode(id: KeystoreSeed['id'], seed: string, seedPassphrase: string) {
+    const checked = this.#checkedPassphrase
+    this.#checkedPassphrase = null
+    if (checked?.id === id && checked.seedPassphrase === seedPassphrase) return checked.masterNode
+
+    return getSeedMasterNode(seed, seedPassphrase)
+  }
+
+  /**
+   * `isSeedPassphraseCorrect` for the UI, which waits for the answer to show it inline. Keeps the
+   * master node of a correct passphrase for the action the UI checks it for.
+   */
   async isSeedPassphraseCorrectAndSendResToUi(
     id: KeystoreSeed['id'],
     seedPassphrase: string | null,
     requestId: string
   ) {
     try {
-      const res = await this.isSeedPassphraseCorrect(id, seedPassphrase)
+      const { isCorrect: res, masterNode } = await this.#checkSeedPassphrase(id, seedPassphrase)
+      if (res && seedPassphrase && masterNode)
+        this.#checkedPassphrase = { id, seedPassphrase, masterNode }
       this.#ui.message.sendUiMessage({ requestId, ok: true, res })
     } catch (error: any) {
       this.emitError({
@@ -1209,7 +1236,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   async storePrivacyPoolsKey(id: KeystoreSeed['id'], seedPassphrase: string) {
     const { seed, passphraseFingerprint } = await this.getSavedSeed(id)
     // Derived once, as it is slow: its fingerprint checks the passphrase and the key comes from it
-    const masterNode = getSeedMasterNode(seed, seedPassphrase)
+    const masterNode = this.#getMasterNode(id, seed, seedPassphrase)
     if (!passphraseFingerprint || masterNode.fingerprint !== passphraseFingerprint)
       throw getWrongPassphraseError()
     if (!this.#mainKey) throw new Error('keystore: not unlocked')

@@ -8,6 +8,7 @@ import { ErrorRef } from '@/interfaces/eventEmitter'
 import { DappConnectRequest, PlainTextMessageUserRequest } from '@/interfaces/userRequest'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
+import * as keystoreLib from '@/libs/keystore/keystore'
 import wait from '@/utils/wait'
 import { describe, expect, jest, test } from '@jest/globals'
 import { makeMainController } from '@test/helpers/mainController'
@@ -626,6 +627,22 @@ describe('Main Controller ', () => {
       expect(emittedErrors).toEqual([])
       expect(initParams?.keyIterator?.subType).toBe('seed')
       expect(mainCtrl.keystore.seeds[0]!.isPassphraseSaved).toBe(true)
+    })
+
+    test('does not derive from a passphrase the UI has just checked', async () => {
+      const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
+      await mainCtrl.keystore.isSeedPassphraseCorrectAndSendResToUi(seedId, PASSPHRASE, 'request')
+      const getSeedMasterNodeSpy = jest.spyOn(keystoreLib, 'getSeedMasterNode')
+
+      const { initParams, emittedErrors } = await setInitParamsFromSavedSeed(mainCtrl, {
+        id: seedId,
+        seedPassphrase: PASSPHRASE
+      })
+
+      expect(getSeedMasterNodeSpy).not.toHaveBeenCalled()
+      getSeedMasterNodeSpy.mockRestore()
+      expect(emittedErrors).toEqual([])
+      expect(initParams?.keyIterator?.subType).toBe('seed')
     })
 
     test('neither saves a wrong passphrase nor opens the picker with it', async () => {
