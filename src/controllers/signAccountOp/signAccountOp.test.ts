@@ -364,15 +364,23 @@ const smartAccount: Account = {
 }
 
 /**
- * Not a real Safe. Fetching its state fails on every network where the address has no contract,
- * and the failure gets logged.
+ * Not a real Safe, so its address must have no contract on any network: reading a Safe's owners
+ * from another contract (like the Ambire account deployed at `smartAccount.addr` on some
+ * networks) reverts and fails the account state fetch. Without a contract it reads as an
+ * undeployed Safe everywhere.
  */
+const safeAccountAddr = '0x5aFE000000000000000000000000000000000001'
 const safeAccount: Account = {
   ...smartAccount,
+  addr: safeAccountAddr,
   creation: null,
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: safeAccountAddr
+  },
   safeCreation: {
-    factoryAddr: smartAccount.addr as Hex,
-    singleton: smartAccount.addr as Hex,
+    factoryAddr: safeAccountAddr,
+    singleton: safeAccountAddr,
     saltNonce: '0x00',
     setupData: '0x'
   }
