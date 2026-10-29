@@ -84,6 +84,12 @@ export interface SubmittedAccountOp extends AccountOp {
   blockNumber?: number
   blockHash?: string
   gasUsed?: string
+  /**
+   * When Activity got the receipt of the op, in ms. Unset while the op is pending. Its nonces stay
+   * taken for `CONFIRMED_NONCE_SETTLE_MS` from this time. The send time is not used, because a txn
+   * can wait in the mempool for minutes before it is mined.
+   */
+  confirmedAt?: number
   balanceChanges?: BalanceChange[]
   nftBalanceChanges?: NftBalanceChange[]
   balanceChangesFetchRetryCount?: number
@@ -203,49 +209,6 @@ export function getSubmittedAccountOpNonce(
   if (isSafeAccount && accountOpNonce !== null) return accountOpNonce
 
   return BigInt(broadcastNonce)
-}
-
-/**
- * Whether the accountOp's `nonce` is the random nonce of the bundler operation it was sent with,
- * instead of the account's own nonce. Safe transactions sent through a bundler were stored like
- * this before `getSubmittedAccountOpNonce` existed, so their `nonce` can't be trusted as a Safe
- * nonce. Correctly stored ones never match, as the bundler nonce is a random 24-byte key.
- */
-export function hasBundlerNonceAsAccountNonce(
-  accountOp: Pick<SubmittedAccountOp, 'nonce'> &
-    Partial<Pick<SubmittedAccountOp, 'identifiedBy' | 'asUserOperation'>>
-): boolean {
-  if (accountOp.identifiedBy?.type !== 'UserOperation' || !accountOp.asUserOperation) return false
-  if (accountOp.nonce === null) return false
-
-  return BigInt(accountOp.asUserOperation.nonce) === BigInt(accountOp.nonce)
-}
-
-/**
- * Returns the first Safe nonce that is free once every transaction that was already sent,
- * but is still waiting to be confirmed, gets mined: the greater of the on-chain nonce and the
- * highest pending nonce + 1. Using it for a new Safe transaction queues the transaction behind
- * the pending ones instead of reusing a pending nonce, which would replace that transaction.
- * Pending accountOps stored with the bundler's nonce instead of the Safe nonce are ignored, as
- * their nonce says nothing about the Safe's (see `hasBundlerNonceAsAccountNonce`).
- *
- * @param accountStateNonce the Safe nonce read from the chain
- * @param pendingAccountOps the account's BroadcastedButNotConfirmed accountOps (any network)
- * @param chainId the network of the new transaction; accountOps on other networks are ignored
- */
-export function getSafeNonceAfterPendingAccountOps(
-  accountStateNonce: bigint,
-  pendingAccountOps: (Pick<SubmittedAccountOp, 'chainId' | 'nonce'> &
-    Partial<Pick<SubmittedAccountOp, 'identifiedBy' | 'asUserOperation'>>)[],
-  chainId: bigint
-): bigint {
-  return pendingAccountOps.reduce((freeNonce, accountOp) => {
-    if (accountOp.chainId !== chainId || accountOp.nonce === null) return freeNonce
-    if (hasBundlerNonceAsAccountNonce(accountOp)) return freeNonce
-
-    const nonceAfterAccountOp = BigInt(accountOp.nonce) + 1n
-    return nonceAfterAccountOp > freeNonce ? nonceAfterAccountOp : freeNonce
-  }, accountStateNonce)
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {

@@ -7,6 +7,7 @@ import {
   Interface,
   isAddress,
   isBytesLike,
+  keccak256,
   toBeHex,
   ZeroAddress
 } from 'ethers'
@@ -34,6 +35,7 @@ import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import {
+  EARLIER_PENDING_TRANSACTION_ERROR_CODE,
   ERRORS,
   RETRY_TO_INIT_ACCOUNT_OP_MSG,
   WARNINGS
@@ -95,6 +97,10 @@ import {
   getPq1BroadcastBlocker,
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
+import {
+  getEarlierPendingAccountOp,
+  getEarlierPendingReplacementAccountOp
+} from '../../libs/accountOp/earlierPendingAccountOp'
 import {
   AccountOpIdentifiedBy,
   getAccountOpRecipients,
@@ -175,6 +181,9 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
+import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
+import isSameAddr from '../../utils/isSameAddr'
+import { getNonceKeys } from '../../utils/nonce'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import { withTimeout } from '../../utils/with-timeout'
@@ -193,6 +202,9 @@ import {
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
+  isNonceTooLow,
+  isReplacementRefused,
+  isTxnAlreadyKnown,
   isUnderpriced,
   SignAccountOpType
 } from './helper'
@@ -200,7 +212,7 @@ import {
   SignAccountOpFeeTokenPreference,
   SignAccountOpPreferenceController
 } from './signAccountOpPreference'
-import { SpeedUp } from './speedUp'
+import { TxnReplacement } from './txnReplacement'
 
 import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
 // Re-exporting for backwards compatibility with existing importers
@@ -529,8 +541,22 @@ export class SignAccountOpController
 
   #onDappsUpdateUnsubscribe?: () => void
 
-  /** Set only when speeding up a pending transaction, see SpeedUp */
-  #speedUp?: SpeedUp
+  /** Set only when replacing a pending transaction, see TxnReplacement */
+  #replacement?: TxnReplacement
+
+  /**
+   * An earlier sent op that is not confirmed yet and holds a nonce this op needs, and the
+   * account op to replace it with, when this op can (see `replacePendingAccountOp`). Null when
+   * nothing holds this op back, and during a speed up or a cancel, as they take no new nonce.
+   */
+  #earlierPending: {
+    accountOp: SubmittedAccountOp
+    replacementAccountOp: AccountOp | null
+  } | null = null
+
+  #onActivityUpdateUnsubscribe?: () => void
+
+  #isReplacedPendingAccountOpProcessed = false
 
   constructor({
     eventEmitterRegistry,
@@ -559,7 +585,7 @@ export class SignAccountOpController
     onBroadcastSuccess,
     onBroadcastFailed,
     onPartialBroadcast,
-    speedUp
+    replacement
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
@@ -587,8 +613,8 @@ export class SignAccountOpController
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
     onPartialBroadcast?: OnPartialBroadcast
-    /** Pass only when speeding up a pending transaction */
-    speedUp?: SpeedUp
+    /** Pass only when speeding up or canceling a pending transaction */
+    replacement?: TxnReplacement
   }) {
     super(eventEmitterRegistry, false)
     this.#type = type || 'default'
@@ -621,7 +647,7 @@ export class SignAccountOpController
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
-    this.#speedUp = speedUp
+    this.#replacement = replacement
     this.#updateSafeEip712Data()
 
     // Only a Safe's signature is made of its owners' signatures, signed over the Safe
@@ -723,16 +749,47 @@ export class SignAccountOpController
     return this.#accountOp
   }
 
+  /** Whether it speeds up or cancels a pending transaction (see `TxnReplacementKind`) */
   get isSpeedUpTransaction(): boolean {
-    return !!this.#speedUp
+    return this.#replacement?.kind === 'speedUp' || this.#replacement?.kind === 'cancel'
+  }
+
+  /**
+   * The earlier pending op that holds this op back, see `#earlierPending`. `canReplace` tells
+   * whether this op can take its place, or stop doing so, and `isReplacing` whether it does.
+   * Neither once a Safe owner signed, as the signature is for the Safe nonce it has.
+   */
+  get earlierPendingAccountOp(): {
+    id: string
+    canReplace: boolean
+    isReplacing: boolean
+  } | null {
+    if (!this.#earlierPending) return null
+
+    return {
+      id: this.#earlierPending.accountOp.id,
+      // While replacing, it can always stop, even when replacing fails for a moment
+      canReplace:
+        !this.#isSignedBySafeOwner &&
+        (this.#replacement?.kind === 'newCalls' || !!this.#earlierPending.replacementAccountOp),
+      isReplacing: this.#replacement?.kind === 'newCalls'
+    }
+  }
+
+  /**
+   * Whether replace mode ended because the earlier pending op was processed, so the UI can tell
+   * it from the user stopping the replacement. Set to false when replace mode starts again.
+   */
+  get isReplacedPendingAccountOpProcessed(): boolean {
+    return this.#isReplacedPendingAccountOpProcessed
   }
 
   /**
    * A cancel that is signed anew, with empty calls in place of the pending transaction's
-   * (see `SpeedUp.isNewCancel`). A speed up of a pending cancel reuses its signatures instead
+   * (see `TxnReplacement.isNewCancel`). A speed up of a pending cancel reuses its signatures instead
    */
   get #isNewCancel(): boolean {
-    return !!this.#speedUp?.isNewCancel
+    return !!this.#replacement?.isNewCancel
   }
 
   /**
@@ -953,7 +1010,7 @@ export class SignAccountOpController
       })
       return
     }
-    if (this.accountOp.signed?.length || this.accountOp.safeTx?.confirmations?.length) {
+    if (this.#isSignedBySafeOwner) {
       const message = 'Nonce cannot be set as the transaction is already signed'
       this.emitError({
         message,
@@ -1100,11 +1157,11 @@ export class SignAccountOpController
     }
   }
 
-  /** A speed up must be paid the same way as the pending transaction it replaces */
-  #selectSpeedUpFeeOption() {
-    if (!this.#speedUp || this.estimation.status !== EstimationStatus.Success) return
+  /** A speed up or a Replace must be paid the same way as the pending transaction it replaces */
+  #selectReplacedFeeOption() {
+    if (this.estimation.status !== EstimationStatus.Success) return
 
-    const replacedFeeOption = this.#speedUp.findReplacedFeeOption(
+    const replacedFeeOption = this.#replacement?.findReplacedFeeOption(
       this.estimation.availableFeeOptions
     )
     if (!replacedFeeOption) return
@@ -1115,12 +1172,12 @@ export class SignAccountOpController
   }
 
   /**
-   * When speeding up a pending transaction, raises the gas prices of every speed
+   * When replacing a pending transaction, raises the gas prices of every speed
    * to the minimum the network needs to accept the replacement. The estimation keeps
    * running, so speeds that are already above that minimum are used as they are
    */
-  #applySpeedUpMinFees(gasPrices?: GasSpeeds): GasSpeeds | undefined {
-    return this.#speedUp ? this.#speedUp.applyMinFees(gasPrices) : gasPrices
+  #applyReplacementMinFees(gasPrices?: GasSpeeds): GasSpeeds | undefined {
+    return this.#replacement ? this.#replacement.applyMinFees(gasPrices) : gasPrices
   }
 
   async #getDefaultSigner() {
@@ -1256,6 +1313,16 @@ export class SignAccountOpController
       this.propagateUpdate(forceEmit)
     }, 'sign-account-op-dapps-verification')
 
+    // Unique, as unsubscribing removes every listener with the same id
+    this.#onActivityUpdateUnsubscribe = this.#activity.onUpdate((forceEmit) => {
+      const hasEarlierPendingChanged = this.#updateEarlierPendingAccountOp()
+      const hasLeftReplaceMode = this.#leaveReplaceModeIfStale()
+      if (!hasEarlierPendingChanged && !hasLeftReplaceMode) return
+      this.updateStatus()
+      this.propagateUpdate(forceEmit)
+    }, `sign-account-op-earlier-pending-${generateUuid()}`)
+    this.#updateEarlierPendingAccountOp()
+
     this.#simulateAndEstimateOrSimulateInterval.start({
       runImmediately: true,
       timeout: ESTIMATE_UPDATE_INTERVAL
@@ -1264,20 +1331,23 @@ export class SignAccountOpController
 
     // Started after the intervals, so they can be stopped if the pending transaction
     // was already processed while the request was opening
-    this.#speedUp?.watchReplacedTransaction(() => this.#stopSpeedUp())
+    this.#replacement?.watchReplacedTransaction(() => this.#onReplacedTransactionProcessed())
   }
 
   /**
-   * During a speed up, the pending transaction that is being replaced may get processed before
-   * the speed up is signed. Its place (nonce) is then taken, so there's nothing left to sign.
-   * Returns whether it's done with the speed up, so the activity no longer needs to be watched
+   * The pending transaction that is being replaced may get processed before the replacement is
+   * signed. Its place (nonce) is then taken, so there's nothing left to replace. A speed up or a
+   * cancel has nothing left to sign, while a `newCalls` replacement goes back to a normal op.
+   * Returns whether it's done with the replacement, so the activity no longer needs to be watched
    */
-  #stopSpeedUp(): boolean {
-    // Signing is in progress, so this is checked again on the next activity update, or once
-    // the status goes back to ReadyToSign (see #checkSpeedUpStillNeeded)
+  #onReplacedTransactionProcessed(): boolean {
+    // Signing is in progress or paused for the user to review a warning, so this is checked again
+    // on the next activity update, or once the status goes back to ReadyToSign
+    // (see #checkReplacementStillNeeded)
     if (
       this.status?.type === SigningStatus.InProgress ||
-      this.status?.type === SigningStatus.WaitingForPaymaster
+      this.status?.type === SigningStatus.WaitingForPaymaster ||
+      this.status?.type === SigningStatus.UpdatesPaused
     )
       return false
     // Already broadcast or already stopped
@@ -1287,20 +1357,178 @@ export class SignAccountOpController
     )
       return true
 
+    if (this.#replacement?.kind === 'newCalls') {
+      this.#leaveReplaceMode()
+      this.#isReplacedPendingAccountOpProcessed = true
+      this.update({ hasNewEstimation: true })
+      return true
+    }
+
     this.#stopIntervals()
     this.updateStatus(SigningStatus.SpeedUpNotNeeded)
     return true
   }
 
   /**
-   * Checks again whether the transaction being sped up was processed, once back to ReadyToSign.
-   * It may have been processed while signing, so the broadcast fails as its place (nonce) is
-   * taken, and with nothing left pending the activity may never update again
+   * Goes back from sending in place of the earlier pending op (`newCalls`) to a normal op, which
+   * the pending op holds back again. A Safe op that took the Safe nonce of the replaced op moves
+   * to the next free one, unless an owner signed it. The caller updates the controller after it.
    */
-  #checkSpeedUpStillNeeded() {
+  #leaveReplaceMode() {
+    if (this.#replacement?.kind !== 'newCalls') return
+
+    const wasReplacingOwnSafeOp =
+      !!this.account.safeCreation && isSameAddr(this.#replacement.accountAddr, this.account.addr)
+    this.#replacement.destroy()
+    this.#replacement = undefined
+    this.#updateAccountOp({ eoaNonce: undefined })
+    // Back to a new Safe transaction, after the pending one, or after it once it's confirmed.
+    // A signed one keeps its Safe nonce, as the signature is for it
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (wasReplacingOwnSafeOp && !this.#isSignedBySafeOwner && accountState)
+      this.setSafeNonce(this.#getAccountNextNonce(accountState.nonce))
+    this.#updateEarlierPendingAccountOp()
+  }
+
+  /**
+   * Leaves replace mode (`newCalls`) when the earlier pending op is no longer the one this op
+   * replaces, or can't be replaced anymore. The op is gone when it got stuck or stopped holding
+   * this op's nonces, and a different one holds them when it was sped up or cancelled, or a newer
+   * one took over. Without fee options, replacing may only fail for a moment, so it stays. A
+   * processed op is left to `#onReplacedTransactionProcessed`. Does nothing while the controller
+   * can't update, as the nonce must not change under the user.
+   * Returns whether it left, after it estimates again.
+   */
+  #leaveReplaceModeIfStale(): boolean {
+    const replacement = this.#replacement
+    if (replacement?.kind !== 'newCalls' || !this.canUpdate()) return false
+    if (replacement.isReplacedTransactionProcessed()) return false
+
+    const isReplacedOpHoldingThisOp =
+      this.#earlierPending?.accountOp.id === replacement.replacedAccountOpId
+    const canNoLongerReplace =
+      !this.#earlierPending?.replacementAccountOp && this.estimation.availableFeeOptions.length > 0
+    if (isReplacedOpHoldingThisOp && !canNoLongerReplace) return false
+
+    this.#leaveReplaceMode()
+    this.update({ hasNewEstimation: true })
+    return true
+  }
+
+  /**
+   * Checks again whether the transaction being replaced was processed or can't be replaced
+   * anymore, once back to ReadyToSign. It may have been processed while signing, so the broadcast
+   * fails as its place (nonce) is taken, and with nothing left pending the activity may never
+   * update again
+   */
+  #checkReplacementStillNeeded() {
     if (this.status?.type !== SigningStatus.ReadyToSign) return
 
-    this.#speedUp?.checkReplacedTransaction()
+    this.#replacement?.checkReplacedTransaction()
+    this.#leaveReplaceModeIfStale()
+  }
+
+  /**
+   * Finds the earlier pending op that holds this op back, and whether this op can replace it.
+   * A speed up or a cancel is never held back, as neither takes a new nonce.
+   * Returns whether anything changed.
+   */
+  #updateEarlierPendingAccountOp(): boolean {
+    const prev = this.earlierPendingAccountOp
+    const reservations = this.isSpeedUpTransaction
+      ? []
+      : this.#activity.getPendingNonceReservations(
+          this.#network.chainId,
+          getNonceKeys({
+            accountOp: this.accountOp,
+            account: this.account,
+            signsBundlerAuthorization: this.baseAccount.shouldSignAuthorization(
+              BROADCAST_OPTIONS.byBundler
+            )
+          })
+        )
+    const pendingAccountOps = reservations.length
+      ? Object.values(this.#activity.broadcastedButNotConfirmed).flat()
+      : []
+    const isSafe = !!this.account.safeCreation
+    const earlierPendingAccountOp = reservations.length
+      ? getEarlierPendingAccountOp({
+          accountOp: this.accountOp,
+          isSafe,
+          reservations,
+          pendingAccountOps
+        })
+      : null
+
+    this.#earlierPending = earlierPendingAccountOp && {
+      accountOp: earlierPendingAccountOp,
+      replacementAccountOp: getEarlierPendingReplacementAccountOp({
+        earlierPendingAccountOp,
+        takesNoncesAfterReplaced:
+          this.baseAccount.shouldBroadcastCallsSeparately(this.accountOp) ||
+          // The authorization of a first-time delegation takes the nonce after the txn
+          this.accountOp.gasFeePayment?.broadcastOption === BROADCAST_OPTIONS.delegation,
+        reservations,
+        pendingAccountOps,
+        // Not only after a successful estimation, as the fee options stay while it reloads
+        feeOptions: this.estimation.availableFeeOptions
+      })
+    }
+    const next = this.earlierPendingAccountOp
+    return prev?.id !== next?.id || prev?.canReplace !== next?.canReplace
+  }
+
+  /**
+   * Sends this op in place of the earlier pending op: with its nonce and a fee high enough to
+   * replace it. It is not a speed up. The calls are new, so a Safe would not reuse old
+   * signatures, and Reject keeps its usual meaning. Activity links the two by the fee payer and
+   * `eoaNonce` (see `getReplacementKey`) and marks the old one as replaced.
+   */
+  replacePendingAccountOp() {
+    const replacementAccountOp = this.#earlierPending?.replacementAccountOp
+    if (!replacementAccountOp || this.#replacement) return
+    // Swapping the nonce while signing, or once signed, would send something other than what
+    // was signed
+    if (!this.canUpdate() || this.#isSignedBySafeOwner) return
+
+    this.#replacement = new TxnReplacement({
+      accountOp: replacementAccountOp,
+      activity: this.#activity,
+      withNewCalls: true
+    })
+    this.#isReplacedPendingAccountOpProcessed = false
+    this.#updateAccountOp({ eoaNonce: replacementAccountOp.eoaNonce })
+    // A Safe op only goes through in place of a pending op of the same Safe at its Safe nonce
+    const replacedSafeNonce = getAccountOpNonce(replacementAccountOp)
+    if (
+      this.account.safeCreation &&
+      isSameAddr(replacementAccountOp.accountAddr, this.account.addr) &&
+      replacedSafeNonce !== null &&
+      replacedSafeNonce !== getAccountOpNonce(this.accountOp)
+    )
+      this.setSafeNonce(replacedSafeNonce)
+    this.#replacement.watchReplacedTransaction(() => this.#onReplacedTransactionProcessed())
+    this.update({ hasNewEstimation: true })
+  }
+
+  /**
+   * Stops sending in place of the earlier pending op, so this op is a normal one again and the
+   * pending op holds it back, at the next free Safe nonce for a Safe. Does nothing when it is not
+   * replacing, while signing, or once a Safe owner signed.
+   */
+  stopReplacingPendingAccountOp() {
+    if (this.#replacement?.kind !== 'newCalls') return
+    if (!this.canUpdate() || this.#isSignedBySafeOwner) return
+
+    this.#leaveReplaceMode()
+    this.update({ hasNewEstimation: true })
+  }
+
+  /** Whether an owner signed the Safe transaction, so its Safe nonce can't change anymore */
+  get #isSignedBySafeOwner(): boolean {
+    if (!this.account.safeCreation) return false
+    return !!this.accountOp.signed?.length || !!this.accountOp.safeTx?.confirmations?.length
   }
 
   #withDecodedCalls(humanization: IrCall[]) {
@@ -1631,6 +1859,18 @@ export class SignAccountOpController
   }
 
   /**
+   * A 1/1 Safe with its only key here executes right after signing. Not behind an earlier
+   * pending transaction, where the owner only signs and executing waits for that one.
+   */
+  get #canSafeQuickBroadcast(): boolean {
+    return (
+      this.threshold === 1 &&
+      this.accountKeyStoreKeys.length === 1 &&
+      (!this.#earlierPending || this.#replacement?.kind === 'newCalls')
+    )
+  }
+
+  /**
    * Whether signing only adds a Safe owner's signature and nothing gets executed. The signature
    * covers just the calls and the nonce, not who pays the fee, so no fee payment is needed for it.
    * A 1/1 Safe with its only key here executes right after signing, so it always needs one.
@@ -1639,8 +1879,7 @@ export class SignAccountOpController
     if (!this.account.safeCreation || this.accountOp.meta?.isSafeDeploy) return false
     if (this.canBroadcast) return false
 
-    const isQuickBroadcast = this.threshold === 1 && this.accountKeyStoreKeys.length === 1
-    return !isQuickBroadcast && (this.accountOp.signed?.length || 0) < this.threshold
+    return !this.#canSafeQuickBroadcast && (this.accountOp.signed?.length || 0) < this.threshold
   }
 
   /**
@@ -1746,12 +1985,13 @@ export class SignAccountOpController
    * The default fee option is picked only once, and when nothing can pay the fee it's one that
    * can't (e.g. the Safe's own native). Later estimations keep it, so when another option becomes
    * able to pay (e.g. the user funds an EOA), the default is picked again. Options that can still
-   * pay are never replaced, and neither is the pending transaction's option of a speed up.
+   * pay are never replaced, and neither is the pending transaction's option of a replacement
+   * (speed up, cancel or Replace), see #selectReplacedFeeOption.
    * With custom gas prices it's kept too, so the user can lower a price the option can't afford
    */
   #replaceUnusableFeeOption() {
     if (
-      this.#speedUp ||
+      this.#replacement ||
       this.hasCustomGasPrices ||
       this.estimation.status !== EstimationStatus.Success ||
       !this.#paidBy ||
@@ -1851,7 +2091,8 @@ export class SignAccountOpController
       this.canBroadcast &&
       this.estimation.availableFeeOptions.length > 0 &&
       this.status?.type !== SigningStatus.SpeedUpNotNeeded &&
-      this.#speedUp?.isReplacedFeeOptionMissing(this.estimation.availableFeeOptions)
+      this.isSpeedUpTransaction &&
+      this.#replacement?.isReplacedFeeOptionMissing(this.estimation.availableFeeOptions)
     ) {
       return [
         {
@@ -2040,26 +2281,46 @@ export class SignAccountOpController
       }
     }
 
-    // Safe txn, signed, with a nonce other than the onchain one: display an error.
+    // Sending behind a pending transaction is blocked for now. Blocks are fast and every account
+    // type can batch, so the user waits or decides what to do with the pending one. Nodes also
+    // refuse a second pending transaction from a delegated EOA. A Safe is held back in canBroadcast
+    if (
+      !this.account.safeCreation &&
+      this.#earlierPending &&
+      this.#replacement?.kind !== 'newCalls'
+    ) {
+      errors.push({
+        title: 'A transaction you sent earlier is still waiting to be confirmed.',
+        code: EARLIER_PENDING_TRANSACTION_ERROR_CODE
+      })
+    }
+
+    // Safe txn, signed, with a nonce it can't be executed with now: display an error.
     // Not for a speed up, which keeps the nonce of the pending transaction it replaces on
     // purpose. If that transaction gets processed first, the speed up is stopped instead
     if (
       !!this.account.safeCreation &&
       !this.accountOp.meta?.isSafeDeploy &&
-      !this.#speedUp &&
+      !this.isSpeedUpTransaction &&
       accountState &&
       this.accountOp.nonce !== null &&
-      this.accountOp.nonce !== accountState.nonce &&
       this.#accountOp.signed &&
       this.#accountOp.signed.length >= this.threshold
     ) {
-      // A past nonce was already used by a confirmed transaction, so this one can never go through
-      if (this.accountOp.nonce < accountState.nonce) {
+      // The earlier pending transaction box explains it, and a refresh would not help.
+      // Not while replacing that transaction, as this one goes through in its place
+      if (this.#earlierPending && this.#replacement?.kind !== 'newCalls') {
+        errors.push({
+          title: 'A transaction you sent earlier is still waiting to be confirmed.',
+          code: EARLIER_PENDING_TRANSACTION_ERROR_CODE
+        })
+      } else if (this.accountOp.nonce < accountState.nonce) {
+        // A past nonce was already used by a confirmed transaction, so this one can never go through
         errors.push({
           title:
             'Another transaction from this account was already confirmed in its place, so this one can no longer go through. You can reject it.'
         })
-      } else {
+      } else if (this.#isSafeNonceAhead(this.accountOp.nonce, accountState.nonce)) {
         // A future nonce: the earlier transactions may be either not sent yet or sent and
         // still waiting to be confirmed
         errors.push({
@@ -2142,8 +2403,14 @@ export class SignAccountOpController
     const estimation = this.estimation.estimation
 
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
-    // that we should update the portfolio to get a correct simulation
-    if (estimation && estimation.ambireEstimation && estimation.flags.hasNonceDiscrepancy) {
+    // that we should update the portfolio to get a correct simulation.
+    // canUpdate() is checked again, as signing may have set the nonce while this awaited
+    if (
+      this.canUpdate() &&
+      estimation &&
+      estimation.ambireEstimation &&
+      estimation.flags.hasNonceDiscrepancy
+    ) {
       this.#updateNonce(BigInt(estimation.ambireEstimation.ambireAccountNonce))
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
@@ -2171,7 +2438,7 @@ export class SignAccountOpController
         this.#accounts.accountStates[this.accountOp.accountAddr]?.[
           this.accountOp.chainId.toString()
         ]
-      if (pendingAccountState) this.#updateNonce(pendingAccountState.nonce)
+      if (pendingAccountState && this.canUpdate()) this.#updateNonce(pendingAccountState.nonce)
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -2326,6 +2593,21 @@ export class SignAccountOpController
         return
       }
 
+      // Paying any other way would send a second transaction next to the pending one, so the
+      // pending one blocks this op again. Checked once the fee options are known, and not only
+      // after a successful estimation, as the options are kept while the estimation reloads
+      if (
+        this.#replacement?.kind === 'newCalls' &&
+        this.estimation.availableFeeOptions.length > 0 &&
+        this.#replacement.isReplacedFeeOptionMissing(this.estimation.availableFeeOptions)
+      ) {
+        this.#leaveReplaceMode()
+        // The payer is gone, so a new default one is picked
+        this.#paidBy = null
+        this.feeTokenResult = null
+        this.selectedOption = undefined
+      }
+
       if (this.estimation.status === EstimationStatus.Success) {
         // Start the gas price interval in case it was stopped earlier
         this.#startGasPriceIntervalIfNoCustomPrices()
@@ -2442,7 +2724,8 @@ export class SignAccountOpController
           : null
       }
 
-      if (feeToken && paidBy && !isSpeedUpTransaction) {
+      // A replacement is paid the way the pending transaction was, see #selectReplacedFeeOption
+      if (feeToken && paidBy && !this.#replacement) {
         this.#paidBy = paidBy
         this.feeTokenResult = feeToken
         if (
@@ -2487,7 +2770,7 @@ export class SignAccountOpController
       // Set defaults, if some of the optional params are omitted
       this.#setDefaults()
       // After the defaults, so the default fee option gets replaced with the pending transaction's
-      this.#selectSpeedUpFeeOption()
+      this.#selectReplacedFeeOption()
       // A fee option the user picks in this update is kept as it is
       if (!feeToken || !paidBy) this.#replaceUnusableFeeOption()
 
@@ -2534,6 +2817,10 @@ export class SignAccountOpController
 
       // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
       this.#setGasFeePayment(paidByKeyType)
+      // The fee payer decides which nonces the op takes
+      this.#updateEarlierPendingAccountOp()
+      // It estimates again by itself, which also takes care of the status and the warnings
+      if (this.#leaveReplaceModeIfStale()) return
       this.updateStatus()
       this.calculateWarnings()
     } catch (e: any) {
@@ -2554,7 +2841,7 @@ export class SignAccountOpController
     if (forceStatusChange) {
       this.status = { type: forceStatusChange }
       this.emitUpdate()
-      this.#checkSpeedUpStillNeeded()
+      this.#checkReplacementStillNeeded()
       return
     }
 
@@ -2614,7 +2901,7 @@ export class SignAccountOpController
       // do not reset this once triggered
       if (replacementFeeLow) this.replacementFeeLow = replacementFeeLow
       this.emitUpdate()
-      this.#checkSpeedUpStillNeeded()
+      this.#checkReplacementStillNeeded()
       return
     }
 
@@ -2636,7 +2923,9 @@ export class SignAccountOpController
     this.gasPrice.destroy()
     this.#onDappsUpdateUnsubscribe?.()
     this.#onDappsUpdateUnsubscribe = undefined
-    this.#speedUp?.destroy()
+    this.#replacement?.destroy()
+    this.#onActivityUpdateUnsubscribe?.()
+    this.#onActivityUpdateUnsubscribe = undefined
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
@@ -2723,6 +3012,13 @@ export class SignAccountOpController
     // have changed on 1, but the simulation from 2 will persist as sadly,
     // the simulation is account based, not accountOp based
     const isSafe = !!this.account.safeCreation
+    // Same for any account, once another op on this network was simulated meanwhile, e.g. a
+    // speed up or a cancel of the earlier pending transaction, signed in its own request
+    const simulatedAccountOps = this.#portfolio.getAccountPortfolioState(
+      this.accountOp.accountAddr
+    )?.[this.accountOp.chainId.toString()]?.accountOps
+    const isAnotherOpSimulated =
+      this.#shouldSimulate && !simulatedAccountOps?.some(({ id }) => id === this.accountOp.id)
 
     this.#stopRefetching = false
     this.#reestimateCounter = 0
@@ -2732,7 +3028,7 @@ export class SignAccountOpController
         !this.gasPrice.updatedAt || Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
     })
 
-    if (haveCallsChanged || isSafe) {
+    if (haveCallsChanged || isSafe || isAnotherOpSimulated) {
       // The simulateAndEstimateOrSimulateInterval must be restarted if the calls have changed
       // as that forces an immediate reestimation. start() does nothing
       // if the interval is already running.
@@ -3090,7 +3386,7 @@ export class SignAccountOpController
 
       const nativeRatio = this.#getNativeToFeeTokenRatio(option.token)
       const shouldUseRpcGasPrices = this.#shouldUseRpcGasPrices(broadcastOption)
-      const gasPrices = this.#applySpeedUpMinFees(
+      const gasPrices = this.#applyReplacementMinFees(
         shouldUseRpcGasPrices ? this.rpcGasPrices : this.gasPrices
       )
       // the RPC gas prices are used only for broadcasts outside erc-4337,
@@ -3398,6 +3694,7 @@ export class SignAccountOpController
     this.status = { type: SigningStatus.ReadyToSign }
 
     this.emitUpdate()
+    this.#checkReplacementStillNeeded()
   }
 
   #addFeePayment() {
@@ -3800,10 +4097,16 @@ export class SignAccountOpController
           ? this.accountOp.signed.concat([signingKeyAddr!])
           : [signingKeyAddr!]
 
+        // The first free nonce, past this device's own pending txns, still goes out in one click.
+        // So does a Replace, which takes the nonce of the pending txn to go through in its place
+        const isReplacingWithPendingNonce =
+          this.#replacement?.kind === 'newCalls' &&
+          this.#customSafeNonce === this.#getReplacedAccountNonce()
         const isQuickBroadcast =
-          this.threshold === 1 &&
-          this.accountKeyStoreKeys.length === 1 &&
-          (!this.#customSafeNonce || this.#customSafeNonce === accountState.nonce)
+          this.#canSafeQuickBroadcast &&
+          (!this.#customSafeNonce ||
+            this.#customSafeNonce === this.#getAccountNextNonce(accountState.nonce) ||
+            isReplacingWithPendingNonce)
         if (!isQuickBroadcast) {
           if (!prevSignedSigs.length) {
             // propose the txn to Safe Global upon first entry
@@ -3874,14 +4177,18 @@ export class SignAccountOpController
         if (!this.isSpeedUpTransaction || this.#isNewCancel) {
           // fetch the nonce if needed. A cancel signs with the nonce of the pending transaction
           // it replaces, so only one of the two can go through
-          const replacedNonce = this.#isNewCancel ? (this.#speedUp?.replacedNonce ?? null) : null
+          const replacedNonce = this.#getReplacedAccountNonce()
           const nonce =
             replacedNonce ??
-            (await this.baseAccount.getBroadcastNonce(
-              this.#activity,
-              this.accountOp,
-              this.provider
-            ))
+            // The op is sent right away, so it skips the nonces of the ops this device sent that
+            // the RPC may not count yet
+            this.#getAccountNextNonce(
+              await this.baseAccount.getBroadcastNonce(
+                this.#activity,
+                this.accountOp,
+                this.provider
+              )
+            )
           if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
 
           const signer = await this.#getDefaultSigner()
@@ -3918,13 +4225,20 @@ export class SignAccountOpController
             this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
 
           const signer = await this.#getDefaultSigner()
+          // The broadcast sends the txn with this same nonce, so the authorization matches it.
+          // Only a speed-up or a Replace keeps the nonce it already has
+          const txnNonce =
+            this.#replacement && typeof this.accountOp.eoaNonce === 'bigint'
+              ? this.accountOp.eoaNonce
+              : await this.#getEoaBroadcastNonce(this.accountOp.accountAddr)
+          this.#updateAccountOp({ eoaNonce: txnNonce })
           const authorization = {
             chainId: this.#network.chainId,
             contract,
             // because we're broadcasting by ourselves, we need to add 1 to the nonce
             // as the sender nonce (the curr acc) gets incremented before the
             // authrorization validation
-            nonce: accountState.eoaNonce! + 1n
+            nonce: txnNonce + 1n
           }
           this.accountOp.meta.delegation = get7702Sig(
             this.#network.chainId,
@@ -3968,14 +4282,17 @@ export class SignAccountOpController
             this.#network.chainId,
             this.accountKeyStoreKeys
           )
+          // The bundler's own EOA sends the txn, so the authorization takes the next nonce of
+          // this EOA. Read fresh, as a pending or just mined txn makes the cached one wrong
+          const authorizationNonce = await this.#getEoaBroadcastNonce(this.accountOp.accountAddr)
           const authorization = {
             chainId: this.#network.chainId,
             contract,
-            nonce: accountState.nonce
+            nonce: authorizationNonce
           }
           eip7702Auth = get7702Sig(
             this.#network.chainId,
-            accountState.nonce,
+            authorizationNonce,
             contract,
             await this.#withHardwareWalletSigningRequest(
               get7702AuthorizationSigningRequest(authorization),
@@ -4157,6 +4474,57 @@ export class SignAccountOpController
   }
 
   /**
+   * The account nonce of the pending op that a new cancel or a Replace signs with, so only one
+   * of the two can go through. Null for other ops, and for a Replace of another account's op.
+   */
+  #getReplacedAccountNonce(): bigint | null {
+    const replacement = this.#replacement
+    if (!replacement) return null
+    if (this.#isNewCancel) return replacement.replacedNonce
+    // Another account's op was replaced through the fee payer they share, see getReplacementKey
+    if (replacement.kind !== 'newCalls' || replacement.accountAddr !== this.accountOp.accountAddr)
+      return null
+    return replacement.replacedNonce
+  }
+
+  /** The account nonce for a new op: `chainNonce`, raised past the nonces of the pending ops. */
+  #getAccountNextNonce(chainNonce: bigint): bigint {
+    return this.#activity.getNextNonce(
+      this.accountOp.accountAddr,
+      this.#network.chainId,
+      'account',
+      chainNonce
+    )
+  }
+
+  /**
+   * Whether `nonce` is past the next Safe nonce, so earlier Safe transactions must be executed
+   * first. The chain nonce alone is not enough, as it lags for a few seconds after a
+   * confirmation, while Activity already knows the nonce the confirmed transaction used.
+   */
+  #isSafeNonceAhead(nonce: bigint, chainNonce: bigint): boolean {
+    // The chain nonce is checked first, so the Activity ops are read only when it's behind
+    return nonce > chainNonce && nonce > this.#getAccountNextNonce(chainNonce)
+  }
+
+  /**
+   * The txn nonce for a new txn of `senderAddr` (or a 7702 authorization it signs). Raised past
+   * the nonces of the pending ops in Activity, as the RPC may not count them (yet).
+   */
+  async #getEoaBroadcastNonce(senderAddr: string): Promise<bigint> {
+    const chainNonce = await this.provider.getTransactionCount(
+      senderAddr,
+      getPendingBlockTagIfSupported(this.#network)
+    )
+    return this.#activity.getNextNonce(
+      senderAddr,
+      this.#network.chainId,
+      'sender',
+      BigInt(chainNonce)
+    )
+  }
+
+  /**
    * There are 3 ways to broadcast an AccountOp:
    *   1. For EOAs, there is only one way to do that. After
    *   signing the transaction, the serialized signed transaction object gets
@@ -4233,6 +4601,7 @@ export class SignAccountOpController
     // broadcasting by EOA is quite the same:
     // 1) build a rawTxn 2) sign 3) broadcast
     // we have one handle, just a diff rawTxn for each case (RAW_TXN_BROADCAST_OPTIONS)
+    let sentEoaNonce: bigint | undefined
 
     // PQ1 is a smart-contract-only signer that cannot produce a raw EOA
     // transaction. The signer packages the calls into a 4337 UserOperation,
@@ -4307,10 +4676,21 @@ export class SignAccountOpController
         accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
           ? accountOp.gasFeePayment.paidBy
           : accountOp.accountAddr
+      // A replacement only takes the place of the pending transaction when it comes from the
+      // same sender, otherwise both would go through
+      if (this.#replacement && !this.#replacement.isSentBySameAccountAsReplaced(senderAddr)) {
+        return this.throwBroadcastAccountOp({
+          message:
+            "This transaction can't take the place of the earlier one, because it would be paid from a different account. Go back and try again.",
+          accountState
+        })
+      }
       const senderNonce =
         accountOp.eoaNonce !== null && typeof accountOp.eoaNonce !== 'undefined'
           ? Number(accountOp.eoaNonce)
-          : await this.provider.getTransactionCount(senderAddr).catch((e) => e)
+          : await this.#getEoaBroadcastNonce(senderAddr)
+              .then(Number)
+              .catch((e) => e)
 
       // @precaution
       if (senderNonce instanceof Error) {
@@ -4319,6 +4699,8 @@ export class SignAccountOpController
           accountState
         })
       }
+
+      const firstSentNonce = BigInt(senderNonce)
 
       try {
         const { gasFeePayment } = accountOp
@@ -4339,7 +4721,7 @@ export class SignAccountOpController
         const txnLength = this.baseAccount.shouldBroadcastCallsSeparately(accountOp)
           ? accountOp.calls.length
           : 1
-        this.#updateAccountOp({ eoaNonce: BigInt(senderNonce) })
+        this.#updateAccountOp({ eoaNonce: firstSentNonce })
         if (txnLength > 1) this.update({ signedTransactionsCount: 0 })
         for (let i = 0; i < txnLength; i++) {
           const currentNonce = senderNonce + i
@@ -4367,14 +4749,20 @@ export class SignAccountOpController
             gasFeePayment.paidByKeyType
           )
 
-          if (isDelegationBroadcast) {
-            multipleTxnsBroadcastRes.push({
-              hash: await this.provider.send('eth_sendRawTransaction', [signedTxn])
-            })
-          } else {
-            multipleTxnsBroadcastRes.push(
-              await broadcastTransaction(this.provider, signedTxn, accountOp.chainId)
-            )
+          try {
+            if (isDelegationBroadcast) {
+              multipleTxnsBroadcastRes.push({
+                hash: await this.provider.send('eth_sendRawTransaction', [signedTxn])
+              })
+            } else {
+              multipleTxnsBroadcastRes.push(
+                await broadcastTransaction(this.provider, signedTxn, accountOp.chainId)
+              )
+            }
+          } catch (sendError: unknown) {
+            // The node already has this exact txn, so it went out
+            if (!isTxnAlreadyKnown(sendError)) throw sendError
+            multipleTxnsBroadcastRes.push({ hash: keccak256(signedTxn) })
           }
           if (txnLength > 1) this.update({ signedTransactionsCount: i + 1 })
 
@@ -4383,6 +4771,7 @@ export class SignAccountOpController
           if (this.isErc4337Enabled) this.#recordEoaTxnForGasTank(accountOp.chainId, signedTxn)
         }
 
+        sentEoaNonce = firstSentNonce
         transactionRes = {
           nonce:
             accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
@@ -4397,8 +4786,10 @@ export class SignAccountOpController
       } catch (error: any) {
         console.error('Error broadcasting', error)
 
-        // reset the eoaNonce on error
-        this.#updateAccountOp({ eoaNonce: undefined })
+        // reset the eoaNonce on error, except for a speed-up or a Replace, which must keep the
+        // nonce it replaces. A Replace that sent part of its batch leaves replace mode once
+        // Activity knows the sent part (see cleanupAfterBroadcast)
+        if (!this.#replacement) this.#updateAccountOp({ eoaNonce: undefined })
 
         // for multiple txn cases
         // if a batch of 5 txn is sent to Ledger for sign but the user reject
@@ -4418,6 +4809,8 @@ export class SignAccountOpController
         }
         if (multipleTxnsBroadcastRes.length && this.#type !== 'one-click-swap-and-bridge') {
           transactionRes = sentTransactionRes
+          // this.accountOp.eoaNonce may have been reset above, so keep the nonce of the sent part
+          sentEoaNonce = firstSentNonce
 
           // The part that went out is reported as broadcast, so without saying this
           // the rest of the batch looks sent when it never was.
@@ -4438,14 +4831,13 @@ export class SignAccountOpController
           // Signing the whole batch again would send them twice (e.g. a second approval)
           if (multipleTxnsBroadcastRes.length && this.#onPartialBroadcast) {
             try {
-              await this.#onPartialBroadcast(
-                this.#buildSubmittedAccountOp(
-                  accountOp,
-                  account,
-                  sentTransactionRes,
-                  BigInt(senderNonce)
-                )
+              const sentAccountOp = this.#buildSubmittedAccountOp(
+                accountOp,
+                account,
+                sentTransactionRes,
+                firstSentNonce
               )
+              await this.#onPartialBroadcast(sentAccountOp)
             } catch (e: any) {
               // Not reporting them must not hide the error that stopped the batch
               this.emitError({
@@ -4456,6 +4848,8 @@ export class SignAccountOpController
               })
             }
           }
+          // The sent part took the nonce of a Replace, so a retry must not reuse it
+          if (multipleTxnsBroadcastRes.length) this.#leaveReplaceMode()
 
           return this.throwBroadcastAccountOp({ error, accountState })
         }
@@ -4533,7 +4927,7 @@ export class SignAccountOpController
       accountOp,
       account,
       transactionRes,
-      this.accountOp.eoaNonce
+      sentEoaNonce ?? this.accountOp.eoaNonce
     )
 
     await this.#onBroadcastSuccess({
@@ -4743,8 +5137,17 @@ export class SignAccountOpController
     this.broadcastStatus = 'INITIAL'
     this.forceEmitUpdate()
 
+    const isRawTxnBroadcast = RAW_TXN_BROADCAST_OPTIONS.includes(
+      this.accountOp.gasFeePayment?.broadcastOption ?? ''
+    )
+
     if (originalMessage) {
-      if (originalMessage.includes('replacement fee too low')) {
+      // Outside a speed-up, a txn this device doesn't know (e.g. from another app) holds the nonce.
+      // The fee is left as is, as a higher one would replace that txn
+      if (isRawTxnBroadcast && !this.#replacement && isReplacementRefused(_err)) {
+        message =
+          'Another transaction from this account is still waiting to be confirmed. Wait for it to finish, then try again.'
+      } else if (originalMessage.includes('replacement fee too low')) {
         // if custom gas prices have been set, show the original error
         if (!this.hasCustomGasPrices) {
           message =
@@ -4781,7 +5184,8 @@ export class SignAccountOpController
         }
       } else if (
         originalMessage.includes('INVALID_ACCOUNT_NONCE') ||
-        originalMessage.includes('user nonce')
+        originalMessage.includes('user nonce') ||
+        isNonceTooLow(_err)
       ) {
         message = 'Pending transaction detected. Please try again in a few seconds'
         this.#accounts
@@ -4885,6 +5289,7 @@ export class SignAccountOpController
   cancelSignReq() {
     this.#resetToReadyToSign()
     this.emitUpdate()
+    this.#checkReplacementStillNeeded()
   }
 
   /**
@@ -4907,7 +5312,13 @@ export class SignAccountOpController
       return notSentCalls
     }
 
-    this.update({ accountOpData: { calls: notSentCalls } })
+    // Part of a Replace went out, so Activity holds the nonce it took. Sending the rest with the
+    // same nonce would collide with it, so the rest is a normal op held behind the sent part
+    const hasSentPartOfReplace =
+      this.#replacement?.kind === 'newCalls' && notSentCalls.length < this.accountOp.calls.length
+    if (hasSentPartOfReplace) this.#leaveReplaceMode()
+
+    this.update({ accountOpData: { calls: notSentCalls }, hasNewEstimation: hasSentPartOfReplace })
 
     return notSentCalls
   }
@@ -5021,7 +5432,7 @@ export class SignAccountOpController
    * (see BaseAccount.getGasPriceFetchStrategy)
    */
   get selectedOptionGasPrices(): GasSpeeds | undefined {
-    if (!this.selectedOption) return this.#applySpeedUpMinFees(this.gasPrices)
+    if (!this.selectedOption) return this.#applyReplacementMinFees(this.gasPrices)
 
     const broadcastOption = this.baseAccount.getBroadcastOption(this.selectedOption, {
       op: this.accountOp,
@@ -5029,7 +5440,7 @@ export class SignAccountOpController
     })
 
     // Raised like the fee speeds, so the advanced options don't start below the speed up minimum
-    return this.#applySpeedUpMinFees(
+    return this.#applyReplacementMinFees(
       this.#shouldUseRpcGasPrices(broadcastOption) ? this.rpcGasPrices : this.gasPrices
     )
   }
@@ -5070,10 +5481,21 @@ export class SignAccountOpController
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-    if (this.accountOp.nonce !== null && this.accountOp.nonce !== accountState?.nonce) return false
+    const { nonce } = this.accountOp
+    if (
+      nonce !== null &&
+      (!accountState ||
+        nonce < accountState.nonce ||
+        this.#isSafeNonceAhead(nonce, accountState.nonce))
+    )
+      return false
+    // The owners can still sign behind a pending transaction, only executing waits for it.
+    // On Ethereum the state is read at the pending block, so the nonce check above can pass.
+    // Not while replacing that transaction, as this one goes through in its place
+    if (this.#earlierPending && this.#replacement?.kind !== 'newCalls') return false
 
     // if the threshold is 1 and there's only 1 imported key, allow quick broadcast
-    if (this.threshold === 1 && this.accountKeyStoreKeys.length === 1) return true
+    if (this.#canSafeQuickBroadcast) return true
 
     return (this.accountOp.signed || []).length >= this.threshold
   }
@@ -5104,6 +5526,8 @@ export class SignAccountOpController
       isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,
       banners: this.banners,
       canAccountBroadcastByItself: this.canAccountBroadcastByItself,
+      earlierPendingAccountOp: this.earlierPendingAccountOp,
+      isReplacedPendingAccountOpProcessed: this.isReplacedPendingAccountOpProcessed,
       selectedOptionGasPrices: this.selectedOptionGasPrices,
       canSetCustomGasPrices: this.canSetCustomGasPrices,
       canSetCustomGas: this.canSetCustomGas,
