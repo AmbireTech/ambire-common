@@ -1,5 +1,3 @@
-import { getDomain } from 'tldts'
-
 import { ISelectedAccountController } from '@/interfaces/selectedAccount'
 
 import {
@@ -52,6 +50,7 @@ import {
   getAccountsForDapp,
   getDappIdFromUrl,
   getDappNameFromId,
+  getCachedDomain,
   getDomainFromUrl,
   getNormalizedHostnameFromUrl,
   isAccountAllowedForDapp,
@@ -64,6 +63,7 @@ import {
   withoutUnusedAccountPreferences
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
+import { startPerfSpan } from '../../libs/perf/perf'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { canBeTrustedByUser } from '../phishing/phishing'
@@ -342,6 +342,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     // the controller loading forever. `migrateDappsAddMissingIds` repairs such records, so any
     // that still show up are skipped and reported.
     let skippedDappsWithoutIdCount = 0
+    const endNormalizeSpan = startPerfSpan('dapps.load.normalize')
     storedDapps.forEach((dapp) => {
       if (!dapp.id) {
         skippedDappsWithoutIdCount += 1
@@ -355,6 +356,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
     })
+    endNormalizeSpan()
     if (skippedDappsWithoutIdCount) {
       this.emitError({
         level: 'silent',
@@ -412,6 +414,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     // const lastDappsUpdateVersion = 'debug-force-fetch'
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) {
+      const endBlacklistSweepSpan = startPerfSpan('dapps.blacklistSweep')
       const dappsWithoutBlacklistedStatus = Array.from(this.#dapps.values()).filter(
         (d) =>
           !d.blacklisted ||
@@ -421,6 +424,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           (d.blacklisted !== 'SUSPICIOUS_HOSTING' &&
             this.#phishing.getDomainBlacklistedStatus(d.url) === 'SUSPICIOUS_HOSTING')
       )
+      endBlacklistSweepSpan()
       // IMPORTANT: Do NOT await this call — we want `isReadyToDisplayDapps` to resolve immediately
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.#updateDappsBlacklistedStatus(dappsWithoutBlacklistedStatus)
@@ -459,6 +463,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       throw new Error('Fetch completed, but no apps or chains were returned')
     }
 
+    const endBuildCatalogSpan = startPerfSpan('dapps.buildCatalog')
     const chainNamesToIds = new Map<string, number | null>()
     for (const c of fetchedChainsList) {
       chainNamesToIds.set(c.name.toLowerCase(), c.chainId)
@@ -469,6 +474,9 @@ export class DappsController extends EventEmitter implements IDappsController {
       .map((c) => c.name.toLowerCase())
 
     const prevDapps = new Map(this.#dapps)
+    // Read once: `allNetworks` rebuilds the whole list on every access, and the loop below
+    // checks every chain of every app against it
+    const knownChainIds = new Set(this.#networks.allNetworks.map((n) => n.chainId.toString()))
 
     for (const dapp of fetchedDappsList) {
       if (categoriesToExclude.includes(dapp.category)) continue
@@ -489,11 +497,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       const chainIds = (dapp.chains ?? [])
         .map((chainName: string) => chainNamesToIds.get(chainName.toLowerCase())!)
-        .filter(
-          (chainId: number) =>
-            !!chainId &&
-            this.#networks.allNetworks.find((n) => n.chainId.toString() === chainId.toString())
-        )
+        .filter((chainId: number) => !!chainId && knownChainIds.has(chainId.toString()))
 
       const prevSources = prevStoredDapp?.connectedSources ?? []
       const updatedDapp: Dapp = {
@@ -526,7 +530,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         dappsMap.set(id, modifiedDapp)
       })
 
-      if (!dappsMap.has(id) && !dappsMap.has(getDomain(updatedDapp.url)!)) {
+      if (!dappsMap.has(id) && !dappsMap.has(getCachedDomain(updatedDapp.url)!)) {
         dappsMap.set(id, updatedDapp)
       }
     }
@@ -588,6 +592,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     // Delete legacy IDs
     for (const id of dappIdsToBeRemoved) dappsMap.delete(id)
     const unverifiedDappsArray = Array.from(dappsMap.values())
+    endBuildCatalogSpan()
 
     this.#dapps = dappsMap
     this.isReadyToDisplayDapps = true
@@ -604,12 +609,14 @@ export class DappsController extends EventEmitter implements IDappsController {
     await this.#phishing.updateDomainsBlacklistedStatus(
       dapps.map((d) => d.url),
       (blacklistedStatus) => {
+        const endApplyStatusesSpan = startPerfSpan('dapps.applyBlacklistStatuses')
         Object.entries(blacklistedStatus).forEach(([dappId, status]) => {
           const dapp = this.#dapps.get(dappId)
           if (dapp && dapp.blacklisted !== status) {
             this.#dapps.set(dapp.id, { ...dapp, blacklisted: status })
           }
         })
+        endApplyStatusesSpan()
         this.emitUpdate()
       }
     )
@@ -619,6 +626,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (!this.#dapps.size) return
 
     let hasUpdatedDapps = false
+    const endSyncSpan = startPerfSpan('dapps.syncBlacklistWithPhishing')
     this.#dapps.forEach((dapp, dappId) => {
       const updatedStatus = this.#phishing.getDomainBlacklistedStatus(dapp.url)
       if (!updatedStatus || dapp.blacklisted === updatedStatus) return
@@ -626,6 +634,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       this.#dapps.set(dappId, { ...dapp, blacklisted: updatedStatus })
       hasUpdatedDapps = true
     })
+    endSyncSpan()
 
     if (!hasUpdatedDapps) return
 

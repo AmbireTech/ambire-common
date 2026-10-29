@@ -1,4 +1,3 @@
-import { getDomain } from 'tldts'
 import { zeroAddress } from 'viem'
 
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -15,13 +14,18 @@ import { Fetch } from '../../interfaces/fetch'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
-import { getDappIdFromUrl, getNormalizedHostnameFromUrl } from '../../libs/dapps/helpers'
+import {
+  getCachedDomain,
+  getDappIdFromUrl,
+  getNormalizedHostnameFromUrl
+} from '../../libs/dapps/helpers'
 import {
   applySortedDelta,
   isSortedUnique,
   sortedIncludes,
   toSortedUnique
 } from '../../libs/sortedList/sortedList'
+import { startPerfSpan } from '../../libs/perf/perf'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SUSPICIOUS_HOSTING_DOMAINS } from './suspiciousHostingDomains'
@@ -276,10 +280,12 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     // because it is cheap, and the migration runs last, so a failing earlier migration skips it -
     // an unsorted list would then make the binary search silently miss listed domains and
     // addresses.
+    const endSortCheckSpan = startPerfSpan('phishing.load.sortCheck')
     const areDomainsSorted = isSortedUnique(phishing.domains)
     const areAddressesSorted = isSortedUnique(phishing.addresses)
     this.#domains = areDomainsSorted ? phishing.domains : toSortedUnique(phishing.domains)
     this.#addresses = areAddressesSorted ? phishing.addresses : toSortedUnique(phishing.addresses)
+    endSortCheckSpan()
 
     if (this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) {
       this.updatePhishingInterval.start({ runImmediately: true })
@@ -392,6 +398,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     }
 
     const phishing = await res.json()
+    const endApplyUpdateSpan = startPerfSpan('phishing.update.apply')
     const { domains, addresses } = getListsFromPhishingResponse(phishing, res.url)
 
     if (this.#version) {
@@ -440,6 +447,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       this.#addresses = toSortedUnique(addresses.map((address: string) => address.toLowerCase()))
     }
 
+    endApplyUpdateSpan()
     this.#shouldSyncDapps = true
     this.emitUpdate()
     // Not after the storage write below, which can be slow with a big list: the checks only need
@@ -478,6 +486,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   ) {
     if (!urls.length) return
 
+    const endDomainsStatusSpan = startPerfSpan('phishing.domainsStatus')
     const dappsData = urls.map((url) => ({ dappId: getDappIdFromUrl(url), url }))
 
     if (process.env.IS_TESTING === 'true') {
@@ -528,6 +537,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     dappsAwaitingList.forEach(({ dappId }) => {
       this.#domainsBlacklistedStatus.set(dappId, 'LOADING')
     })
+    endDomainsStatusSpan()
 
     !!callback &&
       callback(
@@ -744,7 +754,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   #isDomainListed(dappId: string): boolean {
     if (sortedIncludes(this.#domains, dappId)) return true
 
-    const registrableDomain = getDomain(dappId)
+    const registrableDomain = getCachedDomain(dappId)
     return !!registrableDomain && sortedIncludes(this.#domains, registrableDomain)
   }
 

@@ -25,6 +25,7 @@ import {
   UniswapTransactionRequest
 } from '../../interfaces/swapAndBridge'
 import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
+import { startPerfSpan } from '../../libs/perf/perf'
 import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
@@ -431,6 +432,7 @@ export class UniswapAPI implements SwapProvider {
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
+    const endNormalizeSpan = startPerfSpan('swap.uniswap.normalizeTokens')
     const tokens: SwapAndBridgeToToken[] = (response.tokens || [])
       .filter(
         (token) =>
@@ -444,6 +446,7 @@ export class UniswapAPI implements SwapProvider {
         name: token.name,
         symbol: token.symbol
       }))
+    endNormalizeSpan()
 
     return sortNativeTokenFirst(addCustomTokensIfNeeded({ chainId: toChainId, tokens }))
   }

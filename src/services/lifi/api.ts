@@ -37,6 +37,7 @@ import {
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
+import { startPerfSpan } from '../../libs/perf/perf'
 import type { FeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import { ZERO_ADDRESS } from '../socket/constants'
 import { getHumanReadableErrorMessage } from './helpers'
@@ -423,9 +424,11 @@ export class LiFiAPI implements SwapProvider {
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
+    const endNormalizeSpan = startPerfSpan('swap.lifi.normalizeTokens')
     const tokens: SwapAndBridgeToToken[] = (response.tokens[toChainId] || []).map((t: LiFiToken) =>
       normalizeLiFiTokenToSwapAndBridgeToToken(t, toChainId)
     )
+    endNormalizeSpan()
 
     const sortedTokens = await attemptToSortTokensByMarketCap({
       fetch: this.#fetch,
