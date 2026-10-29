@@ -1746,11 +1746,13 @@ export class SignAccountOpController
    * The default fee option is picked only once, and when nothing can pay the fee it's one that
    * can't (e.g. the Safe's own native). Later estimations keep it, so when another option becomes
    * able to pay (e.g. the user funds an EOA), the default is picked again. Options that can still
-   * pay are never replaced, and neither is the pending transaction's option of a speed up
+   * pay are never replaced, and neither is the pending transaction's option of a speed up.
+   * With custom gas prices it's kept too, so the user can lower a price the option can't afford
    */
   #replaceUnusableFeeOption() {
     if (
       this.#speedUp ||
+      this.hasCustomGasPrices ||
       this.estimation.status !== EstimationStatus.Success ||
       !this.#paidBy ||
       !this.feeTokenResult
@@ -1765,13 +1767,11 @@ export class SignAccountOpController
     )
     if (!hasUsableOption) return
 
-    this.#paidBy = null
-    this.feeTokenResult = null
-    // Cleared so the speed is picked again for the new option, see #setDefaultFeeSpeed
-    this.selectedOption = undefined
-    // A Safe may end up with no payer (see isSafeFeePayerChoiceRequired) and then
-    // #setGasFeePayment doesn't override the payment of the unusable option
-    this.#updateAccountOp({ gasFeePayment: null })
+    // Also clears the selected option, so the speed is picked again for the new one (see
+    // #setDefaultFeeSpeed), and the payment, as a Safe may end up with no payer (see
+    // isSafeFeePayerChoiceRequired) and then #setGasFeePayment doesn't override the payment
+    // of the unusable option. The fee speeds it clears are built again by #setDefaults
+    this.#clearFeeSelection()
     this.#setDefaults()
 
     // Same as when the user switches the token: a default saved on signing is
@@ -2812,6 +2812,9 @@ export class SignAccountOpController
     const canNotBecomeSmarter = !canBecomeSmarter(this.account, this.accountKeyStoreKeys)
 
     if (isExternal && canNotBecomeSmarter && feeOption.token.address !== ZERO_ADDRESS) return true
+
+    // Custom gas prices can be set only for the native token, so the others are shown as unavailable
+    if (this.hasCustomGasPrices && feeOption.token.address !== ZERO_ADDRESS) return true
 
     // disable native for safe accounts as it should be visible but not enabled
     if (

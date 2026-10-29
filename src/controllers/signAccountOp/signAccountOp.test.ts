@@ -5299,6 +5299,42 @@ describe('Safe fee payer after the payers get funded', () => {
     expect(controller.accountOp.gasFeePayment?.paidBy).toBe(unlinkedPayer)
   })
 
+  test("keeps the payer when a custom gas price it can't afford is set, so the user can lower it", async () => {
+    // Enough for the regular prices, but not for the custom ones below
+    const lowAmount = 1000000000000n
+    const controller = await initSafe(
+      [
+        { addr: eoaAccount.addr, availableAmount: lowAmount },
+        { addr: unlinkedPayer, availableAmount: funded }
+      ],
+      eoaAccount.addr
+    )
+    expect(controller.selectedOption?.paidBy).toBe(eoaAccount.addr)
+
+    const unaffordablePrice = toBeHex(10000000000n) as Hex
+    const customGasPrices: GasSpeeds = {
+      slow: { maxFeePerGas: unaffordablePrice, maxPriorityFeePerGas: unaffordablePrice },
+      medium: { maxFeePerGas: unaffordablePrice, maxPriorityFeePerGas: unaffordablePrice },
+      fast: { maxFeePerGas: unaffordablePrice, maxPriorityFeePerGas: unaffordablePrice },
+      ape: { maxFeePerGas: unaffordablePrice, maxPriorityFeePerGas: unaffordablePrice }
+    }
+    controller.update({ customGasPrices })
+
+    expect(controller.hasCustomGasPrices).toBe(true)
+    expect(controller.selectedOption?.paidBy).toBe(eoaAccount.addr)
+    expect(controller.accountOp.gasFeePayment?.paidBy).toBe(eoaAccount.addr)
+    expect(controller.isSafeFeePayerChoiceRequired).toBe(false)
+
+    // A new estimation keeps it too, while the custom prices are set
+    estimateAgain(controller, [
+      { addr: eoaAccount.addr, availableAmount: lowAmount },
+      { addr: unlinkedPayer, availableAmount: funded }
+    ])
+
+    expect(controller.selectedOption?.paidBy).toBe(eoaAccount.addr)
+    expect(controller.isSafeFeePayerChoiceRequired).toBe(false)
+  })
+
   test('keeps the fee token the user wants as a default only when the fee is still paid with it', async () => {
     const linkedController = await initSafe(
       [{ addr: eoaAccount.addr, availableAmount: 0n }],
