@@ -1,10 +1,8 @@
-import { toBeHex } from 'ethers'
 import { encodeFunctionData, parseAbi } from 'viem'
 
 import {
   getAccountOpRecipients,
   getCallsWithTxnIds,
-  getSafeNonceAfterPendingAccountOps,
   getSubmittedAccountOpNonce,
   SubmittedAccountOp
 } from './submittedAccountOp'
@@ -82,69 +80,6 @@ describe('SubmittedAccountOp', () => {
 
     test('falls back to the broadcast nonce when a Safe transaction nonce is unavailable', () => {
       expect(getSubmittedAccountOpNonce(null, 7, true)).toBe(7n)
-    })
-  })
-
-  describe('getSafeNonceAfterPendingAccountOps', () => {
-    const BASE = 8453n
-    const ETHEREUM = 1n
-
-    test('uses the on-chain nonce when nothing is pending', () => {
-      expect(getSafeNonceAfterPendingAccountOps(268n, [], BASE)).toBe(268n)
-    })
-
-    test('queues after the highest pending nonce on the same network', () => {
-      const pending = [
-        { chainId: BASE, nonce: 268n },
-        { chainId: BASE, nonce: 270n },
-        { chainId: BASE, nonce: 269n }
-      ]
-
-      expect(getSafeNonceAfterPendingAccountOps(268n, pending, BASE)).toBe(271n)
-    })
-
-    test('ignores pending transactions on other networks', () => {
-      expect(
-        getSafeNonceAfterPendingAccountOps(268n, [{ chainId: ETHEREUM, nonce: 300n }], BASE)
-      ).toBe(268n)
-    })
-
-    test('ignores pending transactions without a nonce', () => {
-      expect(getSafeNonceAfterPendingAccountOps(268n, [{ chainId: BASE, nonce: null }], BASE)).toBe(
-        268n
-      )
-    })
-
-    test('ignores a pending transaction stored with the bundler nonce as its nonce', () => {
-      const bundlerNonce = (123n << 64n) + 0n
-      const legacyPending = {
-        chainId: BASE,
-        nonce: bundlerNonce,
-        identifiedBy: { type: 'UserOperation' as const, identifier: '0xuserophash' },
-        asUserOperation: { nonce: toBeHex(bundlerNonce) } as unknown as SubmittedAccountOp['asUserOperation']
-      }
-
-      expect(
-        getSafeNonceAfterPendingAccountOps(268n, [legacyPending, { chainId: BASE, nonce: 268n }], BASE)
-      ).toBe(269n)
-    })
-
-    test('still counts a bundler-sent transaction stored with its Safe nonce', () => {
-      const pending = {
-        chainId: BASE,
-        nonce: 268n,
-        identifiedBy: { type: 'UserOperation' as const, identifier: '0xuserophash' },
-        asUserOperation: { nonce: toBeHex(123n << 64n) } as unknown as SubmittedAccountOp['asUserOperation']
-      }
-
-      expect(getSafeNonceAfterPendingAccountOps(268n, [pending], BASE)).toBe(269n)
-    })
-
-    test('never goes below the on-chain nonce when a pending one is already mined', () => {
-      // a stale BroadcastedButNotConfirmed status must not move the nonce backwards
-      expect(getSafeNonceAfterPendingAccountOps(275n, [{ chainId: BASE, nonce: 268n }], BASE)).toBe(
-        275n
-      )
     })
   })
 
