@@ -1,13 +1,8 @@
-import { afterEach, describe, expect, it } from '@jest/globals'
+import { describe, expect, it } from '@jest/globals'
 
-import { setPerfRecorder } from '../libs/perf/perf'
 import { forEachInSlices } from './scheduler'
 
 describe('forEachInSlices', () => {
-  afterEach(() => {
-    setPerfRecorder(null)
-  })
-
   it('runs over every item once, in order', async () => {
     const seen: number[] = []
 
@@ -41,16 +36,5 @@ describe('forEachInSlices', () => {
 
     expect(order).toEqual(['item 1', 'item 2', 'item 3'])
     clearTimeout(timer)
-  })
-
-  it('records every slice as a perf span, without an empty one after the last item', async () => {
-    const recordedSpans: string[] = []
-    setPerfRecorder({
-      startSpan: (name) => () => recordedSpans.push(name)
-    })
-
-    await forEachInSlices([1, 2, 3], () => {}, { budgetMs: 0, perfSpanName: 'test.slice' })
-
-    expect(recordedSpans).toEqual(['test.slice', 'test.slice', 'test.slice'])
   })
 })

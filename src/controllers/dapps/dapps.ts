@@ -63,7 +63,6 @@ import {
   withoutUnusedAccountPreferences
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
-import { startPerfSpan } from '../../libs/perf/perf'
 import { fetchWithTimeout } from '../../utils/fetch'
 import { forEachInSlices } from '../../utils/scheduler'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -371,7 +370,6 @@ export class DappsController extends EventEmitter implements IDappsController {
     // the controller loading forever. `migrateDappsAddMissingIds` repairs such records, so any
     // that still show up are skipped and reported.
     let skippedDappsWithoutIdCount = 0
-    const endNormalizeSpan = startPerfSpan('dapps.load.normalize')
     storedDapps.forEach((dapp) => {
       if (!dapp.id) {
         skippedDappsWithoutIdCount += 1
@@ -385,7 +383,6 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
     })
-    endNormalizeSpan()
     if (skippedDappsWithoutIdCount) {
       this.emitError({
         level: 'silent',
@@ -502,54 +499,50 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     // In slices, as the catalog holds thousands of apps and the thread is shared with the UI on
     // mobile
-    await forEachInSlices(
-      fetchedDappsList,
-      (dapp) => {
-        if (categoriesToExclude.includes(dapp.category)) return
-        if (defiLlamaProtocolIdsToExclude.includes(dapp.id)) return
+    await forEachInSlices(fetchedDappsList, (dapp) => {
+      if (categoriesToExclude.includes(dapp.category)) return
+      if (defiLlamaProtocolIdsToExclude.includes(dapp.id)) return
 
-        const id = getDappIdFromUrl(dapp.url)
+      const id = getDappIdFromUrl(dapp.url)
 
-        // Tries to find non-EVM protocols by matching their text with known non-EVM chain names because
-        // some protocols have an empty chains props, and thats the only way to filter the non-EVM ones.
-        if (categoriesNotToFilterOut.includes(dapp.category) && !dapp.chains.length) {
-          const text = `${dapp.name} ${dapp.description ?? ''}`.toLowerCase()
-          if (nonEvmChainsByName.some((chainName) => text.includes(chainName))) return
-        }
+      // Tries to find non-EVM protocols by matching their text with known non-EVM chain names because
+      // some protocols have an empty chains props, and thats the only way to filter the non-EVM ones.
+      if (categoriesNotToFilterOut.includes(dapp.category) && !dapp.chains.length) {
+        const text = `${dapp.name} ${dapp.description ?? ''}`.toLowerCase()
+        if (nonEvmChainsByName.some((chainName) => text.includes(chainName))) return
+      }
 
-        const chainIds = (dapp.chains ?? [])
-          .map((chainName: string) => chainNamesToIds.get(chainName.toLowerCase())!)
-          .filter((chainId: number) => !!chainId && knownChainIds.has(chainId.toString()))
+      const chainIds = (dapp.chains ?? [])
+        .map((chainName: string) => chainNamesToIds.get(chainName.toLowerCase())!)
+        .filter((chainId: number) => !!chainId && knownChainIds.has(chainId.toString()))
 
-        const updatedDapp: Dapp = {
-          id,
-          name: formatDappName(dapp.name),
-          description: dapp.description,
-          url: unifyDefiLlamaDappUrl(dapp.url),
-          icon: dapp.logo,
-          category: CATEGORY_MAP[dapp.category] || dapp.category,
-          tvl: dapp.tvl,
-          chainIds,
-          isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(dapp.url)!),
-          // Always false, even if the user connected to the app before it was listed - it's part of
-          // the catalog now, so it should be treated (and verified) like any other catalog app.
-          isCustom: false,
-          blacklisted: 'LOADING',
-          twitter: dapp.twitter,
-          geckoId: dapp.gecko_id,
-          ...getUserOwnedDappFields(prevDapps.get(id))
-        }
+      const updatedDapp: Dapp = {
+        id,
+        name: formatDappName(dapp.name),
+        description: dapp.description,
+        url: unifyDefiLlamaDappUrl(dapp.url),
+        icon: dapp.logo,
+        category: CATEGORY_MAP[dapp.category] || dapp.category,
+        tvl: dapp.tvl,
+        chainIds,
+        isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(dapp.url)!),
+        // Always false, even if the user connected to the app before it was listed - it's part of
+        // the catalog now, so it should be treated (and verified) like any other catalog app.
+        isCustom: false,
+        blacklisted: 'LOADING',
+        twitter: dapp.twitter,
+        geckoId: dapp.gecko_id,
+        ...getUserOwnedDappFields(prevDapps.get(id))
+      }
 
-        modifyDappPropsIfNeeded(id, dappsMap, dapp, (modifiedDapp: Dapp) => {
-          dappsMap.set(id, modifiedDapp)
-        })
+      modifyDappPropsIfNeeded(id, dappsMap, dapp, (modifiedDapp: Dapp) => {
+        dappsMap.set(id, modifiedDapp)
+      })
 
-        if (!dappsMap.has(id) && !dappsMap.has(getCachedDomain(updatedDapp.url)!)) {
-          dappsMap.set(id, updatedDapp)
-        }
-      },
-      { perfSpanName: 'dapps.buildCatalog' }
-    )
+      if (!dappsMap.has(id) && !dappsMap.has(getCachedDomain(updatedDapp.url)!)) {
+        dappsMap.set(id, updatedDapp)
+      }
+    })
 
     // Add predefined
     for (const pd of predefinedDapps) {
@@ -641,20 +634,16 @@ export class DappsController extends EventEmitter implements IDappsController {
     const dappsWithoutBlacklistedStatus: Dapp[] = []
     // In slices, as the catalog holds thousands of apps and the thread is shared with the UI on
     // mobile
-    await forEachInSlices(
-      Array.from(this.#dapps.values()),
-      (d) => {
-        const shouldRecheck =
-          !d.blacklisted ||
-          ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted) ||
-          // Re-check dApps stored with a non-SUSPICIOUS_HOSTING status that now match the
-          // suspicious hosting pattern, so existing entries are migrated on startup.
-          (d.blacklisted !== 'SUSPICIOUS_HOSTING' &&
-            this.#phishing.getDomainBlacklistedStatus(d.url) === 'SUSPICIOUS_HOSTING')
-        if (shouldRecheck) dappsWithoutBlacklistedStatus.push(d)
-      },
-      { perfSpanName: 'dapps.blacklistSweep' }
-    )
+    await forEachInSlices(Array.from(this.#dapps.values()), (d) => {
+      const shouldRecheck =
+        !d.blacklisted ||
+        ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted) ||
+        // Re-check dApps stored with a non-SUSPICIOUS_HOSTING status that now match the
+        // suspicious hosting pattern, so existing entries are migrated on startup.
+        (d.blacklisted !== 'SUSPICIOUS_HOSTING' &&
+          this.#phishing.getDomainBlacklistedStatus(d.url) === 'SUSPICIOUS_HOSTING')
+      if (shouldRecheck) dappsWithoutBlacklistedStatus.push(d)
+    })
 
     await this.#updateDappsBlacklistedStatus(dappsWithoutBlacklistedStatus)
   }
@@ -706,14 +695,12 @@ export class DappsController extends EventEmitter implements IDappsController {
       dapps.map((d) => d.url),
       (blacklistedStatus) => {
         beforeApply?.()
-        const endApplyStatusesSpan = startPerfSpan('dapps.applyBlacklistStatuses')
         Object.entries(blacklistedStatus).forEach(([dappId, status]) => {
           const dapp = this.#dapps.get(dappId)
           if (dapp && dapp.blacklisted !== status) {
             this.#dapps.set(dapp.id, { ...dapp, blacklisted: status })
           }
         })
-        endApplyStatusesSpan()
         this.emitUpdate()
       }
     )
@@ -726,16 +713,12 @@ export class DappsController extends EventEmitter implements IDappsController {
     const updatedStatuses = new Map<string, BlacklistedStatus>()
     // In slices, as the catalog holds thousands of apps and the thread is shared with the UI on
     // mobile
-    await forEachInSlices(
-      Array.from(this.#dapps.entries()),
-      ([dappId, dapp]) => {
-        const updatedStatus = this.#phishing.getDomainBlacklistedStatus(dapp.url)
-        if (!updatedStatus || dapp.blacklisted === updatedStatus) return
+    await forEachInSlices(Array.from(this.#dapps.entries()), ([dappId, dapp]) => {
+      const updatedStatus = this.#phishing.getDomainBlacklistedStatus(dapp.url)
+      if (!updatedStatus || dapp.blacklisted === updatedStatus) return
 
-        updatedStatuses.set(dappId, updatedStatus)
-      },
-      { perfSpanName: 'dapps.syncBlacklistWithPhishing' }
-    )
+      updatedStatuses.set(dappId, updatedStatus)
+    })
 
     // A newer phishing list started a sync of its own, and its results are the ones to keep
     if (syncId !== this.#blacklistSyncId || !updatedStatuses.size) return

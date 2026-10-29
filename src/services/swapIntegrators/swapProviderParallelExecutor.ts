@@ -1,5 +1,4 @@
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
-import { startPerfSpan } from '../../libs/perf/perf'
 import {
   ProviderQuoteParams,
   SwapAndBridgeQuote,
@@ -284,8 +283,6 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
 
         // Nothing to report until a provider returns tokens
         if (tokenListsByProvider.size) {
-          // The merge and what the controller derives from it run on every provider's answer
-          const endMergeSpan = startPerfSpan(`swap.tokenList.merge+apply:${provider.name}`)
           toTokenList = this.#mergeTokenLists(
             supportedProviders.map((p) => tokenListsByProvider.get(p) || [])
           )
@@ -293,7 +290,6 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
             toTokenList,
             [...loadingProviders].map(({ name }) => name)
           )
-          endMergeSpan()
         }
 
         return result

@@ -25,7 +25,6 @@ import {
   sortedIncludes,
   toSortedUnique
 } from '../../libs/sortedList/sortedList'
-import { startPerfSpan } from '../../libs/perf/perf'
 import { fetchWithTimeout } from '../../utils/fetch'
 import { forEachInSlices } from '../../utils/scheduler'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -281,12 +280,10 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     // because it is cheap, and the migration runs last, so a failing earlier migration skips it -
     // an unsorted list would then make the binary search silently miss listed domains and
     // addresses.
-    const endSortCheckSpan = startPerfSpan('phishing.load.sortCheck')
     const areDomainsSorted = isSortedUnique(phishing.domains)
     const areAddressesSorted = isSortedUnique(phishing.addresses)
     this.#domains = areDomainsSorted ? phishing.domains : toSortedUnique(phishing.domains)
     this.#addresses = areAddressesSorted ? phishing.addresses : toSortedUnique(phishing.addresses)
-    endSortCheckSpan()
 
     if (this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) {
       this.updatePhishingInterval.start({ runImmediately: true })
@@ -399,7 +396,6 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     }
 
     const phishing = await res.json()
-    const endApplyUpdateSpan = startPerfSpan('phishing.update.apply')
     const { domains, addresses } = getListsFromPhishingResponse(phishing, res.url)
 
     if (this.#version) {
@@ -448,7 +444,6 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       this.#addresses = toSortedUnique(addresses.map((address: string) => address.toLowerCase()))
     }
 
-    endApplyUpdateSpan()
     this.#shouldSyncDapps = true
     this.emitUpdate()
     // Not after the storage write below, which can be slow with a big list: the checks only need
@@ -490,9 +485,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     // In slices, as the app catalog checks thousands of urls at once and the thread is shared with
     // the UI on mobile
     const dappsData: { dappId: string; url: string }[] = []
-    await forEachInSlices(urls, (url) => dappsData.push({ dappId: getDappIdFromUrl(url), url }), {
-      perfSpanName: 'phishing.domainsStatus'
-    })
+    await forEachInSlices(urls, (url) => dappsData.push({ dappId: getDappIdFromUrl(url), url }))
 
     if (process.env.IS_TESTING === 'true') {
       dappsData.forEach(({ url, dappId }) => {
@@ -517,21 +510,17 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     }
 
     // Priority: BLACKLISTED (phishing DB) > SUSPICIOUS_HOSTING > VERIFIED.
-    await forEachInSlices(
-      dappsData,
-      ({ url, dappId }) => {
-        if (this.#domains.length && this.#isDomainListed(dappId)) {
-          this.#domainsBlacklistedStatus.set(dappId, 'BLACKLISTED')
-          return
-        }
-        if (isSuspiciousHostingDomain(url)) {
-          this.#domainsBlacklistedStatus.set(dappId, 'SUSPICIOUS_HOSTING')
-          return
-        }
-        if (this.#domains.length) this.#domainsBlacklistedStatus.set(dappId, 'VERIFIED')
-      },
-      { perfSpanName: 'phishing.domainsStatus' }
-    )
+    await forEachInSlices(dappsData, ({ url, dappId }) => {
+      if (this.#domains.length && this.#isDomainListed(dappId)) {
+        this.#domainsBlacklistedStatus.set(dappId, 'BLACKLISTED')
+        return
+      }
+      if (isSuspiciousHostingDomain(url)) {
+        this.#domainsBlacklistedStatus.set(dappId, 'SUSPICIOUS_HOSTING')
+        return
+      }
+      if (this.#domains.length) this.#domainsBlacklistedStatus.set(dappId, 'VERIFIED')
+    })
 
     // The visited domains are never sent to a server. Without the local list a domain can only be
     // resolved once the list is downloaded, so it stays LOADING until then.

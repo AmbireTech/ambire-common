@@ -47,7 +47,6 @@ import { getCallsWithTxnIds, SubmittedAccountOp } from '../accountOp/submittedAc
 import { Call } from '../accountOp/types'
 import { AssetType } from '../defiPositions/types'
 import { PaymasterService } from '../erc7677/types'
-import { startPerfSpan } from '../perf/perf'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD, getTokenUsdPrice } from '../portfolio/helpers'
 import {
@@ -194,8 +193,7 @@ export const attemptToSortTokensByMarketCap = async ({
     )
 
     // Sort the result by the market cap response order position (highest first)
-    const endSortSpan = startPerfSpan('swap.sortByMarketCap')
-    const sortedTokens = tokens.sort((a, b) => {
+    return tokens.sort((a, b) => {
       const aPriority = addressPriority.get(a.address)
       const bPriority = addressPriority.get(b.address)
 
@@ -206,9 +204,6 @@ export const attemptToSortTokensByMarketCap = async ({
       if (bPriority !== undefined) return 1
       return 0
     })
-    endSortSpan()
-
-    return sortedTokens
   } catch (e) {
     // Fail silently, no biggie
     console.error(`Sorting Swap & Bridge tokens by market for network with id ${chainId} failed`, e)

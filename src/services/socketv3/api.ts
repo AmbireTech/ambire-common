@@ -19,7 +19,6 @@ import {
   SwapProvider
 } from '../../interfaces/swapAndBridge'
 import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
-import { startPerfSpan } from '../../libs/perf/perf'
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
@@ -350,7 +349,6 @@ export class SocketV3API implements SwapProvider {
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
-    const endNormalizeSpan = startPerfSpan('swap.socket.normalizeTokens')
     let tokens = response[toChainId] || []
 
     // Exception for Optimism, strip out the legacy ETH address
@@ -367,7 +365,6 @@ export class SocketV3API implements SwapProvider {
       tokens = tokens.filter((token: SocketAPIToken) => token.address !== zeroAddress)
 
     tokens = tokens.map(normalizeIncomingSocketToken)
-    endNormalizeSpan()
 
     return addCustomTokensIfNeeded({ chainId: toChainId, tokens })
   }

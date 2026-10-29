@@ -73,7 +73,6 @@ import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getIntentBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
-import { startPerfSpan } from '../../libs/perf/perf'
 import { TokenResult } from '../../libs/portfolio'
 import { convertApiTokenDataToTokenDataCache, getTokenAmount } from '../../libs/portfolio/helpers'
 import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
@@ -1071,10 +1070,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // do not await the health status check to prevent UI freeze while fetching
 
     this.#serviceProviderAPI.updateHealth()
-    const endCloneSpan = startPerfSpan('swap.initForm.clonePortfolioTokens')
-    const portfolioTokens = structuredClone(this.#selectedAccount.portfolio.tokens)
-    endCloneSpan()
-    await this.updatePortfolioTokenList(portfolioTokens, {
+    await this.updatePortfolioTokenList(structuredClone(this.#selectedAccount.portfolio.tokens), {
       preselectedToken: preselectedFromToken,
       preselectedToToken,
       fromAmount
@@ -1860,12 +1856,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   /** Builds the displayed "to" tokens from the providers' tokens and the portfolio. */
   #deriveToTokens(toTokenList: ToTokenList, fromChainId: number, toChainId: number) {
-    const endDeriveSpan = startPerfSpan('swap.deriveToTokens')
     toTokenList.tokens = this.#getToTokens(fromChainId, toChainId)
     // Committed here rather than where the rebuild is decided, so it describes the portfolio
     // the list was actually derived from.
     toTokenList.portfolioSignature = this.#getToTokenPortfolioSignature(toChainId)
-    endDeriveSpan()
   }
 
   /** Keeps a token looked up by address in its list, so it survives later provider answers. */
