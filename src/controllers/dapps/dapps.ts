@@ -65,6 +65,7 @@ import {
 import { networkChainIdToHex } from '../../libs/networks/networks'
 import { startPerfSpan } from '../../libs/perf/perf'
 import { fetchWithTimeout } from '../../utils/fetch'
+import { forEachInSlices } from '../../utils/scheduler'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { canBeTrustedByUser } from '../phishing/phishing'
 
@@ -90,6 +91,25 @@ const mergeSource = (
 ): ConnectionSource[] => {
   const current = existing ?? []
   return current.includes(source) ? current : [...current, source]
+}
+
+/**
+ * What the user chose for an app (its connection, network, favorite, trust and account
+ * scoping), carried over from its stored record when the catalog rebuilds it.
+ */
+const getUserOwnedDappFields = (storedDapp: Dapp | undefined) => {
+  const connectedSources = storedDapp?.connectedSources ?? []
+
+  return {
+    isConnected: connectedSources.length > 0,
+    connectedSources,
+    chainId: storedDapp?.chainId || 1,
+    favorite: !!storedDapp?.favorite,
+    isTrustedByUser: !!storedDapp?.isTrustedByUser,
+    accountPreferences: storedDapp?.accountPreferences,
+    grantedPermissionId: storedDapp?.grantedPermissionId,
+    grantedPermissionAt: storedDapp?.grantedPermissionAt
+  }
 }
 
 // The DappsController is responsible for the following tasks:
@@ -146,6 +166,9 @@ export class DappsController extends EventEmitter implements IDappsController {
   #retryFetchAndUpdateInterval: IRecurringTimeout
 
   #retryFetchAndUpdateAttempts: number = 0
+
+  /** Bumped by every phishing sync, so a sync overtaken by a newer list drops its results. */
+  #blacklistSyncId = 0
 
   #retryFetchAndUpdateMaxAttempts: number = 3
 
@@ -214,7 +237,13 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.#phishing.onUpdate(() => {
       if (!this.#phishing.shouldSyncDapps) return
-      this.#syncDappsBlacklistedStatusWithPhishing()
+      this.#syncDappsBlacklistedStatusWithPhishing().catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the scam status of the apps',
+          error
+        })
+      )
       this.#phishing.resetShouldSyncDapps()
     })
 
@@ -463,7 +492,6 @@ export class DappsController extends EventEmitter implements IDappsController {
       throw new Error('Fetch completed, but no apps or chains were returned')
     }
 
-    const endBuildCatalogSpan = startPerfSpan('dapps.buildCatalog')
     const chainNamesToIds = new Map<string, number | null>()
     for (const c of fetchedChainsList) {
       chainNamesToIds.set(c.name.toLowerCase(), c.chainId)
@@ -478,62 +506,56 @@ export class DappsController extends EventEmitter implements IDappsController {
     // checks every chain of every app against it
     const knownChainIds = new Set(this.#networks.allNetworks.map((n) => n.chainId.toString()))
 
-    for (const dapp of fetchedDappsList) {
-      if (categoriesToExclude.includes(dapp.category)) continue
-      if (defiLlamaProtocolIdsToExclude.includes(dapp.id)) continue
+    // In slices, as the catalog holds thousands of apps and the thread is shared with the UI on
+    // mobile
+    await forEachInSlices(
+      fetchedDappsList,
+      (dapp) => {
+        if (categoriesToExclude.includes(dapp.category)) return
+        if (defiLlamaProtocolIdsToExclude.includes(dapp.id)) return
 
-      const id = getDappIdFromUrl(dapp.url)
+        const id = getDappIdFromUrl(dapp.url)
 
-      // Tries to find non-EVM protocols by matching their text with known non-EVM chain names because
-      // some protocols have an empty chains props, and thats the only way to filter the non-EVM ones.
-      if (categoriesNotToFilterOut.includes(dapp.category) && !dapp.chains.length) {
-        const text = `${dapp.name} ${dapp.description ?? ''}`.toLowerCase()
-        if (nonEvmChainsByName.some((chainName) => text.includes(chainName))) {
-          continue
+        // Tries to find non-EVM protocols by matching their text with known non-EVM chain names because
+        // some protocols have an empty chains props, and thats the only way to filter the non-EVM ones.
+        if (categoriesNotToFilterOut.includes(dapp.category) && !dapp.chains.length) {
+          const text = `${dapp.name} ${dapp.description ?? ''}`.toLowerCase()
+          if (nonEvmChainsByName.some((chainName) => text.includes(chainName))) return
         }
-      }
 
-      const prevStoredDapp = prevDapps.get(id)
+        const chainIds = (dapp.chains ?? [])
+          .map((chainName: string) => chainNamesToIds.get(chainName.toLowerCase())!)
+          .filter((chainId: number) => !!chainId && knownChainIds.has(chainId.toString()))
 
-      const chainIds = (dapp.chains ?? [])
-        .map((chainName: string) => chainNamesToIds.get(chainName.toLowerCase())!)
-        .filter((chainId: number) => !!chainId && knownChainIds.has(chainId.toString()))
+        const updatedDapp: Dapp = {
+          id,
+          name: formatDappName(dapp.name),
+          description: dapp.description,
+          url: unifyDefiLlamaDappUrl(dapp.url),
+          icon: dapp.logo,
+          category: CATEGORY_MAP[dapp.category] || dapp.category,
+          tvl: dapp.tvl,
+          chainIds,
+          isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(dapp.url)!),
+          // Always false, even if the user connected to the app before it was listed - it's part of
+          // the catalog now, so it should be treated (and verified) like any other catalog app.
+          isCustom: false,
+          blacklisted: 'LOADING',
+          twitter: dapp.twitter,
+          geckoId: dapp.gecko_id,
+          ...getUserOwnedDappFields(prevDapps.get(id))
+        }
 
-      const prevSources = prevStoredDapp?.connectedSources ?? []
-      const updatedDapp: Dapp = {
-        id,
-        name: formatDappName(dapp.name),
-        description: dapp.description,
-        url: unifyDefiLlamaDappUrl(dapp.url),
-        icon: dapp.logo,
-        category: CATEGORY_MAP[dapp.category] || dapp.category,
-        tvl: dapp.tvl,
-        chainIds,
-        isConnected: prevSources.length > 0,
-        connectedSources: prevSources,
-        isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(dapp.url)!),
-        // Always false, even if the user connected to the app before it was listed - it's part of
-        // the catalog now, so it should be treated (and verified) like any other catalog app.
-        isCustom: false,
-        chainId: prevStoredDapp?.chainId || 1,
-        favorite: !!prevStoredDapp?.favorite,
-        isTrustedByUser: !!prevStoredDapp?.isTrustedByUser,
-        blacklisted: 'LOADING',
-        twitter: dapp.twitter,
-        geckoId: dapp.gecko_id,
-        accountPreferences: prevStoredDapp?.accountPreferences,
-        grantedPermissionId: prevStoredDapp?.grantedPermissionId,
-        grantedPermissionAt: prevStoredDapp?.grantedPermissionAt
-      }
+        modifyDappPropsIfNeeded(id, dappsMap, dapp, (modifiedDapp: Dapp) => {
+          dappsMap.set(id, modifiedDapp)
+        })
 
-      modifyDappPropsIfNeeded(id, dappsMap, dapp, (modifiedDapp: Dapp) => {
-        dappsMap.set(id, modifiedDapp)
-      })
-
-      if (!dappsMap.has(id) && !dappsMap.has(getCachedDomain(updatedDapp.url)!)) {
-        dappsMap.set(id, updatedDapp)
-      }
-    }
+        if (!dappsMap.has(id) && !dappsMap.has(getCachedDomain(updatedDapp.url)!)) {
+          dappsMap.set(id, updatedDapp)
+        }
+      },
+      { perfSpanName: 'dapps.buildCatalog' }
+    )
 
     // Add predefined
     for (const pd of predefinedDapps) {
@@ -592,23 +614,78 @@ export class DappsController extends EventEmitter implements IDappsController {
     // Delete legacy IDs
     for (const id of dappIdsToBeRemoved) dappsMap.delete(id)
     const unverifiedDappsArray = Array.from(dappsMap.values())
-    endBuildCatalogSpan()
 
-    this.#dapps = dappsMap
-    this.isReadyToDisplayDapps = true
-    this.#shouldRetryFetchAndUpdate = false
-    this.#retryFetchAndUpdateInterval.stop()
-    this.emitUpdate()
+    let isCatalogLive = false
+    const makeCatalogLive = () => {
+      if (isCatalogLive) return
+      isCatalogLive = true
 
-    await this.#updateDappsBlacklistedStatus(unverifiedDappsArray)
+      this.#applyDappChangesSince(prevDapps, dappsMap)
+      this.#dapps = dappsMap
+      this.isReadyToDisplayDapps = true
+      this.#shouldRetryFetchAndUpdate = false
+      this.#retryFetchAndUpdateInterval.stop()
+    }
+
+    // The new catalog goes live together with the first scam statuses of its apps, in one step,
+    // so no app is seen as LOADING while the local phishing list could already answer for it
+    await this.#updateDappsBlacklistedStatus(unverifiedDappsArray, makeCatalogLive)
+    // When nothing answered, e.g. the check failed
+    if (!isCatalogLive) {
+      makeCatalogLive()
+      this.emitUpdate()
+    }
     await this.#storage.set('dappsV2', Array.from(dappsMap.values()))
     await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
   }
 
-  async #updateDappsBlacklistedStatus(dapps: Dapp[]) {
+  /**
+   * The catalog is rebuilt from a snapshot of the apps and yields while it is, so the user may
+   * have connected, disconnected, removed or otherwise changed an app since. Brings those changes
+   * into the rebuilt catalog, so what the user did wins over the snapshot. Records are replaced
+   * on every change, so a record that differs from the snapshot's is one that changed.
+   */
+  #applyDappChangesSince(snapshot: Map<string, Dapp>, rebuiltDapps: Map<string, Dapp>) {
+    this.#dapps.forEach((liveDapp, id) => {
+      const snapshotDapp = snapshot.get(id)
+      if (liveDapp === snapshotDapp) return
+
+      const rebuiltDapp = rebuiltDapps.get(id)
+      if (!rebuiltDapp) {
+        // Connected to or added while the catalog was rebuilt
+        if (liveDapp.isCustom || liveDapp.connectedSources?.length) rebuiltDapps.set(id, liveDapp)
+        return
+      }
+
+      // A connected or custom app the rebuild took over as it was
+      if (rebuiltDapp === snapshotDapp) {
+        rebuiltDapps.set(id, liveDapp)
+        return
+      }
+
+      rebuiltDapps.set(id, { ...rebuiltDapp, ...getUserOwnedDappFields(liveDapp) })
+    })
+
+    snapshot.forEach((snapshotDapp, id) => {
+      if (this.#dapps.has(id)) return
+
+      // Removed while the catalog was rebuilt
+      const rebuiltDapp = rebuiltDapps.get(id)
+      if (!rebuiltDapp) return
+      if (rebuiltDapp === snapshotDapp) rebuiltDapps.delete(id)
+      else rebuiltDapps.set(id, { ...rebuiltDapp, ...getUserOwnedDappFields(undefined) })
+    })
+  }
+
+  /**
+   * Checks the apps against the phishing list and applies their statuses, possibly in several
+   * answers. `beforeApply` runs right before every answer is applied.
+   */
+  async #updateDappsBlacklistedStatus(dapps: Dapp[], beforeApply?: () => void) {
     await this.#phishing.updateDomainsBlacklistedStatus(
       dapps.map((d) => d.url),
       (blacklistedStatus) => {
+        beforeApply?.()
         const endApplyStatusesSpan = startPerfSpan('dapps.applyBlacklistStatuses')
         Object.entries(blacklistedStatus).forEach(([dappId, status]) => {
           const dapp = this.#dapps.get(dappId)
@@ -622,24 +699,36 @@ export class DappsController extends EventEmitter implements IDappsController {
     )
   }
 
-  #syncDappsBlacklistedStatusWithPhishing() {
+  async #syncDappsBlacklistedStatusWithPhishing() {
     if (!this.#dapps.size) return
 
-    let hasUpdatedDapps = false
-    const endSyncSpan = startPerfSpan('dapps.syncBlacklistWithPhishing')
-    this.#dapps.forEach((dapp, dappId) => {
-      const updatedStatus = this.#phishing.getDomainBlacklistedStatus(dapp.url)
-      if (!updatedStatus || dapp.blacklisted === updatedStatus) return
+    const syncId = ++this.#blacklistSyncId
+    const updatedStatuses = new Map<string, BlacklistedStatus>()
+    // In slices, as the catalog holds thousands of apps and the thread is shared with the UI on
+    // mobile
+    await forEachInSlices(
+      Array.from(this.#dapps.entries()),
+      ([dappId, dapp]) => {
+        const updatedStatus = this.#phishing.getDomainBlacklistedStatus(dapp.url)
+        if (!updatedStatus || dapp.blacklisted === updatedStatus) return
 
-      this.#dapps.set(dappId, { ...dapp, blacklisted: updatedStatus })
-      hasUpdatedDapps = true
+        updatedStatuses.set(dappId, updatedStatus)
+      },
+      { perfSpanName: 'dapps.syncBlacklistWithPhishing' }
+    )
+
+    // A newer phishing list started a sync of its own, and its results are the ones to keep
+    if (syncId !== this.#blacklistSyncId || !updatedStatuses.size) return
+
+    // Applied to the records as they are now, as the user may have changed one while the loop
+    // yielded
+    updatedStatuses.forEach((blacklisted, dappId) => {
+      const dapp = this.#dapps.get(dappId)
+      if (dapp) this.#dapps.set(dappId, { ...dapp, blacklisted })
     })
-    endSyncSpan()
-
-    if (!hasUpdatedDapps) return
 
     this.emitUpdate()
-    void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+    await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
   }
 
   /**

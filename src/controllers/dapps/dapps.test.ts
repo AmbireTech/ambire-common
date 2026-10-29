@@ -408,6 +408,10 @@ describe('DappsController', () => {
       url === 'https://test-dapp.com' ? 'BLACKLISTED' : undefined
     )
     ;(mainCtrl.phishing as any).emitUpdate()
+    // The sync runs in slices, so it completes after the update that started it
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
 
     expect(controller.getDapp('test-dapp.com')?.blacklisted).toBe('BLACKLISTED')
     expect(resetShouldSyncSpy).toHaveBeenCalledTimes(1)
@@ -3265,6 +3269,105 @@ describe('DappsController', () => {
       expect(
         controller.dapps.every((dapp) => dapp.blacklisted !== 'LOADING' || dapp.isConnected)
       ).toBe(true)
+    })
+  })
+
+  // The rebuild yields between slices and while the apps are checked against the phishing list,
+  // so the user can change an app before the rebuilt catalog replaces the old one
+  describe('user changes during an app catalog rebuild', () => {
+    const AAVE_ID = 'aave.com'
+    const CUSTOM_ID = 'my-custom.app'
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    /**
+     * Rebuilds the catalog, making `userChange` right before the rebuilt apps are checked against
+     * the phishing list - after the catalog was built from its snapshot, before it goes live.
+     */
+    const rebuildCatalogWithUserChange = async (
+      userChange: (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) => unknown
+    ) => {
+      let resolveController!: (
+        controller: Awaited<ReturnType<typeof prepareTest>>['controller']
+      ) => void
+      const controllerPromise = new Promise<Awaited<ReturnType<typeof prepareTest>>['controller']>(
+        (resolve) => {
+          resolveController = resolve
+        }
+      )
+      const checkStatuses = PhishingController.prototype.updateDomainsBlacklistedStatus
+      let hasChanged = false
+      jest
+        .spyOn(PhishingController.prototype, 'updateDomainsBlacklistedStatus')
+        .mockImplementation(async function (this: PhishingController, urls, callback) {
+          if (!hasChanged) {
+            hasChanged = true
+            await userChange(await controllerPromise)
+          }
+
+          return checkStatuses.call(this, urls, callback)
+        })
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [
+          makeDapp({
+            id: AAVE_ID,
+            name: 'Aave',
+            url: 'https://aave.com',
+            isConnected: true,
+            connectedSources: ['injected']
+          }),
+          makeDapp({
+            id: CUSTOM_ID,
+            name: 'My custom app',
+            url: 'https://my-custom.app',
+            isCustom: true
+          })
+        ])
+        // Differs from the app version, so loading rebuilds the catalog
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      resolveController(controller)
+      await controller.fetchAndUpdatePromise
+
+      expect(hasChanged).toBe(true)
+      // The catalog was really rebuilt from the downloaded list
+      expect(controller.dapps.some((d) => d.name === 'Lido')).toBe(true)
+
+      return controller
+    }
+
+    test('an app marked as a favorite keeps it', async () => {
+      const controller = await rebuildCatalogWithUserChange((dapps) =>
+        dapps.updateDapp(AAVE_ID, { favorite: true })
+      )
+
+      expect(controller.getDapp(AAVE_ID)?.favorite).toBe(true)
+      expect(controller.getDapp(AAVE_ID)?.isConnected).toBe(true)
+    })
+
+    test('an app the user disconnected from stays disconnected', async () => {
+      const controller = await rebuildCatalogWithUserChange((dapps) =>
+        dapps.disconnectDappSource(AAVE_ID, 'injected')
+      )
+
+      expect(controller.getDapp(AAVE_ID)?.isConnected).toBe(false)
+      expect(controller.getDapp(AAVE_ID)?.connectedSources ?? []).toEqual([])
+    })
+
+    test('a custom app the user removed does not come back', async () => {
+      const controller = await rebuildCatalogWithUserChange((dapps) => dapps.removeDapp(CUSTOM_ID))
+
+      expect(controller.getDapp(CUSTOM_ID)).toBeUndefined()
+    })
+
+    test('an untouched connected app keeps its connection', async () => {
+      const controller = await rebuildCatalogWithUserChange(() => {})
+
+      expect(controller.getDapp(AAVE_ID)?.isConnected).toBe(true)
+      expect(controller.getDapp(CUSTOM_ID)).toBeDefined()
     })
   })
 })

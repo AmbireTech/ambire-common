@@ -27,6 +27,7 @@ import {
 } from '../../libs/sortedList/sortedList'
 import { startPerfSpan } from '../../libs/perf/perf'
 import { fetchWithTimeout } from '../../utils/fetch'
+import { forEachInSlices } from '../../utils/scheduler'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SUSPICIOUS_HOSTING_DOMAINS } from './suspiciousHostingDomains'
 
@@ -486,8 +487,12 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   ) {
     if (!urls.length) return
 
-    const endDomainsStatusSpan = startPerfSpan('phishing.domainsStatus')
-    const dappsData = urls.map((url) => ({ dappId: getDappIdFromUrl(url), url }))
+    // In slices, as the app catalog checks thousands of urls at once and the thread is shared with
+    // the UI on mobile
+    const dappsData: { dappId: string; url: string }[] = []
+    await forEachInSlices(urls, (url) => dappsData.push({ dappId: getDappIdFromUrl(url), url }), {
+      perfSpanName: 'phishing.domainsStatus'
+    })
 
     if (process.env.IS_TESTING === 'true') {
       dappsData.forEach(({ url, dappId }) => {
@@ -512,17 +517,21 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     }
 
     // Priority: BLACKLISTED (phishing DB) > SUSPICIOUS_HOSTING > VERIFIED.
-    dappsData.forEach(({ url, dappId }) => {
-      if (this.#domains.length && this.#isDomainListed(dappId)) {
-        this.#domainsBlacklistedStatus.set(dappId, 'BLACKLISTED')
-        return
-      }
-      if (isSuspiciousHostingDomain(url)) {
-        this.#domainsBlacklistedStatus.set(dappId, 'SUSPICIOUS_HOSTING')
-        return
-      }
-      if (this.#domains.length) this.#domainsBlacklistedStatus.set(dappId, 'VERIFIED')
-    })
+    await forEachInSlices(
+      dappsData,
+      ({ url, dappId }) => {
+        if (this.#domains.length && this.#isDomainListed(dappId)) {
+          this.#domainsBlacklistedStatus.set(dappId, 'BLACKLISTED')
+          return
+        }
+        if (isSuspiciousHostingDomain(url)) {
+          this.#domainsBlacklistedStatus.set(dappId, 'SUSPICIOUS_HOSTING')
+          return
+        }
+        if (this.#domains.length) this.#domainsBlacklistedStatus.set(dappId, 'VERIFIED')
+      },
+      { perfSpanName: 'phishing.domainsStatus' }
+    )
 
     // The visited domains are never sent to a server. Without the local list a domain can only be
     // resolved once the list is downloaded, so it stays LOADING until then.
@@ -537,7 +546,6 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     dappsAwaitingList.forEach(({ dappId }) => {
       this.#domainsBlacklistedStatus.set(dappId, 'LOADING')
     })
-    endDomainsStatusSpan()
 
     !!callback &&
       callback(
