@@ -185,6 +185,7 @@ import { GasPriceController } from '../gasPrice/gasPrice'
 import HumanizationController from '../humanization/humanization'
 import { discoverTxnTokens } from './discoverTxnTokens'
 import {
+  getBroadcastServiceErrorMessage,
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
@@ -1731,6 +1732,62 @@ export class SignAccountOpController
     }
   }
 
+  #findFeeOption(paidBy: string, feeToken: TokenResult): FeePaymentOption | undefined {
+    return this.estimation.availableFeeOptions.find(
+      (option) =>
+        option.paidBy === paidBy &&
+        option.token.address === feeToken.address &&
+        option.token.symbol.toLocaleLowerCase() === feeToken.symbol.toLocaleLowerCase() &&
+        option.token.flags.onGasTank === feeToken.flags.onGasTank
+    )
+  }
+
+  /**
+   * The default fee option is picked only once, and when nothing can pay the fee it's one that
+   * can't (e.g. the Safe's own native). Later estimations keep it, so when another option becomes
+   * able to pay (e.g. the user funds an EOA), the default is picked again. Options that can still
+   * pay are never replaced, and neither is the pending transaction's option of a speed up.
+   * With custom gas prices it's kept too, so the user can lower a price the option can't afford
+   */
+  #replaceUnusableFeeOption() {
+    if (
+      this.#speedUp ||
+      this.hasCustomGasPrices ||
+      this.estimation.status !== EstimationStatus.Success ||
+      !this.#paidBy ||
+      !this.feeTokenResult
+    )
+      return
+
+    const currentOption = this.#findFeeOption(this.#paidBy, this.feeTokenResult)
+    if (!currentOption || !this.#getIsFeeOptionDisabled(currentOption)) return
+
+    const hasUsableOption = this.estimation.availableFeeOptions.some(
+      (option) => !this.#getIsFeeOptionDisabled(option)
+    )
+    if (!hasUsableOption) return
+
+    // Also clears the selected option, so the speed is picked again for the new one (see
+    // #setDefaultFeeSpeed), and the payment, as a Safe may end up with no payer (see
+    // isSafeFeePayerChoiceRequired) and then #setGasFeePayment doesn't override the payment
+    // of the unusable option. The fee speeds it clears are built again by #setDefaults
+    this.#clearFeeSelection()
+    this.#setDefaults()
+
+    // Same as when the user switches the token: a default saved on signing is
+    // only for the token the fee is paid with
+    if (
+      this.pendingFeeTokenPreference &&
+      (!this.feeTokenResult ||
+        !this.#doesFeeTokenPreferenceMatchToken(
+          this.pendingFeeTokenPreference,
+          this.feeTokenResult
+        ))
+    ) {
+      this.pendingFeeTokenPreference = null
+    }
+  }
+
   #setGasFeePayment(paidByKeyType?: Key['type']) {
     if (
       this.isInitialized &&
@@ -2431,20 +2488,15 @@ export class SignAccountOpController
       this.#setDefaults()
       // After the defaults, so the default fee option gets replaced with the pending transaction's
       this.#selectSpeedUpFeeOption()
+      // A fee option the user picks in this update is kept as it is
+      if (!feeToken || !paidBy) this.#replaceUnusableFeeOption()
 
       if (
         this.estimation.status === EstimationStatus.Success &&
         this.#paidBy &&
         this.feeTokenResult
       ) {
-        const selectedOption = this.estimation.availableFeeOptions.find(
-          (option) =>
-            option.paidBy === this.#paidBy &&
-            option.token.address === this.feeTokenResult!.address &&
-            option.token.symbol.toLocaleLowerCase() ===
-              this.feeTokenResult!.symbol.toLocaleLowerCase() &&
-            option.token.flags.onGasTank === this.feeTokenResult!.flags.onGasTank
-        )
+        const selectedOption = this.#findFeeOption(this.#paidBy, this.feeTokenResult)
         // <Bobby>: trigger setting the real default speed just before
         // setting the first selectedOption. This way we know all the
         // necessary information like available amount for the selected
@@ -2771,6 +2823,9 @@ export class SignAccountOpController
     const canNotBecomeSmarter = !canBecomeSmarter(this.account, this.accountKeyStoreKeys)
 
     if (isExternal && canNotBecomeSmarter && feeOption.token.address !== ZERO_ADDRESS) return true
+
+    // Custom gas prices can be set only for the native token, so the others are shown as unavailable
+    if (this.hasCustomGasPrices && feeOption.token.address !== ZERO_ADDRESS) return true
 
     // disable native for safe accounts as it should be visible but not enabled
     if (
@@ -4705,7 +4760,10 @@ export class SignAccountOpController
           .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
-      } else if (isUnderpriced(originalMessage)) {
+      } else if (isUnderpriced(getBroadcastServiceErrorMessage(_err))) {
+        // Checked against the service's own message only, so a bundler error that merely
+        // echoes the user operation (with its fee fields) isn't mistaken for a fee change
+        // and the user isn't stuck in a "Gas fee updated" loop for an error a retry can't fix
         if (!this.hasCustomGasPrices) message = 'Transaction fees changed. Please try again'
         else message = originalMessage
 
