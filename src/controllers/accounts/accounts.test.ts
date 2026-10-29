@@ -400,6 +400,49 @@ describe('AccountsController account state fetching', () => {
     await update
     expect(loadingStates.at(-1)).toBe(false)
   })
+
+  describe('getLatestAccountNonce', () => {
+    test('reads the nonce on the latest block, not from the saved states', async () => {
+      const { accountsCtrl, fetches } = ctrl
+      // A pending state counts txns that are not mined, so it must not answer for the latest one
+      const updatePending = accountsCtrl.updateAccountState(ADDR_A, 'pending', [ETHEREUM.chainId])
+      await flushPromises()
+      fetches[0]!.resolve([makeAccountState(ADDR_A, 11n)])
+      await updatePending
+
+      const nonce = accountsCtrl.getLatestAccountNonce(ADDR_A, ETHEREUM.chainId)
+      await flushPromises()
+      expect(fetches[1]?.blockTag).toBe('latest')
+      fetches[1]!.resolve([makeAccountState(ADDR_A, 10n)])
+
+      expect(await nonce).toBe(10n)
+      // Only a state fetch of its own saves a state
+      expect(accountsCtrl.accountStates[ADDR_A]?.[ETHEREUM.chainId.toString()]?.nonce).toBe(11n)
+    })
+
+    test('is null, with a silent error, when the RPC fails', async () => {
+      const { accountsCtrl, fetches, errors } = ctrl
+      const nonce = accountsCtrl.getLatestAccountNonce(ADDR_A, BASE.chainId)
+      await flushPromises()
+      fetches[0]!.reject(new Error('RPC is down'))
+
+      expect(await nonce).toBeNull()
+      expect(errors).toEqual([`Failed to read the account nonce on ${BASE.name}.`])
+    })
+
+    test('is null for an account that is not in the wallet or a network that is not enabled', async () => {
+      const { accountsCtrl, fetches } = ctrl
+
+      expect(await accountsCtrl.getLatestAccountNonce(ADDR_A, 12345n)).toBeNull()
+      expect(
+        await accountsCtrl.getLatestAccountNonce(
+          '0x0000000000000000000000000000000000000001',
+          BASE.chainId
+        )
+      ).toBeNull()
+      expect(fetches).toHaveLength(0)
+    })
+  })
 })
 
 describe('AccountsController updateAccountPreferences replies', () => {

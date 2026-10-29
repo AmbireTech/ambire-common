@@ -1,3 +1,5 @@
+import { isError } from 'ethers'
+
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
 import { Price } from '../../interfaces/assets'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
@@ -149,6 +151,26 @@ const isUnderpriced = (msg: string): boolean => {
     msg.includes('maxPriorityFeePerGas')
   )
 }
+/**
+ * Whether the node refused a raw txn because another pending txn of the sender already uses
+ * its nonce, and the new fee is not high enough to replace it.
+ */
+const isReplacementRefused = (error: unknown): boolean =>
+  isError(error, 'REPLACEMENT_UNDERPRICED') ||
+  (error instanceof Error && error.message.includes('replacement transaction underpriced'))
+
+/** Whether the node refused a raw txn because its nonce was already used by a mined txn. */
+const isNonceTooLow = (error: unknown): boolean =>
+  isError(error, 'NONCE_EXPIRED') ||
+  (error instanceof Error && error.message.includes('nonce too low'))
+
+/**
+ * Whether the node refused a raw txn because it already has the exact same txn, so it was sent
+ * before. A wrong match would report a txn as sent when it never went out, so only the exact
+ * answer of Geth and its forks counts.
+ */
+const isTxnAlreadyKnown = (error: unknown): boolean =>
+  error instanceof Error && error.message.includes('already known')
 
 export {
   getFeeSpeedIdentifier,
@@ -158,5 +180,8 @@ export {
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
+  isNonceTooLow,
+  isReplacementRefused,
+  isTxnAlreadyKnown,
   isUnderpriced
 }
