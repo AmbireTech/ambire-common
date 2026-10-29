@@ -172,7 +172,35 @@ const isNonceTooLow = (error: unknown): boolean =>
 const isTxnAlreadyKnown = (error: unknown): boolean =>
   error instanceof Error && error.message.includes('already known')
 
+/**
+ * Returns only the message the broadcast service (bundler, RPC, relayer) responded with.
+ *
+ * ethers wraps a failed JSON-RPC request in an error whose message also contains the
+ * request payload. For a bundler that payload is the user operation, which always has
+ * `maxFeePerGas` and `maxPriorityFeePerGas`, so checking the full message with
+ * `isUnderpriced` would treat every bundler error as a fee change.
+ */
+const getBroadcastServiceErrorMessage = (error?: Error): string => {
+  if (!error) return ''
+  if (!('shortMessage' in error) || typeof error.shortMessage !== 'string') return error.message
+
+  // ethers keeps the service's own JSON-RPC error either at the top level or under `info`
+  const rpcError =
+    'error' in error
+      ? error.error
+      : 'info' in error && !!error.info && typeof error.info === 'object' && 'error' in error.info
+        ? error.info.error
+        : undefined
+  const rpcErrorMessage =
+    !!rpcError && typeof rpcError === 'object' && 'message' in rpcError
+      ? rpcError.message
+      : undefined
+
+  return typeof rpcErrorMessage === 'string' ? rpcErrorMessage : error.shortMessage
+}
+
 export {
+  getBroadcastServiceErrorMessage,
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,

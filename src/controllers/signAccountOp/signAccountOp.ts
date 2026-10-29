@@ -194,6 +194,7 @@ import { GasPriceController } from '../gasPrice/gasPrice'
 import HumanizationController from '../humanization/humanization'
 import { discoverTxnTokens } from './discoverTxnTokens'
 import {
+  getBroadcastServiceErrorMessage,
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
@@ -5107,7 +5108,10 @@ export class SignAccountOpController
           .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
-      } else if (isUnderpriced(originalMessage)) {
+      } else if (isUnderpriced(getBroadcastServiceErrorMessage(_err))) {
+        // Checked against the service's own message only, so a bundler error that merely
+        // echoes the user operation (with its fee fields) isn't mistaken for a fee change
+        // and the user isn't stuck in a "Gas fee updated" loop for an error a retry can't fix
         if (!this.hasCustomGasPrices) message = 'Transaction fees changed. Please try again'
         else message = originalMessage
 

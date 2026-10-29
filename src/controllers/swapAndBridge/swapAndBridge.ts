@@ -1038,7 +1038,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       )
     }
 
-    if (this.sessionIds.includes(sessionId)) return
+    const isSessionAlreadyOpen = this.sessionIds.includes(sessionId)
+    const hasPreselectedToken = !!preselectedFromToken || !!preselectedToToken
+    // A screen opened for a specific token (e.g. "Buy $WALLET") must show it, even when the
+    // session is already open, e.g. the popup session kept with the previous form
+    if (isSessionAlreadyOpen && !hasPreselectedToken) return
 
     // reset only if there are no other instances opened/active
     if (!this.sessionIds.length) {
@@ -1062,7 +1066,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
-    this.sessionIds.push(sessionId)
+    if (!isSessionAlreadyOpen) this.sessionIds.push(sessionId)
     // do not await the health status check to prevent UI freeze while fetching
 
     this.#serviceProviderAPI.updateHealth()
@@ -1534,6 +1538,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
+    const hasPreselectedToken = !!preselectedToken || !!preselectedToToken
+
+    // A token preselected from outside Swap & Bridge starts the "to" side over, like a new form.
+    // Otherwise the "to" token kept from the previous form would block a preselected one, or
+    // could end up the same as a preselected "from" token
+    if (hasPreselectedToken) {
+      this.toSelectedToken = null
+      this.#requestedToToken = null
+    }
 
     // When price fetching is disabled or the endpoint is down, tokens come back without
     // a USD price. We must not exclude them as "priceless" in that case, otherwise
@@ -1588,14 +1601,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       !fromSelectedTokenInNextPortfolio ||
       // May happen if user receives or sends the token in the meantime
       fromSelectedTokenInNextPortfolio.amount !== this.fromSelectedToken?.amount ||
-      preselectedToken
+      // The form is kept from another screen, so the preselected token must still be applied
+      hasPreselectedToken
 
     // If the token is not in the portfolio because it was a "to" token
     // and the user has switched the "from" and "to" tokens we should not
-    // update the selected token
+    // update the selected token, unless the user came to select a specific token
     if (
-      !this.fromSelectedToken?.isSwitchedToToken &&
-      !isSelectedTokenFalsyBeforeListUpdate &&
+      (hasPreselectedToken ||
+        (!this.fromSelectedToken?.isSwitchedToToken && !isSelectedTokenFalsyBeforeListUpdate)) &&
       shouldUpdateFromSelectedToken
     ) {
       // get the networks that account is supported on and select

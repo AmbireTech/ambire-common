@@ -6,6 +6,7 @@ import {
   Interface,
   JsonRpcProvider,
   keccak256,
+  makeError,
   MaxUint256,
   Network as EthersNetwork,
   parseEther,
@@ -15,10 +16,6 @@ import {
 } from 'ethers'
 import fetch from 'node-fetch'
 
-import {
-  EARLIER_PENDING_TRANSACTION_ERROR_CODE,
-  WARNINGS
-} from '@/consts/signAccountOp/errorHandling'
 import { afterAll, afterEach, describe, expect, jest, test } from '@jest/globals'
 import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
 
@@ -48,6 +45,10 @@ import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { FeatureFlags } from '../../consts/featureFlags'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
+import {
+  EARLIER_PENDING_TRANSACTION_ERROR_CODE,
+  WARNINGS
+} from '../../consts/signAccountOp/errorHandling'
 import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { DecodedCall } from '../../interfaces/decodeCall'
@@ -64,11 +65,11 @@ import { getReplacementAccountOp } from '../../libs/accountOp/replacement'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import * as broadcastLib from '../../libs/broadcast/broadcast'
-import * as safeLib from '../../libs/safe/safe'
 import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../libs/decodeCall'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
+import { getMinReplacementFees } from '../../libs/gasPrice/speedUp'
 import { ERC7730_DESCRIPTOR_WAIT_MS } from '../../libs/humanizer/erc7730/consts'
 import { HumanizerWarning } from '../../libs/humanizer/interfaces'
 import { hasErc7730Humanization, UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
@@ -78,6 +79,7 @@ import { TokenResult } from '../../libs/portfolio'
 import { AccountState } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_STATE } from '../../libs/portfolio/testData'
 import { BindedRelayerCall, relayerCall, RelayerError } from '../../libs/relayerCall/relayerCall'
+import * as safeLib from '../../libs/safe/safe'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
   getTypedData
@@ -88,7 +90,6 @@ import * as debugTraceCallLib from '../../libs/tracer/debugTraceCall'
 import * as ethSimulateV1Lib from '../../libs/tracer/ethSimulatev1'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
-import { getMinReplacementFees } from '../../libs/gasPrice/speedUp'
 import { paymasterFactory } from '../../services/paymaster'
 import { getRpcProvider } from '../../services/provider'
 import { getSubmittedAccountOpNonces } from '../../utils/nonce'
@@ -185,7 +186,8 @@ const createEOAAccountOp = (account: Account) => {
     chainId: 1n,
     nonce: null, // does not matter when estimating
     calls: [{ to, value: BigInt(1), data }],
-    signature: null
+    signature: null,
+    meta: {}
   }
 
   return { op, nativeToCheck, feeTokens }
@@ -2814,6 +2816,107 @@ describe('throwBroadcastAccountOp', () => {
     const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
     expect(lastError?.level).toBe('major')
   })
+  it('a bundler error that is not about the fee shows an error toast instead of the gas fee updated confirmation', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      }
+    )
+
+    // ethers puts the request payload in the message, so it always contains the
+    // user operation's maxFeePerGas and maxPriorityFeePerGas
+    const userOpPayload = {
+      method: 'eth_sendUserOperation',
+      params: [{ sender: eoaAccount.addr, maxFeePerGas: '0x258', maxPriorityFeePerGas: '0x12c' }]
+    }
+    const error = makeError('could not coalesce error', 'UNKNOWN_ERROR', {
+      error: { code: -32500, message: "AA21 didn't pay prefund" },
+      payload: userOpPayload
+    })
+
+    expect(() => controller.throwBroadcastAccountOp({ error })).toThrow("AA21 didn't pay prefund")
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(false)
+    expect(controller.previousFee).toBe(null)
+    // The user is brought back to the initial signing step
+    expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
+
+    const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
+    expect(lastError?.level).toBe('major')
+  })
+  it('a bundler error about the fee shows the gas fee updated confirmation', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      }
+    )
+
+    // ethers puts the request payload in the message, so it always contains the
+    // user operation's maxFeePerGas and maxPriorityFeePerGas
+    const userOpPayload = {
+      method: 'eth_sendUserOperation',
+      params: [{ sender: eoaAccount.addr, maxFeePerGas: '0x258', maxPriorityFeePerGas: '0x12c' }]
+    }
+    const error = makeError('could not coalesce error', 'UNKNOWN_ERROR', {
+      error: {
+        code: -32602,
+        message:
+          'maxFeePerGas must be at least 1200 (current maxFeePerGas: 600) - use pimlico_getUserOperationGasPrice to get the current gas price'
+      },
+      payload: userOpPayload
+    })
+
+    expect(() => controller.throwBroadcastAccountOp({ error })).toThrow(
+      'Transaction fees changed. Please try again'
+    )
+
+    expect(controller.gasFeeChangedConfirmationRequired).toBe(true)
+
+    const lastError = controller.emittedErrors[controller.emittedErrors.length - 1]
+    expect(lastError?.level).toBe('silent')
+  })
 })
 
 test('Signing [V1 with EOA payment]: working case', async () => {
@@ -4278,7 +4381,7 @@ describe('broadcasting a batch one transaction at a time', () => {
         e.message.startsWith('Failed to report the sent part')
       )
       expect(reportError).toBeDefined()
-      expect(reportError.level).toBe('silent')
+      expect(reportError?.level).toBe('silent')
       expect(controller.emittedErrors.some((e: any) => e.level === 'major')).toBe(true)
       expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
     })
