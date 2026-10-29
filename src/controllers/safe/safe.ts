@@ -1,5 +1,6 @@
 import { getAddress } from 'ethers'
 
+import EmittableError from '../../classes/EmittableError'
 import { FETCH_OTHER_SAFES_PENDING, FETCH_SAFE_TXNS } from '../../consts/intervals'
 import {
   SAFE_API_BATCH_SIZE,
@@ -22,6 +23,7 @@ import {
   findDeployData,
   getApiKit,
   getMessage,
+  getNewSafeAccount,
   getSafeAccountByOwner,
   SafeResults
 } from '../../libs/safe/safe'
@@ -38,7 +40,8 @@ const SAFE_OWNER_SEARCH_DEBOUNCE = 3 * 1000
 const SAFE_PENDING_REQUEST_PAUSE = 600
 
 export const STATUS_WRAPPED_METHODS = {
-  findSafe: 'INITIAL'
+  findSafe: 'INITIAL',
+  createSafeAccount: 'INITIAL'
 } as const
 
 type SafeOwnerSearch = {
@@ -195,6 +198,45 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   async findSafe(safeAddr: string) {
     await this.withStatus('findSafe', () => this.#findSafe(safeAddr), true)
+  }
+
+  /**
+   * Creates a new Safe v1.4.1 account with the given owners and threshold and adds it to
+   * the wallet. It's not deployed - it's added with its counterfactual address and gets
+   * deployed with its first transaction. The same owners and threshold always result in
+   * the same address, so if that Safe is already in the wallet, it errors instead
+   */
+  async createSafeAccount(owners: Hex[], threshold: number) {
+    await this.withStatus(
+      'createSafeAccount',
+      async () => {
+        await this.#accounts.initialLoadPromise
+        const account = getNewSafeAccount(owners, threshold, this.#accounts.accounts)
+        const isAccountInWallet = () =>
+          this.#accounts.accounts.some(({ addr }) => addr === account.addr)
+
+        if (isAccountInWallet()) {
+          throw new EmittableError({
+            level: 'major',
+            message:
+              'This Safe account is already in your wallet. The same owners and required confirmations always lead to the same account.'
+          })
+        }
+
+        await this.#accounts.addAccounts([account])
+
+        // addAccounts handles its own errors and doesn't throw, so it's checked
+        // whether the account got added before reporting a success
+        if (!isAccountInWallet()) {
+          throw new EmittableError({
+            level: 'major',
+            message: "We couldn't add the Safe account to your wallet. Please try again.",
+            error: new Error(`safe: failed to add the new Safe account ${account.addr}`)
+          })
+        }
+      },
+      true
+    )
   }
 
   async resetFind() {
