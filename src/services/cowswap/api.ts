@@ -41,6 +41,7 @@ import {
   SwapAndBridgeUserTx,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
+import { startPerfSpan } from '../../libs/perf/perf'
 import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import {
   addCustomTokensIfNeeded,
@@ -193,9 +194,12 @@ export class CowSwapAPI implements SwapProvider {
     fromChainId: number
     toChainId: number
   }): Promise<SwapAndBridgeToToken[]> {
-    const tokens = (await this.#getTokenList())
+    const tokenList = await this.#getTokenList()
+    const endNormalizeSpan = startPerfSpan('swap.cowswap.normalizeTokens')
+    const tokens = tokenList
       .filter((token) => token.chainId === toChainId)
       .map(normalizeCowSwapToken)
+    endNormalizeSpan()
 
     return addCustomTokensIfNeeded({ chainId: toChainId, tokens })
   }
