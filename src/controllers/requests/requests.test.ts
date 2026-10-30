@@ -5,6 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
+import { mockBundlerRequestsBeforeEach } from '../../../test/mocks/bundler'
 import { Session } from '../../classes/session'
 import { SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE } from '../../consts/safe'
 import {
@@ -31,6 +32,7 @@ import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 import type { AccountOp } from '../../libs/accountOp/accountOp'
+import type { Call } from '../../libs/accountOp/types'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
@@ -370,6 +372,9 @@ describe('RequestsController ', () => {
   beforeEach(() => {
     jest.restoreAllMocks()
   })
+  // Registered after the restoreAllMocks above, so it's not undone right away. The requests
+  // build signAccountOps that estimate in the background, nothing here asserts on the bundler
+  mockBundlerRequestsBeforeEach()
 
   test('Add and then remove a user request', async () => {
     const { controller, getCallsRequest } = await prepareTest()
@@ -667,6 +672,180 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest?.id).toBe('arrived-request')
     expect(controller.requestWindow.windowProps).not.toBe(null)
   })
+  describe('speed ups', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const replacedAccountOpId = 'replaced-account-op-id'
+    const call = { to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143', value: 1n, data: '0x' }
+
+    const buildBatchRequest = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: { calls: [call], meta: { accountAddr, chainId: 1n } }
+        }
+      })
+
+    const buildSpeedUpRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      { replacedTxnId, nonce = 0n }: { replacedTxnId?: string; nonce?: bigint } = {}
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [call],
+            meta: { accountAddr, chainId: 1n },
+            accountOp: {
+              id: replacedAccountOpId,
+              accountAddr,
+              chainId: 1n,
+              signingKeyAddr: null,
+              signingKeyType: null,
+              gasLimit: null,
+              gasFeePayment: null,
+              nonce,
+              signature: null,
+              calls: [{ ...call, id: 'replaced-call-id' }],
+              meta: {
+                speedUp: {
+                  enabled: true,
+                  ...(replacedTxnId && {
+                    replacedIdentifiedBy: { type: 'Transaction', identifier: replacedTxnId }
+                  })
+                }
+              }
+            } as AccountOp
+          }
+        }
+      })
+
+    const getCallsRequests = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.userRequests.filter((r) => r.kind === 'calls')
+
+    test('a speed up is not added to the batch already open on the same chain', async () => {
+      const { controller } = await prepareTest()
+      await buildBatchRequest(controller)
+      await buildSpeedUpRequest(controller)
+
+      const [batch, speedUp] = getCallsRequests(controller)
+      expect(getCallsRequests(controller)).toHaveLength(2)
+      expect(batch!.signAccountOp.isSpeedUpTransaction).toBe(false)
+      expect(batch!.signAccountOp.accountOp.calls).toHaveLength(1)
+      expect(speedUp!.signAccountOp.isSpeedUpTransaction).toBe(true)
+      expect(speedUp!.id).not.toBe(batch!.id)
+    })
+
+    test('new calls are not added to an open speed up', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller)
+      await buildBatchRequest(controller)
+
+      const speedUp = getCallsRequests(controller).find((r) => r.signAccountOp.isSpeedUpTransaction)
+      expect(getCallsRequests(controller)).toHaveLength(2)
+      expect(speedUp!.signAccountOp.accountOp.calls).toHaveLength(1)
+    })
+
+    test('a speed up gets an account op id of its own', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller)
+
+      const [speedUp] = getCallsRequests(controller)
+      expect(speedUp!.signAccountOp.accountOp.id).toBeTruthy()
+      expect(speedUp!.signAccountOp.accountOp.id).not.toBe(replacedAccountOpId)
+    })
+
+    test('batching normal calls still works next to an open speed up', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller)
+      await buildBatchRequest(controller)
+      await buildBatchRequest(controller)
+
+      const batch = getCallsRequests(controller).find((r) => !r.signAccountOp.isSpeedUpTransaction)
+      expect(getCallsRequests(controller)).toHaveLength(2)
+      expect(batch!.signAccountOp.accountOp.calls).toHaveLength(2)
+    })
+
+    test('pressing Speed up again reopens the open speed up of that transaction', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller, { replacedTxnId: `0x${'aa'.repeat(32)}` })
+      await buildSpeedUpRequest(controller, { replacedTxnId: `0x${'aa'.repeat(32)}` })
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      expect(getCallsRequests(controller)[0]!.signAccountOp.accountOp.calls).toHaveLength(1)
+    })
+
+    test('speed ups of different transactions are separate requests', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller, { replacedTxnId: `0x${'aa'.repeat(32)}` })
+      await buildSpeedUpRequest(controller, { replacedTxnId: `0x${'bb'.repeat(32)}` })
+
+      expect(getCallsRequests(controller)).toHaveLength(2)
+    })
+
+    test('pressing Speed up twice while the first is still being built adds one speed up', async () => {
+      const { controller } = await prepareTest()
+      const replacedTxnId = `0x${'aa'.repeat(32)}`
+
+      // Neither is awaited before the other starts, the same as two quick presses
+      await Promise.all([
+        buildSpeedUpRequest(controller, { replacedTxnId }),
+        buildSpeedUpRequest(controller, { replacedTxnId })
+      ])
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+    })
+
+    test('speed ups of different transactions built at the same time are both added', async () => {
+      const { controller } = await prepareTest()
+
+      await Promise.all([
+        buildSpeedUpRequest(controller, { replacedTxnId: `0x${'aa'.repeat(32)}` }),
+        buildSpeedUpRequest(controller, { replacedTxnId: `0x${'bb'.repeat(32)}` })
+      ])
+
+      expect(getCallsRequests(controller)).toHaveLength(2)
+    })
+
+    test('a speed up can be built again after the previous one was closed', async () => {
+      const { controller } = await prepareTest()
+      const replacedTxnId = `0x${'aa'.repeat(32)}`
+      await buildSpeedUpRequest(controller, { replacedTxnId })
+      await controller.removeUserRequests([getCallsRequests(controller)[0]!.id])
+
+      await buildSpeedUpRequest(controller, { replacedTxnId })
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+    })
+
+    // The replaced transaction is still pending, so the pending account state is one nonce ahead
+    const mockPendingNonce = (
+      accountsCtrl: Awaited<ReturnType<typeof prepareTest>>['accountsCtrl']
+    ) => {
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+      accountsCtrl.accountStates[accountAddr]!['1']!.nonce = 8n
+    }
+
+    test('a Safe speed up keeps the nonce of the transaction it replaces', async () => {
+      const { controller, accountsCtrl } = await prepareTest(false, true)
+      mockPendingNonce(accountsCtrl)
+      await buildSpeedUpRequest(controller, { nonce: 7n })
+
+      // The Safe transaction is built from this nonce, and its signatures are for it
+      expect(getCallsRequests(controller)[0]!.signAccountOp.accountOp.nonce).toBe(7n)
+    })
+
+    test('a smart account speed up uses the pending nonce, so it can be simulated', async () => {
+      const { controller, accountsCtrl } = await prepareTest()
+      mockPendingNonce(accountsCtrl)
+      await buildSpeedUpRequest(controller, { nonce: 7n })
+
+      // The simulation runs on the pending block, where the replaced transaction raised it to 8
+      expect(getCallsRequests(controller)[0]!.signAccountOp.accountOp.nonce).toBe(8n)
+    })
+  })
+
   describe('closing the side panel', () => {
     /** Requests show up in the panel, which has no window of its own. */
     const prepareSidePanelTest = async () => {
@@ -815,6 +994,69 @@ describe('RequestsController ', () => {
 
     expect(controller.userRequests.length).toBe(1)
     expect(controller.userRequests[0]!.kind).toBe('calls')
+  })
+
+  describe('build NFT transfer request', () => {
+    const nft = {
+      address: '0x59468516a8259058baD1cA5F8f4BFF190d30E066',
+      chainId: 1n,
+      tokenId: 42n,
+      collectionName: 'Test Collection'
+    }
+    const recipientAddress = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+
+    test('adds a calls request with a safeTransferFrom of the NFT', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.build({
+        type: 'nftTransferRequest',
+        params: {
+          nft,
+          recipientAddress,
+          recipientDomain: 'recipient.eth',
+          executionType: 'queue'
+        }
+      })
+
+      expect(controller.userRequests.length).toBe(1)
+      const request = controller.userRequests[0]!
+      if (request.kind !== 'calls') throw new Error('Expected a calls request')
+
+      const { calls, chainId } = request.signAccountOp.accountOp
+      expect(chainId).toBe(nft.chainId)
+      expect(calls).toHaveLength(1)
+      expect(calls[0]!.to).toBe(nft.address)
+      expect(calls[0]!.value).toBe(0n)
+      // safeTransferFrom(address,address,uint256)
+      expect(calls[0]!.data.startsWith('0x42842e0e')).toBe(true)
+      expect(calls[0]!.recipientDomain).toBe('recipient.eth')
+
+      request.signAccountOp.destroy()
+    })
+
+    test('refuses to send the NFT to its own collection and tells the user', async () => {
+      const { controller } = await prepareTest()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await controller.build({
+        type: 'nftTransferRequest',
+        params: {
+          nft,
+          recipientAddress: nft.address,
+          recipientDomain: undefined,
+          executionType: 'queue'
+        }
+      })
+
+      expect(controller.userRequests.length).toBe(0)
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          level: 'major',
+          message: "We couldn't prepare the NFT transfer. Please check the recipient and try again."
+        })
+      )
+    })
   })
 
   test('emits the updated calls when adding another request to a queued batch', async () => {
@@ -1425,6 +1667,124 @@ describe('RequestsController ', () => {
     expect(safeRequests.map((request) => request.signAccountOp.accountOp.nonce)).toEqual([1n, 5n])
 
     safeRequests.forEach((request) => request.signAccountOp.destroy())
+  })
+  describe('a Safe transaction from the Safe API that is already being sent', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const safeNonce = 7n
+    const call = { to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143', value: 1n, data: '0x' }
+
+    const buildSafeApiRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      { calls = [call], nonce = safeNonce }: { calls?: Call[]; nonce?: bigint } = {}
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls,
+            meta: {
+              accountAddr,
+              chainId,
+              safeTxnProps: { txnId: `0x${'cd'.repeat(32)}`, signature: '0x', nonce }
+            }
+          }
+        }
+      })
+
+    const addBroadcastOp = (
+      activityCtrl: Awaited<ReturnType<typeof prepareTest>>['activityCtrl'],
+      status = AccountOpStatus.BroadcastedButNotConfirmed
+    ) =>
+      activityCtrl.addAccountOp({
+        ...getActivityAccountOp(accountAddr, chainId, safeNonce),
+        // The id the wallet gives a call doesn't make it another transaction
+        calls: [{ ...call, to: call.to.toLowerCase(), id: 'call-id' }],
+        status
+      })
+
+    const prepareSafeTest = async () => {
+      const test = await prepareTest(false, true)
+      test.accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = safeNonce
+      jest.spyOn(test.accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+      return test
+    }
+
+    const getCallsRequests = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.userRequests.filter(
+        (request): request is CallsUserRequest => request.kind === 'calls'
+      )
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    test('is not queued while it waits to get onchain', async () => {
+      const { controller, activityCtrl } = await prepareSafeTest()
+      await addBroadcastOp(activityCtrl)
+
+      await buildSafeApiRequest(controller)
+
+      expect(getCallsRequests(controller)).toHaveLength(0)
+    })
+
+    test('is not queued while it is open as a speed up', async () => {
+      const { controller } = await prepareSafeTest()
+      await controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [call],
+            meta: { accountAddr, chainId },
+            accountOp: {
+              id: 'replaced-account-op-id',
+              accountAddr,
+              chainId,
+              signingKeyAddr: null,
+              signingKeyType: null,
+              gasLimit: null,
+              gasFeePayment: null,
+              nonce: safeNonce,
+              signature: null,
+              calls: [{ ...call, id: 'replaced-call-id' }],
+              meta: { speedUp: { enabled: true } }
+            } as AccountOp
+          }
+        }
+      })
+      expect(getCallsRequests(controller)).toHaveLength(1)
+
+      await buildSafeApiRequest(controller)
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      expect(getCallsRequests(controller)[0]!.signAccountOp.isSpeedUpTransaction).toBe(true)
+      getCallsRequests(controller).forEach((request) => request.signAccountOp.destroy())
+    })
+
+    test('is queued again once the broadcast did not get onchain', async () => {
+      const { controller, activityCtrl } = await prepareSafeTest()
+      await addBroadcastOp(activityCtrl, AccountOpStatus.BroadcastButStuck)
+
+      await buildSafeApiRequest(controller)
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      getCallsRequests(controller).forEach((request) => request.signAccountOp.destroy())
+    })
+
+    test.each([
+      ['another transaction on the same nonce', { calls: [{ ...call, value: 2n }] }],
+      ['the same calls on another nonce', { nonce: safeNonce + 1n }]
+    ])('still queues %s', async (_, overrides) => {
+      const { controller, activityCtrl } = await prepareSafeTest()
+      await addBroadcastOp(activityCtrl)
+
+      await buildSafeApiRequest(controller, overrides)
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      getCallsRequests(controller).forEach((request) => request.signAccountOp.destroy())
+    })
   })
   test('build contract deployment dapp request', async () => {
     const { controller } = await prepareTest(true)
