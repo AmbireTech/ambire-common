@@ -13,6 +13,7 @@ import {
   getRichVisualization,
   getToken
 } from '../../utils'
+import { fallbackHumanizer } from '../FallbackHumanizer/fallBackHumanizer'
 import { humanizePrivacyPoolsWithdrawal, privacyPoolsModule } from './privacyPoolsModule'
 
 const ENTRYPOINT = getPrivacyPoolsChainConfig(1n)!.entrypointAddress
@@ -55,6 +56,26 @@ describe('Privacy Pools humanizer', () => {
     ]
 
     compareHumanizerVisualizations(humanize(calls), expectedVisualizations)
+  })
+
+  test('a deposit of the native coin gets no second row and warning for the coin it sends', () => {
+    const [deposit] = humanize([
+      {
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: true,
+          assetAddress: ZeroAddress,
+          amount: 10n ** 18n,
+          precommitment: 42n
+        })
+      }
+    ])
+
+    // The fallback humanizer runs after every module, as it does in the humanizer pipeline
+    const humanized = fallbackHumanizer(accountOp, deposit!, {} as any)
+
+    expect(humanized.fullVisualization?.fields).toEqual([])
+    expect(humanized.warnings ?? []).toEqual([])
   })
 
   test('leaves other calls alone, including a deposit on a network without Privacy Pools', () => {
