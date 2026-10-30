@@ -27,21 +27,3 @@ export type CowSwapTokenListEntry = {
   name: string
   symbol: string
 }
-
-export type CenaPlatformResponse = {
-  platformId?: string
-}
-
-export type CenaTokenResponse = {
-  blacklist?: boolean
-  decimals?: Record<string, number>
-  image?: {
-    large?: string
-    small?: string
-    thumb?: string
-  }
-  name?: string
-  platforms?: Record<string, string>
-  removed?: boolean
-  symbol?: string
-}
