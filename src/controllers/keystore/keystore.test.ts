@@ -1163,3 +1163,118 @@ describe('KeystoreController fee payer key', () => {
     expect(key).toBeInstanceOf(Error)
   })
 })
+
+describe('KeystoreController updateUnknownKeyDeviceModel', () => {
+  const ledgerAddr = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+  let keystoreCtrl: IKeystoreController
+  let storageCtrl: StorageController
+
+  const ledgerKey = (deviceModel: string): ExternalKey => ({
+    addr: ledgerAddr,
+    type: 'ledger',
+    dedicatedToOneSA: false,
+    label: 'Ledger key',
+    meta: {
+      deviceId: '',
+      deviceModel,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      index: 0,
+      createdAt: new Date().getTime()
+    }
+  })
+
+  const getDeviceModel = (addr: string, type: ExternalKey['type']) => {
+    const key = keystoreCtrl.keys.find((k) => k.addr === addr && k.type === type)
+    return key && 'deviceModel' in key.meta ? key.meta.deviceModel : undefined
+  }
+
+  const setUp = async (keys: ExternalKey[]) => {
+    storageCtrl = new StorageController(produceMemoryStore())
+    const uiCtrl = new UiController({ uiManager })
+    keystoreCtrl = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
+    await keystoreCtrl.addSecret('password', pass, '', false)
+    await keystoreCtrl.unlockWithSecret('password', pass)
+    await keystoreCtrl.addKeysExternallyStored(keys)
+  }
+
+  test('fills in an unknown model and stores it', async () => {
+    await setUp([ledgerKey('unknown')])
+
+    await keystoreCtrl.updateUnknownKeyDeviceModel({
+      addr: ledgerAddr,
+      type: 'ledger',
+      deviceModel: 'stax'
+    })
+
+    expect(getDeviceModel(ledgerAddr, 'ledger')).toBe('stax')
+    const storedKeys: any[] = await storageCtrl.get('keystoreKeys', [])
+    expect(storedKeys.find((k) => k.addr === ledgerAddr).meta.deviceModel).toBe('stax')
+  })
+
+  test('fills in an empty model', async () => {
+    await setUp([ledgerKey('')])
+
+    await keystoreCtrl.updateUnknownKeyDeviceModel({
+      addr: ledgerAddr,
+      type: 'ledger',
+      deviceModel: 'flex'
+    })
+
+    expect(getDeviceModel(ledgerAddr, 'ledger')).toBe('flex')
+  })
+
+  test('keeps a known model, as the same seed can be on another device', async () => {
+    await setUp([ledgerKey('nanoX')])
+
+    await keystoreCtrl.updateUnknownKeyDeviceModel({
+      addr: ledgerAddr,
+      type: 'ledger',
+      deviceModel: 'stax'
+    })
+
+    expect(getDeviceModel(ledgerAddr, 'ledger')).toBe('nanoX')
+  })
+
+  test('never replaces a model with "unknown" or nothing', async () => {
+    await setUp([ledgerKey('unknown')])
+
+    await keystoreCtrl.updateUnknownKeyDeviceModel({
+      addr: ledgerAddr,
+      type: 'ledger',
+      deviceModel: 'unknown'
+    })
+    await keystoreCtrl.updateUnknownKeyDeviceModel({
+      addr: ledgerAddr,
+      type: 'ledger',
+      deviceModel: ''
+    })
+
+    expect(getDeviceModel(ledgerAddr, 'ledger')).toBe('unknown')
+  })
+
+  test('only touches the key of the given type', async () => {
+    await setUp([ledgerKey('unknown'), { ...ledgerKey('unknown'), type: 'trezor' }])
+
+    await keystoreCtrl.updateUnknownKeyDeviceModel({
+      addr: ledgerAddr,
+      type: 'ledger',
+      deviceModel: 'stax'
+    })
+
+    expect(getDeviceModel(ledgerAddr, 'ledger')).toBe('stax')
+    expect(getDeviceModel(ledgerAddr, 'trezor')).toBe('unknown')
+  })
+
+  test('does nothing for a key that is not stored', async () => {
+    await setUp([ledgerKey('unknown')])
+
+    await keystoreCtrl.updateUnknownKeyDeviceModel({
+      addr: '0x0000000000000000000000000000000000000001',
+      type: 'ledger',
+      deviceModel: 'stax'
+    })
+
+    expect(keystoreCtrl.keys).toHaveLength(1)
+    expect(getDeviceModel(ledgerAddr, 'ledger')).toBe('unknown')
+  })
+})
