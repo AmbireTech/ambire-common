@@ -1,12 +1,10 @@
-import { AbiCoder, Contract, ethers, ZeroAddress } from 'ethers'
+import { AbiCoder, Contract, ethers } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import { velcroUrl } from '../../../test/config'
 import { suppressConsole } from '../../../test/helpers/console'
-import { monitor, stopMonitoring } from '../../../test/helpers/requests'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PORTFOLIO_TESTS_V2 } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
@@ -18,9 +16,7 @@ import { getBaseAccount } from '../account/getBaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { ERC20 } from '../humanizer/const/abis'
-import { stringify } from '../richJson/richJson'
-import { Hints } from './interfaces'
-import { Portfolio, PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
+import { Portfolio } from './portfolio'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -55,8 +51,8 @@ describe('Portfolio', () => {
   const provider = getRpcProvider(['https://invictus.ambire.com/ethereum'], 1n)
   const providerArbitrum = getRpcProvider(['https://invictus.ambire.com/arbitrum'], 42161n)
 
-  const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
-  const portfolioArbitrum = new Portfolio(fetch, providerArbitrum, arbitrum, velcroUrl)
+  const portfolio = new Portfolio(fetch, provider, ethereum)
+  const portfolioArbitrum = new Portfolio(fetch, providerArbitrum, arbitrum)
 
   async function getNonce(address: string) {
     const accountContract = new Contract(address, AmbireAccount.abi, provider)
@@ -78,67 +74,6 @@ describe('Portfolio', () => {
       data: usdtContract.interface.encodeFunctionData('transfer', [to, amount])
     }
   }
-
-  test('batching works', async () => {
-    const interceptedRequests = monitor()
-
-    const [{ hints: hints1 }, { hints: hints2 }]: [{ hints: Hints }, { hints: Hints }] =
-      await Promise.all([
-        // @ts-expect-error tests
-        portfolio.externalHintsAPIDiscovery({
-          chainId: 1n,
-          accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-          baseCurrency: 'usd'
-        }),
-        // @ts-expect-error tests
-        portfolio.externalHintsAPIDiscovery({
-          chainId: 1n,
-          accountAddr: '0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6',
-          baseCurrency: 'usd'
-        })
-      ])
-
-    // 💡 Important Note: BATCH_LIMIT is set to 40 in portfolio/gecko.ts.
-    // To simplify testing, we've chosen addresses that contain no more than 40 tokens.
-    // This allows us to predict the number of requests in advance.
-    // If more advanced testing is required, we'll need to count the number of hints and calculate the expected
-    // number of paginated requests accordingly.
-    await Promise.all([
-      portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
-      portfolio.get('0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6')
-    ])
-
-    const tokens =
-      (hints1.erc20s.filter((addr) => Number(addr) !== 0).length || 0) +
-      (hints2.erc20s.filter((addr) => Number(addr) !== 0).length || 0)
-
-    stopMonitoring()
-
-    const multiHintsReqs = interceptedRequests.filter(
-      (req) =>
-        (req?.url.hostname === 'relayer.ambire.com' ||
-          req.url.hostname === 'staging-relayer.ambire.com') &&
-        req?.url.pathname === '/velcro-v3/multi-hints'
-    )
-    const nativePriceReqs = interceptedRequests.filter(
-      (req) =>
-        req?.url.hostname === 'cena.ambire.com' && req?.url.pathname === '/api/v3/simple/price'
-    )
-    const tokenPriceReqs = interceptedRequests.filter(
-      (req) =>
-        req?.url.hostname === 'cena.ambire.com' &&
-        req?.url.pathname === '/api/v3/simple/token_price/ethereum'
-    )
-    const rpcReqs = interceptedRequests.filter(
-      (req) => req?.url === 'https://invictus.ambire.com/ethereum'
-    )
-
-    expect(multiHintsReqs.length).toEqual(2)
-    expect(nativePriceReqs.length).toEqual(1)
-    // Expect tokenPriceReqs to be paginated. 40 is the max tokens per request.
-    expect(tokenPriceReqs.length).toEqual(Math.ceil(tokens / 40))
-    expect(rpcReqs.length).toEqual(1)
-  })
 
   test('token simulation', async () => {
     const accountOp: any = {
@@ -199,12 +134,14 @@ describe('Portfolio', () => {
   })
 
   test('nft simulation', async () => {
+    const SIZECREATURE_ADDRESS = '0xA245fe89Af4573Bc53f4BeA5Ae4c38db431d9123'
+    const SENT_TOKEN_ID = 66185n
     const ABI = ['function transferFrom(address from, address to, uint256 tokenId)']
     const iface = new ethers.Interface(ABI)
     const data = iface.encodeFunctionData('transferFrom', [
       '0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA',
       '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      66185
+      SENT_TOKEN_ID
     ])
 
     const SPOOF_SIGTYPE = '03'
@@ -223,7 +160,7 @@ describe('Portfolio', () => {
         await providerArbitrum.getTransactionCount('0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA')
       ),
       signature: spoofSig,
-      calls: [{ to: '0xA245fe89Af4573Bc53f4BeA5Ae4c38db431d9123', value: BigInt(0), data }],
+      calls: [{ to: SIZECREATURE_ADDRESS, value: BigInt(0), data }],
       id: 'test-id'
     }
     const account = {
@@ -247,6 +184,7 @@ describe('Portfolio', () => {
     const postSimulation = await portfolioArbitrum.get(
       '0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA',
       {
+        additionalErc721Hints: { [SIZECREATURE_ADDRESS]: [SENT_TOKEN_ID] },
         simulation: {
           accountOps: [accountOp],
           baseAccount: getBaseAccount(
@@ -266,7 +204,7 @@ describe('Portfolio', () => {
     if (!collection || collection.amountPostSimulation === undefined) {
       throw new Error('Collection not found or `amountPostSimulation` is not calculated')
     }
-    expect(collection.postSimulation?.sending?.[0]).toBe(66185n)
+    expect(collection.postSimulation?.sending?.[0]).toBe(SENT_TOKEN_ID)
     expect(collection.amount - collection.amountPostSimulation).toBe(1n)
   })
 
@@ -289,12 +227,7 @@ describe('Portfolio', () => {
         }
       })
     }))
-    const portfolioWithMockedPriceFetch = new Portfolio(
-      priceFetch as any,
-      provider,
-      ethereum,
-      velcroUrl
-    )
+    const portfolioWithMockedPriceFetch = new Portfolio(priceFetch as any, provider, ethereum)
     const tokenDataCache = new Map()
 
     await expect(
@@ -314,12 +247,7 @@ describe('Portfolio', () => {
 
   test('finds a cached price the price API stored under a differently cased address', async () => {
     const priceFetch = jest.fn(async () => ({ status: 200, json: async () => ({}) }))
-    const portfolioWithMockedPriceFetch = new Portfolio(
-      priceFetch as any,
-      provider,
-      ethereum,
-      velcroUrl
-    )
+    const portfolioWithMockedPriceFetch = new Portfolio(priceFetch as any, provider, ethereum)
     // Keyed the way the external price API returns it, which is not the casing our
     // own token results carry. An exact-match lookup misses this entry and refetches
     // a price that was already there.
@@ -731,7 +659,7 @@ describe('Portfolio', () => {
     const { restore } = suppressConsole()
     const failingProvider = getRpcProvider(['https://invictus.ambire.com/ethereum-fail'], 1n)
 
-    const failingPortfolio = new Portfolio(fetch, failingProvider, ethereum, velcroUrl)
+    const failingPortfolio = new Portfolio(fetch, failingProvider, ethereum)
 
     let didThrow = false
 
@@ -749,47 +677,9 @@ describe('Portfolio', () => {
   })
 
   describe('Hints', () => {
-    describe('With blocked Velcro discovery', () => {
-      // Done in beforeEach instead of a reusable function because
-      // mocks can't be reused as functions
-      beforeEach(() => {
-        // Simulate a Velcro Discovery failure
-        jest.spyOn(global, 'fetch').mockImplementation((url: any, init: any) => {
-          // @ts-expect-error tests
-          const { Response } = jest.requireActual('node-fetch')
-          if (url.includes(`${velcroUrl}/multi-hints`)) {
-            const body = stringify({ message: 'API error' })
-            const headers = { status: 200 }
-            return Promise.resolve(new Response(body, headers))
-          }
-          // Passed on with the init, which the JSON-RPC requests that now come
-          // through here carry their method and body in
-          // @ts-expect-error tests
-          return jest.requireActual('node-fetch')(url, init)
-        })
-      })
-      afterEach(() => {
-        // Restore the original implementations
-        jest.restoreAllMocks()
-        jest.resetAllMocks()
-      })
-      test('An error is added when the external api hints call fails', async () => {
-        const { restore } = suppressConsole()
-        // @ts-expect-error tests
-        const portfolioInner = new Portfolio(global.fetch, provider, ethereum, velcroUrl)
-
-        const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {})
-
-        expect(
-          result.errors.find(({ name }) => name === PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError)
-        ).toBeDefined()
-
-        restore()
-      })
-    })
     test('Hints are deduped', async () => {
       const additionalErc20Hints = [USDT_ADDRESS, USDT_ADDRESS.toLowerCase()]
-      const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
+      const portfolioInner = new Portfolio(fetch, provider, ethereum)
 
       const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
         additionalErc20Hints
@@ -805,7 +695,7 @@ describe('Portfolio', () => {
       const additionalErc20Hints = [
         `${USDT_ADDRESS.slice(-1)}4` // Bad hint
       ]
-      const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
+      const portfolioInner = new Portfolio(fetch, provider, ethereum)
 
       const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
         additionalErc20Hints
@@ -814,21 +704,6 @@ describe('Portfolio', () => {
       expect(result.tokens.length).toBeGreaterThan(0)
     })
     it('Tokens with balance are returned in toBeLearned', async () => {
-      const hints: Hints = {
-        erc20s: [ZeroAddress],
-        erc721s: {},
-        externalApi: {
-          lastUpdate: Date.now(),
-          hasHints: false,
-          prices: {}
-        }
-      }
-
-      // @ts-expect-error tests
-      jest.spyOn(Portfolio.prototype, 'externalHintsAPIDiscovery').mockResolvedValueOnce({
-        hints
-      })
-
       const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
         specialErc20Hints: {
           learn: [USDT_ADDRESS],
@@ -1112,7 +987,7 @@ describe('Portfolio', () => {
       const { restore } = suppressConsole()
       jest.useFakeTimers()
       try {
-        const portfolioInstance = new Portfolio(hangingFetch, provider, ethereum, velcroUrl)
+        const portfolioInstance = new Portfolio(hangingFetch, provider, ethereum)
         const pricePromise = getPriceOf(portfolioInstance)
         const onSettled = jest.fn()
         pricePromise.then(onSettled, onSettled)

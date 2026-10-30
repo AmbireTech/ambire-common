@@ -1478,7 +1478,7 @@ export class SignAccountOpController
    * covers just the calls and the nonce, not who pays the fee, so no fee payment is needed for it.
    * A 1/1 Safe with its only key here executes right after signing, so it always needs one.
    */
-  get #isCollectingSafeSignatureOnly(): boolean {
+  get isCollectingSafeSignatureOnly(): boolean {
     if (!this.account.safeCreation || this.accountOp.meta?.isSafeDeploy) return false
     if (this.canBroadcast) return false
 
@@ -2365,7 +2365,7 @@ export class SignAccountOpController
       this.isInitialized &&
       (this.accountOp.meta?.isSafeDeploy ||
         (this.accountOp.signingKeyAddr && this.accountOp.signingKeyType)) &&
-      (this.accountOp.gasFeePayment || this.#isCollectingSafeSignatureOnly)
+      (this.accountOp.gasFeePayment || this.isCollectingSafeSignatureOnly)
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
 
@@ -3424,7 +3424,7 @@ export class SignAccountOpController
 
     const missingGasFeePaymentMessage = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
     const hasGasFeePayment = !!this.accountOp.gasFeePayment && !!this.selectedOption
-    if (!hasGasFeePayment && !this.#isCollectingSafeSignatureOnly) {
+    if (!hasGasFeePayment && !this.isCollectingSafeSignatureOnly) {
       return this.#emitSigningErrorAndResetToReadyToSign({ message: missingGasFeePaymentMessage })
     }
 
@@ -3436,7 +3436,7 @@ export class SignAccountOpController
     await this.#persistPendingFeeTokenPreference()
 
     const estimation = this.estimation.estimation as FullEstimationSummary
-    // Missing only while collecting a Safe signature, see #isCollectingSafeSignatureOnly
+    // Missing only while collecting a Safe signature, see isCollectingSafeSignatureOnly
     const broadcastOption = this.accountOp.gasFeePayment?.broadcastOption
     const isUsingPaymaster = !!estimation.bundlerEstimation?.paymaster.isUsable()
     const shouldSignDeployAuth =
@@ -4905,6 +4905,7 @@ export class SignAccountOpController
       canBroadcast: this.canBroadcast,
       isFeePayerNotLinkedToSafe: this.isFeePayerNotLinkedToSafe,
       isSafeFeePayerChoiceRequired: this.isSafeFeePayerChoiceRequired,
+      isCollectingSafeSignatureOnly: this.isCollectingSafeSignatureOnly,
       hasSafeApiFailed: this.hasSafeApiFailed,
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
       safeEip712Data: this.safeEip712Data,
