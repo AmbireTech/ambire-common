@@ -649,7 +649,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     await this.#onAccountsRemoved([seedId])
 
     try {
-      await this.#keystore.removePrivacyPoolsKey(seedId)
+      await this.#keystore.removePrivacyKey(seedId, 'privacyPools')
     } catch (error: any) {
       this.emitError({
         message: 'Could not fully remove the Privacy Pools account. Please try again.',

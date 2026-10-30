@@ -1089,7 +1089,7 @@ export class MainController extends EventEmitter implements IMainController {
 
           // Both check the passphrase before keeping anything
           if (shouldSavePassphrase) await this.keystore.saveSeedPassphrase(seedId, seedPassphrase)
-          else await this.keystore.storePrivacyPoolsKey(seedId, seedPassphrase)
+          else await this.keystore.storePrivacyKey(seedId, 'privacyPools', seedPassphrase)
         }
 
         try {
@@ -1097,7 +1097,7 @@ export class MainController extends EventEmitter implements IMainController {
         } catch (error) {
           // Drops the key stored above, unless an account already uses it (a double submit)
           if (!this.#hasPrivacyPoolsAccount(seedId))
-            await this.keystore.removePrivacyPoolsKey(seedId)
+            await this.keystore.removePrivacyKey(seedId, 'privacyPools')
           throw error
         }
         await this.#selectPrivacyPoolsAccount(seedId)

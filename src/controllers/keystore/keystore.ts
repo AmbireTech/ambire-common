@@ -32,6 +32,7 @@ import {
   getSeedMasterNode,
   migrateStoredPayloadsToGCM,
   SCRYPT_PARAMS,
+  tryParseGcmPayload,
   WrongSecretError
 } from '@/libs/keystore/keystore'
 
@@ -41,7 +42,6 @@ import {
   DERIVATION_OPTIONS,
   HD_PATH_TEMPLATE_TYPE
 } from '../../consts/derivation'
-import { PRIVACY_POOLS_SIGNING_KEY_PATH } from '../../consts/privacyPools'
 import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -67,11 +67,18 @@ import {
   StoredKeystoreSeed
 } from '../../interfaces/keystore'
 import { Platform } from '../../interfaces/platform'
+import { PrivacyProviderId } from '../../interfaces/privateAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { AppDataSyncPayload } from '../../libs/appDataSync/appDataSync'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
+import {
+  decodePrivacyKeyNode,
+  encodePrivacyKeyMaterial,
+  getPathBelow,
+  getPrivacyKeyScope
+} from '../../libs/privateAccount/privacyKeys'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
@@ -88,6 +95,31 @@ type SeedToAdd = KeystoreTempSeed & {
   /** Synced from another device, so a phrase this device already has keeps its saved state */
   isSynced?: boolean
 }
+
+/**
+ * The fields of a stored phrase another device gets. Picked rather than spread, so a field added
+ * later stays on this device unless it is listed here. Leaves out `privacyKeys`: private accounts
+ * don't sync, and the other device stores their keys itself once the user adds them there.
+ */
+const getSyncedSeedFields = ({
+  id,
+  label,
+  seed,
+  seedPassphrase,
+  passphraseFingerprint,
+  passphraseLabel,
+  hdPathTemplate,
+  notBackedUp
+}: StoredKeystoreSeed): StoredKeystoreSeed => ({
+  id,
+  label,
+  seed,
+  seedPassphrase,
+  passphraseFingerprint,
+  passphraseLabel,
+  hdPathTemplate,
+  notBackedUp
+})
 
 /** Thrown when a passphrase is not the one its recovery phrase was added with */
 const getWrongPassphraseError = () =>
@@ -1230,10 +1262,16 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Keeps the Privacy Pools key of a phrase whose passphrase isn't saved, derived with the one the
-   * user entered, as the phrase alone can't derive it again. Called on adding its Privacy Pools account.
+   * Keeps a provider's key of a phrase whose passphrase isn't saved, derived with the one the user
+   * entered, as the phrase alone can't derive it again. Called on adding its private account.
+   * Stores the provider's node (see `PrivacyKeyMaterial`), never the phrase's master node.
    */
-  async storePrivacyPoolsKey(id: KeystoreSeed['id'], seedPassphrase: string) {
+  async storePrivacyKey(
+    id: KeystoreSeed['id'],
+    providerId: PrivacyProviderId,
+    seedPassphrase: string
+  ) {
+    const scope = getPrivacyKeyScope(providerId)
     const { seed, passphraseFingerprint } = await this.getSavedSeed(id)
     // Derived once, as it is slow: its fingerprint checks the passphrase and the key comes from it
     const masterNode = this.#getMasterNode(id, seed, seedPassphrase)
@@ -1241,29 +1279,34 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       throw getWrongPassphraseError()
     if (!this.#mainKey) throw new Error('keystore: not unlocked')
 
-    const privacyPoolsSigningKey = await encryptWithKey(
-      this.#mainKey,
-      getBytes(masterNode.derivePath(PRIVACY_POOLS_SIGNING_KEY_PATH).privateKey)
-    )
+    const material = encodePrivacyKeyMaterial(masterNode, scope)
+    const privacyKey = await encryptWithKey(this.#mainKey, material)
+    material.fill(0)
     this.#keystoreSeeds = this.#keystoreSeeds.map((s) =>
-      s.id === id ? { ...s, privacyPoolsSigningKey } : s
+      s.id === id ? { ...s, privacyKeys: { ...s.privacyKeys, [providerId]: privacyKey } } : s
     )
 
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
   }
 
   /**
-   * Drops the Privacy Pools key stored by `storePrivacyPoolsKey`, once its account is removed - like
-   * a removed account's own key. Re-adding the account asks for the passphrase again.
+   * Drops a provider's key stored by `storePrivacyKey`, once its account is removed - like a
+   * removed account's own key. Re-adding the account asks for the passphrase again.
    */
-  async removePrivacyPoolsKey(id: KeystoreSeed['id']) {
+  async removePrivacyKey(id: KeystoreSeed['id'], providerId: PrivacyProviderId) {
     await this.initialLoadPromise
+    getPrivacyKeyScope(providerId)
 
-    if (!this.#keystoreSeeds.some((s) => s.id === id && s.privacyPoolsSigningKey)) return
+    const hasStoredKey = (s: StoredKeystoreSeed) => s.id === id && !!s.privacyKeys?.[providerId]
+    if (!this.#keystoreSeeds.some(hasStoredKey)) return
 
-    this.#keystoreSeeds = this.#keystoreSeeds.map((s) =>
-      s.id === id ? { ...s, privacyPoolsSigningKey: undefined } : s
-    )
+    this.#keystoreSeeds = this.#keystoreSeeds.map((s) => {
+      if (!hasStoredKey(s)) return s
+
+      const privacyKeys = { ...s.privacyKeys }
+      delete privacyKeys[providerId]
+      return { ...s, privacyKeys: Object.keys(privacyKeys).length ? privacyKeys : undefined }
+    })
 
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
   }
@@ -1646,13 +1689,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr))
     const seedIds = new Set(keys.map((key) => key.meta?.fromSeedId).filter(Boolean))
-    // Without the Privacy Pools key: Privacy Pools accounts don't sync, and the other device stores
-    // the key itself once the user adds the account there
     const seeds = includeSeeds
-      ? this.#keystoreSeeds
-          .filter((seed) => seedIds.has(seed.id))
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          .map(({ privacyPoolsSigningKey, ...seed }) => seed)
+      ? this.#keystoreSeeds.filter((seed) => seedIds.has(seed.id)).map(getSyncedSeedFields)
       : []
 
     // Keys and seeds are migrated to GCM on unlock, so this should never happen. If it
@@ -1828,36 +1866,69 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (!keystoreSeed) throw new Error(`keystore seed with id:${id} not found`)
 
     const { seed, seedPassphrase } = await decryptStoredSeed(this.#mainKey, keystoreSeed)
+    const { label, passphraseFingerprint, passphraseLabel, hdPathTemplate, notBackedUp } =
+      keystoreSeed
 
-    return { ...keystoreSeed, seed, seedPassphrase }
+    // Picked rather than spread, so nothing else stored with the phrase (like `privacyKeys`)
+    // travels further with it
+    return {
+      id,
+      label,
+      seed,
+      seedPassphrase,
+      passphraseFingerprint,
+      passphraseLabel,
+      hdPathTemplate,
+      notBackedUp
+    }
   }
 
   /**
-   * Derives a recovery phrase's Privacy Pools signing key, so the phrase never reaches
-   * `@kohaku-eth/privacy-pools`, whose bundled keystore would keep it.
+   * Derives a recovery phrase's key for a privacy provider, so the phrase never reaches the
+   * provider's SDK (e.g. `@kohaku-eth/privacy-pools`), whose bundled keystore would keep it.
    *
    * The path check is the security boundary: the SDK chooses the paths, so without it a bug or a
-   * malicious bump could get the user's EVM keys. Only `PRIVACY_POOLS_SIGNING_KEY_PATH` passes.
+   * malicious bump could get the user's EVM keys. Only the provider's `isAllowedPath` passes.
    *
-   * A phrase whose passphrase isn't saved has the key stored instead (see `storePrivacyPoolsKey`),
-   * as the phrase alone can't derive it. Not cached here: any other call decrypts the phrase and
-   * runs a PBKDF2, so callers keep the key while unlocked - see `createKohakuKeystore`.
+   * A phrase whose passphrase isn't saved has the provider's node stored instead (see
+   * `storePrivacyKey`), as the phrase alone can't derive it. Not cached here: any other call
+   * decrypts the phrase and runs a PBKDF2, so callers keep the key while unlocked - see
+   * `createKohakuKeystore`.
    */
-  async derivePrivacyPoolsKey(seedId: KeystoreSeed['id'], path: string): Promise<Hex> {
+  async derivePrivacyKey(
+    seedId: KeystoreSeed['id'],
+    providerId: PrivacyProviderId,
+    path: string
+  ): Promise<Hex> {
     await this.initialLoadPromise
 
     if (!this.isUnlocked || !this.#mainKey) throw new Error('keystore: not unlocked')
 
-    if (path !== PRIVACY_POOLS_SIGNING_KEY_PATH)
-      throw new Error(`keystore: refusing to derive a key outside Privacy Pools' paths (${path})`)
+    const scope = getPrivacyKeyScope(providerId)
+    if (!scope.isAllowedPath(path))
+      throw new Error(
+        `keystore: refusing to derive a key outside the paths of ${providerId} (${path})`
+      )
 
-    const storedKey = this.#keystoreSeeds.find((s) => s.id === seedId)?.privacyPoolsSigningKey
-    if (storedKey) return hexlify(await decryptWithKey(this.#mainKey, storedKey)) as Hex
+    const storedKey = this.#keystoreSeeds.find((s) => s.id === seedId)?.privacyKeys?.[providerId]
+    if (storedKey) {
+      // Never the legacy AES-CTR, which isn't authenticated: no privacy key was ever stored with it
+      if (!tryParseGcmPayload(storedKey))
+        throw new Error('keystore: the stored privacy key is not AES-GCM encrypted')
+
+      const material = await decryptWithKey(this.#mainKey, storedKey)
+      try {
+        return decodePrivacyKeyNode(material, scope).derivePath(getPathBelow(scope.rootPath, path))
+          .privateKey as Hex
+      } finally {
+        material.fill(0)
+      }
+    }
 
     const { seed, seedPassphrase, passphraseFingerprint } = await this.getSavedSeed(seedId)
-    // Should never happen, as the key is stored when the phrase's Privacy Pools account is added
+    // Should never happen, as the key is stored when the phrase's private account is added
     if (passphraseFingerprint && !seedPassphrase)
-      throw new Error('keystore: the passphrase is not saved and no Privacy Pools key is stored')
+      throw new Error(`keystore: the passphrase is not saved and no ${providerId} key is stored`)
 
     return HDNodeWallet.fromMnemonic(Mnemonic.fromPhrase(seed, seedPassphrase), path)
       .privateKey as Hex

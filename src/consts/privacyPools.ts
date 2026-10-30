@@ -16,14 +16,20 @@ export const PRIVACY_POOLS_NATIVE_ASSET_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeee
 export const PRIVACY_POOLS_ACCOUNT_INDEX = 0
 
 /**
+ * The SDK's branch of the phrase's key tree: every Privacy Pools account's key is below it, at
+ * `/{accountIndex}'`. Its node is what the keystore stores for a phrase (see `privacyKeys`).
+ */
+export const PRIVACY_POOLS_KEY_ROOT_PATH = "m/28784'/1'"
+
+/**
  * The one key Privacy Pools needs per phrase, from the SDK's `SignatureSecretManager`: every note's
  * nullifier, salt and paymaster withdrawal signer are derived from this key's EIP-712 signature of
  * the note, `PrivacyPoolNote(depositIndex, secretIndex)`.
  *
- * Security boundary: `KeystoreController.derivePrivacyPoolsKey` refuses any other path, since the
+ * Security boundary: `KeystoreController.derivePrivacyKey` refuses any other path, since the
  * plugin asks for arbitrary paths and could otherwise reach the user's EVM keys.
  */
-export const PRIVACY_POOLS_SIGNING_KEY_PATH = `m/28784'/1'/${PRIVACY_POOLS_ACCOUNT_INDEX}'`
+export const PRIVACY_POOLS_SIGNING_KEY_PATH = `${PRIVACY_POOLS_KEY_ROOT_PATH}/${PRIVACY_POOLS_ACCOUNT_INDEX}'`
 
 /**
  * fatlabs' CDN of the entrypoint's and the pools' event history as signed, content-addressed

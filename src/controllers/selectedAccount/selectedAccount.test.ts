@@ -474,7 +474,7 @@ describe('SelectedAccount Controller', () => {
 
       const getStoredKey = async (mainCtrl: any, seedId: string) =>
         (await mainCtrl.storage.get('keystoreSeeds', [])).find(({ id }: any) => id === seedId)
-          ?.privacyPoolsSigningKey
+          ?.privacyKeys?.privacyPools
 
       it('stores no key when the account could not be added', async () => {
         const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()

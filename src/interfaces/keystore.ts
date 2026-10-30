@@ -11,6 +11,7 @@ import { Account } from './account'
 import { ControllerInterface } from './controller'
 import { Hex } from './hex'
 import { Network } from './network'
+import { PrivacyProviderId } from './privateAccount'
 import { EIP7702Signature } from './signatures'
 // TODO: Handle better to prevent dep cycle
 import { TypedMessageUserRequest } from './userRequest'
@@ -256,11 +257,24 @@ export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> &
   seed: KeystoreEncryptedPayload
   seedPassphrase?: KeystoreEncryptedPayload | null
   /**
-   * The Privacy Pools signing key, kept for phrases whose passphrase is not saved, as it can't be
-   * derived again without the passphrase. Stored when the phrase's Privacy Pools account is added,
-   * and dropped when it is removed.
+   * Per privacy provider, the key its accounts derive from (a `PrivacyKeyMaterial`), kept for
+   * phrases whose passphrase is not saved, as it can't be derived again without the passphrase.
+   * Stored when the provider's account is added, dropped when it is removed, and never synced.
+   * AES-GCM only, as the legacy AES-CTR payloads aren't authenticated.
    */
-  privacyPoolsSigningKey?: KeystoreEncryptedPayload
+  privacyKeys?: Partial<Record<PrivacyProviderId, AESGCMEncrypted>>
+}
+
+/**
+ * What a `privacyKeys` entry decrypts to: the HD node at the provider's root path, so all its
+ * keys derive from it and none outside it. A provider with another key scheme adds a kind.
+ */
+export type PrivacyKeyMaterial = {
+  kind: 'bip32Node'
+  /** Where `xprv` was derived, checked against the provider's root path on reading it */
+  path: string
+  /** The node's extended private key: its key and chain code, so the paths below it derive */
+  xprv: string
 }
 
 export type KeystoreTempSeed = {
