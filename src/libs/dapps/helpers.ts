@@ -27,6 +27,18 @@ const normalizeHostname = (hostname: string): string => {
 }
 
 /**
+ * Removes every leading "www." label ("www.www.example.com" -> "example.com"), since no legitimate
+ * domain starts with one and a stacked prefix would otherwise sidestep the dApp id and the
+ * phishing list lookups.
+ */
+const stripLeadingWww = (hostname: string): string => {
+  let start = 0
+  while (hostname.startsWith('www.', start)) start += 4
+
+  return hostname.slice(start)
+}
+
+/**
  * The dApp's canonical hostname, or `null` when the url is not parsable.
  *
  * Normalization deliberately starts from `new URL().hostname` - the parser already lowercases the
@@ -52,7 +64,7 @@ const getDappIdFromUrl = (url: string): string => {
   const hostname = getNormalizedHostnameFromUrl(url)
   if (hostname === null) return url
 
-  return hostname.startsWith('www.') ? hostname.slice(4) : hostname
+  return stripLeadingWww(hostname)
 }
 
 // Safe messages co-signed from another device carry only the dapp name and url
@@ -209,6 +221,18 @@ export function getAccountsForDapp(
   preferences: Dapp['accountPreferences'],
   extensionSelectedAccountAddr: string | undefined
 ): string[] {
+  // An account the user picked for the dapp comes first while the dapp may see it
+  if (
+    preferences?.isSelectedAccountPinned &&
+    isAccountAllowedForDapp(preferences, preferences.selectedAccount)
+  ) {
+    const otherAccounts = preferences.enabled
+      ? preferences.accounts.filter((acc) => acc !== preferences.selectedAccount)
+      : []
+
+    return [preferences.selectedAccount, ...otherAccounts]
+  }
+
   // Always prioritize the extension-selected account if it's in the dapp's allowed accounts, or if no account is currently selected in the dapp
   if (preferences?.enabled) {
     const selectedAccount = preferences.accounts.includes(extensionSelectedAccountAddr || '')
@@ -220,6 +244,18 @@ export function getAccountsForDapp(
   }
 
   return extensionSelectedAccountAddr ? [extensionSelectedAccountAddr] : []
+}
+
+/**
+ * Drops account preferences that neither limit the accounts a dapp may see nor pin one for it,
+ * so the dapp follows the wallet again and also sees the accounts added later.
+ */
+export function withoutUnusedAccountPreferences(
+  preferences: Dapp['accountPreferences']
+): Dapp['accountPreferences'] {
+  if (!preferences || preferences.enabled || preferences.isSelectedAccountPinned) return preferences
+
+  return undefined
 }
 
 /**

@@ -7,6 +7,7 @@ import { CowSwapAPI } from './api'
 import {
   COWSWAP_ETH_FLOW_ADDRESS,
   COWSWAP_SETTLEMENT_ADDRESS,
+  COWSWAP_TOKEN_LIST_CACHE_MS,
   COWSWAP_TOKEN_LIST_URL,
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from './constants'
@@ -229,76 +230,152 @@ describe('CowSwapAPI', () => {
     expect(fetch).toHaveBeenCalledWith(COWSWAP_TOKEN_LIST_URL, expect.any(Object))
   })
 
-  it('uses Cena metadata for a CowSwap-supported token missing from the token list', async () => {
+  it('does not return a token missing from the CowSwap token list from getToken', async () => {
     const customTokenAddress = '0x1111111111111111111111111111111111111111'
-    const fetch = (jest.fn() as any)
-      .mockResolvedValueOnce(makeResponse({ tokens: [] }))
-      .mockResolvedValueOnce(makeResponse({ price: '1' }))
-      .mockResolvedValueOnce(makeResponse({ platformId: 'ethereum' }))
-      .mockResolvedValueOnce(
-        makeResponse({
-          decimals: { ethereum: 18 },
-          image: { small: 'https://cena.ambire.com/custom.png' },
-          name: 'Custom token',
-          platforms: { ethereum: customTokenAddress },
-          symbol: 'custom'
-        })
-      )
+    const fetch = (jest.fn() as any).mockResolvedValueOnce(makeResponse({ tokens: [] }))
     const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
 
-    await expect(api.getToken({ address: customTokenAddress, chainId: 1 })).resolves.toEqual({
-      address: getAddress(customTokenAddress),
-      chainId: 1,
-      decimals: 18,
-      icon: 'https://cena.ambire.com/custom.png',
-      name: 'Custom token',
-      symbol: 'custom'
-    })
-    expect(fetch.mock.calls.map(([url]: [string]) => url)).toEqual([
-      COWSWAP_TOKEN_LIST_URL,
-      `https://partners.cow.fi/mainnet/api/v1/token/${customTokenAddress}/native_price`,
-      'https://cena.ambire.com/api/v3/platform/1',
-      `https://cena.ambire.com/api/v3/coins/ethereum/contract/${customTokenAddress}`
-    ])
-    expect(fetch.mock.calls[1][1].headers).toEqual({
+    await expect(api.getToken({ address: customTokenAddress, chainId: 1 })).resolves.toBeNull()
+    // No lookup of the token metadata, that is the job of the swap provider executor
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports an unlisted token as supported when CowSwap can price it', async () => {
+    const customTokenAddress = '0x1111111111111111111111111111111111111111'
+    const fetch = (jest.fn() as any).mockResolvedValueOnce(makeResponse({ price: '1' }))
+    const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
+
+    await expect(api.isTokenSupported({ address: customTokenAddress, chainId: 1 })).resolves.toBe(
+      true
+    )
+    expect(fetch.mock.calls[0][0]).toBe(
+      `https://partners.cow.fi/mainnet/api/v1/token/${customTokenAddress}/native_price`
+    )
+    expect(fetch.mock.calls[0][1].headers).toEqual({
       Accept: 'application/json',
       'Content-Type': 'application/json',
       'X-API-Key': cowSwapApiKey
     })
-    expect(fetch.mock.calls[2][1].headers).toEqual({
-      Accept: 'application/json',
-      'Content-Type': 'application/json'
+  })
+
+  it('reports an unlisted token as unsupported without CowSwap liquidity', async () => {
+    const customTokenAddress = '0x1111111111111111111111111111111111111111'
+    const fetch = (jest.fn() as any).mockResolvedValueOnce(makeResponse({}, false, 404))
+    const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
+
+    await expect(api.isTokenSupported({ address: customTokenAddress, chainId: 1 })).resolves.toBe(
+      false
+    )
+  })
+
+  it('does not call CowSwap for invalid addresses and unsupported networks', async () => {
+    const fetch = jest.fn()
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+    await expect(api.isTokenSupported({ address: 'not-an-address', chainId: 1 })).resolves.toBe(
+      false
+    )
+    await expect(api.isTokenSupported({ address: tokenIn, chainId: 999999 })).resolves.toBe(false)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('throws when the support check fails, instead of reporting the token as unsupported', async () => {
+    const customTokenAddress = '0x1111111111111111111111111111111111111111'
+    const fetch = (jest.fn() as any).mockResolvedValueOnce(makeResponse({}, false, 500))
+    const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
+
+    await expect(api.isTokenSupported({ address: customTokenAddress, chainId: 1 })).rejects.toThrow(
+      'Unable to check whether the token is supported'
+    )
+  })
+
+  describe('token list cache', () => {
+    const listedToken = {
+      address: safeTokenAddress,
+      chainId: 1,
+      decimals: 18,
+      name: 'Safe',
+      symbol: 'SAFE'
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    it('reuses the fetched token list for the token list and for lookups by address', async () => {
+      const fetch = jest.fn(async () => makeResponse({ tokens: [listedToken] }))
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      await api.getToTokenList({ fromChainId: 1, toChainId: 1 })
+      await api.getToTokenList({ fromChainId: 1, toChainId: 1 })
+      await expect(api.getToken({ address: safeTokenAddress, chainId: 1 })).resolves.toMatchObject({
+        symbol: 'SAFE'
+      })
+
+      expect(fetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('shares one request between simultaneous callers', async () => {
+      const fetch = jest.fn(async () => makeResponse({ tokens: [listedToken] }))
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      await Promise.all([
+        api.getToTokenList({ fromChainId: 1, toChainId: 1 }),
+        api.getToken({ address: safeTokenAddress, chainId: 1 })
+      ])
+
+      expect(fetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not cache a failed request', async () => {
+      const fetch = (jest.fn() as any)
+        .mockResolvedValueOnce(makeResponse({}, false, 500))
+        .mockResolvedValueOnce(makeResponse({ tokens: [listedToken] }))
+      const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
+
+      await expect(api.getToTokenList({ fromChainId: 1, toChainId: 1 })).rejects.toThrow()
+      await expect(api.getToTokenList({ fromChainId: 1, toChainId: 1 })).resolves.toContainEqual(
+        expect.objectContaining({ symbol: 'SAFE' })
+      )
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('fetches the token list again after the cache expires', async () => {
+      const now = jest.spyOn(Date, 'now')
+      now.mockReturnValue(1_000_000)
+      const fetch = jest.fn(async () => makeResponse({ tokens: [listedToken] }))
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      await api.getToTokenList({ fromChainId: 1, toChainId: 1 })
+      now.mockReturnValue(1_000_000 + COWSWAP_TOKEN_LIST_CACHE_MS - 1)
+      await api.getToTokenList({ fromChainId: 1, toChainId: 1 })
+      expect(fetch).toHaveBeenCalledTimes(1)
+
+      now.mockReturnValue(1_000_000 + COWSWAP_TOKEN_LIST_CACHE_MS)
+      await api.getToTokenList({ fromChainId: 1, toChainId: 1 })
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not share the cache between instances', async () => {
+      const fetch = jest.fn(async () => makeResponse({ tokens: [listedToken] }))
+      const firstApi = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+      const secondApi = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      await firstApi.getToTokenList({ fromChainId: 1, toChainId: 1 })
+      await secondApi.getToTokenList({ fromChainId: 1, toChainId: 1 })
+
+      expect(fetch).toHaveBeenCalledTimes(2)
     })
   })
 
-  it('does not add an unlisted token without CowSwap liquidity', async () => {
-    const customTokenAddress = '0x1111111111111111111111111111111111111111'
-    const fetch = (jest.fn() as any)
-      .mockResolvedValueOnce(makeResponse({ tokens: [] }))
-      .mockResolvedValueOnce(makeResponse({}, false, 404))
-    const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
+  it('rejects a cross-chain quote instead of building an order on the source chain', async () => {
+    const fetch = makeQuoteFetch()
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
-    await expect(api.getToken({ address: customTokenAddress, chainId: 1 })).resolves.toBeNull()
-    expect(fetch).toHaveBeenCalledTimes(2)
-  })
-
-  it('does not trust Cena metadata for a different contract', async () => {
-    const customTokenAddress = '0x1111111111111111111111111111111111111111'
-    const fetch = (jest.fn() as any)
-      .mockResolvedValueOnce(makeResponse({ tokens: [] }))
-      .mockResolvedValueOnce(makeResponse({ price: '1' }))
-      .mockResolvedValueOnce(makeResponse({ platformId: 'ethereum' }))
-      .mockResolvedValueOnce(
-        makeResponse({
-          decimals: { ethereum: 18 },
-          name: 'Wrong token',
-          platforms: { ethereum: '0x2222222222222222222222222222222222222222' },
-          symbol: 'wrong'
-        })
-      )
-    const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
-
-    await expect(api.getToken({ address: customTokenAddress, chainId: 1 })).resolves.toBeNull()
+    await expect(api.quote({ ...makeQuoteParams(), toChainId: 8453 })).rejects.toThrow(
+      'CoW Swap supports only same-network swaps'
+    )
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('requests a PreSign quote, includes the Ambire fee and returns an intent route', async () => {

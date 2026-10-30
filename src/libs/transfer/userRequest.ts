@@ -1,19 +1,22 @@
-import { Interface, parseUnits } from 'ethers'
+import { Interface, isAddress, parseUnits } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
 import { Call } from '@/libs/accountOp/types'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
+import IERC721 from '../../../contracts/compiled/IERC721.json'
 import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json'
 import WETH from '../../../contracts/compiled/WETH.json'
 import { FEE_COLLECTOR, STK_WALLET, SUPPLY_CONTROLLER_ADDR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
+import { TransferNft } from '../../interfaces/transfer'
 import { CallsUserRequest } from '../../interfaces/userRequest'
 import { PaymasterService } from '../erc7677/types'
 import { AddrVestingData, ClaimableRewardsData, TokenResult } from '../portfolio'
 import { getSanitizedAmount } from './amount'
 
 const ERC20 = new Interface(IERC20.abi)
+const ERC721 = new Interface(IERC721.abi)
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 
 interface BuildUserRequestParams {
@@ -108,7 +111,8 @@ function getTransferRequestParams({
 
   // if the request is a top up, the recipient is the relayer
   const recipientAddress = _recipientAddress?.toLowerCase()
-  const isTopUp = recipientAddress.toLowerCase() === FEE_COLLECTOR.toLowerCase()
+  const isRecipientFeeCollector = recipientAddress.toLowerCase() === FEE_COLLECTOR.toLowerCase()
+  const isNativeToken = Number(selectedToken.address) === 0
   const sanitizedAmount = getSanitizedAmount(amount, selectedToken.decimals)
 
   const bigNumberHexAmount = `0x${parseUnits(
@@ -118,18 +122,17 @@ function getTransferRequestParams({
 
   // if the top up is a native one, we should wrap the native before sending it
   // as otherwise a Transfer event is not emitted and the top up will not be
-  // recorded
-  const isNativeTopUp = Number(selectedToken.address) === 0 && isTopUp
+  // recorded. Wrapping is possible only on predefined networks with a wrapped addr
+  const wrappedAddr =
+    isNativeToken && isRecipientFeeCollector
+      ? networks.find((n) => n.chainId === selectedToken.chainId)?.wrappedAddr
+      : undefined
+  // a native transfer to the fee collector that can't be wrapped (e.g. on a custom network)
+  // is sent as a regular transfer. It isn't recorded as a top up, so it shouldn't count
+  // towards the gas tank balance
+  const isTopUp = isRecipientFeeCollector && (!isNativeToken || !!wrappedAddr)
 
-  if (isNativeTopUp) {
-    // if not predefined network, we cannot make a native top up
-    const network = networks.find((n) => n.chainId === selectedToken.chainId)
-    if (!network) return null
-
-    // if a wrapped addr is not specified, we cannot make a native top up
-    const wrappedAddr = network.wrappedAddr
-    if (!wrappedAddr) return null
-
+  if (wrappedAddr) {
     const wrapped = new Interface(WETH)
     const deposit = wrapped.encodeFunctionData('deposit')
 
@@ -186,6 +189,58 @@ function getTransferRequestParams({
   }
 }
 
+interface BuildNftTransferRequestParams {
+  nft: TransferNft
+  selectedAccount: string
+  recipientAddress: string
+  recipientDomain: string | undefined
+  paymasterService?: PaymasterService
+}
+
+/**
+ * Builds the call that sends a single ERC-721 NFT from the account to the recipient.
+ *
+ * `safeTransferFrom` is used instead of `transferFrom` on purpose: if the recipient is a
+ * contract that can't handle NFTs, the transaction fails (and it's caught while estimating)
+ * instead of the NFT getting stuck in that contract forever.
+ *
+ * Returns `null` when the params can't produce a safe transfer - e.g. an invalid recipient or
+ * a recipient that is the NFT collection contract itself (anything sent there is lost).
+ */
+function getNftTransferRequestParams({
+  nft,
+  selectedAccount,
+  recipientAddress,
+  recipientDomain,
+  paymasterService
+}: BuildNftTransferRequestParams): {
+  calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
+  meta: CallsUserRequest['meta']
+} | null {
+  if (!nft || !isAddress(selectedAccount) || !isAddress(recipientAddress)) return null
+  if (recipientAddress.toLowerCase() === nft.address.toLowerCase()) return null
+
+  return {
+    calls: [
+      {
+        to: nft.address,
+        value: BigInt(0),
+        data: ERC721.encodeFunctionData('safeTransferFrom(address,address,uint256)', [
+          selectedAccount,
+          recipientAddress,
+          nft.tokenId
+        ]),
+        recipientDomain
+      }
+    ],
+    meta: {
+      chainId: nft.chainId,
+      accountAddr: selectedAccount,
+      paymasterService
+    }
+  }
+}
+
 function getIntentRequestParams({
   selectedToken,
   selectedAccount,
@@ -232,5 +287,6 @@ export {
   getClaimWalletRequestParams,
   getMintVestingRequestParams,
   getTransferRequestParams,
+  getNftTransferRequestParams,
   getIntentRequestParams
 }

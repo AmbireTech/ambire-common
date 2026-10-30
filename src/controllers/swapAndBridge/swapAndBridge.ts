@@ -74,6 +74,7 @@ import { getIntentBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
+import { getTokenMetaViaRPC } from '../../libs/portfolio/getTokenMetaViaRPC'
 import { convertApiTokenDataToTokenDataCache, getTokenAmount } from '../../libs/portfolio/helpers'
 import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
@@ -89,6 +90,7 @@ import {
   getIsIntentRoute,
   getIsTokenEligibleForSwapAndBridge,
   getRouteOutputValuesForSorting,
+  getSentPartOfSwap,
   getSwapAndBridgeCalls,
   getSwapSponsorship,
   isNoFeeToken,
@@ -476,6 +478,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #getVisibleUserRequests: () => UserRequest[]
 
   hasProceeded: boolean = false
+
+  /**
+   * Identifies the txns of a swap that went out before the rest of it failed, e.g. the
+   * approval was sent but the swap was rejected on the hardware wallet. Once they are
+   * confirmed, the quote is refreshed so the swap is built again from the onchain state
+   * (e.g. without the approval). The form isn't blocked meanwhile, as they can get stuck
+   */
+  #sentSwapPartIdentifier: string | null = null
 
   #relayerUrl: string
 
@@ -1029,7 +1039,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       )
     }
 
-    if (this.sessionIds.includes(sessionId)) return
+    const isSessionAlreadyOpen = this.sessionIds.includes(sessionId)
+    const hasPreselectedToken = !!preselectedFromToken || !!preselectedToToken
+    // A screen opened for a specific token (e.g. "Buy $WALLET") must show it, even when the
+    // session is already open, e.g. the popup session kept with the previous form
+    if (isSessionAlreadyOpen && !hasPreselectedToken) return
 
     // reset only if there are no other instances opened/active
     if (!this.sessionIds.length) {
@@ -1053,7 +1067,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
-    this.sessionIds.push(sessionId)
+    if (!isSessionAlreadyOpen) this.sessionIds.push(sessionId)
     // do not await the health status check to prevent UI freeze while fetching
 
     this.#serviceProviderAPI.updateHealth()
@@ -1525,6 +1539,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
+    const hasPreselectedToken = !!preselectedToken || !!preselectedToToken
+
+    // A token preselected from outside Swap & Bridge starts the "to" side over, like a new form.
+    // Otherwise the "to" token kept from the previous form would block a preselected one, or
+    // could end up the same as a preselected "from" token
+    if (hasPreselectedToken) {
+      this.toSelectedToken = null
+      this.#requestedToToken = null
+    }
 
     // When price fetching is disabled or the endpoint is down, tokens come back without
     // a USD price. We must not exclude them as "priceless" in that case, otherwise
@@ -1579,14 +1602,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       !fromSelectedTokenInNextPortfolio ||
       // May happen if user receives or sends the token in the meantime
       fromSelectedTokenInNextPortfolio.amount !== this.fromSelectedToken?.amount ||
-      preselectedToken
+      // The form is kept from another screen, so the preselected token must still be applied
+      hasPreselectedToken
 
     // If the token is not in the portfolio because it was a "to" token
     // and the user has switched the "from" and "to" tokens we should not
-    // update the selected token
+    // update the selected token, unless the user came to select a specific token
     if (
-      !this.fromSelectedToken?.isSwitchedToToken &&
-      !isSelectedTokenFalsyBeforeListUpdate &&
+      (hasPreselectedToken ||
+        (!this.fromSelectedToken?.isSwitchedToToken && !isSelectedTokenFalsyBeforeListUpdate)) &&
       shouldUpdateFromSelectedToken
     ) {
       // get the networks that account is supported on and select
@@ -2235,6 +2259,33 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   /**
+   * Finds a token by address. If none of the providers lists it, it can still be swappable. So if
+   * a provider confirms that it can trade it, the token is read from the chain, through the RPC
+   * of the user (nothing is sent to an Ambire service). The icon is left empty, as for the
+   * portfolio tokens, and the UI discovers it.
+   */
+  async #getSupportedToTokenByAddress(
+    address: string,
+    chainId: number
+  ): Promise<SwapAndBridgeToToken | null> {
+    const providerToken = await this.#serviceProviderAPI.getToken({ address, chainId })
+    if (providerToken) return providerToken
+
+    const isSupported = await this.#serviceProviderAPI.isTokenSupported?.({ address, chainId })
+    if (!isSupported) return null
+
+    const network = this.#networks.networks.find((n) => Number(n.chainId) === chainId)
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!network || !provider) return null
+
+    const token = await getTokenMetaViaRPC({ provider, network, address })
+
+    return token
+      ? { ...convertPortfolioTokenToSwapAndBridgeToToken(token, chainId), unverified: true }
+      : null
+  }
+
+  /**
    * Fetches a single token that the service provider left out of its "to" token list and caches it,
    * so a token preselected from outside Swap & Bridge (e.g. from the trending tokens list) can
    * still be selected. Fails silently, because the selection is not user-initiated.
@@ -2247,7 +2298,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!fromChainId || !toChainId || !tokenList || !isAddress(address)) return null
 
     try {
-      const token = await this.#serviceProviderAPI.getToken({ address, chainId: toChainId })
+      const token = await this.#getSupportedToTokenByAddress(address, toChainId)
 
       if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return null
 
@@ -2287,7 +2338,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     let token: SwapAndBridgeToToken | null
     try {
-      token = await this.#serviceProviderAPI.getToken({ address, chainId: toChainId })
+      token = await this.#getSupportedToTokenByAddress(address, toChainId)
 
       if (!token)
         throw new SwapAndBridgeError(
@@ -3235,6 +3286,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   // update active route if needed on SubmittedAccountOp update
   handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op: SubmittedAccountOp) {
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#handleSentSwapPartResolved(op)
     this.#handleUpdateActiveRouteFromSwapTxnMeta(op)
 
     op.calls.forEach((call) => {
@@ -3244,6 +3297,37 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#handleUpdateActiveRoutesUserTxData(call.id, op)
       this.#handleActiveRoutesCompleted(call.id, op.status)
     })
+  }
+
+  async #handleSentSwapPartResolved(op: SubmittedAccountOp) {
+    if (op.status === AccountOpStatus.BroadcastedButNotConfirmed) return
+    if (!this.#sentSwapPartIdentifier) return
+    if (this.#sentSwapPartIdentifier !== op.identifiedBy.identifier) return
+
+    this.#sentSwapPartIdentifier = null
+    // The new quote builds only the txns still needed,
+    // e.g. no approval if the sent one was confirmed
+    await this.#refreshQuoteAfterPartialSwap()
+  }
+
+  async #refreshQuoteAfterPartialSwap() {
+    try {
+      // A new quote would select the best route instead of the one the user picked,
+      // so only the txns are built again for it (reading the allowance from the chain)
+      if (this.quote?.selectedRoute?.isSelectedManually) {
+        if (this.#updateQuoteId) await this.initSignAccountOpIfNeeded(this.#updateQuoteId)
+        this.emitUpdate()
+        return
+      }
+
+      await this.updateQuote({ skipPreviousQuoteRemoval: true, skipQuoteUpdateOnSameValues: false })
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to refresh the swap quote after a partly sent swap',
+        error
+      })
+    }
   }
 
   #handleUpdateActiveRouteFromSwapTxnMeta(submittedAccountOp: SubmittedAccountOp) {
@@ -3447,8 +3531,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // no updates if the user has committed
     if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
-    // shouldn't happen ever
-    if (!this.#selectedAccount.account) return
+    // Read once, as the selection can change while this awaits, and the quote guards below
+    // drop the result then. Missing when a Privacy Pools account is selected.
+    const { account } = this.#selectedAccount
+    if (!account) return
 
     // again it shouldn't happen but there might be a case where the from token
     // disappears because of a strange update event. It's fine to just not
@@ -3473,7 +3559,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!provider) return
 
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
-      this.#selectedAccount.account.addr,
+      account.addr,
       network.chainId
     )
 
@@ -3517,18 +3603,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const userRequestCalls =
       (
         this.#getUserRequests().find(
-          (r) =>
-            r.kind === 'calls' &&
-            r.id === `${this.#selectedAccount.account!.addr}-${network.chainId}`
+          (r) => r.kind === 'calls' && r.id === `${account.addr}-${network.chainId}`
         ) as CallsUserRequest
       )?.signAccountOp.accountOp.calls || []
 
-    const swapOrBridgeCalls = await getSwapAndBridgeCalls(
-      userTxn,
-      this.#selectedAccount.account,
-      provider,
-      accountState
-    )
+    const swapOrBridgeCalls = await getSwapAndBridgeCalls(userTxn, account, provider, accountState)
 
     if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
@@ -3538,11 +3617,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       : !!this.fromChainId && !!this.toChainId && this.fromChainId !== this.toChainId
     const calls = !isIntent ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
     const native = this.#portfolio
-      .getAccountPortfolioState(this.#selectedAccount.account.addr)
+      .getAccountPortfolioState(account.addr)
       [network.chainId.toString()]?.result?.tokens.find((token) => token.address === ZeroAddress)
     const nativePrice = native?.priceIn.find((price) => price.baseCurrency === 'usd')?.price
     const baseAcc = getBaseAccount(
-      this.#selectedAccount.account,
+      account,
       accountState,
       network,
       this.#featureFlags.isFeatureEnabled('erc4337'),
@@ -3587,13 +3666,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const accountOp: AccountOp = {
       id: generateUuid(),
-      accountAddr: this.#selectedAccount.account.addr,
+      accountAddr: account.addr,
       chainId: network.chainId,
       signingKeyAddr: null,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      nonce: accountState.nonce,
+      // A Safe transaction is queued after the ones this device sent that the RPC may not count
+      // yet, instead of taking (and replacing) the nonce of one of them
+      nonce: account.safeCreation
+        ? this.#activity.getNextNonce(account.addr, network.chainId, 'account', accountState.nonce)
+        : accountState.nonce,
       signature: null,
       calls,
       meta: {
@@ -3605,6 +3688,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     await this.#signAccountOpPreference.initialLoadPromise
+    let hasSentPartOfSwap = false
     this.#signAccountOpController = new SignAccountOpController({
       type: 'one-click-swap-and-bridge',
       callRelayer: this.#callRelayer,
@@ -3617,7 +3701,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
-      account: this.#selectedAccount.account,
+      account,
       network,
       provider,
       phishing: this.#phishing,
@@ -3643,7 +3727,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         await this.#onBroadcastSuccess(props)
       },
-      onBroadcastFailed: this.#onBroadcastFailed
+      onBroadcastFailed: this.#onBroadcastFailed,
+      onPartialBroadcast: async (sentAccountOp) => {
+        hasSentPartOfSwap = true
+        await this.#activity.addAccountOp(getSentPartOfSwap(sentAccountOp))
+        this.#sentSwapPartIdentifier = sentAccountOp.identifiedBy.identifier
+      }
     })
 
     this.emitUpdate()
@@ -3660,15 +3749,31 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }, 'swap-and-bridge')
 
-    this.#signAccountOpController.onError(async (error) => {
-      // Need to clean the pending results for THIS signAccountOpController
-      // specifically. NOT the one from the getter (this.signAccountOpController)
-      // that is ALWAYS up-to-date with the current quote and the current form state.
-      // Due to the async nature, it might not exist - an issue caught by our crash reporting.
-      this.emitError({ ...error, level: 'silent' })
+    // Need to use THIS signAccountOpController specifically, the one that emitted the error.
+    // NOT the field (this.#signAccountOpController), which can be replaced or nulled before
+    // the error arrives, and NOT the getter (this.signAccountOpController) that is ALWAYS
+    // up-to-date with the current quote and the current form state.
+    const signAccountOpController = this.#signAccountOpController
+    signAccountOpController.onError(async (error) => {
+      // Forwarded as is, as SignAccountOp already keeps its background errors silent
+      // on the swap screen (e.g. failed gas price refreshes)
+      this.emitError(error)
 
-      if (this.#signAccountOpController)
-        await this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)
+      // Need to clean the pending results for THIS signAccountOpController
+      await this.#portfolio.overrideSimulationResults(signAccountOpController.accountOp)
+
+      // Part of its txns went out, so it can't be signed again. That would send them twice,
+      // e.g. a second approval after the first one is confirmed. A new one is built right away
+      // from the onchain state. If the sent approval is still pending, the new one replaces it,
+      // as it's sent with the same nonce
+      // TODO: While the sent part is pending (it can get stuck), show a modal to speed it up or
+      // cancel it, so the user fixes it first. Until that UX exists, the user isn't blocked
+      if (hasSentPartOfSwap && this.#signAccountOpController === signAccountOpController) {
+        hasSentPartOfSwap = false
+        this.destroySignAccountOp()
+        this.emitUpdate()
+        await this.#refreshQuoteAfterPartialSwap()
+      }
     })
     // if the estimation emits an error, handle it
     this.#signAccountOpController.estimation.onUpdate(() => {

@@ -2,12 +2,7 @@ import { generateUuid } from '@/utils/uuid'
 
 import { AccountStates } from '../../interfaces/account'
 import { DappProviderRequest } from '../../interfaces/dapp'
-import {
-  CallsUserRequest,
-  SwitchAccountRequest,
-  UserRequest,
-  UserRequestWaitingAccountSwitch
-} from '../../interfaces/userRequest'
+import { CallsUserRequest, SwitchAccountRequest, UserRequest } from '../../interfaces/userRequest'
 
 export const dappRequestMethodToRequestKind = (method: DappProviderRequest['method']) => {
   if (['call', 'calls', 'eth_sendTransaction', 'wallet_sendCalls'].includes(method)) return 'calls'
@@ -80,22 +75,26 @@ export const getCallsUserRequestsByNetwork = (
   return requestsByNetwork
 }
 
+/**
+ * Builds the request that asks the user to switch to `switchToAccountAddr`. `nextRequestKind` is
+ * the kind of the request that waits for the switch, and is left out when nothing waits for it.
+ */
 export const buildSwitchAccountUserRequest = ({
-  nextUserRequest,
-  selectedAccountAddr,
+  switchToAccountAddr,
+  nextRequestKind,
   dappPromises
 }: {
-  nextUserRequest: UserRequestWaitingAccountSwitch
-  selectedAccountAddr: string
+  switchToAccountAddr: string
+  nextRequestKind?: UserRequest['kind']
   dappPromises: UserRequest['dappPromises']
 }): SwitchAccountRequest => {
   return {
     id: generateUuid(),
     kind: 'switchAccount',
     meta: {
-      accountAddr: selectedAccountAddr,
-      switchToAccountAddr: nextUserRequest.meta.accountAddr,
-      nextRequestKind: nextUserRequest.kind
+      accountAddr: switchToAccountAddr,
+      switchToAccountAddr,
+      nextRequestKind
     },
     dappPromises
   } as SwitchAccountRequest

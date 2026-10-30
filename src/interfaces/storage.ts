@@ -3,7 +3,7 @@ import { Contacts } from '@/interfaces/addressBook'
 import { EmailVaultData } from '@/interfaces/emailVault'
 
 import { FeatureFlags } from '../consts/featureFlags'
-import { SentToHistory, SignedMessage } from '../controllers/activity/types'
+import { FeePayersHistory, SentToHistory, SignedMessage } from '../controllers/activity/types'
 import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { Erc7730PersistedRegistryCache } from '../libs/humanizer/erc7730/types'
@@ -23,6 +23,7 @@ import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
+import { PrivacyPoolsAccount } from './privacyPools'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 import type { FeeSpeed } from './signAccountOp'
@@ -47,12 +48,16 @@ export type StorageProps = {
   avatarType: string
   logLevel: string
   crashAnalyticsEnabledV2: boolean
+  crashReportId: string
   autoLockTime: number
   // Activity
   accountsOps: { [key: string]: { [key: string]: SubmittedAccountOp[] } }
   externalAccountOps: { [key: string]: { [key: string]: SubmittedAccountOpLike[] } }
   signedMessages: { [key: AccountId]: SignedMessage[] }
   sentToHistory: SentToHistory
+  feePayersHistory: FeePayersHistory
+  // Set once feePayersHistory was backfilled from every stored op, so the pass runs only once
+  feePayersHistoryBackfilled: boolean
   /**
    * Which backend the transaction history was last written to. Recorded rather than a
    * "migrated" boolean because it says what is true rather than what happened: a session that
@@ -81,6 +86,8 @@ export type StorageProps = {
   // Selected account
   dismissedBanners: (string | number)[]
   selectedAccount: string | null
+  /** Seed id of the selected Privacy Pools account. Exclusive with `selectedAccount`. */
+  selectedPrivacyPoolsAccount: string | null
   selectedAccountDismissedBannerIds: { [key: string]: string[] }
   // Email vault
   emailVault: {
@@ -107,6 +114,14 @@ export type StorageProps = {
   // Safe
   automaticallyResolvedSafeTxns: AutomaticallyResolvedSafeTxn[]
   rejectedSafeTxns: string[]
+  // Privacy Pools
+  /**
+   * The SDK's per-chain state as one blob, as the SDK invents its storage keys at runtime. Values
+   * are serialized stores (megabytes each on mainnet) that spare a full rescan from deployment.
+   */
+  privacyPoolsState: { [key: string]: string }
+  /** The wallet's Privacy Pools accounts, at most one per stored recovery phrase. */
+  privacyPoolsAccounts: PrivacyPoolsAccount[]
   // Other
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'

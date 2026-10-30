@@ -15,8 +15,6 @@ import {
   settlementInterface
 } from '@/services/cowswap/helper'
 import {
-  CenaPlatformResponse,
-  CenaTokenResponse,
   CowSwapErrorResponse,
   CowSwapOrderResponse,
   CowSwapTokenListEntry,
@@ -49,12 +47,12 @@ import {
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
 import {
-  CENA_API_BASE_URL,
   COWSWAP_API_BASE_URL,
   COWSWAP_ETH_FLOW_ADDRESS,
   COWSWAP_ORDER_VALIDITY_SECONDS,
   COWSWAP_SETTLEMENT_ADDRESS,
   COWSWAP_SUPPORTED_CHAINS,
+  COWSWAP_TOKEN_LIST_CACHE_MS,
   COWSWAP_TOKEN_LIST_URL,
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from './constants'
@@ -75,6 +73,12 @@ export class CowSwapAPI implements SwapProvider {
 
   #requestTimeoutMs = 15000
 
+  /** The last successfully fetched token list, kept in memory only */
+  #tokenListCache: { fetchedAt: number; tokens: CowSwapTokenListEntry[] } | null = null
+
+  /** The token list request in progress, so that simultaneous callers share one request */
+  #tokenListRequest: Promise<CowSwapTokenListEntry[]> | null = null
+
   isHealthy: boolean | null = null
 
   supportedChains: SwapProvider['supportedChains'] = null
@@ -93,7 +97,9 @@ export class CowSwapAPI implements SwapProvider {
   }
 
   areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
-    return !!getApiNetwork(fromChainId) && !!getApiNetwork(toChainId)
+    // CoW Swap orders settle on a single network, so a different destination chain would
+    // silently turn into a swap for the destination token address on the source chain
+    return fromChainId === toChainId && !!getApiNetwork(fromChainId)
   }
 
   #getApiUrl(chainId: number, path: string, version: 'v1' | 'v2' = 'v1') {
@@ -169,6 +175,28 @@ export class CowSwapAPI implements SwapProvider {
   }
 
   async #getTokenList(): Promise<CowSwapTokenListEntry[]> {
+    if (
+      this.#tokenListCache &&
+      Date.now() - this.#tokenListCache.fetchedAt < COWSWAP_TOKEN_LIST_CACHE_MS
+    )
+      return this.#tokenListCache.tokens
+
+    if (!this.#tokenListRequest) {
+      // Failed requests are not cached, the next call tries again
+      this.#tokenListRequest = this.#fetchTokenList()
+        .then((tokens) => {
+          this.#tokenListCache = { fetchedAt: Date.now(), tokens }
+          return tokens
+        })
+        .finally(() => {
+          this.#tokenListRequest = null
+        })
+    }
+
+    return this.#tokenListRequest
+  }
+
+  async #fetchTokenList(): Promise<CowSwapTokenListEntry[]> {
     const response = await this.#parseResponse<{ tokens?: unknown }>(
       await this.#fetchWithTimeout(COWSWAP_TOKEN_LIST_URL, { headers: this.#headers }),
       'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
@@ -214,66 +242,36 @@ export class CowSwapAPI implements SwapProvider {
     )
     if (listedToken) return normalizeCowSwapToken(listedToken)
 
+    // The data of tokens missing from the CoW Swap token list is not available here. For the
+    // ones that CoW Swap can trade (see `isTokenSupported`), the swap controller reads it from
+    // the chain
+    return null
+  }
+
+  /**
+   * Whether CoW Swap can trade the token, even if the token is missing from the CoW Swap token
+   * list. CoW Swap can trade a token only if it can price it.
+   */
+  async isTokenSupported({
+    address,
+    chainId
+  }: {
+    address: string
+    chainId: number
+  }): Promise<boolean> {
+    if (!getApiNetwork(chainId) || !isAddress(address)) return false
+
     const nativePriceResponse = await this.#fetchWithTimeout(
-      this.#getApiUrl(chainId, `/token/${normalizedAddress}/native_price`),
+      this.#getApiUrl(chainId, `/token/${getAddress(address)}/native_price`),
       { headers: this.#apiHeaders }
     )
-    if (nativePriceResponse.status === 404) return null
+    if (nativePriceResponse.status === 404) return false
     await this.#parseResponse(
       nativePriceResponse,
       'Unable to check whether the token is supported.'
     )
 
-    const platformResponse = await this.#fetchWithTimeout(
-      `${CENA_API_BASE_URL}/api/v3/platform/${chainId}`,
-      { headers: this.#headers }
-    )
-    if (platformResponse.status === 404) return null
-    const { platformId } = await this.#parseResponse<CenaPlatformResponse>(
-      platformResponse,
-      'Unable to retrieve token information by address.'
-    )
-    if (typeof platformId !== 'string' || !platformId) return null
-
-    const tokenResponse = await this.#fetchWithTimeout(
-      `${CENA_API_BASE_URL}/api/v3/coins/${encodeURIComponent(
-        platformId
-      )}/contract/${normalizedAddress}`,
-      { headers: this.#headers }
-    )
-    if (tokenResponse.status === 404) return null
-    const token = await this.#parseResponse<CenaTokenResponse>(
-      tokenResponse,
-      'Unable to retrieve token information by address.'
-    )
-    const platformAddress = token.platforms?.[platformId]
-    const decimals = token.decimals?.[platformId]
-
-    if (
-      token.blacklist ||
-      token.removed ||
-      !platformAddress ||
-      !isAddress(platformAddress) ||
-      platformAddress.toLowerCase() !== normalizedAddress.toLowerCase() ||
-      !Number.isInteger(decimals) ||
-      decimals === undefined ||
-      decimals < 0 ||
-      decimals > 255 ||
-      typeof token.name !== 'string' ||
-      !token.name ||
-      typeof token.symbol !== 'string' ||
-      !token.symbol
-    )
-      return null
-
-    return {
-      address: normalizedAddress,
-      chainId,
-      decimals,
-      icon: token.image?.large || token.image?.small || token.image?.thumb || '',
-      name: token.name,
-      symbol: token.symbol
-    }
+    return true
   }
 
   async quote({

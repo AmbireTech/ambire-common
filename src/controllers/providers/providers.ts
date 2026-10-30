@@ -512,8 +512,6 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         fetch as any,
         provider,
         network,
-        undefined,
-        undefined,
         () => this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false
       )
 
@@ -570,12 +568,9 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
       fetch as any,
       this.providers[network.chainId.toString()]!,
       network,
-      undefined,
-      undefined,
       () => this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false
     )
     const options: Partial<GetOptions> = {
-      disableAutoDiscovery: true,
       additionalErc20Hints: allAddresses,
       additionalErc721Hints: Object.fromEntries(allAddresses.map((i) => [i, [1n]]))
     }

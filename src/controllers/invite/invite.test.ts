@@ -1,6 +1,7 @@
 import { expect, jest } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { StorageController } from '../storage/storage'
 import {
   INVALID_CODE_MESSAGE,
@@ -41,6 +42,7 @@ describe('InviteController - the invite gate', () => {
   })
 
   it('keeps the app locked and shows what the relayer said about the code', async () => {
+    const { restore } = suppressConsole()
     const relayerMessage = 'The key you entered is invalid.'
     // The relayer rejects a code with a 200 and success: false, not with an error status.
     const ctrl = makeController(mockFetch(200, { success: false, message: relayerMessage }))
@@ -57,18 +59,22 @@ describe('InviteController - the invite gate', () => {
     // The screen reads it off the state, to show it in the form instead of in a toast.
     expect(ctrl.errorMessage).toBe(relayerMessage)
     expect(emittedErrors[0]).toBe(relayerMessage)
+    restore()
   })
 
   it('falls back to a generic message when the relayer rejects the code without saying why', async () => {
+    const { restore } = suppressConsole()
     const ctrl = makeController(mockFetch(200, { success: false }))
 
     await ctrl.verify(DUMMY_CODE)
 
     expect(ctrl.inviteStatus).toBe(INVITE_STATUS.UNVERIFIED)
     expect(ctrl.errorMessage).toBe(INVALID_CODE_MESSAGE)
+    restore()
   })
 
   it('never blames the code when the relayer could not be reached', async () => {
+    const { restore } = suppressConsole()
     const offlineCtrl = makeController(
       jest.fn(async () => Promise.reject(new Error('Network request failed')))
     )
@@ -87,15 +93,18 @@ describe('InviteController - the invite gate', () => {
     expect(offlineCtrl.inviteStatus).toBe(INVITE_STATUS.UNVERIFIED)
     expect(downCtrl.inviteStatus).toBe(INVITE_STATUS.UNVERIFIED)
     expect(unreadableCtrl.inviteStatus).toBe(INVITE_STATUS.UNVERIFIED)
+    restore()
   })
 
   it('clears the error, so that the form stops showing it', async () => {
+    const { restore } = suppressConsole()
     const ctrl = makeController(mockFetch(200, { success: false }))
 
     await ctrl.verify(DUMMY_CODE)
     ctrl.resetErrorState()
 
     expect(ctrl.errorMessage).toBe('')
+    restore()
   })
 
   it('grants access without asking the relayer (for users who were already using the app)', async () => {
