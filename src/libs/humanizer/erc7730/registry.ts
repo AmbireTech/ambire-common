@@ -1,12 +1,6 @@
 import { getAddress, Interface, isAddress, isHexString, ZeroAddress } from 'ethers'
 
-import {
-  ERC20_APPROVE_SELECTOR,
-  ERC20_TRANSFER_SELECTOR,
-  PERMIT2_ADDRESS,
-  PERMIT2_APPROVE_SELECTOR,
-  SAFE_TX_PRIMARY_TYPE
-} from '@/libs/humanizer/erc7730/consts'
+import { ERC20_TRANSFER_SELECTOR, SAFE_TX_PRIMARY_TYPE } from '@/libs/humanizer/erc7730/consts'
 
 import { FEE_COLLECTOR } from '../../../consts/addresses'
 import { execTransactionAbi } from '../../../consts/safe'
@@ -46,16 +40,9 @@ export const ERC7730_MAX_RESOLUTION_DEPTH = 5
 const safeExecTransactionInterface = new Interface(execTransactionAbi)
 const safeExecTransactionSelector =
   safeExecTransactionInterface.getFunction('execTransaction')?.selector
-const erc20ApproveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
 const erc20TransferInterface = new Interface(['function transfer(address _to, uint256 _value)'])
-const permit2ApproveInterface = new Interface([
-  'function approve(address token, address spender, uint160 amount, uint48 expiration)'
-])
 const ABI_WORD_HEX_LENGTH = 64
 const EXEC_TRANSACTION_STATIC_WORDS = 10
-const ERC2612_PERMIT_ENCODE_TYPE_HASH =
-  '0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9'
-
 const isDecimalString = (value: string) =>
   !!value && [...value].every((char) => char >= '0' && char <= '9')
 
@@ -219,168 +206,6 @@ export const validateDescriptor = (
   return true
 }
 
-const getErc20ApproveDescriptor = (
-  path: string,
-  intent: string,
-  spenderLabel: string
-): Erc7730ResolvedDescriptor => ({
-  path,
-  descriptor: {
-    display: {
-      formats: {
-        'approve(address _spender, uint256 _value)': {
-          intent,
-          fields: [
-            {
-              path: '#._spender',
-              label: spenderLabel,
-              format: 'addressName',
-              visible: 'always'
-            },
-            {
-              path: '#._value',
-              label: 'Amount',
-              format: 'tokenAmount',
-              params: { tokenPath: '@.to' },
-              visible: 'always'
-            }
-          ]
-        }
-      }
-    }
-  }
-})
-
-const ERC20_APPROVE_DESCRIPTOR = getErc20ApproveDescriptor(
-  'built-in/erc20-approve',
-  'Approve',
-  'Spender'
-)
-
-const ERC20_REVOKE_APPROVAL_DESCRIPTOR = getErc20ApproveDescriptor(
-  'built-in/erc20-revoke-approval',
-  'Revoke approval',
-  'Spender'
-)
-
-const ERC20_TRANSFER_DESCRIPTOR: Erc7730ResolvedDescriptor = {
-  path: 'built-in/erc20-transfer',
-  descriptor: {
-    display: {
-      formats: {
-        'transfer(address _to, uint256 _value)': {
-          intent: 'Send',
-          fields: [
-            {
-              path: '_value',
-              label: 'Amount',
-              format: 'tokenAmount',
-              params: { tokenPath: '@.to' },
-              visible: 'always'
-            },
-            {
-              path: '_to',
-              label: 'To',
-              format: 'addressName',
-              params: { types: ['eoa'], sources: ['local', 'ens'] },
-              visible: 'always'
-            }
-          ]
-        }
-      }
-    }
-  }
-}
-
-const getPermit2ApproveDescriptor = (path: string, intent: string): Erc7730ResolvedDescriptor => ({
-  path,
-  descriptor: {
-    display: {
-      formats: {
-        'approve(address token, address spender, uint160 amount, uint48 expiration)': {
-          intent,
-          fields: [
-            {
-              path: '#.spender',
-              label: 'Spender',
-              format: 'addressName',
-              visible: 'always'
-            },
-            {
-              path: '#.amount',
-              label: 'Amount',
-              format: 'tokenAmount',
-              params: { tokenPath: '#.token' },
-              visible: 'always'
-            },
-            {
-              path: '#.expiration',
-              label: 'Approval expires',
-              format: 'date',
-              params: { encoding: 'timestamp' },
-              visible: 'always'
-            }
-          ]
-        }
-      }
-    }
-  }
-})
-
-const PERMIT2_APPROVE_DESCRIPTOR = getPermit2ApproveDescriptor(
-  'built-in/permit2-approve',
-  'Approve'
-)
-
-const PERMIT2_REVOKE_APPROVAL_DESCRIPTOR = getPermit2ApproveDescriptor(
-  'built-in/permit2-revoke-approval',
-  'Revoke approval'
-)
-
-const ERC2612_PERMIT_DESCRIPTOR: Erc7730ResolvedDescriptor = {
-  path: 'built-in/erc2612-permit',
-  descriptor: {
-    display: {
-      formats: {
-        'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)': {
-          intent: 'Authorize spending of tokens',
-          fields: [
-            {
-              path: 'spender',
-              label: 'Spender',
-              format: 'raw',
-              visible: 'always'
-            },
-            {
-              path: 'value',
-              label: 'Max spending amount',
-              format: 'tokenAmount',
-              params: { tokenPath: '@.to' },
-              visible: 'always'
-            },
-            {
-              path: 'deadline',
-              label: 'Valid until',
-              format: 'date',
-              params: { encoding: 'timestamp' }
-            },
-            {
-              path: 'owner',
-              label: 'Owner',
-              visible: 'never'
-            },
-            {
-              path: 'nonce',
-              label: 'Nonce',
-              visible: 'never'
-            }
-          ]
-        }
-      }
-    }
-  }
-}
-
 export const normalizeRelayerPath = (pathOrUrl: string): string => {
   try {
     const url = new URL(pathOrUrl)
@@ -423,39 +248,6 @@ const mergeDescriptors = (
   return merge(base, override) as Erc7730Descriptor
 }
 
-const applyBuiltInFormatOverrides = (
-  descriptor: Erc7730Descriptor,
-  builtInDescriptor: Erc7730ResolvedDescriptor
-): Erc7730Descriptor => {
-  const formats = descriptor.display?.formats
-  const builtInFormats = builtInDescriptor.descriptor.display?.formats
-  if (!formats || !builtInFormats) return descriptor
-
-  Object.entries(builtInFormats).forEach(([signature, builtInFormat]) => {
-    const format = formats[signature]
-    if (!format) return
-
-    if (builtInDescriptor.path?.endsWith('-revoke-approval')) {
-      format.intent = builtInFormat.intent
-    }
-
-    const nativeField = builtInFormat.fields?.find(
-      (field) => field.path === '@.value' && field.label === 'Send'
-    )
-    if (!nativeField) return
-
-    const fields = format.fields || []
-    if (
-      fields.some((field) => field.path === nativeField.path && field.label === nativeField.label)
-    )
-      return
-
-    format.fields = [...fields, nativeField]
-  })
-
-  return descriptor
-}
-
 const isErc20TransferToFeeCollector = (call: Call): boolean => {
   if (!call.data || call.data.slice(0, 10).toLowerCase() !== ERC20_TRANSFER_SELECTOR) return false
 
@@ -471,50 +263,7 @@ const isErc20TransferToFeeCollector = (call: Call): boolean => {
 const getBuiltInDescriptorForCall = (call: Call): Erc7730ResolvedDescriptor | null => {
   if (!call.data || !isHexString(call.data)) return null
 
-  const selector = call.data.slice(0, 10).toLowerCase()
-
-  if (selector === ERC20_APPROVE_SELECTOR) {
-    try {
-      const [, value] = erc20ApproveInterface.decodeFunctionData('approve', call.data)
-
-      return value === 0n ? ERC20_REVOKE_APPROVAL_DESCRIPTOR : ERC20_APPROVE_DESCRIPTOR
-    } catch {
-      return ERC20_APPROVE_DESCRIPTOR
-    }
-  }
-  if (selector === ERC20_TRANSFER_SELECTOR) return ERC20_TRANSFER_DESCRIPTOR
-  if (selector === MULTICALL_SELECTOR) return MULTICALL_DESCRIPTOR
-  if (
-    call.to &&
-    call.to.toLowerCase() === PERMIT2_ADDRESS &&
-    selector === PERMIT2_APPROVE_SELECTOR
-  ) {
-    try {
-      const [, , amount] = permit2ApproveInterface.decodeFunctionData('approve', call.data)
-
-      return amount === 0n ? PERMIT2_REVOKE_APPROVAL_DESCRIPTOR : PERMIT2_APPROVE_DESCRIPTOR
-    } catch {
-      return PERMIT2_APPROVE_DESCRIPTOR
-    }
-  }
-
-  return null
-}
-
-const getBuiltInDescriptorForMessage = (message: Message): Erc7730ResolvedDescriptor | null => {
-  if (message.content.kind !== 'typedMessage' || message.content.primaryType !== 'Permit')
-    return null
-
-  try {
-    const encodeTypeHash = getEip712EncodeTypeHash(
-      message.content.types as Erc7730TypedDataTypes,
-      message.content.primaryType
-    )
-
-    return encodeTypeHash === ERC2612_PERMIT_ENCODE_TYPE_HASH ? ERC2612_PERMIT_DESCRIPTOR : null
-  } catch {
-    return null
-  }
+  return call.data.slice(0, 10).toLowerCase() === MULTICALL_SELECTOR ? MULTICALL_DESCRIPTOR : null
 }
 
 const getTypedMessageChainId = (message: Message): bigint | null => {
@@ -927,10 +676,7 @@ const resolveErc7730CallWithoutNested = (
 
   return {
     descriptor: {
-      descriptor: applyBuiltInFormatOverrides(
-        mergeDescriptors(builtInDescriptor.descriptor, registryDescriptor.descriptor),
-        builtInDescriptor
-      ),
+      descriptor: mergeDescriptors(builtInDescriptor.descriptor, registryDescriptor.descriptor),
       path: registryDescriptor.path
     },
     wants
@@ -1041,7 +787,6 @@ export const resolveErc7730Message = (message: Message, known: Erc7730Known): Er
   }
 
   const primaryType = String(message.content.primaryType)
-  const builtInDescriptor = getBuiltInDescriptorForMessage(message)
   let encodeTypeHash: string | null = null
   try {
     encodeTypeHash = getEip712EncodeTypeHash(
@@ -1093,8 +838,8 @@ export const resolveErc7730Message = (message: Message, known: Erc7730Known): Er
     descriptor = resolveFor(singleton)
   }
 
-  if (wants.length) return { descriptor: builtInDescriptor, wants }
-  if (!descriptor) return { descriptor: builtInDescriptor, wants }
+  if (wants.length) return { descriptor: null, wants }
+  if (!descriptor) return { descriptor: null, wants }
 
   // The transactions a SafeTx authorises are described by their own descriptors
   const safeTxCalls = getSafeTxCallsFromMessage(message)

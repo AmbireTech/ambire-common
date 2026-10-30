@@ -18,10 +18,13 @@ import { getCowSwapOrderUid } from '../../services/cowswap/helper'
 import { AccountOp } from '../accountOp/accountOp'
 import { EMPTY_ERC7730_KNOWN, Erc7730CallDescriptors, resolveErc7730Descriptors } from './erc7730'
 import { humanizeAccountOp, humanizeMessage } from './index'
+import { IrCall } from './interfaces'
 import {
   erc20TransferAbi,
   erc20TransferFromAbi,
+  morphoBorrowAbi,
   morphoRepayAbi,
+  morphoSupplyCollateralAbi,
   morphoWithdrawCollateralAbi,
   publicAllocatorReallocateToAbi
 } from './modules/Bundler3/generalAdapter'
@@ -40,12 +43,14 @@ import {
   getRowLabel,
   getRowValues,
   getRichVisualization,
+  getSingleValueRow,
   getLabel,
   getText,
   getToken,
   getUnlimitedApprovalWarning,
   getWarning,
-  hasErc7730Humanization
+  hasErc7730Humanization,
+  UNLIMITED_APPROVAL_WARNING_CODE
 } from './utils'
 
 // const address1 = '0x6942069420694206942069420694206942069420'
@@ -273,29 +278,35 @@ describe('Humanizer main function', () => {
   })
 
   test('generic humanize', async () => {
-    // const ir: Ir = []
     const expectedVisualizations = [
-      [
+      getLegacyVisualization([
         getAction('Send'),
         getToken('0x0000000000000000000000000000000000000000', 1000000000000000000n),
         getLabel('to'),
         getAddressVisualization('0xc4ce03b36f057591b2a360d773edb9896255051e')
-      ],
-      [
-        getAction('Grant approval'),
-        getLabel('for'),
-        getToken(
-          '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-          115792089237316195423570985008687907853269984665640564039457584007913129639935n
+      ]),
+      getRichVisualization('Approve', [
+        getSingleValueRow(
+          'Spender',
+          getAddressVisualization('0xe5c783ee536cf5e63e792988335c4255169be4e1')
         ),
-        getLabel('to'),
-        getAddressVisualization('0xe5c783ee536cf5e63e792988335c4255169be4e1')
-      ]
+        getSingleValueRow(
+          'Amount',
+          getToken(
+            '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+            115792089237316195423570985008687907853269984665640564039457584007913129639935n,
+            accountOp.chainId
+          )
+        )
+      ])
     ]
 
     accountOp.calls = [...transactions.generic]
     const irCalls = humanizeAccountOp(accountOp)
-    compareHumanizerVisualizations(irCalls, expectedVisualizations)
+    compareRichVisualizations(irCalls, expectedVisualizations)
+    expect(irCalls[1]!.warnings?.map((warning) => warning.code)).toEqual([
+      UNLIMITED_APPROVAL_WARNING_CODE
+    ])
   })
 
   test('humanizes Safe allowance with no reset instead of every 0 minutes', async () => {
@@ -332,36 +343,45 @@ describe('Humanizer main function', () => {
   })
 
   test('erc20 humanize end to end', async () => {
-    // const ir: Ir = []
+    const usdt = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+    const approveUsdt = getRichVisualization('Approve', [
+      getSingleValueRow(
+        'Spender',
+        getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8')
+      ),
+      getSingleValueRow('Amount', getToken(usdt, 1000000000n, accountOp.chainId))
+    ])
     const expectedVisualizations = [
-      [
-        getAction('Send'),
-        getToken(ZeroAddress, 10n ** 18n),
-        getLabel('and'),
-        getAction('Grant approval'),
-        getLabel('for'),
-        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 10n ** 9n),
-        getLabel('to'),
-        getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8')
-      ],
-      [
-        getAction('Grant approval'),
-        getLabel('for'),
-        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
-        getLabel('to'),
-        getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8')
-      ],
-      [
-        getAction('Grant approval'),
-        getLabel('for'),
-        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
-        getLabel('to'),
-        getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8')
-      ]
+      // the native value the call carries is a row, not a part of the intent
+      {
+        ...approveUsdt,
+        fields: [
+          ...approveUsdt.fields,
+          getSingleValueRow('Send', getToken(ZeroAddress, 10n ** 18n, accountOp.chainId))
+        ]
+      },
+      approveUsdt,
+      approveUsdt
     ]
     accountOp.calls = [...transactions.erc20.slice(0, 3)]
     const irCalls = humanizeAccountOp(accountOp)
-    compareHumanizerVisualizations(irCalls, expectedVisualizations)
+    compareRichVisualizations(irCalls, expectedVisualizations)
+  })
+
+  test('a Lido stake shows the staked amount and no row or warning for the coin it sends', async () => {
+    const lido = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
+    accountOp.calls = [{ to: lido, value: 10n ** 18n, data: `0xa1903eab${'0'.repeat(64)}` }]
+
+    const [irCall] = humanizeAccountOp(accountOp, { nativeAssetSymbol: 'ETH' })
+
+    expect(irCall!.fullVisualization).toMatchObject({
+      intent: [
+        expect.objectContaining({ type: 'action', content: 'Stake' }),
+        expect.objectContaining({ type: 'token', address: lido.toLowerCase(), value: 10n ** 18n })
+      ],
+      fields: []
+    })
+    expect(irCall!.warnings).toBeUndefined()
   })
 
   test('setApprovalForAll on the Uniswap V3 Position Manager keeps the NFT approval humanization', async () => {
@@ -487,26 +507,22 @@ describe('with (Account | Key)[] arg', () => {
     accountOp.calls = []
   })
   test('with calls', async () => {
+    const getApproveUsdt = (spender: string) =>
+      getRichVisualization('Approve', [
+        getSingleValueRow('Spender', getAddressVisualization(spender)),
+        getSingleValueRow(
+          'Amount',
+          getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, accountOp.chainId)
+        )
+      ])
     const expectedVisualizations = [
-      [
-        getAction('Grant approval'),
-        getLabel('for'),
-        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
-        getLabel('to'),
-        getAddressVisualization(accounts[0]!.addr.toLowerCase())
-      ],
-      [
-        getAction('Grant approval'),
-        getLabel('for'),
-        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
-        getLabel('to'),
-        getAddressVisualization(keys[0]!.addr.toLowerCase())
-      ]
+      getApproveUsdt(accounts[0]!.addr.toLowerCase()),
+      getApproveUsdt(keys[0]!.addr.toLowerCase())
     ]
     accountOp.calls = [...transactions.accountOrKeyArg]
 
     const irCalls = humanizeAccountOp(accountOp)
-    compareHumanizerVisualizations(irCalls, expectedVisualizations)
+    compareRichVisualizations(irCalls, expectedVisualizations)
   })
 })
 
@@ -947,7 +963,8 @@ describe('ERC-7730 descriptors', () => {
       nativeAssetSymbol: 'ETH'
     })
 
-    expect(descriptors[0]?.path).toBe('built-in/erc20-approve')
+    // no descriptor covers a token approval, the module that found it shows the coin as a row
+    expect(descriptors[0]).toBeUndefined()
     expect(irCalls[0]!.fullVisualization).toMatchObject({
       intent: [expect.objectContaining({ content: 'Approve' })],
       fields: [
@@ -971,6 +988,71 @@ describe('ERC-7730 descriptors', () => {
     expect(irCalls[0]!.warnings).toEqual([
       getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
     ])
+  })
+
+  describe('wording of an approval a descriptor describes', () => {
+    const getApproveDescriptors = (intent: string): Erc7730CallDescriptors => ({
+      0: {
+        descriptor: {
+          display: {
+            formats: {
+              'approve(address _spender, uint256 _value)': {
+                intent,
+                fields: [
+                  {
+                    path: '#._spender',
+                    label: 'Spender',
+                    format: 'addressName',
+                    visible: 'always'
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    })
+    const revokeCall = {
+      ...transactions.erc20[1]!,
+      data: `${transactions.erc20[1]!.data.slice(0, -64)}${'0'.repeat(64)}`
+    }
+
+    test('says revoke when the call takes the approval back, whatever the descriptor says', () => {
+      accountOp.calls = [revokeCall]
+
+      const irCalls = humanizeAccountOp(accountOp, {
+        erc7730Descriptors: getApproveDescriptors('Approve')
+      })
+
+      expect(irCalls[0]!.isErc7730).toBe(true)
+      expect(irCalls[0]!.fullVisualization?.intent[0]).toMatchObject({
+        type: 'action',
+        content: 'Revoke approval'
+      })
+      expect(irCalls[0]!.fullVisualization?.fields).toHaveLength(1)
+    })
+
+    test('keeps the wording of the descriptor for an approval that gives a permission', () => {
+      accountOp.calls = [transactions.erc20[1]!]
+
+      const irCalls = humanizeAccountOp(accountOp, {
+        erc7730Descriptors: getApproveDescriptors('Approve')
+      })
+
+      expect(irCalls[0]!.fullVisualization?.intent[0]).toMatchObject({ content: 'Approve' })
+    })
+
+    test('keeps a wording of the descriptor that is not the plain approve', () => {
+      accountOp.calls = [revokeCall]
+
+      const irCalls = humanizeAccountOp(accountOp, {
+        erc7730Descriptors: getApproveDescriptors('Authorize spending')
+      })
+
+      expect(irCalls[0]!.fullVisualization?.intent[0]).toMatchObject({
+        content: 'Authorize spending'
+      })
+    })
   })
 
   test('adds the native transaction value when an unrelated native amount is displayed', async () => {
@@ -2272,6 +2354,185 @@ describe('ERC-7730 descriptors', () => {
     ).toBe(false)
   })
 
+  describe('calls to a Morpho general adapter inside a Bundler3 bundle', () => {
+    const morphoBundler = '0x6BFd8137e702540E7A42B74178A4a49Ba43920C4'
+    const generalAdapter = '0xb98c948cfa24072e58935bc004a8a7b376ae746a'
+    const baseUsdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+    const baseCbBtc = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
+    const owner = '0xd8293ad21678c6f09da139b4b62d38e514a03b78'
+    const stranger = '0x9999999999999999999999999999999999999999'
+    const bundlerRegistryPath = 'registry/morpho/calldata-MorphoBundlerV3.json'
+    const adapterRegistryPath = 'test/morpho/calldata-GeneralAdapter1.json'
+    const marketParams = {
+      loanToken: baseUsdc,
+      collateralToken: baseCbBtc,
+      oracle: '0x663becd10dae6c4a3dcd89f1d76c1174199639b9',
+      irm: '0x46415998764c29ab2a25cbea6254146d50d22687',
+      lltv: 86145408065551n
+    } as const
+    const multicallInterface = new ethers.Interface([
+      'function multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)'
+    ])
+
+    const getBundleOp = (adapter: string, receiver: string): AccountOp => ({
+      ...accountOp,
+      accountAddr: owner,
+      chainId: 8453n,
+      calls: [
+        {
+          to: morphoBundler,
+          value: 0n,
+          data: multicallInterface.encodeFunctionData('multicall', [
+            [
+              encodeFunctionData({
+                abi: erc20TransferAbi,
+                args: [baseUsdc, owner, 7n]
+              }),
+              encodeFunctionData({
+                abi: morphoSupplyCollateralAbi,
+                args: [marketParams, 100000n, receiver, '0x']
+              }),
+              encodeFunctionData({
+                abi: morphoBorrowAbi,
+                args: [marketParams, 50_000000n, 0n, 0n, receiver]
+              })
+            ].map((data) => ({
+              to: adapter,
+              data,
+              value: 0n,
+              skipRevert: false,
+              callbackHash: ethers.ZeroHash
+            }))
+          ])
+        }
+      ]
+    })
+
+    // The Bundler3 descriptor as the registry has it, and optionally a descriptor of the adapter
+    const getRelayer =
+      (adapterDescriptor?: Record<string, unknown>) =>
+      async (path: string, method?: string, body?: any) => {
+        if (path === '/v2/erc7730/account-op') {
+          return {
+            success: true,
+            data: {
+              [`eip155:8453:${morphoBundler.toLowerCase()}`]: bundlerRegistryPath,
+              ...(adapterDescriptor
+                ? { [`eip155:8453:${generalAdapter}`]: adapterRegistryPath }
+                : {})
+            },
+            errorState: []
+          }
+        }
+
+        if (
+          path === '/v2/erc7730/fetch-descriptor' &&
+          body.descriptorPath === `/${adapterRegistryPath}`
+        ) {
+          return { success: true, ...adapterDescriptor }
+        }
+
+        if (path === '/v2/erc7730/fetch-descriptor') {
+          return {
+            success: true,
+            display: {
+              formats: {
+                'multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)':
+                  {
+                    intent: 'Bundler3 Multicall',
+                    fields: [
+                      {
+                        path: '#.bundle.[].data',
+                        label: 'Action',
+                        format: 'calldata',
+                        params: {
+                          calleePath: '#.bundle.[].to',
+                          amountPath: '#.bundle.[].value'
+                        },
+                        visible: 'always'
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+
+        throw new Error(`Unexpected ERC-7730 relayer call: ${path} ${method}`)
+      }
+
+    const humanizeBundle = async (
+      bundleOp: AccountOp,
+      adapterDescriptor?: Record<string, unknown>
+    ) => {
+      const descriptors = await getTestErc7730Descriptors(bundleOp, getRelayer(adapterDescriptor))
+
+      return humanizeAccountOp(bundleOp, { erc7730Descriptors: descriptors })[0]!
+    }
+
+    const getActions = (call: IrCall) =>
+      call.fullVisualization!.fields.map(
+        (row) => getRowValues(row).find((value) => value.type === 'action')?.content
+      )
+
+    test('are described by the module, and its warning reaches the result of the Bundler3 descriptor', async () => {
+      const call = await humanizeBundle(getBundleOp(generalAdapter, stranger))
+
+      expect(call.isErc7730).toBe(true)
+      expect(getActions(call)).toEqual(['Transfer', 'Supply', 'Borrow'])
+      expect(call.warnings?.map((warning) => warning.code)).toEqual(['Morpho_diff_addr'])
+      expect(call.warnings?.[0]?.content).toContain(stranger)
+    })
+
+    test('give no warning when the actions are for the account', async () => {
+      const call = await humanizeBundle(getBundleOp(generalAdapter, owner))
+
+      expect(getActions(call)).toEqual(['Transfer', 'Supply', 'Borrow'])
+      expect(call.warnings).toEqual([])
+    })
+
+    test('are described when the adapter is at an address nothing is registered for', async () => {
+      const call = await humanizeBundle(
+        getBundleOp('0x3a9c1f5d8e7b2a4c6d0e9f1a2b3c4d5e6f708192', stranger)
+      )
+
+      expect(getActions(call)).toEqual(['Transfer', 'Supply', 'Borrow'])
+      expect(call.warnings?.map((warning) => warning.code)).toEqual(['Morpho_diff_addr'])
+    })
+
+    test('are described by the descriptor of the adapter when it has one', async () => {
+      const call = await humanizeBundle(getBundleOp(generalAdapter, owner), {
+        display: {
+          formats: {
+            'erc20Transfer(address token, address receiver, uint256 amount)': {
+              intent: 'Send token',
+              fields: [
+                {
+                  path: 'amount',
+                  label: 'Amount',
+                  format: 'tokenAmount',
+                  params: { tokenPath: '#.token' },
+                  visible: 'always'
+                }
+              ]
+            }
+          }
+        }
+      })
+      const [firstRow] = call.fullVisualization!.fields
+
+      expect(firstRow).toMatchObject({
+        type: 'call',
+        value: {
+          intent: [expect.objectContaining({ content: 'Send token' })],
+          fields: [{ label: 'Amount' }]
+        }
+      })
+      // the actions the descriptor does not know are still described by the module
+      expect(getActions(call).slice(1)).toEqual(['Supply', 'Borrow'])
+    })
+  })
+
   test('humanizes Morpho PublicAllocator reallocateTo in Bundler3 ERC-7730 calldata', () => {
     const morphoBundler = '0x6566194141eefa99Af43Bb5Aa71460Ca2Dc90245'
     const publicAllocator = '0xfd32fA2ca22c76dD6E550706Ad913FC6CE91c75D'
@@ -2373,7 +2634,7 @@ describe('ERC-7730 descriptors', () => {
     ).toBe(false)
   })
 
-  test('uses standard ERC-7730 approval descriptors in a Permit2 + Universal Router batch', async () => {
+  test('describes the approvals in a Permit2 + Universal Router batch with the modules', async () => {
     const baseCbBtc = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
     const permit2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
     const universalRouter = '0xFdf682F51FE81Aa4898F0AE2163d8A55c127fbC7'
@@ -2405,7 +2666,8 @@ describe('ERC-7730 descriptors', () => {
       nativeAssetSymbol: 'ETH'
     })
 
-    expect(Object.keys(descriptors)).toEqual(['0', '1'])
+    // no descriptor covers the approvals or the swap, the modules describe all three calls
+    expect(Object.keys(descriptors)).toEqual([])
     expect(irCalls[0]!.fullVisualization).toMatchObject({
       intent: [expect.objectContaining({ content: 'Approve' })],
       fields: [
@@ -2418,8 +2680,7 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     })
-    // both approvals in this batch are for the maximum amount, and the modules that found them
-    // keep their warnings even though the ERC-7730 descriptors replaced the visualization
+    // both approvals in this batch are for the maximum amount
     expect(irCalls[0]!.warnings).toEqual([
       getUnlimitedApprovalWarning(permit2),
       getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
@@ -2450,7 +2711,7 @@ describe('ERC-7730 descriptors', () => {
     expect(irCalls[2]!.fullVisualization?.fields).toEqual([])
   })
 
-  test('uses revoke wording for standard ERC-7730 ERC-20 approvals with a zero amount', async () => {
+  test('uses revoke wording for ERC-20 approvals with a zero amount', async () => {
     const usdt = '0xdac17f958d2ee523a2206206994597c13d831ec7'
     const spender = '0x46705dfff24256421a05d056c29e81bdc09723b8'
     const revokeApprovalAccountOp: AccountOp = {
@@ -2467,7 +2728,7 @@ describe('ERC-7730 descriptors', () => {
     const descriptors = resolveErc7730Descriptors(revokeApprovalAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(revokeApprovalAccountOp, { erc7730Descriptors: descriptors })
 
-    expect(descriptors[0]?.path).toBe('built-in/erc20-revoke-approval')
+    expect(descriptors[0]).toBeUndefined()
     compareRichVisualization(
       irCalls[0]!.fullVisualization,
       getRichVisualization('Revoke approval', [
@@ -2483,7 +2744,7 @@ describe('ERC-7730 descriptors', () => {
         }
       ])
     )
-    expect(irCalls[0]!.warnings).toEqual([])
+    expect(irCalls[0]!.warnings).toBeUndefined()
   })
 
   test('keeps revoke wording for a zero USDT approval when its registry descriptor says approve', async () => {
@@ -2568,7 +2829,7 @@ describe('ERC-7730 descriptors', () => {
     expect(irCalls[0]!.warnings).toEqual([])
   })
 
-  test('uses revoke wording for standard ERC-7730 Permit2 approvals with a zero amount', async () => {
+  test('uses revoke wording for Permit2 approvals with a zero amount', async () => {
     const baseCbBtc = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
     const permit2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
     const universalRouter = '0xFdf682F51FE81Aa4898F0AE2163d8A55c127fbC7'
@@ -2594,7 +2855,7 @@ describe('ERC-7730 descriptors', () => {
     const descriptors = resolveErc7730Descriptors(revokePermitAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(revokePermitAccountOp, { erc7730Descriptors: descriptors })
 
-    expect(descriptors[0]?.path).toBe('built-in/permit2-revoke-approval')
+    expect(descriptors[0]).toBeUndefined()
     expect(irCalls[0]!.fullVisualization).toMatchObject({
       intent: [expect.objectContaining({ content: 'Revoke approval' })],
       fields: [
@@ -2611,10 +2872,10 @@ describe('ERC-7730 descriptors', () => {
         { label: 'Approval expires' }
       ]
     })
-    expect(irCalls[0]!.warnings).toEqual([])
+    expect(irCalls[0]!.warnings).toBeUndefined()
   })
 
-  test('uses the standard ERC-7730 transfer descriptor for ERC-20 transfers', async () => {
+  test('shows ERC-20 transfers the way a descriptor does without needing one', async () => {
     const usdt = '0xdac17f958d2ee523a2206206994597c13d831ec7'
     const recipient = '0x46705dfff24256421a05d056c29e81bdc09723b8'
     const transferAccountOp: AccountOp = {
@@ -2631,7 +2892,7 @@ describe('ERC-7730 descriptors', () => {
     const descriptors = resolveErc7730Descriptors(transferAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(transferAccountOp, { erc7730Descriptors: descriptors })
 
-    expect(Object.keys(descriptors)).toEqual(['0'])
+    expect(Object.keys(descriptors)).toEqual([])
     compareRichVisualization(
       irCalls[0]!.fullVisualization,
       getRichVisualization('Send', [
@@ -2649,7 +2910,7 @@ describe('ERC-7730 descriptors', () => {
     )
   })
 
-  test('keeps the standard ERC-20 transfer descriptor for WETH when a registry descriptor exists', async () => {
+  test('keeps the module visualization of an ERC-20 transfer when the registry descriptor does not describe it', async () => {
     const recipient = '0x46705dfff24256421a05d056c29e81bdc09723b8'
     const wethRegistryPath = 'registry/weth/calldata-weth.json'
     const transferAccountOp: AccountOp = {
@@ -2814,11 +3075,19 @@ describe('ERC-7730 descriptors', () => {
 
   test('falls back to the built-in calldata descriptor when the relayer index fails', async () => {
     const { restore } = suppressConsole()
-    const call = transactions.erc20[1]!
     const fallbackAccountOp: AccountOp = {
       ...accountOp,
       chainId: 1n,
-      calls: [call]
+      calls: [
+        {
+          to: WETH_ADDRESS,
+          value: 0n,
+          data: new ethers.Interface(['function multicall(bytes[] data)']).encodeFunctionData(
+            'multicall',
+            [[]]
+          )
+        }
+      ]
     }
     const callRelayer = async () => {
       throw new Error('relayer down')
@@ -2827,7 +3096,7 @@ describe('ERC-7730 descriptors', () => {
     try {
       const descriptors = await getTestErc7730Descriptors(fallbackAccountOp, callRelayer)
       expect(Object.keys(descriptors)).toEqual(['0'])
-      expect(descriptors[0]?.path).toBe('built-in/erc20-approve')
+      expect(descriptors[0]?.path).toBe('built-in/multicall')
     } finally {
       restore()
     }
@@ -3596,7 +3865,7 @@ describe('ERC-7730 descriptors', () => {
     expect(descriptor?.path).toBe(registryPath)
   })
 
-  test('uses the standard ERC-2612 Permit descriptor for an unregistered Monerium token', async () => {
+  test('shows an ERC-2612 Permit the way a descriptor does for an unregistered Monerium token', async () => {
     const moneriumEure = '0x39b8b6385416f4ca36a20319f70d28621895279d'
     const aggregationRouterV6 = '0x111111125421ca6dc452d289314280a0f8842a65'
     const permitMessage = {
@@ -3653,8 +3922,10 @@ describe('ERC-7730 descriptors', () => {
       erc7730Descriptor: descriptor || undefined
     })
 
-    expect(descriptor?.path).toBe('built-in/erc2612-permit')
+    // no descriptor is registered, the module that found the permit shows it with rows
+    expect(descriptor).toBeFalsy()
     expect(callRelayer).toHaveBeenCalledTimes(1)
+    expect(irMessage.canHideDropdownArrow).toBe(true)
     expect(irMessage.richVisualization).toMatchObject({
       intent: [expect.objectContaining({ content: 'Authorize spending of tokens' })],
       fields: [
@@ -4639,20 +4910,28 @@ describe('ERC-7730 descriptors', () => {
         },
         {
           type: 'call',
-          value: getLegacyVisualization([
-            getAction('Send'),
-            getToken('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', 100n),
-            getLabel('to'),
-            getAddressVisualization('0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01')
+          value: getRichVisualization('Send', [
+            getSingleValueRow(
+              'Amount',
+              getToken('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', 100n, 8453n)
+            ),
+            getSingleValueRow(
+              'To',
+              getAddressVisualization('0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01')
+            )
           ])
         },
         {
           type: 'call',
-          value: getLegacyVisualization([
-            getAction('Send'),
-            getToken('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', 200n),
-            getLabel('to'),
-            getAddressVisualization('0xd8293ad21678c6f09da139b4b62d38e514a03b78')
+          value: getRichVisualization('Send', [
+            getSingleValueRow(
+              'Amount',
+              getToken('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', 200n, 8453n)
+            ),
+            getSingleValueRow(
+              'To',
+              getAddressVisualization('0xd8293ad21678c6f09da139b4b62d38e514a03b78')
+            )
           ])
         },
         {
@@ -4999,12 +5278,9 @@ describe('ERC-7730 descriptors', () => {
         },
         {
           type: 'call',
-          value: getLegacyVisualization([
-            getAction('Grant approval'),
-            getLabel('for'),
-            getToken(tokenAddress, 1514n),
-            getLabel('to'),
-            getAddressVisualization(spender)
+          value: getRichVisualization('Approve', [
+            getSingleValueRow('Spender', getAddressVisualization(spender)),
+            getSingleValueRow('Amount', getToken(tokenAddress, 1514n, 8453n))
           ])
         },
         {
@@ -5395,15 +5671,16 @@ describe('ERC-7730 descriptors', () => {
         },
         {
           type: 'call',
-          value: getLegacyVisualization([
-            getAction('Grant approval'),
-            getLabel('for'),
-            getToken(
-              usdc,
-              115792089237316195423570985008687907853269984665640564039457584007913129639935n
-            ),
-            getLabel('to'),
-            getAddressVisualization(spender)
+          value: getRichVisualization('Approve', [
+            getSingleValueRow('Spender', getAddressVisualization(spender)),
+            getSingleValueRow(
+              'Amount',
+              getToken(
+                usdc,
+                115792089237316195423570985008687907853269984665640564039457584007913129639935n,
+                8453n
+              )
+            )
           ])
         },
         {
@@ -5578,14 +5855,11 @@ describe('non-strict encoding / dirty bytes', () => {
     accountOp.calls = [{ to: usdtAddress, value: 0n, data }]
 
     const irCalls = humanizeAccountOp(accountOp)
-    compareHumanizerVisualizations(irCalls, [
-      [
-        getAction('Grant approval'),
-        getLabel('for'),
-        getToken(usdtAddress, 1000000000n),
-        getLabel('to'),
-        getAddressVisualization(`0x${spender}`)
-      ]
+    compareRichVisualizations(irCalls, [
+      getRichVisualization('Approve', [
+        getSingleValueRow('Spender', getAddressVisualization(`0x${spender}`)),
+        getSingleValueRow('Amount', getToken(usdtAddress, 1000000000n, accountOp.chainId))
+      ])
     ])
   })
   test('transfer with dirty address padding decodes correctly', () => {
@@ -5596,13 +5870,11 @@ describe('non-strict encoding / dirty bytes', () => {
     accountOp.calls = [{ to: usdtAddress, value: 0n, data }]
 
     const irCalls = humanizeAccountOp(accountOp)
-    compareHumanizerVisualizations(irCalls, [
-      [
-        getAction('Send'),
-        getToken(usdtAddress, 1000000000n),
-        getLabel('to'),
-        getAddressVisualization(`0x${spender}`)
-      ]
+    compareRichVisualizations(irCalls, [
+      getRichVisualization('Send', [
+        getSingleValueRow('Amount', getToken(usdtAddress, 1000000000n, accountOp.chainId)),
+        getSingleValueRow('To', getAddressVisualization(`0x${spender}`))
+      ])
     ])
   })
   test('transferFrom with dirty address padding on the from-slot decodes correctly', () => {

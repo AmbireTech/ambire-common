@@ -19,7 +19,8 @@ import {
 } from '../../utils'
 
 const WRAPPED_ST_ETH_ADDRESS = '0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0'
-const ST_ETH_ADDRESS = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
+/** The Lido staking contract. Sending ETH to its `submit` function is what staking is. */
+export const ST_ETH_ADDRESS = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
 const UNWRAP_CONTRACT_ADDR = '0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1'
 
 const wrapAbi = parseAbi(['function wrap(uint256 _stETHAmount) returns (uint256)'])

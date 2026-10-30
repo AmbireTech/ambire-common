@@ -18,6 +18,7 @@ import { embeddedAmbireOperationHumanizer } from './modules/embeddedAmbireOperat
 import { ensModule } from './modules/ENS'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
+import { generalAdapterModule } from './modules/GeneralAdapter'
 import GuildModule from './modules/Guild'
 import KyberSwap from './modules/KyberSwap'
 import legendsModule from './modules/Legends'
@@ -77,6 +78,7 @@ const singleCallHumanizerModules: HumanizerCallModule[] = [
   ensModule,
   GuildModule,
   openSeaModule,
+  generalAdapterModule,
   asciiModule
 ]
 

@@ -127,7 +127,10 @@ export interface IrCall extends Omit<Call, 'to'> {
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualizationItem[]
-  /** Set only when the message was humanized with an ERC-7730 descriptor. */
+  /**
+   * Set when the message is shown with an intent and labelled rows: by an ERC-7730 descriptor, or
+   * by a module that shows it the same way (e.g. the EIP-2612 permit module).
+   */
   richVisualization?: RichHumanizerVisualization
   warnings?: HumanizerWarning[]
   canHideDropdownArrow?: boolean

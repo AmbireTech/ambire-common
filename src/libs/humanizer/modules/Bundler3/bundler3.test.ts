@@ -148,4 +148,104 @@ describe('Bundler3Module (multicall) short calldata protection', () => {
       [[getAction('Take'), getToken(LOAN_TOKEN, 10n ** 18n), getLabel('loan')]]
     )
   })
+
+  describe('warnings of the actions of the bundle', () => {
+    const STRANGER = '0x9999999999999999999999999999999999999999' as `0x${string}`
+    const OTHER_STRANGER = '0x8888888888888888888888888888888888888888' as `0x${string}`
+    const account = accountOp.accountAddr as `0x${string}`
+    const noHash = `0x${'0'.repeat(64)}` as `0x${string}`
+
+    const getBundleCall = (innerCalls: `0x${string}`[], warnings?: IrCall['warnings']): IrCall => ({
+      to: BUNDLER3,
+      value: 0n,
+      data: encodeFunctionData({
+        abi: multicallAbi,
+        args: [
+          innerCalls.map((innerData) => ({
+            to: VAULT as `0x${string}`,
+            data: innerData,
+            value: 0n,
+            skipRevert: false,
+            callbackHash: noHash
+          }))
+        ]
+      }),
+      warnings
+    })
+
+    const getBorrow = (receiver: `0x${string}`) =>
+      encodeFunctionData({
+        abi: morphoBorrowAbi,
+        args: [marketParams, 10n ** 18n, 0n, 0n, receiver]
+      })
+
+    const getWithdraw = (receiver: `0x${string}`) =>
+      encodeFunctionData({
+        abi: morphoWithdrawCollateralAbi,
+        args: [marketParams, 10n ** 18n, receiver]
+      })
+
+    test('shows the warning when an action is for another address', () => {
+      const irCall = Bundler3Module(accountOp, getBundleCall([getBorrow(STRANGER)]))
+
+      expect(irCall.warnings).toEqual([
+        expect.objectContaining({
+          code: 'Morpho_diff_addr',
+          content: expect.stringContaining(STRANGER)
+        })
+      ])
+    })
+
+    test('shows no warning when every action is for the account', () => {
+      const irCall = Bundler3Module(
+        accountOp,
+        getBundleCall([getBorrow(account), getWithdraw(account)])
+      )
+
+      expect(irCall.warnings).toBeUndefined()
+    })
+
+    test('shows one warning when several actions are for the same other address', () => {
+      const irCall = Bundler3Module(
+        accountOp,
+        getBundleCall([getBorrow(STRANGER), getWithdraw(STRANGER)])
+      )
+
+      expect(irCall.warnings).toHaveLength(1)
+    })
+
+    test('shows a warning for each other address', () => {
+      const irCall = Bundler3Module(
+        accountOp,
+        getBundleCall([getBorrow(STRANGER), getWithdraw(OTHER_STRANGER)])
+      )
+
+      expect(irCall.warnings?.map((warning) => warning.content)).toEqual([
+        expect.stringContaining(STRANGER),
+        expect.stringContaining(OTHER_STRANGER)
+      ])
+    })
+
+    test('keeps a warning the call already had', () => {
+      const earlierWarning = { content: 'An earlier warning', code: 'EARLIER' }
+      const irCall = Bundler3Module(
+        accountOp,
+        getBundleCall([getBorrow(STRANGER)], [earlierWarning])
+      )
+
+      expect(irCall.warnings?.map((warning) => warning.code)).toEqual([
+        'EARLIER',
+        'Morpho_diff_addr'
+      ])
+    })
+
+    test('still shows what the bundle does', () => {
+      const irCall = Bundler3Module(accountOp, getBundleCall([getBorrow(STRANGER)]))
+
+      compareHumanizerVisualizations(
+        [irCall],
+        [[getAction('Take'), getToken(LOAN_TOKEN, 10n ** 18n), getLabel('loan')]]
+      )
+    })
+  })
 })

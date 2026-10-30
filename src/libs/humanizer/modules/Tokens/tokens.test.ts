@@ -5,11 +5,14 @@ import { beforeEach, describe, test } from '@jest/globals'
 import { genericErc20Humanizer, genericErc721Humanizer } from '.'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
-import { compareHumanizerVisualizations } from '../../testHelpers'
+import { compareHumanizerVisualizations, compareRichVisualizations } from '../../testHelpers'
 import {
   getAction,
   getAddressVisualization,
   getLabel,
+  getLegacyVisualization,
+  getRichVisualization,
+  getSingleValueRow,
   getToken,
   getUnlimitedApprovalWarning,
   getWarning,
@@ -207,100 +210,90 @@ describe('Tokens', () => {
     accountOp.calls = []
   })
 
+  const humanizeErc20Calls = (calls: typeof transactions.erc20) =>
+    calls.map((c) =>
+      genericErc20Humanizer({ accountAddr: accountOp.accountAddr, chainId: accountOp.chainId }, c)
+    )
+
+  const getApproveVisualization = (intent: string, amount: bigint) =>
+    getRichVisualization(intent, [
+      getSingleValueRow('Spender', getAddressVisualization(spender)),
+      getSingleValueRow('Amount', getToken(USDT, amount, accountOp.chainId))
+    ])
+
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
-    const irCalls: IrCall[] = accountOp.calls.map((c) =>
-      genericErc20Humanizer({ accountAddr: accountOp.accountAddr }, c)
-    )
+    const irCalls: IrCall[] = humanizeErc20Calls(transactions.erc20)
     const addedValue = 1000000000n
 
-    const expectedHumanization = [
-      [
-        getAction('Grant approval'),
-        getLabel('for'),
-        getToken(USDT, addedValue),
-        getLabel('to'),
-        getAddressVisualization(spender)
-      ],
-      [
-        getAction('Revoke approval'),
-        getToken(USDT, 0n),
-        getLabel('for'),
-        getAddressVisualization(spender)
-      ],
-      [
+    compareRichVisualizations(irCalls, [
+      getApproveVisualization('Approve', addedValue),
+      getApproveVisualization('Revoke approval', 0n),
+      getLegacyVisualization([
         getAction('Increase allowance'),
         getLabel('of'),
         getAddressVisualization(spender),
         getLabel('with'),
         getToken(USDT, addedValue)
-      ],
-      [
+      ]),
+      getLegacyVisualization([
         getAction('Decrease allowance'),
         getLabel('of'),
         getAddressVisualization(spender),
         getLabel('with'),
         getToken(USDT, addedValue)
-      ],
-      [
+      ]),
+      getLegacyVisualization([
         getAction('Increase allowance'),
         getLabel('of'),
         getAddressVisualization(spender),
         getLabel('with'),
         getToken(USDT, addedValue)
-      ],
-      [
+      ]),
+      getLegacyVisualization([
         getAction('Decrease allowance'),
         getLabel('of'),
         getAddressVisualization(spender),
         getLabel('with'),
         getToken(USDT, addedValue)
-      ],
-      [
+      ]),
+      getLegacyVisualization([
         getAction('Take'),
         getToken(USDT, addedValue),
         getLabel('from'),
         getAddressVisualization(spender)
-      ],
-      [
+      ]),
+      getLegacyVisualization([
         getAction('Move'),
         getToken(USDT, addedValue),
         getLabel('from'),
         getAddressVisualization(spender),
         getLabel('to'),
         getAddressVisualization(USDT)
-      ],
-      [
+      ]),
+      getLegacyVisualization([
         getAction('Transfer'),
         getToken(USDT, addedValue),
         getLabel('to'),
         getAddressVisualization(spender)
-      ],
-      [
-        getAction('Send'),
-        getToken(USDT, addedValue),
-        getLabel('to'),
-        getAddressVisualization(spender)
-      ]
-    ]
-
-    compareHumanizerVisualizations(irCalls, expectedHumanization)
+      ]),
+      getRichVisualization('Send', [
+        getSingleValueRow('Amount', getToken(USDT, addedValue, accountOp.chainId)),
+        getSingleValueRow('To', getAddressVisualization(spender))
+      ])
+    ])
   })
 
   test('genericErc20Humanizer with truncated calldata', () => {
     accountOp.calls = [...truncatedTransactions.erc20]
-    const irCalls: IrCall[] = accountOp.calls.map((c) =>
-      genericErc20Humanizer({ accountAddr: accountOp.accountAddr }, c)
-    )
+    const irCalls: IrCall[] = humanizeErc20Calls(truncatedTransactions.erc20)
 
-    compareHumanizerVisualizations(irCalls, [
-      [
-        getAction('Revoke approval'),
-        getToken(USDT, 0n),
-        getLabel('for'),
-        getAddressVisualization(spender)
-      ],
-      [getAction('Send'), getToken(USDT, 0n), getLabel('to'), getAddressVisualization(spender)]
+    compareRichVisualizations(irCalls, [
+      getApproveVisualization('Revoke approval', 0n),
+      getRichVisualization('Send', [
+        getSingleValueRow('Amount', getToken(USDT, 0n, accountOp.chainId)),
+        getSingleValueRow('To', getAddressVisualization(spender))
+      ])
     ])
   })
 

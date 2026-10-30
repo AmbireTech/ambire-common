@@ -3,7 +3,12 @@ import { AbiCoder, ZeroAddress } from 'ethers'
 import { FEE_COLLECTOR } from '../../../../consts/addresses'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getToken, getLegacyVisualization } from '../../utils'
+import {
+  flattenHumanizerVisualization,
+  getAction,
+  getLegacyVisualization,
+  getToken
+} from '../../utils'
 
 export const gasTankModule: HumanizerCallModule = (_: AccountOp, call: IrCall) => {
   // @TODO fix those upper/lowercase
@@ -28,19 +33,17 @@ export const gasTankModule: HumanizerCallModule = (_: AccountOp, call: IrCall) =
     } catch (e) {
       // do nothing
     }
-  } else if (
-    call.fullVisualization?.intent[0]?.content === 'Send' &&
-    call.fullVisualization?.intent[1]?.type === 'token' &&
-    call.fullVisualization?.intent[2]?.content === 'to' &&
-    call.fullVisualization?.intent[3]?.type === 'address' &&
-    call.fullVisualization.intent[3].address!.toLowerCase() === FEE_COLLECTOR.toLowerCase()
-  )
-    return {
-      ...call,
-      fullVisualization: getLegacyVisualization([
-        getAction('Fuel gas tank with'),
-        call.fullVisualization.intent[1]
-      ])
-    }
+  } else if (call.fullVisualization?.intent[0]?.content === 'Send') {
+    // The token and the recipient are in the intent of a flat visualization, and in the rows of a
+    // rich one, so both are read from everything the visualization shows
+    const items = flattenHumanizerVisualization(call.fullVisualization)
+    const token = items.find((item) => item.type === 'token')
+    const recipient = items.find((item) => item.type === 'address')
+    if (token && recipient?.address?.toLowerCase() === FEE_COLLECTOR.toLowerCase())
+      return {
+        ...call,
+        fullVisualization: getLegacyVisualization([getAction('Fuel gas tank with'), token])
+      }
+  }
   return call
 }

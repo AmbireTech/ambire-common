@@ -1,3 +1,4 @@
+import { MaxUint256 } from 'ethers'
 import { getAddress, Hex, isAddress, isHex, zeroAddress } from 'viem'
 
 import {
@@ -204,6 +205,125 @@ export function flattenHumanizerVisualization(
       row.type === 'call' ? flattenHumanizerVisualization(row.value) : [row.value]
     )
   ]
+}
+
+/**
+ * The flat parts of a visualization, for a place that can only show a run of parts: the intent
+ * followed by every row as its label and value (e.g. "Send", "amount", 5 USDC, "to", 0x...).
+ */
+export function getFlatParts(
+  visualization: RichHumanizerVisualization
+): HumanizerVisualizationItem[] {
+  return [
+    ...visualization.intent,
+    ...visualization.fields.flatMap((row) =>
+      row.type === 'call' ? getFlatParts(row.value) : [getLabel(row.label.toLowerCase()), row.value]
+    )
+  ]
+}
+
+/**
+ * A row that shows one labelled value, e.g. "Spender" with an address. The ERC-7730 descriptors
+ * build their rows this way, so a module that returns the same rows looks the same on screen.
+ */
+export function getSingleValueRow(label: string, value: HumanizerVisualizationItem): HumanizerRow {
+  return { type: 'single-value', label, value }
+}
+
+/**
+ * The text shown for a date that is a timestamp in seconds, or null when it is not a valid date.
+ * A timestamp made only of `f` digits (e.g. the maximum value) is how an app asks for "never".
+ */
+export function formatTimestampAsDate(timestamp: bigint): string | null {
+  if (timestamp === MaxUint256) return 'No expiration'
+
+  const hexTimestamp = timestamp.toString(16)
+  const hasOnlyFDigits = [...hexTimestamp].every((char) => char.toLowerCase() === 'f')
+  if (hexTimestamp.length >= 8 && hasOnlyFDigits) return 'No expiration'
+
+  const date = new Date(Number(timestamp) * 1000)
+  if (Number.isNaN(date.getTime())) return null
+
+  return date.toLocaleString()
+}
+
+/**
+ * The code of the warning added when a call sends the native coin (e.g. ETH) that its
+ * visualization does not show.
+ */
+export const NATIVE_VALUE_WARNING_CODE = 'ERC7730_REQUIRES_NATIVE_VALUE'
+
+const hasDisplayedNativeTransactionValue = (
+  visualization: RichHumanizerVisualization,
+  nativeValue: bigint
+) =>
+  flattenHumanizerVisualization(visualization).some(
+    (item) =>
+      item.type === 'token' &&
+      item.address.toLowerCase() === zeroAddress &&
+      item.value === nativeValue
+  )
+
+/**
+ * Adds a "Send" row with the native coin a call sends, unless the visualization already shows that
+ * amount. The coin is sent whatever the call does, so it is a row of its own and not a part of the
+ * intent: the intent keeps describing the action and the row tells that coin goes with it.
+ */
+export function appendNativeValueRow(
+  visualization: RichHumanizerVisualization,
+  nativeValue: bigint,
+  chainId: bigint
+): { fullVisualization: RichHumanizerVisualization; didAppendNativeValueRow: boolean } {
+  if (nativeValue === 0n)
+    return { fullVisualization: visualization, didAppendNativeValueRow: false }
+  if (hasDisplayedNativeTransactionValue(visualization, nativeValue)) {
+    return { fullVisualization: visualization, didAppendNativeValueRow: false }
+  }
+
+  return {
+    fullVisualization: {
+      ...visualization,
+      fields: [
+        ...visualization.fields,
+        getSingleValueRow('Send', getToken(zeroAddress, nativeValue, chainId))
+      ]
+    },
+    didAppendNativeValueRow: true
+  }
+}
+
+/**
+ * The warning for a call that sends the native coin. Without the name of the coin (a module does
+ * not know it) the text names it in a general way.
+ */
+export function getNativeValueWarning(nativeAssetSymbol?: string): HumanizerWarning {
+  return getWarning(
+    nativeAssetSymbol
+      ? `This transaction will send ${nativeAssetSymbol}`
+      : "This transaction will also send the network's main currency (for example ETH)",
+    NATIVE_VALUE_WARNING_CODE
+  )
+}
+
+/**
+ * `appendNativeValueRow` for a module, with the warning that goes with the row. `humanizeAccountOp`
+ * words the warning with the name of the coin when it knows it.
+ */
+export function showNativeValueOfCall(
+  visualization: RichHumanizerVisualization,
+  nativeValue: bigint,
+  chainId: bigint
+): { fullVisualization: RichHumanizerVisualization; warnings: HumanizerWarning[] } {
+  const { fullVisualization, didAppendNativeValueRow } = appendNativeValueRow(
+    visualization,
+    nativeValue,
+    chainId
+  )
+
+  return {
+    fullVisualization,
+    warnings: didAppendNativeValueRow ? [getNativeValueWarning()] : []
+  }
 }
 
 export function hasErc7730Humanization(humanization?: IrCall[]): boolean {

@@ -74,6 +74,76 @@ describe('Erc7730Controller', () => {
     expect(callRelayer).not.toHaveBeenCalled()
   })
 
+  describe('token calls', () => {
+    const TOKEN = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+    const SPENDER = '0x46705dfff24256421a05d056c29e81bdc09723b8'
+    const word = (value: string) => value.replace('0x', '').padStart(64, '0')
+    const tokenAccountOp = {
+      chainId: 1n,
+      calls: [
+        { to: TOKEN, value: 0n, data: `0x095ea7b3${word(SPENDER)}${word('0x5')}` },
+        { to: TOKEN, value: 0n, data: `0xa9059cbb${word(SPENDER)}${word('0x5')}` }
+      ]
+    } as AccountOp
+
+    const makeProvider = () => ({
+      getCode: jest.fn(async () => '0x'),
+      getStorage: jest.fn(async () => `0x${'0'.repeat(64)}`)
+    })
+
+    // A token has no built-in descriptor, so for one with no registered descriptor the Safe proxy
+    // check reads the chain. The opt-out has to stop that, as well as the relayer requests.
+    test('make no relayer or provider requests when clear signing is disabled', async () => {
+      const callRelayer = makeCallRelayer()
+      const provider = makeProvider()
+      const controller = makeController(makeStorage(), callRelayer, makeFeatureFlags(false), {
+        providers: { '1': provider },
+        initialLoadPromise: undefined
+      })
+
+      await expect(controller.getDescriptorsForAccountOp(tokenAccountOp)).resolves.toEqual({})
+      expect(callRelayer).not.toHaveBeenCalled()
+      expect(provider.getCode).not.toHaveBeenCalled()
+      expect(provider.getStorage).not.toHaveBeenCalled()
+    })
+
+    test('make no provider requests when the UI asks for the descriptors and clear signing is disabled', async () => {
+      const callRelayer = makeCallRelayer()
+      const provider = makeProvider()
+      const sendUiMessage = jest.fn()
+      const controller = new Erc7730Controller({
+        storage: makeStorage(),
+        callRelayer,
+        featureFlags: makeFeatureFlags(false),
+        providers: { providers: { '1': provider }, initialLoadPromise: undefined } as any,
+        ui: makeUi(sendUiMessage)
+      })
+
+      await controller.resolveDescriptorsForAccountOp(tokenAccountOp, 'request-id')
+
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-id', ok: true, res: {} })
+      expect(callRelayer).not.toHaveBeenCalled()
+      expect(provider.getCode).not.toHaveBeenCalled()
+      expect(provider.getStorage).not.toHaveBeenCalled()
+    })
+
+    // The control for the two tests above: with clear signing enabled the same calls do read the
+    // chain, once for the token address, so those tests would fail if the opt-out stopped working.
+    test('read the chain once for the token when clear signing is enabled', async () => {
+      const callRelayer = makeCallRelayer()
+      const provider = makeProvider()
+      const controller = makeController(makeStorage(), callRelayer, makeFeatureFlags(true), {
+        providers: { '1': provider },
+        initialLoadPromise: undefined
+      })
+
+      await controller.getDescriptorsForAccountOp(tokenAccountOp)
+
+      expect(provider.getCode).toHaveBeenCalledTimes(1)
+      expect(provider.getStorage).toHaveBeenCalledTimes(1)
+    })
+  })
+
   test('does not make relayer or provider requests for messages when clear signing is disabled', async () => {
     const callRelayer = makeCallRelayer()
     const provider = { getStorage: jest.fn() }
