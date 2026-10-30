@@ -1,6 +1,7 @@
 import {
   ScoredAddressPoisoningMatch,
   getAddressPoisoningMatchCounts,
+  isNearIdenticalAddressMatch,
   pickBetterPoisoningMatch
 } from './address-poisoning'
 
@@ -8,38 +9,103 @@ describe('address poisoning helpers', () => {
   describe('getAddressPoisoningMatchCounts', () => {
     const trustedAddress = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
 
-    test('should detect various overlap shapes and reject totals below 8', () => {
+    test('should detect various overlap shapes and reject totals below 6', () => {
       expect(
         getAddressPoisoningMatchCounts('0xF0cDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB', trustedAddress)
-      ).toEqual({ matchedPrefixCharsCount: 4, matchedSuffixCharsCount: 4 })
+      ).toMatchObject({ matchedPrefixCharsCount: 4, matchedSuffixCharsCount: 4 })
 
       expect(
         getAddressPoisoningMatchCounts('0xF0cD7bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb237DB', trustedAddress)
-      ).toEqual({ matchedPrefixCharsCount: 5, matchedSuffixCharsCount: 5 })
+      ).toMatchObject({ matchedPrefixCharsCount: 5, matchedSuffixCharsCount: 5 })
 
       expect(
         getAddressPoisoningMatchCounts('0xF0cD72ccccccccccccccccccccccccccccc237DB', trustedAddress)
-      ).toEqual({ matchedPrefixCharsCount: 6, matchedSuffixCharsCount: 5 })
+      ).toMatchObject({ matchedPrefixCharsCount: 6, matchedSuffixCharsCount: 5 })
 
       expect(
         getAddressPoisoningMatchCounts('0xF0cDdddddddddddddddddddddddddddd793237DB', trustedAddress)
-      ).toEqual({ matchedPrefixCharsCount: 4, matchedSuffixCharsCount: 8 })
+      ).toMatchObject({ matchedPrefixCharsCount: 4, matchedSuffixCharsCount: 8 })
 
       expect(
         getAddressPoisoningMatchCounts('0xF0ceeeeeeeeeeeeeeeeeeeeeeeeeeeee793237DB', trustedAddress)
-      ).toEqual({ matchedPrefixCharsCount: 3, matchedSuffixCharsCount: 8 })
+      ).toMatchObject({ matchedPrefixCharsCount: 3, matchedSuffixCharsCount: 8 })
 
       expect(
         getAddressPoisoningMatchCounts('0xAb12ffffffffffffffffffffffffffff793237DB', trustedAddress)
-      ).toEqual({ matchedPrefixCharsCount: 0, matchedSuffixCharsCount: 8 })
+      ).toMatchObject({ matchedPrefixCharsCount: 0, matchedSuffixCharsCount: 8 })
 
       expect(
         getAddressPoisoningMatchCounts('0xF0caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB', trustedAddress)
+      ).toMatchObject({ matchedPrefixCharsCount: 3, matchedSuffixCharsCount: 4 })
+
+      expect(
+        getAddressPoisoningMatchCounts('0xF0caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa7DB', trustedAddress)
+      ).toMatchObject({ matchedPrefixCharsCount: 3, matchedSuffixCharsCount: 3 })
+
+      expect(
+        getAddressPoisoningMatchCounts('0xF0caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaDB', trustedAddress)
       ).toBeNull()
 
       expect(
         getAddressPoisoningMatchCounts('0xAb12eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeCDef', trustedAddress)
       ).toBeNull()
+    })
+
+    test('should catch the 4-left / 3-right lookalike from the ScamSniffer report', () => {
+      expect(
+        getAddressPoisoningMatchCounts(
+          '0xF0e6A49668dE1195B931A3717c9cc36fc19721aF',
+          '0xF0e67A1896E814E30c011e36174de28CAA9Ab1aF'
+        )
+      ).toMatchObject({ matchedPrefixCharsCount: 4, matchedSuffixCharsCount: 3 })
+    })
+
+    test('should count the differing chars and flag near-identical addresses', () => {
+      const oneCharTypo = getAddressPoisoningMatchCounts(
+        '0xf0cd725d2195b1d3f4bd138c3786005b793237db',
+        trustedAddress
+      )
+      expect(oneCharTypo).toEqual({
+        matchedPrefixCharsCount: 20,
+        matchedSuffixCharsCount: 19,
+        differingCharsCount: 1
+      })
+
+      // The typos are near the edges, so the prefix/suffix overlap alone (2 + 2) is too short
+      const twoCharsTypoNearEdges = getAddressPoisoningMatchCounts(
+        '0xf00d725d2195b1d3f4bd038c3786005b793230db',
+        trustedAddress
+      )
+      expect(twoCharsTypoNearEdges).toEqual({
+        matchedPrefixCharsCount: 2,
+        matchedSuffixCharsCount: 2,
+        differingCharsCount: 2
+      })
+      expect(
+        isNearIdenticalAddressMatch({ matchedAddress: trustedAddress, ...twoCharsTypoNearEdges! })
+      ).toBe(true)
+
+      const threeCharsTypo = getAddressPoisoningMatchCounts(
+        '0xf0cd705d2195b1d3f4bd138c3786000b793237db',
+        trustedAddress
+      )
+      expect(threeCharsTypo).toMatchObject({ differingCharsCount: 3 })
+      expect(
+        isNearIdenticalAddressMatch({ matchedAddress: trustedAddress, ...threeCharsTypo! })
+      ).toBe(true)
+
+      const fourCharsTypo = getAddressPoisoningMatchCounts(
+        '0xf0cd705d2195b1d0f4bd038c3086005b793037db',
+        trustedAddress
+      )
+      expect(fourCharsTypo).toEqual({
+        matchedPrefixCharsCount: 5,
+        matchedSuffixCharsCount: 4,
+        differingCharsCount: 4
+      })
+      expect(
+        isNearIdenticalAddressMatch({ matchedAddress: trustedAddress, ...fourCharsTypo! })
+      ).toBe(false)
     })
 
     test('should return null for invalid addresses', () => {
@@ -59,11 +125,13 @@ describe('address poisoning helpers', () => {
       matchedAddress: string,
       matchedPrefixCharsCount: number,
       matchedSuffixCharsCount: number,
-      lastInteractedAt: number | null
+      lastInteractedAt: number | null,
+      differingCharsCount = 30
     ): ScoredAddressPoisoningMatch => ({
       matchedAddress,
       matchedPrefixCharsCount,
       matchedSuffixCharsCount,
+      differingCharsCount,
       lastInteractedAt
     })
 
@@ -87,6 +155,19 @@ describe('address poisoning helpers', () => {
     test('should prefer more recent interaction as final tie breaker', () => {
       const best = match('0x6000000000000000000000000000000000000006', 4, 4, 100)
       const candidate = match('0x7000000000000000000000000000000000000007', 4, 4, 200)
+      expect(pickBetterPoisoningMatch(best, candidate)).toEqual(candidate)
+    })
+
+    test('should prefer a near-identical match over a stronger poisoning match', () => {
+      const best = match('0xB00000000000000000000000000000000000000B', 6, 6, 500)
+      const candidate = match('0xC00000000000000000000000000000000000000C', 2, 2, 100, 2)
+      expect(pickBetterPoisoningMatch(best, candidate)).toEqual(candidate)
+      expect(pickBetterPoisoningMatch(candidate, best)).toEqual(candidate)
+    })
+
+    test('should prefer fewer differing chars between near-identical matches', () => {
+      const best = match('0xD00000000000000000000000000000000000000D', 30, 7, 500, 3)
+      const candidate = match('0xE00000000000000000000000000000000000000E', 10, 2, 100, 1)
       expect(pickBetterPoisoningMatch(best, candidate)).toEqual(candidate)
     })
 

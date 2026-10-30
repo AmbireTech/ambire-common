@@ -39,6 +39,8 @@ export type AddressPoisoningMatch = {
   // We keep them separate because poisoning lookalikes are not always symmetric (e.g. 3-left, 6-right).
   matchedPrefixCharsCount: number
   matchedSuffixCharsCount: number
+  // Number of positions where the address body differs. A very low count means a likely typo.
+  differingCharsCount: number
 }
 
 export type AmountAdjustmentInfo = {
