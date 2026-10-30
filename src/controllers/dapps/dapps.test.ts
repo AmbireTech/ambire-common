@@ -15,7 +15,10 @@ import { DAPP_SILENCE_DURATION } from '../../consts/safeguards/dappRequestSpam'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp'
 import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
+import * as ensContenthashModule from '../../services/ensDomains/ensContenthash'
+import { EnsWebsiteContentUpdate } from '../../services/ensDomains/ensContenthash'
 import { PhishingController } from '../phishing/phishing'
+import { WEBSITE_CONTENT_UPDATE_TIMEOUT_MS } from './dapps'
 
 const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
 const NOW = 1_700_000_000_000
@@ -1913,6 +1916,272 @@ describe('DappsController', () => {
       emitUpdateSpy.mockRestore()
     })
 
+    test('follows the wallet again once it switches to another account the dapp may see after one was picked for the dapp', async () => {
+      const dappId = 'pinned-dapp.com'
+      const { controller } = await prepareWithDapps([
+        makeDapp({
+          id: dappId,
+          name: 'Pinned Dapp',
+          url: `https://${dappId}`,
+          isConnected: true,
+          accountPreferences: {
+            enabled: true,
+            selectedAccount: ADDR_1,
+            accounts: [ADDR_1, ADDR_2],
+            isSelectedAccountPinned: true
+          }
+        })
+      ])
+
+      await controller.getOrCreateDappSession({ tabId: 1, url: `https://${dappId}` })
+
+      const broadcastSpy = jest
+        .spyOn(controller, 'broadcastDappSessionEvent')
+        .mockResolvedValue(undefined)
+
+      await controller.onSelectedAccountChange(ADDR_2)
+
+      const preferences = controller.getDapp(dappId)!.accountPreferences!
+      expect(preferences.selectedAccount).toBe(ADDR_2)
+      expect(preferences.isSelectedAccountPinned).toBe(false)
+      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_2, ADDR_1], dappId, true)
+      broadcastSpy.mockRestore()
+    })
+
+    test('keeps the account picked for a dapp when the wallet switches to one the dapp may not see', async () => {
+      const dappId = 'pinned-hidden-dapp.com'
+      const { controller } = await prepareWithDapps([
+        makeDapp({
+          id: dappId,
+          name: 'Pinned Hidden Dapp',
+          url: `https://${dappId}`,
+          isConnected: true,
+          accountPreferences: {
+            enabled: true,
+            selectedAccount: ADDR_2,
+            accounts: [ADDR_1, ADDR_2],
+            isSelectedAccountPinned: true
+          }
+        })
+      ])
+
+      await controller.getOrCreateDappSession({ tabId: 1, url: `https://${dappId}` })
+
+      const broadcastSpy = jest
+        .spyOn(controller, 'broadcastDappSessionEvent')
+        .mockResolvedValue(undefined)
+
+      await controller.onSelectedAccountChange(ADDR_3)
+
+      const preferences = controller.getDapp(dappId)!.accountPreferences!
+      expect(preferences.selectedAccount).toBe(ADDR_2)
+      expect(preferences.isSelectedAccountPinned).toBe(true)
+      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_2, ADDR_1], dappId, true)
+      broadcastSpy.mockRestore()
+    })
+
+    test('unpins the account picked for a dapp that is not open only when the wallet switches to an account it may see', async () => {
+      const pinnedDappId = 'pinned-closed-dapp.com'
+      const pinnedHiddenDappId = 'pinned-hidden-closed-dapp.com'
+      const otherDappId = 'unpinned-closed-dapp.com'
+      const otherPreferences = { enabled: true, selectedAccount: ADDR_1, accounts: [ADDR_1] }
+      const { controller } = await prepareWithDapps([
+        makeDapp({
+          id: pinnedDappId,
+          name: 'Pinned Closed Dapp',
+          url: `https://${pinnedDappId}`,
+          isConnected: true,
+          accountPreferences: {
+            enabled: true,
+            selectedAccount: ADDR_1,
+            accounts: [ADDR_1, ADDR_2],
+            isSelectedAccountPinned: true
+          }
+        }),
+        makeDapp({
+          id: pinnedHiddenDappId,
+          name: 'Pinned Hidden Closed Dapp',
+          url: `https://${pinnedHiddenDappId}`,
+          isConnected: true,
+          accountPreferences: {
+            enabled: true,
+            selectedAccount: ADDR_1,
+            accounts: [ADDR_1, ADDR_3],
+            isSelectedAccountPinned: true
+          }
+        }),
+        makeDapp({
+          id: otherDappId,
+          name: 'Unpinned Closed Dapp',
+          url: `https://${otherDappId}`,
+          isConnected: true,
+          accountPreferences: otherPreferences
+        })
+      ])
+
+      await controller.onSelectedAccountChange(ADDR_2)
+
+      expect(controller.getDapp(pinnedDappId)!.accountPreferences!.isSelectedAccountPinned).toBe(
+        false
+      )
+      expect(
+        controller.getDapp(pinnedHiddenDappId)!.accountPreferences!.isSelectedAccountPinned
+      ).toBe(true)
+      expect(controller.getDapp(otherDappId)!.accountPreferences).toEqual(otherPreferences)
+    })
+
+    test('unpins the account picked for a dapp once it is removed', async () => {
+      const dappId = 'pinned-removed-dapp.com'
+      const { controller } = await prepareWithDapps([
+        makeDapp({
+          id: dappId,
+          name: 'Pinned Removed Dapp',
+          url: `https://${dappId}`,
+          isConnected: true,
+          accountPreferences: {
+            enabled: true,
+            selectedAccount: ADDR_1,
+            accounts: [ADDR_1, ADDR_2, ADDR_3],
+            isSelectedAccountPinned: true
+          }
+        })
+      ])
+
+      controller.removeAccountData(ADDR_3)
+      expect(controller.getDapp(dappId)!.accountPreferences!.isSelectedAccountPinned).toBe(true)
+
+      controller.removeAccountData(ADDR_1)
+      const preferences = controller.getDapp(dappId)!.accountPreferences!
+      expect(preferences.selectedAccount).toBe(ADDR_2)
+      expect(preferences.isSelectedAccountPinned).toBe(false)
+    })
+
+    test('drops the preferences once the dapp may see every account, so it also sees the accounts added later', async () => {
+      const dappId = 'show-all-dapp.com'
+      const { controller } = await prepareWithDapps([
+        makeDapp({
+          id: dappId,
+          name: 'Show All Dapp',
+          url: `https://${dappId}`,
+          isConnected: true,
+          accountPreferences: { enabled: true, selectedAccount: ADDR_2, accounts: [ADDR_2] }
+        })
+      ])
+
+      const broadcastSpy = jest
+        .spyOn(controller, 'broadcastDappSessionEvent')
+        .mockResolvedValue(undefined)
+
+      controller.updateDapp(dappId, {
+        accountPreferences: {
+          enabled: false,
+          selectedAccount: ADDR_2,
+          accounts: [ADDR_1, ADDR_2, ADDR_3]
+        }
+      })
+
+      const dapp = controller.getDapp(dappId)!
+      expect(dapp.accountPreferences).toBeUndefined()
+      expect(dapp.isConnected).toBe(true)
+      // Follows the wallet's account instead of the one it used last
+      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_1], dappId, true)
+      broadcastSpy.mockRestore()
+    })
+
+    test('keeps the preferences of a dapp that may see every account while an account is pinned for it', async () => {
+      const dappId = 'show-all-pinned-dapp.com'
+      const { controller } = await prepareWithDapps([
+        makeDapp({ id: dappId, name: 'Pinned Dapp', url: `https://${dappId}`, isConnected: true })
+      ])
+      const preferences = {
+        enabled: false,
+        selectedAccount: ADDR_2,
+        accounts: [ADDR_2],
+        isSelectedAccountPinned: true
+      }
+
+      const broadcastSpy = jest
+        .spyOn(controller, 'broadcastDappSessionEvent')
+        .mockResolvedValue(undefined)
+
+      controller.updateDapp(dappId, { accountPreferences: preferences })
+
+      expect(controller.getDapp(dappId)!.accountPreferences).toEqual(preferences)
+      expect(broadcastSpy).toHaveBeenCalledWith('accountsChanged', [ADDR_2], dappId, true)
+      broadcastSpy.mockRestore()
+    })
+
+    test('drops the preferences of a dapp that may see every account once its pinned account is unpinned', async () => {
+      const dappId = 'unpinned-show-all-dapp.com'
+      const { controller } = await prepareWithDapps([
+        makeDapp({
+          id: dappId,
+          name: 'Unpinned Dapp',
+          url: `https://${dappId}`,
+          isConnected: true,
+          accountPreferences: {
+            enabled: false,
+            selectedAccount: ADDR_1,
+            accounts: [ADDR_1],
+            isSelectedAccountPinned: true
+          }
+        })
+      ])
+
+      await controller.onSelectedAccountChange(ADDR_3)
+
+      expect(controller.getDapp(dappId)!.accountPreferences).toBeUndefined()
+    })
+
+    test('keeps a dapp that may see every account connected once its pinned account is removed', async () => {
+      const dappId = 'removed-pinned-show-all-dapp.com'
+      const { controller } = await prepareWithDapps([
+        makeDapp({
+          id: dappId,
+          name: 'Removed Pinned Dapp',
+          url: `https://${dappId}`,
+          isConnected: true,
+          accountPreferences: {
+            enabled: false,
+            selectedAccount: ADDR_2,
+            accounts: [ADDR_2],
+            isSelectedAccountPinned: true
+          }
+        })
+      ])
+
+      controller.removeAccountData(ADDR_3)
+      expect(controller.getDapp(dappId)!.accountPreferences!.isSelectedAccountPinned).toBe(true)
+
+      controller.removeAccountData(ADDR_2)
+      const dapp = controller.getDapp(dappId)!
+      expect(dapp.isConnected).toBe(true)
+      expect(dapp.accountPreferences).toBeUndefined()
+    })
+
+    test('drops the preferences of the dapp to connect once it may see every account', async () => {
+      const dappId = 'connecting-dapp.com'
+      const { controller } = await prepareWithDapps([])
+      controller.dappToConnect = makeDapp({
+        id: dappId,
+        name: 'Connecting Dapp',
+        url: `https://${dappId}`
+      })
+      const limitedPreferences = { enabled: true, selectedAccount: ADDR_1, accounts: [ADDR_1] }
+
+      controller.updateDappToConnect(dappId, { accountPreferences: limitedPreferences })
+      expect(controller.dappToConnect!.accountPreferences).toEqual(limitedPreferences)
+
+      controller.updateDappToConnect(dappId, {
+        accountPreferences: {
+          enabled: false,
+          selectedAccount: ADDR_1,
+          accounts: [ADDR_1, ADDR_2, ADDR_3]
+        }
+      })
+      expect(controller.dappToConnect!.accountPreferences).toBeUndefined()
+    })
+
     test('mainCtrl.selectAccount delegates to onSelectedAccountChange; removeAccount calls dapps.removeAccountData', async () => {
       const { mainCtrl } = await prepareWithDapps([])
 
@@ -2253,6 +2522,7 @@ describe('DappsController', () => {
     // Stored after the storage migrations ran, so this is a record the missing-ids migration
     // never saw. It used to make #load throw and leave the controller loading forever.
     test('skips and reports a stored dapp without an id instead of failing the load', async () => {
+      const { restore } = suppressConsole()
       const valid = makeDapp({
         id: 'valid-dapp.com',
         name: 'Valid Dapp',
@@ -2287,6 +2557,7 @@ describe('DappsController', () => {
       expect(loadErrors).toHaveLength(1)
       expect(loadErrors[0]!.level).toBe('silent')
       expect(loadErrors[0]!.error!.message).toContain('skipped 1 stored dapp(s)')
+      restore()
     })
 
     test('disconnectDappSource removes only the targeted source', async () => {
@@ -2743,15 +3014,24 @@ describe('DappsController', () => {
         expect(Number.isFinite(token.priceUSD)).toBe(true)
       })
 
-      // The market data and the icon the trending list and the token-details screen render must
-      // arrive for the first (most trending) token at the very least.
+      // The icon and the price the trending list renders must arrive for the first (most
+      // trending) token at the very least.
       const [topToken] = controller.trendingTokens
       expect(topToken!.icon.startsWith('http')).toBe(true)
       expect(topToken!.priceUSD).toBeGreaterThan(0)
-      expect(topToken!.priceChange24hUSD).not.toBeNull()
-      expect(topToken!.marketCapUSD).not.toBeNull()
-      expect(topToken!.totalVolumeUSD).not.toBeNull()
-      expect(topToken!.marketCapRank).not.toBeNull()
+
+      // CoinGecko has no market data yet for some newly listed tokens, so any single token can
+      // miss it. A field missing on every token means the response structure changed.
+      const marketDataFields = [
+        'priceChange24hUSD',
+        'marketCapUSD',
+        'totalVolumeUSD',
+        'marketCapRank'
+      ] as const
+      const missingMarketDataFields = marketDataFields.filter((field) =>
+        controller.trendingTokens.every((token) => token[field] === null)
+      )
+      expect(missingMarketDataFields).toEqual([])
     }, 40000)
   })
   describe('deferred init', () => {
@@ -2854,7 +3134,7 @@ describe('DappsController', () => {
   // Auto-login signs while an app's status reads LOADING, so a catalog rebuild - which recreates
   // every catalog app as LOADING - must not leave a window where a request can see that status.
   describe('scam check during an app catalog rebuild', () => {
-    const SCAM_CHECKER_DOMAINS_URL = 'https://cena.ambire.com/api/v3/scamchecker/domains'
+    const SCAM_CHECKER_URL = 'https://cena.ambire.com/api/v3/scamchecker'
     const AAVE_ID = 'aave.com'
 
     // CI runs with IS_TESTING, which makes the phishing check skip both the local list and the
@@ -2901,7 +3181,7 @@ describe('DappsController', () => {
     }
 
     const rebuildCatalogWhileSampling = async (localPhishingDomains: string[]) => {
-      const scamCheckerRequestedDomains: string[] = []
+      const scamCheckerRequestedUrls: string[] = []
       const { controller, mainCtrl } = await prepareTest(
         async (storageCtrl) => {
           await storageCtrl.set('dappsV2', [
@@ -2924,25 +3204,25 @@ describe('DappsController', () => {
             })
           }
         },
-        async (url: string, options?: { body?: string }) => {
+        async (url: string) => {
           if (url === 'https://api.llama.fi/protocols') {
             return { ok: true, status: 200, json: async () => mockDapps }
           }
           if (url === 'https://api.llama.fi/v2/chains') {
             return { ok: true, status: 200, json: async () => mockChains }
           }
-          if (url === SCAM_CHECKER_DOMAINS_URL) {
-            const { domains } = JSON.parse(options?.body || '{}') as { domains: string[] }
-            scamCheckerRequestedDomains.push(...domains)
+          if (url.startsWith(SCAM_CHECKER_URL)) {
+            scamCheckerRequestedUrls.push(url)
             // A real network round trip, during which other code gets to run
             await new Promise((resolve) => {
               setTimeout(resolve, 20)
             })
+            // The public phishing list, which has the app on it
             return {
               ok: true,
               status: 200,
-              json: async () =>
-                Object.fromEntries(domains.map((domain) => [domain, domain === AAVE_ID]))
+              url,
+              json: async () => ({ version: 1, domains: [AAVE_ID], addresses: [] })
             }
           }
 
@@ -2951,35 +3231,280 @@ describe('DappsController', () => {
         true
       )
 
+      // makeMainController stubs the list update out, but with no stored list it is what answers
+      if (!localPhishingDomains.length) {
+        ;(
+          mainCtrl.phishing.continuouslyUpdatePhishing as unknown as jest.SpiedFunction<
+            typeof mainCtrl.phishing.continuouslyUpdatePhishing
+          >
+        ).mockRestore()
+      }
+
       const sampler = startStatusSampler(() => controller.getDapp(AAVE_ID)?.blacklisted)
       // The local phishing list is read from storage long before the catalog finishes downloading
       await mainCtrl.phishing.init()
       await controller.init()
       await controller.fetchAndUpdatePromise
+      // The checks that waited for the downloaded list finish after the catalog does
+      await mainCtrl.phishing.updatePhishingInterval.promise
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve)
+      })
       await sampler.stop()
+      mainCtrl.phishing.updatePhishingInterval.stop()
 
-      return { controller, seenStatuses: sampler.seenStatuses, scamCheckerRequestedDomains }
+      return { controller, seenStatuses: sampler.seenStatuses, scamCheckerRequestedUrls }
     }
 
     test('an app checked against the local phishing list is never seen as LOADING', async () => {
-      const { controller, seenStatuses, scamCheckerRequestedDomains } =
+      const { controller, seenStatuses, scamCheckerRequestedUrls } =
         await rebuildCatalogWhileSampling([AAVE_ID])
 
       // The catalog was really rebuilt from the downloaded list
       expect(controller.dapps.some((d) => d.name === 'Lido')).toBe(true)
-      expect(scamCheckerRequestedDomains).toEqual([])
+      expect(scamCheckerRequestedUrls).toEqual([])
       expect(seenStatuses.has('LOADING')).toBe(false)
       expect(controller.getDapp(AAVE_ID)?.blacklisted).toBe('BLACKLISTED')
     })
 
     // Control: proves the sampler does catch LOADING when there is a window to catch
-    test('an app is seen as LOADING while the scam checker is asked, when the local list is empty', async () => {
-      const { controller, seenStatuses, scamCheckerRequestedDomains } =
+    test('an app is seen as LOADING until the phishing list is downloaded, and its domain is never sent', async () => {
+      const { controller, seenStatuses, scamCheckerRequestedUrls } =
         await rebuildCatalogWhileSampling([])
 
-      expect(scamCheckerRequestedDomains).toContain(AAVE_ID)
+      // Only the public list was downloaded
+      expect(scamCheckerRequestedUrls).toEqual([`${SCAM_CHECKER_URL}/data`])
       expect(seenStatuses.has('LOADING')).toBe(true)
       expect(controller.getDapp(AAVE_ID)?.blacklisted).toBe('BLACKLISTED')
+      expect(
+        controller.dapps.every((dapp) => dapp.blacklisted !== 'LOADING' || dapp.isConnected)
+      ).toBe(true)
+    })
+  })
+
+  describe('website content update of the app to connect', () => {
+    const makeConnectRequest = (url: string, tabId = 1): DappConnectRequest => ({
+      id: tabId,
+      kind: 'dappConnect',
+      meta: { params: {} },
+      dappPromises: [
+        {
+          id: '',
+          resolve: () => {},
+          reject: () => {},
+          meta: {},
+          session: new Session({ tabId, url })
+        }
+      ]
+    })
+
+    const prepareContentUpdateTest = async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.initialLoadPromise
+      return controller
+    }
+
+    const makeContentUpdate = (updatedAt: number): EnsWebsiteContentUpdate => ({
+      updatedAt,
+      contenthash: '0xe30101701220aaaa',
+      checkedAtBlock: 25_000_000
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+      jest.useRealTimers()
+    })
+
+    test('loads when the website of an app served from an ENS name was last updated', async () => {
+      const updatedAt = NOW - 2 * 24 * 60 * 60 * 1000
+      let resolveContentUpdate: (value: EnsWebsiteContentUpdate) => void = () => {}
+      const contentUpdateSpy = jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveContentUpdate = resolve
+            })
+        )
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({ status: 'LOADING' })
+      expect(contentUpdateSpy).toHaveBeenCalledWith(expect.anything(), 'tornadocash.eth', {
+        previousUpdate: undefined,
+        signal: expect.any(AbortSignal)
+      })
+
+      resolveContentUpdate(makeContentUpdate(updatedAt))
+      await wait(1)
+
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({ status: 'LOADED', updatedAt })
+      // Not part of the app record, so it never gets persisted with it on connect
+      expect(controller.dappToConnect).not.toHaveProperty('websiteContentUpdate')
+    })
+
+    test('stays empty for apps not served from an ENS name', async () => {
+      const contentUpdateSpy = jest.spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://app.uniswap.org'))
+      await wait(1)
+
+      expect(controller.dappToConnectWebsiteContentUpdate).toBeNull()
+      expect(contentUpdateSpy).not.toHaveBeenCalled()
+    })
+
+    test('stays empty when the ENS name does not point to content with a known update time', async () => {
+      jest.spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate').mockResolvedValue(null)
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://app.uniswap.eth.limo'))
+      await wait(1)
+
+      expect(controller.dappToConnectWebsiteContentUpdate).toBeNull()
+    })
+
+    test('reports a failure without breaking the connection request', async () => {
+      const { restore } = suppressConsole(true)
+      jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockRejectedValue(new Error('rate limited'))
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await wait(1)
+
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({ status: 'FAILED' })
+      expect(controller.dappToConnect?.id).toBe('tornadocash.eth.limo')
+      restore()
+    })
+
+    test('SECURITY: a late result for a previous app never shows on the next app', async () => {
+      let resolveFirstContentUpdate: (value: EnsWebsiteContentUpdate) => void = () => {}
+      jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirstContentUpdate = resolve
+            })
+        )
+        .mockImplementationOnce(() => new Promise(() => {}))
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await controller.setDappToConnectIfNeeded(null)
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://vitalik.eth.limo', 2))
+
+      // The old app's content has not changed in years, the new app's is still loading
+      resolveFirstContentUpdate(makeContentUpdate(0))
+      await wait(1)
+
+      expect(controller.dappToConnect?.id).toBe('vitalik.eth.limo')
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({ status: 'LOADING' })
+    })
+
+    test('is cleared once there is no app to connect', async () => {
+      jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockResolvedValue(makeContentUpdate(NOW))
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await wait(1)
+      await controller.setDappToConnectIfNeeded(null)
+
+      expect(controller.dappToConnectWebsiteContentUpdate).toBeNull()
+    })
+
+    test('continues from the previous result when connecting to the same app again', async () => {
+      const firstUpdate = makeContentUpdate(NOW - 1000)
+      const contentUpdateSpy = jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockResolvedValueOnce(firstUpdate)
+        .mockResolvedValueOnce({ ...firstUpdate, checkedAtBlock: 25_000_100 })
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await wait(1)
+      await controller.setDappToConnectIfNeeded(null)
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await wait(1)
+
+      expect(contentUpdateSpy).toHaveBeenLastCalledWith(expect.anything(), 'tornadocash.eth', {
+        previousUpdate: firstUpdate,
+        signal: expect.any(AbortSignal)
+      })
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({
+        status: 'LOADED',
+        updatedAt: firstUpdate.updatedAt
+      })
+    })
+
+    test('never passes the previous result of one app to another', async () => {
+      const contentUpdateSpy = jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockResolvedValue(makeContentUpdate(NOW))
+      const controller = await prepareContentUpdateTest()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await wait(1)
+      await controller.setDappToConnectIfNeeded(null)
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://vitalik.eth.limo', 2))
+      await wait(1)
+
+      expect(contentUpdateSpy).toHaveBeenLastCalledWith(expect.anything(), 'vitalik.eth', {
+        previousUpdate: undefined,
+        signal: expect.any(AbortSignal)
+      })
+    })
+
+    test('forgets the previous result once the app no longer has a known update time', async () => {
+      const contentUpdateSpy = jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockResolvedValueOnce(makeContentUpdate(NOW))
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+      const controller = await prepareContentUpdateTest()
+
+      for (let i = 0; i < 3; i++) {
+        await controller.setDappToConnectIfNeeded(
+          makeConnectRequest('https://tornadocash.eth.limo')
+        )
+        await wait(1)
+        await controller.setDappToConnectIfNeeded(null)
+      }
+
+      expect(contentUpdateSpy).toHaveBeenLastCalledWith(expect.anything(), 'tornadocash.eth', {
+        previousUpdate: undefined,
+        signal: expect.any(AbortSignal)
+      })
+    })
+
+    test('shows that it could not check and stops the search once it takes too long', async () => {
+      const { restore } = suppressConsole(true)
+      let searchSignal: AbortSignal | null | undefined
+      jest
+        .spyOn(ensContenthashModule, 'getEnsWebsiteContentUpdate')
+        .mockImplementation((_provider, _ensName, { signal } = {}) => {
+          searchSignal = signal
+          return new Promise(() => {})
+        })
+      const controller = await prepareContentUpdateTest()
+      jest.useFakeTimers()
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest('https://tornadocash.eth.limo'))
+      await jest.advanceTimersByTimeAsync(WEBSITE_CONTENT_UPDATE_TIMEOUT_MS - 1)
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({ status: 'LOADING' })
+
+      await jest.advanceTimersByTimeAsync(1)
+      expect(controller.dappToConnectWebsiteContentUpdate).toEqual({ status: 'FAILED' })
+      expect(searchSignal?.aborted).toBe(true)
+      restore()
     })
   })
 })

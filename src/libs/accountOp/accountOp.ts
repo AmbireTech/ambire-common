@@ -10,6 +10,7 @@ import { UserOperation } from '../userOperation/types'
 import { AccountOpStatus, Call, CallTuple } from './types'
 
 import type { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
+import type { AccountOpIdentifiedBy } from './submittedAccountOp'
 
 // This is an abstract representation of the gas fee payment
 // 1) it cannot contain details about maxFeePerGas/baseFee because some networks might not be aware of EIP-1559; it only cares about total amount
@@ -104,7 +105,41 @@ export interface AccountOp {
     }
     speedUp?: {
       enabled: boolean
+      /**
+       * The fees of the pending transaction that is being sped up. The new fee of every
+       * speed is kept at least 12.5% above these, so the network accepts the replacement.
+       * `amount` is the fee that was paid, so the UI can compare it with the new one.
+       * Kept here, separately from `gasFeePayment`, because `gasFeePayment` gets replaced
+       * with the newly selected fee once the estimation comes in
+       */
+      replacedFees?: Pick<GasFeePayment, 'gasPrice' | 'maxPriorityFeePerGas' | 'amount'>
+      /**
+       * When the transaction was first sent, in milliseconds. When a speed up is sped up again,
+       * it's carried over from the first one, so it always refers to the very first attempt
+       */
+      replacedSentAt?: number
+      /** Finds the pending transaction that is being sped up, to stop if it gets processed first */
+      replacedIdentifiedBy?: AccountOpIdentifiedBy
+      /**
+       * The account nonce the pending transaction was signed with, carried over from the very
+       * first attempt. Kept here, as the account op's own nonce changes while a replacement is
+       * prepared (a non-Safe speed up is stored with the next nonce), and a cancel signs with it
+       * (see `toCancelAccountOp`)
+       */
+      replacedNonce?: bigint | null
+      /**
+       * The replacement cancels the pending transaction instead of speeding it up: it takes
+       * the same place (nonces) with an empty call (see `toCancelAccountOp` in `cancel.ts`), so the pending
+       * transaction's calls never run
+       */
+      isCancel?: boolean
     }
+    /**
+     * Set on an accountOp that sends an already signed and already sent transaction again, to
+     * get it confirmed sooner. It isn't a new transaction, so it's kept out of the Safe queue and
+     * rejecting it simply drops it, instead of cancelling the transaction onchain.
+     */
+    isResend?: boolean
     /**
      * @deprecated No longer written or read anywhere. Used to hold the descriptor-backed
      * humanization output, persisted so activity/history/Benzin could redisplay a past op without
@@ -124,7 +159,28 @@ export interface AccountOp {
   dappSessionId?: string
 }
 
-export const getAccountOpNonce = (accountOp: AccountOp): bigint | null => {
+const getAccountOpSenders = (op: Pick<AccountOp, 'accountAddr' | 'gasFeePayment'>) =>
+  [op.accountAddr, op.gasFeePayment?.paidBy]
+    .filter((addr): addr is string => !!addr)
+    .map((addr) => addr.toLowerCase())
+
+/**
+ * Whether two ops on the same chain can use the same txn or account nonce: they share the
+ * account or the fee payer, e.g. a smart account paid by EOA E and E itself.
+ */
+export const isSameChainAndSender = (
+  one: Pick<AccountOp, 'accountAddr' | 'chainId' | 'gasFeePayment'>,
+  two: Pick<AccountOp, 'accountAddr' | 'chainId' | 'gasFeePayment'>
+): boolean => {
+  if (one.chainId !== two.chainId) return false
+
+  const twoSenders = getAccountOpSenders(two)
+  return getAccountOpSenders(one).some((sender) => twoSenders.includes(sender))
+}
+
+export const getAccountOpNonce = (
+  accountOp: Pick<AccountOp, 'safeTx' | 'nonce'>
+): bigint | null => {
   const nonce = accountOp.safeTx?.nonce ?? accountOp.nonce
 
   return nonce === null || typeof nonce === 'undefined' ? null : BigInt(nonce)
@@ -216,6 +272,34 @@ export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
       throw new Error('gas fee payment cannot be paid by anyone other than the EOA that signed it')
   }
   return true
+}
+
+/**
+ * Why an AccountOp signed with a PQ1 key can't be broadcast, as a message for
+ * the user, or null when it can.
+ *
+ * A PQ1 key is a smart-contract wallet that sends its own transactions as
+ * ERC-4337 UserOperations (`KeystoreSignerInterface.broadcastAccountOp`): the
+ * calls run from the PQ1 wallet and it pays the fee, in the native token. So
+ * the AccountOp must be for the PQ1 wallet itself (for any other account the
+ * key can sign for, such as a Safe it is an owner of, the calls would run
+ * from the PQ1 wallet instead of that account) and its fee must be paid in
+ * the native token by the PQ1 wallet.
+ */
+export function getPq1BroadcastBlocker(op: AccountOp): string | null {
+  if (op.accountAddr !== op.signingKeyAddr) {
+    return "Your PQ1 can only send transactions from its own account. Sending from a Safe or another account it is an owner of isn't supported yet."
+  }
+  const { gasFeePayment } = op
+  if (
+    !gasFeePayment ||
+    gasFeePayment.isGasTank ||
+    gasFeePayment.paidBy !== op.accountAddr ||
+    gasFeePayment.inToken !== ZeroAddress
+  ) {
+    return "PQ1 accounts can only pay the fee themselves, in the network's own currency (such as ETH). Please choose that fee option and try again."
+  }
+  return null
 }
 
 export function getSignableCalls(op: AccountOp): CallTuple[] {

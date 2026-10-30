@@ -6,6 +6,7 @@ import { ControllerInterface } from './controller'
 import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { SwapAndBridgeActiveRoute, SwapAndBridgeQuote } from './swapAndBridge'
+import { TransferNft } from './transfer'
 import {
   CallsUserRequest,
   PendingDappPromise,
@@ -47,6 +48,17 @@ export type BuildRequest =
         recipientAddress: string
         recipientDomain: string | undefined
         selectedToken: TokenResult
+        executionType: RequestExecutionType
+        /** Seed id of the Privacy Pools account to send to, which has no address. */
+        privacyPoolsSeedId?: string
+      }
+    }
+  | {
+      type: 'nftTransferRequest'
+      params: {
+        nft: TransferNft
+        recipientAddress: string
+        recipientDomain: string | undefined
         executionType: RequestExecutionType
       }
     }

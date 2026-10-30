@@ -44,9 +44,24 @@ jobs:
           SEED: ${{ secrets.SEED }}
         run: npm run hardhat
 
+      # GitHub masks a secret only as a whole, so the names and values inside the JSON
+      # would show in the logs of this public repo if a test printed a request
+      - name: Mask relayer custom headers 🙈
+        env:
+          RELAYER_CUSTOM_HEADERS: ${{ secrets.RELAYER_CUSTOM_HEADERS }}
+        run: |
+          if ! parts=$(jq -r 'to_entries[] | .key, .value' <<< "$RELAYER_CUSTOM_HEADERS" 2>/dev/null); then
+            echo "RELAYER_CUSTOM_HEADERS must be a JSON object with string values" >&2
+            exit 1
+          fi
+          while IFS= read -r part; do
+            if [ -n "$part" ]; then echo "::add-mask::$part"; fi
+          done <<< "$parts"
+
       - name: JEST Tests 🧑‍🔬
         env:
           SEED: ${{ secrets.SEED }}
+          RELAYER_CUSTOM_HEADERS: ${{ secrets.RELAYER_CUSTOM_HEADERS }}
           IS_TESTING: 'true'
           REACT_APP_PIMLICO_API_KEY: ${{ secrets.REACT_APP_PIMLICO_API_KEY }}
           REACT_APP_CANDIDE_API_KEY: ${{ secrets.REACT_APP_CANDIDE_API_KEY }}

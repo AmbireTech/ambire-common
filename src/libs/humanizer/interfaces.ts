@@ -10,6 +10,11 @@ export type HumanizerRow = {
   // Absent for rows synthesized outside real ERC-7730 fields (fallback/multicall/Safe rows), which
   // are never candidates for exclusion anyway.
   path?: string
+  /**
+   * Draws a divider above the row, setting it and the rows after it apart from the ones above.
+   * Off for descriptor rows, which only some humanizer modules group this way.
+   */
+  hasSeparatorBefore?: boolean
 } & (
   | {
       // One embedded call of a `calldata` field, rendered inline on a single line and never split
@@ -25,6 +30,8 @@ export type HumanizerRow = {
       type: 'single-value'
       label: string
       value: HumanizerVisualizationItem
+      /** Shown before the value, e.g. '≈' for an estimate. Translated by the UI. */
+      valuePrefix?: string
     }
 )
 
@@ -71,6 +78,13 @@ export type HumanizerVisualizationItem = (
       address: string
       value: bigint
       chainId?: bigint
+      /**
+       * The token's symbol and decimals, when the humanizer already knows them for certain. The UI
+       * then shows the token right away instead of looking it up.
+       */
+      tokenInfo?: { symbol: string; decimals: number }
+      /** USD price of one token. When set, the UI shows the amount's USD value next to it. */
+      usdPrice?: number
     }
 ) & {
   id: number
@@ -83,6 +97,11 @@ export type HumanizerVisualizationItem = (
   chainId?: bigint
   verification?: BlacklistedStatus
   mlMi?: boolean
+  /**
+   * Names the address only from what the wallet already knows (accounts, contacts), with no
+   * lookup that sends it out of the wallet.
+   */
+  isLocalLabelOnly?: boolean
 }
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: RichHumanizerVisualization

@@ -43,6 +43,7 @@ import { COWSWAP_EXPLORER_URL } from '../../services/cowswap/constants'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isBasicAccount } from '../account/account'
+import { getCallsWithTxnIds, SubmittedAccountOp } from '../accountOp/submittedAccountOp'
 import { Call } from '../accountOp/types'
 import { AssetType } from '../defiPositions/types'
 import { PaymasterService } from '../erc7677/types'
@@ -301,7 +302,7 @@ export const getIsTokenEligibleForSwapAndBridge = (
 }
 
 export const convertPortfolioTokenToSwapAndBridgeToToken = (
-  portfolioToken: TokenResult,
+  portfolioToken: Pick<TokenResult, 'address' | 'decimals' | 'symbol'>,
   chainId: number
 ): SwapAndBridgeToToken => {
   const { address, decimals, symbol } = portfolioToken
@@ -915,6 +916,37 @@ const enrichRouteWithOutputTokenPrice = (
   }
 }
 
+/**
+ * Turns the txns of a swap that went out before the rest of it failed (e.g. the approval
+ * was sent but the swap was rejected on the hardware wallet) into an activity record.
+ * - Only the sent calls are kept, so e.g. speeding it up doesn't include the unsent swap.
+ * - It's detached from the swap route, as the user can retry the same route while it's
+ *   still pending. The route is matched to account ops by their call ids and
+ *   `meta.swapTxn.activeRouteId`, so e.g. the approval failing later would fail the retry.
+ */
+const getSentPartOfSwap = (sentAccountOp: SubmittedAccountOp): SubmittedAccountOp => {
+  const sentTxnsCount = sentAccountOp.identifiedBy.identifier.split('-').length
+  const calls = getCallsWithTxnIds({
+    ...sentAccountOp,
+    calls: sentAccountOp.calls.slice(0, sentTxnsCount)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  }).map(({ activeRouteId, ...call }) => ({
+    ...call,
+    id: call.id ? `${call.id}-sent-before-retry` : call.id
+  }))
+  const swapTxn = sentAccountOp.meta?.swapTxn
+  if (!swapTxn) return { ...sentAccountOp, calls }
+
+  return {
+    ...sentAccountOp,
+    calls,
+    meta: {
+      ...sentAccountOp.meta,
+      swapTxn: { ...swapTxn, activeRouteId: `${swapTxn.activeRouteId}-sent-before-retry` }
+    }
+  }
+}
+
 export {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
@@ -926,6 +958,7 @@ export {
   getFeeTokenForSponsorship,
   getLink,
   getRouteOutputValuesForSorting,
+  getSentPartOfSwap,
   getSlippage,
   getSwapAndBridgeCalls,
   getSwapAndBridgeRequestParams,

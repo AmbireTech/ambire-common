@@ -34,7 +34,12 @@ const collectionEntry = (symbol: string, fetchedAt: number): CollectionMetadataE
 
 const prepareTest = async () => {
   const storageCtrl = new StorageController(produceMemoryStore())
-  const hintsCtrl = new HintsController(storageCtrl, {} as any, {} as any)
+  // No imported accounts, so a manual update has only this account's assets to add
+  const hintsCtrl = new HintsController(
+    storageCtrl,
+    { accounts: [] } as any,
+    { getAccountKeys: () => [] } as any
+  )
 
   await hintsCtrl.initialLoadPromise
 
@@ -435,5 +440,19 @@ describe('HintsController custom and hidden collectibles', () => {
 
       expect(hints.tokenPreferences).toHaveLength(0)
     })
+  })
+})
+
+describe('HintsController Velcro hints', () => {
+  test('keeps the Velcro collectibles on a manual update', async () => {
+    const { hintsCtrl: hints } = await prepareTest()
+    const velcroHints = { erc20s: [USDT], erc721s: { [AZUKI]: [1n, 2n], [PUNKS]: [] } }
+
+    const automatic = hints.getAllHints(ACCOUNT, ETHEREUM_CHAIN_ID, undefined, false, velcroHints)
+    const manual = hints.getAllHints(ACCOUNT, ETHEREUM_CHAIN_ID, undefined, true, velcroHints)
+
+    expect(manual.additionalErc721Hints).toEqual({ [AZUKI]: [1n, 2n], [PUNKS]: [] })
+    expect(manual.additionalErc721Hints).toEqual(automatic.additionalErc721Hints)
+    expect(manual.additionalErc20Hints).toContain(USDT)
   })
 })

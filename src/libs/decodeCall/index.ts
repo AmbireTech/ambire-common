@@ -121,9 +121,9 @@ export function decodeCall(
         }
       }
     } catch (e: any) {
-      // we will not be able to decode the function if it is malformed
+      // The data does not fit this signature. That is expected, as other signatures can share
+      // the selector and the data may not be a function call at all (e.g. a contract deployment)
       console.warn(`decodeCall: ${e.message}`)
-      // TODO should we ignore it?
     }
   }
   // this is just a false positive MITIGATION

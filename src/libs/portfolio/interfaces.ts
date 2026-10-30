@@ -232,43 +232,36 @@ export type ExternalAPITokenMarketDataResponse = {
 export interface Hints {
   erc20s: string[]
   erc721s: ERC721s
-  /**
-   * Metadata and prices from the Velcro API call
-   */
-  externalApi?: {
-    /**
-     * When hasHints is false and the list is generated from a top X list,
-     * the prices are coming together with the hints as the response contains
-     * prices for all tokens in the hints. In this case the extension should
-     * not make separate requests for prices.
-     */
-    prices: {
-      [addr: string]: ExternalAPITokenMarketDataResponse
-    }
-    /**
-     * When true, either the account is empty and static hints are returned,
-     * or the hints are coming from a top X list of tokens, sorted by market cap.
-     * Used to determine how often to refetch the hints.
-     */
-    hasHints: boolean
-    /**
-     * Attached by the application after the request response or, if there is an
-     * error or the request is skipped, we get it from the last call.
-     */
-    lastUpdate: number
-  }
 }
 
 /**
- * The raw response, returned by the Velcro API.
- * Currently only called by the portfolio lib to fetch hints only.
+ * The hints part of the raw response, returned by the Velcro API.
  */
 export type ExternalHintsAPIResponse = {
   erc20s: Hints['erc20s']
   erc721s: VelcroERC721Hints
-} & (Required<Hints['externalApi']> & {
+  /**
+   * When hasHints is false and the list is generated from a top X list,
+   * the prices are coming together with the hints as the response contains
+   * prices for all tokens in the hints. In this case the extension should
+   * not make separate requests for prices.
+   */
+  prices: {
+    [addr: string]: ExternalAPITokenMarketDataResponse
+  }
+  /**
+   * When false, either the account is empty and static hints are returned,
+   * or the hints are coming from a top X list of tokens, sorted by market cap.
+   * Used to determine how often to refetch the hints.
+   */
+  hasHints: boolean
+  /**
+   * Attached by the application after the request response or, if there is an
+   * error or the request is skipped, we get it from the last call.
+   */
+  lastUpdate: number
   error?: string
-})
+}
 
 /**
  * The raw response, returned by Velcro for portfolio discovery.
@@ -704,7 +697,6 @@ export interface GetOptions {
     erc20?: DeploylessContractOptions
     erc721?: DeploylessContractOptions
   }
-  disableAutoDiscovery?: boolean
   /**
    * Dynamic token blacklist fetched from the API, merged with the static
    * blacklist defined in the portfolio library.

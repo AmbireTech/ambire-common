@@ -2,6 +2,7 @@ import { ethers } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../../test/helpers/console'
 import {
   getTestErc7730DescriptorForCall,
   getTestErc7730Descriptors,
@@ -335,6 +336,7 @@ describe('ERC-7730 registry cache', () => {
   })
 
   test('does not keep a hanging relayer index promise cached', async () => {
+    const { restore } = suppressConsole()
     const callRelayer = jest.fn(() => new Promise(() => {}))
 
     jest.useFakeTimers()
@@ -370,6 +372,7 @@ describe('ERC-7730 registry cache', () => {
     } finally {
       jest.useRealTimers()
     }
+    restore()
   })
 
   test('resolves a SafeTx descriptor by reading the Safe proxy singleton', async () => {
@@ -641,6 +644,7 @@ describe('ERC-7730 registry cache', () => {
   })
 
   test('does not keep a hanging Safe singleton promise cached', async () => {
+    const { restore } = suppressConsole()
     const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
     const callRelayer = jest.fn(async (path: string) => {
       if (path === '/v2/erc7730/eip-712') {
@@ -727,9 +731,11 @@ describe('ERC-7730 registry cache', () => {
     } finally {
       jest.useRealTimers()
     }
+    restore()
   })
 
   test('rejects malformed index responses', async () => {
+    const { restore } = suppressConsole()
     const callRelayer = jest.fn(async (path: string) => {
       if (path === '/v2/erc7730/account-op') {
         return {
@@ -797,9 +803,11 @@ describe('ERC-7730 registry cache', () => {
     expect(calldataDescriptor).toBe(null)
     expect(eip712Descriptor).toBe(null)
     expect(getTestErc7730Errors(callRelayer as any)).toHaveLength(2)
+    restore()
   })
 
   test('does not cache malformed descriptor responses', async () => {
+    const { restore } = suppressConsole()
     const verifyingContract = '0x6666666666666666666666666666666666666666'
     const registryPath = 'registry/test/malformed-descriptor-cache.json'
     let descriptorRequests = 0
@@ -885,6 +893,7 @@ describe('ERC-7730 registry cache', () => {
     expect(validDescriptor?.path).toBe(registryPath)
     expect(descriptorRequests).toBe(2)
     expect(getTestErc7730Errors(callRelayer as any)).toHaveLength(1)
+    restore()
   })
 
   test('fetches the calldata index once for an accountOp with many calls', async () => {

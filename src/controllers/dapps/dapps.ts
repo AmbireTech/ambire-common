@@ -22,6 +22,7 @@ import {
   Dapp,
   DAPP_VERIFICATION_BANNER_IDS,
   DappVerificationBanner,
+  DappWebsiteContentUpdate,
   DefiLlamaChain,
   DefiLlamaProtocol,
   GetCurrentDappRes,
@@ -37,6 +38,7 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
+import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { isExtensionOverlayView, IUiController, View } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
@@ -54,19 +56,33 @@ import {
   getDappNameFromId,
   getDomainFromUrl,
   getNormalizedHostnameFromUrl,
+  isAccountAllowedForDapp,
   modifyDappPropsIfNeeded,
   normalizeDappConnection,
   normalizeHostname,
   normalizeTrendingTokens,
   sortDapps,
-  unifyDefiLlamaDappUrl
+  unifyDefiLlamaDappUrl,
+  withoutUnusedAccountPreferences
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
+import {
+  EnsWebsiteContentUpdate,
+  getEnsNameFromGatewayUrl,
+  getEnsWebsiteContentUpdate
+} from '../../services/ensDomains/ensContenthash'
 import { fetchWithTimeout } from '../../utils/fetch'
+import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { canBeTrustedByUser } from '../phishing/phishing'
 
 const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
+
+/**
+ * How long to look for when the website of the app to connect was last updated, before showing
+ * the user that it couldn't be checked instead of loading for as long as the RPC takes.
+ */
+export const WEBSITE_CONTENT_UPDATE_TIMEOUT_MS = 30000
 
 // Indexed once, because the `dapps` getter asks this per dapp and it runs on every
 // update of this controller.
@@ -108,6 +124,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #phishing: IPhishingController
 
+  #providers: IProvidersController
+
   #ui: IUiController
 
   #featureFlags: IFeatureFlagsController
@@ -132,6 +150,18 @@ export class DappsController extends EventEmitter implements IDappsController {
   #dappToConnectContextStatus: BlacklistedStatus | undefined
 
   #dappToConnectSession: Session | undefined
+
+  /**
+   * When the website of `dappToConnect` was last replaced. Null unless it's served from an ENS
+   * name over IPFS (e.g. `tornadocash.eth.limo`).
+   */
+  dappToConnectWebsiteContentUpdate: DappWebsiteContentUpdate | null = null
+
+  /**
+   * The last found website update of each ENS name, so connecting to the same app again only
+   * checks the blocks since then. Not persisted, as it's cheap to rebuild.
+   */
+  #ensWebsiteContentUpdates = new Map<string, EnsWebsiteContentUpdate>()
 
   isReadyToDisplayDapps: boolean = true
 
@@ -185,6 +215,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage,
     networks,
     phishing,
+    providers,
     ui,
     selectedAccount,
     featureFlags
@@ -195,6 +226,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage: IStorageController
     networks: INetworksController
     phishing: IPhishingController
+    providers: IProvidersController
     ui: IUiController
     selectedAccount: ISelectedAccountController
     featureFlags: IFeatureFlagsController
@@ -206,6 +238,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#storage = storage
     this.#networks = networks
     this.#phishing = phishing
+    this.#providers = providers
     this.#ui = ui
     this.#selectedAccount = selectedAccount
     this.#featureFlags = featureFlags
@@ -1060,8 +1093,12 @@ export class DappsController extends EventEmitter implements IDappsController {
         return
       }
 
+      dappPropsToUpdate.accountPreferences = withoutUnusedAccountPreferences(
+        accountPreferencesToUpdate
+      )
+
       const newAccounts = getAccountsForDapp(
-        accountPreferencesToUpdate,
+        dappPropsToUpdate.accountPreferences,
         this.#selectedAccount.account?.addr
       )
 
@@ -1100,16 +1137,23 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     this.dappToConnect = { ...this.dappToConnect, ...data }
+    if ('accountPreferences' in data) {
+      this.dappToConnect.accountPreferences = withoutUnusedAccountPreferences(
+        data.accountPreferences
+      )
+    }
     this.emitUpdate()
   }
 
   async onSelectedAccountChange(newAccount: string) {
+    this.#unpinSelectedAccounts(newAccount)
+
     Object.values(this.dappSessions).forEach(async (session) => {
       if (!this.hasPermission(session.id)) return
 
       const accountPreferences = this.getDapp(session.id)?.accountPreferences
 
-      // Update the last selected account
+      // Update the last selected account the dapp may see
       if (
         accountPreferences?.accounts.includes(newAccount) &&
         accountPreferences.selectedAccount !== newAccount
@@ -1122,6 +1166,31 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       await this.broadcastDappSessionEvent('accountsChanged', accounts, session.id, true)
     })
+  }
+
+  // An account picked for a dapp lasts only until the wallet switches to another account the dapp
+  // may see, so the dapp follows the wallet again after it - also the dapps that aren't open
+  #unpinSelectedAccounts(newAccount: string) {
+    let hasUnpinned = false
+
+    this.#dapps.forEach((dapp) => {
+      if (!dapp.accountPreferences?.isSelectedAccountPinned) return
+      if (!isAccountAllowedForDapp(dapp.accountPreferences, newAccount)) return
+
+      hasUnpinned = true
+      this.#dapps.set(dapp.id, {
+        ...dapp,
+        accountPreferences: withoutUnusedAccountPreferences({
+          ...dapp.accountPreferences,
+          isSelectedAccountPinned: false
+        })
+      })
+    })
+
+    if (!hasUnpinned) return
+
+    this.emitUpdate()
+    void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
   }
 
   /**
@@ -1154,6 +1223,19 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (!dapp.accountPreferences.accounts.includes(address)) return
 
       const newAccounts = dapp.accountPreferences.accounts.filter((a) => a !== address)
+      const isSelectedAccountRemoved = dapp.accountPreferences.selectedAccount === address
+
+      // A dapp that may see every account keeps its connection, and follows the wallet again
+      // once the account picked for it is gone
+      if (!dapp.accountPreferences.enabled) {
+        this.#dapps.set(dapp.id, {
+          ...dapp,
+          accountPreferences: isSelectedAccountRemoved
+            ? undefined
+            : withoutUnusedAccountPreferences({ ...dapp.accountPreferences, accounts: newAccounts })
+        })
+        return
+      }
 
       this.#dapps.set(dapp.id, {
         ...dapp,
@@ -1164,10 +1246,11 @@ export class DappsController extends EventEmitter implements IDappsController {
           ? {
               ...dapp.accountPreferences,
               accounts: newAccounts,
-              selectedAccount:
-                dapp.accountPreferences.selectedAccount === address
-                  ? newAccounts[0]!
-                  : dapp.accountPreferences.selectedAccount
+              selectedAccount: isSelectedAccountRemoved
+                ? newAccounts[0]!
+                : dapp.accountPreferences.selectedAccount,
+              // The account picked for the dapp is gone, so it follows the wallet again
+              ...(isSelectedAccountRemoved && { isSelectedAccountPinned: false })
             }
           : undefined
       })
@@ -1450,6 +1533,49 @@ export class DappsController extends EventEmitter implements IDappsController {
     })
   }
 
+  async #updateDappToConnectWebsiteContentUpdate(dappId: string, ensName: string) {
+    let websiteContentUpdate: DappWebsiteContentUpdate | null
+    try {
+      // ENS names are registered on Ethereum, so their records are always read from there
+      const provider = this.#providers.providers['1']
+      if (!provider) throw new Error('No Ethereum provider to read the ENS records with')
+
+      const contentUpdate = await withTimeout(
+        ({ signal } = {}) =>
+          getEnsWebsiteContentUpdate(provider, ensName, {
+            previousUpdate: this.#ensWebsiteContentUpdates.get(ensName),
+            signal
+          }),
+        {
+          timeoutMs: WEBSITE_CONTENT_UPDATE_TIMEOUT_MS,
+          message: `Checking when ${ensName} was last updated timed out`,
+          useAbort: true
+        }
+      )
+
+      if (contentUpdate) {
+        this.#ensWebsiteContentUpdates.set(ensName, contentUpdate)
+        websiteContentUpdate = { status: 'LOADED', updatedAt: contentUpdate.updatedAt }
+      } else {
+        this.#ensWebsiteContentUpdates.delete(ensName)
+        websiteContentUpdate = null
+      }
+    } catch (err: any) {
+      websiteContentUpdate = { status: 'FAILED' }
+      this.emitError({
+        message: 'Error in DappsController while checking when the app website was last updated',
+        error: err,
+        level: 'silent'
+      })
+    }
+
+    // The user may have moved on to another connection request in the meantime
+    if (this.dappToConnect?.id !== dappId) return
+
+    this.dappToConnectWebsiteContentUpdate = websiteContentUpdate
+    this.emitUpdate()
+  }
+
   /** Enables scam checking and immediately refreshes the pending connection request. */
   async enableScamCheckerAndRefreshDappToConnect() {
     const dapp = this.dappToConnect
@@ -1487,12 +1613,16 @@ export class DappsController extends EventEmitter implements IDappsController {
           delete this.dappToConnect.accountPreferences
           this.#dappToConnectContextStatus = undefined
           this.#dappToConnectSession = dappPromises[0].session
+          const ensName = getEnsNameFromGatewayUrl(dapp.url)
+          this.dappToConnectWebsiteContentUpdate = ensName ? { status: 'LOADING' } : null
           this.emitUpdate()
 
           const session = dappPromises[0].session
 
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#updateDappToConnectSecurityCheck(dapp, session)
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          if (ensName) this.#updateDappToConnectWebsiteContentUpdate(dapp.id, ensName)
         }
 
         return
@@ -1502,6 +1632,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.dappToConnect = null
         this.#dappToConnectContextStatus = undefined
         this.#dappToConnectSession = undefined
+        this.dappToConnectWebsiteContentUpdate = null
         this.emitUpdate()
       }
     } catch (err: any) {
