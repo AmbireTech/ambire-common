@@ -1,10 +1,12 @@
 import { expect } from '@jest/globals'
 
 import {
+  decodePunycodeLabel,
   getImpersonation,
   IMPERSONATION_TARGETS,
   isWithinOneEdit,
-  normalizeAppName
+  normalizeAppName,
+  toLatinLookalikes
 } from './impersonation'
 
 const check = (
@@ -55,6 +57,36 @@ describe('impersonation', () => {
       expect(isWithinOneEdit('un1swapp', 'uniswap')).toBe(false)
       expect(isWithinOneEdit('uniswapxx', 'uniswap')).toBe(false)
       expect(isWithinOneEdit('sushiswap', 'uniswap')).toBe(false)
+    })
+  })
+
+  describe('toLatinLookalikes', () => {
+    it('replaces cyrillic and greek letters that look like latin ones', () => {
+      expect(toLatinLookalikes('uniswаp')).toBe('uniswap') // cyrillic "а"
+      expect(toLatinLookalikes('οpensea')).toBe('opensea') // greek "ο"
+      expect(toLatinLookalikes('сurve')).toBe('curve') // cyrillic "с"
+    })
+
+    it('drops accents', () => {
+      expect(toLatinLookalikes('unìswap')).toBe('uniswap')
+      expect(toLatinLookalikes('ÜNISWAP')).toBe('uniswap')
+    })
+
+    it('keeps latin text as it is, only lowercased', () => {
+      expect(toLatinLookalikes('Uniswap-App 2')).toBe('uniswap-app 2')
+    })
+  })
+
+  describe('decodePunycodeLabel', () => {
+    it('decodes the punycode form of a domain label', () => {
+      expect(decodePunycodeLabel('uniswp-7nf')).toBe('uniswаp') // cyrillic "а"
+      expect(decodePunycodeLabel('mnchen-3ya')).toBe('münchen')
+      expect(decodePunycodeLabel('t1a')).toBe('ф')
+    })
+
+    it('returns null for an invalid label', () => {
+      expect(decodePunycodeLabel('zz')).toBeNull()
+      expect(decodePunycodeLabel('abc-!!')).toBeNull()
     })
   })
 
@@ -161,6 +193,57 @@ describe('impersonation', () => {
       expect(
         check('totally-legit.xyz', { icon: 'https://APP.UNISWAP.ORG/favicon.png' })?.reason
       ).toBe('icon')
+    })
+
+    it('flags the name of the app with bait words around it', () => {
+      expect(check('totally-legit.xyz', { name: 'Uniswap Airdrop' })?.appName).toBe('Uniswap')
+      expect(check('totally-legit.xyz', { name: 'Claim | Uniswap' })?.appName).toBe('Uniswap')
+      expect(check('totally-legit.xyz', { name: 'Uniswap V4' })?.appName).toBe('Uniswap')
+      expect(check('totally-legit.xyz', { name: 'Lido Finance Rewards' })?.appName).toBe('Lido')
+    })
+
+    it('does not flag third-party tools that mention an app', () => {
+      expect(check('bridge.example.com', { name: 'Arbitrum Bridge' })).toBeNull()
+      expect(check('vision.example.com', { name: 'ENS Vision' })).toBeNull()
+      expect(check('defisaver.com', { name: 'Aave Dashboard by DeFi Saver' })).toBeNull()
+    })
+
+    it('does not flag apps named after a common word with bait words around them', () => {
+      expect(check('totally-legit.xyz', { name: 'Safe Rewards' })).toBeNull()
+      expect(check('totally-legit.xyz', { name: 'Curve Airdrop' })).toBeNull()
+    })
+
+    it('flags a domain with letters from other alphabets', () => {
+      const cyrillicA = new URL('https://uniswаp.org').hostname
+      expect(cyrillicA).toBe('xn--uniswp-7nf.org')
+      expect(check(cyrillicA)).toEqual({
+        appName: 'Uniswap',
+        appDomain: 'uniswap.org',
+        reason: 'domain'
+      })
+      expect(check(new URL('https://οpensea.io').hostname)?.appName).toBe('OpenSea')
+      expect(check(new URL('https://unìswap.org').hostname)?.appName).toBe('Uniswap')
+      // Common words are matched exactly, but only after the lookalike letters are replaced
+      expect(check(new URL('https://сurve.fi').hostname)?.appName).toBe('Curve')
+    })
+
+    it('flags a name with letters from other alphabets', () => {
+      expect(check('totally-legit.xyz', { name: 'Uniswаp' })?.reason).toBe('name')
+    })
+
+    it('does not flag unrelated domains with letters from other alphabets', () => {
+      expect(check('xn--80ak6aa92e.com')).toBeNull()
+      expect(check('xn--mnchen-3ya.de')).toBeNull()
+    })
+
+    it('flags lookalike domains on shared hosting', () => {
+      expect(check('uniswap-claim.vercel.app')?.reason).toBe('domain')
+      expect(check('opensea.github.io')?.reason).toBe('domain')
+      expect(check('my-project.vercel.app')).toBeNull()
+    })
+
+    it('never treats a site on shared hosting as the app itself', () => {
+      expect(check('uniswap.vercel.app', { name: 'Uniswap' })?.reason).toBe('name')
     })
 
     it('has valid targets', () => {

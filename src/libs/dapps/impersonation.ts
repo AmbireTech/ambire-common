@@ -85,6 +85,188 @@ const GENERIC_NAME_SUFFIXES = [
 ]
 
 /**
+ * Words phishing sites commonly add around the name of the app they pretend to be ("Uniswap
+ * Airdrop", "Claim | Uniswap", "Uniswap V4"). A name made only of an app's name and these words (or
+ * the generic suffixes) is treated as the app's name. Any other word means the site isn't flagged,
+ * so third-party tools that mention an app ("Aave Dashboard by DeFi Saver") aren't affected.
+ */
+const BAIT_WORDS = [
+  'airdrop',
+  'claim',
+  'claims',
+  'reward',
+  'rewards',
+  'bonus',
+  'giveaway',
+  'migrate',
+  'migration',
+  'verify',
+  'verification',
+  'v2',
+  'v3',
+  'v4',
+  'v5'
+]
+
+const FILLER_WORDS = [...GENERIC_NAME_SUFFIXES, ...BAIT_WORDS]
+
+/**
+ * Letters from other alphabets that look like latin ones (e.g. cyrillic "а" and latin "a"), which
+ * phishing sites use to make a domain or name look like the original one.
+ */
+const LATIN_LOOKALIKES: Record<string, string> = {
+  // Cyrillic
+  а: 'a',
+  в: 'b',
+  ь: 'b',
+  с: 'c',
+  ԁ: 'd',
+  е: 'e',
+  һ: 'h',
+  і: 'i',
+  ј: 'j',
+  к: 'k',
+  ӏ: 'l',
+  м: 'm',
+  н: 'h',
+  о: 'o',
+  р: 'p',
+  ԛ: 'q',
+  ѕ: 's',
+  т: 't',
+  у: 'y',
+  ԝ: 'w',
+  х: 'x',
+  // Greek
+  α: 'a',
+  β: 'b',
+  ε: 'e',
+  η: 'n',
+  ι: 'i',
+  κ: 'k',
+  ν: 'v',
+  ο: 'o',
+  ρ: 'p',
+  τ: 't',
+  υ: 'u',
+  χ: 'x',
+  γ: 'y',
+  ω: 'w',
+  // Latin letters without a dot
+  ı: 'i',
+  ȷ: 'j'
+}
+
+/** Accents and other marks that are added on top of a letter ("à" is "a" + "̀") */
+const COMBINING_MARKS_START = 0x0300
+const COMBINING_MARKS_END = 0x036f
+
+/**
+ * Replaces letters that look like latin ones with their latin twin and drops accents (e.g.
+ * "uniswаp" with a cyrillic "а", or "unìswap", both become "uniswap").
+ */
+const toLatinLookalikes = (text: string): string => {
+  let result = ''
+  for (const char of text.toLowerCase().normalize('NFD')) {
+    const codePoint = char.codePointAt(0)!
+    if (codePoint >= COMBINING_MARKS_START && codePoint <= COMBINING_MARKS_END) continue
+
+    result += LATIN_LOOKALIKES[char] ?? char
+  }
+
+  return result
+}
+
+// Constants of the punycode algorithm, see https://datatracker.ietf.org/doc/html/rfc3492#section-5
+const PUNYCODE_BASE = 36
+const PUNYCODE_T_MIN = 1
+const PUNYCODE_T_MAX = 26
+const PUNYCODE_SKEW = 38
+const PUNYCODE_DAMP = 700
+const PUNYCODE_INITIAL_BIAS = 72
+const PUNYCODE_INITIAL_N = 128
+const MAX_CODE_POINT = 0x10ffff
+const PUNYCODE_PREFIX = 'xn--'
+
+const adaptPunycodeBias = (delta: number, numPoints: number, isFirstTime: boolean) => {
+  let scaledDelta = isFirstTime ? Math.floor(delta / PUNYCODE_DAMP) : Math.floor(delta / 2)
+  scaledDelta += Math.floor(scaledDelta / numPoints)
+
+  let k = 0
+  while (scaledDelta > ((PUNYCODE_BASE - PUNYCODE_T_MIN) * PUNYCODE_T_MAX) / 2) {
+    scaledDelta = Math.floor(scaledDelta / (PUNYCODE_BASE - PUNYCODE_T_MIN))
+    k += PUNYCODE_BASE
+  }
+
+  return (
+    k +
+    Math.floor(((PUNYCODE_BASE - PUNYCODE_T_MIN + 1) * scaledDelta) / (scaledDelta + PUNYCODE_SKEW))
+  )
+}
+
+const getPunycodeDigit = (char: string) => {
+  const code = char.charCodeAt(0)
+  if (code >= 48 && code <= 57) return code - 22 // 0-9 are the digits 26-35
+  if (code >= 97 && code <= 122) return code - 97 // a-z are the digits 0-25
+  if (code >= 65 && code <= 90) return code - 65 // A-Z are the digits 0-25
+
+  return -1
+}
+
+/**
+ * Decodes a punycode label without its "xn--" prefix (e.g. "uniswp-7nf" becomes "uniswаp" with a
+ * cyrillic "а"). Returns null if the label isn't valid punycode.
+ */
+const decodePunycodeLabel = (label: string): string | null => {
+  const delimiterIndex = Math.max(label.lastIndexOf('-'), 0)
+  const output = Array.from(label.slice(0, delimiterIndex))
+  let index = delimiterIndex > 0 ? delimiterIndex + 1 : 0
+  let i = 0
+  let n = PUNYCODE_INITIAL_N
+  let bias = PUNYCODE_INITIAL_BIAS
+
+  while (index < label.length) {
+    const previousI = i
+    let weight = 1
+    for (let k = PUNYCODE_BASE; ; k += PUNYCODE_BASE) {
+      if (index >= label.length) return null
+
+      const digit = getPunycodeDigit(label[index++]!)
+      if (digit < 0) return null
+
+      i += digit * weight
+      const threshold =
+        k <= bias ? PUNYCODE_T_MIN : k >= bias + PUNYCODE_T_MAX ? PUNYCODE_T_MAX : k - bias
+      if (digit < threshold) break
+
+      weight *= PUNYCODE_BASE - threshold
+    }
+
+    bias = adaptPunycodeBias(i - previousI, output.length + 1, previousI === 0)
+    n += Math.floor(i / (output.length + 1))
+    if (n > MAX_CODE_POINT) return null
+
+    i %= output.length + 1
+    output.splice(i, 0, String.fromCodePoint(n))
+    i++
+  }
+
+  return output.join('')
+}
+
+/**
+ * Brings a domain label (e.g. "xn--uniswp-7nf") to the latin letters it looks like ("uniswap").
+ * Browsers give domains with letters from other alphabets in their punycode form, so it is decoded
+ * first.
+ */
+const toLatinDomainLabel = (label: string): string => {
+  if (!label.startsWith(PUNYCODE_PREFIX)) return toLatinLookalikes(label)
+
+  const decodedLabel = decodePunycodeLabel(label.slice(PUNYCODE_PREFIX.length))
+  return toLatinLookalikes(decodedLabel ?? label)
+}
+
+/**
  * Only domain names at least this long are matched when they differ by one character, as shorter
  * ones are one character away from too many unrelated apps (e.g. "thena" - "ethena",
  * "9inch" - "1inch", "pumper" - "jumper").
@@ -185,12 +367,26 @@ const isLookalikeDomainName = (
   )
 }
 
-const findTargetByName = (normalizedName: string) =>
-  IMPERSONATION_TARGETS.find((target) =>
-    [target.name, ...(target.aliases ?? [])].some(
-      (name) => normalizeAppName(name) === normalizedName
-    )
+/** Joins the words of a name, leaving out the filler words (e.g. "Claim | Uniswap" - "uniswap"). */
+const removeFillerWords = (name: string): string =>
+  toWords(name)
+    .filter((word) => !FILLER_WORDS.includes(word))
+    .join('')
+
+const findTargetByName = (siteName: string) => {
+  const normalizedName = normalizeAppName(siteName)
+  const nameWithoutFillers = removeFillerWords(siteName)
+
+  return IMPERSONATION_TARGETS.find((target) =>
+    [target.name, ...(target.aliases ?? [])].some((appName) => {
+      const normalizedAppName = normalizeAppName(appName)
+      if (normalizedAppName === normalizedName) return true
+
+      // Apps named after a common word only match their exact name ("Safe Rewards" may be anything)
+      return !target.isCommonWord && normalizedAppName === nameWithoutFillers
+    })
   )
+}
 
 const findTargetByDomain = (rootDomain: string) =>
   IMPERSONATION_TARGETS.find((target) => target.domains.includes(rootDomain))
@@ -242,7 +438,10 @@ const getImpersonation = ({
   if (isInAppCatalog) return null
 
   const siteRootDomain = getDomain(hostname)
-  const siteDomainName = getDomainWithoutSuffix(hostname)
+  // On shared hosting (e.g. "uniswap-claim.vercel.app") the site's own part of the domain is
+  // compared, not the platform's ("vercel"). The official domain check below stays on the root
+  // domain, so a site on a shared platform can never pass for the app itself.
+  const siteDomainName = getDomainWithoutSuffix(hostname, { allowPrivateDomains: true })
   if (!siteRootDomain || !siteDomainName) return null
 
   // The site is the app itself
@@ -252,15 +451,23 @@ const getImpersonation = ({
   const targetByIcon = iconRootDomain ? findTargetByDomain(iconRootDomain) : undefined
   if (targetByIcon) return toImpersonation(targetByIcon, 'icon')
 
-  const normalizedName = name ? normalizeAppName(name) : ''
-  const targetByName = normalizedName ? findTargetByName(normalizedName) : undefined
+  const targetByName = name ? findTargetByName(toLatinLookalikes(name)) : undefined
   if (targetByName) return toImpersonation(targetByName, 'name')
 
-  const targetByDomain = findTargetByLookalikeDomain(siteDomainName)
+  // Letters from other alphabets are replaced only for this comparison - a domain that equals an
+  // official one only after replacing them ("uniswаp.org" with a cyrillic "а") is a lookalike
+  const targetByDomain = findTargetByLookalikeDomain(toLatinDomainLabel(siteDomainName))
   if (targetByDomain) return toImpersonation(targetByDomain, 'domain')
 
   return null
 }
 
 export type { Impersonation, ImpersonationReason }
-export { getImpersonation, IMPERSONATION_TARGETS, isWithinOneEdit, normalizeAppName }
+export {
+  decodePunycodeLabel,
+  getImpersonation,
+  IMPERSONATION_TARGETS,
+  isWithinOneEdit,
+  normalizeAppName,
+  toLatinLookalikes
+}
