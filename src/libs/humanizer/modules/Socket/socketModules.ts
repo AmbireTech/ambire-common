@@ -10,7 +10,7 @@ import {
 } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../../interfaces'
+import { HumanizerCallModule, HumanizerVisualizationItem, IrCall } from '../../interfaces'
 import {
   HexIrCall,
   eToNative,
@@ -22,7 +22,8 @@ import {
   getRecipientText,
   getToken,
   getTokenWithChain,
-  isHexCall
+  isHexCall,
+  getLegacyVisualization
 } from '../../utils'
 
 // taken from https://stargateprotocol.gitbook.io/stargate/developers/chain-ids
@@ -187,7 +188,7 @@ const takeFeesAndSwapSelector = toFunctionSelector(takeFeesAndSwapAbi[0])
 const transformERC20Selector = toFunctionSelector(transformERC20Abi[0])
 
 const matcher: {
-  [sighash: string]: (accountOp: AccountOp, irCall: HexIrCall) => HumanizerVisualization[]
+  [sighash: string]: (accountOp: AccountOp, irCall: HexIrCall) => HumanizerVisualizationItem[]
 } = {
   [swapAndBridgeAcrossSelector]: (accountOp: AccountOp, call: HexIrCall) => {
     const { args } = decodeFunctionData({
@@ -620,8 +621,8 @@ const matcher: {
     const { receiverAddress, senderAddress, value, stargateDstChainId, minReceivedAmt } =
       acrossBridgeData
 
-    const dstChain: HumanizerVisualization[] = []
-    const tokensData: HumanizerVisualization[] = []
+    const dstChain: HumanizerVisualizationItem[] = []
+    const tokensData: HumanizerVisualizationItem[] = []
     if (STARGATE_CHAIN_IDS[stargateDstChainId.toString()])
       dstChain.push(getLabel('to'), getChain(STARGATE_CHAIN_IDS[stargateDstChainId.toString()]!))
     if (swapData.startsWith(performActionWithInSelector)) {
@@ -649,8 +650,8 @@ const matcher: {
     const [, swapData, stargateBridgeData] = args
     const { toChainId, receiver, minAmountLD } = stargateBridgeData
 
-    const dstChain: HumanizerVisualization[] = []
-    const tokensData: HumanizerVisualization[] = []
+    const dstChain: HumanizerVisualizationItem[] = []
+    const tokensData: HumanizerVisualizationItem[] = []
     if (swapData.startsWith(performActionWithInSelector)) {
       const { args: innerArgs } = decodeFunctionData({
         abi: performActionWithInAbi,
@@ -677,7 +678,7 @@ const matcher: {
     const [, swapData, hopData] = args
     const { receiverAddress, toChainId, amountOutMinDestination, deadlineDestination } = hopData
 
-    const tokensData: HumanizerVisualization[] = []
+    const tokensData: HumanizerVisualizationItem[] = []
     if (swapData.startsWith(performActionWithInSelector)) {
       const { args: innerArgs } = decodeFunctionData({
         abi: performActionWithInAbi,
@@ -708,7 +709,7 @@ const matcher: {
     const [, swapData, hopData] = args
     const { receiverAddress, toChainId, amountOutMin, deadline } = hopData
 
-    const tokensData: HumanizerVisualization[] = []
+    const tokensData: HumanizerVisualizationItem[] = []
     if (swapData.startsWith(performActionWithInSelector)) {
       const { args: innerArgs } = decodeFunctionData({
         abi: performActionWithInAbi,
@@ -833,7 +834,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, call: Ir
         ? swapMatcher(accountOp, { ...call, data: swapData })
         : [getAction('Swap')]
 
-      let humanizationOfBridge: HumanizerVisualization[] = [getAction('Bridge')]
+      let humanizationOfBridge: HumanizerVisualizationItem[] = [getAction('Bridge')]
 
       try {
         const [decoded] = decodeAbiParameters(
@@ -860,7 +861,11 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, call: Ir
       }
       return {
         ...call,
-        fullVisualization: [...humanizationOfSwap, getLabel('and'), ...humanizationOfBridge]
+        fullVisualization: getLegacyVisualization([
+          ...humanizationOfSwap,
+          getLabel('and'),
+          ...humanizationOfBridge
+        ])
       }
     }
     if (dataToUse.startsWith(takeFeesAndSwapSelector)) {
@@ -879,7 +884,12 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, call: Ir
   }
   const callMatcher = matcher[dataToUse.slice(0, 10)]
   if (callMatcher) {
-    return { ...call, fullVisualization: callMatcher(accountOp, { ...call, data: dataToUse }) }
+    return {
+      ...call,
+      fullVisualization: getLegacyVisualization(
+        callMatcher(accountOp, { ...call, data: dataToUse })
+      )
+    }
   }
   return call
 }

@@ -1,7 +1,7 @@
 import { decodeFunctionData, maxUint256, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerVisualization } from '../../interfaces'
+import { HumanizerVisualizationItem } from '../../interfaces'
 import {
   HexIrCall,
   getAction,
@@ -212,7 +212,7 @@ const withdrawBytes32Selector = toFunctionSelector(withdrawBytes32Abi[0])
 const setUserEModeSelector = toFunctionSelector(setUserEModeAbi[0])
 
 export const aaveV3Pool = (): {
-  [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[]
+  [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualizationItem[]
 } => {
   return {
     [supplySelector]: (accountOp: AccountOp, call: HexIrCall) => {

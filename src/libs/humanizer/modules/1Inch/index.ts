@@ -10,7 +10,8 @@ import {
   getRecipientText,
   getToken,
   isHexCall,
-  uintToAddress
+  uintToAddress,
+  getLegacyVisualization
 } from '../../utils'
 
 const cancelOrderAbi = parseAbi(['function cancelOrder(uint256 makerTraits, bytes32 orderHash)'])
@@ -107,7 +108,7 @@ const OneInchModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   }
   const match = matcher[call.data.slice(0, 10)]
   if (call.fullVisualization || !isHexCall(call) || !match) return call
-  return { ...call, fullVisualization: match(call) }
+  return { ...call, fullVisualization: getLegacyVisualization(match(call)) }
 }
 
 export default OneInchModule

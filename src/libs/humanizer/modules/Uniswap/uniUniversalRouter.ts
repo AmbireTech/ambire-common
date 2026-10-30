@@ -10,7 +10,7 @@ import {
 } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerVisualization, IrCall } from '../../interfaces'
+import { HumanizerVisualizationItem, IrCall } from '../../interfaces'
 import {
   HexIrCall,
   getAction,
@@ -55,9 +55,9 @@ function parseV4Actions(
   actions: string,
   totalParams: Hex[],
   accountAddr: string
-): HumanizerVisualization[] {
+): HumanizerVisualizationItem[] {
   const parsedActions = parseCommands(actions)
-  const parsed: HumanizerVisualization[][] = []
+  const parsed: HumanizerVisualizationItem[][] = []
   if (!parsedActions) return [getAction('Unknown Uniswap V4 action')]
   if (parsedActions.length !== totalParams.length) return [getAction('Unknown Uniswap V4 action')]
   const zippedData = parsedActions.map((_, i) => ({
@@ -160,10 +160,10 @@ export const humanizeUniversalRouterCommands = (
   deadline: bigint,
   accountOp: AccountOp,
   call: HexIrCall
-): HumanizerVisualization[] => {
+): HumanizerVisualizationItem[] => {
   if (!call.to) throw Error('Humanizer: should not be inside the uniswap module when !call.to')
   const parsedCommands = parseCommands(commands)
-  const parsed: HumanizerVisualization[][] = []
+  const parsed: HumanizerVisualizationItem[][] = []
 
   parsedCommands
     ? parsedCommands.forEach((command: string, index: number) => {

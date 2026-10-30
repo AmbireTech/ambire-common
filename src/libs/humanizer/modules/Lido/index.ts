@@ -9,7 +9,14 @@ import {
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel, getToken, isHexCall } from '../../utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getLabel,
+  getToken,
+  isHexCall,
+  getLegacyVisualization
+} from '../../utils'
 
 const WRAPPED_ST_ETH_ADDRESS = '0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0'
 const ST_ETH_ADDRESS = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
@@ -45,13 +52,13 @@ export const LidoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) 
       const { args } = decodeFunctionData({ abi: wrapAbi, data: call.data })
       const [amount] = args
       const fullVisualization = [getAction('Wrap'), getToken(ST_ETH_ADDRESS, amount)]
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     }
     if (call.data.startsWith(unwrapSelector)) {
       const { args } = decodeFunctionData({ abi: unwrapAbi, data: call.data })
       const [amount] = args
       const fullVisualization = [getAction('Unwrap'), getToken(ST_ETH_ADDRESS, amount)]
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     }
   }
 
@@ -66,14 +73,17 @@ export const LidoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) 
       const fullVisualization = [getAction('Request withdraw'), getToken(ST_ETH_ADDRESS, amount)]
       if (![zeroAddress, accOp.accountAddr.toLowerCase()].includes(_owner.toLowerCase()))
         fullVisualization.push(getLabel('and authorize'), getAddressVisualization(_owner))
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     }
 
     if (call.data.startsWith(claimWithdrawalsSelector)) {
-      return { ...call, fullVisualization: [getAction('Claim withdrawals')] }
+      return {
+        ...call,
+        fullVisualization: getLegacyVisualization([getAction('Claim withdrawals')])
+      }
     }
     if (call.data.startsWith(claimWithdrawalSelector)) {
-      return { ...call, fullVisualization: [getAction('Claim withdrawal')] }
+      return { ...call, fullVisualization: getLegacyVisualization([getAction('Claim withdrawal')]) }
     }
     if (call.data.startsWith(claimWithdrawalsToSelector)) {
       const { args } = decodeFunctionData({
@@ -84,13 +94,16 @@ export const LidoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) 
       const fullVisualization = [getAction('Claim withdrawal')]
       if (_recipient.toLowerCase() !== accOp.accountAddr.toLowerCase())
         fullVisualization.push(getLabel('and send to'), getAddressVisualization(_recipient))
-      return { ...call, fullVisualization: [getAction('Claim withdrawal')] }
+      return { ...call, fullVisualization: getLegacyVisualization([getAction('Claim withdrawal')]) }
     }
   } else if (call.to && isAddress(call.to) && getAddress(call.to) === ST_ETH_ADDRESS) {
     if (call.data.startsWith(submitSelector)) {
       return {
         ...call,
-        fullVisualization: [getAction('Stake'), getToken(ST_ETH_ADDRESS, call.value)]
+        fullVisualization: getLegacyVisualization([
+          getAction('Stake'),
+          getToken(ST_ETH_ADDRESS, call.value)
+        ])
       }
     }
   }

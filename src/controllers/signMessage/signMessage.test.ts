@@ -463,8 +463,7 @@ describe('SignMessageController', () => {
       undefined,
       ERC7730_DESCRIPTOR_WAIT_MS
     )
-    expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
-      type: 'erc7730',
+    expect(signMessageController.humanizedMessage?.richVisualization).toMatchObject({
       intent: [{ type: 'action', content: 'Authorize spending of tokens' }],
       fields: [
         {
@@ -488,8 +487,7 @@ describe('SignMessageController', () => {
     })
 
     expect(callRelayer).not.toHaveBeenCalled()
-    expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
-      type: 'erc7730',
+    expect(signMessageController.humanizedMessage?.richVisualization).toMatchObject({
       intent: [{ type: 'action', content: 'Authorize spending of tokens' }]
     })
   })
@@ -584,9 +582,7 @@ describe('SignMessageController', () => {
 
       expect(callRelayer).not.toHaveBeenCalled()
       expect(signMessageController.isHumanizing).toBe(false)
-      expect(signMessageController.humanizedMessage?.fullVisualization).not.toEqual(
-        expect.arrayContaining([expect.objectContaining({ type: 'erc7730' })])
-      )
+      expect(signMessageController.humanizedMessage?.richVisualization).toBeUndefined()
     } finally {
       await featureFlagsCtrl.setFeatureFlag('clearSigning', true)
     }
@@ -740,11 +736,10 @@ describe('SignMessageController', () => {
       undefined,
       ERC7730_DESCRIPTOR_WAIT_MS
     )
-    expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
-      type: 'erc7730',
+    expect(signMessageController.humanizedMessage?.richVisualization).toMatchObject({
       intent: [{ type: 'action', content: '1inch Order' }]
     })
-    const visualization = signMessageController.humanizedMessage?.fullVisualization?.[0] as any
+    const visualization = signMessageController.humanizedMessage?.richVisualization as any
 
     expect(visualization.fields.map((row: any) => row.label)).toEqual([
       'From',

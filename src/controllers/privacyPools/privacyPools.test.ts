@@ -2150,8 +2150,8 @@ describe('PrivacyPoolsController', () => {
 
     /** The proved transfer's clear-signing card, without the ids the humanizer draws at random. */
     const describeHumanization = (humanization: IrCall | null | undefined) => {
-      const card = humanization?.fullVisualization?.[0]
-      if (card?.type !== 'erc7730') return card
+      const card = humanization?.fullVisualization
+      if (!card) return card
 
       return {
         intent: card.intent.map(({ type, content }) => ({ type, content })),

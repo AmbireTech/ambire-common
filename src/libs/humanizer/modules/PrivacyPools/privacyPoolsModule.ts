@@ -8,15 +8,16 @@ import { readPrivacyPoolsDeposit } from '../../../privacyPools/deposit'
 import { PrivacyPoolsPaymasterWithdrawal } from '../../../privacyPools/paymasterWithdrawal'
 import {
   HumanizerCallModule,
-  HumanizerErc7730Row,
-  HumanizerVisualization,
+  HumanizerRow,
+  HumanizerVisualizationItem,
   IrCall
 } from '../../interfaces'
 import {
   getAction,
   getAddressVisualization,
-  getErc7730Visualization,
   getLabel,
+  getLegacyVisualization,
+  getRichVisualization,
   getToken
 } from '../../utils'
 
@@ -33,11 +34,11 @@ export const privacyPoolsModule: HumanizerCallModule = (accountOp: AccountOp, ca
 
   return {
     ...call,
-    fullVisualization: [
+    fullVisualization: getLegacyVisualization([
       getAction('Send'),
       getToken(fromPrivacyPoolsAssetAddress(deposit.assetAddress), deposit.amount),
       getLabel('to a Privacy Pools account')
-    ]
+    ])
   }
 }
 
@@ -71,11 +72,11 @@ export const humanizePrivacyPoolsWithdrawal = ({
   const isSimulated = expectedFeeAmount !== null
   const shownFee = expectedFeeAmount ?? fee
   const asset = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)
-  const getAssetToken = (value: bigint): HumanizerVisualization => ({
+  const getAssetToken = (value: bigint): HumanizerVisualizationItem => ({
     ...getToken(tokenAddress, value),
     ...(asset && { tokenInfo: { symbol: asset.symbol, decimals: asset.decimals } })
   })
-  const rows: HumanizerErc7730Row[] = [
+  const rows: HumanizerRow[] = [
     { type: 'single-value', label: 'Amount to Send', value: getAssetToken(amount) },
     {
       type: 'single-value',
@@ -104,6 +105,6 @@ export const humanizePrivacyPoolsWithdrawal = ({
     // No raw call: nothing in the userOp is a call the user's account makes
     value: 0n,
     data: '0x',
-    fullVisualization: [getErc7730Visualization('Send', rows)]
+    fullVisualization: getRichVisualization('Send', rows)
   }
 }

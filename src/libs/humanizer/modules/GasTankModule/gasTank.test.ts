@@ -3,7 +3,7 @@ import { ZeroAddress } from 'ethers'
 import { describe } from '@jest/globals'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
-import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
+import { HumanizerMeta, HumanizerVisualizationItem, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getToken } from '../../utils'
 import { genericErc20Humanizer } from '../Tokens'
@@ -25,7 +25,7 @@ const txns: IrCall[] = [
 
 describe('gasTank', () => {
   test('basic', () => {
-    const expectedVisualizations: HumanizerVisualization[][] = [
+    const expectedVisualizations: HumanizerVisualizationItem[][] = [
       [getAction('Pay fee with gas tank')],
       [getAction('Fuel gas tank with'), getToken(ZeroAddress, 10n ** 18n)],
       [

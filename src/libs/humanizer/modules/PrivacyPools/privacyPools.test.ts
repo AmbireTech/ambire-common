@@ -4,13 +4,13 @@ import { describe, expect, test } from '@jest/globals'
 
 import { getPrivacyPoolsAsset, getPrivacyPoolsChainConfig } from '../../../../consts/privacyPools'
 import { encodePrivacyPoolsDeposit } from '../../../privacyPools/deposit'
-import { HumanizerVisualization, IrCall } from '../../interfaces'
-import { compareHumanizerVisualizations } from '../../testHelpers'
+import { HumanizerVisualizationItem, IrCall, RichHumanizerVisualization } from '../../interfaces'
+import { compareHumanizerVisualizations, compareRichVisualizations } from '../../testHelpers'
 import {
   getAction,
   getAddressVisualization,
-  getErc7730Visualization,
   getLabel,
+  getRichVisualization,
   getToken
 } from '../../utils'
 import { humanizePrivacyPoolsWithdrawal, privacyPoolsModule } from './privacyPoolsModule'
@@ -45,7 +45,7 @@ describe('Privacy Pools humanizer', () => {
         })
       }
     ]
-    const expectedVisualizations: HumanizerVisualization[][] = [
+    const expectedVisualizations: HumanizerVisualizationItem[][] = [
       [
         getAction('Send'),
         getToken(ZeroAddress, 10n ** 18n),
@@ -91,7 +91,7 @@ describe('Privacy Pools humanizer', () => {
     const USD_PRICE = 1.0001
 
     /** A token of the card, with the symbol and decimals of the pool's asset when it is one. */
-    const getCardToken = (tokenAddress: string, value: bigint): HumanizerVisualization => {
+    const getCardToken = (tokenAddress: string, value: bigint): HumanizerVisualizationItem => {
       const asset = getPrivacyPoolsAsset(BigInt(CHAIN_ID), tokenAddress)
 
       return {
@@ -110,8 +110,8 @@ describe('Privacy Pools humanizer', () => {
       fee: bigint,
       expectedFeeAmount: bigint | null,
       usdPrice: number | null = USD_PRICE
-    ): HumanizerVisualization[] => [
-      getErc7730Visualization('Send', [
+    ): RichHumanizerVisualization =>
+      getRichVisualization('Send', [
         {
           type: 'single-value',
           label: 'Amount to Send',
@@ -140,7 +140,6 @@ describe('Privacy Pools humanizer', () => {
           hasSeparatorBefore: true
         }
       ])
-    ]
 
     const humanize = (
       expectedFeeAmount: bigint | null,
@@ -158,18 +157,18 @@ describe('Privacy Pools humanizer', () => {
       })
 
     test('shows what leaves the account, what the recipient is expected to get, who it is and the fee', () => {
-      compareHumanizerVisualizations(
+      compareRichVisualizations(
         [humanize(120_000n)],
         [expectedCard(USDC, 5_000_000n, 300_000n, 120_000n)]
       )
     })
 
     test('shows the whole amount reaching the recipient when the fee is fully refunded', () => {
-      compareHumanizerVisualizations([humanize(0n)], [expectedCard(USDC, 5_000_000n, 300_000n, 0n)])
+      compareRichVisualizations([humanize(0n)], [expectedCard(USDC, 5_000_000n, 300_000n, 0n)])
     })
 
     test('shows the least the recipient gets and the most the fee can be when it was not simulated', () => {
-      compareHumanizerVisualizations(
+      compareRichVisualizations(
         [humanize(null)],
         [expectedCard(USDC, 5_000_000n, 300_000n, null)]
       )
@@ -177,8 +176,8 @@ describe('Privacy Pools humanizer', () => {
 
     test('never marks a simulated amount as a bound, nor a bound as an estimate', () => {
       const [simulated, notSimulated] = [120_000n, null].map((expectedFeeAmount) => {
-        const card = humanize(expectedFeeAmount).fullVisualization?.[0]
-        if (card?.type !== 'erc7730') throw new Error('Expected a clear-signing card')
+        const card = humanize(expectedFeeAmount).fullVisualization
+        if (!card) throw new Error('Expected a clear-signing card')
 
         return card.fields.map((row) => (row.type === 'single-value' ? row.valuePrefix : undefined))
       })
@@ -189,8 +188,8 @@ describe('Privacy Pools humanizer', () => {
 
     test('prices only the fee, and leaves its price out when unknown', () => {
       const getUsdPrices = (usdPrice: number | null) => {
-        const card = humanize(120_000n, { usdPrice }).fullVisualization?.[0]
-        if (card?.type !== 'erc7730') throw new Error('Expected a clear-signing card')
+        const card = humanize(120_000n, { usdPrice }).fullVisualization
+        if (!card) throw new Error('Expected a clear-signing card')
 
         return card.fields.map((row) =>
           row.type === 'single-value' && row.value.type === 'token' ? row.value.usdPrice : undefined
@@ -203,8 +202,8 @@ describe('Privacy Pools humanizer', () => {
 
     test("gives the native asset's symbol and decimals, so the card needs no lookup", () => {
       const card = humanize(10n ** 15n, { tokenAddress: ZeroAddress, amount: 10n ** 18n })
-        .fullVisualization?.[0]
-      if (card?.type !== 'erc7730') throw new Error('Expected a clear-signing card')
+        .fullVisualization
+      if (!card) throw new Error('Expected a clear-signing card')
       const [amountRow] = card.fields
       if (amountRow?.type !== 'single-value' || amountRow.value.type !== 'token')
         throw new Error('Expected a token row')
@@ -214,8 +213,8 @@ describe('Privacy Pools humanizer', () => {
 
     test('gives no symbol for a token that is not a pool asset, so the UI still looks it up', () => {
       const NOT_A_POOL_ASSET = '0x0000000000000000000000000000000000000001'
-      const card = humanize(120_000n, { tokenAddress: NOT_A_POOL_ASSET }).fullVisualization?.[0]
-      if (card?.type !== 'erc7730') throw new Error('Expected a clear-signing card')
+      const card = humanize(120_000n, { tokenAddress: NOT_A_POOL_ASSET }).fullVisualization
+      if (!card) throw new Error('Expected a clear-signing card')
       const [amountRow] = card.fields
       if (amountRow?.type !== 'single-value' || amountRow.value.type !== 'token')
         throw new Error('Expected a token row')
@@ -224,7 +223,7 @@ describe('Privacy Pools humanizer', () => {
     })
 
     test('describes native ETH by the zero address, as the regular send does', () => {
-      compareHumanizerVisualizations(
+      compareRichVisualizations(
         [humanize(10n ** 15n, { tokenAddress: ZeroAddress, amount: 10n ** 18n })],
         [expectedCard(ZeroAddress, 10n ** 18n, 300_000n, 10n ** 15n)]
       )

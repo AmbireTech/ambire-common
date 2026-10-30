@@ -3,7 +3,7 @@ import { expect } from '@jest/globals'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { Call } from '../../../accountOp/types'
-import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
+import { HumanizerMeta, HumanizerVisualizationItem, IrCall } from '../../interfaces'
 import { privilegeHumanizer } from './privileges'
 
 const transactions: { [key: string]: Call[] } = {
@@ -48,7 +48,7 @@ describe('privileges', () => {
   }
 
   test('Privilege Humanizer', async () => {
-    const expectedHumanization: Partial<HumanizerVisualization>[][] = [
+    const expectedHumanization: Partial<HumanizerVisualizationItem>[][] = [
       [
         { type: 'action', content: 'Enable' },
         {
@@ -84,9 +84,9 @@ describe('privileges', () => {
 
     expect(irCalls.length).toBe(expectedHumanization.length)
     expectedHumanization.forEach(
-      (callHumanization: Partial<HumanizerVisualization>[], i: number) => {
-        callHumanization.forEach((h: Partial<HumanizerVisualization>, j: number) =>
-          expect(irCalls[i]?.fullVisualization?.[j]).toMatchObject(h)
+      (callHumanization: Partial<HumanizerVisualizationItem>[], i: number) => {
+        callHumanization.forEach((h: Partial<HumanizerVisualizationItem>, j: number) =>
+          expect(irCalls[i]?.fullVisualization?.intent[j]).toMatchObject(h)
         )
       }
     )

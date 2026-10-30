@@ -1,6 +1,6 @@
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction } from '../../utils'
+import { getAction, getLegacyVisualization } from '../../utils'
 
 export const deploymentModule: HumanizerCallModule = (
   _: AccountOp,
@@ -10,6 +10,6 @@ export const deploymentModule: HumanizerCallModule = (
   call.to === undefined
     ? {
         ...call,
-        fullVisualization: [getAction('Deploy a smart contract')]
+        fullVisualization: getLegacyVisualization([getAction('Deploy a smart contract')])
       }
     : call

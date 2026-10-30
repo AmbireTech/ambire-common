@@ -2,7 +2,7 @@ import { getAddress, isAddress, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getLabel } from '../../utils'
+import { getAction, getLabel, getLegacyVisualization } from '../../utils'
 
 const pledgeAbi = parseAbi(['function pledge()'])
 
@@ -18,11 +18,11 @@ const TrustlessManifestoModule: HumanizerCallModule = (accOp: AccountOp, call: I
   )
     return {
       ...call,
-      fullVisualization: [
+      fullVisualization: getLegacyVisualization([
         getAction('Sign'),
         getLabel('the'),
         getLabel('Trustless Manifesto Pledge', true)
-      ]
+      ])
     }
   return call
 }

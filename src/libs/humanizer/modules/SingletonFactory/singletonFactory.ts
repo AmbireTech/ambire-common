@@ -2,7 +2,7 @@ import { parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel } from '../../utils'
+import { getAction, getAddressVisualization, getLabel, getLegacyVisualization } from '../../utils'
 
 const CONTRACT_FACTORY_ADDRESS = '0xce0042B868300000d44A59004Da54A005ffdcf9f'
 const deployAbi = parseAbi(['function deploy(bytes,bytes32)'])
@@ -18,11 +18,11 @@ export const singletonFactory: HumanizerCallModule = (_: AccountOp, call: IrCall
   ) {
     return {
       ...call,
-      fullVisualization: [
+      fullVisualization: getLegacyVisualization([
         getAction('Deploy a contract'),
         getLabel('via'),
         getAddressVisualization(CONTRACT_FACTORY_ADDRESS)
-      ]
+      ])
     }
   }
   return call

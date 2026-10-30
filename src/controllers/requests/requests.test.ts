@@ -1297,7 +1297,7 @@ describe('RequestsController ', () => {
     const emittedHumanizationLabels: (string | undefined)[] = []
     const unsubscribe = controller.onUpdate(() => {
       emittedHumanizationLabels.push(
-        request.signAccountOp.humanization[0]?.fullVisualization?.[0]?.content
+        request.signAccountOp.humanization[0]?.fullVisualization?.intent[0]?.content
       )
     })
 

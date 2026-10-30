@@ -5,6 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
+import { getLegacyVisualization } from '../../utils'
 import { fallbackHumanizer } from './fallBackHumanizer'
 
 const accountOp: AccountOp = {
@@ -126,7 +127,7 @@ const fallbackCases: Array<{
       to: TO,
       value: 0n,
       data: DATA,
-      fullVisualization: [{ type: 'action', content: 'Swap', id: 1 }]
+      fullVisualization: getLegacyVisualization([{ type: 'action', content: 'Swap', id: 1 }])
     } as IrCall,
     expected: [{ type: 'action', content: 'Swap' }]
   },
@@ -138,7 +139,9 @@ const fallbackCases: Array<{
       to: TO,
       value: 0n,
       data: '0x',
-      fullVisualization: [{ type: 'action', content: 'Cancel transaction with nonce 5', id: 1 }]
+      fullVisualization: getLegacyVisualization([
+        { type: 'action', content: 'Cancel transaction with nonce 5', id: 1 }
+      ])
     } as IrCall,
     expected: [{ type: 'action', content: 'Cancel transaction with nonce 5' }]
   }
@@ -148,8 +151,8 @@ describe('fallbackHumanizer', () => {
   test('all switch cases', () => {
     fallbackCases.forEach(({ call, expected }) => {
       const result = fallbackHumanizer(accountOp, call, humanizerInfo as HumanizerMeta)
-      expect(result!.fullVisualization).toHaveLength(expected.length)
-      result!.fullVisualization!.forEach((item, i) => {
+      expect(result!.fullVisualization?.intent).toHaveLength(expected.length)
+      result!.fullVisualization!.intent.forEach((item, i) => {
         expect(item).toMatchObject(expected[i]!)
       })
     })

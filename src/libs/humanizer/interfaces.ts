@@ -5,7 +5,7 @@ import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
-export type HumanizerErc7730Row = {
+export type HumanizerRow = {
   // The ERC-7730 field path this row was built from - used to match against `excludedFieldPaths`.
   // Absent for rows synthesized outside real ERC-7730 fields (fallback/multicall/Safe rows), which
   // are never candidates for exclusion anyway.
@@ -18,29 +18,28 @@ export type HumanizerErc7730Row = {
 } & (
   | {
       // One embedded call of a `calldata` field, rendered inline on a single line and never split
-      // into rows of its own. Holds the nested `erc7730` visualization when that call had a
-      // descriptor, or the flat parts the legacy humanizer modules produced when it had none - so
-      // a module's own wording (e.g. "Swap X for Y") survives instead of being taken apart. Carries
-      // no label: the parts are the whole row.
+      // into rows of its own. Holds the nested visualization of that call: the full ERC-7730 one
+      // when it had a descriptor, or one whose `intent` is the flat parts the legacy humanizer
+      // modules produced when it had none - so a module's own wording (e.g. "Swap X for Y")
+      // survives instead of being taken apart. Carries no label: the visualization is the whole row.
       type: 'call'
-      value: HumanizerVisualization[]
+      value: RichHumanizerVisualization
     }
   | {
       // Any other field: its label and the single value the ERC-7730 formatter produced for it.
       type: 'single-value'
       label: string
-      value: HumanizerVisualization
+      value: HumanizerVisualizationItem
       /** Shown before the value, e.g. '≈' for an estimate. Translated by the UI. */
       valuePrefix?: string
     }
 )
 
-export interface HumanizerErc7730Visualization {
-  type: 'erc7730'
+export interface RichHumanizerVisualization {
   // The rendered intent, as parts (text/token/address/action/...). `[action]`
   // (from the spec's plain `intent`) when there's no `interpolatedIntent` or it
   // failed to resolve; the full structured breakdown otherwise.
-  intent: HumanizerVisualization[]
+  intent: HumanizerVisualizationItem[]
   // Paths of fields already rendered inline in `intent` (empty for the plain
   // `[action]` form). Rows to display = `fields` filtered to exclude these -
   // recomputed from `fields` rather than stored as a second row array, so a
@@ -49,12 +48,12 @@ export interface HumanizerErc7730Visualization {
   // Every field turned into a row, regardless of what's excluded above - for
   // heuristics (spender/recipient detection, swap pairing, layout complexity)
   // that need full context independent of `intent`.
-  fields: HumanizerErc7730Row[]
+  fields: HumanizerRow[]
   dapp?: Call['dapp']
 }
 
 // @TODO remove property humanizerMeta
-export type HumanizerVisualization = (
+export type HumanizerVisualizationItem = (
   | {
       type:
         | 'address'
@@ -74,7 +73,6 @@ export type HumanizerVisualization = (
       warning?: boolean
       chainId?: bigint
     }
-  | HumanizerErc7730Visualization
   | {
       type: 'token'
       address: string
@@ -106,7 +104,7 @@ export type HumanizerVisualization = (
   isLocalLabelOnly?: boolean
 }
 export interface IrCall extends Omit<Call, 'to'> {
-  fullVisualization?: HumanizerVisualization[]
+  fullVisualization?: RichHumanizerVisualization
   warnings?: HumanizerWarning[]
   isFallback?: boolean
   to?: string
@@ -121,9 +119,16 @@ export interface IrCall extends Omit<Call, 'to'> {
    * of the descriptor's.
    */
   preferredOverErc7730?: boolean
+  /**
+   * Set when `fullVisualization` was built from an ERC-7730 descriptor instead of the humanizer
+   * modules. The two share the same structure, so this is the only way to tell them apart.
+   */
+  isErc7730?: boolean
 }
 export interface IrMessage extends Message {
-  fullVisualization?: HumanizerVisualization[]
+  fullVisualization?: HumanizerVisualizationItem[]
+  /** Set only when the message was humanized with an ERC-7730 descriptor. */
+  richVisualization?: RichHumanizerVisualization
   warnings?: HumanizerWarning[]
   canHideDropdownArrow?: boolean
 }

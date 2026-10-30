@@ -9,7 +9,8 @@ import {
   getDeadline,
   getLabel,
   getToken,
-  isHexCall
+  isHexCall,
+  getLegacyVisualization
 } from '../../utils'
 
 const fulfillBasicOrderEfficientAbi = parseAbi([
@@ -231,13 +232,13 @@ export const openSeaModule: HumanizerCallModule = (accountOp: AccountOp, call: I
 
     return {
       ...call,
-      fullVisualization: [
+      fullVisualization: getLegacyVisualization([
         getAction('Buy'),
         getToken(offerToken, offerIdentifier),
         getLabel('for'),
         getToken(considerationToken, considerationAmount),
         getDeadline(endTime)
-      ]
+      ])
     }
   }
 
@@ -258,14 +259,14 @@ export const openSeaModule: HumanizerCallModule = (accountOp: AccountOp, call: I
     if (totalOrders.length > 30)
       return {
         ...call,
-        fullVisualization: [
+        fullVisualization: getLegacyVisualization([
           getAction('Buy NFTs'),
           getLabel('from'),
           getAddressVisualization(call.to)
-        ]
+        ])
       }
     const fullVisualization = totalOrders.map(humanizerOrder).flat()
-    return { ...call, fullVisualization }
+    return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
   }
   if (call.data.startsWith(fulfillAdvancedOrderSelector)) {
     const { args } = decodeFunctionData({
@@ -275,7 +276,7 @@ export const openSeaModule: HumanizerCallModule = (accountOp: AccountOp, call: I
     const [order] = args
     const parsedOrder: Order = parseOrder(order)
     const fullVisualization = humanizerOrder(parsedOrder)
-    return { ...call, fullVisualization }
+    return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
   }
 
   return call

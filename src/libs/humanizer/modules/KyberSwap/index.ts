@@ -2,7 +2,15 @@ import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { HexIrCall, eToNative, getAction, getLabel, getToken, isHexCall } from '../../utils'
+import {
+  HexIrCall,
+  eToNative,
+  getAction,
+  getLabel,
+  getToken,
+  isHexCall,
+  getLegacyVisualization
+} from '../../utils'
 
 const swapAbi = parseAbi([
   'function swap((address callTarget,address approveTarget,bytes targetData,(address srcToken,address dstToken,address[] srcReceivers,uint256[] srcAmounts,address[] feeReceivers,uint256[] feeAmounts,address dstReceiver,uint256 amount,uint256 minReturnAmount,uint256 flags,bytes permit) desc,bytes clientData) execution) payable returns (uint256,uint256)'
@@ -41,7 +49,7 @@ const KyberModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   }
   const match = matcher[call.data.slice(0, 10)]
   if (call.fullVisualization || !isHexCall(call) || !match) return call
-  return { ...call, fullVisualization: match(call) }
+  return { ...call, fullVisualization: getLegacyVisualization(match(call)) }
 }
 
 export default KyberModule
