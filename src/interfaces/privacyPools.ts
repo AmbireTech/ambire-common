@@ -74,8 +74,14 @@ export type PrivacyPoolsSyncStatus = 'idle' | 'syncing' | 'ready'
  * - 'locked' - the keystore is locked, so the note secrets can't be derived
  * - 'no-account' - no Privacy Pools account is selected
  * - 'unsupported-network' - no Privacy Pools chain is in the user's network list
+ * - 'passphrase-needed' - the phrase's passphrase isn't saved and its account's key is missing or
+ *   can't be read, so the account has to be added again with the passphrase
  */
-export type PrivacyPoolsUnavailableReason = 'locked' | 'no-account' | 'unsupported-network'
+export type PrivacyPoolsUnavailableReason =
+  | 'locked'
+  | 'no-account'
+  | 'unsupported-network'
+  | 'passphrase-needed'
 
 /**
  * Set by the Association Set Provider, not the protocol. A deposit is 'pending' until 0xBow adds

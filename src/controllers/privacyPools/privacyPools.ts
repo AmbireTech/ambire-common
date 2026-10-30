@@ -281,10 +281,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   get unavailableReason(): PrivacyPoolsUnavailableReason | null {
+    const seedId = this.#getSelectedSeedId()
     // Before 'locked', which unlocking would not fix while these hold
-    if (!this.#getSelectedSeedId()) return 'no-account'
+    if (!seedId) return 'no-account'
     if (!this.supportedChainIds.length) return 'unsupported-network'
     if (!this.#keystore.isUnlocked) return 'locked'
+    if (!this.#keystore.isPrivacyKeyAvailable(seedId, 'privacyPools')) return 'passphrase-needed'
 
     return null
   }
@@ -400,6 +402,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (reason === 'unsupported-network') throw privacyPoolsErrors.noSupportedNetwork()
 
     if (reason === 'locked') throw privacyPoolsErrors.locked()
+
+    if (reason === 'passphrase-needed') throw privacyPoolsErrors.passphraseNeeded()
 
     const seedId = this.#getSelectedSeedId()
     if (!seedId) throw privacyPoolsErrors.unavailableForAccount()
@@ -522,6 +526,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (!this.#hasAccount(seedId)) throw privacyPoolsErrors.depositAccountRemoved(seedId)
 
     if (!this.#keystore.isUnlocked) throw privacyPoolsErrors.depositLocked()
+
+    if (!this.#keystore.isPrivacyKeyAvailable(seedId, 'privacyPools'))
+      throw privacyPoolsErrors.passphraseNeeded()
 
     const config = getPrivacyPoolsChainConfig(BigInt(chainId))
     if (!config || !this.supportedChainIds.includes(chainId))

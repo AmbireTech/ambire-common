@@ -77,7 +77,9 @@ import {
   decodePrivacyKeyNode,
   encodePrivacyKeyMaterial,
   getPathBelow,
-  getPrivacyKeyScope
+  getPrivacyKeyScope,
+  isPrivacyProviderId,
+  PrivacyKeyScope
 } from '../../libs/privateAccount/privacyKeys'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
 import shortenAddress from '../../utils/shortenAddress'
@@ -120,6 +122,10 @@ const getSyncedSeedFields = ({
   hdPathTemplate,
   notBackedUp
 })
+
+/** Tells apart the keystore's privacy key requests of each phrase and provider */
+const getPrivacyRequestKey = (seedId: KeystoreSeed['id'], providerId: PrivacyProviderId) =>
+  `${seedId}:${providerId}`
 
 /** Thrown when a passphrase is not the one its recovery phrase was added with */
 const getWrongPassphraseError = () =>
@@ -194,6 +200,18 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * for doesn't derive it again. Taken by the next use of a passphrase and dropped on lock.
    */
   #checkedPassphrase: { id: string; seedPassphrase: string; masterNode: HDNodeWallet } | null = null
+
+  /**
+   * The providers' nodes being read or stored, by `getPrivacyRequestKey`, so the SDK's concurrent
+   * first requests of a phrase derive and store its node once. Dropped once settled.
+   */
+  #privacyNodeRequests = new Map<string, Promise<HDNodeWallet>>()
+
+  /**
+   * The stored privacy keys that failed to be read, by `getPrivacyRequestKey`. Kept in storage
+   * rather than dropped, but no longer counted as available - see `isPrivacyKeyAvailable`.
+   */
+  #unreadablePrivacyKeys = new Set<string>()
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
@@ -1264,38 +1282,70 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   /**
    * Keeps a provider's key of a phrase whose passphrase isn't saved, derived with the one the user
    * entered, as the phrase alone can't derive it again. Called on adding its private account.
-   * Stores the provider's node (see `PrivacyKeyMaterial`), never the phrase's master node.
+   * Any other phrase has it stored on first use instead - see `derivePrivacyKey`.
    */
   async storePrivacyKey(
     id: KeystoreSeed['id'],
     providerId: PrivacyProviderId,
     seedPassphrase: string
   ) {
-    const scope = getPrivacyKeyScope(providerId)
+    getPrivacyKeyScope(providerId)
     const { seed, passphraseFingerprint } = await this.getSavedSeed(id)
     // Derived once, as it is slow: its fingerprint checks the passphrase and the key comes from it
     const masterNode = this.#getMasterNode(id, seed, seedPassphrase)
     if (!passphraseFingerprint || masterNode.fingerprint !== passphraseFingerprint)
       throw getWrongPassphraseError()
+
+    await this.#storePrivacyNode(id, providerId, masterNode)
+  }
+
+  /**
+   * Stores the provider's node (see `PrivacyKeyMaterial`), never the phrase's master node, which
+   * would reach the user's EVM keys.
+   */
+  async #storePrivacyNode(
+    id: KeystoreSeed['id'],
+    providerId: PrivacyProviderId,
+    masterNode: HDNodeWallet
+  ) {
     if (!this.#mainKey) throw new Error('keystore: not unlocked')
 
-    const material = encodePrivacyKeyMaterial(masterNode, scope)
+    const material = encodePrivacyKeyMaterial(masterNode, getPrivacyKeyScope(providerId))
     const privacyKey = await encryptWithKey(this.#mainKey, material)
     material.fill(0)
+    // In memory first, with no await since the seeds were read, so a write made meanwhile isn't lost
     this.#keystoreSeeds = this.#keystoreSeeds.map((s) =>
       s.id === id ? { ...s, privacyKeys: { ...s.privacyKeys, [providerId]: privacyKey } } : s
     )
+    this.#unreadablePrivacyKeys.delete(getPrivacyRequestKey(id, providerId))
 
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
   }
 
   /**
-   * Drops a provider's key stored by `storePrivacyKey`, once its account is removed - like a
-   * removed account's own key. Re-adding the account asks for the passphrase again.
+   * Whether `derivePrivacyKey` can give the provider's keys of a phrase without asking the user:
+   * its node is stored and readable, or the phrase derives it alone (no passphrase, or a saved
+   * one). Otherwise the user has to add the account again with the passphrase. Reads no secret.
+   */
+  isPrivacyKeyAvailable(id: KeystoreSeed['id'], providerId: PrivacyProviderId): boolean {
+    if (!isPrivacyProviderId(providerId)) return false
+
+    const storedSeed = this.#keystoreSeeds.find((s) => s.id === id)
+    if (!storedSeed) return false
+    if (storedSeed.privacyKeys?.[providerId])
+      return !this.#unreadablePrivacyKeys.has(getPrivacyRequestKey(id, providerId))
+
+    return !storedSeed.passphraseFingerprint || !!storedSeed.seedPassphrase
+  }
+
+  /**
+   * Drops a provider's stored key, once its account is removed - like a removed account's own
+   * key. Re-adding the account asks for the passphrase again if it isn't saved.
    */
   async removePrivacyKey(id: KeystoreSeed['id'], providerId: PrivacyProviderId) {
     await this.initialLoadPromise
     getPrivacyKeyScope(providerId)
+    this.#unreadablePrivacyKeys.delete(getPrivacyRequestKey(id, providerId))
 
     const hasStoredKey = (s: StoredKeystoreSeed) => s.id === id && !!s.privacyKeys?.[providerId]
     if (!this.#keystoreSeeds.some(hasStoredKey)) return
@@ -1890,9 +1940,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * The path check is the security boundary: the SDK chooses the paths, so without it a bug or a
    * malicious bump could get the user's EVM keys. Only the provider's `isAllowedPath` passes.
    *
-   * A phrase whose passphrase isn't saved has the provider's node stored instead (see
-   * `storePrivacyKey`), as the phrase alone can't derive it. Not cached here: any other call
-   * decrypts the phrase and runs a PBKDF2, so callers keep the key while unlocked - see
+   * The keys always come from the provider's stored node, which a phrase that can derive it alone
+   * (no passphrase, or a saved one) stores on first use - see `#getPrivacyNode`. A phrase whose
+   * passphrase isn't saved has it stored on adding its account (see `storePrivacyKey`), as the
+   * phrase alone can't derive it. Not cached here, so callers keep the key while unlocked - see
    * `createKohakuKeystore`.
    */
   async derivePrivacyKey(
@@ -1910,28 +1961,74 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         `keystore: refusing to derive a key outside the paths of ${providerId} (${path})`
       )
 
+    const node = await this.#getPrivacyNode(seedId, providerId)
+    return node.derivePath(getPathBelow(scope.rootPath, path)).privateKey as Hex
+  }
+
+  /** `#readOrStorePrivacyNode`, run once at a time per phrase and provider. */
+  #getPrivacyNode(seedId: KeystoreSeed['id'], providerId: PrivacyProviderId) {
+    const requestKey = getPrivacyRequestKey(seedId, providerId)
+    const pending = this.#privacyNodeRequests.get(requestKey)
+    if (pending) return pending
+
+    const request = this.#readOrStorePrivacyNode(seedId, providerId).finally(() => {
+      this.#privacyNodeRequests.delete(requestKey)
+    })
+    this.#privacyNodeRequests.set(requestKey, request)
+
+    return request
+  }
+
+  /**
+   * The provider's stored node of a phrase. Stored now when missing, for accounts added before
+   * every phrase kept it, or when it can't be read - but only if the phrase derives it alone.
+   * Otherwise the user adds the account again with the passphrase - see `isPrivacyKeyAvailable`.
+   */
+  async #readOrStorePrivacyNode(
+    seedId: KeystoreSeed['id'],
+    providerId: PrivacyProviderId
+  ): Promise<HDNodeWallet> {
+    const scope = getPrivacyKeyScope(providerId)
     const storedKey = this.#keystoreSeeds.find((s) => s.id === seedId)?.privacyKeys?.[providerId]
     if (storedKey) {
-      // Never the legacy AES-CTR, which isn't authenticated: no privacy key was ever stored with it
-      if (!tryParseGcmPayload(storedKey))
-        throw new Error('keystore: the stored privacy key is not AES-GCM encrypted')
-
-      const material = await decryptWithKey(this.#mainKey, storedKey)
       try {
-        return decodePrivacyKeyNode(material, scope).derivePath(getPathBelow(scope.rootPath, path))
-          .privateKey as Hex
-      } finally {
-        material.fill(0)
+        return await this.#readPrivacyNode(storedKey, scope)
+      } catch (error: any) {
+        // Fails the same however often it is read, so the phrase stores it again below, if it can
+        this.#unreadablePrivacyKeys.add(getPrivacyRequestKey(seedId, providerId))
+        this.emitError({
+          level: 'silent',
+          message: 'Could not read the key of a private account.',
+          error:
+            error instanceof Error ? error : new Error('keystore: reading a privacy key failed')
+        })
       }
     }
 
     const { seed, seedPassphrase, passphraseFingerprint } = await this.getSavedSeed(seedId)
-    // Should never happen, as the key is stored when the phrase's private account is added
     if (passphraseFingerprint && !seedPassphrase)
-      throw new Error(`keystore: the passphrase is not saved and no ${providerId} key is stored`)
+      throw new Error(
+        `keystore: the passphrase is not saved and no readable ${providerId} key is stored`
+      )
 
-    return HDNodeWallet.fromMnemonic(Mnemonic.fromPhrase(seed, seedPassphrase), path)
-      .privateKey as Hex
+    const masterNode = getSeedMasterNode(seed, seedPassphrase)
+    await this.#storePrivacyNode(seedId, providerId, masterNode)
+
+    return masterNode.derivePath(scope.rootPath)
+  }
+
+  async #readPrivacyNode(storedKey: AESGCMEncrypted, scope: PrivacyKeyScope) {
+    if (!this.#mainKey) throw new Error('keystore: not unlocked')
+    // Never the legacy AES-CTR, which isn't authenticated: no privacy key was ever stored with it
+    if (!tryParseGcmPayload(storedKey))
+      throw new Error('keystore: the stored privacy key is not AES-GCM encrypted')
+
+    const material = await decryptWithKey(this.#mainKey, storedKey)
+    try {
+      return decodePrivacyKeyNode(material, scope)
+    } finally {
+      material.fill(0)
+    }
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {

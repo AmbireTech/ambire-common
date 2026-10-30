@@ -848,7 +848,7 @@ describe('KeystoreController recovery phrase passphrases', () => {
     // Nothing is derived on adding the phrase, only on adding its Privacy Pools account
     await expect(
       keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
-    ).rejects.toThrow('the passphrase is not saved and no privacyPools key is stored')
+    ).rejects.toThrow('the passphrase is not saved and no readable privacyPools key is stored')
     await expect(
       keystoreCtrl.storePrivacyKey(seedId, 'privacyPools', OTHER_PASSPHRASE)
     ).rejects.toThrow('Wrong passphrase.')
@@ -886,7 +886,7 @@ describe('KeystoreController recovery phrase passphrases', () => {
     expect(storedSeeds.find(({ id }: any) => id === seedId).privacyKeys).toBeUndefined()
     await expect(
       keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
-    ).rejects.toThrow('no privacyPools key is stored')
+    ).rejects.toThrow('no readable privacyPools key is stored')
     expect(seedById(seedId)).toMatchObject({ withPassphrase: true, isPassphraseSaved: false })
     // Only that phrase's key is removed
     expect(
@@ -969,7 +969,7 @@ describe('KeystoreController recovery phrase passphrases', () => {
     ).toBe(expectedPrivacyPoolsKey(PASSPHRASE))
   })
 
-  test('never quotes a stored privacy key it cannot read', async () => {
+  test('never quotes a stored privacy key it cannot read, and asks for the passphrase again', async () => {
     const seedId = await addPhrase(PASSPHRASE)
     const savedSeedId = await addPhrase(OTHER_PASSPHRASE, true)
     await keystoreCtrl.storePrivacyKey(seedId, 'privacyPools', PASSPHRASE)
@@ -982,20 +982,123 @@ describe('KeystoreController recovery phrase passphrases', () => {
       .derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
       .catch((e) => e)
 
-    expect(error.message).toBe('keystore: the stored privacy key is unreadable')
-    expect(error.cause).toBeUndefined()
+    // The phrase can't derive it alone, so it isn't replaced
+    expect(error.message).toBe(
+      'keystore: the passphrase is not saved and no readable privacyPools key is stored'
+    )
+    const readError: any = keystoreCtrl.emittedErrors.at(-1)!.error
+    expect(readError.message).toBe('keystore: the stored privacy key is unreadable')
+    expect(readError.cause).toBeUndefined()
+    expect(JSON.stringify(keystoreCtrl.emittedErrors)).not.toContain(OTHER_PASSPHRASE)
+    expect(keystoreCtrl.isPrivacyKeyAvailable(seedId, 'privacyPools')).toBe(false)
+    // Kept, rather than dropped, until the account is added again
+    const seedsAfter = await storageCtrl.get('keystoreSeeds', [])
+    expect(seedsAfter.find(({ id }: any) => id === seedId).privacyKeys.privacyPools).toEqual(
+      seedPassphrase
+    )
+
+    await keystoreCtrl.storePrivacyKey(seedId, 'privacyPools', PASSPHRASE)
+    expect(keystoreCtrl.isPrivacyKeyAvailable(seedId, 'privacyPools')).toBe(true)
+    expect(
+      await keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
+    ).toBe(expectedPrivacyPoolsKey(PASSPHRASE))
   })
 
-  test('refuses a stored privacy key that is not AES-GCM encrypted', async () => {
-    const seedId = await addPhrase(PASSPHRASE)
-    await keystoreCtrl.storePrivacyKey(seedId, 'privacyPools', PASSPHRASE)
+  test('refuses a stored privacy key that is not AES-GCM encrypted, storing it again if it can', async () => {
+    const notSaved = await addPhrase(PASSPHRASE)
+    const saved = await addPhrase(OTHER_PASSPHRASE, true)
+    await keystoreCtrl.storePrivacyKey(notSaved, 'privacyPools', PASSPHRASE)
+    await keystoreCtrl.derivePrivacyKey(saved, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
 
     // The legacy AES-CTR payloads are plain strings, and aren't authenticated
-    await reloadWithPrivacyKey(seedId, 'a1b2c3d4')
+    await reloadWithPrivacyKey(saved, 'a1b2c3d4')
+    expect(
+      await keystoreCtrl.derivePrivacyKey(saved, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
+    ).toBe(expectedPrivacyPoolsKey(OTHER_PASSPHRASE))
+    expect(keystoreCtrl.emittedErrors.at(-1)!.error.message).toBe(
+      'keystore: the stored privacy key is not AES-GCM encrypted'
+    )
+    const storedSeeds = await storageCtrl.get('keystoreSeeds', [])
+    expect(storedSeeds.find(({ id }: any) => id === saved).privacyKeys.privacyPools).toEqual(
+      expect.objectContaining({ cipherType: 'AES-GCM' })
+    )
 
+    await reloadWithPrivacyKey(notSaved, 'a1b2c3d4')
     await expect(
-      keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
-    ).rejects.toThrow('the stored privacy key is not AES-GCM encrypted')
+      keystoreCtrl.derivePrivacyKey(notSaved, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
+    ).rejects.toThrow('no readable privacyPools key is stored')
+  })
+
+  test('stores the node on first use of a phrase that derives it alone, deriving it once', async () => {
+    const standard = await addPhrase()
+    const saved = await addPhrase(OTHER_PASSPHRASE, true)
+    const getSeedMasterNodeSpy = jest.spyOn(keystoreLib, 'getSeedMasterNode')
+    const setSpy = jest.spyOn(storageCtrl, 'set')
+
+    try {
+      for (const [seedId, passphrase] of [
+        [standard, ''],
+        [saved, OTHER_PASSPHRASE]
+      ] as const) {
+        getSeedMasterNodeSpy.mockClear()
+        setSpy.mockClear()
+
+        // The SDK's first requests come at once
+        const keys = await Promise.all(
+          [1, 2, 3].map(() =>
+            keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
+          )
+        )
+        expect(new Set(keys)).toEqual(new Set([expectedPrivacyPoolsKey(passphrase)]))
+        expect(getSeedMasterNodeSpy).toHaveBeenCalledTimes(1)
+        expect(setSpy).toHaveBeenCalledTimes(1)
+
+        // Read from the stored node from now on, without the phrase
+        getSeedMasterNodeSpy.mockClear()
+        const getSavedSeedSpy = jest.spyOn(keystoreCtrl, 'getSavedSeed')
+        expect(
+          await keystoreCtrl.derivePrivacyKey(
+            seedId,
+            'privacyPools',
+            PRIVACY_POOLS_SIGNING_KEY_PATH
+          )
+        ).toBe(expectedPrivacyPoolsKey(passphrase))
+        expect(getSeedMasterNodeSpy).not.toHaveBeenCalled()
+        expect(getSavedSeedSpy).not.toHaveBeenCalled()
+        getSavedSeedSpy.mockRestore()
+
+        const storedSeeds = await storageCtrl.get('keystoreSeeds', [])
+        expect(storedSeeds.find(({ id }: any) => id === seedId).privacyKeys.privacyPools).toEqual(
+          expect.objectContaining({ cipherType: 'AES-GCM' })
+        )
+      }
+    } finally {
+      getSeedMasterNodeSpy.mockRestore()
+      setSpy.mockRestore()
+    }
+  })
+
+  test('tells whether a private account key is available without asking for the passphrase', async () => {
+    const standard = await addPhrase()
+    const notSaved = await addPhrase(PASSPHRASE)
+    const saved = await addPhrase(OTHER_PASSPHRASE, true)
+    const isAvailable = (seedId: string) =>
+      keystoreCtrl.isPrivacyKeyAvailable(seedId, 'privacyPools')
+
+    expect(isAvailable(standard)).toBe(true)
+    expect(isAvailable(saved)).toBe(true)
+    expect(isAvailable(notSaved)).toBe(false)
+
+    await keystoreCtrl.storePrivacyKey(notSaved, 'privacyPools', PASSPHRASE)
+    expect(isAvailable(notSaved)).toBe(true)
+
+    await keystoreCtrl.removePrivacyKey(notSaved, 'privacyPools')
+    expect(isAvailable(notSaved)).toBe(false)
+
+    expect(isAvailable('does-not-exist')).toBe(false)
+    expect(keystoreCtrl.isPrivacyKeyAvailable(standard, '__proto__' as PrivacyProviderId)).toBe(
+      false
+    )
   })
 
   test('links accounts to the entry of the passphrase they were derived with', async () => {
@@ -1453,7 +1556,7 @@ describe('app data sync between two devices', () => {
       expect(await importingKeystore.isSeedPassphraseCorrect(seedId, PASSPHRASE)).toBe(true)
       await expect(
         importingKeystore.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
-      ).rejects.toThrow('no privacyPools key is stored')
+      ).rejects.toThrow('no readable privacyPools key is stored')
     })
 
     test('adds no Privacy Pools key to a phrase this device already has', async () => {
@@ -1477,7 +1580,7 @@ describe('app data sync between two devices', () => {
           'privacyPools',
           PRIVACY_POOLS_SIGNING_KEY_PATH
         )
-      ).rejects.toThrow('no privacyPools key is stored')
+      ).rejects.toThrow('no readable privacyPools key is stored')
     })
 
     test('stays saved when it was saved on the other device', async () => {

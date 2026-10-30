@@ -367,6 +367,8 @@ class FakeKeystore extends EventEmitter {
 
   removePrivacyKey = jest.fn(async () => {})
 
+  isPrivacyKeyAvailable = jest.fn<(seedId: string, providerId: string) => boolean>(() => true)
+
   fireUpdate() {
     this.emitUpdate()
   }
@@ -764,6 +766,30 @@ describe('PrivacyPoolsController', () => {
       selectedAccount.select('seed-a')
 
       expect(controller.unavailableReason).toBe('locked')
+    })
+
+    it("asks for the passphrase again, reading nothing, when the account's key is not available", async () => {
+      const { controller, keystore, selectedAccount } = await prepareTest()
+      keystore.isPrivacyKeyAvailable.mockImplementation((seedId) => seedId !== 'seed-a')
+
+      selectedAccount.select('seed-a')
+      expect(controller.unavailableReason).toBe('passphrase-needed')
+      expect(keystore.isPrivacyKeyAvailable).toHaveBeenCalledWith('seed-a', 'privacyPools')
+
+      await controller.syncIfStale()
+      expect(runningSyncs).toHaveLength(0)
+      expect(controller.emittedErrors.at(-1)).toMatchObject({
+        level: 'expected',
+        message: expect.stringContaining('needs its passphrase again')
+      })
+
+      // Unlocking comes first, as the key can't be read before it anyway
+      keystore.isUnlocked = false
+      expect(controller.unavailableReason).toBe('locked')
+      keystore.isUnlocked = true
+
+      selectedAccount.select('seed-b')
+      expect(controller.unavailableReason).toBeNull()
     })
 
     it('updates the UI on a selected account update only when the selection changed', async () => {
@@ -1406,6 +1432,15 @@ describe('PrivacyPoolsController', () => {
       await expect(
         buildDeposit(controller, { tokenAddress: '0x0000000000000000000000000000000000000abc' })
       ).rejects.toThrow(EmittableError)
+    })
+
+    it('refuses a deposit into an account whose key is not available, before reading it', async () => {
+      const { controller, keystore } = await prepareTest()
+      keystore.isPrivacyKeyAvailable.mockReturnValue(false)
+
+      await expect(buildDeposit(controller)).rejects.toThrow('needs its passphrase again')
+      expect(keystore.isPrivacyKeyAvailable).toHaveBeenCalledWith('seed-b', 'privacyPools')
+      expect(runningSyncs).toHaveLength(0)
     })
 
     it('refuses a token that could not be sent out of the account again', async () => {

@@ -257,10 +257,10 @@ export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> &
   seed: KeystoreEncryptedPayload
   seedPassphrase?: KeystoreEncryptedPayload | null
   /**
-   * Per privacy provider, the key its accounts derive from (a `PrivacyKeyMaterial`), kept for
-   * phrases whose passphrase is not saved, as it can't be derived again without the passphrase.
-   * Stored when the provider's account is added, dropped when it is removed, and never synced.
-   * AES-GCM only, as the legacy AES-CTR payloads aren't authenticated.
+   * Per privacy provider, the key its accounts derive from (a `PrivacyKeyMaterial`), the only
+   * source of their keys. Stored on adding the provider's account when the passphrase isn't saved,
+   * as it can't be derived again without it, and on first use otherwise. Dropped when the account
+   * is removed, and never synced. AES-GCM only, as the legacy AES-CTR payloads aren't authenticated.
    */
   privacyKeys?: Partial<Record<PrivacyProviderId, AESGCMEncrypted>>
 }
