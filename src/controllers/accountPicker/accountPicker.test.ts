@@ -92,6 +92,28 @@ describe('AccountPicker', () => {
     expect(controller.shouldSearchForLinkedAccounts).toBeFalsy()
   })
 
+  test('should limit the pages only when the key iterator has a limited number of keys', async () => {
+    const { controller } = await prepareTest()
+    const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
+
+    controller.setInitParams({ keyIterator: new KeyIterator(process.env.SEED), hdPathTemplate })
+    await controller.init()
+    expect(controller.toJSON().maxPage).toBeUndefined()
+
+    const privateKeys = Array.from({ length: 11 }, (_, i) =>
+      getPrivateKeyFromSeed(process.env.SEED, null, i, hdPathTemplate)
+    )
+    // Without adding them automatically, which would load every key on a single page
+    controller.setInitParams({
+      keyIterator: new KeyIterator(privateKeys),
+      hdPathTemplate,
+      pageSize: 5,
+      shouldAddNextAccountAutomatically: false
+    })
+    await controller.init()
+    expect(controller.toJSON().maxPage).toBe(3)
+  })
+
   describe('Negative tests', () => {
     suppressConsoleBeforeEach()
     test('should throw if AccountPicker controller method is requested, but the controller was not initialized beforehand', async () => {

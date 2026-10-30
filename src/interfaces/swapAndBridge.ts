@@ -33,6 +33,11 @@ export interface SwapAndBridgeToToken {
   icon?: string
   decimals: number
   priceUSD?: string
+  /**
+   * True for a token that none of the swap providers lists. Its data was read from the chain,
+   * so it is not verified by any provider.
+   */
+  unverified?: boolean
 }
 
 /**
@@ -711,6 +716,13 @@ export interface SwapProvider {
     address: string
     chainId: number
   }): Promise<SwapAndBridgeToToken | null>
+  /**
+   * Whether the provider can trade a token that is missing from its own token list.
+   * Providers that can look up any token via `getToken` do not need to implement it.
+   * Used to decide if the token data can be read from the chain instead, for a token that
+   * none of the providers lists.
+   */
+  isTokenSupported?({ address, chainId }: { address: string; chainId: number }): Promise<boolean>
   startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest>
   quote({
     fromAsset,

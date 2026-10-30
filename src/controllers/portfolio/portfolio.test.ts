@@ -32,7 +32,6 @@ import {
 import {
   CollectionResult,
   GetOptions,
-  Hints,
   LearnedAssets,
   PortfolioGasTankResult,
   PortfolioLibGetResult,
@@ -2361,24 +2360,6 @@ describe('Portfolio Controller ', () => {
       // 2. retrieve the token from portfolio and check if it is found.
       // 3. check if the token is persisted in learnedAssets with timestamp.
       // in learnedAssets as a new token, when found with balance from toBeLearned list.
-
-      const hints: Hints = {
-        erc20s: [ZeroAddress],
-        erc721s: {},
-        externalApi: {
-          hasHints: true,
-          lastUpdate: Date.now(),
-          prices: {}
-        }
-      }
-
-      // @ts-expect-error test
-      jest.spyOn(Portfolio.prototype, 'externalHintsAPIDiscovery').mockImplementationOnce(() =>
-        // @ts-expect-error test
-        Promise.resolve({
-          hints
-        })
-      )
 
       controller.addTokensToBeLearned(['0xc2132D05D31c914a87C6611C10748AEb04B58e8F'], 137n)
 

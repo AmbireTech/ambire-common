@@ -20,6 +20,7 @@ import { IRequestsController } from '../../interfaces/requests'
 import { Storage } from '../../interfaces/storage'
 import { SocketAPIToken } from '../../interfaces/swapAndBridge'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
+import { getTokenInfo, TokenInfo } from '../../libs/portfolio/getTokenInfo'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
@@ -137,6 +138,8 @@ const getSubmittedAccountOp = (
 
 const storage: Storage = produceMemoryStore()
 const storageCtrl = new StorageController(storage)
+jest.mock('../../libs/portfolio/getTokenInfo')
+
 let providersCtrl: IProvidersController
 const networksCtrl = new NetworksController({
   storage: storageCtrl,
@@ -1407,6 +1410,120 @@ describe('SwapAndBridge Controller', () => {
 
     unsubscribe()
     restore()
+  })
+  describe('receive token that no provider lists', () => {
+    // A token added by address stays in the shared token list, so each test uses its own address
+    const getTokenAddress = (suffix: string) => `0x00000000000000000000000000000000000000${suffix}`
+    const makeChainToken = (address: string): TokenInfo => ({
+      address,
+      symbol: 'ONCHAIN',
+      name: 'On-chain token',
+      decimals: 6
+    })
+    let isTokenSupported: jest.Mock<() => Promise<boolean>>
+
+    const mockLookup = ({
+      isSupported,
+      chainResult
+    }: {
+      isSupported: boolean
+      chainResult: TokenInfo | null
+    }) => {
+      jest.spyOn(socketAPIMock, 'getToken').mockResolvedValue(null as never)
+      isTokenSupported = jest.fn<() => Promise<boolean>>().mockResolvedValue(isSupported)
+      Object.assign(socketAPIMock, { isTokenSupported })
+      return jest.mocked(getTokenInfo).mockReset().mockResolvedValue(chainResult)
+    }
+    const getSearchedAddresses = () =>
+      swapAndBridgeController.toTokenSearchResults.map(({ address }) => address)
+
+    afterEach(() => {
+      jest.mocked(socketAPIMock.getToken).mockRestore()
+      jest.mocked(getTokenInfo).mockReset()
+      delete (socketAPIMock as any).isTokenSupported
+    })
+
+    test('is read from the chain when a provider can trade it', async () => {
+      const address = getTokenAddress('cc')
+      const readSpy = mockLookup({
+        isSupported: true,
+        chainResult: makeChainToken(address)
+      })
+
+      await swapAndBridgeController.addToTokenByAddress(address)
+
+      expect(isTokenSupported).toHaveBeenCalledTimes(1)
+      expect(readSpy).toHaveBeenCalledTimes(1)
+      expect(readSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          address,
+          network: expect.objectContaining({ chainId: BigInt(swapAndBridgeController.toChainId!) })
+        })
+      )
+      expect(getSearchedAddresses()).toEqual([address])
+      expect(swapAndBridgeController.toTokenSearchResults[0]).toMatchObject({
+        symbol: 'ONCHAIN',
+        decimals: 6,
+        icon: '',
+        unverified: true
+      })
+    })
+
+    test('is not read from the chain when no provider can trade it', async () => {
+      const { restore } = suppressConsole()
+      const address = getTokenAddress('dd')
+      const readSpy = mockLookup({
+        isSupported: false,
+        chainResult: makeChainToken(address)
+      })
+
+      await swapAndBridgeController.addToTokenByAddress(address)
+
+      expect(isTokenSupported).toHaveBeenCalledTimes(1)
+      expect(readSpy).not.toHaveBeenCalled()
+      expect(getSearchedAddresses()).not.toContain(address)
+      restore()
+    })
+
+    test('is not added when the address is not a token on the chain', async () => {
+      const { restore } = suppressConsole()
+      const address = getTokenAddress('ee')
+      const readSpy = mockLookup({
+        isSupported: true,
+        chainResult: null
+      })
+
+      await swapAndBridgeController.addToTokenByAddress(address)
+
+      expect(readSpy).toHaveBeenCalledTimes(1)
+      expect(getSearchedAddresses()).not.toContain(address)
+      restore()
+    })
+
+    test('is not looked up on the chain when a provider lists it', async () => {
+      const address = getTokenAddress('ff')
+      const readSpy = mockLookup({
+        isSupported: true,
+        chainResult: makeChainToken(address)
+      })
+      jest.spyOn(socketAPIMock, 'getToken').mockResolvedValue({
+        address,
+        chainId: swapAndBridgeController.toChainId!,
+        decimals: 18,
+        name: 'Listed token',
+        symbol: 'LISTED',
+        icon: '',
+        logoURI: ''
+      } as never)
+
+      await swapAndBridgeController.addToTokenByAddress(address)
+
+      expect(isTokenSupported).not.toHaveBeenCalled()
+      expect(readSpy).not.toHaveBeenCalled()
+      expect(getSearchedAddresses()).toEqual([address])
+      expect(swapAndBridgeController.toTokenSearchResults[0]).toMatchObject({ symbol: 'LISTED' })
+      expect(swapAndBridgeController.toTokenSearchResults[0]?.unverified).toBeUndefined()
+    })
   })
   test('should switch from and to tokens', async () => {
     const prevFromChainId = swapAndBridgeController.fromChainId

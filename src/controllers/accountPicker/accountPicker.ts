@@ -550,6 +550,17 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     return this.keyIterator?.derivableHdPathTemplates
   }
 
+  /**
+   * The last page that has accounts on it, when the key iterator has a limited number of
+   * keys. Undefined when there is no such limit.
+   */
+  get maxPage() {
+    const keysCount = this.keyIterator?.keysCount
+    if (keysCount === undefined) return undefined
+
+    return Math.ceil(keysCount / this.pageSize)
+  }
+
   async reset(resetInitParams: boolean = true) {
     this.#setPageRequestId++
     await this.addAccountsPromise
@@ -1721,7 +1732,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       selectedAccounts: this.selectedAccounts,
       type: this.type,
       subType: this.subType,
-      derivableHdPathTemplates: this.derivableHdPathTemplates
+      derivableHdPathTemplates: this.derivableHdPathTemplates,
+      maxPage: this.maxPage
     }
   }
 }

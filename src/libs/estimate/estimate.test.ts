@@ -8,7 +8,7 @@ import { afterEach, describe, jest } from '@jest/globals'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import DeployHelper from '../../../contracts/compiled/DeployHelper.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { relayerUrl, velcroUrl } from '../../../test/config'
+import { relayerUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { mockBundlerRequests } from '../../../test/mocks/bundler'
@@ -251,7 +251,7 @@ const feeTokens = [
 //   }
 // ]
 
-const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
+const portfolio = new Portfolio(fetch, provider, ethereum)
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
