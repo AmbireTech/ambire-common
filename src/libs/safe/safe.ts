@@ -3,7 +3,9 @@ import {
   concat,
   Contract,
   getAddress,
+  getBytes,
   getCreate2Address,
+  hashMessage,
   hexlify,
   id,
   Interface,
@@ -774,8 +776,59 @@ function recoverOwner(
   const safeOwner = getOwnerFromSafeTx(sig, confirmations)
   if (safeOwner) return safeOwner
 
-  // an ambire sig is always ecdsa
+  // an ambire sig is always ecdsa, either over the hash or over the hash signed as a message
+  if (isSafeEthSignSignature(sig)) {
+    return recoverAddress(hashMessage(getBytes(hash)), fromSafeEthSignSignature(sig))
+  }
+
   return recoverAddress(hash, sig)
+}
+
+/**
+ * How much Safe raises `v` of an owner signature to mark it as made over the Safe hash
+ * signed as a regular message (eth_sign), instead of over the hash itself.
+ */
+const SAFE_ETH_SIGN_V_OFFSET = 4
+
+/**
+ * Whether an owner signature was made over the Safe hash signed as a regular message.
+ * Safe marks these by raising `v` above 30 (31 or 32).
+ */
+export function isSafeEthSignSignature(sig: string): boolean {
+  const bytes = getBytes(sig)
+  const v = bytes[64]
+
+  return bytes.length === 65 && (v === 31 || v === 32)
+}
+
+/**
+ * Turns an ECDSA signature of the Safe hash signed as a regular message (the hash as
+ * 32 bytes, with the standard "\x19Ethereum Signed Message:\n32" prefix) into an owner
+ * signature Safe accepts, by raising `v` from 27/28 (or 0/1) to 31/32.
+ *
+ * Used by signers that can't show the full transaction for signing, so the owner signs
+ * only the hash.
+ */
+export function toSafeEthSignSignature(messageSignature: string): Hex {
+  const bytes = getBytes(messageSignature)
+  const rawV = bytes[64]
+  // Some hardware wallets return the recovery id (0/1) instead of 27/28
+  const v = rawV === 0 || rawV === 1 ? rawV + 27 : rawV
+
+  if (bytes.length !== 65 || (v !== 27 && v !== 28)) {
+    throw new Error('Expected a 65-byte message signature with v of 27/28 or 0/1')
+  }
+
+  return concat([bytes.slice(0, 64), toBeHex(v + SAFE_ETH_SIGN_V_OFFSET)]) as Hex
+}
+
+/**
+ * Reverts `toSafeEthSignSignature`, returning the plain message signature (v of 27/28).
+ */
+function fromSafeEthSignSignature(sig: string): Hex {
+  const bytes = getBytes(sig)
+
+  return concat([bytes.slice(0, 64), toBeHex(bytes[64]! - SAFE_ETH_SIGN_V_OFFSET)]) as Hex
 }
 
 // the signature is 130 x number_of_sigs + 2 (0x) symbols long

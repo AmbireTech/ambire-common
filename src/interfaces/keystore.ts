@@ -97,6 +97,13 @@ export interface TxnRequest {
 export interface SignMessageContext {
   chainId: bigint
   provider: JsonRpcProvider
+  /**
+   * Set only when signing a transaction of the user's own Safe account, where Safe also
+   * accepts the transaction hash signed as a regular message (`v` raised by 4). Lets a
+   * signer that can't show a large Safe transaction sign its hash instead. Never set for
+   * typed data from apps, which expect a standard EIP-712 signature.
+   */
+  acceptsSafeEthSignSignature?: boolean
 }
 
 export interface KeystoreSignerInterface {

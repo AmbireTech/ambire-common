@@ -3549,7 +3549,9 @@ export class SignAccountOpController
         const signature = (await this.#withHardwareWalletSigningRequest(signingRequest, () =>
           safeSigner.signTypedData(typedData, {
             chainId: this.#network.chainId,
-            provider: this.provider
+            provider: this.provider,
+            // the signature goes to the Safe contract, which accepts it in either form
+            acceptsSafeEthSignSignature: true
           })
         )) as Hex
         nowSignedSigs.push(signature)
