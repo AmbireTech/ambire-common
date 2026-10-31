@@ -110,7 +110,7 @@ const formatDecimals = (value: number | undefined = undefined, type: FormatType 
     }
   }
 
-  const indexOfFirstNonZero = getIndexOfFirstNonZeroInDecimals(value, type)
+  const indexOfFirstNonZero = getIndexOfFirstNonZeroInDecimals(absoluteValue, type)
 
   const decimals = indexOfFirstNonZero + DECIMAL_RULES[type].max
 
