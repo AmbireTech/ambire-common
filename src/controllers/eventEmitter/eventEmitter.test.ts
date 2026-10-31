@@ -76,6 +76,25 @@ describe('EventEmitter', () => {
 
     consoleSuppressor.restore()
   })
+  it('leaves emittedErrors out of the serialized state while the getter still holds them', () => {
+    const { restore } = suppressConsole()
+    const sampleError: ErrorRef = {
+      message: 'Could not load your balance',
+      level: 'major',
+      error: new Error('RPC failed')
+    }
+    ;(eventEmitter as any).emitError(sampleError)
+    restore()
+
+    const serialized = eventEmitter.toJSON()
+    console.log('serialized EventEmitter state keys', Object.keys(serialized))
+
+    expect(serialized).not.toHaveProperty('emittedErrors')
+    expect(JSON.parse(JSON.stringify(eventEmitter))).not.toHaveProperty('emittedErrors')
+    expect(serialized.name).toBe(eventEmitter.name)
+    expect(eventEmitter.emittedErrors).toEqual([sampleError])
+  })
+
   it('should not execute callbacks after destroy', () => {
     const { restore } = suppressConsole()
     const emitter = new EventEmitter()
