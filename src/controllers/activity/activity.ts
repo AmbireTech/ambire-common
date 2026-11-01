@@ -10,6 +10,7 @@ import { AccountOpsPersistence } from '@/services/storage/accountOpsPersistence'
 import { MAX_OPS_PER_GROUP, STARTUP_RECENT_OPS_LIMIT } from '@/services/storage/activityIdb'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 
+import { ACCOUNT_OP_PENDING_TIMEOUT_MINS } from '../../consts/activity'
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController, InternalAccountsOps } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
@@ -18,20 +19,23 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
-import { IProvidersController } from '../../interfaces/provider'
+import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
+import { getAccountOpNonce } from '../../libs/accountOp/accountOp'
 import {
   getAccountOpBalanceChanges,
   getBalanceChangeTokenAddresses
 } from '../../libs/accountOp/balanceChanges'
+import { isReplaceableBroadcast } from '../../libs/accountOp/replacement'
 import {
   AccountOpIdentifiedBy,
   BalanceChange,
   fetchFrontRanTxnId,
   fetchTxnId,
   getAccountOpRecipients,
+  getMultipleBroadcastUnconfirmedCallOrLast,
   hasTimePassedSinceBroadcast,
   isIdentifiedByMultipleTxn,
   isIdentifiedByRelayer,
@@ -53,6 +57,14 @@ import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import { getAddressCaught } from '../../utils/getAddressCaught'
 import isSameAddr from '../../utils/isSameAddr'
+import {
+  getNextNonce,
+  getNonceKeys,
+  getPendingNonceReservations,
+  NonceKey,
+  PendingNonceReservation,
+  ReservedNonce
+} from '../../utils/nonce'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { FeePayersHistory, InternalSignedMessages, SentToHistory, SignedMessage } from './types'
@@ -128,8 +140,6 @@ const paginate = (
 const getPreviousBlockNumber = (blockNumber: number) => (blockNumber > 0 ? blockNumber - 1 : 0)
 
 const normalizeTxnId = (txnId?: string | null) => txnId?.toLowerCase()
-
-const ACCOUNT_OP_PENDING_TIMEOUT_MINS = 30
 
 /**
  * How many times a page may load more account ops to make up for the ones merged with their
@@ -1515,14 +1525,77 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   /**
+   * Whether the chain already counts a nonce the op took, so another txn used it and the op can
+   * not be mined anymore. It reads the latest txn count of the EOA that sent the op as a raw txn,
+   * and the latest nonce of the account for an op that takes it (an Ambire account sent by
+   * the Relayer or an EOA, or a Safe). Only the nonces the op took are checked, which are the
+   * ones in `getNonceKeys`. False when a read fails, so the next status update tries again.
+   */
+  async #isOpNonceUsedOnChain(
+    accountOp: SubmittedAccountOp,
+    provider: RPCProvider
+  ): Promise<boolean> {
+    const account = this.#accounts.accounts.find((acc) =>
+      isSameAddr(acc.addr, accountOp.accountAddr)
+    )
+    if (!account) return false
+
+    const nonceKeys = getNonceKeys({ accountOp, account })
+    const senderKey = nonceKeys.find(({ kind }) => kind === 'sender')
+    const accountNonce = getAccountOpNonce(accountOp)
+
+    try {
+      const isSenderNonceUsed = async () => {
+        if (!senderKey || accountOp.eoaNonce === null || typeof accountOp.eoaNonce === 'undefined')
+          return false
+
+        // A batch sent one txn at a time takes one nonce per txn, in the order of its calls
+        const txnIndex = isIdentifiedByMultipleTxn(accountOp.identifiedBy)
+          ? getMultipleBroadcastUnconfirmedCallOrLast(accountOp).callIndex
+          : 0
+        const senderTxnCount = await provider.getTransactionCount(senderKey.addr, 'latest')
+        return BigInt(senderTxnCount) > accountOp.eoaNonce + BigInt(txnIndex)
+      }
+      const isAccountNonceUsed = async () => {
+        if (!nonceKeys.some(({ kind }) => kind === 'account') || accountNonce === null) return false
+
+        const latestAccountNonce = await this.#accounts.getLatestAccountNonce(
+          accountOp.accountAddr,
+          accountOp.chainId
+        )
+        return latestAccountNonce !== null && latestAccountNonce > accountNonce
+      }
+
+      const [isSenderUsed, isAccountUsed] = await Promise.all([
+        isSenderNonceUsed(),
+        isAccountNonceUsed()
+      ])
+      return isSenderUsed || isAccountUsed
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: `Failed to check if the nonce of the transaction on network with id ${accountOp.chainId} was used.`,
+        error: error instanceof Error ? error : new Error('activity: failed to read the nonce')
+      })
+      return false
+    }
+  }
+
+  /**
    * Update AccountsOps statuses (inner and public state, and storage)
    *
    * Here is the algorithm:
    * 0. Once we broadcast an AccountOp, we are adding it to ActivityController via `addAccountOp`,
    * and are setting its status to AccountOpStatus.BroadcastedButNotConfirmed.
    * 1. Here, we firstly rely on `getTransactionReceipt` for determining the status (success or failure).
-   * 2. If there's no receipt and the txn is not in the mempool, we look for another confirmed AccountOp with the same eoaNonce.
-   * If there is one, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
+   * 2. If there's no receipt and the txn is not in the mempool, we check if another txn took the nonce
+   * of the AccountOp, which means it has past nonce (AccountOpStatus.UnknownButPastNonce). First we look for another
+   * confirmed AccountOp of the account with the same payer and eoaNonce, which needs no RPC call. Then we read from the
+   * chain whether the txn count of the payer, or the nonce of the account, is already past the nonces of the AccountOp.
+   * This also catches the txns that the wallet knows nothing about, e.g. sent from another device.
+   * 3. An AccountOp that is still unresolved 30 minutes after it was sent is declared stuck
+   * (AccountOpStatus.BroadcastButStuck). Except for a raw txn that is still in the mempool: it can be mined
+   * any time and holds its nonce, so it stays pending until it is mined, replaced or dropped from the mempool.
    */
   async #updateAccountsOpsStatuses(accountAddr: string): Promise<{
     shouldEmitUpdate: boolean
@@ -1591,10 +1664,16 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // implementation is in background.ts
     let newestOpTimestamp: number = 0
 
-    const declareStuckIfExpired = (accountOp: SubmittedAccountOp) => {
+    /**
+     * `mayStillBeMined` is true when the chain tells that the txn of the op can still be mined, or
+     * when it could not be asked. It holds back only an op sent as a raw txn, as a Relayer or a
+     * bundler op keeps its own time limit.
+     */
+    const declareStuckIfExpired = (accountOp: SubmittedAccountOp, mayStillBeMined = false) => {
       if (
         accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed ||
-        !hasTimePassedSinceBroadcast(accountOp, ACCOUNT_OP_PENDING_TIMEOUT_MINS)
+        !hasTimePassedSinceBroadcast(accountOp, ACCOUNT_OP_PENDING_TIMEOUT_MINS) ||
+        (mayStillBeMined && isReplaceableBroadcast(accountOp))
       )
         return
 
@@ -1628,13 +1707,15 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
         // user might have turned off his network
         const network = this.#networks.networks.find((n) => n.chainId.toString() === keyAsChainId)
+        // Without a network or a provider nothing can tell if a txn is still in the mempool,
+        // so only the time counts
         if (!network) {
-          opsToUpdate.forEach(declareStuckIfExpired)
+          opsToUpdate.forEach((op) => declareStuckIfExpired(op))
           return
         }
         const provider = this.#providers.providers[network.chainId.toString()]
         if (!provider) {
-          opsToUpdate.forEach(declareStuckIfExpired)
+          opsToUpdate.forEach((op) => declareStuckIfExpired(op))
           return
         }
 
@@ -1655,10 +1736,11 @@ export class ActivityController extends EventEmitter implements IActivityControl
               newestOpTimestamp = accountOp.timestamp
             }
 
-            try {
-              let isAnyTxnInMempool = false
+            let isAnyTxnInMempool = false
+            let hasLookupFailed = false
 
-              const txIds = []
+            try {
+              const txIds: (string | undefined)[] = []
               if (accountOp.identifiedBy.type !== 'MultipleTxns') {
                 const fetchTxnIdResult = await fetchTxnId(
                   accountOp.identifiedBy,
@@ -1688,10 +1770,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 )
               }
 
-              const receipts = await Promise.all(
-                // no catch, throw an error if one promise doesn't complete
-                txIds.map((txnId) => (txnId ? provider.getTransactionReceipt(txnId) : null))
-              )
+              const getReceipts = () =>
+                Promise.all(
+                  // no catch, throw an error if one promise doesn't complete
+                  txIds.map((txnId) => (txnId ? provider.getTransactionReceipt(txnId) : null))
+                )
+              const receipts = await getReceipts()
               for (let i = 0; i < receipts.length; i++) {
                 let receipt = receipts[i]
                 const txnId = txIds[i]
@@ -1742,6 +1826,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   // if it's not an userOp or it is, but isSuccess was not found
                   if (isSuccess === undefined) isSuccess = !!receipt.status
 
+                  accountOp.confirmedAt = Date.now()
                   const updatedOpIfAny = updateOpStatus(
                     accountOp,
                     isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
@@ -1824,27 +1909,35 @@ export class ActivityController extends EventEmitter implements IActivityControl
               // account paid by one of its EOA keys). Nonces of different EOAs are unrelated,
               // so compare the payer too
               const hasReceipt = typeof firstReceiptBlockNumber !== 'undefined'
-              const accountOpPaidBy = accountOp.gasFeePayment?.paidBy?.toLowerCase()
-              const isReplacedByConfirmedOp =
-                !hasReceipt &&
-                !isAnyTxnInMempool &&
-                accountOp.eoaNonce !== null &&
-                typeof accountOp.eoaNonce !== 'undefined' &&
-                !!accountOpPaidBy &&
-                confirmedOps.some(
-                  (op) =>
-                    op !== accountOp &&
-                    op.eoaNonce === accountOp.eoaNonce &&
-                    op.gasFeePayment?.paidBy?.toLowerCase() === accountOpPaidBy
-                )
-              if (isReplacedByConfirmedOp) {
-                const updatedOpIfAny = updateOpStatus(
-                  accountOp,
-                  AccountOpStatus.UnknownButPastNonce
-                )
-                if (updatedOpIfAny) queueUpdatedOp(updatedOpIfAny)
+              if (!hasReceipt && !isAnyTxnInMempool) {
+                const accountOpPaidBy = accountOp.gasFeePayment?.paidBy?.toLowerCase()
+                const isReplacedByConfirmedOp =
+                  accountOp.eoaNonce !== null &&
+                  typeof accountOp.eoaNonce !== 'undefined' &&
+                  !!accountOpPaidBy &&
+                  confirmedOps.some(
+                    (op) =>
+                      op !== accountOp &&
+                      op.eoaNonce === accountOp.eoaNonce &&
+                      op.gasFeePayment?.paidBy?.toLowerCase() === accountOpPaidBy
+                  )
+                // Costs RPC calls, so it comes last. The op may have been mined after the
+                // receipt lookup, which counts its nonces too, so look for the receipt once more
+                const isReplaced =
+                  isReplacedByConfirmedOp ||
+                  ((await this.#isOpNonceUsedOnChain(accountOp, provider)) &&
+                    !(await getReceipts()).some(Boolean))
+
+                if (isReplaced) {
+                  const updatedOpIfAny = updateOpStatus(
+                    accountOp,
+                    AccountOpStatus.UnknownButPastNonce
+                  )
+                  if (updatedOpIfAny) queueUpdatedOp(updatedOpIfAny)
+                }
               }
             } catch (error) {
+              hasLookupFailed = true
               this.emitError({
                 level: 'silent',
                 message: `Failed to determine transaction status on network with id ${accountOp.chainId} for ${accountOp.txnId}.`,
@@ -1856,7 +1949,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                       )
               })
             } finally {
-              declareStuckIfExpired(accountOp)
+              declareStuckIfExpired(accountOp, isAnyTxnInMempool || hasLookupFailed)
             }
 
             if (shouldScheduleBalanceChangesTask && typeof lastReceiptBlockNumber !== 'undefined') {
@@ -2051,6 +2144,53 @@ export class ActivityController extends EventEmitter implements IActivityControl
     )
   }
 
+  /** The pending ops of every account, as an EOA may send the txns of another account. */
+  #getPendingAccountOps(): SubmittedAccountOp[] {
+    return Object.values(this.broadcastedButNotConfirmed).flat()
+  }
+
+  /** The ops of every account, whatever their status. */
+  #getAllAccountOps(): SubmittedAccountOp[] {
+    return this.#accounts.accounts.flatMap((acc) =>
+      Object.values(this.#accountsOps[acc.addr] ?? {}).flat()
+    )
+  }
+
+  /**
+   * The nonce for a new op of `addr`. It is `chainNonce`, raised past the nonces of the pending
+   * ops of the wallet and of the ops mined less than `CONFIRMED_NONCE_SETTLE_MS` ago, because the
+   * RPC may not count them yet. See `getNextNonce` in `utils/nonce`.
+   */
+  getNextNonce(
+    addr: string,
+    chainId: bigint,
+    kind: ReservedNonce['kind'],
+    chainNonce: bigint
+  ): bigint {
+    return getNextNonce({
+      addr,
+      kind,
+      chainId,
+      chainNonce,
+      accountOps: this.#getAllAccountOps(),
+      now: Date.now(),
+      accounts: this.#accounts.accounts
+    })
+  }
+
+  /**
+   * The nonces on `chainId` held by ops this wallet still waits for, for any of `keys`. Empty
+   * when nothing holds them.
+   */
+  getPendingNonceReservations(chainId: bigint, keys: NonceKey[]): PendingNonceReservation[] {
+    return getPendingNonceReservations({
+      chainId,
+      keys,
+      pendingAccountOps: this.#getPendingAccountOps(),
+      accounts: this.#accounts.accounts
+    })
+  }
+
   async findMessage(account: string, filter: (item: SignedMessage) => boolean) {
     await this.#initialLoadPromise
 
@@ -2112,6 +2252,42 @@ export class ActivityController extends EventEmitter implements IActivityControl
     return this.#accountsOps[accountAddr]?.[chainId.toString()]?.find(
       (op) => op.identifiedBy && op.identifiedBy.identifier === identifiedBy.identifier
     )
+  }
+
+  /**
+   * The speed up or cancel that took the place of the given op. When it was replaced again, this
+   * is the newest replacement. Undefined when nothing replaced it.
+   */
+  findReplacement(
+    identifiedBy: AccountOpIdentifiedBy,
+    accountAddr: string,
+    chainId: bigint
+  ): SubmittedAccountOp | undefined {
+    const ops = this.#accountsOps[accountAddr]?.[chainId.toString()]
+    if (!ops) return undefined
+
+    let replacement: SubmittedAccountOp | undefined
+    let replacedIdentifier = identifiedBy.identifier
+    // Bounded by the number of ops, so replacements that point at each other can't loop forever
+    for (let i = 0; i < ops.length; i++) {
+      const replacements = ops.filter(
+        (op) => op.meta?.speedUp?.replacedIdentifiedBy?.identifier === replacedIdentifier
+      )
+      if (!replacements.length) break
+
+      // The same op may have been sped up more than once, but only one of them can go through
+      replacement =
+        replacements.find(
+          (op) =>
+            op.status !== AccountOpStatus.UnknownButPastNonce &&
+            op.status !== AccountOpStatus.Rejected
+        ) ?? replacements[0]!
+      if (replacement.status !== AccountOpStatus.UnknownButPastNonce) break
+
+      replacedIdentifier = replacement.identifiedBy.identifier
+    }
+
+    return replacement
   }
 
   get banners() {

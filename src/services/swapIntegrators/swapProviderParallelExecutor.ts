@@ -337,6 +337,39 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
     return toTokens.find((t) => t) || null
   }
 
+  /**
+   * Whether at least one enabled provider can trade the token, even if the token is missing
+   * from the token lists of the providers.
+   */
+  async isTokenSupported({
+    address,
+    chainId
+  }: {
+    address: string
+    chainId: number
+  }): Promise<boolean> {
+    // A single provider confirming support is enough, so there is no need to wait for the
+    // slower ones. Providers that cannot check it are skipped. Promise.any also resolves for a
+    // check that completed with false, so that case (and a failed check) rejects instead and is
+    // ignored. The async wrapper turns a synchronous throw of a provider into a rejection too,
+    // so none of the checks can end up as an unhandled rejection
+    const supportChecks = this.#getEnabledProviders()
+      .filter((provider) => provider.isTokenSupported)
+      .map(async (provider) => {
+        const isSupported = await provider.isTokenSupported?.({ address, chainId })
+        if (!isSupported) throw new Error(`${provider.name} does not support the token`)
+      })
+
+    try {
+      await Promise.any(supportChecks)
+    } catch {
+      // No provider confirmed support
+      return false
+    }
+
+    return true
+  }
+
   async startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest> {
     return this.#routeTo(route.providerId, 'startRoute', route)
   }

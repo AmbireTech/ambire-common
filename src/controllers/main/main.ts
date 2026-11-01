@@ -103,7 +103,7 @@ import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
 import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
-import { AccountOp } from '@/libs/accountOp/accountOp'
+import { AccountOp, isSameChainAndSender } from '@/libs/accountOp/accountOp'
 import {
   getCallsWithTxnIds,
   getDappIdentifier,
@@ -353,7 +353,6 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       networks: this.networks,
       fetch: this.fetch,
-      velcroUrl,
       featureFlags: this.featureFlags
     })
     this.accounts = new AccountsController(
@@ -525,6 +524,7 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       networks: this.networks,
       phishing: this.phishing,
+      providers: this.providers,
       ui: this.ui,
       selectedAccount: this.selectedAccount,
       featureFlags: this.featureFlags
@@ -1342,11 +1342,12 @@ export class MainController extends EventEmitter implements IMainController {
 
     let isSignAndBroadcastInProgressOnThisAccountAndChain = false
 
+    // All accounts are checked, as another account can share the fee payer of this op
     if (
-      this.requests.visibleUserRequests.some(
+      this.requests.userRequests.some(
         (r) =>
           r.kind === 'calls' &&
-          r.signAccountOp.accountOp.chainId === signAccountOp.accountOp.chainId &&
+          isSameChainAndSender(r.signAccountOp.accountOp, signAccountOp.accountOp) &&
           r.signAccountOp.isSignAndBroadcastInProgress
       )
     ) {
@@ -1354,19 +1355,20 @@ export class MainController extends EventEmitter implements IMainController {
     } else if (
       type !== 'one-click-swap-and-bridge' &&
       this.swapAndBridge.signAccountOpController &&
-      this.swapAndBridge.signAccountOpController.accountOp.accountAddr ===
-        signAccountOp.accountOp.accountAddr &&
-      this.swapAndBridge.signAccountOpController.accountOp.chainId ===
-        signAccountOp.accountOp.chainId &&
+      isSameChainAndSender(
+        this.swapAndBridge.signAccountOpController.accountOp,
+        signAccountOp.accountOp
+      ) &&
       this.swapAndBridge.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true
     } else if (
       type !== 'one-click-transfer' &&
       this.transfer.signAccountOpController &&
-      this.transfer.signAccountOpController.accountOp.accountAddr ===
-        signAccountOp.accountOp.accountAddr &&
-      this.transfer.signAccountOpController.accountOp.chainId === signAccountOp.accountOp.chainId &&
+      isSameChainAndSender(
+        this.transfer.signAccountOpController.accountOp,
+        signAccountOp.accountOp
+      ) &&
       this.transfer.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true
@@ -1465,14 +1467,18 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleSignMessage() {
-    const accountAddr = this.signMessage.messageToSign?.accountAddr
-    const chainId = this.signMessage.messageToSign?.chainId
+    const approvedMessage = this.signMessage.messageToSign
+    const accountAddr = approvedMessage?.accountAddr
+    const chainId = approvedMessage?.chainId
 
     // Could (rarely) happen if not even a single account state is fetched yet
     const shouldForceUpdateAndWaitForAccountState =
       accountAddr && chainId && !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]
-    if (shouldForceUpdateAndWaitForAccountState)
+    if (shouldForceUpdateAndWaitForAccountState) {
       await this.accounts.updateAccountState(accountAddr, 'latest', [chainId])
+      // A request that replaced the message during the fetch was never approved
+      if (this.signMessage.messageToSign !== approvedMessage) return
+    }
 
     const isAccountStateStillMissing =
       !accountAddr || !chainId || !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]

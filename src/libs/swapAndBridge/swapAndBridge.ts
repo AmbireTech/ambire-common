@@ -302,7 +302,7 @@ export const getIsTokenEligibleForSwapAndBridge = (
 }
 
 export const convertPortfolioTokenToSwapAndBridgeToToken = (
-  portfolioToken: TokenResult,
+  portfolioToken: Pick<TokenResult, 'address' | 'decimals' | 'symbol'>,
   chainId: number
 ): SwapAndBridgeToToken => {
   const { address, decimals, symbol } = portfolioToken

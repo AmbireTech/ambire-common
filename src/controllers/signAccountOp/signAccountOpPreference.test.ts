@@ -1,4 +1,5 @@
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { FeeSpeed } from '../../interfaces/signAccountOp'
 import { StorageController } from '../storage/storage'
 import {
@@ -85,6 +86,7 @@ describe('SignAccountOpPreferenceController fee speed preference', () => {
   })
 
   test('keeps the in-memory preference and emits an error when storage fails', async () => {
+    const { restore } = suppressConsole()
     const { preference, storage } = await initializePreference()
     const storageError = new Error('Storage unavailable')
     jest.spyOn(storage, 'set').mockRejectedValueOnce(storageError)
@@ -99,5 +101,6 @@ describe('SignAccountOpPreferenceController fee speed preference', () => {
       error: storageError,
       level: 'silent'
     })
+    restore()
   })
 })
