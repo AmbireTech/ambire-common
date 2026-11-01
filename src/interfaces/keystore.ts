@@ -60,6 +60,11 @@ export interface ExternalSignerController {
   submitSignatureResponse?: (payload: string | Uint8Array) => void //Qr based specific
   parseAndSetAccountFromQR?: (payload: string | Uint8Array) => Promise<ParsedQrAccount> //Qr based specific
   nfcWalletType?: NfcWalletType // NFC (tap-to-sign card) specific
+  /**
+   * Which Trezor-compatible device is plugged in, when it's not a Trezor (undefined for
+   * a Trezor). Trezor specific.
+   */
+  getTrezorWalletType?: () => Promise<TrezorWalletType | undefined>
   // Mark the start and the end of one account op's signing, so a device that unlocks
   // with a PIN can keep it for that long and ask for it once instead of once per
   // signature. NFC (tap-to-sign card) specific.
@@ -208,6 +213,12 @@ export type QrProtocolType = 'ur' | 'airgap'
 
 export type NfcWalletType = 'keycard' // We can add more supported NFC (tap-to-sign) cards here in the future
 
+/**
+ * Devices from other makers that run Trezor's firmware, so their keys are `trezor` keys,
+ * signed for through the same Trezor flows. Recorded on the key only to name the device.
+ */
+export type TrezorWalletType = 'ambireIce'
+
 export type ExternalKey = {
   addr: Account['addr']
   type: 'trezor' | 'onekey' | 'ledger' | 'lattice' | 'qr' | 'nfc' | 'pq1'
@@ -224,6 +235,7 @@ export type ExternalKey = {
     qrProtocol?: QrProtocolType
     masterFingerprint?: string // BIP32 root fingerprint used to identify/verify the originating hardware wallet account set in QR flows
     nfcWalletType?: NfcWalletType
+    trezorWalletType?: TrezorWalletType // Set on `trezor` keys of a non-Trezor device only
     [key: string]: any
   }
 }

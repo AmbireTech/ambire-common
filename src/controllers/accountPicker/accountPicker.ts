@@ -8,7 +8,7 @@ import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
-import { HARDWARE_WALLET_DEVICE_NAMES } from '../../consts/hardwareWallets'
+import { getHardwareWalletDeviceName } from '../../consts/hardwareWallets'
 import {
   Account,
   AccountOnchainState,
@@ -548,6 +548,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   get derivableHdPathTemplates() {
     return this.keyIterator?.derivableHdPathTemplates
+  }
+
+  /** Set when the `trezor` keys come from a non-Trezor device that runs Trezor's firmware */
+  get trezorWalletType() {
+    return this.keyIterator?.trezorWalletType || this.initParams?.keyIterator?.trezorWalletType
   }
 
   async reset(resetInitParams: boolean = true) {
@@ -1107,13 +1112,17 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     const nfcWalletType = this.#externalSignerControllers.nfc?.nfcWalletType
 
+    const trezorWalletType = keyType === 'trezor' ? this.trezorWalletType : undefined
+
+    const deviceName = getHardwareWalletDeviceName(keyType, { trezorWalletType })
+
     const hdPathTemplate = this.#preparedHdPathTemplate as HD_PATH_TEMPLATE_TYPE
 
     const external = this.#preparedSelection.flatMap(({ account, accountKeys }) =>
       accountKeys.map(({ addr, index }, i) => ({
         addr,
         type: keyType,
-        label: `${HARDWARE_WALLET_DEVICE_NAMES[keyType]} ${
+        label: `${deviceName} ${
           getExistingKeyLabel(this.#keystore.keys, addr, keyType as Key['type']) ||
           getDefaultKeyLabel(
             this.#keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
@@ -1136,6 +1145,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
                 nfcWalletType
               }
             : {}),
+          ...(trezorWalletType ? { trezorWalletType } : {}),
           index,
           createdAt: new Date().getTime()
         }
@@ -1721,6 +1731,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       selectedAccounts: this.selectedAccounts,
       type: this.type,
       subType: this.subType,
+      trezorWalletType: this.trezorWalletType,
       derivableHdPathTemplates: this.derivableHdPathTemplates
     }
   }

@@ -1549,8 +1549,9 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
       const { walletSDK } = trezorCtrl
+      const trezorWalletType = await trezorCtrl.getTrezorWalletType?.()
       await this.accountPicker.setInitParams({
-        keyIterator: new TrezorKeyIterator({ walletSDK }),
+        keyIterator: new TrezorKeyIterator({ walletSDK, trezorWalletType }),
         hdPathTemplate,
         pageSize: 5,
         shouldSelectNextAccountAutomatically: false
