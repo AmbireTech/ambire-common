@@ -1099,6 +1099,64 @@ describe('RequestsController ', () => {
     expect(emittedCallsCount).toBe(2)
   })
 
+  describe('ids of calls added to a batch', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const to = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const buildCalls = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      calls: Call[]
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: { calls, meta: { accountAddr, chainId: 1n } }
+        }
+      })
+    const getBatchedCalls = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) => {
+      const request = controller.userRequests[0]
+      if (request?.kind !== 'calls') throw new Error('Expected a calls request')
+      return request.signAccountOp.accountOp.calls
+    }
+    const destroyBatch = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) => {
+      const request = controller.userRequests[0]
+      if (request?.kind === 'calls') request.signAccountOp.destroy()
+    }
+    const getSwapCalls = (activeRouteId: string): Call[] => [
+      { id: `${activeRouteId}-approval`, activeRouteId, to, value: 0n, data: '0x' },
+      { id: activeRouteId, activeRouteId, to, value: 0n, data: '0x' }
+    ]
+
+    test('two batched swaps keep their ids, so each is tracked once the batch is sent', async () => {
+      const { controller } = await prepareTest()
+
+      await buildCalls(controller, getSwapCalls('order-1'))
+      await buildCalls(controller, getSwapCalls('order-2'))
+
+      expect(controller.userRequests).toHaveLength(1)
+      expect(getBatchedCalls(controller).map(({ id }) => id)).toEqual([
+        'order-1-approval',
+        'order-1',
+        'order-2-approval',
+        'order-2'
+      ])
+      destroyBatch(controller)
+    })
+
+    test('calls that are not part of a swap get a new id, even if they came with one', async () => {
+      const { controller } = await prepareTest()
+
+      await buildCalls(controller, [{ id: 'same-id', to, value: 1n, data: '0x' }])
+      await buildCalls(controller, [{ id: 'same-id', to, value: 1n, data: '0x' }])
+
+      const ids = getBatchedCalls(controller).map(({ id }) => id)
+      expect(ids).toHaveLength(2)
+      expect(ids).not.toContain('same-id')
+      expect(new Set(ids).size).toBe(2)
+      destroyBatch(controller)
+    })
+  })
+
   test('emits refreshed Safe confirmations for a transaction already in the queue', async () => {
     const { accountsCtrl, controller } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
