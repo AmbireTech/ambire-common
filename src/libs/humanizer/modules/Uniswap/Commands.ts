@@ -145,6 +145,14 @@ const SWAP_EXACT_IN_STRUCT = `(address currencyIn,${PATH_KEY_STRUCT}[] path,uint
 const SWAP_EXACT_OUT_SINGLE_STRUCT = `(${POOL_KEY_STRUCT} poolKey,bool zeroForOne,uint128 amountOut,uint128 amountInMaximum,bytes hookData)`
 const SWAP_EXACT_OUT_STRUCT = `(address currencyOut,${PATH_KEY_STRUCT}[] path,uint128 amountOut,uint128 amountInMaximum)`
 
+// Newer versions of the V4 router (for example the one in Universal Router 2.1.2) added the field
+// `minHopPriceX36` to the swap parameters
+// https://github.com/Uniswap/v4-periphery/blob/main/src/interfaces/IV4Router.sol
+const SWAP_EXACT_IN_SINGLE_WITH_MIN_HOP_PRICE_STRUCT = `(${POOL_KEY_STRUCT} poolKey,bool zeroForOne,uint128 amountIn,uint128 amountOutMinimum,uint256 minHopPriceX36,bytes hookData)`
+const SWAP_EXACT_IN_WITH_MIN_HOP_PRICE_STRUCT = `(address currencyIn,${PATH_KEY_STRUCT}[] path,uint256[] minHopPriceX36,uint128 amountIn,uint128 amountOutMinimum)`
+const SWAP_EXACT_OUT_SINGLE_WITH_MIN_HOP_PRICE_STRUCT = `(${POOL_KEY_STRUCT} poolKey,bool zeroForOne,uint128 amountOut,uint128 amountInMaximum,uint256 minHopPriceX36,bytes hookData)`
+const SWAP_EXACT_OUT_WITH_MIN_HOP_PRICE_STRUCT = `(address currencyOut,${PATH_KEY_STRUCT}[] path,uint256[] minHopPriceX36,uint128 amountOut,uint128 amountInMaximum)`
+
 enum Subparser {
   V4SwapExactInSingle,
   V4SwapExactIn,
@@ -275,4 +283,16 @@ export const V4_ACTION_DESCRIPTORS = {
     { name: 'currency', type: 'address' },
     { name: 'recipient', type: 'address' }
   ]
+}
+
+/**
+ * The swap actions of the V4 router with the field `minHopPriceX36`. The first two fields of each
+ * swap (the pool or the currency, and the direction or the path) are in the same place as in
+ * `V4_ACTION_DESCRIPTORS`.
+ */
+export const V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE = {
+  SWAP_EXACT_IN_SINGLE: [{ name: 'swap', type: SWAP_EXACT_IN_SINGLE_WITH_MIN_HOP_PRICE_STRUCT }],
+  SWAP_EXACT_IN: [{ name: 'swap', type: SWAP_EXACT_IN_WITH_MIN_HOP_PRICE_STRUCT }],
+  SWAP_EXACT_OUT_SINGLE: [{ name: 'swap', type: SWAP_EXACT_OUT_SINGLE_WITH_MIN_HOP_PRICE_STRUCT }],
+  SWAP_EXACT_OUT: [{ name: 'swap', type: SWAP_EXACT_OUT_WITH_MIN_HOP_PRICE_STRUCT }]
 }

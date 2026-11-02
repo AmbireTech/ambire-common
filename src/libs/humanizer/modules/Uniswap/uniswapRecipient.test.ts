@@ -15,7 +15,12 @@ import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 import { uniswapHumanizer } from './'
-import { COMMANDS, V4_ACTION_CODES, V4_ACTION_DESCRIPTORS } from './Commands'
+import {
+  COMMANDS,
+  V4_ACTION_CODES,
+  V4_ACTION_DESCRIPTORS,
+  V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE
+} from './Commands'
 
 const coder = new AbiCoder()
 const executeAbi = parseAbi([
@@ -368,5 +373,59 @@ describe('Uniswap Universal Router: the recipient of the funds is shown', () => 
 
     expect(addressesOf(visualization)).toEqual([])
     expect(labelsOf(visualization)).toEqual(['Swap', 'for'])
+  })
+
+  describe('Uniswap V4 swap layouts', () => {
+    const poolKey = (currency0: string, currency1: string) => [
+      currency0,
+      currency1,
+      500,
+      10,
+      NATIVE
+    ]
+    const types = (descriptors: { type: string }[]) => descriptors.map((d) => d.type)
+
+    // the original layout of the V4 router and the one with `minHopPriceX36`
+    const singleSwap = (withMinHopPrice: boolean, zeroForOne: boolean) => ({
+      action: V4_ACTION_CODES.SWAP_EXACT_IN_SINGLE,
+      param: withMinHopPrice
+        ? coder.encode(types(V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE.SWAP_EXACT_IN_SINGLE), [
+            [poolKey(USDC, DAI), zeroForOne, 100n, 1n, 0n, '0x']
+          ])
+        : coder.encode(types(V4_ACTION_DESCRIPTORS.SWAP_EXACT_IN_SINGLE), [
+            [poolKey(USDC, DAI), zeroForOne, 100n, 1n, '0x']
+          ])
+    })
+
+    const swapTokens = (visualization: HumanizerVisualization[]) =>
+      visualization.flatMap((item) => (item.type === 'token' ? [item.address] : []))
+
+    test.each([true, false])(
+      'a single swap is decoded (with minHopPriceX36: %s)',
+      (withMinHopPrice) => {
+        const visualization = humanize([v4Swap([singleSwap(withMinHopPrice, true)])])
+
+        expect(swapTokens(visualization)).toEqual([USDC, DAI])
+      }
+    )
+
+    test.each([true, false])(
+      'a single swap against the order of the pool goes the other way (with minHopPriceX36: %s)',
+      (withMinHopPrice) => {
+        const visualization = humanize([v4Swap([singleSwap(withMinHopPrice, false)])])
+
+        expect(swapTokens(visualization)).toEqual([DAI, USDC])
+      }
+    )
+
+    test('a swap through a path is decoded with minHopPriceX36', () => {
+      const param = coder.encode(
+        types(V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE.SWAP_EXACT_IN),
+        [[NATIVE, [[USDC, 500, 10, NATIVE, '0x']], [0n], 100n, 1n]]
+      )
+      const visualization = humanize([v4Swap([{ action: V4_ACTION_CODES.SWAP_EXACT_IN, param }])])
+
+      expect(swapTokens(visualization)).toEqual([NATIVE, USDC])
+    })
   })
 })

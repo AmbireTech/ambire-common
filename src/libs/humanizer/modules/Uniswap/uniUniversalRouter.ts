@@ -20,7 +20,13 @@ import {
   getToken,
   getWrapping
 } from '../../utils'
-import { COMMANDS, COMMANDS_DESCRIPTIONS, V4_ACTION_CODES, V4_ACTION_DESCRIPTORS } from './Commands'
+import {
+  COMMANDS,
+  COMMANDS_DESCRIPTIONS,
+  V4_ACTION_CODES,
+  V4_ACTION_DESCRIPTORS,
+  V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE
+} from './Commands'
 import { HumanizerUniMatcher } from './interfaces'
 import {
   getUniRecipientText,
@@ -102,6 +108,25 @@ function isFeedingNextAlternativeSwap(
   }
 }
 
+// The swap parameters of the V4 router got a new field (`minHopPriceX36`) in its newer versions.
+// They are decoded with the original layout first, and with the new layout when that does not fit.
+// The fields that are read after this are in the same place in both layouts.
+function extractV4SwapParams(
+  swapAction: keyof typeof V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE,
+  param: Hex
+) {
+  try {
+    const { swap } = extractParams(V4_ACTION_DESCRIPTORS[swapAction], param)
+    // ethers does not throw for a field that does not fit while decoding, it throws when it is read
+    swap.toArray(true)
+    return swap
+  } catch {
+    // not an error: the parameters are not in the original layout, so the new one is used. When
+    // they are not in the new one either, the decoding below throws.
+  }
+  return extractParams(V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE[swapAction], param).swap
+}
+
 function parseV4Actions(
   actions: string,
   totalParams: Hex[],
@@ -124,8 +149,7 @@ function parseV4Actions(
       const args = extractParams(V4_ACTION_DESCRIPTORS.SETTLE_ALL, param)
       parsed.push([getAction('Send'), getToken(args.currency, args.maxAmount)])
     } else if (action === V4_ACTION_CODES.SWAP_EXACT_IN) {
-      const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_IN, param)
-      const [tokenIn, path, amountIn, amountOut] = swap
+      const [tokenIn, path] = extractV4SwapParams('SWAP_EXACT_IN', param)
       const lastToken = path[path.length - 1][0]
 
       parsed.push([
@@ -135,8 +159,7 @@ function parseV4Actions(
         getToken(lastToken, 0n)
       ])
     } else if (action === V4_ACTION_CODES.SWAP_EXACT_OUT) {
-      const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_OUT, param)
-      const [tokenOut, path, amountOut, amountIn] = swap
+      const [tokenOut, path] = extractV4SwapParams('SWAP_EXACT_OUT', param)
       const firstToken = path[0][0]
 
       parsed.push([
@@ -146,30 +169,28 @@ function parseV4Actions(
         getToken(tokenOut, 0n)
       ])
     } else if (action === V4_ACTION_CODES.SWAP_EXACT_IN_SINGLE) {
-      const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_IN_SINGLE, param)
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const [poolKey, zeroForOne, amountIn, amountOutMinimum, hookData] = swap
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const [currency0, currency1, fee, tickSpacing, hooks] = poolKey
+      const [poolKey, zeroForOne] = extractV4SwapParams('SWAP_EXACT_IN_SINGLE', param)
+      const [currency0, currency1] = poolKey
+      // the direction of the swap: from currency0 to currency1 when `zeroForOne` is true
+      const [tokenIn, tokenOut] = zeroForOne ? [currency0, currency1] : [currency1, currency0]
 
       parsed.push([
         getAction('Swap'),
-        getToken(currency0, 0n),
+        getToken(tokenIn, 0n),
         getLabel('for'),
-        getToken(currency1, 0n)
+        getToken(tokenOut, 0n)
       ])
     } else if (action === V4_ACTION_CODES.SWAP_EXACT_OUT_SINGLE) {
-      const { swap } = extractParams(V4_ACTION_DESCRIPTORS.SWAP_EXACT_OUT_SINGLE, param)
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const [poolKey, zeroForOne, amountOut, amountInMaximum, hookData] = swap
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const [currency0, currency1, fee, tickSpacing, hooks] = poolKey
+      const [poolKey, zeroForOne] = extractV4SwapParams('SWAP_EXACT_OUT_SINGLE', param)
+      const [currency0, currency1] = poolKey
+      // the direction of the swap: from currency0 to currency1 when `zeroForOne` is true
+      const [tokenIn, tokenOut] = zeroForOne ? [currency0, currency1] : [currency1, currency0]
 
       parsed.push([
         getAction('Swap'),
-        getToken(currency0, 0n),
+        getToken(tokenIn, 0n),
         getLabel('for'),
-        getToken(currency1, 0n)
+        getToken(tokenOut, 0n)
       ])
     } else if (action === V4_ACTION_CODES.TAKE) {
       const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE, param)
