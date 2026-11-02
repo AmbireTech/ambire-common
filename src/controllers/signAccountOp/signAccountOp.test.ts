@@ -5497,6 +5497,90 @@ describe('RPC gas prices with a bundler fallback', () => {
     expect(controller.selectedOptionGasPrices).toEqual(customGasPrices)
   })
 
+  test('resetting the custom gas goes back to the fetched gas prices and the simulated gas limit', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    const pricesBeforeCustom = controller.selectedOptionGasPrices
+    const gasLimitBeforeCustom = getSpeed(
+      controller,
+      eoaAccount.addr,
+      FeeSpeed.Fast
+    ).simulatedGasLimit
+
+    controller.update({ customGasPrices, customGasLimit: gasLimitBeforeCustom + 1000n })
+    expect(controller.hasCustomGasPrices).toBe(true)
+    expect(controller.selectedOptionGasPrices).toEqual(customGasPrices)
+
+    controller.update({ speed: FeeSpeed.Medium, shouldResetCustomGas: true })
+
+    expect(controller.hasCustomGasPrices).toBe(false)
+    expect(controller.customGasLimit).toBeUndefined()
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
+    expect(controller.selectedOptionGasPrices).toEqual(pricesBeforeCustom)
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Fast).simulatedGasLimit).toBe(
+      gasLimitBeforeCustom
+    )
+  })
+
+  test('custom gas keeps the network fee speeds apart, so each speed shows what picking it costs', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    const identifier = getFeeSpeedIdentifier(
+      controller.selectedOption!,
+      controller.accountOp.accountAddr
+    )
+    const speedsBeforeCustom = controller.feeSpeeds[identifier]!
+    expect(controller.networkFeeSpeeds).toEqual({})
+
+    const customGasLimit = speedsBeforeCustom[0]!.simulatedGasLimit + 1000n
+    controller.update({ customGasPrices, customGasLimit })
+
+    const customSpeeds = controller.feeSpeeds[identifier]!
+    expect(customSpeeds.map(({ simulatedGasLimit }) => simulatedGasLimit)).toEqual(
+      Array(customSpeeds.length).fill(customGasLimit)
+    )
+    expect(customSpeeds).not.toEqual(speedsBeforeCustom)
+    expect(controller.networkFeeSpeeds[identifier]).toEqual(speedsBeforeCustom)
+
+    controller.update({ speed: FeeSpeed.Medium, shouldResetCustomGas: true })
+    expect(controller.networkFeeSpeeds).toEqual({})
+    expect(controller.feeSpeeds[identifier]).toEqual(speedsBeforeCustom)
+  })
+
+  test('fetched gas prices refresh the network fee speeds but keep the custom fee', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    controller.update({ customGasPrices })
+    const identifier = getFeeSpeedIdentifier(
+      controller.selectedOption!,
+      controller.accountOp.accountAddr
+    )
+    const customSpeeds = controller.feeSpeeds[identifier]
+    const networkSpeedsBefore = controller.networkFeeSpeeds[identifier]
+
+    // What the gas price interval passes to update() after each fetch
+    controller.update({ gasPrices: toGasSpeeds(7000n), rpcGasPrices: toGasSpeeds(2000n) })
+
+    expect(controller.hasCustomGasPrices).toBe(true)
+    expect(controller.selectedOptionGasPrices).toEqual(customGasPrices)
+    expect(controller.feeSpeeds[identifier]).toEqual(customSpeeds)
+    expect(controller.networkFeeSpeeds[identifier]).not.toEqual(networkSpeedsBefore)
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Slow).gasPrice).toBe(
+      BigInt(customGasPrices.slow.maxFeePerGas)
+    )
+  })
+
+  test('picking a speed without the reset flag keeps the custom gas prices', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    controller.update({ customGasPrices })
+
+    controller.update({ speed: FeeSpeed.Slow })
+
+    expect(controller.hasCustomGasPrices).toBe(true)
+    expect(controller.selectedOptionGasPrices).toEqual(customGasPrices)
+  })
+
   test('ignores the RPC gas prices outside Ethereum', async () => {
     // the test environment has no Polygon state for the Safe, so use an Ambire smart
     // account, which prefers the bundler outside Ethereum just the same
