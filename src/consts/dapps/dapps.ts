@@ -76,7 +76,6 @@ export const dappIdsToBeRemoved = new Set([
 ])
 
 export const featuredDapps = new Set([
-  'rewards.ambire.com',
   'snapshot.box/#/s:ambire.eth',
   'lido.fi',
   'bitrefill.com',
@@ -449,6 +448,27 @@ export const predefinedDapps: Dapp[] = [
       'Non-custodial anonymous transactions on Ethereum. Opens the same official app, but your browser checks every file itself, so you do not have to trust a middleman server. Slower to load.',
     twitter: 'TornadoCash',
     category: 'Privacy'
+  },
+  // DefiLlama lists RAILGUN only with its info website (railgun.org), not the staking app
+  {
+    id: 'stakerail.fi',
+    url: 'https://stakerail.fi',
+    name: 'RAILGUN Staking',
+    icon: 'https://icons.llamao.fi/icons/protocols/railgun',
+    description: 'Stake RAIL to secure the protocol and collect rewards.',
+    chainIds: [1],
+    twitter: 'railgun_project',
+    category: 'Staking'
+  },
+  // DefiLlama lists Relay with its docs website (docs.relay.link) and no networks, so it gets filtered out
+  {
+    id: 'relay.link',
+    url: 'https://relay.link/bridge',
+    name: 'Relay',
+    icon: 'https://icons.llamao.fi/icons/protocols/relay',
+    description: 'Fast and low-cost moving and swapping of tokens between networks.',
+    twitter: 'RelayProtocol',
+    category: 'Cross Chain Bridge'
   }
 ]
 
@@ -464,7 +484,8 @@ export const dappsNotToFilterOutByDomain = [
   'altitude.fi',
   'zora.co',
   'swap.defillama.com',
-  'jumper.xyz'
+  'jumper.xyz',
+  'privacypools.com'
 ]
 
 export const CATEGORY_MAP: Record<string, string> = {

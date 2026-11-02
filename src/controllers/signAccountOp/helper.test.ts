@@ -1,10 +1,17 @@
+import { JsonRpcProvider, makeError, Network } from 'ethers'
+
 import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import {
+  getBroadcastServiceErrorMessage,
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
-  getSafeGasRefundWarning
+  getSafeGasRefundWarning,
+  isNonceTooLow,
+  isReplacementRefused,
+  isTxnAlreadyKnown,
+  isUnderpriced
 } from './helper'
 
 const buildSafeTxFixture = (
@@ -159,5 +166,103 @@ describe('getSafeGasRefundWarning', () => {
 
   test('does not warn when accountOp.safeTx is not set', () => {
     expect(getSafeGasRefundWarning(accountOp)).toBeNull()
+  })
+})
+
+describe('broadcast error checks', () => {
+  const provider = new JsonRpcProvider('http://127.0.0.1:1', Network.from(1), {
+    staticNetwork: Network.from(1)
+  })
+  afterAll(() => provider.destroy())
+
+  // Built the way ethers builds them from a node answer to eth_sendRawTransaction
+  const nodeError = (message: string) =>
+    provider.getRpcError(
+      { method: 'eth_sendRawTransaction', params: ['0x00'], id: 1, jsonrpc: '2.0' },
+      { id: 1, error: { code: -32000, message } }
+    )
+
+  test('isReplacementRefused matches the node refusal, also without the ethers mapping', () => {
+    expect(isReplacementRefused(nodeError('replacement transaction underpriced'))).toBe(true)
+    expect(isReplacementRefused(new Error('replacement transaction underpriced'))).toBe(true)
+    expect(isReplacementRefused(nodeError('nonce too low'))).toBe(false)
+    expect(isReplacementRefused(nodeError('transaction underpriced'))).toBe(false)
+  })
+
+  test('isNonceTooLow matches the node answer in any form', () => {
+    expect(isNonceTooLow(nodeError('nonce too low'))).toBe(true)
+    expect(isNonceTooLow(nodeError('nonce too low: next nonce 8, tx nonce 7'))).toBe(true)
+    expect(isNonceTooLow(new Error('nonce too low'))).toBe(true)
+    expect(isNonceTooLow(nodeError('replacement transaction underpriced'))).toBe(false)
+  })
+
+  test('isTxnAlreadyKnown matches only a node that already has the txn', () => {
+    expect(isTxnAlreadyKnown(nodeError('already known'))).toBe(true)
+    expect(isTxnAlreadyKnown(new Error('already known'))).toBe(true)
+    // The txn never went out, so it must not count as sent
+    expect(isTxnAlreadyKnown(nodeError('unknown transaction type'))).toBe(false)
+    expect(isTxnAlreadyKnown(nodeError('nonce too low'))).toBe(false)
+    expect(isTxnAlreadyKnown(nodeError('replacement transaction underpriced'))).toBe(false)
+    expect(isTxnAlreadyKnown('already known')).toBe(false)
+  })
+})
+describe('getBroadcastServiceErrorMessage', () => {
+  const userOpPayload = {
+    method: 'eth_sendUserOperation',
+    params: [{ sender: '0x01', maxFeePerGas: '0x3b9aca00', maxPriorityFeePerGas: '0x3b9aca00' }]
+  }
+
+  test('returns only the bundler message of an ethers error, not the request payload', () => {
+    const error = makeError('could not coalesce error', 'UNKNOWN_ERROR', {
+      error: { code: -32500, message: 'AA23 reverted: not enough balance' },
+      payload: userOpPayload
+    })
+
+    // The full ethers message echoes the user operation and its fee fields
+    expect(isUnderpriced(error.message)).toBe(true)
+    expect(getBroadcastServiceErrorMessage(error)).toBe('AA23 reverted: not enough balance')
+    expect(isUnderpriced(getBroadcastServiceErrorMessage(error))).toBe(false)
+  })
+
+  test('keeps a real fee change reported by the bundler', () => {
+    const bundlerMessage =
+      'maxFeePerGas must be at least 1200 (current maxFeePerGas: 1000) - use pimlico_getUserOperationGasPrice to get the current gas price'
+    const error = makeError('could not coalesce error', 'UNKNOWN_ERROR', {
+      error: { code: -32602, message: bundlerMessage },
+      payload: userOpPayload
+    })
+
+    expect(getBroadcastServiceErrorMessage(error)).toBe(bundlerMessage)
+    expect(isUnderpriced(getBroadcastServiceErrorMessage(error))).toBe(true)
+  })
+
+  test('reads the service message nested under info', () => {
+    const error = makeError('unsupported operation', 'UNSUPPORTED_OPERATION', {
+      operation: 'eth_sendUserOperation',
+      info: { error: { message: 'the method does not exist' }, payload: userOpPayload }
+    })
+
+    expect(getBroadcastServiceErrorMessage(error)).toBe('the method does not exist')
+  })
+
+  test('falls back to the short message when ethers has no service error', () => {
+    const error = makeError('timeout', 'TIMEOUT', {
+      operation: 'eth_sendUserOperation',
+      info: { payload: userOpPayload },
+      reason: 'timeout'
+    })
+
+    expect(getBroadcastServiceErrorMessage(error)).toBe('timeout')
+    expect(isUnderpriced(getBroadcastServiceErrorMessage(error))).toBe(false)
+  })
+
+  test('returns the message of a non-ethers error as it is', () => {
+    const message = 'Transaction fee underpriced. Please select a higher fee and try again'
+
+    expect(getBroadcastServiceErrorMessage(new Error(message))).toBe(message)
+  })
+
+  test('returns an empty string when there is no error', () => {
+    expect(getBroadcastServiceErrorMessage()).toBe('')
   })
 })

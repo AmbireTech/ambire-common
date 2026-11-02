@@ -15,9 +15,11 @@ import {
   IPrivacyPoolsController,
   PrivacyPoolsAccount,
   PrivacyPoolsAccountChainState,
+  PrivacyPoolsChainPoolStats,
   PrivacyPoolsChainState,
   PrivacyPoolsDepositAssetConfig,
   PrivacyPoolsOperation,
+  PrivacyPoolsRagequitDeposit,
   PrivacyPoolsSendForm,
   PrivacyPoolsTokenBalance,
   PrivacyPoolsUnavailableReason
@@ -38,7 +40,9 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { LockGeneration, PhraseScopedModule, PrivacyPoolsContext } from './context'
 import { PrivacyPoolsDepositParams, PrivacyPoolsDeposits } from './deposits'
 import { privacyPoolsErrors } from './errors'
+import { PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
+import { PrivacyPoolsRagequit } from './ragequit'
 import { PrivacyPoolsSendFormState } from './sendForm'
 import { PrivacyPoolsSync } from './sync'
 import { PrivacyPoolsWithdrawal, PrivacyPoolsWithdrawalParams } from './withdrawal'
@@ -86,6 +90,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #withdrawal: PrivacyPoolsWithdrawal
 
+  #ragequit: PrivacyPoolsRagequit
+
+  #poolStatsReader: PrivacyPoolsPoolStatsReader
+
+  /** Per chain, the latest `#refreshPoolStats`, so an older one finishing later writes nothing. */
+  #poolStatsRefreshIds: { [chainId: string]: number } = {}
+
   #sendForm: PrivacyPoolsSendFormState
 
   /** In teardown order: a withdrawal being proved is cancelled before its plugin is dropped. */
@@ -105,6 +116,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #pricesFetchedAt = 0
 
   #pricesRequest: Promise<void> | null = null
+
+  /**
+   * Per chain, its pools' numbers for a token's details, so they are there when it opens. The same
+   * for every account, so they outlive a lock. Computed from this device's copy of the history
+   * after each sync of it, before the balances it reads show - see `PrivacyPoolsPoolStatsReader`.
+   * Not on load: a stored history is read only when the user opens a Privacy Pools account.
+   */
+  poolStats: { [chainId: string]: PrivacyPoolsChainPoolStats } = {}
 
   /** At most one per stored recovery phrase, and removed with it. */
   accounts: PrivacyPoolsAccount[] = []
@@ -180,14 +199,19 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
     const cancellableProverFactory = withCancellableProving(
       proverFactory ?? createProverFactory(circuitsBaseUrl),
-      // Read when a proof starts, by which time the withdrawal module exists
-      () => this.#withdrawal.provingSignal
+      // Read when a proof starts, by which time the withdrawal module exists. Only withdrawals
+      // prove the 'withdraw' circuit; a ragequit's short 'commitment' proof is not cancelled.
+      (circuit) => (circuit === 'withdraw' ? this.#withdrawal.provingSignal : null)
     )
 
     this.#registry = new PrivacyPoolsProtocolRegistry(ctx, cancellableProverFactory)
-    this.#sync = new PrivacyPoolsSync(ctx, this.#registry)
+    this.#sync = new PrivacyPoolsSync(ctx, this.#registry, (chainId) =>
+      this.#refreshPoolStats(chainId)
+    )
     this.#deposits = new PrivacyPoolsDeposits(ctx, this.#registry, this.#sync)
     this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
+    this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync)
+    this.#poolStatsReader = new PrivacyPoolsPoolStatsReader(ctx)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
     this.#phraseScopedModules = [this.#withdrawal, this.#deposits, this.#sync, this.#registry]
 
@@ -213,6 +237,33 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     this.#subscribeToDependencies()
     this.emitUpdate()
+  }
+
+  /**
+   * Recomputes a chain's pool numbers from its history on this device. Does not emit: a sync
+   * emits once it is done. Never rejects.
+   */
+  async #refreshPoolStats(chainId: string): Promise<void> {
+    const refreshId = (this.#poolStatsRefreshIds[chainId] || 0) + 1
+    this.#poolStatsRefreshIds[chainId] = refreshId
+    const isLatest = () => this.#poolStatsRefreshIds[chainId] === refreshId
+
+    try {
+      const byToken = await this.#poolStatsReader.read(chainId)
+      // Before the chain's first sync there is nothing to show yet, not an error
+      if (!byToken || !isLatest()) return
+
+      this.poolStats = { ...this.poolStats, [chainId]: { byToken, error: null } }
+    } catch (error: any) {
+      const emittableError = privacyPoolsErrors.poolStatsReadFailed(error)
+      this.emitError(emittableError)
+      if (!isLatest()) return
+
+      this.poolStats = {
+        ...this.poolStats,
+        [chainId]: { byToken: {}, error: emittableError.message }
+      }
+    }
   }
 
   /**
@@ -623,6 +674,68 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     // Picks up the spent note and its change note
     await this.syncChain(operation.chainId)
+  }
+
+  /**
+   * The selected account's deposits of a token that are still being verified, each with the
+   * account it was made from - the only one that can take it back. From the last sync, so nothing
+   * about them is asked of the network.
+   */
+  async getRagequitDeposits(
+    chainId: string,
+    tokenAddress: string
+  ): Promise<PrivacyPoolsRagequitDeposit[]> {
+    const seedId = this.#assertAvailableAndGetSeedId()
+
+    return this.#ragequit.getDeposits({ seedId, chainId, tokenAddress })
+  }
+
+  /** `getRagequitDeposits` for `dispatchAndWait`, as only the Rage quit sheet needs them. */
+  async getRagequitDepositsAndSendResToUi(
+    chainId: string,
+    tokenAddress: string,
+    requestId: string
+  ) {
+    try {
+      const deposits = await this.getRagequitDeposits(chainId, tokenAddress)
+
+      this.#ui.message.sendUiMessage({ requestId, ok: true, res: deposits })
+    } catch (error: any) {
+      const emittableError =
+        error instanceof EmittableError
+          ? error
+          : privacyPoolsErrors.ragequitDepositsReadFailed(error)
+
+      this.#ui.message.sendUiMessage({ requestId, ok: false, error: emittableError.message })
+      this.emitError(emittableError)
+    }
+  }
+
+  /**
+   * The account one of the selected account's deposits still being verified was made from. From
+   * the last sync, so it is known before the reclaim is proved. Undefined for any other deposit.
+   */
+  getRagequitDepositorAddr({ chainId, label }: { chainId: string; label: bigint }) {
+    const seedId = this.#assertAvailableAndGetSeedId()
+
+    return this.#ragequit.getDepositorAddr({ seedId, chainId, label })
+  }
+
+  /**
+   * Proves taking back one of the selected account's deposits still being verified, as a call of
+   * the account that made it. For `MainController.privacyPoolsRagequit`, which selects that
+   * account and adds the call for the user to sign. Throws an `EmittableError` otherwise.
+   */
+  async buildRagequitCalls({
+    chainId,
+    label
+  }: {
+    chainId: string
+    label: bigint
+  }): Promise<{ accountAddr: string; calls: Call[] }> {
+    const seedId = this.#assertAvailableAndGetSeedId()
+
+    return this.#ragequit.buildCalls({ seedId, chainId, label })
   }
 
   /** Adds a stored phrase's Privacy Pools account. Nothing is derived or synced until opened. */
