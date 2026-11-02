@@ -17,12 +17,16 @@ import {
 } from '../../interfaces/network'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
+import { fetchWithTimeout } from '../../utils/fetch'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import { getSASupport } from '../deployless/simulateDeployCall'
 
 const STATE_OVERRIDE_TEST_ADDRESS = '0x0000000000000000000000000000000000696969'
 const STATE_OVERRIDE_TEST_CODE_RETURNING_ONE = '0x600160005260206000f3'
 const STATE_OVERRIDE_TEST_RESULT = toBeHex(1, 32)
+
+/** How long to wait for our price API to return the price ids of a network. */
+export const NETWORK_PRICE_IDS_TIMEOUT_MS = 10000
 
 // bnb, gnosis, fantom, metis
 export const relayerAdditionalNetworks = [
@@ -155,16 +159,23 @@ export function isNetworkInfoPending(info?: NetworkInfoLoading<NetworkInfo>): bo
  * Call it only when the user hasn't opted out of token prices, because the requests
  * to our price API carry analytics data.
  *
+ * The request is aborted after `timeoutMs`, so that a price API that never responds
+ * can't leave the caller waiting forever.
+ *
  * @returns the ids, or null if the network isn't supported by the price API or the
- * request failed
+ * request failed or timed out
  */
 export async function fetchNetworkPriceIds(
   fetch: Fetch,
-  chainId: bigint
+  chainId: bigint,
+  timeoutMs: number = NETWORK_PRICE_IDS_TIMEOUT_MS
 ): Promise<Pick<NetworkInfo, 'platformId' | 'nativeAssetId'> | null> {
   try {
-    const coingeckoRequest = await fetch(
-      `https://cena.ambire.com/api/v3/platform/${Number(chainId)}`
+    const coingeckoRequest = await fetchWithTimeout(
+      fetch,
+      `https://cena.ambire.com/api/v3/platform/${Number(chainId)}`,
+      {},
+      timeoutMs
     )
     const coingeckoInfo = await coingeckoRequest.json()
 

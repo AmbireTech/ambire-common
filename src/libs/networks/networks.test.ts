@@ -166,11 +166,32 @@ describe('Networks lib', () => {
         platformId: 'some-platform',
         nativeAssetId: 'some-asset'
       })
-      expect(fetch).toHaveBeenCalledWith('https://cena.ambire.com/api/v3/platform/424242')
+      expect(fetch).toHaveBeenCalledWith(
+        'https://cena.ambire.com/api/v3/platform/424242',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      )
     })
 
     test('returns null when the price API does not support the network', async () => {
       expect(await fetchNetworkPriceIds(respondWith({ error: 'not found' }), 424242n)).toBe(null)
+    })
+
+    test('returns null and aborts the request when the price API does not respond in time', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+      let signal: AbortSignal | undefined
+      // Accepts the request, but never responds
+      const fetch = jest.fn((_url: string, init?: { signal?: AbortSignal }) => {
+        signal = init?.signal
+        return new Promise(() => {})
+      }) as unknown as Fetch
+
+      try {
+        expect(await fetchNetworkPriceIds(fetch, 424242n, 10)).toBe(null)
+        expect(signal?.aborted).toBe(true)
+        expect(consoleErrorSpy).toHaveBeenCalled()
+      } finally {
+        consoleErrorSpy.mockRestore()
+      }
     })
 
     test('returns null and logs the error when the request fails', async () => {
