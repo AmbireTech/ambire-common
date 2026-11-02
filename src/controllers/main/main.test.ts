@@ -3,6 +3,7 @@ import { toBeHex, Wallet } from 'ethers'
 import EmittableError from '@/classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
+import { PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS } from '@/consts/privacyPools'
 import { AccountOnchainState } from '@/interfaces/account'
 import { ErrorRef } from '@/interfaces/eventEmitter'
 import { Hex } from '@/interfaces/hex'
@@ -1414,6 +1415,44 @@ describe('Main Controller ', () => {
       expect(errors.map(({ message }) => message)).toEqual([
         'Could not load the account this deposit was made from. Please try again.'
       ])
+      expect(statuses).toContain('ERROR')
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
+      expect(mainCtrl.requests.build).not.toHaveBeenCalled()
+    })
+
+    test("gives up and switches nothing when the depositor's account takes too long to load", async () => {
+      const { mainCtrl, errors, statuses } = await setupController({
+        depositorAddr: depositor!.addr
+      })
+      const fetchSpy = jest
+        .spyOn(mainCtrl.accounts, 'getOrFetchAccountOnChainState')
+        .mockReturnValue(new Promise(() => {}))
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] })
+
+      try {
+        const ragequitPromise = mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+        // The time limit starts with the fetch, after status updates that each wait a millisecond
+        while (!fetchSpy.mock.calls.length) await jest.advanceTimersByTimeAsync(1)
+
+        await jest.advanceTimersByTimeAsync(PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS - 1)
+        expect(errors).toEqual([])
+        expect(mainCtrl.statuses.privacyPoolsRagequit).toBe('LOADING')
+
+        await jest.advanceTimersByTimeAsync(1)
+        expect(errors.map(({ message }) => message)).toEqual([
+          'Could not load the account this deposit was made from. Please try again.'
+        ])
+
+        // The status updates after the error
+        await jest.advanceTimersByTimeAsync(10)
+        await ragequitPromise
+      } finally {
+        jest.useRealTimers()
+      }
+
+      expect(errors[0]!.error.message).toBe(
+        "privacyPools: loading the depositor's account state timed out"
+      )
       expect(statuses).toContain('ERROR')
       expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
       expect(mainCtrl.requests.build).not.toHaveBeenCalled()

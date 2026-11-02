@@ -10,6 +10,7 @@ import {
 import { FeatureFlags } from '@/consts/featureFlags'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
 import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
+import { PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS } from '@/consts/privacyPools'
 import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
 import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
@@ -129,6 +130,7 @@ import { getReceiptBlockNumberByChainId } from '@/utils/nonce'
 import { generateUuid } from '@/utils/uuid'
 import wait from '@/utils/wait'
 import { waitForBlockNumber } from '@/utils/waitForBlockNumber'
+import { withTimeout } from '@/utils/with-timeout'
 
 type AccountsUpdate = {
   accountsToAdd: Account[]
@@ -1167,11 +1169,19 @@ export class MainController extends EventEmitter implements IMainController {
 
         // What the request is built from, loaded before the account is switched, so a failure
         // leaves the user on the Privacy Pools account rather than on another one with nothing
-        // to sign
+        // to sign. Limited in time, as the fetch can wait behind other fetches of the account
         const network = this.networks.networks.find((net) => net.chainId === BigInt(chainId))
         const accountState =
           network &&
-          (await this.accounts.getOrFetchAccountOnChainState(depositor.addr, network.chainId))
+          (await withTimeout(
+            () => this.accounts.getOrFetchAccountOnChainState(depositor.addr, network.chainId),
+            {
+              timeoutMs: PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS,
+              message: "privacyPools: loading the depositor's account state timed out"
+            }
+          ).catch((error: unknown) => {
+            throw privacyPoolsErrors.ragequitDepositorStateLoadFailed(error)
+          }))
         if (!accountState) throw privacyPoolsErrors.ragequitDepositorStateUnavailable()
 
         if (this.selectedAccount.account?.addr !== depositor.addr)
