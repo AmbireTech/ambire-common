@@ -201,6 +201,7 @@ const renderListed = (outcome: Outcome, deadline: bigint | undefined, routerAddr
     if (effect.type === 'transfer') {
       // What the signer pays to a contract that passes tokens on, and what is moved to a pool. A
       // command that is not understood can do anything with it.
+      if (effect.isCallValue) return []
       const isPayment = effect.from.kind === 'user' && isPassThroughPlace(effect.to)
       const isMoveToPool = isPassThroughPlace(effect.from) && effect.to.kind === 'pool'
       if (isPayment || isMoveToPool) {

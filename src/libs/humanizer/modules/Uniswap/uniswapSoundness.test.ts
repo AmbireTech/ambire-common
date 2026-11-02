@@ -148,7 +148,9 @@ const randomAmount = (random: Random, canBeAll: boolean): Amount => {
   const options: Amount[] = [
     exact(random.number(300)),
     UNKNOWN,
-    portion(BigInt(random.next(10001)))
+    portion(BigInt(random.next(10001))),
+    // a small share is common: it is the fee of an interface
+    portion(BigInt(random.next(101)))
   ]
   if (canBeAll) options.push(ALL, ALL)
   return random.pick(options)
@@ -215,6 +217,23 @@ const addressesIn = (visualization: HumanizerVisualization[]) =>
     visualization.flatMap((item) => (item.type === 'address' && item.address ? [item.address] : []))
   )
 
+// true when every effect that puts the token in the place takes a share of what another place holds
+const isOnlyShares = (effects: Effect[], place: Place, token: string) => {
+  const putsTokenInPlace = (effect: Effect) =>
+    (effect.type === 'transfer' &&
+      effect.token === token &&
+      getPlaceKey(effect.to) === getPlaceKey(place)) ||
+    (effect.type === 'convert' &&
+      effect.tokenOut === token &&
+      getPlaceKey(effect.to) === getPlaceKey(place))
+  const inflows = effects.filter(putsTokenInPlace)
+
+  return (
+    inflows.length > 0 &&
+    inflows.every((effect) => effect.type === 'transfer' && effect.amount.kind === 'portion')
+  )
+}
+
 const checkScenario = (effects: Effect[], random: Random): 'valid' | 'reverted' => {
   const executor = createExecutor(random)
   try {
@@ -263,11 +282,16 @@ const checkScenario = (effects: Effect[], random: Random): 'valid' | 'reverted' 
   INTERNAL_PLACES.forEach((place) => {
     if (place.kind === 'v4') return
     TOKENS.forEach((token) => {
-      if (executor.balanceOf(place, token) === 0n) return
+      const balance = executor.balanceOf(place, token)
+      if (balance === 0n) return
       const isReported = outcome.stranded.some(
         (item) => getPlaceKey(item.place) === getPlaceKey(place) && item.token === token
       )
-      if (!isReported) {
+      // a small share (the fee of an interface) that is taken into a router is not reported
+      const isSmallShare =
+        isOnlyShares(effects, place, token) &&
+        balance * 100n <= (executor.passedThrough.get(token) ?? 0n)
+      if (!isReported && !isSmallShare) {
         throw new Error(
           `${getPlaceKey(place)} keeps ${token} and it is not reported: ${describe()}`
         )

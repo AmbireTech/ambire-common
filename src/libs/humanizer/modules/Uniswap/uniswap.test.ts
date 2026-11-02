@@ -312,13 +312,6 @@ describe('uniswap', () => {
     )
     const expectedVisualization = [
       [
-        // the ETH that the call sends to the router. A call that adds liquidity is not described
-        // from what it does with the tokens, so the payment is listed.
-        getAction('Send'),
-        getToken(ZeroAddress, accountOp.calls[0]!.value),
-        getLabel('to'),
-        getAddressVisualization(accountOp.calls[0]!.to!.toLowerCase()),
-        getLabel('and'),
         getAction('Add liquidity'),
         getToken('0x4200000000000000000000000000000000000006', 6904077431543n),
         getToken('0x4200000000000000000000000000000000000042', 9999999999998775n),

@@ -12,6 +12,7 @@ import {
 import {
   ADDRESS_THIS,
   ALL,
+  Amount,
   Effect,
   MSG_SENDER,
   NATIVE_TOKEN,
@@ -216,45 +217,71 @@ const decodeV4Actions = (
     return [getOpaqueEffect('V4 actions that do not match', ctx, 'Unknown Uniswap V4 action')]
   }
 
+  // What the swaps of this command owe to the pool manager, by currency. A settle of "all that is
+  // owed" pays exactly this amount. It is not known (null) when the currency is also the output
+  // of a swap, because what a swap returns is not known.
+  const owed = new Map<string, bigint | null>()
+  // the currencies that a swap of this command returns
+  const credited = new Set<string>()
+  const addOwed = (currency: string, amount: bigint | null) => {
+    const previous = owed.get(currency)
+    owed.set(currency, amount === null || previous === null ? null : (previous ?? 0n) + amount)
+  }
+  const addCredit = (currency: string) => {
+    if (owed.has(currency)) owed.set(currency, null)
+    credited.add(currency)
+  }
+  const settleAllOwed = (currency: string): Amount => {
+    const amount = owed.get(currency)
+    owed.set(currency, credited.has(currency) ? null : 0n)
+    return amount === undefined || amount === null ? UNKNOWN : exact(amount)
+  }
+  const settle = (currency: string, payer: Place, amount: Amount): Effect => ({
+    type: 'transfer',
+    token: currency.toLowerCase(),
+    from: payer,
+    to: V4,
+    amount
+  })
+  const swapEffects = (tokenIn: string, tokenOut: string, amountIn: bigint | null): Effect[] => {
+    const input = tokenIn.toLowerCase()
+    // what an earlier swap returns is not known, so the currency is owed in an unknown amount
+    addOwed(input, credited.has(input) ? null : amountIn)
+    addCredit(tokenOut.toLowerCase())
+    return [getV4Swap(tokenIn, tokenOut)]
+  }
+
   return parsedActions.flatMap((action, index): Effect[] => {
     const param = params[index]!
     const place = (address: string) => getPlace(address, ctx, pools)
     try {
       if (action === V4_ACTION_CODES.SETTLE) {
         const args = extractParams(V4_ACTION_DESCRIPTORS.SETTLE, param)
-        return [
-          {
-            type: 'transfer',
-            token: args.currency.toLowerCase(),
-            from: getV4Payer(args.currency, args.payerIsUser),
-            to: V4,
-            amount: args.amount === OPEN_DELTA ? UNKNOWN : toAmount(args.amount)
-          }
-        ]
+        const currency = args.currency.toLowerCase()
+        let amount: Amount
+        if (args.amount === OPEN_DELTA) amount = settleAllOwed(currency)
+        else {
+          amount = toAmount(args.amount)
+          // what is left to pay is not known after a payment of another amount
+          owed.set(currency, null)
+        }
+        return [settle(currency, getV4Payer(currency, args.payerIsUser), amount)]
       }
       if (action === V4_ACTION_CODES.SETTLE_ALL) {
         const args = extractParams(V4_ACTION_DESCRIPTORS.SETTLE_ALL, param)
-        return [
-          {
-            type: 'transfer',
-            token: args.currency.toLowerCase(),
-            from: getV4Payer(args.currency, true),
-            to: V4,
-            amount: UNKNOWN
-          }
-        ]
+        const currency = args.currency.toLowerCase()
+        return [settle(currency, getV4Payer(currency, true), settleAllOwed(currency))]
       }
       if (action === V4_ACTION_CODES.SETTLE_PAIR) {
         const args = extractParams(V4_ACTION_DESCRIPTORS.SETTLE_PAIR, param)
-        return [args.currency0, args.currency1].map(
-          (currency: string): Effect => ({
-            type: 'transfer',
-            token: currency.toLowerCase(),
-            from: getV4Payer(currency, true),
-            to: V4,
-            amount: UNKNOWN
-          })
-        )
+        return [args.currency0, args.currency1].map((currency: string): Effect => {
+          const lowerCaseCurrency = currency.toLowerCase()
+          return settle(
+            lowerCaseCurrency,
+            getV4Payer(lowerCaseCurrency, true),
+            settleAllOwed(lowerCaseCurrency)
+          )
+        })
       }
       if (action === V4_ACTION_CODES.TAKE) {
         const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE, param)
@@ -303,7 +330,7 @@ const decodeV4Actions = (
         const token = args.currency.toLowerCase()
         // it settles what is owed or takes what is due, so both are possible
         return [
-          { type: 'transfer', token, from: getV4Payer(token, true), to: V4, amount: UNKNOWN },
+          settle(token, getV4Payer(token, true), settleAllOwed(token)),
           { type: 'transfer', token, from: V4, to: USER, amount: ALL }
         ]
       }
@@ -320,26 +347,29 @@ const decodeV4Actions = (
         ]
       }
       if (action === V4_ACTION_CODES.SWAP_EXACT_IN_SINGLE) {
-        const [poolKey, zeroForOne] = extractV4SwapParams('SWAP_EXACT_IN_SINGLE', param)
+        const swap = extractV4SwapParams('SWAP_EXACT_IN_SINGLE', param)
+        const [poolKey, zeroForOne] = swap
         const [currency0, currency1] = poolKey
         const [tokenIn, tokenOut] = zeroForOne ? [currency0, currency1] : [currency1, currency0]
-        return [getV4Swap(tokenIn, tokenOut)]
+        return swapEffects(tokenIn, tokenOut, getV4AmountIn(swap))
       }
       if (action === V4_ACTION_CODES.SWAP_EXACT_OUT_SINGLE) {
         const [poolKey, zeroForOne] = extractV4SwapParams('SWAP_EXACT_OUT_SINGLE', param)
         const [currency0, currency1] = poolKey
         const [tokenIn, tokenOut] = zeroForOne ? [currency0, currency1] : [currency1, currency0]
-        return [getV4Swap(tokenIn, tokenOut)]
+        // what an exact output swap owes is not known: only the most it can owe is
+        return swapEffects(tokenIn, tokenOut, null)
       }
       if (action === V4_ACTION_CODES.SWAP_EXACT_IN) {
-        const [tokenIn, path] = extractV4SwapParams('SWAP_EXACT_IN', param)
+        const swap = extractV4SwapParams('SWAP_EXACT_IN', param)
+        const [tokenIn, path] = swap
         if (!path.length) throw new Error('V4 swap without a path')
-        return [getV4Swap(tokenIn, path[path.length - 1][0])]
+        return swapEffects(tokenIn, path[path.length - 1][0], getV4AmountIn(swap))
       }
       if (action === V4_ACTION_CODES.SWAP_EXACT_OUT) {
         const [tokenOut, path] = extractV4SwapParams('SWAP_EXACT_OUT', param)
         if (!path.length) throw new Error('V4 swap without a path')
-        return [getV4Swap(path[0][0], tokenOut)]
+        return swapEffects(path[0][0], tokenOut, null)
       }
     } catch {
       // the action does not decode, so it is shown as an action that is not understood
@@ -350,6 +380,11 @@ const decodeV4Actions = (
     return [getOpaqueEffect(`V4 action ${action}`, ctx, 'Unknown Uniswap V4 action')]
   })
 }
+
+// The amount that an exact input swap pays, or null when it is all that is owed (the open delta).
+// `amountIn` has the same name in the two layouts of the swap parameters.
+const getV4AmountIn = (swap: any): bigint | null =>
+  swap.amountIn === OPEN_DELTA ? null : swap.amountIn
 
 const getV4Swap = (tokenIn: string, tokenOut: string): Effect => ({
   type: 'convert',
@@ -388,7 +423,8 @@ export const decodeUniversalRouter = (
       token: NATIVE_TOKEN,
       from: USER,
       to: ROUTER,
-      amount: exact(ctx.callValue)
+      amount: exact(ctx.callValue),
+      isCallValue: true
     })
   }
 

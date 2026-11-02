@@ -126,6 +126,12 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
   const permits: PermitEffect[] = []
   const opaque: OpaqueEffect[] = []
 
+  // The shares of what a place holds that are taken into a router or a pool, by place and token, and
+  // the places that something other than a share goes into. A place that only gets small shares
+  // (the fee of an interface) is not reported when the tokens stay.
+  const shareInflows = new Map<string, bigint[]>()
+  const nodesWithOtherInflows = new Set<string>()
+
   const getState = (nodeKey: string): BalanceState => states.get(nodeKey) ?? ZERO
 
   // takes tokens out of a place. Returns how many tokens come out, as far as it is known.
@@ -152,10 +158,11 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
   }
 
   // puts tokens in a place
-  const giveTo = (place: Place, token: string, amount: Amount) => {
+  const giveTo = (place: Place, token: string, amount: Amount, isShare = false) => {
     if (!isPassThroughPlace(place)) return
 
     const nodeKey = getNodeKey(place, token)
+    if (!isShare) nodesWithOtherInflows.add(nodeKey)
     const state = getState(nodeKey)
     if (amount.kind !== 'exact') {
       states.set(nodeKey, MAYBE)
@@ -184,7 +191,11 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
 
     if (effect.type === 'transfer') {
       const received = takeFrom(effect.from, effect.token, effect.amount)
-      giveTo(effect.to, effect.token, received)
+      if (effect.amount.kind === 'portion' && isPassThroughPlace(effect.to)) {
+        const nodeKey = getNodeKey(effect.to, effect.token)
+        shareInflows.set(nodeKey, [...(shareInflows.get(nodeKey) || []), effect.amount.bips])
+      }
+      giveTo(effect.to, effect.token, received, effect.amount.kind === 'portion')
       flows.push({
         effectIndex,
         token: effect.token,
@@ -354,6 +365,9 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
     if (state.kind === 'zero') return
     const [placeKey, token] = nodeKey.split('|')
     if (!placeKey || !token || placeKey === 'v4') return
+    // the tokens that stay are only a small share that was taken into this place
+    const shares = shareInflows.get(nodeKey)
+    if (shares && !nodesWithOtherInflows.has(nodeKey) && isSmallTotalShare(shares)) return
     const group = groupOfNode(nodeKey)
     if (!group?.userPaid.length) return
     const place: Place =

@@ -162,6 +162,27 @@ const v4 = {
       [currency, amount, payerIsUser]
     )
   }),
+  settleAll: (currency = USDC, maxAmount = 1000n) => ({
+    action: V4_ACTION_CODES.SETTLE_ALL,
+    param: coder.encode(
+      V4_ACTION_DESCRIPTORS.SETTLE_ALL.map((d) => d.type),
+      [currency, maxAmount]
+    )
+  }),
+  takeAll: (currency = WETH) => ({
+    action: V4_ACTION_CODES.TAKE_ALL,
+    param: coder.encode(
+      V4_ACTION_DESCRIPTORS.TAKE_ALL.map((d) => d.type),
+      [currency, 0n]
+    )
+  }),
+  takePortion: (recipient: string, bips: bigint, currency = WETH) => ({
+    action: V4_ACTION_CODES.TAKE_PORTION,
+    param: coder.encode(
+      V4_ACTION_DESCRIPTORS.TAKE_PORTION.map((d) => d.type),
+      [currency, recipient, bips]
+    )
+  }),
   take: (recipient: string, currency = WETH, amount = 0n) => ({
     action: V4_ACTION_CODES.TAKE,
     param: coder.encode(
@@ -583,6 +604,44 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
 
       expect(tokensOf(visualization)).toEqual([NATIVE, USDC])
       expect(hasLeftoverWarning(warnings)).toBe(false)
+    })
+
+    test('a settle of all that is owed pays the amount of the swap, so no ETH is left', () => {
+      // the swap pays 100, as much as the call sends
+      const { visualization, warnings } = summarize(
+        [v4Swap([v4.swapExactInSingle(NATIVE, USDC), v4.settleAll(NATIVE), v4.takeAll(USDC)])],
+        { value: 100n }
+      )
+
+      expect(tokensOf(visualization)).toEqual([NATIVE, USDC])
+      expect(hasLeftoverWarning(warnings)).toBe(false)
+    })
+
+    test('a settle of all that is owed leaves the rest of the ETH of the call in the router', () => {
+      const { warnings } = summarize(
+        [v4Swap([v4.swapExactInSingle(NATIVE, USDC), v4.settleAll(NATIVE), v4.takeAll(USDC)])],
+        { value: 250n }
+      )
+
+      expect(hasLeftoverWarning(warnings)).toBe(true)
+    })
+
+    test('a small fee that goes to the router is not reported, and a large one is', () => {
+      const withFee = (bips: bigint) =>
+        summarize(
+          [
+            v4Swap([
+              v4.swapExactInSingle(NATIVE, USDC),
+              v4.settleAll(NATIVE),
+              v4.takePortion(ADDRESS_THIS, bips, USDC),
+              v4.takeAll(USDC)
+            ])
+          ],
+          { value: 100n }
+        )
+
+      expect(hasLeftoverWarning(withFee(25n).warnings)).toBe(false)
+      expect(hasLeftoverWarning(withFee(5000n).warnings)).toBe(true)
     })
 
     test('ETH that the call sends and no command uses stays in the router', () => {

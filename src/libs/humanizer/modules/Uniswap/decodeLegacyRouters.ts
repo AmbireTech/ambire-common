@@ -524,7 +524,8 @@ export const decodeLegacyCall = (
               token: NATIVE_TOKEN,
               from: USER,
               to: ROUTER,
-              amount: exact(ctx.callValue)
+              amount: exact(ctx.callValue),
+              isCallValue: true
             } as Effect
           ]
         : []),
