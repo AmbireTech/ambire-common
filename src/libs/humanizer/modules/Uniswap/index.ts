@@ -112,6 +112,25 @@ const uniAddresses = [
   '0x3315ef7ca28db74abadc6c44570efdf06b04b020',
   '0x3a9d48ab9751398bbfa63ad67599bb04e4bdf98b',
   '0xB0C89059d7190EDb17eFF19829cc009cEe923916',
+  // Universal Router V2.1.1, V2.1.2 and V2.2.0, from the official list of deployments:
+  // https://github.com/Uniswap/universal-router/tree/main/deploy-addresses (mainnets only)
+  '0x2d01411773c8C24805306E89A41F7855C3c4Fe65', // arbitrum V2_1_2
+  '0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1', // arc V2_1_1
+  '0xd6145b2D3F379919E8CdEda7B97e37c4b2Ca9c40', // base V2_1_2
+  '0xDc264714F68d84CF29BC605589405E78bDBE7C9f', // bsc V2_1_2, linea V2_1_2, polygon V2_1_2
+  '0xe2023F3FA515cF070e07fD9d51c1d236e07843f4', // celo V2_1_2
+  '0xeD270A1Bcdc63cf1356D695e7f40961d4819d6bF', // hyperevm V2_1_2
+  '0x9aFe3C497e19501DB228F28CdBdD29bC98F65DBa', // hyperevm V2_2_0
+  '0x23617e59A5925b2A4Bf75d73ff6711cD0b29De85', // mainnet V2_1_2
+  '0xAedd1CF4C14e833140A61E9C0d2b73a64795c823', // megaeth V2_1_2
+  '0xa6CE4F10d83dBdDAc17E68e1837ca9cE6a1b596e', // monad V2_1_2
+  '0xC09255D86DB563cBc11C2fCf4a0C512e160111B4', // optimism V2_1_2
+  '0x8876789976dEcBfCbBbe364623C63652db8C0904', // robinhood V2_1_1
+  '0x204FAca1764B154221e35c0d20aBb3c525710498', // robinhood V2_1_2
+  '0x182a927119D56008d921126764bF884221b10f59', // tempo V2_1_2
+  '0xD1b797D92d87B688193A2B976eFc8D577D204343', // unichain V2_1_2
+  '0xF025e0Fe9E331A0eF05c2ad3C4E9C64b625cda6f', // worldchain V2_1_2, zora V2_1_2
+  '0x1cd182C94fcF42277B80DBB9060F88024809E61E', // xlayer V2_1_2
   // SwapProxy: not an official Uniswap deployment, but it forwards swaps to the Universal Router
   // using the same commands/inputs encoding (https://etherscan.io/address/0x02E5be68D46DAc0B524905bfF209cf47EE6dB2a9#code)
   '0x02E5be68D46DAc0B524905bfF209cf47EE6dB2a9'
