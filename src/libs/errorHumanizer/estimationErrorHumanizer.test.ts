@@ -47,6 +47,17 @@ describe('Estimation errors are humanized', () => {
     expect(humanizedError.isFallbackMessage).toBe(false)
     restore()
   })
+  it('0xb115d857 (Privacy Pools NullifierAlreadySpent)', () => {
+    const { restore } = suppressConsole()
+    const EXPECTED_MESSAGE = `${MESSAGE_PREFIX} this Privacy Pools deposit was already taken back, or is taken back twice in this transaction. If it is listed twice, remove one of them and try again.`
+    const error = new Error('0xb115d857')
+
+    const humanizedError = getHumanReadableEstimationError(error)
+
+    expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
+    expect(humanizedError.isFallbackMessage).toBe(false)
+    restore()
+  })
   it('Custom error (0x81ceff30)', () => {
     const swapFailedError = new MockCustomError(
       'CALL_EXCEPTION',
