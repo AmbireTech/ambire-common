@@ -69,11 +69,11 @@ import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
   getAccountPortfolioTotal,
+  getAssetCacheKey,
+  getCollectibleCacheKey,
   getHintsError,
   getTokenDataCacheKey,
   getTotal,
-  getAssetCacheKey,
-  getCollectibleCacheKey,
   validateCollectibleOwnership,
   validateERC20Token,
   validateERC721Token
@@ -81,6 +81,7 @@ import {
 import {
   AccountAssetsState,
   AccountState,
+  AssetValidations,
   ExchangeInfo,
   ExchangeInfoMap,
   ExtendedError,
@@ -100,7 +101,6 @@ import {
   TokenDataCache,
   TokenDataCacheValue,
   TokenError,
-  AssetValidations,
   TokenResult,
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'

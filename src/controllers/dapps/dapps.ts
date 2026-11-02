@@ -54,12 +54,14 @@ import {
   getDappNameFromId,
   getDomainFromUrl,
   getNormalizedHostnameFromUrl,
+  isAccountAllowedForDapp,
   modifyDappPropsIfNeeded,
   normalizeDappConnection,
   normalizeHostname,
   normalizeTrendingTokens,
   sortDapps,
-  unifyDefiLlamaDappUrl
+  unifyDefiLlamaDappUrl,
+  withoutUnusedAccountPreferences
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
 import { fetchWithTimeout } from '../../utils/fetch'
@@ -1060,8 +1062,12 @@ export class DappsController extends EventEmitter implements IDappsController {
         return
       }
 
+      dappPropsToUpdate.accountPreferences = withoutUnusedAccountPreferences(
+        accountPreferencesToUpdate
+      )
+
       const newAccounts = getAccountsForDapp(
-        accountPreferencesToUpdate,
+        dappPropsToUpdate.accountPreferences,
         this.#selectedAccount.account?.addr
       )
 
@@ -1100,16 +1106,23 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     this.dappToConnect = { ...this.dappToConnect, ...data }
+    if ('accountPreferences' in data) {
+      this.dappToConnect.accountPreferences = withoutUnusedAccountPreferences(
+        data.accountPreferences
+      )
+    }
     this.emitUpdate()
   }
 
   async onSelectedAccountChange(newAccount: string) {
+    this.#unpinSelectedAccounts(newAccount)
+
     Object.values(this.dappSessions).forEach(async (session) => {
       if (!this.hasPermission(session.id)) return
 
       const accountPreferences = this.getDapp(session.id)?.accountPreferences
 
-      // Update the last selected account
+      // Update the last selected account the dapp may see
       if (
         accountPreferences?.accounts.includes(newAccount) &&
         accountPreferences.selectedAccount !== newAccount
@@ -1122,6 +1135,31 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       await this.broadcastDappSessionEvent('accountsChanged', accounts, session.id, true)
     })
+  }
+
+  // An account picked for a dapp lasts only until the wallet switches to another account the dapp
+  // may see, so the dapp follows the wallet again after it - also the dapps that aren't open
+  #unpinSelectedAccounts(newAccount: string) {
+    let hasUnpinned = false
+
+    this.#dapps.forEach((dapp) => {
+      if (!dapp.accountPreferences?.isSelectedAccountPinned) return
+      if (!isAccountAllowedForDapp(dapp.accountPreferences, newAccount)) return
+
+      hasUnpinned = true
+      this.#dapps.set(dapp.id, {
+        ...dapp,
+        accountPreferences: withoutUnusedAccountPreferences({
+          ...dapp.accountPreferences,
+          isSelectedAccountPinned: false
+        })
+      })
+    })
+
+    if (!hasUnpinned) return
+
+    this.emitUpdate()
+    void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
   }
 
   /**
@@ -1154,6 +1192,19 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (!dapp.accountPreferences.accounts.includes(address)) return
 
       const newAccounts = dapp.accountPreferences.accounts.filter((a) => a !== address)
+      const isSelectedAccountRemoved = dapp.accountPreferences.selectedAccount === address
+
+      // A dapp that may see every account keeps its connection, and follows the wallet again
+      // once the account picked for it is gone
+      if (!dapp.accountPreferences.enabled) {
+        this.#dapps.set(dapp.id, {
+          ...dapp,
+          accountPreferences: isSelectedAccountRemoved
+            ? undefined
+            : withoutUnusedAccountPreferences({ ...dapp.accountPreferences, accounts: newAccounts })
+        })
+        return
+      }
 
       this.#dapps.set(dapp.id, {
         ...dapp,
@@ -1164,10 +1215,11 @@ export class DappsController extends EventEmitter implements IDappsController {
           ? {
               ...dapp.accountPreferences,
               accounts: newAccounts,
-              selectedAccount:
-                dapp.accountPreferences.selectedAccount === address
-                  ? newAccounts[0]!
-                  : dapp.accountPreferences.selectedAccount
+              selectedAccount: isSelectedAccountRemoved
+                ? newAccounts[0]!
+                : dapp.accountPreferences.selectedAccount,
+              // The account picked for the dapp is gone, so it follows the wallet again
+              ...(isSelectedAccountRemoved && { isSelectedAccountPinned: false })
             }
           : undefined
       })

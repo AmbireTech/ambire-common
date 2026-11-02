@@ -3,7 +3,7 @@
 import { AbiCoder, Contract, Interface, parseEther, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
-import { describe } from '@jest/globals'
+import { afterEach, describe, jest } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import DeployHelper from '../../../contracts/compiled/DeployHelper.json'
@@ -11,6 +11,7 @@ import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { relayerUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
+import { mockBundlerRequests } from '../../../test/mocks/bundler'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
@@ -313,6 +314,10 @@ const areUpdatesForbidden = () => {
 }
 
 describe('estimate', () => {
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
   it('[EOA]:Ethereum | gasUsage and native balance for a normal transfer', async () => {
     const EOAAccount: Account = {
       addr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -771,6 +776,8 @@ describe('estimate', () => {
   })
 
   it('Optimism | deployed account | should put a lower account nonce in account op and ambire etimation should raise a nonce discrepancy flag', async () => {
+    // Asserts on the Ambire estimation only, so the bundler can be mocked
+    mockBundlerRequests()
     const opOptimism = {
       accountAddr: smartAccDeployed.addr,
       signingKeyAddr: smartAccDeployed.associatedKeys[0]!,
@@ -863,6 +870,8 @@ describe('estimate', () => {
   })
 
   it('[ERC-4337]:Optimism | not deployed | should fail with an inner call failure but otherwise estimation should work', async () => {
+    // Asserts on the Ambire estimation only, so the bundler can be mocked
+    mockBundlerRequests()
     const privs = [
       {
         addr: addrWithDeploySignature,
@@ -906,6 +915,8 @@ describe('estimate', () => {
   })
 
   it('[ERC-4337]:Optimism | not deployed | should result in an error as transfer amount of erc-20 token exceed balance', async () => {
+    // Asserts on the Ambire estimation only, so the bundler can be mocked
+    mockBundlerRequests()
     const privs = [
       {
         addr: addrWithDeploySignature,
@@ -1161,6 +1172,8 @@ describe('estimate', () => {
   })
 
   it('[v2] bnb, GasGuard, it should estimate successfully by entering the initialGasLimitFailed case', async () => {
+    // Asserts on the Ambire estimation only, so the bundler can be mocked
+    mockBundlerRequests()
     const gasGuardAbi = [
       {
         inputs: [
@@ -1374,6 +1387,8 @@ describe('estimate', () => {
   })
 
   it('[v2]:Ethereum | deployed account | should work with singletor deployer as salt is different for each contract deployment', async () => {
+    // Asserts on the Ambire estimation only, so the bundler can be mocked
+    mockBundlerRequests()
     const bytecode =
       '0x608060405234801561001057600080fd5b50610134806100206000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c80634af63f0214602d575b600080fd5b60cf60048036036040811015604157600080fd5b810190602081018135640100000000811115605b57600080fd5b820183602082011115606c57600080fd5b80359060200191846001830284011164010000000083111715608d57600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600092019190915250929550509135925060eb915050565b604080516001600160a01b039092168252519081900360200190f35b6000818351602085016000f5939250505056fea26469706673582212206b44f8a82cb6b156bfcc3dc6aadd6df4eefd204bc928a4397fd15dacf6d5320564736f6c63430006020033'
     const salt = '0x0a0b000000000000000000000000000000000000000000000000000000000000'
@@ -1439,6 +1454,8 @@ describe('estimate', () => {
   })
 
   it('[v2]:Ethereum | deployed account | should fail with singletor deployer as inner contracts have already been deployed once', async () => {
+    // Asserts on the Ambire estimation only, so the bundler can be mocked
+    mockBundlerRequests()
     const bytecode = DeployHelper.bin
     const salt = '0x0a0b00000000000000000000000000000000000000000000000000000a101010'
     const singletonABI = [
