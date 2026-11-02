@@ -1,22 +1,23 @@
-import { Hex, decodeFunctionData, toFunctionSelector } from 'viem'
+import { Abi, AbiFunction, Hex, decodeFunctionData, toFunctionSelector } from 'viem'
 
 import { HumanizerVisualization } from '../../interfaces'
 import {
-  ADDRESS_THIS,
   ALL,
-  Amount,
   CONTRACT_BALANCE,
   ConvertEffect,
   Effect,
-  MSG_SENDER,
   NATIVE_TOKEN,
   Place,
+  RecipientRules,
   ROUTER,
   UNKNOWN,
   USER,
   UniswapContext,
+  convert,
+  getPlace,
   exact,
-  portion
+  portion,
+  transfer
 } from './effects'
 import {
   swapETHForExactTokensAbi,
@@ -58,293 +59,142 @@ import { parsePath } from './utils'
  * they keep their own description.
  */
 
-// How the router reads the recipient of a swap
-type RecipientRules = {
-  // 1 is the caller and 2 is the router itself (V3 router 2)
-  hasConstants: boolean
-  // the zero address is the router itself (V3 router)
-  isZeroTheRouter: boolean
-}
-
 const V2_ROUTER: RecipientRules = { hasConstants: false, isZeroTheRouter: false }
 const V3_ROUTER: RecipientRules = { hasConstants: false, isZeroTheRouter: true }
 const V3_ROUTER_2: RecipientRules = { hasConstants: true, isZeroTheRouter: false }
 // the payment functions send to the address they get, or to the caller when they get none
 const PAYMENT: RecipientRules = { hasConstants: false, isZeroTheRouter: false }
 
-type LegacyDecoder = (
-  data: Hex,
-  ctx: UniswapContext,
-  describeUnknownCall: DescribeUnknownCall
-) => { effects: Effect[]; deadline?: bigint }
-
 export type DescribeUnknownCall = (data: Hex) => HumanizerVisualization[]
 
-const getPlace = (address: string, rules: RecipientRules, ctx: UniswapContext): Place => {
-  const lowerCaseAddress = address.toLowerCase()
-  if (lowerCaseAddress === ctx.accountAddr) return USER
-  if (rules.hasConstants && lowerCaseAddress === MSG_SENDER) return USER
-  if (rules.hasConstants && lowerCaseAddress === ADDRESS_THIS) return ROUTER
-  if (rules.isZeroTheRouter && lowerCaseAddress === NATIVE_TOKEN) return ROUTER
-  if (lowerCaseAddress === ctx.routerAddr) return ROUTER
-  return { kind: 'external', address: lowerCaseAddress }
-}
-
-// A V3 swap that is paid by the signer. The router can pay it with the ETH of the call instead.
-const getUserPaidSwap = (
-  tokenIn: string,
-  tokenOut: string,
-  to: Place,
-  amountIn: Amount,
-  isPaidWithEthWhenHeld: boolean
-): ConvertEffect => ({
-  type: 'convert',
-  kind: 'swap',
-  tokenIn: tokenIn.toLowerCase(),
-  tokenOut: tokenOut.toLowerCase(),
-  from: USER,
-  to,
-  amountIn,
-  isPaidWithEthWhenHeld
-})
-
-// V3 router 2 swaps the tokens that it holds when the amount is all of them
+// V3 router 2 swaps the tokens that it holds when the amount is all of them. A swap that the signer
+// pays can be paid with the ETH of the call instead.
 const getV3Swap = (
   tokenIn: string,
   tokenOut: string,
   to: Place,
   amountIn: bigint | undefined
-): ConvertEffect => {
-  if (amountIn === CONTRACT_BALANCE) {
-    return { ...getUserPaidSwap(tokenIn, tokenOut, to, ALL, false), from: ROUTER }
-  }
-  return getUserPaidSwap(
-    tokenIn,
-    tokenOut,
-    to,
-    amountIn === undefined ? UNKNOWN : exact(amountIn),
-    true
-  )
-}
+): ConvertEffect =>
+  amountIn === CONTRACT_BALANCE
+    ? convert('swap', tokenIn, tokenOut, ROUTER, to, ALL, false)
+    : convert(
+        'swap',
+        tokenIn,
+        tokenOut,
+        USER,
+        to,
+        amountIn === undefined ? UNKNOWN : exact(amountIn),
+        true
+      )
 
 const getLastToken = (path: readonly string[]) => path[path.length - 1] ?? ''
 
-const decoders: { [selector: string]: LegacyDecoder } = {}
+type Decoded = { effects: Effect[]; deadline?: bigint }
+type Decoder = (
+  args: readonly any[],
+  ctx: UniswapContext,
+  describeUnknownCall: DescribeUnknownCall
+) => Decoded
 
-const add = (abi: readonly [{ name: string }], decoder: LegacyDecoder) => {
-  decoders[toFunctionSelector(abi[0] as Parameters<typeof toFunctionSelector>[0])] = decoder
+const decoders: {
+  [selector: string]: (data: Hex, ctx: UniswapContext, describe: DescribeUnknownCall) => Decoded
+} = {}
+
+// Registers the decoder of a function, with the arguments that it has already decoded
+const register = (abi: Abi, decoder: Decoder) => {
+  decoders[toFunctionSelector(abi[0] as AbiFunction)] = (data, ctx, describeUnknownCall) =>
+    decoder(decodeFunctionData({ abi, data }).args ?? [], ctx, describeUnknownCall)
 }
 
 // ---------------- the V2 router ----------------
 // These functions take the tokens of the signer, or the ETH that is sent with the call, and send
-// the result to `to`.
-const getV2Swap = (
-  ctx: UniswapContext,
-  tokenIn: string,
-  tokenOut: string,
-  to: string,
-  deadline: bigint
-) => ({
-  effects: [
-    {
-      type: 'convert',
-      kind: 'swap',
-      tokenIn: tokenIn.toLowerCase(),
-      tokenOut: tokenOut.toLowerCase(),
-      from: USER,
-      to: getPlace(to, V2_ROUTER, ctx),
-      amountIn: UNKNOWN
-    } as Effect
-  ],
-  deadline
-})
+// the result to `to`. For each one: where the path, the recipient and the deadline are in the
+// arguments, and which token is the native one when it is not in the path.
+const V2_SWAPS: [Abi, { path: number; to: number; deadline: number; native?: 'in' | 'out' }][] = [
+  [swapExactTokensForTokensAbi, { path: 2, to: 3, deadline: 4 }],
+  [swapTokensForExactTokensAbi, { path: 2, to: 3, deadline: 4 }],
+  [swapExactETHForTokensAbi, { path: 1, to: 2, deadline: 3, native: 'in' }],
+  [swapETHForExactTokensAbi, { path: 1, to: 2, deadline: 3, native: 'in' }],
+  [swapTokensForExactETHAbi, { path: 2, to: 3, deadline: 4, native: 'out' }],
+  [swapExactTokensForETHAbi, { path: 2, to: 3, deadline: 4, native: 'out' }]
+]
+V2_SWAPS.forEach(([abi, { path, to, deadline, native }]) =>
+  register(abi, (args, ctx) => {
+    const route: string[] = args[path]
+    return {
+      effects: [
+        convert(
+          'swap',
+          native === 'in' ? NATIVE_TOKEN : (route[0] ?? ''),
+          native === 'out' ? NATIVE_TOKEN : getLastToken(route),
+          USER,
+          getPlace(args[to], ctx, V2_ROUTER),
+          UNKNOWN
+        )
+      ],
+      deadline: args[deadline]
+    }
+  })
+)
 
-add(swapExactTokensForTokensAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: swapExactTokensForTokensAbi, data })
-  const [, , path, to, deadline] = args
-  return getV2Swap(ctx, path[0] ?? '', getLastToken(path), to, deadline)
-})
-add(swapTokensForExactTokensAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: swapTokensForExactTokensAbi, data })
-  const [, , path, to, deadline] = args
-  return getV2Swap(ctx, path[0] ?? '', getLastToken(path), to, deadline)
-})
-add(swapExactETHForTokensAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: swapExactETHForTokensAbi, data })
-  const [, path, to, deadline] = args
-  return getV2Swap(ctx, NATIVE_TOKEN, getLastToken(path), to, deadline)
-})
-add(swapETHForExactTokensAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: swapETHForExactTokensAbi, data })
-  const [, path, to, deadline] = args
-  return getV2Swap(ctx, NATIVE_TOKEN, getLastToken(path), to, deadline)
-})
-add(swapTokensForExactETHAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: swapTokensForExactETHAbi, data })
-  const [, , path, to, deadline] = args
-  return getV2Swap(ctx, path[0] ?? '', NATIVE_TOKEN, to, deadline)
-})
-add(swapExactTokensForETHAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: swapExactTokensForETHAbi, data })
-  const [, , path, to, deadline] = args
-  return getV2Swap(ctx, path[0] ?? '', NATIVE_TOKEN, to, deadline)
-})
+// ---------------- the V3 routers ----------------
+// The swaps that have a struct of parameters: for each one, the rules for the recipient, whether
+// the tokens are in a path, and whether the swap is for an exact output (the amount paid is then
+// not known, and the path is in the order of the output).
+const V3_STRUCT_SWAPS: [Abi, RecipientRules, { isPath: boolean; isExactOut: boolean }][] = [
+  [exactInputSingleWithDeadlineAbi, V3_ROUTER, { isPath: false, isExactOut: false }],
+  [exactOutputSingleWithDeadlineAbi, V3_ROUTER, { isPath: false, isExactOut: true }],
+  [exactInputV3Abi, V3_ROUTER, { isPath: true, isExactOut: false }],
+  [exactOutputV3Abi, V3_ROUTER, { isPath: true, isExactOut: true }],
+  [exactInputSingleNoDeadlineAbi, V3_ROUTER_2, { isPath: false, isExactOut: false }],
+  [exactOutputSingleNoDeadlineAbi, V3_ROUTER_2, { isPath: false, isExactOut: true }],
+  [exactInputV32Abi, V3_ROUTER_2, { isPath: true, isExactOut: false }],
+  [exactOutputV32Abi, V3_ROUTER_2, { isPath: true, isExactOut: true }]
+]
+V3_STRUCT_SWAPS.forEach(([abi, rules, { isPath, isExactOut }]) =>
+  register(abi, ([params], ctx) => {
+    let [tokenIn, tokenOut] = [params.tokenIn, params.tokenOut]
+    if (isPath) {
+      const path = parsePath(params.path)
+      if (!path.length) throw new Error('V3 swap without a path')
+      ;[tokenIn, tokenOut] = isExactOut
+        ? [getLastToken(path), path[0]!]
+        : [path[0]!, getLastToken(path)]
+    }
+    return {
+      effects: [
+        getV3Swap(
+          tokenIn,
+          tokenOut,
+          getPlace(params.recipient, ctx, rules),
+          isExactOut ? undefined : params.amountIn
+        )
+      ],
+      deadline: params.deadline
+    }
+  })
+)
 
-// ---------------- the V3 router (SwapRouter) ----------------
-add(exactInputSingleWithDeadlineAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: exactInputSingleWithDeadlineAbi, data })
-  const [params] = args
-  return {
-    effects: [
-      getV3Swap(
-        params.tokenIn,
-        params.tokenOut,
-        getPlace(params.recipient, V3_ROUTER, ctx),
-        params.amountIn
-      )
-    ],
-    deadline: params.deadline
-  }
-})
-add(exactOutputSingleWithDeadlineAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: exactOutputSingleWithDeadlineAbi, data })
-  const [params] = args
-  return {
-    effects: [
-      getV3Swap(
-        params.tokenIn,
-        params.tokenOut,
-        getPlace(params.recipient, V3_ROUTER, ctx),
-        undefined
-      )
-    ],
-    deadline: params.deadline
-  }
-})
-add(exactInputV3Abi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: exactInputV3Abi, data })
-  const [params] = args
-  const path = parsePath(params.path)
-  if (!path.length) throw new Error('V3 swap without a path')
-  return {
-    effects: [
-      getV3Swap(
-        path[0]!,
-        getLastToken(path),
-        getPlace(params.recipient, V3_ROUTER, ctx),
-        params.amountIn
-      )
-    ],
-    deadline: params.deadline
-  }
-})
-add(exactOutputV3Abi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: exactOutputV3Abi, data })
-  const [params] = args
-  const path = parsePath(params.path)
-  if (!path.length) throw new Error('V3 swap without a path')
-  // the path of an exact output swap is in the order of the output
-  return {
-    effects: [
-      getV3Swap(getLastToken(path), path[0]!, getPlace(params.recipient, V3_ROUTER, ctx), undefined)
-    ],
-    deadline: params.deadline
-  }
-})
-
-// ---------------- the V3 router 2 (SwapRouter02) ----------------
-add(exactInputSingleNoDeadlineAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: exactInputSingleNoDeadlineAbi, data })
-  const [params] = args
-  return {
-    effects: [
-      getV3Swap(
-        params.tokenIn,
-        params.tokenOut,
-        getPlace(params.recipient, V3_ROUTER_2, ctx),
-        params.amountIn
-      )
-    ]
-  }
-})
-add(exactOutputSingleNoDeadlineAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: exactOutputSingleNoDeadlineAbi, data })
-  const [params] = args
-  return {
-    effects: [
-      getV3Swap(
-        params.tokenIn,
-        params.tokenOut,
-        getPlace(params.recipient, V3_ROUTER_2, ctx),
-        undefined
-      )
-    ]
-  }
-})
-add(exactInputV32Abi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: exactInputV32Abi, data })
-  const [params] = args
-  const path = parsePath(params.path)
-  if (!path.length) throw new Error('V3 swap without a path')
-  return {
-    effects: [
-      getV3Swap(
-        path[0]!,
-        getLastToken(path),
-        getPlace(params.recipient, V3_ROUTER_2, ctx),
-        params.amountIn
-      )
-    ]
-  }
-})
-add(exactOutputV32Abi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: exactOutputV32Abi, data })
-  const [params] = args
-  const path = parsePath(params.path)
-  if (!path.length) throw new Error('V3 swap without a path')
-  return {
-    effects: [
-      getV3Swap(
-        getLastToken(path),
-        path[0]!,
-        getPlace(params.recipient, V3_ROUTER_2, ctx),
-        undefined
-      )
-    ]
-  }
-})
-add(swapExactTokensForTokensV32Abi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: swapExactTokensForTokensV32Abi, data })
-  const [amountIn, , path, to] = args
-  return {
-    effects: [
-      getV3Swap(path[0] ?? '', getLastToken(path), getPlace(to, V3_ROUTER_2, ctx), amountIn)
-    ]
-  }
-})
-add(swapTokensForExactTokensV32Abi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: swapTokensForExactTokensV32Abi, data })
-  const [, , path, to] = args
-  return {
-    effects: [
-      getV3Swap(path[0] ?? '', getLastToken(path), getPlace(to, V3_ROUTER_2, ctx), undefined)
-    ]
-  }
-})
+// the swaps of the V3 router 2 that take a path of tokens
+const V3_ROUTER_2_TOKEN_SWAPS: [Abi, boolean][] = [
+  [swapExactTokensForTokensV32Abi, true],
+  [swapTokensForExactTokensV32Abi, false]
+]
+V3_ROUTER_2_TOKEN_SWAPS.forEach(([abi, isExactIn]) =>
+  register(abi, (args, ctx) => {
+    const path: string[] = args[2]
+    const to = getPlace(args[3], ctx, V3_ROUTER_2)
+    return {
+      effects: [getV3Swap(path[0] ?? '', getLastToken(path), to, isExactIn ? args[0] : undefined)]
+    }
+  })
+)
 
 // ---------------- payments (both V3 routers) ----------------
+// the router unwraps all the wrapped tokens that it holds
 const getUnwrap = (ctx: UniswapContext): Effect => {
   if (!ctx.wrappedNative) throw new Error('the wrapped native token of the network is unknown')
-  // the router unwraps all the wrapped tokens that it holds
-  return {
-    type: 'convert',
-    kind: 'unwrap',
-    tokenIn: ctx.wrappedNative,
-    tokenOut: NATIVE_TOKEN,
-    from: ROUTER,
-    to: ROUTER,
-    amountIn: ALL
-  }
+  return convert('unwrap', ctx.wrappedNative, NATIVE_TOKEN, ROUTER, ROUTER, ALL)
 }
 
 // pays a share to the fee recipient, and all that is left to the recipient
@@ -354,90 +204,40 @@ const getPaymentWithFee = (
   feeBips: bigint,
   feeRecipient: string
 ): Effect[] => [
-  {
-    type: 'transfer',
+  transfer(
     token,
-    from: ROUTER,
-    to: { kind: 'external', address: feeRecipient.toLowerCase() },
-    amount: portion(feeBips)
-  },
-  { type: 'transfer', token, from: ROUTER, to: recipient, amount: ALL }
+    ROUTER,
+    { kind: 'external', address: feeRecipient.toLowerCase() },
+    portion(feeBips)
+  ),
+  transfer(token, ROUTER, recipient, ALL)
 ]
 
-add(unwrapWETH9NoRecipientAbi, (data, ctx) => ({
+register(unwrapWETH9NoRecipientAbi, (_args, ctx) => ({
+  effects: [getUnwrap(ctx), transfer(NATIVE_TOKEN, ROUTER, USER, ALL)]
+}))
+register(unwrapWETH9WithRecipientAbi, ([, recipient], ctx) => ({
+  effects: [getUnwrap(ctx), transfer(NATIVE_TOKEN, ROUTER, getPlace(recipient, ctx, PAYMENT), ALL)]
+}))
+register(unwrapWETH9WithFeeAbi, ([, recipient, feeBips, feeRecipient], ctx) => ({
   effects: [
     getUnwrap(ctx),
-    { type: 'transfer', token: NATIVE_TOKEN, from: ROUTER, to: USER, amount: ALL }
+    ...getPaymentWithFee(NATIVE_TOKEN, getPlace(recipient, ctx, PAYMENT), feeBips, feeRecipient)
   ]
 }))
-add(unwrapWETH9WithRecipientAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: unwrapWETH9WithRecipientAbi, data })
-  const [, recipient] = args
-  return {
-    effects: [
-      getUnwrap(ctx),
-      {
-        type: 'transfer',
-        token: NATIVE_TOKEN,
-        from: ROUTER,
-        to: getPlace(recipient, PAYMENT, ctx),
-        amount: ALL
-      }
-    ]
-  }
-})
-add(unwrapWETH9WithFeeAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: unwrapWETH9WithFeeAbi, data })
-  const [, recipient, feeBips, feeRecipient] = args
-  return {
-    effects: [
-      getUnwrap(ctx),
-      ...getPaymentWithFee(NATIVE_TOKEN, getPlace(recipient, PAYMENT, ctx), feeBips, feeRecipient)
-    ]
-  }
-})
-add(sweepTokenNoRecipientAbi, (data) => {
-  const { args } = decodeFunctionData({ abi: sweepTokenNoRecipientAbi, data })
-  const [token] = args
-  return {
-    effects: [{ type: 'transfer', token: token.toLowerCase(), from: ROUTER, to: USER, amount: ALL }]
-  }
-})
-add(sweepTokenWithRecipientAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: sweepTokenWithRecipientAbi, data })
-  const [token, , recipient] = args
-  return {
-    effects: [
-      {
-        type: 'transfer',
-        token: token.toLowerCase(),
-        from: ROUTER,
-        to: getPlace(recipient, PAYMENT, ctx),
-        amount: ALL
-      }
-    ]
-  }
-})
-add(sweepTokenWithFeeNoRecipientAbi, (data) => {
-  const { args } = decodeFunctionData({ abi: sweepTokenWithFeeNoRecipientAbi, data })
-  const [token, , feeBips, feeRecipient] = args
-  return { effects: getPaymentWithFee(token.toLowerCase(), USER, feeBips, feeRecipient) }
-})
-add(sweepTokenWithFeeWithRecipientAbi, (data, ctx) => {
-  const { args } = decodeFunctionData({ abi: sweepTokenWithFeeWithRecipientAbi, data })
-  const [token, , recipient, feeBips, feeRecipient] = args
-  return {
-    effects: getPaymentWithFee(
-      token.toLowerCase(),
-      getPlace(recipient, PAYMENT, ctx),
-      feeBips,
-      feeRecipient
-    )
-  }
-})
-add(refundETHAbi, () => ({
-  effects: [{ type: 'transfer', token: NATIVE_TOKEN, from: ROUTER, to: USER, amount: ALL }]
+register(sweepTokenNoRecipientAbi, ([token]) => ({
+  effects: [transfer(token, ROUTER, USER, ALL)]
 }))
+register(sweepTokenWithRecipientAbi, ([token, , recipient], ctx) => ({
+  effects: [transfer(token, ROUTER, getPlace(recipient, ctx, PAYMENT), ALL)]
+}))
+register(sweepTokenWithFeeNoRecipientAbi, ([token, , feeBips, feeRecipient]) => ({
+  effects: getPaymentWithFee(token, USER, feeBips, feeRecipient)
+}))
+register(sweepTokenWithFeeWithRecipientAbi, ([token, , recipient, feeBips, feeRecipient], ctx) => ({
+  effects: getPaymentWithFee(token, getPlace(recipient, ctx, PAYMENT), feeBips, feeRecipient)
+}))
+register(refundETHAbi, () => ({ effects: [transfer(NATIVE_TOKEN, ROUTER, USER, ALL)] }))
 
 // ---------------- multicall ----------------
 // A call inside a multicall that is not a swap or a payment is not understood, because it can do
@@ -446,7 +246,7 @@ const decodeCalls = (
   calls: readonly Hex[],
   ctx: UniswapContext,
   describeUnknownCall: DescribeUnknownCall
-) => {
+): Decoded => {
   let deadline: bigint | undefined
   const effects = calls.flatMap((data): Effect[] => {
     const decoded = decodeLegacyFunction(data, ctx, describeUnknownCall)
@@ -465,26 +265,22 @@ const decodeCalls = (
   return { effects, deadline }
 }
 
-add(multicallDeadlineAbi, (data, ctx, describeUnknownCall) => {
-  const { args } = decodeFunctionData({ abi: multicallDeadlineAbi, data })
-  const [deadline, calls] = args
+register(multicallDeadlineAbi, ([deadline, calls], ctx, describeUnknownCall) => {
   const decoded = decodeCalls(calls, ctx, describeUnknownCall)
   return { effects: decoded.effects, deadline: decoded.deadline ?? deadline }
 })
-add(multicallBytesAbi, (data, ctx, describeUnknownCall) => {
-  const { args } = decodeFunctionData({ abi: multicallBytesAbi, data })
-  return decodeCalls(args[0], ctx, describeUnknownCall)
-})
-add(multicallPrevBlockHashAbi, (data, ctx, describeUnknownCall) => {
-  const { args } = decodeFunctionData({ abi: multicallPrevBlockHashAbi, data })
-  return decodeCalls(args[1], ctx, describeUnknownCall)
-})
+register(multicallBytesAbi, ([calls], ctx, describeUnknownCall) =>
+  decodeCalls(calls, ctx, describeUnknownCall)
+)
+register(multicallPrevBlockHashAbi, ([, calls], ctx, describeUnknownCall) =>
+  decodeCalls(calls, ctx, describeUnknownCall)
+)
 
 const decodeLegacyFunction = (
   data: Hex,
   ctx: UniswapContext,
   describeUnknownCall: DescribeUnknownCall
-) => {
+): Decoded | undefined => {
   const decoder = decoders[data.slice(0, 10)]
   if (!decoder) return undefined
   try {
@@ -496,7 +292,7 @@ const decodeLegacyFunction = (
 }
 
 // The functions of the V2 router that take ETH send it from the signer and do not keep it in the router
-const V2_ETH_FUNCTIONS = new Set([
+const V2_ETH_FUNCTIONS = new Set<string>([
   toFunctionSelector(swapExactETHForTokensAbi[0]),
   toFunctionSelector(swapETHForExactTokensAbi[0])
 ])
@@ -509,7 +305,7 @@ export const decodeLegacyCall = (
   data: Hex,
   ctx: UniswapContext,
   describeUnknownCall: DescribeUnknownCall
-): { effects: Effect[]; deadline?: bigint } | undefined => {
+): Decoded | undefined => {
   const decoded = decodeLegacyFunction(data, ctx, describeUnknownCall)
   if (!decoded) return undefined
 
@@ -517,18 +313,7 @@ export const decodeLegacyCall = (
   const holdsValue = ctx.callValue > 0n && !V2_ETH_FUNCTIONS.has(data.slice(0, 10))
   return {
     effects: [
-      ...(holdsValue
-        ? [
-            {
-              type: 'transfer',
-              token: NATIVE_TOKEN,
-              from: USER,
-              to: ROUTER,
-              amount: exact(ctx.callValue),
-              isCallValue: true
-            } as Effect
-          ]
-        : []),
+      ...(holdsValue ? [transfer(NATIVE_TOKEN, USER, ROUTER, exact(ctx.callValue), true)] : []),
       ...decoded.effects
     ],
     deadline: decoded.deadline

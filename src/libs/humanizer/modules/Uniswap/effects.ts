@@ -98,6 +98,64 @@ export type ConvertEffect = {
   isPaidWithEthWhenHeld?: boolean
 }
 
+/** How a router reads an address that is the recipient of its tokens */
+export type RecipientRules = {
+  /** 1 is the caller and 2 is the router itself (Universal Router, V3 router 2) */
+  hasConstants: boolean
+  /** the zero address is the router itself (V3 router) */
+  isZeroTheRouter: boolean
+  /** the pools that are paid by an earlier command of the call */
+  pools?: Set<string>
+}
+
+/** The place that an address stands for: the signer, the router, a pool of the call, or another address */
+export const getPlace = (address: string, ctx: UniswapContext, rules: RecipientRules): Place => {
+  const lowerCaseAddress = address.toLowerCase()
+  if (lowerCaseAddress === ctx.accountAddr) return USER
+  if (rules.hasConstants && lowerCaseAddress === MSG_SENDER) return USER
+  if (rules.hasConstants && lowerCaseAddress === ADDRESS_THIS) return ROUTER
+  if (rules.isZeroTheRouter && lowerCaseAddress === NATIVE_TOKEN) return ROUTER
+  if (lowerCaseAddress === ctx.routerAddr) return ROUTER
+  if (rules.pools?.has(lowerCaseAddress)) return { kind: 'pool', address: lowerCaseAddress }
+  return { kind: 'external', address: lowerCaseAddress }
+}
+
+/** A transfer of tokens. The token is kept in lower case, as everywhere in the ledger. */
+export const transfer = (
+  token: string,
+  from: Place,
+  to: Place,
+  amount: Amount,
+  isCallValue?: boolean
+): TransferEffect => ({
+  type: 'transfer',
+  token: token.toLowerCase(),
+  from,
+  to,
+  amount,
+  ...(isCallValue ? { isCallValue } : {})
+})
+
+/** A conversion of tokens (a swap, a wrap or an unwrap) */
+export const convert = (
+  kind: ConversionKind,
+  tokenIn: string,
+  tokenOut: string,
+  from: Place,
+  to: Place,
+  amountIn: Amount,
+  isPaidWithEthWhenHeld?: boolean
+): ConvertEffect => ({
+  type: 'convert',
+  kind,
+  tokenIn: tokenIn.toLowerCase(),
+  tokenOut: tokenOut.toLowerCase(),
+  from,
+  to,
+  amountIn,
+  ...(isPaidWithEthWhenHeld === undefined ? {} : { isPaidWithEthWhenHeld })
+})
+
 export type PermitEffect = {
   type: 'permit'
   token: string

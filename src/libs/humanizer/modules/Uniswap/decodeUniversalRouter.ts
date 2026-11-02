@@ -10,21 +10,23 @@ import {
   V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE
 } from './Commands'
 import {
-  ADDRESS_THIS,
   ALL,
   Amount,
   Effect,
-  MSG_SENDER,
   NATIVE_TOKEN,
   Place,
+  RecipientRules,
   ROUTER,
   UNKNOWN,
   USER,
   UniswapContext,
   V4,
+  convert,
   exact,
+  getPlace,
   portion,
-  toAmount
+  toAmount,
+  transfer
 } from './effects'
 import { getAerodromePool, getUniswapV2Pool } from './pools'
 import { parsePath } from './utils'
@@ -161,13 +163,12 @@ const getPrepaidPools = (
   return pools
 }
 
-const getPlace = (address: string, ctx: UniswapContext, pools: Set<string>): Place => {
-  const lowerCaseAddress = address.toLowerCase()
-  if (lowerCaseAddress === MSG_SENDER || lowerCaseAddress === ctx.accountAddr) return USER
-  if (lowerCaseAddress === ADDRESS_THIS || lowerCaseAddress === ctx.routerAddr) return ROUTER
-  if (pools.has(lowerCaseAddress)) return { kind: 'pool', address: lowerCaseAddress }
-  return { kind: 'external', address: lowerCaseAddress }
-}
+// the Universal Router reads 1 and 2 as the caller and itself, and the pools that its commands pay
+const UR_RECIPIENT_RULES = (pools: Set<string>): RecipientRules => ({
+  hasConstants: true,
+  isZeroTheRouter: false,
+  pools
+})
 
 const getOpaqueEffect = (reason: string, ctx: UniswapContext, description?: string): Effect => ({
   type: 'opaque',
@@ -201,6 +202,15 @@ const getV4Payer = (currency: string, isUser: boolean): Place =>
 // the V4 router has the open delta (0) to say "all that is owed" or "all that is due"
 const OPEN_DELTA = 0n
 
+// the tokens of a V4 pool swap, in the order of the swap
+const getPoolSwapTokens = (poolKey: string[], zeroForOne: boolean): [string, string] =>
+  zeroForOne ? [poolKey[0]!, poolKey[1]!] : [poolKey[1]!, poolKey[0]!]
+
+// The amount that an exact input swap pays, or null when it is all that is owed (the open delta).
+// `amountIn` has the same name in the two layouts of the swap parameters.
+const getV4AmountIn = (swap: any): bigint | null =>
+  swap.amountIn === OPEN_DELTA ? null : swap.amountIn
+
 /**
  * The V4 pool manager keeps what every swap owes or is due, and the calls that settle and take
  * move the tokens in and out. It reverts when a call ends with tokens that are not settled, so it
@@ -216,6 +226,10 @@ const decodeV4Actions = (
   if (!parsedActions || parsedActions.length !== params.length) {
     return [getOpaqueEffect('V4 actions that do not match', ctx, 'Unknown Uniswap V4 action')]
   }
+
+  const place = (address: string) => getPlace(address, ctx, UR_RECIPIENT_RULES(pools))
+  const decode = (name: keyof typeof V4_ACTION_DESCRIPTORS, param: Hex) =>
+    extractParams(V4_ACTION_DESCRIPTORS[name], param)
 
   // What the swaps of this command owe to the pool manager, by currency. A settle of "all that is
   // owed" pays exactly this amount. It is not known (null) when the currency is also the output
@@ -236,165 +250,229 @@ const decodeV4Actions = (
     owed.set(currency, credited.has(currency) ? null : 0n)
     return amount === undefined || amount === null ? UNKNOWN : exact(amount)
   }
-  const settle = (currency: string, payer: Place, amount: Amount): Effect => ({
-    type: 'transfer',
-    token: currency.toLowerCase(),
-    from: payer,
-    to: V4,
-    amount
-  })
-  const swapEffects = (tokenIn: string, tokenOut: string, amountIn: bigint | null): Effect[] => {
+  const settle = (currency: string, payer: Place, amount: Amount) =>
+    transfer(currency, payer, V4, amount)
+  const settleAll = (currency: string) => {
+    const token = currency.toLowerCase()
+    return settle(token, getV4Payer(token, true), settleAllOwed(token))
+  }
+  const take = (currency: string, to: Place, amount: Amount) => transfer(currency, V4, to, amount)
+  const swap = (tokenIn: string, tokenOut: string, amountIn: bigint | null): Effect[] => {
     const input = tokenIn.toLowerCase()
     // what an earlier swap returns is not known, so the currency is owed in an unknown amount
     addOwed(input, credited.has(input) ? null : amountIn)
     addCredit(tokenOut.toLowerCase())
-    return [getV4Swap(tokenIn, tokenOut)]
+    return [convert('swap', tokenIn, tokenOut, V4, V4, UNKNOWN)]
+  }
+
+  const handlers: { [action: string]: (param: Hex) => Effect[] } = {
+    [V4_ACTION_CODES.SETTLE]: (param) => {
+      const args = decode('SETTLE', param)
+      const currency = args.currency.toLowerCase()
+      let amount: Amount
+      if (args.amount === OPEN_DELTA) amount = settleAllOwed(currency)
+      else {
+        amount = toAmount(args.amount)
+        // what is left to pay is not known after a payment of another amount
+        owed.set(currency, null)
+      }
+      return [settle(currency, getV4Payer(currency, args.payerIsUser), amount)]
+    },
+    [V4_ACTION_CODES.SETTLE_ALL]: (param) => [settleAll(decode('SETTLE_ALL', param).currency)],
+    [V4_ACTION_CODES.SETTLE_PAIR]: (param) => {
+      const args = decode('SETTLE_PAIR', param)
+      return [settleAll(args.currency0), settleAll(args.currency1)]
+    },
+    [V4_ACTION_CODES.TAKE]: (param) => {
+      const args = decode('TAKE', param)
+      const amount = args.amount === OPEN_DELTA ? ALL : exact(args.amount)
+      return [take(args.currency, place(args.recipient), amount)]
+    },
+    [V4_ACTION_CODES.TAKE_ALL]: (param) => [take(decode('TAKE_ALL', param).currency, USER, ALL)],
+    [V4_ACTION_CODES.TAKE_PORTION]: (param) => {
+      const args = decode('TAKE_PORTION', param)
+      return [take(args.currency, place(args.recipient), portion(args.bips))]
+    },
+    [V4_ACTION_CODES.TAKE_PAIR]: (param) => {
+      const args = decode('TAKE_PAIR', param)
+      return [args.currency0, args.currency1].map((currency: string) =>
+        take(currency, place(args.recipient), ALL)
+      )
+    },
+    // it settles what is owed or takes what is due, so both are possible
+    [V4_ACTION_CODES.CLOSE_CURRENCY]: (param) => {
+      const { currency } = decode('CLOSE_CURRENCY', param)
+      return [settleAll(currency), take(currency, USER, ALL)]
+    },
+    [V4_ACTION_CODES.SWEEP]: (param) => {
+      const args = decode('SWEEP', param)
+      return [transfer(args.currency, ROUTER, place(args.recipient), ALL)]
+    },
+    [V4_ACTION_CODES.SWAP_EXACT_IN_SINGLE]: (param) => {
+      const params = extractV4SwapParams('SWAP_EXACT_IN_SINGLE', param)
+      const [tokenIn, tokenOut] = getPoolSwapTokens(params[0], params[1])
+      return swap(tokenIn, tokenOut, getV4AmountIn(params))
+    },
+    // what an exact output swap owes is not known: only the most it can owe is
+    [V4_ACTION_CODES.SWAP_EXACT_OUT_SINGLE]: (param) => {
+      const params = extractV4SwapParams('SWAP_EXACT_OUT_SINGLE', param)
+      const [tokenIn, tokenOut] = getPoolSwapTokens(params[0], params[1])
+      return swap(tokenIn, tokenOut, null)
+    },
+    [V4_ACTION_CODES.SWAP_EXACT_IN]: (param) => {
+      const params = extractV4SwapParams('SWAP_EXACT_IN', param)
+      const [tokenIn, path] = params
+      if (!path.length) throw new Error('V4 swap without a path')
+      return swap(tokenIn, path[path.length - 1][0], getV4AmountIn(params))
+    },
+    [V4_ACTION_CODES.SWAP_EXACT_OUT]: (param) => {
+      const [tokenOut, path] = extractV4SwapParams('SWAP_EXACT_OUT', param)
+      if (!path.length) throw new Error('V4 swap without a path')
+      return swap(path[0][0], tokenOut, null)
+    }
   }
 
   return parsedActions.flatMap((action, index): Effect[] => {
-    const param = params[index]!
-    const place = (address: string) => getPlace(address, ctx, pools)
+    const handler = handlers[action]
+    if (!handler) {
+      return [getOpaqueEffect(`V4 action ${action}`, ctx, 'Unknown Uniswap V4 action')]
+    }
     try {
-      if (action === V4_ACTION_CODES.SETTLE) {
-        const args = extractParams(V4_ACTION_DESCRIPTORS.SETTLE, param)
-        const currency = args.currency.toLowerCase()
-        let amount: Amount
-        if (args.amount === OPEN_DELTA) amount = settleAllOwed(currency)
-        else {
-          amount = toAmount(args.amount)
-          // what is left to pay is not known after a payment of another amount
-          owed.set(currency, null)
-        }
-        return [settle(currency, getV4Payer(currency, args.payerIsUser), amount)]
-      }
-      if (action === V4_ACTION_CODES.SETTLE_ALL) {
-        const args = extractParams(V4_ACTION_DESCRIPTORS.SETTLE_ALL, param)
-        const currency = args.currency.toLowerCase()
-        return [settle(currency, getV4Payer(currency, true), settleAllOwed(currency))]
-      }
-      if (action === V4_ACTION_CODES.SETTLE_PAIR) {
-        const args = extractParams(V4_ACTION_DESCRIPTORS.SETTLE_PAIR, param)
-        return [args.currency0, args.currency1].map((currency: string): Effect => {
-          const lowerCaseCurrency = currency.toLowerCase()
-          return settle(
-            lowerCaseCurrency,
-            getV4Payer(lowerCaseCurrency, true),
-            settleAllOwed(lowerCaseCurrency)
-          )
-        })
-      }
-      if (action === V4_ACTION_CODES.TAKE) {
-        const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE, param)
-        return [
-          {
-            type: 'transfer',
-            token: args.currency.toLowerCase(),
-            from: V4,
-            to: place(args.recipient),
-            amount: args.amount === OPEN_DELTA ? ALL : exact(args.amount)
-          }
-        ]
-      }
-      if (action === V4_ACTION_CODES.TAKE_ALL) {
-        const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_ALL, param)
-        return [
-          { type: 'transfer', token: args.currency.toLowerCase(), from: V4, to: USER, amount: ALL }
-        ]
-      }
-      if (action === V4_ACTION_CODES.TAKE_PORTION) {
-        const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_PORTION, param)
-        return [
-          {
-            type: 'transfer',
-            token: args.currency.toLowerCase(),
-            from: V4,
-            to: place(args.recipient),
-            amount: portion(args.bips)
-          }
-        ]
-      }
-      if (action === V4_ACTION_CODES.TAKE_PAIR) {
-        const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_PAIR, param)
-        return [args.currency0, args.currency1].map(
-          (currency: string): Effect => ({
-            type: 'transfer',
-            token: currency.toLowerCase(),
-            from: V4,
-            to: place(args.recipient),
-            amount: ALL
-          })
-        )
-      }
-      if (action === V4_ACTION_CODES.CLOSE_CURRENCY) {
-        const args = extractParams(V4_ACTION_DESCRIPTORS.CLOSE_CURRENCY, param)
-        const token = args.currency.toLowerCase()
-        // it settles what is owed or takes what is due, so both are possible
-        return [
-          settle(token, getV4Payer(token, true), settleAllOwed(token)),
-          { type: 'transfer', token, from: V4, to: USER, amount: ALL }
-        ]
-      }
-      if (action === V4_ACTION_CODES.SWEEP) {
-        const args = extractParams(V4_ACTION_DESCRIPTORS.SWEEP, param)
-        return [
-          {
-            type: 'transfer',
-            token: args.currency.toLowerCase(),
-            from: ROUTER,
-            to: place(args.recipient),
-            amount: ALL
-          }
-        ]
-      }
-      if (action === V4_ACTION_CODES.SWAP_EXACT_IN_SINGLE) {
-        const swap = extractV4SwapParams('SWAP_EXACT_IN_SINGLE', param)
-        const [poolKey, zeroForOne] = swap
-        const [currency0, currency1] = poolKey
-        const [tokenIn, tokenOut] = zeroForOne ? [currency0, currency1] : [currency1, currency0]
-        return swapEffects(tokenIn, tokenOut, getV4AmountIn(swap))
-      }
-      if (action === V4_ACTION_CODES.SWAP_EXACT_OUT_SINGLE) {
-        const [poolKey, zeroForOne] = extractV4SwapParams('SWAP_EXACT_OUT_SINGLE', param)
-        const [currency0, currency1] = poolKey
-        const [tokenIn, tokenOut] = zeroForOne ? [currency0, currency1] : [currency1, currency0]
-        // what an exact output swap owes is not known: only the most it can owe is
-        return swapEffects(tokenIn, tokenOut, null)
-      }
-      if (action === V4_ACTION_CODES.SWAP_EXACT_IN) {
-        const swap = extractV4SwapParams('SWAP_EXACT_IN', param)
-        const [tokenIn, path] = swap
-        if (!path.length) throw new Error('V4 swap without a path')
-        return swapEffects(tokenIn, path[path.length - 1][0], getV4AmountIn(swap))
-      }
-      if (action === V4_ACTION_CODES.SWAP_EXACT_OUT) {
-        const [tokenOut, path] = extractV4SwapParams('SWAP_EXACT_OUT', param)
-        if (!path.length) throw new Error('V4 swap without a path')
-        return swapEffects(path[0][0], tokenOut, null)
-      }
+      return handler(params[index]!)
     } catch {
       // the action does not decode, so it is shown as an action that is not understood
       return [
         getOpaqueEffect(`V4 action ${action} does not decode`, ctx, 'Unknown Uniswap V4 action')
       ]
     }
-    return [getOpaqueEffect(`V4 action ${action}`, ctx, 'Unknown Uniswap V4 action')]
   })
 }
 
-// The amount that an exact input swap pays, or null when it is all that is owed (the open delta).
-// `amountIn` has the same name in the two layouts of the swap parameters.
-const getV4AmountIn = (swap: any): bigint | null =>
-  swap.amountIn === OPEN_DELTA ? null : swap.amountIn
+type CommandEnv = { ctx: UniswapContext; pools: Set<string>; place: (address: string) => Place }
 
-const getV4Swap = (tokenIn: string, tokenOut: string): Effect => ({
-  type: 'convert',
-  kind: 'swap',
-  tokenIn: tokenIn.toLowerCase(),
-  tokenOut: tokenOut.toLowerCase(),
-  from: V4,
-  to: V4,
-  amountIn: UNKNOWN
-})
+const decodeInput = (name: keyof typeof COMMANDS_DESCRIPTIONS, input: Hex) =>
+  extractParams(COMMANDS_DESCRIPTIONS[name].inputsDetails, input)
+
+// The swaps of V3: the path of an exact output swap is in the order of the output
+const decodeV3Swap =
+  (isExactIn: boolean) =>
+  (input: Hex, { place }: CommandEnv): Effect[] => {
+    const params = decodeInput(isExactIn ? 'V3_SWAP_EXACT_IN' : 'V3_SWAP_EXACT_OUT', input)
+    const path = parsePath(params.path)
+    if (!path.length) throw new Error('V3 swap without a path')
+
+    const [tokenIn, tokenOut] = isExactIn
+      ? [path[0]!, path[path.length - 1]!]
+      : [path[path.length - 1]!, path[0]!]
+    return [
+      convert(
+        'swap',
+        tokenIn,
+        tokenOut,
+        params.payerIsUser ? USER : ROUTER,
+        place(params.recipient),
+        isExactIn ? toAmount(params.amountIn) : UNKNOWN
+      )
+    ]
+  }
+
+// The commands that send tokens of the router: SWEEP sends everything that the router holds (the
+// amount of the command is only the least that it must be), TRANSFER sends an amount and
+// PAY_PORTION sends a share
+const decodeRouterPayment =
+  (name: 'SWEEP' | 'TRANSFER' | 'PAY_PORTION', getAmount: (params: any) => Amount) =>
+  (input: Hex, { place }: CommandEnv): Effect[] => {
+    const params = decodeInput(name, input)
+    return [transfer(params.token, ROUTER, place(params.recipient), getAmount(params))]
+  }
+
+// A wrap takes the amount of the command, an unwrap takes all the wrapped tokens
+const decodeWrapping =
+  (isWrap: boolean) =>
+  (input: Hex, { ctx, place }: CommandEnv): Effect[] => {
+    if (!ctx.wrappedNative) throw new Error('the wrapped native token of the network is unknown')
+    const params = decodeInput(isWrap ? 'WRAP_ETH' : 'UNWRAP_WETH', input)
+    return [
+      convert(
+        isWrap ? 'wrap' : 'unwrap',
+        isWrap ? NATIVE_TOKEN : ctx.wrappedNative,
+        isWrap ? ctx.wrappedNative : NATIVE_TOKEN,
+        ROUTER,
+        place(params.recipient),
+        isWrap ? toAmount(params.amountMin) : ALL
+      )
+    ]
+  }
+
+const COMMAND_DECODERS: { [command: string]: (input: Hex, env: CommandEnv) => Effect[] } = {
+  [COMMANDS.V3_SWAP_EXACT_IN]: decodeV3Swap(true),
+  [COMMANDS.V3_SWAP_EXACT_OUT]: decodeV3Swap(false),
+  [COMMANDS.V2_SWAP_EXACT_IN]: (input, { ctx, place }) => {
+    const swap = decodeV2SwapExactIn(input, ctx)
+    if (!swap || swap.tokens.length < 2) throw new Error('V2 swap that does not decode')
+
+    // a swap that is paid by its pool is not paid by the signer or the router
+    const isPrepaid = isPrepaidV2Swap(swap)
+    let from: Place = swap.payerIsUser ? USER : ROUTER
+    if (isPrepaid) {
+      from = swap.pool
+        ? { kind: 'pool', address: swap.pool }
+        : { kind: 'external', address: 'unverified pool' }
+    }
+    return [
+      convert(
+        'swap',
+        swap.tokens[0]!,
+        swap.tokens[swap.tokens.length - 1]!,
+        from,
+        place(swap.recipient),
+        isPrepaid ? ALL : toAmount(swap.amountIn)
+      )
+    ]
+  },
+  [COMMANDS.V2_SWAP_EXACT_OUT]: (input, { place }) => {
+    const params = decodeInput('V2_SWAP_EXACT_OUT', input)
+    const path: string[] = params.path
+    if (path.length < 2) throw new Error('V2 swap without a path')
+    return [
+      convert(
+        'swap',
+        path[0]!,
+        path[path.length - 1]!,
+        params.payerIsUser ? USER : ROUTER,
+        place(params.recipient),
+        UNKNOWN
+      )
+    ]
+  },
+  [COMMANDS.PERMIT2_TRANSFER_FROM]: (input, { place }) => {
+    const params = decodeInput('PERMIT2_TRANSFER_FROM', input)
+    return [transfer(params.token, USER, place(params.recipient), exact(params.amount))]
+  },
+  [COMMANDS.SWEEP]: decodeRouterPayment('SWEEP', () => ALL),
+  [COMMANDS.TRANSFER]: decodeRouterPayment('TRANSFER', (params) => toAmount(params.value)),
+  [COMMANDS.PAY_PORTION]: decodeRouterPayment('PAY_PORTION', (params) => portion(params.bips)),
+  [COMMANDS.WRAP_ETH]: decodeWrapping(true),
+  [COMMANDS.UNWRAP_WETH]: decodeWrapping(false),
+  [COMMANDS.PERMIT2_PERMIT]: (input) => {
+    const {
+      permit: {
+        details: { token, amount },
+        spender
+      }
+    } = decodeInput('PERMIT2_PERMIT', input)
+    return [{ type: 'permit', token: token.toLowerCase(), spender: spender.toLowerCase(), amount }]
+  },
+  [COMMANDS.BALANCE_CHECK_ERC20]: (input) => {
+    // it only reverts when a balance is too low and moves no tokens
+    decodeInput('BALANCE_CHECK_ERC20', input)
+    return []
+  },
+  [COMMANDS.V4_SWAP]: (input, { ctx, pools }) => {
+    const params = decodeInput('V4_SWAP', input)
+    return decodeV4Actions(params.actions, params.params, ctx, pools)
+  }
+}
 
 /**
  * Turns the commands of a Universal Router call into effects. A command that is not understood, or
@@ -413,198 +491,28 @@ export const decodeUniversalRouter = (
   }
 
   const pools = getPrepaidPools(parsedCommands, inputs, ctx)
-  const place = (address: string) => getPlace(address, ctx, pools)
-  const effects: Effect[] = [...effectsBefore]
-
-  // the value of the transaction goes to the router. This is where the ETH of a swap comes from.
-  if (ctx.callValue > 0n) {
-    effects.push({
-      type: 'transfer',
-      token: NATIVE_TOKEN,
-      from: USER,
-      to: ROUTER,
-      amount: exact(ctx.callValue),
-      isCallValue: true
-    })
+  const env: CommandEnv = {
+    ctx,
+    pools,
+    place: (address) => getPlace(address, ctx, UR_RECIPIENT_RULES(pools))
   }
 
-  parsedCommands.forEach((command, index) => {
-    const input = inputs[index]!
-    try {
-      if (command === COMMANDS.V3_SWAP_EXACT_IN || command === COMMANDS.V3_SWAP_EXACT_OUT) {
-        const isExactIn = command === COMMANDS.V3_SWAP_EXACT_IN
-        const { inputsDetails } = isExactIn
-          ? COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_IN
-          : COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_OUT
-        const params = extractParams(inputsDetails, input)
-        const path = parsePath(params.path)
-        if (!path.length) throw new Error('V3 swap without a path')
-
-        // the path of an exact out swap is in the order of the output
-        const [tokenIn, tokenOut] = isExactIn
-          ? [path[0]!, path[path.length - 1]!]
-          : [path[path.length - 1]!, path[0]!]
-        effects.push({
-          type: 'convert',
-          kind: 'swap',
-          tokenIn: tokenIn.toLowerCase(),
-          tokenOut: tokenOut.toLowerCase(),
-          from: params.payerIsUser ? USER : ROUTER,
-          to: place(params.recipient),
-          amountIn: isExactIn ? toAmount(params.amountIn) : UNKNOWN
-        })
-        return
+  return [
+    ...effectsBefore,
+    // the value of the transaction goes to the router. This is where the ETH of a swap comes from.
+    ...(ctx.callValue > 0n
+      ? [transfer(NATIVE_TOKEN, USER, ROUTER, exact(ctx.callValue), true)]
+      : []),
+    ...parsedCommands.flatMap((command, index): Effect[] => {
+      const decoder = COMMAND_DECODERS[command]
+      if (!decoder) return [getOpaqueEffect(`command ${command}`, ctx)]
+      try {
+        return decoder(inputs[index]!, env)
+      } catch {
+        // The command does not decode. It is shown as an action that is not understood, which also
+        // stops the summary from being shortened.
+        return [getOpaqueEffect(`command ${command} does not decode`, ctx)]
       }
-
-      if (command === COMMANDS.V2_SWAP_EXACT_IN) {
-        const swap = decodeV2SwapExactIn(input, ctx)
-        if (!swap || swap.tokens.length < 2) throw new Error('V2 swap that does not decode')
-
-        let from: Place = swap.payerIsUser ? USER : ROUTER
-        // a swap that is paid by its pool is not paid by the signer or the router
-        if (isPrepaidV2Swap(swap)) {
-          from = swap.pool
-            ? { kind: 'pool', address: swap.pool }
-            : { kind: 'external', address: 'unverified pool' }
-        }
-        effects.push({
-          type: 'convert',
-          kind: 'swap',
-          tokenIn: swap.tokens[0]!,
-          tokenOut: swap.tokens[swap.tokens.length - 1]!,
-          from,
-          to: place(swap.recipient),
-          amountIn: isPrepaidV2Swap(swap) ? ALL : toAmount(swap.amountIn)
-        })
-        return
-      }
-
-      if (command === COMMANDS.V2_SWAP_EXACT_OUT) {
-        const params = extractParams(COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_OUT.inputsDetails, input)
-        const path: string[] = params.path
-        if (path.length < 2) throw new Error('V2 swap without a path')
-        effects.push({
-          type: 'convert',
-          kind: 'swap',
-          tokenIn: path[0]!.toLowerCase(),
-          tokenOut: path[path.length - 1]!.toLowerCase(),
-          from: params.payerIsUser ? USER : ROUTER,
-          to: place(params.recipient),
-          amountIn: UNKNOWN
-        })
-        return
-      }
-
-      if (command === COMMANDS.PERMIT2_TRANSFER_FROM) {
-        const params = extractParams(
-          COMMANDS_DESCRIPTIONS.PERMIT2_TRANSFER_FROM.inputsDetails,
-          input
-        )
-        effects.push({
-          type: 'transfer',
-          token: params.token.toLowerCase(),
-          from: USER,
-          to: place(params.recipient),
-          amount: exact(params.amount)
-        })
-        return
-      }
-
-      if (command === COMMANDS.SWEEP) {
-        const params = extractParams(COMMANDS_DESCRIPTIONS.SWEEP.inputsDetails, input)
-        // it sends everything that the router holds, the amount is only the least that it must be
-        effects.push({
-          type: 'transfer',
-          token: params.token.toLowerCase(),
-          from: ROUTER,
-          to: place(params.recipient),
-          amount: ALL
-        })
-        return
-      }
-
-      if (command === COMMANDS.TRANSFER) {
-        const params = extractParams(COMMANDS_DESCRIPTIONS.TRANSFER.inputsDetails, input)
-        effects.push({
-          type: 'transfer',
-          token: params.token.toLowerCase(),
-          from: ROUTER,
-          to: place(params.recipient),
-          amount: toAmount(params.value)
-        })
-        return
-      }
-
-      if (command === COMMANDS.PAY_PORTION) {
-        const params = extractParams(COMMANDS_DESCRIPTIONS.PAY_PORTION.inputsDetails, input)
-        effects.push({
-          type: 'transfer',
-          token: params.token.toLowerCase(),
-          from: ROUTER,
-          to: place(params.recipient),
-          amount: portion(params.bips)
-        })
-        return
-      }
-
-      if (command === COMMANDS.WRAP_ETH || command === COMMANDS.UNWRAP_WETH) {
-        if (!ctx.wrappedNative)
-          throw new Error('the wrapped native token of the network is unknown')
-        const isWrap = command === COMMANDS.WRAP_ETH
-        const params = extractParams(
-          isWrap
-            ? COMMANDS_DESCRIPTIONS.WRAP_ETH.inputsDetails
-            : COMMANDS_DESCRIPTIONS.UNWRAP_WETH.inputsDetails,
-          input
-        )
-        effects.push({
-          type: 'convert',
-          kind: isWrap ? 'wrap' : 'unwrap',
-          tokenIn: isWrap ? NATIVE_TOKEN : ctx.wrappedNative,
-          tokenOut: isWrap ? ctx.wrappedNative : NATIVE_TOKEN,
-          from: ROUTER,
-          to: place(params.recipient),
-          // a wrap takes the amount of the command, an unwrap takes all the wrapped tokens
-          amountIn: isWrap ? toAmount(params.amountMin) : ALL
-        })
-        return
-      }
-
-      if (command === COMMANDS.PERMIT2_PERMIT) {
-        const {
-          permit: {
-            details: { token, amount },
-            spender
-          }
-        } = extractParams(COMMANDS_DESCRIPTIONS.PERMIT2_PERMIT.inputsDetails, input)
-        effects.push({
-          type: 'permit',
-          token: token.toLowerCase(),
-          spender: spender.toLowerCase(),
-          amount
-        })
-        return
-      }
-
-      if (command === COMMANDS.BALANCE_CHECK_ERC20) {
-        // it only reverts when a balance is too low and moves no tokens
-        extractParams(COMMANDS_DESCRIPTIONS.BALANCE_CHECK_ERC20.inputsDetails, input)
-        return
-      }
-
-      if (command === COMMANDS.V4_SWAP) {
-        const params = extractParams(COMMANDS_DESCRIPTIONS.V4_SWAP.inputsDetails, input)
-        effects.push(...decodeV4Actions(params.actions, params.params, ctx, pools))
-        return
-      }
-
-      effects.push(getOpaqueEffect(`command ${command}`, ctx))
-    } catch {
-      // The command does not decode. It is shown as an action that is not understood, which also
-      // stops the summary from being shortened.
-      effects.push(getOpaqueEffect(`command ${command} does not decode`, ctx))
-    }
-  })
-
-  return effects
+    })
+  ]
 }

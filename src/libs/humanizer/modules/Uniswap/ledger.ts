@@ -11,9 +11,11 @@ import {
   UNKNOWN,
   USER,
   UniswapContext,
+  convert,
   exact,
   getPlaceKey,
-  isPassThroughPlace
+  isPassThroughPlace,
+  transfer
 } from './effects'
 
 /** One movement of tokens between two places */
@@ -238,33 +240,11 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
     const heldEth = getState(getNodeKey(ROUTER, NATIVE_TOKEN))
     if (heldEth.kind === 'exact' && heldEth.value >= effect.amountIn.value) {
       // the router has the ETH, so it wraps it and does not take the wrapped token from the signer
-      apply({
-        type: 'convert',
-        kind: 'wrap',
-        tokenIn: NATIVE_TOKEN,
-        tokenOut: ctx.wrappedNative,
-        from: ROUTER,
-        to: ROUTER,
-        amountIn: effect.amountIn
-      })
+      apply(convert('wrap', NATIVE_TOKEN, ctx.wrappedNative, ROUTER, ROUTER, effect.amountIn))
     } else {
       // it is not known which of the two is used, so both are possible
-      apply({
-        type: 'transfer',
-        token: ctx.wrappedNative,
-        from: USER,
-        to: ROUTER,
-        amount: effect.amountIn
-      })
-      apply({
-        type: 'convert',
-        kind: 'wrap',
-        tokenIn: NATIVE_TOKEN,
-        tokenOut: ctx.wrappedNative,
-        from: ROUTER,
-        to: ROUTER,
-        amountIn: UNKNOWN
-      })
+      apply(transfer(ctx.wrappedNative, USER, ROUTER, effect.amountIn))
+      apply(convert('wrap', NATIVE_TOKEN, ctx.wrappedNative, ROUTER, ROUTER, UNKNOWN))
     }
     apply({ ...swap, from: ROUTER })
   }
