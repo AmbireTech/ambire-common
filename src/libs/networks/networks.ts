@@ -149,8 +149,42 @@ export function isNetworkInfoPending(info?: NetworkInfoLoading<NetworkInfo>): bo
 }
 
 /**
+ * Looks up the ids our price API (CoinGecko under the hood) knows a network by - its
+ * platform id (for token prices) and native asset id (for the native token price).
+ *
+ * Call it only when the user hasn't opted out of token prices, because the requests
+ * to our price API carry analytics data.
+ *
+ * @returns the ids, or null if the network isn't supported by the price API or the
+ * request failed
+ */
+export async function fetchNetworkPriceIds(
+  fetch: Fetch,
+  chainId: bigint
+): Promise<Pick<NetworkInfo, 'platformId' | 'nativeAssetId'> | null> {
+  try {
+    const coingeckoRequest = await fetch(
+      `https://cena.ambire.com/api/v3/platform/${Number(chainId)}`
+    )
+    const coingeckoInfo = await coingeckoRequest.json()
+
+    // Coingecko info not found
+    if (coingeckoInfo.error) return null
+
+    return { platformId: coingeckoInfo.platformId, nativeAssetId: coingeckoInfo.nativeAssetId }
+  } catch (e) {
+    console.error('Error fetching coingecko info', e)
+
+    return null
+  }
+}
+
+/**
  * Fetches a network's capabilities from an RPC provider - smart account support, ERC-4337,
  * fee options and price metadata.
+ *
+ * The price metadata is fetched only if `isTokenPricesEnabled` - otherwise the network's
+ * current values are kept (empty for a network that is being added).
  *
  * Streams progress through `callback`.
  */
@@ -159,7 +193,8 @@ export async function getNetworkInfo(
   chainId: bigint,
   provider: RPCProvider,
   callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void,
-  network: Network | undefined
+  network: Network | undefined,
+  isTokenPricesEnabled: boolean = true
 ) {
   let networkInfo: NetworkInfoLoading<NetworkInfo> = getLoadingNetworkInfo(chainId)
   callback(networkInfo)
@@ -239,29 +274,14 @@ export async function getNetworkInfo(
           networkInfo = { ...networkInfo, feeOptions }
         })(),
         (async () => {
-          // Keep the old value if the request fails
-          let platformId = network?.platformId || ''
-          let nativeAssetId = network?.nativeAssetId || ''
-
-          try {
-            const coingeckoRequest = await fetch(
-              `https://cena.ambire.com/api/v3/platform/${Number(chainId)}`
-            )
-            const coingeckoInfo = await coingeckoRequest.json()
-
-            if (!coingeckoInfo.error) {
-              // Coingecko info found
-              platformId = coingeckoInfo.platformId
-              nativeAssetId = coingeckoInfo.nativeAssetId
-            }
-          } catch (e) {
-            console.error('Error fetching coingecko info', e)
-          }
+          // Keep the old value if the request fails or the user has opted out of token
+          // prices. Resolved to a value either way, so that the info stops being pending.
+          const priceIds = isTokenPricesEnabled ? await fetchNetworkPriceIds(fetch, chainId) : null
 
           networkInfo = {
             ...networkInfo,
-            platformId,
-            nativeAssetId
+            platformId: priceIds?.platformId ?? (network?.platformId || ''),
+            nativeAssetId: priceIds?.nativeAssetId ?? (network?.nativeAssetId || '')
           }
 
           callback(networkInfo)
@@ -281,11 +301,14 @@ export async function getNetworkInfo(
  * Determines supported features for a network based on its properties.
  *
  * Smart Accounts, ERC-4337, transaction simulation, and price tracking are supported.
+ * Price tracking is reported as turned off if the user has opted out of token prices
+ * (`isTokenPricesEnabled` is false), regardless of whether the network supports it.
  */
 // call this if you have the network props already calculated
 export function getFeaturesByNetworkProperties(
   networkInfo: NetworkInfo | NetworkInfoLoading<NetworkInfo> | undefined,
-  network?: Network
+  network?: Network,
+  isTokenPricesEnabled: boolean = true
 ): NetworkFeature[] {
   const features: NetworkFeature[] = [
     {
@@ -404,7 +427,12 @@ export function getFeaturesByNetworkProperties(
     }
   }
 
-  if (nativeAssetId !== 'LOADING') {
+  if (!isTokenPricesEnabled) {
+    updateFeature('prices', {
+      level: 'warning',
+      msg: 'Token prices are turned off in your privacy settings. Turn them back on to see them.'
+    })
+  } else if (nativeAssetId !== 'LOADING') {
     const hasNativeAssetId = nativeAssetId && nativeAssetId !== ''
     updateFeature('prices', {
       level: hasNativeAssetId ? 'success' : 'danger',
@@ -429,9 +457,10 @@ export function getLoadingFeatures(): NetworkFeature[] {
 // this method makes an RPC request, calculates the network info and returns the features
 export function getFeatures(
   networkInfo: NetworkInfoLoading<NetworkInfo> | undefined,
-  network: Network | undefined
+  network: Network | undefined,
+  isTokenPricesEnabled: boolean = true
 ): NetworkFeature[] {
-  return getFeaturesByNetworkProperties(networkInfo, network)
+  return getFeaturesByNetworkProperties(networkInfo, network, isTokenPricesEnabled)
 }
 
 export function hasRelayerSupport(network: Network) {
