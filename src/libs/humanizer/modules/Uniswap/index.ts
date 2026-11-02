@@ -1,19 +1,20 @@
-import { getAddress, isAddress } from 'viem'
+import { Hex, getAddress, isAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, isHexCall } from '../../utils'
+import { getAction, isHexCall, mergeWarnings } from '../../utils'
+import { summarizeLegacyRouterCall } from './summarize'
+import { UniswapSummaryMatcher } from './interfaces'
 import { uniSwapProxy } from './uniSwapProxy'
 import { uniUniversalRouter } from './uniUniversalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV3Mapping } from './uniV3'
+import { UNIVERSAL_ROUTER_CHAIN_IDS } from './universalRouterChains'
 
-const fullUniswapHumanizerMapping = {
-  ...uniV2Mapping,
-  ...uniV3Mapping,
-  ...uniUniversalRouter,
-  ...uniSwapProxy
-}
+// The functions that are described from what they do with the tokens
+const uniswapSummaryMapping: UniswapSummaryMatcher = { ...uniUniversalRouter, ...uniSwapProxy }
+// The functions that add liquidity are described as text, one function at a time
+const uniswapTextMapping = { ...uniV2Mapping, ...uniV3Mapping }
 
 // fetched from https://api.github.com/repos/Uniswap/universal-router/contents/deploy-addresses
 // and https://docs.uniswap.org/contracts/v3/reference/deployments/
@@ -136,8 +137,23 @@ const uniAddresses = [
   '0x02E5be68D46DAc0B524905bfF209cf47EE6dB2a9'
 ]
 
+/** True when the call is to one of the addresses of the routers of Uniswap */
+const isUniswapRouterAddress = (address: string): boolean =>
+  isAddress(address) && uniAddresses.includes(getAddress(address))
+
+/**
+ * True when the Universal Router is not deployed at the address on the network of the account. The
+ * list of addresses has no networks, so the networks that Uniswap lists for its Universal Routers
+ * are checked here: a router address of one network can be another contract on another network. The
+ * V2 router of Ethereum, for example, has the address of a Universal Router on World Chain.
+ */
+const isUniversalRouterOnOtherNetwork = (chainId: bigint, address: string): boolean => {
+  const deployedChainIds = UNIVERSAL_ROUTER_CHAIN_IDS[address.toLowerCase()]
+  return !!deployedChainIds && !deployedChainIds.includes(chainId)
+}
+
 export const uniswapHumanizer: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
-  if (!call.to || !isAddress(call.to) || !uniAddresses.includes(getAddress(call.to))) return call
+  if (!call.to || !isUniswapRouterAddress(call.to)) return call
 
   // A call to a known Uniswap address that isn't a recognized Uniswap-specific action (e.g. an
   // ERC-721 approval on the Position Manager NFT contract) may already carry a more specific
@@ -149,11 +165,38 @@ export const uniswapHumanizer: HumanizerCallModule = (accountOp: AccountOp, call
       : { ...call, fullVisualization: [getAction('Uniswap action')] }
 
   const sigHash = call.data.substring(0, 10)
-  if (fullUniswapHumanizerMapping[sigHash])
+
+  // the commands of the Universal Router are only understood where the router is deployed
+  const isUniversalRouterCall = !!uniswapSummaryMapping[sigHash]
+  if (isUniversalRouterCall && isUniversalRouterOnOtherNetwork(accountOp.chainId, call.to)) {
+    return call
+  }
+
+  // a call inside a multicall that is not a swap or a payment is described as text when it can be
+  const describeUnknownCall = (data: Hex) => {
+    const describe = uniswapTextMapping[data.substring(0, 10)]
+    try {
+      return describe ? describe(accountOp, { ...call, data }) : [getAction('Uniswap action')]
+    } catch {
+      // the call does not decode, so it is only known to be a Uniswap action
+      return [getAction('Uniswap action')]
+    }
+  }
+
+  const summaryFunction = uniswapSummaryMapping[sigHash]
+  const summary = summaryFunction
+    ? summaryFunction(accountOp, call)
+    : summarizeLegacyRouterCall(accountOp, call, describeUnknownCall)
+  if (summary) {
     return {
       ...call,
-      fullVisualization: fullUniswapHumanizerMapping[sigHash](accountOp, call)
+      fullVisualization: summary.visualization,
+      warnings: mergeWarnings(call.warnings, summary.warnings)
     }
+  }
+
+  const textFunction = uniswapTextMapping[sigHash]
+  if (textFunction) return { ...call, fullVisualization: textFunction(accountOp, call) }
 
   return call.fullVisualization
     ? call

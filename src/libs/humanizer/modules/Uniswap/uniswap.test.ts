@@ -15,6 +15,12 @@ import {
   getToken
 } from '../../utils'
 import { uniswapHumanizer } from './'
+import { UNIVERSAL_ROUTER_CHAIN_IDS } from './universalRouterChains'
+
+// A call is humanized on the network where its router is deployed. The routers that Uniswap does not
+// list are on Ethereum.
+const getChainId = (to: string | undefined) =>
+  UNIVERSAL_ROUTER_CHAIN_IDS[(to || '').toLowerCase()]?.[0] ?? 1n
 
 const transactions = {
   firstBatch: [
@@ -200,7 +206,13 @@ describe('uniswap', () => {
     ]
     accountOp.calls = [...transactions.secondBatch]
     let irCalls: IrCall[] = accountOp.calls
-    irCalls = irCalls.map((c) => uniswapHumanizer(accountOp, c, humanizerInfo as HumanizerMeta))
+    irCalls = irCalls.map((c) =>
+      uniswapHumanizer(
+        { ...accountOp, chainId: getChainId(c.to) },
+        c,
+        humanizerInfo as HumanizerMeta
+      )
+    )
     expect(irCalls.length).toBe(expectedhumanization.length)
     compareHumanizerVisualizations(irCalls, expectedhumanization as HumanizerVisualization[][])
   })
@@ -208,7 +220,11 @@ describe('uniswap', () => {
   test('uniSwap', () => {
     accountOp.calls = [...transactions.firstBatch]
     const irCalls = accountOp.calls.map((c) =>
-      uniswapHumanizer(accountOp, c, humanizerInfo as HumanizerMeta)
+      uniswapHumanizer(
+        { ...accountOp, chainId: getChainId(c.to) },
+        c,
+        humanizerInfo as HumanizerMeta
+      )
     )
     const expectedVisualization = [
       [
@@ -232,10 +248,7 @@ describe('uniswap', () => {
         getToken('0x046eee2cc3188071c02bfc1745a6b17c656e3f3d', 0n),
         getLabel('and send it to'),
         getAddressVisualization('0x5a5be6b067d6b5b018adbcd27ee6972105b3b400'),
-        getDeadline(1691677015n),
-        getLabel('and'),
-        getAction('Withdraw'),
-        getToken(ZeroAddress, 0n)
+        getDeadline(1691677015n)
       ]
     ]
     expect(irCalls.length).toEqual(expectedVisualization.length)
@@ -246,7 +259,11 @@ describe('uniswap', () => {
     // the fixture is a real transaction: its recipient is the address of its signer
     const irCalls = accountOp.calls.map((c) =>
       uniswapHumanizer(
-        { ...accountOp, accountAddr: '0x6969174fd72466430a46e18234d0b530c9fd5f49' },
+        {
+          ...accountOp,
+          accountAddr: '0x6969174fd72466430a46e18234d0b530c9fd5f49',
+          chainId: getChainId(c.to)
+        },
         c,
         humanizerInfo as HumanizerMeta
       )
@@ -264,7 +281,13 @@ describe('uniswap', () => {
         getToken(ZeroAddress, 0n),
         getLabel('for'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n),
-        getDeadline(1724237675n)
+        getDeadline(1724237675n),
+        // an exact amount that goes to the fee address of Uniswap is part of what the signer pays
+        getLabel('and'),
+        getAction('Send'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n),
+        getLabel('to'),
+        getAddressVisualization('0x000000fee13a103a10d593b9ae06b3e05f2e7e1c')
       ],
       [
         getAction('Swap'),
@@ -281,10 +304,21 @@ describe('uniswap', () => {
   test('Liquidity', async () => {
     accountOp.calls = [...transactions.liquidity]
     const irCalls = accountOp.calls.map((c) =>
-      uniswapHumanizer(accountOp, c, humanizerInfo as HumanizerMeta)
+      uniswapHumanizer(
+        { ...accountOp, chainId: getChainId(c.to) },
+        c,
+        humanizerInfo as HumanizerMeta
+      )
     )
     const expectedVisualization = [
       [
+        // the ETH that the call sends to the router. A call that adds liquidity is not described
+        // from what it does with the tokens, so the payment is listed.
+        getAction('Send'),
+        getToken(ZeroAddress, accountOp.calls[0]!.value),
+        getLabel('to'),
+        getAddressVisualization(accountOp.calls[0]!.to!.toLowerCase()),
+        getLabel('and'),
         getAction('Add liquidity'),
         getToken('0x4200000000000000000000000000000000000006', 6904077431543n),
         getToken('0x4200000000000000000000000000000000000042', 9999999999998775n),
@@ -293,7 +327,7 @@ describe('uniswap', () => {
         getDeadline(1726227249n),
         getLabel('and'),
         getAction('Withdraw'),
-        getToken(ZeroAddress, 6904077431543n)
+        getToken(ZeroAddress, 0n)
       ]
     ]
     expect(irCalls.length).toEqual(expectedVisualization.length)
@@ -313,7 +347,11 @@ describe('uniswap', () => {
     // the fixture is a real transaction: its recipient is the address of its signer
     const irCalls = accountOp.calls.map((c) =>
       uniswapHumanizer(
-        { ...accountOp, accountAddr: '0xc86fd75749f20123c460dedeab9a5e64fea76222' },
+        {
+          ...accountOp,
+          accountAddr: '0xc86fd75749f20123c460dedeab9a5e64fea76222',
+          chainId: getChainId(c.to)
+        },
         c,
         humanizerInfo as HumanizerMeta
       )
@@ -354,7 +392,7 @@ describe('uniswap', () => {
     ]
     const irCalls = accountOp.calls.map((c, i) =>
       uniswapHumanizer(
-        { ...accountOp, accountAddr: signers[i]! },
+        { ...accountOp, accountAddr: signers[i]!, chainId: getChainId(c.to) },
         c,
         humanizerInfo as HumanizerMeta
       )
@@ -365,7 +403,8 @@ describe('uniswap', () => {
         getAction('Swap'),
         getToken('0x0000000000000000000000000000000000000000', 0n),
         getLabel('for'),
-        getToken('0xfca95aeb5bf44ae355806a5ad14659c940dc6bf7', 0n)
+        getToken('0xfca95aeb5bf44ae355806a5ad14659c940dc6bf7', 0n),
+        getDeadline(1763555024n)
       ],
       [
         getAction('Grant approval'),
@@ -391,7 +430,7 @@ describe('uniswap', () => {
     accountOp.calls = [
       {
         to: '0x6Df1c91424F79E40E33B1A48F0687B666bE71075',
-        value: 0n,
+        value: 10000000000000n,
         data: '0x3593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000698d389400000000000000000000000000000000000000000000000000000000000000030b000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000400000000000000000000000006df1c91424f79e40e33b1a48f0687b666be71075000000000000000000000000000000000000000000000000000009184e72a0000000000000000000000000000000000000000000000000000000000000000120000000000000000000000000328cc728dce83e80dbe55df9ba35baa6f1aa13a6000000000000000000000000000000000000000000000000000009184e72a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002b42000000000000000000000000000000000000060000c8590830dfdf9a3f68afcdde2694773debdf26777400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001200000000000000000000000006969174fd72466430a46e18234d0b530c9fd5f490000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000501600000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000029590830dfdf9a3f68afcdde2694773debdf26777400833589fcd6edb6e08f4c7c32d4f71b54bda0291300000000000000000000000000000000000000000000008779ce964b87d3f89643893fcef2'
       }
     ]
@@ -408,7 +447,11 @@ describe('uniswap', () => {
     // the fixture is a real transaction: its recipient is the address of its signer
     const irCalls = accountOp.calls.map((c) =>
       uniswapHumanizer(
-        { ...accountOp, accountAddr: '0x6969174fd72466430a46e18234d0b530c9fd5f49' },
+        {
+          ...accountOp,
+          accountAddr: '0x6969174fd72466430a46e18234d0b530c9fd5f49', // Base
+          chainId: 8453n
+        },
         c,
         humanizerInfo as HumanizerMeta
       )
@@ -436,7 +479,11 @@ describe('uniswap', () => {
     ]
     const irCalls = accountOp.calls.map((c) =>
       uniswapHumanizer(
-        { ...accountOp, accountAddr: '0xFe89cc7aBB2C4183683ab71653C4cdc9B02D44b7' },
+        {
+          ...accountOp,
+          accountAddr: '0xFe89cc7aBB2C4183683ab71653C4cdc9B02D44b7',
+          chainId: getChainId(c.to)
+        },
         c,
         humanizerInfo as HumanizerMeta
       )
@@ -461,6 +508,7 @@ describe('uniswap', () => {
         getToken(ZeroAddress, 0n),
         getLabel('for'),
         getToken('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 0n),
+        getDeadline(1786460765n),
         getLabel('and'),
         getAction('Send'),
         getLabel('50%', true),
@@ -470,7 +518,11 @@ describe('uniswap', () => {
       ]
     ]
     const irCalls = accountOp.calls.map((c) =>
-      uniswapHumanizer(accountOp, c, humanizerInfo as HumanizerMeta)
+      uniswapHumanizer(
+        { ...accountOp, chainId: getChainId(c.to) },
+        c,
+        humanizerInfo as HumanizerMeta
+      )
     )
 
     expect(irCalls.length).toEqual(expectedVisualization.length)
@@ -492,11 +544,16 @@ describe('uniswap', () => {
         getAction('Swap'),
         getToken(ZeroAddress, 0n),
         getLabel('for'),
-        getToken('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 0n)
+        getToken('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 0n),
+        getDeadline(1786460765n)
       ]
     ]
     const irCalls = accountOp.calls.map((c) =>
-      uniswapHumanizer(accountOp, c, humanizerInfo as HumanizerMeta)
+      uniswapHumanizer(
+        { ...accountOp, chainId: getChainId(c.to) },
+        c,
+        humanizerInfo as HumanizerMeta
+      )
     )
 
     expect(irCalls.length).toEqual(expectedVisualization.length)
@@ -517,12 +574,17 @@ describe('uniswap', () => {
         getAction('Swap'),
         getToken(ZeroAddress, 0n),
         getLabel('for'),
-        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n)
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n),
+        getDeadline(1780314040n)
       ]
     ]
     const irCalls = accountOp.calls.map((c) =>
       uniswapHumanizer(
-        { ...accountOp, accountAddr: '0x1b26e648fa19ca6d081d27c9bb1fc0ddd6ed5562' },
+        {
+          ...accountOp,
+          accountAddr: '0x1b26e648fa19ca6d081d27c9bb1fc0ddd6ed5562',
+          chainId: getChainId(c.to)
+        },
         c,
         humanizerInfo as HumanizerMeta
       )
@@ -548,12 +610,17 @@ describe('uniswap', () => {
         getAction('Swap'),
         getToken('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 0n),
         getLabel('for'),
-        getToken(ZeroAddress, 0n)
+        getToken(ZeroAddress, 0n),
+        getDeadline(1787580364n)
       ]
     ]
     const irCalls = accountOp.calls.map((c) =>
       uniswapHumanizer(
-        { ...accountOp, accountAddr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' },
+        {
+          ...accountOp,
+          accountAddr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+          chainId: getChainId(c.to)
+        },
         c,
         humanizerInfo as HumanizerMeta
       )
@@ -583,7 +650,11 @@ describe('uniswap', () => {
     ]
     const irCalls = accountOp.calls.map((c) =>
       uniswapHumanizer(
-        { ...accountOp, accountAddr: '0x1b26e648fa19ca6d081d27c9bb1fc0ddd6ed5562' },
+        {
+          ...accountOp,
+          accountAddr: '0x1b26e648fa19ca6d081d27c9bb1fc0ddd6ed5562',
+          chainId: getChainId(c.to)
+        },
         c,
         humanizerInfo as HumanizerMeta
       )

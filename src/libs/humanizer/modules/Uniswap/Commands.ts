@@ -17,6 +17,7 @@ export const COMMANDS = {
   WRAP_ETH: '0x0b',
   UNWRAP_WETH: '0x0c',
   // PERMIT2_TRANSFER_FROM_BATCH: '0x0d',
+  BALANCE_CHECK_ERC20: '0x0e',
   V4_SWAP: '0x10'
 }
 
@@ -120,6 +121,15 @@ export const COMMANDS_DESCRIPTIONS = {
     inputsDetails: [
       { type: 'address', name: 'recipient' },
       { type: 'uint256', name: 'amountMin' }
+    ]
+  },
+  // only reverts when the balance is too low. It does not move any tokens.
+  BALANCE_CHECK_ERC20: {
+    command: '0x0e',
+    inputsDetails: [
+      { type: 'address', name: 'owner' },
+      { type: 'address', name: 'token' },
+      { type: 'uint256', name: 'minBalance' }
     ]
   },
   V4_SWAP: {
