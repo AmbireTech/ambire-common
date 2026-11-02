@@ -22,10 +22,21 @@ import {
 } from '../../utils'
 import { COMMANDS, COMMANDS_DESCRIPTIONS, V4_ACTION_CODES, V4_ACTION_DESCRIPTORS } from './Commands'
 import { HumanizerUniMatcher } from './interfaces'
-import { getUniRecipientText, parsePath, uniReduce } from './utils'
+import {
+  getUniRecipientText,
+  getUniversalRouterRecipientText,
+  isOwnOrRouterRecipient,
+  isUniswapFeeRecipient,
+  parsePath,
+  UNIVERSAL_ROUTER_MSG_SENDER,
+  uniReduce
+} from './utils'
 import { AbiCoder } from 'ethers'
 
 const coder = new AbiCoder()
+
+// 100 basis points = 1%. Fees up to this share that are paid with PAY_PORTION are not displayed.
+const MAX_HIDDEN_PAY_PORTION_BIPS = 100n
 const extractParams = (inputsDetails: any, input: any) => {
   const types = inputsDetails.map((i: any) => i.type)
   const decodedInput = coder.decode(types, input)
@@ -36,6 +47,16 @@ const extractParams = (inputsDetails: any, input: any) => {
 
   return params
 }
+
+// The V2_SWAP_EXACT_IN encoding of the routers that have a `bool isUni` flag
+const ALTERNATIVE_V2_SWAP_EXACT_IN_INPUTS_DETAILS = [
+  { type: 'address', name: 'user' },
+  { type: 'uint256', name: 'amountIn' },
+  { type: 'uint256', name: 'amountOut' },
+  { type: 'bytes', name: 'path' },
+  { type: 'bool', name: 'isUserPayer' },
+  { type: 'bool', name: 'isUni' }
+]
 
 // this function splits uniswap commands from single hex string to multiple hex strings
 // '0x1234' => ['0x12', '0x34']
@@ -51,10 +72,41 @@ function parseCommands(commands: string): string[] | null {
   return res
 }
 
+// In the alternative V2_SWAP_EXACT_IN encoding a multi-hop swap is one command per hop (the
+// earlier hops can be V3 swaps). A hop sends its output to the pool of the next hop, and the next
+// hop is not paid by the signer, so the recipient of such a hop is not the final destination of
+// the funds. The last hop is.
+function isFeedingNextAlternativeSwap(
+  parsedCommands: string[],
+  inputs: readonly Hex[],
+  index: number,
+  tokenOut: string
+): boolean {
+  const nextInput = inputs[index + 1]
+  if (parsedCommands[index + 1] !== COMMANDS.V2_SWAP_EXACT_IN || !nextInput) return false
+
+  // the next command must be in the alternative encoding too, which is when the standard one fails
+  try {
+    extractParams(COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN.inputsDetails, nextInput)
+    return false
+  } catch {
+    // not an error: this is how the alternative encoding is detected
+  }
+
+  try {
+    const next = extractParams(ALTERNATIVE_V2_SWAP_EXACT_IN_INPUTS_DETAILS, nextInput)
+    return !next.isUserPayer && next.path.slice(0, 42).toLowerCase() === tokenOut.toLowerCase()
+  } catch {
+    // the next command can't be decoded, so it is not known to continue this swap
+    return false
+  }
+}
+
 function parseV4Actions(
   actions: string,
   totalParams: Hex[],
-  accountAddr: string
+  accountAddr: string,
+  routerAddr: string
 ): HumanizerVisualization[] {
   const parsedActions = parseCommands(actions)
   const parsed: HumanizerVisualization[][] = []
@@ -121,17 +173,23 @@ function parseV4Actions(
       ])
     } else if (action === V4_ACTION_CODES.TAKE) {
       const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE, param)
-      if (
-        args.amount &&
-        ['0x0000000000000000000000000000000000000002', accountAddr].includes(args.recipient)
-      )
-        parsed.push([getAction('Take'), getToken(args.currency, args.amount)])
+      if (isOwnOrRouterRecipient(accountAddr, args.recipient, routerAddr)) {
+        if (args.amount) parsed.push([getAction('Take'), getToken(args.currency, args.amount)])
+      } else {
+        // a zero amount is not "nothing": it takes everything the swaps left to be taken
+        parsed.push([
+          getAction('Send'),
+          getToken(args.currency, args.amount),
+          getLabel('to'),
+          getAddressVisualization(args.recipient)
+        ])
+      }
     } else if (action === V4_ACTION_CODES.TAKE_ALL) {
       const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_ALL, param)
       parsed.push([getAction('Take'), getToken(args.currency, args.minAmount)])
     } else if (action === V4_ACTION_CODES.TAKE_PORTION) {
       const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_PORTION, param)
-      if (!['0x0000000000000000000000000000000000000002', accountAddr].includes(args.recipient)) {
+      if (!isOwnOrRouterRecipient(accountAddr, args.recipient, routerAddr)) {
         parsed.push([
           getAction('Send'),
           getLabel(`${(Number(args.bips) / 100).toFixed(0)}%`, true),
@@ -177,6 +235,18 @@ export const humanizeUniversalRouterCommands = (
               getToken(path[0]!, 0n),
               getLabel('for'),
               getToken(path[path.length - 1]!, 0n),
+              ...(isFeedingNextAlternativeSwap(
+                parsedCommands,
+                inputs,
+                index,
+                path[path.length - 1]!
+              )
+                ? []
+                : getUniversalRouterRecipientText(
+                    accountOp.accountAddr,
+                    params.recipient,
+                    call.to
+                  )),
               getDeadline(deadline)
             ])
           }
@@ -191,6 +261,7 @@ export const humanizeUniversalRouterCommands = (
               getToken(path[path.length - 1]!, 0n),
               getLabel('for'),
               getToken(path[0]!, 0n),
+              ...getUniversalRouterRecipientText(accountOp.accountAddr, params.recipient, call.to),
               getDeadline(deadline)
             ])
           }
@@ -198,8 +269,8 @@ export const humanizeUniversalRouterCommands = (
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
           const params = extractParams(inputsDetails, inputs[index])
           if (
-            ['0x0000000000000000000000000000000000000001', accountOp.accountAddr].includes(
-              params.recipient
+            [UNIVERSAL_ROUTER_MSG_SENDER, accountOp.accountAddr.toLowerCase()].includes(
+              params.recipient.toLowerCase()
             )
           )
             parsed.push([getAction('Take'), getToken(params.token, params.amountMin)])
@@ -213,6 +284,23 @@ export const humanizeUniversalRouterCommands = (
         } else if (command === COMMANDS.PAY_PORTION) {
           // @NOTE: this is used for paying fee although its already calculated in the humanized response
           // @NOTE: no need to be displayed but we can add warning id the fee is too high?
+          // The share can be up to 100% of what the router holds, so a payment that is more than
+          // an ordinary interface fee must be displayed. Smaller fees stay hidden because they are
+          // already included in the amounts of the swap.
+          const { inputsDetails: payPortionInputsDetails } = COMMANDS_DESCRIPTIONS.PAY_PORTION
+          const payPortionParams = extractParams(payPortionInputsDetails, inputs[index])
+          if (
+            payPortionParams.bips > MAX_HIDDEN_PAY_PORTION_BIPS &&
+            !isOwnOrRouterRecipient(accountOp.accountAddr, payPortionParams.recipient, call.to) &&
+            !isUniswapFeeRecipient(payPortionParams.recipient)
+          )
+            parsed.push([
+              getAction('Send'),
+              getLabel(`${Number(payPortionParams.bips) / 100}%`, true),
+              getToken(payPortionParams.token, 0n),
+              getLabel('to'),
+              getAddressVisualization(payPortionParams.recipient)
+            ])
           // const { inputsDetails } = COMMANDS_DESCRIPTIONS.PAY_PORTION
           // const params = extractParams(inputsDetails, inputs[index])
           // parsed.push({
@@ -250,30 +338,27 @@ export const humanizeUniversalRouterCommands = (
               getToken(path[0], 0n),
               getLabel('for'),
               getToken(path[path.length - 1], 0n),
+              ...getUniversalRouterRecipientText(accountOp.accountAddr, params.recipient, call.to),
               getDeadline(deadline)
             ])
           } catch {
             // alternative encoding, handled here
             // https://www.codeslaw.app/contracts/base/0x6Df1c91424F79E40E33B1A48F0687B666bE71075?file=contracts%2Fmodules%2Funiswap%2Fv2%2FV2SwapRouter.sol&start=158&end=160
             // https://www.codeslaw.app/contracts/base/0x6Df1c91424F79E40E33B1A48F0687B666bE71075?file=contracts%2Fmodules%2Funiswap%2Fv2%2FV2SwapRouter.sol&start=223&end=259
-            const params = extractParams(
-              [
-                { type: 'address', name: 'user' },
-                { type: 'uint256', name: 'amountIn' },
-                { type: 'uint256', name: 'amountOut' },
-                { type: 'bytes', name: 'path' },
-                { type: 'bool', name: 'isUserPayer' },
-                { type: 'bool', name: 'isUni' }
-              ],
-              inputs[index]
-            )
+            const params = extractParams(ALTERNATIVE_V2_SWAP_EXACT_IN_INPUTS_DETAILS, inputs[index])
 
             if ((params.path.length / (2 + 40)) % 1 === 0) {
+              const tokenOut = '0x' + params.path.slice(-40)
               parsed.push([
                 getAction('Swap'),
                 getToken(params.path.slice(0, 42), 0n),
                 getLabel('for'),
-                getToken('0x' + params.path.slice(-40), 0n)
+                getToken(tokenOut, 0n),
+                // in this encoding the first address is the one that receives the swap output,
+                // unless that output only goes to the pool of the next hop
+                ...(isFeedingNextAlternativeSwap(parsedCommands, inputs, index, tokenOut)
+                  ? []
+                  : getUniversalRouterRecipientText(accountOp.accountAddr, params.user, call.to))
               ])
             }
           }
@@ -287,8 +372,27 @@ export const humanizeUniversalRouterCommands = (
             getToken(path[0], 0n),
             getLabel('for'),
             getToken(path[path.length - 1], 0n),
+            ...getUniversalRouterRecipientText(accountOp.accountAddr, params.recipient, call.to),
             getDeadline(deadline)
           ])
+        } else if (command === COMMANDS.PERMIT2_TRANSFER_FROM) {
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.PERMIT2_TRANSFER_FROM
+          const params = extractParams(inputsDetails, inputs[index])
+          // Moves tokens of the signer, through a Permit2 allowance, to the recipient. Sending them
+          // to the router is the normal first step of a swap and is covered by the swap itself.
+          if (isOwnOrRouterRecipient(accountOp.accountAddr, params.recipient, call.to))
+            parsed.push([
+              getAction('Uniswap action'),
+              getLabel('to'),
+              getAddressVisualization(call.to)
+            ])
+          else
+            parsed.push([
+              getAction('Send'),
+              getToken(params.token, params.amount),
+              getLabel('to'),
+              getAddressVisualization(params.recipient)
+            ])
         } else if (command === COMMANDS.PERMIT2_PERMIT) {
           const {
             permit: {
@@ -308,24 +412,32 @@ export const humanizeUniversalRouterCommands = (
         } else if (command === COMMANDS.WRAP_ETH) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
           const params = extractParams(inputsDetails, inputs[index])
-          params.amountMin && parsed.push(getWrapping(zeroAddress, params.amountMin))
+          const wrapRecipientText = getUniversalRouterRecipientText(
+            accountOp.accountAddr,
+            params.recipient,
+            call.to
+          )
+          // the wrapped tokens go to the recipient, so a wrap for someone else is shown even when
+          // the minimum amount is zero
+          if (params.amountMin || wrapRecipientText.length)
+            parsed.push([...getWrapping(zeroAddress, params.amountMin), ...wrapRecipientText])
         } else if (command === COMMANDS.UNWRAP_WETH) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
           const params = extractParams(inputsDetails, inputs[index])
 
-          params.amountMin &&
-            parsed.push([
-              getAction('Unwrap'),
-              getToken(zeroAddress, 0n),
-              ...getUniRecipientText(accountOp.accountAddr, params.recipient)
-            ])
+          const unwrapRecipientText = getUniRecipientText(accountOp.accountAddr, params.recipient)
+          // the minimum amount is not the amount sent: everything the router holds is unwrapped and
+          // sent to the recipient, so an unwrap for someone else is shown even when it is zero
+          if (params.amountMin || unwrapRecipientText.length)
+            parsed.push([getAction('Unwrap'), getToken(zeroAddress, 0n), ...unwrapRecipientText])
         } else if (command === COMMANDS.V4_SWAP) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.V4_SWAP
           const params = extractParams(inputsDetails, inputs[index])
           const v4NewHumanization = parseV4Actions(
             params.actions,
             params.params,
-            accountOp.accountAddr
+            accountOp.accountAddr,
+            call.to
           )
           parsed.push(v4NewHumanization)
         } else {
