@@ -219,11 +219,147 @@ const takeRecipientFrom = (target: HumanizerVisualization[], source: HumanizerVi
 const isSendWithoutRecipient = (call: HumanizerVisualization[]): boolean =>
   !hasAddress(call) || isUniswapFeeRecipient(getSendRecipient(call) || '')
 
+type SwapEdge = {
+  call: HumanizerVisualization[]
+  // the tokens, with the wrapped native token counted as the native token when it is wrapped in
+  // the same list of calls
+  tokenIn: string
+  tokenOut: string
+  isWrappedIn: boolean
+  recipient: HumanizerVisualization[]
+  deadline: HumanizerVisualization[]
+}
+
+const sumValues = (items: (HumanizerVisualization | undefined)[]): bigint =>
+  items.reduce<bigint>((sum, item) => sum + BigInt(item?.value ?? 0n), 0n)
+
+/**
+ * Merges the swaps of a route that is split in many parts into one swap.
+ *
+ * The swaps are read as a flow of tokens. When a group of swaps has one token that is only paid, one
+ * token that is only received and other tokens that are only passed on, the whole group is one swap
+ * from the first token to the last one. For example ETH -> USDC, WETH -> USDC, WETH -> USDT and
+ * USDC -> USDT are one swap from ETH to USDT. Merging the swaps two by two cannot do this, because
+ * the result depends on which two swaps are found first.
+ *
+ * A group is not merged when it could hide something: the swaps that pass a token on must not send
+ * it to an address, the swaps that give the last token must send it to the same address, and no
+ * other call may use a token that is passed on.
+ *
+ * Returns the new list of calls, or `null` when there is nothing to merge.
+ */
+const mergeSplitRoutes = (calls: HumanizerVisualization[][]): HumanizerVisualization[][] | null => {
+  // A wrap makes the wrapped native token the same as the native token for the swaps that follow
+  const wrapIndex = calls.findIndex((call) => isWrap(call) && !hasAddress(call))
+  const toTokenInGroup = (address: string) =>
+    wrapIndex !== -1 && WRAPPED_NATIVE_TOKEN_ADDRESSES.has(address) ? zeroAddress : address
+
+  const edges: SwapEdge[] = []
+  calls.forEach((call) => {
+    if (!isSwap(call)) return
+    const { recipient, rest } = splitRecipient(call.slice(4))
+    // a swap with something else after it (for example "and Send ...") is not a plain swap
+    if (rest.some((item) => item.type !== 'deadline')) return
+
+    const tokenIn = call[1].address?.toLowerCase() ?? ''
+    const tokenOut = call[3].address?.toLowerCase() ?? ''
+    edges.push({
+      call,
+      tokenIn: toTokenInGroup(tokenIn),
+      tokenOut: toTokenInGroup(tokenOut),
+      isWrappedIn: toTokenInGroup(tokenIn) !== tokenIn,
+      recipient,
+      deadline: rest
+    })
+  })
+
+  // the swaps that are connected by a token are one group
+  const parents = new Map<string, string>()
+  const findRoot = (token: string): string => {
+    const parent = parents.get(token)
+    if (parent === undefined || parent === token) return token
+    const root = findRoot(parent)
+    parents.set(token, root)
+    return root
+  }
+  edges.forEach(({ tokenIn, tokenOut }) => parents.set(findRoot(tokenIn), findRoot(tokenOut)))
+
+  const groups = new Map<string, SwapEdge[]>()
+  edges.forEach((edge) => {
+    const root = findRoot(edge.tokenIn)
+    groups.set(root, [...(groups.get(root) || []), edge])
+  })
+
+  for (const group of groups.values()) {
+    if (group.length < 2) continue
+
+    const paid = new Set(group.map(({ tokenIn }) => tokenIn))
+    const received = new Set(group.map(({ tokenOut }) => tokenOut))
+    const sources = [...paid].filter((token) => !received.has(token))
+    const lastTokens = [...received].filter((token) => !paid.has(token))
+    const passedOn = [...received].filter((token) => paid.has(token))
+    const [source] = sources
+    const [lastToken] = lastTokens
+    if (sources.length !== 1 || lastTokens.length !== 1 || !passedOn.length) continue
+    if (source === undefined || lastToken === undefined) continue
+
+    const lastEdges = group.filter(({ tokenOut }) => tokenOut === lastToken)
+    const passingEdges = group.filter(({ tokenOut }) => tokenOut !== lastToken)
+    const [firstLastEdge] = lastEdges
+    if (!firstLastEdge) continue
+    if (!passingEdges.every(({ call }) => hasOnlyRouterHeldAddresses(call))) continue
+    if (!lastEdges.every(({ call }) => haveSameAddresses(call, firstLastEdge.call))) continue
+
+    const groupCalls = new Set(group.map(({ call }) => call))
+    const isPassedOnTokenUsedElsewhere = calls.some(
+      (call) =>
+        !groupCalls.has(call) &&
+        call.some(
+          (item) =>
+            item.type === 'token' &&
+            passedOn.includes(toTokenInGroup(item.address?.toLowerCase() ?? ''))
+        )
+    )
+    if (isPassedOnTokenUsedElsewhere) continue
+
+    const sourceEdge = group.find(({ tokenIn }) => tokenIn === source)
+    const deadline = group.flatMap((edge) => edge.deadline)[0]
+    if (!sourceEdge) continue
+
+    const mergedSwap: HumanizerVisualization[] = [
+      firstLastEdge.call[0]!,
+      {
+        ...sourceEdge.call[1]!,
+        address: source,
+        value: sumValues(group.filter(({ tokenIn }) => tokenIn === source).map((e) => e.call[1]))
+      },
+      firstLastEdge.call[2]!,
+      { ...firstLastEdge.call[3]!, value: sumValues(lastEdges.map((e) => e.call[3])) },
+      ...firstLastEdge.recipient,
+      ...(deadline ? [deadline] : [])
+    ]
+
+    // the wrap is the payment of the swaps that were paid with the wrapped native token
+    const isWrapUsed = source === zeroAddress && group.some(({ isWrappedIn }) => isWrappedIn)
+    const firstGroupCall = calls.find((call) => groupCalls.has(call))
+    return calls.flatMap((call, index) => {
+      if (call === firstGroupCall) return [mergedSwap]
+      if (groupCalls.has(call) || (isWrapUsed && index === wrapIndex)) return []
+      return [call]
+    })
+  }
+
+  return null
+}
+
 // Every time a call is merged into another or removed, the reduction starts again from a clean
 // state. Continuing the same pass would keep using calls that are no longer in the list, which
 // removed an unrelated call (for example a transfer to another address) with the stale one.
 const reduceCalls = (_calls: HumanizerVisualization[][]): HumanizerVisualization[] => {
   const calls = _calls
+  const withMergedRoutes = mergeSplitRoutes(calls)
+  if (withMergedRoutes) return reduceCalls(withMergedRoutes)
+
   for (let i = 0; i < calls.length; i++) {
     for (let j = 0; j < calls.length; j++) {
       // looks for wraps before the swap

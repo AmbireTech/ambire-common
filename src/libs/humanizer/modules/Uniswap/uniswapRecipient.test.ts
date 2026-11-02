@@ -35,6 +35,7 @@ const ROUTER = '0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af'
 const WETH = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 const USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 const DAI = '0x6b175474e89094c44da98b954eedeac495271d0f'
+const USDT = '0xdac17f958d2ee523a2206206994597c13d831ec7'
 const NATIVE = '0x0000000000000000000000000000000000000000'
 const DEADLINE = 9999999999n
 
@@ -152,6 +153,26 @@ const v4Swap = (actions: { action: string; param: string }[]): Command => ({
     ['bytes', 'bytes[]'],
     [`0x${actions.map(({ action }) => action.slice(2)).join('')}`, actions.map((a) => a.param)]
   )
+})
+
+const poolKey = (currency0: string, currency1: string) => [currency0, currency1, 500, 10, NATIVE]
+const types = (descriptors: { type: string }[]) => descriptors.map((d) => d.type)
+
+// the original layout of the V4 router and the one with `minHopPriceX36`
+const singleSwap = (
+  currency0: string,
+  currency1: string,
+  zeroForOne = true,
+  withMinHopPrice = true
+) => ({
+  action: V4_ACTION_CODES.SWAP_EXACT_IN_SINGLE,
+  param: withMinHopPrice
+    ? coder.encode(types(V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE.SWAP_EXACT_IN_SINGLE), [
+        [poolKey(currency0, currency1), zeroForOne, 100n, 1n, 0n, '0x']
+      ])
+    : coder.encode(types(V4_ACTION_DESCRIPTORS.SWAP_EXACT_IN_SINGLE), [
+        [poolKey(currency0, currency1), zeroForOne, 100n, 1n, '0x']
+      ])
 })
 
 const buildCall = (commands: Command[], to = ROUTER): IrCall => ({
@@ -348,6 +369,63 @@ describe('Uniswap Universal Router: the recipient of the funds is shown', () => 
       ).toEqual([ATTACKER])
     })
 
+    describe('a route that is split in many parts', () => {
+      // ETH is paid in two ways, one part goes through USDC and the rest goes direct to USDT
+      const splitRoute = (lastRecipient: string) => [
+        cmd.wrap(ADDRESS_THIS, 5n),
+        v4Swap([v4.settle(NATIVE, 5n), singleSwap(NATIVE, USDC), v4.take(ADDRESS_THIS, USDC, 0n)]),
+        cmd.v3In(ADDRESS_THIS, [WETH, USDC]),
+        cmd.v3In(lastRecipient, [WETH, USDT]),
+        v4Swap([v4.settle(USDC, 5n), singleSwap(USDC, USDT), v4.take(lastRecipient, USDT, 0n)]),
+        cmd.sweep(lastRecipient, USDT, 0n)
+      ]
+
+      test('is one swap from the token that is paid to the token that is received', () => {
+        const visualization = humanize(splitRoute(USER))
+
+        expect(
+          visualization.flatMap((item) => (item.type === 'token' ? [item.address] : []))
+        ).toEqual([NATIVE, USDT])
+        expect(labelsOf(visualization)).toEqual(['Swap', 'for'])
+      })
+
+      test('shows the recipient when it is not the signer', () => {
+        expect(addressesOf(humanize(splitRoute(ATTACKER)))).toContain(ATTACKER)
+      })
+
+      test('is not merged when the swaps end in different tokens', () => {
+        const visualization = humanize([cmd.v3In(USER, [WETH, USDC]), cmd.v3In(USER, [WETH, DAI])])
+
+        expect(labelsOf(visualization).filter((label) => label === 'Swap')).toHaveLength(2)
+      })
+
+      test('is not merged when the swaps are not connected', () => {
+        const visualization = humanize([cmd.v3In(USER, [USDC, WETH]), cmd.v3In(USER, [DAI, USDT])])
+
+        expect(labelsOf(visualization).filter((label) => label === 'Swap')).toHaveLength(2)
+      })
+
+      test('does not hide different recipients of the last token', () => {
+        const visualization = humanize([
+          cmd.v3In(ADDRESS_THIS, [WETH, USDC]),
+          cmd.v3In(USER, [USDC, USDT]),
+          cmd.v3In(ATTACKER, [USDC, USDT])
+        ])
+
+        expect(addressesOf(visualization)).toEqual([ATTACKER])
+      })
+
+      test('does not hide a transfer of a token that is passed on', () => {
+        const visualization = humanize([
+          cmd.v3In(ADDRESS_THIS, [USDC, WETH]),
+          cmd.v2In(USER, [WETH, DAI], false),
+          cmd.transfer(ATTACKER, WETH, 1n)
+        ])
+
+        expect(addressesOf(visualization)).toContain(ATTACKER)
+      })
+    })
+
     test('a settle that is dropped does not take the next action with it', () => {
       // the settle of 0 used to be removed twice in the same pass, and the second removal took the
       // transfer to the other address
@@ -376,34 +454,13 @@ describe('Uniswap Universal Router: the recipient of the funds is shown', () => 
   })
 
   describe('Uniswap V4 swap layouts', () => {
-    const poolKey = (currency0: string, currency1: string) => [
-      currency0,
-      currency1,
-      500,
-      10,
-      NATIVE
-    ]
-    const types = (descriptors: { type: string }[]) => descriptors.map((d) => d.type)
-
-    // the original layout of the V4 router and the one with `minHopPriceX36`
-    const singleSwap = (withMinHopPrice: boolean, zeroForOne: boolean) => ({
-      action: V4_ACTION_CODES.SWAP_EXACT_IN_SINGLE,
-      param: withMinHopPrice
-        ? coder.encode(types(V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE.SWAP_EXACT_IN_SINGLE), [
-            [poolKey(USDC, DAI), zeroForOne, 100n, 1n, 0n, '0x']
-          ])
-        : coder.encode(types(V4_ACTION_DESCRIPTORS.SWAP_EXACT_IN_SINGLE), [
-            [poolKey(USDC, DAI), zeroForOne, 100n, 1n, '0x']
-          ])
-    })
-
     const swapTokens = (visualization: HumanizerVisualization[]) =>
       visualization.flatMap((item) => (item.type === 'token' ? [item.address] : []))
 
     test.each([true, false])(
       'a single swap is decoded (with minHopPriceX36: %s)',
       (withMinHopPrice) => {
-        const visualization = humanize([v4Swap([singleSwap(withMinHopPrice, true)])])
+        const visualization = humanize([v4Swap([singleSwap(USDC, DAI, true, withMinHopPrice)])])
 
         expect(swapTokens(visualization)).toEqual([USDC, DAI])
       }
@@ -412,7 +469,7 @@ describe('Uniswap Universal Router: the recipient of the funds is shown', () => 
     test.each([true, false])(
       'a single swap against the order of the pool goes the other way (with minHopPriceX36: %s)',
       (withMinHopPrice) => {
-        const visualization = humanize([v4Swap([singleSwap(withMinHopPrice, false)])])
+        const visualization = humanize([v4Swap([singleSwap(USDC, DAI, false, withMinHopPrice)])])
 
         expect(swapTokens(visualization)).toEqual([DAI, USDC])
       }

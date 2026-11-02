@@ -377,7 +377,9 @@ describe('uniswap', () => {
         getAction('Swap'),
         getToken('0x188c68e2cd63baa16e4504597a0d30bd8bab325d', 0n),
         getLabel('for'),
-        getToken('0x0000000000000000000000000000000000000000', 0n)
+        getToken('0x0000000000000000000000000000000000000000', 0n),
+        // the deadline of the V3 swap, that is merged with the V4 swap
+        getDeadline(1763557707n)
       ]
     ]
 
