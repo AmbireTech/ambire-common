@@ -1989,13 +1989,15 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     providerId: PrivacyProviderId
   ): Promise<HDNodeWallet> {
     const scope = getPrivacyKeyScope(providerId)
+    const requestKey = getPrivacyRequestKey(seedId, providerId)
     const storedKey = this.#keystoreSeeds.find((s) => s.id === seedId)?.privacyKeys?.[providerId]
-    if (storedKey) {
+    if (storedKey && !this.#unreadablePrivacyKeys.has(requestKey)) {
       try {
         return await this.#readPrivacyNode(storedKey, scope)
       } catch (error: any) {
-        // Fails the same however often it is read, so the phrase stores it again below, if it can
-        this.#unreadablePrivacyKeys.add(getPrivacyRequestKey(seedId, providerId))
+        // Fails the same however often it is read, so it isn't read again and the phrase stores
+        // it again below, if it can
+        this.#unreadablePrivacyKeys.add(requestKey)
         this.emitError({
           level: 'silent',
           message: 'Could not read the key of a private account.',

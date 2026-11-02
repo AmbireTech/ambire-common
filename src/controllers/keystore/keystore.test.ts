@@ -1004,6 +1004,25 @@ describe('KeystoreController recovery phrase passphrases', () => {
     ).toBe(expectedPrivacyPoolsKey(PASSPHRASE))
   })
 
+  test('reads an unreadable stored privacy key only once', async () => {
+    const seedId = await addPhrase(PASSPHRASE)
+    const savedSeedId = await addPhrase(OTHER_PASSPHRASE, true)
+    await keystoreCtrl.storePrivacyKey(seedId, 'privacyPools', PASSPHRASE)
+    const storedSeeds = await storageCtrl.get('keystoreSeeds', [])
+    const { seedPassphrase } = storedSeeds.find(({ id }: any) => id === savedSeedId)
+    await reloadWithPrivacyKey(seedId, seedPassphrase)
+
+    const derive = () =>
+      keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
+    await expect(derive()).rejects.toThrow('no readable privacyPools key is stored')
+    await expect(derive()).rejects.toThrow('no readable privacyPools key is stored')
+
+    const readErrors = keystoreCtrl.emittedErrors.filter(
+      ({ message }) => message === 'Could not read the key of a private account.'
+    )
+    expect(readErrors).toHaveLength(1)
+  })
+
   test('refuses a stored privacy key that is not AES-GCM encrypted, storing it again if it can', async () => {
     const notSaved = await addPhrase(PASSPHRASE)
     const saved = await addPhrase(OTHER_PASSPHRASE, true)
