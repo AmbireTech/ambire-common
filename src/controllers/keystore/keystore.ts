@@ -79,6 +79,9 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
   'Keystore unexpected error. If the problem persists, please contact support.'
 
+/** The device model hardware wallet controllers report before they know the real one */
+const UNKNOWN_DEVICE_MODEL = 'unknown'
+
 export const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
   verifySecret: 'INITIAL',
@@ -1629,6 +1632,42 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     })
     await this.#storage.set('keystoreKeys', this.#keystoreKeys)
     this.emitUpdate()
+  }
+
+  /**
+   * Records the model of the hardware wallet a key is on, once the device confirmed it holds
+   * the key. Only fills in a model that is missing or 'unknown' (e.g. Ledger keys imported on
+   * mobile before it stored the model): a known one is kept, as the same seed can be on two devices.
+   */
+  async updateUnknownKeyDeviceModel({
+    addr,
+    type,
+    deviceModel
+  }: {
+    addr: Key['addr']
+    type: ExternalKey['type']
+    deviceModel: string
+  }) {
+    try {
+      await this.initialLoadPromise
+      if (!deviceModel || deviceModel === UNKNOWN_DEVICE_MODEL) return
+
+      const storedKey = this.#keystoreKeys.find((k) => k.addr === addr && k.type === type)
+      if (!storedKey || storedKey.privKey !== null) return
+      if (storedKey.meta.deviceModel && storedKey.meta.deviceModel !== UNKNOWN_DEVICE_MODEL) return
+
+      this.#keystoreKeys = this.#keystoreKeys.map((k) =>
+        k === storedKey ? { ...storedKey, meta: { ...storedKey.meta, deviceModel } } : k
+      )
+      this.emitUpdate()
+      await this.#storage.set('keystoreKeys', this.#keystoreKeys)
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to update the device model of a hardware wallet key',
+        error
+      })
+    }
   }
 
   resetErrorState() {
