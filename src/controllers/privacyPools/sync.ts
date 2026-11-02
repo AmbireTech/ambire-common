@@ -72,9 +72,17 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
   /** Completed syncs per account and chain. A deposit precommitment is valid until the next one. */
   #syncEpochs: { [seedId: string]: { [chainId: string]: number } } = {}
 
-  constructor(ctx: PrivacyPoolsContext, registry: PrivacyPoolsProtocolRegistry) {
+  /** Called once the plugin has persisted a chain's shared state. Must not reject. */
+  #onSharedStateSynced: (chainId: string) => Promise<unknown>
+
+  constructor(
+    ctx: PrivacyPoolsContext,
+    registry: PrivacyPoolsProtocolRegistry,
+    onSharedStateSynced: (chainId: string) => Promise<unknown>
+  ) {
     this.#ctx = ctx
     this.#registry = registry
+    this.#onSharedStateSynced = onSharedStateSynced
   }
 
   getAccountChainStates(seedId: string): { [chainId: string]: PrivacyPoolsAccountChainState } {
@@ -237,6 +245,8 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
       const notes = await protocol.notes()
       // The plugin has persisted the shared state by now
       initialRead?.resolve()
+      // Even if locked since, as for the initial read below: the shared state is the chain's
+      await this.#onSharedStateSynced(chainId)
       const syncDuration = Date.now() - startedAt
 
       // Even if locked since: the shared state is the chain's, not the phrase's

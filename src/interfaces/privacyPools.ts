@@ -34,6 +34,8 @@ export type PrivacyPoolsChainConfig = {
   entrypointAddress: Hex
   /** Where a first sync starts reading the entrypoint's history. */
   deploymentBlock: bigint
+  /** About a day of blocks, to count the pool's recent activity by block instead of by time. */
+  blocksPerDay: bigint
   /** 0xBow's association-set API for this chain. */
   aspUrl: string
   /** The saga-sync CDN serving the pools' history. Without it, a first sync is slow. */
@@ -111,6 +113,30 @@ export type PrivacyPoolsRagequitDeposit = {
   amount: bigint
   /** The address the deposit was made from, the only one it can go back to. */
   depositorAddr: Hex
+}
+
+/**
+ * What everyone's deposits in a pool add up to, as of the chain's last sync. Mostly from this
+ * device's copy of the pool's history, the rest from the pool itself - see `getPrivacyPoolsPoolStats`.
+ */
+export type PrivacyPoolsPoolStats = {
+  /** What the pool holds: deposits less withdrawals and deposits taken back. */
+  totalAmount: bigint
+  /** Deposits ever verified. The more there are, the harder a withdrawal is to tell apart. */
+  approvedDepositsCount: number
+  depositsCount24h: number
+  withdrawalsCount24h: number
+}
+
+/**
+ * A chain's pool numbers, computed after each sync of its history - see
+ * `PrivacyPoolsController.poolStats`.
+ */
+export type PrivacyPoolsChainPoolStats = {
+  /** By the pool's token address, in lowercase. Empty when they could not be read. */
+  byToken: { [tokenAddress: string]: PrivacyPoolsPoolStats }
+  /** Why they could not be read, or null. */
+  error: string | null
 }
 
 /** Notes summed per token. Only `approvedAmount` can be withdrawn. */

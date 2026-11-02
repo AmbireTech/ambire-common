@@ -15,6 +15,7 @@ import {
   IPrivacyPoolsController,
   PrivacyPoolsAccount,
   PrivacyPoolsAccountChainState,
+  PrivacyPoolsChainPoolStats,
   PrivacyPoolsChainState,
   PrivacyPoolsDepositAssetConfig,
   PrivacyPoolsOperation,
@@ -39,6 +40,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { LockGeneration, PhraseScopedModule, PrivacyPoolsContext } from './context'
 import { PrivacyPoolsDepositParams, PrivacyPoolsDeposits } from './deposits'
 import { privacyPoolsErrors } from './errors'
+import { PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsRagequit } from './ragequit'
 import { PrivacyPoolsSendFormState } from './sendForm'
@@ -90,6 +92,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #ragequit: PrivacyPoolsRagequit
 
+  #poolStatsReader: PrivacyPoolsPoolStatsReader
+
+  /** Per chain, the latest `#refreshPoolStats`, so an older one finishing later writes nothing. */
+  #poolStatsRefreshIds: { [chainId: string]: number } = {}
+
   #sendForm: PrivacyPoolsSendFormState
 
   /** In teardown order: a withdrawal being proved is cancelled before its plugin is dropped. */
@@ -109,6 +116,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #pricesFetchedAt = 0
 
   #pricesRequest: Promise<void> | null = null
+
+  /**
+   * Per chain, its pools' numbers for a token's details, so they are there when it opens. The same
+   * for every account, so they outlive a lock. Computed from this device's copy of the history
+   * after each sync of it, before the balances it reads show - see `PrivacyPoolsPoolStatsReader`.
+   * Not on load: a stored history is read only when the user opens a Privacy Pools account.
+   */
+  poolStats: { [chainId: string]: PrivacyPoolsChainPoolStats } = {}
 
   /** At most one per stored recovery phrase, and removed with it. */
   accounts: PrivacyPoolsAccount[] = []
@@ -190,10 +205,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     )
 
     this.#registry = new PrivacyPoolsProtocolRegistry(ctx, cancellableProverFactory)
-    this.#sync = new PrivacyPoolsSync(ctx, this.#registry)
+    this.#sync = new PrivacyPoolsSync(ctx, this.#registry, (chainId) =>
+      this.#refreshPoolStats(chainId)
+    )
     this.#deposits = new PrivacyPoolsDeposits(ctx, this.#registry, this.#sync)
     this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
     this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync)
+    this.#poolStatsReader = new PrivacyPoolsPoolStatsReader(ctx)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
     this.#phraseScopedModules = [this.#withdrawal, this.#deposits, this.#sync, this.#registry]
 
@@ -219,6 +237,33 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     this.#subscribeToDependencies()
     this.emitUpdate()
+  }
+
+  /**
+   * Recomputes a chain's pool numbers from its history on this device. Does not emit: a sync
+   * emits once it is done. Never rejects.
+   */
+  async #refreshPoolStats(chainId: string): Promise<void> {
+    const refreshId = (this.#poolStatsRefreshIds[chainId] || 0) + 1
+    this.#poolStatsRefreshIds[chainId] = refreshId
+    const isLatest = () => this.#poolStatsRefreshIds[chainId] === refreshId
+
+    try {
+      const byToken = await this.#poolStatsReader.read(chainId)
+      // Before the chain's first sync there is nothing to show yet, not an error
+      if (!byToken || !isLatest()) return
+
+      this.poolStats = { ...this.poolStats, [chainId]: { byToken, error: null } }
+    } catch (error: any) {
+      const emittableError = privacyPoolsErrors.poolStatsReadFailed(error)
+      this.emitError(emittableError)
+      if (!isLatest()) return
+
+      this.poolStats = {
+        ...this.poolStats,
+        [chainId]: { byToken: {}, error: emittableError.message }
+      }
+    }
   }
 
   /**
