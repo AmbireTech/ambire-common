@@ -316,3 +316,33 @@ describe('the summary of the Uniswap humanizer covers what happens to the tokens
     expect(validScenarios).toBeGreaterThan(150)
   })
 })
+
+describe('a call with a very large number of commands', () => {
+  // A page controls the calldata, so the summary must not take a long time for a call that is only
+  // large. Before the ledger stopped re-reading all the payments for each payment, 5000 small
+  // payments took almost a minute.
+  test('is summarized in a short time', () => {
+    const external: Place = { kind: 'external', address: EXTERNAL_ADDRESSES[0]! }
+    const effects: Effect[] = [
+      { type: 'transfer', token: WETH, from: USER, to: ROUTER, amount: exact(1000n) },
+      ...Array.from(
+        { length: 5000 },
+        (): Effect => ({
+          type: 'transfer',
+          token: WETH,
+          from: ROUTER,
+          to: external,
+          amount: portion(1n)
+        })
+      ),
+      { type: 'transfer', token: WETH, from: ROUTER, to: USER, amount: ALL }
+    ]
+
+    const start = Date.now()
+    const { visualization } = renderOutcome(buildOutcome(effects, ctx), ctx, undefined)
+
+    expect(Date.now() - start).toBeLessThan(10000)
+    // the payments add up to far more than 1% of the tokens, so they are shown
+    expect(addressesIn(visualization).has(EXTERNAL_ADDRESSES[0]!)).toBe(true)
+  })
+})

@@ -714,6 +714,15 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
       expect(labelsOf(visualization)).toContain('Uniswap action')
     })
 
+    test('the ETH that the call sends is shown, because the extension shows it only when expanded', () => {
+      const ethAmount = 5n * 10n ** 18n
+      const visualization = humanize([{ id: '0x21', input: '0x' }], { value: ethAmount })
+      const ethItem = visualization.find((item) => item.type === 'token' && item.address === NATIVE)
+
+      expect(ethItem && 'value' in ethItem ? ethItem.value : undefined).toBe(ethAmount)
+      expect(labelsOf(visualization)).toContain('Send')
+    })
+
     test('a command that does not decode is not understood', () => {
       const visualization = humanize([cmd.v3In(ATTACKER), { id: COMMANDS.SWEEP, input: '0x1234' }])
 

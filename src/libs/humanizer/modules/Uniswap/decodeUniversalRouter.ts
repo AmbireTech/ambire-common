@@ -500,9 +500,7 @@ export const decodeUniversalRouter = (
   return [
     ...effectsBefore,
     // the value of the transaction goes to the router. This is where the ETH of a swap comes from.
-    ...(ctx.callValue > 0n
-      ? [transfer(NATIVE_TOKEN, USER, ROUTER, exact(ctx.callValue), true)]
-      : []),
+    ...(ctx.callValue > 0n ? [transfer(NATIVE_TOKEN, USER, ROUTER, exact(ctx.callValue))] : []),
     ...parsedCommands.flatMap((command, index): Effect[] => {
       const decoder = COMMAND_DECODERS[command]
       if (!decoder) return [getOpaqueEffect(`command ${command}`, ctx)]

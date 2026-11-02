@@ -53,8 +53,6 @@ export type Group = {
   flows: Flow[]
   /** what the signer pays, without repeats */
   userPaid: string[]
-  /** true when part of what is spent is not from the signer in this call (tokens that were already there) */
-  hasOtherSource: boolean
   conversions: ConversionKind[]
   terminals: Terminal[]
   /** the places of this group that can hold some of the tokens at the end */
@@ -86,27 +84,32 @@ const BIPS_BASE = 10000n
  */
 export const MAX_HIDDEN_SHARE_BIPS = 100n
 
-/** True when what is left after all the payments is at least 99% of what there was */
+const getCappedShares = (bips: bigint[]): bigint[] =>
+  bips.map((share) => (share > BIPS_BASE ? BIPS_BASE : share)).filter((share) => share > 0n)
+
+/**
+ * True when what is left after all the payments is at least 99% of what there was.
+ * A payment of nothing changes nothing, so it is skipped. Every other payment takes at least one
+ * basis point, so what is left falls below 99% after about 100 payments and the check stops there.
+ * This keeps the numbers small when a call has a very large number of payments.
+ */
 const isSmallTotalShare = (bips: bigint[]): boolean => {
   let kept = 1n
   let base = 1n
-  bips.forEach((share) => {
-    const cappedShare = share > BIPS_BASE ? BIPS_BASE : share
-    kept *= BIPS_BASE - cappedShare
+  return getCappedShares(bips).every((share) => {
+    kept *= BIPS_BASE - share
     base *= BIPS_BASE
+    return kept * BIPS_BASE >= base * (BIPS_BASE - MAX_HIDDEN_SHARE_BIPS)
   })
-  return kept * BIPS_BASE >= base * (BIPS_BASE - MAX_HIDDEN_SHARE_BIPS)
 }
 
 /** The largest part of what a place holds that all the shares can take together, in basis points */
 const getTotalShareBips = (bips: bigint[]): bigint => {
-  let kept = 1n
-  let base = 1n
-  bips.forEach((share, index) => {
-    kept *= BIPS_BASE - (share > BIPS_BASE ? BIPS_BASE : share)
-    base *= index ? BIPS_BASE : 1n
-  })
-  return BIPS_BASE - kept / base
+  const shares = getCappedShares(bips)
+  if (!shares.length) return 0n
+
+  const kept = shares.reduce((product, share) => product * (BIPS_BASE - share), 1n)
+  return BIPS_BASE - kept / BIPS_BASE ** BigInt(shares.length - 1)
 }
 
 const getNodeKey = (place: Place, token: string) => `${getPlaceKey(place)}|${token}`
@@ -195,7 +198,9 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
       const received = takeFrom(effect.from, effect.token, effect.amount)
       if (effect.amount.kind === 'portion' && isPassThroughPlace(effect.to)) {
         const nodeKey = getNodeKey(effect.to, effect.token)
-        shareInflows.set(nodeKey, [...(shareInflows.get(nodeKey) || []), effect.amount.bips])
+        const shares = shareInflows.get(nodeKey)
+        if (shares) shares.push(effect.amount.bips)
+        else shareInflows.set(nodeKey, [effect.amount.bips])
       }
       giveTo(effect.to, effect.token, received, effect.amount.kind === 'portion')
       flows.push({
@@ -258,14 +263,15 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
   const sharesByToken = new Map<string, bigint[]>()
   flows.forEach((flow) => {
     if (flow.portionBips === null || flow.toPlace?.kind !== 'external') return
-    sharesByToken.set(flow.tokenOut, [
-      ...(sharesByToken.get(flow.tokenOut) || []),
-      flow.portionBips
-    ])
+    const shares = sharesByToken.get(flow.tokenOut)
+    if (shares) shares.push(flow.portionBips)
+    else sharesByToken.set(flow.tokenOut, [flow.portionBips])
   })
+  const isSmallByToken = new Map<string, boolean>()
+  sharesByToken.forEach((shares, token) => isSmallByToken.set(token, isSmallTotalShare(shares)))
   flows.forEach((flow) => {
     if (flow.portionBips === null || flow.toPlace?.kind !== 'external') return
-    flow.isHiddenLeak = isSmallTotalShare(sharesByToken.get(flow.tokenOut) || [])
+    flow.isHiddenLeak = isSmallByToken.get(flow.tokenOut) ?? false
   })
 
   // flows that meet in a place that passes tokens on are one group
@@ -280,13 +286,14 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
   flows.forEach(({ fromNode, toNode }) => {
     if (fromNode && toNode) parents.set(findRoot(fromNode), findRoot(toNode))
   })
-  const receivingNodes = new Set(flows.flatMap(({ toNode }) => (toNode ? [toNode] : [])))
 
   const flowsByGroup = new Map<string, Flow[]>()
   flows.forEach((flow, index) => {
     const node = flow.fromNode ?? flow.toNode
     const groupKey = node ? findRoot(node) : `alone:${index}`
-    flowsByGroup.set(groupKey, [...(flowsByGroup.get(groupKey) || []), flow])
+    const groupFlows = flowsByGroup.get(groupKey)
+    if (groupFlows) groupFlows.push(flow)
+    else flowsByGroup.set(groupKey, [flow])
   })
 
   const groups: Group[] = [...flowsByGroup.values()].map((groupFlows) => {
@@ -296,24 +303,21 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
       const terminalKey = `${getPlaceKey(flow.toPlace)}|${flow.tokenOut}`
       const terminal = terminals.get(terminalKey)
       const isOnlyShares = (terminal ? terminal.shares !== null : true) && flow.portionBips !== null
+      const shares = isOnlyShares ? (terminal?.shares ?? []) : null
+      if (shares && flow.portionBips !== null) shares.push(flow.portionBips)
       terminals.set(terminalKey, {
         place: flow.toPlace,
         token: flow.tokenOut,
         isHidden: false,
         shareBips: null,
         allHidden: (terminal ? terminal.allHidden : true) && flow.isHiddenLeak,
-        shares: isOnlyShares ? [...(terminal?.shares || []), flow.portionBips!] : null
+        shares
       })
     })
 
     return {
       flows: groupFlows,
       userPaid: [...new Set(groupFlows.filter((flow) => flow.fromUser).map((flow) => flow.token))],
-      // a place that is only paid from inside the call has no other source. Tokens that are taken
-      // from a place that nothing in the call fills were there before the call.
-      hasOtherSource: groupFlows.some(
-        (flow) => !flow.fromUser && (!flow.fromNode || !receivingNodes.has(flow.fromNode))
-      ),
       conversions: [
         ...new Set(groupFlows.flatMap((flow) => (flow.conversion ? [flow.conversion] : [])))
       ],
@@ -327,16 +331,15 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
     }
   })
 
-  const groupOfNode = (nodeKey: string) => {
-    const root = findRoot(nodeKey)
-    return groups.find((group) =>
-      group.flows.some(
-        (flow) =>
-          (flow.fromNode && findRoot(flow.fromNode) === root) ||
-          (flow.toNode && findRoot(flow.toNode) === root)
-      )
-    )
-  }
+  // every flow that touches a node is in the group of the node, so one lookup finds the group
+  const groupByRoot = new Map<string, Group>()
+  groups.forEach((group) =>
+    group.flows.forEach(({ fromNode, toNode }) => {
+      if (fromNode) groupByRoot.set(findRoot(fromNode), group)
+      if (toNode) groupByRoot.set(findRoot(toNode), group)
+    })
+  )
+  const groupOfNode = (nodeKey: string) => groupByRoot.get(findRoot(nodeKey))
 
   // tokens that stay in a router or in a pool. The V4 pool manager does not appear here, because it
   // reverts when a call ends and it still holds tokens of the call.
