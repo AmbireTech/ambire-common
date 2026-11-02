@@ -351,7 +351,8 @@ export const getEnsExpiryBanner = ({
       {
         actionName: 'open-external-url',
         meta: {
-          url: `https://app.ens.domains/${ens}?referrer=${FEE_COLLECTOR}`
+          url: `https://app.ens.domains/${ens}?referrer=${FEE_COLLECTOR}`,
+          shouldOpenInAppBrowser: true
         },
         label: 'Renew'
       }
