@@ -15,6 +15,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerVisualization, HumanizerWarning, IrCall } from '../../interfaces'
 import { compareVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
+import { humanizeCallWithModules } from '../../callModules'
 import { uniswapHumanizer } from './'
 import {
   COMMANDS,
@@ -140,6 +141,10 @@ const cmd = {
   payPortion: (recipient: string, bips: bigint, token = USDC): Command => ({
     id: COMMANDS.PAY_PORTION,
     input: coder.encode(['address', 'address', 'uint256'], [token, recipient, bips])
+  }),
+  payPortionFullPrecision: (recipient: string, portion: bigint, token = USDC): Command => ({
+    id: COMMANDS.PAY_PORTION_FULL_PRECISION,
+    input: coder.encode(['address', 'address', 'uint256'], [token, recipient, portion])
   }),
   wrap: (recipient: string, amount = 1n): Command => ({
     id: COMMANDS.WRAP_ETH,
@@ -479,6 +484,42 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
       expect(labelsOf(visualization)).toEqual(['Send', 'to'])
     })
 
+    describe('PAY_PORTION_FULL_PRECISION', () => {
+      // 1e18 is all the tokens that the router holds
+      const withFullPrecisionPortion = (portion: bigint) =>
+        humanize([
+          cmd.permit2TransferFrom(ADDRESS_THIS, USDC, 1000n),
+          cmd.payPortionFullPrecision(ATTACKER, portion),
+          cmd.sweep(USER, USDC)
+        ])
+
+      test('the fee of an interface (0.25%) and exactly 1% are not shown', () => {
+        expect(addressesOf(withFullPrecisionPortion(25n * 10n ** 14n))).toEqual([])
+        expect(addressesOf(withFullPrecisionPortion(10n ** 16n))).toEqual([])
+      })
+
+      test('a share of more than 1% is shown, also when it is only a little more', () => {
+        // the share is rounded up to whole basis points, so that it is never shown as smaller
+        expect(addressesOf(withFullPrecisionPortion(10n ** 16n + 1n))).toEqual([ATTACKER])
+        expect(addressesOf(withFullPrecisionPortion(10n ** 18n))).toEqual([ATTACKER])
+      })
+
+      test('a share that the router would refuse is not hidden', () => {
+        expect(addressesOf(withFullPrecisionPortion(10n ** 18n + 1n))).toEqual([ATTACKER])
+      })
+
+      test('is added to the shares of PAY_PORTION', () => {
+        const visualization = humanize([
+          cmd.permit2TransferFrom(ADDRESS_THIS, USDC, 1000n),
+          cmd.payPortion(ATTACKER, 60n),
+          cmd.payPortionFullPrecision(ATTACKER, 6n * 10n ** 15n),
+          cmd.sweep(USER, USDC)
+        ])
+
+        expect(addressesOf(visualization)).toEqual([ATTACKER])
+      })
+    })
+
     describe('PAY_PORTION', () => {
       // the tokens of the signer go to the router, a part of them is paid to another address, and
       // all that is left goes back to the signer
@@ -714,13 +755,20 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
       expect(labelsOf(visualization)).toContain('Uniswap action')
     })
 
-    test('the ETH that the call sends is shown, because the extension shows it only when expanded', () => {
+    test('the ETH that the call sends is shown once in the whole humanizer', () => {
+      // The fallback humanizer puts "Send ... ETH and" before a call that has a value, so the
+      // Uniswap humanizer must not list the value again.
       const ethAmount = 5n * 10n ** 18n
-      const visualization = humanize([{ id: '0x21', input: '0x' }], { value: ethAmount })
-      const ethItem = visualization.find((item) => item.type === 'token' && item.address === NATIVE)
+      const humanized = humanizeCallWithModules(
+        { accountAddr: getAddress(USER), chainId: 1n } as unknown as AccountOp,
+        buildCall([{ id: '0x21', input: '0x' }], { value: ethAmount })
+      )
+      const ethItems = (humanized.fullVisualization || []).filter(
+        (item) => item.type === 'token' && item.address === NATIVE
+      )
 
-      expect(ethItem && 'value' in ethItem ? ethItem.value : undefined).toBe(ethAmount)
-      expect(labelsOf(visualization)).toContain('Send')
+      expect(ethItems).toHaveLength(1)
+      expect(labelsOf(humanized.fullVisualization || [])).toContain('Send')
     })
 
     test('a command that does not decode is not understood', () => {

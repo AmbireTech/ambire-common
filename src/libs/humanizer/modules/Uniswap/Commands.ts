@@ -11,6 +11,7 @@ export const COMMANDS = {
   SWEEP: '0x04',
   TRANSFER: '0x05',
   PAY_PORTION: '0x06',
+  PAY_PORTION_FULL_PRECISION: '0x07',
   V2_SWAP_EXACT_IN: '0x08',
   V2_SWAP_EXACT_OUT: '0x09',
   PERMIT2_PERMIT: '0x0a',
@@ -77,6 +78,15 @@ export const COMMANDS_DESCRIPTIONS = {
       { type: 'address', name: 'token' },
       { type: 'address', name: 'recipient' },
       { type: 'uint256', name: 'bips' }
+    ]
+  },
+  PAY_PORTION_FULL_PRECISION: {
+    command: '0x07',
+    inputsDetails: [
+      { type: 'address', name: 'token' },
+      { type: 'address', name: 'recipient' },
+      // the share of the tokens that the router holds, where 1e18 is all of them
+      { type: 'uint256', name: 'portion' }
     ]
   },
   V2_SWAP_EXACT_IN: {

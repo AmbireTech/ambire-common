@@ -77,6 +77,8 @@ export type TransferEffect = {
   from: Place
   to: Place
   amount: Amount
+  /** The value of the transaction. It is already shown with the call, so it is not listed again. */
+  isCallValue?: boolean
 }
 
 /** Tokens of one kind go in and tokens of another kind come out (a swap, a wrap or an unwrap) */
@@ -123,13 +125,15 @@ export const transfer = (
   token: string,
   from: Place,
   to: Place,
-  amount: Amount
+  amount: Amount,
+  isCallValue?: boolean
 ): TransferEffect => ({
   type: 'transfer',
   token: token.toLowerCase(),
   from,
   to,
-  amount
+  amount,
+  ...(isCallValue ? { isCallValue } : {})
 })
 
 /** A conversion of tokens (a swap, a wrap or an unwrap) */

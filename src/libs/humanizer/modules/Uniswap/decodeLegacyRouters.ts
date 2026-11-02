@@ -313,7 +313,7 @@ export const decodeLegacyCall = (
   const holdsValue = ctx.callValue > 0n && !V2_ETH_FUNCTIONS.has(data.slice(0, 10))
   return {
     effects: [
-      ...(holdsValue ? [transfer(NATIVE_TOKEN, USER, ROUTER, exact(ctx.callValue))] : []),
+      ...(holdsValue ? [transfer(NATIVE_TOKEN, USER, ROUTER, exact(ctx.callValue), true)] : []),
       ...decoded.effects
     ],
     deadline: decoded.deadline

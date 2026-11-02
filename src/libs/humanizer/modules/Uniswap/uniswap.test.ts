@@ -317,12 +317,6 @@ describe('uniswap', () => {
     )
     const expectedVisualization = [
       [
-        // the ETH of the transaction goes to the position manager, and the refund comes back
-        getAction('Send'),
-        getToken(ZeroAddress, 6904077431543n),
-        getLabel('to'),
-        getAddressVisualization('0xc36442b4a4522e871399cd717abdd847ab11fe88'),
-        getLabel('and'),
         getAction('Add liquidity'),
         getToken('0x4200000000000000000000000000000000000006', 6904077431543n),
         getToken('0x4200000000000000000000000000000000000042', 9999999999998775n),

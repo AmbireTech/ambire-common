@@ -378,9 +378,15 @@ const decodeV3Swap =
 
 // The commands that send tokens of the router: SWEEP sends everything that the router holds (the
 // amount of the command is only the least that it must be), TRANSFER sends an amount and
+// 1e18 is all the tokens in PAY_PORTION_FULL_PRECISION, and 10000 basis points are all of them
+const FULL_PRECISION_PER_BIP = 10n ** 14n
+
 // PAY_PORTION sends a share
 const decodeRouterPayment =
-  (name: 'SWEEP' | 'TRANSFER' | 'PAY_PORTION', getAmount: (params: any) => Amount) =>
+  (
+    name: 'SWEEP' | 'TRANSFER' | 'PAY_PORTION' | 'PAY_PORTION_FULL_PRECISION',
+    getAmount: (params: any) => Amount
+  ) =>
   (input: Hex, { place }: CommandEnv): Effect[] => {
     const params = decodeInput(name, input)
     return [transfer(params.token, ROUTER, place(params.recipient), getAmount(params))]
@@ -452,6 +458,12 @@ const COMMAND_DECODERS: { [command: string]: (input: Hex, env: CommandEnv) => Ef
   [COMMANDS.SWEEP]: decodeRouterPayment('SWEEP', () => ALL),
   [COMMANDS.TRANSFER]: decodeRouterPayment('TRANSFER', (params) => toAmount(params.value)),
   [COMMANDS.PAY_PORTION]: decodeRouterPayment('PAY_PORTION', (params) => portion(params.bips)),
+  // The share has 18 decimals and the ledger counts basis points (4 decimals). It is rounded up, so
+  // that a share is never shown as smaller than it is.
+  [COMMANDS.PAY_PORTION_FULL_PRECISION]: decodeRouterPayment(
+    'PAY_PORTION_FULL_PRECISION',
+    (params) => portion((params.portion + FULL_PRECISION_PER_BIP - 1n) / FULL_PRECISION_PER_BIP)
+  ),
   [COMMANDS.WRAP_ETH]: decodeWrapping(true),
   [COMMANDS.UNWRAP_WETH]: decodeWrapping(false),
   [COMMANDS.PERMIT2_PERMIT]: (input) => {
@@ -500,7 +512,9 @@ export const decodeUniversalRouter = (
   return [
     ...effectsBefore,
     // the value of the transaction goes to the router. This is where the ETH of a swap comes from.
-    ...(ctx.callValue > 0n ? [transfer(NATIVE_TOKEN, USER, ROUTER, exact(ctx.callValue))] : []),
+    ...(ctx.callValue > 0n
+      ? [transfer(NATIVE_TOKEN, USER, ROUTER, exact(ctx.callValue), true)]
+      : []),
     ...parsedCommands.flatMap((command, index): Effect[] => {
       const decoder = COMMAND_DECODERS[command]
       if (!decoder) return [getOpaqueEffect(`command ${command}`, ctx)]
