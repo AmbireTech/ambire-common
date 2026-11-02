@@ -25,6 +25,7 @@ import {
   UserRequest
 } from '../../interfaces/userRequest'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
 import * as safeLib from '../../libs/safe/safe'
 import { generateUuid } from '../../utils/uuid'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
@@ -1048,6 +1049,112 @@ describe('RequestsController ', () => {
       ).rejects.toThrow(EmittableError)
 
       expect(controller.userRequests).toHaveLength(0)
+    })
+
+    describe('finding the request already taking back a deposit', () => {
+      const encodeRagequit = (label: bigint) =>
+        POOL_RAGEQUIT_INTERFACE.encodeFunctionData('ragequit', [
+          {
+            pA: [0n, 0n],
+            pB: [
+              [0n, 0n],
+              [0n, 0n]
+            ],
+            pC: [0n, 0n],
+            // [commitment, nullifierHash, value, label]
+            pubSignals: [1n, 2n, 30n, label]
+          }
+        ])
+
+      const prepareWithRagequit = async (label: bigint) => {
+        const { controller } = await prepareTest()
+        await controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: {
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            calls: [{ ...RAGEQUIT_CALL, data: encodeRagequit(label) }]
+          }
+        })
+
+        return controller
+      }
+
+      test('finds the request taking back the deposit with that label', async () => {
+        const controller = await prepareWithRagequit(3n)
+
+        const request = controller.findPrivacyPoolsRagequitRequest({
+          // Lowercase, as an address read from the chain's history may be
+          accountAddr: DEPOSITOR.toLowerCase(),
+          chainId: 1n,
+          label: 3n
+        })
+
+        expect(request).toBe(controller.userRequests[0])
+      })
+
+      test('finds it among other calls of the batch', async () => {
+        const controller = await prepareWithRagequit(3n)
+        await controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: {
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            calls: [{ ...RAGEQUIT_CALL, data: encodeRagequit(4n) }]
+          }
+        })
+
+        expect(controller.userRequests).toHaveLength(1)
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            label: 4n
+          })
+        ).toBe(controller.userRequests[0])
+      })
+
+      test('finds nothing for another deposit, network or account', async () => {
+        const controller = await prepareWithRagequit(3n)
+
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            label: 4n
+          })
+        ).toBeUndefined()
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: DEPOSITOR,
+            chainId: 10n,
+            label: 3n
+          })
+        ).toBeUndefined()
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+            chainId: 1n,
+            label: 3n
+          })
+        ).toBeUndefined()
+      })
+
+      test('finds nothing in a request of other calls', async () => {
+        const { controller } = await prepareTest()
+        await controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: { accountAddr: DEPOSITOR, chainId: 1n, calls: [RAGEQUIT_CALL] }
+        })
+
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            label: 3n
+          })
+        ).toBeUndefined()
+      })
     })
   })
 

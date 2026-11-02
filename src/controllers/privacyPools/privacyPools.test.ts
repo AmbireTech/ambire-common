@@ -2624,6 +2624,29 @@ describe('PrivacyPoolsController', () => {
       ])
     })
 
+    it('knows the account of a deposit still being verified before proving it', async () => {
+      const { controller, protocol } = await prepareSynced()
+      const syncCount = protocol.syncCount
+
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 3n })).toBe(DEPOSITOR)
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 6n })).toBe(OTHER_DEPOSITOR)
+      expect(prove).not.toHaveBeenCalled()
+      expect(protocol.syncCount).toBe(syncCount)
+    })
+
+    it('knows no account for a verified, spent, unknown or other phrase deposit', async () => {
+      const { controller } = await prepareSynced()
+
+      // Verified
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 1n })).toBeUndefined()
+      // Spent in full
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 4n })).toBeUndefined()
+      // Of seed-b
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 2n })).toBeUndefined()
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 99n })).toBeUndefined()
+      expect(controller.getRagequitDepositorAddr({ chainId: '10', label: 3n })).toBeUndefined()
+    })
+
     it('keeps the depositor checksummed, as the SDK reports it as a number', async () => {
       const { controller } = await prepareSynced()
 

@@ -1126,7 +1126,8 @@ export class MainController extends EventEmitter implements IMainController {
   /**
    * Takes back a deposit of the selected Privacy Pools account that is still being verified:
    * publicly and in full, to the account that made it. Only that account can, so it is selected
-   * and the call is added to its requests for the user to sign.
+   * and the call is added to its requests for the user to sign. If that call is already waiting
+   * to be signed, its request is opened instead.
    */
   async privacyPoolsRagequit({ chainId, label }: { chainId: string; label: bigint }) {
     await this.initialLoadPromise
@@ -1134,6 +1135,25 @@ export class MainController extends EventEmitter implements IMainController {
     await this.withStatus(
       'privacyPoolsRagequit',
       async () => {
+        // Checked before proving, as a second call for the same deposit would make the whole
+        // transaction fail
+        const depositorAddr = this.privacyPools.getRagequitDepositorAddr({ chainId, label })
+        const waitingRequest =
+          depositorAddr &&
+          this.requests.findPrivacyPoolsRagequitRequest({
+            accountAddr: depositorAddr,
+            chainId: BigInt(chainId),
+            label
+          })
+        if (waitingRequest) {
+          const { accountAddr: waitingAccountAddr } = waitingRequest.meta
+          if (this.selectedAccount.account?.addr !== waitingAccountAddr)
+            await this.#selectAccount(waitingAccountAddr)
+
+          await this.requests.setCurrentUserRequestById(waitingRequest.id)
+          return
+        }
+
         const { accountAddr, calls } = await this.privacyPools.buildRagequitCalls({
           chainId,
           label

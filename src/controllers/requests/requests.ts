@@ -95,6 +95,7 @@ import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc76
 import { getShouldSimulateInTheBackground } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
 import { PortfolioRewardsResult } from '../../libs/portfolio/interfaces'
+import { readPrivacyPoolsRagequit } from '../../libs/privacyPools/ragequit'
 import {
   buildSwitchAccountUserRequest,
   dappRequestMethodToRequestKind,
@@ -798,6 +799,31 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         r.meta.chainId === accountOp.chainId &&
         r.signAccountOp.accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier ===
           replacedIdentifier
+    )
+  }
+
+  /**
+   * A request of the account on the chain that already takes back the Privacy Pools deposit with
+   * this label. Taking it back again in the same transaction would spend the deposit twice and make
+   * the whole transaction fail, so this request is opened instead
+   */
+  findPrivacyPoolsRagequitRequest({
+    accountAddr,
+    chainId,
+    label
+  }: {
+    accountAddr: string
+    chainId: bigint
+    label: bigint
+  }): CallsUserRequest | undefined {
+    return this.userRequests.find(
+      (r): r is CallsUserRequest =>
+        r.kind === 'calls' &&
+        r.meta.chainId === chainId &&
+        r.meta.accountAddr.toLowerCase() === accountAddr.toLowerCase() &&
+        r.signAccountOp.accountOp.calls.some(
+          ({ data }) => readPrivacyPoolsRagequit(data)?.label === label
+        )
     )
   }
 

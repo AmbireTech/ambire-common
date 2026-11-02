@@ -5,6 +5,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
 import { AccountOnchainState } from '@/interfaces/account'
 import { ErrorRef } from '@/interfaces/eventEmitter'
+import { Hex } from '@/interfaces/hex'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
 import wait from '@/utils/wait'
@@ -1304,6 +1305,9 @@ describe('Main Controller ', () => {
         })) as any
       )
       jest
+        .spyOn(mainCtrl.privacyPools, 'getRagequitDepositorAddr')
+        .mockReturnValue(depositorAddr as Hex)
+      jest
         .spyOn(mainCtrl.privacyPools, 'buildRagequitCalls')
         .mockResolvedValue({ accountAddr: depositorAddr, calls: [RAGEQUIT_CALL] })
       jest
@@ -1336,6 +1340,53 @@ describe('Main Controller ', () => {
         type: 'privacyPoolsRagequitRequest',
         params: { accountAddr: depositor!.addr, chainId: 1n, calls: [RAGEQUIT_CALL] }
       })
+    })
+
+    test("looks for a waiting call of that deposit, on the depositor's account", async () => {
+      const { mainCtrl } = await setupController({ depositorAddr: depositor!.addr })
+      jest.spyOn(mainCtrl.requests, 'findPrivacyPoolsRagequitRequest')
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(mainCtrl.requests.findPrivacyPoolsRagequitRequest).toHaveBeenCalledWith({
+        accountAddr: depositor!.addr,
+        chainId: 1n,
+        label: 3n
+      })
+      expect(mainCtrl.requests.build).toHaveBeenCalled()
+    })
+
+    // Proving it again would add a second call spending the same deposit, failing the batch
+    test('opens the request already taking back the deposit instead of proving it again', async () => {
+      const { mainCtrl, errors, statuses } = await setupController({
+        depositorAddr: depositor!.addr
+      })
+      jest
+        .spyOn(mainCtrl.requests, 'findPrivacyPoolsRagequitRequest')
+        .mockReturnValue({ id: 'waiting-ragequit', meta: { accountAddr: depositor!.addr } } as any)
+      jest.spyOn(mainCtrl.requests, 'setCurrentUserRequestById').mockResolvedValue(undefined)
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors).toEqual([])
+      expect(statuses).toContain('SUCCESS')
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(depositor!.addr)
+      expect(mainCtrl.requests.setCurrentUserRequestById).toHaveBeenCalledWith('waiting-ragequit')
+      expect(mainCtrl.privacyPools.buildRagequitCalls).not.toHaveBeenCalled()
+      expect(mainCtrl.requests.build).not.toHaveBeenCalled()
+    })
+
+    test('proves the deposit when its account is not known before proving', async () => {
+      const { mainCtrl, errors } = await setupController({ depositorAddr: depositor!.addr })
+      jest.spyOn(mainCtrl.privacyPools, 'getRagequitDepositorAddr').mockReturnValue(undefined)
+      jest.spyOn(mainCtrl.requests, 'findPrivacyPoolsRagequitRequest')
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors).toEqual([])
+      expect(mainCtrl.requests.findPrivacyPoolsRagequitRequest).not.toHaveBeenCalled()
+      expect(mainCtrl.privacyPools.buildRagequitCalls).toHaveBeenCalled()
+      expect(mainCtrl.requests.build).toHaveBeenCalled()
     })
 
     test('adds nothing for an account that is not in the wallet', async () => {
