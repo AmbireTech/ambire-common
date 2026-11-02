@@ -1,4 +1,4 @@
-import { getDomain, getDomainWithoutSuffix } from 'tldts'
+import { getDomain, getDomainWithoutSuffix, parse } from 'tldts'
 
 /**
  * A well-known app that phishing sites commonly pretend to be.
@@ -18,6 +18,11 @@ type ImpersonationTarget = {
    * in their domains ("safe-haven.com"), so only the exact name with another ending is flagged.
    */
   isCommonWord?: boolean
+  /**
+   * Set for apps the user has connected to (not from the hand-picked list). Their names come from
+   * the sites themselves, so only the exact name is flagged, without the bait words around it.
+   */
+  isConnectedApp?: boolean
 }
 
 /**
@@ -281,7 +286,21 @@ type Impersonation = {
   /** The official domain of the app the site pretends to be */
   appDomain: string
   reason: ImpersonationReason
+  /** Whether the site pretends to be an app the user has connected to before */
+  isConnectedApp: boolean
 }
+
+/** An app the user has connected to, as stored in the dapps list */
+type ConnectedApp = {
+  name: string
+  url: string
+}
+
+/**
+ * Connected apps with a shorter name aren't checked, as short names ("Swap", "Pool") are shared by
+ * too many unrelated sites.
+ */
+const MIN_CONNECTED_APP_NAME_LENGTH = 5
 
 const isLetterOrDigit = (char: string) => {
   const lower = char.toLowerCase()
@@ -373,26 +392,28 @@ const removeFillerWords = (name: string): string =>
     .filter((word) => !FILLER_WORDS.includes(word))
     .join('')
 
-const findTargetByName = (siteName: string) => {
+const findTargetByName = (targets: ImpersonationTarget[], siteName: string) => {
   const normalizedName = normalizeAppName(siteName)
   const nameWithoutFillers = removeFillerWords(siteName)
 
-  return IMPERSONATION_TARGETS.find((target) =>
+  return targets.find((target) =>
     [target.name, ...(target.aliases ?? [])].some((appName) => {
       const normalizedAppName = normalizeAppName(appName)
       if (normalizedAppName === normalizedName) return true
 
       // Apps named after a common word only match their exact name ("Safe Rewards" may be anything)
-      return !target.isCommonWord && normalizedAppName === nameWithoutFillers
+      return (
+        !target.isCommonWord && !target.isConnectedApp && normalizedAppName === nameWithoutFillers
+      )
     })
   )
 }
 
-const findTargetByDomain = (rootDomain: string) =>
-  IMPERSONATION_TARGETS.find((target) => target.domains.includes(rootDomain))
+const findTargetByDomain = (targets: ImpersonationTarget[], rootDomain: string) =>
+  targets.find((target) => target.domains.includes(rootDomain))
 
-const findTargetByLookalikeDomain = (siteDomainName: string) =>
-  IMPERSONATION_TARGETS.find((target) =>
+const findTargetByLookalikeDomain = (targets: ImpersonationTarget[], siteDomainName: string) =>
+  targets.find((target) =>
     target.domains.some((domain) => {
       const appDomainName = getDomainWithoutSuffix(domain)
       return (
@@ -405,11 +426,49 @@ const findTargetByLookalikeDomain = (siteDomainName: string) =>
 const toImpersonation = (
   target: ImpersonationTarget,
   reason: ImpersonationReason
-): Impersonation => ({ appName: target.name, appDomain: target.domains[0]!, reason })
+): Impersonation => ({
+  appName: target.name,
+  appDomain: target.domains[0]!,
+  reason,
+  isConnectedApp: !!target.isConnectedApp
+})
 
 /**
- * Detects a site that pretends to be a well-known app (from a hand-picked list), so the user can be
- * warned before connecting to it. New phishing sites take a while to get on the phishing lists, but
+ * Turns the apps the user has connected to into targets. Their names and icons come from the sites
+ * themselves, so only the ones that can be relied on are used - the app's name must match its own
+ * domain ("Bitrefill" on "bitrefill.com"), and apps on shared hosting ("my-app.vercel.app"),
+ * localhost and IP addresses are skipped, as their domain isn't theirs alone.
+ */
+const toConnectedAppTargets = (connectedApps: ConnectedApp[]): ImpersonationTarget[] => {
+  const targets: ImpersonationTarget[] = []
+
+  for (const { name, url } of connectedApps) {
+    // Only domains with a public ending - shared hosting ("vercel.app"), localhost and IP
+    // addresses don't have one
+    const { domain, domainWithoutSuffix, isIcann } = parse(url, { allowPrivateDomains: true })
+    if (!domain || !domainWithoutSuffix || !isIcann) continue
+    // Already covered by the hand-picked list, with its official name
+    if (findTargetByDomain(IMPERSONATION_TARGETS, domain)) continue
+
+    const normalizedName = normalizeAppName(name)
+    if (normalizedName.length < MIN_CONNECTED_APP_NAME_LENGTH) continue
+    if (normalizedName !== normalizeAppName(domainWithoutSuffix)) continue
+
+    targets.push({
+      name,
+      domains: [domain],
+      // Short domain names only match with another ending, like the common words
+      isCommonWord: domainWithoutSuffix.length < MIN_LENGTH_FOR_FUZZY_DOMAIN_MATCH,
+      isConnectedApp: true
+    })
+  }
+
+  return targets
+}
+
+/**
+ * Detects a site that pretends to be a well-known app (from a hand-picked list) or an app the user
+ * has connected to before, so the user can be warned before connecting to it. New phishing sites take a while to get on the phishing lists, but
  * most of them copy the name, logo or domain of the app they pretend to be.
  *
  * The checks, from strongest to weakest signal:
@@ -425,7 +484,8 @@ const getImpersonation = ({
   hostname,
   name,
   icon,
-  isInAppCatalog
+  isInAppCatalog,
+  connectedApps = []
 }: {
   /** The site's hostname, e.g. "app.uniswap.org" */
   hostname: string
@@ -434,6 +494,11 @@ const getImpersonation = ({
   /** The url of the icon the site declares */
   icon?: string | null
   isInAppCatalog: boolean
+  /**
+   * The apps the user has connected to. Phishing sites often copy the apps people use the most,
+   * e.g. through search ads.
+   */
+  connectedApps?: ConnectedApp[]
 }): Impersonation | null => {
   if (isInAppCatalog) return null
 
@@ -444,25 +509,29 @@ const getImpersonation = ({
   const siteDomainName = getDomainWithoutSuffix(hostname, { allowPrivateDomains: true })
   if (!siteRootDomain || !siteDomainName) return null
 
-  // The site is the app itself
-  if (findTargetByDomain(siteRootDomain)) return null
+  // The hand-picked apps come first, so they win over a connected app with the same name
+  const targets = [...IMPERSONATION_TARGETS, ...toConnectedAppTargets(connectedApps)]
 
+  // The site is the app itself
+  if (findTargetByDomain(targets, siteRootDomain)) return null
+
+  // Compared with the app's own domain, so an icon on a shared host (Google, IPFS) never matches
   const iconRootDomain = icon ? getDomain(icon) : null
-  const targetByIcon = iconRootDomain ? findTargetByDomain(iconRootDomain) : undefined
+  const targetByIcon = iconRootDomain ? findTargetByDomain(targets, iconRootDomain) : undefined
   if (targetByIcon) return toImpersonation(targetByIcon, 'icon')
 
-  const targetByName = name ? findTargetByName(toLatinLookalikes(name)) : undefined
+  const targetByName = name ? findTargetByName(targets, toLatinLookalikes(name)) : undefined
   if (targetByName) return toImpersonation(targetByName, 'name')
 
   // Letters from other alphabets are replaced only for this comparison - a domain that equals an
   // official one only after replacing them ("uniswаp.org" with a cyrillic "а") is a lookalike
-  const targetByDomain = findTargetByLookalikeDomain(toLatinDomainLabel(siteDomainName))
+  const targetByDomain = findTargetByLookalikeDomain(targets, toLatinDomainLabel(siteDomainName))
   if (targetByDomain) return toImpersonation(targetByDomain, 'domain')
 
   return null
 }
 
-export type { Impersonation, ImpersonationReason }
+export type { ConnectedApp, Impersonation, ImpersonationReason }
 export {
   decodePunycodeLabel,
   getImpersonation,

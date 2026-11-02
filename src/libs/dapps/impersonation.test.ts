@@ -1,5 +1,6 @@
 import { expect } from '@jest/globals'
 
+import type { ConnectedApp } from './impersonation'
 import {
   decodePunycodeLabel,
   getImpersonation,
@@ -14,9 +15,17 @@ const check = (
   {
     name,
     icon,
-    isInAppCatalog = false
-  }: { name?: string; icon?: string; isInAppCatalog?: boolean } = {}
-) => getImpersonation({ hostname, name, icon, isInAppCatalog })
+    isInAppCatalog = false,
+    connectedApps
+  }: {
+    name?: string
+    icon?: string
+    isInAppCatalog?: boolean
+    connectedApps?: ConnectedApp[]
+  } = {}
+) => getImpersonation({ hostname, name, icon, isInAppCatalog, connectedApps })
+
+const BITREFILL: ConnectedApp = { name: 'Bitrefill', url: 'https://www.bitrefill.com' }
 
 describe('impersonation', () => {
   describe('normalizeAppName', () => {
@@ -127,7 +136,8 @@ describe('impersonation', () => {
       expect(check('totally-legit.xyz', { name: 'Uniswap' })).toEqual({
         appName: 'Uniswap',
         appDomain: 'uniswap.org',
-        reason: 'name'
+        reason: 'name',
+        isConnectedApp: false
       })
       expect(check('totally-legit.xyz', { name: 'Uniswap Interface' })?.reason).toBe('name')
       expect(check('totally-legit.xyz', { name: 'Sushi' })?.appName).toBe('SushiSwap')
@@ -145,13 +155,18 @@ describe('impersonation', () => {
           name: 'Totally Legit',
           icon: 'https://app.uniswap.org/favicon.png'
         })
-      ).toEqual({ appName: 'Uniswap', appDomain: 'uniswap.org', reason: 'icon' })
+      ).toEqual({
+        appName: 'Uniswap',
+        appDomain: 'uniswap.org',
+        reason: 'icon',
+        isConnectedApp: false
+      })
     })
 
     it('reports the icon over the name, as it is the stronger signal', () => {
       expect(
         check('totally-legit.xyz', { name: 'Uniswap', icon: 'https://aave.com/favicon.ico' })
-      ).toEqual({ appName: 'Aave', appDomain: 'aave.com', reason: 'icon' })
+      ).toEqual({ appName: 'Aave', appDomain: 'aave.com', reason: 'icon', isConnectedApp: false })
     })
 
     it('flags the same domain name with another ending', () => {
@@ -219,7 +234,8 @@ describe('impersonation', () => {
       expect(check(cyrillicA)).toEqual({
         appName: 'Uniswap',
         appDomain: 'uniswap.org',
-        reason: 'domain'
+        reason: 'domain',
+        isConnectedApp: false
       })
       expect(check(new URL('https://οpensea.io').hostname)?.appName).toBe('OpenSea')
       expect(check(new URL('https://unìswap.org').hostname)?.appName).toBe('Uniswap')
@@ -244,6 +260,95 @@ describe('impersonation', () => {
 
     it('never treats a site on shared hosting as the app itself', () => {
       expect(check('uniswap.vercel.app', { name: 'Uniswap' })?.reason).toBe('name')
+    })
+
+    describe('connected apps', () => {
+      const connectedApps = [BITREFILL]
+
+      it('flags a lookalike of a connected app', () => {
+        expect(check('bitrefill.app', { connectedApps })).toEqual({
+          appName: 'Bitrefill',
+          appDomain: 'bitrefill.com',
+          reason: 'domain',
+          isConnectedApp: true
+        })
+        expect(check('bitrefill-promo.com', { connectedApps })?.reason).toBe('domain')
+        expect(check('bitrefil.com', { connectedApps })?.reason).toBe('domain')
+        expect(check(new URL('https://bitrеfill.com').hostname, { connectedApps })?.reason).toBe(
+          'domain'
+        ) // cyrillic "е"
+      })
+
+      it('does not flag a lookalike of an app the user is not connected to', () => {
+        expect(check('bitrefill.app')).toBeNull()
+      })
+
+      it('flags a site with the exact name of a connected app', () => {
+        expect(check('totally-legit.xyz', { name: 'Bitrefill', connectedApps })?.reason).toBe(
+          'name'
+        )
+      })
+
+      it('does not flag the name of a connected app with bait words around it', () => {
+        expect(check('totally-legit.xyz', { name: 'Bitrefill Rewards', connectedApps })).toBeNull()
+      })
+
+      it('flags a site that uses the icon of a connected app', () => {
+        expect(
+          check('totally-legit.xyz', {
+            icon: 'https://www.bitrefill.com/favicon.ico',
+            connectedApps
+          })?.reason
+        ).toBe('icon')
+      })
+
+      it('does not flag another subdomain of a connected app', () => {
+        expect(check('shop.bitrefill.com', { name: 'Bitrefill', connectedApps })).toBeNull()
+      })
+
+      it('does not flag catalog apps', () => {
+        expect(
+          check('bitrefill.app', { name: 'Bitrefill', connectedApps, isInAppCatalog: true })
+        ).toBeNull()
+      })
+
+      it('skips connected apps whose name does not match their domain', () => {
+        const apps = [{ name: 'Dashboard', url: 'https://my-portfolio.xyz' }]
+        expect(check('totally-legit.xyz', { name: 'Dashboard', connectedApps: apps })).toBeNull()
+      })
+
+      it('skips connected apps with a short name', () => {
+        const apps = [{ name: 'Swap', url: 'https://swap.io' }]
+        expect(check('swap.xyz', { name: 'Swap', connectedApps: apps })).toBeNull()
+      })
+
+      it('only flags short connected app domains with another ending', () => {
+        const apps = [{ name: 'Morph', url: 'https://morph.network' }]
+        expect(check('morph.xyz', { connectedApps: apps })?.appName).toBe('Morph')
+        expect(check('morph-labs.com', { connectedApps: apps })).toBeNull()
+        expect(check('morphe.network', { connectedApps: apps })).toBeNull()
+      })
+
+      it('skips connected apps on shared hosting, localhost and IP addresses', () => {
+        const apps = [
+          { name: 'Myproject', url: 'https://myproject.vercel.app' },
+          { name: 'Localapp', url: 'http://localapp.localhost:3000' },
+          { name: 'Ipapp', url: 'http://127.0.0.1:8080' }
+        ]
+        expect(check('myproject.xyz', { name: 'Myproject', connectedApps: apps })).toBeNull()
+        expect(check('other.vercel.app', { name: 'Myproject', connectedApps: apps })).toBeNull()
+        expect(check('localapp.xyz', { name: 'Localapp', connectedApps: apps })).toBeNull()
+      })
+
+      it('prefers the hand-picked list over a connected app', () => {
+        const apps = [{ name: 'Uniswap', url: 'https://app.uniswap.org' }]
+        expect(check('uniswap.app', { connectedApps: apps })).toEqual({
+          appName: 'Uniswap',
+          appDomain: 'uniswap.org',
+          reason: 'domain',
+          isConnectedApp: false
+        })
+      })
     })
 
     it('has valid targets', () => {
