@@ -10,6 +10,7 @@ import {
 import { FeatureFlags } from '@/consts/featureFlags'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
 import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
+import { PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS } from '@/consts/privacyPools'
 import {
   AccountPickerController,
   PreparedAccounts
@@ -37,6 +38,7 @@ import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
+import { privacyPoolsErrors } from '@/controllers/privacyPools/errors'
 import { PrivacyPoolsController } from '@/controllers/privacyPools/privacyPools'
 import { ProvidersController } from '@/controllers/providers/providers'
 import { RequestsController } from '@/controllers/requests/requests'
@@ -125,11 +127,13 @@ import { SocketV3API } from '@/services/socketv3/api'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
+import { getIsViewOnly } from '@/utils/accounts'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
 import { getReceiptBlockNumberByChainId } from '@/utils/nonce'
 import { generateUuid } from '@/utils/uuid'
 import wait from '@/utils/wait'
 import { waitForBlockNumber } from '@/utils/waitForBlockNumber'
+import { withTimeout } from '@/utils/with-timeout'
 
 type AccountsUpdate = {
   accountsToAdd: Account[]
@@ -1124,6 +1128,78 @@ export class MainController extends EventEmitter implements IMainController {
     this.transfer.reset({ destroyAccountOp: true })
 
     await this.#forceEmitSelectedAccountUpdates(null)
+  }
+
+  /**
+   * Takes back a deposit of the selected Privacy Pools account that is still being verified:
+   * publicly and in full, to the account that made it. Only that account can, so it is selected
+   * and the call is added to its requests for the user to sign. If that call is already waiting
+   * to be signed, its request is opened instead.
+   */
+  async privacyPoolsRagequit({ chainId, label }: { chainId: string; label: bigint }) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'privacyPoolsRagequit',
+      async () => {
+        // Checked before proving, as a second call for the same deposit would make the whole
+        // transaction fail
+        const depositorAddr = this.privacyPools.getRagequitDepositorAddr({ chainId, label })
+        const waitingRequest =
+          depositorAddr &&
+          this.requests.findPrivacyPoolsRagequitRequest({
+            accountAddr: depositorAddr,
+            chainId: BigInt(chainId),
+            label
+          })
+        if (waitingRequest) {
+          const { accountAddr: waitingAccountAddr } = waitingRequest.meta
+          if (this.selectedAccount.account?.addr !== waitingAccountAddr)
+            await this.#selectAccount(waitingAccountAddr)
+
+          await this.requests.setCurrentUserRequestById(waitingRequest.id)
+          return
+        }
+
+        const { accountAddr, calls } = await this.privacyPools.buildRagequitCalls({
+          chainId,
+          label
+        })
+        const depositor = this.accounts.accounts.find(
+          ({ addr }) => addr.toLowerCase() === accountAddr.toLowerCase()
+        )
+        if (!depositor) throw privacyPoolsErrors.ragequitDepositorNotInWallet()
+        if (getIsViewOnly(this.keystore.keys, depositor.associatedKeys))
+          throw privacyPoolsErrors.ragequitDepositorViewOnly()
+
+        // What the request is built from, loaded before the account is switched, so a failure
+        // leaves the user on the Privacy Pools account rather than on another one with nothing
+        // to sign. Limited in time, as the fetch can wait behind other fetches of the account
+        const network = this.networks.networks.find((net) => net.chainId === BigInt(chainId))
+        const accountState =
+          network &&
+          (await withTimeout(
+            () => this.accounts.getOrFetchAccountOnChainState(depositor.addr, network.chainId),
+            {
+              timeoutMs: PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS,
+              message: "privacyPools: loading the depositor's account state timed out"
+            }
+          ).catch((error: unknown) => {
+            throw privacyPoolsErrors.ragequitDepositorStateLoadFailed(error)
+          }))
+        if (!accountState) throw privacyPoolsErrors.ragequitDepositorStateUnavailable()
+
+        if (this.selectedAccount.account?.addr !== depositor.addr)
+          await this.#selectAccount(depositor.addr)
+
+        await this.requests.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: { accountAddr: depositor.addr, chainId: BigInt(chainId), calls }
+        })
+      },
+      // As `selectAccount`, which it runs
+      true
+    )
   }
 
   /**
