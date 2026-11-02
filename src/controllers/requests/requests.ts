@@ -2985,6 +2985,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           throw new EmittableError({ message: error.message, level: 'major', error })
         }
 
+        // Read before anything is awaited: the form can be reset while the request is being
+        // built (e.g. the user leaves the "Added to batch" screen), which would otherwise skip
+        // adding the active route and leave the swap untracked once the batch is sent.
+        // The quote must also be the one the transaction was built from
+        const quoteForActiveRoute =
+          this.#swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit &&
+          this.#swapAndBridge.quote?.selectedRoute?.routeId === transaction.activeRouteId
+            ? this.#swapAndBridge.quote
+            : null
+
         // learn the receiving token
         if (this.#swapAndBridge.toSelectedToken && this.#swapAndBridge.toChainId) {
           this.#addTokensToBeLearned(
@@ -3037,8 +3047,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           })
         }
 
-        if (this.#swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
+        if (quoteForActiveRoute) {
           this.#swapAndBridge.addActiveRoute({
+            quote: quoteForActiveRoute,
             userTxIndex: transaction.userTxIndex
           })
         }

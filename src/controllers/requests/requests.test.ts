@@ -26,6 +26,7 @@ import {
 } from '../../interfaces/userRequest'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import * as safeLib from '../../libs/safe/safe'
+import { SwapAndBridgeFormStatus } from '../../libs/swapAndBridge/constants'
 import { generateUuid } from '../../utils/uuid'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
@@ -1154,6 +1155,92 @@ describe('RequestsController ', () => {
       expect(ids).not.toContain('same-id')
       expect(new Set(ids).size).toBe(2)
       destroyBatch(controller)
+    })
+  })
+
+  describe('build swap & bridge request', () => {
+    const ROUTE_ID = 'order-1'
+    const swapTxn = {
+      activeRouteId: ROUTE_ID,
+      approvalData: null,
+      chainId: 1,
+      txData: '0x',
+      txTarget: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+      userTxIndex: 0,
+      value: '0'
+    }
+    const createQuote = (routeId: string) => {
+      const route = { routeId, providerId: 'cowswap', steps: [], userTxs: [] }
+
+      return {
+        fromAsset: { address: '0x0000000000000000000000000000000000000000', symbol: 'ETH' },
+        toAsset: { address: '0x431D5dfF03120AFA4bDf332c61A6e1766eF37BDB', symbol: 'JPYC' },
+        selectedRoute: route,
+        routes: [route]
+      } as any
+    }
+
+    /**
+     * Builds the swap into the batch the way the swap screen does, but resets the form while
+     * the account data is being fetched, like leaving the "Added to batch" screen right away
+     */
+    const buildSwapAndResetFormMidway = async (quoteRouteId: string) => {
+      const { controller, mainCtrl } = await prepareTest()
+      const swapAndBridge = mainCtrl.swapAndBridge
+      let formStatus = SwapAndBridgeFormStatus.ReadyToSubmit
+      swapAndBridge.quote = createQuote(quoteRouteId)
+      jest.spyOn(swapAndBridge, 'formStatus', 'get').mockImplementation(() => formStatus)
+      jest
+        .spyOn(swapAndBridge, 'signAccountOpController', 'get')
+        .mockReturnValue({ accountOp: { meta: { swapTxn } } } as any)
+      const getAccountState = mainCtrl.accounts.getOrFetchAccountOnChainState.bind(
+        mainCtrl.accounts
+      )
+      jest
+        .spyOn(mainCtrl.accounts, 'getOrFetchAccountOnChainState')
+        .mockImplementation(async (...args) => {
+          formStatus = SwapAndBridgeFormStatus.Empty
+          swapAndBridge.quote = null
+          return getAccountState(...args)
+        })
+
+      await controller.build({
+        type: 'swapAndBridgeRequest',
+        params: { openActionWindow: false }
+      })
+
+      return { controller, swapAndBridge }
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    test('tracks the swap even if the form is reset while it is being added to the batch', async () => {
+      const { controller, swapAndBridge } = await buildSwapAndResetFormMidway(ROUTE_ID)
+
+      expect(swapAndBridge.activeRoutes.map((r) => r.activeRouteId)).toContain(ROUTE_ID)
+      const activeRoute = swapAndBridge.activeRoutes.find((r) => r.activeRouteId === ROUTE_ID)
+      expect(activeRoute!.routeStatus).toBe('ready')
+      // the call keeps the id the active route is matched by once the batch is sent
+      const request = controller.userRequests[0]
+      if (request?.kind !== 'calls') throw new Error('Expected a calls request')
+      expect(request.signAccountOp.accountOp.calls.map(({ id }) => id)).toContain(ROUTE_ID)
+
+      swapAndBridge.removeActiveRoute(ROUTE_ID)
+      request.signAccountOp.destroy()
+    })
+
+    test('does not track the swap from a quote it was not built from', async () => {
+      // e.g. the quote got refreshed after the swap was prepared
+      const { controller, swapAndBridge } = await buildSwapAndResetFormMidway('refreshed-route')
+
+      expect(swapAndBridge.activeRoutes.map((r) => r.activeRouteId)).not.toContain(ROUTE_ID)
+      expect(swapAndBridge.activeRoutes.map((r) => r.activeRouteId)).not.toContain(
+        'refreshed-route'
+      )
+      const request = controller.userRequests[0]
+      if (request?.kind === 'calls') request.signAccountOp.destroy()
     })
   })
 
