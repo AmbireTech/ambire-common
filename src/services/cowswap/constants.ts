@@ -2,6 +2,9 @@ export const COWSWAP_API_BASE_URL = 'https://partners.cow.fi'
 
 export const COWSWAP_TOKEN_LIST_URL = 'https://files.cow.fi/tokens/CowSwap.json'
 
+/** The token list changes about once a day, so keeping it for an hour is safe */
+export const COWSWAP_TOKEN_LIST_CACHE_MS = 1000 * 60 * 60
+
 export const COWSWAP_SETTLEMENT_ADDRESS = '0x9008D19f58AAbD9eD0D60971565AA8510560ab41'
 
 export const COWSWAP_VAULT_RELAYER_ADDRESS = '0xC92E8bdf79f0507f65a392b0ab4667716BFE0110'
@@ -74,5 +77,3 @@ export const COWSWAP_ORDER_VALIDITY_SECONDS = 30 * 60
 export const COWSWAP_APP_DATA_VERSION = '1.4.0'
 
 export const COWSWAP_APP_CODE = 'Ambire'
-
-export const CENA_API_BASE_URL = 'https://cena.ambire.com'

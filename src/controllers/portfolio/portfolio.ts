@@ -1204,7 +1204,7 @@ export class PortfolioController
         if (!provider) return null
         this.#portfolioLibs.set(
           key,
-          new Portfolio(this.#fetch, provider, network, this.#velcroUrl, undefined, () =>
+          new Portfolio(this.#fetch, provider, network, () =>
             this.#featureFlags.isFeatureEnabled('tokenPrices')
           )
         )
@@ -1273,8 +1273,7 @@ export class PortfolioController
 
       const result = await portfolioLib.get(accountId, {
         tokenDataRecency: 60000 * 5,
-        additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
-        disableAutoDiscovery: true
+        additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)]
       })
       this.temporaryTokens[network.chainId.toString()] = {
         isLoading: false,
@@ -1831,7 +1830,6 @@ export class PortfolioController
           ...allHints,
           ...portfolioProps,
           blockTag: 'both',
-          disableAutoDiscovery: true,
           blacklist: this.#blacklist
         }),
         getCustomProviderPositions(
@@ -2361,7 +2359,6 @@ export class PortfolioController
                     state
                   }
                 }),
-              disableAutoDiscovery: true,
               hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
             }
           )

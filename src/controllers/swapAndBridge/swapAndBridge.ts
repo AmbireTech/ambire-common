@@ -74,6 +74,7 @@ import { getIntentBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
+import { getTokenMetaViaRPC } from '../../libs/portfolio/getTokenMetaViaRPC'
 import { convertApiTokenDataToTokenDataCache, getTokenAmount } from '../../libs/portfolio/helpers'
 import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
@@ -2258,6 +2259,33 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   /**
+   * Finds a token by address. If none of the providers lists it, it can still be swappable. So if
+   * a provider confirms that it can trade it, the token is read from the chain, through the RPC
+   * of the user (nothing is sent to an Ambire service). The icon is left empty, as for the
+   * portfolio tokens, and the UI discovers it.
+   */
+  async #getSupportedToTokenByAddress(
+    address: string,
+    chainId: number
+  ): Promise<SwapAndBridgeToToken | null> {
+    const providerToken = await this.#serviceProviderAPI.getToken({ address, chainId })
+    if (providerToken) return providerToken
+
+    const isSupported = await this.#serviceProviderAPI.isTokenSupported?.({ address, chainId })
+    if (!isSupported) return null
+
+    const network = this.#networks.networks.find((n) => Number(n.chainId) === chainId)
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!network || !provider) return null
+
+    const token = await getTokenMetaViaRPC({ provider, network, address })
+
+    return token
+      ? { ...convertPortfolioTokenToSwapAndBridgeToToken(token, chainId), unverified: true }
+      : null
+  }
+
+  /**
    * Fetches a single token that the service provider left out of its "to" token list and caches it,
    * so a token preselected from outside Swap & Bridge (e.g. from the trending tokens list) can
    * still be selected. Fails silently, because the selection is not user-initiated.
@@ -2270,7 +2298,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!fromChainId || !toChainId || !tokenList || !isAddress(address)) return null
 
     try {
-      const token = await this.#serviceProviderAPI.getToken({ address, chainId: toChainId })
+      const token = await this.#getSupportedToTokenByAddress(address, toChainId)
 
       if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return null
 
@@ -2310,7 +2338,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     let token: SwapAndBridgeToToken | null
     try {
-      token = await this.#serviceProviderAPI.getToken({ address, chainId: toChainId })
+      token = await this.#getSupportedToTokenByAddress(address, toChainId)
 
       if (!token)
         throw new SwapAndBridgeError(
