@@ -1,3 +1,6 @@
+// The intervals of recurring controller work - polling, background updates and refreshes that
+// repeat while the app runs. A one-off wait or timeout (e.g. before a single retry) doesn't
+// belong here; keep it as a constant next to the code that uses it.
 export const UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL = 60000 // 1 minute
 export const BRIDGE_STATUS_INTERVAL = 10000 // 10 seconds
 // Upon a pending bridge status, the poll interval increases by BRIDGE_STATUS_INTERVAL each

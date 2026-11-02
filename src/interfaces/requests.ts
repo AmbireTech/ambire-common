@@ -6,6 +6,7 @@ import { ControllerInterface } from './controller'
 import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { SwapAndBridgeActiveRoute, SwapAndBridgeQuote } from './swapAndBridge'
+import { TransferNft } from './transfer'
 import {
   CallsUserRequest,
   PendingDappPromise,
@@ -63,6 +64,15 @@ export type BuildRequest =
         accountAddr: string
         chainId: bigint
         calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
+      }
+    }
+  | {
+      type: 'nftTransferRequest'
+      params: {
+        nft: TransferNft
+        recipientAddress: string
+        recipientDomain: string | undefined
+        executionType: RequestExecutionType
       }
     }
   | {

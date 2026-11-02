@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 
 import { EventEmitterRegistryController } from '@/controllers/eventEmitterRegistry/eventEmitterRegistry'
 
+import { networks as predefinedNetworks } from '../../src/consts/networks'
 import { AccountsController } from '../../src/controllers/accounts/accounts'
 import { DappsController } from '../../src/controllers/dapps/dapps'
 import { MainController } from '../../src/controllers/main/main'
@@ -10,6 +11,8 @@ import { PhishingController } from '../../src/controllers/phishing/phishing'
 import { PortfolioController } from '../../src/controllers/portfolio/portfolio'
 import { StorageController } from '../../src/controllers/storage/storage'
 import { KeystoreSigner } from '../../src/libs/keystoreSigner/keystoreSigner'
+import { LiFiAPI } from '../../src/services/lifi/api'
+import { SocketV3API } from '../../src/services/socketv3/api'
 import wait from '../../src/utils/wait'
 import { relayerUrl, velcroUrl } from '../config'
 import { produceMemoryStore } from '../helpers'
@@ -41,6 +44,11 @@ export interface MakeMainControllerOpts {
   skipAppsFetchOnLoad?: boolean
   /** Don't fetch the portfolio blacklist on load. Default: `true`. */
   skipPortfolioFetchBlacklistOnLoad?: boolean
+  /**
+   * Mock the Swap & Bridge providers that fetch their supported chains over the network
+   * (LiFi and Socket), returning the predefined networks instead. Default: `true`.
+   */
+  skipSwapSupportedChainsFetch?: boolean
   /**
    * Don't call `init()` on the dapps and phishing controllers, which load their data
    * lazily. Set to `true` only when the test asserts on the pre-init state. Default: `false`.
@@ -85,6 +93,7 @@ export const makeMainController = async (
     skipDomainsResolveOnLoad = true,
     skipAppsFetchOnLoad = true,
     skipPortfolioFetchBlacklistOnLoad = true,
+    skipSwapSupportedChainsFetch = true,
     skipDappsAndPhishingInit = false,
     overrides = {}
   } = opts
@@ -136,6 +145,23 @@ export const makeMainController = async (
   if (skipAppsFetchOnLoad) {
     jest.spyOn(DappsController.prototype, 'fetchAndUpdateDapps').mockImplementation(async () => {
       await wait(1)
+    })
+  }
+
+  if (skipSwapSupportedChainsFetch) {
+    // Uniswap and CoW Swap return a hardcoded list, so they don't need mocking
+    const supportedChains = predefinedNetworks.map(({ chainId }) => ({ chainId: Number(chainId) }))
+    jest.spyOn(LiFiAPI.prototype, 'getSupportedChains').mockImplementation(async function (
+      this: LiFiAPI
+    ) {
+      this.supportedChains = supportedChains
+      return supportedChains
+    })
+    jest.spyOn(SocketV3API.prototype, 'getSupportedChains').mockImplementation(async function (
+      this: SocketV3API
+    ) {
+      this.supportedChains = supportedChains
+      return supportedChains
     })
   }
 

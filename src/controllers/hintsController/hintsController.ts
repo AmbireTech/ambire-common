@@ -344,7 +344,11 @@ export class HintsController extends EventEmitter {
       const importedAccountsLearned = this.#getImportedAccountsLearnedAssets(chainId, accountId)
 
       learnedTokensHints = importedAccountsLearned.learnedTokens
-      learnedNftsHints = importedAccountsLearned.learnedNfts
+      // Velcro collectibles are merged again, as they aren't part of the learned assets
+      learnedNftsHints = mergeERC721s([
+        importedAccountsLearned.learnedNfts,
+        velcroHints?.erc721s || {}
+      ])
     }
 
     // Check if the user key exists in the new learned tokens structure
