@@ -826,7 +826,6 @@ describe('PrivacyPoolsController', () => {
           'balances',
           'chains',
           'depositAssetConfigs',
-          'emittedErrors',
           'hasPersistedSendForm',
           'hasSyncedAnyChain',
           'id',
