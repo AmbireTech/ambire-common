@@ -2990,13 +2990,15 @@ describe('PrivacyPoolsController', () => {
       })
     })
 
-    it('computes them on load from the history already on this device', async () => {
+    it('does not read the history already on this device on load, only with the next sync', async () => {
       const { storage } = await prepareSynced()
 
-      const { controller } = await prepareTest({ storage })
+      const prepared = await prepareTest({ storage })
       await flush()
+      expect(prepared.controller.poolStats).toEqual({})
 
-      expect(controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({
+      await syncAs(prepared, 'seed-a')
+      expect(prepared.controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({
         totalAmount: 490n
       })
     })
