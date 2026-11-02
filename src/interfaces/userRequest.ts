@@ -99,6 +99,11 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     swapTxn?: SwapAndBridgeSendTxRequest
     quote?: SwapAndBridgeQuote
     isSafeDeploy?: boolean
+    /**
+     * The account the user was on before the wallet switched to `accountAddr` for this request.
+     * A request to switch back to it is queued once this request is sent or rejected.
+     */
+    switchBackToAccountAddr?: string
   }
   signAccountOp: ISignAccountOpController
 }
@@ -194,7 +199,7 @@ export interface SwitchAccountRequest extends UserRequestBase {
   meta: UserRequestBase['meta'] & {
     accountAddr: string
     switchToAccountAddr: string
-    nextRequestKind: UserRequest['kind']
+    nextRequestKind?: UserRequest['kind']
     pendingToRemove?: boolean
   }
 }

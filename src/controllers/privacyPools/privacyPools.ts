@@ -712,6 +712,16 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
+   * The account one of the selected account's deposits still being verified was made from. From
+   * the last sync, so it is known before the reclaim is proved. Undefined for any other deposit.
+   */
+  getRagequitDepositorAddr({ chainId, label }: { chainId: string; label: bigint }) {
+    const seedId = this.#assertAvailableAndGetSeedId()
+
+    return this.#ragequit.getDepositorAddr({ seedId, chainId, label })
+  }
+
+  /**
    * Proves taking back one of the selected account's deposits still being verified, as a call of
    * the account that made it. For `MainController.privacyPoolsRagequit`, which selects that
    * account and adds the call for the user to sign. Throws an `EmittableError` otherwise.

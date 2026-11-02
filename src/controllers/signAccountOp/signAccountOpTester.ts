@@ -1,4 +1,4 @@
-import { SpeedUp } from '@/controllers/signAccountOp/speedUp'
+import { TxnReplacement } from '@/controllers/signAccountOp/txnReplacement'
 
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -58,7 +58,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
     onPartialBroadcast?: OnPartialBroadcast
-    speedUp?: SpeedUp
+    replacement?: TxnReplacement
     estimateController: EstimationController
     gasPriceController: GasPriceController
     phishing: IPhishingController

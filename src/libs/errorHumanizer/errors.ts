@@ -180,6 +180,12 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['0x6679996d'],
     message: 'your health factor will drop below the liquidation threshold.'
+  },
+  // Privacy Pools: NullifierAlreadySpent()
+  {
+    reasons: ['0xb115d857'],
+    message:
+      'this Privacy Pools deposit was already taken back, or is taken back twice in this transaction. If it is listed twice, remove one of them and try again.'
   }
 ]
 
@@ -230,6 +236,26 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     reasons: ['ERC721: token already minted'],
     message:
       'the NFT you are trying to mint is already minted. This can also happen if you have batched multiple mint transactions for the same NFT.'
+  },
+  {
+    // A safe NFT transfer to a contract that can't hold NFTs. The NFT would be stuck there forever,
+    // so the transfer is reverted. Each NFT library words it differently:
+    // - OpenZeppelin v4: the revert string, v5: ERC721InvalidReceiver(address) (0x64a0ae92)
+    // - ERC721A (Azuki and most newer drops): TransferToNonERC721ReceiverImplementer() (0xd1a57ed6)
+    // - Solmate: UNSAFE_RECIPIENT
+    reasons: [
+      'ERC721: transfer to non ERC721Receiver implementer',
+      '0x64a0ae92',
+      '0xd1a57ed6',
+      'UNSAFE_RECIPIENT'
+    ],
+    message:
+      "the recipient address can't receive NFTs, so the NFT would be lost. Please send it to a different address."
+  },
+  {
+    // NFTs that stay with the account they were minted to, e.g. Ambire Legends
+    reasons: ['Soulbound: cannot transfer'],
+    message: "this NFT is tied to your account and can't be sent to anyone else."
   },
   {
     reasons: ['ERC721: token does not exist'],

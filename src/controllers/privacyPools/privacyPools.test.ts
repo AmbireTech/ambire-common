@@ -5,6 +5,7 @@ import { expect, jest } from '@jest/globals'
 import { createPPv1Broadcaster } from '@kohaku-eth/privacy-pools'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import EmittableError from '../../classes/EmittableError'
 import {
   getPrivacyPoolsAsset,
@@ -592,12 +593,22 @@ const flush = () =>
 const getHeldAmounts = (controller: PrivacyPoolsController) =>
   (controller.balances['1'] || []).map(({ totalAmount }) => totalAmount)
 
+const WAIT_UNTIL_TIMEOUT_MS = 5000
+
+/**
+ * Resolves once the condition holds, or throws after WAIT_UNTIL_TIMEOUT_MS. A time limit and
+ * not a count of event loop turns, as a busy CI machine needs many more turns for the same work.
+ */
 const waitUntil = async (condition: () => boolean) => {
-  for (let i = 0; i < 200; i++) {
+  const deadline = Date.now() + WAIT_UNTIL_TIMEOUT_MS
+
+  while (Date.now() < deadline) {
     if (condition()) return
 
     await flush()
   }
+
+  if (condition()) return
 
   throw new Error('waitUntil: condition was never met')
 }
@@ -1120,6 +1131,7 @@ describe('PrivacyPoolsController', () => {
     })
 
     it("fails the syncs waiting for a failed first read, and reads the network's state again on the next one", async () => {
+      const { restore } = suppressConsole()
       const { controller, selectedAccount } = await prepareTest()
 
       selectedAccount.select('seed-a')
@@ -1146,6 +1158,7 @@ describe('PrivacyPoolsController', () => {
       await retry
       expect(controller.chains['1']?.isInitialSyncDone).toBe(true)
       expect(getHeldAmounts(controller)).toEqual([20n])
+      restore()
     })
 
     it("waits after a lock for the network's first read still running from before, instead of reading beside it", async () => {
@@ -1227,6 +1240,7 @@ describe('PrivacyPoolsController', () => {
     })
 
     it('keeps the other networks when the first read of one fails', async () => {
+      const { restore } = suppressConsole()
       const { controller, selectedAccount } = await prepareTest({ hasOtherChain: true })
       selectedAccount.select('seed-a')
 
@@ -1247,9 +1261,11 @@ describe('PrivacyPoolsController', () => {
         isInitialSyncDone: true
       })
       expect(controller.balances[OTHER]).toEqual([expect.objectContaining({ totalAmount: 10n })])
+      restore()
     })
 
     it('proves a transfer without waiting for a sync of another network', async () => {
+      const { restore } = suppressConsole()
       const { controller, selectedAccount } = await prepareTest({ hasOtherChain: true })
       selectedAccount.select('seed-a')
 
@@ -1270,6 +1286,7 @@ describe('PrivacyPoolsController', () => {
 
       await releaseSync('seed-a', OTHER_CHAIN_ID)
       await syncingOther
+      restore()
     })
   })
   describe('syncing on opening an account', () => {
@@ -1429,6 +1446,7 @@ describe('PrivacyPoolsController', () => {
     })
 
     it('does not count a failed first read as done', async () => {
+      const { restore } = suppressConsole()
       const { controller, selectedAccount } = await prepareTest()
 
       selectedAccount.select('seed-a')
@@ -1444,6 +1462,7 @@ describe('PrivacyPoolsController', () => {
         initialSyncDuration: null,
         lastSyncDuration: null
       })
+      restore()
     })
   })
 
@@ -1827,6 +1846,7 @@ describe('PrivacyPoolsController', () => {
     })
 
     it('leaves the sync before proving to the SDK when none is queued', async () => {
+      const { restore } = suppressConsole()
       const { controller, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-a')
 
@@ -1845,9 +1865,11 @@ describe('PrivacyPoolsController', () => {
         status: 'failed',
         error: 'The transfer could not be prepared. Please try again.'
       })
+      restore()
     })
 
     it('waits for a queued sync to finish before proving, without adding one', async () => {
+      const { restore } = suppressConsole()
       const { controller, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-a')
 
@@ -1871,6 +1893,7 @@ describe('PrivacyPoolsController', () => {
       expect(protocol?.syncCountWhenProving).toBe(1)
       expect(protocol?.syncCount).toBe(1)
       expect(runningSyncs).toHaveLength(0)
+      restore()
     })
 
     const prepareSignedWithdrawal = async ({ isBatch = false }: { isBatch?: boolean } = {}) => {
@@ -1910,6 +1933,7 @@ describe('PrivacyPoolsController', () => {
     }
 
     it('explains a fee above the amount, although the SDK throws it from a thunk', async () => {
+      const { restore } = suppressConsole()
       prepareUnshieldFailure = toThunkFailure(
         'Withdrawal amount too small to cover the sponsored gas fee'
       )
@@ -1921,9 +1945,11 @@ describe('PrivacyPoolsController', () => {
         error:
           'This amount is too small to cover the network fee for sending it. Please try a larger amount.'
       })
+      restore()
     })
 
     it('keeps what the SDK said about a failure it cannot explain to the user', async () => {
+      const { restore } = suppressConsole()
       prepareUnshieldFailure = toThunkFailure('Leaf not found in the leaves array.')
 
       const { controller } = await prepareFailingWithdrawal()
@@ -1935,6 +1961,7 @@ describe('PrivacyPoolsController', () => {
       const emitted = controller.emittedErrors.at(-1)
       expect(emitted?.level).toBe('major')
       expect(emitted?.error.message).toBe('Leaf not found in the leaves array.')
+      restore()
     })
 
     it('drops a proved transfer with its account, so re-adding the account cannot send it', async () => {
@@ -1985,6 +2012,7 @@ describe('PrivacyPoolsController', () => {
     })
 
     it('clears the send form when the transfer could not be sent', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareSignedWithdrawal()
       controller.updateSendForm({ recipientFieldValue: WITHDRAWAL_RECIPIENT, amount: '0.1' })
       jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
@@ -1999,9 +2027,11 @@ describe('PrivacyPoolsController', () => {
       await broadcasting
 
       expect(controller.hasPersistedSendForm).toBe(false)
+      restore()
     })
 
     it('reports a transfer that could not be sent without a toast, as the open sheet shows it', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareSignedWithdrawal()
       jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
         broadcast: async () => {
@@ -2022,6 +2052,7 @@ describe('PrivacyPoolsController', () => {
 
       await releaseSync('seed-a')
       await broadcasting
+      restore()
     })
 
     describe('sent a while after it was proved', () => {
@@ -2127,6 +2158,7 @@ describe('PrivacyPoolsController', () => {
       })
 
       it('sends an older one it cannot run again, leaving a stale one to the bundler', async () => {
+        const { restore } = suppressConsole()
         const { controller } = await prepareSignedWithdrawal()
         const broadcast = mockBroadcast()
 
@@ -2138,6 +2170,7 @@ describe('PrivacyPoolsController', () => {
 
         expect(broadcast).toHaveBeenCalledTimes(1)
         expect(controller.emittedErrors.at(-1)).toMatchObject({ level: 'silent' })
+        restore()
       })
 
       describe('on opening the screen again', () => {
@@ -2185,6 +2218,7 @@ describe('PrivacyPoolsController', () => {
         })
 
         it('keeps an older one it cannot run again, for Send to check it again', async () => {
+          const { restore } = suppressConsole()
           const { controller, providers } = await prepareSignedWithdrawal()
           const simulations = countSimulations(providers)
 
@@ -2200,6 +2234,7 @@ describe('PrivacyPoolsController', () => {
           await sendSuccessfully(controller)
 
           expect(countSimulations(providers)).toBe(simulations + 2)
+          restore()
         })
       })
 
@@ -2266,6 +2301,7 @@ describe('PrivacyPoolsController', () => {
     })
 
     it('shows the bounds of what the recipient gets and the fee when the transfer could not be run', async () => {
+      const { restore } = suppressConsole()
       simulateWithdrawal = async () => {
         throw new Error('the method eth_simulateV1 does not exist/is not available')
       }
@@ -2273,6 +2309,7 @@ describe('PrivacyPoolsController', () => {
       const { controller } = await prepareSignedWithdrawal()
 
       expect(describeHumanization(controller.operation?.humanization)).toEqual(humanizedSend(null))
+      restore()
     })
 
     it('describes a transfer only once it is proved', async () => {
@@ -2294,6 +2331,7 @@ describe('PrivacyPoolsController', () => {
 
     it('refuses a transfer proved from the pool of another token', async () => {
       // A pool the paymaster sponsors too, so only the token tells the two apart
+      const { restore } = suppressConsole()
       entrypointPool = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
 
       const { controller } = await prepareSignedWithdrawal()
@@ -2305,9 +2343,11 @@ describe('PrivacyPoolsController', () => {
         humanization: null
       })
       expect(controller.emittedErrors.at(-1)?.error.message).toMatch(/pool of a different token/)
+      restore()
     })
 
     it('shows only the most a transfer can cost when the node cannot run it', async () => {
+      const { restore } = suppressConsole()
       simulateWithdrawal = async () => {
         throw new Error('the method eth_simulateV1 does not exist/is not available')
       }
@@ -2321,9 +2361,11 @@ describe('PrivacyPoolsController', () => {
         quote: { feeAmount: WITHDRAWAL_FEE, expectedFeeAmount: null }
       })
       expect(controller.emittedErrors.at(-1)).toMatchObject({ level: 'silent' })
+      restore()
     })
 
     it('does not fail a transfer the simulation says would revert, leaving that to the bundler', async () => {
+      const { restore } = suppressConsole()
       simulateWithdrawal = async () => [{ calls: [{ status: '0x0', logs: [] }] }]
 
       const { controller } = await prepareSignedWithdrawal()
@@ -2332,6 +2374,7 @@ describe('PrivacyPoolsController', () => {
         phase: 'ready',
         quote: { feeAmount: WITHDRAWAL_FEE, expectedFeeAmount: null }
       })
+      restore()
     })
 
     it('does not try to run a transfer on a node without state overrides', async () => {
@@ -2393,6 +2436,7 @@ describe('PrivacyPoolsController', () => {
         'This transfer combines several of your deposits, and we could not confirm it would go through, so it was not sent. Please try again in a moment, or send a smaller amount.'
 
       it('refuses one the node cannot run', async () => {
+        const { restore } = suppressConsole()
         simulateWithdrawal = async () => {
           throw new Error('the method eth_simulateV1 does not exist/is not available')
         }
@@ -2403,9 +2447,11 @@ describe('PrivacyPoolsController', () => {
           status: 'failed',
           error: batchNotConfirmedError
         })
+        restore()
       })
 
       it('refuses one the simulation says would revert', async () => {
+        const { restore } = suppressConsole()
         simulateWithdrawal = async () => [{ calls: [{ status: '0x0', logs: [] }] }]
 
         const { controller } = await prepareSignedWithdrawal({ isBatch: true })
@@ -2414,9 +2460,11 @@ describe('PrivacyPoolsController', () => {
           status: 'failed',
           error: batchNotConfirmedError
         })
+        restore()
       })
 
       it('refuses one on a node without state overrides', async () => {
+        const { restore } = suppressConsole()
         rpcNoStateOverride = true
 
         const { controller } = await prepareSignedWithdrawal({ isBatch: true })
@@ -2425,6 +2473,7 @@ describe('PrivacyPoolsController', () => {
           status: 'failed',
           error: batchNotConfirmedError
         })
+        restore()
       })
     })
   })
@@ -2675,6 +2724,29 @@ describe('PrivacyPoolsController', () => {
       await expect(controller.getRagequitDeposits('1', USDC.toUpperCase())).resolves.toEqual([
         { label: 5n, amount: 5n, depositorAddr: OTHER_DEPOSITOR }
       ])
+    })
+
+    it('knows the account of a deposit still being verified before proving it', async () => {
+      const { controller, protocol } = await prepareSynced()
+      const syncCount = protocol.syncCount
+
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 3n })).toBe(DEPOSITOR)
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 6n })).toBe(OTHER_DEPOSITOR)
+      expect(prove).not.toHaveBeenCalled()
+      expect(protocol.syncCount).toBe(syncCount)
+    })
+
+    it('knows no account for a verified, spent, unknown or other phrase deposit', async () => {
+      const { controller } = await prepareSynced()
+
+      // Verified
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 1n })).toBeUndefined()
+      // Spent in full
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 4n })).toBeUndefined()
+      // Of seed-b
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 2n })).toBeUndefined()
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 99n })).toBeUndefined()
+      expect(controller.getRagequitDepositorAddr({ chainId: '10', label: 3n })).toBeUndefined()
     })
 
     it('keeps the depositor checksummed, as the SDK reports it as a number', async () => {

@@ -173,6 +173,12 @@ export const privacyPoolsErrors = {
       'This deposit was made from an account that is not in your wallet. Add that account to take the deposit back.',
       'the depositor is not a wallet account'
     ),
+  ragequitDepositorStateLoadFailed: (cause: unknown) =>
+    majorError(
+      'Could not load the account this deposit was made from. Please try again.',
+      cause,
+      "loading the depositor's account state failed"
+    ),
   ragequitDepositorStateUnavailable: () =>
     expectedError(
       'Could not load the account this deposit was made from. Please try again.',
