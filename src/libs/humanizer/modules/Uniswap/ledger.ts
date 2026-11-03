@@ -232,18 +232,24 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
 
   const applyPeripheryPayment = (effect: ConvertEffect) => {
     const swap: ConvertEffect = { ...effect, isPaidWithEthWhenHeld: undefined }
-    const isPaymentKnown =
-      !!ctx.wrappedNative &&
-      effect.tokenIn === ctx.wrappedNative &&
-      ctx.callValue > 0n &&
-      effect.amountIn.kind === 'exact'
-    if (!isPaymentKnown || effect.amountIn.kind !== 'exact' || !ctx.wrappedNative) {
+    const canBePaidWithEth =
+      !!ctx.wrappedNative && effect.tokenIn === ctx.wrappedNative && ctx.callValue > 0n
+    if (!canBePaidWithEth || !ctx.wrappedNative) {
       apply({ ...swap, from: USER })
       return
     }
 
+    const wrappedTokensKey = getNodeKey(ROUTER, ctx.wrappedNative)
+    const wrappedTokensBefore = states.get(wrappedTokensKey)
+
+    // The amount is not known for a swap with an exact output, so the held ETH can never be
+    // proven to cover it. Then both ways of paying stay possible.
     const heldEth = getState(getNodeKey(ROUTER, NATIVE_TOKEN))
-    if (heldEth.kind === 'exact' && heldEth.value >= effect.amountIn.value) {
+    if (
+      effect.amountIn.kind === 'exact' &&
+      heldEth.kind === 'exact' &&
+      heldEth.value >= effect.amountIn.value
+    ) {
       // the router has the ETH, so it wraps it and does not take the wrapped token from the signer
       apply(convert('wrap', NATIVE_TOKEN, ctx.wrappedNative, ROUTER, ROUTER, effect.amountIn))
     } else {
@@ -252,6 +258,14 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
       apply(convert('wrap', NATIVE_TOKEN, ctx.wrappedNative, ROUTER, ROUTER, UNKNOWN))
     }
     apply({ ...swap, from: ROUTER })
+
+    // The swap pays only what it needs, so the wrapped tokens of an unknown amount are all used by
+    // the swap itself. Without this, the router would look like it keeps wrapped tokens after every
+    // swap with an exact output.
+    if (effect.amountIn.kind !== 'exact') {
+      if (wrappedTokensBefore) states.set(wrappedTokensKey, wrappedTokensBefore)
+      else states.delete(wrappedTokensKey)
+    }
   }
 
   effects.forEach((effect) => {

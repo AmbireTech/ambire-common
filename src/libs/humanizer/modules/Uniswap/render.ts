@@ -173,11 +173,17 @@ const renderCondensed = (
 
   // Tokens that the router already held and that go to the signer are not shown next to what the
   // signer pays. When there is nothing else to show (for example a call that only refunds the ETH
-  // of the router), they are the whole call.
+  // of the router), they are the whole call. The tokens that the signer paid are not included:
+  // they return to the signer, so they are not a withdrawal.
   return outcome.groups.flatMap((group) =>
     unique(
       group.terminals
-        .filter((terminal) => terminal.place.kind === 'user' && !terminal.isHidden)
+        .filter(
+          (terminal) =>
+            terminal.place.kind === 'user' &&
+            !terminal.isHidden &&
+            !group.userPaid.includes(terminal.token)
+        )
         .map((terminal) => terminal.token)
     ).map((token) => [getAction('Withdraw'), getToken(token, 0n)])
   )

@@ -33,6 +33,7 @@ const executeAbi = parseAbi([
 const router02Abi = parseAbi([
   'function multicall(uint256 deadline, bytes[] data) payable returns (bytes[])',
   'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)',
+  'function exactOutputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountOut, uint256 amountInMaximum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountIn)',
   'function unwrapWETH9(uint256 amountMinimum, address recipient) payable',
   'function sweepToken(address token, uint256 amountMinimum, address recipient) payable',
   'function refundETH() payable'
@@ -210,7 +211,20 @@ const v4 = {
       : coder.encode(types(V4_ACTION_DESCRIPTORS.SWAP_EXACT_IN_SINGLE), [
           [poolKey(currency0, currency1), zeroForOne, 100n, 1n, '0x']
         ])
-  })
+  }),
+  swapExactIn: (currencyIn: string, hops: string[], withMinHopPrice = true, amountIn = 100n) => {
+    const path = hops.map((hop) => [hop, 500, 10, NATIVE, '0x'])
+    return {
+      action: V4_ACTION_CODES.SWAP_EXACT_IN,
+      param: withMinHopPrice
+        ? coder.encode(types(V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE.SWAP_EXACT_IN), [
+            [currencyIn, path, hops.map(() => 0n), amountIn, 1n]
+          ])
+        : coder.encode(types(V4_ACTION_DESCRIPTORS.SWAP_EXACT_IN), [
+            [currencyIn, path, amountIn, 1n]
+          ])
+    }
+  }
 }
 
 const v4Swap = (actions: { action: string; param: string }[]): Command => ({
@@ -520,6 +534,18 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
       })
     })
 
+    test('tokens that the signer pays and that return to the signer are not shown as a withdrawal', () => {
+      // a small payment to another address is not shown, and the rest of the tokens comes back
+      const visualization = humanize([
+        cmd.permit2TransferFrom(ADDRESS_THIS, USDC, 100n),
+        cmd.payPortion(ATTACKER, 50n, USDC),
+        cmd.sweep(MSG_SENDER, USDC, 1n)
+      ])
+
+      expect(labelsOf(visualization)).not.toContain('Withdraw')
+      expect(tokensOf(visualization)).not.toContain(USDC)
+    })
+
     describe('PAY_PORTION', () => {
       // the tokens of the signer go to the router, a part of them is paid to another address, and
       // all that is left goes back to the signer
@@ -628,6 +654,29 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
         ])
 
         expect(tokensOf(visualization)).toEqual([DAI, USDC])
+      }
+    )
+
+    test.each([true, false])(
+      'a multi-hop swap paid with the ETH of the call is decoded with the amount it pays (with minHopPriceX36: %s)',
+      (withHopPrice) => {
+        // the input amount is read from the wrong place when the layout is not the right one (the
+        // new layout read as the original one gives the position of the data, a few hundred), and
+        // then the ETH of the call looks like it stays in the router
+        const amount = 10n ** 18n
+        const { visualization, warnings } = summarize(
+          [
+            v4Swap([
+              v4.swapExactIn(NATIVE, [WETH, DAI], withHopPrice, amount),
+              v4.settleAll(NATIVE, amount),
+              v4.takeAll(DAI)
+            ])
+          ],
+          { value: amount }
+        )
+
+        expect(tokensOf(visualization)).toEqual([NATIVE, DAI])
+        expect(hasLeftoverWarning(warnings)).toBe(false)
       }
     )
 
@@ -874,6 +923,38 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
 
       expect(tokensOf(visualization)).toEqual([NATIVE, DAI])
       expect(countSwaps(visualization)).toBe(1)
+    })
+
+    test('a swap with an exact output that can be paid with the ETH of the call shows the ETH', () => {
+      const exactOutputSingle = encodeFunctionData({
+        abi: router02Abi,
+        functionName: 'exactOutputSingle',
+        args: [
+          {
+            tokenIn: WETH as `0x${string}`,
+            tokenOut: DAI as `0x${string}`,
+            fee: 500,
+            recipient: MSG_SENDER as `0x${string}`,
+            amountOut: 100n,
+            amountInMaximum: 200n,
+            sqrtPriceLimitX96: 0n
+          }
+        ]
+      })
+      const humanized = run(
+        multicall(
+          [exactOutputSingle, encodeFunctionData({ abi: router02Abi, functionName: 'refundETH' })],
+          200n
+        )
+      )
+      const visualization = humanized.fullVisualization || []
+
+      // the amount is not known, so it is not known if the ETH or the wrapped token pays: both are
+      // shown, and the ETH of the call is never hidden
+      expect(tokensOf(visualization)).toEqual([NATIVE, WETH, DAI])
+      expect(countSwaps(visualization)).toBe(1)
+      // the swap pays only what it needs and the refund returns the rest of the ETH
+      expect(hasLeftoverWarning(humanized.warnings || [])).toBe(false)
     })
 
     test('a call in a multicall that is not understood is shown', () => {

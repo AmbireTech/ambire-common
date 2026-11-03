@@ -180,19 +180,32 @@ const getOpaqueEffect = (reason: string, ctx: UniswapContext, description?: stri
 })
 
 // The swap parameters of the V4 router got a new field (`minHopPriceX36`) in its newer versions.
-// They are decoded with the original layout first, and with the new layout when that does not fit.
+// The layouts are not told apart by the decoder: data of the new layout can decode in the original
+// one without an error, and then the fields are read from the wrong place (for example the input
+// amount of a multi-hop swap). So a layout is used only when its decoded value encodes back to
+// exactly the same data, which means that no data is left unread.
 // The fields that are read after this are in the same place in both layouts.
 function extractV4SwapParams(
   swapAction: keyof typeof V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE,
   param: Hex
 ) {
-  try {
-    return extractParams(V4_ACTION_DESCRIPTORS[swapAction], param).swap
-  } catch {
-    // not an error: the parameters are not in the original layout, so the new one is used. When
-    // they are not in the new one either, the decoding below throws.
+  const layouts = [
+    V4_ACTION_DESCRIPTORS[swapAction],
+    V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE[swapAction]
+  ]
+  for (const layout of layouts) {
+    try {
+      const decoded = extractParams(layout, param)
+      const reEncoded = coder.encode(
+        layout.map((item) => item.type),
+        layout.map((item) => decoded[item.name])
+      )
+      if (reEncoded.toLowerCase() === param.toLowerCase()) return decoded.swap
+    } catch {
+      // not an error: the parameters are not in this layout, so the next one is tried
+    }
   }
-  return extractParams(V4_SWAP_ACTION_DESCRIPTORS_WITH_MIN_HOP_PRICE[swapAction], param).swap
+  throw new Error(`V4 ${swapAction} parameters do not fit a known layout`)
 }
 
 // The native token is always paid from the ETH that the router holds
