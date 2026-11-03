@@ -538,6 +538,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           matchedAddress: recipient,
           matchedPrefixCharsCount: matchCounts.matchedPrefixCharsCount,
           matchedSuffixCharsCount: matchCounts.matchedSuffixCharsCount,
+          differingCharsCount: matchCounts.differingCharsCount,
           lastInteractedAt: recipientSentAt
         })
       }
@@ -549,7 +550,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
       addressPoisoningMatch = {
         matchedAddress: currentBestPoisoningMatch.matchedAddress,
         matchedPrefixCharsCount: currentBestPoisoningMatch.matchedPrefixCharsCount,
-        matchedSuffixCharsCount: currentBestPoisoningMatch.matchedSuffixCharsCount
+        matchedSuffixCharsCount: currentBestPoisoningMatch.matchedSuffixCharsCount,
+        differingCharsCount: currentBestPoisoningMatch.differingCharsCount
       }
     }
 
