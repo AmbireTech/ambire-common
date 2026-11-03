@@ -22,7 +22,6 @@ import { getNFTs, getTokens } from './getOnchainBalances'
 import {
   convertApiTokenDataToTokenDataCache,
   getTokenDataCacheKey,
-  formatExternalHintsAPIResponse,
   getHardcodedCitreaPrices,
   getVisibleCollectibles,
   mergeCollectionHints,
@@ -32,7 +31,6 @@ import {
 } from './helpers'
 import {
   CollectionResult,
-  ExternalHintsAPIResponse,
   GetOptions,
   Hints,
   Limits,
@@ -71,8 +69,7 @@ export { PORTFOLIO_LIB_ERROR_NAMES }
 
 export const getEmptyHints = (): Hints => ({
   erc20s: [],
-  erc721s: {},
-  externalApi: undefined
+  erc721s: {}
 })
 
 const defaultOptions: GetOptions = {
@@ -88,8 +85,6 @@ export class Portfolio {
 
   provider: RPCProvider
 
-  private batchedVelcroDiscovery: Function
-
   private batchedGecko: Function
 
   private isTokenPricesEnabled: () => boolean
@@ -102,36 +97,8 @@ export class Portfolio {
     fetch: Fetch,
     provider: RPCProvider,
     network: Network,
-    velcroUrl?: string,
-    customBatcher?: Function,
     isTokenPricesEnabled: () => boolean = () => true
   ) {
-    if (customBatcher) {
-      this.batchedVelcroDiscovery = customBatcher
-    } else {
-      this.batchedVelcroDiscovery = batcher(
-        fetch,
-        (queue) => {
-          const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
-          return baseCurrencies.map((baseCurrency) => {
-            const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
-            const url = `${velcroUrl}/multi-hints?networks=${queueSegment
-              .map((x) => x.data.chainId)
-              .join(',')}&accounts=${queueSegment
-              .map((x) => x.data.accountAddr)
-              .join(',')}&baseCurrency=${baseCurrency}`
-            return { queueSegment, url }
-          })
-        },
-        {
-          timeoutSettings: {
-            timeoutAfter: 3000,
-            timeoutErrorMessage: `Velcro discovery timed out on ${network.name}`
-          },
-          dedupeByKeys: ['chainId', 'accountAddr']
-        }
-      )
-    }
     this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
       timeoutSettings: {
         timeoutAfter: AMBIRE_API_TIMEOUT,
@@ -145,71 +112,10 @@ export class Portfolio {
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
   }
 
-  /**
-   * Fetch the hints from the external API (Velcro).
-   * Main return cases:
-   * - hints with `externalApi` property set if the hints are coming from the external API (and not from storage)
-   * - empty hints if the hints are static and were learned less than X minutes ago. The goal is to reduce
-   * unnecessary requests to deployless. Once every X minutes we make a call to Velcro, get the static hints and
-   * learn the tokens with amount. In subsequent calls, we return empty hints and the portfolio lib uses the previously learned tokens.
-   */
-  protected async externalHintsAPIDiscovery(options?: {
-    disableAutoDiscovery?: boolean
-    chainId: bigint
-    accountAddr: string
-    baseCurrency: string
-  }): Promise<{
-    hints: Hints
-    error?: PortfolioLibGetResult['errors'][number]
-  }> {
-    const { disableAutoDiscovery = false, chainId, accountAddr, baseCurrency } = options || {}
-    let hints: Hints = getEmptyHints()
-
-    try {
-      // Fetch the latest hints from the external API (Velcro)
-      if (!disableAutoDiscovery) {
-        const hintsFromExternalAPI: ExternalHintsAPIResponse = await this.batchedVelcroDiscovery({
-          chainId,
-          accountAddr,
-          baseCurrency
-        })
-
-        if (hintsFromExternalAPI) {
-          const formatted = formatExternalHintsAPIResponse(hintsFromExternalAPI)
-
-          if (formatted) {
-            hints = formatted
-            // Attach the property as the hints are coming from the external API
-            hints.externalApi = {
-              lastUpdate: Date.now(),
-              prices: hintsFromExternalAPI.prices,
-              hasHints: !!hintsFromExternalAPI.hasHints
-            }
-          }
-        }
-      }
-
-      return {
-        hints
-      }
-    } catch (error: any) {
-      console.error('Portfolio.externalHintsAPIDiscovery error:', error)
-      return {
-        hints,
-        error: {
-          name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
-          message: error?.message || 'Unknown error',
-          level: 'warning'
-        }
-      }
-    }
-  }
-
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioLibGetResult> {
     const errors: PortfolioLibGetResult['errors'] = []
     const {
       simulation,
-      disableAutoDiscovery = false,
       baseCurrency,
       fetchPinned,
       additionalErc20Hints,
@@ -234,19 +140,10 @@ export class Portfolio {
       throw new Error('wrong account passed')
 
     const start = Date.now()
-    const chainId = this.network.chainId
 
-    const { hints, error: hintsError } = await this.externalHintsAPIDiscovery({
-      disableAutoDiscovery,
-      chainId,
-      accountAddr,
-      baseCurrency
-    })
-
-    if (hintsError) errors.push(hintsError)
+    const hints = getEmptyHints()
 
     hints.erc20s = [
-      ...hints.erc20s,
       ...Object.values(specialErc20Hints || {}).flat(),
       ...(additionalErc20Hints || []),
       ...(fetchPinned ? PINNED_TOKENS.map((x) => x.address) : []),
@@ -258,9 +155,7 @@ export class Portfolio {
     // are left out on purpose: adding a collectible also asks for it to be
     // learned, so they would report every custom collection as discovered.
     const discoveredCollections = new Set(
-      [...Object.keys(hints.erc721s), ...Object.keys(additionalErc721Hints || {})].map((address) =>
-        address.toLowerCase()
-      )
+      Object.keys(additionalErc721Hints || {}).map((address) => address.toLowerCase())
     )
 
     hints.erc721s = mergeCollectionHints({
@@ -303,15 +198,6 @@ export class Portfolio {
     hints.erc20s = [...new Set(filteredChecksummedHints.concat(ZeroAddress))]
 
     const tokenDataCache: TokenDataCache = paramsTokenDataCache || new Map()
-    for (const addr in hints.externalApi?.prices || {}) {
-      const tokenDataHint = convertApiTokenDataToTokenDataCache(
-        hints.externalApi?.prices[addr] || null
-      )
-
-      if (!tokenDataHint) continue
-
-      tokenDataCache.set(getTokenDataCacheKey(addr), [start, tokenDataHint])
-    }
     const collectionsHints = Object.entries(hints.erc721s)
 
     // Decided once for the whole update so that every page agrees on which assets
