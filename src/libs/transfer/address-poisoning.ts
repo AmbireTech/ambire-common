@@ -3,13 +3,15 @@ import { isAddress } from 'ethers'
 import { AddressPoisoningMatch } from '@/interfaces/transfer'
 
 /**
- * Address poisoning lookalikes usually preserve a few consecutive chars from the left and/or
- * right side of the original address. We consider any recipient with at least 6 matched chars
- * in total as suspicious, while still keeping the exact prefix/suffix counts so downstream UI
- * can render the true shape of the match (for example 4-left / 3-right or even 0-left / 6-right).
- * With 1,000 past recipients, two unrelated addresses trigger it on ~0.04% of sends.
+ * Address poisoning lookalikes preserve a few consecutive chars from both the left and the
+ * right side of the original address, because that's what wallets and explorers show.
+ * We consider any recipient with at least 3 matched chars on each side as suspicious, while
+ * still keeping the exact prefix/suffix counts so downstream UI can render the true shape of
+ * the match (for example 4-left / 3-right). Requiring both sides skips unrelated addresses that
+ * only share leading zeros or a vanity prefix like 0x1111. With 1,000 past recipients, two
+ * unrelated addresses trigger it on ~0.006% of sends.
  */
-const MIN_ADDRESS_POISONING_TOTAL_MATCH_CHARS = 6
+const MIN_ADDRESS_POISONING_SIDE_MATCH_CHARS = 3
 
 /**
  * An address that differs from a known one in only this many positions is a typo, not
@@ -69,10 +71,11 @@ export const getAddressPoisoningMatchCounts = (candidate: string, trustedAddress
 
   const differingCharsCount = getDifferingCharsCount(candidateBody, trustedAddressBody)
 
-  if (
-    matchedPrefixCharsCount + matchedSuffixCharsCount < MIN_ADDRESS_POISONING_TOTAL_MATCH_CHARS &&
-    differingCharsCount > MAX_NEAR_IDENTICAL_ADDRESS_DIFFERING_CHARS
-  ) {
+  const isPoisoningLookalike =
+    matchedPrefixCharsCount >= MIN_ADDRESS_POISONING_SIDE_MATCH_CHARS &&
+    matchedSuffixCharsCount >= MIN_ADDRESS_POISONING_SIDE_MATCH_CHARS
+
+  if (!isPoisoningLookalike && differingCharsCount > MAX_NEAR_IDENTICAL_ADDRESS_DIFFERING_CHARS) {
     return null
   }
 

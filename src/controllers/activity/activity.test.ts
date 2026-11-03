@@ -180,7 +180,7 @@ describe('Activity Controller ', () => {
   })
 
   describe('AccountsOps', () => {
-    test('should detect various address poisoning attacks (4/4, 5/5, 6/5, 4/8, 3/8, 0/8, 3/4 and reject total < 6 or 0/0)', async () => {
+    test('should detect various address poisoning attacks (4/4, 5/5, 6/5, 4/8, 3/8, 3/4 and reject 0/8, 3/2 or 0/0)', async () => {
       const { controller } = await prepareTest()
 
       const trustedRecipient = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
@@ -308,12 +308,7 @@ describe('Activity Controller ', () => {
       expect(poisoningResult0to8).toEqual({
         found: false,
         lastTransactionDate: null,
-        addressPoisoningMatch: {
-          matchedAddress: trustedRecipient,
-          matchedPrefixCharsCount: 0,
-          matchedSuffixCharsCount: 8,
-          differingCharsCount: 31
-        }
+        addressPoisoningMatch: null
       })
 
       expect(poisoningResult3to4).toEqual({

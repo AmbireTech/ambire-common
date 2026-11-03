@@ -9,7 +9,7 @@ describe('address poisoning helpers', () => {
   describe('getAddressPoisoningMatchCounts', () => {
     const trustedAddress = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
 
-    test('should detect various overlap shapes and reject totals below 6', () => {
+    test('should detect various overlap shapes and reject fewer than 3 matched chars on either side', () => {
       expect(
         getAddressPoisoningMatchCounts('0xF0cDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB', trustedAddress)
       ).toMatchObject({ matchedPrefixCharsCount: 4, matchedSuffixCharsCount: 4 })
@@ -32,7 +32,11 @@ describe('address poisoning helpers', () => {
 
       expect(
         getAddressPoisoningMatchCounts('0xAb12ffffffffffffffffffffffffffff793237DB', trustedAddress)
-      ).toMatchObject({ matchedPrefixCharsCount: 0, matchedSuffixCharsCount: 8 })
+      ).toBeNull()
+
+      expect(
+        getAddressPoisoningMatchCounts('0xF0cD725Dffffffffffffffffffffffffffffffff', trustedAddress)
+      ).toBeNull()
 
       expect(
         getAddressPoisoningMatchCounts('0xF0caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB', trustedAddress)
@@ -48,6 +52,23 @@ describe('address poisoning helpers', () => {
 
       expect(
         getAddressPoisoningMatchCounts('0xAb12eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeCDef', trustedAddress)
+      ).toBeNull()
+    })
+
+    test('should not flag unrelated addresses that only share leading zeros or a vanity prefix', () => {
+      // Real pairs of addresses that the same sender paid on Ethereum mainnet
+      expect(
+        getAddressPoisoningMatchCounts(
+          '0x0000006C61584bCb681b43Bc6d11Aef192757C3d',
+          '0x0000000000367715a1C746Bd336B65e5954C7660'
+        )
+      ).toBeNull()
+
+      expect(
+        getAddressPoisoningMatchCounts(
+          '0x1111115Af63bfBcc151e5753e2EA1a29C79D2F01',
+          '0x111116058b9828CdCDD810c502B925c14F34CA11'
+        )
       ).toBeNull()
     })
 
