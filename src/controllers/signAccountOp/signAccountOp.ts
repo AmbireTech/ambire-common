@@ -3256,8 +3256,9 @@ export class SignAccountOpController
   get accountKeyStoreKeys(): Key[] {
     // we take signing keys from the state as Safe account signers
     // may be different per network.
-    // if the account isn't a Safe, we return the hardcoded associatedKeys
-    // from the account itself in the accountState
+    // if the account isn't a Safe, we return the associatedKeys from the
+    // accountState - the hardcoded ones from the account itself, except for
+    // v1 accounts, where they are filtered to the keys privileged on this network
     const state =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
     if (!state) return []
