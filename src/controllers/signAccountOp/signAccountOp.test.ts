@@ -2780,7 +2780,7 @@ describe('throwBroadcastAccountOp', () => {
 
     controller.selectedOption = feeOption
     controller.selectedFeeSpeed = FeeSpeed.Fast
-    controller.feeSpeeds = { [identifier]: [previousFee] }
+    controller.networkFeeSpeeds = { [identifier]: [previousFee] }
 
     const error = new Error(
       'Transaction fee underpriced. Min expected: 0.03700292154970737. Please select a higher fee and try again'
@@ -2834,7 +2834,13 @@ describe('throwBroadcastAccountOp', () => {
     )
 
     // The user explicitly set advanced gas prices, so we don't override them
-    controller.hasCustomGasPrices = true
+    controller.customGasPrices = {
+      slow: { maxFeePerGas: toBeHex(900n) as Hex, maxPriorityFeePerGas: toBeHex(450n) as Hex },
+      medium: { maxFeePerGas: toBeHex(1000n) as Hex, maxPriorityFeePerGas: toBeHex(500n) as Hex },
+      fast: { maxFeePerGas: toBeHex(1100n) as Hex, maxPriorityFeePerGas: toBeHex(550n) as Hex },
+      ape: { maxFeePerGas: toBeHex(1200n) as Hex, maxPriorityFeePerGas: toBeHex(600n) as Hex }
+    }
+    expect(controller.hasCustomGasPrices).toBe(true)
 
     const originalMessage =
       'Transaction fee underpriced. Min expected: 0.03700292154970737. Please select a higher fee and try again'
@@ -5493,7 +5499,127 @@ describe('RPC gas prices with a bundler fallback', () => {
     expect(getSpeed(controller, safeAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
       BigInt(customGasPrices.fast.maxFeePerGas)
     )
+    // The custom prices are kept apart from the network ones
+    expect(controller.customGasPrices).toEqual(customGasPrices)
+    expect(controller.gasPrices).toEqual(bundlerGasPrices)
+    expect(controller.rpcGasPrices).toEqual(rpcGasPrices)
     controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    expect(controller.selectedOptionGasPrices).toEqual(customGasPrices)
+  })
+
+  test('resetting the custom gas goes back to the fetched gas prices and the simulated gas limit', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    const pricesBeforeCustom = controller.selectedOptionGasPrices
+    const gasLimitBeforeCustom = getSpeed(
+      controller,
+      eoaAccount.addr,
+      FeeSpeed.Fast
+    ).simulatedGasLimit
+
+    controller.update({ customGasPrices, customGasLimit: gasLimitBeforeCustom + 1000n })
+    expect(controller.hasCustomGasPrices).toBe(true)
+    expect(controller.selectedOptionGasPrices).toEqual(customGasPrices)
+
+    controller.update({ speed: FeeSpeed.Medium, shouldResetCustomGas: true })
+
+    expect(controller.hasCustomGasPrices).toBe(false)
+    expect(controller.customGasPrices).toBeUndefined()
+    expect(controller.customGasLimit).toBeUndefined()
+    expect(controller.feeSpeeds).toEqual(controller.networkFeeSpeeds)
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
+    expect(controller.selectedOptionGasPrices).toEqual(pricesBeforeCustom)
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Fast).simulatedGasLimit).toBe(
+      gasLimitBeforeCustom
+    )
+  })
+
+  test('custom gas keeps the network fee speeds apart, so each speed shows what picking it costs', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    const identifier = getFeeSpeedIdentifier(
+      controller.selectedOption!,
+      controller.accountOp.accountAddr
+    )
+    const speedsBeforeCustom = controller.feeSpeeds[identifier]!
+    // Without custom gas the fee speeds in effect are the network ones
+    expect(controller.networkFeeSpeeds[identifier]).toEqual(speedsBeforeCustom)
+    expect(controller.feeSpeeds).toEqual(controller.networkFeeSpeeds)
+
+    const customGasLimit = speedsBeforeCustom[0]!.simulatedGasLimit + 1000n
+    controller.update({ customGasPrices, customGasLimit })
+
+    const customSpeeds = controller.feeSpeeds[identifier]!
+    expect(customSpeeds.map(({ simulatedGasLimit }) => simulatedGasLimit)).toEqual(
+      Array(customSpeeds.length).fill(customGasLimit)
+    )
+    expect(customSpeeds).not.toEqual(speedsBeforeCustom)
+    expect(controller.networkFeeSpeeds[identifier]).toEqual(speedsBeforeCustom)
+
+    controller.update({ speed: FeeSpeed.Medium, shouldResetCustomGas: true })
+    expect(controller.networkFeeSpeeds[identifier]).toEqual(speedsBeforeCustom)
+    expect(controller.feeSpeeds).toEqual(controller.networkFeeSpeeds)
+  })
+
+  test('fetched gas prices refresh the network fee speeds but keep the custom fee', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    controller.update({ customGasPrices })
+    const identifier = getFeeSpeedIdentifier(
+      controller.selectedOption!,
+      controller.accountOp.accountAddr
+    )
+    const customSpeeds = controller.feeSpeeds[identifier]
+    const networkSpeedsBefore = controller.networkFeeSpeeds[identifier]
+
+    // What the gas price interval passes to update() after each fetch
+    const fetchedGasPrices = toGasSpeeds(7000n)
+    controller.update({ gasPrices: fetchedGasPrices, rpcGasPrices: toGasSpeeds(2000n) })
+
+    expect(controller.gasPrices).toEqual(fetchedGasPrices)
+    expect(controller.customGasPrices).toEqual(customGasPrices)
+    expect(controller.hasCustomGasPrices).toBe(true)
+    expect(controller.selectedOptionGasPrices).toEqual(customGasPrices)
+    expect(controller.feeSpeeds[identifier]).toEqual(customSpeeds)
+    expect(controller.networkFeeSpeeds[identifier]).not.toEqual(networkSpeedsBefore)
+    expect(controller.accountOp.gasFeePayment?.gasPrice).toBe(
+      BigInt(customGasPrices[controller.selectedFeeSpeed].maxFeePerGas)
+    )
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Slow).gasPrice).toBe(
+      BigInt(customGasPrices.slow.maxFeePerGas)
+    )
+  })
+
+  test('the serialized state carries the fee speeds in effect and the custom gas flag', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    const identifier = getFeeSpeedIdentifier(
+      controller.selectedOption!,
+      controller.accountOp.accountAddr
+    )
+    const networkSpeeds = controller.networkFeeSpeeds[identifier]
+
+    expect(controller.toJSON().hasCustomGasPrices).toBe(false)
+    expect(controller.toJSON().feeSpeeds[identifier]).toEqual(networkSpeeds)
+
+    controller.update({ customGasPrices })
+
+    // They are getters, so they only reach the UI if toJSON lists them
+    const json = controller.toJSON()
+    expect(json.hasCustomGasPrices).toBe(true)
+    expect(json.feeSpeeds[identifier]).toEqual(controller.feeSpeeds[identifier])
+    expect(json.feeSpeeds[identifier]).not.toEqual(networkSpeeds)
+    expect(json.networkFeeSpeeds[identifier]).toEqual(networkSpeeds)
+  })
+
+  test('picking a speed without the reset flag keeps the custom gas prices', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    controller.update({ customGasPrices })
+
+    controller.update({ speed: FeeSpeed.Slow })
+
+    expect(controller.hasCustomGasPrices).toBe(true)
     expect(controller.selectedOptionGasPrices).toEqual(customGasPrices)
   })
 
@@ -5938,6 +6064,44 @@ describe('speed up of a pending transaction', () => {
 
     expect(controller.errors.some((e) => e.title.includes("can't be sped up"))).toBe(false)
     expect(controller.accountOp.gasFeePayment?.paidBy).toBe(eoaAccount.addr)
+  })
+
+  test('resetting the custom fee of a speed up goes back to the network fee', async () => {
+    jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+    const { controller } = await initSpeedUp({ replacedPaidBy: eoaAccount.addr })
+    // The UI saves a custom fee only once the estimation that starts on init has finished
+    await new Promise((resolve) => {
+      if (controller.estimation.status !== EstimationStatus.Loading) {
+        resolve(true)
+        return
+      }
+      const unsub = controller.estimation.onUpdate(() => {
+        if (controller.estimation.status === EstimationStatus.Loading) return
+        unsub()
+        resolve(true)
+      })
+    })
+    controller.update({ hasNewEstimation: true })
+    const networkGasPrice = controller.accountOp.gasFeePayment!.gasPrice
+    const customPrice = {
+      maxFeePerGas: toBeHex(9000n) as Hex,
+      maxPriorityFeePerGas: toBeHex(4000n) as Hex
+    }
+    const customGasPrices: GasSpeeds = {
+      slow: customPrice,
+      medium: customPrice,
+      fast: customPrice,
+      ape: customPrice
+    }
+
+    controller.update({ customGasPrices })
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toBe(9000n)
+
+    controller.update({ speed: FeeSpeed.Medium, shouldResetCustomGas: true })
+
+    expect(controller.hasCustomGasPrices).toBe(false)
+    expect(controller.feeSpeeds).toEqual(controller.networkFeeSpeeds)
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toBe(networkGasPrice)
   })
 
   test('stops without an error toast when the original got processed while signing and the broadcast failed', async () => {
