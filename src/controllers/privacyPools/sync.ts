@@ -57,19 +57,6 @@ const createInitialChainRead = () => {
 
 type InitialChainRead = ReturnType<typeof createInitialChainRead>
 
-/** Rebuilds of a chain's outdated store per run, so a CDN that is down is not hammered. */
-const MAX_STORE_REBUILD_ATTEMPTS = 3
-
-/**
- * A chain's stored state from before transaction hashes were kept, replaced once - see
- * `#upgradeStore`. Kept through a lock: none of it comes from a phrase.
- */
-type StoreUpgrade =
-  | { status: 'rebuilding'; attempt: number }
-  | { status: 'failed'; attempt: number }
-  /** Replaced, or found current, on this run. */
-  | { status: 'done' }
-
 /**
  * Syncing: every account syncs every chain in parallel, and asking again while a sync runs joins
  * it. Only a chain's shared state - the same for every account, and minutes to read the first
@@ -92,30 +79,22 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
   /** Completed syncs per account and chain. A deposit precommitment is valid until the next one. */
   #syncEpochs: { [seedId: string]: { [chainId: string]: number } } = {}
 
-  /** Per chain - see `StoreUpgrade`. */
-  #storeUpgrades: { [chainId: string]: StoreUpgrade } = {}
-
   /** Called once the plugin has persisted a chain's shared state. Must not reject. */
   #onSharedStateSynced: (chainId: string) => Promise<unknown>
 
   /** Whether a sync of the account also reads its history - only while the UI shows it. */
   #isHistoryWanted: (seedId: string) => boolean
 
-  /** Called once an outdated store was replaced, so a shown history can be read again. */
-  #onStoreReplaced: (chainId: string) => void
-
   constructor(
     ctx: PrivacyPoolsContext,
     registry: PrivacyPoolsProtocolRegistry,
     onSharedStateSynced: (chainId: string) => Promise<unknown>,
-    isHistoryWanted: (seedId: string) => boolean,
-    onStoreReplaced: (chainId: string) => void
+    isHistoryWanted: (seedId: string) => boolean
   ) {
     this.#ctx = ctx
     this.#registry = registry
     this.#onSharedStateSynced = onSharedStateSynced
     this.#isHistoryWanted = isHistoryWanted
-    this.#onStoreReplaced = onStoreReplaced
   }
 
   getAccountChainStates(seedId: string): { [chainId: string]: PrivacyPoolsAccountChainState } {
@@ -205,10 +184,6 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
 
       delete this.#syncQueue[seedId]![chainId]
       if (!Object.keys(this.#syncQueue[seedId]!).length) delete this.#syncQueue[seedId]
-
-      // Never rejects
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.#upgradeStore(chainId, seedId, generation)
     })
     this.#syncQueue[seedId] = { ...this.#syncQueue[seedId], [chainId]: sync }
 
@@ -280,9 +255,7 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
       // The plugin syncs before every read, costing seconds even with no new blocks, so a
       // `sync()` first would pay twice
       const notes = await protocol.notes()
-      // The plugin has persisted the shared state by now, read with transaction hashes. Before the
-      // chain's other syncs go on, so none takes it for an outdated store.
-      if (isChainCold && config) await this.#registry.markStoreCurrent(config)
+      // The plugin has persisted the shared state by now
       initialRead?.resolve()
       // Even if locked since, as for the initial read below: the shared state is the chain's
       await this.#onSharedStateSynced(chainId)
@@ -397,57 +370,6 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
         historyError: 'Could not load your activity on this network. Please try again.'
       })
     }
-  }
-
-  /**
-   * Replaces the chain's stored state once if it was read before transaction hashes were kept, so
-   * the activity links to every transaction. Rebuilt from scratch in memory beside the syncs, while
-   * the old state keeps serving the balances, then saved over it - see
-   * `PrivacyPoolsProtocolRegistry.replaceStore`. Called whenever a sync of the chain leaves the
-   * queue. Never rejects.
-   */
-  async #upgradeStore(chainId: string, seedId: string, generation: number): Promise<void> {
-    const upgrade = this.#storeUpgrades[chainId]
-    if (upgrade && upgrade.status !== 'failed') return
-    if (upgrade && upgrade.attempt >= MAX_STORE_REBUILD_ATTEMPTS) return
-    // The rebuild reads with the phrase's keys, as any sync does
-    if (!this.#ctx.lock.isCurrent(generation) || !this.#ctx.hasAccount(seedId)) return
-
-    const config = getPrivacyPoolsChainConfig(BigInt(chainId))
-    if (!config) return
-
-    const attempt = (upgrade?.attempt || 0) + 1
-    // Before the first await, so the chain's other syncs leaving the queue start no second one
-    this.#storeUpgrades[chainId] = { status: 'rebuilding', attempt }
-
-    try {
-      if (!(await this.#registry.isStoreOutdated(config))) {
-        this.#storeUpgrades[chainId] = { status: 'done' }
-        return
-      }
-
-      const storedState = await this.#registry.rebuildStore(chainId, seedId)
-      await this.#registry.replaceStore(chainId, storedState)
-      this.#storeUpgrades[chainId] = { status: 'done' }
-    } catch (error: any) {
-      this.#storeUpgrades[chainId] = { status: 'failed', attempt }
-      this.#ctx.emitError({
-        message: 'Could not update your Privacy Pools activity. It will be tried again.',
-        level: 'silent',
-        error: error instanceof Error ? error : new Error('privacyPools: store rebuild failed')
-      })
-      return
-    }
-
-    // Read from the old store, without links to the transactions
-    Object.entries(this.#accountStates).forEach(([accountSeedId, accountChains]) => {
-      if (!accountChains[chainId]) return
-
-      this.#writeAccountState(accountSeedId, chainId, this.#ctx.lock.current, {
-        isHistoryCurrent: false
-      })
-    })
-    this.#onStoreReplaced(chainId)
   }
 
   #writeInitialChainSync(chainId: string, update: Partial<InitialChainSync>) {

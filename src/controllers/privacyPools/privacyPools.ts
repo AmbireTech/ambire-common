@@ -216,8 +216,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       this.#registry,
       (chainId) => this.#refreshPoolStats(chainId),
       // Read when a sync asks, by which time the history module exists
-      (seedId) => this.#history.hasSessions() && seedId === this.#getSelectedSeedId(),
-      (chainId) => this.#onStoreReplaced(chainId)
+      (seedId) => this.#history.hasSessions() && seedId === this.#getSelectedSeedId()
     )
     this.#deposits = new PrivacyPoolsDeposits(ctx, this.#registry, this.#sync)
     this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
@@ -590,15 +589,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /** Closes a screen's page of the history. Syncs stop reading it once no screen shows it. */
   resetHistoryFilters(sessionId: string) {
     this.#history.close(sessionId)
-  }
-
-  /** Reads a shown history of the chain again, now with links to its transactions. */
-  #onStoreReplaced(chainId: string) {
-    this.emitUpdate()
-    if (!this.#history.isChainShown(chainId)) return
-
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#loadHistory({ chainId })
   }
 
   async #loadHistory(filters: PrivacyPoolsHistoryFilters = {}) {

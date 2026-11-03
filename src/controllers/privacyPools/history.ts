@@ -98,13 +98,6 @@ export class PrivacyPoolsHistory {
     this.#ctx.emitUpdate()
   }
 
-  /** Whether a screen shows the chain's history. */
-  isChainShown(chainId: string): boolean {
-    return Object.values(this.#sessions).some(({ filters }) =>
-      this.#getChainIds(filters).includes(chainId)
-    )
-  }
-
   /**
    * Syncs the networks the filters show whose history their last sync did not read, as it is read
    * only along with a sync's notes. Rejects when a sync fails.
