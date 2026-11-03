@@ -1,6 +1,5 @@
 import {
   formatUnits,
-  getAddress,
   Interface,
   isAddress,
   keccak256,
@@ -9,6 +8,9 @@ import {
   TypedDataEncoder,
   ZeroAddress
 } from 'ethers'
+// viem's, because on mobile it is swapped for a native checksum (ethers' hashes in JS, ~1ms per
+// address there) and the token list normalizes hundreds of addresses at once
+import { getAddress } from 'viem'
 
 import SwapAndBridgeProviderApiError from '@/classes/SwapAndBridgeProviderApiError'
 import { FEE_COLLECTOR } from '@/consts/addresses'
