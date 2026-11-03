@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -255,6 +256,7 @@ describe('GasPriceController', () => {
     })
 
     test('emits the RPC error once when the bundler fallback fails as well', async () => {
+      const { restore } = suppressConsole()
       jest.mocked(getGasPriceRecommendations).mockRejectedValue(new Error('rpc down'))
       const fetchGasPrices = jest.fn(async () => {
         throw new Error('bundler down')
@@ -275,9 +277,11 @@ describe('GasPriceController', () => {
       expect(onError).toHaveBeenCalledTimes(1)
       expect(controller.emittedErrors[0]?.level).toBe('major')
       expect(controller.emittedErrors[0]?.error.message).toContain('rpc down')
+      restore()
     })
 
     test('emits the RPC error when there are no bundlers to fall back to', async () => {
+      const { restore } = suppressConsole()
       jest.mocked(getGasPriceRecommendations).mockRejectedValue(new Error('rpc down'))
       jest.mocked(getAvailableBunlders).mockReturnValue([])
       const controller = createController({
@@ -293,6 +297,7 @@ describe('GasPriceController', () => {
       expect(getAvailableBunlders).toHaveBeenCalledWith(network)
       expect(controller.rpcGasPrices).toBeUndefined()
       expect(onError).toHaveBeenCalledTimes(1)
+      restore()
     })
 
     test('does not emit an error when gas prices were already fetched once', async () => {
@@ -326,6 +331,7 @@ describe('GasPriceController', () => {
     })
 
     test('gives up on a hanging RPC after 10s and emits an error', async () => {
+      const { restore } = suppressConsole()
       jest.mocked(getGasPriceRecommendations).mockReturnValue(new Promise(() => {}))
       const controller = createController({
         isErc4337Enabled: false,
@@ -350,6 +356,7 @@ describe('GasPriceController', () => {
       expect(onError).toHaveBeenCalledTimes(1)
       expect(controller.emittedErrors[0]?.level).toBe('major')
       expect(controller.emittedErrors[0]?.error.message).toContain('request too slow')
+      restore()
     })
 
     test('keeps the previous gas prices when a later RPC fetch hangs', async () => {

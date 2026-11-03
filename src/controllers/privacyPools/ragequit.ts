@@ -48,6 +48,20 @@ export class PrivacyPoolsRagequit {
       .map(({ label, amount, depositorAddr }) => ({ label, amount, depositorAddr }))
   }
 
+  /** The account a deposit still being verified came from. Undefined for any other deposit. */
+  getDepositorAddr({
+    seedId,
+    chainId,
+    label
+  }: {
+    seedId: string
+    chainId: string
+    label: bigint
+  }): Hex | undefined {
+    return this.#getPendingNotes(seedId, chainId).find((note) => note.label === label)
+      ?.depositorAddr
+  }
+
   /**
    * Proves the deposit's reclaim and returns it as a call of the account that made it, for the
    * regular signing flow. The call is checked against the deposit before it is handed over, as

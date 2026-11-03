@@ -182,6 +182,12 @@ export const PRIVACY_POOLS_CIRCUIT_PATHS = {
   }
 } as const
 
+/**
+ * How long taking back a deposit waits for its depositor's account to load before giving up, so
+ * a slow network does not keep the button loading. Covers one fetch through our RPCs.
+ */
+export const PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS = 15 * 1000
+
 /** Storage key holding the wallet's Privacy Pools accounts. */
 export const PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY = 'privacyPoolsAccounts'
 

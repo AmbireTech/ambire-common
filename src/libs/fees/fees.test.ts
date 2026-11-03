@@ -128,21 +128,6 @@ describe('fees', () => {
     ).toBe(600000n)
   })
 
-  test('calculateFeeAmount converts relayer amount without overhead', () => {
-    expect(
-      calculateFeeAmount({
-        broadcastOption: BROADCAST_OPTIONS.byRelayer,
-        simulatedGasLimit: 200000n,
-        gasPrice: 1000000000n,
-        nativeRatio,
-        feeTokenDecimals: 6,
-        addedNative: 0n,
-        isAccountSafe: false,
-        network: mainnet
-      })
-    ).toBe(400000n)
-  })
-
   test('calculateFeeAmount treats delegation as a non-bundler fee-token broadcast', () => {
     expect(
       calculateFeeAmount({

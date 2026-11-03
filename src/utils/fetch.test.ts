@@ -50,6 +50,26 @@ describe('fetchWithTimeout', () => {
     }
   })
 
+  test('reports a timeout, not an abort, when the fetch rejects as soon as it is aborted', async () => {
+    jest.useFakeTimers()
+    try {
+      const fetchImpl = jest.fn<any>(
+        (_url: string, init: RequestInit) =>
+          new Promise((_, reject) => {
+            init.signal!.addEventListener('abort', () => reject(new Error('aborted')))
+          })
+      )
+
+      const promise = fetchWithTimeout(fetchImpl, URL, {}, 3000)
+      const assertion = expect(promise).rejects.toThrow('request-timeout')
+
+      await jest.advanceTimersByTimeAsync(3000)
+      await assertion
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
   test('clears its timer once the request is done, instead of leaving it pending', async () => {
     jest.useFakeTimers()
     try {

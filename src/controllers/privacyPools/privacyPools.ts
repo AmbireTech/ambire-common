@@ -134,7 +134,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /**
    * Per chain, its pools' numbers for a token's details, so they are there when it opens. The same
    * for every account, so they outlive a lock. Computed from this device's copy of the history
-   * when this loads and after each sync of it - see `PrivacyPoolsPoolStatsReader`.
+   * after each sync of it, before the balances it reads show - see `PrivacyPoolsPoolStatsReader`.
+   * Not on load: a stored history is read only when the user opens a Privacy Pools account.
    */
   poolStats: { [chainId: string]: PrivacyPoolsChainPoolStats } = {}
 
@@ -254,24 +255,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     this.#subscribeToDependencies()
     this.emitUpdate()
-
-    // Not awaited: the numbers are only for a token's details, and reading the history is not free
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#refreshAllPoolStats()
-  }
-
-  async #refreshAllPoolStats() {
-    const isWritten = await Promise.all(
-      this.supportedChainIds.map((chainId) => this.#refreshPoolStats(chainId))
-    )
-    if (isWritten.some(Boolean)) this.emitUpdate()
   }
 
   /**
    * Recomputes a chain's pool numbers from its history on this device. Does not emit: a sync
-   * emits once it is done. Never rejects. Returns whether it wrote them.
+   * emits once it is done. Never rejects.
    */
-  async #refreshPoolStats(chainId: string): Promise<boolean> {
+  async #refreshPoolStats(chainId: string): Promise<void> {
     const refreshId = (this.#poolStatsRefreshIds[chainId] || 0) + 1
     this.#poolStatsRefreshIds[chainId] = refreshId
     const isLatest = () => this.#poolStatsRefreshIds[chainId] === refreshId
@@ -279,20 +269,18 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     try {
       const byToken = await this.#poolStatsReader.read(chainId)
       // Before the chain's first sync there is nothing to show yet, not an error
-      if (!byToken || !isLatest()) return false
+      if (!byToken || !isLatest()) return
 
       this.poolStats = { ...this.poolStats, [chainId]: { byToken, error: null } }
-      return true
     } catch (error: any) {
       const emittableError = privacyPoolsErrors.poolStatsReadFailed(error)
       this.emitError(emittableError)
-      if (!isLatest()) return false
+      if (!isLatest()) return
 
       this.poolStats = {
         ...this.poolStats,
         [chainId]: { byToken: {}, error: emittableError.message }
       }
-      return true
     }
   }
 
@@ -844,6 +832,16 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       this.#ui.message.sendUiMessage({ requestId, ok: false, error: emittableError.message })
       this.emitError(emittableError)
     }
+  }
+
+  /**
+   * The account one of the selected account's deposits still being verified was made from. From
+   * the last sync, so it is known before the reclaim is proved. Undefined for any other deposit.
+   */
+  getRagequitDepositorAddr({ chainId, label }: { chainId: string; label: bigint }) {
+    const seedId = this.#assertAvailableAndGetSeedId()
+
+    return this.#ragequit.getDepositorAddr({ seedId, chainId, label })
   }
 
   /**

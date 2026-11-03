@@ -254,12 +254,10 @@ export class SignMessageController
       } else {
         // if the account is not safe & view only, set a default signer
         // the default signer should be the internal key if any
-        this.signers = accountState.importedAccountKeys
-          ? [
-              accountState.importedAccountKeys.find((k) => k.type === 'internal') ||
-                accountState.importedAccountKeys[0]!
-            ]
-          : undefined
+        const defaultSigner =
+          accountState.importedAccountKeys?.find((k) => k.type === 'internal') ||
+          accountState.importedAccountKeys?.[0]
+        this.signers = defaultSigner ? [defaultSigner] : undefined
       }
 
       this.emitUpdate()
@@ -502,7 +500,10 @@ export class SignMessageController
    * make sure to check `isSigningOperationValidAfterAsyncOperation` afterwards
    * to ensure you’re not acting on obsolete data.
    */
-  async #sign() {
+  async #sign(signingGeneration: number) {
+    // The message was replaced or reset before signing started, so the approval was not for it
+    if (this.#signingGeneration !== signingGeneration) return
+
     if (!this.isInitialized) {
       return SignMessageController.#throwNotInitialized()
     }
@@ -514,10 +515,6 @@ export class SignMessageController
     if (!this.signers?.length) {
       return SignMessageController.#throwMissingSigningKey()
     }
-
-    // Bind this op to the current message; if init() replaces it during any
-    // await below, the generation changes and the op aborts.
-    const signingGeneration = this.#signingGeneration
 
     // we're always signing with the first signer
     // the goal was to have an array of signers that sign simultaneously
@@ -545,6 +542,7 @@ export class SignMessageController
         this.#account.addr,
         this.network.chainId
       )
+      if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
       if (!accountState) {
         throw new Error(`Account details missing. Please try again`)
       }
@@ -744,7 +742,10 @@ export class SignMessageController
   }
 
   async sign() {
-    await this.withStatus('sign', async () => this.#sign())
+    // Bind this op to the current message before the first await, as `withStatus` waits before
+    // it runs the op. If init() replaces the message during any await, the op aborts.
+    const signingGeneration = this.#signingGeneration
+    await this.withStatus('sign', async () => this.#sign(signingGeneration))
   }
 
   removeAccountData(address: Account['addr']) {
