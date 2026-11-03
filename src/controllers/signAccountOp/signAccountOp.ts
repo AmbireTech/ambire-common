@@ -339,8 +339,8 @@ export class SignAccountOpController
   #customSafeNonce: bigint | null = null
 
   /**
-   * The gas prices used for broadcasting. With the `rpcWithBundlerFallback` strategy
-   * (see BaseAccount.getGasPriceFetchStrategy), these come from the bundler estimation
+   * The network gas prices, never the custom ones the user sets. With the `rpcWithBundlerFallback`
+   * strategy (see BaseAccount.getGasPriceFetchStrategy), these come from the bundler estimation
    * and are used for bundler broadcasts only. While there's no bundler estimation,
    * they're the gasPrice controller ones
    */
@@ -353,20 +353,26 @@ export class SignAccountOpController
    */
   rpcGasPrices?: GasSpeeds
 
-  hasCustomGasPrices: boolean = false
+  /**
+   * The gas prices the user has set. Undefined when the user hasn't set custom gas prices
+   */
+  customGasPrices?: GasSpeeds
 
   customGasLimit?: bigint
 
-  feeSpeeds: {
+  /**
+   * The fee speeds at the network gas prices and the estimated gas limit. Always filled once
+   * the estimation succeeds, even when the user has set custom gas. The speed picker uses them
+   */
+  networkFeeSpeeds: {
     [identifier: string]: SpeedCalc[]
   } = {}
 
   /**
-   * The fee speeds at the network gas prices and the estimated gas limit, while the user has set
-   * custom gas values (`feeSpeeds` then uses the custom values for every speed).
-   * Empty when there are no custom gas values, as `feeSpeeds` already holds the network fee speeds
+   * The fee speeds at the custom gas prices or the custom gas limit.
+   * Filled only while the user has set custom gas
    */
-  networkFeeSpeeds: {
+  #customFeeSpeeds: {
     [identifier: string]: SpeedCalc[]
   } = {}
 
@@ -941,8 +947,8 @@ export class SignAccountOpController
     this.feeTokenResult = null
     this.selectedOption = undefined
     this.selectedFeeSpeed = FeeSpeed.Medium
-    this.feeSpeeds = {}
     this.networkFeeSpeeds = {}
+    this.#customFeeSpeeds = {}
     this.#updateAccountOp({ gasFeePayment: null })
   }
 
@@ -2546,26 +2552,16 @@ export class SignAccountOpController
     this.#reestimateCounter += 1
   }
 
-  /**
-   * The gas prices the network asks for, even when the user has set custom ones.
-   * Same priority as in update(): the bundler prices, then the fetched ones
-   */
-  get #networkGasPrices(): GasSpeeds | undefined {
-    return this.estimation.estimation?.bundlerGasPrices || this.gasPrice.gasPrices
-  }
-
   #resetCustomGas() {
-    if (!this.hasCustomGasPrices && typeof this.customGasLimit === 'undefined') return
+    if (!this.#hasCustomGas) return
 
-    this.hasCustomGasPrices = false
+    this.customGasPrices = undefined
     this.customGasLimit = undefined
-    // If there are no network prices yet, the gas price interval fetches them
-    this.gasPrices = this.#networkGasPrices
   }
 
   /**
-   * Keeps the network gas prices fresh. It runs with custom gas prices too, as update() doesn't
-   * replace them with the fetched ones, and `networkFeeSpeeds` needs current prices to compare with
+   * Keeps the network gas prices fresh. It runs with custom gas prices too, as they never
+   * replace the network ones, and `networkFeeSpeeds` needs current prices to compare with
    */
   #startGasPriceInterval() {
     this.#gasPriceInterval.start({
@@ -2708,9 +2704,7 @@ export class SignAccountOpController
           // by transforming and setting the bundler gas prices as this.gasPrices, we accomplish two things:
           // 1. we no longer need to wait for the gasPrice controller to complete in order to refresh the UI
           // 2. we make sure we give priority to the bundler prices as they are generally better
-          if (!this.hasCustomGasPrices) {
-            this.gasPrices = this.estimation.estimation.bundlerGasPrices
-          }
+          this.gasPrices = this.estimation.estimation.bundlerGasPrices
           this.gasPrice.areGasPricesUsedFromBundlerEstimation = true
           // and we're stopping the gas price interval as
           // we will use the bundler gas prices, unless the account
@@ -2785,9 +2779,10 @@ export class SignAccountOpController
       }
 
       if (customGasPrices) {
-        this.gasPrices = customGasPrices
-        this.hasCustomGasPrices = true
-      } else if (gasPrices && !this.hasCustomGasPrices) {
+        this.customGasPrices = customGasPrices
+      }
+
+      if (gasPrices) {
         this.gasPrices = gasPrices
       }
 
@@ -3012,7 +3007,7 @@ export class SignAccountOpController
     this.#hwCleanup()
     this.gasPrices = undefined
     this.rpcGasPrices = undefined
-    this.hasCustomGasPrices = false
+    this.customGasPrices = undefined
     this.gasFeeChangedConfirmationRequired = false
     this.previousFee = null
     this.selectedFeeSpeed = FeeSpeed.Medium
@@ -3450,17 +3445,15 @@ export class SignAccountOpController
   #updateFeeSpeeds() {
     if (this.estimation.status !== EstimationStatus.Success || !this.gasPrices) return
 
-    this.feeSpeeds = this.#calculateFeeSpeeds(this.gasPrices, {
-      areCustomGasPrices: this.hasCustomGasPrices,
-      customGasLimit: this.customGasLimit
+    this.networkFeeSpeeds = this.#calculateFeeSpeeds(this.gasPrices, {
+      areCustomGasPrices: false
     })
-
-    const hasCustomGas = this.hasCustomGasPrices || typeof this.customGasLimit !== 'undefined'
-    const networkGasPrices = this.#networkGasPrices
-    this.networkFeeSpeeds =
-      hasCustomGas && networkGasPrices
-        ? this.#calculateFeeSpeeds(networkGasPrices, { areCustomGasPrices: false })
-        : {}
+    this.#customFeeSpeeds = this.#hasCustomGas
+      ? this.#calculateFeeSpeeds(this.customGasPrices ?? this.gasPrices, {
+          areCustomGasPrices: this.hasCustomGasPrices,
+          customGasLimit: this.customGasLimit
+        })
+      : {}
   }
 
   #calculateFeeSpeeds(
@@ -3742,6 +3735,22 @@ export class SignAccountOpController
     return Object.values(FeeSpeed) as string[]
   }
 
+  get hasCustomGasPrices(): boolean {
+    return !!this.customGasPrices
+  }
+
+  get #hasCustomGas(): boolean {
+    return this.hasCustomGasPrices || typeof this.customGasLimit !== 'undefined'
+  }
+
+  /**
+   * The fee speeds in effect. While the user has set custom gas, every speed costs the custom fee.
+   * Otherwise these are the network fee speeds
+   */
+  get feeSpeeds(): { [identifier: string]: SpeedCalc[] } {
+    return this.#hasCustomGas ? this.#customFeeSpeeds : this.networkFeeSpeeds
+  }
+
   get gasSavedUSD(): number | null {
     if (!this.selectedOption?.token.flags.onGasTank) return null
 
@@ -3920,10 +3929,13 @@ export class SignAccountOpController
       // set the new estimation value
       erc4337Estimation = newEstimate as Erc4337GasLimits
       this.gasPrices = erc4337Estimation.gasPrice
-      gasFeePayment.gasPrice = BigInt(this.gasPrices[this.selectedFeeSpeed!].maxFeePerGas)
-      gasFeePayment.maxPriorityFeePerGas = BigInt(
-        this.gasPrices[this.selectedFeeSpeed!].maxPriorityFeePerGas
-      )
+      // A retry never replaces the fee the user set
+      if (!this.hasCustomGasPrices) {
+        gasFeePayment.gasPrice = BigInt(this.gasPrices[this.selectedFeeSpeed!].maxFeePerGas)
+        gasFeePayment.maxPriorityFeePerGas = BigInt(
+          this.gasPrices[this.selectedFeeSpeed!].maxPriorityFeePerGas
+        )
+      }
     }
 
     const userOperation = getUserOperation({
@@ -5529,11 +5541,14 @@ export class SignAccountOpController
   }
 
   /**
-   * The gas prices used by the selected fee option. They differ from gasPrices
-   * only with the `rpcWithBundlerFallback` strategy
+   * The gas prices the custom fee options start from. They are the custom gas prices when the
+   * user has set them. Otherwise they are the network gas prices of the selected fee option, which
+   * differ from gasPrices only with the `rpcWithBundlerFallback` strategy
    * (see BaseAccount.getGasPriceFetchStrategy)
    */
   get selectedOptionGasPrices(): GasSpeeds | undefined {
+    if (this.customGasPrices) return this.customGasPrices
+
     if (!this.selectedOption) return this.#applyReplacementMinFees(this.gasPrices)
 
     const broadcastOption = this.baseAccount.getBroadcastOption(this.selectedOption, {
@@ -5616,6 +5631,8 @@ export class SignAccountOpController
       feeTokenPreference: this.feeTokenPreference,
       pendingFeeTokenPreference: this.pendingFeeTokenPreference,
       speedOptions: this.speedOptions,
+      feeSpeeds: this.feeSpeeds,
+      hasCustomGasPrices: this.hasCustomGasPrices,
       selectedOption: this.selectedOption,
       account: this.account,
       errors: this.errors,
