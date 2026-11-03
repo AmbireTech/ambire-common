@@ -353,7 +353,6 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       networks: this.networks,
       fetch: this.fetch,
-      velcroUrl,
       featureFlags: this.featureFlags
     })
     this.accounts = new AccountsController(
@@ -651,7 +650,6 @@ export class MainController extends EventEmitter implements IMainController {
         )
       },
       getUserRequests: () => this.requests.userRequests || [],
-      getVisibleUserRequests: () => this.requests.visibleUserRequests || [],
       onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this),
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
       ui: this.ui
