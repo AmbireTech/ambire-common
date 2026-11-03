@@ -1,5 +1,7 @@
 import { getAddress, toBeHex } from 'ethers'
 
+import type { PrivacyPoolsV1Protocol } from '@kohaku-eth/privacy-pools'
+
 import { fromPrivacyPoolsAssetAddress, getPrivacyPoolsChainConfig } from '../../consts/privacyPools'
 import { Hex } from '../../interfaces/hex'
 import {
@@ -319,11 +321,11 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
 
       this.#registry.markChainSynced(chainId, seedId)
 
-      // In the same turn of the queue, as the plugin syncs before reading it and must not do so
-      // beside another sync of the account. The balances are shown meanwhile.
+      // In the same turn of the queue and from the same plugin, so it reads the state the notes
+      // were read from, without syncing again. The balances are shown meanwhile.
       if (this.#isHistoryWanted(seedId)) {
         this.#ctx.emitUpdate()
-        await this.#readHistory({ chainId, seedId, generation, notes: syncedNotes })
+        await this.#readHistory({ protocol, chainId, seedId, generation, notes: syncedNotes })
       }
     } catch (error: any) {
       // Still not on this device: the next sync reads it again
@@ -352,26 +354,28 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
   }
 
   /**
-   * Reads the account's history on the chain right after its notes. From the registry again, as
-   * the plugin that read the notes may have been dropped since - see `markChainSynced`. A failure
-   * keeps the notes, and the history read before. Never rejects.
+   * Reads the account's history on the chain right after its notes, from the plugin that read
+   * them, as of that sync. Even if the registry has dropped it since (see `markChainSynced`): a
+   * new plugin knows none of the account's deposits until it syncs. A failure keeps the notes, and
+   * the history read before. Never rejects.
    */
   async #readHistory({
+    protocol,
     chainId,
     seedId,
     generation,
     notes
   }: {
+    protocol: PrivacyPoolsV1Protocol
     chainId: string
     seedId: string
     generation: number
     notes: PrivacyPoolsNote[]
   }): Promise<void> {
     try {
-      const protocol = await this.#registry.getProtocol(chainId, seedId)
-      // The plugin syncs first, so a block newer than the notes may add a deposit they lack. It is
-      // then not shown as under review until the next sync.
-      const events = await protocol.history()
+      // Not synced again: the notes have just synced it, so the history matches them and a
+      // deposit it lists is under review exactly when its note is pending
+      const events = await protocol.history(undefined, { sync: false })
       const pendingLabels = new Set(
         notes.filter(({ approval }) => approval === 'pending').map(({ label }) => label)
       )

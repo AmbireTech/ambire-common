@@ -257,6 +257,8 @@ let notesBySeed: {
 let historyBySeed: { [seedId: string]: PPv1HistoryEvent[] } = {}
 /** Thrown by `history()` when set. */
 let historyFailure: Error | null = null
+/** Holds `history()` back, once counted, until resolved - when set. */
+let historyGate: Deferred | null = null
 
 /** One of a phrase's events as the plugin's `history()` reports it. */
 const historyEvent = (overrides: Partial<PPv1HistoryEvent> = {}): PPv1HistoryEvent =>
@@ -435,10 +437,13 @@ class FakeProtocol {
 
   historyCount = 0
 
-  // Syncs first too, like the real one
-  async history() {
-    await this.sync()
+  // Syncs first too unless told not to, like the real one. Without a sync of its own, a plugin
+  // knows nothing of the phrase (`seedId` is set by `sync`), so it reports no events, as the
+  // real one would with no discovered secrets
+  async history(_assets?: unknown, { sync = true }: { sync?: boolean } = {}) {
+    if (sync) await this.sync()
     this.historyCount += 1
+    if (historyGate) await historyGate.promise
     if (historyFailure) throw historyFailure
 
     const chainId: bigint = await this.host.provider.getChainId()
@@ -749,6 +754,7 @@ describe('PrivacyPoolsController', () => {
     ragequitGate = null
     historyBySeed = {}
     historyFailure = null
+    historyGate = null
   })
 
   describe('accounts', () => {
@@ -2722,7 +2728,7 @@ describe('PrivacyPoolsController', () => {
     const getAmounts = (controller: PrivacyPoolsController) =>
       getPage(controller)?.items.map(({ amount }) => amount)
 
-    /** Opens a screen, then lets through the sync that reads the notes and the history's own. */
+    /** Opens a screen, then lets through the sync that reads the notes, and the history with them. */
     const openHistory = async (
       controller: PrivacyPoolsController,
       seedId = 'seed-a',
@@ -2731,7 +2737,6 @@ describe('PrivacyPoolsController', () => {
         : never
     ) => {
       const opening = controller.filterHistory(SESSION, ...args)
-      await releaseSync(seedId)
       await releaseSync(seedId)
       await opening
     }
@@ -2756,6 +2761,7 @@ describe('PrivacyPoolsController', () => {
 
     it('is read by a sync once a screen shows it, after the balances are shown', async () => {
       const { controller } = await prepareSelected()
+      historyGate = createDeferred()
 
       const opening = controller.filterHistory(SESSION)
       await flush()
@@ -2767,7 +2773,7 @@ describe('PrivacyPoolsController', () => {
       expect(getHeldAmounts(controller)).toEqual([10n])
       expect(getPage(controller)).toBeNull()
 
-      await releaseSync('seed-a')
+      historyGate.resolve()
       await opening
       expect(getPage(controller)).toEqual({
         items: [
@@ -2780,6 +2786,23 @@ describe('PrivacyPoolsController', () => {
       })
       expect(protocols).toHaveLength(1)
       expect(protocols[0]!.historyCount).toBe(1)
+      // As of the sync that read the notes, without one of its own
+      expect(protocols[0]!.syncCount).toBe(1)
+    })
+
+    it('is read from the plugin that read the notes, even once it is dropped', async () => {
+      // A plugin that read a cold chain from the CDN is dropped after its sync, and a new one
+      // would know none of the account's deposits without syncing again
+      jest
+        .mocked(createPrivacyPoolsDataService)
+        .mockResolvedValueOnce({ dataService: {}, isSagaHydrated: true } as any)
+      const { controller } = await prepareSelected()
+
+      await openHistory(controller)
+
+      expect(protocols).toHaveLength(1)
+      expect(protocols[0]!.historyCount).toBe(1)
+      expect(getAmounts(controller)).toEqual([10n, 4n])
     })
 
     it('reports an empty page for an account with no activity', async () => {
@@ -2814,7 +2837,6 @@ describe('PrivacyPoolsController', () => {
         WITHDRAWAL
       ]
       const refreshing = controller.sync()
-      await releaseSync('seed-a')
       await releaseSync('seed-a')
       await refreshing
 
@@ -2860,7 +2882,6 @@ describe('PrivacyPoolsController', () => {
       expect(getAmounts(controller)).toEqual([10n, 4n])
 
       await releaseSync('seed-a')
-      await releaseSync('seed-a')
       await reopening
       expect(getAmounts(controller)).toEqual([7n])
     })
@@ -2872,11 +2893,10 @@ describe('PrivacyPoolsController', () => {
       await waitUntil(() => runningSyncs.length === 1)
       const opening = controller.filterHistory(SESSION)
       await releaseSync('seed-a')
-      await releaseSync('seed-a')
       await Promise.all([syncing, opening])
 
       expect(runningSyncs).toHaveLength(0)
-      expect(protocols[0]!.syncCount).toBe(2)
+      expect(protocols[0]!.syncCount).toBe(1)
       expect(getAmounts(controller)).toEqual([10n, 4n])
     })
 
@@ -2951,13 +2971,14 @@ describe('PrivacyPoolsController', () => {
 
     it('is not kept from a read that finishes after a lock', async () => {
       const { controller, keystore } = await prepareSelected()
+      historyGate = createDeferred()
 
       const opening = controller.filterHistory(SESSION)
       await releaseSync('seed-a')
-      await waitUntil(() => runningSyncs.length === 1)
+      await waitUntil(() => protocols[0]!.historyCount === 1)
       keystore.isUnlocked = false
       keystore.fireUpdate()
-      await releaseSync('seed-a')
+      historyGate.resolve()
       await opening
       keystore.isUnlocked = true
       keystore.fireUpdate()
@@ -2968,12 +2989,13 @@ describe('PrivacyPoolsController', () => {
 
     it('is not kept for a removed account', async () => {
       const { controller } = await prepareSelected()
+      historyGate = createDeferred()
 
       const opening = controller.filterHistory(SESSION)
       await releaseSync('seed-a')
-      await waitUntil(() => runningSyncs.length === 1)
+      await waitUntil(() => protocols[0]!.historyCount === 1)
       await controller.removeAccount('seed-a')
-      await releaseSync('seed-a')
+      historyGate.resolve()
       await opening
 
       expect(protocols[0]!.historyCount).toBe(1)
@@ -3006,7 +3028,6 @@ describe('PrivacyPoolsController', () => {
         historyFailure = new Error('history failed')
         const refreshing = controller.sync()
         await releaseSync('seed-a')
-        await releaseSync('seed-a')
         await refreshing
 
         expect(getAmounts(controller)).toEqual([10n, 4n])
@@ -3020,7 +3041,6 @@ describe('PrivacyPoolsController', () => {
 
         historyFailure = null
         const refreshing = controller.sync()
-        await releaseSync('seed-a')
         await releaseSync('seed-a')
         await refreshing
 
@@ -3061,12 +3081,10 @@ describe('PrivacyPoolsController', () => {
 
         const opening = controller.filterHistory(SESSION)
         await releaseSync('seed-a')
-        await releaseSync('seed-a')
         await waitUntil(() => !!controller.chains['1']?.lastSyncedAt)
         // One network alone is not the whole history yet
         expect(getPage(controller)).toBeNull()
 
-        await releaseSync('seed-a', OTHER_CHAIN_ID)
         await releaseSync('seed-a', OTHER_CHAIN_ID)
         await opening
 
@@ -3077,7 +3095,6 @@ describe('PrivacyPoolsController', () => {
         const { controller } = await prepareSelected({ hasOtherChain: true })
 
         const opening = controller.filterHistory(SESSION, { chainId: OTHER })
-        await releaseSync('seed-a', OTHER_CHAIN_ID)
         await releaseSync('seed-a', OTHER_CHAIN_ID)
         await opening
 
@@ -3227,15 +3244,13 @@ describe('PrivacyPoolsController', () => {
       const { controller } = await prepareWithOldStore()
 
       const opening = controller.filterHistory(SESSION)
-      // The notes, then the history
-      await releaseSync('seed-a')
+      // The notes, and the history with them
       await releaseSync('seed-a')
       await opening
       expect(protocols[0]!.historyCount).toBe(1)
       ;(await takeRunningSync('seed-a', 1n)).gate.resolve()
 
       // A new plugin, from the new store
-      await releaseSync('seed-a')
       await releaseSync('seed-a')
       await waitUntil(() => protocols[2]?.historyCount === 1)
       expect(protocols).toHaveLength(3)
