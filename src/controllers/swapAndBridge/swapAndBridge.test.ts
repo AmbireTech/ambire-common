@@ -362,7 +362,6 @@ const buildSwapAndBridgeController = (controllerStorage: StorageController = sto
     externalSignerControllers: {},
     relayerUrl,
     getUserRequests: () => [],
-    getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
     onBroadcastSuccess: () => Promise.resolve(),
     onBroadcastFailed: () => {},
     ui: uiCtrl
@@ -2138,7 +2137,6 @@ describe('SwapAndBridge Controller: to token market data', () => {
       externalSignerControllers: {},
       relayerUrl,
       getUserRequests: () => [],
-      getVisibleUserRequests: () => [],
       onBroadcastSuccess: () => Promise.resolve(),
       onBroadcastFailed: () => {},
       ui: uiCtrl
