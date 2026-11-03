@@ -74,6 +74,7 @@ import { getIntentBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
+import { getTokenMetaViaRPC } from '../../libs/portfolio/getTokenMetaViaRPC'
 import { convertApiTokenDataToTokenDataCache, getTokenAmount } from '../../libs/portfolio/helpers'
 import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
@@ -1038,7 +1039,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       )
     }
 
-    if (this.sessionIds.includes(sessionId)) return
+    const isSessionAlreadyOpen = this.sessionIds.includes(sessionId)
+    const hasPreselectedToken = !!preselectedFromToken || !!preselectedToToken
+    // A screen opened for a specific token (e.g. "Buy $WALLET") must show it, even when the
+    // session is already open, e.g. the popup session kept with the previous form
+    if (isSessionAlreadyOpen && !hasPreselectedToken) return
 
     // reset only if there are no other instances opened/active
     if (!this.sessionIds.length) {
@@ -1062,7 +1067,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
-    this.sessionIds.push(sessionId)
+    if (!isSessionAlreadyOpen) this.sessionIds.push(sessionId)
     // do not await the health status check to prevent UI freeze while fetching
 
     this.#serviceProviderAPI.updateHealth()
@@ -1534,6 +1539,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
+    const hasPreselectedToken = !!preselectedToken || !!preselectedToToken
+
+    // A token preselected from outside Swap & Bridge starts the "to" side over, like a new form.
+    // Otherwise the "to" token kept from the previous form would block a preselected one, or
+    // could end up the same as a preselected "from" token
+    if (hasPreselectedToken) {
+      this.toSelectedToken = null
+      this.#requestedToToken = null
+    }
 
     // When price fetching is disabled or the endpoint is down, tokens come back without
     // a USD price. We must not exclude them as "priceless" in that case, otherwise
@@ -1588,14 +1602,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       !fromSelectedTokenInNextPortfolio ||
       // May happen if user receives or sends the token in the meantime
       fromSelectedTokenInNextPortfolio.amount !== this.fromSelectedToken?.amount ||
-      preselectedToken
+      // The form is kept from another screen, so the preselected token must still be applied
+      hasPreselectedToken
 
     // If the token is not in the portfolio because it was a "to" token
     // and the user has switched the "from" and "to" tokens we should not
-    // update the selected token
+    // update the selected token, unless the user came to select a specific token
     if (
-      !this.fromSelectedToken?.isSwitchedToToken &&
-      !isSelectedTokenFalsyBeforeListUpdate &&
+      (hasPreselectedToken ||
+        (!this.fromSelectedToken?.isSwitchedToToken && !isSelectedTokenFalsyBeforeListUpdate)) &&
       shouldUpdateFromSelectedToken
     ) {
       // get the networks that account is supported on and select
@@ -2244,6 +2259,33 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   /**
+   * Finds a token by address. If none of the providers lists it, it can still be swappable. So if
+   * a provider confirms that it can trade it, the token is read from the chain, through the RPC
+   * of the user (nothing is sent to an Ambire service). The icon is left empty, as for the
+   * portfolio tokens, and the UI discovers it.
+   */
+  async #getSupportedToTokenByAddress(
+    address: string,
+    chainId: number
+  ): Promise<SwapAndBridgeToToken | null> {
+    const providerToken = await this.#serviceProviderAPI.getToken({ address, chainId })
+    if (providerToken) return providerToken
+
+    const isSupported = await this.#serviceProviderAPI.isTokenSupported?.({ address, chainId })
+    if (!isSupported) return null
+
+    const network = this.#networks.networks.find((n) => Number(n.chainId) === chainId)
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!network || !provider) return null
+
+    const token = await getTokenMetaViaRPC({ provider, network, address })
+
+    return token
+      ? { ...convertPortfolioTokenToSwapAndBridgeToToken(token, chainId), unverified: true }
+      : null
+  }
+
+  /**
    * Fetches a single token that the service provider left out of its "to" token list and caches it,
    * so a token preselected from outside Swap & Bridge (e.g. from the trending tokens list) can
    * still be selected. Fails silently, because the selection is not user-initiated.
@@ -2256,7 +2298,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!fromChainId || !toChainId || !tokenList || !isAddress(address)) return null
 
     try {
-      const token = await this.#serviceProviderAPI.getToken({ address, chainId: toChainId })
+      const token = await this.#getSupportedToTokenByAddress(address, toChainId)
 
       if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return null
 
@@ -2296,7 +2338,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     let token: SwapAndBridgeToToken | null
     try {
-      token = await this.#serviceProviderAPI.getToken({ address, chainId: toChainId })
+      token = await this.#getSupportedToTokenByAddress(address, toChainId)
 
       if (!token)
         throw new SwapAndBridgeError(
@@ -3630,7 +3672,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      nonce: accountState.nonce,
+      // A Safe transaction is queued after the ones this device sent that the RPC may not count
+      // yet, instead of taking (and replacing) the nonce of one of them
+      nonce: account.safeCreation
+        ? this.#activity.getNextNonce(account.addr, network.chainId, 'account', accountState.nonce)
+        : accountState.nonce,
       signature: null,
       calls,
       meta: {

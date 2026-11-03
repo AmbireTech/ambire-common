@@ -4,6 +4,7 @@ import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
+import { BROADCAST_OPTIONS } from '../../../broadcast/broadcast'
 import { HumanizerMeta, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getLabel } from '../../utils'
@@ -336,6 +337,63 @@ describe('cancel queued transaction', () => {
       SafeModule(cancelAccountOp, c, humanizerInfo as HumanizerMeta)
     )
     compareHumanizerVisualizations(irCalls, expectedVisualization)
+  })
+
+  describe('cancel of a pending transaction', () => {
+    const emptyCall = { to: zeroAddress, value: 0n, data: '0x' }
+    const feePaidWith = (broadcastOption: string): AccountOp['gasFeePayment'] => ({
+      isGasTank: false,
+      paidBy: accountOp.accountAddr,
+      paidByKeyType: 'internal',
+      inToken: zeroAddress,
+      amount: 1n,
+      simulatedGasLimit: 21000n,
+      gasPrice: 1n,
+      broadcastOption
+    })
+
+    test('a 7702 EOA shows its transaction count, not its smart account nonce', () => {
+      const cancelAccountOp: AccountOp = {
+        ...accountOp,
+        nonce: 0n,
+        eoaNonce: 12n,
+        gasFeePayment: feePaidWith(BROADCAST_OPTIONS.bySelf7702),
+        meta: { speedUp: { enabled: true, isCancel: true, replacedNonce: 0n } }
+      }
+      const irCalls = [SafeModule(cancelAccountOp, emptyCall, humanizerInfo as HumanizerMeta)]
+      compareHumanizerVisualizations(irCalls, [
+        [getAction('Cancel'), getLabel('transaction with'), getLabel('nonce 12', true)]
+      ])
+    })
+
+    test('a 7702 EOA cancel without a known transaction count shows no nonce', () => {
+      const cancelAccountOp: AccountOp = {
+        ...accountOp,
+        nonce: 0n,
+        eoaNonce: undefined,
+        gasFeePayment: feePaidWith(BROADCAST_OPTIONS.bySelf7702),
+        meta: { speedUp: { enabled: true, isCancel: true, replacedNonce: 0n } }
+      }
+      const irCalls = [SafeModule(cancelAccountOp, emptyCall, humanizerInfo as HumanizerMeta)]
+      compareHumanizerVisualizations(irCalls, [
+        [getAction('Cancel'), getLabel('currently queued transaction')]
+      ])
+    })
+
+    test('a smart account sent by another account shows the nonce it signed', () => {
+      const cancelAccountOp: AccountOp = {
+        ...accountOp,
+        // The nonce of the next transaction, used while the cancel is being prepared
+        nonce: 6n,
+        eoaNonce: 40n,
+        gasFeePayment: feePaidWith(BROADCAST_OPTIONS.byOtherEOA),
+        meta: { speedUp: { enabled: true, isCancel: true, replacedNonce: 5n } }
+      }
+      const irCalls = [SafeModule(cancelAccountOp, emptyCall, humanizerInfo as HumanizerMeta)]
+      compareHumanizerVisualizations(irCalls, [
+        [getAction('Cancel'), getLabel('transaction with'), getLabel('nonce 5', true)]
+      ])
+    })
   })
 
   test('without a known nonce falls back to a generic label', () => {

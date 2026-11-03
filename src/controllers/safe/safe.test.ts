@@ -2,6 +2,7 @@ import { getAddress } from 'ethers'
 
 import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { Hex } from '../../interfaces/hex'
 import { SafeAccountByOwner } from '../../interfaces/safe'
 import {
@@ -225,6 +226,7 @@ describe('SafeController findSafesByOwner', () => {
   })
 
   it('keeps results from successful networks and reports failed networks', async () => {
+    const { restore } = suppressConsole()
     const mainnetApi = createApi({ safes: [SAFE_A] })
     const optimismApi = createApi({ safes: [] })
     optimismApi.getSafesByOwner.mockRejectedValue(new Error('Service unavailable'))
@@ -239,6 +241,7 @@ describe('SafeController findSafesByOwner', () => {
     expect(getOwnerSearch(controller)?.failedNetworks).toEqual([10n])
     expect(getOwnerSearch(controller)?.searchedNetworks).toEqual([1n, 10n])
     expect(getOwnerSearch(controller)?.updatedAt).toBeGreaterThan(0)
+    restore()
   })
 
   it('keeps search results separate for each owner', async () => {
@@ -285,6 +288,7 @@ describe('SafeController findSafesByOwner', () => {
   })
 
   it('does not cancel an active owner search when another owner search fails', async () => {
+    const { restore } = suppressConsole()
     let resolveSearch!: (value: { safes: string[] }) => void
     let markSearchAsStarted!: () => void
     const searchStarted = new Promise<void>((resolve) => {
@@ -314,6 +318,7 @@ describe('SafeController findSafesByOwner', () => {
     ])
     expect(getOwnerSearch(controller, OTHER_OWNER)?.failedNetworks).toEqual([1n])
     expect(getOwnerSearch(controller, OTHER_OWNER)?.status).toBe('DONE')
+    restore()
   })
 
   it('debounces a repeated search for the same owner while loading', async () => {
@@ -544,6 +549,7 @@ describe('SafeController pending counts', () => {
   })
 
   it('keeps the last counts and goes on with the next chain when a fetch fails', async () => {
+    const { restore } = suppressConsole()
     const { controller } = createPendingCountsController({
       accountStates: {
         [SAFE_B]: {
@@ -571,6 +577,7 @@ describe('SafeController pending counts', () => {
 
     expect(controller.pendingCountBySafe[SAFE_B]).toEqual({ '1': 4, '10': 1 })
     expect(onError).toHaveBeenCalledTimes(1)
+    restore()
   })
 
   it('runs a single update at a time', async () => {

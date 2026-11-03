@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity ^0.8.11;
 
+import './BlockNumber.sol';
 import './IERC20.sol';
 import './IAmbireAccount.sol';
 import './MetaFlags.sol';
@@ -102,7 +103,7 @@ contract BalanceGetter is Simulation {
       metaFlags
     );
 
-    return (balances, metas, block.number);
+    return (balances, metas, BlockNumber.current());
   }
 
   function getDelta(
@@ -172,7 +173,7 @@ contract BalanceGetter is Simulation {
     before.nonce = startNonce;
 
     if (!success) {
-      return (before, afterSimulation, metas, err, gasleft(), block.number, deltaAddressesMapping);
+      return (before, afterSimulation, metas, err, gasleft(), BlockNumber.current(), deltaAddressesMapping);
     }
 
     afterSimulation.nonce = account.nonce();
@@ -192,7 +193,7 @@ contract BalanceGetter is Simulation {
       metas,
       bytes(''),
       gasleft(),
-      block.number,
+      BlockNumber.current(),
       deltaAddressesMapping
     );
   }

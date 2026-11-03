@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.19;
 
+import "./BlockNumber.sol";
 import "./IAmbireAccount.sol";
 
 interface IEntryPoint {
@@ -55,6 +56,8 @@ contract AmbireAccountState {
                 continue;
             }
 
+            // set before any continue, so every result tells which block it was read at
+            accountResult[i].currentBlock = BlockNumber.current();
             accountResult[i].balance = address(account.addr).balance;
             accountResult[i].associatedKeys = account.associatedKeys;
 
@@ -96,8 +99,6 @@ contract AmbireAccountState {
                 accountResult[i].deployErr = err;
                 continue;
             }
-
-            accountResult[i].currentBlock = block.number;
         }
         return accountResult;
     }
@@ -117,6 +118,7 @@ contract AmbireAccountState {
     }
 
     function getSafeAccountState(AccountInput memory account) external view returns (AccountInfo memory safeRes) {
+        safeRes.currentBlock = BlockNumber.current();
         safeRes.balance = address(account.addr).balance;
         bytes memory code = address(account.addr).code;
         if (code.length > 0) safeRes.isDeployed = true;
@@ -125,7 +127,6 @@ contract AmbireAccountState {
             safeRes.nonce = safeAccount.nonce();
             safeRes.associatedKeys = safeAccount.getOwners();
             safeRes.threshold = safeAccount.getThreshold();
-            safeRes.currentBlock = block.number;
         }
 
         // a deployed Safe proxy delegates VERSION() to its current singleton, while an
