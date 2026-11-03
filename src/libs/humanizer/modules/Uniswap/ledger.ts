@@ -242,13 +242,16 @@ export const buildOutcome = (effects: Effect[], ctx: UniswapContext): Outcome =>
     const wrappedTokensKey = getNodeKey(ROUTER, ctx.wrappedNative)
     const wrappedTokensBefore = states.get(wrappedTokensKey)
 
-    // The amount is not known for a swap with an exact output, so the held ETH can never be
-    // proven to cover it. Then both ways of paying stay possible.
+    // The router pays with its ETH when it holds enough for what the swap needs. The amount of a
+    // swap with an exact output is not known, but the swap reverts when it needs more than its
+    // maximum, so the ETH that covers the maximum always covers the payment.
+    const mostThePaymentCanBe =
+      effect.amountIn.kind === 'exact' ? effect.amountIn.value : effect.maxAmountIn
     const heldEth = getState(getNodeKey(ROUTER, NATIVE_TOKEN))
     if (
-      effect.amountIn.kind === 'exact' &&
+      mostThePaymentCanBe !== undefined &&
       heldEth.kind === 'exact' &&
-      heldEth.value >= effect.amountIn.value
+      heldEth.value >= mostThePaymentCanBe
     ) {
       // the router has the ETH, so it wraps it and does not take the wrapped token from the signer
       apply(convert('wrap', NATIVE_TOKEN, ctx.wrappedNative, ROUTER, ROUTER, effect.amountIn))

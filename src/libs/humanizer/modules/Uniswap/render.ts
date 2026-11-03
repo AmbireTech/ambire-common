@@ -85,7 +85,13 @@ const renderGroupOperation = (
   group: Group,
   deadline: bigint | undefined
 ): HumanizerVisualization[][] => {
-  const visibleTerminals = group.terminals.filter((terminal) => !terminal.isHidden)
+  // A small payment is hidden because it is part of the price of a swap. When the signer pays and
+  // nothing is converted, there is no swap that it belongs to, and hiding it would leave the call
+  // with no description of what it does.
+  const areSmallPaymentsShown = group.userPaid.length > 0 && !group.conversions.length
+  const visibleTerminals = group.terminals.filter(
+    (terminal) => !terminal.isHidden || areSmallPaymentsShown
+  )
   const externalTerminals = visibleTerminals.filter((terminal) => terminal.place.kind !== 'user')
   const externalAddresses = unique(
     externalTerminals.flatMap((terminal) => getAddressOfPlace(terminal.place) ?? [])

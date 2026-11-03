@@ -503,8 +503,9 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
       const withFullPrecisionPortion = (portion: bigint) =>
         humanize([
           cmd.permit2TransferFrom(ADDRESS_THIS, USDC, 1000n),
-          cmd.payPortionFullPrecision(ATTACKER, portion),
-          cmd.sweep(USER, USDC)
+          cmd.v3In(ADDRESS_THIS, [USDC, DAI]),
+          cmd.payPortionFullPrecision(ATTACKER, portion, DAI),
+          cmd.sweep(USER, DAI)
         ])
 
       test('the fee of an interface (0.25%) and exactly 1% are not shown', () => {
@@ -525,9 +526,10 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
       test('is added to the shares of PAY_PORTION', () => {
         const visualization = humanize([
           cmd.permit2TransferFrom(ADDRESS_THIS, USDC, 1000n),
-          cmd.payPortion(ATTACKER, 60n),
-          cmd.payPortionFullPrecision(ATTACKER, 6n * 10n ** 15n),
-          cmd.sweep(USER, USDC)
+          cmd.v3In(ADDRESS_THIS, [USDC, DAI]),
+          cmd.payPortion(ATTACKER, 60n, DAI),
+          cmd.payPortionFullPrecision(ATTACKER, 6n * 10n ** 15n, DAI),
+          cmd.sweep(USER, DAI)
         ])
 
         expect(addressesOf(visualization)).toEqual([ATTACKER])
@@ -535,7 +537,7 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
     })
 
     test('tokens that the signer pays and that return to the signer are not shown as a withdrawal', () => {
-      // a small payment to another address is not shown, and the rest of the tokens comes back
+      // the signer pays, a small part goes to another address, and the rest comes back
       const visualization = humanize([
         cmd.permit2TransferFrom(ADDRESS_THIS, USDC, 100n),
         cmd.payPortion(ATTACKER, 50n, USDC),
@@ -543,7 +545,17 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
       ])
 
       expect(labelsOf(visualization)).not.toContain('Withdraw')
-      expect(tokensOf(visualization)).not.toContain(USDC)
+    })
+
+    test('a small payment is shown when nothing is swapped, because it is not the fee of a swap', () => {
+      const visualization = humanize([
+        cmd.permit2TransferFrom(ADDRESS_THIS, USDC, 100n),
+        cmd.payPortion(ATTACKER, 50n, USDC),
+        cmd.sweep(MSG_SENDER, USDC, 1n)
+      ])
+
+      expect(addressesOf(visualization)).toEqual([ATTACKER])
+      expect(visualization.some((item) => item.content === '0.5%')).toBe(true)
     })
 
     describe('PAY_PORTION', () => {
@@ -552,8 +564,9 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
       const withPortions = (...portions: bigint[]) =>
         humanize([
           cmd.permit2TransferFrom(ADDRESS_THIS, USDC, 1000n),
-          ...portions.map((bips) => cmd.payPortion(ATTACKER, bips)),
-          cmd.sweep(USER, USDC)
+          cmd.v3In(ADDRESS_THIS, [USDC, DAI]),
+          ...portions.map((bips) => cmd.payPortion(ATTACKER, bips, DAI)),
+          cmd.sweep(USER, DAI)
         ])
 
       test('a share of more than 1% is shown with its size', () => {
@@ -925,36 +938,57 @@ describe('Uniswap routers: what the signer pays and who receives it', () => {
       expect(countSwaps(visualization)).toBe(1)
     })
 
-    test('a swap with an exact output that can be paid with the ETH of the call shows the ETH', () => {
-      const exactOutputSingle = encodeFunctionData({
-        abi: router02Abi,
-        functionName: 'exactOutputSingle',
-        args: [
-          {
-            tokenIn: WETH as `0x${string}`,
-            tokenOut: DAI as `0x${string}`,
-            fee: 500,
-            recipient: MSG_SENDER as `0x${string}`,
-            amountOut: 100n,
-            amountInMaximum: 200n,
-            sqrtPriceLimitX96: 0n
-          }
-        ]
-      })
-      const humanized = run(
-        multicall(
-          [exactOutputSingle, encodeFunctionData({ abi: router02Abi, functionName: 'refundETH' })],
-          200n
+    describe('a swap with an exact output that is paid in WETH', () => {
+      const exactOutputWithValue = (value: bigint, amountInMaximum = 200n) => {
+        const exactOutputSingle = encodeFunctionData({
+          abi: router02Abi,
+          functionName: 'exactOutputSingle',
+          args: [
+            {
+              tokenIn: WETH as `0x${string}`,
+              tokenOut: DAI as `0x${string}`,
+              fee: 500,
+              recipient: MSG_SENDER as `0x${string}`,
+              amountOut: 100n,
+              amountInMaximum,
+              sqrtPriceLimitX96: 0n
+            }
+          ]
+        })
+        return run(
+          multicall(
+            [
+              exactOutputSingle,
+              encodeFunctionData({ abi: router02Abi, functionName: 'refundETH' })
+            ],
+            value
+          )
         )
-      )
-      const visualization = humanized.fullVisualization || []
+      }
 
-      // the amount is not known, so it is not known if the ETH or the wrapped token pays: both are
-      // shown, and the ETH of the call is never hidden
-      expect(tokensOf(visualization)).toEqual([NATIVE, WETH, DAI])
-      expect(countSwaps(visualization)).toBe(1)
-      // the swap pays only what it needs and the refund returns the rest of the ETH
-      expect(hasLeftoverWarning(humanized.warnings || [])).toBe(false)
+      test('is paid with the ETH of the call when it covers the most that the swap can take', () => {
+        const humanized = exactOutputWithValue(200n)
+
+        expect(tokensOf(humanized.fullVisualization || [])).toEqual([NATIVE, DAI])
+        expect(hasLeftoverWarning(humanized.warnings || [])).toBe(false)
+      })
+
+      test('can be paid with the ETH or with WETH of the signer when the ETH does not cover it', () => {
+        // the router pays with the WETH of the signer when its ETH is not enough, so both are shown
+        const humanized = exactOutputWithValue(150n)
+        const visualization = humanized.fullVisualization || []
+
+        expect(tokensOf(visualization)).toEqual([NATIVE, WETH, DAI])
+        expect(countSwaps(visualization)).toBe(1)
+        // the swap pays only what it needs and the refund returns the rest of the ETH
+        expect(hasLeftoverWarning(humanized.warnings || [])).toBe(false)
+      })
+
+      test('is paid with WETH of the signer when no ETH is sent', () => {
+        const humanized = exactOutputWithValue(0n)
+
+        expect(tokensOf(humanized.fullVisualization || [])).toEqual([WETH, DAI])
+      })
     })
 
     test('a call in a multicall that is not understood is shown', () => {

@@ -96,6 +96,11 @@ export type ConvertEffect = {
    * (`PeripheryPayments.pay` of Uniswap V3)
    */
   isPaidWithEthWhenHeld?: boolean
+  /**
+   * The most that a swap with an exact output can take (`amountInMaximum`). The call reverts when
+   * the swap needs more, so it limits what the payment can be when the amount is not known.
+   */
+  maxAmountIn?: bigint
 }
 
 /** How a router reads an address that is the recipient of its tokens */
@@ -144,7 +149,8 @@ export const convert = (
   from: Place,
   to: Place,
   amountIn: Amount,
-  isPaidWithEthWhenHeld?: boolean
+  isPaidWithEthWhenHeld?: boolean,
+  maxAmountIn?: bigint
 ): ConvertEffect => ({
   type: 'convert',
   kind,
@@ -153,7 +159,8 @@ export const convert = (
   from,
   to,
   amountIn,
-  ...(isPaidWithEthWhenHeld === undefined ? {} : { isPaidWithEthWhenHeld })
+  ...(isPaidWithEthWhenHeld === undefined ? {} : { isPaidWithEthWhenHeld }),
+  ...(maxAmountIn === undefined ? {} : { maxAmountIn })
 })
 
 export type PermitEffect = {

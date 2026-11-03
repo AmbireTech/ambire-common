@@ -73,7 +73,8 @@ const getV3Swap = (
   tokenIn: string,
   tokenOut: string,
   to: Place,
-  amountIn: bigint | undefined
+  amountIn: bigint | undefined,
+  maxAmountIn?: bigint
 ): ConvertEffect =>
   amountIn === CONTRACT_BALANCE
     ? convert('swap', tokenIn, tokenOut, ROUTER, to, ALL, false)
@@ -84,7 +85,8 @@ const getV3Swap = (
         USER,
         to,
         amountIn === undefined ? UNKNOWN : exact(amountIn),
-        true
+        true,
+        maxAmountIn
       )
 
 const getLastToken = (path: readonly string[]) => path[path.length - 1] ?? ''
@@ -167,7 +169,8 @@ V3_STRUCT_SWAPS.forEach(([abi, rules, { isPath, isExactOut }]) =>
           tokenIn,
           tokenOut,
           getPlace(params.recipient, ctx, rules),
-          isExactOut ? undefined : params.amountIn
+          isExactOut ? undefined : params.amountIn,
+          isExactOut ? params.amountInMaximum : undefined
         )
       ],
       deadline: params.deadline
@@ -185,7 +188,15 @@ V3_ROUTER_2_TOKEN_SWAPS.forEach(([abi, isExactIn]) =>
     const path: string[] = args[2]
     const to = getPlace(args[3], ctx, V3_ROUTER_2)
     return {
-      effects: [getV3Swap(path[0] ?? '', getLastToken(path), to, isExactIn ? args[0] : undefined)]
+      effects: [
+        getV3Swap(
+          path[0] ?? '',
+          getLastToken(path),
+          to,
+          isExactIn ? args[0] : undefined,
+          isExactIn ? undefined : args[1]
+        )
+      ]
     }
   })
 )
