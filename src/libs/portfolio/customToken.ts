@@ -1,11 +1,5 @@
 export interface CustomToken {
   address: string
-  /**
-   * Can be missing in a record stored before the switch from `networkId` to `chainId`, if its
-   * network was removed before the migration ran. The `removeTokenRecordsWithoutChainId` storage
-   * migration removes such records, but keep the checks for a missing `chainId` - that migration
-   * is skipped when an earlier one fails.
-   */
   chainId: bigint
   standard: 'ERC20' | 'ERC721'
   /**
@@ -18,7 +12,6 @@ export interface CustomToken {
 
 export interface TokenPreference {
   address: string
-  /** Can be missing in an old record - see `CustomToken['chainId']` */
   chainId: bigint
   isHidden?: boolean
   /** Preferences stored before NFT hiding have none, which means ERC-20 */
