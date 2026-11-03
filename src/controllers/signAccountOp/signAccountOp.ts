@@ -247,10 +247,7 @@ export type SignAccountOpUpdateProps = {
   rpcGasPrices?: GasSpeeds
   customGasPrices?: GasSpeeds
   customGasLimit?: bigint
-  /**
-   * Drops the custom gas prices and gas limit and goes back to the fetched gas prices.
-   * Ignored for speed up transactions, as their gas prices are fixed
-   */
+  /** Drops the custom gas prices and gas limit and goes back to the network gas prices */
   shouldResetCustomGas?: boolean
   feeToken?: TokenResult
   pendingFeeTokenPreference?: TokenResult | null
@@ -2683,7 +2680,7 @@ export class SignAccountOpController
       }
 
       // Before the fee speeds are calculated below, so they use the network gas prices again
-      const hasResetCustomGas = !!shouldResetCustomGas && !isSpeedUpTransaction
+      const hasResetCustomGas = !!shouldResetCustomGas
       if (hasResetCustomGas) this.#resetCustomGas()
 
       if (this.estimation.status === EstimationStatus.Success) {

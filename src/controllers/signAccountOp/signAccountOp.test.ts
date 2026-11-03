@@ -6066,6 +6066,44 @@ describe('speed up of a pending transaction', () => {
     expect(controller.accountOp.gasFeePayment?.paidBy).toBe(eoaAccount.addr)
   })
 
+  test('resetting the custom fee of a speed up goes back to the network fee', async () => {
+    jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy').mockReturnValue(undefined)
+    const { controller } = await initSpeedUp({ replacedPaidBy: eoaAccount.addr })
+    // The UI saves a custom fee only once the estimation that starts on init has finished
+    await new Promise((resolve) => {
+      if (controller.estimation.status !== EstimationStatus.Loading) {
+        resolve(true)
+        return
+      }
+      const unsub = controller.estimation.onUpdate(() => {
+        if (controller.estimation.status === EstimationStatus.Loading) return
+        unsub()
+        resolve(true)
+      })
+    })
+    controller.update({ hasNewEstimation: true })
+    const networkGasPrice = controller.accountOp.gasFeePayment!.gasPrice
+    const customPrice = {
+      maxFeePerGas: toBeHex(9000n) as Hex,
+      maxPriorityFeePerGas: toBeHex(4000n) as Hex
+    }
+    const customGasPrices: GasSpeeds = {
+      slow: customPrice,
+      medium: customPrice,
+      fast: customPrice,
+      ape: customPrice
+    }
+
+    controller.update({ customGasPrices })
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toBe(9000n)
+
+    controller.update({ speed: FeeSpeed.Medium, shouldResetCustomGas: true })
+
+    expect(controller.hasCustomGasPrices).toBe(false)
+    expect(controller.feeSpeeds).toEqual(controller.networkFeeSpeeds)
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toBe(networkGasPrice)
+  })
+
   test('stops without an error toast when the original got processed while signing and the broadcast failed', async () => {
     const { restore } = suppressConsole()
     const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
