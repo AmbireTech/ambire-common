@@ -32,7 +32,6 @@ import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
 import { Call } from '../../libs/accountOp/types'
 import { createKohakuStorage } from '../../libs/kohaku/host'
-import { getPrivacyPoolsHistoryPage } from '../../libs/privacyPools/history'
 import { fetchPrivacyPoolsPrices, getPrivacyPoolsPriceKey } from '../../libs/privacyPools/prices'
 import {
   createProverFactory,
@@ -44,6 +43,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { LockGeneration, PhraseScopedModule, PrivacyPoolsContext } from './context'
 import { PrivacyPoolsDepositParams, PrivacyPoolsDeposits } from './deposits'
 import { privacyPoolsErrors } from './errors'
+import { PrivacyPoolsHistory } from './history'
 import { PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsRagequit } from './ragequit'
@@ -56,15 +56,13 @@ const PRICES_MAX_AGE_MS = 5 * 60 * 1000
 /** A chain read more recently than this is not read again when the account is opened. */
 const SYNC_MAX_AGE_MS = 10 * 60 * 1000
 
-const DEFAULT_HISTORY_PAGINATION: Pagination = { fromPage: 0, itemsPerPage: 10 }
-
 /**
  * Privacy Pools state: one plugin per (chain, recovery phrase) and its notes. Scoped by phrase, as note secrets are derived from it - accounts without one (hardware,
  * private key, view-only) cannot use Privacy Pools.
  *
- * The work is done by modules (plugins, sync, deposits, withdrawal, Send form) holding their own
- * state. This stays the only `EventEmitter`: it checks what is available, wires the modules
- * together and reports their state to the UI. See `PrivacyPoolsContext`.
+ * The work is done by modules (plugins, sync, history, deposits, withdrawal, Send form) holding
+ * their own state. This stays the only `EventEmitter`: it checks what is available, wires the
+ * modules together and reports their state to the UI. See `PrivacyPoolsContext`.
  */
 export class PrivacyPoolsController extends EventEmitter implements IPrivacyPoolsController {
   #keystore: IKeystoreController
@@ -105,13 +103,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #sendForm: PrivacyPoolsSendFormState
 
-  /**
-   * Per screen (session) showing the selected account's history: what it is narrowed to and which
-   * page. Not derived from a phrase, so kept through a lock. See `filterHistory`.
-   */
-  #historySessions: {
-    [sessionId: string]: Pick<PrivacyPoolsHistorySession, 'filters' | 'pagination'>
-  } = {}
+  #history: PrivacyPoolsHistory
 
   /** In teardown order: a withdrawal being proved is cancelled before its plugin is dropped. */
   #phraseScopedModules: PhraseScopedModule[]
@@ -223,7 +215,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       ctx,
       this.#registry,
       (chainId) => this.#refreshPoolStats(chainId),
-      (seedId) => this.#isHistoryWanted(seedId),
+      // Read when a sync asks, by which time the history module exists
+      (seedId) => this.#history.hasSessions() && seedId === this.#getSelectedSeedId(),
       (chainId) => this.#onStoreReplaced(chainId)
     )
     this.#deposits = new PrivacyPoolsDeposits(ctx, this.#registry, this.#sync)
@@ -231,6 +224,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync)
     this.#poolStatsReader = new PrivacyPoolsPoolStatsReader(ctx)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
+    this.#history = new PrivacyPoolsHistory(ctx, this.#sync, {
+      getSupportedChainIds: () => this.supportedChainIds,
+      syncChain: (chainId) => this.syncChain(chainId)
+    })
     this.#phraseScopedModules = [this.#withdrawal, this.#deposits, this.#sync, this.#registry]
 
     this.#ui.uiEvent.on('updateView', this.#onUpdateView)
@@ -426,31 +423,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * it, along with each sync - see `filterHistory`.
    */
   get history(): { [sessionId: string]: PrivacyPoolsHistorySession } {
-    const accountChains = this.#getSelectedAccountStates()
-
-    return Object.fromEntries(
-      Object.entries(this.#historySessions).map(([sessionId, { filters, pagination }]) => {
-        const chainStates = this.#getHistoryChainIds(filters).map(
-          (chainId) => accountChains[chainId]
-        )
-        // A failed read settles the chain too, so the page shows what was read rather than load
-        const isEveryChainSettled = chainStates.every(
-          (state) => !!state && (!!state.history || !!state.historyError || !!state.error)
-        )
-        const histories = chainStates.flatMap((state) => (state?.history ? [state.history] : []))
-        const failedState = chainStates.find((state) => state?.historyError || state?.error)
-
-        return [
-          sessionId,
-          {
-            filters,
-            pagination,
-            result: isEveryChainSettled ? getPrivacyPoolsHistoryPage(histories, pagination) : null,
-            error: failedState?.historyError || failedState?.error || null
-          }
-        ]
-      })
-    )
+    return this.#history.getSessions(this.#getSelectedSeedId())
   }
 
   /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase), read once. */
@@ -600,72 +573,42 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Opens a screen's page of the selected account's history, or moves it to another page or
-   * network. Reads the history of the networks shown that have not read it since their last sync,
-   * which syncs them, as the plugin reads it only after syncing. The page arrives in `history`.
-   * The screen closes it with `resetHistoryFilters`.
+   * network. Syncs the networks shown whose history their last sync did not read, as it is read
+   * only along with a sync's notes. The page arrives in `history`. The screen closes it with
+   * `resetHistoryFilters`.
    */
   async filterHistory(
     sessionId: string,
-    filters: PrivacyPoolsHistoryFilters = {},
-    pagination: Pagination = DEFAULT_HISTORY_PAGINATION
+    filters?: PrivacyPoolsHistoryFilters,
+    pagination?: Pagination
   ): Promise<void> {
-    this.#historySessions = { ...this.#historySessions, [sessionId]: { filters, pagination } }
-    this.emitUpdate()
+    this.#history.open(sessionId, filters, pagination)
 
     await this.#loadHistory(filters)
   }
 
   /** Closes a screen's page of the history. Syncs stop reading it once no screen shows it. */
   resetHistoryFilters(sessionId: string) {
-    if (!this.#historySessions[sessionId]) return
-
-    const historySessions = { ...this.#historySessions }
-    delete historySessions[sessionId]
-    this.#historySessions = historySessions
-    this.emitUpdate()
-  }
-
-  #isHistoryWanted(seedId: string): boolean {
-    return !!Object.keys(this.#historySessions).length && seedId === this.#getSelectedSeedId()
+    this.#history.close(sessionId)
   }
 
   /** Reads a shown history of the chain again, now with links to its transactions. */
   #onStoreReplaced(chainId: string) {
     this.emitUpdate()
-
-    const isChainShown = Object.values(this.#historySessions).some(({ filters }) =>
-      this.#getHistoryChainIds(filters).includes(chainId)
-    )
-    if (!isChainShown) return
+    if (!this.#history.isChainShown(chainId)) return
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#loadHistory({ chainId })
   }
 
-  #getHistoryChainIds({ chainId }: PrivacyPoolsHistoryFilters): string[] {
-    if (!chainId) return this.supportedChainIds
-
-    return this.supportedChainIds.filter((supportedChainId) => supportedChainId === chainId)
-  }
-
-  async #loadHistory(filters: PrivacyPoolsHistoryFilters) {
+  async #loadHistory(filters: PrivacyPoolsHistoryFilters = {}) {
     const seedId = this.#getSelectedSeedId()
     if (!seedId || !this.isAvailableForSelectedAccount) return
     // Like `syncIfStale`: the first read waits for the phrase to be backed up
     if (this.#keystore.seeds.find(({ id }) => id === seedId)?.notBackedUp) return
 
     try {
-      await Promise.all(
-        this.#getHistoryChainIds(filters).map(async (chainId) => {
-          // It may have checked whether to read the history before this screen asked for it
-          await this.#sync.getRunningSync(seedId, chainId)
-
-          const state = this.#sync.getAccountChainStates(seedId)[chainId]
-          if (state?.history && state.isHistoryCurrent) return
-
-          await this.syncChain(chainId)
-        })
-      )
+      await this.#history.load(seedId, filters)
     } catch (error: any) {
       this.#emitSyncError(error)
     }

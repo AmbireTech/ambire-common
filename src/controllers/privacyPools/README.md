@@ -10,6 +10,7 @@ The controller is the only `EventEmitter`. The work is done by plain classes tha
 | --- | --- |
 | `protocolRegistry.ts` | The SDK plugins, one per chain and phrase, their keystores, the chain versions, and the version of each chain's stored state |
 | `sync.ts` | The sync queue, the first read of each chain's shared state, the one-time rebuild of an outdated one, account states (notes, and the history while a screen shows it), and sync epochs |
+| `history.ts` | The screens showing the history and their pages. Syncs the networks a screen shows whose history is not current |
 | `deposits.ts` | Deposit requirements, the next deposit's precommitment, and prepared and broadcast deposits |
 | `withdrawal.ts` | The operation, the proved-but-unsent withdrawal, and the preparation queue and its cancellation |
 | `ragequit.ts` | Nothing of its own. Lists the deposits still being verified with the account each came from, and builds their public reclaim |
@@ -31,6 +32,7 @@ Modules never get the controller. They get a `PrivacyPoolsContext` (see `context
 registry ← sync ← deposits
                 ← withdrawal
                 ← ragequit
+                ← history
 ```
 
 They never see which account is selected: the controller resolves it and passes `seedId`. When two modules share state, the controller wires it. For example, the registry's prover reads the withdrawal's proving signal through a callback, for the 'withdraw' circuit only, so a ragequit's proof is never cancelled with a withdrawal.
@@ -88,10 +90,10 @@ The account's deposits, withdrawals and deposits taken back, for its Activity sc
 - **Never ship it on the SDK up to 0.1.0-alpha.33.** Those versions fetch the block of each of the user's events from the network, which tells it which events are the user's, and store the result unencrypted. From 0.1.0-alpha.34 (kohaku#362) the transaction comes from the bulk sync instead, and the time is estimated from blocks fetched at fixed intervals, the same for every account.
 - **Transaction hashes come with the bulk sync.** The CDN's `/v2` publication (`PRIVACY_POOLS_SAGA_SYNC_URL`) has them, unlike its root one, and so do the provider's logs (`createKohakuProvider`). An event without one is listed without a link.
 - **Stores read before hashes were kept are rebuilt once.** A stored state with no version beside it (`STORE_VERSION` in `protocolRegistry.ts`) has no hash for any event before the upgrade. After a sync of the chain, `sync.ts` reads the chain from scratch into memory with a plugin of its own, from the CDN (about 18 s), while the old state keeps serving the balances. It is then saved over the old one, and the chain's plugins are dropped and retired: what a plugin built before saves, e.g. one syncing for a withdrawal, is ignored, as it would write the old state back. A shown history is read again. A failed rebuild leaves the old state, and is tried again on a later sync, up to 3 times a run. A chain read from scratch by this version gets the version at its first sync.
-- **Read only while a screen shows it.** A screen opens a session with `filterHistory` and closes it with `resetHistoryFilters`. While one is open, each sync of the selected account reads the history right after the notes, in the same turn of the queue. The balances are shown before the history is read.
+- **Read only while a screen shows it.** A screen opens a session with `filterHistory` and closes it with `resetHistoryFilters` (sessions in `history.ts`). While one is open, each sync of the selected account reads the history right after the notes, in the same turn of the queue. The balances are shown before the history is read.
 - **Read without syncing again.** `history()` would sync the plugin first, which costs seconds even with no new blocks, so it is asked not to (`{ sync: false }`, from 0.1.0-alpha.35) and reads the state the notes were just read from. So a deposit is listed exactly when its note is. Always from the plugin that read the notes, even if the registry has dropped it since: a new plugin has not found the account's deposits yet, as the SDK does not store them, and would list none.
 - **A stale list is kept.** A sync with no screen open leaves the history marked as not current. The next screen shows it at once, and reads it again.
-- **Paged here, not by the SDK.** The SDK returns the whole history per chain, newest first. The controller merges the chains newest first and serves each session one page in `history`, in the same shape as `ActivityController`'s.
+- **Paged here, not by the SDK.** The SDK returns the whole history per chain, newest first. `history.ts` merges the chains newest first and serves each session one page in `history`, in the same shape as `ActivityController`'s.
 - **Under review comes from the notes.** The SDK keeps a deposit taken back as 'pending', so a deposit is under review only while a note with its label is still pending.
 - **No recipient for withdrawals.** The pool's records do not say where a withdrawal went, and asking for its transaction would single it out.
 - **Phrase-derived.** It lives in the account states of `sync.ts`, so a lock or the account's removal drops it with the notes. The sessions hold only filters and pages, so they are kept.

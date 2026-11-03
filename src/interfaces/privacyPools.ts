@@ -224,7 +224,7 @@ export type PrivacyPoolsHistoryEntry = {
   isUnderReview: boolean
   /**
    * A deposit the checks approved, so it could be sent privately. Neither this nor
-   * `isUnderReview` for one taken back, or one newer than the notes of the sync.
+   * `isUnderReview` for one taken back.
    */
   isApproved: boolean
 }
