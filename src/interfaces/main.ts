@@ -9,6 +9,7 @@ export const STATUS_WRAPPED_METHODS = {
   updateAccounts: 'INITIAL',
   handleAccountPickerInitLedger: 'INITIAL',
   handleAccountPickerInitTrezor: 'INITIAL',
+  handleAccountPickerInitAmbireIce: 'INITIAL',
   handleAccountPickerInitOneKey: 'INITIAL',
   handleAccountPickerInitLattice: 'INITIAL',
   handleAccountPickerInitQr: 'INITIAL',

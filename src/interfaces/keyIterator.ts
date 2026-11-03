@@ -1,12 +1,6 @@
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 import { SelectedAccountForImport } from './account'
-import {
-  ExternalSignerController,
-  Key,
-  ParsedQrAccount,
-  QrProtocolType,
-  TrezorWalletType
-} from './keystore'
+import { ExternalSignerController, Key, ParsedQrAccount, QrProtocolType } from './keystore'
 
 export type QrWalletConfig = {
   protocol: QrProtocolType
@@ -21,8 +15,6 @@ export interface KeyIterator {
   walletSDK?: any
   /** Needed for the hardware wallets only */
   controller?: ExternalSignerController
-  /** The non-Trezor device that runs Trezor's firmware the keys come from. Trezor specific. */
-  trezorWalletType?: TrezorWalletType
   /**
    * Which of the offered derivation paths this wallet can browse. Wallets that hand
    * over a single extended public key (QR, NFC) are limited to the paths that branch

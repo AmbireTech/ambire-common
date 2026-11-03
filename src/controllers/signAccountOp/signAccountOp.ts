@@ -32,7 +32,6 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { PIMLICO } from '../../consts/bundlers'
 import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { getHardwareWalletDeviceName } from '../../consts/hardwareWallets'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import {
@@ -430,12 +429,6 @@ export class SignAccountOpController
    * your device" prompt only while a device is actually involved.
    */
   activeSigningKeyType: Key['type'] | null = null
-
-  /**
-   * The name of the device behind the key in `activeSigningKeyType` (e.g. "Ambire Ice" for a
-   * `trezor` key of one), or null when it's not a hardware wallet key or no key is needed.
-   */
-  activeSigningKeyDeviceName: string | null = null
 
   safeEip712Data: unknown | null = null
 
@@ -1184,8 +1177,7 @@ export class SignAccountOpController
   }
 
   /**
-   * Runs a signing step and marks the type of `signingKey` as the active signing key type
-   * (and the device behind the key as the active signing key device).
+   * Runs a signing step and marks `keyType` as the active signing key type.
    * It intentionally stays set after the step, so the device prompt in the UI
    * doesn't close and reopen between two device signatures in a row. It's
    * cleared when sign() or the whole sign and broadcast flow no longer needs a key.
@@ -1193,13 +1185,9 @@ export class SignAccountOpController
   async #withHardwareWalletSigningRequest<T>(
     request: HardwareWalletSigningRequest | null,
     sign: () => Promise<T>,
-    signingKey: { addr?: Key['addr'] | null; type: Key['type'] | null } = {
-      addr: this.accountOp.signingKeyAddr,
-      type: this.accountOp.signingKeyType
-    }
+    keyType: Key['type'] | null = this.accountOp.signingKeyType
   ) {
-    this.activeSigningKeyType = signingKey.type
-    this.activeSigningKeyDeviceName = this.#getHardwareWalletDeviceName(signingKey)
+    this.activeSigningKeyType = keyType
 
     if (!request) {
       this.emitUpdate()
@@ -1213,21 +1201,6 @@ export class SignAccountOpController
     } finally {
       this.#setHardwareWalletSigningRequest(null)
     }
-  }
-
-  #getHardwareWalletDeviceName({
-    addr,
-    type
-  }: {
-    addr?: Key['addr'] | null
-    type: Key['type'] | null
-  }) {
-    if (!type || type === 'internal') return null
-
-    const key = this.#keystore.keys.find((k) => k.addr === addr && k.type === type)
-    const meta = key && key.type !== 'internal' ? key.meta : null
-
-    return getHardwareWalletDeviceName(type, meta)
   }
 
   /** A speed up or a Replace must be paid the same way as the pending transaction it replaces */
@@ -4532,10 +4505,7 @@ export class SignAccountOpController
         this.status.type === SigningStatus.Done &&
         !!broadcastOption &&
         RAW_TXN_BROADCAST_OPTIONS.includes(broadcastOption)
-      if (!willBroadcastNeedSignature) {
-        this.activeSigningKeyType = null
-        this.activeSigningKeyDeviceName = null
-      }
+      if (!willBroadcastNeedSignature) this.activeSigningKeyType = null
 
       this.emitUpdate()
     } catch (error: any) {
@@ -4822,7 +4792,7 @@ export class SignAccountOpController
                     eip7702Auth: accountOp.meta!.delegation!
                   })
                 : signer.signRawTransaction(rawTxn),
-            { addr: gasFeePayment.paidBy, type: gasFeePayment.paidByKeyType }
+            gasFeePayment.paidByKeyType
           )
 
           try {
@@ -5120,7 +5090,6 @@ export class SignAccountOpController
 
       if (this.activeSigningKeyType) {
         this.activeSigningKeyType = null
-        this.activeSigningKeyDeviceName = null
         this.emitUpdate()
       }
     })
@@ -5151,7 +5120,6 @@ export class SignAccountOpController
   #hwCleanup() {
     this.hardwareWalletSigningRequest = null
     this.activeSigningKeyType = null
-    this.activeSigningKeyDeviceName = null
 
     const paidByKeyType = this.accountOp.gasFeePayment?.paidByKeyType
     const uniqueSigningKeys = [...new Set([this.accountOp.signingKeyType, paidByKeyType])]
@@ -5619,7 +5587,6 @@ export class SignAccountOpController
       hasSafeApiFailed: this.hasSafeApiFailed,
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
       activeSigningKeyType: this.activeSigningKeyType,
-      activeSigningKeyDeviceName: this.activeSigningKeyDeviceName,
       safeEip712Data: this.safeEip712Data,
       gasFeeChangedConfirmationRequired: this.gasFeeChangedConfirmationRequired,
       previousFee: this.previousFee,
