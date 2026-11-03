@@ -98,6 +98,7 @@ export interface AccountOnchainState {
   eoaNonce: bigint | null
   nonce: bigint
   erc4337Nonce: bigint
+  /** The account's keys on this network. For v1 accounts, only the ones that can sign on it */
   associatedKeys: string[]
   importedAccountKeys: Key[]
   balance: bigint

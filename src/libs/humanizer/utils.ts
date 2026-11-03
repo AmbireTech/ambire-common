@@ -209,10 +209,17 @@ export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisu
 }
 
 // @TODO on some humanization of uniswap there is recipient 0x000...000
+/**
+ * The label that `getRecipientText` puts right before the recipient address.
+ * Code that merges or removes visualizations (e.g. `uniReduce`) uses it to find the recipient
+ * of an action, so it must stay in sync with `getRecipientText`.
+ */
+export const RECIPIENT_LABEL = 'and send it to'
+
 export function getRecipientText(from: string, recipient: string): HumanizerVisualization[] {
   return from.toLowerCase() === recipient.toLowerCase()
     ? []
-    : [getLabel('and send it to'), getAddressVisualization(recipient)]
+    : [getLabel(RECIPIENT_LABEL), getAddressVisualization(recipient)]
 }
 
 export function getDeadlineText(deadline: bigint): string {
