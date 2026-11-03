@@ -2,7 +2,9 @@ import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
+import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { getPrivacyPoolsDepositAsset } from '../../consts/privacyPools'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
@@ -17,6 +19,7 @@ import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
+import { IPrivacyPoolsController } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
@@ -25,6 +28,7 @@ import {
   AddressPoisoningMatch,
   AmountAdjustmentInfo,
   ITransferController,
+  TransferNft,
   TransferUpdate
 } from '../../interfaces/transfer'
 import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
@@ -36,14 +40,24 @@ import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
-import { getTokenAmount, sortTokensByBalanceInUSD } from '../../libs/portfolio/helpers'
+import {
+  getCollectibleCacheKey,
+  getTokenAmount,
+  sortTokensByBalanceInUSD
+} from '../../libs/portfolio/helpers'
 import {
   getAmountAfterFeeReserve,
   getAmountAfterFeeSync,
   getSanitizedAmount
 } from '../../libs/transfer/amount'
-import { getTransferRequestParams } from '../../libs/transfer/userRequest'
+import { getAmountsFromFieldValue } from '../../libs/transfer/fieldAmounts'
+import { getNftParamsFromSearchParams } from '../../libs/transfer/nftSearchParams'
 import {
+  getNftTransferRequestParams,
+  getTransferRequestParams
+} from '../../libs/transfer/userRequest'
+import {
+  RecipientValidation,
   validateSendTransferAddress,
   validateSendTransferAmount,
   Validation
@@ -52,16 +66,12 @@ import { getIsViewOnly } from '../../utils/accounts'
 import { getAddressFromAddressState, getDomainFromAddressState } from '../../utils/domains'
 import {
   convertTokenPriceToBigInt,
-  getSafeAmountFromFieldValue,
-  truncateFiatAmountDecimals
+  getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
-
-const CONVERSION_PRECISION = 16
-const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 
 const DEFAULT_ADDRESS_STATE: AddressState = {
   fieldValue: '',
@@ -71,7 +81,8 @@ const DEFAULT_ADDRESS_STATE: AddressState = {
 }
 
 const DEFAULT_VALIDATION_FORM_MSGS: {
-  [key in 'amount' | 'recipientAddress']: Validation
+  amount: Validation
+  recipientAddress: RecipientValidation
 } = {
   amount: {
     severity: 'error',
@@ -111,6 +122,12 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #selectedToken: TokenResult | null = null
 
+  /**
+   * The NFT being sent. While it is set, the form is in "NFT mode": there is no
+   * selected token and no amount, and the NFT itself is transferred.
+   */
+  selectedNft: TransferNft | null = null
+
   #selectedAccount: ISelectedAccountController
 
   #humanizerInfo: HumanizerMeta | null = null
@@ -147,6 +164,23 @@ export class TransferController extends EventEmitter implements ITransferControl
   isRecipientAddressViewOnly = false
 
   isTopUp: boolean = false
+
+  /**
+   * Seed id of the Privacy Pools account to deposit into, instead of an address. Exclusive with
+   * `addressState`: setting either clears the other. Limits the tokens to what the pools accept.
+   */
+  privacyPoolsRecipient: string | null = null
+
+  /** Whether the deposit calls are being built. The first build per account syncs its network. */
+  isPreparingPrivacyPoolsDeposit = false
+
+  /** Why the deposit cannot be prepared, in words for the user. */
+  privacyPoolsDepositError: string | null = null
+
+  /** Lets a newer deposit preparation discard the result of an older, slower one. */
+  #privacyPoolsDepositPreparationId = 0
+
+  #privacyPools?: IPrivacyPoolsController
 
   #shouldSkipTransactionQueuedModal: boolean = false
 
@@ -196,6 +230,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   latestBroadcastedToken: TokenResult | null = null
 
+  latestBroadcastedNft: TransferNft | null = null
+
   hasProceeded: boolean = false
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -238,6 +274,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     erc7730: IErc7730Controller,
     contractInfo: IContractInfoController,
     platform: Platform,
+    privacyPools?: IPrivacyPoolsController,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
@@ -260,6 +297,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#phishing = phishing
     this.#dapps = dapps
     this.#erc7730 = erc7730
+    this.#privacyPools = privacyPools
     this.#contractInfo = contractInfo
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
@@ -292,7 +330,9 @@ export class TransferController extends EventEmitter implements ITransferControl
       if (!this.#currentTransferSessionId || this.hasProceeded) return
       this.#setTokens()
 
-      if (this.#selectedAccount.portfolio.isReadyToVisualize && !this.selectedToken) {
+      if (this.selectedNft) {
+        this.#syncSelectedNftCollectionName()
+      } else if (this.#selectedAccount.portfolio.isReadyToVisualize && !this.selectedToken) {
         this.#setDefaultSelectedToken()
 
         if (this.selectedToken || this.#selectedAccount.portfolio.isAllReady)
@@ -309,6 +349,13 @@ export class TransferController extends EventEmitter implements ITransferControl
 
       this.propagateUpdate(forceEmit)
     }, 'transfer-recipient-phishing-check')
+
+    // Re-validates the amount once the entrypoint's deposit limits are read
+    this.#privacyPools?.onUpdate((forceEmit) => {
+      if (!this.#currentTransferSessionId || !this.privacyPoolsRecipient) return
+
+      this.propagateUpdate(forceEmit)
+    }, 'transfer-privacy-pools-recipient')
 
     this.emitUpdate()
   }
@@ -343,11 +390,118 @@ export class TransferController extends EventEmitter implements ITransferControl
           }
         : undefined
 
+    // Top ups are always made with tokens
+    const nftParams = nextIsTopUp ? null : getNftParamsFromSearchParams(searchParams)
+    const prevChainId = this.selectedChainId
+    const prevNftKey = this.#getSelectedNftKey()
+
     this.isTopUp = nextIsTopUp
     this.#setTokens()
-    this.#setDefaultSelectedToken(tokenParams)
+    if (nftParams) {
+      this.#selectNft(nftParams)
+    } else if (!this.hasProceeded) {
+      this.selectedNft = null
+      this.#setDefaultSelectedToken(tokenParams)
+    }
+
+    const hasChainChanged = prevChainId !== undefined && prevChainId !== this.selectedChainId
+    // Switching to another NFT, or between an NFT and a token, leaves the calls of the previous
+    // asset in the controller until the form is valid again, so it's rebuilt instead
+    const hasNftChanged = prevNftKey !== this.#getSelectedNftKey()
+    if (hasChainChanged || hasNftChanged) {
+      // The SignAccountOp controller is bound to the previous chain and calls
+      this.destroySignAccountOp()
+    }
+    // The recipient may be validated against a chain it wasn't checked on yet
+    this.#fetchRecipientAccountStateIfNeeded()
+
     this.areDefaultsSet = true
     this.emitUpdate()
+  }
+
+  /**
+   * Switches the form to NFT mode. The selected token and the amount are cleared,
+   * as they don't apply to NFTs.
+   */
+  #selectNft(nft: Pick<TransferNft, 'address' | 'chainId' | 'tokenId'>) {
+    if (this.hasProceeded) return
+
+    this.selectedToken = null
+    this.selectedNft = { ...nft, collectionName: '' }
+    this.#syncSelectedNftCollectionName()
+  }
+
+  #getSelectedNftKey() {
+    if (!this.selectedNft) return null
+    const { address, chainId, tokenId } = this.selectedNft
+
+    return getCollectibleCacheKey(address, chainId, tokenId)
+  }
+
+  /** The collection of the selected NFT, but only if the account still owns the NFT */
+  #getSelectedNftCollection() {
+    if (!this.selectedNft) return null
+    const { address, chainId, tokenId } = this.selectedNft
+
+    return (
+      this.#selectedAccount.portfolio.collections.find(
+        (collection) =>
+          collection.chainId === chainId &&
+          collection.address.toLowerCase() === address.toLowerCase() &&
+          collection.collectibles.includes(tokenId)
+      ) || null
+    )
+  }
+
+  // The collection name is shown in the UI, but the portfolio may not be loaded yet
+  // when the NFT is selected, so it's filled in once the portfolio is available
+  #syncSelectedNftCollectionName() {
+    if (!this.selectedNft || this.selectedNft.collectionName) return
+
+    const collection = this.#getSelectedNftCollection()
+    if (!collection) return
+
+    this.selectedNft = {
+      ...this.selectedNft,
+      collectionName: collection.name || collection.symbol
+    }
+  }
+
+  /**
+   * The chain of whatever is being sent - the selected NFT or the selected token.
+   */
+  get selectedChainId(): bigint | undefined {
+    return this.selectedNft?.chainId ?? this.selectedToken?.chainId
+  }
+
+  get #isRecipientTheSelectedNftCollection() {
+    if (!this.selectedNft || !isAddress(this.recipientAddress)) return false
+
+    return this.recipientAddress.toLowerCase() === this.selectedNft.address.toLowerCase()
+  }
+
+  #validateSelectedNft(): Validation {
+    const selectedNft = this.selectedNft
+    const selectedNftCollection = this.#getSelectedNftCollection()
+    if (!selectedNft || !selectedNftCollection) {
+      // The NFT may still show up once the whole portfolio loads
+      if (!this.#selectedAccount.portfolio.isAllReady) return { severity: 'error', message: '' }
+
+      return {
+        severity: 'error',
+        message: "This NFT is no longer in your account, so it can't be sent."
+      }
+    }
+
+    // e.g. queued in a batch that isn't signed yet - sending it again would fail
+    if (selectedNftCollection.postSimulation?.sending?.includes(selectedNft.tokenId)) {
+      return {
+        severity: 'error',
+        message: 'This NFT is already being sent in a pending transaction.'
+      }
+    }
+
+    return { severity: 'success', message: '' }
   }
 
   #ensureTransferSessionId() {
@@ -368,6 +522,17 @@ export class TransferController extends EventEmitter implements ITransferControl
     const tokens = this.#selectedAccount.portfolio.tokens.filter((token) => {
       const hasAmount = Number(getTokenAmount(token)) > 0
       const isVisible = !token.flags.isHidden
+
+      if (this.privacyPoolsRecipient) {
+        return (
+          hasAmount &&
+          isVisible &&
+          !token.flags.onGasTank &&
+          !token.flags.rewardsType &&
+          token.flags.defiTokenType !== AssetType.Borrow &&
+          this.#isPrivacyPoolsDepositToken(token)
+        )
+      }
 
       if (this.isTopUp) {
         const tokenNetwork = networkByChainId.get(token.chainId)
@@ -403,6 +568,14 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.#tokens[0] ||
         null
     }
+  }
+
+  /** Whether a Privacy Pools account can receive this token, and send it out again. */
+  #isPrivacyPoolsDepositToken(token: TokenResult) {
+    return (
+      !!this.#privacyPools?.supportedChainIds.includes(token.chainId.toString()) &&
+      !!getPrivacyPoolsDepositAsset(token.chainId, token.address)
+    )
   }
 
   #setDefaultSelectedToken(tokenData?: { address: string; chainId: string | number }) {
@@ -537,6 +710,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.amountFieldMode = 'token'
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.#onRecipientAddressChange()
+    this.#clearPrivacyPoolsRecipient()
     // This MUST be incremented and not reset to zero, because the UI relies on
     // the change of this value. If the value was 0 and is reset to 0, the UI
     // would not detect a change.
@@ -550,6 +724,13 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.destroySignAccountOp()
     }
 
+    // The NFT was sent (or queued), so the form goes back to sending tokens
+    if (this.selectedNft) {
+      this.selectedNft = null
+      this.#setTokens()
+      this.#setDefaultSelectedToken()
+    }
+
     this.emitUpdate()
   }
 
@@ -557,15 +738,13 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (!this.isInitialized) return
 
     const recipientAcc = this.#accounts.accounts.find((a) => a.addr === this.recipientAddress)
-    if (recipientAcc && this.selectedToken?.chainId) {
-      const state =
-        this.#accounts.accountStates[recipientAcc.addr]?.[this.selectedToken.chainId.toString()]
+    const chainId = this.selectedChainId
+    if (recipientAcc && chainId) {
+      const state = this.#accounts.accountStates[recipientAcc.addr]?.[chainId.toString()]
       if (!state) {
-        this.#accounts
-          .getOrFetchAccountOnChainState(recipientAcc.addr, this.selectedToken.chainId)
-          .catch((e) => {
-            console.log('Failed to get the account on chain state:', e)
-          })
+        this.#accounts.getOrFetchAccountOnChainState(recipientAcc.addr, chainId).catch((e) => {
+          console.log('Failed to get the account on chain state:', e)
+        })
       }
     }
   }
@@ -577,7 +756,16 @@ export class TransferController extends EventEmitter implements ITransferControl
     // amount." error showing up later for an account with no tokens to select)
     const validationFormMsgsNew = { ...DEFAULT_VALIDATION_FORM_MSGS }
 
-    if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
+    if (this.privacyPoolsRecipient && this.selectedNft) {
+      // Privacy Pools accounts hold tokens only
+      validationFormMsgsNew.recipientAddress = {
+        severity: 'error',
+        message: "NFTs can't be sent to a Privacy Pools account. Choose a different recipient."
+      }
+    } else if (this.privacyPoolsRecipient) {
+      // No address to check: the recipient is one of the wallet's own accounts
+      validationFormMsgsNew.recipientAddress = { severity: 'success', message: '' }
+    } else if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
       // if the recipientAcc is an account in the extension
       // & the account state is not fetched for it, fetch it
       // so that we could validate the account properly
@@ -590,26 +778,88 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        !!this.addressState.resolvedAddress,
         this.addressState.isDomainResolving,
         this.#networks.networks,
         this.#accounts.accountStates,
         recipientAcc,
-        this.selectedToken?.chainId,
+        this.selectedChainId,
         this.isRecipientAddressFirstTimeSend,
         this.lastSentToRecipientAt,
         this.addressPoisoningMatch,
         this.recipientDomainAddressChange,
-        this.isRecipientAddressBlacklisted
+        this.isRecipientAddressBlacklisted,
+        this.isRecipientAddressViewOnly
       )
     }
 
-    // Validate the amount
-    if (this.selectedToken) {
+    // The shared message speaks of tokens being burned, which doesn't fit an NFT
+    if (
+      this.selectedNft &&
+      this.isRecipientHumanizerKnownTokenOrSmartContract &&
+      !this.isRecipientAddressBlacklisted &&
+      validationFormMsgsNew.recipientAddress.severity === 'error'
+    ) {
+      validationFormMsgsNew.recipientAddress = {
+        severity: 'error',
+        message:
+          'This address belongs to an app, not a wallet. An NFT sent to it would likely be lost.'
+      }
+    }
+
+    if (this.#isRecipientTheSelectedNftCollection) {
+      validationFormMsgsNew.recipientAddress = {
+        severity: 'error',
+        message: "This address is the NFT collection itself. NFTs sent to it can't be recovered."
+      }
+    }
+
+    // Validate the amount. NFTs have no amount, so the NFT itself is validated instead
+    if (this.selectedNft) {
+      validationFormMsgsNew.amount = this.#validateSelectedNft()
+    } else if (this.selectedToken) {
       validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
     }
 
+    const privacyPoolsAmountError =
+      validationFormMsgsNew.amount.severity === 'success' && this.#getPrivacyPoolsAmountError()
+    if (privacyPoolsAmountError) {
+      validationFormMsgsNew.amount = { severity: 'error', message: privacyPoolsAmountError }
+    }
+
     return validationFormMsgsNew
+  }
+
+  /**
+   * Checks the amount against the configured maximum and the entrypoint's minimum (once read).
+   * Null when it passes or the transfer is not to a Privacy Pools account.
+   */
+  #getPrivacyPoolsAmountError(): string | null {
+    const token = this.selectedToken
+    if (!this.privacyPoolsRecipient || !token) return null
+
+    const asset = getPrivacyPoolsDepositAsset(token.chainId, token.address)
+    if (!asset) return 'This token cannot be sent to a Privacy Pools account.'
+
+    const amount = parseUnits(
+      getSafeAmountFromFieldValue(this.amount, token.decimals) || '0',
+      token.decimals
+    )
+
+    if (amount > asset.maxDeposit)
+      return `A Privacy Pools account accepts at most ${formatUnits(
+        asset.maxDeposit,
+        asset.decimals
+      )} ${asset.symbol} at a time.`
+
+    const config =
+      this.#privacyPools?.depositAssetConfigs[`${token.chainId}:${token.address.toLowerCase()}`]
+    if (config && amount < config.minimumDepositAmount)
+      return `A Privacy Pools account accepts at least ${formatUnits(
+        config.minimumDepositAmount,
+        asset.decimals
+      )} ${asset.symbol} at a time.`
+
+    return null
   }
 
   get isFormValid() {
@@ -623,7 +873,15 @@ export class TransferController extends EventEmitter implements ITransferControl
       )
     }
 
+    // Sending an NFT to its own collection is blocked here, and not only in the UI,
+    // so that a transaction is never prepared for it
+    if (this.#isRecipientTheSelectedNftCollection) return false
+
     const areFormFieldsValid = this.validationFormMsgs.amount.severity === 'success'
+
+    // No address to resolve; the amount check covers the pools' limits. NFTs can't go there.
+    if (this.privacyPoolsRecipient)
+      return !!this.selectedToken && !this.selectedNft && areFormFieldsValid
 
     return areFormFieldsValid && !this.addressState.isDomainResolving
   }
@@ -657,7 +915,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     shouldSetMaxAmount,
     addressState,
     isRecipientAddressUnknownAgreed,
-    amountFieldMode
+    amountFieldMode,
+    privacyPoolsRecipient
   }: TransferUpdate) {
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
@@ -668,25 +927,28 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     if (selectedToken) {
-      if (this.selectedToken && selectedToken.chainId !== this.selectedToken.chainId) {
+      if (this.selectedChainId !== undefined && selectedToken.chainId !== this.selectedChainId) {
         // The SignAccountOp controller is already initialized with the previous chainId and account operation.
         // When the chainId changes, we need to recreate the controller to correctly estimate for the new chain.
         // Here, we destroy it, and at the end of this update method, we initialize it again.
         this.destroySignAccountOp()
       }
 
+      // Picking a token switches the form out of NFT mode
+      if (!this.hasProceeded) this.selectedNft = null
       this.selectedToken = selectedToken
       this.#fetchRecipientAccountStateIfNeeded()
     }
-    // If we do a regular check the value won't update if it's '' or '0'
-    if (typeof amount === 'string') {
+    // If we do a regular check the value won't update if it's '' or '0'.
+    // NFTs have no amount, so amount updates are ignored in NFT mode.
+    if (typeof amount === 'string' && !this.selectedNft) {
       this.#isMaxAmountSelected = false
       this.#wasAmountAdjustedForFee = false
       this.#resetMaxFeeReservation()
       this.#setAmount(amount)
     }
 
-    if (shouldSetMaxAmount) {
+    if (shouldSetMaxAmount && !this.selectedNft) {
       const maxAmountAfterFeeReservation = this.#getMaxAmountAfterFeeReservation()
       if (!Number(maxAmountAfterFeeReservation)) return
 
@@ -698,14 +960,22 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#setTokenAmount(maxAmountAfterFeeReservation, true)
     }
 
+    if (privacyPoolsRecipient !== undefined) this.#setPrivacyPoolsRecipient(privacyPoolsRecipient)
+
     if (addressState) {
       this.addressState = {
         ...this.addressState,
         ...addressState
       }
+      // Typing an address means sending to it instead
+      if (this.addressState.fieldValue) this.#setPrivacyPoolsRecipient(null)
       if (this.isInitialized) {
         this.#onRecipientAddressChange()
       }
+    }
+
+    if (this.privacyPoolsRecipient && (selectedToken || privacyPoolsRecipient)) {
+      this.#loadPrivacyPoolsDepositLimits()
     }
     // We can do a regular check here, because the property defines if it should be updated
     // and not the actual value
@@ -717,6 +987,56 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     await this.syncSignAccountOp()
     this.emitUpdate()
+  }
+
+  /**
+   * Switches between sending to a Privacy Pools account and to an address. Drops the account op
+   * either way, as the calls and the tokens to choose from differ.
+   */
+  #setPrivacyPoolsRecipient(seedId: string | null) {
+    if (this.privacyPoolsRecipient === seedId) return
+
+    this.privacyPoolsRecipient = seedId
+    this.privacyPoolsDepositError = null
+    this.isPreparingPrivacyPoolsDeposit = false
+    this.#privacyPoolsDepositPreparationId += 1
+
+    if (seedId) {
+      this.addressState = { ...DEFAULT_ADDRESS_STATE }
+      this.#onRecipientAddressChange()
+      // The address field may still hold the text typed to find the account; make the UI clear it
+      this.programmaticUpdateCounter += 1
+    }
+
+    this.destroySignAccountOp()
+    this.#setTokens()
+    // An NFT stays selected, so the form can tell the user it can't go to a Privacy Pools account
+    if (!this.selectedToken && !this.selectedNft) this.#setDefaultSelectedToken()
+  }
+
+  #clearPrivacyPoolsRecipient() {
+    this.privacyPoolsRecipient = null
+    this.privacyPoolsDepositError = null
+    this.isPreparingPrivacyPoolsDeposit = false
+    this.#privacyPoolsDepositPreparationId += 1
+  }
+
+  /** Loads the entrypoint's deposit limits for the selected token. */
+  #loadPrivacyPoolsDepositLimits() {
+    const token = this.selectedToken
+    if (!this.#privacyPools || !token || !getPrivacyPoolsDepositAsset(token.chainId, token.address))
+      return
+
+    this.#privacyPools
+      .loadDepositAssetConfig(token.chainId.toString(), token.address)
+      .catch((error) => {
+        // Not fatal: preparing the deposit checks the same limits
+        this.emitError({
+          level: 'silent',
+          message: 'Could not read what Privacy Pools accepts for this token.',
+          error: error instanceof Error ? error : new Error('transfer: deposit limits read failed')
+        })
+      })
   }
 
   checkIsRecipientAddressUnknown() {
@@ -795,64 +1115,17 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.programmaticUpdateCounter += 1
     }
 
-    if (!fieldValue) {
-      this.amount = ''
-      this.amountInFiat = ''
-      return
-    }
-
-    const tokenPrice = this.selectedToken?.priceIn.find(
-      (p) => p.baseCurrency === HARD_CODED_CURRENCY
-    )?.price
-
-    if (!tokenPrice) {
-      this.amount = fieldValue
-      this.amountInFiat = ''
-      return
-    }
-
-    if (this.amountFieldMode === 'fiat' && typeof this.selectedToken?.decimals === 'number') {
-      this.amountInFiat = fieldValue
-
-      // Get the number of decimals
-      const amountInFiatDecimals = 10
-      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
-
-      // Convert the numbers to big int
-      const sanitizedFiat = getSanitizedAmount(fieldValue, amountInFiatDecimals)
-      const amountInFiatBigInt = sanitizedFiat
-        ? parseUnits(sanitizedFiat, amountInFiatDecimals)
-        : 0n
-      this.amount = formatUnits(
-        (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
-        // Shift the decimal point by the number of decimals in the token price
-        amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals
-      )
-
-      return
-    }
-    if (this.amountFieldMode === 'token') {
-      this.amount = fieldValue
-
-      if (!this.selectedToken) return
-
-      const formattedAmount = parseUnits(
-        getSafeAmountFromFieldValue(fieldValue, this.selectedToken.decimals),
-        this.selectedToken.decimals
-      )
-
-      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
-
-      // The fiat field shows this as-is when switched to, so cut it down to a displayable
-      // precision instead of the token's full one (up to 18 decimals)
-      this.amountInFiat = truncateFiatAmountDecimals(
-        formatUnits(
-          formattedAmount * tokenPriceBigInt,
-          // Shift the decimal point by the number of decimals in the token price
-          this.selectedToken.decimals + tokenPriceDecimals
-        )
-      )
-    }
+    const { amount, amountInFiat } = getAmountsFromFieldValue({
+      fieldValue,
+      fieldMode: this.amountFieldMode,
+      price:
+        this.selectedToken?.priceIn.find((p) => p.baseCurrency === HARD_CODED_CURRENCY)?.price ??
+        null,
+      // Unused without a token, as there is no price then
+      decimals: this.selectedToken?.decimals ?? 0
+    })
+    this.amount = amount
+    this.amountInFiat = amountInFiat
   }
 
   #setTokenAmount(amount: string, isProgrammaticUpdate = false) {
@@ -1049,7 +1322,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     this.isRecipientAddressFirstTimeSend =
-      !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+      !found &&
+      !this.privacyPoolsRecipient &&
+      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
 
     this.addressPoisoningMatch = this.isRecipientAddressFirstTimeSend ? addressPoisoningMatch : null
@@ -1079,31 +1354,36 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   get hasPersistedState() {
-    return !!(this.amount || this.amountInFiat || this.addressState.fieldValue)
+    return !!(
+      this.amount ||
+      this.amountInFiat ||
+      this.addressState.fieldValue ||
+      this.privacyPoolsRecipient
+    )
   }
 
   async syncSignAccountOp() {
     // shouldn't happen ever
     if (!this.#selectedAccount.account) return
 
+    if (this.privacyPoolsRecipient) {
+      await this.#syncPrivacyPoolsDeposit()
+      return
+    }
+
     const recipientAddress = this.isTopUp
       ? FEE_COLLECTOR
       : getAddressFromAddressState(this.addressState)
 
-    // form field validation
-    if (!this.#selectedToken || !this.amount || !isAddress(recipientAddress) || !this.isFormValid)
-      return
+    const hasAssetToSend = !!this.selectedNft || (!!this.#selectedToken && !!this.amount)
 
-    const sanitizedFiat = getSanitizedAmount(this.amountInFiat, 6)
-    const amountInFiatBigInt = sanitizedFiat ? parseUnits(sanitizedFiat, 6) : 0n
-    const userRequestParams = getTransferRequestParams({
-      selectedAccount: this.#selectedAccount.account.addr,
-      amount: getSafeAmountFromFieldValue(this.amount, this.selectedToken?.decimals),
-      selectedToken: this.#selectedToken,
-      recipientAddress,
-      amountInFiat: amountInFiatBigInt,
-      recipientDomain: getDomainFromAddressState(this.addressState)
-    })
+    // form field validation
+    if (!hasAssetToSend || !isAddress(recipientAddress) || !this.isFormValid) return
+
+    const userRequestParams = this.#getUserRequestParams(
+      this.#selectedAccount.account.addr,
+      recipientAddress
+    )
 
     if (!userRequestParams) {
       this.emitError({
@@ -1135,12 +1415,117 @@ export class TransferController extends EventEmitter implements ITransferControl
     await this.#initSignAccOp(userRequestParams.calls, userRequestParams.meta.topUpAmount)
   }
 
+  #getUserRequestParams(selectedAccountAddr: string, recipientAddress: string) {
+    const recipientDomain = getDomainFromAddressState(this.addressState)
+
+    if (this.selectedNft) {
+      return getNftTransferRequestParams({
+        nft: this.selectedNft,
+        selectedAccount: selectedAccountAddr,
+        recipientAddress,
+        recipientDomain
+      })
+    }
+
+    if (!this.#selectedToken) return null
+
+    const sanitizedFiat = getSanitizedAmount(this.amountInFiat, 6)
+    const amountInFiatBigInt = sanitizedFiat ? parseUnits(sanitizedFiat, 6) : 0n
+
+    return getTransferRequestParams({
+      selectedAccount: selectedAccountAddr,
+      amount: getSafeAmountFromFieldValue(this.amount, this.#selectedToken.decimals),
+      selectedToken: this.#selectedToken,
+      recipientAddress,
+      amountInFiat: amountInFiatBigInt,
+      recipientDomain
+    })
+  }
+
+  /** Builds the deposit calls into a Privacy Pools account. May first sync its network (slow). */
+  async buildPrivacyPoolsDepositCalls({
+    seedId,
+    selectedToken,
+    amount
+  }: {
+    seedId: string
+    selectedToken: TokenResult
+    /** Already sanitized to the token's decimals. */
+    amount: string
+  }): Promise<Call[]> {
+    if (!this.#privacyPools || !this.#selectedAccount.account)
+      throw new EmittableError({
+        message: 'Sending to a Privacy Pools account is not available here.',
+        level: 'expected',
+        error: new Error('transfer: no Privacy Pools controller or selected account')
+      })
+
+    return this.#privacyPools.buildDepositCalls({
+      seedId,
+      accountAddr: this.#selectedAccount.account.addr,
+      chainId: selectedToken.chainId.toString(),
+      tokenAddress: selectedToken.address,
+      amount: parseUnits(amount, selectedToken.decimals)
+    })
+  }
+
+  async #syncPrivacyPoolsDeposit() {
+    const seedId = this.privacyPoolsRecipient
+    const token = this.#selectedToken
+    if (!seedId || !token || !this.amount || !this.isFormValid) return
+
+    this.#privacyPoolsDepositPreparationId += 1
+    const preparationId = this.#privacyPoolsDepositPreparationId
+    const isCurrent = () => preparationId === this.#privacyPoolsDepositPreparationId
+
+    this.isPreparingPrivacyPoolsDeposit = true
+    this.privacyPoolsDepositError = null
+    this.emitUpdate()
+
+    let calls: Call[]
+    try {
+      calls = await this.buildPrivacyPoolsDepositCalls({
+        seedId,
+        selectedToken: token,
+        amount: getSafeAmountFromFieldValue(this.amount, token.decimals)
+      })
+    } catch (error: any) {
+      if (!isCurrent()) return
+
+      this.isPreparingPrivacyPoolsDeposit = false
+      // Shown in the form, not as a toast, which would pop up again on every keystroke
+      this.privacyPoolsDepositError =
+        error instanceof EmittableError
+          ? error.message
+          : 'Could not prepare the transfer to this Privacy Pools account. Please try again.'
+      if (!(error instanceof EmittableError))
+        this.emitError({
+          level: 'silent',
+          message: this.privacyPoolsDepositError,
+          error: error instanceof Error ? error : new Error('transfer: deposit preparation failed')
+        })
+      this.emitUpdate()
+      return
+    }
+
+    if (!isCurrent()) return
+
+    this.isPreparingPrivacyPoolsDeposit = false
+
+    if (this.signAccountOpController) {
+      this.signAccountOpController.update({ accountOpData: { calls } })
+      this.emitUpdate()
+      return
+    }
+
+    await this.#initSignAccOp(calls)
+    this.emitUpdate()
+  }
+
   async #initSignAccOp(calls: Call[], topUpAmount?: bigint) {
     if (!this.#selectedAccount.account || this.signAccountOpController) return
 
-    const network = this.#networks.networks.find(
-      (net) => net.chainId === this.#selectedToken!.chainId
-    )
+    const network = this.#networks.networks.find((net) => net.chainId === this.selectedChainId)
 
     // shouldn't happen ever
     if (!network) return
@@ -1180,7 +1565,16 @@ export class TransferController extends EventEmitter implements ITransferControl
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      nonce: accountState.nonce,
+      // A Safe transaction is queued after the ones this device sent that the RPC may not count
+      // yet, instead of taking (and replacing) the nonce of one of them
+      nonce: this.#selectedAccount.account.safeCreation
+        ? this.#activity.getNextNonce(
+            this.#selectedAccount.account.addr,
+            network.chainId,
+            'account',
+            accountState.nonce
+          )
+        : accountState.nonce,
       signature: null,
       calls,
       meta: {
@@ -1224,6 +1618,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
         if (this.transferSessionId) {
           this.latestBroadcastedToken = structuredClone(this.selectedToken)
+          this.latestBroadcastedNft = structuredClone(this.selectedNft)
           this.latestBroadcastedAccountOp = submittedAccountOp
         } else {
           // Do a complete reset if there is no transfer session
@@ -1282,6 +1677,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   destroyLatestBroadcastedAccountOp(skipUpdate: boolean = false) {
     this.latestBroadcastedAccountOp = null
     this.latestBroadcastedToken = null
+    this.latestBroadcastedNft = null
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -1305,6 +1701,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.#tokens = []
     this.selectedToken = null
+    // Cleared before resetForm, which would otherwise select a default token
+    this.selectedNft = null
     this.areDefaultsSet = false
 
     this.destroyLatestBroadcastedAccountOp(true)
@@ -1330,6 +1728,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       isFormValid: this.isFormValid,
       isInitialized: this.isInitialized,
       selectedToken: this.selectedToken,
+      selectedChainId: this.selectedChainId,
       tokens: this.tokens,
       maxAmount: this.maxAmount,
       maxAmountInFiat: this.maxAmountInFiat,

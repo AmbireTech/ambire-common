@@ -2,10 +2,12 @@ import fetch from 'node-fetch'
 
 import { expect, jest } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import {
   PHISHING_ACTIVE_UPDATE_INTERVAL,
-  PHISHING_INACTIVE_UPDATE_INTERVAL
+  PHISHING_INACTIVE_UPDATE_INTERVAL,
+  PHISHING_LIST_WAIT_TIMEOUT
 } from '../../consts/intervals'
 import { canBeTrustedByUser, PhishingController } from './phishing'
 import { SUSPICIOUS_HOSTING_DOMAINS } from './suspiciousHostingDomains'
@@ -35,6 +37,11 @@ const prepareTest = async (
 }
 
 const flushMicrotaskQueue = async () => Promise.resolve()
+// Lets the work that continues after a resolved promise finish, e.g. a check waiting for the list
+const flushPendingWork = async () =>
+  new Promise<void>((resolve) => {
+    setImmediate(resolve)
+  })
 
 const removeAllViews = (ui: Awaited<ReturnType<typeof prepareTest>>['ui']) => {
   ui.views.map((view) => view.id).forEach((viewId) => ui.removeView(viewId))
@@ -447,6 +454,288 @@ describe('PhishingController', () => {
 
       expect(fetchedUrls).toEqual([`${SCAMCHECKER_BASE_URL}/get_update?version=${STORED_VERSION}`])
       expect(controller.getAddressBlacklistedStatus(STORED_SCAM_ADDRESS)).toBe('BLACKLISTED')
+
+      cleanup()
+    })
+  })
+
+  // The visited domains must never reach a server. While the local list is empty a check waits for
+  // the list to be downloaded, and must always end up with a final status - never stay LOADING.
+  describe('domain checks without a local list', () => {
+    const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker'
+    const SCAM_DOMAIN = 'wallet-premium.org'
+    const SAFE_DOMAIN = 'aave.com'
+    const urls: string[] = [`https://${SCAM_DOMAIN}`, `https://${SAFE_DOMAIN}`]
+    const SCAM_ADDRESS = '0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'
+    const SAFE_ADDRESS = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const addresses = [SCAM_ADDRESS, SAFE_ADDRESS]
+
+    // CI runs with IS_TESTING, which makes the domain check answer VERIFIED without any list
+    let isTestingEnv: string | undefined
+    beforeEach(() => {
+      isTestingEnv = process.env.IS_TESTING
+      delete process.env.IS_TESTING
+    })
+    afterEach(() => {
+      jest.useRealTimers()
+      if (isTestingEnv === undefined) return
+      process.env.IS_TESTING = isTestingEnv
+    })
+
+    const prepareNoListTest = async ({
+      isListDownloadFailing = false,
+      storedDomains = [],
+      storedAddresses = [SCAM_ADDRESS]
+    }: {
+      isListDownloadFailing?: boolean
+      storedDomains?: string[]
+      storedAddresses?: string[]
+    } = {}) => {
+      const scamcheckerRequests: { url: string; body?: string }[] = []
+      const mockFetch = jest.fn((url: string, options?: any) => {
+        if (!url.startsWith(SCAMCHECKER_BASE_URL)) return (fetch as any)(url, options)
+
+        scamcheckerRequests.push({ url, body: options?.body })
+
+        return Promise.resolve({
+          ok: !isListDownloadFailing,
+          status: isListDownloadFailing ? 500 : 200,
+          url,
+          json: async () => ({ version: 1, domains: [SCAM_DOMAIN], addresses: [SCAM_ADDRESS] })
+        })
+      })
+
+      const { mainCtrl } = await makeMainController(
+        async (storageCtrl) => {
+          if (!storedDomains.length) return
+
+          await storageCtrl.set('phishing', {
+            version: 1,
+            // Recent, so the update does not run again and the stored list is all there is
+            updatedAt: Date.now(),
+            domains: storedDomains,
+            addresses: storedAddresses
+          })
+        },
+        { skipDappsAndPhishingInit: true, overrides: { fetch: mockFetch } }
+      )
+      // makeMainController stubs the update out for every other test, but this one is about it.
+      ;(
+        PhishingController.prototype.continuouslyUpdatePhishing as unknown as jest.SpiedFunction<
+          PhishingController['continuouslyUpdatePhishing']
+        >
+      ).mockRestore()
+
+      const controller = mainCtrl.phishing
+      const callback = jest.fn()
+
+      return {
+        controller,
+        callback,
+        scamcheckerRequests,
+        cleanup: () => controller.updatePhishingInterval.stop()
+      }
+    }
+
+    test('waits as LOADING for the downloaded list, resolves from it, and never sends the domains', async () => {
+      const { controller, callback, scamcheckerRequests, cleanup } = await prepareNoListTest()
+
+      // Returns without waiting for the list, so that its callers are not held up by the download
+      await controller.updateDomainsBlacklistedStatus(urls, callback)
+
+      expect(callback).toHaveBeenCalledTimes(1)
+      expect(callback).toHaveBeenLastCalledWith({
+        [SCAM_DOMAIN]: 'LOADING',
+        [SAFE_DOMAIN]: 'LOADING'
+      })
+
+      await controller.init()
+      await controller.updatePhishingInterval.promise
+      await flushPendingWork()
+
+      expect(callback).toHaveBeenCalledTimes(2)
+      expect(callback).toHaveBeenLastCalledWith({
+        [SCAM_DOMAIN]: 'BLACKLISTED',
+        [SAFE_DOMAIN]: 'VERIFIED'
+      })
+      // Only the public list was downloaded - no request carries a visited domain
+      expect(scamcheckerRequests.map(({ url }) => url)).toEqual([`${SCAMCHECKER_BASE_URL}/data`])
+      expect(scamcheckerRequests.every(({ body }) => body === undefined)).toBe(true)
+      expect(controller.getDomainBlacklistedStatus(urls[0] as string)).toBe('BLACKLISTED')
+
+      cleanup()
+    })
+
+    test('ends as FAILED_TO_GET, not LOADING, when the list download fails', async () => {
+      const { restore } = suppressConsole()
+      const { controller, callback, scamcheckerRequests, cleanup } = await prepareNoListTest({
+        isListDownloadFailing: true
+      })
+
+      await controller.updateDomainsBlacklistedStatus(urls, callback)
+      await controller.init()
+      await controller.updatePhishingInterval.promise?.catch(() => {})
+      await flushPendingWork()
+
+      expect(callback).toHaveBeenLastCalledWith({
+        [SCAM_DOMAIN]: 'FAILED_TO_GET',
+        [SAFE_DOMAIN]: 'FAILED_TO_GET'
+      })
+      expect(scamcheckerRequests.map(({ url }) => url)).toEqual([`${SCAMCHECKER_BASE_URL}/data`])
+
+      cleanup()
+      restore()
+    })
+
+    test('ends as FAILED_TO_GET, not LOADING, when no list download ever runs', async () => {
+      const { controller, callback, scamcheckerRequests } = await prepareNoListTest()
+      // After the setup, which waits on real timers
+      jest.useFakeTimers()
+
+      // init() is never called, as on mobile before the dashboard is shown
+      await controller.updateDomainsBlacklistedStatus(urls, callback)
+      await jest.advanceTimersByTimeAsync(PHISHING_LIST_WAIT_TIMEOUT - 1)
+      expect(callback).toHaveBeenCalledTimes(1)
+      expect(callback).toHaveBeenLastCalledWith({
+        [SCAM_DOMAIN]: 'LOADING',
+        [SAFE_DOMAIN]: 'LOADING'
+      })
+
+      await jest.advanceTimersByTimeAsync(1)
+
+      expect(callback).toHaveBeenLastCalledWith({
+        [SCAM_DOMAIN]: 'FAILED_TO_GET',
+        [SAFE_DOMAIN]: 'FAILED_TO_GET'
+      })
+      expect(scamcheckerRequests).toHaveLength(0)
+    })
+
+    test('a check that waits does not leave its timer running once the list arrives', async () => {
+      const { controller, callback, cleanup } = await prepareNoListTest()
+      // After the setup, which waits on real timers
+      jest.useFakeTimers()
+
+      await controller.updateDomainsBlacklistedStatus(urls, callback)
+      const timersWhileWaiting = jest.getTimerCount()
+      await controller.init()
+      await jest.advanceTimersByTimeAsync(0)
+
+      cleanup()
+      expect(jest.getTimerCount()).toBeLessThan(timersWhileWaiting)
+    })
+
+    test('answers at once from a list read from storage, with nothing sent and no LOADING', async () => {
+      const { controller, callback, scamcheckerRequests, cleanup } = await prepareNoListTest({
+        storedDomains: [SCAM_DOMAIN]
+      })
+
+      await controller.init()
+      await controller.updateDomainsBlacklistedStatus(urls, callback)
+
+      expect(callback).toHaveBeenCalledTimes(1)
+      expect(callback).toHaveBeenCalledWith({
+        [SCAM_DOMAIN]: 'BLACKLISTED',
+        [SAFE_DOMAIN]: 'VERIFIED'
+      })
+      expect(scamcheckerRequests).toHaveLength(0)
+
+      cleanup()
+    })
+
+    test('waits as LOADING for the downloaded list, resolves addresses from it, and never sends them', async () => {
+      const { controller, callback, scamcheckerRequests, cleanup } = await prepareNoListTest()
+      // Resolves with the final status only once the list is here, so safety checks stay loading
+      const addressesPromise = controller.updateAddressesBlacklistedStatus(addresses, callback)
+      await flushPendingWork()
+
+      expect(callback).toHaveBeenCalledTimes(1)
+      expect(callback).toHaveBeenLastCalledWith({
+        [SCAM_ADDRESS]: 'LOADING',
+        [SAFE_ADDRESS]: 'LOADING'
+      })
+
+      await controller.init()
+      await controller.updatePhishingInterval.promise
+      await addressesPromise
+
+      expect(callback).toHaveBeenCalledTimes(2)
+      expect(callback).toHaveBeenLastCalledWith({
+        [SCAM_ADDRESS]: 'BLACKLISTED',
+        [SAFE_ADDRESS]: 'VERIFIED'
+      })
+      // Only the public list was downloaded - no request carries a checked address
+      expect(scamcheckerRequests.map(({ url }) => url)).toEqual([`${SCAMCHECKER_BASE_URL}/data`])
+      expect(scamcheckerRequests.every(({ body }) => body === undefined)).toBe(true)
+
+      cleanup()
+    })
+
+    test('addresses end as FAILED_TO_GET, not LOADING, when the list download fails', async () => {
+      const { controller, callback, scamcheckerRequests, cleanup } = await prepareNoListTest({
+        isListDownloadFailing: true
+      })
+
+      const addressesPromise = controller.updateAddressesBlacklistedStatus(addresses, callback)
+      await controller.init()
+      await controller.updatePhishingInterval.promise?.catch(() => {})
+      await addressesPromise
+
+      expect(callback).toHaveBeenLastCalledWith({
+        [SCAM_ADDRESS]: 'FAILED_TO_GET',
+        [SAFE_ADDRESS]: 'FAILED_TO_GET'
+      })
+      expect(scamcheckerRequests.map(({ url }) => url)).toEqual([`${SCAMCHECKER_BASE_URL}/data`])
+
+      cleanup()
+    })
+
+    test('addresses end as FAILED_TO_GET, not LOADING, when no list download ever runs', async () => {
+      const { controller, callback, scamcheckerRequests } = await prepareNoListTest()
+      jest.useFakeTimers()
+
+      const addressesPromise = controller.updateAddressesBlacklistedStatus(addresses, callback)
+      await jest.advanceTimersByTimeAsync(PHISHING_LIST_WAIT_TIMEOUT)
+      await addressesPromise
+
+      expect(callback).toHaveBeenLastCalledWith({
+        [SCAM_ADDRESS]: 'FAILED_TO_GET',
+        [SAFE_ADDRESS]: 'FAILED_TO_GET'
+      })
+      expect(scamcheckerRequests).toHaveLength(0)
+    })
+
+    test('addresses are answered at once from a list read from storage, with nothing sent', async () => {
+      const { controller, callback, scamcheckerRequests, cleanup } = await prepareNoListTest({
+        storedDomains: [SCAM_DOMAIN]
+      })
+
+      await controller.init()
+      await controller.updateAddressesBlacklistedStatus(addresses, callback)
+
+      expect(callback).toHaveBeenCalledTimes(1)
+      expect(callback).toHaveBeenCalledWith({
+        [SCAM_ADDRESS]: 'BLACKLISTED',
+        [SAFE_ADDRESS]: 'VERIFIED'
+      })
+      expect(scamcheckerRequests).toHaveLength(0)
+
+      cleanup()
+    })
+
+    test('a stored list with domains and no addresses resolves addresses as VERIFIED', async () => {
+      const { controller, callback, scamcheckerRequests, cleanup } = await prepareNoListTest({
+        storedDomains: [SCAM_DOMAIN],
+        storedAddresses: []
+      })
+
+      await controller.init()
+      await controller.updateAddressesBlacklistedStatus(addresses, callback)
+
+      expect(callback).toHaveBeenLastCalledWith({
+        [SCAM_ADDRESS]: 'VERIFIED',
+        [SAFE_ADDRESS]: 'VERIFIED'
+      })
+      expect(scamcheckerRequests).toHaveLength(0)
 
       cleanup()
     })

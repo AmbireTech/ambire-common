@@ -23,7 +23,8 @@ export interface KeyIterator {
   derivableHdPathTemplates?: HD_PATH_TEMPLATE_TYPE[]
   /**
    * How many keys the iterator can serve, when that number is limited (e.g. a list of
-   * private keys). Undefined means keys can be retrieved at any index.
+   * private keys, or a QR wallet exporting its Ledger Live accounts one by one).
+   * Undefined means keys can be retrieved at any index.
    */
   keysCount?: number
   /** Retrieves the the public addresses (accounts) from specific indexes */

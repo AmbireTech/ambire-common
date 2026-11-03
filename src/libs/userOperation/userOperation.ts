@@ -16,7 +16,12 @@ import { Account, AccountId, AccountOnchainState } from '../../interfaces/accoun
 import { Hex } from '../../interfaces/hex'
 import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
 import { getSafeBroadcastTxn } from '../safe/helpers'
-import { PackedUserOperation, UserOperation, UserOperationEventData } from './types'
+import {
+  PackableUserOperation,
+  PackedUserOperation,
+  UserOperation,
+  UserOperationEventData
+} from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
   if (callData === '0x') return 0n
@@ -196,7 +201,7 @@ export function getUserOperation({
 
 export const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_REQUEST_ID'
 
-export function getPackedUserOp(userOp: UserOperation): PackedUserOperation {
+export function getPackedUserOp(userOp: PackableUserOperation): PackedUserOperation {
   const initCode = userOp.factory ? concat([userOp.factory, userOp.factoryData!]) : '0x'
   const accountGasLimits = concat([
     toBeHex(userOp.verificationGasLimit.toString(), 16),

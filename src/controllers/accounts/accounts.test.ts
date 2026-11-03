@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
 
 import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -10,10 +11,12 @@ import {
   IAccountsController,
   SafeAccountCreation
 } from '../../interfaces/account'
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
+import { UiManager } from '../../interfaces/ui'
 import * as accountStateLib from '../../libs/accountState/accountState'
 import { StorageController } from '../storage/storage'
 import { AccountsController } from './accounts'
@@ -143,7 +146,9 @@ const track = (promise: Promise<unknown>) => {
  * Builds an AccountsController with stubbed dependencies and no RPC access.
  * `fetches` lists every `getAccountState` call, which the test settles by hand.
  */
-const makeAccountsController = async () => {
+const makeAccountsController = async ({
+  sendUiMessage
+}: { sendUiMessage?: UiManager['message']['sendUiMessage'] } = {}) => {
   const fetches: AccountStateFetch[] = []
   jest
     .spyOn(accountStateLib, 'getAccountState')
@@ -183,14 +188,15 @@ const makeAccountsController = async () => {
     {
       initialLoadPromise: Promise.resolve(),
       isFeatureEnabled: () => false
-    } as unknown as IFeatureFlagsController
+    } as unknown as IFeatureFlagsController,
+    sendUiMessage
   )
   await accountsCtrl.initialLoadPromise
   await accountsCtrl.accountStateInitialLoadPromise
   const errors: string[] = []
   accountsCtrl.onError((error) => errors.push(error.message))
 
-  return { accountsCtrl, fetches, errors, updateProviderIsWorking }
+  return { accountsCtrl, storage, fetches, errors, updateProviderIsWorking }
 }
 
 describe('AccountsController account state fetching', () => {
@@ -285,6 +291,7 @@ describe('AccountsController account state fetching', () => {
   })
 
   test('a forced call still fetches when the running fetch fails', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, fetches, errors } = ctrl
     const running = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId])
     await flushPromises()
@@ -299,9 +306,11 @@ describe('AccountsController account state fetching', () => {
     fetches[1]!.resolve([makeAccountState(ADDR_A, 11n)])
     await forced
     expect(accountsCtrl.accountStates[ADDR_A]?.[BASE.chainId.toString()]?.currentBlock).toBe(11n)
+    restore()
   })
 
   test('a failed forced fetch resolves every forced call it covers without another fetch', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, fetches, updateProviderIsWorking } = ctrl
     const running = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId])
     await flushPromises()
@@ -318,6 +327,7 @@ describe('AccountsController account state fetching', () => {
     expect(fetches).toHaveLength(2)
     expect(updateProviderIsWorking).toHaveBeenLastCalledWith(BASE.chainId, false)
     expect(accountsCtrl.accountStates[ADDR_A]?.[BASE.chainId.toString()]?.currentBlock).toBe(10n)
+    restore()
   })
 
   test('a pending result from an older block does not replace the stored state', async () => {
@@ -394,5 +404,168 @@ describe('AccountsController account state fetching', () => {
     fetches[0]!.resolve([makeAccountState(ADDR_A, 10n)])
     await update
     expect(loadingStates.at(-1)).toBe(false)
+  })
+
+  describe('getLatestAccountNonce', () => {
+    test('reads the nonce on the latest block, not from the saved states', async () => {
+      const { accountsCtrl, fetches } = ctrl
+      // A pending state counts txns that are not mined, so it must not answer for the latest one
+      const updatePending = accountsCtrl.updateAccountState(ADDR_A, 'pending', [ETHEREUM.chainId])
+      await flushPromises()
+      fetches[0]!.resolve([makeAccountState(ADDR_A, 11n)])
+      await updatePending
+
+      const nonce = accountsCtrl.getLatestAccountNonce(ADDR_A, ETHEREUM.chainId)
+      await flushPromises()
+      expect(fetches[1]?.blockTag).toBe('latest')
+      fetches[1]!.resolve([makeAccountState(ADDR_A, 10n)])
+
+      expect(await nonce).toBe(10n)
+      // Only a state fetch of its own saves a state
+      expect(accountsCtrl.accountStates[ADDR_A]?.[ETHEREUM.chainId.toString()]?.nonce).toBe(11n)
+    })
+
+    test('is null, with a silent error, when the RPC fails', async () => {
+      const { accountsCtrl, fetches, errors } = ctrl
+      const nonce = accountsCtrl.getLatestAccountNonce(ADDR_A, BASE.chainId)
+      await flushPromises()
+      fetches[0]!.reject(new Error('RPC is down'))
+
+      expect(await nonce).toBeNull()
+      expect(errors).toEqual([`Failed to read the account nonce on ${BASE.name}.`])
+    })
+
+    test('is null for an account that is not in the wallet or a network that is not enabled', async () => {
+      const { accountsCtrl, fetches } = ctrl
+
+      expect(await accountsCtrl.getLatestAccountNonce(ADDR_A, 12345n)).toBeNull()
+      expect(
+        await accountsCtrl.getLatestAccountNonce(
+          '0x0000000000000000000000000000000000000001',
+          BASE.chainId
+        )
+      ).toBeNull()
+      expect(fetches).toHaveLength(0)
+    })
+  })
+})
+
+describe('AccountsController updateAccountPreferences replies', () => {
+  const ADDR = accounts[0]!.addr
+  const preferences = { label: 'Savings', pfp: ADDR }
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  test('replies with success once the preferences are saved', async () => {
+    const sendUiMessage = jest.fn()
+    const { accountsCtrl, storage } = await makeAccountsController({ sendUiMessage })
+
+    await accountsCtrl.updateAccountPreferences([{ addr: ADDR, preferences }], 'request-1')
+
+    const savedAccounts: Account[] = await storage.get('accounts', [])
+    expect(savedAccounts.find((a) => a.addr === ADDR)?.preferences.label).toBe('Savings')
+    expect(sendUiMessage).toHaveBeenCalledTimes(1)
+    expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-1', ok: true })
+  })
+
+  test('does not reply when called without a request id', async () => {
+    const sendUiMessage = jest.fn()
+    const { accountsCtrl } = await makeAccountsController({ sendUiMessage })
+
+    await accountsCtrl.updateAccountPreferences([{ addr: ADDR, preferences }])
+
+    expect(accountsCtrl.accounts.find((a) => a.addr === ADDR)?.preferences.label).toBe('Savings')
+    expect(sendUiMessage).not.toHaveBeenCalled()
+  })
+
+  const getLabel = (ctrl: { accounts: Account[] }) =>
+    ctrl.accounts.find((a) => a.addr === ADDR)?.preferences.label
+
+  test('replies with the error and emits it silently when saving fails', async () => {
+    const { restore } = suppressConsole()
+    const sendUiMessage = jest.fn()
+    const { accountsCtrl, storage } = await makeAccountsController({ sendUiMessage })
+    const emittedErrors: ErrorRef[] = []
+    accountsCtrl.onError((error) => emittedErrors.push(error))
+    jest.spyOn(storage, 'set').mockRejectedValueOnce(new Error('Storage is full'))
+
+    await expect(
+      accountsCtrl.updateAccountPreferences([{ addr: ADDR, preferences }], 'request-2')
+    ).resolves.toBeUndefined()
+
+    expect(sendUiMessage).toHaveBeenCalledTimes(1)
+    expect(sendUiMessage).toHaveBeenCalledWith({
+      requestId: 'request-2',
+      ok: false,
+      error: 'Storage is full'
+    })
+    // Silent, as the UI that asked tells the user itself
+    expect(emittedErrors).toHaveLength(1)
+    expect(emittedErrors[0]!.level).toBe('silent')
+    expect(emittedErrors[0]!.error.message).toBe('Storage is full')
+    restore()
+  })
+
+  test('restores the previous preferences when saving fails', async () => {
+    const { restore } = suppressConsole()
+    const { accountsCtrl, storage } = await makeAccountsController({ sendUiMessage: jest.fn() })
+    const otherAddr = accounts[1]!.addr
+    jest.spyOn(storage, 'set').mockRejectedValueOnce(new Error('Storage is full'))
+
+    await accountsCtrl.updateAccountPreferences([{ addr: ADDR, preferences }], 'request-5')
+
+    expect(getLabel(accountsCtrl)).toBe(DEFAULT_ACCOUNT_LABEL)
+    // Accounts that weren't part of the update are left as they are
+    expect(accountsCtrl.accounts.find((a) => a.addr === otherAddr)?.preferences.label).toBe(
+      DEFAULT_ACCOUNT_LABEL
+    )
+    restore()
+  })
+
+  test('shows the error when saving fails and there is no request to reply to', async () => {
+    const { restore } = suppressConsole()
+    const sendUiMessage = jest.fn()
+    const { accountsCtrl, storage } = await makeAccountsController({ sendUiMessage })
+    const emittedErrors: ErrorRef[] = []
+    accountsCtrl.onError((error) => emittedErrors.push(error))
+    jest.spyOn(storage, 'set').mockRejectedValueOnce(new Error('Storage is full'))
+
+    await expect(
+      accountsCtrl.updateAccountPreferences([{ addr: ADDR, preferences }])
+    ).resolves.toBeUndefined()
+
+    expect(sendUiMessage).not.toHaveBeenCalled()
+    expect(getLabel(accountsCtrl)).toBe(DEFAULT_ACCOUNT_LABEL)
+    expect(emittedErrors).toHaveLength(1)
+    expect(emittedErrors[0]!.level).toBe('major')
+    restore()
+  })
+
+  test('shows the error when saving fails and there is no way to reply', async () => {
+    const { restore } = suppressConsole()
+    const { accountsCtrl, storage } = await makeAccountsController()
+    const emittedErrors: ErrorRef[] = []
+    accountsCtrl.onError((error) => emittedErrors.push(error))
+    jest.spyOn(storage, 'set').mockRejectedValueOnce(new Error('Storage is full'))
+
+    await expect(
+      accountsCtrl.updateAccountPreferences([{ addr: ADDR, preferences }], 'request-4')
+    ).resolves.toBeUndefined()
+
+    expect(getLabel(accountsCtrl)).toBe(DEFAULT_ACCOUNT_LABEL)
+    expect(emittedErrors).toHaveLength(1)
+    expect(emittedErrors[0]!.level).toBe('major')
+    restore()
+  })
+
+  test('saves without replying when no way to reply was given', async () => {
+    const { accountsCtrl } = await makeAccountsController()
+
+    await expect(
+      accountsCtrl.updateAccountPreferences([{ addr: ADDR, preferences }], 'request-3')
+    ).resolves.toBeUndefined()
+    expect(accountsCtrl.accounts.find((a) => a.addr === ADDR)?.preferences.label).toBe('Savings')
   })
 })

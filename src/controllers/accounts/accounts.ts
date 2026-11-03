@@ -28,11 +28,13 @@ import { dedicatedToOneSAPriv, IKeystoreController } from '../../interfaces/keys
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { UiManager } from '../../interfaces/ui'
 import { getUniqueAccountsArray, isAmbireV2Account } from '../../libs/account/account'
 import { normalizeIdentityResponse } from '../../libs/accountPicker/accountPicker'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
+import isSameAddr from '../../utils/isSameAddr'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
@@ -90,6 +92,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   #featureFlags?: IFeatureFlagsController
 
+  /** Replies to a UI request, so the UI can await the outcome of a method */
+  #sendUiMessage?: UiManager['message']['sendUiMessage']
+
   /**
    * Creating Ambire smart account identity is needed but not critical, user
    * is still able to interact and transfer funds with a smart account one.
@@ -141,7 +146,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     relayerUrl: string,
     fetch: Fetch,
     eventEmitterRegistry?: IEventEmitterRegistryController,
-    featureFlags?: IFeatureFlagsController
+    featureFlags?: IFeatureFlagsController,
+    sendUiMessage?: UiManager['message']['sendUiMessage']
   ) {
     super(eventEmitterRegistry)
     this.#storage = storage
@@ -153,6 +159,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.#onAccountStateUpdate = onAccountStateUpdate
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#featureFlags = featureFlags
+    this.#sendUiMessage = sendUiMessage
 
     this.#viewOnlyAccountGetIdentityInterval = new RecurringTimeout(
       this.setViewOnlyAccountIdentitiesIfNeeded.bind(this),
@@ -239,6 +246,38 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
     if (!accountData) return
     await this.updateAccountStates([accountData], blockTag, networks, force)
+  }
+
+  /**
+   * The account nonce (an Ambire account or a Safe) on the latest block, read from the chain now
+   * and not from the saved states, as these may come from the pending block. Null if it can't be
+   * read, e.g. when the RPC is down.
+   */
+  async getLatestAccountNonce(accountAddr: string, chainId: bigint): Promise<bigint | null> {
+    await this.initialLoadPromise
+
+    const account = this.accounts.find(({ addr }) => isSameAddr(addr, accountAddr))
+    const network = this.#networks.networks.find((net) => net.chainId === chainId)
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!account || !network || !provider) return null
+
+    try {
+      const [accountState] = await getAccountState(
+        provider,
+        network,
+        [account],
+        this.#keystore.keys,
+        'latest'
+      )
+      return accountState?.nonce ?? null
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: `Failed to read the account nonce on ${network.name}.`,
+        error
+      })
+      return null
+    }
   }
 
   private async updateAccountStates(
@@ -480,18 +519,60 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.emitUpdate()
   }
 
-  async updateAccountPreferences(accounts: { addr: string; preferences: AccountPreferences }[]) {
-    this.accounts = this.accounts.map((acc) => {
-      const account = accounts.find((a) => a.addr === acc.addr)
-      if (!account) return acc
-      if (isAddress(account.preferences.pfp)) {
-        account.preferences.pfp = getAddress(account.preferences.pfp)
-      }
-      return { ...acc, preferences: account.preferences }
-    })
+  /**
+   * Updates the preferences (label, pfp) of the given accounts and saves them.
+   * If saving fails, the previous preferences are restored and the error is emitted.
+   * When called with a `requestId` (via `dispatchAndWait` in the UI), it also replies
+   * once they are saved or failed to save, and the error is emitted silently, as the
+   * UI that asked tells the user instead.
+   */
+  async updateAccountPreferences(
+    accounts: { addr: string; preferences: AccountPreferences }[],
+    requestId?: string
+  ) {
+    const previousPreferences = new Map(
+      this.accounts.map((acc) => [acc.addr, acc.preferences] as const)
+    )
 
-    this.emitUpdate()
-    await this.#storage.set('accounts', this.accounts)
+    try {
+      this.accounts = this.accounts.map((acc) => {
+        const account = accounts.find((a) => a.addr === acc.addr)
+        if (!account) return acc
+        if (isAddress(account.preferences.pfp)) {
+          account.preferences.pfp = getAddress(account.preferences.pfp)
+        }
+        return { ...acc, preferences: account.preferences }
+      })
+
+      this.emitUpdate()
+      await this.#storage.set('accounts', this.accounts)
+
+      if (requestId) this.#sendUiMessage?.({ requestId, ok: true })
+    } catch (error: any) {
+      // Restores only the accounts this call changed, so the wallet doesn't show names
+      // that were never saved, without undoing other changes made in the meantime
+      this.accounts = this.accounts.map((acc) => {
+        const previous = previousPreferences.get(acc.addr)
+        const wasChanged = accounts.some((a) => a.addr === acc.addr)
+        return wasChanged && previous ? { ...acc, preferences: previous } : acc
+      })
+      this.emitUpdate()
+
+      const canReply = !!requestId && !!this.#sendUiMessage
+      this.emitError({
+        level: canReply ? 'silent' : 'major',
+        message: "Couldn't save the account changes. Please try again.",
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+
+      if (canReply) {
+        this.#sendUiMessage?.({
+          requestId,
+          ok: false,
+          error: error?.message || 'updateAccountPreferences failed'
+        })
+      }
+    }
   }
 
   /** Saves recovered Safe creation data on an imported account. */

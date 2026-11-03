@@ -3,10 +3,12 @@ import { expect } from '@jest/globals'
 import { predefinedDapps } from '../../consts/dapps/dapps'
 import { Dapp } from '../../interfaces/dapp'
 import {
+  getAccountsForDapp,
   getDappIdFromUrl,
   getNormalizedHostnameFromUrl,
   getUnauthenticatedDapps,
-  normalizeHostname
+  normalizeHostname,
+  withoutUnusedAccountPreferences
 } from './helpers'
 
 describe('dapps helpers', () => {
@@ -75,6 +77,11 @@ describe('dapps helpers', () => {
       expect(getDappIdFromUrl('https://app.aave.com.')).toBe('app.aave.com')
     })
 
+    it('strips every leading www., not just the first one', () => {
+      expect(getDappIdFromUrl('https://www.www.aave.com')).toBe('aave.com')
+      expect(getDappIdFromUrl('https://www.www.www.aave.com')).toBe('aave.com')
+    })
+
     it('strips www. from a fully-qualified host as well', () => {
       expect(getDappIdFromUrl('https://www.example.web.app./')).toBe('example.web.app')
     })
@@ -128,6 +135,121 @@ describe('dapps helpers', () => {
 
     it('returns nothing for no dapps', () => {
       expect(getUnauthenticatedDapps([])).toEqual([])
+    })
+  })
+
+  describe('getAccountsForDapp', () => {
+    const WALLET = '0x16c81367c30c71d6B712355255A07FCe8fd3b5bB'
+    const PICKED = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const OTHER = '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6'
+
+    it('follows the wallet account when the dapp may see it and nothing is pinned', () => {
+      expect(
+        getAccountsForDapp(
+          { enabled: true, selectedAccount: PICKED, accounts: [PICKED, WALLET] },
+          WALLET
+        )
+      ).toEqual([WALLET, PICKED])
+    })
+
+    it('keeps the last used account when the dapp may not see the wallet account', () => {
+      expect(
+        getAccountsForDapp(
+          { enabled: true, selectedAccount: PICKED, accounts: [PICKED, OTHER] },
+          WALLET
+        )
+      ).toEqual([PICKED, OTHER])
+    })
+
+    it('puts the pinned account first even when the dapp may see the wallet account', () => {
+      expect(
+        getAccountsForDapp(
+          {
+            enabled: true,
+            selectedAccount: PICKED,
+            accounts: [WALLET, PICKED, OTHER],
+            isSelectedAccountPinned: true
+          },
+          WALLET
+        )
+      ).toEqual([PICKED, WALLET, OTHER])
+    })
+
+    it('returns only the pinned account to a dapp that may see every account', () => {
+      expect(
+        getAccountsForDapp(
+          {
+            enabled: false,
+            selectedAccount: PICKED,
+            accounts: [WALLET, PICKED],
+            isSelectedAccountPinned: true
+          },
+          WALLET
+        )
+      ).toEqual([PICKED])
+    })
+
+    it('ignores a pinned account the dapp may no longer see', () => {
+      expect(
+        getAccountsForDapp(
+          {
+            enabled: true,
+            selectedAccount: PICKED,
+            accounts: [WALLET, OTHER],
+            isSelectedAccountPinned: true
+          },
+          WALLET
+        )
+      ).toEqual([WALLET, OTHER])
+    })
+
+    it('follows the wallet account without preferences', () => {
+      expect(getAccountsForDapp(undefined, WALLET)).toEqual([WALLET])
+      expect(getAccountsForDapp(undefined, undefined)).toEqual([])
+    })
+  })
+
+  describe('withoutUnusedAccountPreferences', () => {
+    const PICKED = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const OTHER = '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6'
+
+    it('drops preferences that let the dapp see every account without pinning one', () => {
+      expect(
+        withoutUnusedAccountPreferences({
+          enabled: false,
+          selectedAccount: PICKED,
+          accounts: [PICKED, OTHER]
+        })
+      ).toBeUndefined()
+      expect(
+        withoutUnusedAccountPreferences({
+          enabled: false,
+          selectedAccount: PICKED,
+          accounts: [PICKED],
+          isSelectedAccountPinned: false
+        })
+      ).toBeUndefined()
+    })
+
+    it('keeps preferences that limit the accounts the dapp may see', () => {
+      const preferences = { enabled: true, selectedAccount: PICKED, accounts: [PICKED] }
+
+      expect(withoutUnusedAccountPreferences(preferences)).toBe(preferences)
+    })
+
+    it('keeps preferences that pin an account for a dapp that may see every account', () => {
+      const preferences = {
+        enabled: false,
+        selectedAccount: PICKED,
+        accounts: [PICKED],
+        isSelectedAccountPinned: true
+      }
+
+      expect(withoutUnusedAccountPreferences(preferences)).toBe(preferences)
+    })
+
+    it('returns undefined without preferences', () => {
+      expect(withoutUnusedAccountPreferences(undefined)).toBeUndefined()
     })
   })
 })

@@ -365,6 +365,9 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     if (!this.#main.accounts.accounts.length) return // no accounts imported yet
 
+    // A Privacy Pools account has no address, so it has no account state
+    if (this.#main.selectedAccount.selectedType === 'privacyPools') return
+
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to latest state')
       return
@@ -393,35 +396,6 @@ export class ContinuousUpdatesController extends EventEmitter {
     await this.#main.accounts.updateAccountState(
       this.#main.selectedAccount.account.addr,
       'latest',
-      networksToUpdate
-    )
-  }
-
-  async #updateAccountStatePending() {
-    await this.initialLoadPromise
-    await this.#main.accounts.accountStateInitialLoadPromise
-
-    if (!this.#main.selectedAccount.account) {
-      console.error('No selected account to update pending state')
-      return
-    }
-
-    const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
-      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr] ||
-        []
-      : []
-    const networksToUpdate = selectedAccountBroadcastedButNotConfirmed
-      .map((op) => op.chainId)
-      .filter((chainId, index, self) => self.indexOf(chainId) === index)
-
-    if (!networksToUpdate.length) {
-      this.#accountStateLatestInterval.restart()
-      return
-    }
-
-    await this.#main.accounts.updateAccountState(
-      this.#main.selectedAccount.account.addr,
-      'pending',
       networksToUpdate
     )
   }

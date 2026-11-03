@@ -9,6 +9,7 @@ type RequestParams = {
   callsCount: number
   isSafe?: boolean
   signed?: string[]
+  isSpeedUp?: boolean
 }
 
 const accountAddr = '0x0000000000000000000000000000000000000001'
@@ -16,7 +17,8 @@ const accountAddr = '0x0000000000000000000000000000000000000001'
 const makeRequest = ({
   callsCount,
   isSafe = false,
-  signed = []
+  signed = [],
+  isSpeedUp = false
 }: RequestParams): CallsUserRequest => {
   const account: Account = {
     addr: accountAddr,
@@ -44,7 +46,8 @@ const makeRequest = ({
     gasLimit: null,
     signature: null,
     gasFeePayment: null,
-    signed
+    signed,
+    ...(isSpeedUp && { meta: { speedUp: { enabled: true } } })
   }
 
   return {
@@ -82,5 +85,14 @@ describe('getCallsCount', () => {
         makeRequest({ callsCount: 1, isSafe: true })
       ])
     ).toBe(3)
+  })
+
+  test('does not count the calls of a speed up, as it is a request of its own', () => {
+    expect(
+      getCallsCount([
+        makeRequest({ callsCount: 2 }),
+        makeRequest({ callsCount: 1, isSpeedUp: true })
+      ])
+    ).toBe(2)
   })
 })

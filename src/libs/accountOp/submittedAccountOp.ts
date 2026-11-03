@@ -84,6 +84,12 @@ export interface SubmittedAccountOp extends AccountOp {
   blockNumber?: number
   blockHash?: string
   gasUsed?: string
+  /**
+   * When Activity got the receipt of the op, in ms. Unset while the op is pending. Its nonces stay
+   * taken for `CONFIRMED_NONCE_SETTLE_MS` from this time. The send time is not used, because a txn
+   * can wait in the mempool for minutes before it is mined.
+   */
+  confirmedAt?: number
   balanceChanges?: BalanceChange[]
   nftBalanceChanges?: NftBalanceChange[]
   balanceChangesFetchRetryCount?: number
@@ -128,6 +134,32 @@ export interface SubmittedAccountOpLike
     >,
     Partial<SubmittedAccountOpActionFields> {
   activitySource?: 'internal' | 'external'
+}
+
+/**
+ * Adds to each call of a batch broadcast as one txn per call (`MultipleTxns`) the hash
+ * of its txn. Calls without a txn were not sent (e.g. rejected on the hardware wallet
+ * midway through the batch), so they are marked as rejected.
+ */
+export function getCallsWithTxnIds(
+  submittedAccountOp: SubmittedAccountOp
+): SubmittedAccountOp['calls'] {
+  const txnIds = submittedAccountOp.identifiedBy.identifier.split('-')
+
+  return submittedAccountOp.calls.map((oneCall, i) => {
+    const localCall = { ...oneCall }
+
+    // if there's no tx id, we set it to Rejected and continue.
+    // it means broadcast has failed
+    if (!(i in txnIds)) {
+      localCall.status = AccountOpStatus.Rejected
+      return localCall
+    }
+
+    localCall.txnId = txnIds[i] as Hex
+    localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
+    return localCall
+  })
 }
 
 /**

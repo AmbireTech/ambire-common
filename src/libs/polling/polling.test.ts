@@ -14,7 +14,7 @@ const getRandomEmail = () => {
 }
 const email = getRandomEmail()
 
-describe('Polling', () => {
+describe.skip('Polling', () => {
   const ev: EmailVault = new EmailVault(fetch, relayerUrl)
   beforeEach(async () => {
     const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })

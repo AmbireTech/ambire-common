@@ -1,3 +1,5 @@
+import { isError } from 'ethers'
+
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
 import { Price } from '../../interfaces/assets'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
@@ -149,8 +151,56 @@ const isUnderpriced = (msg: string): boolean => {
     msg.includes('maxPriorityFeePerGas')
   )
 }
+/**
+ * Whether the node refused a raw txn because another pending txn of the sender already uses
+ * its nonce, and the new fee is not high enough to replace it.
+ */
+const isReplacementRefused = (error: unknown): boolean =>
+  isError(error, 'REPLACEMENT_UNDERPRICED') ||
+  (error instanceof Error && error.message.includes('replacement transaction underpriced'))
+
+/** Whether the node refused a raw txn because its nonce was already used by a mined txn. */
+const isNonceTooLow = (error: unknown): boolean =>
+  isError(error, 'NONCE_EXPIRED') ||
+  (error instanceof Error && error.message.includes('nonce too low'))
+
+/**
+ * Whether the node refused a raw txn because it already has the exact same txn, so it was sent
+ * before. A wrong match would report a txn as sent when it never went out, so only the exact
+ * answer of Geth and its forks counts.
+ */
+const isTxnAlreadyKnown = (error: unknown): boolean =>
+  error instanceof Error && error.message.includes('already known')
+
+/**
+ * Returns only the message the broadcast service (bundler, RPC, relayer) responded with.
+ *
+ * ethers wraps a failed JSON-RPC request in an error whose message also contains the
+ * request payload. For a bundler that payload is the user operation, which always has
+ * `maxFeePerGas` and `maxPriorityFeePerGas`, so checking the full message with
+ * `isUnderpriced` would treat every bundler error as a fee change.
+ */
+const getBroadcastServiceErrorMessage = (error?: Error): string => {
+  if (!error) return ''
+  if (!('shortMessage' in error) || typeof error.shortMessage !== 'string') return error.message
+
+  // ethers keeps the service's own JSON-RPC error either at the top level or under `info`
+  const rpcError =
+    'error' in error
+      ? error.error
+      : 'info' in error && !!error.info && typeof error.info === 'object' && 'error' in error.info
+        ? error.info.error
+        : undefined
+  const rpcErrorMessage =
+    !!rpcError && typeof rpcError === 'object' && 'message' in rpcError
+      ? rpcError.message
+      : undefined
+
+  return typeof rpcErrorMessage === 'string' ? rpcErrorMessage : error.shortMessage
+}
 
 export {
+  getBroadcastServiceErrorMessage,
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
@@ -158,5 +208,8 @@ export {
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
+  isNonceTooLow,
+  isReplacementRefused,
+  isTxnAlreadyKnown,
   isUnderpriced
 }
