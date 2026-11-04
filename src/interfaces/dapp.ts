@@ -11,9 +11,17 @@ export interface DappAccountPreferences {
   /**
    * The last selected account in the extension when the dapp session was active. It is used
    * when the currently selected account in the extension is not a part of the `accounts` list.
-   * If the currently selected account in the extension is a prat of the list, this field is ignored and the current account is used instead.
+   * If the currently selected account in the extension is a prat of the list, this field is ignored and the current account is used instead,
+   * unless `isSelectedAccountPinned` is set.
    */
   selectedAccount: string
+  /**
+   * Set when the user picks the app's account without switching the wallet's. The app then keeps
+   * `selectedAccount` until the wallet switches to another account the app may see, after which it
+   * follows the wallet again.
+   * Absent on older preferences.
+   */
+  isSelectedAccountPinned?: boolean
   accounts: string[]
 }
 

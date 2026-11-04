@@ -45,6 +45,33 @@ const getIndexOfFirstNonZeroInDecimals = (value: number, type: FormatType) => {
 
 const getPrefix = (widthDollarPrefix: boolean) => (widthDollarPrefix ? '$' : '')
 
+/** The shortest exact form of a positive non-integer `value`, spelled out without the exponent
+ * toString() uses below 1e-6, e.g. 1.5e-7 → "0.00000015". */
+const toPlainDecimalString = (value: number) => {
+  const valueString = value.toString()
+  const indexOfExponent = valueString.indexOf('e-')
+  if (indexOfExponent === -1) return valueString
+
+  const mantissaDigits = valueString.slice(0, indexOfExponent).replace('.', '')
+  const exponent = Number(valueString.slice(indexOfExponent + 2))
+
+  return `0.${'0'.repeat(exponent - 1)}${mantissaDigits}`
+}
+
+/** Cuts a positive `value` to `maxDecimals` fraction digits without rounding (0.7957 → 0.79).
+ * Done by hand because Hermes (mobile) ignores Intl's `roundingMode: 'trunc'` and rounds 0.7957
+ * up to 0.8. Works on the shortest exact form, so 0.29 isn't cut from 0.28999... to 0.28. */
+const truncateDecimals = (value: number, maxDecimals: number) => {
+  // Also covers everything from 1e21 up, the only numbers toString() writes as "e+"
+  if (Number.isInteger(value)) return value
+
+  const valueString = toPlainDecimalString(value)
+  const indexOfDot = valueString.indexOf('.')
+  if (indexOfDot === -1) return value
+
+  return Number(valueString.slice(0, indexOfDot + 1 + maxDecimals))
+}
+
 const formatNumber = (
   value: number,
   withDollarPrefix: boolean,
@@ -68,7 +95,7 @@ const formatNumber = (
     })
 
   const formatter = cacheForNumberFormatters[keyForCache]
-  const reconstructedStringValue = formatter.format(value)
+  const reconstructedStringValue = formatter.format(truncateDecimals(value, maximumFractionDigits))
 
   return `${sign}${getPrefix(withDollarPrefix)}${reconstructedStringValue}`
 }

@@ -1,3 +1,5 @@
+import { SpeedUp } from '@/controllers/signAccountOp/speedUp'
+
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IContractInfoController } from '../../interfaces/contractInfo'
@@ -52,11 +54,11 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     fromRequestId: UserRequest['id']
     accountOp: AccountOp
     shouldSimulate: boolean
-    traceCall?: Function
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
     onPartialBroadcast?: OnPartialBroadcast
+    speedUp?: SpeedUp
     estimateController: EstimationController
     gasPriceController: GasPriceController
     phishing: IPhishingController

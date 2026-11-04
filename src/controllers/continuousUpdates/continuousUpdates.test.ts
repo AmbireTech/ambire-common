@@ -285,7 +285,7 @@ describe('ContinuousUpdatesController intervals', () => {
     })
   })
 
-  test('should run updateAccountStateLatest and updateAccountStatePending', async () => {
+  test('should run updateAccountStateLatest', async () => {
     const { mainCtrl } = await prepareTest()
 
     jest.spyOn(mainCtrl.continuousUpdates!.accountStateLatestInterval, 'restart')

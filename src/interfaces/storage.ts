@@ -48,6 +48,7 @@ export type StorageProps = {
   avatarType: string
   logLevel: string
   crashAnalyticsEnabledV2: boolean
+  crashReportId: string
   autoLockTime: number
   // Activity
   accountsOps: { [key: string]: { [key: string]: SubmittedAccountOp[] } }
@@ -55,6 +56,8 @@ export type StorageProps = {
   signedMessages: { [key: AccountId]: SignedMessage[] }
   sentToHistory: SentToHistory
   feePayersHistory: FeePayersHistory
+  // Set once feePayersHistory was backfilled from every stored op, so the pass runs only once
+  feePayersHistoryBackfilled: boolean
   /**
    * Which backend the transaction history was last written to. Recorded rather than a
    * "migrated" boolean because it says what is true rather than what happened: a session that
