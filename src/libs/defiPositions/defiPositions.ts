@@ -6,7 +6,10 @@ import { getSanitizedAmount } from '@/libs/transfer/amount'
 import { AccountId } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
-import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
+import {
+  numberToDecimalString,
+  safeTokenAmountAndNumberMultiplication
+} from '../../utils/numbers/formatters'
 import shortenAddress from '../../utils/shortenAddress'
 import { TokenResult } from '../portfolio'
 import {
@@ -256,9 +259,13 @@ const getNewDefiState = (
 
 /**
  * Formats the response from Debank in a format that is expected by the extension.
- * Invalid positions are excluded from the formatted response.
+ * Invalid positions are excluded from the formatted response and passed to
+ * `onInvalidPosition`, so that the caller can report them.
  */
-const getFormattedApiPositions = (result: Omit<PositionsByProvider, 'source'>[]) => {
+const getFormattedApiPositions = (
+  result: Omit<PositionsByProvider, 'source'>[],
+  onInvalidPosition?: (error: unknown, providerName: string, positionName?: string) => void
+) => {
   return result.map((p) => ({
     ...p,
     source: 'debank' as const,
@@ -288,7 +295,7 @@ const getFormattedApiPositions = (result: Omit<PositionsByProvider, 'source'>[])
                 if (isCustomAppChain) {
                   // Amount should be formatted with decimals and turned to bigint after that
                   amount = parseUnits(
-                    String(getSanitizedAmount(String(amount), asset.decimals)),
+                    getSanitizedAmount(numberToDecimalString(amount), asset.decimals),
                     asset.decimals
                   )
                   // In else because app assets don't have addresses and we don't want to set them as zero addresses
@@ -315,6 +322,7 @@ const getFormattedApiPositions = (result: Omit<PositionsByProvider, 'source'>[])
           }
         } catch (error) {
           console.error('DeFi error when mapping positions: ', error, 'position', pos)
+          onInvalidPosition?.(error, p.providerName, pos.additionalData?.name)
           return null
         }
       })
