@@ -800,16 +800,26 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return this.#ragequit.buildCalls({ seedId, chainId, label })
   }
 
-  /** Adds a stored phrase's Privacy Pools account. Nothing is derived or synced until opened. */
-  async addAccount(seedId: string): Promise<void> {
+  /** The name a new account gets until the user renames it, e.g. "Private account 2". */
+  get defaultAccountLabel() {
+    return `Private account ${this.accounts.length + 1}`
+  }
+
+  /** Throws when the phrase is gone or has an account already. */
+  async assertCanAddAccount(seedId: string): Promise<void> {
     await this.initialLoadPromise
 
     if (!this.#keystore.seeds.some((seed) => seed.id === seedId))
       throw privacyPoolsErrors.seedRemoved(seedId)
 
     if (this.#hasAccount(seedId)) throw privacyPoolsErrors.accountExists(seedId)
+  }
 
-    this.accounts = [...this.accounts, { seedId, createdAt: Date.now() }]
+  /** Adds a stored phrase's Privacy Pools account. Nothing is derived or synced until opened. */
+  async addAccount(seedId: string, label: string): Promise<void> {
+    await this.assertCanAddAccount(seedId)
+
+    this.accounts = [...this.accounts, { seedId, createdAt: Date.now(), label }]
     this.emitUpdate()
     await this.#persistAccounts()
   }

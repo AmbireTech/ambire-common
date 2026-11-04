@@ -795,23 +795,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Generates and stores a recovery phrase flagged as not backed up, returning its id. For a
-   * Privacy Pools-only phrase: unlike `generateTempSeed`, it never touches the temp seed another
-   * flow may be holding.
-   */
-  async addGeneratedSeed({ extraEntropy }: { extraEntropy?: string }): Promise<string> {
-    const [seedId] = await this.#addSeeds([this.#generateNotBackedUpSeed(extraEntropy)])
-    if (!seedId)
-      throw new EmittableError({
-        message: 'The new recovery phrase could not be saved. Please try again.',
-        level: 'major',
-        error: new Error('keystore: the generated seed was not stored')
-      })
-
-    return seedId
-  }
-
-  /**
    * Generates a new 12-word phrase on the standard derivation path, flagged as not backed up
    * since the user has not seen it yet.
    */
@@ -826,12 +809,15 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (shouldUpdate) this.emitUpdate()
   }
 
-  async persistTempSeed() {
+  /** Stores the temp seed and returns its id, or nothing when there is no temp seed. */
+  async persistTempSeed(): Promise<StoredKeystoreSeed['id'] | undefined> {
     if (!this.#tempSeed) return
 
-    await this.#addSeeds([this.#tempSeed])
+    const [seedId] = await this.#addSeeds([this.#tempSeed])
     this.#tempSeed = null
     this.emitUpdate()
+
+    return seedId
   }
 
   /**

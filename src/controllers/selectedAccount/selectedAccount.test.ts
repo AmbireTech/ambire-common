@@ -364,6 +364,15 @@ describe('SelectedAccount Controller', () => {
       return { mainCtrl, selectedAccountCtrl: mainCtrl.selectedAccount }
     }
 
+    // What the add sheet and then the personalize step do
+    const preparePrivacyPoolsAccount = async (
+      mainCtrl: Awaited<ReturnType<typeof preparePrivacyPoolsTest>>['mainCtrl'],
+      params: { seedId?: string }
+    ) => {
+      await mainCtrl.accountPicker.setPrivacyPoolsInitParams(params)
+      await mainCtrl.accountPicker.initIfNotStarted()
+    }
+
     it('selecting one leaves no regular account selected, in memory and in storage', async () => {
       const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest()
 
@@ -469,7 +478,7 @@ describe('SelectedAccount Controller', () => {
       expect(selectedAccountCtrl.privacyPoolsAccountId).toBeNull()
     })
 
-    it('creating one from a new recovery phrase selects it and derives no regular account', async () => {
+    it('creating one from a new recovery phrase writes nothing until it is added', async () => {
       const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest({
         privacyPoolsSeedIds: [],
         withStoredSeed: false
@@ -477,13 +486,126 @@ describe('SelectedAccount Controller', () => {
       await mainCtrl.keystore.addSecret('password', 'password', '', false)
       await mainCtrl.keystore.unlockWithSecret('password', 'password')
 
-      await mainCtrl.addPrivacyPoolsAccountFromNewSeed({})
+      await mainCtrl.accountPicker.setPrivacyPoolsInitParams({})
+      // Only set up: the phrase is generated once the personalize step starts the flow
+      expect(mainCtrl.keystore.hasTempSeed).toBe(false)
+      expect(mainCtrl.accountPicker.privacyPoolsAccountToAdd).toBeNull()
+
+      await mainCtrl.accountPicker.initIfNotStarted()
+
+      expect(mainCtrl.accountPicker.privacyPoolsAccountToAdd).toEqual({
+        isNewSeed: true,
+        label: 'Private account 1'
+      })
+      expect(mainCtrl.keystore.seeds).toHaveLength(0)
+      expect(mainCtrl.privacyPools.accounts).toHaveLength(0)
+
+      await mainCtrl.addPreparedPrivacyPoolsAccount('Private account 1')
 
       const [newSeed] = mainCtrl.keystore.seeds
       expect(newSeed?.notBackedUp).toBe(true)
-      expect(mainCtrl.privacyPools.accounts.map((account) => account.seedId)).toEqual([newSeed?.id])
+      expect(mainCtrl.privacyPools.accounts).toEqual([
+        expect.objectContaining({ seedId: newSeed?.id, label: 'Private account 1' })
+      ])
       expect(selectedAccountCtrl.privacyPoolsAccountId).toBe(newSeed?.id)
       expect(mainCtrl.accounts.accounts).toHaveLength(accounts.length)
+      expect(mainCtrl.accountPicker.privacyPoolsAccountToAdd).toBeNull()
+      expect(mainCtrl.keystore.hasTempSeed).toBe(false)
+    })
+
+    it('going back from a new recovery phrase drops the phrase', async () => {
+      const { mainCtrl } = await preparePrivacyPoolsTest({
+        privacyPoolsSeedIds: [],
+        withStoredSeed: false
+      })
+      await mainCtrl.keystore.addSecret('password', 'password', '', false)
+      await mainCtrl.keystore.unlockWithSecret('password', 'password')
+      await preparePrivacyPoolsAccount(mainCtrl, {})
+      expect(mainCtrl.keystore.hasTempSeed).toBe(true)
+
+      await mainCtrl.accountPicker.reset()
+
+      expect(mainCtrl.accountPicker.privacyPoolsAccountToAdd).toBeNull()
+      expect(mainCtrl.keystore.hasTempSeed).toBe(false)
+      expect(mainCtrl.keystore.seeds).toHaveLength(0)
+    })
+
+    it('adding one from a stored recovery phrase keeps the name the user gave it', async () => {
+      const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest({
+        privacyPoolsSeedIds: []
+      })
+
+      await preparePrivacyPoolsAccount(mainCtrl, { seedId: PRIVACY_POOLS_SEED_ID })
+
+      expect(mainCtrl.accountPicker.privacyPoolsAccountToAdd).toEqual({
+        isNewSeed: false,
+        seedId: PRIVACY_POOLS_SEED_ID,
+        label: 'Private account 1'
+      })
+      expect(mainCtrl.privacyPools.accounts).toHaveLength(0)
+
+      await mainCtrl.addPreparedPrivacyPoolsAccount('Savings')
+
+      expect(mainCtrl.privacyPools.accounts).toEqual([
+        expect.objectContaining({ seedId: PRIVACY_POOLS_SEED_ID, label: 'Savings' })
+      ])
+      expect(selectedAccountCtrl.privacyPoolsAccountId).toBe(PRIVACY_POOLS_SEED_ID)
+    })
+
+    it('an empty name falls back to the default one', async () => {
+      const { mainCtrl } = await preparePrivacyPoolsTest({ privacyPoolsSeedIds: [] })
+      await preparePrivacyPoolsAccount(mainCtrl, { seedId: PRIVACY_POOLS_SEED_ID })
+
+      await mainCtrl.addPreparedPrivacyPoolsAccount('   ')
+
+      expect(mainCtrl.privacyPools.accounts[0]?.label).toBe('Private account 1')
+    })
+
+    it('does not prepare a recovery phrase that has an account already', async () => {
+      const { restore } = suppressConsole()
+      const { mainCtrl } = await preparePrivacyPoolsTest()
+
+      await preparePrivacyPoolsAccount(mainCtrl, { seedId: PRIVACY_POOLS_SEED_ID })
+
+      expect(mainCtrl.accountPicker.privacyPoolsAccountToAdd).toBeNull()
+      restore()
+    })
+
+    it('a personalize step asking before the flow is set up waits for it', async () => {
+      const { mainCtrl } = await preparePrivacyPoolsTest({ privacyPoolsSeedIds: [] })
+
+      const settingUp = mainCtrl.accountPicker.setPrivacyPoolsInitParams({
+        seedId: PRIVACY_POOLS_SEED_ID
+      })
+      await mainCtrl.accountPicker.initIfNotStarted()
+      await settingUp
+
+      expect(mainCtrl.accountPicker.privacyPoolsAccountToAdd).toEqual(
+        expect.objectContaining({ seedId: PRIVACY_POOLS_SEED_ID })
+      )
+    })
+
+    it('starting the flow again keeps the account prepared already', async () => {
+      const { mainCtrl } = await preparePrivacyPoolsTest({ privacyPoolsSeedIds: [] })
+      await preparePrivacyPoolsAccount(mainCtrl, { seedId: PRIVACY_POOLS_SEED_ID })
+      const prepared = mainCtrl.accountPicker.privacyPoolsAccountToAdd
+
+      await mainCtrl.accountPicker.initIfNotStarted()
+
+      expect(mainCtrl.accountPicker.privacyPoolsAccountToAdd).toBe(prepared)
+    })
+
+    it('adds nothing when nothing is prepared', async () => {
+      const { restore } = suppressConsole()
+      const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest({
+        privacyPoolsSeedIds: []
+      })
+
+      await mainCtrl.addPreparedPrivacyPoolsAccount('Savings')
+
+      expect(mainCtrl.privacyPools.accounts).toHaveLength(0)
+      expect(selectedAccountCtrl.account?.addr).toBe(accounts[0]!.addr)
+      restore()
     })
 
     it('removing the only account of either kind leaves nothing selected', async () => {

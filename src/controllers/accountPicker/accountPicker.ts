@@ -35,6 +35,7 @@ import {
   ReadyToAddKeys
 } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { PrivacyPoolsAccountToAdd } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import {
   getAccountImportStatus,
@@ -142,6 +143,36 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   readyToRemoveAccounts: Account[] = []
 
   /**
+   * A Privacy Pools account flow set up by `setPrivacyPoolsInitParams`, from a stored recovery
+   * phrase (`seedId`) or a new one. Prepared by the personalize step (`initIfNotStarted`).
+   */
+  privacyPoolsInitParams: { seedId: string | null } | null = null
+
+  // Kept private, as the public state goes to the UI
+  #privacyPoolsExtraEntropy?: string
+
+  /**
+   * The Privacy Pools account the current flow is about to add. The personalize step shows it
+   * under `label`, and nothing is written until the user proceeds from there - going back from it
+   * only resets the flow.
+   */
+  privacyPoolsAccountToAdd: PrivacyPoolsAccountToAdd | null = null
+
+  /**
+   * Setting the Privacy Pools flow up or preparing its account, which `initIfNotStarted` awaits:
+   * personalize can ask for it before the flow's own screen has finished setting it up.
+   */
+  #privacyPoolsPromise?: Promise<void>
+
+  // Bumped by `reset`, so a preparation it outran does not bring the account back
+  #privacyPoolsRunId = 0
+
+  #onPreparePrivacyPoolsAccount: (params: {
+    seedId: string | null
+    extraEntropy?: string
+  }) => Promise<PrivacyPoolsAccountToAdd>
+
+  /**
    * Keys handed in by a flow without a key iterator (`prepareAccounts`). Private, as
    * internal keys carry the private key and the public state goes to the UI. The keys of
    * selected accounts are derived only when they are added.
@@ -215,7 +246,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch,
     featureFlags,
     sendUiMessage,
-    onAddPreparedAccounts
+    onAddPreparedAccounts,
+    onPreparePrivacyPoolsAccount
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     accounts: IAccountsController
@@ -228,6 +260,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     featureFlags?: IFeatureFlagsController
     sendUiMessage: (params: {}) => void
     onAddPreparedAccounts: (prepared: PreparedAccounts) => Promise<void>
+    /** Checks a Privacy Pools account can be added, names it, and generates its new phrase */
+    onPreparePrivacyPoolsAccount: (params: {
+      seedId: string | null
+      extraEntropy?: string
+    }) => Promise<PrivacyPoolsAccountToAdd>
   }) {
     super(eventEmitterRegistry)
     this.#accounts = accounts
@@ -239,6 +276,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#sendUiMessage = sendUiMessage
     this.#onAddPreparedAccounts = onAddPreparedAccounts
+    this.#onPreparePrivacyPoolsAccount = onPreparePrivacyPoolsAccount
 
     this.#controllerSubscriptions.push(
       this.#accounts.onUpdate(() => {
@@ -462,6 +500,13 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * with the number of prepared accounts.
    */
   async initIfNotStarted(requestId?: string) {
+    await this.#privacyPoolsPromise
+    if (this.privacyPoolsInitParams && !this.privacyPoolsAccountToAdd) {
+      this.#privacyPoolsPromise = this.#preparePrivacyPoolsAccount(requestId)
+      await this.#privacyPoolsPromise
+      return
+    }
+
     if (!this.initParams || this.isInitialized || this.readyToAddAccounts.length) {
       this.#replyWithPreparedCount(requestId)
       return
@@ -575,8 +620,16 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       if (this.#keystore.isKeyIteratorInitializedWithTempSeed(keyIterator)) {
         this.#keystore.deleteTempSeed()
       }
+      // ...and so does one generated for a new Privacy Pools account
+      if (this.privacyPoolsAccountToAdd?.isNewSeed && this.#keystore.hasTempSeed) {
+        this.#keystore.deleteTempSeed()
+      }
       this.initParams = null
     }
+    this.privacyPoolsAccountToAdd = null
+    this.privacyPoolsInitParams = null
+    this.#privacyPoolsExtraEntropy = undefined
+    this.#privacyPoolsRunId++
     this.keyIterator = null
     this.selectedAccountsFromCurrentSession = []
     this.page = DEFAULT_PAGE
@@ -612,6 +665,53 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // outside of this controller instance.
     this.#controllerSubscriptions.forEach((unsubscribe) => unsubscribe())
     this.#controllerSubscriptions = []
+  }
+
+  /**
+   * Sets a Privacy Pools account flow up, from a stored recovery phrase (`seedId`) or a new one,
+   * ending any other flow. Only that - the personalize step prepares the account behind its
+   * loading state (`initIfNotStarted`), so the flow moves on at once.
+   */
+  async setPrivacyPoolsInitParams({
+    seedId,
+    extraEntropy
+  }: {
+    seedId?: string
+    extraEntropy?: string
+  }) {
+    // Assigned before anything is awaited, so a personalize step already asking waits for it
+    this.#privacyPoolsPromise = (async () => {
+      await this.reset()
+      this.privacyPoolsInitParams = { seedId: seedId ?? null }
+      this.#privacyPoolsExtraEntropy = extraEntropy
+      this.emitUpdate()
+    })()
+    await this.#privacyPoolsPromise
+  }
+
+  async #preparePrivacyPoolsAccount(requestId?: string) {
+    if (!this.privacyPoolsInitParams) return
+
+    const runId = this.#privacyPoolsRunId
+    try {
+      const accountToAdd = await this.#onPreparePrivacyPoolsAccount({
+        seedId: this.privacyPoolsInitParams.seedId,
+        extraEntropy: this.#privacyPoolsExtraEntropy
+      })
+      // Reset meanwhile - the user left the flow
+      if (runId !== this.#privacyPoolsRunId) {
+        if (accountToAdd.isNewSeed) this.#keystore.deleteTempSeed()
+        this.#replyToRequest(requestId, 'The account is no longer being added')
+        return
+      }
+
+      this.privacyPoolsAccountToAdd = accountToAdd
+      this.emitUpdate()
+      this.#replyWithPreparedCount(requestId)
+    } catch (error: any) {
+      this.#replyToRequest(requestId, error?.message || 'Preparing the account failed')
+      this.#emitCaughtError(error, 'Preparing the account failed. Please try again.')
+    }
   }
 
   /**
@@ -1173,7 +1273,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #replyWithPreparedCount(requestId?: string) {
     if (!requestId) return
 
-    this.#sendUiMessage({ requestId, ok: true, res: this.readyToAddAccounts.length })
+    const preparedCount = this.readyToAddAccounts.length + (this.privacyPoolsAccountToAdd ? 1 : 0)
+    this.#sendUiMessage({ requestId, ok: true, res: preparedCount })
   }
 
   #emitCaughtError(error: any, fallbackMessage: string) {

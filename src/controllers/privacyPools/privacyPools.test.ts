@@ -761,7 +761,7 @@ describe('PrivacyPoolsController', () => {
     it('adds an account for a stored recovery phrase and persists it', async () => {
       const { controller, storage } = await prepareTest({ accounts: [] })
 
-      await controller.addAccount('seed-a')
+      await controller.addAccount('seed-a', 'Private account 1')
 
       expect(controller.accounts.map((account) => account.seedId)).toEqual(['seed-a'])
       expect((await storage.get('privacyPoolsAccounts', [])).map((a) => a.seedId)).toEqual([
@@ -769,17 +769,48 @@ describe('PrivacyPoolsController', () => {
       ])
     })
 
+    it('stores the name the account is added with', async () => {
+      const { controller, storage } = await prepareTest({ accounts: [] })
+
+      await controller.addAccount('seed-a', 'Savings')
+
+      expect(controller.accounts[0]?.label).toBe('Savings')
+      expect((await storage.get('privacyPoolsAccounts', []))[0]?.label).toBe('Savings')
+    })
+
+    it('names a new account after the accounts there are already', async () => {
+      const { controller } = await prepareTest({ accounts: [] })
+      expect(controller.defaultAccountLabel).toBe('Private account 1')
+
+      await controller.addAccount('seed-a', controller.defaultAccountLabel)
+
+      expect(controller.defaultAccountLabel).toBe('Private account 2')
+    })
+
+    it('tells whether an account can be added, without adding it', async () => {
+      const { controller } = await prepareTest({ accounts: ['seed-a'] })
+
+      await expect(controller.assertCanAddAccount('seed-a')).rejects.toThrow(EmittableError)
+      await expect(controller.assertCanAddAccount('seed-unknown')).rejects.toThrow(EmittableError)
+      await expect(controller.assertCanAddAccount('seed-b')).resolves.toBeUndefined()
+      expect(controller.accounts).toHaveLength(1)
+    })
+
     it('refuses a second account for the same recovery phrase', async () => {
       const { controller } = await prepareTest({ accounts: ['seed-a'] })
 
-      await expect(controller.addAccount('seed-a')).rejects.toThrow(EmittableError)
+      await expect(controller.addAccount('seed-a', 'Private account 1')).rejects.toThrow(
+        EmittableError
+      )
       expect(controller.accounts).toHaveLength(1)
     })
 
     it('refuses an account for a recovery phrase the wallet does not have', async () => {
       const { controller } = await prepareTest({ accounts: [] })
 
-      await expect(controller.addAccount('seed-unknown')).rejects.toThrow(EmittableError)
+      await expect(controller.addAccount('seed-unknown', 'Private account 1')).rejects.toThrow(
+        EmittableError
+      )
       expect(controller.accounts).toHaveLength(0)
     })
 
@@ -1149,7 +1180,7 @@ describe('PrivacyPoolsController', () => {
       await syncA
 
       // Added back, it starts with nothing until it is synced again
-      await controller.addAccount('seed-a')
+      await controller.addAccount('seed-a', 'Private account 1')
       expect(getHeldAmounts(controller)).toEqual([])
       expect(controller.chains['1']?.lastSyncedAt).toBeNull()
     })
@@ -2012,7 +2043,7 @@ describe('PrivacyPoolsController', () => {
       jest.mocked(createPPv1Broadcaster).mockClear()
 
       await controller.removeAccount('seed-a')
-      await controller.addAccount('seed-a')
+      await controller.addAccount('seed-a', 'Private account 1')
 
       expect(controller.operation).toBeNull()
       await expect(controller.broadcastWithdrawal()).rejects.toThrow(

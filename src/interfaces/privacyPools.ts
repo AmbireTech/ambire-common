@@ -73,7 +73,17 @@ export type PrivacyPoolsPaymasterConfig = {
 export type PrivacyPoolsAccount = {
   seedId: string
   createdAt: number
+  /** The name the user gave it. Missing on accounts added before they had names. */
+  label?: string
 }
+
+/**
+ * A Privacy Pools account an adding flow prepared, named `label` until the user renames it. Its
+ * recovery phrase is a stored one, or a new one the keystore holds as its temp seed until added.
+ */
+export type PrivacyPoolsAccountToAdd =
+  | { isNewSeed: false; seedId: string; label: string }
+  | { isNewSeed: true; label: string }
 
 export type PrivacyPoolsSyncStatus = 'idle' | 'syncing' | 'ready'
 

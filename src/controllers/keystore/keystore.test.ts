@@ -483,29 +483,29 @@ describe('KeystoreController recovery phrase backup state', () => {
     expect(keystoreCtrl.seeds.find((s) => s.id === firstSeed!.id)?.notBackedUp).toBe(true)
   })
 
-  test('a phrase generated and stored at once is flagged like a generated temp seed', async () => {
-    const seedId = await keystoreCtrl.addGeneratedSeed({})
+  test('a generated temp seed is stored flagged as not backed up, and its id returned', async () => {
+    await keystoreCtrl.generateTempSeed({})
+    const seedId = await keystoreCtrl.persistTempSeed()
 
     expect(keystoreCtrl.seeds.map((seed) => seed.id)).toEqual([seedId])
     expect(keystoreCtrl.seeds[0]!.notBackedUp).toBe(true)
     expect(keystoreCtrl.seeds[0]!.hdPathTemplate).toBe(BIP44_STANDARD_DERIVATION_TEMPLATE)
+    expect(keystoreCtrl.hasTempSeed).toBe(false)
     // Stored encrypted and recoverable, as a valid phrase
-    const { seed } = await keystoreCtrl.getSavedSeed(seedId)
+    const { seed } = await keystoreCtrl.getSavedSeed(seedId!)
     expect(seed.split(' ')).toHaveLength(12)
   })
 
-  test('generating a stored phrase leaves the temp seed of another flow alone', async () => {
-    await keystoreCtrl.addTempSeed({
-      seed: process.env.SEED,
-      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
-    })
-
-    await keystoreCtrl.addGeneratedSeed({})
-    await keystoreCtrl.persistTempSeed()
-
-    expect(keystoreCtrl.seeds).toHaveLength(2)
-    expect(keystoreCtrl.seeds.filter((seed) => seed.notBackedUp)).toHaveLength(1)
+  test('storing the temp seed without one stores nothing', async () => {
+    expect(await keystoreCtrl.persistTempSeed()).toBeUndefined()
+    expect(keystoreCtrl.seeds).toHaveLength(0)
   })
+
+  const addGeneratedSeed = async () => {
+    await keystoreCtrl.generateTempSeed({})
+
+    return (await keystoreCtrl.persistTempSeed())!
+  }
 
   const addPhrase = async (seed: string, seedPassphrase?: string) => {
     await keystoreCtrl.addTempSeed({
@@ -519,7 +519,7 @@ describe('KeystoreController recovery phrase backup state', () => {
   }
 
   test('derives the Privacy Pools signing key exactly as from the phrase itself', async () => {
-    const seedId = await keystoreCtrl.addGeneratedSeed({})
+    const seedId = await addGeneratedSeed()
     const { seed } = await keystoreCtrl.getSavedSeed(seedId)
 
     const key = await keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
@@ -557,7 +557,7 @@ describe('KeystoreController recovery phrase backup state', () => {
   })
 
   test('refuses any key but the Privacy Pools signing key, and any key once locked', async () => {
-    const seedId = await keystoreCtrl.addGeneratedSeed({})
+    const seedId = await addGeneratedSeed()
     await keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
 
     const refusedPaths = [
