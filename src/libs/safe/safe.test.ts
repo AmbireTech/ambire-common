@@ -12,12 +12,14 @@ import {
   zeroPadValue
 } from 'ethers'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
+import SafeApiKit from '@safe-global/api-kit'
 
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
 import {
   canHotOwnersMeetSafeThreshold,
   findDeployData,
+  getPendingTransactions,
   getSafeAccountByOwner,
   getSafeDeploymentCall,
   hasCompleteSafeCreationData,
@@ -751,5 +753,61 @@ describe('canHotOwnersMeetSafeThreshold', () => {
 
   test('is false when there are no imported owners', () => {
     expect(canHotOwnersMeetSafeThreshold([], 1)).toBe(false)
+  })
+})
+
+describe('getPendingTransactions', () => {
+  const originalApiKey = process.env.SAFE_API_KEY
+  const emptyListResponse = { count: 0, next: null, previous: null, results: [] }
+
+  beforeEach(() => {
+    // getApiKit refuses to build a client without one; no request leaves the test
+    process.env.SAFE_API_KEY = 'test-api-key'
+  })
+
+  afterEach(() => {
+    process.env.SAFE_API_KEY = originalApiKey
+    jest.restoreAllMocks()
+  })
+
+  test('asks only for the not executed txns from the passed nonce, without fetching the Safe info', async () => {
+    const getMultisigTransactions = jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockResolvedValue(emptyListResponse)
+    const getSafeInfo = jest.spyOn(SafeApiKit.prototype, 'getSafeInfo')
+
+    const response = await getPendingTransactions(1n, SAFE_ADDRESS, 12n)
+
+    expect(getMultisigTransactions).toHaveBeenCalledTimes(1)
+    expect(getMultisigTransactions).toHaveBeenCalledWith(SAFE_ADDRESS, {
+      executed: false,
+      nonce__gte: '12',
+      ordering: 'nonce'
+    })
+    expect(getSafeInfo).not.toHaveBeenCalled()
+    expect(response).toEqual({ ...emptyListResponse, chainId: 1n, type: 'txn' })
+  })
+
+  test('does not fetch the Safe info for a Safe that has not executed a txn yet (nonce 0)', async () => {
+    const getMultisigTransactions = jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockResolvedValue(emptyListResponse)
+    const getSafeInfo = jest.spyOn(SafeApiKit.prototype, 'getSafeInfo')
+
+    await getPendingTransactions(1n, SAFE_ADDRESS, 0n)
+
+    expect(getMultisigTransactions).toHaveBeenCalledWith(
+      SAFE_ADDRESS,
+      expect.objectContaining({ executed: false, nonce__gte: '0' })
+    )
+    expect(getSafeInfo).not.toHaveBeenCalled()
+  })
+
+  test('passes the Safe API error on to the caller', async () => {
+    jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockRejectedValue(new Error('Too many requests'))
+
+    await expect(getPendingTransactions(1n, SAFE_ADDRESS, 3n)).rejects.toThrow('Too many requests')
   })
 })
