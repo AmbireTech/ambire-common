@@ -30,6 +30,12 @@ const TEST_CASES: TestCases = [
   { value: -1234, type: 'amount', expected: '-1,234' },
   { value: -1234, type: 'default', expected: '-1,234' },
   { value: -1234, type: 'precise', expected: '-1,234' },
+  { value: 1.001, type: 'amount', expected: '1' },
+  { value: 1.001, type: 'default', expected: '1' },
+  { value: 2.000000001, type: 'precise', expected: '2' },
+  { value: -1.001, type: 'amount', expected: '-1' },
+  { value: -1.001, type: 'default', expected: '-1' },
+  { value: -2.000000001, type: 'precise', expected: '-2' },
   { value: 0, type: 'value', expected: '$0.00' },
   { value: 0, type: 'price', expected: '$0.00' },
   { value: 0, type: 'amount', expected: '0' },
@@ -79,6 +85,15 @@ describe('formatDecimals', () => {
   SPECIAL_TEST_CASES.forEach(({ value, type, expected }) => {
     it(`special test case: should format ${value} as ${expected} for type ${type}`, () => {
       expect(formatDecimals(value, type)).toBe(expected)
+    })
+  })
+  const MIRRORED_VALUES = [1.001, 1.0005, 5.5, 12.0003, 2.000000001, 1234.5678, 0.0123, 0.5]
+  const MIRRORED_TYPES = ['value', 'price', 'amount', 'default', 'precise'] as const
+  MIRRORED_TYPES.forEach((type) => {
+    MIRRORED_VALUES.forEach((value) => {
+      it(`should format -${value} as its positive counterpart with a minus for type ${type}`, () => {
+        expect(formatDecimals(-value, type)).toBe(`-${formatDecimals(value, type)}`)
+      })
     })
   })
 })
