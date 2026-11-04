@@ -3,6 +3,7 @@ import { EventEmitter as NodeEventEmitter } from 'events'
 
 import { expect, jest } from '@jest/globals'
 import { createPPv1Broadcaster } from '@kohaku-eth/privacy-pools'
+import type { PPv1HistoryEvent } from '@kohaku-eth/privacy-pools'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
@@ -19,6 +20,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IUiController, View } from '../../interfaces/ui'
 import { IrCall } from '../../libs/humanizer/interfaces'
+import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
 import { getPrivacyPoolsPoolLabels } from '../../libs/privacyPools/poolStats'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
@@ -251,6 +253,27 @@ let notesBySeed: {
     deposit?: number
   }[]
 } = {}
+/** What `history()` returns per phrase, or per `${seedId}:${chainId}` - see `FakeProtocol.history`. */
+let historyBySeed: { [seedId: string]: PPv1HistoryEvent[] } = {}
+/** Thrown by `history()` when set. */
+let historyFailure: Error | null = null
+/** Holds `history()` back, once counted, until resolved - when set. */
+let historyGate: Deferred | null = null
+
+/** One of a phrase's events as the plugin's `history()` reports it. */
+const historyEvent = (overrides: Partial<PPv1HistoryEvent> = {}): PPv1HistoryEvent =>
+  ({
+    type: 'withdrawal',
+    transactionHash: 0xabcn,
+    blockNumber: 100n,
+    logIndex: 0,
+    timestamp: 1_700_000_000n,
+    poolAddress: BigInt(ETHEREUM_ETH_POOL),
+    assetAddress: 0n,
+    value: 1n,
+    ...overrides
+  }) as PPv1HistoryEvent
+
 /** Scope of a chain's first pool. Each next one in the config has the next number. */
 const FIRST_POOL_SCOPE = 42n
 
@@ -410,6 +433,22 @@ class FakeProtocol {
     if (preparedWithdrawal) return preparedWithdrawal
 
     throw new Error('prepareUnshield is not faked')
+  }
+
+  historyCount = 0
+
+  // Syncs first too unless told not to, like the real one. Without a sync of its own, a plugin
+  // knows nothing of the phrase (`seedId` is set by `sync`), so it reports no events, as the
+  // real one would with no discovered secrets
+  async history(_assets?: unknown, { sync = true }: { sync?: boolean } = {}) {
+    if (sync) await this.sync()
+    this.historyCount += 1
+    if (historyGate) await historyGate.promise
+    if (historyFailure) throw historyFailure
+
+    const chainId: bigint = await this.host.provider.getChainId()
+
+    return historyBySeed[`${this.seedId}:${chainId}`] || historyBySeed[this.seedId as string] || []
   }
 
   // The real one syncs before every read, so the fake does too: a controller that also calls
@@ -713,6 +752,9 @@ describe('PrivacyPoolsController', () => {
     storedPoolState = null
     ragequitTxns = null
     ragequitGate = null
+    historyBySeed = {}
+    historyFailure = null
+    historyGate = null
   })
 
   describe('accounts', () => {
@@ -828,6 +870,7 @@ describe('PrivacyPoolsController', () => {
           'depositAssetConfigs',
           'hasPersistedSendForm',
           'hasSyncedAnyChain',
+          'history',
           'id',
           'initialLoadPromise',
           'isAvailableForSelectedAccount',
@@ -2010,6 +2053,28 @@ describe('PrivacyPoolsController', () => {
       await broadcasting
     })
 
+    it('reads the history along with the sync after the transfer, so the activity lists it at once', async () => {
+      const { controller } = await prepareSignedWithdrawal()
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast: async () => {} } as any)
+      historyBySeed = { 'seed-a': [historyEvent({ value: WITHDRAWAL_AMOUNT })] }
+
+      const broadcasting = controller.broadcastWithdrawal()
+      await releaseSync('seed-a')
+      await broadcasting
+
+      // Though no screen showed it
+      expect(protocols[0]!.historyCount).toBe(1)
+      expect(protocols[0]!.syncCount).toBe(1)
+
+      // Opening the activity then neither syncs nor reads it again
+      await controller.filterHistory('dashboard')
+      expect(runningSyncs).toHaveLength(0)
+      expect(protocols[0]!.historyCount).toBe(1)
+      expect(controller.history.dashboard?.result?.items.map(({ amount }) => amount)).toEqual([
+        WITHDRAWAL_AMOUNT
+      ])
+    })
+
     it('clears the send form when the transfer could not be sent', async () => {
       const { restore } = suppressConsole()
       const { controller } = await prepareSignedWithdrawal()
@@ -2660,6 +2725,528 @@ describe('PrivacyPoolsController', () => {
     })
   })
 
+  describe('history', () => {
+    const SESSION = 'privacy-pools-dashboard'
+    const DEPOSIT = historyEvent({
+      type: 'deposit',
+      depositor: BigInt(DEPOSITOR),
+      label: 1n,
+      aspStatus: 'approved',
+      value: 10n,
+      blockNumber: 101n,
+      timestamp: 1_700_000_100n
+    } as Partial<PPv1HistoryEvent>)
+    const WITHDRAWAL = historyEvent({ value: 4n })
+
+    beforeEach(() => {
+      historyBySeed = {
+        'seed-a': [DEPOSIT, WITHDRAWAL],
+        'seed-b': [historyEvent({ value: 99n })]
+      }
+    })
+
+    const getPage = (controller: PrivacyPoolsController) => controller.history[SESSION]?.result
+
+    const getAmounts = (controller: PrivacyPoolsController) =>
+      getPage(controller)?.items.map(({ amount }) => amount)
+
+    /** Opens a screen, then lets through the sync that reads the notes, and the history with them. */
+    const openHistory = async (
+      controller: PrivacyPoolsController,
+      seedId = 'seed-a',
+      ...args: Parameters<PrivacyPoolsController['filterHistory']> extends [any, ...infer Rest]
+        ? Rest
+        : never
+    ) => {
+      const opening = controller.filterHistory(SESSION, ...args)
+      await releaseSync(seedId)
+      await opening
+    }
+
+    const prepareSelected = async (options: Parameters<typeof prepareTest>[0] = {}) => {
+      const prepared = await prepareTest(options)
+      prepared.selectedAccount.select('seed-a')
+
+      return prepared
+    }
+
+    it('is not read while no screen shows it', async () => {
+      const { controller } = await prepareSelected()
+
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+
+      expect(protocols[0]!.historyCount).toBe(0)
+      expect(controller.history).toEqual({})
+    })
+
+    it('is read by a sync once a screen shows it, after the balances are shown', async () => {
+      const { controller } = await prepareSelected()
+      historyGate = createDeferred()
+
+      const opening = controller.filterHistory(SESSION)
+      await flush()
+      // Not an empty page: whether there is any activity is not known yet
+      expect(controller.history[SESSION]).toMatchObject({ result: null, error: null })
+
+      await releaseSync('seed-a')
+      await waitUntil(() => controller.chains['1']?.syncStatus === 'ready')
+      expect(getHeldAmounts(controller)).toEqual([10n])
+      expect(getPage(controller)).toBeNull()
+
+      historyGate.resolve()
+      await opening
+      expect(getPage(controller)).toEqual({
+        items: [
+          expect.objectContaining({ type: 'deposit', amount: 10n, counterpartyAddr: DEPOSITOR }),
+          expect.objectContaining({ type: 'withdrawal', amount: 4n, counterpartyAddr: null })
+        ],
+        itemsTotal: 2,
+        currentPage: 0,
+        maxPages: 1
+      })
+      expect(protocols).toHaveLength(1)
+      expect(protocols[0]!.historyCount).toBe(1)
+      // As of the sync that read the notes, without one of its own
+      expect(protocols[0]!.syncCount).toBe(1)
+    })
+
+    it('is read from the plugin that read the notes, even once it is dropped', async () => {
+      // A plugin that read a cold chain from the CDN is dropped after its sync, and a new one
+      // would know none of the account's deposits without syncing again
+      jest
+        .mocked(createPrivacyPoolsDataService)
+        .mockResolvedValueOnce({ dataService: {}, isSagaHydrated: true } as any)
+      const { controller } = await prepareSelected()
+
+      await openHistory(controller)
+
+      expect(protocols).toHaveLength(1)
+      expect(protocols[0]!.historyCount).toBe(1)
+      expect(getAmounts(controller)).toEqual([10n, 4n])
+    })
+
+    describe('on opening a screen after a sync that did not read it', () => {
+      const syncFirst = async (controller: PrivacyPoolsController, seedId = 'seed-a') => {
+        const syncing = controller.syncChain('1')
+        await releaseSync(seedId)
+        await syncing
+      }
+
+      it('is read from that sync, without syncing again', async () => {
+        const { controller } = await prepareSelected()
+        await syncFirst(controller)
+        const syncStatuses: (string | undefined)[] = []
+        const unsubscribe = controller.onUpdate(() =>
+          syncStatuses.push(controller.chains['1']?.syncStatus)
+        )
+
+        const opening = controller.filterHistory(SESSION)
+        await flush()
+        // The balances are not shown as loading again
+        expect(controller.chains['1']?.syncStatus).toBe('ready')
+        await opening
+        unsubscribe()
+
+        expect(syncStatuses.length).toBeGreaterThan(0)
+        expect(syncStatuses).not.toContain('syncing')
+        expect(runningSyncs).toHaveLength(0)
+        expect(protocols).toHaveLength(1)
+        expect(protocols[0]!.syncCount).toBe(1)
+        expect(protocols[0]!.historyCount).toBe(1)
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it('syncs again once the plugin that read the notes is gone', async () => {
+        // A plugin that read a cold chain from the CDN is dropped after its sync, and a new one
+        // would know none of the account's deposits without syncing
+        jest
+          .mocked(createPrivacyPoolsDataService)
+          .mockResolvedValueOnce({ dataService: {}, isSagaHydrated: true } as any)
+        const { controller } = await prepareSelected()
+        await syncFirst(controller)
+
+        await openHistory(controller)
+
+        expect(protocols).toHaveLength(2)
+        expect(protocols[0]!.historyCount).toBe(0)
+        expect(protocols[1]!.historyCount).toBe(1)
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it("syncs again once another account's sync of the network has replaced its plugin", async () => {
+        const { controller, selectedAccount } = await prepareSelected()
+        await syncFirst(controller)
+        selectedAccount.select('seed-b')
+        await syncFirst(controller, 'seed-b')
+        selectedAccount.select('seed-a')
+
+        await openHistory(controller)
+
+        // seed-a's, seed-b's, then seed-a's again, built from what seed-b's sync stored
+        expect(protocols).toHaveLength(3)
+        expect(protocols[0]!.historyCount).toBe(0)
+        expect(protocols[2]!.historyCount).toBe(1)
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it('syncs again when that sync failed', async () => {
+        const { controller } = await prepareSelected()
+        await syncFirst(controller)
+        const failing = controller.syncChain('1')
+        const running = await takeRunningSync('seed-a', 1n)
+        running.gate.reject(new Error('RPC is down'))
+        await failing
+
+        await openHistory(controller)
+
+        expect(protocols[0]!.syncCount).toBe(3)
+        expect(controller.chains['1']).toMatchObject({ syncStatus: 'ready', error: null })
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it('is not kept once a newer sync has read it, even one ending in the same millisecond', async () => {
+        // Both syncs end at the same time, so only a count of the syncs tells them apart
+        const now = jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000)
+        try {
+          const { controller } = await prepareSelected()
+          await syncFirst(controller)
+          const staleRead = createDeferred()
+          jest.spyOn(protocols[0]!, 'history').mockImplementationOnce(async () => {
+            await staleRead.promise
+            return [WITHDRAWAL]
+          })
+
+          const opening = controller.filterHistory(SESSION)
+          await flush()
+          historyBySeed['seed-a'] = [historyEvent({ value: 7n, blockNumber: 200n })]
+          const refreshing = controller.sync()
+          await releaseSync('seed-a')
+          await refreshing
+          staleRead.resolve()
+          await opening
+
+          expect(getAmounts(controller)).toEqual([7n])
+        } finally {
+          now.mockRestore()
+        }
+      })
+    })
+
+    it('reports an empty page for an account with no activity', async () => {
+      historyBySeed = {}
+      const { controller } = await prepareSelected()
+
+      await openHistory(controller)
+
+      expect(getPage(controller)).toEqual({ items: [], itemsTotal: 0, currentPage: 0, maxPages: 0 })
+    })
+
+    it('moves between pages without reading it again', async () => {
+      const { controller } = await prepareSelected()
+      await openHistory(controller, 'seed-a', {}, { fromPage: 0, itemsPerPage: 1 })
+      expect(getAmounts(controller)).toEqual([10n])
+      expect(getPage(controller)?.maxPages).toBe(2)
+
+      await controller.filterHistory(SESSION, {}, { fromPage: 1, itemsPerPage: 1 })
+
+      expect(runningSyncs).toHaveLength(0)
+      expect(getAmounts(controller)).toEqual([4n])
+      expect(protocols[0]!.historyCount).toBe(1)
+    })
+
+    it('is read again by every sync while shown', async () => {
+      const { controller } = await prepareSelected()
+      await openHistory(controller)
+
+      historyBySeed['seed-a'] = [
+        historyEvent({ value: 7n, blockNumber: 200n }),
+        DEPOSIT,
+        WITHDRAWAL
+      ]
+      const refreshing = controller.sync()
+      await releaseSync('seed-a')
+      await refreshing
+
+      expect(getAmounts(controller)).toEqual([7n, 10n, 4n])
+    })
+
+    it('is no longer read once its screen closes', async () => {
+      const { controller } = await prepareSelected()
+      await openHistory(controller)
+
+      controller.resetHistoryFilters(SESSION)
+      const refreshing = controller.sync()
+      await releaseSync('seed-a')
+      await refreshing
+
+      expect(controller.history).toEqual({})
+      expect(protocols[0]!.historyCount).toBe(1)
+    })
+
+    it('keeps another screen open when one closes', async () => {
+      const { controller } = await prepareSelected()
+      await openHistory(controller)
+      await controller.filterHistory('settings')
+
+      controller.resetHistoryFilters(SESSION)
+
+      expect(Object.keys(controller.history)).toEqual(['settings'])
+      expect(controller.history.settings?.result?.items).toHaveLength(2)
+    })
+
+    it('shows the last list while it is read again on reopening', async () => {
+      const { controller } = await prepareSelected()
+      await openHistory(controller)
+      controller.resetHistoryFilters(SESSION)
+      // A sync while no screen shows it leaves the list behind the balances
+      const refreshing = controller.sync()
+      await releaseSync('seed-a')
+      await refreshing
+
+      historyBySeed['seed-a'] = [historyEvent({ value: 7n, blockNumber: 200n })]
+      historyGate = createDeferred()
+      const reopening = controller.filterHistory(SESSION)
+      await waitUntil(() => protocols[0]!.historyCount === 2)
+      expect(getAmounts(controller)).toEqual([10n, 4n])
+
+      historyGate.resolve()
+      await reopening
+      expect(getAmounts(controller)).toEqual([7n])
+      // Read as of the last sync, without another
+      expect(protocols[0]!.syncCount).toBe(2)
+    })
+
+    it('is read by a sync already running when the screen opens, rather than by another', async () => {
+      const { controller } = await prepareSelected()
+
+      const syncing = controller.syncChain('1')
+      await waitUntil(() => runningSyncs.length === 1)
+      const opening = controller.filterHistory(SESSION)
+      await releaseSync('seed-a')
+      await Promise.all([syncing, opening])
+
+      expect(runningSyncs).toHaveLength(0)
+      expect(protocols[0]!.syncCount).toBe(1)
+      expect(getAmounts(controller)).toEqual([10n, 4n])
+    })
+
+    it("shows the selected account's history only", async () => {
+      const { controller, selectedAccount } = await prepareSelected()
+      await openHistory(controller)
+
+      selectedAccount.select('seed-b')
+      // The other account's list is never shown in its place
+      expect(getPage(controller)).toBeNull()
+
+      await openHistory(controller, 'seed-b')
+      expect(getAmounts(controller)).toEqual([99n])
+
+      selectedAccount.select('seed-a')
+      expect(getAmounts(controller)).toEqual([10n, 4n])
+    })
+
+    it('marks a deposit under review only while it is still being verified', async () => {
+      notesBySeed = { 'seed-a': [{ label: 2n, amount: 5n, approved: false }] }
+      historyBySeed = {
+        'seed-a': [
+          // Still being verified
+          historyEvent({ type: 'deposit', label: 2n, aspStatus: 'pending', depositor: 1n } as any),
+          // Taken back, so it has no note left, though the plugin still reports it pending
+          historyEvent({ type: 'deposit', label: 3n, aspStatus: 'pending', depositor: 1n } as any),
+          historyEvent({ type: 'ragequit', ragequitter: 1n, value: 6n } as any)
+        ]
+      }
+      const { controller } = await prepareSelected()
+
+      await openHistory(controller)
+
+      expect(getPage(controller)?.items.map(({ status }) => status)).toEqual([
+        'pending',
+        null,
+        null
+      ])
+    })
+
+    it('waits for the recovery phrase to be backed up, like the balances', async () => {
+      const { controller, keystore } = await prepareSelected()
+      keystore.seeds = [{ id: 'seed-a', notBackedUp: true }, { id: 'seed-b' }]
+
+      await controller.filterHistory(SESSION)
+
+      expect(runningSyncs).toHaveLength(0)
+      expect(getPage(controller)).toBeNull()
+    })
+
+    it('is not read while locked', async () => {
+      const { controller, keystore } = await prepareSelected()
+      keystore.isUnlocked = false
+
+      await controller.filterHistory(SESSION)
+
+      expect(runningSyncs).toHaveLength(0)
+      expect(controller.emittedErrors).toEqual([])
+    })
+
+    it('is dropped on lock', async () => {
+      const { controller, keystore } = await prepareSelected()
+      await openHistory(controller)
+
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      keystore.isUnlocked = true
+      keystore.fireUpdate()
+
+      expect(getPage(controller)).toBeNull()
+    })
+
+    it('is not kept from a read that finishes after a lock', async () => {
+      const { controller, keystore } = await prepareSelected()
+      historyGate = createDeferred()
+
+      const opening = controller.filterHistory(SESSION)
+      await releaseSync('seed-a')
+      await waitUntil(() => protocols[0]!.historyCount === 1)
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      historyGate.resolve()
+      await opening
+      keystore.isUnlocked = true
+      keystore.fireUpdate()
+
+      expect(getPage(controller)).toBeNull()
+      expect(controller.emittedErrors).toEqual([])
+    })
+
+    it('is not kept for a removed account', async () => {
+      const { controller } = await prepareSelected()
+      historyGate = createDeferred()
+
+      const opening = controller.filterHistory(SESSION)
+      await releaseSync('seed-a')
+      await waitUntil(() => protocols[0]!.historyCount === 1)
+      await controller.removeAccount('seed-a')
+      historyGate.resolve()
+      await opening
+
+      expect(protocols[0]!.historyCount).toBe(1)
+      expect(getPage(controller)).toBeNull()
+    })
+
+    describe('when it cannot be read', () => {
+      it('still shows the balances, and an empty page with the reason', async () => {
+        historyFailure = new Error('history failed')
+        const { controller } = await prepareSelected()
+
+        await openHistory(controller)
+
+        expect(getHeldAmounts(controller)).toEqual([10n])
+        expect(controller.chains['1']).toMatchObject({ syncStatus: 'ready', error: null })
+        expect(controller.history[SESSION]).toMatchObject({
+          result: { items: [] },
+          error: 'Could not load your activity on this network. Please try again.'
+        })
+        expect(controller.emittedErrors.at(-1)).toMatchObject({
+          level: 'silent',
+          error: historyFailure
+        })
+      })
+
+      it('keeps the list read before', async () => {
+        const { controller } = await prepareSelected()
+        await openHistory(controller)
+
+        historyFailure = new Error('history failed')
+        const refreshing = controller.sync()
+        await releaseSync('seed-a')
+        await refreshing
+
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+        expect(controller.history[SESSION]?.error).not.toBeNull()
+      })
+
+      it('clears the reason once read again', async () => {
+        historyFailure = new Error('history failed')
+        const { controller } = await prepareSelected()
+        await openHistory(controller)
+
+        historyFailure = null
+        const refreshing = controller.sync()
+        await releaseSync('seed-a')
+        await refreshing
+
+        expect(controller.history[SESSION]).toMatchObject({ error: null })
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it('settles the page with the reason when the balances cannot be read either', async () => {
+        const { controller } = await prepareSelected()
+
+        const opening = controller.filterHistory(SESSION)
+        const running = await takeRunningSync('seed-a', 1n)
+        running.gate.reject(new Error('RPC is down'))
+        await opening
+
+        expect(controller.history[SESSION]).toMatchObject({
+          result: { items: [] },
+          error: 'Could not load your Privacy Pools balance on this network. Please try again.'
+        })
+      })
+    })
+
+    describe('on several networks', () => {
+      const OTHER = OTHER_CHAIN_ID.toString()
+
+      beforeEach(() => {
+        historyBySeed = {
+          'seed-a:1': [
+            historyEvent({ value: 3n, timestamp: 300n }),
+            historyEvent({ value: 1n, timestamp: 100n })
+          ],
+          [`seed-a:${OTHER}`]: [historyEvent({ value: 2n, timestamp: 200n })]
+        }
+      })
+
+      it('merges them newest first, once every network is read', async () => {
+        const { controller } = await prepareSelected({ hasOtherChain: true })
+
+        const opening = controller.filterHistory(SESSION)
+        await releaseSync('seed-a')
+        await waitUntil(() => !!controller.chains['1']?.lastSyncedAt)
+        // One network alone is not the whole history yet
+        expect(getPage(controller)).toBeNull()
+
+        await releaseSync('seed-a', OTHER_CHAIN_ID)
+        await opening
+
+        expect(getAmounts(controller)).toEqual([3n, 2n, 1n])
+      })
+
+      it('reads and shows only the network it is narrowed to', async () => {
+        const { controller } = await prepareSelected({ hasOtherChain: true })
+
+        const opening = controller.filterHistory(SESSION, { chainId: OTHER })
+        await releaseSync('seed-a', OTHER_CHAIN_ID)
+        await opening
+
+        expect(runningSyncs).toHaveLength(0)
+        expect(controller.chains['1']?.lastSyncedAt).toBeNull()
+        expect(getAmounts(controller)).toEqual([2n])
+        expect(controller.history[SESSION]?.filters).toEqual({ chainId: OTHER })
+      })
+
+      it('shows an empty page for a network without Privacy Pools', async () => {
+        const { controller } = await prepareSelected({ hasOtherChain: true })
+
+        await controller.filterHistory(SESSION, { chainId: '137' })
+
+        expect(runningSyncs).toHaveLength(0)
+        expect(getPage(controller)?.items).toEqual([])
+      })
+    })
+  })
+
   describe('taking back deposits (ragequit)', () => {
     const USDC_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
     const OTHER_DEPOSITOR = '0x0000000000000000000000000000000000000001'
@@ -2906,6 +3493,30 @@ describe('PrivacyPoolsController', () => {
       await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).resolves.toEqual([
         expect.objectContaining({ label: 6n })
       ])
+    })
+
+    it('reads the deposit again with a sync of its own, not one that read the notes while proving', async () => {
+      const { controller, protocol } = await prepareSynced()
+      // A screen shows the history, so a sync reads it after the notes
+      await controller.filterHistory('dashboard')
+      ragequitGate = createDeferred()
+      const building = buildRagequit(controller, 3n)
+      await waitUntil(() => protocol.ragequitLabels.length === 1)
+
+      // Started while proving, and reading the history when the proof is done
+      historyGate = createDeferred()
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await waitUntil(() => protocol.historyCount === 2)
+      ragequitGate.resolve()
+      await flush()
+      historyGate.resolve()
+      await syncing
+
+      // The read once it is proved
+      await releaseSync('seed-a')
+      await expect(building).resolves.toMatchObject({ accountAddr: DEPOSITOR })
+      expect(protocol.syncCount).toBe(3)
     })
 
     it('refuses a deposit taken back elsewhere once it was proved', async () => {

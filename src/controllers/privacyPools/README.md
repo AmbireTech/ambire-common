@@ -9,7 +9,8 @@ The controller is the only `EventEmitter`. The work is done by plain classes tha
 | Module | Holds |
 | --- | --- |
 | `protocolRegistry.ts` | The SDK plugins, one per chain and phrase, their keystores, and the chain versions |
-| `sync.ts` | The sync queue, the first read of each chain's shared state, account states (notes), and sync epochs |
+| `sync.ts` | The sync queue, the first read of each chain's shared state, account states (notes, and the history once read), and sync epochs |
+| `history.ts` | The screens showing the history and their pages. Reads the history of the networks a screen shows whose history is not current, and syncs only those whose plugin has not |
 | `deposits.ts` | Deposit requirements, the next deposit's precommitment, and prepared and broadcast deposits |
 | `withdrawal.ts` | The operation, the proved-but-unsent withdrawal, and the preparation queue and its cancellation |
 | `ragequit.ts` | Nothing of its own. Lists the deposits still being verified with the account each came from, and builds their public reclaim |
@@ -22,7 +23,7 @@ The controller keeps the parts that need the whole picture:
 - whether Privacy Pools is available for the selected account;
 - the subscriptions to other controllers;
 - the account list;
-- the steps that span modules (sending a withdrawal clears the form, then syncs);
+- the steps that span modules (sending a withdrawal clears the form, then syncs and reads the history);
 - `toJSON`.
 
 Modules never get the controller. They get a `PrivacyPoolsContext` (see `context.ts`), and the modules they build on:
@@ -31,6 +32,7 @@ Modules never get the controller. They get a `PrivacyPoolsContext` (see `context
 registry ← sync ← deposits
                 ← withdrawal
                 ← ragequit
+                ← history
 ```
 
 They never see which account is selected: the controller resolves it and passes `seedId`. When two modules share state, the controller wires it. For example, the registry's prover reads the withdrawal's proving signal through a callback, for the 'withdraw' circuit only, so a ragequit's proof is never cancelled with a withdrawal.
@@ -62,7 +64,7 @@ A sync or a proof cannot be stopped midway, so each one checks, before it writes
 - **`LockGeneration`** - a sync captures the generation when it starts. `#writeAccountState` writes nothing after a lock, nor for a removed account.
 - **Operation id** - a withdrawal updates the operation only while it is still the current one. A lock, a cancel or a newer withdrawal replaces it. A proved withdrawal is not sent if a lock came while it was checked again.
 - **Chain versions** - a sync that persists a chain's history bumps its version. The other phrases' plugins on that chain are rebuilt on next use, so they start from the stored history instead of reading it again.
-- **Sync epochs** - the next deposit's precommitment is cached until the account's next sync, which may have seen a deposit land.
+- **Sync epochs** - the next deposit's precommitment is cached until the account's next sync, which may have seen a deposit land. A history read is kept only if no sync of the account's chain ended since it started. The epoch tells, not the time, as two syncs can end in the same millisecond.
 - **First chain read** - only the first sync of a chain reads its shared state. The other syncs of that chain wait for it, and a failed read is retried by the next sync.
 - **Preparation queue** - a cancelled withdrawal may still be proving. The next one waits for it rather than prove beside it on the same plugin.
 
@@ -80,14 +82,30 @@ Updates are sent from one place, so the same rules hold for every module:
 - **The plugins' state** (pool history and notes) is stored by the SDK under `privacyPoolsState`. All plugins share one storage adapter (`kohakuStorage`). Adapters per plugin would overwrite each other's progress.
 - **Deposits and withdrawals are not persisted**, as a local log would link a deposit to its withdrawal.
 
+## History
+
+The account's deposits, withdrawals and deposits taken back, for its Activity screens. Read with the SDK's `history()`, from this device's copy of the pools' history.
+
+- **Transaction hashes come with the bulk sync.** The CDN's `/v2` publication (`PRIVACY_POOLS_SAGA_SYNC_URL`) has them, unlike its root one, and so do the provider's logs (`createKohakuProvider`). An event without one is listed without a link.
+- **Stores read before hashes were kept are not read again.** Their events up to the upgrade have no hash, so they are listed without a link, while newer ones have it. Privacy Pools has reached only dev and Ambire Next builds, so a one-time rebuild of such stores (about 18 s from the CDN, beside the syncs) is not worth its cost.
+- **Read while a screen shows it, and after a transfer.** A screen opens a session with `filterHistory` and closes it with `resetHistoryFilters` (sessions in `history.ts`). While one is open, each sync of the selected account reads the history right after the notes, in the same turn of the queue. The balances are shown before the history is read. A sent withdrawal reads it along with its sync even with no screen open, so the Activity lists it at once.
+- **Read without syncing again.** `history()` would sync the plugin first, which costs seconds even with no new blocks, so it is asked not to (`{ sync: false }`, from 0.1.0-alpha.35) and reads the state the notes were just read from. So a deposit is listed exactly when its note is. A sync reads it from the plugin that read the notes, even if the registry has dropped it since: a new plugin has not found the account's deposits yet, as the SDK does not store them, and would list none.
+- **A screen opened later reads it from the current plugin.** After a sync that did not read the history, a screen reads it from the chain's current plugin (`readHistoryWithoutSync`), if a sync has read the account's notes with that plugin, so the balances are not shown as loading again. A plugin built since - after the first read of a chain from the CDN, a provider change, or another account's sync of the chain - knows none of the account's deposits, so the chain is synced instead.
+- **It still asks the network for block times.** Each read fetches the time of the latest block synced to date the events, which took about 0.8 s on Ethereum when measured. Those blocks are the same for every account.
+- **A stale list is kept.** A sync with no screen open leaves the history marked as not current. The next screen shows it at once, and reads it again.
+- **Paged here, not by the SDK.** The SDK returns the whole history per chain, newest first. `history.ts` merges the chains newest first and serves each session one page in `history`, in the same shape as `ActivityController`'s.
+- **Under review comes from the notes.** The SDK keeps a deposit taken back as 'pending', so a deposit is under review only while a note with its label is still pending.
+- **No recipient for withdrawals.** The pool's records do not say where a withdrawal went, and asking for its transaction would single it out.
+- **Phrase-derived.** It lives in the account states of `sync.ts`, so a lock or the account's removal drops it with the notes. The sessions hold only filters and pages, so they are kept.
+
 ## Ragequit
 
 A deposit still being verified can only be taken back publicly, in full, by the account that made it (the pool checks `msg.sender`). Verified deposits are sent from the Privacy Pools account instead, so they are never offered.
 
-- **Depositors are read locally.** Each note's `depositor` (and its deposit index, which orders them newest first) comes with `notes()` in `sync.ts`, from the pools' history synced in bulk. Never use the SDK's `history()` or the pool's `depositors(label)`: both ask the network about single deposits, which tells it which ones are the user's.
+- **Depositors are read locally.** Each note's `depositor` (and its deposit index, which orders them newest first) comes with `notes()` in `sync.ts`, from the pools' history synced in bulk. Never use the pool's `depositors(label)`: it asks the network about a single deposit, which tells it which one is the user's.
 - **No deposit dates.** `INote` has no block, and asking for a deposit's block or its time would single it out. Once Kohaku exposes the block on `INote`, the Rage quit sheet can show when each deposit was made again.
 - **The SDK's call is checked** against the deposit (label, amount, and a pool in `PrivacyPoolsChainConfig.pools` holding its token), as the SDK picks the pool and drops a deposit it could not prove for with only a warning.
-- **The SDK syncs before proving**, outside the queue, so a ragequit waits for the running sync first, as a withdrawal does. Then the deposit is read again through the queue: if it was verified while being proved, it is refused, as it can now be sent privately instead of going back publicly. A failed read refuses it too.
+- **The SDK syncs before proving**, outside the queue, so a ragequit waits for the running sync first, as a withdrawal does. Then the deposit is read again through the queue: if it was verified while being proved, it is refused, as it can now be sent privately instead of going back publicly. A failed read refuses it too. A sync started while proving is waited for rather than joined: it may have read the notes before proving ended, and its epoch, bumped before it reads the history, would make the read look failed.
 - **The account is switched by `MainController.privacyPoolsRagequit`**, which selects the depositor (refusing one not in the wallet or view-only) and adds the call as a regular request.
 
 ## Pool stats
