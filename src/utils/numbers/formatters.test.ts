@@ -1,5 +1,53 @@
 import formatDecimals from '../formatDecimals/formatDecimals'
-import { truncateFiatAmountDecimals } from './formatters'
+import { parseUnits } from 'ethers'
+
+import {
+  convertTokenPriceToBigInt,
+  numberToDecimalString,
+  truncateFiatAmountDecimals
+} from './formatters'
+
+describe('numberToDecimalString', () => {
+  it('writes small numbers as decimals that parseUnits accepts', () => {
+    const decimalString = numberToDecimalString(5.3e-7)
+
+    expect(decimalString).toBe('0.00000053')
+    expect(parseUnits(decimalString, 18)).toBe(530_000_000_000n)
+    expect(numberToDecimalString(1e-7)).toBe('0.0000001')
+  })
+
+  it('writes large numbers as whole numbers', () => {
+    expect(numberToDecimalString(1.5e21)).toBe('1500000000000000000000')
+    expect(numberToDecimalString(1.2345e22)).toBe('12345000000000000000000')
+  })
+
+  it('keeps the sign of negative numbers', () => {
+    expect(numberToDecimalString(-2.5e-7)).toBe('-0.00000025')
+    expect(numberToDecimalString(-1e21)).toBe('-1000000000000000000000')
+  })
+
+  it('returns numbers without exponent notation and bigints unchanged', () => {
+    expect(numberToDecimalString(1.123456)).toBe('1.123456')
+    expect(numberToDecimalString(0)).toBe('0')
+    expect(numberToDecimalString(10n ** 30n)).toBe(String(10n ** 30n))
+  })
+})
+
+describe('convertTokenPriceToBigInt', () => {
+  it('converts small prices in exponent notation', () => {
+    expect(convertTokenPriceToBigInt(5.3e-7)).toEqual({
+      tokenPriceBigInt: 53n,
+      tokenPriceDecimals: 8
+    })
+  })
+
+  it('converts large prices in exponent notation without turning them into tiny ones', () => {
+    expect(convertTokenPriceToBigInt(1.5e21)).toEqual({
+      tokenPriceBigInt: 1_500_000_000_000_000_000_000n,
+      tokenPriceDecimals: 0
+    })
+  })
+})
 
 describe('truncateFiatAmountDecimals', () => {
   it('keeps two decimals for amounts of a dollar or more', () => {

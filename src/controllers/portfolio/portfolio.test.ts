@@ -13,6 +13,7 @@ import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { StoredKey } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
@@ -3273,6 +3274,40 @@ describe('Portfolio Controller ', () => {
         expect(state?.result?.tokens).toEqual([])
         expect(firstProvider?.chainId).toBeUndefined()
         expect(firstAsset?.address).toBe(undefined)
+      })
+
+      it('should report an unreadable app position and hide it', async () => {
+        const { restore } = suppressConsole()
+        const { controller } = await prepareTest()
+        const brokenResponse = getDefiAppsResponse()
+        // @ts-expect-error test
+        brokenResponse.defi.positions[0]!.positions[0]!.assets[0]!.amount = 'not an amount'
+
+        // @ts-expect-error test
+        const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        discoverySpy.mockResolvedValue(brokenResponse)
+        const emittedErrors: ErrorRef[] = []
+        const unsubscribe = controller.onError((error) => emittedErrors.push(error))
+
+        // @ts-expect-error test
+        await controller.updateDefiAppsState(account, {
+          defiMaxDataAgeMs: 0,
+          hasKeys: true,
+          isManualUpdate: true
+        })
+        unsubscribe()
+
+        const positionErrors = emittedErrors.filter((e) => e.message.includes('Polymarket'))
+        expect(positionErrors).toHaveLength(1)
+        expect(positionErrors[0]!.level).toBe('silent')
+        expect(positionErrors[0]!.message).not.toContain(account.addr)
+        expect(positionErrors[0]!.error.cause).toBeInstanceOf(Error)
+        expect(
+          controller.getAccountPortfolioState(account.addr).defiApps?.result?.defiPositions
+            .positionsByProvider[0]?.positions
+        ).toHaveLength(0)
+
+        restore()
       })
 
       it('should set criticalError on discovery failure', async () => {
