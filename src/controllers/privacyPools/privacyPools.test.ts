@@ -2906,25 +2906,31 @@ describe('PrivacyPoolsController', () => {
         expect(getAmounts(controller)).toEqual([10n, 4n])
       })
 
-      it('is not kept once a newer sync has read it', async () => {
-        const { controller } = await prepareSelected()
-        await syncFirst(controller)
-        const staleRead = createDeferred()
-        jest.spyOn(protocols[0]!, 'history').mockImplementationOnce(async () => {
-          await staleRead.promise
-          return [WITHDRAWAL]
-        })
+      it('is not kept once a newer sync has read it, even one ending in the same millisecond', async () => {
+        // Both syncs end at the same time, so only a count of the syncs tells them apart
+        const now = jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000)
+        try {
+          const { controller } = await prepareSelected()
+          await syncFirst(controller)
+          const staleRead = createDeferred()
+          jest.spyOn(protocols[0]!, 'history').mockImplementationOnce(async () => {
+            await staleRead.promise
+            return [WITHDRAWAL]
+          })
 
-        const opening = controller.filterHistory(SESSION)
-        await flush()
-        historyBySeed['seed-a'] = [historyEvent({ value: 7n, blockNumber: 200n })]
-        const refreshing = controller.sync()
-        await releaseSync('seed-a')
-        await refreshing
-        staleRead.resolve()
-        await opening
+          const opening = controller.filterHistory(SESSION)
+          await flush()
+          historyBySeed['seed-a'] = [historyEvent({ value: 7n, blockNumber: 200n })]
+          const refreshing = controller.sync()
+          await releaseSync('seed-a')
+          await refreshing
+          staleRead.resolve()
+          await opening
 
-        expect(getAmounts(controller)).toEqual([7n])
+          expect(getAmounts(controller)).toEqual([7n])
+        } finally {
+          now.mockRestore()
+        }
       })
     })
 

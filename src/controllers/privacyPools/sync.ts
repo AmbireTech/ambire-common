@@ -206,7 +206,8 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
     const generation = this.#ctx.lock.current
     const state = this.#accountStates[seedId]?.[chainId]
     if (state?.history && state.isHistoryCurrent) return true
-    if (state?.syncStatus !== 'ready' || !state.lastSyncedAt) return false
+    if (state?.syncStatus !== 'ready') return false
+    const syncEpoch = this.getEpoch(chainId, seedId)
 
     try {
       const protocol = await this.#registry.getProtocol(chainId, seedId)
@@ -218,7 +219,7 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
         seedId,
         generation,
         notes: state.notes,
-        lastSyncedAt: state.lastSyncedAt
+        syncEpoch
       })
       this.#ctx.emitUpdate()
 
@@ -319,13 +320,12 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
         depositorAddr: getAddress(toBeHex(note.depositor, 20)) as Hex,
         depositIndex: note.deposit
       }))
-      const lastSyncedAt = Date.now()
       // Nothing derived from the phrase is written back after a lock or account removal
       const isWritten = this.#writeAccountState(seedId, chainId, generation, {
         syncStatus: 'ready',
         syncStartedAt: null,
         error: null,
-        lastSyncedAt,
+        lastSyncedAt: Date.now(),
         lastSyncDuration: syncDuration,
         notes: syncedNotes,
         // Kept, as a stale list beats a blank one, until the history is read again
@@ -351,7 +351,7 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
           seedId,
           generation,
           notes: syncedNotes,
-          lastSyncedAt
+          syncEpoch: this.getEpoch(chainId, seedId)
         })
       }
     } catch (error: any) {
@@ -393,18 +393,17 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
     seedId,
     generation,
     notes,
-    lastSyncedAt
+    syncEpoch
   }: {
     protocol: PrivacyPoolsV1Protocol
     chainId: string
     seedId: string
     generation: number
     notes: PrivacyPoolsNote[]
-    /** Of the sync that read `notes`. */
-    lastSyncedAt: number
+    /** The epoch of the sync that read `notes`. Unlike its time, no other sync can share it. */
+    syncEpoch: number
   }): Promise<void> {
-    const isNewerSynced = () =>
-      this.#accountStates[seedId]?.[chainId]?.lastSyncedAt !== lastSyncedAt
+    const isNewerSynced = () => this.getEpoch(chainId, seedId) !== syncEpoch
 
     try {
       // Not synced again: the notes have just synced it, so the history matches them and a
