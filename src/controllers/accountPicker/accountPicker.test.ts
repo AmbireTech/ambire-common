@@ -96,7 +96,10 @@ describe('AccountPicker', () => {
     const { controller } = await prepareTest()
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
 
-    controller.setInitParams({ keyIterator: new KeyIterator(process.env.SEED), hdPathTemplate })
+    await controller.setInitParams({
+      keyIterator: new KeyIterator(process.env.SEED),
+      hdPathTemplate
+    })
     await controller.init()
     expect(controller.toJSON().maxPage).toBeUndefined()
 

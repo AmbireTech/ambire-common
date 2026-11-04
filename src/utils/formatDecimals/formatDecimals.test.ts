@@ -70,6 +70,29 @@ const SPECIAL_TEST_CASES: TestCases = [
   }
 ]
 
+// Cut, never rounded up: a balance shown rounded up is more than the user can spend. Done by hand
+// because Hermes ignores Intl's `roundingMode: 'trunc'`, so these run on Node too.
+const TRUNCATION_TEST_CASES: TestCases = [
+  { value: 0.7957, type: 'amount', expected: '0.79' },
+  { value: -0.7957, type: 'amount', expected: '-0.79' },
+  { value: 0.999, type: 'amount', expected: '0.99' },
+  { value: 0.7957, type: 'price', expected: '$0.79' },
+  { value: 0.999, type: 'value', expected: '$0.99' },
+  { value: 10009.99, type: 'value', expected: '$10,009' },
+  { value: 999999.999, type: 'amount', expected: '999,999.99' },
+  // Float noise: 0.29 is 0.28999... in binary and must not be cut to 0.28
+  { value: 0.29, type: 'amount', expected: '0.29' },
+  { value: 0.57, type: 'price', expected: '$0.57' },
+  { value: 1.1, type: 'precise', expected: '1.1' },
+  // Leading zeros don't count towards the decimals
+  { value: 0.000012345, type: 'amount', expected: '0.000012' },
+  { value: 0.0019999, type: 'amount', expected: '0.0019' },
+  // Below 1e-6 toString() switches to exponent form
+  { value: 0.00000012345, type: 'precise', expected: '0.00000012345' },
+  { value: 0.000000999999999, type: 'precise', expected: '0.00000099999999' },
+  { value: 1e21, type: 'amount', expected: '1,000,000,000,000,000,000,000' }
+]
+
 describe('formatDecimals', () => {
   TEST_CASES.forEach(({ value, type, expected }) => {
     it(`should format ${value} as ${expected} for type ${type}`, () => {
@@ -78,6 +101,11 @@ describe('formatDecimals', () => {
   })
   SPECIAL_TEST_CASES.forEach(({ value, type, expected }) => {
     it(`special test case: should format ${value} as ${expected} for type ${type}`, () => {
+      expect(formatDecimals(value, type)).toBe(expected)
+    })
+  })
+  TRUNCATION_TEST_CASES.forEach(({ value, type, expected }) => {
+    it(`truncation: should format ${value} as ${expected} for type ${type}`, () => {
       expect(formatDecimals(value, type)).toBe(expected)
     })
   })

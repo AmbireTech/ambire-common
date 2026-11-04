@@ -30,6 +30,7 @@ import {
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
 import * as safeLib from '../../libs/safe/safe'
+import { SwapAndBridgeFormStatus } from '../../libs/swapAndBridge/constants'
 import { generateUuid } from '../../utils/uuid'
 import { EstimationController } from '../estimation/estimation'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
@@ -1315,6 +1316,150 @@ describe('RequestsController ', () => {
     unsubscribe()
     expect(controller.userRequests).toHaveLength(1)
     expect(emittedCallsCount).toBe(2)
+  })
+
+  describe('ids of calls added to a batch', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const to = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const buildCalls = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      calls: Call[]
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: { calls, meta: { accountAddr, chainId: 1n } }
+        }
+      })
+    const getBatchedCalls = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) => {
+      const request = controller.userRequests[0]
+      if (request?.kind !== 'calls') throw new Error('Expected a calls request')
+      return request.signAccountOp.accountOp.calls
+    }
+    const destroyBatch = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) => {
+      const request = controller.userRequests[0]
+      if (request?.kind === 'calls') request.signAccountOp.destroy()
+    }
+    const getSwapCalls = (activeRouteId: string): Call[] => [
+      { id: `${activeRouteId}-approval`, activeRouteId, to, value: 0n, data: '0x' },
+      { id: activeRouteId, activeRouteId, to, value: 0n, data: '0x' }
+    ]
+
+    test('two batched swaps keep their ids, so each is tracked once the batch is sent', async () => {
+      const { controller } = await prepareTest()
+
+      await buildCalls(controller, getSwapCalls('order-1'))
+      await buildCalls(controller, getSwapCalls('order-2'))
+
+      expect(controller.userRequests).toHaveLength(1)
+      expect(getBatchedCalls(controller).map(({ id }) => id)).toEqual([
+        'order-1-approval',
+        'order-1',
+        'order-2-approval',
+        'order-2'
+      ])
+      destroyBatch(controller)
+    })
+
+    test('calls that are not part of a swap get a new id, even if they came with one', async () => {
+      const { controller } = await prepareTest()
+
+      await buildCalls(controller, [{ id: 'same-id', to, value: 1n, data: '0x' }])
+      await buildCalls(controller, [{ id: 'same-id', to, value: 1n, data: '0x' }])
+
+      const ids = getBatchedCalls(controller).map(({ id }) => id)
+      expect(ids).toHaveLength(2)
+      expect(ids).not.toContain('same-id')
+      expect(new Set(ids).size).toBe(2)
+      destroyBatch(controller)
+    })
+  })
+
+  describe('build swap & bridge request', () => {
+    const ROUTE_ID = 'order-1'
+    const swapTxn = {
+      activeRouteId: ROUTE_ID,
+      approvalData: null,
+      chainId: 1,
+      txData: '0x',
+      txTarget: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+      userTxIndex: 0,
+      value: '0'
+    }
+    const createQuote = (routeId: string) => {
+      const route = { routeId, providerId: 'cowswap', steps: [], userTxs: [] }
+
+      return {
+        fromAsset: { address: '0x0000000000000000000000000000000000000000', symbol: 'ETH' },
+        toAsset: { address: '0x431D5dfF03120AFA4bDf332c61A6e1766eF37BDB', symbol: 'JPYC' },
+        selectedRoute: route,
+        routes: [route]
+      } as any
+    }
+
+    /**
+     * Builds the swap into the batch the way the swap screen does, but resets the form while
+     * the account data is being fetched, like leaving the "Added to batch" screen right away
+     */
+    const buildSwapAndResetFormMidway = async (quoteRouteId: string) => {
+      const { controller, mainCtrl } = await prepareTest()
+      const swapAndBridge = mainCtrl.swapAndBridge
+      let formStatus = SwapAndBridgeFormStatus.ReadyToSubmit
+      swapAndBridge.quote = createQuote(quoteRouteId)
+      jest.spyOn(swapAndBridge, 'formStatus', 'get').mockImplementation(() => formStatus)
+      jest
+        .spyOn(swapAndBridge, 'signAccountOpController', 'get')
+        .mockReturnValue({ accountOp: { meta: { swapTxn } } } as any)
+      const getAccountState = mainCtrl.accounts.getOrFetchAccountOnChainState.bind(
+        mainCtrl.accounts
+      )
+      jest
+        .spyOn(mainCtrl.accounts, 'getOrFetchAccountOnChainState')
+        .mockImplementation(async (...args) => {
+          formStatus = SwapAndBridgeFormStatus.Empty
+          swapAndBridge.quote = null
+          return getAccountState(...args)
+        })
+
+      await controller.build({
+        type: 'swapAndBridgeRequest',
+        params: { openActionWindow: false }
+      })
+
+      return { controller, swapAndBridge }
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    test('tracks the swap even if the form is reset while it is being added to the batch', async () => {
+      const { controller, swapAndBridge } = await buildSwapAndResetFormMidway(ROUTE_ID)
+
+      expect(swapAndBridge.activeRoutes.map((r) => r.activeRouteId)).toContain(ROUTE_ID)
+      const activeRoute = swapAndBridge.activeRoutes.find((r) => r.activeRouteId === ROUTE_ID)
+      expect(activeRoute!.routeStatus).toBe('ready')
+      // the call keeps the id the active route is matched by once the batch is sent
+      const request = controller.userRequests[0]
+      if (request?.kind !== 'calls') throw new Error('Expected a calls request')
+      expect(request.signAccountOp.accountOp.calls.map(({ id }) => id)).toContain(ROUTE_ID)
+
+      swapAndBridge.removeActiveRoute(ROUTE_ID)
+      request.signAccountOp.destroy()
+    })
+
+    test('does not track the swap from a quote it was not built from', async () => {
+      // e.g. the quote got refreshed after the swap was prepared
+      const { controller, swapAndBridge } = await buildSwapAndResetFormMidway('refreshed-route')
+
+      expect(swapAndBridge.activeRoutes.map((r) => r.activeRouteId)).not.toContain(ROUTE_ID)
+      expect(swapAndBridge.activeRoutes.map((r) => r.activeRouteId)).not.toContain(
+        'refreshed-route'
+      )
+      const request = controller.userRequests[0]
+      if (request?.kind === 'calls') request.signAccountOp.destroy()
+    })
   })
 
   test('emits refreshed Safe confirmations for a transaction already in the queue', async () => {
