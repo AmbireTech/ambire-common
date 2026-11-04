@@ -1,16 +1,13 @@
 import { Interface } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
-import {
-  getPrivacyPoolsChainConfig,
-  getPrivacyPoolsDepositAsset,
-  toPrivacyPoolsAssetAddress
-} from '../../consts/privacyPools'
+import { getPrivacyPoolsDepositAsset, toPrivacyPoolsAssetAddress } from '../../consts/privacyPools'
 import { PrivacyPoolsDepositAssetConfig } from '../../interfaces/privacyPools'
 import { Call } from '../../libs/accountOp/types'
 import { encodePrivacyPoolsDeposit, readPrivacyPoolsDeposit } from '../../libs/privacyPools/deposit'
 import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
+import { PrivacyPoolsBuiltCalls } from './builtCalls'
 import {
   AssetRef,
   getChainConfig,
@@ -21,9 +18,7 @@ import {
 import { privacyPoolsErrors } from './errors'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsSync } from './sync'
-
-/** How long a broadcast deposit blocks another into the same account. See `#broadcastDeposits`. */
-const DEPOSIT_CONFIRMATION_WINDOW_MS = 15 * 60 * 1000
+import { PrivacyPoolsWatches } from './watches'
 
 const ERC20_INTERFACE = new Interface([
   'function approve(address spender, uint256 amount)',
@@ -53,7 +48,10 @@ type NextDepositPrecommitment = {
   epoch: number | null
 }
 
-/** Deposits into Privacy Pools accounts: building them, and recognising them once broadcast. */
+/**
+ * Deposits into Privacy Pools accounts: building them, and refusing one while the previous one into
+ * the same account is still pending.
+ */
 export class PrivacyPoolsDeposits implements PhraseScopedModule {
   #ctx: PrivacyPoolsContext
 
@@ -61,30 +59,28 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
 
   #sync: PrivacyPoolsSync
 
+  #builtCalls: PrivacyPoolsBuiltCalls
+
+  #watches: PrivacyPoolsWatches
+
   /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase), read once. */
   assetConfigs: { [key: string]: PrivacyPoolsDepositAssetConfig } = {}
 
   /** Per `${chainId}:${seedId}`. See `#getNextDepositPrecommitment`. */
   #nextDepositPrecommitments = new Map<string, NextDepositPrecommitment>()
 
-  /** Deposits `buildCalls` prepared, by precommitment, so a broadcast can be recognised. */
-  #preparedDeposits = new Map<bigint, { seedId: string; chainId: string }>()
-
-  /**
-   * Broadcast time per precommitment. A second deposit before the first lands would reuse its
-   * precommitment, which the entrypoint rejects - so it is refused for a fixed window rather than
-   * until seen on chain, which a never-landing broadcast would block forever.
-   */
-  #broadcastDeposits = new Map<bigint, number>()
-
   constructor(
     ctx: PrivacyPoolsContext,
     registry: PrivacyPoolsProtocolRegistry,
-    sync: PrivacyPoolsSync
+    sync: PrivacyPoolsSync,
+    builtCalls: PrivacyPoolsBuiltCalls,
+    watches: PrivacyPoolsWatches
   ) {
     this.#ctx = ctx
     this.#registry = registry
     this.#sync = sync
+    this.#builtCalls = builtCalls
+    this.#watches = watches
   }
 
   /**
@@ -117,9 +113,8 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
 
     const precommitment = await this.#getNextDepositPrecommitment(chainId, seedId)
 
-    if (this.#isDepositAwaitingChain(precommitment)) throw privacyPoolsErrors.depositAwaitingChain()
-
-    this.#preparedDeposits.set(precommitment, { seedId, chainId })
+    if (this.#isDepositPending(seedId, chainId, precommitment))
+      throw privacyPoolsErrors.depositAwaitingChain()
 
     const depositCall: Call = {
       to: config.entrypointAddress,
@@ -130,6 +125,7 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
         precommitment
       })
     }
+    this.#builtCalls.add({ chainId, call: depositCall, seedId, kind: 'deposit' })
 
     if (asset.isNative) return [depositCall]
 
@@ -163,42 +159,17 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     }
   }
 
-  /**
-   * Marks a broadcast account op's deposits as awaiting the chain, however it was signed. Only
-   * those `buildCalls` prepared are recognised, by precommitment - others are not this wallet's.
-   * Nothing is persisted, as a local log would link deposits to their withdrawals.
-   */
-  onAccountOpBroadcast({ chainId, calls }: { chainId: bigint; calls: Call[] }) {
-    const config = getPrivacyPoolsChainConfig(chainId)
-    if (!config) return
-
-    calls
-      .filter((call) => call.to?.toLowerCase() === config.entrypointAddress.toLowerCase())
-      .map((call) => readPrivacyPoolsDeposit(call))
-      .filter((deposit): deposit is NonNullable<typeof deposit> => !!deposit)
-      .filter(
-        ({ precommitment }) =>
-          this.#preparedDeposits.get(precommitment)?.chainId === chainId.toString()
-      )
-      .forEach(({ precommitment }) => this.#broadcastDeposits.set(precommitment, Date.now()))
-  }
-
   hasPhraseDerivedState(): boolean {
     return !!this.#nextDepositPrecommitments.size
   }
 
-  /** Keeps its prepared and broadcast deposits, for the reason given in `clear`. */
   forgetSeed(seedId: string) {
     this.#nextDepositPrecommitments.forEach((entry, key) => {
       if (entry.seedId === seedId) this.#nextDepositPrecommitments.delete(key)
     })
   }
 
-  /**
-   * Drops the precommitments derived ahead. Prepared and broadcast deposits are kept, as one made
-   * before a lock may be broadcast or land after it: it must still be recognised, and still block
-   * another deposit from reusing its precommitment.
-   */
+  /** Drops the precommitments derived ahead. */
   clear() {
     this.#nextDepositPrecommitments.clear()
   }
@@ -260,10 +231,31 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     })
   }
 
-  #isDepositAwaitingChain(precommitment: bigint) {
-    const broadcastAt = this.#broadcastDeposits.get(precommitment)
+  /**
+   * Whether a deposit with this precommitment is broadcast and not confirmed yet, or in the
+   * current request batch. A second one would reuse the precommitment, which the entrypoint
+   * rejects. Read from the transactions themselves, so it holds across a restart; one that failed,
+   * was dropped or got stuck is no longer pending and frees the precommitment.
+   *
+   * Also while a change to the account's chain is still being looked for: a deposit that landed
+   * is not in the notes until a sync shows it, and until then the precommitment is the same.
+   */
+  #isDepositPending(seedId: string, chainId: string, precommitment: bigint): boolean {
+    if (this.#watches.isWatching(seedId, chainId)) return true
 
-    return !!broadcastAt && Date.now() - broadcastAt < DEPOSIT_CONFIRMATION_WINDOW_MS
+    const entrypointAddress = getChainConfig(chainId).entrypointAddress.toLowerCase()
+
+    return this.#ctx
+      .getPendingAccountOps()
+      .some(
+        (op) =>
+          op.chainId.toString() === chainId &&
+          op.calls.some(
+            (call) =>
+              call.to?.toLowerCase() === entrypointAddress &&
+              readDepositPrecommitment(call.data) === precommitment
+          )
+      )
   }
 
   /**
