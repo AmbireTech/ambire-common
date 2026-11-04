@@ -7539,18 +7539,21 @@ describe('an earlier pending transaction', () => {
 
     /**
      * A Safe op at `nonce` that `threshold` owners must sign, `signed` of them already did. Its
-     * fee is paid by `paidBy`, the Safe itself by default
+     * fee is paid by `paidBy`, the Safe itself by default. Unless `hasOwnerKey` is false, the
+     * key of the first owner is in this wallet
      */
     const initSafe = async ({
       threshold,
       signed,
       nonce = 3n,
-      paidBy = safeAccount.addr
+      paidBy = safeAccount.addr,
+      hasOwnerKey = true
     }: {
       threshold: number
       signed: string[]
       nonce?: bigint
       paidBy?: string
+      hasOwnerKey?: boolean
     }) => {
       const feePaymentOptions = [nativeFeeOption(paidBy)]
       const accountOp = createAccountOp(safeAccount, chainId)
@@ -7590,9 +7593,9 @@ describe('an earlier pending transaction', () => {
       accountState.isDeployed = true
       accountState.associatedKeys = owners
       // Only the first owner's key is in this wallet
-      accountState.importedAccountKeys = [
-        { addr: eoaSigner.keyPublicAddress, type: 'internal', label: 'Key 1' } as any
-      ]
+      accountState.importedAccountKeys = hasOwnerKey
+        ? [{ addr: eoaSigner.keyPublicAddress, type: 'internal', label: 'Key 1' } as any]
+        : []
       ctrl.controller.update({ hasNewEstimation: true })
       return ctrl
     }
@@ -7608,6 +7611,52 @@ describe('an earlier pending transaction', () => {
       expect(hasEarlierPendingError(controller)).toBe(true)
       // Sent through a bundler, which holds the transaction, so it can't be replaced
       expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+    })
+
+    test('executes once fully signed, even with no key of the Safe in this wallet', async () => {
+      // e.g. approved onchain by its only owner, a smart account, and paid by an EOA
+      const { controller } = await initSafe({
+        threshold: 1,
+        signed: [owners[1]!],
+        paidBy: eoaSigner.keyPublicAddress,
+        hasOwnerKey: false
+      })
+      expect(controller.accountOp.signingKeyAddr).toBeFalsy()
+      expect(controller.readyToSign).toBe(true)
+      jest
+        .spyOn(broadcastLib, 'buildRawTransaction')
+        .mockResolvedValue({ to: '0x', value: 0n } as any)
+      jest.spyOn(KeystoreSigner.prototype, 'signRawTransaction').mockResolvedValue('0xsigned')
+      const broadcastTransactionSpy = jest
+        .spyOn(broadcastLib, 'broadcastTransaction')
+        .mockResolvedValue({ hash: '0xhash' } as any)
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await controller.signAndBroadcast()
+
+      expect(onError).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Missing mandatory transaction details')
+        })
+      )
+      expect(broadcastTransactionSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not execute with no key of the Safe in this wallet before it is fully signed', async () => {
+      const { controller } = await initSafe({
+        threshold: 2,
+        signed: [owners[1]!],
+        paidBy: eoaSigner.keyPublicAddress,
+        hasOwnerKey: false
+      })
+      const broadcastTransactionSpy = jest
+        .spyOn(broadcastLib, 'broadcastTransaction')
+        .mockResolvedValue({ hash: '0xhash' } as any)
+
+      await controller.signAndBroadcast()
+
+      expect(broadcastTransactionSpy).not.toHaveBeenCalled()
     })
 
     test('the owners can still sign behind a pending transaction', async () => {

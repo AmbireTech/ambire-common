@@ -3799,13 +3799,21 @@ export class SignAccountOpController
   }
 
   /**
+   * A Safe transaction with all the signatures it needs, so no key of the Safe signs it anymore.
+   * E.g. one approved only by smart account owners, as none of the Safe's keys is in the wallet
+   */
+  get #isSafeFullySigned(): boolean {
+    return !!this.account.safeCreation && (this.accountOp.signed?.length || 0) >= this.threshold
+  }
+
+  /**
    * Safes only: whether it can go on without a signing key. That's when it has all the
    * signatures it needs, or when its only imported owners that can approve are smart accounts,
    * which approve with their own transaction instead of a key
    */
   get #canSafeProceedWithoutSigningKey(): boolean {
     if (!this.account.safeCreation || this.accountOp.meta?.isSafeDeploy) return false
-    if ((this.accountOp.signed?.length || 0) >= this.threshold) return true
+    if (this.#isSafeFullySigned) return true
 
     return !this.accountKeyStoreKeys.length && this.safeSmartAccountOwners.length > 0
   }
@@ -4608,9 +4616,7 @@ export class SignAccountOpController
     const signingKeyAddr = this.accountOp.signingKeyAddr
     const signingKeyType = this.accountOp.signingKeyType
 
-    const isSafeFullySigned =
-      !!this.account.safeCreation && (this.accountOp.signed?.length || 0) >= this.threshold
-    if (!isSafeDeploy && !isSafeFullySigned && (!signingKeyAddr || !signingKeyType)) {
+    if (!isSafeDeploy && !this.#isSafeFullySigned && (!signingKeyAddr || !signingKeyType)) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
@@ -5173,7 +5179,10 @@ export class SignAccountOpController
       !accountOp ||
       !estimation ||
       !requestId ||
-      (!accountOp.meta?.isSafeDeploy && (!accountOp.signingKeyAddr || !accountOp.signingKeyType)) ||
+      // a fully signed Safe transaction is sent by its fee payer, with no key of the Safe
+      (!accountOp.meta?.isSafeDeploy &&
+        !this.#isSafeFullySigned &&
+        (!accountOp.signingKeyAddr || !accountOp.signingKeyType)) ||
       !accountOp.signature ||
       !bundlerSwitcher ||
       !accountOp.gasFeePayment
