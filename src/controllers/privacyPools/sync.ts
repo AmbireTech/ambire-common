@@ -1,5 +1,7 @@
 import { getAddress, toBeHex } from 'ethers'
 
+import type { PrivacyPoolsV1Protocol } from '@kohaku-eth/privacy-pools'
+
 import { fromPrivacyPoolsAssetAddress, getPrivacyPoolsChainConfig } from '../../consts/privacyPools'
 import { Hex } from '../../interfaces/hex'
 import {
@@ -72,13 +74,16 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
   /** Completed syncs per account and chain. A deposit precommitment is valid until the next one. */
   #syncEpochs: { [seedId: string]: { [chainId: string]: number } } = {}
 
-  /** Called once the plugin has persisted a chain's shared state. Must not reject. */
-  #onSharedStateSynced: (chainId: string) => Promise<unknown>
+  /**
+   * Called once the plugin has persisted a chain's shared state, and not awaited, as what it does
+   * is slow and no balance depends on it. Must not reject.
+   */
+  #onSharedStateSynced: (chainId: string) => Promise<void>
 
   constructor(
     ctx: PrivacyPoolsContext,
     registry: PrivacyPoolsProtocolRegistry,
-    onSharedStateSynced: (chainId: string) => Promise<unknown>
+    onSharedStateSynced: (chainId: string) => Promise<void>
   ) {
     this.#ctx = ctx
     this.#registry = registry
@@ -235,7 +240,10 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
       this.#writeAccountState(seedId, chainId, generation, { syncStartedAt: startedAt })
       this.#ctx.emitUpdate()
 
+      let t = Date.now() // PP_TIMING
       const protocol = await this.#registry.getProtocol(chainId, seedId)
+      console.log(`PP_TIMING getProtocol ${Date.now() - t} ms`) // PP_TIMING
+      t = Date.now() // PP_TIMING
 
       // Optional on the plugin interface; checked so an SDK that drops it fails clearly
       if (!protocol.notes) throw new Error('privacyPools: plugin does not expose notes')
@@ -243,10 +251,9 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
       // The plugin syncs before every read, costing seconds even with no new blocks, so a
       // `sync()` first would pay twice
       const notes = await protocol.notes()
+      console.log(`PP_TIMING notes ${Date.now() - t} ms`) // PP_TIMING
       // The plugin has persisted the shared state by now
       initialRead?.resolve()
-      // Even if locked since, as for the initial read below: the shared state is the chain's
-      await this.#onSharedStateSynced(chainId)
       const syncDuration = Date.now() - startedAt
 
       // Even if locked since: the shared state is the chain's, not the phrase's
@@ -269,6 +276,11 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
           depositIndex: note.deposit
         }))
       })
+
+      // After the notes are written, so the balance does not wait for it. Even if locked since, as
+      // for the initial read above: the shared state is the chain's, not the phrase's.
+      void this.#onSharedStateSynced(chainId)
+
       if (!isWritten) return
 
       // A deposit may have landed, which moves the next one's precommitment on
@@ -278,6 +290,9 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
       }
 
       this.#registry.markChainSynced(chainId, seedId)
+
+      // Not awaited, so the balance shows while the trees build
+      void this.#prepareProofTrees(protocol, generation)
     } catch (error: any) {
       // Still not on this device: the next sync reads it again
       if (initialRead && isChainCold) {
@@ -301,6 +316,27 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
       // Settled on every path, as the chain's other syncs wait for it. A no-op once settled.
       initialRead?.resolve()
       this.#ctx.emitUpdate()
+    }
+  }
+
+  /**
+   * Checks the pool and Association Set roots on chain, which the sync skips, and leaves their
+   * trees built for the next withdrawal. A failure is only reported: the withdrawal runs the check
+   * again and stops on it. Never rejects.
+   */
+  async #prepareProofTrees(protocol: PrivacyPoolsV1Protocol, generation: number) {
+    try {
+      const t = Date.now() // PP_TIMING
+      await protocol.prepareProofTrees()
+      console.log(`PP_TIMING prepareProofTrees ${Date.now() - t} ms`) // PP_TIMING
+    } catch (error: any) {
+      if (!this.#ctx.lock.isCurrent(generation)) return
+
+      this.#ctx.emitError({
+        message: 'Could not check your Privacy Pools data. Please try again.',
+        level: 'silent',
+        error: error instanceof Error ? error : new Error('privacyPools: proof trees check failed')
+      })
     }
   }
 

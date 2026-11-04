@@ -115,6 +115,9 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
       secretManager: SignatureSecretManager,
       // Skipped once this chain has a persisted store
       initialState: resolveInitialState,
+      // The check hashes every leaf of every pool, minutes on mobile, so the balance shows without
+      // it and `PrivacyPoolsSync` runs it after each sync, through `prepareProofTrees`
+      verifyRootsOnSync: false,
       dataService,
       entrypoint: {
         address: BigInt(config.entrypointAddress),
