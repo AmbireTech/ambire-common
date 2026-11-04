@@ -3182,8 +3182,9 @@ export class SignAccountOpController
     // controllers nested in another one (e.g. safeOwnerApproval) reach the UI through it
     if (this.#isRegistrable) this.registerInRegistry()
     this.#resumeIntervals()
-    // a finished approval has nothing left to estimate
-    if (this.safeOwnerApproval && this.safeOwnerApproval.broadcastStatus !== 'SUCCESS')
+    // a signed approval (e.g. one already sent) has nothing left to estimate. Not checked by
+    // its broadcastStatus, as it goes back to INITIAL right after a successful broadcast
+    if (this.safeOwnerApproval && this.safeOwnerApproval.status?.type !== SigningStatus.Done)
       this.safeOwnerApproval.resume()
 
     this.emitUpdate()
@@ -3867,17 +3868,15 @@ export class SignAccountOpController
     if (!accountState) throw new Error('initSafeOwnerApproval: missing the Safe account state')
 
     const { safeTxnHash } = this.#getSafeSigningData(accountState)
-    if (
-      this.safeOwnerApproval?.account.addr === owner.addr &&
-      this.#safeOwnerApprovalHash === safeTxnHash
-    ) {
+    // e.g. approved before the window was closed, from the Safe app, or by an approval sent
+    // from here that was confirmed only after the wallet stopped waiting for it
+    const isAlreadyApproved = await this.#recordSafeOwnerApproval(owner.addr, safeTxnHash)
+    if (isAlreadyApproved || initId !== this.#safeOwnerApprovalInitId) return
+
+    if (this.#canReuseSafeOwnerApproval(owner.addr, safeTxnHash)) {
       this.emitUpdate()
       return
     }
-
-    // e.g. approved before the window was closed, or from the Safe app
-    const isAlreadyApproved = await this.#recordSafeOwnerApproval(owner.addr, safeTxnHash)
-    if (isAlreadyApproved || initId !== this.#safeOwnerApprovalInitId) return
 
     const ownerState = await this.#accounts.getOrFetchAccountOnChainState(
       owner.addr,
@@ -3941,6 +3940,19 @@ export class SignAccountOpController
     this.safeOwnerApproval = approval
     this.#safeOwnerApprovalHash = safeTxnHash
     this.emitUpdate()
+  }
+
+  /**
+   * Whether safeOwnerApproval is the approval of this owner for this Safe transaction that can
+   * be shown again. A signed one can't be signed again (e.g. it was sent, but never confirmed),
+   * so it's prepared anew, unless it's still being sent and is the one to wait for
+   */
+  #canReuseSafeOwnerApproval(ownerAddr: string, safeTxnHash: string): boolean {
+    const approval = this.safeOwnerApproval
+    if (!approval || approval.account.addr !== ownerAddr) return false
+    if (this.#safeOwnerApprovalHash !== safeTxnHash) return false
+
+    return approval.isSignAndBroadcastInProgress || approval.status?.type !== SigningStatus.Done
   }
 
   /**

@@ -1601,6 +1601,78 @@ describe('SignAccountOp Controller ', () => {
       controller.destroy()
     })
 
+    test('prepares the approval again when the one sent before was never confirmed', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const sentApproval = controller.safeOwnerApproval!
+      // e.g. stuck with a fee too low, until the wallet stopped waiting for it
+      sentApproval.updateStatus(SigningStatus.Done)
+      const destroySpy = jest.spyOn(sentApproval, 'destroy')
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr, 'approve-again')
+
+      expect(destroySpy).toHaveBeenCalled()
+      const newApproval = controller.safeOwnerApproval!
+      expect(newApproval).not.toBe(sentApproval)
+      expect(newApproval.account.addr).toBe(e2esmartAccount.addr)
+      expect(newApproval.status?.type).not.toBe(SigningStatus.Done)
+      expect(controller.safeOwnerApprovalRequestId).toBe('approve-again')
+      controller.destroy()
+    })
+
+    test('keeps a signed approval of the same owner while it is still being sent', async () => {
+      const { controller, isSafeHashApprovedSpy } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const approval = controller.safeOwnerApproval!
+      approval.updateStatus(SigningStatus.Done)
+      const isInProgressSpy = jest
+        .spyOn(approval, 'isSignAndBroadcastInProgress', 'get')
+        .mockReturnValue(false)
+      // starts being sent while it's checked whether the owner approved onchain already
+      isSafeHashApprovedSpy.mockImplementation(async () => {
+        isInProgressSpy.mockReturnValue(true)
+        return false
+      })
+      const destroySpy = jest.spyOn(approval, 'destroy')
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+
+      expect(controller.safeOwnerApproval).toBe(approval)
+      expect(destroySpy).not.toHaveBeenCalled()
+      expect(onError).not.toHaveBeenCalled()
+      controller.destroy()
+    })
+
+    test('counts an approval confirmed after the wallet stopped waiting for it', async () => {
+      const { controller, isSafeHashApprovedSpy } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      controller.safeOwnerApproval!.updateStatus(SigningStatus.Done)
+      // e.g. confirmed later on a slow network
+      isSafeHashApprovedSpy.mockResolvedValue(true)
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+
+      expect(controller.accountOp.signed).toEqual([e2esmartAccount.addr])
+      expect(controller.accountOp.signature).toBe(
+        safeLib.getSafeApprovedHashSignature(e2esmartAccount.addr)
+      )
+      controller.destroy()
+    })
+
+    test('counts an approval made onchain meanwhile instead of showing the one not sent yet', async () => {
+      const { controller, isSafeHashApprovedSpy } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      // e.g. from the Safe app, while the approval here was left unsent
+      isSafeHashApprovedSpy.mockResolvedValue(true)
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+
+      expect(controller.accountOp.signed).toEqual([e2esmartAccount.addr])
+      controller.destroy()
+    })
+
     test('does not replace an approval while it is being signed or sent', async () => {
       const { controller } = await initSafeWithSmartAccountOwners()
       await controller.initSafeOwnerApproval(e2esmartAccount.addr)
@@ -1770,6 +1842,22 @@ describe('SignAccountOp Controller ', () => {
       // prepared again, for the transaction with the new nonce
       expect(controller.safeOwnerApproval).not.toBe(approval)
       expect(controller.safeOwnerApproval!.account.addr).toBe(e2esmartAccount.addr)
+      controller.destroy()
+    })
+
+    test('resumes the approval with the Safe request only while it is not signed', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const approval = controller.safeOwnerApproval!
+      const resumeSpy = jest.spyOn(approval, 'resume')
+
+      controller.resume()
+      expect(resumeSpy).toHaveBeenCalledTimes(1)
+
+      // e.g. sent, so nothing is left to estimate
+      approval.updateStatus(SigningStatus.Done)
+      controller.resume()
+      expect(resumeSpy).toHaveBeenCalledTimes(1)
       controller.destroy()
     })
 
