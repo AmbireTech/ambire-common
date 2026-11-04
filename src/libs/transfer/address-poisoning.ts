@@ -5,13 +5,15 @@ import { AddressPoisoningMatch } from '@/interfaces/transfer'
 /**
  * Address poisoning lookalikes preserve a few consecutive chars from both the left and the
  * right side of the original address, because that's what wallets and explorers show.
- * We consider any recipient with at least 3 matched chars on each side as suspicious, while
- * still keeping the exact prefix/suffix counts so downstream UI can render the true shape of
- * the match (for example 4-left / 3-right). Requiring both sides skips unrelated addresses that
- * only share leading zeros or a vanity prefix like 0x1111. With 1,000 past recipients, two
- * unrelated addresses trigger it on ~0.006% of sends.
+ * We consider a recipient suspicious when it has at least 2 matched chars on each side and at
+ * least 7 in total (for example 2-left / 5-right or 4-left / 3-right), while still keeping the
+ * exact prefix/suffix counts so downstream UI can render the true shape of the match.
+ * Requiring both sides skips unrelated addresses that only share leading zeros or a vanity
+ * prefix like 0x1111. With 1,000 past recipients, two unrelated addresses trigger it on
+ * ~0.0014% of sends.
  */
-const MIN_ADDRESS_POISONING_SIDE_MATCH_CHARS = 3
+const MIN_ADDRESS_POISONING_SIDE_MATCH_CHARS = 2
+const MIN_ADDRESS_POISONING_TOTAL_MATCH_CHARS = 7
 
 /**
  * An address that differs from a known one in only this many positions is a typo, not
@@ -73,7 +75,8 @@ export const getAddressPoisoningMatchCounts = (candidate: string, trustedAddress
 
   const isPoisoningLookalike =
     matchedPrefixCharsCount >= MIN_ADDRESS_POISONING_SIDE_MATCH_CHARS &&
-    matchedSuffixCharsCount >= MIN_ADDRESS_POISONING_SIDE_MATCH_CHARS
+    matchedSuffixCharsCount >= MIN_ADDRESS_POISONING_SIDE_MATCH_CHARS &&
+    matchedPrefixCharsCount + matchedSuffixCharsCount >= MIN_ADDRESS_POISONING_TOTAL_MATCH_CHARS
 
   if (!isPoisoningLookalike && differingCharsCount > MAX_NEAR_IDENTICAL_ADDRESS_DIFFERING_CHARS) {
     return null
