@@ -1,10 +1,20 @@
-import { solidityPackedKeccak256 } from 'ethers'
+import { isHexString, solidityPackedKeccak256 } from 'ethers'
 
 import { PrivacyPoolsPoolStats } from '../../interfaces/privacyPools'
+import { yieldToMain } from '../../utils/scheduler'
 
 /** The field the pools reduce labels into, BN254's scalar field. */
 const SNARK_SCALAR_FIELD =
   21888242871839275222246405745257275088548364400416034343698204186575808495617n
+
+/**
+ * How long labels are derived before the event loop gets a turn. Deriving a pool's labels takes
+ * seconds on mobile, which would freeze the UI if done in one go.
+ */
+const LABELS_DERIVATION_SLICE_MS = 8
+
+/** Hex digits of an encoded label: a label is below the 254-bit field, so 32 bytes hold it. */
+const ENCODED_LABEL_LENGTH = 64
 
 /** An event of a pool as the SDK persists it: what it moved and when. */
 type StoredPoolEvent = { value: bigint; blockNumber: bigint }
@@ -114,18 +124,43 @@ export const readPrivacyPoolsPoolHistory = (
  * The labels of a pool's deposits from `fromNonce` (1 for the first deposit) to `toNonce`, as the
  * pool derives them: `keccak256(abi.encodePacked(SCOPE, nonce)) % SNARK_SCALAR_FIELD`. A pool's
  * nonce is its deposits count, so its labels are those up to `deposits.length`.
+ *
+ * Yields to the event loop every few milliseconds, so a long range does not freeze the UI.
  */
-export const getPrivacyPoolsPoolLabels = (
+export const getPrivacyPoolsPoolLabels = async (
   scope: bigint,
   fromNonce: bigint,
   toNonce: bigint
-): bigint[] => {
+): Promise<bigint[]> => {
   const labels: bigint[] = []
+  let sliceStartedAt = Date.now()
+
   for (let nonce = fromNonce; nonce <= toNonce; nonce++) {
     labels.push(
       BigInt(solidityPackedKeccak256(['uint256', 'uint256'], [scope, nonce])) % SNARK_SCALAR_FIELD
     )
+
+    if (Date.now() - sliceStartedAt < LABELS_DERIVATION_SLICE_MS) continue
+
+    await yieldToMain()
+    sliceStartedAt = Date.now()
   }
+
+  return labels
+}
+
+/** Labels as one string for storage: each a fixed-width hex number, so none needs a separator. */
+export const encodePrivacyPoolsPoolLabels = (labels: bigint[]): string =>
+  labels.map((label) => label.toString(16).padStart(ENCODED_LABEL_LENGTH, '0')).join('')
+
+/** The labels `encodePrivacyPoolsPoolLabels` made, or null if the value is not what it makes. */
+export const decodePrivacyPoolsPoolLabels = (encoded: unknown): bigint[] | null => {
+  if (typeof encoded !== 'string') return null
+  if (encoded.length % ENCODED_LABEL_LENGTH !== 0 || !isHexString(`0x${encoded}`)) return null
+
+  const labels: bigint[] = []
+  for (let start = 0; start < encoded.length; start += ENCODED_LABEL_LENGTH)
+    labels.push(BigInt(`0x${encoded.slice(start, start + ENCODED_LABEL_LENGTH)}`))
 
   return labels
 }

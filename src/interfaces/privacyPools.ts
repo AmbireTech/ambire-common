@@ -74,6 +74,20 @@ export type PrivacyPoolsAccount = {
   createdAt: number
 }
 
+/**
+ * The labels derived for each pool's deposits (`chainId:poolAddress`), kept so they are derived
+ * once per deposit, ever. Public data: a label comes from the pool's scope and the deposit's
+ * nonce. See `encodePrivacyPoolsPoolLabels`.
+ */
+export type PrivacyPoolsStoredPoolLabels = {
+  [poolKey: string]: {
+    /** The scope the labels were derived from, as hex, so labels of another scope are not reused. */
+    scope: string
+    /** Every deposit's label in nonce order, each a fixed-width hex number, joined with no separator. */
+    labels: string
+  }
+}
+
 export type PrivacyPoolsSyncStatus = 'idle' | 'syncing' | 'ready'
 
 /**

@@ -1,4 +1,6 @@
 import {
+  decodePrivacyPoolsPoolLabels,
+  encodePrivacyPoolsPoolLabels,
   getPrivacyPoolsPoolLabels,
   getPrivacyPoolsPoolStats,
   readPrivacyPoolsPoolHistory
@@ -16,6 +18,10 @@ const ETH_POOL_FIRST_LABELS = [
   17257527664226596860182647181834562990452572441828453844295388934492155844989n,
   20572552624186342001946977043772471280043833801939562344058440297043467610171n
 ]
+
+/** BN254's scalar field, which a label is reduced into. */
+const SNARK_SCALAR_FIELD =
+  21888242871839275222246405745257275088548364400416034343698204186575808495617n
 
 const hex = (value: bigint) => `0x${value.toString(16)}`
 
@@ -65,13 +71,48 @@ const getStats = (state: object, poolLabels: bigint[] = []) =>
   })
 
 describe('getPrivacyPoolsPoolLabels', () => {
-  test("derives a pool's labels from its scope and the deposits' nonces, as the pool does", () => {
-    expect(getPrivacyPoolsPoolLabels(ETH_POOL_SCOPE, 1n, 2n)).toEqual(ETH_POOL_FIRST_LABELS)
-    expect(getPrivacyPoolsPoolLabels(ETH_POOL_SCOPE, 2n, 2n)).toEqual([ETH_POOL_FIRST_LABELS[1]])
+  test("derives a pool's labels from its scope and the deposits' nonces, as the pool does", async () => {
+    expect(await getPrivacyPoolsPoolLabels(ETH_POOL_SCOPE, 1n, 2n)).toEqual(ETH_POOL_FIRST_LABELS)
+    expect(await getPrivacyPoolsPoolLabels(ETH_POOL_SCOPE, 2n, 2n)).toEqual([
+      ETH_POOL_FIRST_LABELS[1]
+    ])
   })
 
-  test('derives none for an empty range', () => {
-    expect(getPrivacyPoolsPoolLabels(ETH_POOL_SCOPE, 1n, 0n)).toEqual([])
+  test('derives none for an empty range', async () => {
+    expect(await getPrivacyPoolsPoolLabels(ETH_POOL_SCOPE, 1n, 0n)).toEqual([])
+  })
+
+  test('lets the event loop run while it derives a long range', async () => {
+    let hasEventLoopRun = false
+    const timer = setTimeout(() => {
+      hasEventLoopRun = true
+    }, 0)
+
+    // Far more than one slice of work, even on a fast machine
+    const labels = await getPrivacyPoolsPoolLabels(ETH_POOL_SCOPE, 1n, 1000n)
+    clearTimeout(timer)
+
+    expect(labels).toHaveLength(1000)
+    expect(hasEventLoopRun).toBe(true)
+  })
+})
+
+describe('encoding the labels for storage', () => {
+  test('gives back the labels it was given, the largest and the smallest included', () => {
+    const labels = [...ETH_POOL_FIRST_LABELS, 0n, 1n, SNARK_SCALAR_FIELD - 1n]
+
+    expect(decodePrivacyPoolsPoolLabels(encodePrivacyPoolsPoolLabels(labels))).toEqual(labels)
+    expect(decodePrivacyPoolsPoolLabels(encodePrivacyPoolsPoolLabels([]))).toEqual([])
+  })
+
+  test('refuses what it did not make, so a damaged value is derived again', () => {
+    const encoded = encodePrivacyPoolsPoolLabels(ETH_POOL_FIRST_LABELS)
+
+    expect(decodePrivacyPoolsPoolLabels(encoded.slice(0, -1))).toBeNull()
+    expect(decodePrivacyPoolsPoolLabels(`${encoded.slice(0, -1)}z`)).toBeNull()
+    expect(decodePrivacyPoolsPoolLabels(`0x${encoded.slice(2)}`)).toBeNull()
+    expect(decodePrivacyPoolsPoolLabels(42)).toBeNull()
+    expect(decodePrivacyPoolsPoolLabels(null)).toBeNull()
   })
 })
 
