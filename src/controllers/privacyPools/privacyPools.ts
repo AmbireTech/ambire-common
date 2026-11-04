@@ -715,7 +715,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Sends the signed withdrawal to the bundler and waits for it. Syncs either way, as a userOp can
-   * land after the receipt wait gives up.
+   * land after the receipt wait gives up, and reads the history along with it.
    */
   async broadcastWithdrawal(): Promise<void> {
     // `operation`, so another phrase's cannot be sent
@@ -731,6 +731,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     // Picks up the spent note and its change note
     await this.syncChain(operation.chainId)
+
+    // Even with no screen showing it, so the activity lists the transfer once opened. Of the
+    // account the sync read, which may no longer be the sender's if switched meanwhile.
+    const syncedSeedId = this.#getSelectedSeedId()
+    if (syncedSeedId) await this.#sync.readHistoryWithoutSync(operation.chainId, syncedSeedId)
   }
 
   /**

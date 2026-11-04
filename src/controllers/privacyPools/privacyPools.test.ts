@@ -2053,6 +2053,28 @@ describe('PrivacyPoolsController', () => {
       await broadcasting
     })
 
+    it('reads the history along with the sync after the transfer, so the activity lists it at once', async () => {
+      const { controller } = await prepareSignedWithdrawal()
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast: async () => {} } as any)
+      historyBySeed = { 'seed-a': [historyEvent({ value: WITHDRAWAL_AMOUNT })] }
+
+      const broadcasting = controller.broadcastWithdrawal()
+      await releaseSync('seed-a')
+      await broadcasting
+
+      // Though no screen showed it
+      expect(protocols[0]!.historyCount).toBe(1)
+      expect(protocols[0]!.syncCount).toBe(1)
+
+      // Opening the activity then neither syncs nor reads it again
+      await controller.filterHistory('dashboard')
+      expect(runningSyncs).toHaveLength(0)
+      expect(protocols[0]!.historyCount).toBe(1)
+      expect(controller.history.dashboard?.result?.items.map(({ amount }) => amount)).toEqual([
+        WITHDRAWAL_AMOUNT
+      ])
+    })
+
     it('clears the send form when the transfer could not be sent', async () => {
       const { restore } = suppressConsole()
       const { controller } = await prepareSignedWithdrawal()

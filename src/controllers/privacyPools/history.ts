@@ -109,9 +109,6 @@ export class PrivacyPoolsHistory {
         // It may have checked whether to read the history before this screen asked for it
         await this.#sync.getRunningSync(seedId, chainId)
 
-        const state = this.#sync.getAccountChainStates(seedId)[chainId]
-        if (state?.history && state.isHistoryCurrent) return
-
         // Not a sync, so the balances are not shown as loading again
         if (await this.#sync.readHistoryWithoutSync(chainId, seedId)) return
 

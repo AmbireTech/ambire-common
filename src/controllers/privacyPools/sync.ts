@@ -198,13 +198,14 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
 
   /**
    * Reads an account's history on a chain from its current plugin, as of that plugin's last sync,
-   * without syncing again - so the balances are not shown as loading. False when the current
-   * plugin has not synced the account's notes (a new one knows none of its deposits), or the last
-   * sync failed. Never rejects.
+   * without syncing again - so the balances are not shown as loading. True once the history is
+   * current, also when the last sync has read it. False when the current plugin has not synced the
+   * account's notes (a new one knows none of its deposits), or the last sync failed. Never rejects.
    */
   async readHistoryWithoutSync(chainId: string, seedId: string): Promise<boolean> {
     const generation = this.#ctx.lock.current
     const state = this.#accountStates[seedId]?.[chainId]
+    if (state?.history && state.isHistoryCurrent) return true
     if (state?.syncStatus !== 'ready' || !state.lastSyncedAt) return false
 
     try {
