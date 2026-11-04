@@ -180,7 +180,7 @@ describe('Activity Controller ', () => {
   })
 
   describe('AccountsOps', () => {
-    test('should detect various address poisoning attacks (4/4, 5/5, 6/5, 4/8, 3/8, 0/8 and reject total < 8 or 0/0)', async () => {
+    test('should detect various address poisoning attacks (4/4, 5/5, 6/5, 4/8, 3/8, 3/4 and reject 0/8, 3/2 or 0/0)', async () => {
       const { controller } = await prepareTest()
 
       const trustedRecipient = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
@@ -191,6 +191,7 @@ describe('Activity Controller ', () => {
       const poisoningRecipient3to8 = '0xF0cEEeeeEEEEEeEEEEeeEEEEeeEeeeEe793237db'
       const poisoningRecipient0to8 = '0xaB12ffFFfFFFFfFfFFFffffFffFFFfFF793237DB'
       const poisoningRecipient3to4 = '0xF0cAAaAaAaaaAAaAAaaaaAAaaaAaAAAaAAaa37dB'
+      const poisoningRecipient3to2 = '0xf0caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaadb'
       const poisoningRecipient0to0 = '0xAB12eeeeeeeEeeeEeeeEEeeeEEEEEeeEeEeeCdef'
 
       await controller.addAccountOp({
@@ -240,6 +241,10 @@ describe('Activity Controller ', () => {
         poisoningRecipient3to4,
         ACCOUNTS[1]!.addr
       )
+      const poisoningResult3to2 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient3to2,
+        ACCOUNTS[1]!.addr
+      )
       const poisoningResult0to0 = await controller.hasAccountOpsSentTo(
         poisoningRecipient0to0,
         ACCOUNTS[1]!.addr
@@ -251,7 +256,8 @@ describe('Activity Controller ', () => {
         addressPoisoningMatch: {
           matchedAddress: trustedRecipient,
           matchedPrefixCharsCount: 4,
-          matchedSuffixCharsCount: 4
+          matchedSuffixCharsCount: 4,
+          differingCharsCount: 32
         }
       })
 
@@ -261,7 +267,8 @@ describe('Activity Controller ', () => {
         addressPoisoningMatch: {
           matchedAddress: trustedRecipient,
           matchedPrefixCharsCount: 5,
-          matchedSuffixCharsCount: 5
+          matchedSuffixCharsCount: 5,
+          differingCharsCount: 27
         }
       })
 
@@ -271,7 +278,8 @@ describe('Activity Controller ', () => {
         addressPoisoningMatch: {
           matchedAddress: trustedRecipient,
           matchedPrefixCharsCount: 6,
-          matchedSuffixCharsCount: 5
+          matchedSuffixCharsCount: 5,
+          differingCharsCount: 28
         }
       })
 
@@ -281,7 +289,8 @@ describe('Activity Controller ', () => {
         addressPoisoningMatch: {
           matchedAddress: trustedRecipient,
           matchedPrefixCharsCount: 4,
-          matchedSuffixCharsCount: 8
+          matchedSuffixCharsCount: 8,
+          differingCharsCount: 25
         }
       })
 
@@ -291,21 +300,29 @@ describe('Activity Controller ', () => {
         addressPoisoningMatch: {
           matchedAddress: trustedRecipient,
           matchedPrefixCharsCount: 3,
-          matchedSuffixCharsCount: 8
+          matchedSuffixCharsCount: 8,
+          differingCharsCount: 29
         }
       })
 
       expect(poisoningResult0to8).toEqual({
         found: false,
         lastTransactionDate: null,
-        addressPoisoningMatch: {
-          matchedAddress: trustedRecipient,
-          matchedPrefixCharsCount: 0,
-          matchedSuffixCharsCount: 8
-        }
+        addressPoisoningMatch: null
       })
 
       expect(poisoningResult3to4).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 3,
+          matchedSuffixCharsCount: 4,
+          differingCharsCount: 33
+        }
+      })
+
+      expect(poisoningResult3to2).toEqual({
         found: false,
         lastTransactionDate: null,
         addressPoisoningMatch: null
@@ -1635,6 +1652,69 @@ describe('Activity Controller ', () => {
 
       expect(recipientsForAccount![getAddress(recipientLower)]).toBe(SENT_AT_LATER)
       expect(recipientsForAccount![recipientLower]).toBeUndefined()
+    })
+  })
+
+  describe('Speed ups', () => {
+    const SENDER = SUBMITTED_ACCOUNT_OP.accountAddr
+    const buildAttempt = (txnId: string, timestamp: number, eoaNonce: bigint | null = 5n) =>
+      buildSubmittedAccountOp({
+        txnId,
+        identifiedBy: { type: 'Transaction', identifier: txnId },
+        timestamp,
+        eoaNonce
+      })
+
+    test('shows a transaction and its speed up as a single row, the newest one while pending', async () => {
+      const { controller, sessionId } = await prepareTest()
+      const original = buildAttempt(`0x${'01'.repeat(32)}`, 1000)
+      const speedUp = buildAttempt(`0x${'02'.repeat(32)}`, 2000)
+      await controller.addAccountOp(original)
+      await controller.addAccountOp(speedUp)
+
+      await controller.filterAccountsOps(sessionId, { account: SENDER, chainId: 1n })
+
+      const { result } = controller.accountsOps[sessionId]!
+      expect(result.items.map((op) => op.txnId)).toEqual([speedUp.txnId])
+      expect(result.itemsTotal).toBe(1)
+    })
+
+    test('keeps transactions with different nonces as separate rows', async () => {
+      const { controller, sessionId } = await prepareTest()
+      await controller.addAccountOp(buildAttempt(`0x${'03'.repeat(32)}`, 1000, 5n))
+      await controller.addAccountOp(buildAttempt(`0x${'04'.repeat(32)}`, 2000, 6n))
+
+      await controller.filterAccountsOps(sessionId, { account: SENDER, chainId: 1n })
+
+      expect(controller.accountsOps[sessionId]!.result.items).toHaveLength(2)
+    })
+
+    test('keeps transactions without a known nonce as separate rows', async () => {
+      const { controller, sessionId } = await prepareTest()
+      // null, as passing undefined would fall back to the default nonce
+      await controller.addAccountOp(buildAttempt(`0x${'05'.repeat(32)}`, 1000, null))
+      await controller.addAccountOp(buildAttempt(`0x${'06'.repeat(32)}`, 2000, null))
+
+      await controller.filterAccountsOps(sessionId, { account: SENDER, chainId: 1n })
+
+      expect(controller.accountsOps[sessionId]!.result.items).toHaveLength(2)
+    })
+
+    test('still finds a replaced transaction when looking it up directly', async () => {
+      const { controller, sessionId } = await prepareTest()
+      const original = buildAttempt(`0x${'07'.repeat(32)}`, 1000)
+      await controller.addAccountOp(original)
+      await controller.addAccountOp(buildAttempt(`0x${'08'.repeat(32)}`, 2000))
+
+      await controller.filterAccountsOps(sessionId, {
+        account: SENDER,
+        chainId: 1n,
+        identifiedBy: original.identifiedBy
+      })
+
+      expect(controller.accountsOps[sessionId]!.result.items.map((op) => op.txnId)).toEqual([
+        original.txnId
+      ])
     })
   })
 })

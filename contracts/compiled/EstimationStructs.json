@@ -1,1 +1,22 @@
-{"abi":[],"bin":"0x60808060405234601357603a908160198239f35b600080fdfe600080fdfea264697066735822122041dc9cdeddaf71cda86cf07dffc9889a8aeb3bab909727a815122dcbc349855064736f6c63430008130033","binRuntime":"0x600080fdfea264697066735822122041dc9cdeddaf71cda86cf07dffc9889a8aeb3bab909727a815122dcbc349855064736f6c63430008130033"}
+{
+    "abi": [
+        {
+            "inputs": [],
+            "name": "OOG",
+            "type": "error"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "gasUsed",
+                    "type": "uint256"
+                }
+            ],
+            "name": "RevertWithSuccess",
+            "type": "error"
+        }
+    ],
+    "bin": "0x60808060405234601357603a908160198239f35b600080fdfe600080fdfea26469706673582212200b5f8c58f15d224466f4d3c7cbb794627b13700f9a11ade1ba6686a5d8d459ee64736f6c63430008130033",
+    "binRuntime": "0x600080fdfea26469706673582212200b5f8c58f15d224466f4d3c7cbb794627b13700f9a11ade1ba6686a5d8d459ee64736f6c63430008130033"
+}

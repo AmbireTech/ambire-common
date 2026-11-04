@@ -1,4 +1,4 @@
-import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
+import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/submittedAccountOp'
 import { ControllerInterface } from './controller'
 
 export type IActivityController = ControllerInterface<
@@ -61,6 +61,14 @@ export interface IActivityOpsBackend {
    * a finalized status onto one the backend still has pending.
    */
   mergeGroups(ops: InternalAccountsOps): Promise<void>
+
+  /**
+   * Calls `visit` once for every stored op of every account, in no particular order. Reads the
+   * whole history, so it is only for one-time passes over it, never for a render path.
+   */
+  forEachOp(
+    visit: (accountAddr: string, op: SubmittedAccountOp | SubmittedAccountOpLike) => void
+  ): Promise<void>
 
   /** Whether the account already stores an op carrying this txnId, including per-call ones. */
   hasOpWithTxnId(accountAddr: string, txnId: string): Promise<boolean>
