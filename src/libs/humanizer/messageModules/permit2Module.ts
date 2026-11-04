@@ -2,17 +2,14 @@ import { isAddress, zeroAddress } from 'viem'
 
 import { PANCAKE_SWAP_PERMIT_2_ADDRESS, PERMIT_2_ADDRESS } from '../../../consts/addresses'
 import { Message } from '../../../interfaces/userRequest'
-import {
-  HumanizerTypedMessageModule,
-  HumanizerVisualization,
-  HumanizerWarning
-} from '../interfaces'
+import { HumanizerTypedMessageModule, HumanizerWarning } from '../interfaces'
 import {
   getAction,
   getAddressVisualization,
   getDeadline,
   getLabel,
   getRecipientText,
+  getSignedMessage,
   getToken,
   getWarning
 } from '../utils'
@@ -56,11 +53,21 @@ interface TokenPermissions {
   amount?: bigint
 }
 
+function isCompletePermitDetails(
+  details: PermitDetails
+): details is { token: string; amount: bigint; expiration: bigint } {
+  return (
+    details.token !== undefined && details.amount !== undefined && details.expiration !== undefined
+  )
+}
+
 function isCompletePermission(
   permission: TokenPermissions
 ): permission is { token: string; amount: bigint } {
   return permission.token !== undefined && permission.amount !== undefined
 }
+
+const WITNESS_PRIMARY_TYPES = ['PermitWitnessTransferFrom', 'PermitBatchWitnessTransferFrom']
 
 // The witness struct is defined by the app that asks for the signature, so the
 // address that receives the tokens can be under any of these common names
@@ -88,15 +95,12 @@ export const permit2Module: HumanizerTypedMessageModule = (message: Message) => 
   )
     return { fullVisualization: [] }
 
-  const witnessMessageType =
-    tm.types?.PermitWitnessTransferFrom?.[0]?.type ||
-    tm.types?.PermitBatchWitnessTransferFrom?.[0]?.type
+  // The branch is chosen by the type that is actually signed, not by which type names or message
+  // keys happen to be present, and only the fields declared in that type are read
+  const signedMessage = getSignedMessage(tm.types, tm.primaryType, tm.message)
 
-  if (
-    witnessMessageType &&
-    ['TokenPermissions', 'TokenPermissions[]'].includes(witnessMessageType)
-  ) {
-    const { permitted, spender, nonce, deadline, witness } = tm.message
+  if (WITNESS_PRIMARY_TYPES.includes(tm.primaryType)) {
+    const { permitted, spender, nonce, deadline, witness } = signedMessage
     if ([permitted, spender, nonce, deadline].some((field) => field === undefined))
       return { fullVisualization: [] }
 
@@ -143,14 +147,8 @@ export const permit2Module: HumanizerTypedMessageModule = (message: Message) => 
     }
   }
 
-  const messageType =
-    tm?.types?.PermitSingle?.[0]?.type ||
-    tm?.types?.PermitBatch?.[0]?.type ||
-    tm.types?.PermitTransferFrom?.[0]?.type
-
-  if (!messageType) return { fullVisualization: [] }
-  if (messageType === 'TokenPermissions') {
-    const { spender, nonce, deadline, permitted } = tm.message
+  if (tm.primaryType === 'PermitTransferFrom') {
+    const { spender, nonce, deadline, permitted } = signedMessage
     if ([spender, nonce, deadline, permitted].some((a) => a === undefined))
       return { fullVisualization: [] }
     const { token, amount } = permitted
@@ -164,35 +162,31 @@ export const permit2Module: HumanizerTypedMessageModule = (message: Message) => 
         getDeadline(deadline)
       ]
     }
-  } else if (['PermitDetails', 'PermitDetails[]'].includes(messageType)) {
-    if (!tm.message.details) return { fullVisualization: [] }
-    const permits: { token: string; amount: bigint }[] = (
-      messageType === 'PermitDetails' ? [tm.message.details] : tm.message.details
-    ).map((d: PermitDetails) => ({
-      token: d.token,
-      amount: d.amount
-    }))
-    if (permits.some((p) => p.amount === undefined || p.token === undefined))
-      return { fullVisualization: [] }
+  }
 
-    if (!permits.length) return { fullVisualization: [] }
+  if (tm.primaryType === 'PermitSingle' || tm.primaryType === 'PermitBatch') {
+    const { spender, details } = signedMessage
+    if (!details || !spender) return { fullVisualization: [] }
+
+    const permits: PermitDetails[] = tm.primaryType === 'PermitSingle' ? [details] : details
+    if (!Array.isArray(permits) || !permits.length) return { fullVisualization: [] }
+    // The allowance expiration is what limits how long the spender can use the tokens, so
+    // it is required. The signature deadline only limits how long the signature can be submitted
+    if (!permits.every(isCompletePermitDetails)) return { fullVisualization: [] }
 
     const permitVisualizations = permits
-      .map(({ token, amount }) => [
-        getAddressVisualization(tm.message.spender),
+      .map(({ token, amount, expiration }) => [
+        getAddressVisualization(spender),
         getLabel('to use'),
         getToken(token, amount),
+        getDeadline(expiration),
         getLabel('and')
       ])
       .flat()
       .slice(0, -1)
 
     return {
-      fullVisualization: [
-        getAction('Approve'),
-        ...permitVisualizations,
-        getDeadline(tm.message.sigDeadline) as HumanizerVisualization
-      ]
+      fullVisualization: [getAction('Approve'), ...permitVisualizations]
     }
   }
 

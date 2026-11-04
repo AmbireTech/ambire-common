@@ -446,9 +446,21 @@ describe('TypedMessages', () => {
         verifyingContract: '0x000000000022d473030f116ddee9f6b43ac78ba3',
         salt: '1'
       },
-      types: { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] },
+      types: {
+        PermitDetails: [
+          { name: 'token', type: 'address' },
+          { name: 'amount', type: 'uint160' },
+          { name: 'expiration', type: 'uint48' },
+          { name: 'nonce', type: 'uint48' }
+        ],
+        PermitBatch: [
+          { name: 'details', type: 'PermitDetails[]' },
+          { name: 'spender', type: 'address' },
+          { name: 'sigDeadline', type: 'uint256' }
+        ]
+      },
       message,
-      primaryType: 'Permit'
+      primaryType: 'PermitBatch'
     }
     const fullMessage = {
       fromRequestId: 1,
@@ -463,11 +475,12 @@ describe('TypedMessages', () => {
       getAddressVisualization(address2),
       getLabel('to use'),
       getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 1000000000000000000n),
+      getDeadline(968187600n),
       getLabel('and'),
       getAddressVisualization(address2),
       getLabel('to use'),
       getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 500000000000000000n),
-      getDeadline(968187600n)
+      getDeadline(969187600n)
     ]
 
     const irMessage = humanizeMessage(fullMessage)

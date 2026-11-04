@@ -8,6 +8,47 @@ import {
   IrCall
 } from './interfaces'
 
+/** The struct definitions of an EIP-712 typed message, as passed in `types` */
+type TypedMessageTypes = Record<string, Array<{ name: string; type: string }>>
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function getSignedValue(types: TypedMessageTypes, typeName: string, value: unknown): unknown {
+  if (typeName.endsWith(']')) {
+    if (!Array.isArray(value)) return value
+    const elementTypeName = typeName.slice(0, typeName.lastIndexOf('['))
+    return value.map((element) => getSignedValue(types, elementTypeName, element))
+  }
+
+  const fields = types[typeName]
+  // Atomic types (address, uint256, etc.) have no fields to narrow down
+  if (!fields || !isRecord(value)) return value
+
+  return fields.reduce<Record<string, unknown>>((signedValue, field) => {
+    if (!(field.name in value)) return signedValue
+
+    return { ...signedValue, [field.name]: getSignedValue(types, field.type, value[field.name]) }
+  }, {})
+}
+
+/**
+ * Returns only the part of a typed message that the signature actually covers.
+ * The EIP-712 hash includes just the fields declared in `types[primaryType]` (and the structs
+ * they reference). Any other key in `message` is ignored when signing, so it must be ignored
+ * when showing the message too. Otherwise the screen could show values that are not signed.
+ */
+export function getSignedMessage(
+  types: TypedMessageTypes,
+  primaryType: string,
+  message: Record<string, any>
+): Record<string, any> {
+  const signedMessage = getSignedValue(types, primaryType, message)
+
+  return isRecord(signedMessage) ? signedMessage : {}
+}
+
 export type HexIrCall = IrCall & { data: Hex }
 
 /** Type guard that narrows an IrCall to one with a valid hex data field. */
@@ -222,6 +263,8 @@ export function getRecipientText(from: string, recipient: string): HumanizerVisu
     : [getLabel(RECIPIENT_LABEL), getAddressVisualization(recipient)]
 }
 
+const MAX_UINT_48 = 2n ** 48n - 1n
+
 export function getDeadlineText(deadline: bigint): string {
   const minute = 60000n
   const diff = BigInt(deadline) - BigInt(Date.now())
@@ -231,6 +274,8 @@ export function getDeadlineText(deadline: bigint): string {
   if (diff < minute) return 'expires in less than a minute'
   if (diff < 30n * minute) return `expires in ${Math.floor(Number(diff / minute))} minutes`
   if ((deadline / 1000n).toString(16) === 'f'.repeat(64)) return 'No expiration date'
+  // Permit2 allowance expirations are uint48 values, so their max value means "never expires"
+  if (deadline / 1000n === MAX_UINT_48) return 'No expiration date'
   if (deadline.toString(16) === 'f'.repeat(64)) return 'No expiration date'
   const deadlineDate = new Date(Number(deadline))
   if (isNaN(deadlineDate.getTime())) return 'Invalid expiration date'
