@@ -1,9 +1,13 @@
 import { getAddress } from 'ethers'
 
-import { beforeEach, describe, expect, it, jest } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
-import { NOT_A_SAFE_ACCOUNT_MESSAGE, SAFE_INFO_FETCH_FAILED_MESSAGE } from '../../consts/safe'
+import {
+  NOT_A_SAFE_ACCOUNT_MESSAGE,
+  SAFE_API_TIMEOUT_MS,
+  SAFE_INFO_FETCH_FAILED_MESSAGE
+} from '../../consts/safe'
 import { Hex } from '../../interfaces/hex'
 import { SafeAccountByOwner } from '../../interfaces/safe'
 import {
@@ -135,6 +139,71 @@ describe('SafeController findSafe', () => {
 
     expect(isSafeContract).not.toHaveBeenCalled()
     expect(controller.importError).toBeUndefined()
+  })
+
+  describe('when a request never answers', () => {
+    const never = <T>() => new Promise<T>(() => {})
+
+    beforeEach(() => {
+      jest.useFakeTimers()
+    })
+
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    it('stops waiting for the on-chain Safe check and asks the user to try again', async () => {
+      const provider = { getCode: jest.fn(async () => '0x1234') }
+      mockSafeApiFailure()
+      jest.mocked(isSafeContract).mockImplementation(() => never<boolean>())
+      const controller = createController([1n], { '1': provider })
+
+      const findSafePromise = controller.findSafe(SAFE_A)
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+      await findSafePromise
+
+      expect(controller.statuses.findSafe).toBe('INITIAL')
+      expect(controller.importError).toEqual({
+        address: SAFE_A,
+        message: SAFE_INFO_FETCH_FAILED_MESSAGE
+      })
+    })
+
+    it('stops waiting for the Safe API and still tells a non-Safe address apart', async () => {
+      const provider = { getCode: jest.fn(async () => '0x1234') }
+      jest.mocked(getApiKit).mockReturnValue({
+        getSafeInfo: jest.fn(() => never())
+      } as any)
+      jest.mocked(findDeployData).mockResolvedValue(new Error('Not Found'))
+      jest.mocked(isSafeContract).mockResolvedValue(false)
+      const controller = createController([1n], { '1': provider })
+
+      const findSafePromise = controller.findSafe(SAFE_A)
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+      await findSafePromise
+
+      expect(controller.statuses.findSafe).toBe('INITIAL')
+      expect(controller.importError).toEqual({
+        address: SAFE_A,
+        message: NOT_A_SAFE_ACCOUNT_MESSAGE
+      })
+    })
+
+    it('does not give up before the timeout', async () => {
+      const provider = { getCode: jest.fn(async () => '0x1234') }
+      mockSafeApiFailure()
+      jest.mocked(isSafeContract).mockImplementation(() => never<boolean>())
+      const controller = createController([1n], { '1': provider })
+
+      const findSafePromise = controller.findSafe(SAFE_A)
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS - 1)
+
+      expect(controller.statuses.findSafe).toBe('LOADING')
+      expect(controller.importError).toBeUndefined()
+
+      await jest.advanceTimersByTimeAsync(1)
+      await findSafePromise
+    })
   })
 
   it('uses recovered deployment data when importing a Safe', async () => {

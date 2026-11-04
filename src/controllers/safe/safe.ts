@@ -169,7 +169,10 @@ export class SafeController extends EventEmitter implements ISafeController {
     const provider = this.#providers.providers[deployedOn.chainId.toString()]!
     const [safeInfo, safeCreation]: [SafeInfoResponse | Error, SafeAccountCreation | Error] =
       await Promise.all([
-        apiKit.getSafeInfo(safeAddr).catch((e) => e),
+        withTimeout(() => apiKit.getSafeInfo(safeAddr), {
+          timeoutMs: SAFE_API_TIMEOUT_MS,
+          message: `Safe API: get Safe info timed out after ${SAFE_API_TIMEOUT_MS}ms`
+        }).catch((e) => e),
         findDeployData(safeAddr, deployedOn.chainId, provider)
       ])
     if (safeInfo instanceof Error) {
@@ -200,6 +203,7 @@ export class SafeController extends EventEmitter implements ISafeController {
    * The Safe API doesn't know addresses that aren't Safe accounts (e.g. an older Gnosis
    * MultiSigWallet), so when it fails, check on chain whether the contract is a Safe at all.
    * Telling the user to try again only makes sense if it is.
+   * The check is time-bound so an unresponsive network can't keep the import loading for minutes.
    */
   async #getSafeInfoFailedMessage(
     safeAddr: string,
@@ -207,7 +211,10 @@ export class SafeController extends EventEmitter implements ISafeController {
     safeInfoError: Error
   ): Promise<string> {
     try {
-      const isSafe = await isSafeContract(safeAddr, provider)
+      const isSafe = await withTimeout(() => isSafeContract(safeAddr, provider), {
+        timeoutMs: SAFE_API_TIMEOUT_MS,
+        message: `Safe check: getThreshold() call timed out after ${SAFE_API_TIMEOUT_MS}ms`
+      })
       if (!isSafe) return NOT_A_SAFE_ACCOUNT_MESSAGE
     } catch (error) {
       this.emitError({
