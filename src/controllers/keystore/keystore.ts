@@ -1569,10 +1569,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (path !== PRIVACY_POOLS_SIGNING_KEY_PATH)
       throw new Error(`keystore: refusing to derive a key outside Privacy Pools' paths (${path})`)
 
+    let t = Date.now() // PP_TIMING
     const { seed, seedPassphrase } = await this.getSavedSeed(seedId)
-
-    return HDNodeWallet.fromMnemonic(Mnemonic.fromPhrase(seed, seedPassphrase), path)
-      .privateKey as Hex
+    console.log(`PP_TIMING key getSavedSeed ${Date.now() - t} ms`) // PP_TIMING
+    t = Date.now() // PP_TIMING
+    const mnemonic = Mnemonic.fromPhrase(seed, seedPassphrase) // PP_TIMING
+    const pk = HDNodeWallet.fromMnemonic(mnemonic, path).privateKey as Hex // PP_TIMING
+    console.log(`PP_TIMING key fromMnemonic (pbkdf2 + HD path) ${Date.now() - t} ms`) // PP_TIMING
+    return pk // PP_TIMING
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {

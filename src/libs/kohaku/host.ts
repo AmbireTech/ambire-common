@@ -71,7 +71,11 @@ export const createKohakuStorage = ({
       blob[key] = value
 
       writeQueue = writeQueue
-        .then(() => storage.set(storageKey, blob))
+        .then(async () => {
+          const t = Date.now() // PP_TIMING
+          await storage.set(storageKey, blob)
+          console.log(`PP_TIMING storage.set ${Date.now() - t} ms`) // PP_TIMING
+        })
         .catch((error) =>
           onError(error, 'Privacy Pools could not save its progress on this device.')
         )
