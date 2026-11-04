@@ -10,7 +10,11 @@ import {
 import { FeatureFlags } from '@/consts/featureFlags'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
 import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
-import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
+import { PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS } from '@/consts/privacyPools'
+import {
+  AccountPickerController,
+  PreparedAccounts
+} from '@/controllers/accountPicker/accountPicker'
 import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
 import { SignedMessage } from '@/controllers/activity/types'
@@ -34,6 +38,7 @@ import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
+import { privacyPoolsErrors } from '@/controllers/privacyPools/errors'
 import { PrivacyPoolsController } from '@/controllers/privacyPools/privacyPools'
 import { ProvidersController } from '@/controllers/providers/providers'
 import { RequestsController } from '@/controllers/requests/requests'
@@ -100,7 +105,7 @@ import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
 import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
-import { AccountOp } from '@/libs/accountOp/accountOp'
+import { AccountOp, isSameChainAndSender } from '@/libs/accountOp/accountOp'
 import {
   getCallsWithTxnIds,
   getDappIdentifier,
@@ -122,11 +127,13 @@ import { SocketV3API } from '@/services/socketv3/api'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
+import { getIsViewOnly } from '@/utils/accounts'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
 import { getReceiptBlockNumberByChainId } from '@/utils/nonce'
 import { generateUuid } from '@/utils/uuid'
 import wait from '@/utils/wait'
 import { waitForBlockNumber } from '@/utils/waitForBlockNumber'
+import { withTimeout } from '@/utils/with-timeout'
 
 type AccountsUpdate = {
   accountsToAdd: Account[]
@@ -350,7 +357,6 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       networks: this.networks,
       fetch: this.fetch,
-      velcroUrl,
       featureFlags: this.featureFlags
     })
     this.accounts = new AccountsController(
@@ -496,14 +502,10 @@ export class MainController extends EventEmitter implements IMainController {
       sendUiMessage: this.ui.message.sendUiMessage,
       /**
        * callback that gets triggered as a finalization step of adding new
-       * accounts via the AccountPickerController.
-       *
-       * VIEW-ONLY ACCOUNTS: In case of changes in this method, make sure these
-       * changes are reflected for view-only accounts as well. Because the
-       * view-only accounts import flow bypasses the AccountPicker, this method
-       * won't click for them.
+       * accounts via the AccountPickerController - for every flow, including the
+       * ones without a key iterator (view-only, Safe, account JSON).
        */
-      onAddAccountsSuccessCallback: this.#onAccountPickerSuccess.bind(this)
+      onAddPreparedAccounts: this.#onAccountPickerSuccess.bind(this)
     })
     this.addressBook = new AddressBookController(
       this.storage,
@@ -526,6 +528,7 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       networks: this.networks,
       phishing: this.phishing,
+      providers: this.providers,
       ui: this.ui,
       selectedAccount: this.selectedAccount,
       featureFlags: this.featureFlags
@@ -652,7 +655,6 @@ export class MainController extends EventEmitter implements IMainController {
         )
       },
       getUserRequests: () => this.requests.userRequests || [],
-      getVisibleUserRequests: () => this.requests.visibleUserRequests || [],
       onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this),
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
       ui: this.ui
@@ -828,7 +830,7 @@ export class MainController extends EventEmitter implements IMainController {
               fetch: this.fetch,
               featureFlags: this.featureFlags,
               sendUiMessage: this.ui.message.sendUiMessage,
-              onAddAccountsSuccessCallback: async () => {}
+              onAddPreparedAccounts: async () => {}
             }),
           this.keystore,
           async () => {
@@ -989,7 +991,9 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     this.isOffline = false
-    await this.#leaveSelectedAccount()
+    // A connect request isn't tied to an account - it connects whichever one is selected when
+    // approved - so it stays open and the user can pick the account to connect with.
+    await this.#leaveSelectedAccount({ keepsDappConnectRequest: true })
     await this.selectedAccount.select({ account: accountToSelect })
     // Update reverse lookup data and ENS expiry
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -1036,10 +1040,14 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /** Cleans up after the selected account, before another one of either kind is selected. */
-  async #leaveSelectedAccount() {
+  async #leaveSelectedAccount({ keepsDappConnectRequest = false } = {}) {
     // call closeRequestWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
-    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
+    const currentRequestKind = this.requests.currentUserRequest?.kind
+    const keepsCurrentRequest =
+      currentRequestKind === 'switchAccount' ||
+      (keepsDappConnectRequest && currentRequestKind === 'dappConnect')
+    if (!keepsCurrentRequest) {
       // Switching accounts is the user acting on the wallet, not refusing the apps that
       // happened to be waiting, so it must not count towards the spam detection.
       await this.requests.closeRequestWindow({ isUserInitiated: false })
@@ -1122,6 +1130,78 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
+   * Takes back a deposit of the selected Privacy Pools account that is still being verified:
+   * publicly and in full, to the account that made it. Only that account can, so it is selected
+   * and the call is added to its requests for the user to sign. If that call is already waiting
+   * to be signed, its request is opened instead.
+   */
+  async privacyPoolsRagequit({ chainId, label }: { chainId: string; label: bigint }) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'privacyPoolsRagequit',
+      async () => {
+        // Checked before proving, as a second call for the same deposit would make the whole
+        // transaction fail
+        const depositorAddr = this.privacyPools.getRagequitDepositorAddr({ chainId, label })
+        const waitingRequest =
+          depositorAddr &&
+          this.requests.findPrivacyPoolsRagequitRequest({
+            accountAddr: depositorAddr,
+            chainId: BigInt(chainId),
+            label
+          })
+        if (waitingRequest) {
+          const { accountAddr: waitingAccountAddr } = waitingRequest.meta
+          if (this.selectedAccount.account?.addr !== waitingAccountAddr)
+            await this.#selectAccount(waitingAccountAddr)
+
+          await this.requests.setCurrentUserRequestById(waitingRequest.id)
+          return
+        }
+
+        const { accountAddr, calls } = await this.privacyPools.buildRagequitCalls({
+          chainId,
+          label
+        })
+        const depositor = this.accounts.accounts.find(
+          ({ addr }) => addr.toLowerCase() === accountAddr.toLowerCase()
+        )
+        if (!depositor) throw privacyPoolsErrors.ragequitDepositorNotInWallet()
+        if (getIsViewOnly(this.keystore.keys, depositor.associatedKeys))
+          throw privacyPoolsErrors.ragequitDepositorViewOnly()
+
+        // What the request is built from, loaded before the account is switched, so a failure
+        // leaves the user on the Privacy Pools account rather than on another one with nothing
+        // to sign. Limited in time, as the fetch can wait behind other fetches of the account
+        const network = this.networks.networks.find((net) => net.chainId === BigInt(chainId))
+        const accountState =
+          network &&
+          (await withTimeout(
+            () => this.accounts.getOrFetchAccountOnChainState(depositor.addr, network.chainId),
+            {
+              timeoutMs: PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS,
+              message: "privacyPools: loading the depositor's account state timed out"
+            }
+          ).catch((error: unknown) => {
+            throw privacyPoolsErrors.ragequitDepositorStateLoadFailed(error)
+          }))
+        if (!accountState) throw privacyPoolsErrors.ragequitDepositorStateUnavailable()
+
+        if (this.selectedAccount.account?.addr !== depositor.addr)
+          await this.#selectAccount(depositor.addr)
+
+        await this.requests.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: { accountAddr: depositor.addr, chainId: BigInt(chainId), calls }
+        })
+      },
+      // As `selectAccount`, which it runs
+      true
+    )
+  }
+
+  /**
    * Once the selected account is gone, selects the first regular account, else the first Privacy
    * Pools account, else nothing (signed out).
    */
@@ -1151,33 +1231,36 @@ export class MainController extends EventEmitter implements IMainController {
     await this.#selectFallbackAccount()
   }
 
-  async #onAccountPickerSuccess() {
+  /** Writes what the account picker prepared, once the user proceeds from the personalize step. */
+  async #onAccountPickerSuccess({
+    accounts,
+    keys,
+    accountsToRemove,
+    hdPathTemplate
+  }: PreparedAccounts) {
     if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator))
       await this.keystore.persistTempSeed()
 
+    let internalKeys = keys.internal
     const storedSeed = await this.keystore.getKeystoreSeed(this.accountPicker.keyIterator)
     if (storedSeed) {
-      await this.keystore.updateSeed({
-        id: storedSeed.id,
-        hdPathTemplate: this.accountPicker.hdPathTemplate
-      })
+      await this.keystore.updateSeed({ id: storedSeed.id, hdPathTemplate })
 
-      this.accountPicker.readyToAddKeys.internal = this.accountPicker.readyToAddKeys.internal.map(
-        (key) => ({ ...key, meta: { ...key.meta, fromSeedId: storedSeed.id } })
-      )
+      internalKeys = internalKeys.map((key) => ({
+        ...key,
+        meta: { ...key.meta, fromSeedId: storedSeed.id }
+      }))
     }
 
     // Should be separate (not combined in Promise.all, since firing multiple
     // keystore actions is not possible (the #wrapKeystoreAction listens for the
     // first one to finish and skips the parallel one, if one is requested).
-    await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
-    await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
+    await this.keystore.addKeys(internalKeys)
+    await this.keystore.addKeysExternallyStored(keys.external)
 
     await this.#updateAccounts({
-      accountsToAdd: this.accountPicker.readyToAddAccounts,
-      accountAddressesToRemove: this.accountPicker.readyToRemoveAccounts.map(
-        (account) => account.addr
-      )
+      accountsToAdd: accounts,
+      accountAddressesToRemove: accountsToRemove.map((account) => account.addr)
     })
   }
 
@@ -1314,11 +1397,12 @@ export class MainController extends EventEmitter implements IMainController {
 
     let isSignAndBroadcastInProgressOnThisAccountAndChain = false
 
+    // All accounts are checked, as another account can share the fee payer of this op
     if (
-      this.requests.visibleUserRequests.some(
+      this.requests.userRequests.some(
         (r) =>
           r.kind === 'calls' &&
-          r.signAccountOp.accountOp.chainId === signAccountOp.accountOp.chainId &&
+          isSameChainAndSender(r.signAccountOp.accountOp, signAccountOp.accountOp) &&
           r.signAccountOp.isSignAndBroadcastInProgress
       )
     ) {
@@ -1326,19 +1410,20 @@ export class MainController extends EventEmitter implements IMainController {
     } else if (
       type !== 'one-click-swap-and-bridge' &&
       this.swapAndBridge.signAccountOpController &&
-      this.swapAndBridge.signAccountOpController.accountOp.accountAddr ===
-        signAccountOp.accountOp.accountAddr &&
-      this.swapAndBridge.signAccountOpController.accountOp.chainId ===
-        signAccountOp.accountOp.chainId &&
+      isSameChainAndSender(
+        this.swapAndBridge.signAccountOpController.accountOp,
+        signAccountOp.accountOp
+      ) &&
       this.swapAndBridge.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true
     } else if (
       type !== 'one-click-transfer' &&
       this.transfer.signAccountOpController &&
-      this.transfer.signAccountOpController.accountOp.accountAddr ===
-        signAccountOp.accountOp.accountAddr &&
-      this.transfer.signAccountOpController.accountOp.chainId === signAccountOp.accountOp.chainId &&
+      isSameChainAndSender(
+        this.transfer.signAccountOpController.accountOp,
+        signAccountOp.accountOp
+      ) &&
       this.transfer.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true
@@ -1441,14 +1526,18 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleSignMessage() {
-    const accountAddr = this.signMessage.messageToSign?.accountAddr
-    const chainId = this.signMessage.messageToSign?.chainId
+    const approvedMessage = this.signMessage.messageToSign
+    const accountAddr = approvedMessage?.accountAddr
+    const chainId = approvedMessage?.chainId
 
     // Could (rarely) happen if not even a single account state is fetched yet
     const shouldForceUpdateAndWaitForAccountState =
       accountAddr && chainId && !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]
-    if (shouldForceUpdateAndWaitForAccountState)
+    if (shouldForceUpdateAndWaitForAccountState) {
       await this.accounts.updateAccountState(accountAddr, 'latest', [chainId])
+      // A request that replaced the message during the fetch was never approved
+      if (this.signMessage.messageToSign !== approvedMessage) return
+    }
 
     const isAccountStateStillMissing =
       !accountAddr || !chainId || !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]
@@ -1512,11 +1601,11 @@ export class MainController extends EventEmitter implements IMainController {
       }
 
       const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator,
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false
+        shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Ledger device. Please try again.'
@@ -1525,10 +1614,13 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleAccountPickerInitLedger(
-    LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */
+    LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitLedger', async () =>
-      this.#handleAccountPickerInitLedger(LedgerKeyIterator)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitLedger',
+      () => this.#handleAccountPickerInitLedger(LedgerKeyIterator),
+      requestId
     )
   }
 
@@ -1546,11 +1638,11 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
       const { walletSDK } = trezorCtrl
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator: new TrezorKeyIterator({ walletSDK }),
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false
+        shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Trezor device. Please try again.'
@@ -1559,10 +1651,13 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleAccountPickerInitTrezor(
-    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */
+    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitTrezor', async () =>
-      this.#handleAccountPickerInitTrezor(TrezorKeyIterator)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitTrezor',
+      () => this.#handleAccountPickerInitTrezor(TrezorKeyIterator),
+      requestId
     )
   }
 
@@ -1586,7 +1681,7 @@ export class MainController extends EventEmitter implements IMainController {
         keyIterator: new OneKeyKeyIterator({ controller: oneKeyCtrl }),
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false
+        shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the OneKey device. Please try again.'
@@ -1596,10 +1691,13 @@ export class MainController extends EventEmitter implements IMainController {
 
   async handleAccountPickerInitOneKey(
     OneKeyKeyIterator: any, // TODO: KeyIterator type mismatch
-    preferredDeviceId?: string
+    preferredDeviceId?: string,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitOneKey', async () =>
-      this.#handleAccountPickerInitOneKey(OneKeyKeyIterator, preferredDeviceId)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitOneKey',
+      () => this.#handleAccountPickerInitOneKey(OneKeyKeyIterator, preferredDeviceId),
+      requestId
     )
   }
 
@@ -1616,11 +1714,11 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
 
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator: new LatticeKeyIterator({ controller: latticeCtrl }),
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false
+        shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.'
@@ -1629,10 +1727,13 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleAccountPickerInitLattice(
-    LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
+    LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitLattice', async () =>
-      this.#handleAccountPickerInitLattice(LatticeKeyIterator)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitLattice',
+      () => this.#handleAccountPickerInitLattice(LatticeKeyIterator),
+      requestId
     )
   }
 
@@ -1669,11 +1770,11 @@ export class MainController extends EventEmitter implements IMainController {
       // In the rare case of migration (ledger -> qr -> has created a linked account),
       // The user should instead go to the web wallet and migrate his funds instead.
       // v1 accounts are generally deprecated and we don't encourage users to use them.
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator,
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false,
+        shouldSelectNextAccountAutomatically: false,
         shouldSearchForLinkedAccounts: false
       })
     } catch (error: any) {
@@ -1685,10 +1786,13 @@ export class MainController extends EventEmitter implements IMainController {
 
   async handleAccountPickerInitQr(
     QrKeyIterator: any, // TODO: KeyIterator type mismatch
-    payload: string | Uint8Array
+    payload: string | Uint8Array,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitQr', async () =>
-      this.#handleAccountPickerInitQr(QrKeyIterator, payload)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitQr',
+      () => this.#handleAccountPickerInitQr(QrKeyIterator, payload),
+      requestId
     )
   }
 
@@ -1713,11 +1817,11 @@ export class MainController extends EventEmitter implements IMainController {
 
       // v1 accounts have never supported NFC cards, so there is nothing to look
       // for on the relayer (same reasoning as the QR flow).
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator,
         hdPathTemplate: keyIterator.hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false,
+        shouldSelectNextAccountAutomatically: false,
         shouldSearchForLinkedAccounts: false
       })
     } catch (error: any) {
@@ -1728,10 +1832,35 @@ export class MainController extends EventEmitter implements IMainController {
 
   async handleAccountPickerInitNfc(
     NfcKeyIterator: any, // TODO: KeyIterator type mismatch
-    payload: { extendedPublicKey: string; hdPath: string }
+    payload: { extendedPublicKey: string; hdPath: string },
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitNfc', async () =>
-      this.#handleAccountPickerInitNfc(NfcKeyIterator, payload)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitNfc',
+      () => this.#handleAccountPickerInitNfc(NfcKeyIterator, payload),
+      requestId
+    )
+  }
+
+  /**
+   * Sets the account picker up for a hardware wallet under the method's status, and replies
+   * to `requestId` once done, so the connect screen moves on only then - the status alone
+   * is transient and can be missed.
+   */
+  async #setUpPickerForHardwareWallet(
+    callName: keyof typeof STATUS_WRAPPED_METHODS,
+    setUp: () => Promise<void>,
+    requestId?: string
+  ) {
+    let isSetUp = false
+    await this.withStatus(callName, async () => {
+      await setUp()
+      isSetUp = true
+    })
+
+    this.#replyToRequest(
+      requestId,
+      isSetUp ? undefined : 'The hardware wallet could not be connected'
     )
   }
 
@@ -2376,16 +2505,25 @@ export class MainController extends EventEmitter implements IMainController {
     this.emitUpdate()
   }
 
-  async accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
-    privKeyOrSeed,
-    seedPassphrase
-  }: {
-    privKeyOrSeed: string
-    seedPassphrase?: string | null
-  }) {
+  /**
+   * Sets the account picker up with a recovery phrase or private key, for the personalize
+   * step to select and prepare its next account (`init`) - nothing is written yet. Replies
+   * to `requestId` once set up.
+   */
+  async accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase(
+    {
+      privKeyOrSeed,
+      seedPassphrase
+    }: {
+      privKeyOrSeed: string
+      seedPassphrase?: string | null
+    },
+    requestId?: string
+  ) {
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
     const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
-    this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+    await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+    this.#replyToRequest(requestId)
   }
 
   async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
@@ -2410,7 +2548,7 @@ export class MainController extends EventEmitter implements IMainController {
       throw new EmittableError({ message, level: 'major', error })
     }
 
-    this.accountPicker.setInitParams({
+    await this.accountPicker.setInitParams({
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
@@ -2419,22 +2557,54 @@ export class MainController extends EventEmitter implements IMainController {
   /**
    * Prepares the account picker with a list of private keys (bulk import). The key at position N
    * in the list is listed as the account at index N. Duplicates are dropped and the list is
-   * limited to `MAX_BULK_PRIVATE_KEYS` keys.
+   * limited to `MAX_BULK_PRIVATE_KEYS` keys. Replies to `requestId` once set up - the
+   * personalize step selects and prepares every key's account.
    */
-  async accountPickerSetInitParamsFromPrivateKeys({ privateKeys }: { privateKeys: string[] }) {
+  async accountPickerSetInitParamsFromPrivateKeys(
+    { privateKeys }: { privateKeys: string[] },
+    requestId?: string
+  ) {
+    let isSetUp = false
     await this.withStatus(
       'accountPickerSetInitParamsFromPrivateKeys',
-      async () => this.#accountPickerSetInitParamsFromPrivateKeys(privateKeys),
+      async () => {
+        await this.#accountPickerSetInitParamsFromPrivateKeys(privateKeys)
+        isSetUp = true
+      },
       true
     )
+
+    this.#replyToRequest(requestId, isSetUp ? undefined : 'Importing the private keys failed')
   }
 
   /**
-   * Creates a brand new recovery phrase and prepares the account picker with it, all
-   * in the background. The phrase is never sent to the UI - the user gets prompted to
+   * Sets the account picker up with a recovery phrase the user already saved, for the
+   * personalize step to select and prepare its next account. Replies to `requestId` once
+   * set up.
+   */
+  async accountPickerSetInitParamsFromSavedSeed(seedId: string, requestId?: string) {
+    const savedSeed = await this.keystore.getSavedSeed(seedId)
+    if (!savedSeed) return this.#replyToRequest(requestId, 'The recovery phrase was not found')
+
+    const keyIterator = new KeyIterator(savedSeed.seed, savedSeed.seedPassphrase)
+    await this.accountPicker.setInitParams({
+      keyIterator,
+      hdPathTemplate: savedSeed.hdPathTemplate
+    })
+    this.#replyToRequest(requestId)
+  }
+
+  /**
+   * Creates a brand new recovery phrase and sets the account picker up with it, for the
+   * personalize step to prepare its first account - nothing is written until the user
+   * proceeds from there. The phrase is never sent to the UI - the user gets prompted to
    * write it down later, once the account holds funds.
    */
-  async accountPickerSetInitParamsFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+  async accountPickerSetInitParamsFromNewSeed(
+    { extraEntropy }: { extraEntropy?: string },
+    requestId?: string
+  ) {
+    let isSetUp = false
     await this.withStatus(
       'accountPickerSetInitParamsFromNewSeed',
       async () => {
@@ -2443,9 +2613,24 @@ export class MainController extends EventEmitter implements IMainController {
         await this.accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
           privKeyOrSeed: tempSeed.seed
         })
+        isSetUp = true
       },
       true
     )
+
+    // Replies to the UI directly: a screen that is not subscribed at that moment (e.g.
+    // mid-transition on mobile) would miss the transient status and wait forever.
+    this.#replyToRequest(requestId, isSetUp ? undefined : 'Creating the new account failed')
+  }
+
+  /**
+   * Replies to the UI request behind a call (if there is one), so the UI can await it
+   * instead of watching a transient status.
+   */
+  #replyToRequest(requestId?: string, error?: string) {
+    if (!requestId) return
+
+    this.ui.message.sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
   }
 
   // includes the getters in the stringified instance

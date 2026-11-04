@@ -1,5 +1,6 @@
 import { expect } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
@@ -271,6 +272,38 @@ describe('SelectedAccount Controller', () => {
     unsubscribe()
   })
 
+  it('the account balance shown in the account list is the newly loaded total, not the previous one', async () => {
+    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
+    const accountAddr = accounts[0]!.addr
+
+    await portfolioCtrl.updateSelectedAccount(accountAddr)
+    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+    const loadedTotalBalance = selectedAccountCtrl.portfolio.totalBalance
+    expect(loadedTotalBalance).toBeGreaterThan(0)
+
+    // The previous (still loading) total is 0; the recalculation finds the portfolio loaded
+    selectedAccountCtrl.resetSelectedAccountPortfolio({ skipUpdate: true })
+    expect(selectedAccountCtrl.portfolio.totalBalance).toBe(0)
+    selectedAccountCtrl.updateSelectedAccountPortfolio(true)
+
+    expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
+    expect(selectedAccountCtrl.balanceByAccounts[accountAddr]).toBe(loadedTotalBalance)
+  })
+  it('the account balance shown in the account list is not overwritten while the portfolio is loading', async () => {
+    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
+    const accountAddr = accounts[0]!.addr
+
+    await portfolioCtrl.updateSelectedAccount(accountAddr)
+    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+    const loadedTotalBalance = selectedAccountCtrl.portfolio.totalBalance
+
+    jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockImplementation((() => ({})) as any)
+    selectedAccountCtrl.updateSelectedAccountPortfolio(true)
+
+    expect(selectedAccountCtrl.portfolio.isAllReady).toBe(false)
+    expect(selectedAccountCtrl.balanceByAccounts[accountAddr]).toBe(loadedTotalBalance)
+  })
+
   it('the mobile invite key of the selected account reaches its portfolio', async () => {
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
     const accountAddr = accounts[0]!.addr
@@ -385,12 +418,14 @@ describe('SelectedAccount Controller', () => {
     })
 
     it('does not select a Privacy Pools account that does not exist', async () => {
+      const { restore } = suppressConsole()
       const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest()
 
       await mainCtrl.selectPrivacyPoolsAccount('unknown-seed')
 
       expect(selectedAccountCtrl.account?.addr).toBe(accounts[0]!.addr)
       expect(selectedAccountCtrl.privacyPoolsAccountId).toBeNull()
+      restore()
     })
 
     it('is restored as selected on the next start', async () => {

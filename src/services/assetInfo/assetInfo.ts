@@ -24,16 +24,8 @@ export async function executeBatchedFetch(
   const allAddresses =
     Array.from(new Set(scheduledActions[network.chainId.toString()]?.data.map((i) => i.address))) ||
     []
-  const portfolio = new Portfolio(
-    fetch as any,
-    provider,
-    network,
-    undefined,
-    undefined,
-    isTokenPricesEnabled
-  )
+  const portfolio = new Portfolio(fetch as any, provider, network, isTokenPricesEnabled)
   const options: Partial<GetOptions> = {
-    disableAutoDiscovery: true,
     additionalErc20Hints: allAddresses,
     additionalErc721Hints: Object.fromEntries(allAddresses.map((i) => [i, [1n]])),
     preventTokenBlacklisting: true

@@ -3,14 +3,15 @@
 import { AbiCoder, Contract, Interface, parseEther, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
-import { describe } from '@jest/globals'
+import { afterEach, describe, jest } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import DeployHelper from '../../../contracts/compiled/DeployHelper.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { relayerUrl, velcroUrl } from '../../../test/config'
+import { relayerUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
+import { mockBundlerRequests } from '../../../test/mocks/bundler'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
@@ -250,7 +251,7 @@ const feeTokens = [
 //   }
 // ]
 
-const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
+const portfolio = new Portfolio(fetch, provider, ethereum)
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -313,6 +314,10 @@ const areUpdatesForbidden = () => {
 }
 
 describe('estimate', () => {
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
   it('[EOA]:Ethereum | gasUsage and native balance for a normal transfer', async () => {
     const EOAAccount: Account = {
       addr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -771,6 +776,8 @@ describe('estimate', () => {
   })
 
   it('Optimism | deployed account | should put a lower account nonce in account op and ambire etimation should raise a nonce discrepancy flag', async () => {
+    // Asserts on the Ambire estimation only, so the bundler can be mocked
+    mockBundlerRequests()
     const opOptimism = {
       accountAddr: smartAccDeployed.addr,
       signingKeyAddr: smartAccDeployed.associatedKeys[0]!,
@@ -863,6 +870,8 @@ describe('estimate', () => {
   })
 
   it('[ERC-4337]:Optimism | not deployed | should fail with an inner call failure but otherwise estimation should work', async () => {
+    // Asserts on the Ambire estimation only, so the bundler can be mocked
+    mockBundlerRequests()
     const privs = [
       {
         addr: addrWithDeploySignature,
@@ -906,6 +915,8 @@ describe('estimate', () => {
   })
 
   it('[ERC-4337]:Optimism | not deployed | should result in an error as transfer amount of erc-20 token exceed balance', async () => {
+    // Asserts on the Ambire estimation only, so the bundler can be mocked
+    mockBundlerRequests()
     const privs = [
       {
         addr: addrWithDeploySignature,
@@ -1161,6 +1172,8 @@ describe('estimate', () => {
   })
 
   it('[v2] bnb, GasGuard, it should estimate successfully by entering the initialGasLimitFailed case', async () => {
+    // Asserts on the Ambire estimation only, so the bundler can be mocked
+    mockBundlerRequests()
     const gasGuardAbi = [
       {
         inputs: [
@@ -1223,157 +1236,66 @@ describe('estimate', () => {
     expect(ambireGas.flags.hasInitialGasLimitFailed).toBe(false)
     const originalGas = ambireGas.gasUsed
 
-    /** **************************************
-     * hasInitialGasLimitFailed = true, pass after simulation with increased gas
-     **************************************** */
+    const estimateGuardedCall = async (minGasRequired: number) => {
+      const guardedOp = {
+        ...op,
+        calls: [
+          {
+            to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
+            value: 0n,
+            data: gasGuardInterface.encodeFunctionData('guardedCall', [minGasRequired])
+          }
+        ]
+      }
+      return getEstimation(baseAcc, accountState, guardedOp, bsc, bscProvider, [], [], switcher)
+    }
+    const expectAmbireGas = async (minGasRequired: number, expectedGasUsed: bigint) => {
+      const guardedResponse = await estimateGuardedCall(minGasRequired)
+      expect(guardedResponse instanceof Error).toBe(false)
+      const guardedAmbireGas = (guardedResponse as FullEstimation).ambire as AmbireEstimation
+      expect(guardedAmbireGas instanceof Error).toBe(false)
+      expect(guardedAmbireGas.flags.hasInitialGasLimitFailed).toBe(true)
+      expect(guardedAmbireGas.gasUsed).toBe(expectedGasUsed)
+    }
 
-    const gasGuardCallPassWithIncreasedGasLimit = {
-      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
-      value: 0n,
-      data: gasGuardInterface.encodeFunctionData('guardedCall', [60000])
-    }
-    const opTwo = {
-      accountAddr: devconSmart.addr,
-      signingKeyAddr: null,
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      chainId: bsc.chainId,
-      nonce: 1n,
-      signature: '0x',
-      calls: [gasGuardCallPassWithIncreasedGasLimit],
-      id: 'random'
-    }
-    const responseTwo = await getEstimation(
-      baseAcc,
-      accountState,
-      opTwo,
-      bsc,
-      bscProvider,
-      [],
-      [],
-      switcher
-    )
-    expect(responseTwo instanceof Error).toBe(false)
-    const resTwo = responseTwo as FullEstimation
-    const ambireGasTwo = resTwo.ambire as AmbireEstimation
-    expect(ambireGasTwo instanceof Error).toBe(false)
-    expect(ambireGasTwo.flags.hasInitialGasLimitFailed).toBe(true)
-    expect(ambireGasTwo.gasUsed).toBe(originalGas * 2n)
+    // the gas limit of the first halving step between the failing 1x and the successful 8x
+    const firstHalvingGas = (originalGas + originalGas * 8n) / 2n
 
     /** **************************************
-     * hasInitialGasLimitFailed = true, 2 iterations without touching upper limit
+     * hasInitialGasLimitFailed = true, passes with 8x and both halving steps,
+     * so 2.75x (between 1x and 4.5x) is returned
      **************************************** */
-
-    const gasGuardCallPassWithMoreIncreasedGasLimit = {
-      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
-      value: 0n,
-      data: gasGuardInterface.encodeFunctionData('guardedCall', [80000])
-    }
-    const opFour = {
-      accountAddr: devconSmart.addr,
-      signingKeyAddr: null,
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      chainId: bsc.chainId,
-      nonce: 1n,
-      signature: '0x',
-      calls: [gasGuardCallPassWithMoreIncreasedGasLimit],
-      id: 'random'
-    }
-    const responseFour = await getEstimation(
-      baseAcc,
-      accountState,
-      opFour,
-      bsc,
-      bscProvider,
-      [],
-      [],
-      switcher
-    )
-    expect(responseFour instanceof Error).toBe(false)
-    const resFour = responseFour as FullEstimation
-    const ambireGasFour = resFour.ambire as AmbireEstimation
-    expect(ambireGasFour instanceof Error).toBe(false)
-    expect(ambireGasFour.flags.hasInitialGasLimitFailed).toBe(true)
-    expect(ambireGasFour.gasUsed).toBeGreaterThan(originalGas * 2n)
-    expect(ambireGasFour.gasUsed).toBeLessThan(originalGas * 3n)
+    await expectAmbireGas(60000, (originalGas + firstHalvingGas) / 2n)
 
     /** **************************************
-     * hasInitialGasLimitFailed = true, hits upper limit
+     * hasInitialGasLimitFailed = true, passes with 8x and the first halving step
+     * but fails the second one, so 4.5x is returned
      **************************************** */
-
-    const gasGuardCallPassWithGasLimitToTheRoof = {
-      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
-      value: 0n,
-      data: gasGuardInterface.encodeFunctionData('guardedCall', [90000])
-    }
-    const opFive = {
-      accountAddr: devconSmart.addr,
-      signingKeyAddr: null,
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      chainId: bsc.chainId,
-      nonce: 1n,
-      signature: '0x',
-      calls: [gasGuardCallPassWithGasLimitToTheRoof],
-      id: 'random'
-    }
-    const responseFive = await getEstimation(
-      baseAcc,
-      accountState,
-      opFive,
-      bsc,
-      bscProvider,
-      [],
-      [],
-      switcher
-    )
-    expect(responseFive instanceof Error).toBe(false)
-    const resFive = responseFive as FullEstimation
-    const ambireGasFive = resFive.ambire as AmbireEstimation
-    expect(ambireGasFive instanceof Error).toBe(false)
-    expect(ambireGasFive.flags.hasInitialGasLimitFailed).toBe(true)
-    expect(ambireGasFive.gasUsed).toBe(originalGas * 3n)
+    await expectAmbireGas(120000, firstHalvingGas)
 
     /** **************************************
-     * hasInitialGasLimitFailed = true, fail even after increased gas
+     * hasInitialGasLimitFailed = true, passes with 8x, fails the first halving step
+     * but passes the second one, so 6.25x (between 4.5x and 8x) is returned
      **************************************** */
+    await expectAmbireGas(200000, (firstHalvingGas + originalGas * 8n) / 2n)
 
-    const gasGuardCallPassWithUnreasonableGasLimit = {
-      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
-      value: 0n,
-      data: gasGuardInterface.encodeFunctionData('guardedCall', [600000])
-    }
-    const opThree = {
-      accountAddr: devconSmart.addr,
-      signingKeyAddr: null,
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      chainId: bsc.chainId,
-      nonce: 1n,
-      signature: '0x',
-      calls: [gasGuardCallPassWithUnreasonableGasLimit],
-      id: 'random'
-    }
-    const responseThree = await getEstimation(
-      baseAcc,
-      accountState,
-      opThree,
-      bsc,
-      bscProvider,
-      [],
-      [],
-      switcher
-    )
+    /** **************************************
+     * hasInitialGasLimitFailed = true, passes with 8x but fails both halving steps,
+     * so 8x is returned
+     **************************************** */
+    await expectAmbireGas(290000, originalGas * 8n)
+
+    /** **************************************
+     * hasInitialGasLimitFailed = true, fail even with 8x the gas limit
+     **************************************** */
+    const responseThree = await estimateGuardedCall(600000)
     expect(responseThree.criticalError).not.toBe(undefined)
     expect(responseThree.criticalError instanceof Error).toBe(true)
   })
 
   it('[v2]:Ethereum | deployed account | should work with singletor deployer as salt is different for each contract deployment', async () => {
+    // Asserts on the Ambire estimation only, so the bundler can be mocked
+    mockBundlerRequests()
     const bytecode =
       '0x608060405234801561001057600080fd5b50610134806100206000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c80634af63f0214602d575b600080fd5b60cf60048036036040811015604157600080fd5b810190602081018135640100000000811115605b57600080fd5b820183602082011115606c57600080fd5b80359060200191846001830284011164010000000083111715608d57600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600092019190915250929550509135925060eb915050565b604080516001600160a01b039092168252519081900360200190f35b6000818351602085016000f5939250505056fea26469706673582212206b44f8a82cb6b156bfcc3dc6aadd6df4eefd204bc928a4397fd15dacf6d5320564736f6c63430006020033'
     const salt = '0x0a0b000000000000000000000000000000000000000000000000000000000000'
@@ -1439,6 +1361,8 @@ describe('estimate', () => {
   })
 
   it('[v2]:Ethereum | deployed account | should fail with singletor deployer as inner contracts have already been deployed once', async () => {
+    // Asserts on the Ambire estimation only, so the bundler can be mocked
+    mockBundlerRequests()
     const bytecode = DeployHelper.bin
     const salt = '0x0a0b00000000000000000000000000000000000000000000000000000a101010'
     const singletonABI = [

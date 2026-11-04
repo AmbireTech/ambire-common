@@ -9,6 +9,7 @@ import {
   hexlify,
   id,
   Interface,
+  isError,
   keccak256,
   recoverAddress,
   toBeHex,
@@ -369,6 +370,26 @@ export async function findDeployData(
   }
 
   return safeCreation
+}
+
+const safeThresholdInterface = new Interface(['function getThreshold() view returns (uint256)'])
+
+/**
+ * Checks on chain whether the contract at `safeAddr` is a Safe account by calling `getThreshold()`,
+ * which every Safe version has. Other shared wallets, like the older Gnosis MultiSigWallet, don't
+ * have it, so the call reverts or returns no data.
+ * Throws when the network request itself fails, so callers can tell "not a Safe" apart from
+ * "couldn't check".
+ */
+export async function isSafeContract(safeAddr: string, provider: RPCProvider): Promise<boolean> {
+  const safe = new Contract(safeAddr, safeThresholdInterface, provider)
+  try {
+    await safe.getFunction('getThreshold').staticCall()
+    return true
+  } catch (error) {
+    if (isError(error, 'CALL_EXCEPTION') || isError(error, 'BAD_DATA')) return false
+    throw error
+  }
 }
 
 /**

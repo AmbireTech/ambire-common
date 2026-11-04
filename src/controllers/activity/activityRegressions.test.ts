@@ -95,7 +95,13 @@ function makeController(
     Object.assign(selectedAccount, { initialLoadPromise: Promise.resolve() }) as any, // same ref, so a test can switch account
     providers,
     { networks: [{ chainId: 1n }] } as any,
-    { addTokensToBeLearned: () => {}, addErc721sToBeLearned: () => {} } as any,
+    {
+      addTokensToBeLearned: () => {},
+      addErc721sToBeLearned: () => {},
+      // A confirmed transaction starts a balance changes backfill, which reads the balances
+      getTokenBalancesOnBlock: async (_accountId: string, _chainId: bigint, tokenAddrs: string[]) =>
+        tokenAddrs.map((address) => ['0x', { address, symbol: 'TKN', amount: 0n }])
+    } as any,
     {} as any,
     { isFeatureEnabled: () => undefined } as any, // featureFlags
     async () => {},

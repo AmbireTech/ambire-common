@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 
+import EmittableError from '../../classes/EmittableError'
 import { Banner } from '../../interfaces/banner'
 import {
   EmailVaultData,
@@ -408,6 +409,9 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   }
 
   async #removeKeyStoreSecret(email: string) {
+    // A cancel from a previous attempt leaves the flag on, which would skip the email confirmation
+    this.#shouldStopConfirmationPolling = false
+
     if (!this.emailVaultStates.email[email]) {
       await this.#getEmailVaultInfo(email)
     }
@@ -421,15 +425,19 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       })
     }
 
+    if (this.#shouldStopConfirmationPolling) {
+      // Set status to ERROR, but don't emit an error message
+      throw new Error('')
+    }
+
+    // Throwing (instead of returning) sets the status to ERROR, so the UI doesn't treat it as SUCCESS
     if (!magicKey?.key) {
-      this.emitError({
+      throw new EmittableError({
         message: 'Email key not confirmed',
         level: 'minor',
         sendCrashReport: false,
         error: new Error('removeKeyStoreSecret: not confirmed magic link key')
       })
-      this.emitUpdate()
-      return
     }
     try {
       this.#isRemovingSecret = true

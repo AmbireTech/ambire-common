@@ -17,108 +17,78 @@ export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: Ac
     return banner.meta.accountAddr === selectedAccount
   })
 
+/** The route statuses that get a banner, in the order their banners are shown */
+const INTENT_BANNER_STATUSES: SwapAndBridgeActiveRoute['routeStatus'][] = [
+  'in-progress',
+  'failed',
+  'refunded',
+  'completed'
+]
+
+const getIntentBanner = (route: SwapAndBridgeActiveRoute, accountAddr: AccountId): Banner => {
+  const actionWord = route.route && getIsBridgeRoute(route.route) ? 'Bridge' : 'Swap'
+  const fromSymbol = route.fromAsset?.symbol
+  const toSymbol = route.toAsset?.symbol
+  const text = fromSymbol && toSymbol ? `${fromSymbol} to ${toSymbol}` : ''
+
+  let type: BannerType = 'success'
+  let title = `${actionWord} completed`
+  if (route.routeStatus === 'in-progress') {
+    type = 'info'
+    title = `${actionWord} in progress`
+  } else if (route.routeStatus === 'failed') {
+    type = 'error'
+    title = `${actionWord} failed`
+  } else if (route.routeStatus === 'refunded') {
+    type = 'warning'
+    title = `${actionWord} refunded`
+  }
+
+  return {
+    id: `bridge-in-progress-${route.activeRouteId}`,
+    type,
+    category: 'bridge-in-progress',
+    title,
+    text,
+    meta: {
+      accountAddr,
+      activeRouteId: route.activeRouteId
+    },
+    actions: [
+      {
+        actionName: 'view-bridge',
+        label: 'View'
+      }
+    ],
+    dismissAction: {
+      label: 'Dismiss',
+      actionName: 'close-bridge',
+      meta: {
+        activeRouteIds: [route.activeRouteId],
+        isHideStyle: true
+      }
+    }
+  }
+}
+
+/** One banner for each swap or bridge that finishes after the user's transaction */
 export const getIntentBanners = (
   activeRoutes: SwapAndBridgeActiveRoute[],
-  callsUserRequests: CallsUserRequest[],
   accountAddr: AccountId
-): Banner[] => {
-  const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
-    return callsUserRequests.some((req) => {
-      return req.signAccountOp.accountOp.calls.some(
-        (call) =>
-          call.id === route.activeRouteId ||
-          call.id === `${route.activeRouteId}-revoke-approval` ||
-          call.id === `${route.activeRouteId}-approval`
-      )
-    })
-  }
-
-  const filteredRoutes = activeRoutes.filter((route) => {
-    if (!route.route || !getIsIntentRoute(route.route)) return false
-    if (route.routeStatus !== 'ready' && route.routeStatus !== 'waiting-approval-to-resolve')
-      return true
-    return !isRouteTurnedIntoAccountOp(route)
-  })
-
-  const inProgressRoutes = filteredRoutes.filter((r) => r.routeStatus === 'in-progress')
-  const failedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'failed')
-  const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
-  const refundedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'refunded')
-  const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes, ...refundedRoutes]
-  const onlyBridges = filteredRoutes.every((route) => route.route && getIsBridgeRoute(route.route))
-  const onlySwaps = filteredRoutes.every((route) => route.route && !getIsBridgeRoute(route.route))
-  const actionWordUppercase = onlyBridges ? 'Bridge' : onlySwaps ? 'Swap' : 'Transaction'
-  const actionWordLower = actionWordUppercase.toLowerCase()
-
-  let title = ''
-  let text = ''
-  let type: BannerType
-  if (inProgressRoutes.length > 0) {
-    type = 'info'
-    title = `${actionWordUppercase}${inProgressRoutes.length > 1 ? 's' : ''} in progress`
-    text = `You have ${inProgressRoutes.length} pending ${actionWordLower}${
-      inProgressRoutes.length > 1 ? 's' : ''
-    }`
-  } else if (failedRoutes.length > 0) {
-    type = 'error'
-    title = `Failed ${actionWordLower}${failedRoutes.length > 1 ? 's' : ''}`
-    text = `You have ${failedRoutes.length} failed ${actionWordLower}${failedRoutes.length > 1 ? 's' : ''}${
-      completedRoutes.length > 1
-        ? ` and ${completedRoutes.length} completed ${actionWordLower}${completedRoutes.length > 1 ? 's' : ''}`
-        : ''
-    }${
-      refundedRoutes.length > 1
-        ? ` and ${refundedRoutes.length} refunded ${actionWordLower}${refundedRoutes.length > 1 ? 's' : ''}`
-        : ''
-    }`
-  } else if (refundedRoutes.length > 0) {
-    type = 'warning'
-    title = `Refunded ${actionWordLower}${refundedRoutes.length > 1 ? 's' : ''}`
-    text = `You have ${refundedRoutes.length} refunded ${actionWordLower}${
-      refundedRoutes.length > 1 ? 's' : ''
-    }${
-      completedRoutes.length > 1
-        ? ` and ${completedRoutes.length} completed ${actionWordLower}${completedRoutes.length > 1 ? 's' : ''}`
-        : ''
-    }`
-  } else {
-    type = 'success'
-    title = `${actionWordUppercase}${completedRoutes.length > 1 ? 's' : ''} completed`
-    text = `You have ${completedRoutes.length} completed ${actionWordLower}${
-      completedRoutes.length > 1 ? 's' : ''
-    }.`
-  }
-
-  const banners: Banner[] = []
-  if (allRoutes.length > 0) {
-    banners.push({
-      id: 'bridge-in-progress',
-      type,
-      category: 'bridge-in-progress',
-      title,
-      text,
-      meta: {
-        accountAddr
-      },
-      actions: [
-        {
-          actionName: 'view-bridge',
-          label: 'View'
-        }
-      ],
-      dismissAction: {
-        label: 'Dismiss',
-        actionName: 'close-bridge',
-        meta: {
-          activeRouteIds: allRoutes.map((r) => r.activeRouteId),
-          isHideStyle: true
-        }
-      }
-    })
-  }
-
-  return banners
-}
+): Banner[] =>
+  activeRoutes
+    .filter(
+      (route) =>
+        !!route.route &&
+        getIsIntentRoute(route.route) &&
+        INTENT_BANNER_STATUSES.includes(route.routeStatus)
+    )
+    .sort(
+      (a, b) =>
+        INTENT_BANNER_STATUSES.indexOf(a.routeStatus) -
+        INTENT_BANNER_STATUSES.indexOf(b.routeStatus)
+    )
+    .map((route) => getIntentBanner(route, accountAddr))
 
 export const getSafeMessageRequestBanners = (
   account: Account,
@@ -351,7 +321,8 @@ export const getEnsExpiryBanner = ({
       {
         actionName: 'open-external-url',
         meta: {
-          url: `https://app.ens.domains/${ens}?referrer=${FEE_COLLECTOR}`
+          url: `https://app.ens.domains/${ens}?referrer=${FEE_COLLECTOR}`,
+          shouldOpenInAppBrowser: true
         },
         label: 'Renew'
       }

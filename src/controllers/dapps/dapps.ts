@@ -1,5 +1,3 @@
-import { getDomain } from 'tldts'
-
 import { ISelectedAccountController } from '@/interfaces/selectedAccount'
 
 import {
@@ -22,6 +20,7 @@ import {
   Dapp,
   DAPP_VERIFICATION_BANNER_IDS,
   DappVerificationBanner,
+  DappWebsiteContentUpdate,
   DefiLlamaChain,
   DefiLlamaProtocol,
   GetCurrentDappRes,
@@ -32,11 +31,12 @@ import {
   TrendingToken
 } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-import { Fetch } from '../../interfaces/fetch'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
+import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
+import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { isExtensionOverlayView, IUiController, View } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
@@ -50,23 +50,39 @@ import {
 import {
   formatDappName,
   getAccountsForDapp,
+  getCachedDomain,
   getDappIdFromUrl,
   getDappNameFromId,
   getDomainFromUrl,
   getNormalizedHostnameFromUrl,
+  isAccountAllowedForDapp,
   modifyDappPropsIfNeeded,
   normalizeDappConnection,
   normalizeHostname,
   normalizeTrendingTokens,
   sortDapps,
-  unifyDefiLlamaDappUrl
+  unifyDefiLlamaDappUrl,
+  withoutUnusedAccountPreferences
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
+import {
+  EnsWebsiteContentUpdate,
+  getEnsNameFromGatewayUrl,
+  getEnsWebsiteContentUpdate
+} from '../../services/ensDomains/ensContenthash'
 import { fetchWithTimeout } from '../../utils/fetch'
+import { forEachInSlices } from '../../utils/scheduler'
+import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { canBeTrustedByUser } from '../phishing/phishing'
 
 const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
+
+/**
+ * How long to look for when the website of the app to connect was last updated, before showing
+ * the user that it couldn't be checked instead of loading for as long as the RPC takes.
+ */
+export const WEBSITE_CONTENT_UPDATE_TIMEOUT_MS = 30000
 
 // Indexed once, because the `dapps` getter asks this per dapp and it runs on every
 // update of this controller.
@@ -90,6 +106,25 @@ const mergeSource = (
   return current.includes(source) ? current : [...current, source]
 }
 
+/**
+ * What the user chose for an app (its connection, network, favorite, trust and account
+ * scoping), carried over from its stored record when the catalog rebuilds it.
+ */
+const getUserOwnedDappFields = (storedDapp: Dapp | undefined) => {
+  const connectedSources = storedDapp?.connectedSources ?? []
+
+  return {
+    isConnected: connectedSources.length > 0,
+    connectedSources,
+    chainId: storedDapp?.chainId || 1,
+    favorite: !!storedDapp?.favorite,
+    isTrustedByUser: !!storedDapp?.isTrustedByUser,
+    accountPreferences: storedDapp?.accountPreferences,
+    grantedPermissionId: storedDapp?.grantedPermissionId,
+    grantedPermissionAt: storedDapp?.grantedPermissionAt
+  }
+}
+
 // The DappsController is responsible for the following tasks:
 // 1. Managing the dApp catalog
 // 2. Handling active sessions between dApps and the wallet
@@ -107,6 +142,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   #networks: INetworksController
 
   #phishing: IPhishingController
+
+  #providers: IProvidersController
 
   #ui: IUiController
 
@@ -133,6 +170,18 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #dappToConnectSession: Session | undefined
 
+  /**
+   * When the website of `dappToConnect` was last replaced. Null unless it's served from an ENS
+   * name over IPFS (e.g. `tornadocash.eth.limo`).
+   */
+  dappToConnectWebsiteContentUpdate: DappWebsiteContentUpdate | null = null
+
+  /**
+   * The last found website update of each ENS name, so connecting to the same app again only
+   * checks the blocks since then. Not persisted, as it's cheap to rebuild.
+   */
+  #ensWebsiteContentUpdates = new Map<string, EnsWebsiteContentUpdate>()
+
   isReadyToDisplayDapps: boolean = true
 
   #isReady = false
@@ -144,6 +193,9 @@ export class DappsController extends EventEmitter implements IDappsController {
   #retryFetchAndUpdateInterval: IRecurringTimeout
 
   #retryFetchAndUpdateAttempts: number = 0
+
+  /** Bumped by every phishing sync, so a sync overtaken by a newer list drops its results. */
+  #blacklistSyncId = 0
 
   #retryFetchAndUpdateMaxAttempts: number = 3
 
@@ -185,6 +237,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage,
     networks,
     phishing,
+    providers,
     ui,
     selectedAccount,
     featureFlags
@@ -195,6 +248,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage: IStorageController
     networks: INetworksController
     phishing: IPhishingController
+    providers: IProvidersController
     ui: IUiController
     selectedAccount: ISelectedAccountController
     featureFlags: IFeatureFlagsController
@@ -206,13 +260,20 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#storage = storage
     this.#networks = networks
     this.#phishing = phishing
+    this.#providers = providers
     this.#ui = ui
     this.#selectedAccount = selectedAccount
     this.#featureFlags = featureFlags
 
     this.#phishing.onUpdate(() => {
       if (!this.#phishing.shouldSyncDapps) return
-      this.#syncDappsBlacklistedStatusWithPhishing()
+      this.#syncDappsBlacklistedStatusWithPhishing().catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the scam status of the apps',
+          error
+        })
+      )
       this.#phishing.resetShouldSyncDapps()
     })
 
@@ -410,18 +471,14 @@ export class DappsController extends EventEmitter implements IDappsController {
     // const lastDappsUpdateVersion = 'debug-force-fetch'
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) {
-      const dappsWithoutBlacklistedStatus = Array.from(this.#dapps.values()).filter(
-        (d) =>
-          !d.blacklisted ||
-          ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted) ||
-          // Re-check dApps stored with a non-SUSPICIOUS_HOSTING status that now match the
-          // suspicious hosting pattern, so existing entries are migrated on startup.
-          (d.blacklisted !== 'SUSPICIOUS_HOSTING' &&
-            this.#phishing.getDomainBlacklistedStatus(d.url) === 'SUSPICIOUS_HOSTING')
-      )
       // IMPORTANT: Do NOT await this call — we want `isReadyToDisplayDapps` to resolve immediately
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.#updateDappsBlacklistedStatus(dappsWithoutBlacklistedStatus)
+      this.#recheckStoredDappsBlacklistedStatus().catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the scam status of the apps',
+          error
+        })
+      )
       return
     }
 
@@ -467,10 +524,15 @@ export class DappsController extends EventEmitter implements IDappsController {
       .map((c) => c.name.toLowerCase())
 
     const prevDapps = new Map(this.#dapps)
+    // Read once: `allNetworks` rebuilds the whole list on every access, and the loop below
+    // checks every chain of every app against it
+    const knownChainIds = new Set(this.#networks.allNetworks.map((n) => n.chainId.toString()))
 
-    for (const dapp of fetchedDappsList) {
-      if (categoriesToExclude.includes(dapp.category)) continue
-      if (defiLlamaProtocolIdsToExclude.includes(dapp.id)) continue
+    // In slices, as the catalog holds thousands of apps and the thread is shared with the UI on
+    // mobile
+    await forEachInSlices(fetchedDappsList, (dapp) => {
+      if (categoriesToExclude.includes(dapp.category)) return
+      if (defiLlamaProtocolIdsToExclude.includes(dapp.id)) return
 
       const id = getDappIdFromUrl(dapp.url)
 
@@ -478,22 +540,13 @@ export class DappsController extends EventEmitter implements IDappsController {
       // some protocols have an empty chains props, and thats the only way to filter the non-EVM ones.
       if (categoriesNotToFilterOut.includes(dapp.category) && !dapp.chains.length) {
         const text = `${dapp.name} ${dapp.description ?? ''}`.toLowerCase()
-        if (nonEvmChainsByName.some((chainName) => text.includes(chainName))) {
-          continue
-        }
+        if (nonEvmChainsByName.some((chainName) => text.includes(chainName))) return
       }
-
-      const prevStoredDapp = prevDapps.get(id)
 
       const chainIds = (dapp.chains ?? [])
         .map((chainName: string) => chainNamesToIds.get(chainName.toLowerCase())!)
-        .filter(
-          (chainId: number) =>
-            !!chainId &&
-            this.#networks.allNetworks.find((n) => n.chainId.toString() === chainId.toString())
-        )
+        .filter((chainId: number) => !!chainId && knownChainIds.has(chainId.toString()))
 
-      const prevSources = prevStoredDapp?.connectedSources ?? []
       const updatedDapp: Dapp = {
         id,
         name: formatDappName(dapp.name),
@@ -503,31 +556,24 @@ export class DappsController extends EventEmitter implements IDappsController {
         category: CATEGORY_MAP[dapp.category] || dapp.category,
         tvl: dapp.tvl,
         chainIds,
-        isConnected: prevSources.length > 0,
-        connectedSources: prevSources,
         isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(dapp.url)!),
         // Always false, even if the user connected to the app before it was listed - it's part of
         // the catalog now, so it should be treated (and verified) like any other catalog app.
         isCustom: false,
-        chainId: prevStoredDapp?.chainId || 1,
-        favorite: !!prevStoredDapp?.favorite,
-        isTrustedByUser: !!prevStoredDapp?.isTrustedByUser,
         blacklisted: 'LOADING',
         twitter: dapp.twitter,
         geckoId: dapp.gecko_id,
-        accountPreferences: prevStoredDapp?.accountPreferences,
-        grantedPermissionId: prevStoredDapp?.grantedPermissionId,
-        grantedPermissionAt: prevStoredDapp?.grantedPermissionAt
+        ...getUserOwnedDappFields(prevDapps.get(id))
       }
 
       modifyDappPropsIfNeeded(id, dappsMap, dapp, (modifiedDapp: Dapp) => {
         dappsMap.set(id, modifiedDapp)
       })
 
-      if (!dappsMap.has(id) && !dappsMap.has(getDomain(updatedDapp.url)!)) {
+      if (!dappsMap.has(id) && !dappsMap.has(getCachedDomain(updatedDapp.url)!)) {
         dappsMap.set(id, updatedDapp)
       }
-    }
+    })
 
     // Add predefined
     for (const pd of predefinedDapps) {
@@ -587,21 +633,99 @@ export class DappsController extends EventEmitter implements IDappsController {
     for (const id of dappIdsToBeRemoved) dappsMap.delete(id)
     const unverifiedDappsArray = Array.from(dappsMap.values())
 
-    this.#dapps = dappsMap
-    this.isReadyToDisplayDapps = true
-    this.#shouldRetryFetchAndUpdate = false
-    this.#retryFetchAndUpdateInterval.stop()
-    this.emitUpdate()
+    let isCatalogLive = false
+    const makeCatalogLive = () => {
+      if (isCatalogLive) return
+      isCatalogLive = true
 
-    await this.#updateDappsBlacklistedStatus(unverifiedDappsArray)
+      this.#applyDappChangesSince(prevDapps, dappsMap)
+      this.#dapps = dappsMap
+      this.isReadyToDisplayDapps = true
+      this.#shouldRetryFetchAndUpdate = false
+      this.#retryFetchAndUpdateInterval.stop()
+    }
+
+    // The new catalog goes live together with the first scam statuses of its apps, in one step,
+    // so no app is seen as LOADING while the local phishing list could already answer for it
+    await this.#updateDappsBlacklistedStatus(unverifiedDappsArray, makeCatalogLive)
+    // When nothing answered, e.g. the check failed
+    if (!isCatalogLive) {
+      makeCatalogLive()
+      this.emitUpdate()
+    }
     await this.#storage.set('dappsV2', Array.from(dappsMap.values()))
     await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
   }
 
-  async #updateDappsBlacklistedStatus(dapps: Dapp[]) {
+  /**
+   * Checks the stored apps that have no final scam status yet against the phishing list, along
+   * with the ones that now match the suspicious hosting pattern.
+   */
+  async #recheckStoredDappsBlacklistedStatus() {
+    const dappsWithoutBlacklistedStatus: Dapp[] = []
+    // In slices, as the catalog holds thousands of apps and the thread is shared with the UI on
+    // mobile
+    await forEachInSlices(Array.from(this.#dapps.values()), (d) => {
+      const shouldRecheck =
+        !d.blacklisted ||
+        ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted) ||
+        // Re-check dApps stored with a non-SUSPICIOUS_HOSTING status that now match the
+        // suspicious hosting pattern, so existing entries are migrated on startup.
+        (d.blacklisted !== 'SUSPICIOUS_HOSTING' &&
+          this.#phishing.getDomainBlacklistedStatus(d.url) === 'SUSPICIOUS_HOSTING')
+      if (shouldRecheck) dappsWithoutBlacklistedStatus.push(d)
+    })
+
+    await this.#updateDappsBlacklistedStatus(dappsWithoutBlacklistedStatus)
+  }
+
+  /**
+   * The catalog is rebuilt from a snapshot of the apps and yields while it is, so the user may
+   * have connected, disconnected, removed or otherwise changed an app since. Brings those changes
+   * into the rebuilt catalog, so what the user did wins over the snapshot. Records are replaced
+   * on every change, so a record that differs from the snapshot's is one that changed.
+   */
+  #applyDappChangesSince(snapshot: Map<string, Dapp>, rebuiltDapps: Map<string, Dapp>) {
+    this.#dapps.forEach((liveDapp, id) => {
+      const snapshotDapp = snapshot.get(id)
+      if (liveDapp === snapshotDapp) return
+
+      const rebuiltDapp = rebuiltDapps.get(id)
+      if (!rebuiltDapp) {
+        // Connected to or added while the catalog was rebuilt
+        if (liveDapp.isCustom || liveDapp.connectedSources?.length) rebuiltDapps.set(id, liveDapp)
+        return
+      }
+
+      // A connected or custom app the rebuild took over as it was
+      if (rebuiltDapp === snapshotDapp) {
+        rebuiltDapps.set(id, liveDapp)
+        return
+      }
+
+      rebuiltDapps.set(id, { ...rebuiltDapp, ...getUserOwnedDappFields(liveDapp) })
+    })
+
+    snapshot.forEach((snapshotDapp, id) => {
+      if (this.#dapps.has(id)) return
+
+      // Removed while the catalog was rebuilt
+      const rebuiltDapp = rebuiltDapps.get(id)
+      if (!rebuiltDapp) return
+      if (rebuiltDapp === snapshotDapp) rebuiltDapps.delete(id)
+      else rebuiltDapps.set(id, { ...rebuiltDapp, ...getUserOwnedDappFields(undefined) })
+    })
+  }
+
+  /**
+   * Checks the apps against the phishing list and applies their statuses, possibly in several
+   * answers. `beforeApply` runs right before every answer is applied.
+   */
+  async #updateDappsBlacklistedStatus(dapps: Dapp[], beforeApply?: () => void) {
     await this.#phishing.updateDomainsBlacklistedStatus(
       dapps.map((d) => d.url),
       (blacklistedStatus) => {
+        beforeApply?.()
         Object.entries(blacklistedStatus).forEach(([dappId, status]) => {
           const dapp = this.#dapps.get(dappId)
           if (dapp && dapp.blacklisted !== status) {
@@ -613,22 +737,32 @@ export class DappsController extends EventEmitter implements IDappsController {
     )
   }
 
-  #syncDappsBlacklistedStatusWithPhishing() {
+  async #syncDappsBlacklistedStatusWithPhishing() {
     if (!this.#dapps.size) return
 
-    let hasUpdatedDapps = false
-    this.#dapps.forEach((dapp, dappId) => {
+    const syncId = ++this.#blacklistSyncId
+    const updatedStatuses = new Map<string, BlacklistedStatus>()
+    // In slices, as the catalog holds thousands of apps and the thread is shared with the UI on
+    // mobile
+    await forEachInSlices(Array.from(this.#dapps.entries()), ([dappId, dapp]) => {
       const updatedStatus = this.#phishing.getDomainBlacklistedStatus(dapp.url)
       if (!updatedStatus || dapp.blacklisted === updatedStatus) return
 
-      this.#dapps.set(dappId, { ...dapp, blacklisted: updatedStatus })
-      hasUpdatedDapps = true
+      updatedStatuses.set(dappId, updatedStatus)
     })
 
-    if (!hasUpdatedDapps) return
+    // A newer phishing list started a sync of its own, and its results are the ones to keep
+    if (syncId !== this.#blacklistSyncId || !updatedStatuses.size) return
+
+    // Applied to the records as they are now, as the user may have changed one while the loop
+    // yielded
+    updatedStatuses.forEach((blacklisted, dappId) => {
+      const dapp = this.#dapps.get(dappId)
+      if (dapp) this.#dapps.set(dappId, { ...dapp, blacklisted })
+    })
 
     this.emitUpdate()
-    void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+    await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
   }
 
   /**
@@ -1060,8 +1194,12 @@ export class DappsController extends EventEmitter implements IDappsController {
         return
       }
 
+      dappPropsToUpdate.accountPreferences = withoutUnusedAccountPreferences(
+        accountPreferencesToUpdate
+      )
+
       const newAccounts = getAccountsForDapp(
-        accountPreferencesToUpdate,
+        dappPropsToUpdate.accountPreferences,
         this.#selectedAccount.account?.addr
       )
 
@@ -1100,16 +1238,23 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     this.dappToConnect = { ...this.dappToConnect, ...data }
+    if ('accountPreferences' in data) {
+      this.dappToConnect.accountPreferences = withoutUnusedAccountPreferences(
+        data.accountPreferences
+      )
+    }
     this.emitUpdate()
   }
 
   async onSelectedAccountChange(newAccount: string) {
+    this.#unpinSelectedAccounts(newAccount)
+
     Object.values(this.dappSessions).forEach(async (session) => {
       if (!this.hasPermission(session.id)) return
 
       const accountPreferences = this.getDapp(session.id)?.accountPreferences
 
-      // Update the last selected account
+      // Update the last selected account the dapp may see
       if (
         accountPreferences?.accounts.includes(newAccount) &&
         accountPreferences.selectedAccount !== newAccount
@@ -1122,6 +1267,31 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       await this.broadcastDappSessionEvent('accountsChanged', accounts, session.id, true)
     })
+  }
+
+  // An account picked for a dapp lasts only until the wallet switches to another account the dapp
+  // may see, so the dapp follows the wallet again after it - also the dapps that aren't open
+  #unpinSelectedAccounts(newAccount: string) {
+    let hasUnpinned = false
+
+    this.#dapps.forEach((dapp) => {
+      if (!dapp.accountPreferences?.isSelectedAccountPinned) return
+      if (!isAccountAllowedForDapp(dapp.accountPreferences, newAccount)) return
+
+      hasUnpinned = true
+      this.#dapps.set(dapp.id, {
+        ...dapp,
+        accountPreferences: withoutUnusedAccountPreferences({
+          ...dapp.accountPreferences,
+          isSelectedAccountPinned: false
+        })
+      })
+    })
+
+    if (!hasUnpinned) return
+
+    this.emitUpdate()
+    void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
   }
 
   /**
@@ -1154,6 +1324,19 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (!dapp.accountPreferences.accounts.includes(address)) return
 
       const newAccounts = dapp.accountPreferences.accounts.filter((a) => a !== address)
+      const isSelectedAccountRemoved = dapp.accountPreferences.selectedAccount === address
+
+      // A dapp that may see every account keeps its connection, and follows the wallet again
+      // once the account picked for it is gone
+      if (!dapp.accountPreferences.enabled) {
+        this.#dapps.set(dapp.id, {
+          ...dapp,
+          accountPreferences: isSelectedAccountRemoved
+            ? undefined
+            : withoutUnusedAccountPreferences({ ...dapp.accountPreferences, accounts: newAccounts })
+        })
+        return
+      }
 
       this.#dapps.set(dapp.id, {
         ...dapp,
@@ -1164,10 +1347,11 @@ export class DappsController extends EventEmitter implements IDappsController {
           ? {
               ...dapp.accountPreferences,
               accounts: newAccounts,
-              selectedAccount:
-                dapp.accountPreferences.selectedAccount === address
-                  ? newAccounts[0]!
-                  : dapp.accountPreferences.selectedAccount
+              selectedAccount: isSelectedAccountRemoved
+                ? newAccounts[0]!
+                : dapp.accountPreferences.selectedAccount,
+              // The account picked for the dapp is gone, so it follows the wallet again
+              ...(isSelectedAccountRemoved && { isSelectedAccountPinned: false })
             }
           : undefined
       })
@@ -1450,6 +1634,49 @@ export class DappsController extends EventEmitter implements IDappsController {
     })
   }
 
+  async #updateDappToConnectWebsiteContentUpdate(dappId: string, ensName: string) {
+    let websiteContentUpdate: DappWebsiteContentUpdate | null
+    try {
+      // ENS names are registered on Ethereum, so their records are always read from there
+      const provider = this.#providers.providers['1']
+      if (!provider) throw new Error('No Ethereum provider to read the ENS records with')
+
+      const contentUpdate = await withTimeout(
+        ({ signal } = {}) =>
+          getEnsWebsiteContentUpdate(provider, ensName, {
+            previousUpdate: this.#ensWebsiteContentUpdates.get(ensName),
+            signal
+          }),
+        {
+          timeoutMs: WEBSITE_CONTENT_UPDATE_TIMEOUT_MS,
+          message: `Checking when ${ensName} was last updated timed out`,
+          useAbort: true
+        }
+      )
+
+      if (contentUpdate) {
+        this.#ensWebsiteContentUpdates.set(ensName, contentUpdate)
+        websiteContentUpdate = { status: 'LOADED', updatedAt: contentUpdate.updatedAt }
+      } else {
+        this.#ensWebsiteContentUpdates.delete(ensName)
+        websiteContentUpdate = null
+      }
+    } catch (err: any) {
+      websiteContentUpdate = { status: 'FAILED' }
+      this.emitError({
+        message: 'Error in DappsController while checking when the app website was last updated',
+        error: err,
+        level: 'silent'
+      })
+    }
+
+    // The user may have moved on to another connection request in the meantime
+    if (this.dappToConnect?.id !== dappId) return
+
+    this.dappToConnectWebsiteContentUpdate = websiteContentUpdate
+    this.emitUpdate()
+  }
+
   /** Enables scam checking and immediately refreshes the pending connection request. */
   async enableScamCheckerAndRefreshDappToConnect() {
     const dapp = this.dappToConnect
@@ -1487,12 +1714,16 @@ export class DappsController extends EventEmitter implements IDappsController {
           delete this.dappToConnect.accountPreferences
           this.#dappToConnectContextStatus = undefined
           this.#dappToConnectSession = dappPromises[0].session
+          const ensName = getEnsNameFromGatewayUrl(dapp.url)
+          this.dappToConnectWebsiteContentUpdate = ensName ? { status: 'LOADING' } : null
           this.emitUpdate()
 
           const session = dappPromises[0].session
 
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#updateDappToConnectSecurityCheck(dapp, session)
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          if (ensName) this.#updateDappToConnectWebsiteContentUpdate(dapp.id, ensName)
         }
 
         return
@@ -1502,6 +1733,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.dappToConnect = null
         this.#dappToConnectContextStatus = undefined
         this.#dappToConnectSession = undefined
+        this.dappToConnectWebsiteContentUpdate = null
         this.emitUpdate()
       }
     } catch (err: any) {

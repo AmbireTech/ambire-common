@@ -15,9 +15,13 @@ import {
   IPrivacyPoolsController,
   PrivacyPoolsAccount,
   PrivacyPoolsAccountChainState,
+  PrivacyPoolsChainPoolStats,
   PrivacyPoolsChainState,
   PrivacyPoolsDepositAssetConfig,
+  PrivacyPoolsHistoryFilters,
+  PrivacyPoolsHistorySession,
   PrivacyPoolsOperation,
+  PrivacyPoolsRagequitDeposit,
   PrivacyPoolsSendForm,
   PrivacyPoolsTokenBalance,
   PrivacyPoolsUnavailableReason
@@ -34,11 +38,15 @@ import {
   PrivacyPoolsProverFactory,
   withCancellableProving
 } from '../../libs/privacyPools/prover'
+import { Pagination } from '../../utils/paginate'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { LockGeneration, PhraseScopedModule, PrivacyPoolsContext } from './context'
 import { PrivacyPoolsDepositParams, PrivacyPoolsDeposits } from './deposits'
 import { privacyPoolsErrors } from './errors'
+import { PrivacyPoolsHistory } from './history'
+import { PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
+import { PrivacyPoolsRagequit } from './ragequit'
 import { PrivacyPoolsSendFormState } from './sendForm'
 import { PrivacyPoolsSync } from './sync'
 import { PrivacyPoolsWithdrawal, PrivacyPoolsWithdrawalParams } from './withdrawal'
@@ -52,9 +60,9 @@ const SYNC_MAX_AGE_MS = 10 * 60 * 1000
  * Privacy Pools state: one plugin per (chain, recovery phrase) and its notes. Scoped by phrase, as note secrets are derived from it - accounts without one (hardware,
  * private key, view-only) cannot use Privacy Pools.
  *
- * The work is done by modules (plugins, sync, deposits, withdrawal, Send form) holding their own
- * state. This stays the only `EventEmitter`: it checks what is available, wires the modules
- * together and reports their state to the UI. See `PrivacyPoolsContext`.
+ * The work is done by modules (plugins, sync, history, deposits, withdrawal, Send form) holding
+ * their own state. This stays the only `EventEmitter`: it checks what is available, wires the
+ * modules together and reports their state to the UI. See `PrivacyPoolsContext`.
  */
 export class PrivacyPoolsController extends EventEmitter implements IPrivacyPoolsController {
   #keystore: IKeystoreController
@@ -86,7 +94,16 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #withdrawal: PrivacyPoolsWithdrawal
 
+  #ragequit: PrivacyPoolsRagequit
+
+  #poolStatsReader: PrivacyPoolsPoolStatsReader
+
+  /** Per chain, the latest `#refreshPoolStats`, so an older one finishing later writes nothing. */
+  #poolStatsRefreshIds: { [chainId: string]: number } = {}
+
   #sendForm: PrivacyPoolsSendFormState
+
+  #history: PrivacyPoolsHistory
 
   /** In teardown order: a withdrawal being proved is cancelled before its plugin is dropped. */
   #phraseScopedModules: PhraseScopedModule[]
@@ -105,6 +122,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #pricesFetchedAt = 0
 
   #pricesRequest: Promise<void> | null = null
+
+  /**
+   * Per chain, its pools' numbers for a token's details, so they are there when it opens. The same
+   * for every account, so they outlive a lock. Computed from this device's copy of the history
+   * after each sync of it, before the balances it reads show - see `PrivacyPoolsPoolStatsReader`.
+   * Not on load: a stored history is read only when the user opens a Privacy Pools account.
+   */
+  poolStats: { [chainId: string]: PrivacyPoolsChainPoolStats } = {}
 
   /** At most one per stored recovery phrase, and removed with it. */
   accounts: PrivacyPoolsAccount[] = []
@@ -180,15 +205,28 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
     const cancellableProverFactory = withCancellableProving(
       proverFactory ?? createProverFactory(circuitsBaseUrl),
-      // Read when a proof starts, by which time the withdrawal module exists
-      () => this.#withdrawal.provingSignal
+      // Read when a proof starts, by which time the withdrawal module exists. Only withdrawals
+      // prove the 'withdraw' circuit; a ragequit's short 'commitment' proof is not cancelled.
+      (circuit) => (circuit === 'withdraw' ? this.#withdrawal.provingSignal : null)
     )
 
     this.#registry = new PrivacyPoolsProtocolRegistry(ctx, cancellableProverFactory)
-    this.#sync = new PrivacyPoolsSync(ctx, this.#registry)
+    this.#sync = new PrivacyPoolsSync(
+      ctx,
+      this.#registry,
+      (chainId) => this.#refreshPoolStats(chainId),
+      // Read when a sync asks, by which time the history module exists
+      (seedId) => this.#history.hasSessions() && seedId === this.#getSelectedSeedId()
+    )
     this.#deposits = new PrivacyPoolsDeposits(ctx, this.#registry, this.#sync)
     this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
+    this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync)
+    this.#poolStatsReader = new PrivacyPoolsPoolStatsReader(ctx)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
+    this.#history = new PrivacyPoolsHistory(ctx, this.#sync, {
+      getSupportedChainIds: () => this.supportedChainIds,
+      syncChain: (chainId) => this.syncChain(chainId)
+    })
     this.#phraseScopedModules = [this.#withdrawal, this.#deposits, this.#sync, this.#registry]
 
     this.#ui.uiEvent.on('updateView', this.#onUpdateView)
@@ -213,6 +251,33 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     this.#subscribeToDependencies()
     this.emitUpdate()
+  }
+
+  /**
+   * Recomputes a chain's pool numbers from its history on this device. Does not emit: a sync
+   * emits once it is done. Never rejects.
+   */
+  async #refreshPoolStats(chainId: string): Promise<void> {
+    const refreshId = (this.#poolStatsRefreshIds[chainId] || 0) + 1
+    this.#poolStatsRefreshIds[chainId] = refreshId
+    const isLatest = () => this.#poolStatsRefreshIds[chainId] === refreshId
+
+    try {
+      const byToken = await this.#poolStatsReader.read(chainId)
+      // Before the chain's first sync there is nothing to show yet, not an error
+      if (!byToken || !isLatest()) return
+
+      this.poolStats = { ...this.poolStats, [chainId]: { byToken, error: null } }
+    } catch (error: any) {
+      const emittableError = privacyPoolsErrors.poolStatsReadFailed(error)
+      this.emitError(emittableError)
+      if (!isLatest()) return
+
+      this.poolStats = {
+        ...this.poolStats,
+        [chainId]: { byToken: {}, error: emittableError.message }
+      }
+    }
   }
 
   /**
@@ -350,6 +415,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         return [chainId, [...byToken.values()]]
       })
     )
+  }
+
+  /**
+   * The selected account's history, one page per screen showing it. Read only while a screen shows
+   * it, along with each sync - see `filterHistory`.
+   */
+  get history(): { [sessionId: string]: PrivacyPoolsHistorySession } {
+    return this.#history.getSessions(this.#getSelectedSeedId())
   }
 
   /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase), read once. */
@@ -497,6 +570,41 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
   }
 
+  /**
+   * Opens a screen's page of the selected account's history, or moves it to another page or
+   * network. Reads the history of the networks shown whose last sync did not read it, without
+   * syncing them again unless their current plugin has not synced - see
+   * `PrivacyPoolsHistory.load`. The page arrives in `history`. The screen closes it with
+   * `resetHistoryFilters`.
+   */
+  async filterHistory(
+    sessionId: string,
+    filters?: PrivacyPoolsHistoryFilters,
+    pagination?: Pagination
+  ): Promise<void> {
+    this.#history.open(sessionId, filters, pagination)
+
+    await this.#loadHistory(filters)
+  }
+
+  /** Closes a screen's page of the history. Syncs stop reading it once no screen shows it. */
+  resetHistoryFilters(sessionId: string) {
+    this.#history.close(sessionId)
+  }
+
+  async #loadHistory(filters: PrivacyPoolsHistoryFilters = {}) {
+    const seedId = this.#getSelectedSeedId()
+    if (!seedId || !this.isAvailableForSelectedAccount) return
+    // Like `syncIfStale`: the first read waits for the phrase to be backed up
+    if (this.#keystore.seeds.find(({ id }) => id === seedId)?.notBackedUp) return
+
+    try {
+      await this.#history.load(seedId, filters)
+    } catch (error: any) {
+      this.#emitSyncError(error)
+    }
+  }
+
   #emitSyncError(error: any) {
     if (error instanceof EmittableError) {
       this.emitError(error)
@@ -607,7 +715,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Sends the signed withdrawal to the bundler and waits for it. Syncs either way, as a userOp can
-   * land after the receipt wait gives up.
+   * land after the receipt wait gives up, and reads the history along with it.
    */
   async broadcastWithdrawal(): Promise<void> {
     // `operation`, so another phrase's cannot be sent
@@ -623,6 +731,73 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     // Picks up the spent note and its change note
     await this.syncChain(operation.chainId)
+
+    // Even with no screen showing it, so the activity lists the transfer once opened. Of the
+    // account the sync read, which may no longer be the sender's if switched meanwhile.
+    const syncedSeedId = this.#getSelectedSeedId()
+    if (syncedSeedId) await this.#sync.readHistoryWithoutSync(operation.chainId, syncedSeedId)
+  }
+
+  /**
+   * The selected account's deposits of a token that are still being verified, each with the
+   * account it was made from - the only one that can take it back. From the last sync, so nothing
+   * about them is asked of the network.
+   */
+  async getRagequitDeposits(
+    chainId: string,
+    tokenAddress: string
+  ): Promise<PrivacyPoolsRagequitDeposit[]> {
+    const seedId = this.#assertAvailableAndGetSeedId()
+
+    return this.#ragequit.getDeposits({ seedId, chainId, tokenAddress })
+  }
+
+  /** `getRagequitDeposits` for `dispatchAndWait`, as only the Rage quit sheet needs them. */
+  async getRagequitDepositsAndSendResToUi(
+    chainId: string,
+    tokenAddress: string,
+    requestId: string
+  ) {
+    try {
+      const deposits = await this.getRagequitDeposits(chainId, tokenAddress)
+
+      this.#ui.message.sendUiMessage({ requestId, ok: true, res: deposits })
+    } catch (error: any) {
+      const emittableError =
+        error instanceof EmittableError
+          ? error
+          : privacyPoolsErrors.ragequitDepositsReadFailed(error)
+
+      this.#ui.message.sendUiMessage({ requestId, ok: false, error: emittableError.message })
+      this.emitError(emittableError)
+    }
+  }
+
+  /**
+   * The account one of the selected account's deposits still being verified was made from. From
+   * the last sync, so it is known before the reclaim is proved. Undefined for any other deposit.
+   */
+  getRagequitDepositorAddr({ chainId, label }: { chainId: string; label: bigint }) {
+    const seedId = this.#assertAvailableAndGetSeedId()
+
+    return this.#ragequit.getDepositorAddr({ seedId, chainId, label })
+  }
+
+  /**
+   * Proves taking back one of the selected account's deposits still being verified, as a call of
+   * the account that made it. For `MainController.privacyPoolsRagequit`, which selects that
+   * account and adds the call for the user to sign. Throws an `EmittableError` otherwise.
+   */
+  async buildRagequitCalls({
+    chainId,
+    label
+  }: {
+    chainId: string
+    label: bigint
+  }): Promise<{ accountAddr: string; calls: Call[] }> {
+    const seedId = this.#assertAvailableAndGetSeedId()
+
+    return this.#ragequit.buildCalls({ seedId, chainId, label })
   }
 
   /** Adds a stored phrase's Privacy Pools account. Nothing is derived or synced until opened. */
@@ -723,6 +898,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       hasSyncedAnyChain: this.hasSyncedAnyChain,
       operation: this.operation,
       depositAssetConfigs: this.depositAssetConfigs,
+      history: this.history,
       sendForm: this.sendForm,
       sendFormResetCounter: this.sendFormResetCounter,
       hasPersistedSendForm: this.hasPersistedSendForm

@@ -5,7 +5,6 @@ import { describe, expect, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
-import { velcroUrl } from '../../../test/config'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
@@ -98,7 +97,7 @@ describe('Portfolio simulation', () => {
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
 
   const provider = getRpcProvider(['https://invictus.ambire.com/ethereum'], 1n)
-  const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
+  const portfolio = new Portfolio(fetch, provider, ethereum)
   const balanceGetterInterface = new Interface(BalanceGetter.abi)
 
   async function getNonce(address: string) {
@@ -162,7 +161,6 @@ describe('Portfolio simulation', () => {
 
     const postSimulation = await portfolio.get(ACCOUNT_ADDR, {
       additionalErc20Hints: TOKENS.map(({ address }) => address),
-      disableAutoDiscovery: true,
       fetchPinned: false,
       simulation: {
         accountOps: [accountOp],

@@ -10,6 +10,7 @@ import {
 } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { getRpcProvider } from '../../services/provider'
 import { get4437Bytecode, getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
@@ -24,6 +25,15 @@ if (!ethereum) throw new Error('unable to find ethereum network in consts')
 const optimism = networks.find((n) => n.chainId === 10n)
 if (!optimism) throw new Error('unable to find optimism network in consts')
 const provider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
+
+const getInternalKey = (addr: string): Key => ({
+  addr,
+  type: 'internal',
+  label: 'Key',
+  dedicatedToOneSA: false,
+  isExternallyStored: false,
+  meta: { createdAt: null }
+})
 
 describe('AccountState', () => {
   test('should get the account state and check if a v1 address and v2 address (not deployed) are returned correctly', async () => {
@@ -181,6 +191,81 @@ describe('AccountState', () => {
     const accEOANonZero = state[5]!
     expect(accEOANonZero.isEOA).toBe(true)
     expect(accEOANonZero.nonce).toBeGreaterThan(0n)
+  })
+  describe('v1 keys privileged per network', () => {
+    const v1SignerOnAllNetworks = '0xB336900deb329bE6E6E515954c31AE610c13B771'
+    // a v2 account that was added as a signer of the v1 account only on polygon
+    const v1SignerOnlyOnPolygon = '0x26d6a373397d553595Cd6A7BBaBD86DEbd60a1Cc'
+    // deployed on polygon, not deployed on ethereum
+    const v1Account: Account = {
+      addr: '0x254D526978D15C9619288949f9419e918977F9F3',
+      associatedKeys: [v1SignerOnAllNetworks, v1SignerOnlyOnPolygon],
+      initialPrivileges: [],
+      creation: {
+        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+        bytecode:
+          '0x7f00000000000000000000000000000000000000000000000000000000000000017f832a45b3e3616710ac5703e98191d3827c46e7f1107596b00d26584abe24d690553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x254D526978D15C9619288949f9419e918977F9F3'
+      }
+    }
+    const keys = [getInternalKey(v1SignerOnAllNetworks), getInternalKey(v1SignerOnlyOnPolygon)]
+
+    test('should keep all keys of a deployed v1 account that are privileged on the network', async () => {
+      const [state] = await getAccountState(provider, polygon, [v1Account], keys)
+
+      expect(state!.isV2).toBeFalsy()
+      expect(state!.isDeployed).toBeTruthy()
+      expect(state!.associatedKeys).toEqual([v1SignerOnAllNetworks, v1SignerOnlyOnPolygon])
+      expect(state!.importedAccountKeys.map((k) => k.addr)).toEqual([
+        v1SignerOnAllNetworks,
+        v1SignerOnlyOnPolygon
+      ])
+    })
+    test('should drop the v1 keys that are not privileged on the network, so they cannot be picked for signing', async () => {
+      const ethereumProvider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+      const [state] = await getAccountState(ethereumProvider, ethereum, [v1Account], keys)
+
+      expect(state!.isV2).toBeFalsy()
+      // the privileges are read from the account deployed within the call
+      expect(state!.isDeployed).toBeFalsy()
+      expect(state!.associatedKeys).toEqual([v1SignerOnAllNetworks])
+      expect(state!.importedAccountKeys.map((k) => k.addr)).toEqual([v1SignerOnAllNetworks])
+    })
+    test('should not filter the keys of a v2 account', async () => {
+      const signerAddr = ethers.Wallet.createRandom().address
+      const notPrivilegedKeyAddr = ethers.Wallet.createRandom().address
+      const privileges = [
+        {
+          addr: signerAddr,
+          hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        }
+      ]
+      const bytecode = await getBytecode(privileges)
+      const addr = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
+      const v2Account: Account = {
+        addr,
+        associatedKeys: [signerAddr, notPrivilegedKeyAddr],
+        initialPrivileges: privileges.map((priv) => [priv.addr, priv.hash]),
+        creation: {
+          factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+          bytecode,
+          salt: ethers.toBeHex(0, 32)
+        },
+        preferences: {
+          label: DEFAULT_ACCOUNT_LABEL,
+          pfp: addr
+        }
+      }
+
+      const [state] = await getAccountState(provider, polygon, [v2Account], [])
+
+      expect(state!.isV2).toBeTruthy()
+      expect(state!.associatedKeys).toEqual([signerAddr, notPrivilegedKeyAddr])
+    })
   })
   test('should fetch the account state for a 7702 EOA', async () => {
     const account7702: Account = {

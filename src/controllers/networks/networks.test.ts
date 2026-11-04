@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, jest, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
+import { mockBundlerRequests } from '../../../test/mocks/bundler'
 import { SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
@@ -19,6 +21,7 @@ import {
   isNetworkInfoPending
 } from '../../libs/networks/networks'
 import wait from '../../utils/wait'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { StorageController } from '../storage/storage'
 import { NetworksController } from './networks'
 
@@ -42,7 +45,8 @@ const buildNetworksController = ({
   // No-op by default: it never calls back, so no RPC/network-info work runs on load.
   useTempProvider = async () => {},
   // Never invoked by default: `mergeRelayerNetworks` (the only relayer caller) is spied.
-  fetch = jest.fn() as unknown as Fetch
+  fetch = jest.fn() as unknown as Fetch,
+  featureFlags
 }: {
   defaultNetworksMode?: 'mainnet' | 'testnet'
   mergeImpl?: NetworksController['mergeRelayerNetworks']
@@ -51,6 +55,7 @@ const buildNetworksController = ({
     callback: (provider: RPCProvider) => Promise<void>
   ) => Promise<void>
   fetch?: Fetch
+  featureFlags?: FeatureFlagsController
 } = {}) => {
   const onAddOrUpdateNetworks = jest.fn<(networks: Network[]) => Promise<void>>(async () => {})
   const controller = new NetworksController({
@@ -60,7 +65,8 @@ const buildNetworksController = ({
     relayerUrl,
     useTempProvider,
     onAddOrUpdateNetworks,
-    onReady: async () => {}
+    onReady: async () => {},
+    featureFlags
   })
   const mergeRelayerNetworks = jest
     .spyOn(controller, 'mergeRelayerNetworks')
@@ -166,13 +172,19 @@ describe('Networks Controller', () => {
 
   test('should work in testnet mode', async () => {
     skipBeforeEach = true
-    const { mainCtrl } = await makeMainController(undefined, {
-      overrides: { featureFlags: { testnetMode: true } }
-    })
+    // Loading the testnets checks whether the bundler supports them, which isn't under test
+    const { restore: restoreBundlerRequests } = mockBundlerRequests()
+    try {
+      const { mainCtrl } = await makeMainController(undefined, {
+        overrides: { featureFlags: { testnetMode: true } }
+      })
 
-    await mainCtrl.networks.initialLoadPromise
-    expect(mainCtrl.networks.networks.find((n) => n.chainId === 1n)).toBe(undefined)
-    expect(mainCtrl.networks.networks.find((n) => n.chainId === 11155111n)).not.toBe(undefined)
+      await mainCtrl.networks.initialLoadPromise
+      expect(mainCtrl.networks.networks.find((n) => n.chainId === 1n)).toBe(undefined)
+      expect(mainCtrl.networks.networks.find((n) => n.chainId === 11155111n)).not.toBe(undefined)
+    } finally {
+      restoreBundlerRequests()
+    }
   })
 
   // TODO: Refactor Fantom test as well
@@ -600,6 +612,7 @@ describe('Networks Controller - add or update network info', () => {
     }
 
     test('ends in ERROR and adds nothing when there is no network info at all', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await buildForNetworkInfo()
       const { statuses, unsubscribe } = recordAddNetworkStatuses(controller)
 
@@ -609,9 +622,11 @@ describe('Networks Controller - add or update network info', () => {
       expect(statuses).toContain('ERROR')
       expect(statuses).not.toContain('SUCCESS')
       expect(controller.allNetworks.some((n) => n.chainId === CHAIN_ID_A)).toBe(false)
+      restore()
     })
 
     test('ends in ERROR and adds nothing while the network info is still loading', async () => {
+      const { restore } = suppressConsole()
       const { controller, harness } = await buildForNetworkInfo()
 
       const pendingRun = controller.setNetworkToAddOrUpdate({
@@ -632,6 +647,7 @@ describe('Networks Controller - add or update network info', () => {
 
       harness.release(RPC_URL_A)
       await pendingRun
+      restore()
     })
   })
 })
@@ -693,5 +709,212 @@ describe('Networks Controller - merge networks from another device', () => {
 
     expect(controller.allNetworks).toEqual(networksBefore)
     expect(onAddOrUpdateNetworks).not.toHaveBeenCalled()
+  })
+})
+
+describe('Networks Controller - token prices opt-out', () => {
+  const PRICE_API_PLATFORM_PATH = 'cena.ambire.com/api/v3/platform/'
+  const CUSTOM_PLATFORM_ID = 'custom-platform'
+  const CUSTOM_NATIVE_ASSET_ID = 'custom-native-asset'
+  const CUSTOM_NETWORK_WITHOUT_PRICE_IDS: Network = {
+    ...predefinedNetworks[0]!,
+    chainId: 987654321n,
+    name: 'Custom network',
+    rpcUrls: ['https://custom.example'],
+    selectedRpcUrl: 'https://custom.example',
+    predefined: false,
+    platformId: '',
+    nativeAssetId: ''
+  }
+  const DISABLED_CUSTOM_NETWORK_WITHOUT_PRICE_IDS: Network = {
+    ...CUSTOM_NETWORK_WITHOUT_PRICE_IDS,
+    chainId: 987654322n,
+    name: 'Disabled custom network',
+    disabled: true
+  }
+
+  const createFeatureFlags = (tokenPrices: boolean) =>
+    new FeatureFlagsController({ tokenPrices }, new StorageController(produceMemoryStore()))
+
+  const createPriceApiFetchStub = (gate?: Promise<void>) =>
+    jest.fn(async () => {
+      if (gate) await gate
+
+      return {
+        status: 200,
+        json: async () => ({
+          platformId: CUSTOM_PLATFORM_ID,
+          nativeAssetId: CUSTOM_NATIVE_ASSET_ID
+        })
+      }
+    }) as unknown as Fetch
+
+  const getPriceApiUrls = (fetch: Fetch) =>
+    (fetch as unknown as jest.Mock).mock.calls
+      .map(([url]) => String(url))
+      .filter((url) => url.includes(PRICE_API_PLATFORM_PATH))
+
+  const byChainId = (controller: NetworksController, chainId: bigint) =>
+    controller.allNetworks.find((n) => n.chainId === chainId)
+
+  /** Builds an opted-out controller that already has custom networks without price ids. */
+  const buildOptedOutWithCustomNetworks = async (fetch: Fetch) => {
+    const featureFlags = createFeatureFlags(false)
+    await featureFlags.initialLoadPromise
+    const built = buildNetworksController({ fetch, featureFlags })
+    await built.controller.initialLoadPromise
+    await settleBackgroundSync(built.controller)
+    await built.controller.mergeNetworks([
+      CUSTOM_NETWORK_WITHOUT_PRICE_IDS,
+      DISABLED_CUSTOM_NETWORK_WITHOUT_PRICE_IDS
+    ])
+    built.onAddOrUpdateNetworks.mockClear()
+
+    return { ...built, featureFlags }
+  }
+
+  const waitUntil = async (condition: () => boolean) => {
+    for (let i = 0; i < 100 && !condition(); i++) await wait(0)
+  }
+
+  beforeEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  test('adding a network while opted out does not call the price API', async () => {
+    const featureFlags = createFeatureFlags(false)
+    await featureFlags.initialLoadPromise
+    const fetch = createPriceApiFetchStub()
+    const { controller } = buildNetworksController({
+      fetch,
+      featureFlags,
+      useTempProvider: async (_, callback) => {
+        await callback({
+          getCode: async () => '0x1234',
+          getBlock: async () => ({ baseFeePerGas: 1n }),
+          send: async () => '0x',
+          call: async () => '0x'
+        } as unknown as RPCProvider)
+      }
+    })
+    await controller.initialLoadPromise
+    await settleBackgroundSync(controller)
+
+    await controller.setNetworkToAddOrUpdate({
+      chainId: CUSTOM_NETWORK_WITHOUT_PRICE_IDS.chainId,
+      rpcUrl: CUSTOM_NETWORK_WITHOUT_PRICE_IDS.selectedRpcUrl
+    })
+
+    expect(getPriceApiUrls(fetch)).toEqual([])
+    expect(isNetworkInfoPending(controller.networkToAddOrUpdate?.info)).toBe(false)
+    expect(controller.networkToAddOrUpdate?.info?.platformId).toBe('')
+    expect(controller.networkToAddOrUpdate?.info?.nativeAssetId).toBe('')
+  })
+
+  test('reports token prices as turned off for every network while opted out', async () => {
+    const { controller, featureFlags } = await buildOptedOutWithCustomNetworks(
+      createPriceApiFetchStub()
+    )
+    const getPricesLevels = () =>
+      controller.allNetworks.map(
+        (network) => network.features.find((feature) => feature.id === 'prices')?.level
+      )
+
+    expect(new Set(getPricesLevels())).toEqual(new Set(['warning']))
+
+    let hasEmitted = false
+    const unsubscribe = controller.onUpdate(() => {
+      hasEmitted = true
+    })
+    await featureFlags.setFeatureFlag('tokenPrices', true)
+    unsubscribe()
+
+    // Emitted, so that the UI picks up the features that changed with the opt-out
+    expect(hasEmitted).toBe(true)
+    expect(getPricesLevels()).not.toContain('warning')
+  })
+
+  test('opting back in fetches the missing price ids of custom networks only', async () => {
+    const fetch = createPriceApiFetchStub()
+    const { controller, featureFlags, onAddOrUpdateNetworks } =
+      await buildOptedOutWithCustomNetworks(fetch)
+    expect(getPriceApiUrls(fetch)).toEqual([])
+
+    await featureFlags.setFeatureFlag('tokenPrices', true)
+    await waitUntil(() => onAddOrUpdateNetworks.mock.calls.length > 0)
+
+    // Predefined networks get their ids from the network config, so they are not looked up
+    expect(getPriceApiUrls(fetch).sort()).toEqual(
+      [
+        `https://${PRICE_API_PLATFORM_PATH}${CUSTOM_NETWORK_WITHOUT_PRICE_IDS.chainId}`,
+        `https://${PRICE_API_PLATFORM_PATH}${DISABLED_CUSTOM_NETWORK_WITHOUT_PRICE_IDS.chainId}`
+      ].sort()
+    )
+    ;[CUSTOM_NETWORK_WITHOUT_PRICE_IDS, DISABLED_CUSTOM_NETWORK_WITHOUT_PRICE_IDS].forEach(
+      ({ chainId }) => {
+        expect(byChainId(controller, chainId)).toMatchObject({
+          platformId: CUSTOM_PLATFORM_ID,
+          nativeAssetId: CUSTOM_NATIVE_ASSET_ID
+        })
+      }
+    )
+    // Only the enabled network's portfolio is reloaded, as for a disabled one the callback
+    // removes its data instead
+    expect(onAddOrUpdateNetworks).toHaveBeenCalledTimes(1)
+    expect(onAddOrUpdateNetworks).toHaveBeenCalledWith([
+      expect.objectContaining({ chainId: CUSTOM_NETWORK_WITHOUT_PRICE_IDS.chainId })
+    ])
+    // Persisted, so a restart keeps them
+    const networksInStorage = await controller.getNetworksInStorage()
+    expect(networksInStorage[CUSTOM_NETWORK_WITHOUT_PRICE_IDS.chainId.toString()]?.platformId).toBe(
+      CUSTOM_PLATFORM_ID
+    )
+  })
+
+  test('does not apply the fetched price ids if the user opts out again meanwhile', async () => {
+    let releasePriceApi: () => void = () => {}
+    const priceApiGate = new Promise<void>((resolve) => {
+      releasePriceApi = resolve
+    })
+    const fetch = createPriceApiFetchStub(priceApiGate)
+    const { controller, featureFlags, onAddOrUpdateNetworks } =
+      await buildOptedOutWithCustomNetworks(fetch)
+
+    await featureFlags.setFeatureFlag('tokenPrices', true)
+    await waitUntil(() => getPriceApiUrls(fetch).length > 0)
+    await featureFlags.setFeatureFlag('tokenPrices', false)
+    releasePriceApi()
+    // Gives the refetch plenty of turns to (wrongly) apply its results
+    for (let i = 0; i < 25; i++) await wait(0)
+
+    expect(byChainId(controller, CUSTOM_NETWORK_WITHOUT_PRICE_IDS.chainId)?.platformId).toBe('')
+    expect(onAddOrUpdateNetworks).not.toHaveBeenCalled()
+  })
+
+  test('leaves the networks untouched when the price API does not support them', async () => {
+    const fetch = jest.fn(async () => ({
+      status: 200,
+      json: async () => ({ error: 'not found' })
+    })) as unknown as Fetch
+    const { controller, featureFlags, onAddOrUpdateNetworks } =
+      await buildOptedOutWithCustomNetworks(fetch)
+
+    await featureFlags.setFeatureFlag('tokenPrices', true)
+    await waitUntil(() => getPriceApiUrls(fetch).length === 2)
+    for (let i = 0; i < 25; i++) await wait(0)
+
+    expect(byChainId(controller, CUSTOM_NETWORK_WITHOUT_PRICE_IDS.chainId)?.platformId).toBe('')
+    expect(onAddOrUpdateNetworks).not.toHaveBeenCalled()
+  })
+
+  test('stops reacting to the opt-out once destroyed', async () => {
+    const fetch = createPriceApiFetchStub()
+    const { controller, featureFlags } = await buildOptedOutWithCustomNetworks(fetch)
+
+    controller.destroy()
+    await featureFlags.setFeatureFlag('tokenPrices', true)
+    for (let i = 0; i < 25; i++) await wait(0)
+
+    expect(getPriceApiUrls(fetch)).toEqual([])
   })
 })

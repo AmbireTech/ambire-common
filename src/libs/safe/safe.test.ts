@@ -7,6 +7,7 @@ import {
   id,
   Interface,
   keccak256,
+  makeError,
   solidityPacked,
   toUtf8Bytes,
   Wallet,
@@ -16,6 +17,7 @@ import {
 
 import { describe, expect, jest, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
 import {
   canHotOwnersMeetSafeThreshold,
@@ -29,6 +31,7 @@ import {
   sortSigs,
   getSafeDeploymentCall,
   hasCompleteSafeCreationData,
+  isSafeContract,
   normalizeSafeGlobalMessage,
   toCallsUserRequest
 } from './safe'
@@ -37,7 +40,6 @@ import type { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/ap
 import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 import type { Hex } from '../../interfaces/hex'
 import type { RPCProvider } from '../../interfaces/provider'
-
 const OWNER: Hex = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
 const OTHER_OWNER = '0x94b0080A00579C1307B0eF2C499AD98A8ce58e58'
 const SAFE_ADDRESS: Hex = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
@@ -105,6 +107,54 @@ const getSafeCreationInfo = (): SafeCreationInfoResponse => ({
 const createApi = (owners: string[] = [OWNER]) => ({
   getSafeCreationInfo: jest.fn(async () => getSafeCreationInfo()),
   getSafeInfo: jest.fn(async () => getSafeInfo(owners))
+})
+
+describe('isSafeContract', () => {
+  const getThresholdData = new Interface([
+    'function getThreshold() view returns (uint256)'
+  ]).encodeFunctionData('getThreshold')
+  const createProvider = (call: () => Promise<string>) =>
+    ({ call: jest.fn(call) }) as unknown as RPCProvider
+
+  test('returns true when the contract answers getThreshold()', async () => {
+    const provider = createProvider(async () => new AbiCoder().encode(['uint256'], [2]))
+
+    await expect(isSafeContract(SAFE_ADDRESS, provider)).resolves.toBe(true)
+    expect(provider.call).toHaveBeenCalledWith(
+      expect.objectContaining({ data: getThresholdData })
+    )
+  })
+
+  test('returns false when the contract has no getThreshold() and returns no data', async () => {
+    // e.g. an older Gnosis MultiSigWallet, whose fallback accepts any call and returns nothing
+    const provider = createProvider(async () => '0x')
+
+    await expect(isSafeContract(SAFE_ADDRESS, provider)).resolves.toBe(false)
+  })
+
+  test('returns false when the getThreshold() call reverts', async () => {
+    const provider = createProvider(async () => {
+      throw makeError('execution reverted', 'CALL_EXCEPTION', {
+        action: 'call',
+        data: '0x',
+        reason: null,
+        transaction: { to: SAFE_ADDRESS, data: getThresholdData },
+        invocation: null,
+        revert: null
+      })
+    })
+
+    await expect(isSafeContract(SAFE_ADDRESS, provider)).resolves.toBe(false)
+  })
+
+  test('throws when the network request fails, instead of claiming it is not a Safe', async () => {
+    const networkError = new Error('fetch failed')
+    const provider = createProvider(async () => {
+      throw networkError
+    })
+
+    await expect(isSafeContract(SAFE_ADDRESS, provider)).rejects.toBe(networkError)
+  })
 })
 
 describe('Safe deployment data', () => {
@@ -515,6 +565,7 @@ describe('Safe deployment data', () => {
   })
 
   test('returns null when the singleton deployment cannot be checked', async () => {
+    const { restore } = suppressConsole()
     const provider = {
       call: jest.fn(async () => encodedProxyCreationCode),
       getCode: jest.fn(async () => {
@@ -523,6 +574,7 @@ describe('Safe deployment data', () => {
     } as unknown as RPCProvider
 
     await expect(getSafeDeploymentCall(account, provider)).resolves.toBeNull()
+    restore()
   })
 
   test('rejects saved creation data that derives a different account address', async () => {
@@ -536,6 +588,7 @@ describe('Safe deployment data', () => {
   })
 
   test('returns null when the factory deployment data cannot be read on the network', async () => {
+    const { restore } = suppressConsole()
     const provider = {
       call: jest.fn(async () => {
         throw new Error('factory unavailable')
@@ -543,9 +596,11 @@ describe('Safe deployment data', () => {
     } as unknown as RPCProvider
 
     await expect(getSafeDeploymentCall(account, provider)).resolves.toBeNull()
+    restore()
   })
 
   test('returns null when the saved creation data is malformed', async () => {
+    const { restore } = suppressConsole()
     const provider = {
       call: jest.fn(async () => encodedProxyCreationCode)
     } as unknown as RPCProvider
@@ -559,6 +614,7 @@ describe('Safe deployment data', () => {
         provider
       )
     ).resolves.toBeNull()
+    restore()
   })
 })
 
@@ -588,6 +644,7 @@ describe('toCallsUserRequest', () => {
 
 describe('getSafeAccountByOwner', () => {
   test('falls back to the next deployed network when fetching Safe details fails', async () => {
+    const { restore } = suppressConsole()
     const mainnetApi = createApi()
     mainnetApi.getSafeInfo.mockRejectedValue(new Error('Service unavailable'))
     const optimismApi = createApi()
@@ -605,6 +662,7 @@ describe('getSafeAccountByOwner', () => {
       deployedOn: [1n, 10n]
     })
     expect(result.failed).toBe(false)
+    restore()
   })
 
   test('falls back to the next deployed network when the first one does not include the owner', async () => {

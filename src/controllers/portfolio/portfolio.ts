@@ -1204,7 +1204,7 @@ export class PortfolioController
         if (!provider) return null
         this.#portfolioLibs.set(
           key,
-          new Portfolio(this.#fetch, provider, network, this.#velcroUrl, undefined, () =>
+          new Portfolio(this.#fetch, provider, network, () =>
             this.#featureFlags.isFeatureEnabled('tokenPrices')
           )
         )
@@ -1273,8 +1273,7 @@ export class PortfolioController
 
       const result = await portfolioLib.get(accountId, {
         tokenDataRecency: 60000 * 5,
-        additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
-        disableAutoDiscovery: true
+        additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)]
       })
       this.temporaryTokens[network.chainId.toString()] = {
         isLoading: false,
@@ -1549,6 +1548,14 @@ export class PortfolioController
     return isWithinMinUpdateInterval || networkState.isLoading
   }
 
+  #reportInvalidDefiPosition(error: unknown, providerName: string, positionName?: string) {
+    const message = `A DeFi position from ${providerName}${
+      positionName ? ` (${positionName})` : ''
+    } could not be read and is hidden.`
+
+    this.emitError({ level: 'silent', message, error: new Error(message, { cause: error }) })
+  }
+
   /**
    * Fetches portfolio asset hints and defi positions from the external API (Velcro)
    * and formats the response. If both hints and defi positions can be skipped, returns null data.
@@ -1710,7 +1717,10 @@ export class PortfolioController
           response.defi && !('errorState' in response.defi)
             ? {
                 updatedAt: response.defi.updatedAt,
-                positions: getFormattedApiPositions(response.defi.positions),
+                positions: getFormattedApiPositions(
+                  response.defi.positions,
+                  this.#reportInvalidDefiPosition.bind(this)
+                ),
                 isForceUpdate: defiUpdateMode === DefiUpdateMode.Force
               }
             : null,
@@ -1831,7 +1841,6 @@ export class PortfolioController
           ...allHints,
           ...portfolioProps,
           blockTag: 'both',
-          disableAutoDiscovery: true,
           blacklist: this.#blacklist
         }),
         getCustomProviderPositions(
@@ -2125,7 +2134,7 @@ export class PortfolioController
 
       // Used only to sort assets and positions
       const positionsByProvider = getUniqueMergedPositions(
-        getFormattedApiPositions(positions),
+        getFormattedApiPositions(positions, this.#reportInvalidDefiPosition.bind(this)),
         [],
         null
       )
@@ -2361,7 +2370,6 @@ export class PortfolioController
                     state
                   }
                 }),
-              disableAutoDiscovery: true,
               hasKeys: this.#keystore.getAccountKeys(selectedAccount).length > 0
             }
           )

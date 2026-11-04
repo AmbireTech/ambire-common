@@ -12,7 +12,9 @@ import { BALANCE_GETTER, NFT_GETTER } from '../../consts/deploy'
 import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import * as portfolioConsts from '../../consts/portfolio'
 import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { StoredKey } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
@@ -31,7 +33,6 @@ import {
 import {
   CollectionResult,
   GetOptions,
-  Hints,
   LearnedAssets,
   PortfolioGasTankResult,
   PortfolioLibGetResult,
@@ -237,6 +238,7 @@ const accountWithManyAssets = {
     pfp: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
   }
 }
+const SLOW_DISCOVERY_TIMEOUT = 10000
 
 // If the account ever has to be replaced:
 // 1. Go to https://debank.com/protocols
@@ -736,8 +738,10 @@ describe('Portfolio Controller ', () => {
     verifyPortfolioSpy.mockRejectedValueOnce(new Error('Colibri verification crashed'))
     portfolioGetCalls.length = 0
 
+    const { restore } = suppressConsole()
     await controller.updateSelectedAccount(account.addr, [colibriEthereum])
     const rejectedVerification = await waitForVerification()
+    restore()
 
     expect(rejectedVerification?.status).toBe('warning')
     expect(rejectedVerification?.error).toBe('Colibri could not verify portfolio balances')
@@ -2358,24 +2362,6 @@ describe('Portfolio Controller ', () => {
       // 3. check if the token is persisted in learnedAssets with timestamp.
       // in learnedAssets as a new token, when found with balance from toBeLearned list.
 
-      const hints: Hints = {
-        erc20s: [ZeroAddress],
-        erc721s: {},
-        externalApi: {
-          hasHints: true,
-          lastUpdate: Date.now(),
-          prices: {}
-        }
-      }
-
-      // @ts-expect-error test
-      jest.spyOn(Portfolio.prototype, 'externalHintsAPIDiscovery').mockImplementationOnce(() =>
-        // @ts-expect-error test
-        Promise.resolve({
-          hints
-        })
-      )
-
       controller.addTokensToBeLearned(['0xc2132D05D31c914a87C6611C10748AEb04B58e8F'], 137n)
 
       await controller.updateSelectedAccount(account2.addr, [polygon], undefined)
@@ -2641,6 +2627,9 @@ describe('Portfolio Controller ', () => {
       expect(latestHintsUpdate2).toBe(latestHintsUpdate)
     })
     test('All external API hints with balance are learned', async () => {
+      // Velcro often needs more than the extension's budget to discover an account with this
+      // many assets, and a timed out discovery returns no hints to learn from
+      jest.spyOn(portfolioConsts, 'getDiscoveryTimeout').mockReturnValue(SLOW_DISCOVERY_TIMEOUT)
       const { controller, storageCtrl } = await prepareTest()
       const ethereum = networks.find(({ chainId }) => chainId === 1n)!
 
@@ -2661,12 +2650,8 @@ describe('Portfolio Controller ', () => {
         ?.filter(({ amount }) => amount > 0)
         .forEach(({ address, flags }) => {
           if (address === ZeroAddress) return
-          if (flags.defiTokenType) {
-            console.warn(`Skipping defi token ${address} from learned assets check`)
-            // Defi tokens are learned in a different way. Warning just in case someone debugs
-            // this test in the future if the behaviour changes
-            return
-          }
+          // Defi tokens are learned in a different way
+          if (flags.defiTokenType) return
           expect(learnedAssets.erc20s[key]).toHaveProperty(address)
           // Has a timestamp
           expect(learnedAssets.erc20s[key]![address]).toBeDefined()
@@ -3292,6 +3277,40 @@ describe('Portfolio Controller ', () => {
         expect(state?.result?.tokens).toEqual([])
         expect(firstProvider?.chainId).toBeUndefined()
         expect(firstAsset?.address).toBe(undefined)
+      })
+
+      it('should report an unreadable app position and hide it', async () => {
+        const { restore } = suppressConsole()
+        const { controller } = await prepareTest()
+        const brokenResponse = getDefiAppsResponse()
+        // @ts-expect-error test
+        brokenResponse.defi.positions[0]!.positions[0]!.assets[0]!.amount = 'not an amount'
+
+        // @ts-expect-error test
+        const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        discoverySpy.mockResolvedValue(brokenResponse)
+        const emittedErrors: ErrorRef[] = []
+        const unsubscribe = controller.onError((error) => emittedErrors.push(error))
+
+        // @ts-expect-error test
+        await controller.updateDefiAppsState(account, {
+          defiMaxDataAgeMs: 0,
+          hasKeys: true,
+          isManualUpdate: true
+        })
+        unsubscribe()
+
+        const positionErrors = emittedErrors.filter((e) => e.message.includes('Polymarket'))
+        expect(positionErrors).toHaveLength(1)
+        expect(positionErrors[0]!.level).toBe('silent')
+        expect(positionErrors[0]!.message).not.toContain(account.addr)
+        expect(positionErrors[0]!.error.cause).toBeInstanceOf(Error)
+        expect(
+          controller.getAccountPortfolioState(account.addr).defiApps?.result?.defiPositions
+            .positionsByProvider[0]?.positions
+        ).toHaveLength(0)
+
+        restore()
       })
 
       it('should set criticalError on discovery failure', async () => {
@@ -4285,6 +4304,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Malformed array length mismatch should trigger mismatch rejection', async () => {
+      const { restore } = suppressConsole()
       const fetchOverride = createDiscoveryFetchOverride(async () => createJsonResponse([{}]))
 
       const { controller } = await prepareTest({
@@ -4324,6 +4344,7 @@ describe('Portfolio Controller ', () => {
           'internal error: queue length and response length mismatch'
         )
       }
+      restore()
     })
 
     test('customAppChain discovery is batched with network discovery for the same account/baseCurrency', async () => {
