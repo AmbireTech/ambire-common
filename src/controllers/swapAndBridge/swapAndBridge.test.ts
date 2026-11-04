@@ -369,7 +369,6 @@ const buildSwapAndBridgeController = (
     externalSignerControllers: {},
     relayerUrl,
     getUserRequests: () => [],
-    getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
     onBroadcastSuccess: () => Promise.resolve(),
     onBroadcastFailed: () => {},
     ui
@@ -2148,7 +2147,6 @@ describe('SwapAndBridge Controller: to token market data', () => {
       externalSignerControllers: {},
       relayerUrl,
       getUserRequests: () => [],
-      getVisibleUserRequests: () => [],
       onBroadcastSuccess: () => Promise.resolve(),
       onBroadcastFailed: () => {},
       ui: new UiController({ uiManager })
