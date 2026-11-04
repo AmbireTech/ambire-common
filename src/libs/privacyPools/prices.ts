@@ -17,8 +17,22 @@ export const getPrivacyPoolsPriceKey = (chainId: string | bigint, tokenAddress: 
   `${chainId.toString()}:${tokenAddress.toLowerCase()}`
 
 /**
- * USD value per chain of the balances, the pending part included, as the account holds it. An
- * unpriced token adds nothing rather than making the chain's value unknown.
+ * What the account will hold of a token once what is on its way shows in its notes. Not below
+ * zero, as a sync that is ahead of what was expected must not show a negative balance.
+ */
+export const getPrivacyPoolsProjectedAmount = ({
+  totalAmount,
+  simulationAmount
+}: Pick<PrivacyPoolsTokenBalance, 'totalAmount' | 'simulationAmount'>): bigint => {
+  const projectedAmount = totalAmount + simulationAmount
+
+  return projectedAmount > 0n ? projectedAmount : 0n
+}
+
+/**
+ * USD value per chain of the balances, the pending part included, as the account will hold it
+ * once what is on its way shows - see `getPrivacyPoolsProjectedAmount`. An unpriced
+ * token adds nothing rather than making the chain's value unknown.
  */
 export const getPrivacyPoolsValuePerChain = (
   balances: { [chainId: string]: PrivacyPoolsTokenBalance[] },
@@ -31,7 +45,10 @@ export const getPrivacyPoolsValuePerChain = (
         const price = prices[getPrivacyPoolsPriceKey(chainId, balance.tokenAddress)]
         if (price === undefined) return total
 
-        return total + Number(formatUnits(balance.totalAmount, balance.decimals)) * price
+        return (
+          total +
+          Number(formatUnits(getPrivacyPoolsProjectedAmount(balance), balance.decimals)) * price
+        )
       }, 0)
     ])
   )

@@ -3,6 +3,14 @@ import { PhraseScopedModule, PrivacyPoolsContext } from './context'
 
 export type BuiltCallKind = 'deposit' | 'ragequit'
 
+/** What is known of a built call when it is broadcast. */
+export type BuiltCallBroadcast = {
+  /** A fingerprint of the account's notes, or null when the chain had not been read yet. */
+  baseline: string | null
+  /** The change it was expected to make, or null when none was started. See `PrivacyPoolsWatches`. */
+  expectedChangeId: number | null
+}
+
 /**
  * A deposit or ragequit call this wallet built, with the account and chain it changes. Once the
  * call is broadcast, `broadcast` holds the account's notes as they were then.
@@ -11,8 +19,14 @@ export type BuiltCall = {
   seedId: string
   chainId: string
   kind: BuiltCallKind
-  /** `baseline` is a fingerprint of the notes, or null when the chain had not been read yet. */
-  broadcast: { baseline: string | null } | null
+  /** The token the call moves, in the wallet's convention - `ZERO_ADDRESS` for native. */
+  tokenAddress: string
+  /**
+   * What the call adds to the account's total of the token once it lands: a deposit's amount after
+   * the pool's fee, or minus the whole deposit a ragequit takes back.
+   */
+  amount: bigint
+  broadcast: BuiltCallBroadcast | null
 }
 
 /** Identifies a call the same way wherever it ends up, without decoding it. */
@@ -45,12 +59,11 @@ export class PrivacyPoolsBuiltCalls implements PhraseScopedModule {
     chainId,
     call,
     seedId,
-    kind
-  }: {
-    chainId: string
+    kind,
+    tokenAddress,
+    amount
+  }: Pick<BuiltCall, 'seedId' | 'chainId' | 'kind' | 'tokenAddress' | 'amount'> & {
     call: Call
-    seedId: string
-    kind: BuiltCallKind
   }) {
     const pendingKeys = new Set(
       this.#ctx
@@ -66,18 +79,22 @@ export class PrivacyPoolsBuiltCalls implements PhraseScopedModule {
 
     const key = getCallKey(chainId, call)
     if (!this.#builtCalls.has(key))
-      this.#builtCalls.set(key, { seedId, chainId, kind, broadcast: null })
+      this.#builtCalls.set(key, { seedId, chainId, kind, tokenAddress, amount, broadcast: null })
   }
 
   /**
-   * Records that a call built here was broadcast, with the account's notes as of now. A call
-   * built elsewhere is ignored, and so is one already marked.
+   * Records that a call built here was broadcast, with what `getBroadcast` knows of the account as
+   * of now. A call built elsewhere is ignored, and so is one already marked.
    */
-  markBroadcast(chainId: bigint, call: Call, getBaseline: (builtCall: BuiltCall) => string | null) {
+  markBroadcast(
+    chainId: bigint,
+    call: Call,
+    getBroadcast: (builtCall: BuiltCall) => BuiltCallBroadcast
+  ) {
     const builtCall = this.#builtCalls.get(getCallKey(chainId, call))
     if (!builtCall || builtCall.broadcast) return
 
-    builtCall.broadcast = { baseline: getBaseline(builtCall) }
+    builtCall.broadcast = getBroadcast(builtCall)
   }
 
   /** Forgets the call and returns what was known of it, if it was built here. */
@@ -103,7 +120,7 @@ export class PrivacyPoolsBuiltCalls implements PhraseScopedModule {
   /** Drops every baseline but keeps the calls, so a broadcast one is still recognised later. */
   clear() {
     this.#builtCalls.forEach((builtCall) => {
-      if (builtCall.broadcast) builtCall.broadcast.baseline = null
+      if (builtCall.broadcast) builtCall.broadcast = { baseline: null, expectedChangeId: null }
     })
   }
 }

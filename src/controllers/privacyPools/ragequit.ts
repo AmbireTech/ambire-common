@@ -144,7 +144,14 @@ export class PrivacyPoolsRagequit {
     if (syncedNote?.amount !== note.amount) throw privacyPoolsErrors.ragequitDepositNotFound()
 
     const call: Call = { to: txn.to, value: 0n, data: txn.data }
-    this.#builtCalls.add({ chainId, call, seedId, kind: 'ragequit' })
+    this.#builtCalls.add({
+      chainId,
+      call,
+      seedId,
+      kind: 'ragequit',
+      tokenAddress: note.tokenAddress,
+      amount: -note.amount
+    })
 
     return { accountAddr: note.depositorAddr, calls: [call] }
   }
