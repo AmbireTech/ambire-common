@@ -56,8 +56,7 @@ const entry = (id: string, timestamp: number): PrivacyPoolsHistoryEntry => ({
   timestamp,
   txnId: null,
   counterpartyAddr: null,
-  isUnderReview: false,
-  isApproved: false
+  status: null
 })
 
 describe('toPrivacyPoolsHistoryEntries', () => {
@@ -72,8 +71,7 @@ describe('toPrivacyPoolsHistoryEntries', () => {
         timestamp: 1_700_000_000_000,
         txnId: TX_HASH,
         counterpartyAddr: DEPOSITOR,
-        isUnderReview: false,
-        isApproved: true
+        status: 'approved'
       }
     ])
   })
@@ -115,34 +113,20 @@ describe('toPrivacyPoolsHistoryEntries', () => {
     expect(entry0!.txnId).toHaveLength(66)
   })
 
-  describe('a deposit under review', () => {
-    it('is one still being verified, by the notes of the same sync', () => {
+  describe('the status', () => {
+    it('is pending for a deposit still being verified, by the notes of the same sync', () => {
       const [entry0] = toEntries([deposit({ aspStatus: 'pending', label: 7n } as any)], [7n])
 
-      expect(entry0!.isUnderReview).toBe(true)
+      expect(entry0!.status).toBe('pending')
     })
 
-    it('is not one taken back, though the plugin still reports it pending', () => {
+    it('is none for a deposit taken back, though the plugin still reports it pending', () => {
       const [entry0] = toEntries([deposit({ aspStatus: 'pending', label: 7n } as any)], [])
 
-      expect(entry0!.isUnderReview).toBe(false)
+      expect(entry0!.status).toBeNull()
     })
 
-    it('is not one verified, even when a note of its label is listed as pending', () => {
-      const [entry0] = toEntries([deposit({ aspStatus: 'approved', label: 7n } as any)], [7n])
-
-      expect(entry0!.isUnderReview).toBe(false)
-    })
-
-    it('is never a withdrawal or a deposit taken back', () => {
-      const entries = toEntries([withdrawal(), ragequit()], [1n])
-
-      expect(entries.map(({ isUnderReview }) => isUnderReview)).toEqual([false, false])
-    })
-  })
-
-  describe('an approved deposit', () => {
-    it('is one the plugin reports approved, whatever the notes say', () => {
+    it('is approved for a deposit the plugin reports approved, whatever the notes say', () => {
       const [listed, spent] = toEntries(
         [
           deposit({ aspStatus: 'approved', label: 7n } as any),
@@ -151,20 +135,14 @@ describe('toPrivacyPoolsHistoryEntries', () => {
         [7n]
       )
 
-      expect(listed!.isApproved).toBe(true)
-      expect(spent!.isApproved).toBe(true)
+      expect(listed!.status).toBe('approved')
+      expect(spent!.status).toBe('approved')
     })
 
-    it('is neither approved nor under review when taken back while pending', () => {
-      const [entry0] = toEntries([deposit({ aspStatus: 'pending', label: 7n } as any)], [])
+    it('is none for a withdrawal or a deposit taken back, even when a note shares the label', () => {
+      const entries = toEntries([withdrawal(), ragequit()], [1n])
 
-      expect(entry0).toMatchObject({ isApproved: false, isUnderReview: false })
-    })
-
-    it('is never a withdrawal or a deposit taken back', () => {
-      const entries = toEntries([withdrawal(), ragequit()])
-
-      expect(entries.map(({ isApproved }) => isApproved)).toEqual([false, false])
+      expect(entries.map(({ status }) => status)).toEqual([null, null])
     })
   })
 

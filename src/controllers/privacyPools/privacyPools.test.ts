@@ -3062,10 +3062,10 @@ describe('PrivacyPoolsController', () => {
 
       await openHistory(controller)
 
-      expect(getPage(controller)?.items.map(({ isUnderReview }) => isUnderReview)).toEqual([
-        true,
-        false,
-        false
+      expect(getPage(controller)?.items.map(({ status }) => status)).toEqual([
+        'pending',
+        null,
+        null
       ])
     })
 

@@ -220,13 +220,12 @@ export type PrivacyPoolsHistoryEntry = {
    * went to. Null for a withdrawal, as where it went is not in the pool's records.
    */
   counterpartyAddr: Hex | null
-  /** A deposit still being verified: it cannot be sent privately yet. */
-  isUnderReview: boolean
   /**
-   * A deposit the checks approved, so it could be sent privately. Neither this nor
-   * `isUnderReview` for one taken back.
+   * A deposit's review: 'pending' while it is still being verified, so it cannot be sent privately
+   * yet, or 'approved' once the checks approved it, so it could be. Null for a withdrawal or a
+   * ragequit, and for the deposit a ragequit took back, as it is no longer being verified.
    */
-  isApproved: boolean
+  status: PrivacyPoolsApprovalStatus | null
 }
 
 /** What a history page is narrowed to. */

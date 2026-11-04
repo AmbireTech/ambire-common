@@ -4,10 +4,21 @@ import type { PPv1HistoryEvent } from '@kohaku-eth/privacy-pools'
 
 import { fromPrivacyPoolsAssetAddress } from '../../consts/privacyPools'
 import { Hex } from '../../interfaces/hex'
-import { PrivacyPoolsHistoryEntry } from '../../interfaces/privacyPools'
+import { PrivacyPoolsApprovalStatus, PrivacyPoolsHistoryEntry } from '../../interfaces/privacyPools'
 import { getPage, Pagination, PaginationResult } from '../../utils/paginate'
 
 const toAddress = (address: bigint): Hex => getAddress(toBeHex(address, 20)) as Hex
+
+const getStatus = (
+  event: PPv1HistoryEvent,
+  pendingLabels: Set<bigint>
+): PrivacyPoolsApprovalStatus | null => {
+  if (event.type !== 'deposit') return null
+  if (event.aspStatus === 'approved') return 'approved'
+
+  // Still 'pending' after it is taken back, so only a note left tells it is being verified
+  return pendingLabels.has(event.label) ? 'pending' : null
+}
 
 /**
  * The plugin's history of one chain in the wallet's terms, in the plugin's order (newest first).
@@ -47,9 +58,7 @@ export const toPrivacyPoolsHistoryEntries = ({
           : event.type === 'ragequit'
             ? toAddress(event.ragequitter)
             : null,
-      isUnderReview:
-        event.type === 'deposit' && event.aspStatus === 'pending' && pendingLabels.has(event.label),
-      isApproved: event.type === 'deposit' && event.aspStatus === 'approved'
+      status: getStatus(event, pendingLabels)
     }
   })
 }
