@@ -658,11 +658,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   async #watchChange({
     seedId,
     chainId,
-    baseline
+    baseline,
+    hasDeposit
   }: {
     seedId: string
     chainId: string
     baseline: string | null
+    hasDeposit: boolean
   }): Promise<void> {
     if (!this.#hasAccount(seedId)) return
 
@@ -671,7 +673,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#watches.start({
       seedId,
       chainId,
-      baseline: this.#keystore.isUnlocked ? baseline : null
+      baseline: this.#keystore.isUnlocked ? baseline : null,
+      hasDeposit
     })
     // Wakes the timer
     this.emitUpdate()
@@ -767,7 +770,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       this.#watchChange({
         seedId: builtCall.seedId,
         chainId: builtCall.chainId,
-        baseline: builtCall.broadcast?.baseline ?? null
+        baseline: builtCall.broadcast?.baseline ?? null,
+        hasDeposit: builtCall.kind === 'deposit'
       })
     })
   }
@@ -856,7 +860,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     // Not the selected account: the user may have switched while the receipt was awaited. Picks
     // up the spent note and its change note.
-    await this.#watchChange({ seedId, chainId, baseline })
+    await this.#watchChange({ seedId, chainId, baseline, hasDeposit: false })
   }
 
   /**

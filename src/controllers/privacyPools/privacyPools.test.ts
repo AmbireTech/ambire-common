@@ -1577,6 +1577,30 @@ describe('PrivacyPoolsController', () => {
       await waitUntil(() => !controller.hasSyncWatches)
     })
 
+    it('does not end on a read already running when it does not know the notes from before the change', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      // Another account has read the chain, so building the deposit reads nothing of seed-b's
+      selectedAccount.select('seed-a')
+      const warming = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await warming
+      const calls = await buildDeposit(controller)
+      controller.onAccountOpBroadcast({ chainId: 1n, calls })
+
+      // Started before the deposit showed, so it reads the notes without it
+      selectedAccount.select('seed-b')
+      const earlierRead = controller.syncChain('1')
+      finalize(controller, calls)
+      await releaseSync('seed-b')
+      await earlierRead
+      expect(controller.hasSyncWatches).toBe(true)
+
+      landDeposit()
+      await releaseSync('seed-b')
+      await waitUntil(() => !controller.hasSyncWatches)
+      expect(getHeldAmounts(controller)).toEqual([25n])
+    })
+
     it('gives the watch its full time again when another change is sent to the account', async () => {
       const { controller, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-b')
@@ -2572,6 +2596,36 @@ describe('PrivacyPoolsController', () => {
         expect(controller.hasSyncWatches).toBe(false)
         expect(getHeldAmounts(controller)).toEqual([3n])
         restore()
+      })
+
+      /** Sends the proved withdrawal, which lands but is not read yet, so it stays watched. */
+      const broadcastUnreadWithdrawal = async (controller: PrivacyPoolsController) => {
+        jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast: async () => {} } as any)
+        const broadcasting = controller.broadcastWithdrawal()
+        await releaseSync('seed-a')
+        await broadcasting
+        expect(controller.hasSyncWatches).toBe(true)
+      }
+
+      it('does not hold back a deposit into the account while the transfer is watched', async () => {
+        const { controller } = await prepareReadWithdrawal()
+        await broadcastUnreadWithdrawal(controller)
+
+        // A transfer does not change the next deposit's precommitment
+        await expect(buildDeposit(controller, { seedId: 'seed-a' })).resolves.toHaveLength(1)
+      })
+
+      it('keeps holding back the next deposit when the transfer starts the watch of a deposit over', async () => {
+        const { controller } = await prepareReadWithdrawal()
+        const depositCalls = await buildDeposit(controller, { seedId: 'seed-a' })
+        controller.onAccountOpBroadcast({ chainId: 1n, calls: depositCalls })
+        finalize(controller, depositCalls)
+        await releaseSync('seed-a')
+        await waitForSynced(controller)
+
+        await broadcastUnreadWithdrawal(controller)
+
+        await expect(buildDeposit(controller, { seedId: 'seed-a' })).rejects.toThrow(EmittableError)
       })
     })
 

@@ -237,11 +237,11 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
    * rejects. Read from the transactions themselves, so it holds across a restart; one that failed,
    * was dropped or got stuck is no longer pending and frees the precommitment.
    *
-   * Also while a change to the account's chain is still being looked for: a deposit that landed
-   * is not in the notes until a sync shows it, and until then the precommitment is the same.
+   * Also while a deposit into the account's chain is still being looked for: one that landed is
+   * not in the notes until a sync shows it, and until then the precommitment is the same.
    */
   #isDepositPending(seedId: string, chainId: string, precommitment: bigint): boolean {
-    if (this.#watches.isWatching(seedId, chainId)) return true
+    if (this.#watches.isWatchingDeposit(seedId, chainId)) return true
 
     const entrypointAddress = getChainConfig(chainId).entrypointAddress.toLowerCase()
 

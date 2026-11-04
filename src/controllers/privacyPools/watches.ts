@@ -18,6 +18,8 @@ export type Watch = {
   chainId: string
   /** The notes when the change was sent. Null when the chain had not been read yet. */
   baseline: string | null
+  /** Whether a deposit is among the changes waited for. See `isWatchingDeposit`. */
+  hasDeposit: boolean
   startedAt: number
 }
 
@@ -43,9 +45,12 @@ export class PrivacyPoolsWatches implements PhraseScopedModule {
     return !!this.#watches.size
   }
 
-  /** Whether a change to the account's chain is still being looked for. */
-  isWatching(seedId: string, chainId: string): boolean {
-    return this.#watches.has(this.#getKey(seedId, chainId))
+  /**
+   * Whether a deposit into the account's chain is still being looked for. Until a sync shows it,
+   * the next deposit would get the same precommitment. A withdrawal or ragequit does not change it.
+   */
+  isWatchingDeposit(seedId: string, chainId: string): boolean {
+    return !!this.#watches.get(this.#getKey(seedId, chainId))?.hasDeposit
   }
 
   /** The notes of the account's last sync of the chain, as a fingerprint. Null before its first. */
@@ -56,12 +61,18 @@ export class PrivacyPoolsWatches implements PhraseScopedModule {
     return getNotesFingerprint(accountChain.notes)
   }
 
-  /** Starts watching, or starts over if the account's chain is watched already. */
-  start({ seedId, chainId, baseline }: Omit<Watch, 'startedAt'>) {
-    this.#watches.set(this.#getKey(seedId, chainId), {
+  /**
+   * Starts watching, or starts over if the account's chain is watched already. Starting over keeps
+   * waiting for a deposit the earlier watch was waiting for.
+   */
+  start({ seedId, chainId, baseline, hasDeposit }: Omit<Watch, 'startedAt'>) {
+    const key = this.#getKey(seedId, chainId)
+
+    this.#watches.set(key, {
       seedId,
       chainId,
       baseline,
+      hasDeposit: hasDeposit || !!this.#watches.get(key)?.hasDeposit,
       startedAt: Date.now()
     })
   }
@@ -96,6 +107,14 @@ export class PrivacyPoolsWatches implements PhraseScopedModule {
   async #syncWatch(watch: Watch) {
     const { seedId, chainId, baseline } = watch
     const key = this.#getKey(seedId, chainId)
+
+    // With no notes to compare with, any completed sync ends the watch, so one that was already
+    // running, and may have read the chain before the change, must not count
+    if (baseline === null) {
+      await this.#sync.getRunningSync(seedId, chainId)
+      if (this.#watches.get(key) !== watch) return
+    }
+
     const epoch = this.#sync.getEpoch(chainId, seedId)
 
     await this.#sync.queue(chainId, seedId)
