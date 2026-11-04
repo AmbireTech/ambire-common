@@ -121,7 +121,7 @@ describe('getIntentBanners', () => {
       }
     ]
 
-    const banners = getIntentBanners(activeRoutes, [], ACCOUNT_ADDR)
+    const banners = getIntentBanners(activeRoutes, ACCOUNT_ADDR)
 
     expect(banners).toHaveLength(1)
     expect(banners[0]!.meta?.accountAddr).toEqual(ACCOUNT_ADDR)
@@ -152,9 +152,98 @@ describe('getIntentBanners', () => {
       }
     ]
 
-    const banners = getIntentBanners(activeRoutes, [], ACCOUNT_ADDR)
+    const banners = getIntentBanners(activeRoutes, ACCOUNT_ADDR)
 
     expect(banners[0]!.title).toBe('Swap in progress')
-    expect(banners[0]!.text).toBe('You have 1 pending swap')
+    expect(banners[0]!.text).toBe('')
+  })
+
+  const getCowSwapRoute = (
+    activeRouteId: string,
+    routeStatus: SwapAndBridgeActiveRoute['routeStatus'],
+    toChainId = 1
+  ): SwapAndBridgeActiveRoute => ({
+    serviceProviderId: 'cowswap',
+    fromAsset: { symbol: 'USDC' } as SwapAndBridgeActiveRoute['fromAsset'],
+    toAsset: { symbol: 'WETH' } as SwapAndBridgeActiveRoute['toAsset'],
+    fromAssetAddress: '0x0',
+    toAssetAddress: '0x0',
+    steps: [],
+    sender: ACCOUNT_ADDR,
+    activeRouteId,
+    userTxIndex: 0,
+    userTxHash: '0x1',
+    identifiedBy: null,
+    route: {
+      providerId: 'cowswap',
+      routeStatus,
+      fromChainId: 1,
+      toChainId,
+      currentUserTxIndex: 0,
+      transactionData: null,
+      userAddress: ACCOUNT_ADDR
+    } as unknown as SwapAndBridgeActiveRoute['route'],
+    routeStatus
+  })
+
+  test('shows a banner of its own for each of two swaps sent together', () => {
+    const banners = getIntentBanners(
+      [getCowSwapRoute('order-1', 'in-progress'), getCowSwapRoute('order-2', 'in-progress')],
+      ACCOUNT_ADDR
+    )
+
+    expect(banners).toHaveLength(2)
+    expect(banners.map(({ id }) => id)).toEqual([
+      'bridge-in-progress-order-1',
+      'bridge-in-progress-order-2'
+    ])
+    banners.forEach((banner, i) => {
+      const activeRouteId = `order-${i + 1}`
+      expect(banner.category).toBe('bridge-in-progress')
+      expect(banner.title).toBe('Swap in progress')
+      expect(banner.text).toBe('USDC to WETH')
+      expect(banner.meta?.activeRouteId).toBe(activeRouteId)
+      expect(banner.dismissAction).toMatchObject({
+        actionName: 'close-bridge',
+        meta: { activeRouteIds: [activeRouteId] }
+      })
+    })
+  })
+
+  test('each swap shows its own status, the ones still in progress first', () => {
+    const banners = getIntentBanners(
+      [
+        getCowSwapRoute('order-completed', 'completed'),
+        getCowSwapRoute('order-refunded', 'refunded'),
+        getCowSwapRoute('order-failed', 'failed'),
+        getCowSwapRoute('order-in-progress', 'in-progress')
+      ],
+      ACCOUNT_ADDR
+    )
+
+    expect(banners.map(({ title, type }) => ({ title, type }))).toEqual([
+      { title: 'Swap in progress', type: 'info' },
+      { title: 'Swap failed', type: 'error' },
+      { title: 'Swap refunded', type: 'warning' },
+      { title: 'Swap completed', type: 'success' }
+    ])
+  })
+
+  test('shows no banner for a swap that has not been sent yet', () => {
+    const banners = getIntentBanners(
+      [
+        getCowSwapRoute('order-ready', 'ready'),
+        getCowSwapRoute('order-approval', 'waiting-approval-to-resolve')
+      ],
+      ACCOUNT_ADDR
+    )
+
+    expect(banners).toEqual([])
+  })
+
+  test('calls a route to another network a bridge', () => {
+    const [banner] = getIntentBanners([getCowSwapRoute('route-1', 'failed', 10)], ACCOUNT_ADDR)
+
+    expect(banner!.title).toBe('Bridge failed')
   })
 })

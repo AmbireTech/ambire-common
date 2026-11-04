@@ -78,7 +78,11 @@ export type Action = (
     }
   | {
       actionName: 'open-external-url'
-      meta: { url: string }
+      meta: {
+        url: string
+        /** Set for dapp pages that need the wallet connected, so mobile opens them in the in-app browser */
+        shouldOpenInAppBrowser?: boolean
+      }
     }
   | {
       actionName: 'backup-keystore-secret'

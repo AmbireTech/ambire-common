@@ -157,6 +157,14 @@ const SAFE_DEPLOYMENT_STUCK_MESSAGE =
 const MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR =
   "This app asked to sign a message with an account that isn't in your wallet."
 
+/**
+ * The id a call gets when it's added to a request. Swap & bridge calls keep theirs, as it's made
+ * from their active route ID and it's how each swap in a batch is tracked once the batch is sent.
+ * Every other call gets a new one; dApps can't set `activeRouteId`, so theirs always do too.
+ */
+const getRequestCallId = (call: Call): string =>
+  call.activeRouteId && call.id ? call.id : uuidv4()
+
 /** Whether both lists make the same calls, ignoring the ids the wallet gives them */
 const haveSameCalls = (calls: Call[], otherCalls: Call[]): boolean =>
   calls.length === otherCalls.length &&
@@ -3233,6 +3241,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           throw new EmittableError({ message: error.message, level: 'major', error })
         }
 
+        // Read before anything is awaited: the form can be reset while the request is being
+        // built (e.g. the user leaves the "Added to batch" screen), which would otherwise skip
+        // adding the active route and leave the swap untracked once the batch is sent.
+        // The quote must also be the one the transaction was built from
+        const quoteForActiveRoute =
+          this.#swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit &&
+          this.#swapAndBridge.quote?.selectedRoute?.routeId === transaction.activeRouteId
+            ? this.#swapAndBridge.quote
+            : null
+
         // learn the receiving token
         if (this.#swapAndBridge.toSelectedToken && this.#swapAndBridge.toChainId) {
           this.#addTokensToBeLearned(
@@ -3285,8 +3303,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           })
         }
 
-        if (this.#swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
+        if (quoteForActiveRoute) {
           this.#swapAndBridge.addActiveRoute({
+            quote: quoteForActiveRoute,
             userTxIndex: transaction.userTxIndex
           })
         }
@@ -3901,7 +3920,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                 ...existingUserRequest.signAccountOp.accountOp.calls,
                 ...calls.map((call) => ({
                   ...call,
-                  id: uuidv4(),
+                  id: getRequestCallId(call),
                   // `to` is falsy in contract deployment transactions
                   to: !!call.to ? getAddress(call.to) : call.to,
                   data: call.data || '0x',
@@ -4046,7 +4065,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                 calls: [
                   ...calls.map((call) => ({
                     ...call,
-                    id: uuidv4(),
+                    id: getRequestCallId(call),
                     // `to` is falsy in contract deployment transactions
                     to: !!call.to ? getAddress(call.to) : call.to,
                     data: call.data || '0x',
