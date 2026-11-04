@@ -2805,6 +2805,107 @@ describe('PrivacyPoolsController', () => {
       expect(getAmounts(controller)).toEqual([10n, 4n])
     })
 
+    describe('on opening a screen after a sync that did not read it', () => {
+      const syncFirst = async (controller: PrivacyPoolsController, seedId = 'seed-a') => {
+        const syncing = controller.syncChain('1')
+        await releaseSync(seedId)
+        await syncing
+      }
+
+      it('is read from that sync, without syncing again', async () => {
+        const { controller } = await prepareSelected()
+        await syncFirst(controller)
+        const syncStatuses: (string | undefined)[] = []
+        const unsubscribe = controller.onUpdate(() =>
+          syncStatuses.push(controller.chains['1']?.syncStatus)
+        )
+
+        const opening = controller.filterHistory(SESSION)
+        await flush()
+        // The balances are not shown as loading again
+        expect(controller.chains['1']?.syncStatus).toBe('ready')
+        await opening
+        unsubscribe()
+
+        expect(syncStatuses.length).toBeGreaterThan(0)
+        expect(syncStatuses).not.toContain('syncing')
+        expect(runningSyncs).toHaveLength(0)
+        expect(protocols).toHaveLength(1)
+        expect(protocols[0]!.syncCount).toBe(1)
+        expect(protocols[0]!.historyCount).toBe(1)
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it('syncs again once the plugin that read the notes is gone', async () => {
+        // A plugin that read a cold chain from the CDN is dropped after its sync, and a new one
+        // would know none of the account's deposits without syncing
+        jest
+          .mocked(createPrivacyPoolsDataService)
+          .mockResolvedValueOnce({ dataService: {}, isSagaHydrated: true } as any)
+        const { controller } = await prepareSelected()
+        await syncFirst(controller)
+
+        await openHistory(controller)
+
+        expect(protocols).toHaveLength(2)
+        expect(protocols[0]!.historyCount).toBe(0)
+        expect(protocols[1]!.historyCount).toBe(1)
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it("syncs again once another account's sync of the network has replaced its plugin", async () => {
+        const { controller, selectedAccount } = await prepareSelected()
+        await syncFirst(controller)
+        selectedAccount.select('seed-b')
+        await syncFirst(controller, 'seed-b')
+        selectedAccount.select('seed-a')
+
+        await openHistory(controller)
+
+        // seed-a's, seed-b's, then seed-a's again, built from what seed-b's sync stored
+        expect(protocols).toHaveLength(3)
+        expect(protocols[0]!.historyCount).toBe(0)
+        expect(protocols[2]!.historyCount).toBe(1)
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it('syncs again when that sync failed', async () => {
+        const { controller } = await prepareSelected()
+        await syncFirst(controller)
+        const failing = controller.syncChain('1')
+        const running = await takeRunningSync('seed-a', 1n)
+        running.gate.reject(new Error('RPC is down'))
+        await failing
+
+        await openHistory(controller)
+
+        expect(protocols[0]!.syncCount).toBe(3)
+        expect(controller.chains['1']).toMatchObject({ syncStatus: 'ready', error: null })
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it('is not kept once a newer sync has read it', async () => {
+        const { controller } = await prepareSelected()
+        await syncFirst(controller)
+        const staleRead = createDeferred()
+        jest.spyOn(protocols[0]!, 'history').mockImplementationOnce(async () => {
+          await staleRead.promise
+          return [WITHDRAWAL]
+        })
+
+        const opening = controller.filterHistory(SESSION)
+        await flush()
+        historyBySeed['seed-a'] = [historyEvent({ value: 7n, blockNumber: 200n })]
+        const refreshing = controller.sync()
+        await releaseSync('seed-a')
+        await refreshing
+        staleRead.resolve()
+        await opening
+
+        expect(getAmounts(controller)).toEqual([7n])
+      })
+    })
+
     it('reports an empty page for an account with no activity', async () => {
       historyBySeed = {}
       const { controller } = await prepareSelected()
@@ -2877,13 +2978,16 @@ describe('PrivacyPoolsController', () => {
       await refreshing
 
       historyBySeed['seed-a'] = [historyEvent({ value: 7n, blockNumber: 200n })]
+      historyGate = createDeferred()
       const reopening = controller.filterHistory(SESSION)
-      await flush()
+      await waitUntil(() => protocols[0]!.historyCount === 2)
       expect(getAmounts(controller)).toEqual([10n, 4n])
 
-      await releaseSync('seed-a')
+      historyGate.resolve()
       await reopening
       expect(getAmounts(controller)).toEqual([7n])
+      // Read as of the last sync, without another
+      expect(protocols[0]!.syncCount).toBe(2)
     })
 
     it('is read by a sync already running when the screen opens, rather than by another', async () => {

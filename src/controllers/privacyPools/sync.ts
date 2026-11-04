@@ -73,6 +73,12 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
   /** The running sync per account and chain. Asking again while it runs joins it. */
   #syncQueue: { [seedId: string]: { [chainId: string]: Promise<void> } } = {}
 
+  /**
+   * The plugins a sync has read an account's notes with. Only these know the account's deposits,
+   * so only their history can be read without syncing - see `readHistoryWithoutSync`.
+   */
+  #syncedProtocols = new WeakSet<PrivacyPoolsV1Protocol>()
+
   /** Per account and chain: its sync and its notes. Written only through `#writeAccountState`. */
   #accountStates: { [seedId: string]: { [chainId: string]: PrivacyPoolsAccountChainState } } = {}
 
@@ -190,6 +196,44 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
     return sync
   }
 
+  /**
+   * Reads an account's history on a chain from its current plugin, as of that plugin's last sync,
+   * without syncing again - so the balances are not shown as loading. False when the current
+   * plugin has not synced the account's notes (a new one knows none of its deposits), or the last
+   * sync failed. Never rejects.
+   */
+  async readHistoryWithoutSync(chainId: string, seedId: string): Promise<boolean> {
+    const generation = this.#ctx.lock.current
+    const state = this.#accountStates[seedId]?.[chainId]
+    if (state?.syncStatus !== 'ready' || !state.lastSyncedAt) return false
+
+    try {
+      const protocol = await this.#registry.getProtocol(chainId, seedId)
+      if (!this.#syncedProtocols.has(protocol)) return false
+
+      await this.#readHistory({
+        protocol,
+        chainId,
+        seedId,
+        generation,
+        notes: state.notes,
+        lastSyncedAt: state.lastSyncedAt
+      })
+      this.#ctx.emitUpdate()
+
+      return true
+    } catch (error: any) {
+      // A sync builds the plugin again and reports why it cannot
+      this.#ctx.emitError({
+        message: 'Could not load your Privacy Pools activity. Please try again.',
+        level: 'silent',
+        error: error instanceof Error ? error : new Error('privacyPools: plugin build failed')
+      })
+
+      return false
+    }
+  }
+
   hasPhraseDerivedState(): boolean {
     return !!Object.keys(this.#syncQueue).length || !!Object.keys(this.#accountStates).length
   }
@@ -255,6 +299,7 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
       // The plugin syncs before every read, costing seconds even with no new blocks, so a
       // `sync()` first would pay twice
       const notes = await protocol.notes()
+      this.#syncedProtocols.add(protocol)
       // The plugin has persisted the shared state by now
       initialRead?.resolve()
       // Even if locked since, as for the initial read below: the shared state is the chain's
@@ -273,12 +318,13 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
         depositorAddr: getAddress(toBeHex(note.depositor, 20)) as Hex,
         depositIndex: note.deposit
       }))
+      const lastSyncedAt = Date.now()
       // Nothing derived from the phrase is written back after a lock or account removal
       const isWritten = this.#writeAccountState(seedId, chainId, generation, {
         syncStatus: 'ready',
         syncStartedAt: null,
         error: null,
-        lastSyncedAt: Date.now(),
+        lastSyncedAt,
         lastSyncDuration: syncDuration,
         notes: syncedNotes,
         // Kept, as a stale list beats a blank one, until the history is read again
@@ -298,7 +344,14 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
       // were read from, without syncing again. The balances are shown meanwhile.
       if (this.#isHistoryWanted(seedId)) {
         this.#ctx.emitUpdate()
-        await this.#readHistory({ protocol, chainId, seedId, generation, notes: syncedNotes })
+        await this.#readHistory({
+          protocol,
+          chainId,
+          seedId,
+          generation,
+          notes: syncedNotes,
+          lastSyncedAt
+        })
       }
     } catch (error: any) {
       // Still not on this device: the next sync reads it again
@@ -330,25 +383,34 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
    * Reads the account's history on the chain right after its notes, from the plugin that read
    * them, as of that sync. Even if the registry has dropped it since (see `markChainSynced`): a
    * new plugin knows none of the account's deposits until it syncs. A failure keeps the notes, and
-   * the history read before. Never rejects.
+   * the history read before. Not kept once a newer sync has read the notes, which reads the
+   * history itself while a screen shows it. Never rejects.
    */
   async #readHistory({
     protocol,
     chainId,
     seedId,
     generation,
-    notes
+    notes,
+    lastSyncedAt
   }: {
     protocol: PrivacyPoolsV1Protocol
     chainId: string
     seedId: string
     generation: number
     notes: PrivacyPoolsNote[]
+    /** Of the sync that read `notes`. */
+    lastSyncedAt: number
   }): Promise<void> {
+    const isNewerSynced = () =>
+      this.#accountStates[seedId]?.[chainId]?.lastSyncedAt !== lastSyncedAt
+
     try {
       // Not synced again: the notes have just synced it, so the history matches them and a
       // deposit it lists is under review exactly when its note is pending
       const events = await protocol.history(undefined, { sync: false })
+      if (isNewerSynced()) return
+
       const pendingLabels = new Set(
         notes.filter(({ approval }) => approval === 'pending').map(({ label }) => label)
       )
@@ -366,6 +428,8 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
         level: 'silent',
         error: error instanceof Error ? error : new Error('privacyPools: history read failed')
       })
+      if (isNewerSynced()) return
+
       this.#writeAccountState(seedId, chainId, generation, {
         historyError: 'Could not load your activity on this network. Please try again.'
       })

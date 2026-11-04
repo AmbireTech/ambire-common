@@ -572,8 +572,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Opens a screen's page of the selected account's history, or moves it to another page or
-   * network. Syncs the networks shown whose history their last sync did not read, as it is read
-   * only along with a sync's notes. The page arrives in `history`. The screen closes it with
+   * network. Reads the history of the networks shown whose last sync did not read it, without
+   * syncing them again unless their current plugin has not synced - see
+   * `PrivacyPoolsHistory.load`. The page arrives in `history`. The screen closes it with
    * `resetHistoryFilters`.
    */
   async filterHistory(

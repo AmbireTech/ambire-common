@@ -99,8 +99,9 @@ export class PrivacyPoolsHistory {
   }
 
   /**
-   * Syncs the networks the filters show whose history their last sync did not read, as it is read
-   * only along with a sync's notes. Rejects when a sync fails.
+   * Reads the history of the networks the filters show whose last sync did not read it, from their
+   * current plugin. Syncs a network only when that plugin has not synced the account's notes, as a
+   * new one knows none of its deposits. Rejects when a sync fails.
    */
   async load(seedId: string, filters: PrivacyPoolsHistoryFilters): Promise<void> {
     await Promise.all(
@@ -110,6 +111,9 @@ export class PrivacyPoolsHistory {
 
         const state = this.#sync.getAccountChainStates(seedId)[chainId]
         if (state?.history && state.isHistoryCurrent) return
+
+        // Not a sync, so the balances are not shown as loading again
+        if (await this.#sync.readHistoryWithoutSync(chainId, seedId)) return
 
         await this.#syncChain(chainId)
       })
