@@ -13,6 +13,7 @@ import {
   LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
 import { PRIVACY_POOLS_SIGNING_KEY_PATH } from '../../consts/privacyPools'
+import { Account } from '../../interfaces/account'
 import { ExternalKey, IKeystoreController, InternalKey } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -25,7 +26,8 @@ const uiManager = mockUiManager().uiManager
 
 let keystore: IKeystoreController
 const pass = 'hoiHoi'
-const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
+// LedgerSigner stands in for any hardware wallet: keys of a type without a signer are unsupported
+const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner, trezor: LedgerSigner }
 
 const privKey = stripHexPrefix(
   getPrivateKeyFromSeed(process.env.SEED, null, 5, BIP44_STANDARD_DERIVATION_TEMPLATE)
@@ -1276,5 +1278,135 @@ describe('KeystoreController updateUnknownKeyDeviceModel', () => {
 
     expect(keystoreCtrl.keys).toHaveLength(1)
     expect(getDeviceModel(ledgerAddr, 'ledger')).toBe('unknown')
+  })
+})
+
+describe('KeystoreController keys this device cannot sign with', () => {
+  const latticeAddr = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+  let storageCtrl: StorageController
+  let keystoreCtrl: KeystoreController
+
+  const externalKey = (addr: string, type: ExternalKey['type']): ExternalKey => ({
+    addr,
+    type,
+    dedicatedToOneSA: false,
+    label: `${type} key`,
+    meta: {
+      deviceId: '1',
+      deviceModel: type,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      index: 1,
+      createdAt: new Date().getTime()
+    }
+  })
+
+  const makeKeystore = () =>
+    new KeystoreController(
+      'default',
+      storageCtrl,
+      // Like a device with no GridPlus support
+      { internal: InternalSigner, ledger: LedgerSigner },
+      new UiController({ uiManager })
+    )
+
+  beforeEach(async () => {
+    storageCtrl = new StorageController(produceMemoryStore())
+    keystoreCtrl = makeKeystore()
+    await keystoreCtrl.addSecret('password', pass, '', false)
+    await keystoreCtrl.unlockWithSecret('password', pass)
+    await keystoreCtrl.addKeysExternallyStored([
+      externalKey(keyPublicAddress, 'ledger'),
+      externalKey(keyPublicAddress, 'lattice'),
+      externalKey(latticeAddr, 'lattice')
+    ])
+    await keystoreCtrl.addKeys([
+      {
+        addr: keyPublicAddress,
+        label: 'Key 1',
+        type: 'internal',
+        privateKey: privKey,
+        dedicatedToOneSA: false,
+        meta: { createdAt: new Date().getTime() }
+      }
+    ])
+  })
+
+  test('supports exactly the key types it has a signer for', () => {
+    expect(keystoreCtrl.supportedKeyTypes).toEqual(['internal', 'ledger'])
+  })
+
+  test('keeps keys of other types apart from the ones it can sign with', () => {
+    expect(keystoreCtrl.keys.map((k) => k.type).sort()).toEqual(['internal', 'ledger'])
+    expect(keystoreCtrl.unsupportedKeys).toEqual([
+      expect.objectContaining({ addr: keyPublicAddress, type: 'lattice' }),
+      expect.objectContaining({ addr: latticeAddr, type: 'lattice' })
+    ])
+    // Both reach the UI
+    const json = keystoreCtrl.toJSON()
+    expect(json.unsupportedKeys).toHaveLength(2)
+    expect(json.supportedKeyTypes).toEqual(['internal', 'ledger'])
+  })
+
+  test('treats an account with only unsupported keys as having no keys', () => {
+    const account = { associatedKeys: [latticeAddr] } as Account
+
+    expect(keystoreCtrl.getAccountKeys(account)).toEqual([])
+  })
+
+  test('never signs with an unsupported key', async () => {
+    await expect(keystoreCtrl.getSigner(latticeAddr, 'lattice')).rejects.toThrow(
+      'keystore: unsupported signer type'
+    )
+  })
+
+  test('deletes a key, keeping the other keys with the same address', async () => {
+    await keystoreCtrl.deleteKey(keyPublicAddress, 'ledger')
+
+    expect(keystoreCtrl.keys.map((k) => k.type)).toEqual(['internal'])
+    expect(keystoreCtrl.unsupportedKeys).toHaveLength(2)
+    expect(keystoreCtrl.statuses.deleteKey).toBe('INITIAL')
+  })
+
+  test('deletes an unsupported key and persists the removal', async () => {
+    await keystoreCtrl.deleteKey(latticeAddr, 'lattice')
+    expect(keystoreCtrl.unsupportedKeys).toEqual([
+      expect.objectContaining({ addr: keyPublicAddress, type: 'lattice' })
+    ])
+
+    // Read back from storage by a fresh controller
+    const reloadedCtrl = makeKeystore()
+    await reloadedCtrl.unlockWithSecret('password', pass)
+    expect(reloadedCtrl.unsupportedKeys).toEqual([
+      expect.objectContaining({ addr: keyPublicAddress, type: 'lattice' })
+    ])
+    expect(reloadedCtrl.keys).toHaveLength(2)
+  })
+
+  describe('Negative cases', () => {
+    suppressConsoleBeforeEach()
+
+    test('emits an error and removes nothing when the key does not exist', async () => {
+      const errors: string[] = []
+      const unsubscribe = keystoreCtrl.onError((error) => errors.push(error.message))
+
+      await keystoreCtrl.deleteKey(latticeAddr, 'ledger')
+      unsubscribe()
+
+      expect(errors).toHaveLength(1)
+      expect(keystoreCtrl.keys).toHaveLength(2)
+      expect(keystoreCtrl.unsupportedKeys).toHaveLength(2)
+    })
+
+    test('emits an error and removes nothing while locked', async () => {
+      keystoreCtrl.lock()
+      const errors: string[] = []
+      const unsubscribe = keystoreCtrl.onError((error) => errors.push(error.message))
+
+      await keystoreCtrl.deleteKey(latticeAddr, 'lattice')
+      unsubscribe()
+
+      expect(errors).toHaveLength(1)
+      expect(keystoreCtrl.unsupportedKeys).toHaveLength(2)
+    })
   })
 })

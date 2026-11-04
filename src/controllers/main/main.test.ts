@@ -890,6 +890,75 @@ describe('Main Controller ', () => {
     })
   })
 
+  describe('deleteKey', () => {
+    const wallet = Wallet.createRandom()
+    const otherAddr = '0x1111111111111111111111111111111111111111'
+    const getAccount = (addr: string, associatedKeys: string[]) => ({
+      addr,
+      associatedKeys,
+      initialPrivileges: [],
+      creation: accounts[0]!.creation,
+      preferences: { label: DEFAULT_ACCOUNT_LABEL, pfp: addr }
+    })
+
+    const makeWithKey = async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', [
+          getAccount(wallet.address, [wallet.address]),
+          getAccount(otherAddr, [otherAddr])
+        ])
+      })
+      await mainCtrl.initialLoadPromise
+      await mainCtrl.keystore.addSecret('password', 'password', '', true)
+      await mainCtrl.keystore.addKeys([
+        {
+          addr: wallet.address,
+          label: 'Key 1',
+          type: 'internal',
+          privateKey: wallet.privateKey,
+          dedicatedToOneSA: false,
+          meta: { createdAt: Date.now() }
+        }
+      ])
+      const [key] = mainCtrl.keystore.keys
+      // Only the account that counted the key has it in its state
+      mainCtrl.accounts.accountStates = {
+        [wallet.address]: { '1': { importedAccountKeys: [key] } as unknown as AccountOnchainState }
+      }
+      const updateAccountState = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+
+      return { mainCtrl, updateAccountState, sendUiMessage }
+    }
+
+    test('removes the key, replies to the UI and reloads only the accounts that had it', async () => {
+      const { mainCtrl, updateAccountState, sendUiMessage } = await makeWithKey()
+
+      const isRemoved = await mainCtrl.deleteKey(wallet.address, 'internal', 'request-1')
+
+      expect(isRemoved).toBe(true)
+      expect(mainCtrl.keystore.keys).toHaveLength(0)
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-1', ok: true, res: true })
+      expect(updateAccountState).toHaveBeenCalledTimes(1)
+      expect(updateAccountState).toHaveBeenCalledWith(wallet.address, 'latest', [], true)
+    })
+
+    test('replies false and reloads nothing when the key does not exist', async () => {
+      const { mainCtrl, updateAccountState, sendUiMessage } = await makeWithKey()
+      const { restore } = suppressConsole()
+
+      const isRemoved = await mainCtrl.deleteKey(otherAddr, 'internal', 'request-2')
+      restore()
+
+      expect(isRemoved).toBe(false)
+      expect(mainCtrl.keystore.keys).toHaveLength(1)
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-2', ok: true, res: false })
+      expect(updateAccountState).not.toHaveBeenCalled()
+    })
+  })
+
   describe('updateAccounts', () => {
     const getAccount = (addr: string) => ({
       addr,
