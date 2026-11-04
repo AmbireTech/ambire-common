@@ -1079,6 +1079,37 @@ describe('Main Controller ', () => {
       expect(scheduleUpdateSpy).not.toHaveBeenCalled()
     })
 
+    test('should tell Privacy Pools about every op that got its outcome, even when nothing else needs an update', async () => {
+      const mainCtrl = await setupController()
+      const finalizedOp = {
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+      const finalizedOnPrivacyPoolsSpy = jest
+        .spyOn(mainCtrl.privacyPools, 'onAccountOpFinalized')
+        .mockImplementation(() => {})
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: false,
+          chainsToUpdate: [],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [finalizedOp]
+        }
+      })
+
+      await mainCtrl.updateAccountsOpsStatuses()
+
+      expect(finalizedOnPrivacyPoolsSpy.mock.calls).toEqual([[finalizedOp]])
+    })
+
     test('removes the safs of the Safe on the same chain when an internal deployment fails', async () => {
       const mainCtrl = await setupController()
       const rejectSafRequestsSpy = jest
@@ -1726,6 +1757,28 @@ describe('Main Controller ', () => {
       const [storedAccountOp] = jest.mocked(mainCtrl.activity.addAccountOp).mock.calls[0]!
       expect(storedAccountOp.meta).not.toHaveProperty('quote')
       expect(storedAccountOp.meta?.swapTxn?.activeRouteId).toBe(SIGNED_ROUTE_ID)
+    })
+  })
+
+  describe('pending transactions told to Privacy Pools', () => {
+    test('are the broadcast ones of every account and those of the calls requests, and no other request', async () => {
+      const { mainCtrl } = await makeMainController()
+      const broadcastOps = [
+        { id: 'op-1', chainId: 1n, calls: [] },
+        { id: 'op-2', chainId: 10n, calls: [] }
+      ]
+      const requestedAccountOp = { id: 'op-3', chainId: 1n, calls: [] }
+      jest.spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get').mockReturnValue({
+        [accounts[0]!.addr]: [broadcastOps[0]],
+        [accounts[1]!.addr]: [broadcastOps[1]]
+      } as any)
+      mainCtrl.requests.userRequests = [
+        { id: 1, kind: 'calls', signAccountOp: { accountOp: requestedAccountOp } },
+        { id: 2, kind: 'dappConnect' }
+      ] as any
+
+      // @ts-expect-error protected, called directly to test what Privacy Pools is given
+      expect(mainCtrl.getPendingAccountOps()).toEqual([...broadcastOps, requestedAccountOp])
     })
   })
 
