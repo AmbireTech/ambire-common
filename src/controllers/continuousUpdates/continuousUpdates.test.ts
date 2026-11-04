@@ -220,7 +220,7 @@ describe('ContinuousUpdatesController intervals', () => {
     jest
       .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
       .mockReturnValue(Object.fromEntries(mainCtrl.accounts.accounts.map((a) => [a.addr, []])))
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.activity.emitUpdate()
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.stop).toHaveBeenCalled()
@@ -341,27 +341,27 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
       initialFnExecutionsCount
     )
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
 
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout)
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
 
     expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
       initialFnExecutionsCount + 1
     )
-    // @ts-expect-error
+    // @ts-expect-error no-desc no-desc
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
 
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout)
@@ -474,7 +474,13 @@ describe('ContinuousUpdatesController intervals', () => {
       const { mainCtrl } = await prepareTest()
       await waitForContinuousUpdatesCtrlReady(mainCtrl)
 
-      mainCtrl.selectedAccount.account = { ...accounts[2]!, safeCreation }
+      const safeAccount = { ...accounts[2]!, safeCreation }
+      // The stored account is made a Safe too, as every accounts update replaces the selected
+      // account with the stored one, which would stop the checks after the first one
+      mainCtrl.accounts.accounts = mainCtrl.accounts.accounts.map((account) =>
+        account.addr === SAFE_ADDR ? safeAccount : account
+      )
+      mainCtrl.selectedAccount.account = safeAccount
       // opening a view fetches the pending Safe txns too, which is not under test here
       jest.spyOn(mainCtrl, 'fetchSafeTxns').mockResolvedValue()
       const isUnlockedSpy = jest.spyOn(mainCtrl.keystore, 'isUnlocked', 'get').mockReturnValue(true)
@@ -491,7 +497,9 @@ describe('ContinuousUpdatesController intervals', () => {
       ]
       const getMessagesByHashSpy = jest
         .spyOn(mainCtrl.safe, 'getMessagesByHash')
-        .mockResolvedValue([{ messageHash: '0x01', confirmations: [{}], isConfirmed: false } as any])
+        .mockResolvedValue([
+          { messageHash: '0x01', confirmations: [{}], isConfirmed: false } as any
+        ])
 
       return {
         mainCtrl,
