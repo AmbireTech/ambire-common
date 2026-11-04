@@ -1857,6 +1857,8 @@ export class MainController extends EventEmitter implements IMainController {
    * request batch. For `PrivacyPoolsController`, which holds back a deposit while one is pending.
    */
   protected getPendingAccountOps() {
+    // An unsigned deposit already holds the next precommitment, which stays the same until a sync
+    // shows the deposit. A second deposit built meanwhile would reuse it and fail onchain.
     const requestedAccountOps = this.requests.userRequests.flatMap((request) =>
       request.kind === 'calls' ? [request.signAccountOp.accountOp] : []
     )
