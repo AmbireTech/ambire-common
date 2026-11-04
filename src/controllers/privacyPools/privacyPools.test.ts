@@ -641,6 +641,10 @@ const flush = () =>
 const getHeldAmounts = (controller: PrivacyPoolsController) =>
   (controller.balances['1'] || []).map(({ totalAmount }) => totalAmount)
 
+/** The selected account's row of a token on Ethereum, native by default. */
+const getBalance = (controller: PrivacyPoolsController, tokenAddress = ZERO_ADDRESS) =>
+  controller.balances['1']?.find((balance) => balance.tokenAddress === tokenAddress)
+
 const WAIT_UNTIL_TIMEOUT_MS = 5000
 
 /**
@@ -744,6 +748,8 @@ const prepareTest = async ({
 }
 
 const ONE_ETH = 10n ** 18n
+/** What a deposit of `ONE_ETH` becomes in the pool, after the 50 basis points the fake entrypoint keeps. */
+const ONE_ETH_AFTER_VETTING_FEE = ONE_ETH - (ONE_ETH * 50n) / 10_000n
 
 const buildDeposit = (
   controller: PrivacyPoolsController,
@@ -794,7 +800,10 @@ const syncRound = async (
 
 /** The note a deposit into seed-b creates, once it lands. */
 const landDeposit = () => {
-  notesBySeed['seed-b'] = [...notesBySeed['seed-b']!, { label: 3n, amount: 5n, approved: false }]
+  notesBySeed['seed-b'] = [
+    ...notesBySeed['seed-b']!,
+    { label: 3n, amount: ONE_ETH_AFTER_VETTING_FEE, approved: false }
+  ]
 }
 
 /** Tells the controller a transaction got its outcome. */
@@ -1542,7 +1551,7 @@ describe('PrivacyPoolsController', () => {
       await waitUntil(() => !controller.hasSyncWatches)
 
       selectedAccount.select('seed-b')
-      expect(getHeldAmounts(controller)).toEqual([25n])
+      expect(getHeldAmounts(controller)).toEqual([20n + ONE_ETH_AFTER_VETTING_FEE])
     })
 
     it('reads again until the change shows, and holds back the next deposit until then', async () => {
@@ -1561,7 +1570,7 @@ describe('PrivacyPoolsController', () => {
       await syncRound(controller)
 
       expect(controller.hasSyncWatches).toBe(false)
-      expect(getHeldAmounts(controller)).toEqual([25n])
+      expect(getHeldAmounts(controller)).toEqual([20n + ONE_ETH_AFTER_VETTING_FEE])
       await expect(buildDeposit(controller)).resolves.toHaveLength(1)
     })
 
@@ -1641,7 +1650,7 @@ describe('PrivacyPoolsController', () => {
       landDeposit()
       await releaseSync('seed-b')
       await waitUntil(() => !controller.hasSyncWatches)
-      expect(getHeldAmounts(controller)).toEqual([25n])
+      expect(getHeldAmounts(controller)).toEqual([20n + ONE_ETH_AFTER_VETTING_FEE])
     })
 
     it('gives the watch its full time again when another change is sent to the account', async () => {
@@ -1754,6 +1763,194 @@ describe('PrivacyPoolsController', () => {
       expect(controller.hasSyncWatches).toBe(true)
       await syncRound(controller)
       expect(controller.hasSyncWatches).toBe(false)
+    })
+
+    describe('the amounts shown while a change is on its way', () => {
+      // The vetting fee of 50 basis points on this is 25000.005, which the entrypoint rounds down
+      const USDC_DEPOSIT = 5n * 10n ** 6n + 1n
+      const USDC_DEPOSIT_AFTER_VETTING_FEE = 4_975_001n
+
+      it('shows a deposit into an account that is not selected, with a row for a token it holds no notes of, until its notes land', async () => {
+        const { controller, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-a')
+        const building = buildDeposit(controller, { tokenAddress: USDC, amount: USDC_DEPOSIT })
+        await releaseSync('seed-b')
+        const calls = await building
+        controller.onAccountOpBroadcast({ chainId: 1n, calls })
+
+        // The selected account is not the one it goes to
+        expect(getBalance(controller, USDC)).toBeUndefined()
+
+        selectedAccount.select('seed-b')
+        expect(getBalance(controller, USDC)).toMatchObject({
+          totalAmount: 0n,
+          simulationAmount: USDC_DEPOSIT_AFTER_VETTING_FEE,
+          approvedAmountPostSimulation: 0n
+        })
+        expect(getBalance(controller)).toMatchObject({ totalAmount: 20n, simulationAmount: 0n })
+
+        notesBySeed['seed-b'] = [
+          ...notesBySeed['seed-b']!,
+          {
+            label: 3n,
+            amount: USDC_DEPOSIT_AFTER_VETTING_FEE,
+            approved: false,
+            assetAddress: BigInt(USDC)
+          }
+        ]
+        finalize(controller, calls)
+        await releaseSync('seed-b')
+        await waitUntil(() => !controller.hasSyncWatches)
+
+        expect(getBalance(controller, USDC)).toMatchObject({
+          totalAmount: USDC_DEPOSIT_AFTER_VETTING_FEE,
+          simulationAmount: 0n
+        })
+      })
+
+      it('does not count the deposit twice when a read shows its note before the transaction is finalized', async () => {
+        const { controller, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-b')
+        const calls = await buildAndBroadcastDeposit(controller)
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n,
+          simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+        })
+
+        landDeposit()
+        const reading = controller.syncChain('1')
+        await releaseSync('seed-b')
+        await reading
+
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n + ONE_ETH_AFTER_VETTING_FEE,
+          simulationAmount: 0n
+        })
+
+        finalize(controller, calls)
+        await releaseSync('seed-b')
+        await waitUntil(() => !controller.hasSyncWatches)
+        expect(getBalance(controller)).toMatchObject({ simulationAmount: 0n })
+      })
+
+      it.each([
+        ['failed', AccountOpStatus.Failure],
+        ['was rejected', AccountOpStatus.Rejected]
+      ])('stops showing a deposit whose transaction %s, and tells the UI', async (_, status) => {
+        const { controller, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-b')
+        const calls = await buildAndBroadcastDeposit(controller)
+        expect(getBalance(controller)).toMatchObject({
+          simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+        })
+        const onUpdate = jest.fn()
+        controller.onUpdate(onUpdate)
+
+        finalize(controller, calls, status)
+
+        expect(getBalance(controller)).toMatchObject({ totalAmount: 20n, simulationAmount: 0n })
+        expect(onUpdate).toHaveBeenCalled()
+        expect(controller.hasSyncWatches).toBe(false)
+        expect(runningSyncs).toHaveLength(0)
+      })
+
+      it('keeps showing a deposit whose transaction is not finished', async () => {
+        const { controller, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-b')
+        const calls = await buildAndBroadcastDeposit(controller)
+
+        finalize(controller, calls, AccountOpStatus.BroadcastedButNotConfirmed)
+
+        expect(getBalance(controller)).toMatchObject({
+          simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+        })
+      })
+
+      it('keeps showing a deposit while another token of the account changes, and drops it once its own total is reached', async () => {
+        const { controller, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-b')
+        const calls = await buildAndBroadcastDeposit(controller)
+        await finalizeAndRead(controller, calls)
+
+        // Another token's note shows first, which changes the notes but not what was waited for
+        notesBySeed['seed-b'] = [
+          ...notesBySeed['seed-b']!,
+          { label: 4n, amount: 7n, approved: true, assetAddress: BigInt(USDC) }
+        ]
+        await syncRound(controller)
+
+        expect(controller.hasSyncWatches).toBe(true)
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n,
+          simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+        })
+        expect(getBalance(controller, USDC)).toMatchObject({
+          totalAmount: 7n,
+          simulationAmount: 0n
+        })
+
+        landDeposit()
+        await syncRound(controller)
+
+        expect(controller.hasSyncWatches).toBe(false)
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n + ONE_ETH_AFTER_VETTING_FEE,
+          simulationAmount: 0n
+        })
+      })
+
+      it('shows a deposit that never lands until the watch gives up, then stops', async () => {
+        const { controller, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-b')
+        const calls = await buildAndBroadcastDeposit(controller)
+        const clock = mockClock()
+
+        try {
+          // Not counted before its transaction lands, however long it takes
+          clock.advance(10 * WATCH_MAX_DURATION_MS)
+          await syncRound(controller)
+          expect(getBalance(controller)).toMatchObject({
+            simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+          })
+
+          await finalizeAndRead(controller, calls)
+          clock.advance(WATCH_MAX_DURATION_MS - 1_000)
+          await syncRound(controller)
+          expect(getBalance(controller)).toMatchObject({
+            simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+          })
+
+          clock.advance(1_000)
+          const onUpdate = jest.fn()
+          controller.onUpdate(onUpdate)
+          await controller.syncInBackground()
+
+          expect(getBalance(controller)).toMatchObject({ simulationAmount: 0n })
+          expect(onUpdate).toHaveBeenCalled()
+          expect(controller.hasSyncWatches).toBe(false)
+        } finally {
+          clock.restore()
+        }
+      })
+
+      it('does not show a deposit after a lock, though it was broadcast before it', async () => {
+        const { controller, keystore, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-b')
+        await buildAndBroadcastDeposit(controller)
+        expect(getBalance(controller)).toMatchObject({
+          simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+        })
+
+        keystore.isUnlocked = false
+        keystore.fireUpdate()
+        keystore.isUnlocked = true
+        keystore.fireUpdate()
+        const reading = controller.syncChain('1')
+        await releaseSync('seed-b')
+        await reading
+
+        expect(getBalance(controller)).toMatchObject({ totalAmount: 20n, simulationAmount: 0n })
+      })
     })
 
     describe('the background round', () => {
@@ -2569,7 +2766,8 @@ describe('PrivacyPoolsController', () => {
 
     describe('reading the account after it was sent', () => {
       /** Reads the proved withdrawal's account, so there are notes to compare with after. */
-      const prepareReadWithdrawal = async () => {
+      const prepareReadWithdrawal = async (heldAmount = WITHDRAWAL_AMOUNT + 10n) => {
+        notesBySeed['seed-a'] = [{ label: 1n, amount: heldAmount, approved: true }]
         const test = await prepareSignedWithdrawal()
         const syncing = test.controller.syncChain('1')
         await releaseSync('seed-a')
@@ -2652,14 +2850,14 @@ describe('PrivacyPoolsController', () => {
         await releaseSync('seed-a')
         await broadcasting
         expect(controller.hasSyncWatches).toBe(true)
-        expect(getHeldAmounts(controller)).toEqual([10n])
+        expect(getHeldAmounts(controller)).toEqual([WITHDRAWAL_AMOUNT + 10n])
 
         // It lands: the spent note is gone and its change is left
-        notesBySeed['seed-a'] = [{ label: 7n, amount: 3n, approved: true }]
+        notesBySeed['seed-a'] = [{ label: 7n, amount: 10n, approved: true }]
         await syncRound(controller, [['seed-a']])
 
         expect(controller.hasSyncWatches).toBe(false)
-        expect(getHeldAmounts(controller)).toEqual([3n])
+        expect(getHeldAmounts(controller)).toEqual([10n])
         restore()
       })
 
@@ -2691,6 +2889,137 @@ describe('PrivacyPoolsController', () => {
         await broadcastUnreadWithdrawal(controller)
 
         await expect(buildDeposit(controller, { seedId: 'seed-a' })).rejects.toThrow(EmittableError)
+      })
+
+      describe('the amounts shown while it is on its way', () => {
+        it('shows the amount as gone from the approved balance until the notes show it', async () => {
+          const { controller } = await prepareReadWithdrawal()
+          expect(getBalance(controller)).toMatchObject({
+            approvedAmountPostSimulation: WITHDRAWAL_AMOUNT + 10n,
+            simulationAmount: 0n
+          })
+
+          await broadcastUnreadWithdrawal(controller)
+
+          // The notes still hold all of it
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: WITHDRAWAL_AMOUNT + 10n,
+            approvedAmount: WITHDRAWAL_AMOUNT + 10n,
+            simulationAmount: -WITHDRAWAL_AMOUNT,
+            approvedAmountPostSimulation: 10n
+          })
+
+          notesBySeed['seed-a'] = [{ label: 7n, amount: 10n, approved: true }]
+          await syncRound(controller, [['seed-a']])
+
+          expect(controller.hasSyncWatches).toBe(false)
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: 10n,
+            simulationAmount: 0n,
+            approvedAmountPostSimulation: 10n
+          })
+        })
+
+        it('shows two transfers sent one after the other, each until its own lands', async () => {
+          const { controller } = await prepareReadWithdrawal(2n * WITHDRAWAL_AMOUNT + 10n)
+          await broadcastUnreadWithdrawal(controller)
+          await controller.prepareWithdrawal({
+            chainId: '1',
+            tokenAddress: ZERO_ADDRESS,
+            amount: WITHDRAWAL_AMOUNT,
+            recipient: WITHDRAWAL_RECIPIENT
+          })
+          await broadcastUnreadWithdrawal(controller)
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: 2n * WITHDRAWAL_AMOUNT + 10n,
+            simulationAmount: -2n * WITHDRAWAL_AMOUNT,
+            approvedAmountPostSimulation: 10n
+          })
+
+          // The first lands: the second is still on its way, so the watch goes on
+          notesBySeed['seed-a'] = [{ label: 7n, amount: WITHDRAWAL_AMOUNT + 10n, approved: true }]
+          await syncRound(controller, [['seed-a']])
+
+          expect(controller.hasSyncWatches).toBe(true)
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: WITHDRAWAL_AMOUNT + 10n,
+            simulationAmount: -WITHDRAWAL_AMOUNT,
+            approvedAmountPostSimulation: 10n
+          })
+
+          notesBySeed['seed-a'] = [{ label: 8n, amount: 10n, approved: true }]
+          await syncRound(controller, [['seed-a']])
+
+          expect(controller.hasSyncWatches).toBe(false)
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: 10n,
+            simulationAmount: 0n,
+            approvedAmountPostSimulation: 10n
+          })
+        })
+
+        it('shows a transfer whose notes never change until the watch gives up, then stops', async () => {
+          const { controller } = await prepareReadWithdrawal()
+          const clock = mockClock()
+
+          try {
+            await broadcastUnreadWithdrawal(controller)
+
+            clock.advance(WATCH_MAX_DURATION_MS - 1_000)
+            await syncRound(controller, [['seed-a']])
+            expect(getBalance(controller)).toMatchObject({ simulationAmount: -WITHDRAWAL_AMOUNT })
+
+            clock.advance(1_000)
+            const onUpdate = jest.fn()
+            controller.onUpdate(onUpdate)
+            await controller.syncInBackground()
+
+            expect(getBalance(controller)).toMatchObject({
+              simulationAmount: 0n,
+              approvedAmountPostSimulation: WITHDRAWAL_AMOUNT + 10n
+            })
+            expect(onUpdate).toHaveBeenCalled()
+            expect(controller.hasSyncWatches).toBe(false)
+          } finally {
+            clock.restore()
+          }
+        })
+
+        it('keeps showing a transfer that could not be confirmed, as it may still land', async () => {
+          const { restore } = suppressConsole()
+          const { controller } = await prepareReadWithdrawal()
+          jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+            broadcast: async () => {
+              throw new Error('receipt wait timed out')
+            }
+          } as any)
+
+          const broadcasting = controller.broadcastWithdrawal()
+          await releaseSync('seed-a')
+          await broadcasting
+          restore()
+
+          expect(getBalance(controller)).toMatchObject({ simulationAmount: -WITHDRAWAL_AMOUNT })
+        })
+
+        it('does not show the transfer after a lock, though it was sent before it', async () => {
+          const { controller, keystore } = await prepareReadWithdrawal()
+          await broadcastUnreadWithdrawal(controller)
+
+          keystore.isUnlocked = false
+          keystore.fireUpdate()
+          keystore.isUnlocked = true
+          keystore.fireUpdate()
+          const reading = controller.syncChain('1')
+          await releaseSync('seed-a')
+          await reading
+
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: WITHDRAWAL_AMOUNT + 10n,
+            simulationAmount: 0n,
+            approvedAmountPostSimulation: WITHDRAWAL_AMOUNT + 10n
+          })
+        })
       })
     })
 
@@ -2782,6 +3111,25 @@ describe('PrivacyPoolsController', () => {
         // Shown in the sheet, not as a toast
         expect(getShownErrors(controller)).toHaveLength(shownErrors)
         await expectSentBackToPrepareAgain(controller)
+      })
+
+      it('does not count a transfer that was never sent because it had gone stale', async () => {
+        const { controller } = await prepareSignedWithdrawal()
+        const syncing = controller.syncChain('1')
+        await releaseSync('seed-a')
+        await syncing
+
+        now += RECHECK_AFTER_MS
+        latestBaseFee = 2n * 10n ** 9n
+        await controller.broadcastWithdrawal()
+
+        // Nothing left the account, so none of it shows as on its way
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 10n,
+          simulationAmount: 0n,
+          approvedAmountPostSimulation: 10n
+        })
+        expect(controller.hasSyncWatches).toBe(false)
       })
 
       it('does not send an older one that would now fail, as over a root that moved on', async () => {
@@ -4055,6 +4403,44 @@ describe('PrivacyPoolsController', () => {
       await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).resolves.toEqual([
         { label: 6n, amount: 60n, depositorAddr: OTHER_DEPOSITOR }
       ])
+    })
+
+    it('shows the reclaimed deposit as leaving the pending balance, and leaves the approved one alone, until it lands', async () => {
+      const { controller } = await prepareSynced()
+      const { calls } = await buildRagequitAfterSync(controller, 3n)
+      expect(getBalance(controller)).toMatchObject({
+        totalAmount: 100n,
+        approvedAmount: 10n,
+        pendingAmount: 90n
+      })
+
+      controller.onAccountOpBroadcast({ chainId: 1n, calls })
+
+      expect(getBalance(controller)).toMatchObject({
+        totalAmount: 100n,
+        simulationAmount: -30n,
+        approvedAmountPostSimulation: 10n
+      })
+
+      notesBySeed['seed-a'] = notesBySeed['seed-a']!.map((note) =>
+        note.label === 3n ? { ...note, amount: 0n } : note
+      )
+      finalize(controller, calls)
+      await releaseSync('seed-a')
+      await waitUntil(() => !controller.hasSyncWatches)
+
+      expect(getBalance(controller)).toMatchObject({ totalAmount: 70n, simulationAmount: 0n })
+    })
+
+    it('stops showing a reclaim whose transaction failed', async () => {
+      const { controller } = await prepareSynced()
+      const { calls } = await buildRagequitAfterSync(controller, 3n)
+      controller.onAccountOpBroadcast({ chainId: 1n, calls })
+      expect(getBalance(controller)).toMatchObject({ simulationAmount: -30n })
+
+      finalize(controller, calls, AccountOpStatus.Failure)
+
+      expect(getBalance(controller)).toMatchObject({ totalAmount: 100n, simulationAmount: 0n })
     })
 
     it('does not read the account when the reclaim failed', async () => {
