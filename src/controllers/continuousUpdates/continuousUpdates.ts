@@ -7,6 +7,7 @@ import {
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
+  PRIVACY_POOLS_WATCH_SYNC_INTERVAL,
   TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
   TRENDING_TOKENS_FAILED_UPDATE_INTERVAL,
   TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
@@ -83,6 +84,15 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   #trendingTokensFailedRetries = 0
 
+  #privacyPoolsSyncInterval: IRecurringTimeout
+
+  get privacyPoolsSyncInterval() {
+    return this.#privacyPoolsSyncInterval
+  }
+
+  /** The timeout `#privacyPoolsSyncInterval` runs with, or null while it is stopped. */
+  #privacyPoolsSyncTimeout: number | null = null
+
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
 
@@ -116,6 +126,8 @@ export class ContinuousUpdatesController extends EventEmitter {
     )
 
     this.#main.ui.uiEvent.on('addView', () => {
+      this.#updatePrivacyPoolsSyncInterval()
+
       if (this.#main.ui.views.length === 1) {
         this.#updatePortfolioInterval.restart({
           timeout: ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
@@ -124,6 +136,8 @@ export class ContinuousUpdatesController extends EventEmitter {
       }
     })
     this.#main.ui.uiEvent.on('removeView', () => {
+      this.#updatePrivacyPoolsSyncInterval()
+
       // Don't restart the timeout of the extension is locked to not overwrite the longer timeout set on lock
       // How it could happen: the user locks the extension manually and closes the popup
       if (!this.#main.ui.views.length && this.#main.keystore.isUnlocked) {
@@ -203,6 +217,19 @@ export class ContinuousUpdatesController extends EventEmitter {
       }
     })
 
+    // Syncs the Privacy Pools accounts: often while a deposit, withdrawal or ragequit is waiting to
+    // show in the notes, and from time to time while the selected account is a Privacy Pools one
+    // and a view is open. Stopped on lock and when there is nothing to do.
+    this.#privacyPoolsSyncInterval = new RecurringTimeout(
+      this.#syncPrivacyPools.bind(this),
+      PRIVACY_POOLS_WATCH_SYNC_INTERVAL,
+      this.emitError.bind(this),
+      'privacyPoolsSyncInterval'
+    )
+    // Also runs on a selected account change and on keystore updates, as the controller
+    // propagates those
+    this.#main.privacyPools.onUpdate(this.#updatePrivacyPoolsSyncInterval, 'continuous-update')
+
     this.#main.swapAndBridge.onUpdate(() => {
       if (this.#main.swapAndBridge.signAccountOpController?.broadcastStatus === 'SUCCESS') {
         this.#accountStateLatestInterval.restart()
@@ -264,6 +291,42 @@ export class ContinuousUpdatesController extends EventEmitter {
     this.#safeGlobalTxnInterval.start()
     this.#safeGlobalMessageInterval.start()
     this.#updateTrendingTokensInterval.start({ runImmediately: true })
+    this.#updatePrivacyPoolsSyncInterval()
+  }
+
+  async #syncPrivacyPools() {
+    await this.initialLoadPromise
+
+    await this.#main.privacyPools.syncInBackground()
+  }
+
+  /** How often the Privacy Pools accounts are synced right now, or null when they should not be. */
+  #getPrivacyPoolsSyncTimeout(): number | null {
+    if (!this.#main.keystore.isUnlocked) return null
+    if (this.#main.privacyPools.hasSyncWatches) return PRIVACY_POOLS_WATCH_SYNC_INTERVAL
+
+    const isPrivacyPoolsAccountOpen =
+      !!this.#main.ui.views.length && this.#main.selectedAccount.selectedType === 'privacyPools'
+
+    return isPrivacyPoolsAccountOpen ? ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL : null
+  }
+
+  /**
+   * Starts, restarts or stops the Privacy Pools sync timer, only when what it should do changed:
+   * it runs on every update of the controllers it listens to, and a restart each time would keep
+   * the timer from ever firing.
+   */
+  #updatePrivacyPoolsSyncInterval = () => {
+    const timeout = this.#getPrivacyPoolsSyncTimeout()
+    if (timeout === this.#privacyPoolsSyncTimeout) return
+
+    this.#privacyPoolsSyncTimeout = timeout
+    if (timeout === null) {
+      this.#privacyPoolsSyncInterval.stop()
+      return
+    }
+
+    this.#privacyPoolsSyncInterval.restart({ timeout })
   }
 
   async #updatePortfolio() {

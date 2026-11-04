@@ -34,3 +34,6 @@ export const SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL = 20 * 1000 // 20 secon
 // How long a scheduled portfolio update waits before the runner executes it, giving the
 // discovery API time to index the defi position changes caused by the transaction
 export const SCHEDULED_PORTFOLIO_UPDATE_DELAY = 60 * 1000 // 1 minute
+// How often a Privacy Pools account is synced while a deposit, withdrawal or ragequit is waiting
+// to show in its notes
+export const PRIVACY_POOLS_WATCH_SYNC_INTERVAL = 10 * 1000 // 10 seconds
