@@ -3495,6 +3495,30 @@ describe('PrivacyPoolsController', () => {
       ])
     })
 
+    it('reads the deposit again with a sync of its own, not one that read the notes while proving', async () => {
+      const { controller, protocol } = await prepareSynced()
+      // A screen shows the history, so a sync reads it after the notes
+      await controller.filterHistory('dashboard')
+      ragequitGate = createDeferred()
+      const building = buildRagequit(controller, 3n)
+      await waitUntil(() => protocol.ragequitLabels.length === 1)
+
+      // Started while proving, and reading the history when the proof is done
+      historyGate = createDeferred()
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await waitUntil(() => protocol.historyCount === 2)
+      ragequitGate.resolve()
+      await flush()
+      historyGate.resolve()
+      await syncing
+
+      // The read once it is proved
+      await releaseSync('seed-a')
+      await expect(building).resolves.toMatchObject({ accountAddr: DEPOSITOR })
+      expect(protocol.syncCount).toBe(3)
+    })
+
     it('refuses a deposit taken back elsewhere once it was proved', async () => {
       const { controller } = await prepareSynced()
       // Proved from what the SDK's sync read, then taken back before the deposit is read again
