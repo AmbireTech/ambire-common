@@ -5,7 +5,10 @@ import { getPrivacyPoolsDepositAsset, toPrivacyPoolsAssetAddress } from '../../c
 import { PrivacyPoolsDepositAssetConfig } from '../../interfaces/privacyPools'
 import { Call } from '../../libs/accountOp/types'
 import { encodePrivacyPoolsDeposit, readPrivacyPoolsDeposit } from '../../libs/privacyPools/deposit'
-import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
+import {
+  getDepositAmountAfterVettingFee,
+  readEntrypointAssetConfig
+} from '../../libs/privacyPools/entrypointAssetConfig'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { PrivacyPoolsBuiltCalls } from './builtCalls'
 import {
@@ -102,7 +105,10 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     if (amount > asset.maxDeposit)
       throw privacyPoolsErrors.depositAboveMaximum(asset.maxDeposit, asset)
 
-    const { minimumDepositAmount, poolAddress } = await this.loadAssetConfig(chainId, tokenAddress)
+    const { minimumDepositAmount, poolAddress, vettingFeeBPS } = await this.loadAssetConfig(
+      chainId,
+      tokenAddress
+    )
     if (amount < minimumDepositAmount)
       throw privacyPoolsErrors.depositBelowMinimum(minimumDepositAmount, asset)
 
@@ -125,7 +131,14 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
         precommitment
       })
     }
-    this.#builtCalls.add({ chainId, call: depositCall, seedId, kind: 'deposit' })
+    this.#builtCalls.add({
+      chainId,
+      call: depositCall,
+      seedId,
+      kind: 'deposit',
+      tokenAddress: asset.address,
+      amount: getDepositAmountAfterVettingFee(amount, vettingFeeBPS)
+    })
 
     if (asset.isNative) return [depositCall]
 

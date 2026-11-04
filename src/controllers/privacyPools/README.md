@@ -76,6 +76,17 @@ Updates are sent from one place, so the same rules hold for every module:
 - A method the controller calls from a subscription, or together with other changes, does not emit. Examples: `dropUnsent`, `dismiss`, the Send form's `clear`. At most it returns whether it changed anything, and the controller emits once. Subscription handlers pass updates on with `propagateUpdate(forceEmit)`.
 - `toJSON` spreads `...this`. That leaves out the `#` fields, so the modules (plugins, keystores, proofs) never reach the UI. Getters are listed explicitly. The test "state sent to the UI" pins the exact keys.
 
+## Amounts on their way
+
+Between sending a deposit, withdrawal or ragequit and a sync showing it, the notes do not say what is happening. `balances` therefore adds `simulationAmount` and `approvedAmountPostSimulation` to each token, named like the regular portfolio's. The first is the signed change of the total, which the UI shows as the amount the account will hold. The second is the approved part less what withdrawals on their way take out, so it is what can be sent now. A ragequit lowers the part being verified, which the notes show once it lands, so it leaves the approved part alone. They come from the expected changes in `watches.ts`, so a lock or the account's removal drops them with the watches.
+
+- **Recorded when sent.** `onAccountOpBroadcast` records one for a deposit or ragequit this wallet built, and `broadcastWithdrawal` for a withdrawal, before it is sent. The amount is saved when the call is built (`BuiltCall.amount`): a deposit's amount after the vetting fee, read from the entrypoint like the minimum deposit, or minus the whole deposit a ragequit takes back. A withdrawal's is the amount the proof spends, its fee included, as that is all of what leaves the notes.
+- **Not recorded while locked, or for a chain not read yet.** There is no total to compare with, so nothing could tell it landed. The watch still ends after its first read, as before.
+- **Shown until it lands.** Each holds the token's total at the time it was sent, plus the amounts of the changes of that token still open then. It ends once a sync of the account's chain shows that total, so two quick withdrawals each stay until their own lands. Changes of one token that land in another order than they were sent stay until the watch ends.
+- **Ends on failure.** A deposit or ragequit that did not land is dropped when its transaction ends (`onAccountOpFinalized`). A withdrawal that could not be confirmed is not: it may still land, so it stays until the watch ends.
+- **Time.** The 3 minutes count from when the watch starts. A deposit or ragequit has no watch until its transaction lands, so it waits for that for as long as it takes.
+- **The watch outlasts the first change.** A second change starts the watch over with a newer baseline, so a watch ends only when its notes changed and every change sent through it has shown, or when its time is up.
+
 ## Persistence
 
 - **The account list** is stored under `PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY`.
