@@ -240,6 +240,10 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       const protocol = await this.#registry.getProtocol(chainId, seedId)
       throwIfWithdrawalCancelled(signal)
 
+      // The roots the sync left unchecked must match the chain before anything is proved against
+      // them. Joins the tree build the sync started, if it still runs.
+      await untilWithdrawalCancelled(protocol.prepareProofTrees(), signal)
+
       // Checked by `isAddress` above
       const sdkRecipient = recipient as Hex
       // Prices gas, proves and signs the userOp. Always a batch (a batch of one equals a plain

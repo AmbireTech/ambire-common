@@ -120,7 +120,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /**
    * Per chain, its pools' numbers for a token's details, so they are there when it opens. The same
    * for every account, so they outlive a lock. Computed from this device's copy of the history
-   * after each sync of it, before the balances it reads show - see `PrivacyPoolsPoolStatsReader`.
+   * after each sync of it, once the balances it reads show - see `PrivacyPoolsPoolStatsReader`.
    * Not on load: a stored history is read only when the user opens a Privacy Pools account.
    */
   poolStats: { [chainId: string]: PrivacyPoolsChainPoolStats } = {}
@@ -211,7 +211,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#deposits = new PrivacyPoolsDeposits(ctx, this.#registry, this.#sync)
     this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
     this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync)
-    this.#poolStatsReader = new PrivacyPoolsPoolStatsReader(ctx)
+    this.#poolStatsReader = new PrivacyPoolsPoolStatsReader(ctx, storage)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
     this.#phraseScopedModules = [this.#withdrawal, this.#deposits, this.#sync, this.#registry]
 
@@ -240,8 +240,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Recomputes a chain's pool numbers from its history on this device. Does not emit: a sync
-   * emits once it is done. Never rejects.
+   * Recomputes a chain's pool numbers from its history on this device, which can take seconds the
+   * first time. Emits when it sets them, as no sync waits for it. Never rejects.
    */
   async #refreshPoolStats(chainId: string): Promise<void> {
     const refreshId = (this.#poolStatsRefreshIds[chainId] || 0) + 1
@@ -249,11 +249,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     const isLatest = () => this.#poolStatsRefreshIds[chainId] === refreshId
 
     try {
+      const t = Date.now() // PP_TIMING
       const byToken = await this.#poolStatsReader.read(chainId)
+      console.log(`PP_TIMING refreshPoolStats ${Date.now() - t} ms`) // PP_TIMING
       // Before the chain's first sync there is nothing to show yet, not an error
       if (!byToken || !isLatest()) return
 
       this.poolStats = { ...this.poolStats, [chainId]: { byToken, error: null } }
+      this.emitUpdate()
     } catch (error: any) {
       const emittableError = privacyPoolsErrors.poolStatsReadFailed(error)
       this.emitError(emittableError)
@@ -263,6 +266,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         ...this.poolStats,
         [chainId]: { byToken: {}, error: emittableError.message }
       }
+      this.emitUpdate()
     }
   }
 

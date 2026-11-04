@@ -10,8 +10,10 @@ import EmittableError from '../../classes/EmittableError'
 import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig,
-  getPrivacyPoolsStoreKey
+  getPrivacyPoolsStoreKey,
+  PRIVACY_POOLS_POOL_LABELS_STORAGE_KEY
 } from '../../consts/privacyPools'
+import { PrivacyPoolsStoredPoolLabels } from '../../interfaces/privacyPools'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -19,12 +21,13 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IUiController, View } from '../../interfaces/ui'
 import { IrCall } from '../../libs/humanizer/interfaces'
-import { getPrivacyPoolsPoolLabels } from '../../libs/privacyPools/poolStats'
+import * as poolStatsLib from '../../libs/privacyPools/poolStats'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
+import { PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsController } from './privacyPools'
 
 /**
@@ -301,6 +304,10 @@ let storedPoolState: string | null = null
 let ragequitTxns: { to: string; data: string; value: bigint }[] | null = null
 /** Holds `ragequit` until the test releases it, when set. */
 let ragequitGate: Deferred | null = null
+/** Holds `prepareProofTrees` until the test releases it, when set. */
+let proofTreesGate: Deferred | null = null
+/** What `prepareProofTrees` throws, when set, as when a root does not match the chain. */
+let proofTreesFailure: Error | null = null
 /** What `prepareUnshield` returns, or null for it to fail like proving did. */
 let preparedWithdrawal: ReturnType<typeof buildPreparedWithdrawal> | null = null
 /** What `prepareUnshield` throws instead, when set - the SDK's thunks throw plain objects, not `Error`s. */
@@ -355,6 +362,15 @@ class FakeProtocol {
         getPrivacyPoolsStoreKey(config),
         storedPoolState ?? toStoredPoolState()
       )
+  }
+
+  prepareProofTreesCount = 0
+
+  // The real one builds the trees a sync skips and checks their roots on chain
+  async prepareProofTrees() {
+    this.prepareProofTreesCount += 1
+    if (proofTreesGate) await proofTreesGate.promise
+    if (proofTreesFailure) throw proofTreesFailure
   }
 
   ragequitLabels: bigint[][] = []
@@ -713,6 +729,8 @@ describe('PrivacyPoolsController', () => {
     storedPoolState = null
     ragequitTxns = null
     ragequitGate = null
+    proofTreesGate = null
+    proofTreesFailure = null
   })
 
   describe('accounts', () => {
@@ -1092,6 +1110,58 @@ describe('PrivacyPoolsController', () => {
       expect(getHeldAmounts(controller)).toEqual([])
       expect(controller.chains['1']?.lastSyncedAt).toBeNull()
       expect(controller.chains['1']?.syncStatus).toBe('idle')
+    })
+
+    it('shows the balance before the trees are checked, then checks them', async () => {
+      proofTreesGate = createDeferred()
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+
+      const [protocol] = protocols
+      // Else every sync hashes every leaf of every pool itself
+      expect(protocol?.params.verifyRootsOnSync).toBe(false)
+      expect(controller.chains['1']?.syncStatus).toBe('ready')
+      expect(getHeldAmounts(controller)).toEqual([10n])
+      expect(protocol?.prepareProofTreesCount).toBe(1)
+      proofTreesGate.resolve()
+    })
+
+    it('reports a failed tree check without failing the sync', async () => {
+      proofTreesFailure = new Error('State root verification failed')
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+      await waitUntil(() =>
+        controller.emittedErrors.some((e) => e.error.message === 'State root verification failed')
+      )
+
+      expect(controller.emittedErrors.at(-1)?.level).toBe('silent')
+      expect(controller.chains['1']).toMatchObject({ syncStatus: 'ready', error: null })
+      expect(getHeldAmounts(controller)).toEqual([10n])
+    })
+
+    it('does not report a tree check that fails after a lock', async () => {
+      proofTreesGate = createDeferred()
+      proofTreesFailure = new Error('State root verification failed')
+      const { controller, keystore, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      proofTreesGate.resolve()
+      await flush()
+
+      expect(controller.emittedErrors).toHaveLength(0)
     })
 
     it('does not write notes for an account removed while it was syncing', async () => {
@@ -1892,6 +1962,53 @@ describe('PrivacyPoolsController', () => {
       expect(protocol?.syncCountWhenProving).toBe(1)
       expect(protocol?.syncCount).toBe(1)
       expect(runningSyncs).toHaveLength(0)
+      restore()
+    })
+
+    it('checks the trees before proving', async () => {
+      const { restore } = suppressConsole()
+      proofTreesGate = createDeferred()
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const preparing = controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        amount: 10n ** 17n,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+      await waitUntil(() => protocols[0]?.prepareProofTreesCount === 1)
+      await flush()
+      const [protocol] = protocols
+      expect(protocol?.syncCountWhenProving).toBeNull()
+
+      proofTreesGate.resolve()
+      await preparing
+
+      expect(protocol?.syncCountWhenProving).toBe(0)
+      restore()
+    })
+
+    it('stops a transfer whose trees do not match the chain, before proving', async () => {
+      const { restore } = suppressConsole()
+      proofTreesFailure = new Error(
+        'State root verification failed: root not found in Pool recent history'
+      )
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      await controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        amount: 10n ** 17n,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+
+      expect(protocols[0]?.syncCountWhenProving).toBeNull()
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error: 'The transfer could not be prepared. Please try again.'
+      })
       restore()
     })
 
@@ -2970,11 +3087,28 @@ describe('PrivacyPoolsController', () => {
   describe("a pool's numbers", () => {
     const USDC_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
     // The ETH pool's first three deposits. It is the first pool, so it has the first scope
-    const [LABEL_1, , LABEL_3] = getPrivacyPoolsPoolLabels(FIRST_POOL_SCOPE, 1n, 3n) as [
-      bigint,
-      bigint,
-      bigint
-    ]
+    let LABEL_1: bigint
+    let LABEL_3: bigint
+    const ETH_POOL_KEY = `1:${ETHEREUM_ETH_POOL}`
+    const USDC_POOL_KEY = `1:${USDC_POOL}`
+
+    beforeAll(async () => {
+      const labels = await poolStatsLib.getPrivacyPoolsPoolLabels(FIRST_POOL_SCOPE, 1n, 3n)
+      LABEL_1 = labels[0]!
+      LABEL_3 = labels[2]!
+    })
+
+    // Restored one by one, as `restoreAllMocks` may also wipe the mocks this file builds once
+    const spies: { mockRestore: () => void }[] = []
+    const track = <T extends { mockRestore: () => void }>(spy: T): T => {
+      spies.push(spy)
+      return spy
+    }
+
+    afterEach(() => {
+      spies.splice(0).forEach((spy) => spy.mockRestore())
+    })
+
     /** The ETH pool's first `count` deposits of 100, 30 and 400, and one in the USDC pool. */
     const toEthPoolState = (count: number) =>
       toStoredPoolState({
@@ -2995,10 +3129,13 @@ describe('PrivacyPoolsController', () => {
       { controller, selectedAccount }: Awaited<ReturnType<typeof prepareTest>>,
       seedId: string
     ) => {
+      const statsBefore = controller.poolStats['1']
       selectedAccount.select(seedId)
       const syncing = controller.syncChain('1')
       await releaseSync(seedId)
       await syncing
+      // The numbers follow the balance, as nothing waits for them
+      await waitUntil(() => controller.poolStats['1'] !== statsBefore)
     }
 
     const prepareSynced = async () => {
@@ -3091,6 +3228,204 @@ describe('PrivacyPoolsController', () => {
         error: 'Could not load the numbers of this pool.'
       })
       expect(controller.emittedErrors.at(-1)?.level).toBe('silent')
+    })
+
+    it('shows the balance before the numbers, which then arrive with an update', async () => {
+      const labelsGate = createDeferred()
+      const deriveLabels = poolStatsLib.getPrivacyPoolsPoolLabels
+      track(jest.spyOn(poolStatsLib, 'getPrivacyPoolsPoolLabels')).mockImplementation(
+        async (...args) => {
+          await labelsGate.promise
+          return deriveLabels(...args)
+        }
+      )
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+      await flush()
+
+      expect(controller.chains['1']?.syncStatus).toBe('ready')
+      expect(getHeldAmounts(controller)).toEqual([10n])
+      expect(controller.poolStats).toEqual({})
+
+      const onUpdate = jest.fn()
+      controller.onUpdate(onUpdate)
+      labelsGate.resolve()
+      await waitUntil(() => !!controller.poolStats['1'])
+
+      expect(onUpdate).toHaveBeenCalled()
+    })
+
+    it('computes them even for a sync that finished after a lock', async () => {
+      const { controller, keystore, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const syncing = controller.syncChain('1')
+      const running = await takeRunningSync('seed-a', 1n)
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      running.gate.resolve()
+      await syncing
+      await waitUntil(() => !!controller.poolStats['1'])
+
+      expect(controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({ totalAmount: 490n })
+      expect(getHeldAmounts(controller)).toEqual([])
+    })
+
+    it('keeps the numbers of the latest refresh when an older one finishes after it', async () => {
+      const olderRead = createDeferred()
+      const stats = (totalAmount: bigint) => ({
+        [ZERO_ADDRESS]: {
+          totalAmount,
+          approvedDepositsCount: 0,
+          depositsCount24h: 0,
+          withdrawalsCount24h: 0
+        }
+      })
+      const read = track(jest.spyOn(PrivacyPoolsPoolStatsReader.prototype, 'read'))
+      read.mockImplementationOnce(async () => {
+        await olderRead.promise
+        return stats(1n)
+      })
+      read.mockImplementationOnce(async () => stats(2n))
+      const { controller, selectedAccount } = await prepareTest()
+
+      // The first sync's refresh is held while the second one's is not
+      selectedAccount.select('seed-a')
+      const firstSync = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await firstSync
+      selectedAccount.select('seed-b')
+      const secondSync = controller.syncChain('1')
+      await releaseSync('seed-b')
+      await secondSync
+      await waitUntil(() => controller.poolStats['1']?.byToken[ZERO_ADDRESS]?.totalAmount === 2n)
+      olderRead.resolve()
+      await flush()
+
+      expect(controller.poolStats['1']?.byToken[ZERO_ADDRESS]?.totalAmount).toBe(2n)
+    })
+
+    describe('the labels of the deposits', () => {
+      type StoredLabels = PrivacyPoolsStoredPoolLabels[string]
+
+      /** What is saved for a pool once it holds `count` labels. The sync does not wait for the write. */
+      const getStoredLabels = async (
+        storage: StorageController,
+        poolKey: string,
+        count: number
+      ): Promise<StoredLabels> => {
+        const readStored = async () =>
+          (await storage.get(PRIVACY_POOLS_POOL_LABELS_STORAGE_KEY, {}))[poolKey]
+        const isComplete = (stored?: StoredLabels) =>
+          poolStatsLib.decodePrivacyPoolsPoolLabels(stored?.labels)?.length === count
+        const deadline = Date.now() + WAIT_UNTIL_TIMEOUT_MS
+
+        let stored = await readStored()
+        while (!isComplete(stored) && Date.now() < deadline) {
+          await flush()
+          stored = await readStored()
+        }
+        if (!stored || !isComplete(stored))
+          throw new Error(`no ${count} labels saved for ${poolKey}`)
+
+        return stored
+      }
+
+      const spyOnDerivation = () => track(jest.spyOn(poolStatsLib, 'getPrivacyPoolsPoolLabels'))
+
+      it('are saved, and a restart derives only the deposits made since', async () => {
+        storedPoolState = toEthPoolState(2)
+        const first = await prepareSynced()
+        await getStoredLabels(first.storage, ETH_POOL_KEY, 2)
+
+        storedPoolState = toEthPoolState(3)
+        const derivation = spyOnDerivation()
+        const restarted = await prepareTest({ storage: first.storage })
+        await syncAs(restarted, 'seed-a')
+
+        // The ETH pool's third deposit is the only new one. The USDC pool's only deposit is known.
+        expect(derivation.mock.calls).toEqual([[FIRST_POOL_SCOPE, 3n, 3n]])
+        expect(restarted.controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({
+          approvedDepositsCount: 2
+        })
+        const stored = await getStoredLabels(first.storage, ETH_POOL_KEY, 3)
+        expect(poolStatsLib.decodePrivacyPoolsPoolLabels(stored.labels)).toEqual(
+          await poolStatsLib.getPrivacyPoolsPoolLabels(FIRST_POOL_SCOPE, 1n, 3n)
+        )
+      })
+
+      it('are not derived again by the next sync of the same run', async () => {
+        const prepared = await prepareSynced()
+        const derivation = spyOnDerivation()
+
+        await syncAs(prepared, 'seed-b')
+
+        expect(derivation).not.toHaveBeenCalled()
+      })
+
+      it.each([
+        ['of another scope', (stored: StoredLabels) => ({ ...stored, scope: '0x2a2a' })],
+        [
+          'more than the pool has deposits',
+          (stored: StoredLabels) => ({ ...stored, labels: stored.labels.repeat(2) })
+        ],
+        [
+          'not hex',
+          (stored: StoredLabels) => ({ ...stored, labels: 'z'.repeat(stored.labels.length) })
+        ],
+        [
+          'cut off mid label',
+          (stored: StoredLabels) => ({ ...stored, labels: stored.labels.slice(0, -5) })
+        ],
+        ['not a string', (stored: StoredLabels) => ({ ...stored, labels: 7 as any })]
+      ])('are derived again when the saved ones are %s', async (_, damage) => {
+        const first = await prepareSynced()
+        const stored = await getStoredLabels(first.storage, ETH_POOL_KEY, 3)
+        await first.storage.set(PRIVACY_POOLS_POOL_LABELS_STORAGE_KEY, {
+          [ETH_POOL_KEY]: damage(stored)
+        })
+
+        const restarted = await prepareTest({ storage: first.storage })
+        await syncAs(restarted, 'seed-a')
+
+        expect(restarted.controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({
+          totalAmount: 490n,
+          approvedDepositsCount: 2
+        })
+        expect(restarted.controller.emittedErrors.at(-1)?.level).toBe('silent')
+        // Saved right, for the next start
+        expect(await getStoredLabels(first.storage, ETH_POOL_KEY, 3)).toEqual(stored)
+      })
+
+      it('are saved one write at a time, none lost to another', async () => {
+        const storage = new StorageController(produceMemoryStore())
+        let inFlightWrites = 0
+        let mostInFlightWrites = 0
+        const set = storage.set.bind(storage)
+        track(jest.spyOn(storage, 'set')).mockImplementation(async (key, value) => {
+          if (key !== PRIVACY_POOLS_POOL_LABELS_STORAGE_KEY) return set(key, value)
+
+          inFlightWrites += 1
+          mostInFlightWrites = Math.max(mostInFlightWrites, inFlightWrites)
+          await new Promise((resolve) => {
+            setTimeout(resolve, 5)
+          })
+          await set(key, value)
+          inFlightWrites -= 1
+        })
+
+        const prepared = await prepareTest({ storage })
+        await syncAs(prepared, 'seed-a')
+        // The ETH pool and the USDC pool each have labels to save
+        await getStoredLabels(storage, ETH_POOL_KEY, 3)
+        await getStoredLabels(storage, USDC_POOL_KEY, 1)
+
+        expect(mostInFlightWrites).toBe(1)
+      })
     })
   })
 

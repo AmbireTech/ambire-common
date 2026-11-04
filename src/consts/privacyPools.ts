@@ -190,6 +190,9 @@ export const PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS = 15 * 1000
 /** Storage key holding the wallet's Privacy Pools accounts. */
 export const PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY = 'privacyPoolsAccounts'
 
+/** Storage key holding the labels derived for each pool's deposits. */
+export const PRIVACY_POOLS_POOL_LABELS_STORAGE_KEY = 'privacyPoolsPoolLabels'
+
 export const getPrivacyPoolsChainConfig = (chainId: bigint): PrivacyPoolsChainConfig | undefined =>
   PRIVACY_POOLS_CHAINS[chainId.toString()]
 
