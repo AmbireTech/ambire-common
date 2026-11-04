@@ -6,6 +6,8 @@ export type SafeOwnerApprovalUiMethod =
   | 'enableErc4337AndReestimate'
   | 'retry'
   | 'cancelSignReq'
+  | 'replacePendingAccountOp'
+  | 'stopReplacingPendingAccountOp'
 
 /** How waiting for a sent approval of a Safe smart account owner ended */
 export type SafeOwnerApprovalResult = {
