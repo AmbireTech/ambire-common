@@ -1,6 +1,11 @@
 export const PROXY_AMBIRE_ACCOUNT = '0x0F2AA7bcda3d9D210dF69a394b6965CB2566c828'
 export const AMBIRE_ACCOUNT_FACTORY = '0x26cE6745A633030A6faC5e64e41D21fb6246dc2d'
-export const AMBIRE_PAYMASTER = '0xA8B267C68715FA1Dca055993149f30217B572Cf0'
+/**
+ * The only paymaster the relayer signs for. Unlike the previous one
+ * (0xA8B267C68715FA1Dca055993149f30217B572Cf0), it signs paymasterVerificationGasLimit
+ * and paymasterPostOpGasLimit, so they can't be changed after the relayer signs
+ */
+export const AMBIRE_PAYMASTER = '0xBB928A44c681f57fb5fE7C13e6D1e014d92a1251'
 export const AMBIRE_PAYMASTER_SIGNER = '0x39f1B4be409F2DFC8FCB84C1196537728df727f3'
 export const ERC_4337_ENTRYPOINT = '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
 export const ENTRY_POINT_MARKER =
