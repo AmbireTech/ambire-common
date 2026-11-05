@@ -1,21 +1,23 @@
 import { toBeHex, Wallet } from 'ethers'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import * as uiHelpers from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { MAX_UINT256 } from '../../consts/deploy'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   DERIVATION_OPTIONS,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
-import { Account } from '../../interfaces/account'
+import { Account, AccountOnchainState } from '../../interfaces/account'
 import { isSmartAccount } from '../../libs/account/account'
+import * as accountStateLib from '../../libs/accountState/accountState'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import wait from '../../utils/wait'
-import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountPicker'
+import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE, USED_ON_NETWORK_CHECK_TIMEOUT_MS } from './accountPicker'
 
 const key1to11BasicAccPublicAddresses = Array.from(
   { length: 11 },
@@ -319,6 +321,85 @@ describe('AccountPicker', () => {
     expect(controller.isInitialized).toBe(false)
     expect(controller.smartAccountsLoading).toBe(false)
     expect(controller.accountsOnPage).toHaveLength(0)
+  })
+
+  describe('when a network never answers whether the accounts were used on it', () => {
+    const UNRESPONSIVE_CHAIN_ID = 1n
+    const never = <T>() => new Promise<T>(() => {})
+    // Partial on purpose: the used on check reads only these fields
+    const getUsedAccountState = (accountAddr: string) =>
+      ({
+        accountAddr,
+        balance: 1n,
+        isEOA: true,
+        nonce: 0n,
+        eoaNonce: 0n,
+        erc4337Nonce: MAX_UINT256,
+        isDeployed: false
+      }) as AccountOnchainState
+
+    const prepareUsedOnTest = async () => {
+      const { controller } = await prepareTest()
+      jest
+        .spyOn(accountStateLib, 'getAccountState')
+        .mockImplementation(async (_provider, network, accounts) =>
+          network.chainId === UNRESPONSIVE_CHAIN_ID
+            ? never()
+            : accounts.map((acc) => getUsedAccountState(acc.addr))
+        )
+
+      await controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        pageSize: 1,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        shouldGetAccountsUsedOnNetworks: true,
+        shouldSearchForLinkedAccounts: false,
+        shouldSelectNextAccountAutomatically: false
+      })
+      await controller.init()
+      // Only after the setup, which needs the real timers to finish
+      jest.useFakeTimers()
+
+      return { controller }
+    }
+
+    afterEach(() => {
+      jest.useRealTimers()
+      jest.restoreAllMocks()
+    })
+
+    test('should stop waiting for it and list it as a network that could not be checked', async () => {
+      const { controller } = await prepareUsedOnTest()
+
+      const setPagePromise = controller.setPage({ page: 1 })
+      await jest.advanceTimersByTimeAsync(USED_ON_NETWORK_CHECK_TIMEOUT_MS)
+      await setPagePromise
+
+      expect(controller.networksWithAccountStateError).toEqual([UNRESPONSIVE_CHAIN_ID])
+      expect(controller.accountsOnPage.length).toBeGreaterThan(0)
+      controller.accountsOnPage.forEach(({ account }) => {
+        // The networks that answered are kept
+        expect(account.usedOnNetworks?.length).toBeGreaterThan(0)
+        expect(account.usedOnNetworks?.map((n) => n.chainId)).not.toContain(UNRESPONSIVE_CHAIN_ID)
+      })
+    })
+
+    test('should keep waiting for it until the timeout', async () => {
+      const { controller } = await prepareUsedOnTest()
+
+      const setPagePromise = controller.setPage({ page: 1 })
+      await jest.advanceTimersByTimeAsync(USED_ON_NETWORK_CHECK_TIMEOUT_MS - 1)
+
+      expect(controller.networksWithAccountStateError).toEqual([])
+      expect(controller.accountsOnPage.length).toBeGreaterThan(0)
+      // Still loading - neither the networks it was used on, nor `null` (not requested)
+      controller.accountsOnPage.forEach(({ account }) => {
+        expect(account.usedOnNetworks).toBeUndefined()
+      })
+
+      await jest.advanceTimersByTimeAsync(1)
+      await setPagePromise
+    })
   })
 
   describe('initIfNotStarted', () => {
