@@ -99,8 +99,31 @@ contract AmbireAccountState {
                 accountResult[i].deployErr = err;
                 continue;
             }
+
+            // v1 keys are added and removed on each chain on its own, so the keys
+            // we get from the relayer may not be able to sign for the account on this chain
+            if (!accountResult[i].isV2 && !accountResult[i].isEOA) {
+                try this.getPrivilegedKeys(account.addr, account.associatedKeys) returns (address[] memory privilegedKeys) {
+                    accountResult[i].associatedKeys = privilegedKeys;
+                } catch (bytes memory) {}
+            }
         }
         return accountResult;
+    }
+
+    function getPrivilegedKeys(address acc, address[] memory keys) external view returns (address[] memory privilegedKeys) {
+        uint privilegedCount = 0;
+        for (uint i=0; i!=keys.length; i++) {
+            if (IAmbireAccount(acc).privileges(keys[i]) != bytes32(0)) privilegedCount++;
+        }
+
+        privilegedKeys = new address[](privilegedCount);
+        uint j = 0;
+        for (uint i=0; i!=keys.length; i++) {
+            if (IAmbireAccount(acc).privileges(keys[i]) == bytes32(0)) continue;
+            privilegedKeys[j] = keys[i];
+            j++;
+        }
     }
 
     function gatherAmbireData(AccountInput memory account) external view returns (uint nonce, bool isV2, bool isErc4337Enabled) {

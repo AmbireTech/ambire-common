@@ -10,6 +10,20 @@ export const SAFE_NETWORKS = [
 
 export const SAFE_API_TIMEOUT_MS = 15000
 
+/**
+ * Shown when importing an address that has a contract on chain, but the contract is not a Safe
+ * account (e.g. an older Gnosis MultiSigWallet).
+ */
+export const NOT_A_SAFE_ACCOUNT_MESSAGE =
+  "This address either isn't a Safe account, or it's a custom, old Gnosis Safe that isn't supported by Ambire."
+
+/**
+ * Shown when the details of a Safe account couldn't be loaded for a reason that may be temporary,
+ * so trying again may work.
+ */
+export const SAFE_INFO_FETCH_FAILED_MESSAGE =
+  'Failed to retrieve information about the Safe. Please try again'
+
 export const SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE =
   "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
 

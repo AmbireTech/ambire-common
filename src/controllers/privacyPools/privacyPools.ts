@@ -18,6 +18,8 @@ import {
   PrivacyPoolsChainPoolStats,
   PrivacyPoolsChainState,
   PrivacyPoolsDepositAssetConfig,
+  PrivacyPoolsHistoryFilters,
+  PrivacyPoolsHistorySession,
   PrivacyPoolsOperation,
   PrivacyPoolsRagequitDeposit,
   PrivacyPoolsSendForm,
@@ -36,10 +38,12 @@ import {
   PrivacyPoolsProverFactory,
   withCancellableProving
 } from '../../libs/privacyPools/prover'
+import { Pagination } from '../../utils/paginate'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { LockGeneration, PhraseScopedModule, PrivacyPoolsContext } from './context'
 import { PrivacyPoolsDepositParams, PrivacyPoolsDeposits } from './deposits'
 import { privacyPoolsErrors } from './errors'
+import { PrivacyPoolsHistory } from './history'
 import { PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsRagequit } from './ragequit'
@@ -56,9 +60,9 @@ const SYNC_MAX_AGE_MS = 10 * 60 * 1000
  * Privacy Pools state: one plugin per (chain, recovery phrase) and its notes. Scoped by phrase, as note secrets are derived from it - accounts without one (hardware,
  * private key, view-only) cannot use Privacy Pools.
  *
- * The work is done by modules (plugins, sync, deposits, withdrawal, Send form) holding their own
- * state. This stays the only `EventEmitter`: it checks what is available, wires the modules
- * together and reports their state to the UI. See `PrivacyPoolsContext`.
+ * The work is done by modules (plugins, sync, history, deposits, withdrawal, Send form) holding
+ * their own state. This stays the only `EventEmitter`: it checks what is available, wires the
+ * modules together and reports their state to the UI. See `PrivacyPoolsContext`.
  */
 export class PrivacyPoolsController extends EventEmitter implements IPrivacyPoolsController {
   #keystore: IKeystoreController
@@ -98,6 +102,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #poolStatsRefreshIds: { [chainId: string]: number } = {}
 
   #sendForm: PrivacyPoolsSendFormState
+
+  #history: PrivacyPoolsHistory
 
   /** In teardown order: a withdrawal being proved is cancelled before its plugin is dropped. */
   #phraseScopedModules: PhraseScopedModule[]
@@ -205,14 +211,22 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     )
 
     this.#registry = new PrivacyPoolsProtocolRegistry(ctx, cancellableProverFactory)
-    this.#sync = new PrivacyPoolsSync(ctx, this.#registry, (chainId) =>
-      this.#refreshPoolStats(chainId)
+    this.#sync = new PrivacyPoolsSync(
+      ctx,
+      this.#registry,
+      (chainId) => this.#refreshPoolStats(chainId),
+      // Read when a sync asks, by which time the history module exists
+      (seedId) => this.#history.hasSessions() && seedId === this.#getSelectedSeedId()
     )
     this.#deposits = new PrivacyPoolsDeposits(ctx, this.#registry, this.#sync)
     this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
     this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync)
     this.#poolStatsReader = new PrivacyPoolsPoolStatsReader(ctx)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
+    this.#history = new PrivacyPoolsHistory(ctx, this.#sync, {
+      getSupportedChainIds: () => this.supportedChainIds,
+      syncChain: (chainId) => this.syncChain(chainId)
+    })
     this.#phraseScopedModules = [this.#withdrawal, this.#deposits, this.#sync, this.#registry]
 
     this.#ui.uiEvent.on('updateView', this.#onUpdateView)
@@ -403,6 +417,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     )
   }
 
+  /**
+   * The selected account's history, one page per screen showing it. Read only while a screen shows
+   * it, along with each sync - see `filterHistory`.
+   */
+  get history(): { [sessionId: string]: PrivacyPoolsHistorySession } {
+    return this.#history.getSessions(this.#getSelectedSeedId())
+  }
+
   /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase), read once. */
   get depositAssetConfigs(): { [key: string]: PrivacyPoolsDepositAssetConfig } {
     return this.#deposits.assetConfigs
@@ -548,6 +570,41 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
   }
 
+  /**
+   * Opens a screen's page of the selected account's history, or moves it to another page or
+   * network. Reads the history of the networks shown whose last sync did not read it, without
+   * syncing them again unless their current plugin has not synced - see
+   * `PrivacyPoolsHistory.load`. The page arrives in `history`. The screen closes it with
+   * `resetHistoryFilters`.
+   */
+  async filterHistory(
+    sessionId: string,
+    filters?: PrivacyPoolsHistoryFilters,
+    pagination?: Pagination
+  ): Promise<void> {
+    this.#history.open(sessionId, filters, pagination)
+
+    await this.#loadHistory(filters)
+  }
+
+  /** Closes a screen's page of the history. Syncs stop reading it once no screen shows it. */
+  resetHistoryFilters(sessionId: string) {
+    this.#history.close(sessionId)
+  }
+
+  async #loadHistory(filters: PrivacyPoolsHistoryFilters = {}) {
+    const seedId = this.#getSelectedSeedId()
+    if (!seedId || !this.isAvailableForSelectedAccount) return
+    // Like `syncIfStale`: the first read waits for the phrase to be backed up
+    if (this.#keystore.seeds.find(({ id }) => id === seedId)?.notBackedUp) return
+
+    try {
+      await this.#history.load(seedId, filters)
+    } catch (error: any) {
+      this.#emitSyncError(error)
+    }
+  }
+
   #emitSyncError(error: any) {
     if (error instanceof EmittableError) {
       this.emitError(error)
@@ -658,7 +715,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Sends the signed withdrawal to the bundler and waits for it. Syncs either way, as a userOp can
-   * land after the receipt wait gives up.
+   * land after the receipt wait gives up, and reads the history along with it.
    */
   async broadcastWithdrawal(): Promise<void> {
     // `operation`, so another phrase's cannot be sent
@@ -674,6 +731,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     // Picks up the spent note and its change note
     await this.syncChain(operation.chainId)
+
+    // Even with no screen showing it, so the activity lists the transfer once opened. Of the
+    // account the sync read, which may no longer be the sender's if switched meanwhile.
+    const syncedSeedId = this.#getSelectedSeedId()
+    if (syncedSeedId) await this.#sync.readHistoryWithoutSync(operation.chainId, syncedSeedId)
   }
 
   /**
@@ -836,6 +898,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       hasSyncedAnyChain: this.hasSyncedAnyChain,
       operation: this.operation,
       depositAssetConfigs: this.depositAssetConfigs,
+      history: this.history,
       sendForm: this.sendForm,
       sendFormResetCounter: this.sendFormResetCounter,
       hasPersistedSendForm: this.hasPersistedSendForm

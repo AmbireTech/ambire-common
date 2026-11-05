@@ -118,7 +118,11 @@ export class PrivacyPoolsRagequit {
 
     // The SDK synced before proving, so the deposit may have been verified since our last sync.
     // It would then go back publicly although it could be sent privately, so it is read again,
-    // through the queue so that read never runs beside another sync of the plugin
+    // through the queue so that read never runs beside another sync of the plugin. A sync running
+    // now may have read the notes before proving ended, and would be joined, so it is waited for
+    await (this.#sync.getRunningSync(seedId, chainId) || Promise.resolve())
+    this.#assertSecretsHeld(seedId, generation)
+    // With no await from here to the queue, so it reads the notes from now on
     const epoch = this.#sync.getEpoch(chainId, seedId)
     await this.#sync.queue(chainId, seedId)
     this.#assertSecretsHeld(seedId, generation)

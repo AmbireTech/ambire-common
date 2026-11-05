@@ -7,6 +7,7 @@ import {
   id,
   Interface,
   keccak256,
+  makeError,
   solidityPacked,
   ZeroAddress,
   zeroPadValue
@@ -25,6 +26,7 @@ import {
   getSafeAccountByOwner,
   getSafeDeploymentCall,
   hasCompleteSafeCreationData,
+  isSafeContract,
   normalizeSafeGlobalMessage,
   toCallsUserRequest
 } from './safe'
@@ -100,6 +102,54 @@ const getSafeCreationInfo = (): SafeCreationInfoResponse => ({
 const createApi = (owners: string[] = [OWNER]) => ({
   getSafeCreationInfo: jest.fn(async () => getSafeCreationInfo()),
   getSafeInfo: jest.fn(async () => getSafeInfo(owners))
+})
+
+describe('isSafeContract', () => {
+  const getThresholdData = new Interface([
+    'function getThreshold() view returns (uint256)'
+  ]).encodeFunctionData('getThreshold')
+  const createProvider = (call: () => Promise<string>) =>
+    ({ call: jest.fn(call) }) as unknown as RPCProvider
+
+  test('returns true when the contract answers getThreshold()', async () => {
+    const provider = createProvider(async () => new AbiCoder().encode(['uint256'], [2]))
+
+    await expect(isSafeContract(SAFE_ADDRESS, provider)).resolves.toBe(true)
+    expect(provider.call).toHaveBeenCalledWith(
+      expect.objectContaining({ data: getThresholdData })
+    )
+  })
+
+  test('returns false when the contract has no getThreshold() and returns no data', async () => {
+    // e.g. an older Gnosis MultiSigWallet, whose fallback accepts any call and returns nothing
+    const provider = createProvider(async () => '0x')
+
+    await expect(isSafeContract(SAFE_ADDRESS, provider)).resolves.toBe(false)
+  })
+
+  test('returns false when the getThreshold() call reverts', async () => {
+    const provider = createProvider(async () => {
+      throw makeError('execution reverted', 'CALL_EXCEPTION', {
+        action: 'call',
+        data: '0x',
+        reason: null,
+        transaction: { to: SAFE_ADDRESS, data: getThresholdData },
+        invocation: null,
+        revert: null
+      })
+    })
+
+    await expect(isSafeContract(SAFE_ADDRESS, provider)).resolves.toBe(false)
+  })
+
+  test('throws when the network request fails, instead of claiming it is not a Safe', async () => {
+    const networkError = new Error('fetch failed')
+    const provider = createProvider(async () => {
+      throw networkError
+    })
+
+    await expect(isSafeContract(SAFE_ADDRESS, provider)).rejects.toBe(networkError)
+  })
 })
 
 describe('Safe deployment data', () => {

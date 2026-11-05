@@ -154,7 +154,8 @@ describe('validateSendTransferAddress - address poisoning', () => {
   const addressPoisoningMatch: AddressPoisoningMatch = {
     matchedAddress: POISONING_LOOKALIKE,
     matchedPrefixCharsCount: 36,
-    matchedSuffixCharsCount: 0
+    matchedSuffixCharsCount: 0,
+    differingCharsCount: 4
   }
 
   it('warns about the look-alike address and requires a hold', () => {
@@ -201,6 +202,19 @@ describe('validateSendTransferAddress - address poisoning', () => {
 
     expect(result.message).toBe(BLACKLISTED_MESSAGE)
     expect(result.severity).toBe('error')
+  })
+
+  it('suggests a typo instead of poisoning when only a few characters differ', () => {
+    const result = validate({
+      addressPoisoningMatch: { ...addressPoisoningMatch, differingCharsCount: 1 },
+      isRecipientAddressFirstTimeSend: true
+    })
+
+    expect(result.severity).toBe('warning')
+    expect(result.message).toBe(
+      'Looks like a typo: only 1 character differs from an address you have sent to before.'
+    )
+    expect(result.shouldHold).toBe(true)
   })
 
   it('does not require a hold when there is no poisoning match', () => {
