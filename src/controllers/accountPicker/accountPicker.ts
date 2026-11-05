@@ -48,7 +48,6 @@ import { getRelayerLinkedAccounts } from '../../libs/accountPicker/accountPicker
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const DEFAULT_PAGE = 1
@@ -56,13 +55,6 @@ export const DEFAULT_PAGE_SIZE = 1
 const DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS = true
 const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true
 const DEFAULT_SHOULD_SELECT_NEXT_ACCOUNT_AUTOMATICALLY = true
-/**
- * How long to wait for each network to tell whether the accounts were used on it.
- * A network that does not answer in time is listed as one that could not be checked,
- * so a single unresponsive RPC can't keep the "used on" info of all accounts loading
- * for minutes (the default request timeout of ethers is 5 minutes per request).
- */
-export const USED_ON_NETWORK_CHECK_TIMEOUT_MS = 15000
 
 /** What adding the prepared accounts writes (see `addPreparedAccounts`). */
 export type PreparedAccounts = {
@@ -1395,9 +1387,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const provider = this.#providers.providers[chainId]
       if (!provider) return
 
-      const accountState = await withTimeout(
-        () => getAccountState(provider, network, accountsList, this.#keystore.keys),
-        { timeoutMs: USED_ON_NETWORK_CHECK_TIMEOUT_MS }
+      const accountState = await getAccountState(
+        provider,
+        network,
+        accountsList,
+        this.#keystore.keys
       ).catch(() => {
         if (this.page !== page) return
         if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
