@@ -87,7 +87,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '@/interfa
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
 import { IPortfolioController } from '@/interfaces/portfolio'
-import { IPrivacyPoolsController } from '@/interfaces/privacyPools'
+import { IPrivacyPoolsController, PreparePrivacyPoolsAccount } from '@/interfaces/privacyPools'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
 import { ISafeController } from '@/interfaces/safe'
@@ -505,7 +505,8 @@ export class MainController extends EventEmitter implements IMainController {
        * accounts via the AccountPickerController - for every flow, including the
        * ones without a key iterator (view-only, Safe, account JSON).
        */
-      onAddPreparedAccounts: this.#onAccountPickerSuccess.bind(this)
+      onAddPreparedAccounts: this.#onAccountPickerSuccess.bind(this),
+      onPreparePrivacyPoolsAccount: this.#preparePrivacyPoolsAccount.bind(this)
     })
     this.addressBook = new AddressBookController(
       this.storage,
@@ -830,7 +831,10 @@ export class MainController extends EventEmitter implements IMainController {
               fetch: this.fetch,
               featureFlags: this.featureFlags,
               sendUiMessage: this.ui.message.sendUiMessage,
-              onAddPreparedAccounts: async () => {}
+              onAddPreparedAccounts: async () => {},
+              onPreparePrivacyPoolsAccount: async () => {
+                throw new Error('main: the legacy seed migration adds no Privacy Pools account')
+              }
             }),
           this.keystore,
           async () => {
@@ -1065,78 +1069,91 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Adds the Privacy Pools account of a stored recovery phrase and selects it. A phrase whose
-   * passphrase isn't saved needs it, to save it or to keep the account's key. Replies to
-   * `requestId` once done, with `isWrongPassphrase` when the passphrase isn't the phrase's one.
+   * Prepares the Privacy Pools account a flow set up on the picker, for the personalize step:
+   * checks its stored recovery phrase can have one, or generates a new phrase as the temp seed -
+   * flagged as not backed up, so the UI asks for a backup: the only way to recover the funds.
+   * Nothing is written until the user proceeds (`addPreparedPrivacyPoolsAccount`).
    */
-  async addPrivacyPoolsAccount(
-    seedId: string,
-    {
-      seedPassphrase,
-      shouldSavePassphrase
-    }: { seedPassphrase?: string; shouldSavePassphrase?: boolean } = {},
-    requestId?: string
-  ) {
-    await this.initialLoadPromise
+  async #preparePrivacyPoolsAccount({
+    seedId,
+    extraEntropy,
+    signal
+  }: Parameters<PreparePrivacyPoolsAccount>[0]): ReturnType<PreparePrivacyPoolsAccount> {
+    await this.privacyPools.initialLoadPromise
+    const label = this.privacyPools.defaultAccountLabel
 
-    let isWrongPassphrase = false
+    if (seedId) {
+      await this.privacyPools.assertCanAddAccount(seedId)
+      return { isNewSeed: false, seedId, label }
+    }
+
+    // Left meanwhile - a phrase generated now could replace the temp seed of a flow started since
+    if (signal.aborted) return null
+    await this.keystore.generateTempSeed({ extraEntropy })
+    return { isNewSeed: true, label }
+  }
+
+  /**
+   * Adds the Privacy Pools account the personalize step shows, named `label`, and selects it -
+   * storing its new recovery phrase first, if it has one, or the account's key, if its phrase
+   * doesn't save its passphrase. Replies to `requestId` once done.
+   */
+  async addPreparedPrivacyPoolsAccount(label: string, requestId?: string) {
     let isAdded = false
     // Wrapped as a whole, so a refused account is shown to the user
     await this.withStatus(
       'selectAccount',
       async () => {
-        const seed = this.keystore.seeds.find(({ id }) => id === seedId)
-        if (seed?.isPassphraseNeeded) {
-          // Both check the passphrase before keeping anything
-          const isPassphraseKept =
-            !!seedPassphrase &&
-            (shouldSavePassphrase
-              ? await this.keystore.saveSeedPassphrase(seedId, seedPassphrase)
-              : await this.keystore.storePrivacyKey(seedId, 'privacyPools', seedPassphrase))
-          // Shown by the passphrase sheet, so not reported as an error
-          if (!isPassphraseKept) {
-            isWrongPassphrase = true
-            return
-          }
-        }
+        await this.initialLoadPromise
+
+        const toAdd = this.accountPicker.privacyPoolsAccountToAdd
+        if (!toAdd)
+          throw new EmittableError({
+            message: 'There is no account to add. Please go back and try again.',
+            level: 'major',
+            error: new Error('main: no prepared Privacy Pools account to add')
+          })
+
+        // The temp seed is gone once the keystore locks
+        const seedId = toAdd.isNewSeed ? await this.keystore.persistTempSeed() : toAdd.seedId
+        if (!seedId)
+          throw new EmittableError({
+            message:
+              'The new recovery phrase is no longer available. Please go back and try again.',
+            level: 'major',
+            error: new Error('main: the temp seed of the Privacy Pools account to add is gone')
+          })
+        if (toAdd.isNewSeed) this.accountPicker.onPrivacyPoolsAccountSeedStored(seedId)
+
+        // Checked by the picker already, so a mismatch means the phrase changed meanwhile
+        const seedPassphrase = this.accountPicker.getPrivacyPoolsSeedPassphrase()
+        if (
+          seedPassphrase &&
+          !(await this.keystore.storePrivacyKey(seedId, 'privacyPools', seedPassphrase))
+        )
+          throw new EmittableError({
+            message:
+              'The passphrase no longer matches the recovery phrase. Please go back and try again.',
+            level: 'major',
+            error: new Error('main: the passphrase of the Privacy Pools account to add is wrong')
+          })
 
         try {
-          await this.privacyPools.addAccount(seedId)
+          await this.privacyPools.addAccount(seedId, label.trim() || toAdd.label)
         } catch (error) {
           // Drops the key stored above, unless an account already uses it (a double submit)
           if (!this.#hasPrivacyPoolsAccount(seedId))
             await this.keystore.removePrivacyKey(seedId, 'privacyPools')
           throw error
         }
+        await this.accountPicker.reset()
         await this.#selectPrivacyPoolsAccount(seedId)
         isAdded = true
       },
       true
     )
 
-    this.#replyToRequest(
-      requestId,
-      isAdded || isWrongPassphrase ? undefined : 'Adding the Privacy Pools account failed',
-      { isWrongPassphrase }
-    )
-  }
-
-  /**
-   * Creates a recovery phrase with only a Privacy Pools account on it, and selects it. The phrase
-   * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
-   */
-  async addPrivacyPoolsAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
-    await this.initialLoadPromise
-
-    await this.withStatus(
-      'selectAccount',
-      async () => {
-        const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
-        await this.privacyPools.addAccount(seedId)
-        await this.#selectPrivacyPoolsAccount(seedId)
-      },
-      true
-    )
+    this.#replyToRequest(requestId, isAdded ? undefined : 'Adding the account failed')
   }
 
   async selectPrivacyPoolsAccount(seedId: string) {

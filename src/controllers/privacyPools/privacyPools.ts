@@ -807,16 +807,77 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return this.#ragequit.buildCalls({ seedId, chainId, label })
   }
 
-  /** Adds a stored phrase's Privacy Pools account. Nothing is derived or synced until opened. */
-  async addAccount(seedId: string): Promise<void> {
+  /** The name a new account gets until the user renames it, e.g. "Private account 2". */
+  get defaultAccountLabel() {
+    return `Private account ${this.accounts.length + 1}`
+  }
+
+  /** Throws when the phrase is gone or has an account already. */
+  async assertCanAddAccount(seedId: string): Promise<void> {
     await this.initialLoadPromise
 
     if (!this.#keystore.seeds.some((seed) => seed.id === seedId))
       throw privacyPoolsErrors.seedRemoved(seedId)
 
     if (this.#hasAccount(seedId)) throw privacyPoolsErrors.accountExists(seedId)
+  }
 
-    this.accounts = [...this.accounts, { seedId, createdAt: Date.now() }]
+  /** Adds a stored phrase's Privacy Pools account. Nothing is derived or synced until opened. */
+  async addAccount(seedId: string, label: string): Promise<void> {
+    await this.assertCanAddAccount(seedId)
+
+    this.accounts = [...this.accounts, { seedId, createdAt: Date.now(), label }]
+    this.emitUpdate()
+    await this.#persistAccounts()
+  }
+
+  /**
+   * Renames an account, keeping the name it has when `label` is empty. Replies to `requestId`
+   * once saved, so the rename sheet stays open until then.
+   */
+  async updateAccountLabel(seedId: string, label: string, requestId?: string): Promise<void> {
+    await this.initialLoadPromise
+
+    const trimmedLabel = label.trim()
+    if (!trimmedLabel || !this.#hasAccount(seedId)) {
+      const message = "Couldn't rename the account. Please try again."
+      // The rename sheet tells the user itself once it gets the reply
+      this.emitError({
+        level: requestId ? 'silent' : 'major',
+        message,
+        error: new Error('privacyPools: the account to rename is gone or the name is empty')
+      })
+      if (requestId) this.#ui.message.sendUiMessage({ requestId, ok: false, error: message })
+      return
+    }
+
+    this.accounts = this.accounts.map((account) =>
+      account.seedId === seedId ? { ...account, label: trimmedLabel } : account
+    )
+    this.emitUpdate()
+    await this.#persistAccounts()
+    if (requestId) this.#ui.message.sendUiMessage({ requestId, ok: true })
+  }
+
+  /** Moves an account to another place in the list. The wallet shows the accounts in this order. */
+  async reorderAccounts({ fromIndex, toIndex }: { fromIndex: number; toIndex: number }) {
+    await this.initialLoadPromise
+
+    const movedAccount = this.accounts[fromIndex]
+    if (!movedAccount || toIndex < 0 || toIndex >= this.accounts.length) {
+      this.emitError({
+        level: 'major',
+        message: "Couldn't reorder the accounts. Please reload the page and try again.",
+        error: new Error('privacyPools: the account to move or its new place is out of the list')
+      })
+      return
+    }
+
+    if (fromIndex === toIndex) return
+
+    const reorderedAccounts = this.accounts.filter((_, index) => index !== fromIndex)
+    reorderedAccounts.splice(toIndex, 0, movedAccount)
+    this.accounts = reorderedAccounts
     this.emitUpdate()
     await this.#persistAccounts()
   }
