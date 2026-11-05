@@ -41,14 +41,14 @@ const IMPERSONATION_TARGETS: ImpersonationTarget[] = [
   { name: 'Aave', domains: ['aave.com'] },
   { name: 'Lido', domains: ['lido.fi'] },
   { name: 'Curve', domains: ['curve.finance', 'curve.fi'], isCommonWord: true },
-  { name: 'PancakeSwap', domains: ['pancakeswap.finance'] },
+  { name: 'PancakeSwap', domains: ['pancakeswap.finance', 'pancakeswap.com', 'pancakeswap.info'] },
   { name: 'SushiSwap', domains: ['sushi.com'], aliases: ['Sushi'] },
   { name: 'Balancer', domains: ['balancer.fi'], isCommonWord: true },
   { name: 'Compound', domains: ['compound.xyz', 'compound.finance'], isCommonWord: true },
   { name: 'Pendle', domains: ['pendle.finance'] },
   { name: 'Morpho', domains: ['morpho.org'] },
   { name: 'GMX', domains: ['gmx.io'] },
-  { name: 'Hyperliquid', domains: ['hyperliquid.xyz'] },
+  { name: 'Hyperliquid', domains: ['hyperliquid.xyz', 'hyperliquid-testnet.xyz'] },
   { name: 'Stargate', domains: ['stargate.finance'], isCommonWord: true },
   { name: 'Across', domains: ['across.to'], isCommonWord: true },
   { name: 'CoW Swap', domains: ['cow.fi'], aliases: ['CoW Protocol'] },
@@ -56,17 +56,17 @@ const IMPERSONATION_TARGETS: ImpersonationTarget[] = [
   { name: 'ENS', domains: ['ens.domains'] },
   { name: 'Safe', domains: ['safe.global'], aliases: ['Safe{Wallet}'], isCommonWord: true },
   { name: 'Matcha', domains: ['matcha.xyz'], isCommonWord: true },
-  { name: 'Polymarket', domains: ['polymarket.com'] },
-  { name: 'Magic Eden', domains: ['magiceden.io'] },
+  { name: 'Polymarket', domains: ['polymarket.com', 'polymarket.us', 'polymarket.dev'] },
+  { name: 'Magic Eden', domains: ['magiceden.io', 'magiceden.us', 'magiceden.dev'] },
   { name: 'Ethena', domains: ['ethena.fi'] },
   { name: 'Rocket Pool', domains: ['rocketpool.net'] },
   { name: 'Convex', domains: ['convexfinance.com'], isCommonWord: true },
-  { name: 'Yearn', domains: ['yearn.fi'] },
+  { name: 'Yearn', domains: ['yearn.fi', 'yearn.finance'] },
   { name: 'KyberSwap', domains: ['kyberswap.com'] },
   { name: 'EigenLayer', domains: ['eigenlayer.xyz', 'eigencloud.xyz'] },
   { name: 'Arbitrum', domains: ['arbitrum.io', 'arbitrum.foundation'] },
   { name: 'Revoke', domains: ['revoke.cash'], aliases: ['Revoke.cash'], isCommonWord: true },
-  { name: 'Etherscan', domains: ['etherscan.io'] },
+  { name: 'Etherscan', domains: ['etherscan.io', 'etherscan.com'] },
   { name: 'MetaMask', domains: ['metamask.io'] },
   { name: 'Rabby', domains: ['rabby.io'] },
   { name: 'Ambire', domains: ['ambire.com'] }
@@ -272,6 +272,19 @@ const toLatinDomainLabel = (label: string): string => {
 }
 
 /**
+ * Only app domain names at least this long are looked for inside a longer word of the site's domain
+ * ("metamaskcrypto.vip", "wwwuniswap.com"), as shorter ones are often part of unrelated words
+ * ("morpho" - "morphology", "jumper" - "parajumpers").
+ */
+const MIN_LENGTH_FOR_CONTAINED_DOMAIN_MATCH = 7
+
+/**
+ * Shorter app domain names ("gmx", "ens", "cow") aren't looked for in subdomains, as they are
+ * commonly used there by unrelated sites.
+ */
+const MIN_LENGTH_FOR_SUBDOMAIN_MATCH = 4
+
+/**
  * Only domain names at least this long are matched when they differ by one character, as shorter
  * ones are one character away from too many unrelated apps (e.g. "thena" - "ethena",
  * "9inch" - "1inch", "pumper" - "jumper").
@@ -412,13 +425,42 @@ const findTargetByName = (targets: ImpersonationTarget[], siteName: string) => {
 const findTargetByDomain = (targets: ImpersonationTarget[], rootDomain: string) =>
   targets.find((target) => target.domains.includes(rootDomain))
 
-const findTargetByLookalikeDomain = (targets: ImpersonationTarget[], siteDomainName: string) =>
+/**
+ * Whether the site's domain name has the app's domain name glued to other words
+ * ("metamaskcrypto" for "metamask").
+ */
+const containsAppDomainName = (siteDomainName: string, appDomainName: string): boolean =>
+  appDomainName.length >= MIN_LENGTH_FOR_CONTAINED_DOMAIN_MATCH &&
+  siteDomainName.includes(appDomainName)
+
+/**
+ * Whether one of the site's subdomains is the app's domain name, alone or with words added
+ * ("uniswap.web3kit.space", "aave-claim.example.com", "claimuniswap.example.com").
+ */
+const isLookalikeSubdomain = (subdomainLabels: string[], appDomainName: string): boolean =>
+  subdomainLabels.some(
+    (label) =>
+      (appDomainName.length >= MIN_LENGTH_FOR_SUBDOMAIN_MATCH &&
+        label.split('-').includes(appDomainName)) ||
+      containsAppDomainName(label, appDomainName)
+  )
+
+const findTargetByLookalikeDomain = (
+  targets: ImpersonationTarget[],
+  siteDomainName: string,
+  siteSubdomainLabels: string[]
+) =>
   targets.find((target) =>
     target.domains.some((domain) => {
       const appDomainName = getDomainWithoutSuffix(domain)
+      if (!appDomainName) return false
+      if (isLookalikeDomainName(siteDomainName, appDomainName, !!target.isCommonWord)) return true
+      // Common words show up in unrelated domains and subdomains far too often
+      if (target.isCommonWord) return false
+
       return (
-        !!appDomainName &&
-        isLookalikeDomainName(siteDomainName, appDomainName, !!target.isCommonWord)
+        containsAppDomainName(siteDomainName, appDomainName) ||
+        isLookalikeSubdomain(siteSubdomainLabels, appDomainName)
       )
     })
   )
@@ -474,7 +516,8 @@ const toConnectedAppTargets = (connectedApps: ConnectedApp[]): ImpersonationTarg
  * The checks, from strongest to weakest signal:
  * 1. icon - the site's icon is loaded from the app's official domain
  * 2. name - the site calls itself by the app's name
- * 3. domain - the site's domain looks like the app's official domain
+ * 3. domain - the site's domain looks like the app's official domain, or has the app's name in it
+ *    (also in a subdomain, e.g. "uniswap.web3kit.space")
  *
  * Sites that are part of the app catalog are never flagged - the catalog follows the apps when
  * they move to a new domain. Neither are sites without a public domain (localhost, IP addresses),
@@ -506,7 +549,9 @@ const getImpersonation = ({
   // On shared hosting (e.g. "uniswap-claim.vercel.app") the site's own part of the domain is
   // compared, not the platform's ("vercel"). The official domain check below stays on the root
   // domain, so a site on a shared platform can never pass for the app itself.
-  const siteDomainName = getDomainWithoutSuffix(hostname, { allowPrivateDomains: true })
+  const { domainWithoutSuffix: siteDomainName, subdomain: siteSubdomain } = parse(hostname, {
+    allowPrivateDomains: true
+  })
   if (!siteRootDomain || !siteDomainName) return null
 
   // The hand-picked apps come first, so they win over a connected app with the same name
@@ -525,7 +570,12 @@ const getImpersonation = ({
 
   // Letters from other alphabets are replaced only for this comparison - a domain that equals an
   // official one only after replacing them ("uniswаp.org" with a cyrillic "а") is a lookalike
-  const targetByDomain = findTargetByLookalikeDomain(targets, toLatinDomainLabel(siteDomainName))
+  const siteSubdomainLabels = siteSubdomain ? siteSubdomain.split('.').map(toLatinDomainLabel) : []
+  const targetByDomain = findTargetByLookalikeDomain(
+    targets,
+    toLatinDomainLabel(siteDomainName),
+    siteSubdomainLabels
+  )
   if (targetByDomain) return toImpersonation(targetByDomain, 'domain')
 
   return null

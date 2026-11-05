@@ -262,6 +262,54 @@ describe('impersonation', () => {
       expect(check('uniswap.vercel.app', { name: 'Uniswap' })?.reason).toBe('name')
     })
 
+    it('does not flag the official domains apps redirect from', () => {
+      expect(check('etherscan.com', { name: 'Etherscan' })).toBeNull()
+      expect(check('pancakeswap.com', { name: 'PancakeSwap' })).toBeNull()
+      expect(check('yearn.finance', { name: 'Yearn' })).toBeNull()
+      expect(check('polymarket.us', { name: 'Polymarket' })).toBeNull()
+      expect(check('app.hyperliquid-testnet.xyz', { name: 'Hyperliquid' })).toBeNull()
+    })
+
+    it('flags a domain with the app name glued to other words', () => {
+      expect(check('metamaskcrypto.vip')?.appName).toBe('MetaMask')
+      expect(check('wwwuniswap.com')?.appName).toBe('Uniswap')
+      expect(check('claimeigenlayer.xyz')?.appName).toBe('EigenLayer')
+    })
+
+    it('does not look for short app names inside other words', () => {
+      expect(check('j-morphology.com')).toBeNull()
+      expect(check('parajumpers.it')).toBeNull()
+      expect(check('pendleton-usa.com')).toBeNull()
+      expect(check('goethena.com')).toBeNull()
+    })
+
+    it('flags a subdomain with the app name', () => {
+      expect(check('uniswap.web3kit.space')).toEqual({
+        appName: 'Uniswap',
+        appDomain: 'uniswap.org',
+        reason: 'domain',
+        isConnectedApp: false
+      })
+      expect(check('lido.en-us.io')?.appName).toBe('Lido')
+      expect(check('aave-claim.example.com')?.appName).toBe('Aave')
+      expect(check('claimuniswap.example.com')?.appName).toBe('Uniswap')
+      expect(check('rabby.io.wallet-connect.xyz')?.appName).toBe('Rabby')
+      expect(check('mint.xn--pensea-h0e.example.com')?.appName).toBe('OpenSea') // greek "ο"
+    })
+
+    it('does not look for short or common app names in subdomains', () => {
+      expect(check('gmx.example.com')).toBeNull()
+      expect(check('ens.example.com')).toBeNull()
+      expect(check('cow.example.com')).toBeNull()
+      expect(check('safe.example.com')).toBeNull()
+      expect(check('curve.example.com')).toBeNull()
+    })
+
+    it('does not flag subdomains of the app itself', () => {
+      expect(check('uniswap.app.uniswap.org')).toBeNull()
+      expect(check('docs.opensea.io')).toBeNull()
+    })
+
     describe('connected apps', () => {
       const connectedApps = [BITREFILL]
 
