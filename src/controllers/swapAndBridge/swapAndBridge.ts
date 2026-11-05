@@ -1416,6 +1416,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
       // Always update to reflect portfolio amount (or other props) changes
       this.fromSelectedToken = fromSelectedToken
+
+      // A token without a price can't be entered in USD, and the form hides the USD switch for it,
+      // so a fiat mode carried over from an earlier session or token would leave it stuck there
+      const hasFromTokenPrice = !!fromSelectedToken?.priceIn.find(
+        (p) => p.baseCurrency === HARD_CODED_CURRENCY
+      )?.price
+      if (fromSelectedToken && !hasFromTokenPrice) this.fromAmountFieldMode = 'token'
     }
 
     if (toChainId) {
