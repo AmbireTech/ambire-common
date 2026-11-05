@@ -375,6 +375,18 @@ describe('impersonation', () => {
         expect(check('morph.xyz', { connectedApps: apps })?.appName).toBe('Morph')
         expect(check('morph-labs.com', { connectedApps: apps })).toBeNull()
         expect(check('morphe.network', { connectedApps: apps })).toBeNull()
+        expect(check('morphology.com', { connectedApps: apps })).toBeNull()
+        expect(check('morph.web3kit.space', { connectedApps: apps })).toBeNull()
+      })
+
+      it('flags a connected app name glued to other words or in a subdomain', () => {
+        expect(check('bitrefillpromo.com', { connectedApps })?.appName).toBe('Bitrefill')
+        expect(check('bitrefill.web3kit.space', { connectedApps })).toEqual({
+          appName: 'Bitrefill',
+          appDomain: 'bitrefill.com',
+          reason: 'domain',
+          isConnectedApp: true
+        })
       })
 
       it('skips connected apps on shared hosting, localhost and IP addresses', () => {

@@ -8,7 +8,8 @@ type ImpersonationTarget = {
   name: string
   /**
    * The official root domains of the app (e.g. "uniswap.org"). The first one is shown to the user.
-   * Old domains the app moved away from are kept, as people still use them.
+   * Its other official domains are kept too - old ones the app moved away from, as people still
+   * use them, and regional, docs or testnet ones ("polymarket.us", "magiceden.dev").
    */
   domains: string[]
   /** Other names the app goes by. `name` is always checked too */
