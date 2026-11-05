@@ -21,7 +21,7 @@ import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 import SafeApiKit from '@safe-global/api-kit'
 
 import SafeAbi from '../../../contracts/compiled/Safe.json'
-import { SAFE_API_TIMEOUT_MS, SAFE_V1_4_1 } from '../../consts/safe'
+import { SAFE_API_TIMEOUT_MS, SAFE_SENTINEL_OWNER, SAFE_V1_4_1 } from '../../consts/safe'
 import { Account, SafeAccountCreation } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Key } from '../../interfaces/keystore'
@@ -199,6 +199,16 @@ const safeSetupInterface = new Interface([
 ])
 
 /**
+ * Whether Safe accepts the address as an owner. Its `setup` reverts for the zero address and
+ * the sentinel address, so a Safe with either one as an owner could never be activated.
+ */
+export function isAllowedSafeOwner(owner: string): boolean {
+  const normalizedOwner = owner.toLowerCase()
+
+  return normalizedOwner !== ZeroAddress && normalizedOwner !== SAFE_SENTINEL_OWNER
+}
+
+/**
  * Builds the creation data of a new Safe v1.4.1 account with the given owners and threshold.
  * The salt nonce is always zero, so the same owners (in the same order) and threshold
  * always result in the same Safe address.
@@ -207,6 +217,9 @@ export function getNewSafeCreation(owners: Hex[], threshold: number): SafeAccoun
   if (!owners.length) throw new Error('A Safe account needs at least one owner.')
   if (new Set(owners.map((owner) => owner.toLowerCase())).size !== owners.length) {
     throw new Error('Each Safe account owner can be added only once.')
+  }
+  if (!owners.every(isAllowedSafeOwner)) {
+    throw new Error('This address cannot be an owner of a Safe account.')
   }
   if (!Number.isInteger(threshold) || threshold < 1 || threshold > owners.length) {
     throw new Error(

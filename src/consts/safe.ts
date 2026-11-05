@@ -109,6 +109,12 @@ export const allowedFallbackHandlers = [
 ]
 
 /**
+ * The start and end marker of Safe's linked list of owners. Safe's `setup` reverts when it's
+ * given as an owner, as it does for the zero address.
+ */
+export const SAFE_SENTINEL_OWNER = '0x0000000000000000000000000000000000000001'
+
+/**
  * Canonical Safe v1.4.1 contracts used to create new Safe accounts. They share the same
  * address on all SAFE_NETWORKS, so a new Safe gets the same counterfactual address everywhere.
  * https://github.com/safe-global/safe-deployments/tree/main/src/assets/v1.4.1

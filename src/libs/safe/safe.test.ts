@@ -16,6 +16,7 @@ import {
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import { SAFE_SENTINEL_OWNER } from '../../consts/safe'
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
 import {
   canHotOwnersMeetSafeThreshold,
@@ -115,9 +116,7 @@ describe('isSafeContract', () => {
     const provider = createProvider(async () => new AbiCoder().encode(['uint256'], [2]))
 
     await expect(isSafeContract(SAFE_ADDRESS, provider)).resolves.toBe(true)
-    expect(provider.call).toHaveBeenCalledWith(
-      expect.objectContaining({ data: getThresholdData })
-    )
+    expect(provider.call).toHaveBeenCalledWith(expect.objectContaining({ data: getThresholdData }))
   })
 
   test('returns false when the contract has no getThreshold() and returns no data', async () => {
@@ -862,6 +861,10 @@ describe('new Safe accounts', () => {
   test('rejects invalid setups', () => {
     expect(() => getNewSafeCreation([], 1)).toThrow('at least one owner')
     expect(() => getNewSafeCreation([ownerA, ownerA.toLowerCase() as Hex], 1)).toThrow('only once')
+    expect(() => getNewSafeCreation([ownerA, ZeroAddress as Hex], 1)).toThrow('cannot be an owner')
+    expect(() => getNewSafeCreation([SAFE_SENTINEL_OWNER as Hex, ownerA], 1)).toThrow(
+      'cannot be an owner'
+    )
     expect(() => getNewSafeCreation([ownerA], 0)).toThrow('required confirmations')
     expect(() => getNewSafeCreation([ownerA], 2)).toThrow('required confirmations')
     expect(() => getNewSafeCreation([ownerA, ownerB], 1.5)).toThrow('required confirmations')
