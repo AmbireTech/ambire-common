@@ -28,8 +28,11 @@ import {
   encryptWithKey,
   extractEntropyFromSeed,
   getBytesForSecret,
+  getNextPassphraseLabel,
+  getSeedMasterNode,
   migrateStoredPayloadsToGCM,
   SCRYPT_PARAMS,
+  tryParseGcmPayload,
   WrongSecretError
 } from '@/libs/keystore/keystore'
 
@@ -39,7 +42,6 @@ import {
   DERIVATION_OPTIONS,
   HD_PATH_TEMPLATE_TYPE
 } from '../../consts/derivation'
-import { PRIVACY_POOLS_SIGNING_KEY_PATH } from '../../consts/privacyPools'
 import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -65,16 +67,67 @@ import {
   StoredKeystoreSeed
 } from '../../interfaces/keystore'
 import { Platform } from '../../interfaces/platform'
+import { PrivacyProviderId } from '../../interfaces/privateAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { AppDataSyncPayload } from '../../libs/appDataSync/appDataSync'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
+import {
+  decodePrivacyKeyNode,
+  encodePrivacyKeyMaterial,
+  getPathBelow,
+  getPrivacyKeyScope,
+  isPrivacyProviderId,
+  PrivacyKeyScope
+} from '../../libs/privateAccount/privacyKeys'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+/**
+ * A seed to store. One synced from another device without its passphrase brings the passphrase's
+ * fingerprint instead.
+ */
+type SeedToAdd = KeystoreTempSeed & {
+  id?: StoredKeystoreSeed['id']
+  passphraseFingerprint?: string
+  /** The passphrase's name on the device it is synced from, kept unless taken on this one */
+  passphraseLabel?: StoredKeystoreSeed['passphraseLabel']
+  /** Synced from another device, so a phrase this device already has keeps its saved state */
+  isSynced?: boolean
+}
+
+/**
+ * The fields of a stored phrase another device gets. Picked rather than spread, so a field added
+ * later stays on this device unless it is listed here. Leaves out `privacyKeys`: private accounts
+ * don't sync, and the other device stores their keys itself once the user adds them there.
+ */
+const getSyncedSeedFields = ({
+  id,
+  label,
+  seed,
+  seedPassphrase,
+  passphraseFingerprint,
+  passphraseLabel,
+  hdPathTemplate,
+  notBackedUp
+}: StoredKeystoreSeed): StoredKeystoreSeed => ({
+  id,
+  label,
+  seed,
+  seedPassphrase,
+  passphraseFingerprint,
+  passphraseLabel,
+  hdPathTemplate,
+  notBackedUp
+})
+
+/** Tells apart the keystore's privacy key requests of each phrase and provider */
+const getPrivacyRequestKey = (seedId: KeystoreSeed['id'], providerId: PrivacyProviderId) =>
+  `${seedId}:${providerId}`
 
 const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
   'Keystore unexpected error. If the problem persists, please contact support.'
@@ -139,6 +192,18 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   #tempSeed: KeystoreTempSeed | null = null
 
+  /**
+   * The providers' nodes being read or stored, by `getPrivacyRequestKey`, so the SDK's concurrent
+   * first requests of a phrase derive and store its node once. Dropped once settled.
+   */
+  #privacyNodeRequests = new Map<string, Promise<HDNodeWallet>>()
+
+  /**
+   * The stored privacy keys that failed to be read, by `getPrivacyRequestKey`. Kept in storage
+   * rather than dropped, but no longer counted as available - see `isPrivacyKeyAvailable`.
+   */
+  #unreadablePrivacyKeys = new Set<string>()
+
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
   #keystoreKeys: StoredKey[] = []
@@ -147,7 +212,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   #externalKeysToAddOnKeystoreReady: ReadyToAddKeys['external'] = []
 
-  #seedsToAddOnKeystoreReady: (KeystoreTempSeed & { id?: StoredKeystoreSeed['id'] })[] = []
+  #seedsToAddOnKeystoreReady: SeedToAdd[] = []
 
   keyStoreUid: string | null
 
@@ -372,6 +437,17 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         })
       }
     }
+
+    // Unnamed passphrases are still listed, just without a number, so a failure doesn't block unlocking
+    try {
+      await this.#nameUnnamedPassphrases()
+    } catch (e) {
+      this.emitError({
+        message: 'Naming the saved passphrases failed.',
+        level: 'silent',
+        error: e instanceof Error ? e : new Error('keystore: naming passphrases failed')
+      })
+    }
   }
 
   /**
@@ -481,19 +557,83 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     }
   }
 
-  async #findStoredSeed(seed: string, seedPassphrase?: string | null) {
-    const normalizedSeed = Mnemonic.fromPhrase(seed).phrase
-    const normalizedPassphrase = seedPassphrase || ''
+  /**
+   * Finds the entry of the seed with its passphrase. When there is none, also returns the entries
+   * of the same phrase with other passphrases (or none), whose name a new entry follows.
+   * `getMasterNode` runs a PBKDF2, so it is called only when a fingerprint has to be compared.
+   */
+  async #findStoredSeed(
+    seedToAdd: SeedToAdd,
+    getMasterNode: () => HDNodeWallet
+  ): Promise<{
+    existingEntry: StoredKeystoreSeed | null
+    entriesOfSamePhrase: StoredKeystoreSeed[]
+  }> {
+    const normalizedSeed = Mnemonic.fromPhrase(seedToAdd.seed).phrase
+    const hasPassphrase = !!seedToAdd.seedPassphrase || !!seedToAdd.passphraseFingerprint
+    const entriesOfSamePhrase: StoredKeystoreSeed[] = []
 
     for (const storedSeed of this.#keystoreSeeds) {
       const decryptedStoredSeed = await this.getSavedSeed(storedSeed.id)
       if (decryptedStoredSeed.seed !== normalizedSeed) continue
-      if ((decryptedStoredSeed.seedPassphrase || '') !== normalizedPassphrase) continue
 
-      return storedSeed
+      entriesOfSamePhrase.push(storedSeed)
+
+      const storedHasPassphrase =
+        !!decryptedStoredSeed.seedPassphrase || !!storedSeed.passphraseFingerprint
+      if (!hasPassphrase || !storedHasPassphrase) {
+        if (hasPassphrase === storedHasPassphrase)
+          return { existingEntry: storedSeed, entriesOfSamePhrase }
+        continue
+      }
+
+      // Both passphrases at hand, so no fingerprint is needed
+      if (seedToAdd.seedPassphrase && decryptedStoredSeed.seedPassphrase) {
+        if (seedToAdd.seedPassphrase === decryptedStoredSeed.seedPassphrase)
+          return { existingEntry: storedSeed, entriesOfSamePhrase }
+        continue
+      }
+
+      const storedFingerprint =
+        storedSeed.passphraseFingerprint ??
+        getSeedMasterNode(normalizedSeed, decryptedStoredSeed.seedPassphrase).fingerprint
+      const fingerprint = seedToAdd.passphraseFingerprint ?? getMasterNode().fingerprint
+      if (storedFingerprint === fingerprint)
+        return { existingEntry: storedSeed, entriesOfSamePhrase }
     }
 
-    return null
+    return { existingEntry: null, entriesOfSamePhrase }
+  }
+
+  /**
+   * Names the passphrases saved before passphrases had names, numbering them per phrase. Safe to
+   * re-run, as only the unnamed ones are touched.
+   */
+  async #nameUnnamedPassphrases() {
+    if (!this.#keystoreSeeds.some((s) => !!s.seedPassphrase && !s.passphraseLabel)) return
+
+    const phraseById: { [seedId: string]: string } = {}
+    for (const storedSeed of this.#keystoreSeeds) {
+      phraseById[storedSeed.id] = (await this.getSavedSeed(storedSeed.id)).seed
+    }
+
+    const namedSeeds = [...this.#keystoreSeeds]
+    namedSeeds.forEach((storedSeed, index) => {
+      if (!storedSeed.seedPassphrase || storedSeed.passphraseLabel) return
+
+      const entriesOfSamePhrase = namedSeeds.filter(
+        (other) => phraseById[other.id] === phraseById[storedSeed.id]
+      )
+      namedSeeds[index] = {
+        ...storedSeed,
+        passphraseLabel: getNextPassphraseLabel(entriesOfSamePhrase)
+      }
+    })
+
+    // In memory first, with no await since the seeds were read, so a write made meanwhile isn't lost
+    this.#keystoreSeeds = namedSeeds
+    this.emitUpdate()
+    await this.#storage.set('keystoreSeeds', namedSeeds)
   }
 
   /**
@@ -755,17 +895,34 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   get seeds() {
     return this.#keystoreSeeds.map(
-      ({ id, label, hdPathTemplate, seedPassphrase, notBackedUp }) => ({
+      ({
+        id,
+        label,
+        hdPathTemplate,
+        seedPassphrase,
+        passphraseFingerprint,
+        passphraseLabel,
+        notBackedUp
+      }) => ({
         id,
         label: label || 'Unnamed Recovery Seed',
         hdPathTemplate,
-        withPassphrase: !!seedPassphrase,
+        withPassphrase: !!seedPassphrase || !!passphraseFingerprint,
+        // Added with a passphrase that isn't saved, so the user has to enter it to use the phrase
+        isPassphraseNeeded: !seedPassphrase && !!passphraseFingerprint,
+        passphraseLabel,
         notBackedUp
       })
     )
   }
 
-  async addTempSeed({ seed, seedPassphrase, hdPathTemplate, notBackedUp }: KeystoreTempSeed) {
+  async addTempSeed({
+    seed,
+    seedPassphrase,
+    shouldSavePassphrase,
+    hdPathTemplate,
+    notBackedUp
+  }: KeystoreTempSeed) {
     const validHdPath = DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate)
     if (!validHdPath)
       throw new EmittableError({
@@ -775,7 +932,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         error: new Error('keystore: hd path to temp seed incorrect')
       })
 
-    this.#tempSeed = { seed, seedPassphrase, hdPathTemplate, notBackedUp }
+    this.#tempSeed = { seed, seedPassphrase, shouldSavePassphrase, hdPathTemplate, notBackedUp }
 
     this.emitUpdate()
   }
@@ -841,7 +998,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * synced keys' `meta.fromSeedId` keeps pointing to it.
    */
   async #addSeeds(
-    seedsToAdd: (KeystoreTempSeed & { id?: StoredKeystoreSeed['id'] })[],
+    seedsToAdd: SeedToAdd[],
     shouldEmitUpdate: boolean = true
   ): Promise<StoredKeystoreSeed['id'][]> {
     await this.initialLoadPromise
@@ -864,28 +1021,67 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       })
     }
 
+    const mainKey = this.#mainKey
     const seedsBeforeAdd = [...this.#keystoreSeeds]
     const ids: StoredKeystoreSeed['id'][] = []
 
     try {
       // Entries are pushed as they are built, so that duplicates and labels are
       // resolved against the seeds added earlier in the same batch as well
-      for (const { seed, seedPassphrase, hdPathTemplate, notBackedUp, id } of seedsToAdd) {
-        const existingEntry = await this.#findStoredSeed(seed, seedPassphrase)
+      for (const seedToAdd of seedsToAdd) {
+        const { seed, seedPassphrase, shouldSavePassphrase, hdPathTemplate, notBackedUp, id } =
+          seedToAdd
+        let masterNode: HDNodeWallet | undefined
+        const getMasterNode = () => {
+          // Without it, the phrase alone would derive keys of other accounts
+          if (!seedPassphrase) throw new Error('keystore: no passphrase to derive with')
+
+          masterNode ??= getSeedMasterNode(seed, seedPassphrase)
+          return masterNode
+        }
+        const passphraseToSave = shouldSavePassphrase && seedPassphrase ? seedPassphrase : null
+        const encryptPassphrase = (passphrase: string) =>
+          encryptWithKey(mainKey, new TextEncoder().encode(passphrase))
+
+        const { existingEntry, entriesOfSamePhrase } = await this.#findStoredSeed(
+          seedToAdd,
+          getMasterNode
+        )
         if (existingEntry) {
+          // The user entered a passphrase that isn't saved yet and chose to save it this time.
+          // Not on sync: the other device's choice doesn't override this one's
+          if (passphraseToSave && !existingEntry.seedPassphrase && !seedToAdd.isSynced) {
+            const savedPassphrase = await encryptPassphrase(passphraseToSave)
+            this.#keystoreSeeds = this.#keystoreSeeds.map((s) =>
+              s.id === existingEntry.id ? { ...s, seedPassphrase: savedPassphrase } : s
+            )
+          }
           ids.push(existingEntry.id)
           continue
         }
 
         const newEntry: StoredKeystoreSeed = {
           id: id || generateUuid(),
-          label: `Recovery Phrase ${this.#keystoreSeeds.length + 1}`,
-          seed: await encryptWithKey(this.#mainKey, extractEntropyFromSeed(seed)),
-          seedPassphrase: seedPassphrase
-            ? await encryptWithKey(this.#mainKey, new TextEncoder().encode(seedPassphrase))
-            : null,
+          // The same phrase with another passphrase keeps the name the user knows the phrase by
+          label:
+            entriesOfSamePhrase[0]?.label ?? `Recovery Phrase ${this.#keystoreSeeds.length + 1}`,
+          seed: await encryptWithKey(mainKey, extractEntropyFromSeed(seed)),
+          seedPassphrase: passphraseToSave ? await encryptPassphrase(passphraseToSave) : null,
           hdPathTemplate,
           notBackedUp
+        }
+
+        if (seedPassphrase || seedToAdd.passphraseFingerprint) {
+          newEntry.passphraseFingerprint =
+            seedToAdd.passphraseFingerprint ?? getMasterNode().fingerprint
+          // A synced name is numbered again only if another passphrase of the phrase has it here
+          const isSyncedLabelTaken = entriesOfSamePhrase.some(
+            (entry) => entry.passphraseLabel === seedToAdd.passphraseLabel
+          )
+          newEntry.passphraseLabel =
+            seedToAdd.passphraseLabel && !isSyncedLabelTaken
+              ? seedToAdd.passphraseLabel
+              : getNextPassphraseLabel(entriesOfSamePhrase)
         }
 
         this.#keystoreSeeds.push(newEntry)
@@ -952,20 +1148,26 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   async #updateSeed({
     id,
     label,
+    passphraseLabel,
     hdPathTemplate,
     notBackedUp
   }: {
     id: KeystoreSeed['id']
     label?: KeystoreSeed['label']
+    passphraseLabel?: KeystoreSeed['passphraseLabel']
     hdPathTemplate?: KeystoreSeed['hdPathTemplate']
     notBackedUp?: KeystoreSeed['notBackedUp']
   }) {
-    if (!label && !hdPathTemplate && notBackedUp === undefined) return
+    if (!label && !passphraseLabel && !hdPathTemplate && notBackedUp === undefined) return
 
     const keystoreSeed = this.#keystoreSeeds.find((s) => s.id === id)
     if (!keystoreSeed) return
 
     if (label) keystoreSeed.label = label
+
+    // Only a phrase added with a passphrase has one to name
+    if (passphraseLabel && (keystoreSeed.seedPassphrase || keystoreSeed.passphraseFingerprint))
+      keystoreSeed.passphraseLabel = passphraseLabel
 
     if (hdPathTemplate) keystoreSeed.hdPathTemplate = hdPathTemplate
 
@@ -981,22 +1183,169 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     this.emitUpdate()
   }
 
-  async updateSeed({
-    id,
-    label,
-    hdPathTemplate,
-    notBackedUp
-  }: {
-    id: KeystoreSeed['id']
-    label?: KeystoreSeed['label']
-    hdPathTemplate?: KeystoreSeed['hdPathTemplate']
-    notBackedUp?: KeystoreSeed['notBackedUp']
-  }) {
-    await this.withStatus(
-      'updateSeed',
-      () => this.#updateSeed({ id, label, hdPathTemplate, notBackedUp }),
-      true
+  /**
+   * With a `requestId`, replies once the change is stored, for a UI that waits for it and tells
+   * the user about a failure itself.
+   */
+  async updateSeed(
+    {
+      id,
+      label,
+      passphraseLabel,
+      hdPathTemplate,
+      notBackedUp
+    }: {
+      id: KeystoreSeed['id']
+      label?: KeystoreSeed['label']
+      passphraseLabel?: KeystoreSeed['passphraseLabel']
+      hdPathTemplate?: KeystoreSeed['hdPathTemplate']
+      notBackedUp?: KeystoreSeed['notBackedUp']
+    },
+    requestId?: string
+  ) {
+    const update = () =>
+      this.#updateSeed({ id, label, passphraseLabel, hdPathTemplate, notBackedUp })
+    if (!requestId) {
+      await this.withStatus('updateSeed', update, true)
+      return
+    }
+
+    try {
+      await update()
+      this.#ui.message.sendUiMessage({ requestId, ok: true })
+    } catch (error: any) {
+      this.emitError({
+        message: "Couldn't save the recovery phrase changes. Please try again.",
+        level: 'silent',
+        error: error instanceof Error ? error : new Error('keystore: updating the seed failed')
+      })
+      this.#ui.message.sendUiMessage({
+        requestId,
+        ok: false,
+        error: error?.message || 'updateSeed failed'
+      })
+    }
+  }
+
+  /**
+   * Whether it is the passphrase the phrase was added with (none for a phrase added without one).
+   * Lets the user be told on the spot when they mistype a passphrase that isn't saved.
+   */
+  async isSeedPassphraseCorrect(id: KeystoreSeed['id'], seedPassphrase: string | null) {
+    const savedSeed = await this.getSavedSeed(id)
+
+    if (savedSeed.seedPassphrase) return savedSeed.seedPassphrase === seedPassphrase
+    if (!savedSeed.passphraseFingerprint) return !seedPassphrase
+    if (!seedPassphrase) return false
+
+    return (
+      getSeedMasterNode(savedSeed.seed, seedPassphrase).fingerprint ===
+      savedSeed.passphraseFingerprint
     )
+  }
+
+  /**
+   * Saves the passphrase of a phrase added without saving it, once the user chooses to. Returns
+   * false, saving nothing, when it isn't the passphrase the phrase was added with.
+   */
+  async saveSeedPassphrase(id: KeystoreSeed['id'], seedPassphrase: string) {
+    if (!(await this.isSeedPassphraseCorrect(id, seedPassphrase))) return false
+    if (!this.#mainKey) throw new Error('keystore: not unlocked')
+
+    const savedPassphrase = await encryptWithKey(
+      this.#mainKey,
+      new TextEncoder().encode(seedPassphrase)
+    )
+    this.#keystoreSeeds = this.#keystoreSeeds.map((s) =>
+      s.id === id ? { ...s, seedPassphrase: savedPassphrase } : s
+    )
+    this.emitUpdate()
+
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+    return true
+  }
+
+  /**
+   * Keeps a provider's key of a phrase whose passphrase isn't saved, derived with the one the user
+   * entered, as the phrase alone can't derive it again. Called on adding its private account.
+   * Any other phrase has it stored on first use instead - see `derivePrivacyKey`. Returns false,
+   * storing nothing, when it isn't the passphrase the phrase was added with.
+   */
+  async storePrivacyKey(
+    id: KeystoreSeed['id'],
+    providerId: PrivacyProviderId,
+    seedPassphrase: string
+  ) {
+    getPrivacyKeyScope(providerId)
+    const { seed, passphraseFingerprint } = await this.getSavedSeed(id)
+    // Derived once, as it is slow: its fingerprint checks the passphrase and the key comes from it
+    const masterNode = getSeedMasterNode(seed, seedPassphrase)
+    if (!passphraseFingerprint || masterNode.fingerprint !== passphraseFingerprint) return false
+
+    await this.#storePrivacyNode(id, providerId, masterNode)
+    return true
+  }
+
+  /**
+   * Stores the provider's node (see `PrivacyKeyMaterial`), never the phrase's master node, which
+   * would reach the user's EVM keys.
+   */
+  async #storePrivacyNode(
+    id: KeystoreSeed['id'],
+    providerId: PrivacyProviderId,
+    masterNode: HDNodeWallet
+  ) {
+    if (!this.#mainKey) throw new Error('keystore: not unlocked')
+
+    const material = encodePrivacyKeyMaterial(masterNode, getPrivacyKeyScope(providerId))
+    const privacyKey = await encryptWithKey(this.#mainKey, material)
+    material.fill(0)
+    // In memory first, with no await since the seeds were read, so a write made meanwhile isn't lost
+    this.#keystoreSeeds = this.#keystoreSeeds.map((s) =>
+      s.id === id ? { ...s, privacyKeys: { ...s.privacyKeys, [providerId]: privacyKey } } : s
+    )
+    this.#unreadablePrivacyKeys.delete(getPrivacyRequestKey(id, providerId))
+
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+  }
+
+  /**
+   * Whether `derivePrivacyKey` can give the provider's keys of a phrase without asking the user:
+   * its node is stored and readable, or the phrase derives it alone (no passphrase, or a saved
+   * one). Otherwise the user has to add the account again with the passphrase. Reads no secret.
+   */
+  isPrivacyKeyAvailable(id: KeystoreSeed['id'], providerId: PrivacyProviderId): boolean {
+    if (!isPrivacyProviderId(providerId)) return false
+
+    const storedSeed = this.#keystoreSeeds.find((s) => s.id === id)
+    if (!storedSeed) return false
+    if (storedSeed.privacyKeys?.[providerId])
+      return !this.#unreadablePrivacyKeys.has(getPrivacyRequestKey(id, providerId))
+
+    return !storedSeed.passphraseFingerprint || !!storedSeed.seedPassphrase
+  }
+
+  /**
+   * Drops a provider's stored key, once its account is removed - like a removed account's own
+   * key. Re-adding the account asks for the passphrase again if it isn't saved.
+   */
+  async removePrivacyKey(id: KeystoreSeed['id'], providerId: PrivacyProviderId) {
+    await this.initialLoadPromise
+    getPrivacyKeyScope(providerId)
+    this.#unreadablePrivacyKeys.delete(getPrivacyRequestKey(id, providerId))
+
+    const hasStoredKey = (s: StoredKeystoreSeed) => s.id === id && !!s.privacyKeys?.[providerId]
+    if (!this.#keystoreSeeds.some(hasStoredKey)) return
+
+    this.#keystoreSeeds = this.#keystoreSeeds.map((s) => {
+      if (!hasStoredKey(s)) return s
+
+      const privacyKeys = { ...s.privacyKeys }
+      delete privacyKeys[providerId]
+      return { ...s, privacyKeys: Object.keys(privacyKeys).length ? privacyKeys : undefined }
+    })
+
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
   }
 
   /**
@@ -1377,7 +1726,9 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr))
     const seedIds = new Set(keys.map((key) => key.meta?.fromSeedId).filter(Boolean))
-    const seeds = includeSeeds ? this.#keystoreSeeds.filter((seed) => seedIds.has(seed.id)) : []
+    const seeds = includeSeeds
+      ? this.#keystoreSeeds.filter((seed) => seedIds.has(seed.id)).map(getSyncedSeedFields)
+      : []
 
     // Keys and seeds are migrated to GCM on unlock, so this should never happen. If it
     // does, fail here rather than on the other device, which would reject the payload
@@ -1439,6 +1790,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
           id: seed.id,
           seed: decryptedSeed,
           seedPassphrase,
+          // Saved on the other device, so it stays saved
+          shouldSavePassphrase: !!seedPassphrase,
+          // A passphrase that isn't saved doesn't travel, so its fingerprint comes instead
+          passphraseFingerprint: seed.passphraseFingerprint,
+          passphraseLabel: seed.passphraseLabel,
+          isSynced: true,
           hdPathTemplate: seed.hdPathTemplate,
           notBackedUp: seed.notBackedUp
         })
@@ -1487,7 +1844,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * guaranteed to be the one the seed ends up stored with.
    */
   async #storeSyncedSeed(
-    seed: KeystoreTempSeed & { id: StoredKeystoreSeed['id'] }
+    seed: SeedToAdd & { id: StoredKeystoreSeed['id'] }
   ): Promise<StoredKeystoreSeed['id']> {
     if (!this.isReadyToStoreKeys || !this.#mainKey) {
       this.#seedsToAddOnKeystoreReady.push(seed)
@@ -1547,32 +1904,121 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (!keystoreSeed) throw new Error(`keystore seed with id:${id} not found`)
 
     const { seed, seedPassphrase } = await decryptStoredSeed(this.#mainKey, keystoreSeed)
+    const { label, passphraseFingerprint, passphraseLabel, hdPathTemplate, notBackedUp } =
+      keystoreSeed
 
-    return { ...keystoreSeed, seed, seedPassphrase }
+    // Picked rather than spread, so nothing else stored with the phrase (like `privacyKeys`)
+    // travels further with it
+    return {
+      id,
+      label,
+      seed,
+      seedPassphrase,
+      passphraseFingerprint,
+      passphraseLabel,
+      hdPathTemplate,
+      notBackedUp
+    }
   }
 
   /**
-   * Derives a recovery phrase's Privacy Pools signing key, so the phrase never reaches
-   * `@kohaku-eth/privacy-pools`, whose bundled keystore would keep it.
+   * Derives a recovery phrase's key for a privacy provider, so the phrase never reaches the
+   * provider's SDK (e.g. `@kohaku-eth/privacy-pools`), whose bundled keystore would keep it.
    *
    * The path check is the security boundary: the SDK chooses the paths, so without it a bug or a
-   * malicious bump could get the user's EVM keys. Only `PRIVACY_POOLS_SIGNING_KEY_PATH` passes.
+   * malicious bump could get the user's EVM keys. Only the provider's `isAllowedPath` passes.
    *
-   * Not cached here: each call decrypts the phrase and runs a PBKDF2, so callers keep the key while
-   * unlocked - see `createKohakuKeystore`.
+   * The keys always come from the provider's stored node, which a phrase that can derive it alone
+   * (no passphrase, or a saved one) stores on first use - see `#getPrivacyNode`. A phrase whose
+   * passphrase isn't saved has it stored on adding its account (see `storePrivacyKey`), as the
+   * phrase alone can't derive it. Not cached here, so callers keep the key while unlocked - see
+   * `createKohakuKeystore`.
    */
-  async derivePrivacyPoolsKey(seedId: KeystoreSeed['id'], path: string): Promise<Hex> {
+  async derivePrivacyKey(
+    seedId: KeystoreSeed['id'],
+    providerId: PrivacyProviderId,
+    path: string
+  ): Promise<Hex> {
     await this.initialLoadPromise
 
-    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+    if (!this.isUnlocked || !this.#mainKey) throw new Error('keystore: not unlocked')
 
-    if (path !== PRIVACY_POOLS_SIGNING_KEY_PATH)
-      throw new Error(`keystore: refusing to derive a key outside Privacy Pools' paths (${path})`)
+    const scope = getPrivacyKeyScope(providerId)
+    if (!scope.isAllowedPath(path))
+      throw new Error(
+        `keystore: refusing to derive a key outside the paths of ${providerId} (${path})`
+      )
 
-    const { seed, seedPassphrase } = await this.getSavedSeed(seedId)
+    const node = await this.#getPrivacyNode(seedId, providerId)
+    return node.derivePath(getPathBelow(scope.rootPath, path)).privateKey as Hex
+  }
 
-    return HDNodeWallet.fromMnemonic(Mnemonic.fromPhrase(seed, seedPassphrase), path)
-      .privateKey as Hex
+  /** `#readOrStorePrivacyNode`, run once at a time per phrase and provider. */
+  #getPrivacyNode(seedId: KeystoreSeed['id'], providerId: PrivacyProviderId) {
+    const requestKey = getPrivacyRequestKey(seedId, providerId)
+    const pending = this.#privacyNodeRequests.get(requestKey)
+    if (pending) return pending
+
+    const request = this.#readOrStorePrivacyNode(seedId, providerId).finally(() => {
+      this.#privacyNodeRequests.delete(requestKey)
+    })
+    this.#privacyNodeRequests.set(requestKey, request)
+
+    return request
+  }
+
+  /**
+   * The provider's stored node of a phrase. Stored now when missing, for accounts added before
+   * every phrase kept it, or when it can't be read - but only if the phrase derives it alone.
+   * Otherwise the user adds the account again with the passphrase - see `isPrivacyKeyAvailable`.
+   */
+  async #readOrStorePrivacyNode(
+    seedId: KeystoreSeed['id'],
+    providerId: PrivacyProviderId
+  ): Promise<HDNodeWallet> {
+    const scope = getPrivacyKeyScope(providerId)
+    const requestKey = getPrivacyRequestKey(seedId, providerId)
+    const storedKey = this.#keystoreSeeds.find((s) => s.id === seedId)?.privacyKeys?.[providerId]
+    if (storedKey && !this.#unreadablePrivacyKeys.has(requestKey)) {
+      try {
+        return await this.#readPrivacyNode(storedKey, scope)
+      } catch (error: any) {
+        // Fails the same however often it is read, so it isn't read again and the phrase stores
+        // it again below, if it can
+        this.#unreadablePrivacyKeys.add(requestKey)
+        this.emitError({
+          level: 'silent',
+          message: 'Could not read the key of a private account.',
+          error:
+            error instanceof Error ? error : new Error('keystore: reading a privacy key failed')
+        })
+      }
+    }
+
+    const { seed, seedPassphrase, passphraseFingerprint } = await this.getSavedSeed(seedId)
+    if (passphraseFingerprint && !seedPassphrase)
+      throw new Error(
+        `keystore: the passphrase is not saved and no readable ${providerId} key is stored`
+      )
+
+    const masterNode = getSeedMasterNode(seed, seedPassphrase)
+    await this.#storePrivacyNode(seedId, providerId, masterNode)
+
+    return masterNode.derivePath(scope.rootPath)
+  }
+
+  async #readPrivacyNode(storedKey: AESGCMEncrypted, scope: PrivacyKeyScope) {
+    if (!this.#mainKey) throw new Error('keystore: not unlocked')
+    // Never the legacy AES-CTR, which isn't authenticated: no privacy key was ever stored with it
+    if (!tryParseGcmPayload(storedKey))
+      throw new Error('keystore: the stored privacy key is not AES-GCM encrypted')
+
+    const material = await decryptWithKey(this.#mainKey, storedKey)
+    try {
+      return decodePrivacyKeyNode(material, scope)
+    } finally {
+      material.fill(0)
+    }
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
@@ -1743,14 +2189,20 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     for (const storedSeed of this.#keystoreSeeds) {
       const decryptedStoredSeed = await this.getSavedSeed(storedSeed.id)
+      const { passphraseFingerprint } = storedSeed
 
-      if (
-        !keyIterator.isSeedMatching(
-          decryptedStoredSeed.seed,
-          decryptedStoredSeed.seedPassphrase ?? null
-        )
-      )
-        continue
+      // A passphrase that isn't saved is known only by its fingerprint
+      const isMatching =
+        passphraseFingerprint && !decryptedStoredSeed.seedPassphrase
+          ? !!keyIterator.isSeedMatchingFingerprint?.(
+              decryptedStoredSeed.seed,
+              passphraseFingerprint
+            )
+          : keyIterator.isSeedMatching(
+              decryptedStoredSeed.seed,
+              decryptedStoredSeed.seedPassphrase ?? null
+            )
+      if (!isMatching) continue
 
       return storedSeed
     }

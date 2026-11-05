@@ -1064,18 +1064,60 @@ export class MainController extends EventEmitter implements IMainController {
     return this.privacyPools.accounts.some((account) => account.seedId === seedId)
   }
 
-  /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
-  async addPrivacyPoolsAccount(seedId: string) {
+  /**
+   * Adds the Privacy Pools account of a stored recovery phrase and selects it. A phrase whose
+   * passphrase isn't saved needs it, to save it or to keep the account's key. Replies to
+   * `requestId` once done, with `isWrongPassphrase` when the passphrase isn't the phrase's one.
+   */
+  async addPrivacyPoolsAccount(
+    seedId: string,
+    {
+      seedPassphrase,
+      shouldSavePassphrase
+    }: { seedPassphrase?: string; shouldSavePassphrase?: boolean } = {},
+    requestId?: string
+  ) {
     await this.initialLoadPromise
 
+    let isWrongPassphrase = false
+    let isAdded = false
     // Wrapped as a whole, so a refused account is shown to the user
     await this.withStatus(
       'selectAccount',
       async () => {
-        await this.privacyPools.addAccount(seedId)
+        const seed = this.keystore.seeds.find(({ id }) => id === seedId)
+        if (seed?.isPassphraseNeeded) {
+          // Both check the passphrase before keeping anything
+          const isPassphraseKept =
+            !!seedPassphrase &&
+            (shouldSavePassphrase
+              ? await this.keystore.saveSeedPassphrase(seedId, seedPassphrase)
+              : await this.keystore.storePrivacyKey(seedId, 'privacyPools', seedPassphrase))
+          // Shown by the passphrase sheet, so not reported as an error
+          if (!isPassphraseKept) {
+            isWrongPassphrase = true
+            return
+          }
+        }
+
+        try {
+          await this.privacyPools.addAccount(seedId)
+        } catch (error) {
+          // Drops the key stored above, unless an account already uses it (a double submit)
+          if (!this.#hasPrivacyPoolsAccount(seedId))
+            await this.keystore.removePrivacyKey(seedId, 'privacyPools')
+          throw error
+        }
         await this.#selectPrivacyPoolsAccount(seedId)
+        isAdded = true
       },
       true
+    )
+
+    this.#replyToRequest(
+      requestId,
+      isAdded || isWrongPassphrase ? undefined : 'Adding the Privacy Pools account failed',
+      { isWrongPassphrase }
     )
   }
 
@@ -2512,6 +2554,60 @@ export class MainController extends EventEmitter implements IMainController {
     this.#replyToRequest(requestId)
   }
 
+  /**
+   * Sets the account picker up with a recovery phrase the user already saved, for the
+   * personalize step to select and prepare its next account. One whose passphrase isn't saved
+   * needs it from the user, and has it saved if they chose to. Replies to `requestId` once set up,
+   * with `isWrongPassphrase` when the passphrase isn't the phrase's one.
+   */
+  async accountPickerSetInitParamsFromSavedSeed(
+    {
+      id,
+      seedPassphrase,
+      shouldSavePassphrase
+    }: {
+      id: string
+      seedPassphrase?: string | null
+      shouldSavePassphrase?: boolean
+    },
+    requestId?: string
+  ) {
+    let isSetUp = false
+    let isWrongPassphrase = false
+    await this.withStatus(
+      'accountPickerSetInitParamsFromSavedSeed',
+      async () => {
+        const savedSeed = await this.keystore.getSavedSeed(id)
+        const passphrase = savedSeed.seedPassphrase || seedPassphrase || null
+
+        // Another passphrase would open other accounts, which this phrase's entry doesn't hold.
+        // Saving it checks it too, so it isn't checked twice
+        const isPassphraseCorrect =
+          shouldSavePassphrase && passphrase && !savedSeed.seedPassphrase
+            ? await this.keystore.saveSeedPassphrase(id, passphrase)
+            : await this.keystore.isSeedPassphraseCorrect(id, passphrase)
+        // Shown by the passphrase sheet, so not reported as an error
+        if (!isPassphraseCorrect) {
+          isWrongPassphrase = true
+          return
+        }
+
+        await this.accountPicker.setInitParams({
+          keyIterator: new KeyIterator(savedSeed.seed, passphrase),
+          hdPathTemplate: savedSeed.hdPathTemplate
+        })
+        isSetUp = true
+      },
+      true
+    )
+
+    this.#replyToRequest(
+      requestId,
+      isSetUp || isWrongPassphrase ? undefined : 'Adding accounts from the recovery phrase failed',
+      { isWrongPassphrase }
+    )
+  }
+
   async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
     if (!privateKeys.length) {
       const message = 'Please enter at least one private key.'
@@ -2564,23 +2660,6 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Sets the account picker up with a recovery phrase the user already saved, for the
-   * personalize step to select and prepare its next account. Replies to `requestId` once
-   * set up.
-   */
-  async accountPickerSetInitParamsFromSavedSeed(seedId: string, requestId?: string) {
-    const savedSeed = await this.keystore.getSavedSeed(seedId)
-    if (!savedSeed) return this.#replyToRequest(requestId, 'The recovery phrase was not found')
-
-    const keyIterator = new KeyIterator(savedSeed.seed, savedSeed.seedPassphrase)
-    await this.accountPicker.setInitParams({
-      keyIterator,
-      hdPathTemplate: savedSeed.hdPathTemplate
-    })
-    this.#replyToRequest(requestId)
-  }
-
-  /**
    * Creates a brand new recovery phrase and sets the account picker up with it, for the
    * personalize step to prepare its first account - nothing is written until the user
    * proceeds from there. The phrase is never sent to the UI - the user gets prompted to
@@ -2613,10 +2692,12 @@ export class MainController extends EventEmitter implements IMainController {
    * Replies to the UI request behind a call (if there is one), so the UI can await it
    * instead of watching a transient status.
    */
-  #replyToRequest(requestId?: string, error?: string) {
+  #replyToRequest(requestId?: string, error?: string, res?: unknown) {
     if (!requestId) return
 
-    this.ui.message.sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
+    this.ui.message.sendUiMessage(
+      error ? { requestId, ok: false, error } : { requestId, ok: true, res }
+    )
   }
 
   // includes the getters in the stringified instance

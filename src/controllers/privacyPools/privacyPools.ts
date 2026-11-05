@@ -346,10 +346,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   get unavailableReason(): PrivacyPoolsUnavailableReason | null {
+    const seedId = this.#getSelectedSeedId()
     // Before 'locked', which unlocking would not fix while these hold
-    if (!this.#getSelectedSeedId()) return 'no-account'
+    if (!seedId) return 'no-account'
     if (!this.supportedChainIds.length) return 'unsupported-network'
     if (!this.#keystore.isUnlocked) return 'locked'
+    if (!this.#keystore.isPrivacyKeyAvailable(seedId, 'privacyPools')) return 'passphrase-needed'
 
     return null
   }
@@ -473,6 +475,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (reason === 'unsupported-network') throw privacyPoolsErrors.noSupportedNetwork()
 
     if (reason === 'locked') throw privacyPoolsErrors.locked()
+
+    if (reason === 'passphrase-needed') throw privacyPoolsErrors.passphraseNeeded()
 
     const seedId = this.#getSelectedSeedId()
     if (!seedId) throw privacyPoolsErrors.unavailableForAccount()
@@ -630,6 +634,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (!this.#hasAccount(seedId)) throw privacyPoolsErrors.depositAccountRemoved(seedId)
 
     if (!this.#keystore.isUnlocked) throw privacyPoolsErrors.depositLocked()
+
+    if (!this.#keystore.isPrivacyKeyAvailable(seedId, 'privacyPools'))
+      throw privacyPoolsErrors.passphraseNeeded()
 
     const config = getPrivacyPoolsChainConfig(BigInt(chainId))
     if (!config || !this.supportedChainIds.includes(chainId))
@@ -822,6 +829,17 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.emitUpdate()
     await this.#persistAccounts()
     await this.#onAccountsRemoved([seedId])
+
+    try {
+      await this.#keystore.removePrivacyKey(seedId, 'privacyPools')
+    } catch (error: any) {
+      this.emitError({
+        message: 'Could not fully remove the Privacy Pools account. Please try again.',
+        level: 'silent',
+        error:
+          error instanceof Error ? error : new Error('privacyPools: removing the stored key failed')
+      })
+    }
   }
 
   /** Drops an account and everything derived for it. */

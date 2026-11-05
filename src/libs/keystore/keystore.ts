@@ -1,5 +1,5 @@
 import aes from 'aes-js'
-import { getBytes, hexlify, Mnemonic, toUtf8Bytes } from 'ethers'
+import { getBytes, HDNodeWallet, hexlify, Mnemonic, toUtf8Bytes } from 'ethers'
 
 import {
   AESGCMEncrypted,
@@ -42,6 +42,25 @@ export const extractEntropyFromSeed = (seed: string): Uint8Array => {
 
   const mnemonic = Mnemonic.fromPhrase(seed)
   return getBytes(mnemonic.entropy)
+}
+
+/**
+ * The BIP32 master node of a phrase with its passphrase. Its `fingerprint` tells passphrases apart
+ * without storing them, and helps guess one no more than the addresses kept next to it do.
+ */
+export const getSeedMasterNode = (seed: string, seedPassphrase?: string | null): HDNodeWallet =>
+  HDNodeWallet.fromMnemonic(Mnemonic.fromPhrase(seed, seedPassphrase), 'm')
+
+/** The lowest number none of the other passphrases of the same phrase is named with */
+export const getNextPassphraseLabel = (
+  entriesOfSamePhrase: Pick<StoredKeystoreSeed, 'passphraseLabel'>[]
+): string => {
+  const takenLabels = new Set(entriesOfSamePhrase.map(({ passphraseLabel }) => passphraseLabel))
+
+  let number = 1
+  while (takenLabels.has(String(number))) number += 1
+
+  return String(number)
 }
 
 /**
