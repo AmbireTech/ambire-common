@@ -49,6 +49,17 @@ export function getSignedMessage(
   return isRecord(signedMessage) ? signedMessage : {}
 }
 
+/**
+ * Returns only the domain fields that the signature covers: the ones declared in
+ * `types.EIP712Domain`. When `EIP712Domain` is not declared, the domain is returned as is.
+ */
+export function getSignedDomain(
+  types: TypedMessageTypes,
+  domain: Record<string, any>
+): Record<string, any> {
+  return getSignedMessage(types, 'EIP712Domain', domain)
+}
+
 export type HexIrCall = IrCall & { data: Hex }
 
 /** Type guard that narrows an IrCall to one with a valid hex data field. */
