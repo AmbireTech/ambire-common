@@ -852,6 +852,29 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (requestId) this.#ui.message.sendUiMessage({ requestId, ok: true })
   }
 
+  /** Moves an account to another place in the list. The wallet shows the accounts in this order. */
+  async reorderAccounts({ fromIndex, toIndex }: { fromIndex: number; toIndex: number }) {
+    await this.initialLoadPromise
+
+    const movedAccount = this.accounts[fromIndex]
+    if (!movedAccount || toIndex < 0 || toIndex >= this.accounts.length) {
+      this.emitError({
+        level: 'major',
+        message: "Couldn't reorder the accounts. Please reload the page and try again.",
+        error: new Error('privacyPools: the account to move or its new place is out of the list')
+      })
+      return
+    }
+
+    if (fromIndex === toIndex) return
+
+    const reorderedAccounts = this.accounts.filter((_, index) => index !== fromIndex)
+    reorderedAccounts.splice(toIndex, 0, movedAccount)
+    this.accounts = reorderedAccounts
+    this.emitUpdate()
+    await this.#persistAccounts()
+  }
+
   /** Removes the account, not its funds: re-adding it finds them. */
   async removeAccount(seedId: string): Promise<void> {
     await this.initialLoadPromise

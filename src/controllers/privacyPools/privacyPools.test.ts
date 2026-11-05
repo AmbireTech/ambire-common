@@ -826,6 +826,31 @@ describe('PrivacyPoolsController', () => {
       )
     })
 
+    it('moves an account to another place in the list and saves the order', async () => {
+      const { controller, storage } = await prepareTest()
+
+      await controller.reorderAccounts({ fromIndex: 1, toIndex: 0 })
+
+      expect(controller.accounts.map(({ seedId }) => seedId)).toEqual(['seed-b', 'seed-a'])
+      expect((await storage.get('privacyPoolsAccounts', [])).map(({ seedId }) => seedId)).toEqual([
+        'seed-b',
+        'seed-a'
+      ])
+    })
+
+    it('keeps the order when asked to move an account out of the list', async () => {
+      const { controller, storage } = await prepareTest()
+      const storedBefore = await storage.get('privacyPoolsAccounts', [])
+
+      await controller.reorderAccounts({ fromIndex: 0, toIndex: 2 })
+
+      expect(controller.accounts.map(({ seedId }) => seedId)).toEqual(['seed-a', 'seed-b'])
+      expect(await storage.get('privacyPoolsAccounts', [])).toEqual(storedBefore)
+      expect(controller.emittedErrors.at(-1)?.message).toBe(
+        "Couldn't reorder the accounts. Please reload the page and try again."
+      )
+    })
+
     it('tells whether an account can be added, without adding it', async () => {
       const { controller } = await prepareTest({ accounts: ['seed-a'] })
 
