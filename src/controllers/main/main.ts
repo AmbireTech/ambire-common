@@ -87,7 +87,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '@/interfa
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
 import { IPortfolioController } from '@/interfaces/portfolio'
-import { IPrivacyPoolsController, PrivacyPoolsAccountToAdd } from '@/interfaces/privacyPools'
+import { IPrivacyPoolsController, PreparePrivacyPoolsAccount } from '@/interfaces/privacyPools'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
 import { ISafeController } from '@/interfaces/safe'
@@ -1076,11 +1076,9 @@ export class MainController extends EventEmitter implements IMainController {
    */
   async #preparePrivacyPoolsAccount({
     seedId,
-    extraEntropy
-  }: {
-    seedId: string | null
-    extraEntropy?: string
-  }): Promise<PrivacyPoolsAccountToAdd> {
+    extraEntropy,
+    signal
+  }: Parameters<PreparePrivacyPoolsAccount>[0]): ReturnType<PreparePrivacyPoolsAccount> {
     await this.privacyPools.initialLoadPromise
     const label = this.privacyPools.defaultAccountLabel
 
@@ -1089,6 +1087,8 @@ export class MainController extends EventEmitter implements IMainController {
       return { isNewSeed: false, seedId, label }
     }
 
+    // Left meanwhile - a phrase generated now could replace the temp seed of a flow started since
+    if (signal.aborted) return null
     await this.keystore.generateTempSeed({ extraEntropy })
     return { isNewSeed: true, label }
   }
@@ -1122,6 +1122,7 @@ export class MainController extends EventEmitter implements IMainController {
             level: 'major',
             error: new Error('main: the temp seed of the Privacy Pools account to add is gone')
           })
+        if (toAdd.isNewSeed) this.accountPicker.onPrivacyPoolsAccountSeedStored(seedId)
 
         await this.privacyPools.addAccount(seedId, label.trim() || toAdd.label)
         await this.accountPicker.reset()

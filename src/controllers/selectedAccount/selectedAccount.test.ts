@@ -530,6 +530,66 @@ describe('SelectedAccount Controller', () => {
       expect(mainCtrl.keystore.seeds).toHaveLength(0)
     })
 
+    it('leaving before the new recovery phrase is generated keeps the next flow phrase', async () => {
+      const { mainCtrl } = await preparePrivacyPoolsTest({
+        privacyPoolsSeedIds: [],
+        withStoredSeed: false
+      })
+      await mainCtrl.keystore.addSecret('password', 'password', '', false)
+      await mainCtrl.keystore.unlockWithSecret('password', 'password')
+      let finishLoading: () => void = () => {}
+      mainCtrl.privacyPools.initialLoadPromise = new Promise((resolve) => {
+        finishLoading = resolve
+      })
+      await mainCtrl.accountPicker.setPrivacyPoolsInitParams({})
+      const preparing = mainCtrl.accountPicker.initIfNotStarted()
+
+      await mainCtrl.accountPicker.reset()
+      // The flow the user went on to (e.g. Create) generates its own phrase
+      await mainCtrl.keystore.generateTempSeed({})
+      const generateSpy = jest.spyOn(mainCtrl.keystore, 'generateTempSeed')
+      finishLoading()
+      await preparing
+
+      expect(generateSpy).not.toHaveBeenCalled()
+      expect(mainCtrl.keystore.hasTempSeed).toBe(true)
+      expect(mainCtrl.accountPicker.privacyPoolsAccountToAdd).toBeNull()
+      generateSpy.mockRestore()
+    })
+
+    it('adding again after a failure reuses the new recovery phrase stored already', async () => {
+      const { restore } = suppressConsole()
+      const { mainCtrl } = await preparePrivacyPoolsTest({
+        privacyPoolsSeedIds: [],
+        withStoredSeed: false
+      })
+      await mainCtrl.keystore.addSecret('password', 'password', '', false)
+      await mainCtrl.keystore.unlockWithSecret('password', 'password')
+      await preparePrivacyPoolsAccount(mainCtrl, {})
+      const addAccountSpy = jest
+        .spyOn(mainCtrl.privacyPools, 'addAccount')
+        .mockRejectedValueOnce(new Error('Saving failed'))
+
+      await mainCtrl.addPreparedPrivacyPoolsAccount('Savings')
+
+      const [storedSeed] = mainCtrl.keystore.seeds
+      expect(mainCtrl.privacyPools.accounts).toHaveLength(0)
+      expect(mainCtrl.accountPicker.privacyPoolsAccountToAdd).toEqual({
+        isNewSeed: false,
+        seedId: storedSeed?.id,
+        label: 'Private account 1'
+      })
+
+      await mainCtrl.addPreparedPrivacyPoolsAccount('Savings')
+
+      expect(mainCtrl.keystore.seeds).toHaveLength(1)
+      expect(mainCtrl.privacyPools.accounts).toEqual([
+        expect.objectContaining({ seedId: storedSeed?.id, label: 'Savings' })
+      ])
+      addAccountSpy.mockRestore()
+      restore()
+    })
+
     it('adding one from a stored recovery phrase keeps the name the user gave it', async () => {
       const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest({
         privacyPoolsSeedIds: []

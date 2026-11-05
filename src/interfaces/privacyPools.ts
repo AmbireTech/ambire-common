@@ -85,6 +85,16 @@ export type PrivacyPoolsAccountToAdd =
   | { isNewSeed: false; seedId: string; label: string }
   | { isNewSeed: true; label: string }
 
+/**
+ * Prepares the Privacy Pools account of a flow, from a stored recovery phrase (`seedId`) or a new
+ * one. Resolves with `null` when `signal` aborts first - the user left the flow.
+ */
+export type PreparePrivacyPoolsAccount = (params: {
+  seedId: string | null
+  extraEntropy?: string
+  signal: AbortSignal
+}) => Promise<PrivacyPoolsAccountToAdd | null>
+
 export type PrivacyPoolsSyncStatus = 'idle' | 'syncing' | 'ready'
 
 /**

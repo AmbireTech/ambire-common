@@ -35,7 +35,7 @@ import {
   ReadyToAddKeys
 } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
-import { PrivacyPoolsAccountToAdd } from '../../interfaces/privacyPools'
+import { PreparePrivacyPoolsAccount, PrivacyPoolsAccountToAdd } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import {
   getAccountImportStatus,
@@ -164,13 +164,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    */
   #privacyPoolsPromise?: Promise<void>
 
-  // Bumped by `reset`, so a preparation it outran does not bring the account back
-  #privacyPoolsRunId = 0
+  // Aborted by `reset`, so a preparation it outran does not bring the account back
+  #privacyPoolsAbortController?: AbortController
 
-  #onPreparePrivacyPoolsAccount: (params: {
-    seedId: string | null
-    extraEntropy?: string
-  }) => Promise<PrivacyPoolsAccountToAdd>
+  #onPreparePrivacyPoolsAccount: PreparePrivacyPoolsAccount
 
   /**
    * Keys handed in by a flow without a key iterator (`prepareAccounts`). Private, as
@@ -261,10 +258,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     sendUiMessage: (params: {}) => void
     onAddPreparedAccounts: (prepared: PreparedAccounts) => Promise<void>
     /** Checks a Privacy Pools account can be added, names it, and generates its new phrase */
-    onPreparePrivacyPoolsAccount: (params: {
-      seedId: string | null
-      extraEntropy?: string
-    }) => Promise<PrivacyPoolsAccountToAdd>
+    onPreparePrivacyPoolsAccount: PreparePrivacyPoolsAccount
   }) {
     super(eventEmitterRegistry)
     this.#accounts = accounts
@@ -629,7 +623,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.privacyPoolsAccountToAdd = null
     this.privacyPoolsInitParams = null
     this.#privacyPoolsExtraEntropy = undefined
-    this.#privacyPoolsRunId++
+    this.#privacyPoolsAbortController?.abort()
+    this.#privacyPoolsAbortController = undefined
     this.keyIterator = null
     this.selectedAccountsFromCurrentSession = []
     this.page = DEFAULT_PAGE
@@ -689,18 +684,34 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     await this.#privacyPoolsPromise
   }
 
+  /**
+   * Called once the new recovery phrase of the account to add is stored, ahead of the account:
+   * adding it again, after a failure, reuses the phrase rather than look for the temp seed.
+   */
+  onPrivacyPoolsAccountSeedStored(seedId: string) {
+    if (!this.privacyPoolsAccountToAdd?.isNewSeed) return
+
+    this.privacyPoolsAccountToAdd = {
+      isNewSeed: false,
+      seedId,
+      label: this.privacyPoolsAccountToAdd.label
+    }
+  }
+
   async #preparePrivacyPoolsAccount(requestId?: string) {
     if (!this.privacyPoolsInitParams) return
 
-    const runId = this.#privacyPoolsRunId
+    const abortController = new AbortController()
+    this.#privacyPoolsAbortController = abortController
     try {
       const accountToAdd = await this.#onPreparePrivacyPoolsAccount({
         seedId: this.privacyPoolsInitParams.seedId,
-        extraEntropy: this.#privacyPoolsExtraEntropy
+        extraEntropy: this.#privacyPoolsExtraEntropy,
+        signal: abortController.signal
       })
       // Reset meanwhile - the user left the flow
-      if (runId !== this.#privacyPoolsRunId) {
-        if (accountToAdd.isNewSeed) this.#keystore.deleteTempSeed()
+      if (!accountToAdd || abortController.signal.aborted) {
+        if (accountToAdd?.isNewSeed) this.#keystore.deleteTempSeed()
         this.#replyToRequest(requestId, 'The account is no longer being added')
         return
       }
