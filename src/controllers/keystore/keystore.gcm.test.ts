@@ -290,7 +290,8 @@ const tamperGcmCiphertext = (payload: any) => {
   return { ...payload, ciphertext: hexlify(bytes) }
 }
 
-const keystoreSigners = { internal: KeystoreSigner, ledger: LedgerSigner }
+// LedgerSigner stands in for any hardware wallet: keys of a type without a signer are unsupported
+const keystoreSigners = { internal: KeystoreSigner, ledger: LedgerSigner, trezor: LedgerSigner }
 
 const prepareTest = async (
   initialSetStorage?: (storageCtrl: StorageController) => Promise<void>,

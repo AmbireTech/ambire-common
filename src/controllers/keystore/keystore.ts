@@ -89,6 +89,7 @@ export const STATUS_WRAPPED_METHODS = {
   addSeed: 'INITIAL',
   updateSeed: 'INITIAL',
   deleteSeed: 'INITIAL',
+  deleteKey: 'INITIAL',
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
   addKeysExternallyStored: 'INITIAL',
@@ -141,6 +142,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
+  /**
+   * The key types this device can sign with: the ones it registered a signer for. Keys of other
+   * types (synced from a device that supports them) are kept, but left out of `keys`.
+   */
+  supportedKeyTypes: Key['type'][]
+
   #keystoreKeys: StoredKey[] = []
 
   #internalKeysToAddOnKeystoreReady: ReadyToAddKeys['internal'] = []
@@ -189,6 +196,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     super(eventEmitterRegistry)
     this.#storage = _storage
     this.#keystoreSigners = _keystoreSigners
+    this.supportedKeyTypes = Object.keys(_keystoreSigners) as Key['type'][]
     this.#mainKey = null
     this.keyStoreUid = null
     this.#ui = ui
@@ -726,7 +734,23 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     await this.withStatus('removeSecret', () => this.#removeSecret(secretId))
   }
 
+  /**
+   * The keys this device can sign with. Keys of a type it has no signer for are in
+   * `unsupportedKeys`, so everything that signs or tells whether an account is view-only skips them.
+   */
   get keys(): Key[] {
+    return this.#allKeys.filter((key) => this.supportedKeyTypes.includes(key.type))
+  }
+
+  /**
+   * Keys of a type this device can't sign with, e.g. a GridPlus key synced from the extension
+   * to mobile. They are stored (and synced back) like any other key, only never used to sign.
+   */
+  get unsupportedKeys(): Key[] {
+    return this.#allKeys.filter((key) => !this.supportedKeyTypes.includes(key.type))
+  }
+
+  get #allKeys(): Key[] {
     return this.#keystoreKeys.map(({ addr, type, label, dedicatedToOneSA, meta }) => {
       // Written with this 'internal' type guard (if) on purpose, because this
       // way TypeScript will be able to narrow down the types properly and infer
@@ -1159,6 +1183,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   async removeKey(addr: Key['addr'], type: Key['type']) {
     await this.initialLoadPromise
+    this.#removeKeyFromMemory(addr, type)
+    await this.#storage.set('keystoreKeys', this.#keystoreKeys)
+  }
+
+  #removeKeyFromMemory(addr: Key['addr'], type: Key['type']) {
     if (!this.isUnlocked)
       throw new EmittableError({
         message:
@@ -1181,7 +1210,19 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
       return !isMatching
     })
-    await this.#storage.set('keystoreKeys', this.#keystoreKeys)
+  }
+
+  /**
+   * Removes a key on the user's request. The key is stored once for every account it signs
+   * for, so they all lose it.
+   */
+  async deleteKey(addr: Key['addr'], type: Key['type']) {
+    await this.withStatus('deleteKey', async () => {
+      await this.initialLoadPromise
+      this.#removeKeyFromMemory(addr, type)
+      this.emitUpdate()
+      await this.#storage.set('keystoreKeys', this.#keystoreKeys)
+    })
   }
 
   async exportKeyWithPasscode(keyAddress: Key['addr'], keyType: Key['type'], passphrase: string) {
@@ -1813,6 +1854,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       // includes the getters in the stringified instance
       isUnlocked: this.isUnlocked,
       keys: this.keys,
+      unsupportedKeys: this.unsupportedKeys,
       seeds: this.seeds,
       hasPasswordSecret: this.hasPasswordSecret,
       hasBiometricsSecret: this.hasBiometricsSecret,

@@ -3,6 +3,7 @@ import { getBytes, Wallet } from 'ethers'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { LedgerSigner } from '../../../test/keystore'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
@@ -12,6 +13,7 @@ import {
   parseAppDataSyncPayload,
   serializeAppDataSyncPayload
 } from '../../libs/appDataSync/appDataSync'
+import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { MainController } from '../main/main'
 
 const EXPORTING_PASS = 'exportingDevicePass'
@@ -41,11 +43,17 @@ const accounts = [
   toAccount(LEDGER_ADDR, 'Ledger account')
 ]
 
+/** A device that can sign with private keys and a Ledger, like both apps can */
+const SIGNERS_WITH_LEDGER = { internal: KeystoreSigner, ledger: LedgerSigner }
+
 const makeExportingDevice = async () => {
-  const { mainCtrl } = await makeMainController(async (storageCtrl) => {
-    await storageCtrl.set('accounts', accounts)
-    await storageCtrl.set('selectedAccount', accounts[0]!.addr)
-  })
+  const { mainCtrl } = await makeMainController(
+    async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
+      await storageCtrl.set('selectedAccount', accounts[0]!.addr)
+    },
+    { overrides: { keystoreSigners: SIGNERS_WITH_LEDGER } }
+  )
 
   await mainCtrl.keystore.addSecret('password', EXPORTING_PASS, '', true)
   await mainCtrl.keystore.addKeys(
@@ -77,8 +85,14 @@ const makeExportingDevice = async () => {
   return mainCtrl
 }
 
-const makeImportingDevice = async ({ withPassword }: { withPassword: boolean }) => {
-  const { mainCtrl } = await makeMainController()
+const makeImportingDevice = async ({
+  withPassword,
+  keystoreSigners = SIGNERS_WITH_LEDGER
+}: {
+  withPassword: boolean
+  keystoreSigners?: Parameters<typeof makeMainController>[1]['overrides']['keystoreSigners']
+}) => {
+  const { mainCtrl } = await makeMainController(undefined, { overrides: { keystoreSigners } })
 
   if (withPassword) await mainCtrl.keystore.addSecret('password', IMPORTING_PASS, '', true)
 
@@ -171,6 +185,32 @@ describe('AppDataSyncController', () => {
     expect(importingDevice.keystore.keys).toEqual([
       expect.objectContaining({ addr: LEDGER_ADDR, type: 'ledger', isExternallyStored: true })
     ])
+  })
+
+  test('keeps a key this device cannot sign with, as unsupported, and syncs it back', async () => {
+    const exportingDevice = await makeExportingDevice()
+    const payload = await exportPayload(exportingDevice, [LEDGER_ADDR])
+
+    // A device without a Ledger signer, like the mobile app is for GridPlus
+    const importingDevice = await makeImportingDevice({
+      withPassword: true,
+      keystoreSigners: { internal: KeystoreSigner }
+    })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+
+    expect(importingDevice.keystore.supportedKeyTypes).toEqual(['internal'])
+    // The account is view-only here, as nothing on this device can sign for it
+    expect(importingDevice.keystore.keys).toHaveLength(0)
+    expect(importingDevice.keystore.unsupportedKeys).toEqual([
+      expect.objectContaining({ addr: LEDGER_ADDR, type: 'ledger' })
+    ])
+    await expect(importingDevice.keystore.getSigner(LEDGER_ADDR, 'ledger')).rejects.toThrow(
+      'keystore: unsupported signer type'
+    )
+
+    // Syncing back to a device that supports it hands the key over again
+    const { keys } = await importingDevice.keystore.exportForSync([LEDGER_ADDR])
+    expect(keys).toEqual([expect.objectContaining({ addr: LEDGER_ADDR, type: 'ledger' })])
   })
 
   test('does not duplicate an account the other device already has', async () => {
