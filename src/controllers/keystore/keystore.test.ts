@@ -13,6 +13,7 @@ import {
   LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
 import { PRIVACY_POOLS_SIGNING_KEY_PATH } from '../../consts/privacyPools'
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { ExternalKey, IKeystoreController, InternalKey } from '../../interfaces/keystore'
 import { PrivacyProviderId } from '../../interfaces/privateAccount'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
@@ -731,6 +732,38 @@ describe('KeystoreController recovery phrase passphrases', () => {
     await keystoreCtrl.updateSeed({ id: seedId, passphraseLabel: 'Travel' })
 
     expect(seedById(seedId).passphraseLabel).toBeUndefined()
+  })
+
+  test('replies to a waiting UI once the new name is stored', async () => {
+    const seedId = await addPhrase(PASSPHRASE)
+    const sendUiMessage = jest.spyOn(uiManager.message, 'sendUiMessage')
+
+    await keystoreCtrl.updateSeed({ id: seedId, label: 'Travel phrase' }, 'request-id')
+
+    const [storedSeed] = await storageCtrl.get('keystoreSeeds', [])
+    expect(storedSeed.label).toBe('Travel phrase')
+    expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-id', ok: true })
+    sendUiMessage.mockRestore()
+  })
+
+  test('replies to a waiting UI with a failed save, leaving the toast to it', async () => {
+    const seedId = await addPhrase(PASSPHRASE)
+    const sendUiMessage = jest.spyOn(uiManager.message, 'sendUiMessage')
+    const setSpy = jest.spyOn(storageCtrl, 'set').mockRejectedValueOnce(new Error('disk full'))
+    const emittedErrors: ErrorRef[] = []
+    const unsubscribe = keystoreCtrl.onError((error) => emittedErrors.push(error))
+
+    await keystoreCtrl.updateSeed({ id: seedId, label: 'Travel phrase' }, 'request-id')
+
+    unsubscribe()
+    setSpy.mockRestore()
+    expect(sendUiMessage).toHaveBeenCalledWith({
+      requestId: 'request-id',
+      ok: false,
+      error: 'disk full'
+    })
+    sendUiMessage.mockRestore()
+    expect(emittedErrors).toEqual([expect.objectContaining({ level: 'silent' })])
   })
 
   test('tells the right passphrase from a wrong one', async () => {

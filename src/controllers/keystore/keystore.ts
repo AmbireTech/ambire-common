@@ -1183,24 +1183,48 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     this.emitUpdate()
   }
 
-  async updateSeed({
-    id,
-    label,
-    passphraseLabel,
-    hdPathTemplate,
-    notBackedUp
-  }: {
-    id: KeystoreSeed['id']
-    label?: KeystoreSeed['label']
-    passphraseLabel?: KeystoreSeed['passphraseLabel']
-    hdPathTemplate?: KeystoreSeed['hdPathTemplate']
-    notBackedUp?: KeystoreSeed['notBackedUp']
-  }) {
-    await this.withStatus(
-      'updateSeed',
-      () => this.#updateSeed({ id, label, passphraseLabel, hdPathTemplate, notBackedUp }),
-      true
-    )
+  /**
+   * With a `requestId`, replies once the change is stored, for a UI that waits for it and tells
+   * the user about a failure itself.
+   */
+  async updateSeed(
+    {
+      id,
+      label,
+      passphraseLabel,
+      hdPathTemplate,
+      notBackedUp
+    }: {
+      id: KeystoreSeed['id']
+      label?: KeystoreSeed['label']
+      passphraseLabel?: KeystoreSeed['passphraseLabel']
+      hdPathTemplate?: KeystoreSeed['hdPathTemplate']
+      notBackedUp?: KeystoreSeed['notBackedUp']
+    },
+    requestId?: string
+  ) {
+    const update = () =>
+      this.#updateSeed({ id, label, passphraseLabel, hdPathTemplate, notBackedUp })
+    if (!requestId) {
+      await this.withStatus('updateSeed', update, true)
+      return
+    }
+
+    try {
+      await update()
+      this.#ui.message.sendUiMessage({ requestId, ok: true })
+    } catch (error: any) {
+      this.emitError({
+        message: "Couldn't save the recovery phrase changes. Please try again.",
+        level: 'silent',
+        error: error instanceof Error ? error : new Error('keystore: updating the seed failed')
+      })
+      this.#ui.message.sendUiMessage({
+        requestId,
+        ok: false,
+        error: error?.message || 'updateSeed failed'
+      })
+    }
   }
 
   /**
