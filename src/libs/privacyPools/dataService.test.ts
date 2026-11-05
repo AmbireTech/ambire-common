@@ -24,9 +24,9 @@ const LOGS_PARAMS = { address: POOL_ADDRESS, fromBlock: 0n, toBlock: 0n }
 /** A CDN read that was accepted and never answers. */
 const hang = () => new Promise<never>(() => {})
 
-const createService = () => {
+const createService = (getProviderLogs = jest.fn(async () => [RPC_LOG])) => {
   const provider = {
-    getLogs: jest.fn(async () => [RPC_LOG]),
+    getLogs: getProviderLogs,
     getBlockNumber: async () => 0n
   } as unknown as EthereumProvider
   const onSagaUnavailable = jest.fn()
@@ -72,5 +72,35 @@ describe('createPrivacyPoolsDataService', () => {
     await expect(getLogs(LOGS_PARAMS)).resolves.toEqual([RPC_LOG])
     expect(sagaLogs).toHaveBeenCalledTimes(1)
     expect(onSagaUnavailable).toHaveBeenCalledTimes(1)
+  })
+
+  test('stays on the CDN when the provider fails on the blocks the CDN has not indexed', async () => {
+    jest.useFakeTimers()
+    const rpcError = new Error('RPC unavailable')
+    let failuresLeft = 4
+    const getProviderLogs = jest.fn(async () => {
+      if (failuresLeft > 0) {
+        failuresLeft -= 1
+        throw rpcError
+      }
+      return [RPC_LOG]
+    })
+    // Like the SDK's reader, it hands the newest blocks to the provider
+    const sagaLogs = jest.fn()
+    jest.mocked(createSagaLogSource).mockImplementation(async ({ fallback }) => {
+      sagaLogs.mockImplementation((params) => fallback(params as typeof LOGS_PARAMS))
+      return sagaLogs as any
+    })
+    const { servicePromise, onSagaUnavailable } = createService(getProviderLogs)
+    const getLogs = getLogsOf((await servicePromise).dataService)
+
+    const reading = getLogs(LOGS_PARAMS)
+    const failed = expect(reading).rejects.toBe(rpcError)
+    await jest.advanceTimersByTimeAsync(PRIVACY_POOLS_SAGA_READ_TIMEOUT / 2)
+    await failed
+
+    await expect(getLogs(LOGS_PARAMS)).resolves.toEqual([RPC_LOG])
+    expect(sagaLogs).toHaveBeenCalledTimes(2)
+    expect(onSagaUnavailable).not.toHaveBeenCalled()
   })
 })

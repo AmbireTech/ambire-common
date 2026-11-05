@@ -30,6 +30,18 @@ export const createPrivacyPoolsDataService = async ({
 
   if (!saga) return { dataService: new DataService({ provider, getLogs }), isSagaHydrated: false }
 
+  // The CDN reader asks the provider for the blocks it has not indexed yet. A failure there is the
+  // provider's, so it must not move the next reads off the CDN.
+  const providerErrors = new WeakSet<object>()
+  const getLogsFromProvider: typeof getLogs = async (params) => {
+    try {
+      return await getLogs(params)
+    } catch (error: unknown) {
+      if (error instanceof Object) providerErrors.add(error)
+      throw error
+    }
+  }
+
   try {
     // The CDN is read with the global fetch inside the SDK, so a timeout can only race it
     const sagaLogs = await withTimeout(
@@ -37,7 +49,7 @@ export const createPrivacyPoolsDataService = async ({
         createSagaLogSource({
           sourceUrl: saga.sourceUrl,
           chainId: Number(saga.chainId),
-          fallback: getLogs,
+          fallback: getLogsFromProvider,
           publicKey: PRIVACY_POOLS_SAGA_SYNC_PUBLIC_KEY
         }),
       { timeoutMs: PRIVACY_POOLS_SAGA_READ_TIMEOUT }
@@ -52,6 +64,8 @@ export const createPrivacyPoolsDataService = async ({
           timeoutMs: PRIVACY_POOLS_SAGA_READ_TIMEOUT
         })
       } catch (error: any) {
+        if (providerErrors.has(error)) throw error
+
         hasSagaFailed = true
         onSagaUnavailable(error)
 
