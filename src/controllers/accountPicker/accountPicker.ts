@@ -151,6 +151,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   // Kept private, as the public state goes to the UI
   #privacyPoolsExtraEntropy?: string
 
+  // The passphrase of a phrase that doesn't save it, which derives the account's key on adding it
+  #privacyPoolsSeedPassphrase?: string
+
   /**
    * The Privacy Pools account the current flow is about to add. The personalize step shows it
    * under `label`, and nothing is written until the user proceeds from there - going back from it
@@ -623,6 +626,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.privacyPoolsAccountToAdd = null
     this.privacyPoolsInitParams = null
     this.#privacyPoolsExtraEntropy = undefined
+    this.#privacyPoolsSeedPassphrase = undefined
     this.#privacyPoolsAbortController?.abort()
     this.#privacyPoolsAbortController = undefined
     this.keyIterator = null
@@ -665,23 +669,62 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   /**
    * Sets a Privacy Pools account flow up, from a stored recovery phrase (`seedId`) or a new one,
    * ending any other flow. Only that - the personalize step prepares the account behind its
-   * loading state (`initIfNotStarted`), so the flow moves on at once.
+   * loading state (`initIfNotStarted`), so the flow moves on at once. A phrase whose passphrase
+   * isn't saved needs it, checked here and saved if the user chose to. Replies to `requestId`
+   * once set up, with `isWrongPassphrase` when the passphrase isn't the phrase's one.
    */
-  async setPrivacyPoolsInitParams({
-    seedId,
-    extraEntropy
-  }: {
-    seedId?: string
-    extraEntropy?: string
-  }) {
+  async setPrivacyPoolsInitParams(
+    {
+      seedId,
+      extraEntropy,
+      seedPassphrase,
+      shouldSavePassphrase
+    }: {
+      seedId?: string
+      extraEntropy?: string
+      seedPassphrase?: string
+      shouldSavePassphrase?: boolean
+    },
+    requestId?: string
+  ) {
     // Assigned before anything is awaited, so a personalize step already asking waits for it
     this.#privacyPoolsPromise = (async () => {
-      await this.reset()
-      this.privacyPoolsInitParams = { seedId: seedId ?? null }
-      this.#privacyPoolsExtraEntropy = extraEntropy
-      this.emitUpdate()
+      try {
+        const seed = this.#keystore.seeds.find(({ id }) => id === seedId)
+        const isPassphraseKept =
+          !seed?.isPassphraseNeeded ||
+          (!!seedPassphrase &&
+            (shouldSavePassphrase
+              ? await this.#keystore.saveSeedPassphrase(seed.id, seedPassphrase)
+              : await this.#keystore.isSeedPassphraseCorrect(seed.id, seedPassphrase)))
+        // Shown by the passphrase sheet, so not reported as an error
+        if (!isPassphraseKept) {
+          this.#replyToRequest(requestId, undefined, { isWrongPassphrase: true })
+          return
+        }
+
+        await this.reset()
+        this.privacyPoolsInitParams = { seedId: seedId ?? null }
+        this.#privacyPoolsExtraEntropy = extraEntropy
+        // A saved passphrase derives the key from the phrase alone
+        if (seed?.isPassphraseNeeded && !shouldSavePassphrase)
+          this.#privacyPoolsSeedPassphrase = seedPassphrase
+        this.emitUpdate()
+        this.#replyToRequest(requestId, undefined, { isWrongPassphrase: false })
+      } catch (error: any) {
+        this.#replyToRequest(requestId, error?.message || 'Setting the account up failed')
+        this.#emitCaughtError(error, 'Setting the account up failed. Please try again.')
+      }
     })()
     await this.#privacyPoolsPromise
+  }
+
+  /**
+   * The passphrase the user entered for the account to add's recovery phrase, when it isn't
+   * saved - adding the account keeps its key, as the phrase alone can't derive it.
+   */
+  getPrivacyPoolsSeedPassphrase() {
+    return this.#privacyPoolsSeedPassphrase
   }
 
   /**
@@ -1271,10 +1314,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * Replies to the UI request behind a call (if there is one), so the UI can await it
    * instead of watching a transient status.
    */
-  #replyToRequest(requestId?: string, error?: string) {
+  #replyToRequest(requestId?: string, error?: string, res?: unknown) {
     if (!requestId) return
 
-    this.#sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
+    this.#sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true, res })
   }
 
   /**

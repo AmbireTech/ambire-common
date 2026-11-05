@@ -9,7 +9,7 @@ describe('address poisoning helpers', () => {
   describe('getAddressPoisoningMatchCounts', () => {
     const trustedAddress = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
 
-    test('should detect various overlap shapes and reject fewer than 3 matched chars on either side', () => {
+    test('should detect various overlap shapes and reject fewer than 2 matched chars on either side or 7 in total', () => {
       expect(
         getAddressPoisoningMatchCounts('0xF0cDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB', trustedAddress)
       ).toMatchObject({ matchedPrefixCharsCount: 4, matchedSuffixCharsCount: 4 })
@@ -44,7 +44,22 @@ describe('address poisoning helpers', () => {
 
       expect(
         getAddressPoisoningMatchCounts('0xF0caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa7DB', trustedAddress)
-      ).toMatchObject({ matchedPrefixCharsCount: 3, matchedSuffixCharsCount: 3 })
+      ).toBeNull()
+
+      expect(
+        getAddressPoisoningMatchCounts('0xF0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa237DB', trustedAddress)
+      ).toMatchObject({
+        matchedPrefixCharsCount: 2,
+        matchedSuffixCharsCount: 5
+      })
+
+      expect(
+        getAddressPoisoningMatchCounts('0xF0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB', trustedAddress)
+      ).toBeNull()
+
+      expect(
+        getAddressPoisoningMatchCounts('0xFaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa793237DB', trustedAddress)
+      ).toBeNull()
 
       expect(
         getAddressPoisoningMatchCounts('0xF0caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaDB', trustedAddress)

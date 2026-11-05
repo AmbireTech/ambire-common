@@ -1,6 +1,7 @@
 import { expect } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import * as uiHelpers from '../../../test/helpers/ui'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
@@ -9,6 +10,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { defiPositionsOnDisabledNetworksBannerId } from '../../libs/banners/banners'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
+import * as keystoreLib from '../../libs/keystore/keystore'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { stringify } from '../../libs/richJson/richJson'
 import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO } from '../../libs/selectedAccount/selectedAccount'
@@ -666,6 +668,194 @@ describe('SelectedAccount Controller', () => {
       expect(mainCtrl.privacyPools.accounts).toHaveLength(0)
       expect(selectedAccountCtrl.account?.addr).toBe(accounts[0]!.addr)
       restore()
+    })
+
+    describe('adding one from a phrase whose passphrase is not saved', () => {
+      const PASSPHRASE = 'extra word'
+
+      const prepareUnsavedPassphraseSeed = async () => {
+        // The picker keeps the `sendUiMessage` it was built with, so the spy goes in before that
+        const sendUiMessage = jest.fn()
+        const { mockUiManager } = uiHelpers
+        jest.spyOn(uiHelpers, 'mockUiManager').mockImplementationOnce(() => {
+          const mocked = mockUiManager()
+          mocked.uiManager.message.sendUiMessage = sendUiMessage
+          return mocked
+        })
+        const { mainCtrl } = await preparePrivacyPoolsTest({
+          privacyPoolsSeedIds: [],
+          withStoredSeed: false
+        })
+        await mainCtrl.keystore.addSecret('password', 'password', '', false)
+        await mainCtrl.keystore.unlockWithSecret('password', 'password')
+        await mainCtrl.keystore.addTempSeed({
+          seed: process.env.SEED,
+          seedPassphrase: PASSPHRASE,
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+        })
+        await mainCtrl.keystore.persistTempSeed()
+
+        return { mainCtrl, seedId: mainCtrl.keystore.seeds[0]!.id, sendUiMessage }
+      }
+
+      const getStoredKey = async (mainCtrl: any, seedId: string) =>
+        (await mainCtrl.storage.get('keystoreSeeds', [])).find(({ id }: any) => id === seedId)
+          ?.privacyKeys?.privacyPools
+
+      const setUpAndPrepare = async (
+        mainCtrl: any,
+        seedId: string,
+        passphrase: { seedPassphrase?: string; shouldSavePassphrase?: boolean },
+        requestId?: string
+      ) => {
+        await mainCtrl.accountPicker.setPrivacyPoolsInitParams({ seedId, ...passphrase }, requestId)
+        await mainCtrl.accountPicker.initIfNotStarted()
+      }
+
+      it('checks the passphrase on setting the flow up, but stores the key only once added', async () => {
+        const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()
+
+        await setUpAndPrepare(mainCtrl, seedId, { seedPassphrase: PASSPHRASE })
+
+        expect(mainCtrl.accountPicker.privacyPoolsAccountToAdd).toEqual(
+          expect.objectContaining({ isNewSeed: false, seedId })
+        )
+        expect(await getStoredKey(mainCtrl, seedId)).toBeUndefined()
+
+        await mainCtrl.addPreparedPrivacyPoolsAccount('Savings')
+
+        expect(mainCtrl.privacyPools.accounts).toEqual([
+          expect.objectContaining({ seedId, label: 'Savings' })
+        ])
+        expect(await getStoredKey(mainCtrl, seedId)).toBeDefined()
+        // Not saved - the user didn't choose to
+        expect(mainCtrl.keystore.seeds[0]?.isPassphraseNeeded).toBe(true)
+        expect(mainCtrl.accountPicker.getPrivacyPoolsSeedPassphrase()).toBeUndefined()
+      })
+
+      it('saves the passphrase on setting the flow up when the user chose to, storing no key', async () => {
+        const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()
+
+        await setUpAndPrepare(mainCtrl, seedId, {
+          seedPassphrase: PASSPHRASE,
+          shouldSavePassphrase: true
+        })
+
+        expect(mainCtrl.keystore.seeds[0]?.isPassphraseNeeded).toBe(false)
+        expect(mainCtrl.accountPicker.getPrivacyPoolsSeedPassphrase()).toBeUndefined()
+        const storeSpy = jest.spyOn(mainCtrl.keystore, 'storePrivacyKey')
+
+        await mainCtrl.addPreparedPrivacyPoolsAccount('Savings')
+
+        expect(storeSpy).not.toHaveBeenCalled()
+        storeSpy.mockRestore()
+        expect(mainCtrl.privacyPools.accounts).toHaveLength(1)
+      })
+
+      it('stores no key when the account could not be added', async () => {
+        const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()
+        await setUpAndPrepare(mainCtrl, seedId, { seedPassphrase: PASSPHRASE })
+        jest
+          .spyOn(mainCtrl.privacyPools, 'addAccount')
+          .mockRejectedValueOnce(new Error('could not add'))
+
+        await mainCtrl.addPreparedPrivacyPoolsAccount('Savings')
+
+        expect(mainCtrl.privacyPools.accounts).toHaveLength(0)
+        expect(await getStoredKey(mainCtrl, seedId)).toBeUndefined()
+        // Kept for adding it again
+        expect(mainCtrl.accountPicker.getPrivacyPoolsSeedPassphrase()).toBe(PASSPHRASE)
+
+        await mainCtrl.addPreparedPrivacyPoolsAccount('Savings')
+
+        expect(mainCtrl.privacyPools.accounts).toHaveLength(1)
+        expect(await getStoredKey(mainCtrl, seedId)).toBeDefined()
+      })
+
+      it('keeps the key of an account that is already added', async () => {
+        const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()
+        await setUpAndPrepare(mainCtrl, seedId, { seedPassphrase: PASSPHRASE })
+
+        // A double submit - the second one is refused
+        await Promise.all([
+          mainCtrl.addPreparedPrivacyPoolsAccount('Savings'),
+          mainCtrl.addPreparedPrivacyPoolsAccount('Savings')
+        ])
+
+        expect(mainCtrl.privacyPools.accounts).toHaveLength(1)
+        expect(await getStoredKey(mainCtrl, seedId)).toBeDefined()
+      })
+
+      it('derives from the passphrase once to check it, and once on adding to keep the key', async () => {
+        const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()
+        const getSeedMasterNodeSpy = jest.spyOn(keystoreLib, 'getSeedMasterNode')
+
+        await setUpAndPrepare(mainCtrl, seedId, { seedPassphrase: PASSPHRASE })
+        expect(getSeedMasterNodeSpy).toHaveBeenCalledTimes(1)
+        await mainCtrl.addPreparedPrivacyPoolsAccount('Savings')
+
+        expect(getSeedMasterNodeSpy).toHaveBeenCalledTimes(2)
+        getSeedMasterNodeSpy.mockRestore()
+        expect(await getStoredKey(mainCtrl, seedId)).toBeDefined()
+      })
+
+      it.each([
+        ['a wrong passphrase', { seedPassphrase: 'another word' }],
+        [
+          'a wrong passphrase to save',
+          { seedPassphrase: 'another word', shouldSavePassphrase: true }
+        ],
+        ['no passphrase', {}]
+      ])(
+        'sets nothing up for %s, and replies with it instead of an error',
+        async (_, passphrase) => {
+          const { mainCtrl, seedId, sendUiMessage } = await prepareUnsavedPassphraseSeed()
+          const emittedErrors: unknown[] = []
+          const unsubscribeErrors = mainCtrl.onError((error: unknown) => emittedErrors.push(error))
+
+          await mainCtrl.accountPicker.setPrivacyPoolsInitParams(
+            { seedId, ...passphrase },
+            'request'
+          )
+
+          unsubscribeErrors()
+          expect(emittedErrors).toEqual([])
+          expect(sendUiMessage).toHaveBeenCalledWith({
+            requestId: 'request',
+            ok: true,
+            res: { isWrongPassphrase: true }
+          })
+          expect(mainCtrl.accountPicker.privacyPoolsInitParams).toBeNull()
+          expect(mainCtrl.accountPicker.getPrivacyPoolsSeedPassphrase()).toBeUndefined()
+          expect(mainCtrl.keystore.seeds[0]?.isPassphraseNeeded).toBe(true)
+          expect(await getStoredKey(mainCtrl, seedId)).toBeUndefined()
+        }
+      )
+
+      it('replies once the flow is set up', async () => {
+        const { mainCtrl, seedId, sendUiMessage } = await prepareUnsavedPassphraseSeed()
+
+        await mainCtrl.accountPicker.setPrivacyPoolsInitParams(
+          { seedId, seedPassphrase: PASSPHRASE },
+          'request'
+        )
+
+        expect(mainCtrl.accountPicker.privacyPoolsInitParams).toEqual({ seedId })
+        expect(sendUiMessage).toHaveBeenCalledWith({
+          requestId: 'request',
+          ok: true,
+          res: { isWrongPassphrase: false }
+        })
+      })
+
+      it('going back drops the passphrase', async () => {
+        const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()
+        await setUpAndPrepare(mainCtrl, seedId, { seedPassphrase: PASSPHRASE })
+
+        await mainCtrl.accountPicker.reset()
+
+        expect(mainCtrl.accountPicker.getPrivacyPoolsSeedPassphrase()).toBeUndefined()
+      })
     })
 
     it('removing the only account of either kind leaves nothing selected', async () => {
