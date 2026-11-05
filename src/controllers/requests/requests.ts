@@ -116,6 +116,7 @@ import {
   isCallToSelfOrAmbireOp
 } from '../../libs/signMessage/signMessage'
 import { getSwapAndBridgeRequestParams } from '../../libs/swapAndBridge/swapAndBridge'
+import { getSignedDomain, getSignedMessage } from '../../libs/typedData/signedFields'
 import {
   getClaimWalletRequestParams,
   getIntentRequestParams,
@@ -2588,9 +2589,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (!typedData.types[typedData.primaryType])
       throw ethErrors.rpc.invalidParams('The primary data type is missing from the provided types')
+    let typedDataHash: string
     try {
-      // we ignore the result because we only care if the func will fail
-      hashTypedData({
+      typedDataHash = hashTypedData({
         types: typedData.types,
         primaryType: typedData.primaryType,
         message: typedData.message,
@@ -2601,8 +2602,39 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
     }
 
+    // Runs on the data as the app sent it, so unused types and extra fields can only make
+    // this check stricter, never weaker
     if (isCallToSelfOrAmbireOp(typedData, this.#selectedAccount.account)) {
       throw ethErrors.rpc.methodNotSupported(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
+    }
+
+    // The signature covers only the fields declared in the types. Every other field is dropped
+    // here (in the domain and at every level of the message), so the rest of the app, such as
+    // the humanizers and the hardware wallets, works only with what is actually signed.
+    // The chainId added to the domain above is dropped as well when the app did not declare it.
+    const signedDomain = getSignedDomain(typedData.types, typedData.domain)
+    const signedMessage = getSignedMessage(
+      typedData.types,
+      typedData.primaryType,
+      typedData.message
+    )
+
+    let signedDataHash: string
+    try {
+      signedDataHash = hashTypedData({
+        types: typedData.types,
+        primaryType: typedData.primaryType,
+        message: signedMessage,
+        domain: signedDomain
+      })
+    } catch (e) {
+      console.error(e)
+      throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
+    }
+
+    // Removing the fields that are not signed must never change what is signed
+    if (signedDataHash !== typedDataHash) {
+      throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
     }
 
     return {
@@ -2611,12 +2643,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       meta: {
         params: {
           types: typedData.types,
-          domain: typedData.domain,
-          message: typedData.message,
+          domain: signedDomain,
+          message: signedMessage,
           primaryType: typedData.primaryType
         },
         accountAddr: msgAddress,
-        chainId: typedData.domain.chainId
+        // The domain may not declare a chainId, so the network is the source of truth
+        chainId: network.chainId
       },
       dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
     } as TypedMessageUserRequest
