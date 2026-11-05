@@ -475,8 +475,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #getUserRequests: () => UserRequest[]
 
-  #getVisibleUserRequests: () => UserRequest[]
-
   hasProceeded: boolean = false
 
   /**
@@ -537,7 +535,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     relayerUrl,
     isCurrentSignAccountOpThrowingAnEstimationError,
     getUserRequests,
-    getVisibleUserRequests,
     swapProvider,
     onBroadcastSuccess,
     onBroadcastFailed,
@@ -566,7 +563,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isCurrentSignAccountOpThrowingAnEstimationError?: Function
     getUserRequests: () => UserRequest[]
-    getVisibleUserRequests: () => UserRequest[]
     swapProvider: SwapProviderExecutor
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
@@ -597,7 +593,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#contractInfo = contractInfo
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
-    this.#getVisibleUserRequests = getVisibleUserRequests
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
     this.#ui = ui
@@ -3848,17 +3843,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#selectedAccount.account.addr,
       this.activeRoutes
     )
-    const callsUserRequests = this.#getVisibleUserRequests().filter(
-      ({ kind }) => kind === 'calls'
-    ) as CallsUserRequest[]
-
     // Regular swaps complete with the user's transaction. Intents finish asynchronously and
     // remain visible in the same progress UI as bridges until the provider reports completion.
-    return getIntentBanners(
-      activeRoutesForSelectedAccount,
-      callsUserRequests,
-      this.#selectedAccount.account.addr
-    )
+    return getIntentBanners(activeRoutesForSelectedAccount, this.#selectedAccount.account.addr)
   }
 
   get #shouldAutoUpdateQuote() {

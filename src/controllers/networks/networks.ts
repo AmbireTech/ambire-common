@@ -7,8 +7,8 @@ import { NETWORKS_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
-import { Fetch } from '../../interfaces/fetch'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
+import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
   ChainId,
@@ -21,6 +21,7 @@ import {
 import { RPCProvider } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import {
+  fetchNetworkPriceIds,
   getFeaturesByNetworkProperties,
   getLoadingNetworkInfo,
   getNetworkInfo,
@@ -54,6 +55,14 @@ export class NetworksController extends EventEmitter implements INetworksControl
   #callRelayer: Function
 
   #featureFlags?: IFeatureFlagsController
+
+  // The last known value of the `tokenPrices` opt-out, to react only when it flips
+  #areTokenPricesEnabled: boolean
+
+  #unsubscribeFromFeatureFlags?: () => void
+
+  // Prevents race conditions in #refetchMissingPriceIds
+  #priceIdsRefetchId = 0
 
   #networks: { [key: string]: Network } = {}
 
@@ -124,6 +133,11 @@ export class NetworksController extends EventEmitter implements INetworksControl
     this.#onAddOrUpdateNetworks = onAddOrUpdateNetworks
     this.#onReady = onReady
     this.#featureFlags = featureFlags
+    this.#areTokenPricesEnabled = this.#isTokenPricesEnabled()
+    this.#unsubscribeFromFeatureFlags = this.#featureFlags?.onUpdate(
+      () => this.#onFeatureFlagsUpdate(),
+      'networks'
+    )
 
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -144,6 +158,80 @@ export class NetworksController extends EventEmitter implements INetworksControl
     if (this.defaultNetworksMode === 'mainnet') {
       this.#updateWithRelayerNetworksInterval.start()
     }
+  }
+
+  #isTokenPricesEnabled(): boolean {
+    return this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false
+  }
+
+  #onFeatureFlagsUpdate() {
+    const areTokenPricesEnabled = this.#isTokenPricesEnabled()
+    if (areTokenPricesEnabled === this.#areTokenPricesEnabled) return
+
+    this.#areTokenPricesEnabled = areTokenPricesEnabled
+    // The "Token prices" feature of every network depends on the opt-out
+    this.emitUpdate()
+
+    if (!areTokenPricesEnabled) return
+
+    this.#refetchMissingPriceIds().catch((error) =>
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to fetch the token price details of the custom networks.',
+        error
+      })
+    )
+  }
+
+  /**
+   * Custom networks added (or refreshed) while the user had opted out of token prices
+   * are left without the ids our price API looks them up by. Fetches them once the
+   * user opts back in, so that the token prices on these networks start showing
+   * without having to re-add the network.
+   */
+  async #refetchMissingPriceIds() {
+    await this.initialLoadPromise
+
+    this.#priceIdsRefetchId += 1
+    const refetchId = this.#priceIdsRefetchId
+
+    // Predefined networks get their ids from the network config instead
+    const networksWithoutPriceIds = Object.values(this.#networks).filter(
+      (network) => !network.predefined && (!network.platformId || !network.nativeAssetId)
+    )
+    if (!networksWithoutPriceIds.length) return
+
+    const results = await Promise.all(
+      networksWithoutPriceIds.map(async ({ chainId }) => ({
+        chainId,
+        priceIds: await fetchNetworkPriceIds(this.#fetch, chainId)
+      }))
+    )
+
+    // Opted out again or a newer refetch has started in the meantime
+    if (refetchId !== this.#priceIdsRefetchId || !this.#isTokenPricesEnabled()) return
+
+    const updatedNetworks = results.flatMap(({ chainId, priceIds }) => {
+      const stringChainId = chainId.toString()
+      const storedNetwork = this.#networks[stringChainId]
+      // Not supported by the price API, the request failed or the network got removed
+      if (!priceIds || !storedNetwork) return []
+
+      const updatedNetwork = { ...storedNetwork, ...priceIds }
+      this.#networks[stringChainId] = updatedNetwork
+
+      return [updatedNetwork]
+    })
+    if (!updatedNetworks.length) return
+
+    this.emitUpdate()
+    await this.#storage.set('networks', this.#networks)
+
+    // Reloads the portfolio on these networks, so that their token prices show up
+    // right away. Disabled networks are left out, because for them this callback
+    // removes the network data instead.
+    const enabledUpdatedNetworks = updatedNetworks.filter((network) => !network.disabled)
+    if (enabledUpdatedNetworks.length) await this.#onAddOrUpdateNetworks(enabledUpdatedNetworks)
   }
 
   get isInitialized(): boolean {
@@ -174,7 +262,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
           chainId: network.chainId,
           hasSingleton: network.hasSingleton
         },
-        network
+        network,
+        this.#areTokenPricesEnabled
       )
       return network
     })
@@ -395,7 +484,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
               this.emitUpdate()
             },
-            network
+            network,
+            this.#isTokenPricesEnabled()
           )
         }
       )
@@ -443,7 +533,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
             this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
             this.emitUpdate()
           },
-          this.#networks[networkToAddOrUpdate.chainId.toString()]
+          this.#networks[networkToAddOrUpdate.chainId.toString()],
+          this.#isTokenPricesEnabled()
         )
       }
     )
@@ -473,13 +564,13 @@ export class NetworksController extends EventEmitter implements INetworksControl
     const info = { ...(this.networkToAddOrUpdate.info as NetworkInfo) }
     const { feeOptions } = info
 
-    // @ts-expect-error
+    // @ts-expect-error delete is ok
     delete info.feeOptions
     this.#networks[network.chainId.toString()] = {
       ...network,
       ...info,
       feeOptions,
-      features: getFeaturesByNetworkProperties(info, undefined),
+      features: getFeaturesByNetworkProperties(info, undefined, this.#isTokenPricesEnabled()),
       hasRelayer: false,
       predefined: false,
       has7702: false
@@ -579,7 +670,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
                 this.emitUpdate()
               },
-              this.#networks[stringChainId]
+              this.#networks[stringChainId],
+              this.#isTokenPricesEnabled()
             )
           }
         )
@@ -640,6 +732,11 @@ export class NetworksController extends EventEmitter implements INetworksControl
     delete this.#networks[chainId.toString()]
     await this.#storage.set('networks', this.#networks)
     this.emitUpdate()
+  }
+
+  destroy() {
+    super.destroy()
+    this.#unsubscribeFromFeatureFlags?.()
   }
 
   toJSON() {

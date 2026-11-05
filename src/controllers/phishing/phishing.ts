@@ -1,4 +1,3 @@
-import { getDomain } from 'tldts'
 import { zeroAddress } from 'viem'
 
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -15,7 +14,11 @@ import { Fetch } from '../../interfaces/fetch'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
-import { getDappIdFromUrl, getNormalizedHostnameFromUrl } from '../../libs/dapps/helpers'
+import {
+  getCachedDomain,
+  getDappIdFromUrl,
+  getNormalizedHostnameFromUrl
+} from '../../libs/dapps/helpers'
 import {
   applySortedDelta,
   isSortedUnique,
@@ -23,6 +26,7 @@ import {
   toSortedUnique
 } from '../../libs/sortedList/sortedList'
 import { fetchWithTimeout } from '../../utils/fetch'
+import { forEachInSlices } from '../../utils/scheduler'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SUSPICIOUS_HOSTING_DOMAINS } from './suspiciousHostingDomains'
 
@@ -478,7 +482,10 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   ) {
     if (!urls.length) return
 
-    const dappsData = urls.map((url) => ({ dappId: getDappIdFromUrl(url), url }))
+    // In slices, as the app catalog checks thousands of urls at once and the thread is shared with
+    // the UI on mobile
+    const dappsData: { dappId: string; url: string }[] = []
+    await forEachInSlices(urls, (url) => dappsData.push({ dappId: getDappIdFromUrl(url), url }))
 
     if (process.env.IS_TESTING === 'true') {
       dappsData.forEach(({ url, dappId }) => {
@@ -503,7 +510,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     }
 
     // Priority: BLACKLISTED (phishing DB) > SUSPICIOUS_HOSTING > VERIFIED.
-    dappsData.forEach(({ url, dappId }) => {
+    await forEachInSlices(dappsData, ({ url, dappId }) => {
       if (this.#domains.length && this.#isDomainListed(dappId)) {
         this.#domainsBlacklistedStatus.set(dappId, 'BLACKLISTED')
         return
@@ -744,7 +751,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   #isDomainListed(dappId: string): boolean {
     if (sortedIncludes(this.#domains, dappId)) return true
 
-    const registrableDomain = getDomain(dappId)
+    const registrableDomain = getCachedDomain(dappId)
     return !!registrableDomain && sortedIncludes(this.#domains, registrableDomain)
   }
 

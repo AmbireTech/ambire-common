@@ -1,3 +1,4 @@
+import { toASCII } from 'punycode'
 import { getDomain } from 'tldts'
 
 import { predefinedDapps } from '../../consts/dapps/dapps'
@@ -39,20 +40,100 @@ const stripLeadingWww = (hostname: string): string => {
 }
 
 /**
+ * Past this many entries a cache is emptied instead of growing further, so a long-running
+ * extension that meets many distinct urls cannot accumulate them. The dapp catalog alone holds a
+ * few thousand.
+ */
+const MAX_URL_CACHE_SIZE = 20_000
+
+/**
+ * Reads a cached value, computing and storing it on a miss. Only for values that depend on the key
+ * alone, so a cached entry can never go stale.
+ */
+const getOrCompute = <T extends object | string | null>(
+  cache: Map<string, T>,
+  key: string,
+  compute: () => T
+): T => {
+  const cached = cache.get(key)
+  if (cached !== undefined) return cached
+
+  if (cache.size >= MAX_URL_CACHE_SIZE) cache.clear()
+  const value = compute()
+  cache.set(key, value)
+
+  return value
+}
+
+/** Whether every character of the string is ASCII. */
+const isAscii = (value: string): boolean => {
+  for (let i = 0; i < value.length; i++) {
+    if (value.charCodeAt(i) > 0x7f) return false
+  }
+
+  return true
+}
+
+/**
+ * The hostname in the form a spec-compliant `URL` gives it - lowercase, an internationalized name
+ * in punycode ("xn--...") and the ideographic full stops ("。") as plain dots - which is the form
+ * the phishing list and the stored dApp records use. Where `URL` follows the spec (browsers, Node)
+ * the hostname already is in that form and nothing changes. React Native's `URL` polyfill leaves
+ * internationalized names as typed, and without this they would never match the phishing list.
+ * `null` when the name cannot be converted.
+ */
+const toCanonicalHostname = (hostname: string): string | null => {
+  if (isAscii(hostname)) return hostname.toLowerCase()
+
+  try {
+    // NFKC folds look-alike forms, such as full-width letters ("ＥＶＩＬ"), into the plain ones
+    const folded = typeof hostname.normalize === 'function' ? hostname.normalize('NFKC') : hostname
+
+    return toASCII(folded.toLowerCase())
+  } catch {
+    return null
+  }
+}
+
+type UrlParts = Readonly<{ hostname: string; origin: string }>
+
+/**
+ * The parts of each url already parsed. On mobile `URL` is a spec parser written in JS, and the
+ * dapp catalog and the phishing checks used to parse every dapp's url several times, on every load.
+ */
+const urlPartsByUrl = new Map<string, UrlParts | null>()
+
+/**
+ * Parses a url once and remembers its canonical hostname (see `toCanonicalHostname`) and its
+ * origin, or `null` when it is not parsable.
+ */
+const getUrlParts = (url: string): UrlParts | null =>
+  getOrCompute(urlPartsByUrl, url, () => {
+    try {
+      const { hostname, origin } = new URL(url)
+      const canonicalHostname = toCanonicalHostname(hostname)
+      if (canonicalHostname === null) return null
+
+      return Object.freeze({ hostname: canonicalHostname, origin })
+    } catch {
+      return null
+    }
+  })
+
+/**
  * The dApp's canonical hostname, or `null` when the url is not parsable.
  *
- * Normalization deliberately starts from `new URL().hostname` - the parser already lowercases the
- * host and converts internationalized ones to punycode, which is the form the phishing blacklist
- * and the stored dApp records use. `tldts.getHostname()` also drops the trailing dot, but returns
+ * Normalization deliberately starts from `new URL().hostname` - a spec-compliant parser already
+ * lowercases the host and converts internationalized ones to punycode, which is the form the
+ * phishing blacklist and the stored dApp records use, and `toCanonicalHostname` does the same where
+ * the parser does not (React Native). `tldts.getHostname()` also drops the trailing dot, but returns
  * the unicode form of internationalized hostnames, so using it here would silently change the
  * identity of every non-ASCII dApp.
  */
 const getNormalizedHostnameFromUrl = (url: string): string | null => {
-  try {
-    return normalizeHostname(new URL(url).hostname)
-  } catch {
-    return null
-  }
+  const urlParts = getUrlParts(url)
+
+  return urlParts ? normalizeHostname(urlParts.hostname) : null
 }
 
 const getDappIdFromUrl = (url: string): string => {
@@ -82,23 +163,21 @@ const predefinedDappIdByUrl = new Map(predefinedDapps.map((d) => [d.url, d.id]))
 
 /**
  * Resolved domains, kept because `getDomain` walks a public-suffix trie and the catalog
- * is re-derived per dapp on every update of the dapps controller. The result depends only
- * on the url, so a cached entry can never go stale, and the keys are bounded by the dapps
- * the app has seen.
+ * is re-derived per dapp on every update of the dapps controller, and the phishing checks
+ * resolve every dapp's hostname. The result depends only on the url or hostname, so a cached
+ * entry can never go stale, and the size is capped by `MAX_URL_CACHE_SIZE`.
  */
 const domainByUrl = new Map<string, string | null>()
+
+/** `tldts.getDomain`, cached per input (a url or a hostname). */
+const getCachedDomain = (urlOrHostname: string): string | null =>
+  getOrCompute(domainByUrl, urlOrHostname, () => getDomain(urlOrHostname))
 
 const getDomainFromUrl = (url: string) => {
   const predefinedDappId = predefinedDappIdByUrl.get(url)
   if (predefinedDappId) return predefinedDappId
 
-  const cached = domainByUrl.get(url)
-  if (cached !== undefined) return cached
-
-  const domain = getDomain(url)
-  domainByUrl.set(url, domain)
-
-  return domain
+  return getCachedDomain(url)
 }
 
 const formatDappName = (name: string) => {
@@ -183,11 +262,8 @@ function getDappNameFromId(id: string) {
 }
 
 function unifyDefiLlamaDappUrl(url: string) {
-  try {
-    return new URL(url).origin
-  } catch {
-    return url // If it's not a valid URL, return as-is
-  }
+  // If it's not a valid URL, return as-is
+  return getUrlParts(url)?.origin ?? url
 }
 
 /** Whether signing requests can ask for the password/biometrics confirmation - mobile only. */
@@ -324,6 +400,7 @@ export {
   getDappIdFromUrl,
   getDappIconFromUrl,
   getDomainFromUrl,
+  getCachedDomain,
   formatDappName,
   sortDapps,
   modifyDappPropsIfNeeded,

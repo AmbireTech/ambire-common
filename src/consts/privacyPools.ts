@@ -34,9 +34,10 @@ export const PRIVACY_POOLS_SIGNING_KEY_PATH = `${PRIVACY_POOLS_KEY_ROOT_PATH}/${
 /**
  * fatlabs' CDN of the entrypoint's and the pools' event history as signed, content-addressed
  * files, against thousands of `eth_getLogs` calls: a chain's first read takes about 18 s. Only
- * Ethereum is published. Every file is checked against the signed manifest before use.
+ * Ethereum is published. Every file is checked against the signed manifest before use. The `/v2`
+ * publication, as only it has each event's transaction hash, which the activity links to.
  */
-export const PRIVACY_POOLS_SAGA_SYNC_URL = 'https://saga.fatsolutions.xyz'
+export const PRIVACY_POOLS_SAGA_SYNC_URL = 'https://saga.fatsolutions.xyz/v2'
 
 /**
  * Ethereum only: Sepolia has no paymaster, so nothing could be withdrawn there. Other chains
@@ -47,6 +48,8 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
     chainId: 1n,
     entrypointAddress: '0x6818809EefCe719E480a7526D76bD3e561526b46',
     deploymentBlock: 22153713n,
+    // 12 s per block
+    blocksPerDay: 7200n,
     aspUrl: 'https://api.0xbow.io',
     sagaSyncUrl: PRIVACY_POOLS_SAGA_SYNC_URL,
     paymaster: {
@@ -60,6 +63,12 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
         // USDC pool -> privacypools_complex_usdc_100 adapter
         '0xb419c2867ab3cbc78921660cb95150d95a94ce86': '0x841E8F12FDbB2c55c9E054B4c6d07c2743E09cFC'
       }
+    },
+    // As the entrypoint's `assetConfig` lists them
+    pools: {
+      '0xf241d57c6debae225c0f2e6ea1529373c9a9c9fb': ZERO_ADDRESS as Hex,
+      '0xb419c2867ab3cbc78921660cb95150d95a94ce86': '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      '0xe859c0bd25f260baee534fb52e307d3b64d24572': '0xdAC17F958D2ee523a2206206994597C13D831ec7'
     },
     assets: [
       {
@@ -178,6 +187,12 @@ export const PRIVACY_POOLS_CIRCUIT_PATHS = {
     zkey: 'commitment.zkey'
   }
 } as const
+
+/**
+ * How long taking back a deposit waits for its depositor's account to load before giving up, so
+ * a slow network does not keep the button loading. Covers one fetch through our RPCs.
+ */
+export const PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS = 15 * 1000
 
 /** Storage key holding the wallet's Privacy Pools accounts. */
 export const PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY = 'privacyPoolsAccounts'

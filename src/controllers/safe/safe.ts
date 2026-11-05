@@ -2,8 +2,10 @@ import { getAddress } from 'ethers'
 
 import { FETCH_OTHER_SAFES_PENDING, FETCH_SAFE_TXNS } from '../../consts/intervals'
 import {
+  NOT_A_SAFE_ACCOUNT_MESSAGE,
   SAFE_API_BATCH_SIZE,
   SAFE_API_TIMEOUT_MS,
+  SAFE_INFO_FETCH_FAILED_MESSAGE,
   SAFE_NETWORKS,
   safeNullOwner
 } from '../../consts/safe'
@@ -12,7 +14,7 @@ import { IEventEmitterRegistryController, Statuses } from '../../interfaces/even
 import { Hex } from '../../interfaces/hex'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
-import { IProvidersController } from '../../interfaces/provider'
+import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { ISafeController, SafeAccountByOwner } from '../../interfaces/safe'
 import { IStorageController } from '../../interfaces/storage'
 import {
@@ -23,6 +25,7 @@ import {
   getApiKit,
   getMessage,
   getSafeAccountByOwner,
+  isSafeContract,
   SafeResults
 } from '../../libs/safe/safe'
 import wait from '../../utils/wait'
@@ -166,13 +169,16 @@ export class SafeController extends EventEmitter implements ISafeController {
     const provider = this.#providers.providers[deployedOn.chainId.toString()]!
     const [safeInfo, safeCreation]: [SafeInfoResponse | Error, SafeAccountCreation | Error] =
       await Promise.all([
-        apiKit.getSafeInfo(safeAddr).catch((e) => e),
+        withTimeout(() => apiKit.getSafeInfo(safeAddr), {
+          timeoutMs: SAFE_API_TIMEOUT_MS,
+          message: `Safe API: get Safe info timed out after ${SAFE_API_TIMEOUT_MS}ms`
+        }).catch((e) => e),
         findDeployData(safeAddr, deployedOn.chainId, provider)
       ])
     if (safeInfo instanceof Error) {
       this.importError = {
         address: safeAddr,
-        message: 'Failed to retrieve information about the Safe. Please try again'
+        message: await this.#getSafeInfoFailedMessage(safeAddr, provider, safeInfo)
       }
       return
     }
@@ -191,6 +197,39 @@ export class SafeController extends EventEmitter implements ISafeController {
       deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId),
       requiresModules: safeInfo.owners.length === 1 && safeInfo.owners[0] === safeNullOwner
     }
+  }
+
+  /**
+   * The Safe API doesn't know addresses that aren't Safe accounts (e.g. an older Gnosis
+   * MultiSigWallet), so when it fails, check on chain whether the contract is a Safe at all.
+   * Telling the user to try again only makes sense if it is.
+   * The check is time-bound so an unresponsive network can't keep the import loading for minutes.
+   */
+  async #getSafeInfoFailedMessage(
+    safeAddr: string,
+    provider: RPCProvider,
+    safeInfoError: Error
+  ): Promise<string> {
+    try {
+      const isSafe = await withTimeout(() => isSafeContract(safeAddr, provider), {
+        timeoutMs: SAFE_API_TIMEOUT_MS,
+        message: `Safe check: getThreshold() call timed out after ${SAFE_API_TIMEOUT_MS}ms`
+      })
+      if (!isSafe) return NOT_A_SAFE_ACCOUNT_MESSAGE
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to check if the imported address is a Safe account',
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+    }
+
+    this.emitError({
+      level: 'silent',
+      message: 'Failed to retrieve information about the imported Safe account',
+      error: safeInfoError
+    })
+    return SAFE_INFO_FETCH_FAILED_MESSAGE
   }
 
   async findSafe(safeAddr: string) {

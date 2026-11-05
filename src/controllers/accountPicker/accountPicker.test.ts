@@ -96,19 +96,23 @@ describe('AccountPicker', () => {
     const { controller } = await prepareTest()
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
 
-    controller.setInitParams({ keyIterator: new KeyIterator(process.env.SEED), hdPathTemplate })
+    await controller.setInitParams({
+      keyIterator: new KeyIterator(process.env.SEED),
+      hdPathTemplate
+    })
     await controller.init()
     expect(controller.toJSON().maxPage).toBeUndefined()
 
     const privateKeys = Array.from({ length: 11 }, (_, i) =>
       getPrivateKeyFromSeed(process.env.SEED, null, i, hdPathTemplate)
     )
-    // Without adding them automatically, which would load every key on a single page
-    controller.setInitParams({
+    // Without selecting them automatically, which would load every key on a single page.
+    // Awaited, as the picker is initialized already and resets before taking the new params
+    await controller.setInitParams({
       keyIterator: new KeyIterator(privateKeys),
       hdPathTemplate,
       pageSize: 5,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     expect(controller.toJSON().maxPage).toBe(3)

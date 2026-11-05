@@ -139,7 +139,9 @@ export const createKohakuProvider = (
       topics: [...log.topics],
       data: log.data,
       address: log.address,
-      logIndex: log.index
+      logIndex: log.index,
+      // Read by the plugin's history, which links each event to its transaction
+      transactionHash: log.transactionHash
     }))
   },
 
@@ -166,7 +168,8 @@ export const createKohakuProvider = (
         topics: [...log.topics],
         data: log.data,
         address: log.address,
-        logIndex: log.index
+        logIndex: log.index,
+        transactionHash: log.transactionHash
       }))
     }
   },

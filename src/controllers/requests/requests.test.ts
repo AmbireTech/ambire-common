@@ -7,6 +7,7 @@ import { suppressConsole } from '../../../test/helpers/console'
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { mockBundlerRequestsBeforeEach } from '../../../test/mocks/bundler'
+import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
 import { SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE } from '../../consts/safe'
 import {
@@ -27,7 +28,9 @@ import {
   UserRequest
 } from '../../interfaces/userRequest'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
 import * as safeLib from '../../libs/safe/safe'
+import { SwapAndBridgeFormStatus } from '../../libs/swapAndBridge/constants'
 import { generateUuid } from '../../utils/uuid'
 import { EstimationController } from '../estimation/estimation'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
@@ -331,6 +334,7 @@ const prepareTest = async (
     safeCtrl: mainCtrl.safe,
     activityCtrl: mainCtrl.activity,
     controller: mainCtrl.requests,
+    networksCtrl: mainCtrl.networks,
     getSignAccountOp,
     getCallsRequest,
     event: eventEmitter,
@@ -1047,6 +1051,170 @@ describe('RequestsController ', () => {
     expect(controller.userRequests[0]!.kind).toBe('calls')
   })
 
+  describe('build Privacy Pools ragequit request', () => {
+    const DEPOSITOR = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const RAGEQUIT_CALL = {
+      to: '0xF241d57C6DebAe225c0F2e6eA1529373C9A9C9fB',
+      value: 0n,
+      data: '0x1234'
+    }
+
+    test('adds the call for the selected account, which made the deposit', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.build({
+        type: 'privacyPoolsRagequitRequest',
+        params: { accountAddr: DEPOSITOR, chainId: 1n, calls: [RAGEQUIT_CALL] }
+      })
+
+      const [request] = controller.userRequests
+      expect(request?.kind).toBe('calls')
+      if (request?.kind !== 'calls') return
+      expect(request.meta.accountAddr).toBe(DEPOSITOR)
+      expect(request.meta.chainId).toBe(1n)
+      expect(request.signAccountOp.accountOp.calls).toEqual([
+        expect.objectContaining(RAGEQUIT_CALL)
+      ])
+    })
+
+    // Thrown, so the caller's status reports it as failed rather than done
+    test('throws and adds nothing for an account that is not the selected one', async () => {
+      const { controller } = await prepareTest()
+
+      await expect(
+        controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: {
+            accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+            chainId: 1n,
+            calls: [RAGEQUIT_CALL]
+          }
+        })
+      ).rejects.toThrow('Could not prepare taking back this deposit. Please try again.')
+
+      expect(controller.userRequests).toHaveLength(0)
+    })
+
+    test('throws and adds nothing on a network the wallet does not have', async () => {
+      const { controller } = await prepareTest()
+
+      await expect(
+        controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: { accountAddr: DEPOSITOR, chainId: 424242n, calls: [RAGEQUIT_CALL] }
+        })
+      ).rejects.toThrow(EmittableError)
+
+      expect(controller.userRequests).toHaveLength(0)
+    })
+
+    describe('finding the request already taking back a deposit', () => {
+      const encodeRagequit = (label: bigint) =>
+        POOL_RAGEQUIT_INTERFACE.encodeFunctionData('ragequit', [
+          {
+            pA: [0n, 0n],
+            pB: [
+              [0n, 0n],
+              [0n, 0n]
+            ],
+            pC: [0n, 0n],
+            // [commitment, nullifierHash, value, label]
+            pubSignals: [1n, 2n, 30n, label]
+          }
+        ])
+
+      const prepareWithRagequit = async (label: bigint) => {
+        const { controller } = await prepareTest()
+        await controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: {
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            calls: [{ ...RAGEQUIT_CALL, data: encodeRagequit(label) }]
+          }
+        })
+
+        return controller
+      }
+
+      test('finds the request taking back the deposit with that label', async () => {
+        const controller = await prepareWithRagequit(3n)
+
+        const request = controller.findPrivacyPoolsRagequitRequest({
+          // Lowercase, as an address read from the chain's history may be
+          accountAddr: DEPOSITOR.toLowerCase(),
+          chainId: 1n,
+          label: 3n
+        })
+
+        expect(request).toBe(controller.userRequests[0])
+      })
+
+      test('finds it among other calls of the batch', async () => {
+        const controller = await prepareWithRagequit(3n)
+        await controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: {
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            calls: [{ ...RAGEQUIT_CALL, data: encodeRagequit(4n) }]
+          }
+        })
+
+        expect(controller.userRequests).toHaveLength(1)
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            label: 4n
+          })
+        ).toBe(controller.userRequests[0])
+      })
+
+      test('finds nothing for another deposit, network or account', async () => {
+        const controller = await prepareWithRagequit(3n)
+
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            label: 4n
+          })
+        ).toBeUndefined()
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: DEPOSITOR,
+            chainId: 10n,
+            label: 3n
+          })
+        ).toBeUndefined()
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+            chainId: 1n,
+            label: 3n
+          })
+        ).toBeUndefined()
+      })
+
+      test('finds nothing in a request of other calls', async () => {
+        const { controller } = await prepareTest()
+        await controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: { accountAddr: DEPOSITOR, chainId: 1n, calls: [RAGEQUIT_CALL] }
+        })
+
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            label: 3n
+          })
+        ).toBeUndefined()
+      })
+    })
+  })
+
   describe('build NFT transfer request', () => {
     const nft = {
       address: '0x59468516a8259058baD1cA5F8f4BFF190d30E066',
@@ -1148,6 +1316,150 @@ describe('RequestsController ', () => {
     unsubscribe()
     expect(controller.userRequests).toHaveLength(1)
     expect(emittedCallsCount).toBe(2)
+  })
+
+  describe('ids of calls added to a batch', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const to = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const buildCalls = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      calls: Call[]
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: { calls, meta: { accountAddr, chainId: 1n } }
+        }
+      })
+    const getBatchedCalls = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) => {
+      const request = controller.userRequests[0]
+      if (request?.kind !== 'calls') throw new Error('Expected a calls request')
+      return request.signAccountOp.accountOp.calls
+    }
+    const destroyBatch = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) => {
+      const request = controller.userRequests[0]
+      if (request?.kind === 'calls') request.signAccountOp.destroy()
+    }
+    const getSwapCalls = (activeRouteId: string): Call[] => [
+      { id: `${activeRouteId}-approval`, activeRouteId, to, value: 0n, data: '0x' },
+      { id: activeRouteId, activeRouteId, to, value: 0n, data: '0x' }
+    ]
+
+    test('two batched swaps keep their ids, so each is tracked once the batch is sent', async () => {
+      const { controller } = await prepareTest()
+
+      await buildCalls(controller, getSwapCalls('order-1'))
+      await buildCalls(controller, getSwapCalls('order-2'))
+
+      expect(controller.userRequests).toHaveLength(1)
+      expect(getBatchedCalls(controller).map(({ id }) => id)).toEqual([
+        'order-1-approval',
+        'order-1',
+        'order-2-approval',
+        'order-2'
+      ])
+      destroyBatch(controller)
+    })
+
+    test('calls that are not part of a swap get a new id, even if they came with one', async () => {
+      const { controller } = await prepareTest()
+
+      await buildCalls(controller, [{ id: 'same-id', to, value: 1n, data: '0x' }])
+      await buildCalls(controller, [{ id: 'same-id', to, value: 1n, data: '0x' }])
+
+      const ids = getBatchedCalls(controller).map(({ id }) => id)
+      expect(ids).toHaveLength(2)
+      expect(ids).not.toContain('same-id')
+      expect(new Set(ids).size).toBe(2)
+      destroyBatch(controller)
+    })
+  })
+
+  describe('build swap & bridge request', () => {
+    const ROUTE_ID = 'order-1'
+    const swapTxn = {
+      activeRouteId: ROUTE_ID,
+      approvalData: null,
+      chainId: 1,
+      txData: '0x',
+      txTarget: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+      userTxIndex: 0,
+      value: '0'
+    }
+    const createQuote = (routeId: string) => {
+      const route = { routeId, providerId: 'cowswap', steps: [], userTxs: [] }
+
+      return {
+        fromAsset: { address: '0x0000000000000000000000000000000000000000', symbol: 'ETH' },
+        toAsset: { address: '0x431D5dfF03120AFA4bDf332c61A6e1766eF37BDB', symbol: 'JPYC' },
+        selectedRoute: route,
+        routes: [route]
+      } as any
+    }
+
+    /**
+     * Builds the swap into the batch the way the swap screen does, but resets the form while
+     * the account data is being fetched, like leaving the "Added to batch" screen right away
+     */
+    const buildSwapAndResetFormMidway = async (quoteRouteId: string) => {
+      const { controller, mainCtrl } = await prepareTest()
+      const swapAndBridge = mainCtrl.swapAndBridge
+      let formStatus = SwapAndBridgeFormStatus.ReadyToSubmit
+      swapAndBridge.quote = createQuote(quoteRouteId)
+      jest.spyOn(swapAndBridge, 'formStatus', 'get').mockImplementation(() => formStatus)
+      jest
+        .spyOn(swapAndBridge, 'signAccountOpController', 'get')
+        .mockReturnValue({ accountOp: { meta: { swapTxn } } } as any)
+      const getAccountState = mainCtrl.accounts.getOrFetchAccountOnChainState.bind(
+        mainCtrl.accounts
+      )
+      jest
+        .spyOn(mainCtrl.accounts, 'getOrFetchAccountOnChainState')
+        .mockImplementation(async (...args) => {
+          formStatus = SwapAndBridgeFormStatus.Empty
+          swapAndBridge.quote = null
+          return getAccountState(...args)
+        })
+
+      await controller.build({
+        type: 'swapAndBridgeRequest',
+        params: { openActionWindow: false }
+      })
+
+      return { controller, swapAndBridge }
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    test('tracks the swap even if the form is reset while it is being added to the batch', async () => {
+      const { controller, swapAndBridge } = await buildSwapAndResetFormMidway(ROUTE_ID)
+
+      expect(swapAndBridge.activeRoutes.map((r) => r.activeRouteId)).toContain(ROUTE_ID)
+      const activeRoute = swapAndBridge.activeRoutes.find((r) => r.activeRouteId === ROUTE_ID)
+      expect(activeRoute!.routeStatus).toBe('ready')
+      // the call keeps the id the active route is matched by once the batch is sent
+      const request = controller.userRequests[0]
+      if (request?.kind !== 'calls') throw new Error('Expected a calls request')
+      expect(request.signAccountOp.accountOp.calls.map(({ id }) => id)).toContain(ROUTE_ID)
+
+      swapAndBridge.removeActiveRoute(ROUTE_ID)
+      request.signAccountOp.destroy()
+    })
+
+    test('does not track the swap from a quote it was not built from', async () => {
+      // e.g. the quote got refreshed after the swap was prepared
+      const { controller, swapAndBridge } = await buildSwapAndResetFormMidway('refreshed-route')
+
+      expect(swapAndBridge.activeRoutes.map((r) => r.activeRouteId)).not.toContain(ROUTE_ID)
+      expect(swapAndBridge.activeRoutes.map((r) => r.activeRouteId)).not.toContain(
+        'refreshed-route'
+      )
+      const request = controller.userRequests[0]
+      if (request?.kind === 'calls') request.signAccountOp.destroy()
+    })
   })
 
   test('emits refreshed Safe confirmations for a transaction already in the queue', async () => {
@@ -5006,6 +5318,149 @@ describe('RequestsController ', () => {
         expect(controller.currentUserRequest).toBe(null)
         expect(sideEffects.closeCount()).toBe(1)
         expect(controller.requestWindow.windowProps).toBe(null)
+      })
+    })
+
+    describe('for a disabled network', () => {
+      const BASE_CHAIN_ID = 8453n
+
+      /** Connects the app to Base and disables it, returning a switch that turns it back on */
+      const prepareDisabledNetworkTest = async () => {
+        const testCtx = await prepareTest(true)
+        testCtx.dappsCtrl.updateDapp(MOCK_SESSION.id, { chainId: Number(BASE_CHAIN_ID) })
+        const base = testCtx.networksCtrl.allNetworks.find((n) => n.chainId === BASE_CHAIN_ID)!
+        base.disabled = true
+
+        return {
+          ...testCtx,
+          enableNetwork: () => {
+            base.disabled = false
+          }
+        }
+      }
+
+      test('holds a transaction behind a prompt and moves straight to it once the network is on', async () => {
+        const { controller, uiCtrl, enableNetwork } = await prepareDisabledNetworkTest()
+        const sideEffects = watchSideEffects(uiCtrl)
+        const [promise] = makeRejectMocks(1)
+
+        await sendTransaction(controller, promise!)
+
+        // Nothing can be built for a disabled network, so only the prompt is there
+        expect(controller.userRequests.map((r) => r.kind)).toEqual(['walletAddEthereumChain'])
+        const prompt = controller.currentUserRequest!
+        expect(prompt.kind).toBe('walletAddEthereumChain')
+        expect(prompt.meta.hasNextRequest).toBe(true)
+        expect(prompt.meta.params[0].chainId).toBe('0x2105')
+
+        enableNetwork()
+        await controller.resolveUserRequest(null, prompt.id)
+
+        const [callsRequest] = controller.userRequests as CallsUserRequest[]
+        expect(controller.userRequests).toHaveLength(1)
+        expect(callsRequest!.meta.chainId).toBe(BASE_CHAIN_ID)
+        expect(controller.currentUserRequest).toBe(callsRequest)
+        // The view goes from the prompt to the transaction without closing on the way
+        expect(sideEffects.openCount()).toBe(1)
+        expect(sideEffects.closeCount()).toBe(0)
+        expect(promise!.reject).not.toHaveBeenCalled()
+
+        callsRequest!.signAccountOp.destroy()
+      })
+
+      test('holds requests arriving at once for the same network behind one prompt', async () => {
+        const { controller, enableNetwork } = await prepareDisabledNetworkTest()
+        const promises = makeRejectMocks(3)
+
+        await Promise.all(promises.map((promise) => sendTransaction(controller, promise)))
+
+        expect(controller.userRequests.map((r) => r.kind)).toEqual(['walletAddEthereumChain'])
+
+        enableNetwork()
+        await controller.resolveUserRequest(null, controller.currentUserRequest!.id)
+
+        const [callsRequest] = controller.userRequests as CallsUserRequest[]
+        expect(controller.userRequests).toHaveLength(1)
+        // Built together, the way they would have been had the network been on
+        expect(callsRequest!.signAccountOp.accountOp.calls).toHaveLength(3)
+        expect(callsRequest!.dappPromises).toHaveLength(3)
+
+        callsRequest!.signAccountOp.destroy()
+      })
+
+      test('builds the held requests on the network they were sent for, even after the app moves', async () => {
+        const { controller, dappsCtrl, enableNetwork } = await prepareDisabledNetworkTest()
+        const [txPromise, messagePromise, typedMessagePromise] = makeRejectMocks(3)
+
+        await sendTransaction(controller, txPromise!)
+        await controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'personal_sign',
+              params: ['0x68656c6c6f', FROM],
+              session: MOCK_SESSION
+            },
+            dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...messagePromise! }
+          }
+        })
+        await controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'eth_signTypedData_v4',
+              params: [
+                FROM,
+                JSON.stringify({
+                  ...TYPED_DATA,
+                  domain: { ...TYPED_DATA.domain, chainId: Number(BASE_CHAIN_ID) }
+                })
+              ],
+              session: MOCK_SESSION
+            },
+            dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...typedMessagePromise! }
+          }
+        })
+        const prompt = controller.currentUserRequest!
+
+        // The app moves to Ethereum while the prompt for Base is open
+        dappsCtrl.updateDapp(MOCK_SESSION.id, { chainId: 1 })
+        enableNetwork()
+        await controller.resolveUserRequest(null, prompt.id)
+
+        const builtOn = controller.userRequests.map((r) => `${r.kind}:${String(r.meta.chainId)}`)
+        expect(builtOn.sort()).toEqual(['calls:8453', 'message:8453', 'typedMessage:8453'])
+        expect(typedMessagePromise!.reject).not.toHaveBeenCalled()
+
+        controller.userRequests.forEach((r) => r.kind === 'calls' && r.signAccountOp.destroy())
+      })
+
+      test('rejects the held requests with the prompt, and prompts again for the next one', async () => {
+        const { controller } = await prepareDisabledNetworkTest()
+        const [rejected, next] = makeRejectMocks(2)
+
+        await sendTransaction(controller, rejected!)
+        await controller.rejectUserRequests('User rejected', [controller.currentUserRequest!.id])
+
+        expect(rejected!.reject).toHaveBeenCalled()
+        expect(controller.userRequests).toHaveLength(0)
+
+        // Joining the rejected prompt would leave this one waiting forever
+        await sendTransaction(controller, next!)
+        expect(controller.userRequests.map((r) => r.kind)).toEqual(['walletAddEthereumChain'])
+        expect(next!.reject).not.toHaveBeenCalled()
+      })
+
+      test('rejects the held requests when the view closes, even with the network turned on', async () => {
+        const { controller, enableNetwork } = await prepareDisabledNetworkTest()
+        const [promise] = makeRejectMocks(1)
+
+        await sendTransaction(controller, promise!)
+        enableNetwork()
+        await controller.closeRequestWindow()
+
+        expect(promise!.reject).toHaveBeenCalled()
+        expect(controller.userRequests).toHaveLength(0)
       })
     })
   })

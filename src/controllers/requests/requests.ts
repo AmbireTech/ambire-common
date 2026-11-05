@@ -67,6 +67,7 @@ import {
   CallsWaitingAccountSwitch,
   DappCallsRequestParams,
   DappRequestQueueItem,
+  HeldDappRequest,
   OpenRequestWindowParams,
   PendingDappPromise,
   PlainTextMessageUserRequest,
@@ -79,7 +80,8 @@ import {
   TransferRequest,
   TypedMessageUserRequest,
   UserRequest,
-  UserRequestWaitingAccountSwitch
+  UserRequestWaitingAccountSwitch,
+  WalletAddEthereumChainRequest
 } from '../../interfaces/userRequest'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
@@ -95,8 +97,10 @@ import { getDappIdsFromUserRequest } from '../../libs/dapps/dappRequestSpam'
 import { isAccountAllowedForDapp, isSigningAuthPlatform } from '../../libs/dapps/helpers'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getShouldSimulateInTheBackground } from '../../libs/main/main'
+import { networkChainIdToHex } from '../../libs/networks/networks'
 import { TokenResult } from '../../libs/portfolio'
 import { PortfolioRewardsResult } from '../../libs/portfolio/interfaces'
+import { readPrivacyPoolsRagequit } from '../../libs/privacyPools/ragequit'
 import {
   buildSwitchAccountUserRequest,
   dappRequestMethodToRequestKind,
@@ -140,6 +144,9 @@ const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
 
+/** How long a resolved transitional request stays, so the app request it was blocking can arrive */
+const TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS = 300
+
 const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
   'Your Safe account is still being activated on this network. Wait a moment, then try again.'
 const SAFE_DEPLOYMENT_FAILED_MESSAGE =
@@ -149,6 +156,14 @@ const SAFE_DEPLOYMENT_STUCK_MESSAGE =
 
 const MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR =
   "This app asked to sign a message with an account that isn't in your wallet."
+
+/**
+ * The id a call gets when it's added to a request. Swap & bridge calls keep theirs, as it's made
+ * from their active route ID and it's how each swap in a batch is tracked once the batch is sent.
+ * Every other call gets a new one; dApps can't set `activeRouteId`, so theirs always do too.
+ */
+const getRequestCallId = (call: Call): string =>
+  call.activeRouteId && call.id ? call.id : uuidv4()
 
 /** Whether both lists make the same calls, ignoring the ids the wallet gives them */
 const haveSameCalls = (calls: Call[], otherCalls: Call[]): boolean =>
@@ -298,6 +313,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * refused. Scoped to the close in flight - see `closeRequestWindow`.
    */
   #isWalletInitiatedClose = false
+
+  /**
+   * App requests for a disabled network, keyed by the id of the request asking the user to turn
+   * it on. Kept unbuilt, as nothing can be built for a disabled network, and built once it is on.
+   */
+  #dappRequestsWaitingNetworkEnable = new Map<
+    UserRequest['id'],
+    { chainId: bigint; heldRequests: HeldDappRequest[] }
+  >()
 
   private shouldSimulateAccountOps = true
 
@@ -861,6 +885,31 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   /**
+   * A request of the account on the chain that already takes back the Privacy Pools deposit with
+   * this label. Taking it back again in the same transaction would spend the deposit twice and make
+   * the whole transaction fail, so this request is opened instead
+   */
+  findPrivacyPoolsRagequitRequest({
+    accountAddr,
+    chainId,
+    label
+  }: {
+    accountAddr: string
+    chainId: bigint
+    label: bigint
+  }): CallsUserRequest | undefined {
+    return this.userRequests.find(
+      (r): r is CallsUserRequest =>
+        r.kind === 'calls' &&
+        r.meta.chainId === chainId &&
+        r.meta.accountAddr.toLowerCase() === accountAddr.toLowerCase() &&
+        r.signAccountOp.accountOp.calls.some(
+          ({ data }) => readPrivacyPoolsRagequit(data)?.label === label
+        )
+    )
+  }
+
+  /**
    * Identifies the pending transaction a speed up replaces, the same way as
    * `#findOpenSpeedUpRequest` does. Undefined for anything that isn't a speed up
    */
@@ -1218,7 +1267,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       for (const r of this.userRequests) {
-        if (r.kind === 'walletAddEthereumChain') {
+        // A prompt holding app requests is rejected with the view instead, as are its requests
+        if (
+          r.kind === 'walletAddEthereumChain' &&
+          !this.#dappRequestsWaitingNetworkEnable.has(r.id)
+        ) {
           const chainId = r.meta.params[0].chainId
 
           if (!chainId) continue
@@ -1380,6 +1433,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     let switchBackRequest: SwitchAccountRequest | undefined
 
     ids.forEach((id) => {
+      // A network prompt removed without being answered would otherwise leave its apps waiting
+      this.#takeHeldDappRequests(id)?.forEach(({ dappPromise }) =>
+        dappPromise.reject(ethErrors.provider.userRejectedRequest<any>())
+      )
+
       const req = this.userRequests.find((uReq) => uReq.id === id)
 
       if (!req) return
@@ -1507,6 +1565,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   async resolveUserRequest(data: any, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
+    // Already resolved and only waiting to be removed, so resolving it again changes nothing
+    if (userRequest.meta.pendingToRemove) return
 
     const { kind, meta, dappPromises } = userRequest
 
@@ -1540,6 +1600,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       p.resolve(data)
     })
 
+    const heldForChainId = this.#dappRequestsWaitingNetworkEnable.get(requestId)?.chainId
+    const heldDappRequests = this.#takeHeldDappRequests(requestId)
+
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
     // before being resolved. The timeout prevents the request-window from closing before the actual dApp request arrives
     if (kind === 'unlock' || kind === 'dappConnect') {
@@ -1548,7 +1611,24 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       setTimeout(async () => {
         await this.removeUserRequests([requestId])
         this.emitUpdate()
-      }, 300)
+      }, TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS)
+    } else if (heldDappRequests) {
+      // The network is on now, so the requests held for it can be built. The prompt stays until
+      // they are, so the view moves straight to them instead of closing and reopening for them.
+      meta.pendingToRemove = true
+
+      await Promise.all(
+        heldDappRequests.map(({ request, dappPromise }) =>
+          this.#buildDappProviderRequest(request, dappPromise, heldForChainId).catch((error: any) =>
+            dappPromise.reject(error)
+          )
+        )
+      )
+
+      // A built request takes the view over, so the prompt opens the next one only if it is
+      // still shown - e.g. when nothing was built
+      const isPromptShown = this.currentUserRequest?.id === requestId
+      await this.removeUserRequests([requestId], { shouldOpenNextRequest: isPromptShown })
     } else {
       await this.removeUserRequests([requestId])
       this.emitUpdate()
@@ -1827,16 +1907,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.initialLoadPromise
 
     if (type === 'dappRequest') {
-      try {
-        await this.#processDappRequest(params.request, params.dappPromise)
-      } catch (e: any) {
-        this.emitError({
-          error: e,
-          message: `Error processing app request${e.message ? `: ${e.message}` : '.'}`,
-          level: 'major'
-        })
-        throw e
-      }
+      await this.#buildDappProviderRequest(params.request, params.dappPromise)
     }
 
     if (type === 'calls') {
@@ -1854,6 +1925,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (type === 'swapAndBridgeRequest') {
       await this.#buildSwapAndBridgeUserRequest(params)
+    }
+
+    if (type === 'privacyPoolsRagequitRequest') {
+      await this.#buildPrivacyPoolsRagequitUserRequest(params)
     }
 
     if (type === 'claimWalletRequest') {
@@ -2124,14 +2199,38 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
+  /** Builds an app request and tells the user when that fails. Rethrows, so the app hears why. */
+  async #buildDappProviderRequest(
+    request: DappProviderRequest,
+    dappPromise: PendingDappPromise,
+    heldForChainId?: bigint
+  ) {
+    try {
+      await this.#processDappRequest(request, dappPromise, heldForChainId)
+    } catch (e: any) {
+      this.emitError({
+        error: e,
+        message: `Error processing app request${e.message ? `: ${e.message}` : '.'}`,
+        level: 'major'
+      })
+      throw e
+    }
+  }
+
   /**
    * The one place every app request passes through, whatever brought it in - the injected
    * provider, the mobile WebView or WalletConnect. Requests that would collide with one another
    * are queued behind the one being built and built together; everything else builds straight
    * through. Resolves once the request has been added (or answered on the spot), and rejects
    * with what the app should be told, which is what `rpcFlow` turns into the RPC error.
+   * `heldForChainId` is the network a request waited on to be turned on. The request is built
+   * on it even when the app has moved to another network since.
    */
-  async #processDappRequest(request: DappProviderRequest, dappPromise: PendingDappPromise) {
+  async #processDappRequest(
+    request: DappProviderRequest,
+    dappPromise: PendingDappPromise,
+    heldForChainId?: bigint
+  ) {
     await this.initialLoadPromise
 
     if (this.#dapps.isDappSilenced(request.session.id)) {
@@ -2141,7 +2240,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     await this.#guardHWSigning(true)
 
-    const dapp = (await this.#getDapp(request.session.id)) || null
+    const currentDapp = (await this.#getDapp(request.session.id)) || null
+    const dapp =
+      currentDapp && heldForChainId !== undefined
+        ? { ...currentDapp, chainId: Number(heldForChainId) }
+        : currentDapp
+
+    const disabledNetwork = this.#getDisabledNetworkOfDappRequest(request, dapp)
+    if (disabledNetwork) {
+      await this.#holdUntilNetworkEnabled(disabledNetwork, { request, dappPromise })
+      return
+    }
+
     const key = this.#getDappRequestKey(request, dapp)
 
     if (!key) {
@@ -2150,6 +2260,88 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
 
     await this.#enqueueDappRequest(key, { request, dappPromise, dapp })
+  }
+
+  /** The disabled network an app's sign request is for, if it is for one */
+  #getDisabledNetworkOfDappRequest(
+    request: DappProviderRequest,
+    dapp: Dapp | null
+  ): Network | undefined {
+    const kind = dappRequestMethodToRequestKind(request.method)
+    if (!isSignRequest(kind)) return undefined
+
+    const chainId = kind === 'calls' ? this.#getDappCallsChainId(request, dapp) : dapp?.chainId
+
+    return this.#networks.disabledNetworks.find((n) => Number(n.chainId) === Number(chainId))
+  }
+
+  /**
+   * Holds an app request for a disabled network behind a prompt to turn that network on, like an
+   * account switch holds one for another account. Requests arriving for the same network join the
+   * prompt already there instead of each opening their own.
+   */
+  async #holdUntilNetworkEnabled(network: Network, heldRequest: HeldDappRequest) {
+    // Looked up and set with no await in between, so a request arriving meanwhile finds the prompt
+    const existingPrompt = [...this.#dappRequestsWaitingNetworkEnable.values()].find(
+      (prompt) => prompt.chainId === network.chainId
+    )
+    if (existingPrompt) {
+      existingPrompt.heldRequests.push(heldRequest)
+      return
+    }
+
+    const promptId = generateUuid()
+    this.#dappRequestsWaitingNetworkEnable.set(promptId, {
+      chainId: network.chainId,
+      heldRequests: [heldRequest]
+    })
+
+    try {
+      await this.#addBuiltDappRequest({
+        id: promptId,
+        kind: 'walletAddEthereumChain',
+        meta: {
+          params: [
+            {
+              chainId: networkChainIdToHex(network.chainId),
+              chainName: network.name,
+              rpcUrls: network.rpcUrls,
+              nativeCurrency: { name: network.nativeAssetName, symbol: network.nativeAssetSymbol }
+            }
+          ],
+          hasNextRequest: true
+        },
+        dappPromises: [
+          {
+            id: generateUuid(),
+            session: heldRequest.request.session,
+            meta: {},
+            // Turning the network on is all it asks for - `resolveUserRequest` builds what it held
+            resolve: () => {},
+            // Rejected with the prompt, whether by the user or by the view closing
+            reject: (error: any) =>
+              this.#takeHeldDappRequests(promptId)?.forEach(({ dappPromise }) =>
+                dappPromise.reject(error)
+              )
+          }
+        ]
+      } as WalletAddEthereumChainRequest)
+    } finally {
+      // Never added, e.g. turned away by a pending swap, so nothing would ever answer its apps
+      if (!this.userRequests.some((r) => r.id === promptId)) {
+        this.#takeHeldDappRequests(promptId)?.forEach(({ dappPromise }) =>
+          dappPromise.reject(ethErrors.rpc.internal())
+        )
+      }
+    }
+  }
+
+  /** Hands over the app requests a network prompt holds, and stops holding them */
+  #takeHeldDappRequests(promptId: UserRequest['id']): HeldDappRequest[] | undefined {
+    const heldRequests = this.#dappRequestsWaitingNetworkEnable.get(promptId)?.heldRequests
+    this.#dappRequestsWaitingNetworkEnable.delete(promptId)
+
+    return heldRequests
   }
 
   /**
@@ -3049,6 +3241,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           throw new EmittableError({ message: error.message, level: 'major', error })
         }
 
+        // Read before anything is awaited: the form can be reset while the request is being
+        // built (e.g. the user leaves the "Added to batch" screen), which would otherwise skip
+        // adding the active route and leave the swap untracked once the batch is sent.
+        // The quote must also be the one the transaction was built from
+        const quoteForActiveRoute =
+          this.#swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit &&
+          this.#swapAndBridge.quote?.selectedRoute?.routeId === transaction.activeRouteId
+            ? this.#swapAndBridge.quote
+            : null
+
         // learn the receiving token
         if (this.#swapAndBridge.toSelectedToken && this.#swapAndBridge.toChainId) {
           this.#addTokensToBeLearned(
@@ -3101,8 +3303,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           })
         }
 
-        if (this.#swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
+        if (quoteForActiveRoute) {
           this.#swapAndBridge.addActiveRoute({
+            quote: quoteForActiveRoute,
             userTxIndex: transaction.userTxIndex
           })
         }
@@ -3143,6 +3346,57 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     })
     const userRequest = await this.#createOrUpdateCallsUserRequest(userRequestParams)
     if (userRequest) await this.addUserRequests([userRequest])
+  }
+
+  async #buildPrivacyPoolsRagequitUserRequest({
+    accountAddr,
+    chainId,
+    calls
+  }: {
+    accountAddr: string
+    chainId: bigint
+    calls: Call[]
+  }) {
+    const { account } = this.#selectedAccount
+    // Selected first by the caller, as the call only works from the account that deposited.
+    // Thrown rather than emitted, so the caller's status does not report it as done
+    if (account?.addr !== accountAddr) {
+      throw new EmittableError({
+        level: 'major',
+        message: 'Could not prepare taking back this deposit. Please try again.',
+        error: new Error('requestsController: the ragequit depositor is not the selected account')
+      })
+    }
+
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(accountAddr, chainId)
+    const network = this.#networks.networks.find((net) => net.chainId === chainId)
+    if (!accountState || !network) {
+      throw new EmittableError({
+        level: 'major',
+        message:
+          "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support.",
+        error: new Error(
+          `requestsController error: accountState for ${accountAddr} is undefined on network with id ${chainId}`
+        )
+      })
+    }
+
+    const baseAcc = getBaseAccount(
+      account,
+      accountState,
+      network,
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
+    )
+    const userRequest = await this.#createOrUpdateCallsUserRequest({
+      calls,
+      meta: {
+        chainId,
+        accountAddr,
+        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      }
+    })
+    if (userRequest) await this.addUserRequests([userRequest], { position: 'last' })
   }
 
   async #buildMintVestingUserRequest({ token }: { token: TokenResult }) {
@@ -3666,7 +3920,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                 ...existingUserRequest.signAccountOp.accountOp.calls,
                 ...calls.map((call) => ({
                   ...call,
-                  id: uuidv4(),
+                  id: getRequestCallId(call),
                   // `to` is falsy in contract deployment transactions
                   to: !!call.to ? getAddress(call.to) : call.to,
                   data: call.data || '0x',
@@ -3811,7 +4065,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                 calls: [
                   ...calls.map((call) => ({
                     ...call,
-                    id: uuidv4(),
+                    id: getRequestCallId(call),
                     // `to` is falsy in contract deployment transactions
                     to: !!call.to ? getAddress(call.to) : call.to,
                     data: call.data || '0x',
