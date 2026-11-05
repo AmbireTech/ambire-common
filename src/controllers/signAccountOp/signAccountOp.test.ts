@@ -69,7 +69,6 @@ import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../libs/decodeCall'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
-import * as safeLib from '../../libs/safe/safe'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { getMinReplacementFees } from '../../libs/gasPrice/speedUp'
 import {
@@ -397,6 +396,27 @@ const safeAccount: Account = {
     singleton: safeAccountAddr,
     saltNonce: '0x00',
     setupData: '0x'
+  }
+}
+
+const e2esmartAccount: Account = {
+  addr: '0x4C71d299f23eFC660b3295D1f631724693aE22Ac',
+  associatedKeys: ['0xa18fe725A4a0E25A02411Ab28073E4F35D32d8e2'],
+  creation: {
+    factoryAddr: '0x26cE6745A633030A6faC5e64e41D21fb6246dc2d',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027fca32523c64c36083b1291dd9ad1e268d3731e36174438cb702336b275ccb8295553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  initialPrivileges: [
+    [
+      '0xa18fe725A4a0E25A02411Ab28073E4F35D32d8e2',
+      '0x0000000000000000000000000000000000000000000000000000000000000001'
+    ]
+  ],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x4C71d299f23eFC660b3295D1f631724693aE22Ac'
   }
 }
 
@@ -7540,25 +7560,28 @@ describe('an earlier pending transaction', () => {
     /**
      * A Safe op at `nonce` that `threshold` owners must sign, `signed` of them already did. Its
      * fee is paid by `paidBy`, the Safe itself by default. Unless `hasOwnerKey` is false, the
-     * key of the first owner is in this wallet
+     * key of the first owner is in this wallet. `signature` holds the signatures collected so far
      */
     const initSafe = async ({
       threshold,
       signed,
       nonce = 3n,
       paidBy = safeAccount.addr,
-      hasOwnerKey = true
+      hasOwnerKey = true,
+      signature
     }: {
       threshold: number
       signed: string[]
       nonce?: bigint
       paidBy?: string
       hasOwnerKey?: boolean
+      signature?: string
     }) => {
       const feePaymentOptions = [nativeFeeOption(paidBy)]
       const accountOp = createAccountOp(safeAccount, chainId)
       accountOp.op.nonce = nonce
       accountOp.op.signed = signed
+      if (signature) accountOp.op.signature = signature
       jest.spyOn(EstimationController.prototype, 'estimate').mockResolvedValue(undefined)
 
       const ctrl = await init(
@@ -7619,7 +7642,8 @@ describe('an earlier pending transaction', () => {
         threshold: 1,
         signed: [owners[1]!],
         paidBy: eoaSigner.keyPublicAddress,
-        hasOwnerKey: false
+        hasOwnerKey: false,
+        signature: safeLib.getSafeApprovedHashSignature(owners[1]!)
       })
       expect(controller.accountOp.signingKeyAddr).toBeFalsy()
       expect(controller.readyToSign).toBe(true)
