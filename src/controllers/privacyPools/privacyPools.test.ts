@@ -787,6 +787,45 @@ describe('PrivacyPoolsController', () => {
       expect(controller.defaultAccountLabel).toBe('Private account 2')
     })
 
+    it('renames an account and persists the new name', async () => {
+      const { controller, storage, ui } = await prepareTest({ accounts: [] })
+      await controller.addAccount('seed-a', 'Private account 1')
+
+      await controller.updateAccountLabel('seed-a', '  Savings  ', 'request-1')
+
+      expect(controller.accounts[0]?.label).toBe('Savings')
+      expect((await storage.get('privacyPoolsAccounts', []))[0]?.label).toBe('Savings')
+      expect(ui.message.sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-1', ok: true })
+    })
+
+    it('keeps the name when renamed to an empty one, and tells the rename sheet', async () => {
+      const { controller, ui } = await prepareTest({ accounts: [] })
+      await controller.addAccount('seed-a', 'Private account 1')
+
+      await controller.updateAccountLabel('seed-a', '   ', 'request-1')
+
+      expect(controller.accounts[0]?.label).toBe('Private account 1')
+      expect(ui.message.sendUiMessage).toHaveBeenCalledWith({
+        requestId: 'request-1',
+        ok: false,
+        error: "Couldn't rename the account. Please try again."
+      })
+    })
+
+    it('renames no account for a recovery phrase without one', async () => {
+      const { controller, storage } = await prepareTest({ accounts: ['seed-a'] })
+      const storedBefore = await storage.get('privacyPoolsAccounts', [])
+
+      await controller.updateAccountLabel('seed-b', 'Savings')
+
+      expect(controller.accounts.map(({ seedId }) => seedId)).toEqual(['seed-a'])
+      expect(controller.accounts.some(({ label }) => label === 'Savings')).toBe(false)
+      expect(await storage.get('privacyPoolsAccounts', [])).toEqual(storedBefore)
+      expect(controller.emittedErrors.at(-1)?.message).toBe(
+        "Couldn't rename the account. Please try again."
+      )
+    })
+
     it('tells whether an account can be added, without adding it', async () => {
       const { controller } = await prepareTest({ accounts: ['seed-a'] })
 

@@ -824,6 +824,34 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     await this.#persistAccounts()
   }
 
+  /**
+   * Renames an account, keeping the name it has when `label` is empty. Replies to `requestId`
+   * once saved, so the rename sheet stays open until then.
+   */
+  async updateAccountLabel(seedId: string, label: string, requestId?: string): Promise<void> {
+    await this.initialLoadPromise
+
+    const trimmedLabel = label.trim()
+    if (!trimmedLabel || !this.#hasAccount(seedId)) {
+      const message = "Couldn't rename the account. Please try again."
+      // The rename sheet tells the user itself once it gets the reply
+      this.emitError({
+        level: requestId ? 'silent' : 'major',
+        message,
+        error: new Error('privacyPools: the account to rename is gone or the name is empty')
+      })
+      if (requestId) this.#ui.message.sendUiMessage({ requestId, ok: false, error: message })
+      return
+    }
+
+    this.accounts = this.accounts.map((account) =>
+      account.seedId === seedId ? { ...account, label: trimmedLabel } : account
+    )
+    this.emitUpdate()
+    await this.#persistAccounts()
+    if (requestId) this.#ui.message.sendUiMessage({ requestId, ok: true })
+  }
+
   /** Removes the account, not its funds: re-adding it finds them. */
   async removeAccount(seedId: string): Promise<void> {
     await this.initialLoadPromise
