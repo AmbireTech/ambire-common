@@ -15,7 +15,6 @@ import { DappConnectRequest, Message, PlainTextMessageUserRequest } from '@/inte
 import { isSmartAccount } from '@/libs/account/account'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
-import * as keystoreLib from '@/libs/keystore/keystore'
 import * as magicLinkLib from '@/libs/magicLink/magicLink'
 import { stringify } from '@/libs/richJson/richJson'
 import wait from '@/utils/wait'
@@ -945,24 +944,20 @@ describe('Main Controller ', () => {
       expect(mainCtrl.statuses.accountPickerSetInitParamsFromSavedSeed).toBe('INITIAL')
     })
 
-    test('reports a wrong passphrase to the user instead of throwing', async () => {
+    test('leaves a wrong passphrase to the reply, without reporting an error', async () => {
       const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
 
-      const { initParams, emittedErrors, statuses } = await setInitParamsFromSavedSeed(mainCtrl, {
+      const { initParams, emittedErrors } = await setInitParamsFromSavedSeed(mainCtrl, {
         id: seedId,
         seedPassphrase: 'another word'
       })
 
       expect(initParams).toBeUndefined()
-      expect(emittedErrors).toEqual([
-        expect.objectContaining({ message: 'Wrong passphrase.', level: 'expected' })
-      ])
-      expect(statuses).toContain('ERROR')
-      expect(statuses).not.toContain('SUCCESS')
+      expect(emittedErrors).toEqual([])
       expect(mainCtrl.statuses.accountPickerSetInitParamsFromSavedSeed).toBe('INITIAL')
     })
 
-    test('replies to the request once set up, and with an error for a wrong passphrase', async () => {
+    test('replies to the request once set up, and with the wrong passphrase', async () => {
       const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
       const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
 
@@ -975,10 +970,16 @@ describe('Main Controller ', () => {
         'request-2'
       )
 
-      expect(sendUiMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ requestId: 'request-1', ok: false })
-      )
-      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-2', ok: true })
+      expect(sendUiMessage).toHaveBeenCalledWith({
+        requestId: 'request-1',
+        ok: true,
+        res: { isWrongPassphrase: true }
+      })
+      expect(sendUiMessage).toHaveBeenCalledWith({
+        requestId: 'request-2',
+        ok: true,
+        res: { isWrongPassphrase: false }
+      })
       sendUiMessage.mockRestore()
     })
 
@@ -996,23 +997,7 @@ describe('Main Controller ', () => {
       isSeedPassphraseCorrectSpy.mockRestore()
       expect(emittedErrors).toEqual([])
       expect(initParams?.keyIterator?.subType).toBe('seed')
-      expect(mainCtrl.keystore.seeds[0]!.isPassphraseSaved).toBe(true)
-    })
-
-    test('does not derive from a passphrase the UI has just checked', async () => {
-      const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
-      await mainCtrl.keystore.isSeedPassphraseCorrectAndSendResToUi(seedId, PASSPHRASE, 'request')
-      const getSeedMasterNodeSpy = jest.spyOn(keystoreLib, 'getSeedMasterNode')
-
-      const { initParams, emittedErrors } = await setInitParamsFromSavedSeed(mainCtrl, {
-        id: seedId,
-        seedPassphrase: PASSPHRASE
-      })
-
-      expect(getSeedMasterNodeSpy).not.toHaveBeenCalled()
-      getSeedMasterNodeSpy.mockRestore()
-      expect(emittedErrors).toEqual([])
-      expect(initParams?.keyIterator?.subType).toBe('seed')
+      expect(mainCtrl.keystore.seeds[0]!.isPassphraseNeeded).toBe(false)
     })
 
     test('neither saves a wrong passphrase nor opens the picker with it', async () => {
@@ -1025,10 +1010,8 @@ describe('Main Controller ', () => {
       })
 
       expect(initParams).toBeUndefined()
-      expect(emittedErrors).toEqual([
-        expect.objectContaining({ message: 'Wrong passphrase.', level: 'expected' })
-      ])
-      expect(mainCtrl.keystore.seeds[0]!.isPassphraseSaved).toBe(false)
+      expect(emittedErrors).toEqual([])
+      expect(mainCtrl.keystore.seeds[0]!.isPassphraseNeeded).toBe(true)
     })
   })
 

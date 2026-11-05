@@ -653,7 +653,7 @@ describe('KeystoreController recovery phrase passphrases', () => {
 
     expect(seedById(seedId)).toMatchObject({
       withPassphrase: true,
-      isPassphraseSaved: false,
+      isPassphraseNeeded: true,
       passphraseLabel: '1'
     })
     const savedSeed = await keystoreCtrl.getSavedSeed(seedId)
@@ -666,14 +666,14 @@ describe('KeystoreController recovery phrase passphrases', () => {
   test('saves the passphrase when the user asks to', async () => {
     const seedId = await addPhrase(PASSPHRASE, true)
 
-    expect(seedById(seedId)).toMatchObject({ withPassphrase: true, isPassphraseSaved: true })
+    expect(seedById(seedId)).toMatchObject({ withPassphrase: true, isPassphraseNeeded: false })
     expect((await keystoreCtrl.getSavedSeed(seedId)).seedPassphrase).toBe(PASSPHRASE)
   })
 
   test('a phrase without a passphrase is not marked, and ignores the save flag', async () => {
     const seedId = await addPhrase(undefined, true)
 
-    expect(seedById(seedId)).toMatchObject({ withPassphrase: false, isPassphraseSaved: false })
+    expect(seedById(seedId)).toMatchObject({ withPassphrase: false, isPassphraseNeeded: false })
     expect(seedById(seedId).passphraseLabel).toBeUndefined()
   })
 
@@ -701,7 +701,7 @@ describe('KeystoreController recovery phrase passphrases', () => {
     const seedId = await addPhrase(PASSPHRASE)
 
     expect(await addPhrase(PASSPHRASE, true)).toBe(seedId)
-    expect(seedById(seedId).isPassphraseSaved).toBe(true)
+    expect(seedById(seedId).isPassphraseNeeded).toBe(false)
     expect((await keystoreCtrl.getSavedSeed(seedId)).seedPassphrase).toBe(PASSPHRASE)
   })
 
@@ -748,93 +748,25 @@ describe('KeystoreController recovery phrase passphrases', () => {
     expect(await keystoreCtrl.isSeedPassphraseCorrect(standard, PASSPHRASE)).toBe(false)
   })
 
-  describe("reusing the UI's passphrase check", () => {
-    const checkInUi = (id: string, passphrase: string) =>
-      keystoreCtrl.isSeedPassphraseCorrectAndSendResToUi(id, passphrase, 'request-id')
+  test('keeps the Privacy Pools key from the one derivation that checks the passphrase', async () => {
+    const seedId = await addPhrase(PASSPHRASE)
+    const getSeedMasterNodeSpy = jest.spyOn(keystoreLib, 'getSeedMasterNode')
 
-    const countDerivations = async (action: () => Promise<unknown>) => {
-      const getSeedMasterNodeSpy = jest.spyOn(keystoreLib, 'getSeedMasterNode')
-      await action()
-      const count = getSeedMasterNodeSpy.mock.calls.length
-      getSeedMasterNodeSpy.mockRestore()
-      return count
-    }
+    expect(await keystoreCtrl.storePrivacyKey(seedId, 'privacyPools', PASSPHRASE)).toBe(true)
 
-    test('the action it was checked for derives nothing again', async () => {
-      const seedId = await addPhrase(PASSPHRASE)
-      await checkInUi(seedId, PASSPHRASE)
-
-      expect(
-        await countDerivations(() =>
-          keystoreCtrl.storePrivacyKey(seedId, 'privacyPools', PASSPHRASE)
-        )
-      ).toBe(0)
-      expect(
-        await keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
-      ).toBe(
-        ethers.HDNodeWallet.fromMnemonic(
-          ethers.Mnemonic.fromPhrase(process.env.SEED, PASSPHRASE),
-          PRIVACY_POOLS_SIGNING_KEY_PATH
-        ).privateKey
-      )
-    })
-
-    test('is used only once', async () => {
-      const seedId = await addPhrase(PASSPHRASE)
-      await checkInUi(seedId, PASSPHRASE)
-
-      const isCorrect = () => keystoreCtrl.isSeedPassphraseCorrect(seedId, PASSPHRASE)
-      expect(await countDerivations(isCorrect)).toBe(0)
-      expect(await countDerivations(isCorrect)).toBe(1)
-    })
-
-    test('is not used for another phrase entry, and never for a wrong passphrase', async () => {
-      const seedId = await addPhrase(PASSPHRASE)
-      const otherSeedId = await addPhrase(OTHER_PASSPHRASE)
-
-      await checkInUi(seedId, PASSPHRASE)
-      expect(
-        await countDerivations(() =>
-          keystoreCtrl.storePrivacyKey(otherSeedId, 'privacyPools', OTHER_PASSPHRASE)
-        )
-      ).toBe(1)
-
-      await checkInUi(seedId, OTHER_PASSPHRASE)
-      expect(
-        await countDerivations(() =>
-          expect(
-            keystoreCtrl.storePrivacyKey(seedId, 'privacyPools', OTHER_PASSPHRASE)
-          ).rejects.toThrow('Wrong passphrase.')
-        )
-      ).toBe(1)
-    })
-
-    test('is dropped on lock', async () => {
-      const seedId = await addPhrase(PASSPHRASE)
-      await checkInUi(seedId, PASSPHRASE)
-
-      keystoreCtrl.lock()
-      await keystoreCtrl.unlockWithSecret('password', pass)
-
-      expect(
-        await countDerivations(() =>
-          keystoreCtrl.storePrivacyKey(seedId, 'privacyPools', PASSPHRASE)
-        )
-      ).toBe(1)
-    })
+    expect(getSeedMasterNodeSpy).toHaveBeenCalledTimes(1)
+    getSeedMasterNodeSpy.mockRestore()
   })
 
   test('saves a passphrase later only if it is the one the phrase was added with', async () => {
     const seedId = await addPhrase(PASSPHRASE)
 
-    await expect(keystoreCtrl.saveSeedPassphrase(seedId, OTHER_PASSPHRASE)).rejects.toThrow(
-      'Wrong passphrase.'
-    )
-    expect(seedById(seedId).isPassphraseSaved).toBe(false)
+    expect(await keystoreCtrl.saveSeedPassphrase(seedId, OTHER_PASSPHRASE)).toBe(false)
+    expect(seedById(seedId).isPassphraseNeeded).toBe(true)
 
-    await keystoreCtrl.saveSeedPassphrase(seedId, PASSPHRASE)
+    expect(await keystoreCtrl.saveSeedPassphrase(seedId, PASSPHRASE)).toBe(true)
 
-    expect(seedById(seedId).isPassphraseSaved).toBe(true)
+    expect(seedById(seedId).isPassphraseNeeded).toBe(false)
     expect((await keystoreCtrl.getSavedSeed(seedId)).seedPassphrase).toBe(PASSPHRASE)
   })
 
@@ -849,13 +781,14 @@ describe('KeystoreController recovery phrase passphrases', () => {
     await expect(
       keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
     ).rejects.toThrow('the passphrase is not saved and no readable privacyPools key is stored')
-    await expect(
-      keystoreCtrl.storePrivacyKey(seedId, 'privacyPools', OTHER_PASSPHRASE)
-    ).rejects.toThrow('Wrong passphrase.')
+    expect(await keystoreCtrl.storePrivacyKey(seedId, 'privacyPools', OTHER_PASSPHRASE)).toBe(false)
+    expect(
+      (await storageCtrl.get('keystoreSeeds', [])).find(({ id }: any) => id === seedId).privacyKeys
+    ).toBeUndefined()
 
     await keystoreCtrl.storePrivacyKey(seedId, 'privacyPools', PASSPHRASE)
 
-    expect(seedById(seedId).isPassphraseSaved).toBe(false)
+    expect(seedById(seedId).isPassphraseNeeded).toBe(true)
     expect(
       await keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
     ).toBe(expectedKey)
@@ -887,7 +820,7 @@ describe('KeystoreController recovery phrase passphrases', () => {
     await expect(
       keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
     ).rejects.toThrow('no readable privacyPools key is stored')
-    expect(seedById(seedId)).toMatchObject({ withPassphrase: true, isPassphraseSaved: false })
+    expect(seedById(seedId)).toMatchObject({ withPassphrase: true, isPassphraseNeeded: true })
     // Only that phrase's key is removed
     expect(
       await keystoreCtrl.derivePrivacyKey(
@@ -1567,7 +1500,7 @@ describe('app data sync between two devices', () => {
 
       expect(payload.seeds[0]).not.toHaveProperty('privacyKeys')
       expect(importingKeystore.seeds).toEqual([
-        expect.objectContaining({ id: seedId, withPassphrase: true, isPassphraseSaved: false })
+        expect.objectContaining({ id: seedId, withPassphrase: true, isPassphraseNeeded: true })
       ])
       expect(importingKeystore.keys[0]!.meta.fromSeedId).toBe(seedId)
       const syncedSeed = await importingKeystore.getSavedSeed(seedId)
@@ -1608,7 +1541,7 @@ describe('app data sync between two devices', () => {
 
       await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
 
-      expect(importingKeystore.seeds[0]).toMatchObject({ id: seedId, isPassphraseSaved: true })
+      expect(importingKeystore.seeds[0]).toMatchObject({ id: seedId, isPassphraseNeeded: false })
       expect((await importingKeystore.getSavedSeed(seedId)).seedPassphrase).toBe(PASSPHRASE)
     })
 
@@ -1626,7 +1559,7 @@ describe('app data sync between two devices', () => {
       await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
 
       expect(importingKeystore.seeds).toEqual([
-        expect.objectContaining({ id: existingSeedId, isPassphraseSaved: false })
+        expect.objectContaining({ id: existingSeedId, isPassphraseNeeded: true })
       ])
       expect((await importingKeystore.getSavedSeed(existingSeedId)).seedPassphrase).toBeNull()
     })
@@ -1639,6 +1572,37 @@ describe('app data sync between two devices', () => {
 
       expect(importingKeystore.seeds[0]).toMatchObject({ id: seedId, withPassphrase: true })
       expect(await importingKeystore.isSeedPassphraseCorrect(seedId, PASSPHRASE)).toBe(true)
+    })
+
+    test("keeps the passphrase's name from the other device", async () => {
+      const seedId = await addPassphrasePhraseWithKey(false)
+      await exportingKeystore.updateSeed({ id: seedId, passphraseLabel: 'Savings' })
+      await importingKeystore.addSecret('password', importingPass, '', true)
+
+      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
+
+      expect(importingKeystore.seeds[0]).toMatchObject({ id: seedId, passphraseLabel: 'Savings' })
+    })
+
+    test('numbers the passphrase again when another passphrase of the phrase has its name here', async () => {
+      const seedId = await addPassphrasePhraseWithKey(false)
+      await importingKeystore.addSecret('password', importingPass, '', true)
+      await importingKeystore.addTempSeed({
+        seed: process.env.SEED,
+        seedPassphrase: 'another word',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      await importingKeystore.persistTempSeed()
+      const otherPassphraseSeedId = importingKeystore.seeds[0]!.id
+
+      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
+
+      // Both are "1" on the device they were added on
+      expect(exportingKeystore.seeds.find(({ id }) => id === seedId)!.passphraseLabel).toBe('1')
+      expect(importingKeystore.seeds).toEqual([
+        expect.objectContaining({ id: otherPassphraseSeedId, passphraseLabel: '1' }),
+        expect.objectContaining({ id: seedId, passphraseLabel: '2' })
+      ])
     })
   })
 

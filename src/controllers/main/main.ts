@@ -1066,33 +1066,38 @@ export class MainController extends EventEmitter implements IMainController {
 
   /**
    * Adds the Privacy Pools account of a stored recovery phrase and selects it. A phrase whose
-   * passphrase isn't saved needs it, to save it or to keep the account's key.
+   * passphrase isn't saved needs it, to save it or to keep the account's key. Replies to
+   * `requestId` once done, with `isWrongPassphrase` when the passphrase isn't the phrase's one.
    */
   async addPrivacyPoolsAccount(
     seedId: string,
     {
       seedPassphrase,
       shouldSavePassphrase
-    }: { seedPassphrase?: string; shouldSavePassphrase?: boolean } = {}
+    }: { seedPassphrase?: string; shouldSavePassphrase?: boolean } = {},
+    requestId?: string
   ) {
     await this.initialLoadPromise
 
+    let isWrongPassphrase = false
+    let isAdded = false
     // Wrapped as a whole, so a refused account is shown to the user
     await this.withStatus(
       'selectAccount',
       async () => {
         const seed = this.keystore.seeds.find(({ id }) => id === seedId)
-        if (seed?.withPassphrase && !seed.isPassphraseSaved) {
-          if (!seedPassphrase)
-            throw new EmittableError({
-              level: 'expected',
-              message: 'Wrong passphrase.',
-              error: new Error('main: no passphrase for a Privacy Pools account')
-            })
-
+        if (seed?.isPassphraseNeeded) {
           // Both check the passphrase before keeping anything
-          if (shouldSavePassphrase) await this.keystore.saveSeedPassphrase(seedId, seedPassphrase)
-          else await this.keystore.storePrivacyKey(seedId, 'privacyPools', seedPassphrase)
+          const isPassphraseKept =
+            !!seedPassphrase &&
+            (shouldSavePassphrase
+              ? await this.keystore.saveSeedPassphrase(seedId, seedPassphrase)
+              : await this.keystore.storePrivacyKey(seedId, 'privacyPools', seedPassphrase))
+          // Shown by the passphrase sheet, so not reported as an error
+          if (!isPassphraseKept) {
+            isWrongPassphrase = true
+            return
+          }
         }
 
         try {
@@ -1104,8 +1109,15 @@ export class MainController extends EventEmitter implements IMainController {
           throw error
         }
         await this.#selectPrivacyPoolsAccount(seedId)
+        isAdded = true
       },
       true
+    )
+
+    this.#replyToRequest(
+      requestId,
+      isAdded || isWrongPassphrase ? undefined : 'Adding the Privacy Pools account failed',
+      { isWrongPassphrase }
     )
   }
 
@@ -2545,7 +2557,8 @@ export class MainController extends EventEmitter implements IMainController {
   /**
    * Sets the account picker up with a recovery phrase the user already saved, for the
    * personalize step to select and prepare its next account. One whose passphrase isn't saved
-   * needs it from the user, and has it saved if they chose to. Replies to `requestId` once set up.
+   * needs it from the user, and has it saved if they chose to. Replies to `requestId` once set up,
+   * with `isWrongPassphrase` when the passphrase isn't the phrase's one.
    */
   async accountPickerSetInitParamsFromSavedSeed(
     {
@@ -2560,6 +2573,7 @@ export class MainController extends EventEmitter implements IMainController {
     requestId?: string
   ) {
     let isSetUp = false
+    let isWrongPassphrase = false
     await this.withStatus(
       'accountPickerSetInitParamsFromSavedSeed',
       async () => {
@@ -2568,14 +2582,15 @@ export class MainController extends EventEmitter implements IMainController {
 
         // Another passphrase would open other accounts, which this phrase's entry doesn't hold.
         // Saving it checks it too, so it isn't checked twice
-        if (shouldSavePassphrase && passphrase && !savedSeed.seedPassphrase)
-          await this.keystore.saveSeedPassphrase(id, passphrase)
-        else if (!(await this.keystore.isSeedPassphraseCorrect(id, passphrase)))
-          throw new EmittableError({
-            level: 'expected',
-            message: 'Wrong passphrase.',
-            error: new Error('main: wrong passphrase for a saved recovery phrase')
-          })
+        const isPassphraseCorrect =
+          shouldSavePassphrase && passphrase && !savedSeed.seedPassphrase
+            ? await this.keystore.saveSeedPassphrase(id, passphrase)
+            : await this.keystore.isSeedPassphraseCorrect(id, passphrase)
+        // Shown by the passphrase sheet, so not reported as an error
+        if (!isPassphraseCorrect) {
+          isWrongPassphrase = true
+          return
+        }
 
         await this.accountPicker.setInitParams({
           keyIterator: new KeyIterator(savedSeed.seed, passphrase),
@@ -2588,7 +2603,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.#replyToRequest(
       requestId,
-      isSetUp ? undefined : 'Adding accounts from the recovery phrase failed'
+      isSetUp || isWrongPassphrase ? undefined : 'Adding accounts from the recovery phrase failed',
+      { isWrongPassphrase }
     )
   }
 
@@ -2676,10 +2692,12 @@ export class MainController extends EventEmitter implements IMainController {
    * Replies to the UI request behind a call (if there is one), so the UI can await it
    * instead of watching a transient status.
    */
-  #replyToRequest(requestId?: string, error?: string) {
+  #replyToRequest(requestId?: string, error?: string, res?: unknown) {
     if (!requestId) return
 
-    this.ui.message.sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
+    this.ui.message.sendUiMessage(
+      error ? { requestId, ok: false, error } : { requestId, ok: true, res }
+    )
   }
 
   // includes the getters in the stringified instance

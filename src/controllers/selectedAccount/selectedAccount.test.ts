@@ -544,13 +544,37 @@ describe('SelectedAccount Controller', () => {
         expect(await getStoredKey(mainCtrl, seedId)).toBeDefined()
       })
 
-      it('stores no key for a wrong passphrase', async () => {
+      it('stores no key for a wrong passphrase, and replies with it instead of an error', async () => {
         const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()
+        const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+        const emittedErrors: unknown[] = []
+        const unsubscribeErrors = mainCtrl.onError((error: unknown) => emittedErrors.push(error))
 
-        await mainCtrl.addPrivacyPoolsAccount(seedId, { seedPassphrase: 'another word' })
+        await mainCtrl.addPrivacyPoolsAccount(seedId, { seedPassphrase: 'another word' }, 'request')
 
+        unsubscribeErrors()
+        expect(emittedErrors).toEqual([])
+        expect(sendUiMessage).toHaveBeenCalledWith({
+          requestId: 'request',
+          ok: true,
+          res: { isWrongPassphrase: true }
+        })
         expect(mainCtrl.privacyPools.accounts).toHaveLength(0)
         expect(await getStoredKey(mainCtrl, seedId)).toBeUndefined()
+      })
+
+      it('replies once the account is added', async () => {
+        const { mainCtrl, seedId } = await prepareUnsavedPassphraseSeed()
+        const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+
+        await mainCtrl.addPrivacyPoolsAccount(seedId, { seedPassphrase: PASSPHRASE }, 'request')
+
+        expect(mainCtrl.privacyPools.accounts).toHaveLength(1)
+        expect(sendUiMessage).toHaveBeenCalledWith({
+          requestId: 'request',
+          ok: true,
+          res: { isWrongPassphrase: false }
+        })
       })
     })
 
