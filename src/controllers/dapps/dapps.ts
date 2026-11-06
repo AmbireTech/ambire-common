@@ -4,7 +4,13 @@ import {
   IRecurringTimeout,
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
-import { getSessionId, Session, SessionInitProps, SessionProp } from '../../classes/session'
+import {
+  getSessionConnectionSource,
+  getSessionId,
+  Session,
+  SessionInitProps,
+  SessionProp
+} from '../../classes/session'
 import {
   categoriesNotToFilterOut,
   categoriesToExclude,
@@ -812,6 +818,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     tabId,
     url,
     wcTopic,
+    isWcFromInAppBrowser,
     frameId,
     topFrameUrl
   }: SessionInitProps) {
@@ -828,7 +835,15 @@ export class DappsController extends EventEmitter implements IDappsController {
       return existingSession
     }
 
-    return this.#createDappSession({ windowId, tabId, url, wcTopic, frameId, topFrameUrl })
+    return this.#createDappSession({
+      windowId,
+      tabId,
+      url,
+      wcTopic,
+      isWcFromInAppBrowser,
+      frameId,
+      topFrameUrl
+    })
   }
 
   getDappSessionByWcTopic(wcTopic: string): Session | undefined {
@@ -902,27 +917,28 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   /**
-   * Removes a WalletConnect session terminated by the dApp and, once none of its WC sessions
-   * remain, revokes the `'wc'` connection so the next pairing asks for approval again.
+   * Removes a WalletConnect session terminated by the dApp and, once none of the same source
+   * remain, revokes that connection so the next pairing asks for approval again.
    */
   disconnectWcSessionByTopic = (wcTopic: string) => {
     const session = this.getDappSessionByWcTopic(wcTopic)
     if (!session) return
 
     const dappId = session.id
+    const sessionSource = getSessionConnectionSource(session)
     delete this.dappSessions[session.sessionId]
     this.emitUpdate()
 
-    const hasOtherWcSession = Object.values(this.dappSessions).some(
-      (s) => s.id === dappId && !!s.wcTopic
+    const hasOtherWcSessionOfSameSource = Object.values(this.dappSessions).some(
+      (s) => s.id === dappId && getSessionConnectionSource(s) === sessionSource
     )
-    if (hasOtherWcSession) return
+    if (hasOtherWcSessionOfSameSource) return
 
     const dapp = this.#dapps.get(dappId)
-    if (!dapp?.connectedSources?.includes('wc')) return
+    if (!dapp?.connectedSources?.includes(sessionSource)) return
 
     this.updateDapp(dappId, {
-      connectedSources: dapp.connectedSources.filter((source) => source !== 'wc')
+      connectedSources: dapp.connectedSources.filter((source) => source !== sessionSource)
     })
   }
 
@@ -945,11 +961,11 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (id) {
       dappSessions = dappSessions.filter((dappSession) => dappSession.data.id === id)
     }
-    // Source filter: 'wc' → only sessions with a wcTopic; 'injected' → only sessions without one.
-    // Used by `disconnectDappSource` so disconnecting one channel doesn't tear down the other.
+    // Source filter: only the sessions of that channel (see `getSessionConnectionSource`).
+    // Used by `disconnectDappSource` so disconnecting one channel doesn't tear down the others.
     if (sourceFilter) {
-      dappSessions = dappSessions.filter((dappSession) =>
-        sourceFilter === 'wc' ? !!dappSession.data.wcTopic : !dappSession.data.wcTopic
+      dappSessions = dappSessions.filter(
+        (dappSession) => getSessionConnectionSource(dappSession.data) === sourceFilter
       )
     }
 
@@ -1052,8 +1068,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   /**
    * Convenience for callers that have a dapp identity (id/url/name/icon) but not a full
    * Dapp record yet — used by the WalletConnect session setup/restore paths, which need
-   * to register the dapp with `'wc'` as the source even when there's no prior catalog
-   * entry. Defers to `#buildDapp` so existing catalog metadata is preserved.
+   * to register the dapp with `'wc'` or `'wc-in-app'` as the source even when there's no
+   * prior catalog entry. Defers to `#buildDapp` so existing catalog metadata is preserved.
    *
    * `candidateChainIds` are the chains the WC dapp approved in its eip155 namespace; the
    * dapp's stored chainId is resolved from them via `pickWalletConnectChainId`, falling
