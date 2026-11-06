@@ -50,6 +50,7 @@ import {
   getAmountAfterFeeSync,
   getSanitizedAmount
 } from '../../libs/transfer/amount'
+import { pickPoisoningMatchWithOwnAccounts } from '../../libs/transfer/address-poisoning'
 import { getAmountsFromFieldValue } from '../../libs/transfer/fieldAmounts'
 import { getNftParamsFromSearchParams } from '../../libs/transfer/nftSearchParams'
 import {
@@ -1327,7 +1328,23 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
 
-    this.addressPoisoningMatch = this.isRecipientAddressFirstTimeSend ? addressPoisoningMatch : null
+    // View-only accounts are left out: the user didn't create them, so one could be a lookalike
+    const ownAccounts = this.#accounts.accounts.filter(
+      ({ associatedKeys }) => !getIsViewOnly(this.#keystore.keys, associatedKeys)
+    )
+    // Sending to your own account is safe, even if it looks like an address you sent to before
+    const isRecipientOwnAccount = ownAccounts.some(
+      ({ addr }) => addr.toLowerCase() === this.recipientAddress.toLowerCase()
+    )
+
+    this.addressPoisoningMatch =
+      this.isRecipientAddressFirstTimeSend && !isRecipientOwnAccount
+        ? pickPoisoningMatchWithOwnAccounts(
+            this.recipientAddress,
+            ownAccounts,
+            addressPoisoningMatch
+          )
+        : null
 
     this.#updateRecipientDomainAddressChange()
   }
