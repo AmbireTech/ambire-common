@@ -1,23 +1,31 @@
 import { getAddress } from 'ethers'
 
-import { beforeEach, describe, expect, it, jest } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
+import {
+  NOT_A_SAFE_ACCOUNT_MESSAGE,
+  SAFE_API_TIMEOUT_MS,
+  SAFE_INFO_FETCH_FAILED_MESSAGE
+} from '../../consts/safe'
 import { Hex } from '../../interfaces/hex'
 import { SafeAccountByOwner } from '../../interfaces/safe'
 import {
   fetchAllPending,
   findDeployData,
   getApiKit,
-  getSafeAccountByOwner
+  getSafeAccountByOwner,
+  isSafeContract
 } from '../../libs/safe/safe'
 import { SafeController } from './safe'
 
 jest.mock('../../libs/safe/safe', () => ({
-  ...jest.requireActual('../../libs/safe/safe'),
+  ...jest.requireActual<typeof import('../../libs/safe/safe')>('../../libs/safe/safe'),
   fetchAllPending: jest.fn(),
   findDeployData: jest.fn(),
   getApiKit: jest.fn(),
-  getSafeAccountByOwner: jest.fn()
+  getSafeAccountByOwner: jest.fn(),
+  isSafeContract: jest.fn()
 }))
 
 // The pause between requests to the Safe API is not what is tested
@@ -59,6 +67,143 @@ describe('SafeController findSafe', () => {
   beforeEach(() => {
     jest.mocked(findDeployData).mockReset()
     jest.mocked(getApiKit).mockReset()
+    jest.mocked(isSafeContract).mockReset()
+  })
+
+  const mockSafeApiFailure = () => {
+    jest.mocked(getApiKit).mockReturnValue({
+      getSafeInfo: jest.fn(async () => {
+        throw new Error('Not Found')
+      })
+    } as any)
+    jest.mocked(findDeployData).mockResolvedValue(new Error('Not Found'))
+  }
+
+  it('tells the user the address is not a Safe when the contract on chain is not one', async () => {
+    const provider = { getCode: jest.fn(async () => '0x1234') }
+    mockSafeApiFailure()
+    jest.mocked(isSafeContract).mockResolvedValue(false)
+    const controller = createController([1n], { '1': provider })
+
+    await controller.findSafe(SAFE_A)
+
+    expect(isSafeContract).toHaveBeenCalledWith(SAFE_A, provider)
+    expect(controller.safeInfo).toBeUndefined()
+    expect(controller.importError).toEqual({ address: SAFE_A, message: NOT_A_SAFE_ACCOUNT_MESSAGE })
+  })
+
+  it('asks the user to try again when the Safe API fails for a real Safe', async () => {
+    const provider = { getCode: jest.fn(async () => '0x1234') }
+    mockSafeApiFailure()
+    jest.mocked(isSafeContract).mockResolvedValue(true)
+    const controller = createController([1n], { '1': provider })
+
+    await controller.findSafe(SAFE_A)
+
+    expect(controller.safeInfo).toBeUndefined()
+    expect(controller.importError).toEqual({
+      address: SAFE_A,
+      message: SAFE_INFO_FETCH_FAILED_MESSAGE
+    })
+  })
+
+  it('asks the user to try again when it cannot check whether the contract is a Safe', async () => {
+    const provider = { getCode: jest.fn(async () => '0x1234') }
+    mockSafeApiFailure()
+    jest.mocked(isSafeContract).mockRejectedValue(new Error('fetch failed'))
+    const controller = createController([1n], { '1': provider })
+
+    await controller.findSafe(SAFE_A)
+
+    // a failed check must not be reported as "not a Safe" - the address may still be one
+    expect(controller.importError).toEqual({
+      address: SAFE_A,
+      message: SAFE_INFO_FETCH_FAILED_MESSAGE
+    })
+  })
+
+  it('does not check the contract on chain when the Safe API knows the Safe', async () => {
+    const provider = { getCode: jest.fn(async () => '0x1234') }
+    jest.mocked(getApiKit).mockReturnValue({
+      getSafeInfo: jest.fn(async () => ({ address: SAFE_A, owners: [OWNER], version: '1.4.1' }))
+    } as any)
+    jest.mocked(findDeployData).mockResolvedValue({
+      factoryAddr: '0x',
+      singleton: '0x',
+      setupData: '0x',
+      saltNonce: '0x'
+    })
+    const controller = createController([1n], { '1': provider })
+
+    await controller.findSafe(SAFE_A)
+
+    expect(isSafeContract).not.toHaveBeenCalled()
+    expect(controller.importError).toBeUndefined()
+  })
+
+  describe('when a request never answers', () => {
+    const never = <T>() => new Promise<T>(() => {})
+
+    beforeEach(() => {
+      jest.useFakeTimers()
+    })
+
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    it('stops waiting for the on-chain Safe check and asks the user to try again', async () => {
+      const provider = { getCode: jest.fn(async () => '0x1234') }
+      mockSafeApiFailure()
+      jest.mocked(isSafeContract).mockImplementation(() => never<boolean>())
+      const controller = createController([1n], { '1': provider })
+
+      const findSafePromise = controller.findSafe(SAFE_A)
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+      await findSafePromise
+
+      expect(controller.statuses.findSafe).toBe('INITIAL')
+      expect(controller.importError).toEqual({
+        address: SAFE_A,
+        message: SAFE_INFO_FETCH_FAILED_MESSAGE
+      })
+    })
+
+    it('stops waiting for the Safe API and still tells a non-Safe address apart', async () => {
+      const provider = { getCode: jest.fn(async () => '0x1234') }
+      jest.mocked(getApiKit).mockReturnValue({
+        getSafeInfo: jest.fn(() => never())
+      } as any)
+      jest.mocked(findDeployData).mockResolvedValue(new Error('Not Found'))
+      jest.mocked(isSafeContract).mockResolvedValue(false)
+      const controller = createController([1n], { '1': provider })
+
+      const findSafePromise = controller.findSafe(SAFE_A)
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+      await findSafePromise
+
+      expect(controller.statuses.findSafe).toBe('INITIAL')
+      expect(controller.importError).toEqual({
+        address: SAFE_A,
+        message: NOT_A_SAFE_ACCOUNT_MESSAGE
+      })
+    })
+
+    it('does not give up before the timeout', async () => {
+      const provider = { getCode: jest.fn(async () => '0x1234') }
+      mockSafeApiFailure()
+      jest.mocked(isSafeContract).mockImplementation(() => never<boolean>())
+      const controller = createController([1n], { '1': provider })
+
+      const findSafePromise = controller.findSafe(SAFE_A)
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS - 1)
+
+      expect(controller.statuses.findSafe).toBe('LOADING')
+      expect(controller.importError).toBeUndefined()
+
+      await jest.advanceTimersByTimeAsync(1)
+      await findSafePromise
+    })
   })
 
   it('uses recovered deployment data when importing a Safe', async () => {
@@ -225,6 +370,7 @@ describe('SafeController findSafesByOwner', () => {
   })
 
   it('keeps results from successful networks and reports failed networks', async () => {
+    const { restore } = suppressConsole()
     const mainnetApi = createApi({ safes: [SAFE_A] })
     const optimismApi = createApi({ safes: [] })
     optimismApi.getSafesByOwner.mockRejectedValue(new Error('Service unavailable'))
@@ -239,6 +385,7 @@ describe('SafeController findSafesByOwner', () => {
     expect(getOwnerSearch(controller)?.failedNetworks).toEqual([10n])
     expect(getOwnerSearch(controller)?.searchedNetworks).toEqual([1n, 10n])
     expect(getOwnerSearch(controller)?.updatedAt).toBeGreaterThan(0)
+    restore()
   })
 
   it('keeps search results separate for each owner', async () => {
@@ -285,6 +432,7 @@ describe('SafeController findSafesByOwner', () => {
   })
 
   it('does not cancel an active owner search when another owner search fails', async () => {
+    const { restore } = suppressConsole()
     let resolveSearch!: (value: { safes: string[] }) => void
     let markSearchAsStarted!: () => void
     const searchStarted = new Promise<void>((resolve) => {
@@ -314,6 +462,7 @@ describe('SafeController findSafesByOwner', () => {
     ])
     expect(getOwnerSearch(controller, OTHER_OWNER)?.failedNetworks).toEqual([1n])
     expect(getOwnerSearch(controller, OTHER_OWNER)?.status).toBe('DONE')
+    restore()
   })
 
   it('debounces a repeated search for the same owner while loading', async () => {
@@ -544,6 +693,7 @@ describe('SafeController pending counts', () => {
   })
 
   it('keeps the last counts and goes on with the next chain when a fetch fails', async () => {
+    const { restore } = suppressConsole()
     const { controller } = createPendingCountsController({
       accountStates: {
         [SAFE_B]: {
@@ -571,6 +721,7 @@ describe('SafeController pending counts', () => {
 
     expect(controller.pendingCountBySafe[SAFE_B]).toEqual({ '1': 4, '10': 1 })
     expect(onError).toHaveBeenCalledTimes(1)
+    restore()
   })
 
   it('runs a single update at a time', async () => {

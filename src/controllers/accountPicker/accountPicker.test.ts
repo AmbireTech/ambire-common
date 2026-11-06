@@ -106,8 +106,8 @@ describe('AccountPicker', () => {
     const privateKeys = Array.from({ length: 11 }, (_, i) =>
       getPrivateKeyFromSeed(process.env.SEED, null, i, hdPathTemplate)
     )
-    // Without adding them automatically, which would load every key on a single page
-    // Awaited, since the picker is initialized already and gets reset first
+    // Without selecting them automatically, which would load every key on a single page.
+    // Awaited, as the picker is initialized already and resets before taking the new params
     await controller.setInitParams({
       keyIterator: new KeyIterator(privateKeys),
       hdPathTemplate,

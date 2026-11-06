@@ -6,6 +6,7 @@ import { CALLDATA_SELECTOR_HEX_LENGTH } from '@/libs/decodeCall'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import {
   makeSelectorsApi as makeSelectorsApiWithSignatures,
   waitUntil
@@ -219,6 +220,7 @@ describe('ContractInfoController', () => {
   })
 
   test('resolves the call data fetch when the API keeps failing, saving the selectors as errors without fetching in a loop', async () => {
+    const { restore } = suppressConsole()
     const api = makeSelectorsApi({ failingAttempts: Infinity })
     const { contractInfo, storage } = await makeController({ fetch: api.fetch })
 
@@ -230,6 +232,7 @@ describe('ContractInfoController', () => {
     expect(api.requests).toHaveLength(2)
     expect(storedSelectors[EXECUTE_SELECTOR]?.status).toBe('error')
     expect(contractInfo.decodeCallData(executeData)).toBeNull()
+    restore()
   })
 
   test('sends selectors asked for close together in one request', async () => {
@@ -364,6 +367,7 @@ describe('ContractInfoController', () => {
   })
 
   test('retries once after a failed request and succeeds', async () => {
+    const { restore } = suppressConsole()
     const api = makeSelectorsApi({ failingAttempts: 1 })
     const { contractInfo } = await makeController({ fetch: api.fetch })
 
@@ -371,9 +375,11 @@ describe('ContractInfoController', () => {
 
     expect(api.requests).toHaveLength(2)
     expect(contractInfo.decodeCallData(transferData)?.signature).toBe(TRANSFER_SIGNATURE)
+    restore()
   })
 
   test('saves a failed fetch as an error that keeps the old signatures, resolves instead of rejecting, and does not ask again while the error is fresh', async () => {
+    const { restore } = suppressConsole()
     const api = makeSelectorsApi({ failingAttempts: Infinity })
     const { contractInfo, storage } = await makeController({
       fetch: api.fetch,
@@ -401,6 +407,7 @@ describe('ContractInfoController', () => {
     await contractInfo.fetchSelectors([TRANSFER_SELECTOR])
     await contractInfo.fetchSelectorsForCallDatas([transferData])
     expect(api.requests).toHaveLength(2)
+    restore()
   })
 
   test('with fetching disabled, fetches nothing and still decodes saved selectors', async () => {

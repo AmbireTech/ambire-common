@@ -1,11 +1,13 @@
 import { errorCodes } from 'eth-rpc-errors'
 import { Wallet, ZeroAddress } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { afterEach, describe, expect, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { mockBundlerRequestsBeforeEach } from '../../../test/mocks/bundler'
+import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
 import { SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE } from '../../consts/safe'
 import {
@@ -19,21 +21,26 @@ import { Platform } from '../../interfaces/platform'
 import {
   BenzinUserRequest,
   CallsUserRequest,
+  SwitchAccountRequest,
   DappConnectRequest,
   PlainTextMessageUserRequest,
   TypedMessageUserRequest,
   UserRequest
 } from '../../interfaces/userRequest'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
 import * as safeLib from '../../libs/safe/safe'
 import { SwapAndBridgeFormStatus } from '../../libs/swapAndBridge/constants'
 import { generateUuid } from '../../utils/uuid'
+import { EstimationController } from '../estimation/estimation'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 import type { AccountOp } from '../../libs/accountOp/accountOp'
 import type { Call } from '../../libs/accountOp/types'
+import type { IRequestsController } from '../../interfaces/requests'
+import type { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
@@ -98,6 +105,25 @@ const accounts = [
   }
 ]
 
+/**
+ * A Safe transaction with every field its signing data needs. The nonce can also be a number,
+ * so tests can check that nonces are compared by value.
+ */
+const getSafeTx = (nonce: string | number) =>
+  ({
+    safe: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+    to: ZeroAddress,
+    value: '0',
+    data: '0x',
+    operation: 0,
+    gasToken: ZeroAddress,
+    safeTxGas: '0',
+    baseGas: '0',
+    gasPrice: '0',
+    refundReceiver: ZeroAddress,
+    nonce
+  }) as unknown as AccountOp['safeTx']
+
 const updateAccountOp = (request: CallsUserRequest, accountOpData: Partial<AccountOp>) => {
   request.signAccountOp.update({ accountOpData })
 }
@@ -125,6 +151,26 @@ const getActivityAccountOp = (
   timestamp
 })
 
+/**
+ * Every SignAccountOp built by `getSignAccountOp`. One left alive keeps humanizing and
+ * refreshing gas prices after its test ends, so its logs land in later tests.
+ */
+const createdSignAccountOps: SignAccountOpController[] = []
+/** The requests controller of every test, for the batches it built and still holds. */
+const createdRequestsControllers: IRequestsController[] = []
+
+afterEach(() => {
+  const signAccountOpsLeftRunning = new Set<ISignAccountOpController>(
+    createdSignAccountOps.splice(0)
+  )
+  createdRequestsControllers.splice(0).forEach(({ userRequests }) => {
+    userRequests.forEach((request) => {
+      if (request.kind === 'calls') signAccountOpsLeftRunning.add(request.signAccountOp)
+    })
+  })
+  signAccountOpsLeftRunning.forEach((signAccountOp) => signAccountOp.destroy())
+})
+
 const prepareTest = async (
   seedTestDapp = false,
   isSelectedAccountSafe = false,
@@ -150,6 +196,9 @@ const prepareTest = async (
       saltNonce: '0x00',
       setupData: '0x'
     }
+    // This Safe has no real factory, so fetching its state from the network always fails.
+    // The tests use the account states set below.
+    jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockResolvedValue(undefined)
   }
 
   // Mock account states for all accounts
@@ -241,9 +290,7 @@ const prepareTest = async (
       onBroadcastSuccess: async () => {},
       onBroadcastFailed: () => {}
     })
-    // Prevent the recurring estimation timer from reaching V1.getAvailableFeeOptions
-    // (which throws for accounts with no ETH on the test networks).
-    jest.spyOn(signAccountOp.estimation, 'estimate').mockResolvedValue(undefined)
+    createdSignAccountOps.push(signAccountOp)
     return signAccountOp
   }
 
@@ -271,6 +318,12 @@ const prepareTest = async (
     } as CallsUserRequest
   }
 
+  createdRequestsControllers.push(mainCtrl.requests)
+  // Keeps the recurring estimation of every batch away from V1.getAvailableFeeOptions (which
+  // throws for accounts with no ETH on the test networks) and from the live RPCs, where the calls
+  // of these tests fail at random. The tests here are about routing requests, not fees.
+  jest.spyOn(EstimationController.prototype, 'estimate').mockResolvedValue(undefined)
+
   return {
     mainCtrl,
     selectedAccountCtrl: mainCtrl.selectedAccount,
@@ -281,6 +334,7 @@ const prepareTest = async (
     safeCtrl: mainCtrl.safe,
     activityCtrl: mainCtrl.activity,
     controller: mainCtrl.requests,
+    networksCtrl: mainCtrl.networks,
     getSignAccountOp,
     getCallsRequest,
     event: eventEmitter,
@@ -997,6 +1051,170 @@ describe('RequestsController ', () => {
     expect(controller.userRequests[0]!.kind).toBe('calls')
   })
 
+  describe('build Privacy Pools ragequit request', () => {
+    const DEPOSITOR = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const RAGEQUIT_CALL = {
+      to: '0xF241d57C6DebAe225c0F2e6eA1529373C9A9C9fB',
+      value: 0n,
+      data: '0x1234'
+    }
+
+    test('adds the call for the selected account, which made the deposit', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.build({
+        type: 'privacyPoolsRagequitRequest',
+        params: { accountAddr: DEPOSITOR, chainId: 1n, calls: [RAGEQUIT_CALL] }
+      })
+
+      const [request] = controller.userRequests
+      expect(request?.kind).toBe('calls')
+      if (request?.kind !== 'calls') return
+      expect(request.meta.accountAddr).toBe(DEPOSITOR)
+      expect(request.meta.chainId).toBe(1n)
+      expect(request.signAccountOp.accountOp.calls).toEqual([
+        expect.objectContaining(RAGEQUIT_CALL)
+      ])
+    })
+
+    // Thrown, so the caller's status reports it as failed rather than done
+    test('throws and adds nothing for an account that is not the selected one', async () => {
+      const { controller } = await prepareTest()
+
+      await expect(
+        controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: {
+            accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+            chainId: 1n,
+            calls: [RAGEQUIT_CALL]
+          }
+        })
+      ).rejects.toThrow('Could not prepare taking back this deposit. Please try again.')
+
+      expect(controller.userRequests).toHaveLength(0)
+    })
+
+    test('throws and adds nothing on a network the wallet does not have', async () => {
+      const { controller } = await prepareTest()
+
+      await expect(
+        controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: { accountAddr: DEPOSITOR, chainId: 424242n, calls: [RAGEQUIT_CALL] }
+        })
+      ).rejects.toThrow(EmittableError)
+
+      expect(controller.userRequests).toHaveLength(0)
+    })
+
+    describe('finding the request already taking back a deposit', () => {
+      const encodeRagequit = (label: bigint) =>
+        POOL_RAGEQUIT_INTERFACE.encodeFunctionData('ragequit', [
+          {
+            pA: [0n, 0n],
+            pB: [
+              [0n, 0n],
+              [0n, 0n]
+            ],
+            pC: [0n, 0n],
+            // [commitment, nullifierHash, value, label]
+            pubSignals: [1n, 2n, 30n, label]
+          }
+        ])
+
+      const prepareWithRagequit = async (label: bigint) => {
+        const { controller } = await prepareTest()
+        await controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: {
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            calls: [{ ...RAGEQUIT_CALL, data: encodeRagequit(label) }]
+          }
+        })
+
+        return controller
+      }
+
+      test('finds the request taking back the deposit with that label', async () => {
+        const controller = await prepareWithRagequit(3n)
+
+        const request = controller.findPrivacyPoolsRagequitRequest({
+          // Lowercase, as an address read from the chain's history may be
+          accountAddr: DEPOSITOR.toLowerCase(),
+          chainId: 1n,
+          label: 3n
+        })
+
+        expect(request).toBe(controller.userRequests[0])
+      })
+
+      test('finds it among other calls of the batch', async () => {
+        const controller = await prepareWithRagequit(3n)
+        await controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: {
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            calls: [{ ...RAGEQUIT_CALL, data: encodeRagequit(4n) }]
+          }
+        })
+
+        expect(controller.userRequests).toHaveLength(1)
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            label: 4n
+          })
+        ).toBe(controller.userRequests[0])
+      })
+
+      test('finds nothing for another deposit, network or account', async () => {
+        const controller = await prepareWithRagequit(3n)
+
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            label: 4n
+          })
+        ).toBeUndefined()
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: DEPOSITOR,
+            chainId: 10n,
+            label: 3n
+          })
+        ).toBeUndefined()
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+            chainId: 1n,
+            label: 3n
+          })
+        ).toBeUndefined()
+      })
+
+      test('finds nothing in a request of other calls', async () => {
+        const { controller } = await prepareTest()
+        await controller.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: { accountAddr: DEPOSITOR, chainId: 1n, calls: [RAGEQUIT_CALL] }
+        })
+
+        expect(
+          controller.findPrivacyPoolsRagequitRequest({
+            accountAddr: DEPOSITOR,
+            chainId: 1n,
+            label: 3n
+          })
+        ).toBeUndefined()
+      })
+    })
+  })
+
   describe('build NFT transfer request', () => {
     const nft = {
       address: '0x59468516a8259058baD1cA5F8f4BFF190d30E066',
@@ -1250,7 +1468,6 @@ describe('RequestsController ', () => {
     const chainId = 1n
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.threshold = 2
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const txnId = SAFE_TX_HASH
     const firstSigner = new Wallet(`0x${'1'.repeat(64)}`)
     const secondSigner = new Wallet(`0x${'2'.repeat(64)}`)
@@ -1532,6 +1749,156 @@ describe('RequestsController ', () => {
     expect(request.signAccountOp.accountOp.nonce).toBe(119n)
     request.signAccountOp.destroy()
   })
+  test('queues a new Safe request after the pending transactions the RPC does not count yet', async () => {
+    const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    // sent, but not counted by the RPC yet - the new request must not reuse (and replace) these nonces
+    const sentAccountOp = (nonce: bigint): SubmittedAccountOp => ({
+      ...getActivityAccountOp(accountAddr, chainId, nonce),
+      status: AccountOpStatus.BroadcastedButNotConfirmed
+    })
+    await activityCtrl.addAccountOp(sentAccountOp(119n))
+    await activityCtrl.addAccountOp(sentAccountOp(120n))
+
+    await controller.build({
+      type: 'calls',
+      params: {
+        executionType: 'queue',
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, value: 1n, data: '0x' }],
+          meta: { accountAddr, chainId }
+        }
+      }
+    })
+
+    const request = controller.userRequests[0]
+    if (request?.kind !== 'calls') throw new Error('Expected calls request')
+    expect(request.signAccountOp.accountOp.nonce).toBe(121n)
+    request.signAccountOp.destroy()
+  })
+
+  test('keeps the pending transaction nonce for a Safe speed up and opens it separately', async () => {
+    const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    const pendingAccountOp: SubmittedAccountOp = {
+      ...getActivityAccountOp(accountAddr, chainId, 119n),
+      status: AccountOpStatus.BroadcastedButNotConfirmed
+    }
+    await activityCtrl.addAccountOp(pendingAccountOp)
+
+    // an unrelated request, queued after the pending transaction
+    await controller.build({
+      type: 'calls',
+      params: {
+        executionType: 'queue',
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, value: 1n, data: '0x' }],
+          meta: { accountAddr, chainId }
+        }
+      }
+    })
+
+    const speedUpCalls = [{ id: generateUuid(), to: ZeroAddress, value: 2n, data: '0x' }]
+    await controller.build({
+      type: 'calls',
+      params: {
+        executionType: 'queue',
+        userRequestParams: {
+          calls: speedUpCalls,
+          meta: { accountAddr, chainId },
+          accountOp: {
+            id: pendingAccountOp.id,
+            accountAddr,
+            chainId,
+            signingKeyAddr: null,
+            signingKeyType: null,
+            nonce: 119n,
+            eoaNonce: 5n,
+            calls: speedUpCalls,
+            gasLimit: null,
+            signature: null,
+            gasFeePayment: null,
+            meta: { speedUp: { enabled: true } }
+          }
+        }
+      }
+    })
+
+    expect(controller.userRequests).toHaveLength(2)
+    const callsRequests = controller.userRequests as CallsUserRequest[]
+    const speedUpRequest = callsRequests.find(
+      (request) => request.signAccountOp.accountOp.meta?.speedUp?.enabled
+    )
+    const queuedRequest = callsRequests.find((request) => request !== speedUpRequest)
+    // the speed up must not get merged into the request that is already open
+    expect(queuedRequest?.signAccountOp.accountOp.calls).toHaveLength(1)
+    expect(queuedRequest?.signAccountOp.accountOp.nonce).toBe(120n)
+    expect(speedUpRequest?.signAccountOp.accountOp.nonce).toBe(119n)
+    expect(speedUpRequest?.signAccountOp.accountOp.eoaNonce).toBe(5n)
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
+
+  test.each([
+    ['resend', [{ to: ZeroAddress, value: 2n, data: '0x' }], { isResend: true }],
+    ['cancel', [{ to: ZeroAddress, value: 0n, data: '0x' }], undefined]
+  ])(
+    'reopens the open Safe %s of a pending transaction instead of opening another one',
+    async (_, prebuiltCalls, prebuiltMeta) => {
+      const { controller, accountsCtrl } = await prepareTest(false, true)
+      const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      const chainId = 1n
+      accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+
+      // Built anew on every press, as the sign screen does (see getResendAccountOp and
+      // getSafeCancellationAccountOp in the app)
+      const buildPrebuiltRequest = () => {
+        const calls = prebuiltCalls.map((call) => ({ ...call, id: generateUuid() }))
+
+        return controller.build({
+          type: 'calls',
+          params: {
+            executionType: 'queue',
+            userRequestParams: {
+              calls,
+              meta: { accountAddr, chainId },
+              accountOp: {
+                id: generateUuid(),
+                accountAddr,
+                chainId,
+                signingKeyAddr: null,
+                signingKeyType: null,
+                nonce: 119n,
+                calls,
+                gasLimit: null,
+                signature: null,
+                gasFeePayment: null,
+                ...(prebuiltMeta && { meta: prebuiltMeta })
+              }
+            }
+          }
+        })
+      }
+
+      await buildPrebuiltRequest()
+      await buildPrebuiltRequest()
+
+      expect(controller.userRequests).toHaveLength(1)
+      const request = controller.userRequests[0]
+      if (request?.kind !== 'calls') throw new Error('Expected calls request')
+      // reopened as it is, without the calls of the second press added to it
+      expect(request.signAccountOp.accountOp.calls).toHaveLength(1)
+      expect(request.signAccountOp.accountOp.nonce).toBe(119n)
+      request.signAccountOp.destroy()
+    }
+  )
+
   test('keeps the nonce when adding calls to an existing Safe request', async () => {
     const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -1572,7 +1939,7 @@ describe('RequestsController ', () => {
     await controller.setCurrentUserRequestById(request.id)
     updateAccountOp(request, {
       nonce: 99n,
-      safeTx: { nonce: '0x07' } as any,
+      safeTx: getSafeTx('0x07'),
       signed: [SAFE_OWNER],
       txnId: SAFE_TX_HASH
     })
@@ -1779,7 +2146,6 @@ describe('RequestsController ', () => {
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 1n
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const buildSafeRequest = (nonce: bigint, txnId: Hex) =>
       controller.build({
         type: 'calls',
@@ -1852,7 +2218,6 @@ describe('RequestsController ', () => {
     const prepareSafeTest = async () => {
       const test = await prepareTest(false, true)
       test.accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = safeNonce
-      jest.spyOn(test.accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
       return test
     }
 
@@ -1976,7 +2341,6 @@ describe('RequestsController ', () => {
     }
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
@@ -2043,7 +2407,6 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -2090,7 +2453,6 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -2114,6 +2476,7 @@ describe('RequestsController ', () => {
   })
 
   test('asks to try again when preparing the Safe deployment fails unexpectedly', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
@@ -2144,6 +2507,7 @@ describe('RequestsController ', () => {
     )
 
     unsubscribe()
+    restore()
   })
 
   test('does not add a second deployment call to a deployment an app transaction queued meanwhile', async () => {
@@ -2154,7 +2518,6 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const deploymentCall = {
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -2218,7 +2581,6 @@ describe('RequestsController ', () => {
     })
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -2341,7 +2703,6 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValueOnce(null)
@@ -2363,6 +2724,7 @@ describe('RequestsController ', () => {
   })
 
   test('does not build a Safe deployment request for a non-Safe account', async () => {
+    const { restore } = suppressConsole()
     const { controller, uiCtrl } = await prepareTest()
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
@@ -2379,6 +2741,7 @@ describe('RequestsController ', () => {
       ok: false,
       error: 'unavailable'
     })
+    restore()
   })
 
   test('reports when a Safe deployment request cannot be prepared', async () => {
@@ -2389,7 +2752,6 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue(null)
     const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
 
@@ -2406,10 +2768,9 @@ describe('RequestsController ', () => {
   })
 
   test('does not build a deployment request when the Safe is already deployed', async () => {
-    const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
+    const { controller, uiCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
     const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
 
@@ -2437,7 +2798,6 @@ describe('RequestsController ', () => {
     })
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -2498,7 +2858,6 @@ describe('RequestsController ', () => {
     account.safeCreation = { ...account.safeCreation!, setupData: '0x1234' }
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -2704,6 +3063,7 @@ describe('RequestsController ', () => {
     })
 
     test('rejects the safs when the on-chain check fails', async () => {
+      const { restore } = suppressConsole()
       const { controller, rejectSpy, updateAccountStateSpy } = await setup(true)
       updateAccountStateSpy.mockRejectedValue(new Error('RPC down'))
 
@@ -2712,6 +3072,7 @@ describe('RequestsController ', () => {
       )
 
       expect(rejectSpy).toHaveBeenCalledTimes(1)
+      restore()
     })
 
     test('does nothing on success or for non-deploy ops', async () => {
@@ -2847,9 +3208,8 @@ describe('RequestsController ', () => {
   })
 
   test('keeps Benzin open while the Safe deployment is not confirmed', async () => {
-    const { accountsCtrl, benzinRequest, controller, transactionRequest } =
-      await prepareSafeDeploymentHandoff()
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+    const { restore } = suppressConsole()
+    const { benzinRequest, controller, transactionRequest } = await prepareSafeDeploymentHandoff()
     const onError = jest.fn()
     controller.onError(onError)
     const resumeSpy = jest.spyOn(transactionRequest.signAccountOp, 'resume')
@@ -2868,9 +3228,11 @@ describe('RequestsController ', () => {
     )
 
     transactionRequest.signAccountOp.destroy()
+    restore()
   })
 
   test('keeps Benzin open when refreshing the Safe state after its deployment fails', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, benzinRequest, controller, transactionRequest } =
       await prepareSafeDeploymentHandoff()
     jest
@@ -2894,6 +3256,7 @@ describe('RequestsController ', () => {
     )
 
     transactionRequest.signAccountOp.destroy()
+    restore()
   })
 
   test('recovers and stores incomplete Safe deployment data before building the deployment', async () => {
@@ -2911,7 +3274,6 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
 
     const recoveredSafeCreation = {
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
@@ -2976,7 +3338,6 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'findDeployData').mockResolvedValue({
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
       singleton: '0x2345678901234567890123456789012345678901' as Hex,
@@ -3018,6 +3379,7 @@ describe('RequestsController ', () => {
   })
 
   test('rejects a Safe deployment when incomplete creation data cannot be recovered', async () => {
+    const { restore } = suppressConsole()
     const { accountsCtrl, controller } = await prepareTest(true, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
@@ -3032,7 +3394,6 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const incompleteSafeCreation = {
       factoryAddr: '0x' as Hex,
       singleton: '0x' as Hex,
@@ -3080,6 +3441,7 @@ describe('RequestsController ', () => {
           "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
       })
     )
+    restore()
   })
 
   test('rejects the app transaction without creating requests when the Safe cannot be deployed', async () => {
@@ -3087,7 +3449,6 @@ describe('RequestsController ', () => {
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue(null)
     const reject = jest.fn()
 
@@ -3338,6 +3699,7 @@ describe('RequestsController ', () => {
     })
 
     test('rejects the message without adding requests when the Safe cannot be deployed', async () => {
+      const { restore } = suppressConsole()
       const { controller, getSafeDeploymentCallSpy } = await prepareUndeployedSafe()
       getSafeDeploymentCallSpy.mockResolvedValue(null)
       const onError = jest.fn()
@@ -3356,6 +3718,7 @@ describe('RequestsController ', () => {
         })
       )
       expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'expected' }))
+      restore()
     })
 
     test('rejects the message when incomplete Safe creation data cannot be recovered', async () => {
@@ -3421,6 +3784,7 @@ describe('RequestsController ', () => {
     })
 
     test('keeps Benzin open while the Safe deployment a message waits for is not confirmed', async () => {
+      const { restore } = suppressConsole()
       const { accountsCtrl, controller } = await prepareTest(false, true)
       accountsCtrl.accountStates[safeAccountAddr]![1]!.isDeployed = false
       const updateAccountStateSpy = jest
@@ -3450,6 +3814,7 @@ describe('RequestsController ', () => {
       expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], true)
       expect(controller.userRequests).toEqual([benzinRequest, messageRequest])
       expect(controller.currentUserRequest).toBe(benzinRequest)
+      restore()
     })
   })
 
@@ -3515,10 +3880,10 @@ describe('RequestsController ', () => {
     nextNonceRequest.id = 'next-nonce-request'
     otherNetworkRequest.id = 'other-network-request'
 
-    updateAccountOp(broadcastRequest, { nonce: 8n, safeTx: { nonce: 7 } as any })
-    updateAccountOp(sameNonceRequest, { nonce: 8n, safeTx: { nonce: '7' } as any })
-    updateAccountOp(nextNonceRequest, { nonce: 8n, safeTx: { nonce: 8 } as any })
-    updateAccountOp(otherNetworkRequest, { nonce: 8n, safeTx: { nonce: 7 } as any })
+    updateAccountOp(broadcastRequest, { nonce: 8n, safeTx: getSafeTx(7) })
+    updateAccountOp(sameNonceRequest, { nonce: 8n, safeTx: getSafeTx('7') })
+    updateAccountOp(nextNonceRequest, { nonce: 8n, safeTx: getSafeTx(8) })
+    updateAccountOp(otherNetworkRequest, { nonce: 8n, safeTx: getSafeTx(7) })
     controller.userRequests = [
       broadcastRequest,
       sameNonceRequest,
@@ -3545,17 +3910,17 @@ describe('RequestsController ', () => {
     updateAccountOp(broadcastRequest, {
       txnId: '0xbroadcast',
       nonce: 8n,
-      safeTx: { nonce: 7 } as any
+      safeTx: getSafeTx(7)
     })
     updateAccountOp(sameNonceRequest, {
       txnId: '0xalternative',
       nonce: 8n,
-      safeTx: { nonce: 7 } as any
+      safeTx: getSafeTx(7)
     })
     updateAccountOp(nextNonceRequest, {
       txnId: '0xnext',
       nonce: 8n,
-      safeTx: { nonce: 8 } as any
+      safeTx: getSafeTx(8)
     })
     controller.userRequests = [broadcastRequest, sameNonceRequest, nextNonceRequest]
     await controller.setCurrentUserRequestById(broadcastRequest.id)
@@ -3580,7 +3945,7 @@ describe('RequestsController ', () => {
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const request = await getCallsRequest({ addr: accountAddr, chainId: 1n })
 
-    updateAccountOp(request, { txnId: '0xzero', nonce: 0n, safeTx: { nonce: 0 } as any })
+    updateAccountOp(request, { txnId: '0xzero', nonce: 0n, safeTx: getSafeTx(0) })
     controller.userRequests = [request]
     const destroySpy = jest.spyOn(request.signAccountOp, 'destroy')
 
@@ -3655,6 +4020,316 @@ describe('RequestsController ', () => {
       expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
 
       existingBatch.signAccountOp.destroy()
+    })
+  })
+
+  describe('speed up or cancel of a pending transaction of another account', () => {
+    const STARTING_ACCOUNT_ADDR = accounts[2]!.addr
+    const PENDING_ACCOUNT_ADDR = accounts[0]!.addr
+    const THIRD_ACCOUNT_ADDR = accounts[1]!.addr
+    const REPLACED_TXN_ID = '0x1111111111111111111111111111111111111111111111111111111111111111'
+    const PENDING_CALL = { to: ZeroAddress, value: 1n, data: '0x' as const }
+
+    type TestSetup = Awaited<ReturnType<typeof prepareTest>>
+
+    const buildReplacementForPendingAccount = (
+      { controller }: TestSetup,
+      { isCancel = false, chainId = 1n }: { isCancel?: boolean; chainId?: bigint } = {}
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          allowAccountSwitch: true,
+          userRequestParams: {
+            calls: [PENDING_CALL],
+            meta: { accountAddr: PENDING_ACCOUNT_ADDR, chainId },
+            accountOp: {
+              id: 'replaced-account-op-id',
+              accountAddr: PENDING_ACCOUNT_ADDR,
+              chainId,
+              signingKeyAddr: null,
+              signingKeyType: null,
+              gasLimit: null,
+              gasFeePayment: null,
+              nonce: 7n,
+              signature: null,
+              calls: [{ ...PENDING_CALL, id: 'replaced-call-id' }],
+              meta: {
+                speedUp: {
+                  enabled: true,
+                  ...(isCancel && { isCancel: true }),
+                  replacedIdentifiedBy: { type: 'Transaction', identifier: REPLACED_TXN_ID }
+                }
+              }
+            } as AccountOp
+          }
+        }
+      })
+
+    const selectAccountAddr = (setup: TestSetup) => setup.selectedAccountCtrl.account?.addr
+
+    const getSwitchAccountRequest = ({ controller }: TestSetup) =>
+      controller.userRequests.find((r) => r.kind === 'switchAccount')
+
+    /**
+     * The user is on the starting account with a request of its own open, presses Speed up (or
+     * Cancel) of a pending transaction of another account, and goes through the switch screen.
+     */
+    const startReplacementFromStartingAccount = async (
+      setup: TestSetup,
+      options?: { isCancel?: boolean; chainId?: bigint }
+    ) => {
+      const { mainCtrl, controller, getCallsRequest } = setup
+      const startingAccountRequest = await getCallsRequest({
+        addr: STARTING_ACCOUNT_ADDR,
+        chainId: 10n
+      })
+      await controller.addUserRequests([startingAccountRequest], { executionType: 'queue' })
+      expect(selectAccountAddr(setup)).toBe(STARTING_ACCOUNT_ADDR)
+
+      await buildReplacementForPendingAccount(setup, options)
+      const switchAccountRequest = getSwitchAccountRequest(setup)
+      expect(switchAccountRequest?.kind).toBe('switchAccount')
+
+      await mainCtrl.selectAccount(PENDING_ACCOUNT_ADDR)
+      await controller.resolveUserRequest(null, switchAccountRequest!.id)
+
+      const replacementRequest = controller.userRequests.find(
+        (r): r is CallsUserRequest =>
+          r.kind === 'calls' && r.signAccountOp.accountOp.accountAddr === PENDING_ACCOUNT_ADDR
+      )
+
+      return { startingAccountRequest, replacementRequest }
+    }
+
+    test('a speed up opens as a speed up of the same transaction after the switch', async () => {
+      const setup = await prepareTest()
+
+      const { replacementRequest } = await startReplacementFromStartingAccount(setup)
+
+      expect(selectAccountAddr(setup)).toBe(PENDING_ACCOUNT_ADDR)
+      expect(replacementRequest).toBeDefined()
+      const { accountOp, isSpeedUpTransaction } = replacementRequest!.signAccountOp
+      expect(isSpeedUpTransaction).toBe(true)
+      expect(accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier).toBe(REPLACED_TXN_ID)
+      expect(accountOp.calls.map(({ to, value }) => ({ to, value }))).toEqual([
+        { to: PENDING_CALL.to, value: PENDING_CALL.value }
+      ])
+    })
+
+    test('a cancel keeps its empty call after the switch, although it is made a cancel twice', async () => {
+      const setup = await prepareTest()
+
+      const { replacementRequest } = await startReplacementFromStartingAccount(setup, {
+        isCancel: true
+      })
+
+      expect(replacementRequest).toBeDefined()
+      const { accountOp } = replacementRequest!.signAccountOp
+      expect(accountOp.meta?.speedUp).toMatchObject({
+        enabled: true,
+        isCancel: true,
+        replacedNonce: 7n,
+        replacedIdentifiedBy: { identifier: REPLACED_TXN_ID }
+      })
+      expect(accountOp.calls).toHaveLength(1)
+      expect(accountOp.calls[0]).toMatchObject({ to: ZeroAddress, value: 0n, data: '0x' })
+    })
+
+    const getSwitchBackRequests = ({ controller }: TestSetup) =>
+      controller.userRequests.filter(
+        (r): r is SwitchAccountRequest =>
+          r.kind === 'switchAccount' && r.meta.switchToAccountAddr === STARTING_ACCOUNT_ADDR
+      )
+
+    const sendReplacement = (
+      { mainCtrl }: TestSetup,
+      replacementRequest: CallsUserRequest | undefined
+    ) =>
+      mainCtrl.resolveAccountOpRequest(
+        {
+          ...getActivityAccountOp(PENDING_ACCOUNT_ADDR, 1n, 7n),
+          calls: replacementRequest!.signAccountOp.accountOp.calls
+        },
+        replacementRequest!.id
+      )
+
+    test('a switch request to the starting account opens once the speed up is rejected', async () => {
+      const setup = await prepareTest()
+      const { startingAccountRequest, replacementRequest } =
+        await startReplacementFromStartingAccount(setup)
+      const { controller } = setup
+
+      await controller.rejectUserRequests('User rejected', [replacementRequest!.id])
+
+      const [switchBackRequest] = getSwitchBackRequests(setup)
+      expect(switchBackRequest).toBeDefined()
+      expect(switchBackRequest!.meta.nextRequestKind).toBe('calls')
+      expect(controller.currentUserRequest).toBe(switchBackRequest)
+      expect(controller.requestWindow.windowProps).not.toBe(null)
+      // The user is not moved until they accept
+      expect(selectAccountAddr(setup)).toBe(PENDING_ACCOUNT_ADDR)
+      expect(controller.userRequests).not.toContain(replacementRequest)
+      expect(controller.userRequests).toContain(startingAccountRequest)
+
+      startingAccountRequest.signAccountOp.destroy()
+    })
+
+    test('the transaction page stays open after a speed up is sent and the switch request is next', async () => {
+      const setup = await prepareTest()
+      const { startingAccountRequest, replacementRequest } =
+        await startReplacementFromStartingAccount(setup)
+      const { controller } = setup
+
+      await sendReplacement(setup, replacementRequest)
+
+      const [switchBackRequest] = getSwitchBackRequests(setup)
+      expect(switchBackRequest).toBeDefined()
+      expect(controller.visibleUserRequests.map((r) => r.kind)).toEqual(['benzin', 'switchAccount'])
+      expect(controller.currentUserRequest?.kind).toBe('benzin')
+      expect(controller.requestWindow.windowProps).not.toBe(null)
+      expect(selectAccountAddr(setup)).toBe(PENDING_ACCOUNT_ADDR)
+      expect(controller.userRequests).not.toContain(replacementRequest)
+
+      const benzinRequest = controller.currentUserRequest!
+      await controller.resolveUserRequest(null, benzinRequest.id)
+
+      expect(controller.currentUserRequest).toBe(switchBackRequest)
+      expect(controller.requestWindow.windowProps).not.toBe(null)
+
+      startingAccountRequest.signAccountOp.destroy()
+    })
+
+    test('rejecting the switch request keeps the user on the account with the speed up and the starting request queued', async () => {
+      const setup = await prepareTest()
+      const { startingAccountRequest, replacementRequest } =
+        await startReplacementFromStartingAccount(setup)
+      const { controller, mainCtrl } = setup
+      const onError = jest.fn()
+      controller.onError(onError)
+      mainCtrl.onError(onError)
+      await controller.rejectUserRequests('User rejected', [replacementRequest!.id])
+      const [switchBackRequest] = getSwitchBackRequests(setup)
+
+      await controller.rejectUserRequests('User rejected', [switchBackRequest!.id])
+
+      expect(selectAccountAddr(setup)).toBe(PENDING_ACCOUNT_ADDR)
+      expect(getSwitchBackRequests(setup)).toEqual([])
+      expect(controller.userRequests).toEqual([startingAccountRequest])
+      expect(controller.visibleUserRequests).toEqual([])
+      expect(controller.currentUserRequest).toBe(null)
+      expect(onError).not.toHaveBeenCalled()
+
+      startingAccountRequest.signAccountOp.destroy()
+    })
+
+    test('accepting the switch request keeps the window open and opens the starting account request in it', async () => {
+      const setup = await prepareTest()
+      const { startingAccountRequest, replacementRequest } =
+        await startReplacementFromStartingAccount(setup)
+      const { controller, mainCtrl } = setup
+      await sendReplacement(setup, replacementRequest)
+      const [switchBackRequest] = getSwitchBackRequests(setup)
+      await controller.resolveUserRequest(null, controller.currentUserRequest!.id)
+      expect(controller.currentUserRequest).toBe(switchBackRequest)
+      const windowId = controller.requestWindow.windowProps?.id
+      expect(windowId).toBeDefined()
+
+      // What the UI does: select the account, then resolve the switch request once it is selected
+      await mainCtrl.selectAccount(STARTING_ACCOUNT_ADDR)
+      expect(controller.requestWindow.windowProps?.id).toBe(windowId)
+      expect(controller.currentUserRequest).toBe(switchBackRequest)
+      await controller.resolveUserRequest(null, switchBackRequest!.id)
+
+      expect(selectAccountAddr(setup)).toBe(STARTING_ACCOUNT_ADDR)
+      expect(controller.requestWindow.windowProps?.id).toBe(windowId)
+      expect(controller.currentUserRequest).toBe(startingAccountRequest)
+      expect(getSwitchBackRequests(setup)).toEqual([])
+
+      startingAccountRequest.signAccountOp.destroy()
+    })
+
+    test('one switch request is enough for speed ups of two transactions of the account', async () => {
+      const setup = await prepareTest()
+      const { mainCtrl, controller, getCallsRequest } = setup
+      const startingAccountRequest = await getCallsRequest({
+        addr: STARTING_ACCOUNT_ADDR,
+        chainId: 10n
+      })
+      await controller.addUserRequests([startingAccountRequest], { executionType: 'queue' })
+      await buildReplacementForPendingAccount(setup, { chainId: 1n })
+      await buildReplacementForPendingAccount(setup, { chainId: 56n })
+      const switchRequestIds = controller.userRequests
+        .filter((r) => r.kind === 'switchAccount')
+        .map((r) => r.id)
+      expect(switchRequestIds).toHaveLength(2)
+      await mainCtrl.selectAccount(PENDING_ACCOUNT_ADDR)
+      await controller.resolveUserRequest(null, switchRequestIds[0]!)
+      const replacementRequestIds = controller.userRequests
+        .filter((r) => r.kind === 'calls' && r.meta.accountAddr === PENDING_ACCOUNT_ADDR)
+        .map((r) => r.id)
+      expect(replacementRequestIds).toHaveLength(2)
+
+      await controller.rejectUserRequests('User rejected', [replacementRequestIds[0]!])
+      await controller.rejectUserRequests('User rejected', [replacementRequestIds[1]!])
+
+      expect(getSwitchBackRequests(setup)).toHaveLength(1)
+
+      startingAccountRequest.signAccountOp.destroy()
+    })
+
+    test('no switch request is added if the user picked another account in between', async () => {
+      const setup = await prepareTest()
+      const { startingAccountRequest, replacementRequest } =
+        await startReplacementFromStartingAccount(setup)
+      const { controller, mainCtrl } = setup
+      await mainCtrl.selectAccount(THIRD_ACCOUNT_ADDR)
+
+      await controller.rejectUserRequests('User rejected', [replacementRequest!.id])
+
+      expect(selectAccountAddr(setup)).toBe(THIRD_ACCOUNT_ADDR)
+      expect(getSwitchBackRequests(setup)).toEqual([])
+
+      startingAccountRequest.signAccountOp.destroy()
+    })
+
+    test('no switch request is added if the starting account was removed', async () => {
+      const setup = await prepareTest()
+      const { replacementRequest } = await startReplacementFromStartingAccount(setup)
+      const { controller, mainCtrl } = setup
+      await mainCtrl.removeAccount(STARTING_ACCOUNT_ADDR)
+      expect(mainCtrl.accounts.accounts.map((a) => a.addr)).not.toContain(STARTING_ACCOUNT_ADDR)
+
+      await controller.rejectUserRequests('User rejected', [replacementRequest!.id])
+
+      expect(getSwitchBackRequests(setup)).toEqual([])
+      expect(selectAccountAddr(setup)).toBe(PENDING_ACCOUNT_ADDR)
+    })
+
+    test('calls that are not a speed up leave the user on the account they switched to', async () => {
+      const setup = await prepareTest()
+      const { controller, mainCtrl } = setup
+
+      await controller.build({
+        type: 'calls',
+        params: {
+          allowAccountSwitch: true,
+          userRequestParams: {
+            calls: [PENDING_CALL],
+            meta: { accountAddr: PENDING_ACCOUNT_ADDR, chainId: 1n }
+          }
+        }
+      })
+      const switchAccountRequest = getSwitchAccountRequest(setup)
+      await mainCtrl.selectAccount(PENDING_ACCOUNT_ADDR)
+      await controller.resolveUserRequest(null, switchAccountRequest!.id)
+      const callsRequest = controller.userRequests.find((r) => r.kind === 'calls')
+      expect(callsRequest).toBeDefined()
+
+      await controller.rejectUserRequests('User rejected', [callsRequest!.id])
+
+      expect(selectAccountAddr(setup)).toBe(PENDING_ACCOUNT_ADDR)
+      expect(controller.userRequests.some((r) => r.kind === 'switchAccount')).toBe(false)
     })
   })
 
@@ -4117,6 +4792,7 @@ describe('RequestsController ', () => {
     })
 
     test('a malformed transaction in the batch costs only the app that sent it', async () => {
+      const { restore } = suppressConsole()
       const { controller, uiCtrl } = await prepareTest(true)
       const sideEffects = watchSideEffects(uiCtrl)
       const promises = makeRejectMocks(10)
@@ -4150,9 +4826,11 @@ describe('RequestsController ', () => {
       expect(sideEffects.closeCount()).toBe(0)
 
       callsRequests[0]!.signAccountOp.destroy()
+      restore()
     })
 
     test('a transaction with no parameters does not take its batch down with it', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
       const sendRaw = (dappPromise: { id: string; reject: (err: any) => void }, params: any[]) =>
         controller.build({
@@ -4186,9 +4864,11 @@ describe('RequestsController ', () => {
       expect(noFromReason.message).not.toBe(noParamsReason.message)
 
       expect(controller.userRequests.filter((r) => r.kind === 'calls')).toHaveLength(0)
+      restore()
     })
 
     test('every transaction turned away for one already signing is answered', async () => {
+      const { restore } = suppressConsole()
       const { controller, getCallsRequest } = await prepareTest()
       const inProgress = await getCallsRequest({ addr: FROM, chainId: 1n })
 
@@ -4213,6 +4893,7 @@ describe('RequestsController ', () => {
       inProgress.signAccountOp.destroy()
       second.signAccountOp.destroy()
       third.signAccountOp.destroy()
+      restore()
     })
 
     test('supersedes every message fired at once down to exactly one', async () => {
@@ -4264,6 +4945,7 @@ describe('RequestsController ', () => {
     })
 
     test('one request that cannot be prepared does not abandon the others', async () => {
+      const { restore } = suppressConsole()
       const { controller, accountsCtrl, getCallsRequest } = await prepareTest()
       const unfetchable = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 10n })
       const fine = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 1n })
@@ -4286,6 +4968,7 @@ describe('RequestsController ', () => {
 
       unfetchable.signAccountOp.destroy()
       fine.signAccountOp.destroy()
+      restore()
     })
 
     test('an empty transaction to the account itself joins the batch it already has', async () => {
@@ -4473,6 +5156,7 @@ describe('RequestsController ', () => {
       })
 
       test('turns away a transaction from an account that is not in the wallet', async () => {
+        const { restore } = suppressConsole()
         const { controller } = await prepareTest(true)
         const [unknownAccountPromise] = makeRejectMocks(1)
 
@@ -4484,9 +5168,11 @@ describe('RequestsController ', () => {
 
         expect(controller.userRequests).toHaveLength(0)
         expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+        restore()
       })
 
       test('answers an app connected only to the selected account as if the other one is not in the wallet', async () => {
+        const { restore } = suppressConsole()
         const { controller, dappsCtrl } = await prepareTest(true)
         jest.spyOn(dappsCtrl, 'getDapp').mockReturnValue({
           ...TEST_DAPP,
@@ -4517,9 +5203,11 @@ describe('RequestsController ', () => {
 
         expect(controller.userRequests).toHaveLength(0)
         expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+        restore()
       })
 
       test('turns away too many transactions for another account before asking to switch', async () => {
+        const { restore } = suppressConsole()
         const { controller } = await prepareTest(true)
         const reject = jest.fn()
 
@@ -4549,6 +5237,7 @@ describe('RequestsController ', () => {
           expect.objectContaining({ code: errorCodes.rpc.limitExceeded })
         )
         expect(getSwitchAccountRequests(controller)).toHaveLength(0)
+        restore()
       })
     })
 
@@ -4629,6 +5318,149 @@ describe('RequestsController ', () => {
         expect(controller.currentUserRequest).toBe(null)
         expect(sideEffects.closeCount()).toBe(1)
         expect(controller.requestWindow.windowProps).toBe(null)
+      })
+    })
+
+    describe('for a disabled network', () => {
+      const BASE_CHAIN_ID = 8453n
+
+      /** Connects the app to Base and disables it, returning a switch that turns it back on */
+      const prepareDisabledNetworkTest = async () => {
+        const testCtx = await prepareTest(true)
+        testCtx.dappsCtrl.updateDapp(MOCK_SESSION.id, { chainId: Number(BASE_CHAIN_ID) })
+        const base = testCtx.networksCtrl.allNetworks.find((n) => n.chainId === BASE_CHAIN_ID)!
+        base.disabled = true
+
+        return {
+          ...testCtx,
+          enableNetwork: () => {
+            base.disabled = false
+          }
+        }
+      }
+
+      test('holds a transaction behind a prompt and moves straight to it once the network is on', async () => {
+        const { controller, uiCtrl, enableNetwork } = await prepareDisabledNetworkTest()
+        const sideEffects = watchSideEffects(uiCtrl)
+        const [promise] = makeRejectMocks(1)
+
+        await sendTransaction(controller, promise!)
+
+        // Nothing can be built for a disabled network, so only the prompt is there
+        expect(controller.userRequests.map((r) => r.kind)).toEqual(['walletAddEthereumChain'])
+        const prompt = controller.currentUserRequest!
+        expect(prompt.kind).toBe('walletAddEthereumChain')
+        expect(prompt.meta.hasNextRequest).toBe(true)
+        expect(prompt.meta.params[0].chainId).toBe('0x2105')
+
+        enableNetwork()
+        await controller.resolveUserRequest(null, prompt.id)
+
+        const [callsRequest] = controller.userRequests as CallsUserRequest[]
+        expect(controller.userRequests).toHaveLength(1)
+        expect(callsRequest!.meta.chainId).toBe(BASE_CHAIN_ID)
+        expect(controller.currentUserRequest).toBe(callsRequest)
+        // The view goes from the prompt to the transaction without closing on the way
+        expect(sideEffects.openCount()).toBe(1)
+        expect(sideEffects.closeCount()).toBe(0)
+        expect(promise!.reject).not.toHaveBeenCalled()
+
+        callsRequest!.signAccountOp.destroy()
+      })
+
+      test('holds requests arriving at once for the same network behind one prompt', async () => {
+        const { controller, enableNetwork } = await prepareDisabledNetworkTest()
+        const promises = makeRejectMocks(3)
+
+        await Promise.all(promises.map((promise) => sendTransaction(controller, promise)))
+
+        expect(controller.userRequests.map((r) => r.kind)).toEqual(['walletAddEthereumChain'])
+
+        enableNetwork()
+        await controller.resolveUserRequest(null, controller.currentUserRequest!.id)
+
+        const [callsRequest] = controller.userRequests as CallsUserRequest[]
+        expect(controller.userRequests).toHaveLength(1)
+        // Built together, the way they would have been had the network been on
+        expect(callsRequest!.signAccountOp.accountOp.calls).toHaveLength(3)
+        expect(callsRequest!.dappPromises).toHaveLength(3)
+
+        callsRequest!.signAccountOp.destroy()
+      })
+
+      test('builds the held requests on the network they were sent for, even after the app moves', async () => {
+        const { controller, dappsCtrl, enableNetwork } = await prepareDisabledNetworkTest()
+        const [txPromise, messagePromise, typedMessagePromise] = makeRejectMocks(3)
+
+        await sendTransaction(controller, txPromise!)
+        await controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'personal_sign',
+              params: ['0x68656c6c6f', FROM],
+              session: MOCK_SESSION
+            },
+            dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...messagePromise! }
+          }
+        })
+        await controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'eth_signTypedData_v4',
+              params: [
+                FROM,
+                JSON.stringify({
+                  ...TYPED_DATA,
+                  domain: { ...TYPED_DATA.domain, chainId: Number(BASE_CHAIN_ID) }
+                })
+              ],
+              session: MOCK_SESSION
+            },
+            dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...typedMessagePromise! }
+          }
+        })
+        const prompt = controller.currentUserRequest!
+
+        // The app moves to Ethereum while the prompt for Base is open
+        dappsCtrl.updateDapp(MOCK_SESSION.id, { chainId: 1 })
+        enableNetwork()
+        await controller.resolveUserRequest(null, prompt.id)
+
+        const builtOn = controller.userRequests.map((r) => `${r.kind}:${String(r.meta.chainId)}`)
+        expect(builtOn.sort()).toEqual(['calls:8453', 'message:8453', 'typedMessage:8453'])
+        expect(typedMessagePromise!.reject).not.toHaveBeenCalled()
+
+        controller.userRequests.forEach((r) => r.kind === 'calls' && r.signAccountOp.destroy())
+      })
+
+      test('rejects the held requests with the prompt, and prompts again for the next one', async () => {
+        const { controller } = await prepareDisabledNetworkTest()
+        const [rejected, next] = makeRejectMocks(2)
+
+        await sendTransaction(controller, rejected!)
+        await controller.rejectUserRequests('User rejected', [controller.currentUserRequest!.id])
+
+        expect(rejected!.reject).toHaveBeenCalled()
+        expect(controller.userRequests).toHaveLength(0)
+
+        // Joining the rejected prompt would leave this one waiting forever
+        await sendTransaction(controller, next!)
+        expect(controller.userRequests.map((r) => r.kind)).toEqual(['walletAddEthereumChain'])
+        expect(next!.reject).not.toHaveBeenCalled()
+      })
+
+      test('rejects the held requests when the view closes, even with the network turned on', async () => {
+        const { controller, enableNetwork } = await prepareDisabledNetworkTest()
+        const [promise] = makeRejectMocks(1)
+
+        await sendTransaction(controller, promise!)
+        enableNetwork()
+        await controller.closeRequestWindow()
+
+        expect(promise!.reject).toHaveBeenCalled()
+        expect(controller.userRequests).toHaveLength(0)
       })
     })
   })
@@ -4882,28 +5714,34 @@ describe('RequestsController ', () => {
       })
 
     test('rejects eth_sendTransaction with odd-length hex data', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
 
       await expect(
         buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0', data: '0x1' })
       ).rejects.toThrow('A call has uneven number of character in the hex data.')
+      restore()
     })
 
     test('rejects eth_sendTransaction with non-hex data (even length, no 0x prefix)', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
 
       // Even length so it passes the odd-length check; no 0x prefix so isHex returns false
       await expect(
         buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0', data: 'aabbccdd' })
       ).rejects.toThrow('A call has invalid data.')
+      restore()
     })
 
     test('rejects eth_sendTransaction with invalid "to" address', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
 
       await expect(
         buildEthSendTx(controller, { from: FROM, to: 'not-an-address', value: '0x0' })
       ).rejects.toThrow('A call has invalid "to" field ')
+      restore()
     })
 
     test('accepts eth_sendTransaction without a "to" field (contract deployment)', async () => {
@@ -4972,6 +5810,7 @@ describe('RequestsController ', () => {
     })
 
     test('rejects wallet_sendCalls when any call has odd-length hex data', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
 
       await expect(
@@ -4980,9 +5819,11 @@ describe('RequestsController ', () => {
           { to: VALID_TO, value: '0x0', data: '0x1' }
         ])
       ).rejects.toThrow('A call has uneven number of character in the hex data.')
+      restore()
     })
 
     test('rejects wallet_sendCalls when any call has an invalid "to" address', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
 
       await expect(
@@ -4991,6 +5832,7 @@ describe('RequestsController ', () => {
           { to: 'bad-address', value: '0x0' }
         ])
       ).rejects.toThrow('A call has invalid "to" field ')
+      restore()
     })
 
     test('accepts wallet_sendCalls where a call omits "to" (contract deployment within batch)', async () => {
@@ -5053,6 +5895,7 @@ describe('RequestsController ', () => {
       })
 
     test('rejects when primaryType is missing from types', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
       const typedData = {
         ...VALID_TYPED_DATA,
@@ -5061,9 +5904,11 @@ describe('RequestsController ', () => {
       await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
         'The primary data type is missing from the provided types'
       )
+      restore()
     })
 
     test('rejects when message contents do not match the declared types', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
       const typedData = {
         ...VALID_TYPED_DATA,
@@ -5076,6 +5921,7 @@ describe('RequestsController ', () => {
       await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
         'The message contents did not match the provided types.'
       )
+      restore()
     })
 
     test('accepts valid typed data and creates a typedMessage user request', async () => {
@@ -5086,6 +5932,7 @@ describe('RequestsController ', () => {
     })
 
     test('rejects when domain.chainId does not match the current network chainId', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
       const typedData = {
         ...VALID_TYPED_DATA,
@@ -5094,6 +5941,7 @@ describe('RequestsController ', () => {
       await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
         'The domain chainId (999) does not match the current network chainId (1)'
       )
+      restore()
     })
 
     test('replaces domain.chainId with current network chainId when domain.chainId is 0', async () => {
@@ -5157,14 +6005,17 @@ describe('RequestsController ', () => {
     }
 
     test('rejects AmbireOperation typed data for the selected account', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
       await expect(
         buildSignTypedDataRequest(controller, AMBIRE_OPERATION_TYPED_DATA, SELECTED_ACCOUNT)
       ).rejects.toThrow('Signing an AmbireOperation is not allowed')
       expect(controller.userRequests.length).toBe(0)
+      restore()
     })
 
     test('rejects AmbireOperation typed data for a non-selected account', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
       const otherAccountTypedData = {
         ...AMBIRE_OPERATION_TYPED_DATA,
@@ -5183,6 +6034,7 @@ describe('RequestsController ', () => {
       ).rejects.toThrow('Signing an AmbireOperation is not allowed')
       expect(controller.userRequests.length).toBe(0)
       expect(controller.userRequestsWaitingAccountSwitch.length).toBe(0)
+      restore()
     })
   })
 })
