@@ -2585,7 +2585,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       throw ethErrors.rpc.invalidRequest(
         `The domain chainId (${typedData.domain.chainId}) does not match the current network chainId (${network.chainId})`
       )
-    typedData.domain.chainId = network.chainId
 
     if (!typedData.types[typedData.primaryType])
       throw ethErrors.rpc.invalidParams('The primary data type is missing from the provided types')
@@ -2611,7 +2610,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // The signature covers only the fields declared in the types. Every other field is dropped
     // here (in the domain and at every level of the message), so the rest of the app, such as
     // the humanizers and the hardware wallets, works only with what is actually signed.
-    // The chainId added to the domain above is dropped as well when the app did not declare it.
     const signedDomain = getSignedDomain(typedData.types, typedData.domain)
     const signedMessage = getSignedMessage(
       typedData.types,
