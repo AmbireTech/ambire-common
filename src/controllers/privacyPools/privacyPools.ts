@@ -1,4 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
+import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '../../consts/activity'
 import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig,
@@ -30,6 +31,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { createKohakuStorage } from '../../libs/kohaku/host'
 import { fetchPrivacyPoolsPrices, getPrivacyPoolsPriceKey } from '../../libs/privacyPools/prices'
@@ -38,10 +40,13 @@ import {
   PrivacyPoolsProverFactory,
   withCancellableProving
 } from '../../libs/privacyPools/prover'
+import { readPrivacyPoolsRagequit } from '../../libs/privacyPools/ragequit'
 import { Pagination } from '../../utils/paginate'
+import { waitForBlockNumber } from '../../utils/waitForBlockNumber'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { PrivacyPoolsBuiltCalls } from './builtCalls'
 import {
+  getChainProvider,
   LockGeneration,
   PendingAccountOp,
   PhraseScopedModule,
@@ -49,14 +54,18 @@ import {
 } from './context'
 import { PrivacyPoolsDepositParams, PrivacyPoolsDeposits } from './deposits'
 import { privacyPoolsErrors } from './errors'
+import { PrivacyPoolsExpectedChanges } from './expectedChanges'
 import { PrivacyPoolsHistory } from './history'
 import { PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsRagequit } from './ragequit'
 import { PrivacyPoolsSendFormState } from './sendForm'
 import { PrivacyPoolsSync } from './sync'
-import { PrivacyPoolsWatches, Watch } from './watches'
-import { PrivacyPoolsWithdrawal, PrivacyPoolsWithdrawalParams } from './withdrawal'
+import {
+  PrivacyPoolsBroadcastAttempt,
+  PrivacyPoolsWithdrawal,
+  PrivacyPoolsWithdrawalParams
+} from './withdrawal'
 
 const PRICES_MAX_AGE_MS = 5 * 60 * 1000
 
@@ -105,7 +114,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #builtCalls: PrivacyPoolsBuiltCalls
 
-  #watches: PrivacyPoolsWatches
+  #expectedChanges: PrivacyPoolsExpectedChanges
 
   #poolStatsReader: PrivacyPoolsPoolStatsReader
 
@@ -237,13 +246,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       (seedId) => this.#history.hasSessions() && seedId === this.#getSelectedSeedId()
     )
     this.#builtCalls = new PrivacyPoolsBuiltCalls(ctx)
-    this.#watches = new PrivacyPoolsWatches(this.#sync)
+    this.#expectedChanges = new PrivacyPoolsExpectedChanges(this.#sync)
     this.#deposits = new PrivacyPoolsDeposits(
       ctx,
       this.#registry,
       this.#sync,
       this.#builtCalls,
-      this.#watches
+      this.#expectedChanges
     )
     this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
     this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync, this.#builtCalls)
@@ -255,8 +264,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     })
     this.#phraseScopedModules = [
       this.#withdrawal,
-      this.#watches,
-      this.#builtCalls,
+      this.#expectedChanges,
       this.#deposits,
       this.#sync,
       this.#registry
@@ -425,19 +433,24 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * One row per token per chain. Only `approvedAmount` can be withdrawn; the rest awaits the
-   * association set and can only be reclaimed publicly.
+   * association set and can only be reclaimed publicly. What a deposit, withdrawal or ragequit is
+   * still moving is in `simulationAmount` and `approvedAmountPostSimulation`, not in the notes'
+   * amounts yet - so a token with only an arriving deposit has a row too.
    */
   get balances(): { [chainId: string]: PrivacyPoolsTokenBalance[] } {
+    const seedId = this.#getSelectedSeedId()
     const accountChains = this.#getSelectedAccountStates()
 
     return Object.fromEntries(
       Object.keys(this.chains).map((chainId) => {
         const byToken = new Map<string, PrivacyPoolsTokenBalance>()
 
-        ;(accountChains[chainId]?.notes || []).forEach((note) => {
-          const key = note.tokenAddress.toLowerCase()
+        const getEntry = (key: string): PrivacyPoolsTokenBalance => {
+          const existing = byToken.get(key)
+          if (existing) return existing
+
           const asset = getPrivacyPoolsAsset(BigInt(chainId), key)
-          const entry = byToken.get(key) || {
+          const entry = {
             tokenAddress: key,
             // A pool added before we list it: show the raw amount rather than hide the balance
             symbol: asset?.symbol || 'Unknown token',
@@ -445,15 +458,38 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
             isNative: asset?.isNative ?? isPrivacyPoolsNativeAsset(key),
             approvedAmount: 0n,
             pendingAmount: 0n,
-            totalAmount: 0n
+            totalAmount: 0n,
+            simulationAmount: 0n,
+            approvedAmountPostSimulation: 0n
           }
+          byToken.set(key, entry)
 
-          if (note.approval === 'approved') entry.approvedAmount += note.amount
-          else entry.pendingAmount += note.amount
+          return entry
+        }
+
+        ;(accountChains[chainId]?.notes || []).forEach((note) => {
+          const entry = getEntry(note.tokenAddress.toLowerCase())
+
+          if (note.approval === 'approved') {
+            entry.approvedAmount += note.amount
+            entry.approvedAmountPostSimulation += note.amount
+          } else entry.pendingAmount += note.amount
 
           entry.totalAmount += note.amount
-          byToken.set(key, entry)
         })
+
+        const changeAmounts = seedId ? this.#expectedChanges.getChangeAmounts(seedId, chainId) : {}
+        Object.entries(changeAmounts).forEach(
+          ([tokenAddress, { simulationAmount, withdrawingAmount }]) => {
+            const entry = getEntry(tokenAddress)
+            const approvedAmountPostSimulation = entry.approvedAmount - withdrawingAmount
+
+            entry.simulationAmount = simulationAmount
+            // Not below zero, as a sync ahead of what was expected must not show a negative amount
+            entry.approvedAmountPostSimulation =
+              approvedAmountPostSimulation > 0n ? approvedAmountPostSimulation : 0n
+          }
+        )
 
         return [chainId, [...byToken.values()]]
       })
@@ -592,25 +628,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
   }
 
-  /** Whether a deposit, withdrawal or ragequit is waiting to show in an account's notes. */
-  get hasSyncWatches(): boolean {
-    return this.#watches.hasWatches
-  }
-
   /**
-   * One round of the background sync, run by the timer of `ContinuousUpdatesController`: the
-   * watches, if any, and the selected account's chains, in parallel. While watches keep the timer
-   * fast, the account only syncs the chains older than `OPEN_SYNC_MAX_AGE_MS`. A chain a watch is
-   * syncing is not synced twice, as `PrivacyPoolsSync.queue` joins the running sync. Never
-   * rejects, as the syncs do not - a failure shows in the chain's state.
+   * Syncs every network of the selected account. Called with each portfolio update of
+   * `ContinuousUpdatesController`. Never rejects. A failure shows in the network's state.
    */
   async syncInBackground(): Promise<void> {
-    const hasWatches = this.#watches.hasWatches
-
-    await Promise.all([
-      hasWatches ? this.#syncWatches() : Promise.resolve(),
-      this.#syncSelectedAccountChains(hasWatches ? OPEN_SYNC_MAX_AGE_MS : undefined)
-    ])
+    await this.#syncSelectedAccountChains()
   }
 
   /**
@@ -659,8 +682,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return this.#keystore.seeds.some((seed) => seed.id === seedId && !seed.notBackedUp)
   }
 
-  /** Whether a watch may sync now: unlocked, on a network the user still has, phrase backed up. */
-  #canWatchSync({ seedId, chainId }: Watch) {
+  /** Whether the account can sync on this network now. */
+  #canSync(seedId: string, chainId: string) {
     return (
       this.#keystore.isUnlocked &&
       this.#hasAccount(seedId) &&
@@ -669,43 +692,29 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     )
   }
 
-  /** One sync of every watch. Tells the timer once the last one is over. */
-  async #syncWatches() {
-    const hadWatches = this.#watches.hasWatches
-    await this.#watches.syncAll((watch) => this.#canWatchSync(watch))
-
-    if (hadWatches && !this.#watches.hasWatches) this.emitUpdate()
-  }
-
   /**
-   * Syncs an account's chain at once, and on every round of the timer after, until its notes differ
-   * from `baseline` or the watch runs out of time. Resolves after the first sync.
+   * Syncs the account on this network once, after a change. With `blockNumber`, it first waits for
+   * our RPC to reach that block. It waits for a running sync to end first, as that sync may have
+   * started before the block. Never rejects.
    */
-  async #watchChange({
-    seedId,
-    chainId,
-    baseline,
-    hasDeposit
-  }: {
-    seedId: string
-    chainId: string
-    baseline: string | null
-    hasDeposit: boolean
-  }): Promise<void> {
-    if (!this.#hasAccount(seedId)) return
+  async #syncOnce(seedId: string, chainId: string, blockNumber?: number): Promise<void> {
+    try {
+      if (blockNumber !== undefined) {
+        const provider = getChainProvider(this.#providers, chainId)
+        await waitForBlockNumber(provider, blockNumber, CONFIRMED_BLOCK_WAIT_TIMEOUT_MS)
+      }
+      if (!this.#canSync(seedId, chainId)) return
 
-    // `onAccountOpFinalized` can run while locked, when the notes of a phrase must not be held.
-    // A watch without a baseline ends after its first sync, which waits for the unlock.
-    this.#watches.start({
-      seedId,
-      chainId,
-      baseline: this.#keystore.isUnlocked ? baseline : null,
-      hasDeposit
-    })
-    // Wakes the timer
-    this.emitUpdate()
-
-    await this.#syncWatches()
+      await this.#sync.getRunningSync(seedId, chainId)
+      await this.#sync.queue(chainId, seedId)
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: 'Could not update your Privacy Pools balance.',
+        error:
+          error instanceof Error ? error : new Error('privacyPools: sync after a change failed')
+      })
+    }
   }
 
   /**
@@ -788,56 +797,89 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Records the account's notes as they are when a transaction with a deposit or ragequit this
-   * wallet built is broadcast, however it was signed. Only calls `buildDepositCalls` and
-   * `buildRagequitCalls` built are recognised - others are not this wallet's. Nothing is
-   * persisted, as a local log would link deposits to their withdrawals.
+   * Adds the expected change of each deposit or ragequit this wallet built, once its transaction is
+   * sent, so the balance shows it right away. Other calls are ignored.
    */
   onAccountOpBroadcast({ chainId, calls }: { chainId: bigint; calls: Call[] }) {
+    let hasAdded = false
+
     calls.forEach((call) =>
-      this.#builtCalls.markBroadcast(chainId, call, ({ seedId, chainId: builtChainId }) =>
-        this.#keystore.isUnlocked ? this.#watches.getFingerprint(seedId, builtChainId) : null
+      this.#builtCalls.markBroadcast(
+        chainId,
+        call,
+        ({ seedId, chainId: builtChainId, kind, tokenAddress, amount }) => {
+          const changeId = this.#expectedChanges.add({
+            seedId,
+            chainId: builtChainId,
+            kind,
+            tokenAddress,
+            amount,
+            label: kind === 'ragequit' ? readPrivacyPoolsRagequit(call.data)?.label : undefined
+          })
+          if (changeId !== null) hasAdded = true
+
+          return changeId
+        }
       )
     )
+
+    if (hasAdded) this.emitUpdate()
   }
 
   /**
-   * Called with every transaction once its outcome is known. One that landed starts a watch on each
-   * account its deposit or ragequit changes, so the balance shows without the user asking. One
-   * that did not frees its calls, which no longer hold up the next deposit.
+   * Called by `MainController` with finished transactions. A deposit or ragequit that landed syncs
+   * its account once, then its expected change is deleted. One that failed deletes it at once.
+   * Never rejects.
    */
-  onAccountOpFinalized({
-    chainId,
-    status,
-    calls
-  }: {
-    chainId: bigint
-    status?: AccountOpStatus
-    calls: Call[]
-  }) {
-    if (
-      !status ||
-      status === AccountOpStatus.Pending ||
-      status === AccountOpStatus.BroadcastedButNotConfirmed
-    )
-      return
+  async onAccountOpsFinalized(ops: SubmittedAccountOp[]): Promise<void> {
+    const landed = new Map<string, { seedId: string; chainId: string; changeIds: number[] }>()
+    let hasDeleted = false
 
-    // A batch may be partly complete, and it may be the deposit that landed
-    const hasLanded =
-      status === AccountOpStatus.Success || status === AccountOpStatus.PartiallyComplete
+    ops.forEach(({ chainId, status, calls }) => {
+      if (
+        !status ||
+        status === AccountOpStatus.Pending ||
+        status === AccountOpStatus.BroadcastedButNotConfirmed
+      )
+        return
 
-    calls.forEach((call) => {
-      const builtCall = this.#builtCalls.take(chainId, call)
-      if (!builtCall || !hasLanded) return
+      // A batch may be partly complete, and it may be the deposit that landed
+      const hasLanded =
+        status === AccountOpStatus.Success || status === AccountOpStatus.PartiallyComplete
 
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.#watchChange({
-        seedId: builtCall.seedId,
-        chainId: builtCall.chainId,
-        baseline: builtCall.broadcast?.baseline ?? null,
-        hasDeposit: builtCall.kind === 'deposit'
+      calls.forEach((call) => {
+        const builtCall = this.#builtCalls.take(chainId, call)
+        if (!builtCall) return
+
+        const changeId = builtCall.broadcast?.changeId ?? null
+        if (!hasLanded) {
+          if (changeId !== null && this.#expectedChanges.delete(changeId)) hasDeleted = true
+
+          return
+        }
+
+        const key = `${builtCall.seedId}:${builtCall.chainId}`
+        const group = landed.get(key) || {
+          seedId: builtCall.seedId,
+          chainId: builtCall.chainId,
+          changeIds: []
+        }
+        if (changeId !== null) group.changeIds.push(changeId)
+        landed.set(key, group)
       })
     })
+
+    await Promise.all(
+      [...landed.values()].map(async ({ seedId, chainId, changeIds }) => {
+        await this.#syncOnce(seedId, chainId)
+
+        changeIds.forEach((changeId) => {
+          if (this.#expectedChanges.delete(changeId)) hasDeleted = true
+        })
+      })
+    )
+
+    if (hasDeleted) this.emitUpdate()
   }
 
   updateSendForm(update: Partial<PrivacyPoolsSendForm>) {
@@ -903,9 +945,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Sends the signed withdrawal to the bundler and waits for it. Watches the account it came from
-   * either way, as a userOp can land after the receipt wait gives up, or before our node sees it,
-   * and reads the history along with the first sync.
+   * Sends the signed withdrawal to the bundler and waits for it. The balance shows the amount as
+   * gone from the start. Once our RPC reaches the withdrawal's block, the account syncs once and
+   * the expected change is deleted. If the block is unknown, it syncs at once.
    */
   async broadcastWithdrawal(): Promise<void> {
     // `operation`, so another phrase's cannot be sent
@@ -914,10 +956,23 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#assertAvailableAndGetSeedId()
 
     const { seedId, chainId } = operation
-    // Read before sending: after it, a sync may already show what the withdrawal changed
-    const baseline = this.#watches.getFingerprint(seedId, chainId)
+    // The whole amount leaves the notes, its fee included - see `readPaymasterWithdrawal`
+    const changeId = this.#expectedChanges.add({
+      seedId,
+      chainId,
+      kind: 'withdrawal',
+      tokenAddress: operation.tokenAddress,
+      amount: -operation.amount
+    })
+    this.emitUpdate()
 
-    const attempt = await this.#withdrawal.broadcast(operation)
+    let attempt: PrivacyPoolsBroadcastAttempt | null = null
+    try {
+      attempt = await this.#withdrawal.broadcast(operation)
+    } finally {
+      // Not handed to the bundler, so nothing is on its way out
+      if (!attempt && changeId !== null && this.#expectedChanges.delete(changeId)) this.emitUpdate()
+    }
     if (!attempt) return
 
     // Also when it failed, as it may still land, so a reopened popup starts on a blank form
@@ -925,10 +980,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     // Not the selected account: the user may have switched while the receipt was awaited. Picks
     // up the spent note and its change note.
-    await this.#watchChange({ seedId, chainId, baseline, hasDeposit: false })
+    await this.#syncOnce(seedId, chainId, attempt.blockNumber ?? undefined)
+    if (changeId !== null) this.#expectedChanges.delete(changeId)
+    this.emitUpdate()
 
     // Even with no screen showing it, so the activity lists the transfer once opened. A later sync
-    // of the watch marks it as not current, so opening the activity reads it again.
+    // of the account marks it as not current, so opening the activity reads it again.
     await this.#sync.readHistoryWithoutSync(chainId, seedId)
   }
 
@@ -1094,6 +1151,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #forgetAccount(seedId: string) {
     this.accounts = this.accounts.filter((account) => account.seedId !== seedId)
     this.#phraseScopedModules.forEach((phraseScopedModule) => phraseScopedModule.forgetSeed(seedId))
+    this.#builtCalls.forgetSeed(seedId)
   }
 
   /** Removes accounts whose phrase is gone - nothing in them is reachable. */

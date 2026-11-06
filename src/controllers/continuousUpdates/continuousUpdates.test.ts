@@ -4,9 +4,7 @@ import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import {
-  ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
-  PRIVACY_POOLS_WATCH_SYNC_INTERVAL,
   TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
   TRENDING_TOKENS_FAILED_UPDATE_INTERVAL,
   TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
@@ -284,101 +282,28 @@ describe('ContinuousUpdatesController intervals', () => {
     })
   })
 
-  describe('privacyPoolsSyncInterval', () => {
-    const preparePrivacyPoolsTest = async ({ hasWatches = false } = {}) => {
-      const { mainCtrl } = await prepareTest()
-      await waitForContinuousUpdatesCtrlReady(mainCtrl)
+  test('should sync the Privacy Pools accounts with the portfolio update only while a view is open', async () => {
+    const { mainCtrl } = await prepareTest()
+    await waitForContinuousUpdatesCtrlReady(mainCtrl)
+    await waitForAccountStatesInitialLoad(mainCtrl)
+    const { updatePortfolioInterval } = mainCtrl.continuousUpdates!
+    const syncInBackground = jest
+      .spyOn(mainCtrl.privacyPools, 'syncInBackground')
+      .mockResolvedValue(undefined)
 
-      const syncInBackground = jest
-        .spyOn(mainCtrl.privacyPools, 'syncInBackground')
-        .mockResolvedValue(undefined)
-      const isUnlocked = jest.spyOn(mainCtrl.keystore, 'isUnlocked', 'get').mockReturnValue(true)
-      const hasSyncWatches = jest
-        .spyOn(mainCtrl.privacyPools, 'hasSyncWatches', 'get')
-        .mockReturnValue(hasWatches)
-      const selectedType = jest.spyOn(mainCtrl.selectedAccount, 'selectedType', 'get')
+    mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
+    await jest.advanceTimersByTimeAsync(0)
+    await waitForFnToBeCalledAndExecuted(updatePortfolioInterval)
+    expect(syncInBackground).toHaveBeenCalledTimes(1)
 
-      return {
-        mainCtrl,
-        interval: mainCtrl.continuousUpdates!.privacyPoolsSyncInterval,
-        syncInBackground,
-        isUnlocked,
-        hasSyncWatches,
-        selectedType
-      }
-    }
-
-    // The controller propagates selected account and keystore updates, so this is what wakes it
-    const emitPrivacyPoolsUpdate = async (mainCtrl: MainController) => {
-      // @ts-expect-error — need synchronous emit here; forceEmitUpdate is async and won't resolve with fake timers
-      mainCtrl.privacyPools.emitUpdate()
-      await jest.advanceTimersByTimeAsync(0)
-    }
-
-    const addPopupView = async (mainCtrl: MainController) => {
-      mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
-      await jest.advanceTimersByTimeAsync(0)
-    }
-
-    test('should sync every 10 seconds while a change waits to show, and stop on lock', async () => {
-      const { mainCtrl, interval, syncInBackground, isUnlocked, hasSyncWatches } =
-        await preparePrivacyPoolsTest()
-      expect(interval.running).toBe(false)
-
-      hasSyncWatches.mockReturnValue(true)
-      await emitPrivacyPoolsUpdate(mainCtrl)
-
-      expect(interval.currentTimeout).toBe(PRIVACY_POOLS_WATCH_SYNC_INTERVAL)
-      await waitForFnToBeCalledAndExecuted(interval)
-      expect(syncInBackground).toHaveBeenCalledTimes(1)
-
-      isUnlocked.mockReturnValue(false)
-      await emitPrivacyPoolsUpdate(mainCtrl)
-
-      expect(interval.running).toBe(false)
-    })
-
-    test('should sync every 2 minutes while a view is open on a Privacy Pools account, and stop when the view closes', async () => {
-      const { mainCtrl, interval, syncInBackground, hasSyncWatches, selectedType } =
-        await preparePrivacyPoolsTest({ hasWatches: true })
-      selectedType.mockReturnValue('privacyPools')
-      await addPopupView(mainCtrl)
-      expect(interval.running).toBe(true)
-      expect(interval.currentTimeout).toBe(PRIVACY_POOLS_WATCH_SYNC_INTERVAL)
-
-      // The last change showed, so the timer slows down
-      hasSyncWatches.mockReturnValue(false)
-      await emitPrivacyPoolsUpdate(mainCtrl)
-
-      expect(interval.currentTimeout).toBe(ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL)
-      await waitForFnToBeCalledAndExecuted(interval)
-      expect(syncInBackground).toHaveBeenCalledTimes(1)
-
-      mainCtrl.ui.removeView('1')
-      await jest.advanceTimersByTimeAsync(0)
-
-      expect(interval.running).toBe(false)
-    })
-
-    test('should not run while the selected account is not a Privacy Pools one and nothing is watched', async () => {
-      const { mainCtrl, interval, selectedType } = await preparePrivacyPoolsTest()
-      selectedType.mockReturnValue('regular')
-
-      await addPopupView(mainCtrl)
-      await emitPrivacyPoolsUpdate(mainCtrl)
-
-      expect(interval.running).toBe(false)
-    })
-
-    test('should not restart the timer on every update, which would keep it from ever firing', async () => {
-      const { mainCtrl, interval } = await preparePrivacyPoolsTest({ hasWatches: true })
-      jest.spyOn(interval, 'restart')
-
-      await emitPrivacyPoolsUpdate(mainCtrl)
-      await emitPrivacyPoolsUpdate(mainCtrl)
-
-      expect(interval.restart).toHaveBeenCalledTimes(1)
-    })
+    // The interval goes on with the last view closed, but a sync is much heavier than a portfolio
+    // update, so it is not run then
+    mainCtrl.ui.removeView('1')
+    await jest.advanceTimersByTimeAsync(0)
+    const executionsCount = updatePortfolioInterval.fnExecutionsCount
+    await waitForFnToBeCalledAndExecuted(updatePortfolioInterval)
+    expect(updatePortfolioInterval.fnExecutionsCount).toBe(executionsCount + 1)
+    expect(syncInBackground).toHaveBeenCalledTimes(1)
   })
 
   test('should run updateAccountStateLatest', async () => {
