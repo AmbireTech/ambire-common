@@ -1,11 +1,12 @@
 import { EIP_7702_AMBIRE_ACCOUNT, EIP_7702_GRID_PLUS, EIP_7702_METAMASK } from '../../consts/deploy'
 import { Hex } from '../../interfaces/hex'
+import { Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 
 export function getContractImplementation(
   chainId: bigint,
   accountKeys: {
-    type: 'internal' | 'lattice' | 'trezor' | 'onekey' | 'ledger' | 'qr' | 'nfc' | 'pq1'
+    type: Key['type']
   }[]
 ): Hex {
   if (accountKeys.find((key) => key.type === 'lattice')) {

@@ -3,6 +3,7 @@ import { ExternalKey } from '../interfaces/keystore'
 export const HARDWARE_WALLET_DEVICE_NAMES: { [key in ExternalKey['type']]: string } = {
   ledger: 'Ledger',
   trezor: 'Trezor',
+  ambireIce: 'Ambire Ice',
   onekey: 'OneKey',
   lattice: 'GridPlus',
   qr: 'QR-based',
