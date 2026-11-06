@@ -78,7 +78,7 @@ import {
 } from '../../interfaces/signAccountOp'
 import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import { UserRequest } from '../../interfaces/userRequest'
-import { getContractImplementation } from '../../libs/7702/7702'
+import { getContractImplementation, getUserOpDelegator } from '../../libs/7702/7702'
 import {
   canBecomeSmarter,
   isAmbireV1LinkedAccount,
@@ -4033,9 +4033,12 @@ export class SignAccountOpController
           // the Ambire4337AccountOp typed data in unprotected mode, while the
           // GridPlus one expects the standard AmbireOperation wrapping that smart
           // accounts use. Getting this wrong fails the userOp with AA24.
-          const delegator =
-            accountState.delegatedContract ??
-            getContractImplementation(this.#network.chainId, this.accountKeyStoreKeys)
+          const delegator = getUserOpDelegator({
+            eip7702Auth: userOperation.eip7702Auth,
+            delegatedContract: accountState.delegatedContract,
+            chainId: this.#network.chainId,
+            accountKeys: this.accountKeyStoreKeys
+          })
           const signsAsAmbire7702Eoa =
             accountState.isEOA && delegator.toLowerCase() === EIP_7702_AMBIRE_ACCOUNT.toLowerCase()
           if (!signsAsAmbire7702Eoa) {
