@@ -1749,6 +1749,12 @@ export class MainController extends EventEmitter implements IMainController {
    * Sets the account picker up for a hardware wallet under the method's status, and replies
    * to `requestId` once done, so the connect screen moves on only then - the status alone
    * is transient and can be missed.
+   *
+   * Runs alongside other actions, like the recovery phrase and private key set ups: it only
+   * talks to the device and sets the picker up. Otherwise a background action (e.g. fetching
+   * a Safe's pending transactions on every portfolio reload) makes it refuse the user's press,
+   * which looks like the connect button doing nothing. A second set up of the same wallet is
+   * still refused while the first one waits on the device.
    */
   async #setUpPickerForHardwareWallet(
     callName: keyof typeof STATUS_WRAPPED_METHODS,
@@ -1756,10 +1762,14 @@ export class MainController extends EventEmitter implements IMainController {
     requestId?: string
   ) {
     let isSetUp = false
-    await this.withStatus(callName, async () => {
-      await setUp()
-      isSetUp = true
-    })
+    await this.withStatus(
+      callName,
+      async () => {
+        await setUp()
+        isSetUp = true
+      },
+      true
+    )
 
     this.#replyToRequest(
       requestId,
