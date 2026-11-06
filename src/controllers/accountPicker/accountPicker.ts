@@ -28,8 +28,8 @@ import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   dedicatedToOneSAPriv,
-  ExternalKey,
   ExternalSignerControllers,
+  HdExternalKey,
   IKeystoreController,
   Key,
   ReadyToAddKeys
@@ -1264,7 +1264,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       }
     }
 
-    const keyType = this.type as ExternalKey['type']
+    // PQ1 keys are never derived here: PQ1 has no key iterator (see `Pq1ExternalKey`)
+    const keyType = this.type as HdExternalKey['type']
 
     const signer = this.#externalSignerControllers[keyType]
 

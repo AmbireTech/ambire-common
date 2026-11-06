@@ -72,7 +72,7 @@ import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { AppDataSyncPayload } from '../../libs/appDataSync/appDataSync'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
-import { getDefaultKeyLabel } from '../../libs/keys/keys'
+import { getDefaultKeyLabel, getKeySeedId } from '../../libs/keys/keys'
 import {
   decodePrivacyKeyNode,
   encodePrivacyKeyMaterial,
@@ -134,6 +134,20 @@ const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
 
 /** The device model hardware wallet controllers report before they know the real one */
 const UNKNOWN_DEVICE_MODEL = 'unknown'
+
+/**
+ * The stored form of an external key. Picks its fields one by one, as the caller can hand over
+ * more (e.g. `isExternallyStored`). The two branches are the same on purpose: narrowing on
+ * `type` is what lets TypeScript check that each `meta` matches its `type`.
+ */
+const toStoredExternalKey = (key: ExternalKey): StoredKey => {
+  const { addr, label, dedicatedToOneSA } = key
+  if (key.type === 'pq1') {
+    return { addr, type: key.type, label, dedicatedToOneSA, meta: key.meta, privKey: null }
+  }
+
+  return { addr, type: key.type, label, dedicatedToOneSA, meta: key.meta, privKey: null }
+}
 
 export const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
@@ -867,27 +881,40 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   get keys(): Key[] {
-    return this.#keystoreKeys.map(({ addr, type, label, dedicatedToOneSA, meta }) => {
-      // Written with this 'internal' type guard (if) on purpose, because this
-      // way TypeScript will be able to narrow down the types properly and infer
-      // the return type of the map function correctly.
-      if (type === 'internal') {
+    return this.#keystoreKeys.map((key) => {
+      const { addr, label, dedicatedToOneSA } = key
+      // Written with these type guards (if) on purpose, because this way
+      // TypeScript will be able to narrow down the types properly (each `meta`
+      // matching its `type`) and infer the return type of the map function
+      // correctly. The fields are picked one by one so `privKey` never leaves.
+      if (key.type === 'internal') {
         return {
           addr,
-          type,
+          type: key.type,
           label,
           dedicatedToOneSA,
-          meta,
+          meta: key.meta,
           isExternallyStored: false
+        }
+      }
+
+      if (key.type === 'pq1') {
+        return {
+          addr,
+          type: key.type,
+          label,
+          dedicatedToOneSA,
+          meta: key.meta,
+          isExternallyStored: true
         }
       }
 
       return {
         addr,
-        type,
+        type: key.type,
         label,
         dedicatedToOneSA,
-        meta: meta as ExternalKey['meta'],
+        meta: key.meta,
         isExternallyStored: true
       }
     })
@@ -1401,14 +1428,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     const keys = this.#keystoreKeys
 
     const newKeys = uniqueKeysToAdd
-      .map(({ addr, type, label, dedicatedToOneSA, meta }) => ({
-        addr,
-        type,
-        label,
-        dedicatedToOneSA,
-        meta,
-        privKey: null
-      }))
+      .map(toStoredExternalKey)
       // No need to re-add keys that are already added (with the same type / device)
       .filter(({ addr, type }) => !keys.some((x) => x.addr === addr && x.type === type))
 
@@ -1711,7 +1731,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       })
 
     const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr))
-    const seedIds = new Set(keys.map((key) => key.meta?.fromSeedId).filter(Boolean))
+    const seedIds = new Set(keys.map(getKeySeedId).filter(Boolean))
     const seeds = includeSeeds
       ? this.#keystoreSeeds.filter((seed) => seedIds.has(seed.id)).map(getSyncedSeedFields)
       : []
@@ -2086,6 +2106,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
       const storedKey = this.#keystoreKeys.find((k) => k.addr === addr && k.type === type)
       if (!storedKey || storedKey.privKey !== null) return
+      // A PQ1 key always stores its model ('pq1')
+      if (storedKey.type === 'pq1') return
       if (storedKey.meta.deviceModel && storedKey.meta.deviceModel !== UNKNOWN_DEVICE_MODEL) return
 
       this.#keystoreKeys = this.#keystoreKeys.map((k) =>
