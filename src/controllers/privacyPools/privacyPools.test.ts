@@ -508,7 +508,11 @@ class FakeKeystore extends EventEmitter {
   keys = []
 
   // The fake plugin learns its phrase from the "key" it derives
-  derivePrivacyPoolsKey = jest.fn(async (seedId: string) => seedId)
+  derivePrivacyKey = jest.fn(async (seedId: string) => seedId)
+
+  removePrivacyKey = jest.fn(async () => {})
+
+  isPrivacyKeyAvailable = jest.fn<(seedId: string, providerId: string) => boolean>(() => true)
 
   fireUpdate() {
     this.emitUpdate()
@@ -761,7 +765,7 @@ describe('PrivacyPoolsController', () => {
     it('adds an account for a stored recovery phrase and persists it', async () => {
       const { controller, storage } = await prepareTest({ accounts: [] })
 
-      await controller.addAccount('seed-a')
+      await controller.addAccount('seed-a', 'Private account 1')
 
       expect(controller.accounts.map((account) => account.seedId)).toEqual(['seed-a'])
       expect((await storage.get('privacyPoolsAccounts', [])).map((a) => a.seedId)).toEqual([
@@ -769,17 +773,112 @@ describe('PrivacyPoolsController', () => {
       ])
     })
 
+    it('stores the name the account is added with', async () => {
+      const { controller, storage } = await prepareTest({ accounts: [] })
+
+      await controller.addAccount('seed-a', 'Savings')
+
+      expect(controller.accounts[0]?.label).toBe('Savings')
+      expect((await storage.get('privacyPoolsAccounts', []))[0]?.label).toBe('Savings')
+    })
+
+    it('names a new account after the accounts there are already', async () => {
+      const { controller } = await prepareTest({ accounts: [] })
+      expect(controller.defaultAccountLabel).toBe('Private account 1')
+
+      await controller.addAccount('seed-a', controller.defaultAccountLabel)
+
+      expect(controller.defaultAccountLabel).toBe('Private account 2')
+    })
+
+    it('renames an account and persists the new name', async () => {
+      const { controller, storage, ui } = await prepareTest({ accounts: [] })
+      await controller.addAccount('seed-a', 'Private account 1')
+
+      await controller.updateAccountLabel('seed-a', '  Savings  ', 'request-1')
+
+      expect(controller.accounts[0]?.label).toBe('Savings')
+      expect((await storage.get('privacyPoolsAccounts', []))[0]?.label).toBe('Savings')
+      expect(ui.message.sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-1', ok: true })
+    })
+
+    it('keeps the name when renamed to an empty one, and tells the rename sheet', async () => {
+      const { controller, ui } = await prepareTest({ accounts: [] })
+      await controller.addAccount('seed-a', 'Private account 1')
+
+      await controller.updateAccountLabel('seed-a', '   ', 'request-1')
+
+      expect(controller.accounts[0]?.label).toBe('Private account 1')
+      expect(ui.message.sendUiMessage).toHaveBeenCalledWith({
+        requestId: 'request-1',
+        ok: false,
+        error: "Couldn't rename the account. Please try again."
+      })
+    })
+
+    it('renames no account for a recovery phrase without one', async () => {
+      const { controller, storage } = await prepareTest({ accounts: ['seed-a'] })
+      const storedBefore = await storage.get('privacyPoolsAccounts', [])
+
+      await controller.updateAccountLabel('seed-b', 'Savings')
+
+      expect(controller.accounts.map(({ seedId }) => seedId)).toEqual(['seed-a'])
+      expect(controller.accounts.some(({ label }) => label === 'Savings')).toBe(false)
+      expect(await storage.get('privacyPoolsAccounts', [])).toEqual(storedBefore)
+      expect(controller.emittedErrors.at(-1)?.message).toBe(
+        "Couldn't rename the account. Please try again."
+      )
+    })
+
+    it('moves an account to another place in the list and saves the order', async () => {
+      const { controller, storage } = await prepareTest()
+
+      await controller.reorderAccounts({ fromIndex: 1, toIndex: 0 })
+
+      expect(controller.accounts.map(({ seedId }) => seedId)).toEqual(['seed-b', 'seed-a'])
+      expect((await storage.get('privacyPoolsAccounts', [])).map(({ seedId }) => seedId)).toEqual([
+        'seed-b',
+        'seed-a'
+      ])
+    })
+
+    it('keeps the order when asked to move an account out of the list', async () => {
+      const { controller, storage } = await prepareTest()
+      const storedBefore = await storage.get('privacyPoolsAccounts', [])
+
+      await controller.reorderAccounts({ fromIndex: 0, toIndex: 2 })
+
+      expect(controller.accounts.map(({ seedId }) => seedId)).toEqual(['seed-a', 'seed-b'])
+      expect(await storage.get('privacyPoolsAccounts', [])).toEqual(storedBefore)
+      expect(controller.emittedErrors.at(-1)?.message).toBe(
+        "Couldn't reorder the accounts. Please reload the page and try again."
+      )
+    })
+
+    it('tells whether an account can be added, without adding it', async () => {
+      const { controller } = await prepareTest({ accounts: ['seed-a'] })
+
+      await expect(controller.assertCanAddAccount('seed-a')).rejects.toThrow(EmittableError)
+      await expect(controller.assertCanAddAccount('seed-unknown')).rejects.toThrow(EmittableError)
+      await expect(controller.assertCanAddAccount('seed-b')).resolves.toBeUndefined()
+      expect(controller.accounts).toHaveLength(1)
+    })
+
     it('refuses a second account for the same recovery phrase', async () => {
       const { controller } = await prepareTest({ accounts: ['seed-a'] })
 
-      await expect(controller.addAccount('seed-a')).rejects.toThrow(EmittableError)
+      await expect(controller.addAccount('seed-a', 'Private account 1')).rejects.toThrow(
+        EmittableError
+      )
       expect(controller.accounts).toHaveLength(1)
     })
 
     it('refuses an account for a recovery phrase the wallet does not have', async () => {
       const { controller } = await prepareTest({ accounts: [] })
 
-      await expect(controller.addAccount('seed-unknown')).rejects.toThrow(EmittableError)
+      await expect(controller.addAccount('seed-unknown', 'Private account 1')).rejects.toThrow(
+        EmittableError
+      )
       expect(controller.accounts).toHaveLength(0)
     })
 
@@ -790,6 +889,15 @@ describe('PrivacyPoolsController', () => {
 
       expect(controller.accounts.map((account) => account.seedId)).toEqual(['seed-b'])
       expect(onAccountsRemoved).toHaveBeenCalledWith(['seed-a'])
+    })
+
+    it("drops a removed account's stored key, so re-adding it asks for the passphrase", async () => {
+      const { controller, keystore } = await prepareTest()
+
+      await controller.removeAccount('seed-a')
+
+      expect(keystore.removePrivacyKey).toHaveBeenCalledTimes(1)
+      expect(keystore.removePrivacyKey).toHaveBeenCalledWith('seed-a', 'privacyPools')
     })
 
     it('removes the account of a deleted recovery phrase', async () => {
@@ -917,6 +1025,30 @@ describe('PrivacyPoolsController', () => {
       selectedAccount.select('seed-a')
 
       expect(controller.unavailableReason).toBe('locked')
+    })
+
+    it("asks for the passphrase again, reading nothing, when the account's key is not available", async () => {
+      const { controller, keystore, selectedAccount } = await prepareTest()
+      keystore.isPrivacyKeyAvailable.mockImplementation((seedId) => seedId !== 'seed-a')
+
+      selectedAccount.select('seed-a')
+      expect(controller.unavailableReason).toBe('passphrase-needed')
+      expect(keystore.isPrivacyKeyAvailable).toHaveBeenCalledWith('seed-a', 'privacyPools')
+
+      await controller.syncIfStale()
+      expect(runningSyncs).toHaveLength(0)
+      expect(controller.emittedErrors.at(-1)).toMatchObject({
+        level: 'expected',
+        message: expect.stringContaining('needs its passphrase again')
+      })
+
+      // Unlocking comes first, as the key can't be read before it anyway
+      keystore.isUnlocked = false
+      expect(controller.unavailableReason).toBe('locked')
+      keystore.isUnlocked = true
+
+      selectedAccount.select('seed-b')
+      expect(controller.unavailableReason).toBeNull()
     })
 
     it('updates the UI on a selected account update only when the selection changed', async () => {
@@ -1149,7 +1281,7 @@ describe('PrivacyPoolsController', () => {
       await syncA
 
       // Added back, it starts with nothing until it is synced again
-      await controller.addAccount('seed-a')
+      await controller.addAccount('seed-a', 'Private account 1')
       expect(getHeldAmounts(controller)).toEqual([])
       expect(controller.chains['1']?.lastSyncedAt).toBeNull()
     })
@@ -1567,6 +1699,15 @@ describe('PrivacyPoolsController', () => {
       await expect(
         buildDeposit(controller, { tokenAddress: '0x0000000000000000000000000000000000000abc' })
       ).rejects.toThrow(EmittableError)
+    })
+
+    it('refuses a deposit into an account whose key is not available, before reading it', async () => {
+      const { controller, keystore } = await prepareTest()
+      keystore.isPrivacyKeyAvailable.mockReturnValue(false)
+
+      await expect(buildDeposit(controller)).rejects.toThrow('needs its passphrase again')
+      expect(keystore.isPrivacyKeyAvailable).toHaveBeenCalledWith('seed-b', 'privacyPools')
+      expect(runningSyncs).toHaveLength(0)
     })
 
     it('refuses a token that could not be sent out of the account again', async () => {
@@ -2012,7 +2153,7 @@ describe('PrivacyPoolsController', () => {
       jest.mocked(createPPv1Broadcaster).mockClear()
 
       await controller.removeAccount('seed-a')
-      await controller.addAccount('seed-a')
+      await controller.addAccount('seed-a', 'Private account 1')
 
       expect(controller.operation).toBeNull()
       await expect(controller.broadcastWithdrawal()).rejects.toThrow(
