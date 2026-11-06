@@ -2,6 +2,7 @@ import { Hex } from '../../interfaces/hex'
 import { PrivacyPoolsNote, PrivacyPoolsRagequitDeposit } from '../../interfaces/privacyPools'
 import { Call } from '../../libs/accountOp/types'
 import { readPrivacyPoolsRagequit } from '../../libs/privacyPools/ragequit'
+import { PrivacyPoolsBuiltCalls } from './builtCalls'
 import { getChainConfig, PrivacyPoolsContext } from './context'
 import { privacyPoolsErrors } from './errors'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
@@ -22,14 +23,18 @@ export class PrivacyPoolsRagequit {
 
   #sync: PrivacyPoolsSync
 
+  #builtCalls: PrivacyPoolsBuiltCalls
+
   constructor(
     ctx: PrivacyPoolsContext,
     registry: PrivacyPoolsProtocolRegistry,
-    sync: PrivacyPoolsSync
+    sync: PrivacyPoolsSync,
+    builtCalls: PrivacyPoolsBuiltCalls
   ) {
     this.#ctx = ctx
     this.#registry = registry
     this.#sync = sync
+    this.#builtCalls = builtCalls
   }
 
   /** A token's deposits that can be taken back, newest first, each with the account it goes back to. */
@@ -138,7 +143,10 @@ export class PrivacyPoolsRagequit {
     if (syncedNote?.approval === 'approved') throw privacyPoolsErrors.ragequitDepositVerified()
     if (syncedNote?.amount !== note.amount) throw privacyPoolsErrors.ragequitDepositNotFound()
 
-    return { accountAddr: note.depositorAddr, calls: [{ to: txn.to, value: 0n, data: txn.data }] }
+    const call: Call = { to: txn.to, value: 0n, data: txn.data }
+    this.#builtCalls.add({ chainId, call, seedId, kind: 'ragequit' })
+
+    return { accountAddr: note.depositorAddr, calls: [call] }
   }
 
   /** Throws once the wallet was locked or the account removed since `generation` was read. */

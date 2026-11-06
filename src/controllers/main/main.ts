@@ -460,7 +460,8 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
-      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
+      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds),
+      getPendingAccountOps: () => this.getPendingAccountOps()
     })
 
     this.portfolio = new PortfolioController(
@@ -1909,6 +1910,23 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  /**
+   * The transactions the wallet has not finished with: broadcast but not confirmed, and the
+   * request batch. For `PrivacyPoolsController`, which holds back a deposit while one is pending.
+   */
+  protected getPendingAccountOps() {
+    // An unsigned deposit already holds the next precommitment, which stays the same until a sync
+    // shows the deposit. A second deposit built meanwhile would reuse it and fail onchain.
+    const requestedAccountOps = this.requests.userRequests.flatMap((request) =>
+      request.kind === 'calls' ? [request.signAccountOp.accountOp] : []
+    )
+
+    return [
+      ...Object.values(this.activity.broadcastedButNotConfirmed).flat(),
+      ...requestedAccountOps
+    ]
+  }
+
   async updateAccountsOpsStatuses() {
     await this.initialLoadPromise
 
@@ -1924,6 +1942,7 @@ export class MainController extends EventEmitter implements IMainController {
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+          this.privacyPools.onAccountOpFinalized(op)
 
           safeDeployStatusUpdates.push(this.requests.handleSafeDeployStatusUpdate(op))
 
