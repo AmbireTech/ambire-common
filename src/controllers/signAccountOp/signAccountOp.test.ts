@@ -1176,6 +1176,50 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.canBroadcast).toBe(false)
   })
 
+  describe('Safe owners among the fee payers', () => {
+    const onChainOwner = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const setSafeState = (
+      accountsCtrl: Awaited<ReturnType<typeof initSafeNonce>>['accountsCtrl'],
+      controller: SignAccountOpController,
+      overrides: { isDeployed: boolean; associatedKeys: string[] }
+    ) => {
+      const chainKey = controller.accountOp.chainId.toString()
+      const safeStates = accountsCtrl.accountStates[controller.accountOp.accountAddr]!
+      safeStates[chainKey] = { ...safeStates[chainKey]!, ...overrides }
+    }
+    const importedOwners = safeAccount.associatedKeys.map((addr) => addr.toLowerCase())
+
+    test('takes the owners from the import for a Safe that is not deployed yet', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce()
+      setSafeState(accountsCtrl, controller, { isDeployed: false, associatedKeys: [] })
+
+      controller.update({ hasNewEstimation: true })
+
+      expect(controller.safeFeePayerLinks?.owners).toEqual(importedOwners)
+    })
+
+    test('takes the owners from the chain for a deployed Safe', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce()
+      setSafeState(accountsCtrl, controller, {
+        isDeployed: true,
+        associatedKeys: [onChainOwner]
+      })
+
+      controller.update({ hasNewEstimation: true })
+
+      expect(controller.safeFeePayerLinks?.owners).toEqual([onChainOwner.toLowerCase()])
+    })
+
+    test('has no owners for a deployed Safe whose owners on chain are none', async () => {
+      const { controller, accountsCtrl } = await initSafeNonce()
+      setSafeState(accountsCtrl, controller, { isDeployed: true, associatedKeys: [] })
+
+      controller.update({ hasNewEstimation: true })
+
+      expect(controller.safeFeePayerLinks?.owners).toEqual([])
+    })
+  })
+
   test('does not block a Safe speed up for keeping the nonce of the transaction it replaces', async () => {
     const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress], {
       isSpeedUp: true

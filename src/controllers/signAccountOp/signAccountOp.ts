@@ -1603,12 +1603,14 @@ export class SignAccountOpController
       return
     }
 
-    // The owners can differ per chain, so the chain's state wins over the ones from the import
+    // The owners can differ per chain, so the chain's state wins over the ones from the import.
+    // A Safe that isn't deployed yet has no owners on chain, so the ones from the import are used
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-    const owners = (accountState?.associatedKeys || this.account.associatedKeys).map((addr) =>
-      addr.toLowerCase()
-    )
+    const ownersSource = accountState?.isDeployed
+      ? accountState.associatedKeys
+      : this.account.associatedKeys
+    const owners = ownersSource.map((addr) => addr.toLowerCase())
     // Ordered from the one that paid last
     const feePayers = this.#activity
       .getFeePayers(this.account.addr, this.#network.chainId)
