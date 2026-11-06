@@ -10,6 +10,7 @@ import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { PrivacyPoolsChainConfig } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
+import { Call } from '../../libs/accountOp/types'
 
 /** Bumped on every lock, so a sync that cannot be aborted does not write back wiped notes. */
 export class LockGeneration {
@@ -28,6 +29,9 @@ export class LockGeneration {
   }
 }
 
+/** A transaction the wallet has not finished with yet: broadcast, or waiting to be signed. */
+export type PendingAccountOp = { chainId: bigint; calls: Call[] }
+
 /**
  * What every Privacy Pools module gets from `PrivacyPoolsController` - never the controller itself.
  * The controller stays the only `EventEmitter`, so updates and errors keep a single path to the UI.
@@ -45,6 +49,11 @@ export type PrivacyPoolsContext = {
   kohakuStorage: Storage
   lock: LockGeneration
   hasAccount: (seedId: string) => boolean
+  /**
+   * The transactions broadcast but not confirmed yet, and those in the current request batch -
+   * what a deposit has to wait for. Read from other controllers, so passed in by the caller.
+   */
+  getPendingAccountOps: () => PendingAccountOp[]
   /** USD price of a pool's asset, or null when unknown - see `PrivacyPoolsController.prices`. */
   getTokenPrice: (chainId: string, tokenAddress: string) => number | null
   /**

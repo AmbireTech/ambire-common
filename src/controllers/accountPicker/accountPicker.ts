@@ -28,13 +28,14 @@ import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   dedicatedToOneSAPriv,
-  ExternalKey,
   ExternalSignerControllers,
+  HdExternalKey,
   IKeystoreController,
   Key,
   ReadyToAddKeys
 } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { PreparePrivacyPoolsAccount, PrivacyPoolsAccountToAdd } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import {
   getAccountImportStatus,
@@ -142,6 +143,36 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   readyToRemoveAccounts: Account[] = []
 
   /**
+   * A Privacy Pools account flow set up by `setPrivacyPoolsInitParams`, from a stored recovery
+   * phrase (`seedId`) or a new one. Prepared by the personalize step (`initIfNotStarted`).
+   */
+  privacyPoolsInitParams: { seedId: string | null } | null = null
+
+  // Kept private, as the public state goes to the UI
+  #privacyPoolsExtraEntropy?: string
+
+  // The passphrase of a phrase that doesn't save it, which derives the account's key on adding it
+  #privacyPoolsSeedPassphrase?: string
+
+  /**
+   * The Privacy Pools account the current flow is about to add. The personalize step shows it
+   * under `label`, and nothing is written until the user proceeds from there - going back from it
+   * only resets the flow.
+   */
+  privacyPoolsAccountToAdd: PrivacyPoolsAccountToAdd | null = null
+
+  /**
+   * Setting the Privacy Pools flow up or preparing its account, which `initIfNotStarted` awaits:
+   * personalize can ask for it before the flow's own screen has finished setting it up.
+   */
+  #privacyPoolsPromise?: Promise<void>
+
+  // Aborted by `reset`, so a preparation it outran does not bring the account back
+  #privacyPoolsAbortController?: AbortController
+
+  #onPreparePrivacyPoolsAccount: PreparePrivacyPoolsAccount
+
+  /**
    * Keys handed in by a flow without a key iterator (`prepareAccounts`). Private, as
    * internal keys carry the private key and the public state goes to the UI. The keys of
    * selected accounts are derived only when they are added.
@@ -215,7 +246,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch,
     featureFlags,
     sendUiMessage,
-    onAddPreparedAccounts
+    onAddPreparedAccounts,
+    onPreparePrivacyPoolsAccount
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     accounts: IAccountsController
@@ -228,6 +260,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     featureFlags?: IFeatureFlagsController
     sendUiMessage: (params: {}) => void
     onAddPreparedAccounts: (prepared: PreparedAccounts) => Promise<void>
+    /** Checks a Privacy Pools account can be added, names it, and generates its new phrase */
+    onPreparePrivacyPoolsAccount: PreparePrivacyPoolsAccount
   }) {
     super(eventEmitterRegistry)
     this.#accounts = accounts
@@ -239,6 +273,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#sendUiMessage = sendUiMessage
     this.#onAddPreparedAccounts = onAddPreparedAccounts
+    this.#onPreparePrivacyPoolsAccount = onPreparePrivacyPoolsAccount
 
     this.#controllerSubscriptions.push(
       this.#accounts.onUpdate(() => {
@@ -462,6 +497,13 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * with the number of prepared accounts.
    */
   async initIfNotStarted(requestId?: string) {
+    await this.#privacyPoolsPromise
+    if (this.privacyPoolsInitParams && !this.privacyPoolsAccountToAdd) {
+      this.#privacyPoolsPromise = this.#preparePrivacyPoolsAccount(requestId)
+      await this.#privacyPoolsPromise
+      return
+    }
+
     if (!this.initParams || this.isInitialized || this.readyToAddAccounts.length) {
       this.#replyWithPreparedCount(requestId)
       return
@@ -575,8 +617,18 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       if (this.#keystore.isKeyIteratorInitializedWithTempSeed(keyIterator)) {
         this.#keystore.deleteTempSeed()
       }
+      // ...and so does one generated for a new Privacy Pools account
+      if (this.privacyPoolsAccountToAdd?.isNewSeed && this.#keystore.hasTempSeed) {
+        this.#keystore.deleteTempSeed()
+      }
       this.initParams = null
     }
+    this.privacyPoolsAccountToAdd = null
+    this.privacyPoolsInitParams = null
+    this.#privacyPoolsExtraEntropy = undefined
+    this.#privacyPoolsSeedPassphrase = undefined
+    this.#privacyPoolsAbortController?.abort()
+    this.#privacyPoolsAbortController = undefined
     this.keyIterator = null
     this.selectedAccountsFromCurrentSession = []
     this.page = DEFAULT_PAGE
@@ -612,6 +664,108 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // outside of this controller instance.
     this.#controllerSubscriptions.forEach((unsubscribe) => unsubscribe())
     this.#controllerSubscriptions = []
+  }
+
+  /**
+   * Sets a Privacy Pools account flow up, from a stored recovery phrase (`seedId`) or a new one,
+   * ending any other flow. Only that - the personalize step prepares the account behind its
+   * loading state (`initIfNotStarted`), so the flow moves on at once. A phrase whose passphrase
+   * isn't saved needs it, checked here and saved if the user chose to. Replies to `requestId`
+   * once set up, with `isWrongPassphrase` when the passphrase isn't the phrase's one.
+   */
+  async setPrivacyPoolsInitParams(
+    {
+      seedId,
+      extraEntropy,
+      seedPassphrase,
+      shouldSavePassphrase
+    }: {
+      seedId?: string
+      extraEntropy?: string
+      seedPassphrase?: string
+      shouldSavePassphrase?: boolean
+    },
+    requestId?: string
+  ) {
+    // Assigned before anything is awaited, so a personalize step already asking waits for it
+    this.#privacyPoolsPromise = (async () => {
+      try {
+        const seed = this.#keystore.seeds.find(({ id }) => id === seedId)
+        const isPassphraseKept =
+          !seed?.isPassphraseNeeded ||
+          (!!seedPassphrase &&
+            (shouldSavePassphrase
+              ? await this.#keystore.saveSeedPassphrase(seed.id, seedPassphrase)
+              : await this.#keystore.isSeedPassphraseCorrect(seed.id, seedPassphrase)))
+        // Shown by the passphrase sheet, so not reported as an error
+        if (!isPassphraseKept) {
+          this.#replyToRequest(requestId, undefined, { isWrongPassphrase: true })
+          return
+        }
+
+        await this.reset()
+        this.privacyPoolsInitParams = { seedId: seedId ?? null }
+        this.#privacyPoolsExtraEntropy = extraEntropy
+        // A saved passphrase derives the key from the phrase alone
+        if (seed?.isPassphraseNeeded && !shouldSavePassphrase)
+          this.#privacyPoolsSeedPassphrase = seedPassphrase
+        this.emitUpdate()
+        this.#replyToRequest(requestId, undefined, { isWrongPassphrase: false })
+      } catch (error: any) {
+        this.#replyToRequest(requestId, error?.message || 'Setting the account up failed')
+        this.#emitCaughtError(error, 'Setting the account up failed. Please try again.')
+      }
+    })()
+    await this.#privacyPoolsPromise
+  }
+
+  /**
+   * The passphrase the user entered for the account to add's recovery phrase, when it isn't
+   * saved - adding the account keeps its key, as the phrase alone can't derive it.
+   */
+  getPrivacyPoolsSeedPassphrase() {
+    return this.#privacyPoolsSeedPassphrase
+  }
+
+  /**
+   * Called once the new recovery phrase of the account to add is stored, ahead of the account:
+   * adding it again, after a failure, reuses the phrase rather than look for the temp seed.
+   */
+  onPrivacyPoolsAccountSeedStored(seedId: string) {
+    if (!this.privacyPoolsAccountToAdd?.isNewSeed) return
+
+    this.privacyPoolsAccountToAdd = {
+      isNewSeed: false,
+      seedId,
+      label: this.privacyPoolsAccountToAdd.label
+    }
+  }
+
+  async #preparePrivacyPoolsAccount(requestId?: string) {
+    if (!this.privacyPoolsInitParams) return
+
+    const abortController = new AbortController()
+    this.#privacyPoolsAbortController = abortController
+    try {
+      const accountToAdd = await this.#onPreparePrivacyPoolsAccount({
+        seedId: this.privacyPoolsInitParams.seedId,
+        extraEntropy: this.#privacyPoolsExtraEntropy,
+        signal: abortController.signal
+      })
+      // Reset meanwhile - the user left the flow
+      if (!accountToAdd || abortController.signal.aborted) {
+        if (accountToAdd?.isNewSeed) this.#keystore.deleteTempSeed()
+        this.#replyToRequest(requestId, 'The account is no longer being added')
+        return
+      }
+
+      this.privacyPoolsAccountToAdd = accountToAdd
+      this.emitUpdate()
+      this.#replyWithPreparedCount(requestId)
+    } catch (error: any) {
+      this.#replyToRequest(requestId, error?.message || 'Preparing the account failed')
+      this.#emitCaughtError(error, 'Preparing the account failed. Please try again.')
+    }
   }
 
   /**
@@ -1110,7 +1264,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       }
     }
 
-    const keyType = this.type as ExternalKey['type']
+    // PQ1 keys are never derived here: PQ1 has no key iterator (see `Pq1ExternalKey`)
+    const keyType = this.type as HdExternalKey['type']
 
     const signer = this.#externalSignerControllers[keyType]
 
@@ -1160,10 +1315,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * Replies to the UI request behind a call (if there is one), so the UI can await it
    * instead of watching a transient status.
    */
-  #replyToRequest(requestId?: string, error?: string) {
+  #replyToRequest(requestId?: string, error?: string, res?: unknown) {
     if (!requestId) return
 
-    this.#sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
+    this.#sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true, res })
   }
 
   /**
@@ -1173,7 +1328,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #replyWithPreparedCount(requestId?: string) {
     if (!requestId) return
 
-    this.#sendUiMessage({ requestId, ok: true, res: this.readyToAddAccounts.length })
+    const preparedCount = this.readyToAddAccounts.length + (this.privacyPoolsAccountToAdd ? 1 : 0)
+    this.#sendUiMessage({ requestId, ok: true, res: preparedCount })
   }
 
   #emitCaughtError(error: any, fallbackMessage: string) {

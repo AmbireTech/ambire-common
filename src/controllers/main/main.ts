@@ -87,7 +87,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '@/interfa
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
 import { IPortfolioController } from '@/interfaces/portfolio'
-import { IPrivacyPoolsController } from '@/interfaces/privacyPools'
+import { IPrivacyPoolsController, PreparePrivacyPoolsAccount } from '@/interfaces/privacyPools'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
 import { ISafeController } from '@/interfaces/safe'
@@ -460,7 +460,8 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
-      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
+      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds),
+      getPendingAccountOps: () => this.getPendingAccountOps()
     })
 
     this.portfolio = new PortfolioController(
@@ -505,7 +506,8 @@ export class MainController extends EventEmitter implements IMainController {
        * accounts via the AccountPickerController - for every flow, including the
        * ones without a key iterator (view-only, Safe, account JSON).
        */
-      onAddPreparedAccounts: this.#onAccountPickerSuccess.bind(this)
+      onAddPreparedAccounts: this.#onAccountPickerSuccess.bind(this),
+      onPreparePrivacyPoolsAccount: this.#preparePrivacyPoolsAccount.bind(this)
     })
     this.addressBook = new AddressBookController(
       this.storage,
@@ -830,7 +832,10 @@ export class MainController extends EventEmitter implements IMainController {
               fetch: this.fetch,
               featureFlags: this.featureFlags,
               sendUiMessage: this.ui.message.sendUiMessage,
-              onAddPreparedAccounts: async () => {}
+              onAddPreparedAccounts: async () => {},
+              onPreparePrivacyPoolsAccount: async () => {
+                throw new Error('main: the legacy seed migration adds no Privacy Pools account')
+              }
             }),
           this.keystore,
           async () => {
@@ -1064,37 +1069,92 @@ export class MainController extends EventEmitter implements IMainController {
     return this.privacyPools.accounts.some((account) => account.seedId === seedId)
   }
 
-  /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
-  async addPrivacyPoolsAccount(seedId: string) {
-    await this.initialLoadPromise
+  /**
+   * Prepares the Privacy Pools account a flow set up on the picker, for the personalize step:
+   * checks its stored recovery phrase can have one, or generates a new phrase as the temp seed -
+   * flagged as not backed up, so the UI asks for a backup: the only way to recover the funds.
+   * Nothing is written until the user proceeds (`addPreparedPrivacyPoolsAccount`).
+   */
+  async #preparePrivacyPoolsAccount({
+    seedId,
+    extraEntropy,
+    signal
+  }: Parameters<PreparePrivacyPoolsAccount>[0]): ReturnType<PreparePrivacyPoolsAccount> {
+    await this.privacyPools.initialLoadPromise
+    const label = this.privacyPools.defaultAccountLabel
 
+    if (seedId) {
+      await this.privacyPools.assertCanAddAccount(seedId)
+      return { isNewSeed: false, seedId, label }
+    }
+
+    // Left meanwhile - a phrase generated now could replace the temp seed of a flow started since
+    if (signal.aborted) return null
+    await this.keystore.generateTempSeed({ extraEntropy })
+    return { isNewSeed: true, label }
+  }
+
+  /**
+   * Adds the Privacy Pools account the personalize step shows, named `label`, and selects it -
+   * storing its new recovery phrase first, if it has one, or the account's key, if its phrase
+   * doesn't save its passphrase. Replies to `requestId` once done.
+   */
+  async addPreparedPrivacyPoolsAccount(label: string, requestId?: string) {
+    let isAdded = false
     // Wrapped as a whole, so a refused account is shown to the user
     await this.withStatus(
       'selectAccount',
       async () => {
-        await this.privacyPools.addAccount(seedId)
+        await this.initialLoadPromise
+
+        const toAdd = this.accountPicker.privacyPoolsAccountToAdd
+        if (!toAdd)
+          throw new EmittableError({
+            message: 'There is no account to add. Please go back and try again.',
+            level: 'major',
+            error: new Error('main: no prepared Privacy Pools account to add')
+          })
+
+        // The temp seed is gone once the keystore locks
+        const seedId = toAdd.isNewSeed ? await this.keystore.persistTempSeed() : toAdd.seedId
+        if (!seedId)
+          throw new EmittableError({
+            message:
+              'The new recovery phrase is no longer available. Please go back and try again.',
+            level: 'major',
+            error: new Error('main: the temp seed of the Privacy Pools account to add is gone')
+          })
+        if (toAdd.isNewSeed) this.accountPicker.onPrivacyPoolsAccountSeedStored(seedId)
+
+        // Checked by the picker already, so a mismatch means the phrase changed meanwhile
+        const seedPassphrase = this.accountPicker.getPrivacyPoolsSeedPassphrase()
+        if (
+          seedPassphrase &&
+          !(await this.keystore.storePrivacyKey(seedId, 'privacyPools', seedPassphrase))
+        )
+          throw new EmittableError({
+            message:
+              'The passphrase no longer matches the recovery phrase. Please go back and try again.',
+            level: 'major',
+            error: new Error('main: the passphrase of the Privacy Pools account to add is wrong')
+          })
+
+        try {
+          await this.privacyPools.addAccount(seedId, label.trim() || toAdd.label)
+        } catch (error) {
+          // Drops the key stored above, unless an account already uses it (a double submit)
+          if (!this.#hasPrivacyPoolsAccount(seedId))
+            await this.keystore.removePrivacyKey(seedId, 'privacyPools')
+          throw error
+        }
+        await this.accountPicker.reset()
         await this.#selectPrivacyPoolsAccount(seedId)
+        isAdded = true
       },
       true
     )
-  }
 
-  /**
-   * Creates a recovery phrase with only a Privacy Pools account on it, and selects it. The phrase
-   * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
-   */
-  async addPrivacyPoolsAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
-    await this.initialLoadPromise
-
-    await this.withStatus(
-      'selectAccount',
-      async () => {
-        const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
-        await this.privacyPools.addAccount(seedId)
-        await this.#selectPrivacyPoolsAccount(seedId)
-      },
-      true
-    )
+    this.#replyToRequest(requestId, isAdded ? undefined : 'Adding the account failed')
   }
 
   async selectPrivacyPoolsAccount(seedId: string) {
@@ -1850,6 +1910,23 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  /**
+   * The transactions the wallet has not finished with: broadcast but not confirmed, and the
+   * request batch. For `PrivacyPoolsController`, which holds back a deposit while one is pending.
+   */
+  protected getPendingAccountOps() {
+    // An unsigned deposit already holds the next precommitment, which stays the same until a sync
+    // shows the deposit. A second deposit built meanwhile would reuse it and fail onchain.
+    const requestedAccountOps = this.requests.userRequests.flatMap((request) =>
+      request.kind === 'calls' ? [request.signAccountOp.accountOp] : []
+    )
+
+    return [
+      ...Object.values(this.activity.broadcastedButNotConfirmed).flat(),
+      ...requestedAccountOps
+    ]
+  }
+
   async updateAccountsOpsStatuses() {
     await this.initialLoadPromise
 
@@ -1960,6 +2037,10 @@ export class MainController extends EventEmitter implements IMainController {
               // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
               finalizedAccountOps.length
                 ? this.portfolio.discardSimulation(finalizedAccountOps)
+                : undefined,
+              // Updates the Privacy Pools balances. Failed ops too, to remove their amounts
+              finalizedAccountOps.length
+                ? this.privacyPools.onAccountOpsFinalized(finalizedAccountOps)
                 : undefined,
               ...otherAccountsToUpdate.map(async ([portfolioAccountAddr, chainIds]) => {
                 // A fee payer has a new nonce and a recipient a new balance, and the
@@ -2512,6 +2593,60 @@ export class MainController extends EventEmitter implements IMainController {
     this.#replyToRequest(requestId)
   }
 
+  /**
+   * Sets the account picker up with a recovery phrase the user already saved, for the
+   * personalize step to select and prepare its next account. One whose passphrase isn't saved
+   * needs it from the user, and has it saved if they chose to. Replies to `requestId` once set up,
+   * with `isWrongPassphrase` when the passphrase isn't the phrase's one.
+   */
+  async accountPickerSetInitParamsFromSavedSeed(
+    {
+      id,
+      seedPassphrase,
+      shouldSavePassphrase
+    }: {
+      id: string
+      seedPassphrase?: string | null
+      shouldSavePassphrase?: boolean
+    },
+    requestId?: string
+  ) {
+    let isSetUp = false
+    let isWrongPassphrase = false
+    await this.withStatus(
+      'accountPickerSetInitParamsFromSavedSeed',
+      async () => {
+        const savedSeed = await this.keystore.getSavedSeed(id)
+        const passphrase = savedSeed.seedPassphrase || seedPassphrase || null
+
+        // Another passphrase would open other accounts, which this phrase's entry doesn't hold.
+        // Saving it checks it too, so it isn't checked twice
+        const isPassphraseCorrect =
+          shouldSavePassphrase && passphrase && !savedSeed.seedPassphrase
+            ? await this.keystore.saveSeedPassphrase(id, passphrase)
+            : await this.keystore.isSeedPassphraseCorrect(id, passphrase)
+        // Shown by the passphrase sheet, so not reported as an error
+        if (!isPassphraseCorrect) {
+          isWrongPassphrase = true
+          return
+        }
+
+        await this.accountPicker.setInitParams({
+          keyIterator: new KeyIterator(savedSeed.seed, passphrase),
+          hdPathTemplate: savedSeed.hdPathTemplate
+        })
+        isSetUp = true
+      },
+      true
+    )
+
+    this.#replyToRequest(
+      requestId,
+      isSetUp || isWrongPassphrase ? undefined : 'Adding accounts from the recovery phrase failed',
+      { isWrongPassphrase }
+    )
+  }
+
   async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
     if (!privateKeys.length) {
       const message = 'Please enter at least one private key.'
@@ -2564,23 +2699,6 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Sets the account picker up with a recovery phrase the user already saved, for the
-   * personalize step to select and prepare its next account. Replies to `requestId` once
-   * set up.
-   */
-  async accountPickerSetInitParamsFromSavedSeed(seedId: string, requestId?: string) {
-    const savedSeed = await this.keystore.getSavedSeed(seedId)
-    if (!savedSeed) return this.#replyToRequest(requestId, 'The recovery phrase was not found')
-
-    const keyIterator = new KeyIterator(savedSeed.seed, savedSeed.seedPassphrase)
-    await this.accountPicker.setInitParams({
-      keyIterator,
-      hdPathTemplate: savedSeed.hdPathTemplate
-    })
-    this.#replyToRequest(requestId)
-  }
-
-  /**
    * Creates a brand new recovery phrase and sets the account picker up with it, for the
    * personalize step to prepare its first account - nothing is written until the user
    * proceeds from there. The phrase is never sent to the UI - the user gets prompted to
@@ -2613,10 +2731,12 @@ export class MainController extends EventEmitter implements IMainController {
    * Replies to the UI request behind a call (if there is one), so the UI can await it
    * instead of watching a transient status.
    */
-  #replyToRequest(requestId?: string, error?: string) {
+  #replyToRequest(requestId?: string, error?: string, res?: unknown) {
     if (!requestId) return
 
-    this.ui.message.sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
+    this.ui.message.sendUiMessage(
+      error ? { requestId, ok: false, error } : { requestId, ok: true, res }
+    )
   }
 
   // includes the getters in the stringified instance

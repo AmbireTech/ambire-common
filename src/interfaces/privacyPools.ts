@@ -73,7 +73,27 @@ export type PrivacyPoolsPaymasterConfig = {
 export type PrivacyPoolsAccount = {
   seedId: string
   createdAt: number
+  /** The name the user gave it. Missing on accounts added before they had names. */
+  label?: string
 }
+
+/**
+ * A Privacy Pools account an adding flow prepared, named `label` until the user renames it. Its
+ * recovery phrase is a stored one, or a new one the keystore holds as its temp seed until added.
+ */
+export type PrivacyPoolsAccountToAdd =
+  | { isNewSeed: false; seedId: string; label: string }
+  | { isNewSeed: true; label: string }
+
+/**
+ * Prepares the Privacy Pools account of a flow, from a stored recovery phrase (`seedId`) or a new
+ * one. Resolves with `null` when `signal` aborts first - the user left the flow.
+ */
+export type PreparePrivacyPoolsAccount = (params: {
+  seedId: string | null
+  extraEntropy?: string
+  signal: AbortSignal
+}) => Promise<PrivacyPoolsAccountToAdd | null>
 
 export type PrivacyPoolsSyncStatus = 'idle' | 'syncing' | 'ready'
 
@@ -82,8 +102,14 @@ export type PrivacyPoolsSyncStatus = 'idle' | 'syncing' | 'ready'
  * - 'locked' - the keystore is locked, so the note secrets can't be derived
  * - 'no-account' - no Privacy Pools account is selected
  * - 'unsupported-network' - no Privacy Pools chain is in the user's network list
+ * - 'passphrase-needed' - the phrase's passphrase isn't saved and its account's key is missing or
+ *   can't be read, so the account has to be added again with the passphrase
  */
-export type PrivacyPoolsUnavailableReason = 'locked' | 'no-account' | 'unsupported-network'
+export type PrivacyPoolsUnavailableReason =
+  | 'locked'
+  | 'no-account'
+  | 'unsupported-network'
+  | 'passphrase-needed'
 
 /**
  * Set by the Association Set Provider, not the protocol. A deposit is 'pending' until 0xBow adds
@@ -140,7 +166,11 @@ export type PrivacyPoolsChainPoolStats = {
   error: string | null
 }
 
-/** Notes summed per token. Only `approvedAmount` can be withdrawn. */
+/**
+ * Notes summed per token. Only `approvedAmount` can be withdrawn. What deposits, withdrawals and
+ * ragequits still on their way will do is not in the notes yet, so the amounts above do not
+ * include it. The fields below are named like the regular portfolio's.
+ */
 export type PrivacyPoolsTokenBalance = {
   tokenAddress: string
   symbol: string
@@ -149,6 +179,13 @@ export type PrivacyPoolsTokenBalance = {
   approvedAmount: bigint
   pendingAmount: bigint
   totalAmount: bigint
+  /**
+   * How much `totalAmount` will change once what is on its way shows in the notes: positive for a
+   * deposit, after the pool's fee, negative for a withdrawal or a deposit taken back.
+   */
+  simulationAmount: bigint
+  /** `approvedAmount` less what withdrawals on their way take out of it. What can be sent now. */
+  approvedAmountPostSimulation: bigint
 }
 
 /**
@@ -322,6 +359,8 @@ export type PrivacyPoolsSendForm = {
  */
 export type PrivacyPoolsDepositAssetConfig = {
   minimumDepositAmount: bigint
+  /** The share of a deposit the entrypoint keeps, in basis points (1 = 0.01%). */
+  vettingFeeBPS: bigint
 }
 
 /** 'pending' means "not observed as complete yet". It resolves from the broadcast result. */

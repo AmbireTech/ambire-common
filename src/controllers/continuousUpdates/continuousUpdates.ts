@@ -269,10 +269,15 @@ export class ContinuousUpdatesController extends EventEmitter {
   async #updatePortfolio() {
     await this.initialLoadPromise
 
-    await this.#main.updateSelectedAccountPortfolio({
-      maxDataAgeMs: 60 * 1000,
-      maxDataAgeMsUnused: 60 * 60 * 1000
-    })
+    await Promise.all([
+      this.#main.updateSelectedAccountPortfolio({
+        maxDataAgeMs: 60 * 1000,
+        maxDataAgeMsUnused: 60 * 60 * 1000
+      }),
+      // Only while a view is open, as a sync is much heavier than a portfolio update. Does nothing
+      // unless a Privacy Pools account is selected and the wallet is unlocked.
+      this.#main.ui.views.length ? this.#main.privacyPools.syncInBackground() : undefined
+    ])
   }
 
   async #updateTrendingTokens() {
