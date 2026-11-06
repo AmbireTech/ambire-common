@@ -713,6 +713,49 @@ describe('Main Controller ', () => {
       )
       expect(mainCtrl.statuses.handleAccountPickerInitTrezor).toBe('INITIAL')
     })
+
+    // These run in the background (e.g. a Safe's pending transactions are fetched on every
+    // portfolio reload), so the user can't tell they are in progress
+    test.each(['fetchSafeTxns', 'refreshSafeTxns', 'selectAccount'] as const)(
+      'sets the picker up while %s is in progress',
+      async (unrelatedStatus) => {
+        const { mainCtrl } = await makeMainController(undefined, {
+          overrides: { externalSignerControllers: { trezor: { walletSDK: {} } as any } }
+        })
+        await mainCtrl.initialLoadPromise
+        const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+        // The statuses object is shared between instances, so it is restored for the next test
+        mainCtrl.statuses[unrelatedStatus] = 'LOADING'
+        try {
+          await mainCtrl.handleAccountPickerInitTrezor(FakeTrezorKeyIterator, 'request-hw-3')
+        } finally {
+          mainCtrl.statuses[unrelatedStatus] = 'INITIAL'
+        }
+
+        expect(mainCtrl.accountPicker.initParams?.keyIterator).toBeInstanceOf(FakeTrezorKeyIterator)
+        expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-hw-3', ok: true })
+      }
+    )
+
+    test('refuses a second set up of the same wallet while the first is in progress', async () => {
+      const { mainCtrl } = await makeMainController(undefined, {
+        overrides: { externalSignerControllers: { trezor: { walletSDK: {} } as any } }
+      })
+      await mainCtrl.initialLoadPromise
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+      // E.g. the button pressed again while the device still waits to be unlocked
+      mainCtrl.statuses.handleAccountPickerInitTrezor = 'LOADING'
+      try {
+        await mainCtrl.handleAccountPickerInitTrezor(FakeTrezorKeyIterator, 'request-hw-4')
+      } finally {
+        mainCtrl.statuses.handleAccountPickerInitTrezor = 'INITIAL'
+      }
+
+      expect(mainCtrl.accountPicker.initParams).toBeNull()
+      expect(sendUiMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: 'request-hw-4', ok: false })
+      )
+    })
   })
 
   test('should add accounts and merge the associated keys of the already added accounts', async () => {
