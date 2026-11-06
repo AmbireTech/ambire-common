@@ -1548,6 +1548,14 @@ export class PortfolioController
     return isWithinMinUpdateInterval || networkState.isLoading
   }
 
+  #reportInvalidDefiPosition(error: unknown, providerName: string, positionName?: string) {
+    const message = `A DeFi position from ${providerName}${
+      positionName ? ` (${positionName})` : ''
+    } could not be read and is hidden.`
+
+    this.emitError({ level: 'silent', message, error: new Error(message, { cause: error }) })
+  }
+
   /**
    * Fetches portfolio asset hints and defi positions from the external API (Velcro)
    * and formats the response. If both hints and defi positions can be skipped, returns null data.
@@ -1709,7 +1717,10 @@ export class PortfolioController
           response.defi && !('errorState' in response.defi)
             ? {
                 updatedAt: response.defi.updatedAt,
-                positions: getFormattedApiPositions(response.defi.positions),
+                positions: getFormattedApiPositions(
+                  response.defi.positions,
+                  this.#reportInvalidDefiPosition.bind(this)
+                ),
                 isForceUpdate: defiUpdateMode === DefiUpdateMode.Force
               }
             : null,
@@ -2123,7 +2134,7 @@ export class PortfolioController
 
       // Used only to sort assets and positions
       const positionsByProvider = getUniqueMergedPositions(
-        getFormattedApiPositions(positions),
+        getFormattedApiPositions(positions, this.#reportInvalidDefiPosition.bind(this)),
         [],
         null
       )
