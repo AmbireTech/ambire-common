@@ -942,6 +942,43 @@ export class DappsController extends EventEmitter implements IDappsController {
     })
   }
 
+  /**
+   * Drops the WalletConnect sources no live session backs anymore (e.g. one that expired while
+   * the app was closed). Call once the live WalletConnect sessions are restored.
+   */
+  async dropWcSourcesWithoutSessions() {
+    if (!this.isReady) return
+
+    const liveWcSessions = Object.values(this.dappSessions).filter((s) => !!s.wcTopic)
+    const hasLiveSession = (dappId: string, source: ConnectionSource) =>
+      liveWcSessions.some((s) => s.id === dappId && getSessionConnectionSource(s) === source)
+
+    let hasChanges = false
+    Array.from(this.#dapps.values()).forEach((dapp) => {
+      const current = dapp.connectedSources ?? []
+      const nextSources = current.filter(
+        (source) => source === 'injected' || hasLiveSession(dapp.id, source)
+      )
+      if (nextSources.length === current.length) return
+
+      hasChanges = true
+      // Mirror `updateDapp`: a custom dapp that loses its last source is removed.
+      if (dapp.isCustom && nextSources.length === 0) {
+        this.#dapps.delete(dapp.id)
+        return
+      }
+      this.#dapps.set(dapp.id, {
+        ...dapp,
+        connectedSources: nextSources,
+        isConnected: nextSources.length > 0
+      })
+    })
+    if (!hasChanges) return
+
+    this.emitUpdate()
+    await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+  }
+
   broadcastDappSessionEvent = async (
     ev: any,
     data?: any,

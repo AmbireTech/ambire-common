@@ -2732,6 +2732,82 @@ describe('DappsController', () => {
     })
   })
 
+  describe('dropWcSourcesWithoutSessions', () => {
+    const makeConnectedDapp = (id: string, isCustom = false): Dapp =>
+      makeDapp({
+        id,
+        name: id,
+        url: `https://${id}`,
+        isCustom,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+
+    const prepare = async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      return controller
+    }
+
+    test('drops WalletConnect sources without a live session and keeps the injected one', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'injected')
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc')
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc-in-app')
+
+      await controller.dropWcSourcesWithoutSessions()
+
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['injected'])
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(false)
+      expect(controller.hasPermission('aave.com', 'wc-in-app')).toBe(false)
+    })
+
+    test('keeps each WalletConnect source that a live session of the same kind backs', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc')
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc-in-app')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-in-app',
+        isWcFromInAppBrowser: true
+      })
+
+      await controller.dropWcSourcesWithoutSessions()
+
+      // Only the in-app session is live, so the external connection is the stale one
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc-in-app'])
+    })
+
+    test('removes a custom dapp whose only source was a stale WalletConnect one', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('custom-wc-dapp.com', true), 'wc')
+
+      await controller.dropWcSourcesWithoutSessions()
+
+      expect(controller.getDapp('custom-wc-dapp.com')).toBeUndefined()
+    })
+
+    test('leaves the dapps untouched when every source is backed', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-external'
+      })
+      const emitUpdateSpy = jest.spyOn(controller, 'emitUpdate')
+
+      await controller.dropWcSourcesWithoutSessions()
+
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc'])
+      expect(emitUpdateSpy).not.toHaveBeenCalled()
+    })
+  })
+
   describe('wc-in-app source', () => {
     const inAppDapp = (): Dapp =>
       makeDapp({
