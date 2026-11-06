@@ -1173,7 +1173,7 @@ describe('PrivacyPoolsController', () => {
       expect(controller.unavailableReason).toBe('locked')
     })
 
-    it("asks for the passphrase again, reading nothing, when the account's key is not available", async () => {
+    it("reads nothing, and stays silent, when the account's key is not available", async () => {
       const { controller, keystore, selectedAccount } = await prepareTest()
       keystore.isPrivacyKeyAvailable.mockImplementation((seedId) => seedId !== 'seed-a')
 
@@ -1181,12 +1181,10 @@ describe('PrivacyPoolsController', () => {
       expect(controller.unavailableReason).toBe('passphrase-needed')
       expect(keystore.isPrivacyKeyAvailable).toHaveBeenCalledWith('seed-a', 'privacyPools')
 
-      await controller.syncIfStale()
+      const emittedErrorsCount = controller.emittedErrors.length
+      await controller.syncInBackground()
       expect(runningSyncs).toHaveLength(0)
-      expect(controller.emittedErrors.at(-1)).toMatchObject({
-        level: 'expected',
-        message: expect.stringContaining('needs its passphrase again')
-      })
+      expect(controller.emittedErrors).toHaveLength(emittedErrorsCount)
 
       // Unlocking comes first, as the key can't be read before it anyway
       keystore.isUnlocked = false
