@@ -1883,7 +1883,6 @@ export class MainController extends EventEmitter implements IMainController {
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
-          this.privacyPools.onAccountOpFinalized(op)
 
           safeDeployStatusUpdates.push(this.requests.handleSafeDeployStatusUpdate(op))
 
@@ -1979,6 +1978,10 @@ export class MainController extends EventEmitter implements IMainController {
               // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
               finalizedAccountOps.length
                 ? this.portfolio.discardSimulation(finalizedAccountOps)
+                : undefined,
+              // Updates the Privacy Pools balances. Failed ops too, to remove their amounts
+              finalizedAccountOps.length
+                ? this.privacyPools.onAccountOpsFinalized(finalizedAccountOps)
                 : undefined,
               ...otherAccountsToUpdate.map(async ([portfolioAccountAddr, chainIds]) => {
                 // A fee payer has a new nonce and a recipient a new balance, and the

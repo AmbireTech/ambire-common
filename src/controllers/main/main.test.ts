@@ -1079,7 +1079,7 @@ describe('Main Controller ', () => {
       expect(scheduleUpdateSpy).not.toHaveBeenCalled()
     })
 
-    test('should tell Privacy Pools about every op that got its outcome, even when nothing else needs an update', async () => {
+    test('should tell Privacy Pools about the ops that got their outcome, together and not the pending ones, even when nothing else needs an update', async () => {
       const mainCtrl = await setupController()
       const finalizedOp = {
         accountAddr: senderAccount,
@@ -1087,27 +1087,30 @@ describe('Main Controller ', () => {
         status: AccountOpStatus.Success,
         calls: []
       } as any
+      const failedOp = { ...finalizedOp, status: AccountOpStatus.Failure }
+      const pendingOp = { ...finalizedOp, status: AccountOpStatus.BroadcastedButNotConfirmed }
       const finalizedOnPrivacyPoolsSpy = jest
-        .spyOn(mainCtrl.privacyPools, 'onAccountOpFinalized')
-        .mockImplementation(() => {})
+        .spyOn(mainCtrl.privacyPools, 'onAccountOpsFinalized')
+        .mockResolvedValue(undefined)
 
       jest
         .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
         .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
       jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
         [senderAccount]: {
-          shouldEmitUpdate: false,
+          shouldEmitUpdate: true,
           chainsToUpdate: [],
           portfoliosToUpdate: {},
           shouldFetchSafeTxns: false,
           newestOpTimestamp: Date.now(),
-          updatedAccountsOps: [finalizedOp]
+          updatedAccountsOps: [finalizedOp, pendingOp, failedOp]
         }
       })
 
       await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
 
-      expect(finalizedOnPrivacyPoolsSpy.mock.calls).toEqual([[finalizedOp]])
+      expect(finalizedOnPrivacyPoolsSpy.mock.calls).toEqual([[[finalizedOp, failedOp]]])
     })
 
     test('removes the safs of the Safe on the same chain when an internal deployment fails', async () => {

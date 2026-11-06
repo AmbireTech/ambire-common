@@ -11,7 +11,9 @@ The controller is the only `EventEmitter`. The work is done by plain classes tha
 | `protocolRegistry.ts` | The SDK plugins, one per chain and phrase, their keystores, and the chain versions |
 | `sync.ts` | The sync queue, the first read of each chain's shared state, account states (notes, and the history once read), and sync epochs |
 | `history.ts` | The screens showing the history and their pages. Reads the history of the networks a screen shows whose history is not current, and syncs only those whose plugin has not |
-| `deposits.ts` | Deposit requirements, the next deposit's precommitment, and prepared and broadcast deposits |
+| `deposits.ts` | Deposit requirements and the next deposit's precommitment |
+| `builtCalls.ts` | The deposit and ragequit calls this wallet built, and the change recorded for each once broadcast |
+| `expectedChanges.ts` | The deposits, withdrawals and ragequits sent that the notes do not show yet: their amounts count until the notes show them, or until the sync after them is done |
 | `withdrawal.ts` | The operation, the proved-but-unsent withdrawal, and the preparation queue and its cancellation |
 | `ragequit.ts` | Nothing of its own. Lists the deposits still being verified with the account each came from, and builds their public reclaim |
 | `poolStats.ts` | The pools' deposits' labels. Computes a pool's numbers for a token's details from the synced history |
@@ -52,7 +54,8 @@ Some state is kept on purpose, because none of it comes from a phrase, or becaus
 | Kept | Why |
 | --- | --- |
 | The first read of each chain (`sync.ts`), chain versions (`protocolRegistry.ts`) | The chain's shared state, the same for every phrase. It takes minutes to read the first time |
-| Prepared and broadcast deposits (`deposits.ts`) | A deposit made before a lock may be sent or land after it. It must still be recognised, and still block another deposit from reusing its precommitment |
+| Built and broadcast deposit and ragequit calls (`builtCalls.ts`) | A deposit made before a lock may be sent or land after it. It must still be recognised, and still sync its account's chain once it lands. Nothing in them comes from a phrase: the account id, token, amount and block are public or local |
+| Expected changes (`expectedChanges.ts`) | Each keeps a check taken from the account's notes, so a lock deletes them all. The amounts then stop counting |
 | Deposit requirements, prices, pool numbers, the account list, the Send form | Not derived from a phrase |
 
 A new module that holds anything derived from a phrase must implement `PhraseScopedModule` and be added to `#phraseScopedModules`.
@@ -78,14 +81,11 @@ Updates are sent from one place, so the same rules hold for every module:
 
 ## Amounts on their way
 
-Between sending a deposit, withdrawal or ragequit and a sync showing it, the notes do not say what is happening. `balances` therefore adds `simulationAmount` and `approvedAmountPostSimulation` to each token, named like the regular portfolio's. The first is the signed change of the total, which the UI shows as the amount the account will hold. The second is the approved part less what withdrawals on their way take out, so it is what can be sent now. A ragequit lowers the part being verified, which the notes show once it lands, so it leaves the approved part alone. They come from the expected changes in `watches.ts`, so a lock or the account's removal drops them with the watches.
+A deposit, withdrawal or ragequit should show in the balance as soon as it is sent, before a sync reads it from the chain. `expectedChanges.ts` keeps one entry per change, and `balances` adds its amount to the token's `simulationAmount`. A withdrawal also lowers `approvedAmountPostSimulation`, the part that can be sent now.
 
-- **Recorded when sent.** `onAccountOpBroadcast` records one for a deposit or ragequit this wallet built, and `broadcastWithdrawal` for a withdrawal, before it is sent. The amount is saved when the call is built (`BuiltCall.amount`): a deposit's amount after the vetting fee, read from the entrypoint like the minimum deposit, or minus the whole deposit a ragequit takes back. A withdrawal's is the amount the proof spends, its fee included, as that is all of what leaves the notes.
-- **Not recorded while locked, or for a chain not read yet.** There is no total to compare with, so nothing could tell it landed. The watch still ends after its first read, as before.
-- **Shown until it lands.** Each holds the token's total at the time it was sent, plus the amounts of the changes of that token still open then. It ends once a sync of the account's chain shows that total, so two quick withdrawals each stay until their own lands. Changes of one token that land in another order than they were sent stay until the watch ends.
-- **Ends on failure.** A deposit or ragequit that did not land is dropped when its transaction ends (`onAccountOpFinalized`). A withdrawal that could not be confirmed is not: it may still land, so it stays until the watch ends.
-- **Time.** The 3 minutes count from when the watch starts. A deposit or ragequit has no watch until its transaction lands, so it waits for that for as long as it takes.
-- **The watch outlasts the first change.** A second change starts the watch over with a newer baseline, so a watch ends only when its notes changed and every change sent through it has shown, or when its time is up.
+An entry is deleted after one sync, which runs once our RPC has reached the transaction's block. `main.ts` starts it for deposits and ragequits, and `broadcastWithdrawal` for withdrawals, with the block from the bundler so our RPC never sees the withdrawal. A failed transaction deletes its entry at once, and a lock deletes them all.
+
+Another sync, for example from opening the account, can read the change first. So each entry remembers the notes from when it was sent, and is ignored once they show the change. For a withdrawal, that is the total of the token's approved notes, less the withdrawals sent before it that the notes do not show yet, as another withdrawal may have spent a different note. Until then, a new deposit is blocked, as it would reuse the same precommitment.
 
 ## Persistence
 
