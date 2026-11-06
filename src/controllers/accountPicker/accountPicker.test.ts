@@ -1,18 +1,22 @@
 import { toBeHex, Wallet } from 'ethers'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import * as uiHelpers from '../../../test/helpers/ui'
+import { ProviderError } from '../../classes/ProviderError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { MAX_UINT256 } from '../../consts/deploy'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   DERIVATION_OPTIONS,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
-import { Account } from '../../interfaces/account'
+import { Account, AccountOnchainState } from '../../interfaces/account'
 import { isSmartAccount } from '../../libs/account/account'
+import * as accountStateLib from '../../libs/accountState/accountState'
+import { RPC_HARDCODED_ERRORS } from '../../libs/errorDecoder/handlers/rpc'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import wait from '../../utils/wait'
 import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountPicker'
@@ -319,6 +323,63 @@ describe('AccountPicker', () => {
     expect(controller.isInitialized).toBe(false)
     expect(controller.smartAccountsLoading).toBe(false)
     expect(controller.accountsOnPage).toHaveLength(0)
+  })
+
+  describe('when a network times out while checking where the accounts were used', () => {
+    const TIMED_OUT_CHAIN_ID = 1n
+    // Partial on purpose: the used on check reads only these fields
+    const getUsedAccountState = (accountAddr: string) =>
+      ({
+        accountAddr,
+        balance: 1n,
+        isEOA: true,
+        nonce: 0n,
+        eoaNonce: 0n,
+        erc4337Nonce: MAX_UINT256,
+        isDeployed: false
+      }) as AccountOnchainState
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    // A hung RPC request becoming this error is covered in `accountState.test.ts`
+    test('should list it as a network that could not be checked and keep the others', async () => {
+      const { controller } = await prepareTest()
+      jest
+        .spyOn(accountStateLib, 'getAccountState')
+        .mockImplementation(async (provider, network, accounts) => {
+          if (network.chainId === TIMED_OUT_CHAIN_ID) {
+            throw new ProviderError({
+              originalError: new Error(RPC_HARDCODED_ERRORS.rpcTimeout),
+              providerUrl: provider._getConnection()?.url
+            })
+          }
+
+          return accounts.map((acc) => getUsedAccountState(acc.addr))
+        })
+
+      await controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        pageSize: 1,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        shouldGetAccountsUsedOnNetworks: true,
+        shouldSearchForLinkedAccounts: false,
+        shouldSelectNextAccountAutomatically: false
+      })
+      await controller.init()
+      await controller.setPage({ page: 1 })
+
+      expect(controller.accountsLoading).toBe(false)
+      expect(controller.smartAccountsLoading).toBe(false)
+      expect(controller.networksWithAccountStateError).toEqual([TIMED_OUT_CHAIN_ID])
+      expect(controller.accountsOnPage.length).toBeGreaterThan(0)
+      controller.accountsOnPage.forEach(({ account }) => {
+        // The networks that answered are kept
+        expect(account.usedOnNetworks?.length).toBeGreaterThan(0)
+        expect(account.usedOnNetworks?.map((n) => n.chainId)).not.toContain(TIMED_OUT_CHAIN_ID)
+      })
+    })
   })
 
   describe('initIfNotStarted', () => {
