@@ -481,6 +481,28 @@ describe('Defi positions helper and portfolio functions', () => {
 
       restore()
     })
+    it('Invalid positions are passed to onInvalidPosition, valid ones are not', () => {
+      const { restore } = suppressConsole()
+      const clonedDebankUniV3 = structuredClone(DEBANK_UNI_V3)
+      const provider = clonedDebankUniV3[0]!
+      const validPositionsCount = provider.positions.length - 1
+      const onInvalidPosition = jest.fn()
+
+      // @ts-expect-error test
+      provider.positions[0]!.assets[0]!.amount = 'not an amount'
+
+      const formattedPositions = getFormattedApiPositions(clonedDebankUniV3, onInvalidPosition)
+
+      expect(formattedPositions[0]!.positions).toHaveLength(validPositionsCount)
+      expect(onInvalidPosition).toHaveBeenCalledTimes(1)
+      expect(onInvalidPosition).toHaveBeenCalledWith(
+        expect.any(Error),
+        'Uniswap V3',
+        'Liquidity Pool'
+      )
+
+      restore()
+    })
     it('Non-hex addresses are converted to ZeroAddress', () => {
       const clonedDebankUniV3 = structuredClone(DEBANK_UNI_V3)
 
@@ -499,6 +521,29 @@ describe('Defi positions helper and portfolio functions', () => {
       const formattedPositions = getFormattedApiPositions(clonedDebankUniV3)
 
       expect(formattedPositions[0]!.positions[0]!.assets[0]!.amount).toBe(1234567890n)
+    })
+    it('App chain positions with exponent amounts are kept', () => {
+      const clonedDebankUniV3 = structuredClone(DEBANK_UNI_V3)
+      const appChainProvider = clonedDebankUniV3[0]!
+      const [firstAsset, secondAsset] = appChainProvider.positions[0]!.assets
+
+      // App chains (like Hyperliquid) have no chainId and send decimal amounts as numbers
+      // @ts-expect-error test
+      delete appChainProvider.chainId
+      // @ts-expect-error test
+      firstAsset!.amount = 5.3e-7
+      // @ts-expect-error test
+      secondAsset!.amount = 1.5
+      firstAsset!.decimals = 18
+
+      const formattedPositions = getFormattedApiPositions(clonedDebankUniV3)
+      const formattedPosition = formattedPositions[0]!.positions.find(
+        (p) => p.id === appChainProvider.positions[0]!.id
+      )
+
+      expect(formattedPosition).toBeDefined()
+      expect(formattedPosition!.assets[0]!.amount).toBe(530_000_000_000n)
+      expect(formattedPosition!.assets[1]!.amount).toBe(1_500_000n)
     })
   })
 })
