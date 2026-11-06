@@ -12,6 +12,7 @@ import {
   getPrivacyPoolsChainConfig,
   getPrivacyPoolsStoreKey,
   PRIVACY_POOLS_ACCOUNT_INDEX,
+  PRIVACY_POOLS_READ_TIMEOUT,
   PRIVACY_POOLS_SUPPORTED_CHAIN_IDS
 } from '../../consts/privacyPools'
 import { PrivacyPoolsChainConfig } from '../../interfaces/privacyPools'
@@ -194,7 +195,7 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
 
   #createHost(provider: JsonRpcProvider, seedId: string): Host {
     return {
-      network: createKohakuNetwork(this.#ctx.fetch),
+      network: createKohakuNetwork(this.#ctx.fetch, PRIVACY_POOLS_READ_TIMEOUT),
       storage: this.#ctx.kohakuStorage,
       keystore: this.#getKohakuKeystore(seedId),
       provider: createKohakuProvider(provider)

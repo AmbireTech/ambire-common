@@ -352,10 +352,12 @@ export type PrivacyPoolsSendForm = {
   amountFieldMode: 'token' | 'fiat'
 }
 
-/** The entrypoint's deposit requirements for one asset, read from the chain as 0xBow tunes them. */
+/**
+ * The entrypoint's deposit requirements for one asset that the Send form checks, read from the
+ * chain as 0xBow tunes them. The pool is kept privately, and read again once per Send session, as
+ * 0xBow can replace a pool while the wallet runs.
+ */
 export type PrivacyPoolsDepositAssetConfig = {
-  /** The pool the entrypoint sends the asset's deposits to. */
-  poolAddress: string
   minimumDepositAmount: bigint
   /** The share of a deposit the entrypoint keeps, in basis points (1 = 0.01%). */
   vettingFeeBPS: bigint

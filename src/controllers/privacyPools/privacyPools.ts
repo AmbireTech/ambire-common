@@ -504,7 +504,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return this.#history.getSessions(this.#getSelectedSeedId())
   }
 
-  /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase), read once. */
+  /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase), read once per Send session. */
   get depositAssetConfigs(): { [key: string]: PrivacyPoolsDepositAssetConfig } {
     return this.#deposits.assetConfigs
   }
@@ -788,12 +788,16 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return this.#deposits.buildCalls(params)
   }
 
-  /** Reads the entrypoint's deposit requirements for an asset once, into `depositAssetConfigs`. */
+  /**
+   * Reads the entrypoint's deposit requirements for an asset into `depositAssetConfigs`, once per
+   * Send session. The deposits built after use this read. See `PrivacyPoolsDeposits.loadAssetConfig`.
+   */
   loadDepositAssetConfig(
     chainId: string,
-    tokenAddress: string
+    tokenAddress: string,
+    sessionId: string | null
   ): Promise<PrivacyPoolsDepositAssetConfig> {
-    return this.#deposits.loadAssetConfig(chainId, tokenAddress)
+    return this.#deposits.loadAssetConfig(chainId, tokenAddress, sessionId)
   }
 
   /**

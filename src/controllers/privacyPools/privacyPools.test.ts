@@ -70,6 +70,7 @@ const ERC20_INTERFACE = new Interface([
 ])
 
 const MINIMUM_DEPOSIT = 10n ** 16n
+const VETTING_FEE_BPS = 50n
 const MINIMUM_USDC_DEPOSIT = 10n ** 6n
 
 const ETHEREUM_PAYMASTER = getPrivacyPoolsChainConfig(1n)!.paymaster!
@@ -349,6 +350,12 @@ let simulateWithdrawal: () => Promise<unknown> = async () => successfulSimulatio
 let rpcNoStateOverride = false
 /** The pool the entrypoint lists for any asset. */
 let entrypointPool = ETHEREUM_ETH_POOL
+const SEND_SESSION = 'send-session-1'
+const NEXT_SEND_SESSION = 'send-session-2'
+/** Thrown by the entrypoint's asset config read when set. */
+let assetConfigReadFailure: Error | null = null
+let assetConfigReadCount = 0
+
 /** The block our node is at. */
 let nodeBlockNumber = WITHDRAWAL_BLOCK
 
@@ -627,13 +634,16 @@ const fakeFetch = jest.fn(async (url: string) => ({
 /** Answers the only two reads a deposit makes: the entrypoint's asset config and an allowance. */
 const fakeProviderCall = async ({ data }: { to: string; data: string }) => {
   if (data.startsWith(ENTRYPOINT_INTERFACE.getFunction('assetConfig')!.selector)) {
+    assetConfigReadCount += 1
+    if (assetConfigReadFailure) throw assetConfigReadFailure
+
     const [asset] = ENTRYPOINT_INTERFACE.decodeFunctionData('assetConfig', data)
 
     return ENTRYPOINT_INTERFACE.encodeFunctionResult('assetConfig', [
       // The Ethereum ETH pool by default, which the paymaster has an adapter for
       entrypointPool,
       String(asset).toLowerCase() === USDC ? MINIMUM_USDC_DEPOSIT : MINIMUM_DEPOSIT,
-      50n,
+      VETTING_FEE_BPS,
       100n
     ])
   }
@@ -780,7 +790,7 @@ const prepareTest = async ({
 
 const ONE_ETH = 10n ** 18n
 /** What a deposit of `ONE_ETH` becomes in the pool, after the 50 basis points the fake entrypoint keeps. */
-const ONE_ETH_AFTER_VETTING_FEE = ONE_ETH - (ONE_ETH * 50n) / 10_000n
+const ONE_ETH_AFTER_VETTING_FEE = ONE_ETH - (ONE_ETH * VETTING_FEE_BPS) / 10_000n
 
 const buildDeposit = (
   controller: PrivacyPoolsController,
@@ -887,6 +897,8 @@ describe('PrivacyPoolsController', () => {
     simulateWithdrawal = async () => successfulSimulation()
     rpcNoStateOverride = false
     entrypointPool = ETHEREUM_ETH_POOL
+    assetConfigReadFailure = null
+    assetConfigReadCount = 0
     nodeBlockNumber = WITHDRAWAL_BLOCK
     jest.mocked(getRpcProvider).mockReset()
     jest.mocked(getRpcProvider).mockReturnValue(bundlerProvider as any)
@@ -2184,6 +2196,63 @@ describe('PrivacyPoolsController', () => {
         'Sending ETH to a Privacy Pools account is not supported yet.'
       )
       expect(runningSyncs).toHaveLength(0)
+    })
+
+    it('reads what the entrypoint accepts once per Send session', async () => {
+      const { controller } = await prepareTest()
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, SEND_SESSION)
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, SEND_SESSION)
+
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+      await building
+      await buildDeposit(controller)
+
+      expect(assetConfigReadCount).toBe(1)
+    })
+
+    it('refuses a deposit into a pool 0xBow replaced before the next Send session', async () => {
+      const { controller } = await prepareTest()
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, SEND_SESSION)
+      entrypointPool = '0x000000000000000000000000000000000000bEEF'
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, NEXT_SEND_SESSION)
+
+      await expect(buildDeposit(controller)).rejects.toThrow(
+        'Sending ETH to a Privacy Pools account is not supported yet.'
+      )
+      expect(runningSyncs).toHaveLength(0)
+    })
+
+    it("keeps the last read when the next Send session's read fails", async () => {
+      const { controller } = await prepareTest()
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, SEND_SESSION)
+      assetConfigReadFailure = new Error('RPC unavailable')
+
+      await expect(
+        controller.loadDepositAssetConfig('1', ZERO_ADDRESS, NEXT_SEND_SESSION)
+      ).resolves.toEqual({ minimumDepositAmount: MINIMUM_DEPOSIT, vettingFeeBPS: VETTING_FEE_BPS })
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+
+      await expect(building).resolves.toHaveLength(1)
+      expect(assetConfigReadCount).toBe(2)
+    })
+
+    it('reads again on building a deposit when no read succeeded yet', async () => {
+      const { controller } = await prepareTest()
+      assetConfigReadFailure = new Error('RPC unavailable')
+      await expect(
+        controller.loadDepositAssetConfig('1', ZERO_ADDRESS, SEND_SESSION)
+      ).rejects.toThrow(
+        'Could not check what Privacy Pools accepts for this token. Please try again.'
+      )
+      assetConfigReadFailure = null
+
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+
+      await expect(building).resolves.toHaveLength(1)
+      expect(assetConfigReadCount).toBe(2)
     })
 
     it('refuses a deposit into an account the wallet does not have', async () => {

@@ -7,6 +7,7 @@ import { Call } from '../../libs/accountOp/types'
 import { encodePrivacyPoolsDeposit, readPrivacyPoolsDeposit } from '../../libs/privacyPools/deposit'
 import {
   getDepositAmountAfterVettingFee,
+  PrivacyPoolsEntrypointAssetConfig,
   readEntrypointAssetConfig
 } from '../../libs/privacyPools/entrypointAssetConfig'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
@@ -27,6 +28,17 @@ const ERC20_INTERFACE = new Interface([
   'function approve(address spender, uint256 amount)',
   'function allowance(address owner, address spender) view returns (uint256)'
 ])
+
+const getAssetConfigKey = (chainId: string, tokenAddress: string) =>
+  `${chainId}:${tokenAddress.toLowerCase()}`
+
+const toDepositAssetConfig = ({
+  minimumDepositAmount,
+  vettingFeeBPS
+}: PrivacyPoolsEntrypointAssetConfig): PrivacyPoolsDepositAssetConfig => ({
+  minimumDepositAmount,
+  vettingFeeBPS
+})
 
 const readDepositPrecommitment = (data: string): bigint | null =>
   readPrivacyPoolsDeposit({ data, value: 0n })?.precommitment ?? null
@@ -66,8 +78,14 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
 
   #expectedChanges: PrivacyPoolsExpectedChanges
 
-  /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase), read once. */
+  /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase). See `loadAssetConfig`. */
   assetConfigs: { [key: string]: PrivacyPoolsDepositAssetConfig } = {}
+
+  /** The last successful entrypoint read per `assetConfigs` key, and the Send session it was in. */
+  #lastAssetConfigs = new Map<
+    string,
+    { assetConfig: PrivacyPoolsEntrypointAssetConfig; sessionId: string | null }
+  >()
 
   /** Per `${chainId}:${seedId}`. See `#getNextDepositPrecommitment`. */
   #nextDepositPrecommitments = new Map<string, NextDepositPrecommitment>()
@@ -105,10 +123,10 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     if (amount > asset.maxDeposit)
       throw privacyPoolsErrors.depositAboveMaximum(asset.maxDeposit, asset)
 
-    const { minimumDepositAmount, poolAddress, vettingFeeBPS } = await this.loadAssetConfig(
-      chainId,
-      tokenAddress
-    )
+    // The last read, made when the Send session started; a pool replaced since is seen next session
+    const { minimumDepositAmount, poolAddress, vettingFeeBPS } =
+      this.#lastAssetConfigs.get(getAssetConfigKey(chainId, tokenAddress))?.assetConfig ??
+      (await this.#readAssetConfig(chainId, tokenAddress, null))
     if (amount < minimumDepositAmount)
       throw privacyPoolsErrors.depositBelowMinimum(minimumDepositAmount, asset)
 
@@ -145,31 +163,60 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     return [...(await this.#approvalCallIfNeeded(chainId, asset, amount, accountAddr)), depositCall]
   }
 
-  /** Reads the entrypoint's deposit requirements for an asset once, into `assetConfigs`. */
+  /**
+   * Reads the entrypoint's deposit requirements for an asset into `assetConfigs`, once per Send
+   * session (`sessionId`), so 0xBow replacing a pool is seen by the next session. A failed read
+   * keeps the last one, so the user is not blocked; throws only when there is none.
+   */
   async loadAssetConfig(
     chainId: string,
-    tokenAddress: string
+    tokenAddress: string,
+    sessionId: string | null
   ): Promise<PrivacyPoolsDepositAssetConfig> {
-    const key = `${chainId}:${tokenAddress.toLowerCase()}`
-    const loaded = this.assetConfigs[key]
-    if (loaded) return loaded
-
-    const config = getChainConfig(chainId)
+    const last = this.#lastAssetConfigs.get(getAssetConfigKey(chainId, tokenAddress))
+    if (last && sessionId !== null && last.sessionId === sessionId)
+      return toDepositAssetConfig(last.assetConfig)
 
     try {
-      const assetConfig = await readEntrypointAssetConfig({
-        provider: getChainProvider(this.#ctx.providers, chainId),
-        entrypointAddress: config.entrypointAddress,
-        assetAddress: toPrivacyPoolsAssetAddress(tokenAddress)
+      return toDepositAssetConfig(await this.#readAssetConfig(chainId, tokenAddress, sessionId))
+    } catch (error: any) {
+      if (!last) throw error
+
+      this.#ctx.emitError({
+        level: 'silent',
+        message: 'Could not check again what Privacy Pools accepts for this token.',
+        error
       })
 
-      this.assetConfigs = { ...this.assetConfigs, [key]: assetConfig }
-      this.#ctx.emitUpdate()
+      return toDepositAssetConfig(last.assetConfig)
+    }
+  }
 
-      return assetConfig
+  async #readAssetConfig(
+    chainId: string,
+    tokenAddress: string,
+    sessionId: string | null
+  ): Promise<PrivacyPoolsEntrypointAssetConfig> {
+    let assetConfig: PrivacyPoolsEntrypointAssetConfig
+    try {
+      assetConfig = await readEntrypointAssetConfig({
+        provider: getChainProvider(this.#ctx.providers, chainId),
+        entrypointAddress: getChainConfig(chainId).entrypointAddress,
+        assetAddress: toPrivacyPoolsAssetAddress(tokenAddress)
+      })
     } catch (error: any) {
       throw privacyPoolsErrors.depositAssetConfigReadFailed(error)
     }
+
+    const key = getAssetConfigKey(chainId, tokenAddress)
+    this.#lastAssetConfigs.set(key, { assetConfig, sessionId })
+    this.assetConfigs = {
+      ...this.assetConfigs,
+      [key]: toDepositAssetConfig(assetConfig)
+    }
+    this.#ctx.emitUpdate()
+
+    return assetConfig
   }
 
   hasPhraseDerivedState(): boolean {
