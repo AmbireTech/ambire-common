@@ -84,7 +84,7 @@ export const LidoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) 
       const fullVisualization = [getAction('Claim withdrawal')]
       if (_recipient.toLowerCase() !== accOp.accountAddr.toLowerCase())
         fullVisualization.push(getLabel('and send to'), getAddressVisualization(_recipient))
-      return { ...call, fullVisualization: [getAction('Claim withdrawal')] }
+      return { ...call, fullVisualization }
     }
   } else if (call.to && isAddress(call.to) && getAddress(call.to) === ST_ETH_ADDRESS) {
     if (call.data.startsWith(submitSelector)) {
