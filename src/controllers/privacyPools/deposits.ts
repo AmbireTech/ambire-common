@@ -19,9 +19,9 @@ import {
   PrivacyPoolsContext
 } from './context'
 import { privacyPoolsErrors } from './errors'
+import { PrivacyPoolsExpectedChanges } from './expectedChanges'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsSync } from './sync'
-import { PrivacyPoolsWatches } from './watches'
 
 const ERC20_INTERFACE = new Interface([
   'function approve(address spender, uint256 amount)',
@@ -64,7 +64,7 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
 
   #builtCalls: PrivacyPoolsBuiltCalls
 
-  #watches: PrivacyPoolsWatches
+  #expectedChanges: PrivacyPoolsExpectedChanges
 
   /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase), read once. */
   assetConfigs: { [key: string]: PrivacyPoolsDepositAssetConfig } = {}
@@ -77,13 +77,13 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     registry: PrivacyPoolsProtocolRegistry,
     sync: PrivacyPoolsSync,
     builtCalls: PrivacyPoolsBuiltCalls,
-    watches: PrivacyPoolsWatches
+    expectedChanges: PrivacyPoolsExpectedChanges
   ) {
     this.#ctx = ctx
     this.#registry = registry
     this.#sync = sync
     this.#builtCalls = builtCalls
-    this.#watches = watches
+    this.#expectedChanges = expectedChanges
   }
 
   /**
@@ -250,11 +250,11 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
    * rejects. Read from the transactions themselves, so it holds across a restart; one that failed,
    * was dropped or got stuck is no longer pending and frees the precommitment.
    *
-   * Also while a deposit into the account's chain is still being looked for: one that landed is
-   * not in the notes until a sync shows it, and until then the precommitment is the same.
+   * Also while a sent deposit is not in the notes yet, as the next one would get the same
+   * precommitment.
    */
   #isDepositPending(seedId: string, chainId: string, precommitment: bigint): boolean {
-    if (this.#watches.isWatchingDeposit(seedId, chainId)) return true
+    if (this.#expectedChanges.hasExpectedDeposit(seedId, chainId)) return true
 
     const entrypointAddress = getChainConfig(chainId).entrypointAddress.toLowerCase()
 

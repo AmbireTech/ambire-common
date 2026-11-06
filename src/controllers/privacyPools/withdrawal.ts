@@ -11,6 +11,7 @@ import {
 } from '../../consts/privacyPools'
 import { Hex } from '../../interfaces/hex'
 import { PrivacyPoolsOperation, PrivacyPoolsPaymasterConfig } from '../../interfaces/privacyPools'
+import { RPCProvider } from '../../interfaces/provider'
 import { humanizePrivacyPoolsWithdrawal } from '../../libs/humanizer/modules/PrivacyPools/privacyPoolsModule'
 import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
 import {
@@ -21,6 +22,7 @@ import {
 } from '../../libs/privacyPools/estimateWithdrawal'
 import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdrawal'
 import { toPrivacyPoolsSdkError } from '../../libs/privacyPools/sdkError'
+import { getRpcProvider } from '../../services/provider'
 import { generateUuid } from '../../utils/uuid'
 import { withTimeout } from '../../utils/with-timeout'
 import {
@@ -89,9 +91,14 @@ export type PrivacyPoolsWithdrawalParams = AssetRef & {
 
 /**
  * A withdrawal handed to the bundler. `isSent` when it went through while still the current
- * operation - not after a lock or a newer one replaced it.
+ * operation - not after a lock or a newer one replaced it. `blockNumber` is the block it landed
+ * in, or null when it failed or the block is unknown.
  */
-export type PrivacyPoolsBroadcastAttempt = { operation: PrivacyPoolsOperation; isSent: boolean }
+export type PrivacyPoolsBroadcastAttempt = {
+  operation: PrivacyPoolsOperation
+  isSent: boolean
+  blockNumber: number | null
+}
 
 type WithdrawalSimulationParams = AssetRef & {
   chainId: string
@@ -392,7 +399,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       const host = this.#registry.getHost(operation.chainId, seedId)
       // No relayers: a paymaster withdrawal goes to the bundler URL carried in the payload.
       const broadcaster = createPPv1Broadcaster(host, { broadcasterUrl: {} })
-      await broadcaster.broadcast(privateOp)
+      const { requestId } = await broadcaster.broadcast(privateOp)
 
       const isCurrentOperation = this.#updateOperation({
         ...operation,
@@ -401,7 +408,14 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       })
       this.#ctx.emitUpdate()
 
-      return { operation, isSent: isCurrentOperation }
+      // After the UI is told, as the sheet need not wait for it
+      const blockNumber = await this.#readBlockNumber(
+        requestId,
+        operation.chainId,
+        privateOp.withdrawal.bundlerUrl
+      )
+
+      return { operation, isSent: isCurrentOperation, blockNumber }
     } catch (error: any) {
       // Silent: the confirmation sheet is open and shows the error itself
       this.#failOperation(
@@ -412,7 +426,40 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       )
       this.#ctx.emitUpdate()
 
-      return { operation, isSent: false }
+      return { operation, isSent: false, blockNumber: null }
+    }
+  }
+
+  /**
+   * The block a sent withdrawal landed in, or null if unknown. Asks the bundler the withdrawal was
+   * sent to, not our RPC, so our RPC cannot link the user's IP to the withdrawal.
+   */
+  async #readBlockNumber(
+    userOpHash: string,
+    chainId: string,
+    bundlerUrl: string
+  ): Promise<number | null> {
+    let provider: RPCProvider | undefined
+
+    try {
+      provider = getRpcProvider([bundlerUrl], BigInt(chainId))
+      const receipt = await provider.send('eth_getUserOperationReceipt', [userOpHash])
+      // A hex string
+      const blockNumber = Number(receipt?.receipt?.blockNumber)
+      if (!Number.isSafeInteger(blockNumber))
+        throw new Error('privacyPools: the bundler returned no block for the withdrawal')
+
+      return blockNumber
+    } catch (error: any) {
+      this.#ctx.emitError({
+        level: 'silent',
+        message: 'Could not read the block of the Privacy Pools withdrawal.',
+        error: error instanceof Error ? error : new Error('privacyPools: block read failed')
+      })
+
+      return null
+    } finally {
+      provider?.destroy()
     }
   }
 

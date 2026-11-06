@@ -19,18 +19,19 @@ import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IUiController, View } from '../../interfaces/ui'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
 import { getPrivacyPoolsPoolLabels } from '../../libs/privacyPools/poolStats'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
+import { getRpcProvider } from '../../services/provider'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
 import { PendingAccountOp } from './context'
 import { OPEN_SYNC_MAX_AGE_MS, PrivacyPoolsController } from './privacyPools'
-import { WATCH_MAX_DURATION_MS } from './watches'
 
 /**
  * Stands in for the SDK plugin. Each `sync()` waits until the test releases it, so a test can see
@@ -72,6 +73,13 @@ const MINIMUM_DEPOSIT = 10n ** 16n
 const MINIMUM_USDC_DEPOSIT = 10n ** 6n
 
 const ETHEREUM_PAYMASTER = getPrivacyPoolsChainConfig(1n)!.paymaster!
+/** The bundler a prepared withdrawal carries, which it is sent to and its block is read from. */
+const PAYMASTER_BUNDLER_URL = 'https://bundler.example/v2/1/rpc'
+const USER_OP_HASH = `0x${'ab'.repeat(32)}`
+/** What the SDK's broadcaster returns once the bundler accepted the withdrawal. */
+const BROADCAST_RESULT = { requestId: USER_OP_HASH }
+/** The block a withdrawal lands in, according to its bundler. */
+const WITHDRAWAL_BLOCK = 21_000_000
 const WITHDRAWAL_AMOUNT = 10n ** 17n
 const WITHDRAWAL_FEE = 2n * 10n ** 15n
 const WITHDRAWAL_REFUND = 12n * 10n ** 14n
@@ -172,6 +180,7 @@ const buildPreparedWithdrawal = ({ isBatch = false }: { isBatch?: boolean } = {}
       poolAddress: BigInt(ETHEREUM_ETH_POOL),
       paymasterAddress: ETHEREUM_PAYMASTER.paymasterAddress,
       entryPointAddress: ETHEREUM_PAYMASTER.entryPointAddress,
+      bundlerUrl: PAYMASTER_BUNDLER_URL,
       userOperation: {
         sender: WITHDRAWAL_SENDER,
         nonce: '0x0',
@@ -340,6 +349,18 @@ let simulateWithdrawal: () => Promise<unknown> = async () => successfulSimulatio
 let rpcNoStateOverride = false
 /** The pool the entrypoint lists for any asset. */
 let entrypointPool = ETHEREUM_ETH_POOL
+/** The block our node is at. */
+let nodeBlockNumber = WITHDRAWAL_BLOCK
+
+/** Stands in for the connection to a withdrawal's bundler, see `readBlockNumber`. */
+const bundlerProvider = {
+  send: jest.fn<(method: string, params: unknown[]) => Promise<unknown>>(),
+  destroy: jest.fn()
+}
+/** What the bundler answers when asked for the receipt of a withdrawal. */
+const toUserOpReceipt = (blockNumber = WITHDRAWAL_BLOCK) => ({
+  receipt: { blockNumber: toBeHex(blockNumber) }
+})
 
 class FakeProtocol {
   host: any
@@ -476,6 +497,11 @@ jest.mock('@kohaku-eth/privacy-pools', () => ({
     .mockImplementation((host: any, params: any) => new FakeProtocol(host, params)),
   OxBowAspService: jest.fn(),
   createPPv1Broadcaster: jest.fn()
+}))
+
+jest.mock('../../services/provider', () => ({
+  ...jest.requireActual<typeof import('../../services/provider')>('../../services/provider'),
+  getRpcProvider: jest.fn()
 }))
 
 jest.mock('../../libs/privacyPools/dataService', () => ({
@@ -619,6 +645,7 @@ const createFakeProvider = (chainId: bigint) => ({
   getNetwork: async () => ({ chainId }),
   call: fakeProviderCall,
   getBlock: async () => ({ baseFeePerGas: latestBaseFee }),
+  getBlockNumber: jest.fn(async () => nodeBlockNumber),
   send: jest.fn(async (method: string) => {
     if (method === 'eth_simulateV1') return simulateWithdrawal()
 
@@ -806,22 +833,30 @@ const syncRound = async (
 const landDeposit = () => {
   notesBySeed['seed-b'] = [
     ...notesBySeed['seed-b']!,
-    { label: 3n, amount: ONE_ETH_AFTER_VETTING_FEE, approved: false }
+    // A deposit after the account's first one, so a higher index than any note it held
+    { label: 3n, amount: ONE_ETH_AFTER_VETTING_FEE, approved: false, deposit: 1 }
   ]
 }
 
-/** Tells the controller a transaction got its outcome. */
+/** Tells the controller a transaction got its outcome. Settles once the sync it starts, if any, ends. */
 const finalize = (
   controller: PrivacyPoolsController,
   calls: Call[],
   status = AccountOpStatus.Success
-) => controller.onAccountOpFinalized({ chainId: 1n, status, calls })
+) =>
+  controller.onAccountOpsFinalized([
+    { chainId: 1n, status, calls } as unknown as SubmittedAccountOp
+  ])
 
-/** Finalizes the transaction and waits for the read of seed-b it starts, while it is selected. */
-const finalizeAndRead = async (controller: PrivacyPoolsController, calls: Call[]) => {
-  finalize(controller, calls)
-  await releaseSync('seed-b')
-  await waitForSynced(controller)
+/** Finalizes the transaction and waits for the read it starts, of seed-b by default. */
+const finalizeAndRead = async (
+  controller: PrivacyPoolsController,
+  calls: Call[],
+  seedId = 'seed-b'
+) => {
+  const finalizing = finalize(controller, calls)
+  await releaseSync(seedId)
+  await finalizing
 }
 
 /** Replaces `Date.now`, so a test can pass minutes at once. Call `restore` when done. */
@@ -852,6 +887,12 @@ describe('PrivacyPoolsController', () => {
     simulateWithdrawal = async () => successfulSimulation()
     rpcNoStateOverride = false
     entrypointPool = ETHEREUM_ETH_POOL
+    nodeBlockNumber = WITHDRAWAL_BLOCK
+    jest.mocked(getRpcProvider).mockReset()
+    jest.mocked(getRpcProvider).mockReturnValue(bundlerProvider as any)
+    bundlerProvider.send.mockReset()
+    bundlerProvider.send.mockImplementation(async () => toUserOpReceipt())
+    bundlerProvider.destroy.mockReset()
     notesBySeed = {
       'seed-a': [{ label: 1n, amount: 10n, approved: true }],
       'seed-b': [{ label: 2n, amount: 20n, approved: false }]
@@ -1678,163 +1719,71 @@ describe('PrivacyPoolsController', () => {
       const calls = await buildAndBroadcastDeposit(controller)
 
       landDeposit()
-      finalize(controller, calls)
-      await releaseSync('seed-b')
-      await waitUntil(() => !controller.hasSyncWatches)
+      await finalizeAndRead(controller, calls)
 
       selectedAccount.select('seed-b')
       expect(getHeldAmounts(controller)).toEqual([20n + ONE_ETH_AFTER_VETTING_FEE])
     })
 
-    it('reads again until the change shows, and holds back the next deposit until then', async () => {
+    it('reads once after a deposit lands, and stops counting it even when its note is not there yet', async () => {
       const { controller, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-b')
       const calls = await buildAndBroadcastDeposit(controller)
+      const syncCount = getSyncCount()
 
-      // The first read after it landed is too early to show it, as our node can be a block behind
-      // the one that confirmed it. The next deposit would reuse its precommitment.
+      // Our node can be a block behind the one that confirmed it
       await finalizeAndRead(controller, calls)
-      expect(controller.hasSyncWatches).toBe(true)
+
+      expect(getSyncCount()).toBe(syncCount + 1)
+      expect(runningSyncs).toHaveLength(0)
+      expect(getBalance(controller)).toMatchObject({ totalAmount: 20n, simulationAmount: 0n })
+    })
+
+    it('holds back the next deposit until the sent one is in the notes', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-b')
+      await buildAndBroadcastDeposit(controller)
+
+      // No pending transaction is left to tell, so only the amount on its way does
       await expect(buildDeposit(controller)).rejects.toThrow(EmittableError)
 
       depositCountBySeed['seed-b'] = 1
       landDeposit()
       await syncRound(controller)
 
-      expect(controller.hasSyncWatches).toBe(false)
-      expect(getHeldAmounts(controller)).toEqual([20n + ONE_ETH_AFTER_VETTING_FEE])
       await expect(buildDeposit(controller)).resolves.toHaveLength(1)
     })
 
-    it('gives up after 3 minutes', async () => {
-      const { controller, selectedAccount } = await prepareTest()
-      selectedAccount.select('seed-b')
-      const calls = await buildAndBroadcastDeposit(controller)
-      const clock = mockClock()
-
-      try {
-        await finalizeAndRead(controller, calls)
-
-        clock.advance(WATCH_MAX_DURATION_MS - 1_000)
-        await syncRound(controller)
-        expect(controller.hasSyncWatches).toBe(true)
-
-        clock.advance(1_000)
-        await controller.syncInBackground()
-
-        expect(controller.hasSyncWatches).toBe(false)
-        expect(runningSyncs).toHaveLength(0)
-      } finally {
-        clock.restore()
-      }
-    })
-
-    it('ends after its first read when a read before the transaction was finalized showed the change', async () => {
+    it('ignores a transaction that is not finished, and reads once a batch is only partly complete', async () => {
       const { controller, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-b')
       const calls = await buildAndBroadcastDeposit(controller)
 
-      // The timer's read lands between the deposit being mined and the wallet finalizing it
-      landDeposit()
-      const timerSync = controller.syncChain('1')
-      await releaseSync('seed-b')
-      await timerSync
-
-      finalize(controller, calls)
-      await releaseSync('seed-b')
-      await waitUntil(() => !controller.hasSyncWatches)
-
-      // The build, the timer and the watch, not 3 minutes of reads
-      expect(getSyncCount()).toBe(3)
+      await finalize(controller, calls, AccountOpStatus.BroadcastedButNotConfirmed)
       expect(runningSyncs).toHaveLength(0)
-    })
-
-    it('ends after its first read when it does not know the notes from before the change', async () => {
-      const { controller } = await prepareTest()
-      // Built here but never noted as broadcast, as when the wallet restarted in between
-      const building = buildDeposit(controller)
-      await releaseSync('seed-b')
-      const calls = await building
-
-      finalize(controller, calls)
-      await releaseSync('seed-b')
-      await waitUntil(() => !controller.hasSyncWatches)
-    })
-
-    it('does not end on a read already running when it does not know the notes from before the change', async () => {
-      const { controller, selectedAccount } = await prepareTest()
-      // Another account has read the chain, so building the deposit reads nothing of seed-b's
-      selectedAccount.select('seed-a')
-      const warming = controller.syncChain('1')
-      await releaseSync('seed-a')
-      await warming
-      const calls = await buildDeposit(controller)
-      controller.onAccountOpBroadcast({ chainId: 1n, calls })
-
-      // Started before the deposit showed, so it reads the notes without it
-      selectedAccount.select('seed-b')
-      const earlierRead = controller.syncChain('1')
-      finalize(controller, calls)
-      await releaseSync('seed-b')
-      await earlierRead
-      expect(controller.hasSyncWatches).toBe(true)
-
-      landDeposit()
-      await releaseSync('seed-b')
-      await waitUntil(() => !controller.hasSyncWatches)
-      expect(getHeldAmounts(controller)).toEqual([20n + ONE_ETH_AFTER_VETTING_FEE])
-    })
-
-    it('gives the watch its full time again when another change is sent to the account', async () => {
-      const { controller, selectedAccount } = await prepareTest()
-      selectedAccount.select('seed-b')
-      const firstCalls = await buildAndBroadcastDeposit(controller)
-      const secondCalls = await buildDeposit(controller, { amount: 2n * ONE_ETH })
-      controller.onAccountOpBroadcast({ chainId: 1n, calls: secondCalls })
-      const clock = mockClock()
-
-      try {
-        await finalizeAndRead(controller, firstCalls)
-        clock.advance(WATCH_MAX_DURATION_MS - 60_000)
-        await finalizeAndRead(controller, secondCalls)
-
-        // Past the time the first change had, within the time the second has
-        clock.advance(2 * 60_000)
-        await syncRound(controller)
-
-        expect(controller.hasSyncWatches).toBe(true)
-      } finally {
-        clock.restore()
-      }
-    })
-
-    it('waits for a transaction that is not finished, and watches a batch that is only partly complete', async () => {
-      const { controller } = await prepareTest()
-      const calls = await buildAndBroadcastDeposit(controller)
-
-      finalize(controller, calls, AccountOpStatus.BroadcastedButNotConfirmed)
-      expect(controller.hasSyncWatches).toBe(false)
+      expect(getBalance(controller)).toMatchObject({ simulationAmount: ONE_ETH_AFTER_VETTING_FEE })
 
       // It lands later, and is still recognised. The deposit may be what landed.
-      finalize(controller, calls, AccountOpStatus.PartiallyComplete)
-      expect(controller.hasSyncWatches).toBe(true)
+      const finalizing = finalize(controller, calls, AccountOpStatus.PartiallyComplete)
       await releaseSync('seed-b')
+      await finalizing
+      expect(getBalance(controller)).toMatchObject({ simulationAmount: 0n })
     })
 
     it('ignores a transaction it did not build, and one it already finalized', async () => {
       const { controller } = await prepareTest()
       const calls = await buildAndBroadcastDeposit(controller)
 
-      finalize(controller, [{ ...calls[0]!, value: 3n * ONE_ETH }])
-      expect(controller.hasSyncWatches).toBe(false)
+      await finalize(controller, [{ ...calls[0]!, value: 3n * ONE_ETH }])
+      expect(runningSyncs).toHaveLength(0)
 
       landDeposit()
-      finalize(controller, calls)
-      await releaseSync('seed-b')
-      await waitUntil(() => !controller.hasSyncWatches)
+      await finalizeAndRead(controller, calls)
+      const syncCount = getSyncCount()
 
-      finalize(controller, calls)
-      expect(controller.hasSyncWatches).toBe(false)
+      await finalize(controller, calls)
+      expect(getSyncCount()).toBe(syncCount)
+      expect(runningSyncs).toHaveLength(0)
     })
 
     it.each([
@@ -1849,52 +1798,35 @@ describe('PrivacyPoolsController', () => {
         'the account is removed',
         ({ controller }: PreparedTest) => controller.removeAccount('seed-b')
       ]
-    ])(
-      'drops the watches when %s, so nothing derived from the phrase outlives it',
-      async (_, leave) => {
-        const test = await prepareTest()
-        finalize(test.controller, await buildAndBroadcastDeposit(test.controller))
-        expect(test.controller.hasSyncWatches).toBe(true)
+    ])('does not read the account when its deposit lands after %s', async (_, leave) => {
+      const test = await prepareTest()
+      const calls = await buildAndBroadcastDeposit(test.controller)
+      await leave(test)
+      const errorCount = test.controller.emittedErrors.length
 
-        await leave(test)
-
-        expect(test.controller.hasSyncWatches).toBe(false)
-        runningSyncs.forEach(({ gate }) => gate.resolve())
-      }
-    )
-
-    it('ends after its first read when the deposit was broadcast before a lock, as the lock drops the notes it compared with', async () => {
-      const { controller, keystore, selectedAccount } = await prepareTest()
-      selectedAccount.select('seed-b')
-      const calls = await buildAndBroadcastDeposit(controller)
-
-      keystore.isUnlocked = false
-      keystore.fireUpdate()
-      keystore.isUnlocked = true
-      keystore.fireUpdate()
-      finalize(controller, calls)
-      await releaseSync('seed-b')
-      await waitUntil(() => !controller.hasSyncWatches)
-
+      const finalizing = finalize(test.controller, calls)
+      await flush()
       expect(runningSyncs).toHaveLength(0)
+      runningSyncs.forEach(({ gate }) => gate.resolve())
+      await finalizing
+
+      expect(test.controller.emittedErrors).toHaveLength(errorCount)
     })
 
-    it('keeps a watch whose read failed, for the next round', async () => {
+    it('stops counting a deposit when the read after it failed, as it is not read again', async () => {
       const { controller, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-b')
       const calls = await buildAndBroadcastDeposit(controller)
-      landDeposit()
 
       const { restore } = suppressConsole()
-      finalize(controller, calls)
+      const finalizing = finalize(controller, calls)
       const running = await takeRunningSync('seed-b', 1n)
       running.gate.reject(new Error('node unreachable'))
-      await waitUntil(() => controller.chains['1']?.syncStatus === 'idle')
+      await finalizing
       restore()
 
-      expect(controller.hasSyncWatches).toBe(true)
-      await syncRound(controller)
-      expect(controller.hasSyncWatches).toBe(false)
+      expect(getBalance(controller)).toMatchObject({ simulationAmount: 0n })
+      expect(runningSyncs).toHaveLength(0)
     })
 
     describe('the amounts shown while a change is on its way', () => {
@@ -1927,12 +1859,11 @@ describe('PrivacyPoolsController', () => {
             label: 3n,
             amount: USDC_DEPOSIT_AFTER_VETTING_FEE,
             approved: false,
-            assetAddress: BigInt(USDC)
+            assetAddress: BigInt(USDC),
+            deposit: 1
           }
         ]
-        finalize(controller, calls)
-        await releaseSync('seed-b')
-        await waitUntil(() => !controller.hasSyncWatches)
+        await finalizeAndRead(controller, calls)
 
         expect(getBalance(controller, USDC)).toMatchObject({
           totalAmount: USDC_DEPOSIT_AFTER_VETTING_FEE,
@@ -1959,50 +1890,51 @@ describe('PrivacyPoolsController', () => {
           simulationAmount: 0n
         })
 
-        finalize(controller, calls)
-        await releaseSync('seed-b')
-        await waitUntil(() => !controller.hasSyncWatches)
+        await finalizeAndRead(controller, calls)
         expect(getBalance(controller)).toMatchObject({ simulationAmount: 0n })
       })
 
       it.each([
         ['failed', AccountOpStatus.Failure],
-        ['was rejected', AccountOpStatus.Rejected]
-      ])('stops showing a deposit whose transaction %s, and tells the UI', async (_, status) => {
-        const { controller, selectedAccount } = await prepareTest()
-        selectedAccount.select('seed-b')
-        const calls = await buildAndBroadcastDeposit(controller)
-        expect(getBalance(controller)).toMatchObject({
-          simulationAmount: ONE_ETH_AFTER_VETTING_FEE
-        })
-        const onUpdate = jest.fn()
-        controller.onUpdate(onUpdate)
+        ['was rejected', AccountOpStatus.Rejected],
+        ['is stuck', AccountOpStatus.BroadcastButStuck],
+        ['was dropped', AccountOpStatus.UnknownButPastNonce]
+      ])(
+        'stops showing a deposit whose transaction %s at once, without reading the account, and tells the UI',
+        async (_, status) => {
+          const { controller, selectedAccount } = await prepareTest()
+          selectedAccount.select('seed-b')
+          const calls = await buildAndBroadcastDeposit(controller)
+          expect(getBalance(controller)).toMatchObject({
+            simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+          })
+          const onUpdate = jest.fn()
+          controller.onUpdate(onUpdate)
 
-        finalize(controller, calls, status)
+          await finalize(controller, calls, status)
 
-        expect(getBalance(controller)).toMatchObject({ totalAmount: 20n, simulationAmount: 0n })
-        expect(onUpdate).toHaveBeenCalled()
-        expect(controller.hasSyncWatches).toBe(false)
-        expect(runningSyncs).toHaveLength(0)
-      })
+          expect(getBalance(controller)).toMatchObject({ totalAmount: 20n, simulationAmount: 0n })
+          expect(onUpdate).toHaveBeenCalled()
+          expect(runningSyncs).toHaveLength(0)
+        }
+      )
 
       it('keeps showing a deposit whose transaction is not finished', async () => {
         const { controller, selectedAccount } = await prepareTest()
         selectedAccount.select('seed-b')
         const calls = await buildAndBroadcastDeposit(controller)
 
-        finalize(controller, calls, AccountOpStatus.BroadcastedButNotConfirmed)
+        await finalize(controller, calls, AccountOpStatus.BroadcastedButNotConfirmed)
 
         expect(getBalance(controller)).toMatchObject({
           simulationAmount: ONE_ETH_AFTER_VETTING_FEE
         })
       })
 
-      it('keeps showing a deposit while another token of the account changes, and drops it once its own total is reached', async () => {
+      it('keeps showing a deposit while another token of the account changes, and drops it once its own note shows', async () => {
         const { controller, selectedAccount } = await prepareTest()
         selectedAccount.select('seed-b')
-        const calls = await buildAndBroadcastDeposit(controller)
-        await finalizeAndRead(controller, calls)
+        await buildAndBroadcastDeposit(controller)
 
         // Another token's note shows first, which changes the notes but not what was waited for
         notesBySeed['seed-b'] = [
@@ -2011,7 +1943,6 @@ describe('PrivacyPoolsController', () => {
         ]
         await syncRound(controller)
 
-        expect(controller.hasSyncWatches).toBe(true)
         expect(getBalance(controller)).toMatchObject({
           totalAmount: 20n,
           simulationAmount: ONE_ETH_AFTER_VETTING_FEE
@@ -2024,45 +1955,10 @@ describe('PrivacyPoolsController', () => {
         landDeposit()
         await syncRound(controller)
 
-        expect(controller.hasSyncWatches).toBe(false)
         expect(getBalance(controller)).toMatchObject({
           totalAmount: 20n + ONE_ETH_AFTER_VETTING_FEE,
           simulationAmount: 0n
         })
-      })
-
-      it('shows a deposit that never lands until the watch gives up, then stops', async () => {
-        const { controller, selectedAccount } = await prepareTest()
-        selectedAccount.select('seed-b')
-        const calls = await buildAndBroadcastDeposit(controller)
-        const clock = mockClock()
-
-        try {
-          // Not counted before its transaction lands, however long it takes
-          clock.advance(10 * WATCH_MAX_DURATION_MS)
-          await syncRound(controller)
-          expect(getBalance(controller)).toMatchObject({
-            simulationAmount: ONE_ETH_AFTER_VETTING_FEE
-          })
-
-          await finalizeAndRead(controller, calls)
-          clock.advance(WATCH_MAX_DURATION_MS - 1_000)
-          await syncRound(controller)
-          expect(getBalance(controller)).toMatchObject({
-            simulationAmount: ONE_ETH_AFTER_VETTING_FEE
-          })
-
-          clock.advance(1_000)
-          const onUpdate = jest.fn()
-          controller.onUpdate(onUpdate)
-          await controller.syncInBackground()
-
-          expect(getBalance(controller)).toMatchObject({ simulationAmount: 0n })
-          expect(onUpdate).toHaveBeenCalled()
-          expect(controller.hasSyncWatches).toBe(false)
-        } finally {
-          clock.restore()
-        }
       })
 
       it('does not show a deposit after a lock, though it was broadcast before it', async () => {
@@ -2086,7 +1982,7 @@ describe('PrivacyPoolsController', () => {
     })
 
     describe('the background round', () => {
-      it('reads every network of the selected account when nothing is watched', async () => {
+      it('reads every network of the selected account', async () => {
         const { controller, selectedAccount } = await prepareTest({ hasOtherChain: true })
         selectedAccount.select('seed-a')
 
@@ -2097,36 +1993,6 @@ describe('PrivacyPoolsController', () => {
 
         expect(controller.chains['1']?.lastSyncedAt).not.toBeNull()
         expect(controller.chains[OTHER_CHAIN_ID.toString()]?.lastSyncedAt).not.toBeNull()
-      })
-
-      it('reads the selected account while a change is watched, only the networks older than 2 minutes', async () => {
-        const { controller, selectedAccount } = await prepareTest({ hasOtherChain: true })
-        selectedAccount.select('seed-a')
-        const calls = await buildAndBroadcastDeposit(controller)
-        const clock = mockClock()
-        const syncs: [string, bigint?][] = [['seed-b'], ['seed-a'], ['seed-a', OTHER_CHAIN_ID]]
-
-        try {
-          // The watch is already syncing. The selected account was never read: both its networks.
-          finalize(controller, calls)
-          await syncRound(controller, syncs)
-          expect(controller.hasSyncWatches).toBe(true)
-          expect(getSyncCount('seed-a')).toBe(2)
-
-          // Read a moment ago: the watch alone
-          const freshRound = controller.syncInBackground()
-          await waitUntil(() => runningSyncs.length > 0)
-          await flush()
-          expect(runningSyncs.map(({ seedId }) => seedId)).toEqual(['seed-b'])
-          await releaseSync('seed-b')
-          await freshRound
-
-          clock.advance(OPEN_SYNC_MAX_AGE_MS)
-          await syncRound(controller, syncs)
-          expect(getSyncCount('seed-a')).toBe(4)
-        } finally {
-          clock.restore()
-        }
       })
 
       it('reads nothing while locked, or before the phrase is backed up, or with no account selected', async () => {
@@ -2418,9 +2284,7 @@ describe('PrivacyPoolsController', () => {
       depositCountBySeed['seed-b'] = 1
       landDeposit()
       pendingAccountOps.length = 0
-      finalize(controller, calls)
-      await releaseSync('seed-b')
-      await waitUntil(() => !controller.hasSyncWatches)
+      await finalizeAndRead(controller, calls)
 
       await expect(buildDeposit(controller)).resolves.toHaveLength(1)
       expect(runningSyncs).toHaveLength(0)
@@ -2466,11 +2330,10 @@ describe('PrivacyPoolsController', () => {
 
       // Activity no longer lists it as waiting for the chain
       pendingAccountOps.length = 0
-      finalize(controller, calls, status)
+      await finalize(controller, calls, status)
 
       await expect(buildDeposit(controller)).resolves.toHaveLength(1)
       // Nothing landed, so there is nothing to look for
-      expect(controller.hasSyncWatches).toBe(false)
       expect(runningSyncs).toHaveLength(0)
     })
 
@@ -2494,7 +2357,10 @@ describe('PrivacyPoolsController', () => {
       ['another chain', (calls: Call[]): PendingAccountOp => ({ chainId: 10n, calls })]
     ])('does not block a deposit over a pending one with %s', async (_, toPendingOp) => {
       const { controller, pendingAccountOps } = await prepareTest()
-      pendingAccountOps.push(toPendingOp(await buildAndBroadcastDeposit(controller)))
+      // Not broadcast, as that alone holds back the next deposit
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+      pendingAccountOps.push(toPendingOp(await building))
 
       await expect(buildDeposit(controller)).resolves.toHaveLength(1)
     })
@@ -2828,7 +2694,9 @@ describe('PrivacyPoolsController', () => {
     it('clears the send form once the transfer is sent, like a regular transfer', async () => {
       const { controller } = await prepareSignedWithdrawal()
       controller.updateSendForm({ recipientFieldValue: WITHDRAWAL_RECIPIENT, amount: '0.1' })
-      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast: async () => {} } as any)
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+        broadcast: async () => BROADCAST_RESULT
+      } as any)
 
       const broadcasting = controller.broadcastWithdrawal()
       await waitUntil(() => controller.operation?.status === 'success')
@@ -2841,7 +2709,9 @@ describe('PrivacyPoolsController', () => {
 
     it('reads the history along with the sync after the transfer, so the activity lists it at once', async () => {
       const { controller } = await prepareSignedWithdrawal()
-      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast: async () => {} } as any)
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+        broadcast: async () => BROADCAST_RESULT
+      } as any)
       historyBySeed = { 'seed-a': [historyEvent({ value: WITHDRAWAL_AMOUNT })] }
 
       const broadcasting = controller.broadcastWithdrawal()
@@ -2907,8 +2777,12 @@ describe('PrivacyPoolsController', () => {
 
     describe('reading the account after it was sent', () => {
       /** Reads the proved withdrawal's account, so there are notes to compare with after. */
-      const prepareReadWithdrawal = async (heldAmount = WITHDRAWAL_AMOUNT + 10n) => {
-        notesBySeed['seed-a'] = [{ label: 1n, amount: heldAmount, approved: true }]
+      const prepareReadWithdrawal = async (
+        notes: (typeof notesBySeed)[string] = [
+          { label: 1n, amount: WITHDRAWAL_AMOUNT + 10n, approved: true }
+        ]
+      ) => {
+        notesBySeed['seed-a'] = notes
         const test = await prepareSignedWithdrawal()
         const syncing = test.controller.syncChain('1')
         await releaseSync('seed-a')
@@ -2917,13 +2791,31 @@ describe('PrivacyPoolsController', () => {
         return test
       }
 
-      const mockReceiptWait = () => {
-        const receipt = createDeferred()
+      const mockBroadcastResult = () =>
         jest
           .mocked(createPPv1Broadcaster)
-          .mockReturnValueOnce({ broadcast: () => receipt.promise } as any)
+          .mockReturnValueOnce({ broadcast: async () => BROADCAST_RESULT } as any)
+
+      /** A broadcast that settles once the test says the bundler accepted the withdrawal. */
+      const mockReceiptWait = () => {
+        const receipt = createDeferred()
+        jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+          broadcast: () => receipt.promise.then(() => BROADCAST_RESULT)
+        } as any)
 
         return receipt
+      }
+
+      /** Holds back the bundler's answer to the next request for a withdrawal's block. */
+      const holdBlockRead = () => {
+        const answer = createDeferred()
+        bundlerProvider.send.mockImplementationOnce(async () => {
+          await answer.promise
+
+          return toUserOpReceipt()
+        })
+
+        return answer
       }
 
       it.each([
@@ -2949,7 +2841,67 @@ describe('PrivacyPoolsController', () => {
         }
       )
 
-      it('holds no notes while locked when the transfer lands then, and ends after its first read once unlocked', async () => {
+      it('asks for the block of the withdrawal from the bundler it was sent to, and closes that connection', async () => {
+        const { controller } = await prepareReadWithdrawal()
+        mockBroadcastResult()
+
+        const broadcasting = controller.broadcastWithdrawal()
+        await releaseSync('seed-a')
+        await broadcasting
+
+        // Not Ambire's own bundler account, which would link the withdrawal to it
+        expect(getRpcProvider).toHaveBeenCalledTimes(1)
+        expect(getRpcProvider).toHaveBeenCalledWith([PAYMASTER_BUNDLER_URL], 1n)
+        expect(bundlerProvider.send).toHaveBeenCalledWith('eth_getUserOperationReceipt', [
+          USER_OP_HASH
+        ])
+        expect(bundlerProvider.destroy).toHaveBeenCalledTimes(1)
+      })
+
+      it('waits for our node to reach the block of the withdrawal, then reads the account once', async () => {
+        nodeBlockNumber = WITHDRAWAL_BLOCK - 1
+        const { controller, providers } = await prepareReadWithdrawal()
+        const syncCount = getSyncCount()
+        mockBroadcastResult()
+
+        const broadcasting = controller.broadcastWithdrawal()
+        await waitUntil(() => providers.providers['1'].getBlockNumber.mock.calls.length >= 2)
+        expect(runningSyncs).toHaveLength(0)
+
+        nodeBlockNumber = WITHDRAWAL_BLOCK
+        notesBySeed['seed-a'] = [{ label: 7n, amount: 10n, approved: true }]
+        await releaseSync('seed-a')
+        await broadcasting
+
+        expect(getSyncCount()).toBe(syncCount + 1)
+        expect(getBalance(controller)).toMatchObject({ totalAmount: 10n, simulationAmount: 0n })
+      })
+
+      it.each([
+        ['cannot be reached', () => bundlerProvider.send.mockRejectedValueOnce(new Error('down'))],
+        ['has no receipt yet', () => bundlerProvider.send.mockResolvedValueOnce(null)]
+      ])(
+        'reads the account at once when the bundler %s, and closes the connection',
+        async (_, breakBundler) => {
+          const { restore } = suppressConsole()
+          const { controller, providers } = await prepareReadWithdrawal()
+          const syncCount = getSyncCount()
+          mockBroadcastResult()
+          breakBundler()
+
+          const broadcasting = controller.broadcastWithdrawal()
+          await releaseSync('seed-a')
+          await broadcasting
+          restore()
+
+          expect(getSyncCount()).toBe(syncCount + 1)
+          expect(providers.providers['1'].getBlockNumber).not.toHaveBeenCalled()
+          expect(controller.emittedErrors).toEqual([expect.objectContaining({ level: 'silent' })])
+          expect(bundlerProvider.destroy).toHaveBeenCalledTimes(1)
+        }
+      )
+
+      it('does not read the account when the wallet is locked by the time the transfer lands', async () => {
         const { controller, keystore } = await prepareReadWithdrawal()
         const receipt = mockReceiptWait()
 
@@ -2960,76 +2912,61 @@ describe('PrivacyPoolsController', () => {
         receipt.resolve()
         await broadcasting
 
-        // Watched, but not read while locked
-        expect(controller.hasSyncWatches).toBe(true)
         expect(runningSyncs).toHaveLength(0)
-
-        keystore.isUnlocked = true
-        keystore.fireUpdate()
-        await syncRound(controller, [['seed-a']])
-
-        expect(controller.hasSyncWatches).toBe(false)
       })
 
-      it.each([
-        [
-          'the transfer could not be confirmed, as it may still land',
-          async () => {
-            throw new Error('receipt wait timed out')
-          }
-        ],
-        [
-          'the first read is too early to show the transfer, as our node is a block behind',
-          async () => {}
-        ]
-      ])('keeps reading it when %s', async (_, broadcast) => {
+      it('reads the account once and stops counting the transfer, even when its notes do not show it yet', async () => {
+        const { controller } = await prepareReadWithdrawal()
+        const syncCount = getSyncCount()
+        mockBroadcastResult()
+
+        const broadcasting = controller.broadcastWithdrawal()
+        await releaseSync('seed-a')
+        await broadcasting
+
+        expect(getSyncCount()).toBe(syncCount + 1)
+        expect(runningSyncs).toHaveLength(0)
+        expect(getHeldAmounts(controller)).toEqual([WITHDRAWAL_AMOUNT + 10n])
+        expect(getBalance(controller)).toMatchObject({
+          simulationAmount: 0n,
+          approvedAmountPostSimulation: WITHDRAWAL_AMOUNT + 10n
+        })
+      })
+
+      it('reads the account at once, and stops counting the transfer, when it could not be confirmed', async () => {
         const { restore } = suppressConsole()
         const { controller } = await prepareReadWithdrawal()
-        jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast } as any)
+        const syncCount = getSyncCount()
+        jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+          broadcast: async () => {
+            throw new Error('receipt wait timed out')
+          }
+        } as any)
 
         const broadcasting = controller.broadcastWithdrawal()
         await releaseSync('seed-a')
         await broadcasting
-        expect(controller.hasSyncWatches).toBe(true)
-        expect(getHeldAmounts(controller)).toEqual([WITHDRAWAL_AMOUNT + 10n])
-
-        // It lands: the spent note is gone and its change is left
-        notesBySeed['seed-a'] = [{ label: 7n, amount: 10n, approved: true }]
-        await syncRound(controller, [['seed-a']])
-
-        expect(controller.hasSyncWatches).toBe(false)
-        expect(getHeldAmounts(controller)).toEqual([10n])
         restore()
+
+        // It may have landed all the same
+        expect(getSyncCount()).toBe(syncCount + 1)
+        expect(getBalance(controller)).toMatchObject({ simulationAmount: 0n })
       })
 
-      /** Sends the proved withdrawal, which lands but is not read yet, so it stays watched. */
-      const broadcastUnreadWithdrawal = async (controller: PrivacyPoolsController) => {
-        jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast: async () => {} } as any)
-        const broadcasting = controller.broadcastWithdrawal()
-        await releaseSync('seed-a')
-        await broadcasting
-        expect(controller.hasSyncWatches).toBe(true)
-      }
-
-      it('does not hold back a deposit into the account while the transfer is watched', async () => {
+      it('does not hold back a deposit into the account while the transfer is on its way', async () => {
         const { controller } = await prepareReadWithdrawal()
-        await broadcastUnreadWithdrawal(controller)
+        const receipt = mockReceiptWait()
+
+        const broadcasting = controller.broadcastWithdrawal()
+        await waitUntil(() => controller.operation?.phase === 'broadcasting')
+        expect(getBalance(controller)).toMatchObject({ simulationAmount: -WITHDRAWAL_AMOUNT })
 
         // A transfer does not change the next deposit's precommitment
         await expect(buildDeposit(controller, { seedId: 'seed-a' })).resolves.toHaveLength(1)
-      })
 
-      it('keeps holding back the next deposit when the transfer starts the watch of a deposit over', async () => {
-        const { controller } = await prepareReadWithdrawal()
-        const depositCalls = await buildDeposit(controller, { seedId: 'seed-a' })
-        controller.onAccountOpBroadcast({ chainId: 1n, calls: depositCalls })
-        finalize(controller, depositCalls)
+        receipt.resolve()
         await releaseSync('seed-a')
-        await waitForSynced(controller)
-
-        await broadcastUnreadWithdrawal(controller)
-
-        await expect(buildDeposit(controller, { seedId: 'seed-a' })).rejects.toThrow(EmittableError)
+        await broadcasting
       })
 
       describe('the amounts shown while it is on its way', () => {
@@ -3039,8 +2976,10 @@ describe('PrivacyPoolsController', () => {
             approvedAmountPostSimulation: WITHDRAWAL_AMOUNT + 10n,
             simulationAmount: 0n
           })
+          const receipt = mockReceiptWait()
 
-          await broadcastUnreadWithdrawal(controller)
+          const broadcasting = controller.broadcastWithdrawal()
+          await waitUntil(() => controller.operation?.phase === 'broadcasting')
 
           // The notes still hold all of it
           expect(getBalance(controller)).toMatchObject({
@@ -3051,9 +2990,10 @@ describe('PrivacyPoolsController', () => {
           })
 
           notesBySeed['seed-a'] = [{ label: 7n, amount: 10n, approved: true }]
-          await syncRound(controller, [['seed-a']])
+          receipt.resolve()
+          await releaseSync('seed-a')
+          await broadcasting
 
-          expect(controller.hasSyncWatches).toBe(false)
           expect(getBalance(controller)).toMatchObject({
             totalAmount: 10n,
             simulationAmount: 0n,
@@ -3061,91 +3001,68 @@ describe('PrivacyPoolsController', () => {
           })
         })
 
-        it('shows two transfers sent one after the other, each until its own lands', async () => {
-          const { controller } = await prepareReadWithdrawal(2n * WITHDRAWAL_AMOUNT + 10n)
-          await broadcastUnreadWithdrawal(controller)
+        it('keeps showing a transfer when the notes only show another one, sent before it, that spent a different note of the token', async () => {
+          const { controller } = await prepareReadWithdrawal([
+            { label: 1n, amount: ONE_ETH, approved: true },
+            { label: 2n, amount: ONE_ETH, approved: true }
+          ])
+          // Both are on their way: the bundler has taken them, and their blocks are not known yet
+          const firstBlock = holdBlockRead()
+          const secondBlock = holdBlockRead()
+          mockBroadcastResult()
+          const first = controller.broadcastWithdrawal()
+          await waitUntil(() => bundlerProvider.send.mock.calls.length === 1)
+
           await controller.prepareWithdrawal({
             chainId: '1',
             tokenAddress: ZERO_ADDRESS,
             amount: WITHDRAWAL_AMOUNT,
             recipient: WITHDRAWAL_RECIPIENT
           })
-          await broadcastUnreadWithdrawal(controller)
+          mockBroadcastResult()
+          const second = controller.broadcastWithdrawal()
+          await waitUntil(() => bundlerProvider.send.mock.calls.length === 2)
           expect(getBalance(controller)).toMatchObject({
-            totalAmount: 2n * WITHDRAWAL_AMOUNT + 10n,
+            totalAmount: 2n * ONE_ETH,
             simulationAmount: -2n * WITHDRAWAL_AMOUNT,
-            approvedAmountPostSimulation: 10n
+            approvedAmountPostSimulation: 2n * ONE_ETH - 2n * WITHDRAWAL_AMOUNT
           })
 
-          // The first lands: the second is still on its way, so the watch goes on
-          notesBySeed['seed-a'] = [{ label: 7n, amount: WITHDRAWAL_AMOUNT + 10n, approved: true }]
-          await syncRound(controller, [['seed-a']])
-
-          expect(controller.hasSyncWatches).toBe(true)
-          expect(getBalance(controller)).toMatchObject({
-            totalAmount: WITHDRAWAL_AMOUNT + 10n,
-            simulationAmount: -WITHDRAWAL_AMOUNT,
-            approvedAmountPostSimulation: 10n
-          })
-
-          notesBySeed['seed-a'] = [{ label: 8n, amount: 10n, approved: true }]
-          await syncRound(controller, [['seed-a']])
-
-          expect(controller.hasSyncWatches).toBe(false)
-          expect(getBalance(controller)).toMatchObject({
-            totalAmount: 10n,
-            simulationAmount: 0n,
-            approvedAmountPostSimulation: 10n
-          })
-        })
-
-        it('shows a transfer whose notes never change until the watch gives up, then stops', async () => {
-          const { controller } = await prepareReadWithdrawal()
-          const clock = mockClock()
-
-          try {
-            await broadcastUnreadWithdrawal(controller)
-
-            clock.advance(WATCH_MAX_DURATION_MS - 1_000)
-            await syncRound(controller, [['seed-a']])
-            expect(getBalance(controller)).toMatchObject({ simulationAmount: -WITHDRAWAL_AMOUNT })
-
-            clock.advance(1_000)
-            const onUpdate = jest.fn()
-            controller.onUpdate(onUpdate)
-            await controller.syncInBackground()
-
-            expect(getBalance(controller)).toMatchObject({
-              simulationAmount: 0n,
-              approvedAmountPostSimulation: WITHDRAWAL_AMOUNT + 10n
-            })
-            expect(onUpdate).toHaveBeenCalled()
-            expect(controller.hasSyncWatches).toBe(false)
-          } finally {
-            clock.restore()
-          }
-        })
-
-        it('keeps showing a transfer that could not be confirmed, as it may still land', async () => {
-          const { restore } = suppressConsole()
-          const { controller } = await prepareReadWithdrawal()
-          jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
-            broadcast: async () => {
-              throw new Error('receipt wait timed out')
-            }
-          } as any)
-
-          const broadcasting = controller.broadcastWithdrawal()
+          // The first lands and is read, spending from one note. The second is still on its way.
+          notesBySeed['seed-a'] = [
+            { label: 1n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true },
+            { label: 2n, amount: ONE_ETH, approved: true }
+          ]
+          firstBlock.resolve()
           await releaseSync('seed-a')
-          await broadcasting
-          restore()
+          await first
 
-          expect(getBalance(controller)).toMatchObject({ simulationAmount: -WITHDRAWAL_AMOUNT })
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: 2n * ONE_ETH - WITHDRAWAL_AMOUNT,
+            simulationAmount: -WITHDRAWAL_AMOUNT,
+            approvedAmountPostSimulation: 2n * ONE_ETH - 2n * WITHDRAWAL_AMOUNT
+          })
+
+          notesBySeed['seed-a'] = [
+            { label: 1n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true },
+            { label: 2n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true }
+          ]
+          secondBlock.resolve()
+          await releaseSync('seed-a')
+          await second
+
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: 2n * ONE_ETH - 2n * WITHDRAWAL_AMOUNT,
+            simulationAmount: 0n,
+            approvedAmountPostSimulation: 2n * ONE_ETH - 2n * WITHDRAWAL_AMOUNT
+          })
         })
 
         it('does not show the transfer after a lock, though it was sent before it', async () => {
           const { controller, keystore } = await prepareReadWithdrawal()
-          await broadcastUnreadWithdrawal(controller)
+          const receipt = mockReceiptWait()
+          const broadcasting = controller.broadcastWithdrawal()
+          await waitUntil(() => controller.operation?.phase === 'broadcasting')
 
           keystore.isUnlocked = false
           keystore.fireUpdate()
@@ -3160,6 +3077,10 @@ describe('PrivacyPoolsController', () => {
             simulationAmount: 0n,
             approvedAmountPostSimulation: WITHDRAWAL_AMOUNT + 10n
           })
+
+          receipt.resolve()
+          await releaseSync('seed-a')
+          await broadcasting
         })
       })
     })
@@ -3183,7 +3104,7 @@ describe('PrivacyPoolsController', () => {
           .length
 
       const mockBroadcast = () => {
-        const broadcast = jest.fn(async () => {})
+        const broadcast = jest.fn(async () => BROADCAST_RESULT)
         jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast } as any)
 
         return broadcast
@@ -3270,7 +3191,6 @@ describe('PrivacyPoolsController', () => {
           simulationAmount: 0n,
           approvedAmountPostSimulation: 10n
         })
-        expect(controller.hasSyncWatches).toBe(false)
       })
 
       it('does not send an older one that would now fail, as over a root that moved on', async () => {
@@ -3710,9 +3630,9 @@ describe('PrivacyPoolsController', () => {
       proofs[0]!.gate.resolve()
       await preparing
       const sending = createDeferred()
-      jest
-        .mocked(createPPv1Broadcaster)
-        .mockReturnValueOnce({ broadcast: () => sending.promise } as any)
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+        broadcast: () => sending.promise.then(() => BROADCAST_RESULT)
+      } as any)
 
       const broadcasting = controller.broadcastWithdrawal()
       await waitUntil(() => controller.operation?.phase === 'broadcasting')
@@ -4537,9 +4457,7 @@ describe('PrivacyPoolsController', () => {
       notesBySeed['seed-a'] = notesBySeed['seed-a']!.map((note) =>
         note.label === 3n ? { ...note, amount: 0n } : note
       )
-      finalize(controller, calls)
-      await releaseSync('seed-a')
-      await waitUntil(() => !controller.hasSyncWatches)
+      await finalizeAndRead(controller, calls, 'seed-a')
 
       await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).resolves.toEqual([
         { label: 6n, amount: 60n, depositorAddr: OTHER_DEPOSITOR }
@@ -4566,9 +4484,7 @@ describe('PrivacyPoolsController', () => {
       notesBySeed['seed-a'] = notesBySeed['seed-a']!.map((note) =>
         note.label === 3n ? { ...note, amount: 0n } : note
       )
-      finalize(controller, calls)
-      await releaseSync('seed-a')
-      await waitUntil(() => !controller.hasSyncWatches)
+      await finalizeAndRead(controller, calls, 'seed-a')
 
       expect(getBalance(controller)).toMatchObject({ totalAmount: 70n, simulationAmount: 0n })
     })
@@ -4579,7 +4495,7 @@ describe('PrivacyPoolsController', () => {
       controller.onAccountOpBroadcast({ chainId: 1n, calls })
       expect(getBalance(controller)).toMatchObject({ simulationAmount: -30n })
 
-      finalize(controller, calls, AccountOpStatus.Failure)
+      await finalize(controller, calls, AccountOpStatus.Failure)
 
       expect(getBalance(controller)).toMatchObject({ totalAmount: 100n, simulationAmount: 0n })
     })
@@ -4589,9 +4505,8 @@ describe('PrivacyPoolsController', () => {
       const { calls } = await buildRagequitAfterSync(controller, 3n)
       controller.onAccountOpBroadcast({ chainId: 1n, calls })
 
-      finalize(controller, calls, AccountOpStatus.Failure)
+      await finalize(controller, calls, AccountOpStatus.Failure)
 
-      expect(controller.hasSyncWatches).toBe(false)
       expect(runningSyncs).toHaveLength(0)
     })
 
