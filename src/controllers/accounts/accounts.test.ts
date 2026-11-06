@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globa
 
 import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
+import { makeStorageWithSlowFlags } from '../../../test/helpers/featureFlags'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -18,6 +19,7 @@ import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { UiManager } from '../../interfaces/ui'
 import * as accountStateLib from '../../libs/accountState/accountState'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { StorageController } from '../storage/storage'
 import { AccountsController } from './accounts'
 
@@ -147,8 +149,19 @@ const track = (promise: Promise<unknown>) => {
  * `fetches` lists every `getAccountState` call, which the test settles by hand.
  */
 const makeAccountsController = async ({
-  sendUiMessage
-}: { sendUiMessage?: UiManager['message']['sendUiMessage'] } = {}) => {
+  sendUiMessage,
+  featureFlags = {
+    initialLoadPromise: Promise.resolve(),
+    // Disabled smart accounts stop the identity intervals, so no Relayer calls run
+    isFeatureEnabled: () => false
+  } as unknown as IFeatureFlagsController,
+  awaitInitialLoad = true
+}: {
+  sendUiMessage?: UiManager['message']['sendUiMessage']
+  featureFlags?: IFeatureFlagsController
+  /** Set to `false` to check the controller while it is still loading */
+  awaitInitialLoad?: boolean
+} = {}) => {
   const fetches: AccountStateFetch[] = []
   jest
     .spyOn(accountStateLib, 'getAccountState')
@@ -184,15 +197,13 @@ const makeAccountsController = async ({
     '',
     jest.fn<any>(),
     undefined,
-    // Disabled smart accounts stop the identity intervals, so no Relayer calls run
-    {
-      initialLoadPromise: Promise.resolve(),
-      isFeatureEnabled: () => false
-    } as unknown as IFeatureFlagsController,
+    featureFlags,
     sendUiMessage
   )
-  await accountsCtrl.initialLoadPromise
-  await accountsCtrl.accountStateInitialLoadPromise
+  if (awaitInitialLoad) {
+    await accountsCtrl.initialLoadPromise
+    await accountsCtrl.accountStateInitialLoadPromise
+  }
   const errors: string[] = []
   accountsCtrl.onError((error) => errors.push(error.message))
 
@@ -567,5 +578,30 @@ describe('AccountsController updateAccountPreferences replies', () => {
       accountsCtrl.updateAccountPreferences([{ addr: ADDR, preferences }], 'request-3')
     ).resolves.toBeUndefined()
     expect(accountsCtrl.accounts.find((a) => a.addr === ADDR)?.preferences.label).toBe('Savings')
+  })
+})
+
+describe('AccountsController feature flags', () => {
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  // The routes of the app wait for the accounts to load. This wait is what keeps the app from
+  // starting with the default flags, so it must not be removed.
+  test('does not finish loading until the saved feature flags load', async () => {
+    const { storage, releaseRead } = makeStorageWithSlowFlags({ ambireSmartAccounts: false })
+    const featureFlags = new FeatureFlagsController({}, storage)
+    const { accountsCtrl } = await makeAccountsController({ featureFlags, awaitInitialLoad: false })
+    const load = track(accountsCtrl.initialLoadPromise!)
+    await flushPromises()
+
+    expect(load.isSettled).toBe(false)
+    expect(accountsCtrl.accounts).toEqual([])
+
+    releaseRead()
+    await load.promise
+
+    expect(accountsCtrl.accounts.map(({ addr }) => addr)).toEqual([ADDR_A, ADDR_B])
+    expect(featureFlags.isFeatureEnabled('ambireSmartAccounts')).toBe(false)
   })
 })
