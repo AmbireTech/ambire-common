@@ -40,6 +40,22 @@ export const PRIVACY_POOLS_SIGNING_KEY_PATH = `${PRIVACY_POOLS_KEY_ROOT_PATH}/${
 export const PRIVACY_POOLS_SAGA_SYNC_URL = 'https://saga.fatsolutions.xyz/v2'
 
 /**
+ * fatlabs' Ed25519 key that signs the `PRIVACY_POOLS_SAGA_SYNC_URL` manifest. A manifest that
+ * fails the check is rejected and the history is read from the provider instead.
+ */
+export const PRIVACY_POOLS_SAGA_SYNC_PUBLIC_KEY =
+  '0x03778175990200a844f375d7c6e13e2ae0dc67a4ce610b04afb77c0ebb46b115'
+
+/**
+ * How long one read from `PRIVACY_POOLS_SAGA_SYNC_URL` may take before the provider reads the
+ * history instead. One read can carry a pool's whole history, so it is longer than a request's.
+ */
+export const PRIVACY_POOLS_SAGA_READ_TIMEOUT = 60_000
+
+/** How long a GET from the Privacy Pools SDK, such as the 0xBow API, may take before it fails. */
+export const PRIVACY_POOLS_READ_TIMEOUT = 30_000
+
+/**
  * Ethereum only: Sepolia has no paymaster, so nothing could be withdrawn there. Other chains
  * (Optimism, BSC, Arbitrum) use a different entrypoint, so adding them takes more than an entry.
  */

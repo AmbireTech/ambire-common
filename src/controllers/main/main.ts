@@ -460,7 +460,8 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
-      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
+      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds),
+      getPendingAccountOps: () => this.getPendingAccountOps()
     })
 
     this.portfolio = new PortfolioController(
@@ -1909,6 +1910,23 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  /**
+   * The transactions the wallet has not finished with: broadcast but not confirmed, and the
+   * request batch. For `PrivacyPoolsController`, which holds back a deposit while one is pending.
+   */
+  protected getPendingAccountOps() {
+    // An unsigned deposit already holds the next precommitment, which stays the same until a sync
+    // shows the deposit. A second deposit built meanwhile would reuse it and fail onchain.
+    const requestedAccountOps = this.requests.userRequests.flatMap((request) =>
+      request.kind === 'calls' ? [request.signAccountOp.accountOp] : []
+    )
+
+    return [
+      ...Object.values(this.activity.broadcastedButNotConfirmed).flat(),
+      ...requestedAccountOps
+    ]
+  }
+
   async updateAccountsOpsStatuses() {
     await this.initialLoadPromise
 
@@ -2019,6 +2037,10 @@ export class MainController extends EventEmitter implements IMainController {
               // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
               finalizedAccountOps.length
                 ? this.portfolio.discardSimulation(finalizedAccountOps)
+                : undefined,
+              // Updates the Privacy Pools balances. Failed ops too, to remove their amounts
+              finalizedAccountOps.length
+                ? this.privacyPools.onAccountOpsFinalized(finalizedAccountOps)
                 : undefined,
               ...otherAccountsToUpdate.map(async ([portfolioAccountAddr, chainIds]) => {
                 // A fee payer has a new nonce and a recipient a new balance, and the

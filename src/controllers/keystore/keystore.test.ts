@@ -14,7 +14,12 @@ import {
 } from '../../consts/derivation'
 import { PRIVACY_POOLS_SIGNING_KEY_PATH } from '../../consts/privacyPools'
 import { ErrorRef } from '../../interfaces/eventEmitter'
-import { ExternalKey, IKeystoreController, InternalKey } from '../../interfaces/keystore'
+import {
+  ExternalKey,
+  HdExternalKey,
+  IKeystoreController,
+  InternalKey
+} from '../../interfaces/keystore'
 import { PrivacyProviderId } from '../../interfaces/privateAccount'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import * as keystoreLib from '../../libs/keystore/keystore'
@@ -1471,7 +1476,9 @@ describe('app data sync between two devices', () => {
     )
 
     expect(importingKeystore.seeds).toHaveLength(0)
-    expect(importingKeystore.keys[0]!.meta.fromSeedId).toBeUndefined()
+    const [importedKey] = importingKeystore.keys
+    expect(importedKey?.type).toBe('internal')
+    expect(importedKey?.type === 'internal' && importedKey.meta.fromSeedId).toBeUndefined()
   })
 
   test('exports the main key even when nothing needs decrypting, so the password gets confirmed', async () => {
@@ -1535,7 +1542,10 @@ describe('app data sync between two devices', () => {
       expect(importingKeystore.seeds).toEqual([
         expect.objectContaining({ id: seedId, withPassphrase: true, isPassphraseNeeded: true })
       ])
-      expect(importingKeystore.keys[0]!.meta.fromSeedId).toBe(seedId)
+      expect(importingKeystore.keys[0]).toMatchObject({
+        type: 'internal',
+        meta: { fromSeedId: seedId }
+      })
       const syncedSeed = await importingKeystore.getSavedSeed(seedId)
       expect(syncedSeed.seedPassphrase).toBeNull()
       expect(await importingKeystore.isSeedPassphraseCorrect(seedId, PASSPHRASE)).toBe(true)
@@ -1887,7 +1897,7 @@ describe('KeystoreController updateUnknownKeyDeviceModel', () => {
   let keystoreCtrl: IKeystoreController
   let storageCtrl: StorageController
 
-  const ledgerKey = (deviceModel: string): ExternalKey => ({
+  const ledgerKey = (deviceModel: string): HdExternalKey => ({
     addr: ledgerAddr,
     type: 'ledger',
     dedicatedToOneSA: false,

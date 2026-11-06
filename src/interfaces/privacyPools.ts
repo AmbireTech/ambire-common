@@ -166,7 +166,11 @@ export type PrivacyPoolsChainPoolStats = {
   error: string | null
 }
 
-/** Notes summed per token. Only `approvedAmount` can be withdrawn. */
+/**
+ * Notes summed per token. Only `approvedAmount` can be withdrawn. What deposits, withdrawals and
+ * ragequits still on their way will do is not in the notes yet, so the amounts above do not
+ * include it. The fields below are named like the regular portfolio's.
+ */
 export type PrivacyPoolsTokenBalance = {
   tokenAddress: string
   symbol: string
@@ -175,6 +179,13 @@ export type PrivacyPoolsTokenBalance = {
   approvedAmount: bigint
   pendingAmount: bigint
   totalAmount: bigint
+  /**
+   * How much `totalAmount` will change once what is on its way shows in the notes: positive for a
+   * deposit, after the pool's fee, negative for a withdrawal or a deposit taken back.
+   */
+  simulationAmount: bigint
+  /** `approvedAmount` less what withdrawals on their way take out of it. What can be sent now. */
+  approvedAmountPostSimulation: bigint
 }
 
 /**
@@ -341,11 +352,15 @@ export type PrivacyPoolsSendForm = {
   amountFieldMode: 'token' | 'fiat'
 }
 
-/** The entrypoint's deposit requirements for one asset, read from the chain as 0xBow tunes them. */
+/**
+ * The entrypoint's deposit requirements for one asset that the Send form checks, read from the
+ * chain as 0xBow tunes them. The pool is kept privately, and read again once per Send session, as
+ * 0xBow can replace a pool while the wallet runs.
+ */
 export type PrivacyPoolsDepositAssetConfig = {
-  /** The pool the entrypoint sends the asset's deposits to. */
-  poolAddress: string
   minimumDepositAmount: bigint
+  /** The share of a deposit the entrypoint keeps, in basis points (1 = 0.01%). */
+  vettingFeeBPS: bigint
 }
 
 /** 'pending' means "not observed as complete yet". It resolves from the broadcast result. */

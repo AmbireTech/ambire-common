@@ -282,6 +282,30 @@ describe('ContinuousUpdatesController intervals', () => {
     })
   })
 
+  test('should sync the Privacy Pools accounts with the portfolio update only while a view is open', async () => {
+    const { mainCtrl } = await prepareTest()
+    await waitForContinuousUpdatesCtrlReady(mainCtrl)
+    await waitForAccountStatesInitialLoad(mainCtrl)
+    const { updatePortfolioInterval } = mainCtrl.continuousUpdates!
+    const syncInBackground = jest
+      .spyOn(mainCtrl.privacyPools, 'syncInBackground')
+      .mockResolvedValue(undefined)
+
+    mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
+    await jest.advanceTimersByTimeAsync(0)
+    await waitForFnToBeCalledAndExecuted(updatePortfolioInterval)
+    expect(syncInBackground).toHaveBeenCalledTimes(1)
+
+    // The interval goes on with the last view closed, but a sync is much heavier than a portfolio
+    // update, so it is not run then
+    mainCtrl.ui.removeView('1')
+    await jest.advanceTimersByTimeAsync(0)
+    const executionsCount = updatePortfolioInterval.fnExecutionsCount
+    await waitForFnToBeCalledAndExecuted(updatePortfolioInterval)
+    expect(updatePortfolioInterval.fnExecutionsCount).toBe(executionsCount + 1)
+    expect(syncInBackground).toHaveBeenCalledTimes(1)
+  })
+
   test('should run updateAccountStateLatest', async () => {
     const { mainCtrl } = await prepareTest()
 
