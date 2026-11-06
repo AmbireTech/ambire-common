@@ -1,5 +1,5 @@
 import { errorCodes } from 'eth-rpc-errors'
-import { Wallet, ZeroAddress } from 'ethers'
+import { TypedDataEncoder, Wallet, ZeroAddress } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -5096,7 +5096,7 @@ describe('RequestsController ', () => {
       )
     })
 
-    test('replaces domain.chainId with current network chainId when domain.chainId is 0', async () => {
+    test('keeps the domain.chainId the app signs for, even when it is 0', async () => {
       const { controller } = await prepareTest(true)
       const typedData = {
         ...VALID_TYPED_DATA,
@@ -5105,7 +5105,33 @@ describe('RequestsController ', () => {
       await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
       expect(controller.userRequests.length).toBe(1)
       const req = controller.userRequests[0]! as any
-      expect(req.meta.params.domain.chainId).toBe(1n)
+      // The domain is signed as the app sent it, it is not rewritten to the current network
+      expect(req.meta.params.domain.chainId).toBe(0)
+      expect(req.meta.chainId).toBe(1n)
+    })
+
+    test('keeps the domain.chainId as the app sent it when it is a hex string', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        domain: { ...VALID_TYPED_DATA.domain, chainId: '0x1' }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      const req = controller.userRequests[0]! as any
+      expect(req.meta.params.domain.chainId).toBe('0x1')
+      expect(req.meta.chainId).toBe(1n)
+    })
+
+    test('rejects when EIP712Domain declares chainId but the domain has no value for it', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        domain: { name: VALID_TYPED_DATA.domain.name, version: VALID_TYPED_DATA.domain.version }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'The message contents did not match the provided types.'
+      )
+      expect(controller.userRequests.length).toBe(0)
     })
 
     test('accepts typed data with no domain.chainId regardless of current network', async () => {
@@ -5122,7 +5148,73 @@ describe('RequestsController ', () => {
       expect(controller.userRequests.length).toBe(1)
       const req = controller.userRequests[0]! as any
       expect(req.kind).toBe('typedMessage')
-      expect(req.meta.params.domain.chainId).toBe(1n)
+      // The domain has only what the app declared, nothing is added to it ...
+      expect(req.meta.params.domain).toEqual({
+        name: VALID_TYPED_DATA.domain.name,
+        version: VALID_TYPED_DATA.domain.version
+      })
+      // ... but the request still belongs to the current network
+      expect(req.meta.chainId).toBe(1n)
+    })
+
+    test('drops domain fields that are not declared in EIP712Domain', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        domain: {
+          ...VALID_TYPED_DATA.domain,
+          verifyingContract: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd',
+          extraField: 'extra'
+        }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      const req = controller.userRequests[0]! as any
+      expect(req.meta.params.domain).toEqual(VALID_TYPED_DATA.domain)
+    })
+
+    test('drops message fields that are not declared, at every level', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        types: {
+          EIP712Domain: VALID_TYPED_DATA.types.EIP712Domain,
+          Person: [{ name: 'wallet', type: 'address' }],
+          Mail: [
+            { name: 'from', type: 'Person' },
+            { name: 'to', type: 'Person[]' },
+            { name: 'contents', type: 'string' }
+          ]
+        },
+        primaryType: 'Mail',
+        domain: VALID_TYPED_DATA.domain,
+        message: {
+          from: { wallet: FROM, extraNested: 1 },
+          to: [{ wallet: FROM, extraInArray: 2 }],
+          contents: 'Hello!',
+          extraTopLevel: 3
+        }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      const req = controller.userRequests[0]! as any
+      expect(req.meta.params.message).toEqual({
+        from: { wallet: FROM },
+        to: [{ wallet: FROM }],
+        contents: 'Hello!'
+      })
+    })
+
+    test('keeps the digest of the message the same after dropping the undeclared fields', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        domain: { ...VALID_TYPED_DATA.domain, extraField: 'extra' },
+        message: { ...VALID_TYPED_DATA.message, extraTopLevel: 'extra' }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      const { domain, message } = (controller.userRequests[0]! as any).meta.params
+      const typesWithoutDomain = { Mail: VALID_TYPED_DATA.types.Mail }
+      expect(TypedDataEncoder.hash(domain, typesWithoutDomain, message)).toBe(
+        TypedDataEncoder.hash(VALID_TYPED_DATA.domain, typesWithoutDomain, VALID_TYPED_DATA.message)
+      )
     })
 
     const SELECTED_ACCOUNT = FROM
@@ -5183,6 +5275,33 @@ describe('RequestsController ', () => {
       ).rejects.toThrow('Signing an AmbireOperation is not allowed')
       expect(controller.userRequests.length).toBe(0)
       expect(controller.userRequestsWaitingAccountSwitch.length).toBe(0)
+    })
+
+    test('still rejects when the AmbireOperation type is only listed in types and not used', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        types: {
+          ...VALID_TYPED_DATA.types,
+          AmbireOperation: AMBIRE_OPERATION_TYPED_DATA.types.AmbireOperation
+        }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'Signing an AmbireOperation is not allowed'
+      )
+      expect(controller.userRequests.length).toBe(0)
+    })
+
+    test('still rejects when the domain points to the account but does not declare the field', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        domain: { ...VALID_TYPED_DATA.domain, verifyingContract: SELECTED_ACCOUNT }
+      }
+      await expect(
+        buildSignTypedDataRequest(controller, typedData, SELECTED_ACCOUNT)
+      ).rejects.toThrow('Signing an AmbireOperation is not allowed')
+      expect(controller.userRequests.length).toBe(0)
     })
   })
 })
