@@ -209,11 +209,15 @@ export type QrProtocolType = 'ur' | 'airgap'
 
 export type NfcWalletType = 'keycard' // We can add more supported NFC (tap-to-sign) cards here in the future
 
-export type ExternalKey = {
+type ExternalKeyBase = {
   addr: Account['addr']
-  type: 'trezor' | 'onekey' | 'ledger' | 'lattice' | 'qr' | 'nfc' | 'pq1'
   label: string
   dedicatedToOneSA: boolean
+}
+
+/** A key on a hardware wallet that derives it on a BIP-32 path (`hdPathTemplate` + `index`). */
+export type HdExternalKey = ExternalKeyBase & {
+  type: 'trezor' | 'onekey' | 'ledger' | 'lattice' | 'qr' | 'nfc'
   meta: {
     deviceId: string
     deviceModel: string
@@ -228,6 +232,25 @@ export type ExternalKey = {
     [key: string]: any
   }
 }
+
+/**
+ * A key on a PQ1 (post-quantum) hardware wallet. PQ1 has no BIP-32 derivation, so the key has
+ * no HD path: the device holds 256 numbered accounts, and `index` is the account's number.
+ * Its `meta` deliberately has no catch-all `[key: string]: any`, so code that reads
+ * `meta.hdPathTemplate` off any external key fails to compile until it handles PQ1 keys.
+ */
+export type Pq1ExternalKey = ExternalKeyBase & {
+  type: 'pq1'
+  meta: {
+    deviceId: string
+    deviceModel: string
+    /** The account's number on the device (0-255), which the device signs with */
+    index: number
+    createdAt: number | null
+  }
+}
+
+export type ExternalKey = HdExternalKey | Pq1ExternalKey
 
 export type StoredKey =
   | (InternalKey & { privKey: KeystoreEncryptedPayload })
@@ -304,13 +327,8 @@ export type ReadyToAddKeys = {
     dedicatedToOneSA: InternalKey['dedicatedToOneSA']
     meta: InternalKey['meta']
   }[]
-  external: {
-    addr: ExternalKey['addr']
-    label: string
-    type: ExternalKey['type']
-    dedicatedToOneSA: Key['dedicatedToOneSA']
-    meta: ExternalKey['meta']
-  }[]
+  // The whole union, rather than each field's, so a key's `meta` always matches its `type`
+  external: ExternalKey[]
 }
 
 export type KeyPreferences = {
