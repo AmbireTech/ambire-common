@@ -1408,8 +1408,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       if (shouldResetFromTokenAmount) {
         // This branch is invoked when the from token is changed, but also when the form is initialized.
         // We want to persist the fromAmountFieldMode across sessions, but reset it when the user changes
-        // the token and has entered a value.
-        if (this.fromAmount !== '') this.fromAmountFieldMode = 'token'
+        // the token and has entered a value. A token without a price can't be entered in USD at all,
+        // and the form hides the USD switch for it, so a fiat mode would leave it stuck there.
+        const hasFromTokenPrice = !!fromSelectedToken?.priceIn.find(
+          (p) => p.baseCurrency === HARD_CODED_CURRENCY
+        )?.price
+        if (this.fromAmount !== '' || (fromSelectedToken && !hasFromTokenPrice)) {
+          this.fromAmountFieldMode = 'token'
+        }
         this.#setFromAmountAndNotifyUI('')
         this.#setFromAmountInFiatAndNotifyUI('')
       }

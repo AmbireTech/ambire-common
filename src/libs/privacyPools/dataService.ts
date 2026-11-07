@@ -1,6 +1,11 @@
 import { createSagaLogSource, DataService } from '@kohaku-eth/privacy-pools'
 import type { EthereumProvider } from '@kohaku-eth/provider'
 
+import {
+  PRIVACY_POOLS_SAGA_READ_TIMEOUT,
+  PRIVACY_POOLS_SAGA_SYNC_PUBLIC_KEY
+} from '../../consts/privacyPools'
+import { withTimeout } from '../../utils/with-timeout'
 import { createParallelLogSource } from './parallelLogSource'
 
 /**
@@ -25,14 +30,53 @@ export const createPrivacyPoolsDataService = async ({
 
   if (!saga) return { dataService: new DataService({ provider, getLogs }), isSagaHydrated: false }
 
-  try {
-    const sagaLogs = await createSagaLogSource({
-      sourceUrl: saga.sourceUrl,
-      chainId: Number(saga.chainId),
-      fallback: getLogs
-    })
+  // The CDN reader asks the provider for the blocks it has not indexed yet. A failure there is the
+  // provider's, so it must not move the next reads off the CDN.
+  const providerErrors = new WeakSet<object>()
+  const getLogsFromProvider: typeof getLogs = async (params) => {
+    try {
+      return await getLogs(params)
+    } catch (error: unknown) {
+      if (error instanceof Object) providerErrors.add(error)
+      throw error
+    }
+  }
 
-    return { dataService: new DataService({ provider, getLogs: sagaLogs }), isSagaHydrated: true }
+  try {
+    // The CDN is read with the global fetch inside the SDK, so a timeout can only race it
+    const sagaLogs = await withTimeout(
+      () =>
+        createSagaLogSource({
+          sourceUrl: saga.sourceUrl,
+          chainId: Number(saga.chainId),
+          fallback: getLogsFromProvider,
+          publicKey: PRIVACY_POOLS_SAGA_SYNC_PUBLIC_KEY
+        }),
+      { timeoutMs: PRIVACY_POOLS_SAGA_READ_TIMEOUT }
+    )
+
+    let hasSagaFailed = false
+    const getLogsFromSaga: typeof getLogs = async (params) => {
+      if (hasSagaFailed) return getLogs(params)
+
+      try {
+        return await withTimeout(() => sagaLogs(params), {
+          timeoutMs: PRIVACY_POOLS_SAGA_READ_TIMEOUT
+        })
+      } catch (error: any) {
+        if (providerErrors.has(error)) throw error
+
+        hasSagaFailed = true
+        onSagaUnavailable(error)
+
+        return getLogs(params)
+      }
+    }
+
+    return {
+      dataService: new DataService({ provider, getLogs: getLogsFromSaga }),
+      isSagaHydrated: true
+    }
   } catch (error: any) {
     // Not fatal: the provider yields the same history, only slower
     onSagaUnavailable(error)

@@ -16,14 +16,20 @@ export const PRIVACY_POOLS_NATIVE_ASSET_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeee
 export const PRIVACY_POOLS_ACCOUNT_INDEX = 0
 
 /**
+ * The SDK's branch of the phrase's key tree: every Privacy Pools account's key is below it, at
+ * `/{accountIndex}'`. Its node is what the keystore stores for a phrase (see `privacyKeys`).
+ */
+export const PRIVACY_POOLS_KEY_ROOT_PATH = "m/28784'/1'"
+
+/**
  * The one key Privacy Pools needs per phrase, from the SDK's `SignatureSecretManager`: every note's
  * nullifier, salt and paymaster withdrawal signer are derived from this key's EIP-712 signature of
  * the note, `PrivacyPoolNote(depositIndex, secretIndex)`.
  *
- * Security boundary: `KeystoreController.derivePrivacyPoolsKey` refuses any other path, since the
+ * Security boundary: `KeystoreController.derivePrivacyKey` refuses any other path, since the
  * plugin asks for arbitrary paths and could otherwise reach the user's EVM keys.
  */
-export const PRIVACY_POOLS_SIGNING_KEY_PATH = `m/28784'/1'/${PRIVACY_POOLS_ACCOUNT_INDEX}'`
+export const PRIVACY_POOLS_SIGNING_KEY_PATH = `${PRIVACY_POOLS_KEY_ROOT_PATH}/${PRIVACY_POOLS_ACCOUNT_INDEX}'`
 
 /**
  * fatlabs' CDN of the entrypoint's and the pools' event history as signed, content-addressed
@@ -32,6 +38,22 @@ export const PRIVACY_POOLS_SIGNING_KEY_PATH = `m/28784'/1'/${PRIVACY_POOLS_ACCOU
  * publication, as only it has each event's transaction hash, which the activity links to.
  */
 export const PRIVACY_POOLS_SAGA_SYNC_URL = 'https://saga.fatsolutions.xyz/v2'
+
+/**
+ * fatlabs' Ed25519 key that signs the `PRIVACY_POOLS_SAGA_SYNC_URL` manifest. A manifest that
+ * fails the check is rejected and the history is read from the provider instead.
+ */
+export const PRIVACY_POOLS_SAGA_SYNC_PUBLIC_KEY =
+  '0x03778175990200a844f375d7c6e13e2ae0dc67a4ce610b04afb77c0ebb46b115'
+
+/**
+ * How long one read from `PRIVACY_POOLS_SAGA_SYNC_URL` may take before the provider reads the
+ * history instead. One read can carry a pool's whole history, so it is longer than a request's.
+ */
+export const PRIVACY_POOLS_SAGA_READ_TIMEOUT = 60_000
+
+/** How long a GET from the Privacy Pools SDK, such as the 0xBow API, may take before it fails. */
+export const PRIVACY_POOLS_READ_TIMEOUT = 30_000
 
 /**
  * Ethereum only: Sepolia has no paymaster, so nothing could be withdrawn there. Other chains

@@ -13,6 +13,8 @@ const getBalance = (overrides: Partial<PrivacyPoolsTokenBalance>): PrivacyPoolsT
   approvedAmount: 0n,
   pendingAmount: 0n,
   totalAmount: 0n,
+  simulationAmount: 0n,
+  approvedAmountPostSimulation: 0n,
   ...overrides
 })
 
@@ -43,6 +45,32 @@ describe('getPrivacyPoolsValuePerChain', () => {
     )
 
     expect(values).toEqual({ '1': 12002.5 })
+  })
+
+  it('values what the account will hold once what is on its way shows, and never below zero', () => {
+    const values = getPrivacyPoolsValuePerChain(
+      {
+        '1': [
+          // A deposit on its way adds to it
+          getBalance({ totalAmount: 10n ** 18n, simulationAmount: 5n * 10n ** 17n }),
+          // A sync ahead of what was expected must not take value off the others
+          getBalance({
+            tokenAddress: USDC,
+            symbol: 'USDC',
+            decimals: 6,
+            isNative: false,
+            totalAmount: 1_000_000n,
+            simulationAmount: -2_000_000n
+          })
+        ]
+      },
+      {
+        [getPrivacyPoolsPriceKey('1', '0x0000000000000000000000000000000000000000')]: 2000,
+        [getPrivacyPoolsPriceKey('1', USDC)]: 1
+      }
+    )
+
+    expect(values).toEqual({ '1': 3000 })
   })
 
   it('leaves out a token with no known price without dropping the chain', () => {

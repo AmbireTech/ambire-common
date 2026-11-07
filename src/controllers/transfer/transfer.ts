@@ -1028,7 +1028,11 @@ export class TransferController extends EventEmitter implements ITransferControl
       return
 
     this.#privacyPools
-      .loadDepositAssetConfig(token.chainId.toString(), token.address)
+      .loadDepositAssetConfig(
+        token.chainId.toString(),
+        token.address,
+        this.#currentTransferSessionId
+      )
       .catch((error) => {
         // Not fatal: preparing the deposit checks the same limits
         this.emitError({
