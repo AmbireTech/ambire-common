@@ -101,18 +101,19 @@ describe('waitForSafeOwnerApproval', () => {
     jest.restoreAllMocks()
   })
 
-  const wait = (overrides: Partial<Parameters<typeof waitForSafeOwnerApproval>[0]> = {}) =>
+  const startWait = (overrides: Partial<Parameters<typeof waitForSafeOwnerApproval>[0]> = {}) =>
     waitForSafeOwnerApproval({
       safeAddr: SAFE_ADDR,
       ownerAddr: AMBIRE_OWNER,
       safeTxnHash: SAFE_TXN_HASH,
       provider,
       getSentApprovalStatus: () => AccountOpStatus.BroadcastedButNotConfirmed,
-      shouldStop: () => false,
       onCheckError: () => {},
       ...fastTimings,
       ...overrides
     })
+  const wait = (overrides: Partial<Parameters<typeof waitForSafeOwnerApproval>[0]> = {}) =>
+    startWait(overrides).result
 
   test('resolves as approved once the Safe has the approval', async () => {
     const isApprovedSpy = jest
@@ -163,12 +164,30 @@ describe('waitForSafeOwnerApproval', () => {
   test('stops when asked to, e.g. when the Safe request is closed', async () => {
     const isApprovedSpy = jest.spyOn(safeLib, 'isSafeHashApproved').mockResolvedValue(false)
     let checks = 0
+    let approvalWait: ReturnType<typeof startWait>
+    approvalWait = startWait({
+      getSentApprovalStatus: () => {
+        checks += 1
+        if (checks === 2) approvalWait.stop()
+        return AccountOpStatus.BroadcastedButNotConfirmed
+      }
+    })
 
-    await expect(wait({ shouldStop: () => checks++ >= 2 })).resolves.toEqual({
-      isApproved: false,
-      hasFailed: false
+    await expect(approvalWait.result).resolves.toEqual({ isApproved: false, hasFailed: false })
+    // no check is left scheduled after stopping
+    await new Promise((resolve) => {
+      setTimeout(resolve, fastTimings.checkIntervalMs * 3)
     })
     expect(isApprovedSpy).toHaveBeenCalledTimes(2)
+  })
+
+  test('stopping right away does no check', async () => {
+    const isApprovedSpy = jest.spyOn(safeLib, 'isSafeHashApproved').mockResolvedValue(true)
+    const approvalWait = startWait()
+    approvalWait.stop()
+
+    await expect(approvalWait.result).resolves.toEqual({ isApproved: false, hasFailed: false })
+    expect(isApprovedSpy).not.toHaveBeenCalled()
   })
 
   test('reports a failed check and checks again', async () => {

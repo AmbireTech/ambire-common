@@ -145,7 +145,6 @@ import {
   confirm,
   getAlreadySignedOwners,
   getImportedSignersThatHaveNotSigned,
-  getNonce,
   getSafeApprovedHashSignature,
   getSafeTxnHash,
   getSigs,
@@ -216,6 +215,7 @@ import {
   getSafeOwnerApprovalAccountOp,
   getSafeOwnerApprovalFailureMessage,
   getSafeSmartAccountOwners,
+  SafeOwnerApprovalWait,
   waitForSafeOwnerApproval
 } from './safeOwnerApproval'
 import {
@@ -347,10 +347,10 @@ export class SignAccountOpController
   #customSafeNonce: bigint | null = null
 
   /**
-<<<<<<< HEAD
    * Safes only: the transaction of a smart account owner (Ambire v1, v2 or another Safe) that
    * approves this Safe transaction onchain with `approveHash`, as smart accounts can't sign it.
-   * Created when the user picks the owner and kept until another smart account owner is picked
+   * Created when the user picks the owner and kept while it's for the same owner and Safe
+   * transaction and isn't signed yet, see initSafeOwnerApproval
    */
   safeOwnerApproval: SignAccountOpController | null = null
 
@@ -366,7 +366,7 @@ export class SignAccountOpController
   /** The Safe transaction hash that safeOwnerApproval approves */
   #safeOwnerApprovalHash: string | null = null
 
-  /** Discards the results of an older initSafeOwnerApproval when the user picks another owner */
+  /** Discards the results of an older initSafeOwnerApproval once a newer one starts */
   #safeOwnerApprovalInitId = 0
 
   #networks: INetworksController
@@ -375,13 +375,12 @@ export class SignAccountOpController
 
   #isDestroyed = false
 
+  /** Safes only: the checks for sent approvals of smart account owners, stopped on destroy */
+  #safeOwnerApprovalWaits = new Set<SafeOwnerApprovalWait>()
+
   /**
-   * The gas prices used for broadcasting. With the `rpcWithBundlerFallback` strategy
-   * (see BaseAccount.getGasPriceFetchStrategy), these come from the bundler estimation
-=======
    * The network gas prices, never the custom ones the user sets. With the `rpcWithBundlerFallback`
    * strategy (see BaseAccount.getGasPriceFetchStrategy), these come from the bundler estimation
->>>>>>> 1d32b19993af78833bac030e7297295cf34f10a7
    * and are used for bundler broadcasts only. While there's no bundler estimation,
    * they're the gasPrice controller ones
    */
@@ -2242,6 +2241,20 @@ export class SignAccountOpController
       })
     }
 
+    // An active Safe always needs at least one signature, so a threshold of 0 (the threshold
+    // getter's fallback) means its details couldn't be loaded and it's unknown how many it needs
+    const isSafeThresholdUnknown =
+      !accountState || (accountState.isDeployed && accountState.threshold < 1)
+    if (
+      !!this.account.safeCreation &&
+      !this.accountOp.meta?.isSafeDeploy &&
+      isSafeThresholdUnknown
+    ) {
+      errors.push({
+        title: `We couldn't load the details of your Safe account on ${this.#network.name}, like how many of its owners have to sign. Please try again in a moment.`
+      })
+    }
+
     // It may occur, only if there are no available signer.
     if (
       !this.accountOp.meta?.isSafeDeploy &&
@@ -3036,6 +3049,7 @@ export class SignAccountOpController
     super.destroy()
     this.#isDestroyed = true
     this.#destroySafeOwnerApproval()
+    this.#safeOwnerApprovalWaits.forEach((approvalWait) => approvalWait.stop())
     // Stop intervals
     this.#simulateAndEstimateOrSimulateInterval.stop()
     this.#gasPriceInterval.stop()
@@ -3803,7 +3817,12 @@ export class SignAccountOpController
    * E.g. one approved only by smart account owners, as none of the Safe's keys is in the wallet
    */
   get #isSafeFullySigned(): boolean {
-    return !!this.account.safeCreation && (this.accountOp.signed?.length || 0) >= this.threshold
+    // a threshold of 0 means the Safe's details aren't loaded, never that it needs no signatures
+    return (
+      !!this.account.safeCreation &&
+      this.threshold > 0 &&
+      (this.accountOp.signed?.length || 0) >= this.threshold
+    )
   }
 
   /**
@@ -3866,8 +3885,6 @@ export class SignAccountOpController
       return
     }
 
-    // the approval is for one exact Safe transaction, so settle its nonce like signing does
-    await this.#resolveSafeNonceBeforeSigning()
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
       this.account.addr,
       this.accountOp.chainId
@@ -4080,7 +4097,7 @@ export class SignAccountOpController
     safeTxnHash: string,
     submittedAccountOp: SubmittedAccountOp
   ) {
-    const { isApproved, hasFailed } = await waitForSafeOwnerApproval({
+    const approvalWait = waitForSafeOwnerApproval({
       safeAddr: this.account.addr,
       ownerAddr,
       safeTxnHash,
@@ -4091,7 +4108,6 @@ export class SignAccountOpController
           submittedAccountOp.accountAddr,
           submittedAccountOp.chainId
         )?.status,
-      shouldStop: () => this.#isDestroyed,
       onCheckError: (error) =>
         this.emitError({
           level: 'silent',
@@ -4099,6 +4115,10 @@ export class SignAccountOpController
           error
         })
     })
+    this.#safeOwnerApprovalWaits.add(approvalWait)
+    const { isApproved, hasFailed } = await approvalWait.result.finally(() =>
+      this.#safeOwnerApprovalWaits.delete(approvalWait)
+    )
     if (this.#isDestroyed) return
 
     let isRecorded = false
@@ -4154,45 +4174,39 @@ export class SignAccountOpController
     const { safeTxn, safeTxnHash: currentSafeTxnHash } = this.#getSafeSigningData(accountState)
     if (currentSafeTxnHash !== safeTxnHash) return false
 
-    const prevSignedSigs = getSigs(this.accountOp.signature)
     const signature = getSafeApprovedHashSignature(ownerAddr)
     await this.#shareSafeSignature({
       safeTxn,
       safeTxnHash,
       owner: ownerAddr as Hex,
       signature,
-      shouldPropose: this.#shouldProposeSafeTxn(prevSignedSigs)
+      shouldPropose: this.#shouldProposeSafeTxn(getSigs(this.accountOp.signature))
     })
 
-    this.#updateAccountOp({
-      signature: sortSigs(
-        prevSignedSigs.concat([signature]),
-        safeTxnHash,
-        this.accountOp.safeTx?.confirmations
-      ),
-      signed: (this.accountOp.signed || []).concat([ownerAddr]),
-      txnId: safeTxnHash
-    })
+    this.#addSafeOwnerSignature(ownerAddr, signature, safeTxnHash)
     this.updateStatus()
     return true
   }
 
   /**
-   * Before the first signature of a Safe transaction, fetches the latest Safe nonce,
-   * unless the user picked one for this transaction.
-   * A cancel keeps the nonce of the transaction it replaces, as that's what it cancels
+   * Adds the signature of an owner to the ones the Safe transaction has now. They're read when
+   * it's added, not before the owner signed, as another owner may have signed meanwhile (e.g. a
+   * smart account approval got confirmed while a hardware wallet was signing). Otherwise that
+   * signature would be lost while its owner still counts as signed
    */
-  async #resolveSafeNonceBeforeSigning() {
-    if (this.accountOp.safeTx || this.#customSafeNonce !== null || this.#isNewCancel) return
+  #addSafeOwnerSignature(owner: string, signature: Hex, safeTxnHash: string) {
+    const signed = this.accountOp.signed || []
+    if (signed.includes(owner)) return
 
-    const latestNonce = await getNonce(this.accountOp.accountAddr, this.provider).catch((e) => {
-      console.log('failed to retrieve the latest nonce for Safe')
-      console.log(e)
-      return null
+    this.#updateAccountOp({
+      signature: sortSigs(
+        getSigs(this.accountOp.signature).concat([signature]),
+        safeTxnHash,
+        this.accountOp.safeTx?.confirmations
+      ),
+      signed: signed.concat([owner]),
+      txnId: safeTxnHash
     })
-    if (latestNonce) {
-      this.#updateNonce(latestNonce)
-    }
   }
 
   /**
@@ -4723,11 +4737,6 @@ export class SignAccountOpController
         !isSafeDeploy &&
         (this.#accountOp.signed?.length || 0) < this.threshold
       ) {
-        await this.#resolveSafeNonceBeforeSigning()
-
-        const prevSignedSigs = getSigs(this.accountOp.signature)
-        const nowSignedSigs: Hex[] = []
-
         const safeSigner = await this.#keystore.getSigner(signingKeyAddr!, signingKeyType!)
         if (safeSigner.init) safeSigner.init(this.#externalSignerControllers[signingKeyType!])
 
@@ -4739,12 +4748,6 @@ export class SignAccountOpController
             provider: this.provider
           })
         )) as Hex
-        nowSignedSigs.push(signature)
-
-        // all the signers that have signed
-        const allSigners = this.accountOp.signed
-          ? this.accountOp.signed.concat([signingKeyAddr!])
-          : [signingKeyAddr!]
 
         // The first free nonce, past this device's own pending txns, still goes out in one click.
         // So does a Replace, which takes the nonce of the pending txn to go through in its place
@@ -4762,21 +4765,14 @@ export class SignAccountOpController
             safeTxnHash,
             owner: this.#accountOp.signingKeyAddr as Hex,
             signature,
-            shouldPropose: this.#shouldProposeSafeTxn(prevSignedSigs)
+            // read now, as another owner may have proposed it while this one was signing
+            shouldPropose: this.#shouldProposeSafeTxn(getSigs(this.accountOp.signature))
           })
 
           this.status = { type: SigningStatus.Queued }
         }
 
-        this.#updateAccountOp({
-          signature: sortSigs(
-            prevSignedSigs.concat(nowSignedSigs),
-            safeTxnHash,
-            this.accountOp.safeTx?.confirmations
-          ),
-          signed: allSigners,
-          txnId: safeTxnHash
-        })
+        this.#addSafeOwnerSignature(signingKeyAddr!, signature, safeTxnHash)
 
         // change to quick broadcast mode so we could sign immediately
         // the userOp and broadcast it
