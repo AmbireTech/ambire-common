@@ -7,7 +7,11 @@ import { Interface, JsonRpcProvider } from 'ethers'
 export type PrivacyPoolsEntrypointAssetConfig = {
   poolAddress: string
   minimumDepositAmount: bigint
+  /** The share of a deposit the entrypoint keeps, in basis points (1 = 0.01%). */
+  vettingFeeBPS: bigint
 }
+
+const BASIS_POINTS_DENOMINATOR = 10_000n
 
 const ENTRYPOINT_INTERFACE = new Interface([
   'function assetConfig(address asset) view returns (address pool, uint256 minimumDepositAmount, uint256 vettingFeeBPS, uint256 maxRelayFeeBPS)'
@@ -34,6 +38,14 @@ export const readEntrypointAssetConfig = async ({
 
   return {
     poolAddress: decoded.pool,
-    minimumDepositAmount: BigInt(decoded.minimumDepositAmount)
+    minimumDepositAmount: BigInt(decoded.minimumDepositAmount),
+    vettingFeeBPS: BigInt(decoded.vettingFeeBPS)
   }
 }
+
+/**
+ * What a deposit of `amount` adds to the pool, after the entrypoint keeps its vetting fee. Rounds
+ * the fee down, as the entrypoint does, so it matches the note the deposit becomes.
+ */
+export const getDepositAmountAfterVettingFee = (amount: bigint, vettingFeeBPS: bigint): bigint =>
+  amount - (amount * vettingFeeBPS) / BASIS_POINTS_DENOMINATOR

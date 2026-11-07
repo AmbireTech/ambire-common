@@ -890,6 +890,131 @@ describe('Main Controller ', () => {
     })
   })
 
+  describe('accountPickerSetInitParamsFromSavedSeed', () => {
+    const PASSPHRASE = 'extra word'
+
+    const prepareSeedWithUnsavedPassphrase = async () => {
+      const { mainCtrl } = await makeMainController()
+      await mainCtrl.initialLoadPromise
+      await mainCtrl.keystore.addSecret('password', 'password', '', false)
+      await mainCtrl.keystore.unlockWithSecret('password', 'password')
+      await mainCtrl.keystore.addTempSeed({
+        seed: process.env.SEED!,
+        seedPassphrase: PASSPHRASE,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      await mainCtrl.keystore.persistTempSeed()
+
+      return { mainCtrl, seedId: mainCtrl.keystore.seeds[0]!.id }
+    }
+
+    const setInitParamsFromSavedSeed = async (
+      mainCtrl: MainController,
+      params: { id: string; seedPassphrase?: string; shouldSavePassphrase?: boolean }
+    ) => {
+      const setInitParamsSpy = jest.spyOn(mainCtrl.accountPicker, 'setInitParams')
+      const emittedErrors: ErrorRef[] = []
+      const statuses: string[] = []
+      const unsubscribeErrors = mainCtrl.onError((error) => emittedErrors.push(error))
+      const unsubscribeUpdates = mainCtrl.onUpdate(() =>
+        statuses.push(mainCtrl.statuses.accountPickerSetInitParamsFromSavedSeed)
+      )
+
+      await mainCtrl.accountPickerSetInitParamsFromSavedSeed(params)
+
+      unsubscribeErrors()
+      unsubscribeUpdates()
+      const initParams = setInitParamsSpy.mock.calls[0]?.[0]
+      setInitParamsSpy.mockRestore()
+
+      return { initParams, emittedErrors, statuses }
+    }
+
+    test('prepares the account picker with the entered passphrase', async () => {
+      const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
+
+      const { initParams, emittedErrors, statuses } = await setInitParamsFromSavedSeed(mainCtrl, {
+        id: seedId,
+        seedPassphrase: PASSPHRASE
+      })
+
+      expect(emittedErrors).toEqual([])
+      expect(statuses).toContain('SUCCESS')
+      expect(initParams?.keyIterator?.subType).toBe('seed')
+      expect(mainCtrl.statuses.accountPickerSetInitParamsFromSavedSeed).toBe('INITIAL')
+    })
+
+    test('leaves a wrong passphrase to the reply, without reporting an error', async () => {
+      const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
+
+      const { initParams, emittedErrors } = await setInitParamsFromSavedSeed(mainCtrl, {
+        id: seedId,
+        seedPassphrase: 'another word'
+      })
+
+      expect(initParams).toBeUndefined()
+      expect(emittedErrors).toEqual([])
+      expect(mainCtrl.statuses.accountPickerSetInitParamsFromSavedSeed).toBe('INITIAL')
+    })
+
+    test('replies to the request once set up, and with the wrong passphrase', async () => {
+      const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+
+      await mainCtrl.accountPickerSetInitParamsFromSavedSeed(
+        { id: seedId, seedPassphrase: 'another word' },
+        'request-1'
+      )
+      await mainCtrl.accountPickerSetInitParamsFromSavedSeed(
+        { id: seedId, seedPassphrase: PASSPHRASE },
+        'request-2'
+      )
+
+      expect(sendUiMessage).toHaveBeenCalledWith({
+        requestId: 'request-1',
+        ok: true,
+        res: { isWrongPassphrase: true }
+      })
+      expect(sendUiMessage).toHaveBeenCalledWith({
+        requestId: 'request-2',
+        ok: true,
+        res: { isWrongPassphrase: false }
+      })
+      sendUiMessage.mockRestore()
+    })
+
+    test('checks the passphrase only once when saving it', async () => {
+      const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
+      const isSeedPassphraseCorrectSpy = jest.spyOn(mainCtrl.keystore, 'isSeedPassphraseCorrect')
+
+      const { initParams, emittedErrors } = await setInitParamsFromSavedSeed(mainCtrl, {
+        id: seedId,
+        seedPassphrase: PASSPHRASE,
+        shouldSavePassphrase: true
+      })
+
+      expect(isSeedPassphraseCorrectSpy).toHaveBeenCalledTimes(1)
+      isSeedPassphraseCorrectSpy.mockRestore()
+      expect(emittedErrors).toEqual([])
+      expect(initParams?.keyIterator?.subType).toBe('seed')
+      expect(mainCtrl.keystore.seeds[0]!.isPassphraseNeeded).toBe(false)
+    })
+
+    test('neither saves a wrong passphrase nor opens the picker with it', async () => {
+      const { mainCtrl, seedId } = await prepareSeedWithUnsavedPassphrase()
+
+      const { initParams, emittedErrors } = await setInitParamsFromSavedSeed(mainCtrl, {
+        id: seedId,
+        seedPassphrase: 'another word',
+        shouldSavePassphrase: true
+      })
+
+      expect(initParams).toBeUndefined()
+      expect(emittedErrors).toEqual([])
+      expect(mainCtrl.keystore.seeds[0]!.isPassphraseNeeded).toBe(true)
+    })
+  })
+
   describe('updateAccounts', () => {
     const getAccount = (addr: string) => ({
       addr,
@@ -1077,6 +1202,40 @@ describe('Main Controller ', () => {
       expect(discardSimulationSpy).not.toHaveBeenCalled()
       expect(updateSelectedAccountSpy).not.toHaveBeenCalled()
       expect(scheduleUpdateSpy).not.toHaveBeenCalled()
+    })
+
+    test('should tell Privacy Pools about the ops that got their outcome, together and not the pending ones, even when nothing else needs an update', async () => {
+      const mainCtrl = await setupController()
+      const finalizedOp = {
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+      const failedOp = { ...finalizedOp, status: AccountOpStatus.Failure }
+      const pendingOp = { ...finalizedOp, status: AccountOpStatus.BroadcastedButNotConfirmed }
+      const finalizedOnPrivacyPoolsSpy = jest
+        .spyOn(mainCtrl.privacyPools, 'onAccountOpsFinalized')
+        .mockResolvedValue(undefined)
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [finalizedOp, pendingOp, failedOp]
+        }
+      })
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(finalizedOnPrivacyPoolsSpy.mock.calls).toEqual([[[finalizedOp, failedOp]]])
     })
 
     test('removes the safs of the Safe on the same chain when an internal deployment fails', async () => {
@@ -1726,6 +1885,28 @@ describe('Main Controller ', () => {
       const [storedAccountOp] = jest.mocked(mainCtrl.activity.addAccountOp).mock.calls[0]!
       expect(storedAccountOp.meta).not.toHaveProperty('quote')
       expect(storedAccountOp.meta?.swapTxn?.activeRouteId).toBe(SIGNED_ROUTE_ID)
+    })
+  })
+
+  describe('pending transactions told to Privacy Pools', () => {
+    test('are the broadcast ones of every account and those of the calls requests, and no other request', async () => {
+      const { mainCtrl } = await makeMainController()
+      const broadcastOps = [
+        { id: 'op-1', chainId: 1n, calls: [] },
+        { id: 'op-2', chainId: 10n, calls: [] }
+      ]
+      const requestedAccountOp = { id: 'op-3', chainId: 1n, calls: [] }
+      jest.spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get').mockReturnValue({
+        [accounts[0]!.addr]: [broadcastOps[0]],
+        [accounts[1]!.addr]: [broadcastOps[1]]
+      } as any)
+      mainCtrl.requests.userRequests = [
+        { id: 1, kind: 'calls', signAccountOp: { accountOp: requestedAccountOp } },
+        { id: 2, kind: 'dappConnect' }
+      ] as any
+
+      // @ts-expect-error protected, called directly to test what Privacy Pools is given
+      expect(mainCtrl.getPendingAccountOps()).toEqual([...broadcastOps, requestedAccountOp])
     })
   })
 
