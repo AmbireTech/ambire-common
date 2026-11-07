@@ -2053,7 +2053,8 @@ export class MainController extends EventEmitter implements IMainController {
         maxDataAgeMs
       })
     ])
-    this.fetchSafeTxns([], true).catch((e) => e) // we catch the error inside
+    // Refetch only the chains the dashboard is filtered by, if it is filtered
+    this.fetchSafeTxns(chainIds ?? [], true).catch((e) => e) // we catch the error inside
   }
 
   /**
@@ -2072,12 +2073,16 @@ export class MainController extends EventEmitter implements IMainController {
 
   /**
    * Fetches the pending txns of the selected Safe, and then the pending counts of the other
-   * Safes, one after the other so they don't compete for the Safe API's rate limit
+   * Safes, one after the other so they don't compete for the Safe API's rate limit.
+   * Nothing is fetched while the wallet is locked, as unlocking fetches them again.
    */
   async #fetchAllSafesPending() {
+    // do not make Safe requests if the wallet is locked
+    if (!this.keystore.isUnlocked) return
+
     await this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
 
-    // do not make Safe requests for the other Safes if the wallet is locked
+    // the wallet may have been locked while the selected Safe was fetched
     if (!this.keystore.isUnlocked) return
 
     await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
@@ -2091,6 +2096,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
     if (!this.selectedAccount?.account?.safeCreation) return
+    // do not make Safe requests if the wallet is locked
+    if (!this.keystore.isUnlocked) return
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex
 
@@ -2102,20 +2109,16 @@ export class MainController extends EventEmitter implements IMainController {
     const accountState = await this.accounts.getOrFetchAccountStates(safeAddr)
     if (!accountState) return
 
-    const finalChainIds = chainIds.length
-      ? chainIds
-      : this.networks.networks
-          .filter((n) => {
-            // fetch info only about deployed safes
-            const state = accountState?.[n.chainId.toString()]
-            return state?.isDeployed
-          })
-          .map((n) => n.chainId)
+    // fetch info only about deployed safes, and only on the passed chains if there are any.
+    // A chain without an account state has no nonce to fetch the pending txns from either
+    const networksAndThresholds = this.networks.networks.flatMap(({ chainId }) => {
+      if (chainIds.length && !chainIds.includes(chainId)) return []
 
-    const networksAndThresholds = finalChainIds.map((c) => ({
-      chainId: c,
-      threshold: accountState[c.toString()]?.threshold || 0
-    }))
+      const chainAccountState = accountState[chainId.toString()]
+      if (!chainAccountState?.isDeployed) return []
+
+      return [{ chainId, threshold: chainAccountState.threshold, nonce: chainAccountState.nonce }]
+    })
 
     if (!networksAndThresholds.length) return
 
@@ -2123,6 +2126,10 @@ export class MainController extends EventEmitter implements IMainController {
       'fetchSafeTxns',
       async () => {
         for (let i = 0; i < networksAndThresholds.length; i++) {
+          // stop once the wallet gets locked, instead of pausing before each remaining chain.
+          // If it gets locked during the pause below, `fetchPending` makes no request either
+          if (!this.keystore.isUnlocked) break
+
           // wait a second to not hit 5 request per minute API limit
           if (i !== 0) await wait(600)
 

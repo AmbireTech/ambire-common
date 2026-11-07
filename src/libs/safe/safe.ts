@@ -539,12 +539,23 @@ export async function addMessageSignature(chainId: bigint, hash: string, signatu
   return apiKit.addMessageSignature(hash, signature)
 }
 
+/**
+ * Fetches the Safe txns that are not executed yet, starting from `currentNonce` - the nonce
+ * of the Safe on-chain, as everything below it can no longer execute.
+ * api-kit's `getPendingTransactions` is not used on purpose: it fetches the Safe info first
+ * to read the nonce from the Safe API (on every call where `currentNonce` is falsy, so 0
+ * included), which costs an extra request per chain on every fetch.
+ */
 export async function getPendingTransactions(
   chainId: bigint,
-  safeAddress: Hex
+  safeAddress: Hex,
+  currentNonce: bigint
 ): Promise<SafeMultisigTransactionListResponse & { chainId: bigint; type: string }> {
   const apiKit = getApiKit(chainId)
-  const response = await apiKit.getPendingTransactions(safeAddress, {
+  // The double underscore is the filter syntax of the Safe Transaction Service, not a typo
+  const response = await apiKit.getMultisigTransactions(safeAddress, {
+    executed: false,
+    nonce__gte: currentNonce.toString(),
     ordering: 'nonce'
   })
   return { ...response, chainId, type: 'txn' }
@@ -575,15 +586,21 @@ export async function getLatestMessages(
   return { ...response, results: finalRes, chainId, type: 'message' }
 }
 
+/**
+ * A chain to fetch the pending Safe txns and messages on. `threshold` is how many owner
+ * signatures confirm a message, and `nonce` is the nonce of the Safe on-chain.
+ */
+export type SafePendingFetchNetwork = { chainId: bigint; threshold: number; nonce: bigint }
+
 export async function fetchAllPending(
-  networks: { chainId: bigint; threshold: number }[],
+  networks: SafePendingFetchNetwork[],
   safeAddr: Hex
 ): Promise<SafeResults | null> {
   const results: SafeResults = {}
   for (let i = 0; i < networks.length; i++) {
     const network = networks[i]!
     const responses = await Promise.all([
-      getPendingTransactions(network.chainId, safeAddr),
+      getPendingTransactions(network.chainId, safeAddr, network.nonce),
       getLatestMessages(network.chainId, safeAddr)
     ])
     responses.forEach((r) => {
