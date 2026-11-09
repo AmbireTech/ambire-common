@@ -183,6 +183,8 @@ async function buildUserOp(
   }
   const validUntil = options.validUntil ?? 0
   const validAfter = options.validAfter ?? 0
+  const paymasterVerificationGasLimit = ethers.toBeHex(400000, 16)
+  const paymasterPostOp = ethers.toBeHex(0, 16)
   const hash = ethers.keccak256(
     abiCoder.encode(
       [
@@ -197,6 +199,7 @@ async function buildUserOp(
         'bytes',
         'bytes32',
         'uint256',
+        'bytes32',
         'bytes32'
       ],
       [
@@ -211,7 +214,8 @@ async function buildUserOp(
         userOp.callData,
         userOp.accountGasLimits,
         userOp.preVerificationGas,
-        userOp.gasFees
+        userOp.gasFees,
+        ethers.concat([paymasterVerificationGasLimit, paymasterPostOp])
       ]
     )
   )
@@ -224,8 +228,6 @@ async function buildUserOp(
     ['uint48', 'uint48', 'bytes'],
     [validUntil, validAfter, signature]
   )
-  const paymasterVerificationGasLimit = ethers.toBeHex(400000, 16)
-  const paymasterPostOp = ethers.toBeHex(0, 16)
   const paymasterAndData = ethers.hexlify(
     ethers.concat([
       await paymaster.getAddress(),

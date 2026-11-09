@@ -66,6 +66,9 @@ export type DappRequestQueueItem = {
   fail: (error: any) => void
 }
 
+/** An app request held unbuilt until the user turns on the disabled network it is for. */
+export type HeldDappRequest = Pick<DappRequestQueueItem, 'request' | 'dappPromise'>
+
 /** One transaction request, validated and ready to go into a batch. */
 export type DappCallsRequestParams = {
   calls: Call[]
@@ -99,6 +102,11 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     swapTxn?: SwapAndBridgeSendTxRequest
     quote?: SwapAndBridgeQuote
     isSafeDeploy?: boolean
+    /**
+     * The account the user was on before the wallet switched to `accountAddr` for this request.
+     * A request to switch back to it is queued once this request is sent or rejected.
+     */
+    switchBackToAccountAddr?: string
   }
   signAccountOp: ISignAccountOpController
 }
@@ -194,7 +202,7 @@ export interface SwitchAccountRequest extends UserRequestBase {
   meta: UserRequestBase['meta'] & {
     accountAddr: string
     switchToAccountAddr: string
-    nextRequestKind: UserRequest['kind']
+    nextRequestKind?: UserRequest['kind']
     pendingToRemove?: boolean
   }
 }
@@ -203,6 +211,8 @@ export interface WalletAddEthereumChainRequest extends UserRequestBase<[DappProm
   meta: UserRequestBase['meta'] & {
     // TODO: impl AddEthereumChainParameter
     params: [any]
+    /** Set when it holds app requests until the network is on, so the view moves straight to them */
+    hasNextRequest?: boolean
     [key: string]: any
   }
 }

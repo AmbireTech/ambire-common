@@ -67,6 +67,7 @@ import {
   CallsWaitingAccountSwitch,
   DappCallsRequestParams,
   DappRequestQueueItem,
+  HeldDappRequest,
   OpenRequestWindowParams,
   PendingDappPromise,
   PlainTextMessageUserRequest,
@@ -75,10 +76,12 @@ import {
   SignUserRequest,
   SiweMessageUserRequest,
   SwapAndBridgeRequest,
+  SwitchAccountRequest,
   TransferRequest,
   TypedMessageUserRequest,
   UserRequest,
-  UserRequestWaitingAccountSwitch
+  UserRequestWaitingAccountSwitch,
+  WalletAddEthereumChainRequest
 } from '../../interfaces/userRequest'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
@@ -94,8 +97,10 @@ import { getDappIdsFromUserRequest } from '../../libs/dapps/dappRequestSpam'
 import { isAccountAllowedForDapp, isSigningAuthPlatform } from '../../libs/dapps/helpers'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getShouldSimulateInTheBackground } from '../../libs/main/main'
+import { networkChainIdToHex } from '../../libs/networks/networks'
 import { TokenResult } from '../../libs/portfolio'
 import { PortfolioRewardsResult } from '../../libs/portfolio/interfaces'
+import { readPrivacyPoolsRagequit } from '../../libs/privacyPools/ragequit'
 import {
   buildSwitchAccountUserRequest,
   dappRequestMethodToRequestKind,
@@ -128,7 +133,7 @@ import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
-import { SpeedUp } from '../signAccountOp/speedUp'
+import { TxnReplacement } from '../signAccountOp/txnReplacement'
 
 import type { EIP712TypedData } from '@safe-global/types-kit'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -138,6 +143,9 @@ import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/sig
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
+
+/** How long a resolved transitional request stays, so the app request it was blocking can arrive */
+const TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS = 300
 
 const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
   'Your Safe account is still being activated on this network. Wait a moment, then try again.'
@@ -306,6 +314,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    */
   #isWalletInitiatedClose = false
 
+  /**
+   * App requests for a disabled network, keyed by the id of the request asking the user to turn
+   * it on. Kept unbuilt, as nothing can be built for a disabled network, and built once it is on.
+   */
+  #dappRequestsWaitingNetworkEnable = new Map<
+    UserRequest['id'],
+    { chainId: bigint; heldRequests: HeldDappRequest[] }
+  >()
+
   private shouldSimulateAccountOps = true
 
   get currentUserRequest() {
@@ -317,7 +334,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#onSetCurrentUserRequest(val)
   }
 
-  #getFirstFreeNonce(accountAddr: string, chainId: bigint, startNonce: bigint): bigint {
+  /**
+   * The first Safe nonce not taken by a transaction this device sent that the RPC may not count
+   * yet, nor by another queued (not yet sent) request.
+   */
+  #getFirstFreeNonce(accountAddr: string, chainId: bigint, accountStateNonce: bigint): bigint {
+    const startNonce = this.#activity.getNextNonce(
+      accountAddr,
+      chainId,
+      'account',
+      accountStateNonce
+    )
     const queuedNonces = this.userRequests.reduce<bigint[]>((nonces, request) => {
       if (
         request.kind !== 'calls' ||
@@ -619,9 +646,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         const accountStateBefore =
           this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
-        // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
+        // Try to update the account state for 2 seconds. If that fails, use the previous account state if it exists,
         // otherwise wait for the fetch to complete (no matter how long it takes).
         // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
+        let fallbackTimeoutId: ReturnType<typeof setTimeout> | undefined
         const accountState = await Promise.race([
           this.#accounts
             .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
@@ -630,10 +658,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           accountStateBefore
             ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
               new Promise<AccountOnchainState | undefined>((res) => {
-                setTimeout(() => res(accountStateBefore), 2000)
+                fallbackTimeoutId = setTimeout(() => res(accountStateBefore), 2000)
               })
             : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
         ])
+        clearTimeout(fallbackTimeoutId)
 
         if (!accountState) {
           const message =
@@ -807,7 +836,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #findOpenSpeedUpRequest(accountOp: AccountOp): CallsUserRequest | undefined {
     const replacedIdentifier = accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier
     if (!replacedIdentifier) return undefined
-    const isCancel = SpeedUp.isCancel(accountOp)
+    const isCancel = TxnReplacement.isCancel(accountOp)
 
     return this.userRequests.find(
       (r): r is CallsUserRequest =>
@@ -816,7 +845,28 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         r.meta.chainId === accountOp.chainId &&
         r.signAccountOp.accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier ===
           replacedIdentifier &&
-        SpeedUp.isCancel(r.signAccountOp.accountOp) === isCancel
+        TxnReplacement.isCancel(r.signAccountOp.accountOp) === isCancel
+    )
+  }
+
+  /**
+   * An open request that already resends or cancels the same pending Safe transaction with a
+   * Safe accountOp built in advance: same Safe nonce and same calls. Pressing the button again
+   * reopens it, as a second one would compete with it for the same nonce. A cancel is an empty
+   * call, so an open onchain rejection at that nonce is reopened for it too, as it's the same
+   */
+  #findOpenPrebuiltSafeRequest(accountOp: AccountOp): CallsUserRequest | undefined {
+    const safeNonce = getAccountOpNonce(accountOp)
+    if (safeNonce === null) return undefined
+
+    return this.userRequests.find(
+      (r): r is CallsUserRequest =>
+        r.kind === 'calls' &&
+        !r.signAccountOp.isSpeedUpTransaction &&
+        r.meta.accountAddr === accountOp.accountAddr &&
+        r.meta.chainId === accountOp.chainId &&
+        getAccountOpNonce(r.signAccountOp.accountOp) === safeNonce &&
+        haveSameCalls(r.signAccountOp.accountOp.calls, accountOp.calls)
     )
   }
 
@@ -829,8 +879,33 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       (r): r is CallsUserRequest =>
         r.kind === 'calls' &&
         !!r.signAccountOp.account.safeCreation &&
-        SpeedUp.isCancel(r.signAccountOp.accountOp) &&
+        TxnReplacement.isCancel(r.signAccountOp.accountOp) &&
         r.signAccountOp.accountOp.txnId === safeTxnHash
+    )
+  }
+
+  /**
+   * A request of the account on the chain that already takes back the Privacy Pools deposit with
+   * this label. Taking it back again in the same transaction would spend the deposit twice and make
+   * the whole transaction fail, so this request is opened instead
+   */
+  findPrivacyPoolsRagequitRequest({
+    accountAddr,
+    chainId,
+    label
+  }: {
+    accountAddr: string
+    chainId: bigint
+    label: bigint
+  }): CallsUserRequest | undefined {
+    return this.userRequests.find(
+      (r): r is CallsUserRequest =>
+        r.kind === 'calls' &&
+        r.meta.chainId === chainId &&
+        r.meta.accountAddr.toLowerCase() === accountAddr.toLowerCase() &&
+        r.signAccountOp.accountOp.calls.some(
+          ({ data }) => readPrivacyPoolsRagequit(data)?.label === label
+        )
     )
   }
 
@@ -839,10 +914,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * `#findOpenSpeedUpRequest` does. Undefined for anything that isn't a speed up
    */
   #getSpeedUpKey(accountOp: AccountOp | undefined): string | undefined {
-    if (!accountOp || !SpeedUp.isSpeedUp(accountOp)) return undefined
+    if (!accountOp || !TxnReplacement.isSpeedUp(accountOp)) return undefined
     const replacedIdentifier = accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier
     if (!replacedIdentifier) return undefined
-    const replacementType = SpeedUp.isCancel(accountOp) ? 'cancel' : 'speedUp'
+    const replacementType = TxnReplacement.isCancel(accountOp) ? 'cancel' : 'speedUp'
 
     return `${accountOp.chainId.toString()}:${replacedIdentifier}:${replacementType}`
   }
@@ -1192,7 +1267,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       for (const r of this.userRequests) {
-        if (r.kind === 'walletAddEthereumChain') {
+        // A prompt holding app requests is rejected with the view instead, as are its requests
+        if (
+          r.kind === 'walletAddEthereumChain' &&
+          !this.#dappRequestsWaitingNetworkEnable.has(r.id)
+        ) {
           const chainId = r.meta.params[0].chainId
 
           if (!chainId) continue
@@ -1351,8 +1430,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const safeRejectIds: string[] = []
     let didRemoveCurrentUserRequest = false
     let didRemoveSkipQueueRequest = false
+    let switchBackRequest: SwitchAccountRequest | undefined
 
     ids.forEach((id) => {
+      // A network prompt removed without being answered would otherwise leave its apps waiting
+      this.#takeHeldDappRequests(id)?.forEach(({ dappPromise }) =>
+        dappPromise.reject(ethErrors.provider.userRejectedRequest<any>())
+      )
+
       const req = this.userRequests.find((uReq) => uReq.id === id)
 
       if (!req) return
@@ -1379,6 +1464,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
 
         req.signAccountOp.destroy()
+
+        switchBackRequest ??= this.#buildSwitchBackRequest(meta)
       }
       if (kind === 'switchAccount') {
         const requestsToAddOrRemove = this.userRequestsWaitingAccountSwitch.filter(
@@ -1418,6 +1505,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
     })
 
+    // Added straight to the list because `addUserRequests` drops the benzin request, which has
+    // to stay open when this removal comes from a sent transaction
+    if (switchBackRequest) this.userRequests.push(switchBackRequest)
+
     // reject all Safe txns so they do not appear by accident again
     if (safeRejectIds.length) await this.#safe.rejectTxnId(safeRejectIds)
 
@@ -1441,9 +1532,41 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
+  /**
+   * The request that takes the user back to the account they came from, once a request that made
+   * the wallet switch accounts is done. Undefined when there is none to go back to. The user may
+   * have picked another account in the meantime, or removed the one they came from, and neither
+   * is overridden.
+   */
+  #buildSwitchBackRequest({
+    accountAddr,
+    switchBackToAccountAddr
+  }: CallsUserRequest['meta']): SwitchAccountRequest | undefined {
+    if (!switchBackToAccountAddr) return undefined
+    if (this.#selectedAccount.account?.addr !== accountAddr) return undefined
+    if (!this.#accounts.accounts.some((a) => a.addr === switchBackToAccountAddr)) return undefined
+
+    const isAlreadyQueued = this.userRequests.some(
+      (r) => r.kind === 'switchAccount' && r.meta.switchToAccountAddr === switchBackToAccountAddr
+    )
+    if (isAlreadyQueued) return undefined
+
+    const hasCallsWaiting = this.userRequests.some(
+      (r) => r.kind === 'calls' && r.meta.accountAddr === switchBackToAccountAddr
+    )
+
+    return buildSwitchAccountUserRequest({
+      switchToAccountAddr: switchBackToAccountAddr,
+      nextRequestKind: hasCallsWaiting ? 'calls' : undefined,
+      dappPromises: []
+    })
+  }
+
   async resolveUserRequest(data: any, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
+    // Already resolved and only waiting to be removed, so resolving it again changes nothing
+    if (userRequest.meta.pendingToRemove) return
 
     const { kind, meta, dappPromises } = userRequest
 
@@ -1477,6 +1600,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       p.resolve(data)
     })
 
+    const heldForChainId = this.#dappRequestsWaitingNetworkEnable.get(requestId)?.chainId
+    const heldDappRequests = this.#takeHeldDappRequests(requestId)
+
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
     // before being resolved. The timeout prevents the request-window from closing before the actual dApp request arrives
     if (kind === 'unlock' || kind === 'dappConnect') {
@@ -1485,7 +1611,24 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       setTimeout(async () => {
         await this.removeUserRequests([requestId])
         this.emitUpdate()
-      }, 300)
+      }, TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS)
+    } else if (heldDappRequests) {
+      // The network is on now, so the requests held for it can be built. The prompt stays until
+      // they are, so the view moves straight to them instead of closing and reopening for them.
+      meta.pendingToRemove = true
+
+      await Promise.all(
+        heldDappRequests.map(({ request, dappPromise }) =>
+          this.#buildDappProviderRequest(request, dappPromise, heldForChainId).catch((error: any) =>
+            dappPromise.reject(error)
+          )
+        )
+      )
+
+      // A built request takes the view over, so the prompt opens the next one only if it is
+      // still shown - e.g. when nothing was built
+      const isPromptShown = this.currentUserRequest?.id === requestId
+      await this.removeUserRequests([requestId], { shouldOpenNextRequest: isPromptShown })
     } else {
       await this.removeUserRequests([requestId])
       this.emitUpdate()
@@ -1764,16 +1907,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.initialLoadPromise
 
     if (type === 'dappRequest') {
-      try {
-        await this.#processDappRequest(params.request, params.dappPromise)
-      } catch (e: any) {
-        this.emitError({
-          error: e,
-          message: `Error processing app request${e.message ? `: ${e.message}` : '.'}`,
-          level: 'major'
-        })
-        throw e
-      }
+      await this.#buildDappProviderRequest(params.request, params.dappPromise)
     }
 
     if (type === 'calls') {
@@ -1791,6 +1925,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (type === 'swapAndBridgeRequest') {
       await this.#buildSwapAndBridgeUserRequest(params)
+    }
+
+    if (type === 'privacyPoolsRagequitRequest') {
+      await this.#buildPrivacyPoolsRagequitUserRequest(params)
     }
 
     if (type === 'claimWalletRequest') {
@@ -2061,14 +2199,38 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
+  /** Builds an app request and tells the user when that fails. Rethrows, so the app hears why. */
+  async #buildDappProviderRequest(
+    request: DappProviderRequest,
+    dappPromise: PendingDappPromise,
+    heldForChainId?: bigint
+  ) {
+    try {
+      await this.#processDappRequest(request, dappPromise, heldForChainId)
+    } catch (e: any) {
+      this.emitError({
+        error: e,
+        message: `Error processing app request${e.message ? `: ${e.message}` : '.'}`,
+        level: 'major'
+      })
+      throw e
+    }
+  }
+
   /**
    * The one place every app request passes through, whatever brought it in - the injected
    * provider, the mobile WebView or WalletConnect. Requests that would collide with one another
    * are queued behind the one being built and built together; everything else builds straight
    * through. Resolves once the request has been added (or answered on the spot), and rejects
    * with what the app should be told, which is what `rpcFlow` turns into the RPC error.
+   * `heldForChainId` is the network a request waited on to be turned on. The request is built
+   * on it even when the app has moved to another network since.
    */
-  async #processDappRequest(request: DappProviderRequest, dappPromise: PendingDappPromise) {
+  async #processDappRequest(
+    request: DappProviderRequest,
+    dappPromise: PendingDappPromise,
+    heldForChainId?: bigint
+  ) {
     await this.initialLoadPromise
 
     if (this.#dapps.isDappSilenced(request.session.id)) {
@@ -2078,7 +2240,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     await this.#guardHWSigning(true)
 
-    const dapp = (await this.#getDapp(request.session.id)) || null
+    const currentDapp = (await this.#getDapp(request.session.id)) || null
+    const dapp =
+      currentDapp && heldForChainId !== undefined
+        ? { ...currentDapp, chainId: Number(heldForChainId) }
+        : currentDapp
+
+    const disabledNetwork = this.#getDisabledNetworkOfDappRequest(request, dapp)
+    if (disabledNetwork) {
+      await this.#holdUntilNetworkEnabled(disabledNetwork, { request, dappPromise })
+      return
+    }
+
     const key = this.#getDappRequestKey(request, dapp)
 
     if (!key) {
@@ -2087,6 +2260,88 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
 
     await this.#enqueueDappRequest(key, { request, dappPromise, dapp })
+  }
+
+  /** The disabled network an app's sign request is for, if it is for one */
+  #getDisabledNetworkOfDappRequest(
+    request: DappProviderRequest,
+    dapp: Dapp | null
+  ): Network | undefined {
+    const kind = dappRequestMethodToRequestKind(request.method)
+    if (!isSignRequest(kind)) return undefined
+
+    const chainId = kind === 'calls' ? this.#getDappCallsChainId(request, dapp) : dapp?.chainId
+
+    return this.#networks.disabledNetworks.find((n) => Number(n.chainId) === Number(chainId))
+  }
+
+  /**
+   * Holds an app request for a disabled network behind a prompt to turn that network on, like an
+   * account switch holds one for another account. Requests arriving for the same network join the
+   * prompt already there instead of each opening their own.
+   */
+  async #holdUntilNetworkEnabled(network: Network, heldRequest: HeldDappRequest) {
+    // Looked up and set with no await in between, so a request arriving meanwhile finds the prompt
+    const existingPrompt = [...this.#dappRequestsWaitingNetworkEnable.values()].find(
+      (prompt) => prompt.chainId === network.chainId
+    )
+    if (existingPrompt) {
+      existingPrompt.heldRequests.push(heldRequest)
+      return
+    }
+
+    const promptId = generateUuid()
+    this.#dappRequestsWaitingNetworkEnable.set(promptId, {
+      chainId: network.chainId,
+      heldRequests: [heldRequest]
+    })
+
+    try {
+      await this.#addBuiltDappRequest({
+        id: promptId,
+        kind: 'walletAddEthereumChain',
+        meta: {
+          params: [
+            {
+              chainId: networkChainIdToHex(network.chainId),
+              chainName: network.name,
+              rpcUrls: network.rpcUrls,
+              nativeCurrency: { name: network.nativeAssetName, symbol: network.nativeAssetSymbol }
+            }
+          ],
+          hasNextRequest: true
+        },
+        dappPromises: [
+          {
+            id: generateUuid(),
+            session: heldRequest.request.session,
+            meta: {},
+            // Turning the network on is all it asks for - `resolveUserRequest` builds what it held
+            resolve: () => {},
+            // Rejected with the prompt, whether by the user or by the view closing
+            reject: (error: any) =>
+              this.#takeHeldDappRequests(promptId)?.forEach(({ dappPromise }) =>
+                dappPromise.reject(error)
+              )
+          }
+        ]
+      } as WalletAddEthereumChainRequest)
+    } finally {
+      // Never added, e.g. turned away by a pending swap, so nothing would ever answer its apps
+      if (!this.userRequests.some((r) => r.id === promptId)) {
+        this.#takeHeldDappRequests(promptId)?.forEach(({ dappPromise }) =>
+          dappPromise.reject(ethErrors.rpc.internal())
+        )
+      }
+    }
+  }
+
+  /** Hands over the app requests a network prompt holds, and stops holding them */
+  #takeHeldDappRequests(promptId: UserRequest['id']): HeldDappRequest[] | undefined {
+    const heldRequests = this.#dappRequestsWaitingNetworkEnable.get(promptId)?.heldRequests
+    this.#dappRequestsWaitingNetworkEnable.delete(promptId)
+
+    return heldRequests
   }
 
   /**
@@ -2509,7 +2764,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             })
           }
 
-          console.log(
+          this.debugLog(
+            'autoLogin',
             `SIWE auto-login with dapp ${request.session.origin} and account ${msgAddress} succeeded.`
           )
 
@@ -3092,6 +3348,57 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (userRequest) await this.addUserRequests([userRequest])
   }
 
+  async #buildPrivacyPoolsRagequitUserRequest({
+    accountAddr,
+    chainId,
+    calls
+  }: {
+    accountAddr: string
+    chainId: bigint
+    calls: Call[]
+  }) {
+    const { account } = this.#selectedAccount
+    // Selected first by the caller, as the call only works from the account that deposited.
+    // Thrown rather than emitted, so the caller's status does not report it as done
+    if (account?.addr !== accountAddr) {
+      throw new EmittableError({
+        level: 'major',
+        message: 'Could not prepare taking back this deposit. Please try again.',
+        error: new Error('requestsController: the ragequit depositor is not the selected account')
+      })
+    }
+
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(accountAddr, chainId)
+    const network = this.#networks.networks.find((net) => net.chainId === chainId)
+    if (!accountState || !network) {
+      throw new EmittableError({
+        level: 'major',
+        message:
+          "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support.",
+        error: new Error(
+          `requestsController error: accountState for ${accountAddr} is undefined on network with id ${chainId}`
+        )
+      })
+    }
+
+    const baseAcc = getBaseAccount(
+      account,
+      accountState,
+      network,
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
+    )
+    const userRequest = await this.#createOrUpdateCallsUserRequest({
+      calls,
+      meta: {
+        chainId,
+        accountAddr,
+        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      }
+    })
+    if (userRequest) await this.addUserRequests([userRequest], { position: 'last' })
+  }
+
   async #buildMintVestingUserRequest({ token }: { token: TokenResult }) {
     if (!this.#selectedAccount.account) return
 
@@ -3117,8 +3424,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async #addSwitchAccountUserRequest(req: UserRequestWaitingAccountSwitch) {
     const switchAccountUserRequest = buildSwitchAccountUserRequest({
-      nextUserRequest: req,
-      selectedAccountAddr: req.meta.accountAddr,
+      switchToAccountAddr: req.meta.accountAddr,
+      nextRequestKind: req.kind,
       dappPromises: req.dappPromises
     })
     req.meta.switchAccountRequestId = switchAccountUserRequest.id
@@ -3400,7 +3707,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // A cancel comes in as the pending transaction it replaces. Its calls are swapped for empty
     // ones here, whatever calls it came with, so a cancel never runs anything
     const cancelAccountOp =
-      requestParams.accountOp && SpeedUp.isCancel(requestParams.accountOp)
+      requestParams.accountOp && TxnReplacement.isCancel(requestParams.accountOp)
         ? toCancelAccountOp(requestParams.accountOp)
         : undefined
     const params: CallsUserRequestParams = cancelAccountOp
@@ -3412,8 +3719,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // is over the cap on its own is turned away now rather than after the user has switched
       if (this.#rejectDappCallsOverCap(params.calls.length, params.dappPromises ?? [])) return
 
+      // A speed up or cancel is started from the account that has the pending alert, so the user
+      // is taken back there once it is done. Other requests are what the user came to switch for
+      const startingAccountAddr = this.#selectedAccount.account?.addr
+      const shouldSwitchBack =
+        !!startingAccountAddr && !!params.accountOp && TxnReplacement.isSpeedUp(params.accountOp)
+
       await this.#addSwitchAccountUserRequest({
         ...params,
+        meta: shouldSwitchBack
+          ? { ...params.meta, switchBackToAccountAddr: startingAccountAddr }
+          : params.meta,
         kind: 'calls',
         dappPromises: params.dappPromises ?? []
       })
@@ -3478,7 +3794,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // it's never added to a batch and nothing gets added to it. Otherwise its calls would be
     // sent again as a new transaction instead of replacing the pending one. A speed up of the
     // same transaction that is already open is reopened instead of building another one
-    const isSpeedUpRequest = !!providedAccountOp && SpeedUp.isSpeedUp(providedAccountOp)
+    const isSpeedUpRequest = !!providedAccountOp && TxnReplacement.isSpeedUp(providedAccountOp)
+
+    // A Safe accountOp built in advance (e.g. resending an already sent transaction or cancelling
+    // it) is pinned to that transaction's nonce, so it must always be a request of its own instead
+    // of getting its calls merged into whatever request is already open. One that already
+    // resends or cancels the same transaction is reopened instead of building another one
+    const isPrebuiltSafeAccountOp = isSafeAccount && !!providedAccountOp
 
     const openSafeCancelRequest =
       meta.safeTxnProps && this.#findOpenSafeCancelRequest(meta.safeTxnProps.txnId)
@@ -3493,9 +3815,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (meta.safeTxnProps && this.#isSafeTxnBeingSent(calls, meta, meta.safeTxnProps.nonce)) return
 
+    // A speed up / cancel or a Safe accountOp built in advance replaces one pending transaction
+    const findOpenReplacementRequest = (accountOp: AccountOp) =>
+      isSpeedUpRequest
+        ? this.#findOpenSpeedUpRequest(accountOp)
+        : this.#findOpenPrebuiltSafeRequest(accountOp)
     const existingUserRequest =
-      isSpeedUpRequest && providedAccountOp
-        ? this.#findOpenSpeedUpRequest(providedAccountOp)
+      (isSpeedUpRequest || isPrebuiltSafeAccountOp) && providedAccountOp
+        ? findOpenReplacementRequest(providedAccountOp)
         : (this.userRequests.find(
             (r) =>
               r.kind === 'calls' &&
@@ -3583,7 +3910,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           // if we're updating a signAccountOp with external data (txnId / signature),
           // we do not wish to continue any further down as race conditions may happen
           return
-        } else if (!existingUserRequest.signAccountOp.isSpeedUpTransaction) {
+        } else if (
+          !existingUserRequest.signAccountOp.isSpeedUpTransaction &&
+          !isPrebuiltSafeAccountOp
+        ) {
           existingUserRequest.signAccountOp.update({
             accountOpData: {
               calls: [
@@ -3631,9 +3961,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const accountStateBefore =
         this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
-      // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
+      // Try to update the account state for 2 seconds. If that fails, use the previous account state if it exists,
       // otherwise wait for the fetch to complete (no matter how long it takes).
       // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
+      let fallbackTimeoutId: ReturnType<typeof setTimeout> | undefined
       const accountState = await Promise.race([
         this.#accounts
           .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
@@ -3641,10 +3972,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // Fallback to the old account state if it exists and the fetch takes too long
         accountStateBefore
           ? new Promise<AccountOnchainState>((res) => {
-              setTimeout(() => res(accountStateBefore), 2000)
+              fallbackTimeoutId = setTimeout(() => res(accountStateBefore), 2000)
             })
           : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
       ])
+      clearTimeout(fallbackTimeoutId)
 
       if (!accountState) {
         this.emitError({
@@ -3671,18 +4003,21 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         !!account.safeCreation || isSpeedUpRequest
           ? `${baseRequestId}-${generateUuid()}`
           : baseRequestId
-      // A Safe speed up keeps the Safe nonce of the transaction it replaces: the Safe transaction
-      // is built from it and its signatures, which aren't made again, are for that nonce.
+      // A Safe accountOp built in advance (a speed up, a cancel or a resend) keeps the Safe nonce
+      // of the transaction it replaces: the Safe transaction is built from it and its signatures,
+      // if reused, are for that nonce.
       // Other accounts don't put the account nonce in the broadcast (the EOA nonce, eoaNonce,
       // is kept separately), and their simulation runs on the pending block, where the replaced
       // transaction has already raised the nonce. Keeping the old one there makes it fail
-      const speedUpNonce =
-        isSpeedUpRequest && account.safeCreation ? providedAccountOp?.nonce : undefined
+      const prebuiltSafeNonce =
+        isSafeAccount && providedAccountOp && providedAccountOp.nonce !== null
+          ? providedAccountOp.nonce
+          : undefined
+      const pinnedNonce = prebuiltSafeNonce ?? accountOpNonce
       const initialNonce =
-        speedUpNonce ??
-        (account.safeCreation && !meta.safeTxnProps && accountOpNonce === undefined
+        account.safeCreation && !meta.safeTxnProps && pinnedNonce === undefined
           ? this.#getFirstFreeNonce(meta.accountAddr, meta.chainId, accountState.nonce)
-          : (accountOpNonce ?? meta.safeTxnProps?.nonce ?? accountState.nonce))
+          : (pinnedNonce ?? meta.safeTxnProps?.nonce ?? accountState.nonce)
       await this.#signAccountOpPreference.initialLoadPromise
       callUserRequest = {
         id: requestId,
@@ -3747,9 +4082,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           },
           onBroadcastSuccess: this.#onBroadcastSuccess,
           onBroadcastFailed: this.#onBroadcastFailed,
-          speedUp:
+          replacement:
             providedAccountOp && isSpeedUpRequest
-              ? new SpeedUp({ accountOp: providedAccountOp, activity: this.#activity })
+              ? new TxnReplacement({ accountOp: providedAccountOp, activity: this.#activity })
               : undefined
         }),
 

@@ -2,6 +2,7 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { createScopedDebugLogger } from '../../libs/debugLogger/debugLogger'
 import { createAccessListCall, getShouldUseAccessListCall } from '../../libs/tracer/accessListCall'
 import { debugTraceCall, getStateOverride } from '../../libs/tracer/debugTraceCall'
 import { ethSimulateV1 } from '../../libs/tracer/ethSimulatev1'
@@ -20,6 +21,8 @@ type DiscoverTxnTokensProps = {
 type DiscoveredAssets = { tokens: string[]; nfts: [string, bigint[]][] }
 
 const discoveryMethodCache = new Map<string, DiscoveryMethod>()
+
+const signAccountOpDebugLog = createScopedDebugLogger('SignAccountOpController')
 
 /**
  * A helper function to use in the tests only
@@ -86,7 +89,7 @@ export async function discoverTxnTokens({
   let lastError: unknown
 
   for (const method of orderedMethods) {
-    console.log(`Debug: using ${method} for asset discovery`)
+    signAccountOpDebugLog('discovery', `Using ${method} for asset discovery`)
 
     try {
       discoveredAssets = await methodCalls[method]()
@@ -96,7 +99,7 @@ export async function discoverTxnTokens({
     } catch (error) {
       lastError = error
       // do not emit an error here as there is a retry mechanism
-      console.log(`${method} failed`, error)
+      signAccountOpDebugLog('discovery', `${method} failed`, error)
     }
 
     // If this discovery run has been superseded, do not continue with its fallbacks.
