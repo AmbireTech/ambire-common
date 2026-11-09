@@ -521,12 +521,13 @@ describe('Main Controller ', () => {
     test('adds the accounts prepared by a flow without keys (view-only)', async () => {
       const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
       const before = snapshot()
+      // Not in the wallet yet, as adding an account it has already keeps that one's name
       const viewOnlyAccount = {
-        addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
         associatedKeys: [],
         initialPrivileges: [],
         creation: null,
-        preferences: { label: 'Watched', pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' }
+        preferences: { label: 'Watched', pfp: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }
       }
 
       await picker.prepareAccounts({ accounts: [viewOnlyAccount] })
