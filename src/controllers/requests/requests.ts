@@ -2841,6 +2841,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       throw ethErrors.rpc.invalidRequest(
         `The domain chainId (${typedData.domain.chainId}) does not match the current network chainId (${network.chainId})`
       )
+    // The chain that is signed is always the current network, so a chainId that the app left out
+    // or set to 0 is filled in. It is set only when the domain declares it: an undeclared chainId
+    // is not signed, and the pruning below would not remove it if EIP712Domain is missing
+    const domainTypes = typedData.types.EIP712Domain
+    if (Array.isArray(domainTypes) && domainTypes.some((field) => field?.name === 'chainId'))
+      typedData.domain.chainId = network.chainId
 
     if (!typedData.types[typedData.primaryType])
       throw ethErrors.rpc.invalidParams('The primary data type is missing from the provided types')
