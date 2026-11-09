@@ -66,6 +66,7 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
+import { SafeTx } from '../../interfaces/safe'
 import {
   FeeSpeed,
   HardwareWalletSigningRequest,
@@ -144,8 +145,10 @@ import {
   confirm,
   getAlreadySignedOwners,
   getImportedSignersThatHaveNotSigned,
+  getSafeApprovedHashSignature,
   getSafeTxnHash,
   getSigs,
+  isSafeHashApproved,
   propose,
   sortSigs
 } from '../../libs/safe/safe'
@@ -209,10 +212,18 @@ import {
   SignAccountOpType
 } from './helper'
 import {
+  getSafeOwnerApprovalAccountOp,
+  getSafeOwnerApprovalFailureMessage,
+  getSafeSmartAccountOwners,
+  SafeOwnerApprovalWait,
+  waitForSafeOwnerApproval
+} from './safeOwnerApproval'
+import {
   SignAccountOpFeeTokenPreference,
   SignAccountOpPreferenceController
 } from './signAccountOpPreference'
 import { TxnReplacement } from './txnReplacement'
+import { SafeOwnerApprovalUiMethod } from './types'
 
 import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
 // Re-exporting for backwards compatibility with existing importers
@@ -334,6 +345,38 @@ export class SignAccountOpController
   #accountOp: AccountOp
 
   #customSafeNonce: bigint | null = null
+
+  /**
+   * Safes only: the transaction of a smart account owner (Ambire v1, v2 or another Safe) that
+   * approves this Safe transaction onchain with `approveHash`, as smart accounts can't sign it.
+   * Created when the user picks the owner and kept while it's for the same owner and Safe
+   * transaction and isn't signed yet, see initSafeOwnerApproval
+   */
+  safeOwnerApproval: SignAccountOpController | null = null
+
+  /** Safes only: the smart account owners whose approval was sent but isn't confirmed yet */
+  pendingSafeOwnerApprovals: string[] = []
+
+  /**
+   * Safes only: the id of the last initSafeOwnerApproval request that finished, so the UI knows
+   * safeOwnerApproval is the result of its request and not of an older one
+   */
+  safeOwnerApprovalRequestId: string | null = null
+
+  /** The Safe transaction hash that safeOwnerApproval approves */
+  #safeOwnerApprovalHash: string | null = null
+
+  /** Discards the results of an older initSafeOwnerApproval once a newer one starts */
+  #safeOwnerApprovalInitId = 0
+
+  #networks: INetworksController
+
+  #isRegistrable: boolean
+
+  #isDestroyed = false
+
+  /** Safes only: the checks for sent approvals of smart account owners, stopped on destroy */
+  #safeOwnerApprovalWaits = new Set<SafeOwnerApprovalWait>()
 
   /**
    * The network gas prices, never the custom ones the user sets. With the `rpcWithBundlerFallback`
@@ -634,6 +677,8 @@ export class SignAccountOpController
     replacement?: TxnReplacement
   }) {
     super(eventEmitterRegistry, false)
+    this.#isRegistrable = !!eventEmitterRegistry
+    this.#networks = networks
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
     this.#erc7730 = erc7730
@@ -683,10 +728,10 @@ export class SignAccountOpController
         this.#accountOp.txnId,
         this.#accountOp.safeTx
       )
-      const notSigned = getImportedSignersThatHaveNotSigned(
-        this.#accountOp.signed,
-        accountState.importedAccountKeys.map((k) => k.addr)
-      )
+      const notSigned = getImportedSignersThatHaveNotSigned(this.#accountOp.signed, [
+        ...accountState.importedAccountKeys.map((k) => k.addr),
+        ...this.#safeSmartAccountOwnersToApprove
+      ])
 
       // make the status queued if there are no additional owners left to sign
       if (this.#accountOp.signed.length < accountState.threshold && !notSigned.length)
@@ -2196,9 +2241,24 @@ export class SignAccountOpController
       })
     }
 
+    // An active Safe always needs at least one signature, so a threshold of 0 (the threshold
+    // getter's fallback) means its details couldn't be loaded and it's unknown how many it needs
+    const isSafeThresholdUnknown =
+      !accountState || (accountState.isDeployed && accountState.threshold < 1)
+    if (
+      !!this.account.safeCreation &&
+      !this.accountOp.meta?.isSafeDeploy &&
+      isSafeThresholdUnknown
+    ) {
+      errors.push({
+        title: `We couldn't load the details of your Safe account on ${this.#network.name}, like how many of its owners have to sign. Please try again in a moment.`
+      })
+    }
+
     // It may occur, only if there are no available signer.
     if (
       !this.accountOp.meta?.isSafeDeploy &&
+      !this.#canSafeProceedWithoutSigningKey &&
       (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
     )
       errors.push({
@@ -2953,10 +3013,10 @@ export class SignAccountOpController
         this.#accountOp.txnId,
         this.#accountOp.safeTx
       )
-      const notSigned = getImportedSignersThatHaveNotSigned(
-        this.#accountOp.signed,
-        this.accountKeyStoreKeys.map((k) => k.addr)
-      )
+      const notSigned = getImportedSignersThatHaveNotSigned(this.#accountOp.signed, [
+        ...this.accountKeyStoreKeys.map((k) => k.addr),
+        ...this.#safeSmartAccountOwnersToApprove
+      ])
       if (this.#accountOp.signed.length < this.threshold && !notSigned.length) {
         this.status = { type: SigningStatus.Queued }
         this.emitUpdate()
@@ -2967,6 +3027,7 @@ export class SignAccountOpController
     if (
       this.isInitialized &&
       (this.accountOp.meta?.isSafeDeploy ||
+        this.#canSafeProceedWithoutSigningKey ||
         (this.accountOp.signingKeyAddr && this.accountOp.signingKeyType)) &&
       (this.accountOp.gasFeePayment || this.isCollectingSafeSignatureOnly)
     ) {
@@ -2986,6 +3047,9 @@ export class SignAccountOpController
 
   destroy() {
     super.destroy()
+    this.#isDestroyed = true
+    this.#destroySafeOwnerApproval()
+    this.#safeOwnerApprovalWaits.forEach((approvalWait) => approvalWait.stop())
     // Stop intervals
     this.#simulateAndEstimateOrSimulateInterval.stop()
     this.#gasPriceInterval.stop()
@@ -3057,6 +3121,7 @@ export class SignAccountOpController
   pause() {
     this.#stopIntervals()
     this.unregisterFromRegistry()
+    this.safeOwnerApproval?.pause()
   }
 
   #stopIntervals() {
@@ -3128,8 +3193,13 @@ export class SignAccountOpController
    * Also registers the controller in the controller registry.
    */
   resume() {
-    this.registerInRegistry()
+    // controllers nested in another one (e.g. safeOwnerApproval) reach the UI through it
+    if (this.#isRegistrable) this.registerInRegistry()
     this.#resumeIntervals()
+    // a signed approval (e.g. one already sent) has nothing left to estimate. Not checked by
+    // its broadcastStatus, as it goes back to INITIAL right after a successful broadcast
+    if (this.safeOwnerApproval && this.safeOwnerApproval.status?.type !== SigningStatus.Done)
+      this.safeOwnerApproval.resume()
 
     this.emitUpdate()
   }
@@ -3719,6 +3789,485 @@ export class SignAccountOpController
     return this.#keystore.keys.filter((key) => state.associatedKeys.includes(key.addr))
   }
 
+  /**
+   * Safes only: the owners that are smart accounts imported in the wallet. They can't sign the
+   * Safe transaction, so each of them approves it onchain instead, see initSafeOwnerApproval
+   */
+  get safeSmartAccountOwners(): string[] {
+    // an approval is a transaction of its own, it doesn't take approvals itself
+    if (this.#type === 'safe-owner-approval') return []
+    if (!this.account.safeCreation || this.accountOp.meta?.isSafeDeploy) return []
+
+    const state =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (!state) return []
+
+    return getSafeSmartAccountOwners(state.associatedKeys, this.#accounts.accounts)
+  }
+
+  /** The smart account owners that can still approve, i.e. haven't approved or sent one yet */
+  get #safeSmartAccountOwnersToApprove(): string[] {
+    return this.safeSmartAccountOwners.filter(
+      (owner) => !this.pendingSafeOwnerApprovals.includes(owner)
+    )
+  }
+
+  /**
+   * A Safe transaction with all the signatures it needs, so no key of the Safe signs it anymore.
+   * E.g. one approved only by smart account owners, as none of the Safe's keys is in the wallet
+   */
+  get #isSafeFullySigned(): boolean {
+    // a threshold of 0 means the Safe's details aren't loaded, never that it needs no signatures
+    return (
+      !!this.account.safeCreation &&
+      this.threshold > 0 &&
+      (this.accountOp.signed?.length || 0) >= this.threshold
+    )
+  }
+
+  /**
+   * Safes only: whether it can go on without a signing key. That's when it has all the
+   * signatures it needs, or when its only imported owners that can approve are smart accounts,
+   * which approve with their own transaction instead of a key
+   */
+  get #canSafeProceedWithoutSigningKey(): boolean {
+    if (!this.account.safeCreation || this.accountOp.meta?.isSafeDeploy) return false
+    if (this.#isSafeFullySigned) return true
+
+    return !this.accountKeyStoreKeys.length && this.safeSmartAccountOwners.length > 0
+  }
+
+  /**
+   * Safes only: prepares the transaction of a smart account owner that approves this Safe
+   * transaction onchain (safeOwnerApproval). The approval of the same owner is kept as long as
+   * it's for the same Safe transaction; picking another owner replaces it.
+   * Once done, successfully or not, `requestId` is set as safeOwnerApprovalRequestId
+   */
+  async initSafeOwnerApproval(ownerAddr: string, requestId?: string) {
+    const initId = ++this.#safeOwnerApprovalInitId
+    try {
+      await this.#initSafeOwnerApproval(ownerAddr, initId)
+    } catch (error: any) {
+      if (initId !== this.#safeOwnerApprovalInitId) return
+
+      this.emitError({
+        level: 'major',
+        message: 'Unable to prepare the approval. Please try again.',
+        error
+      })
+    } finally {
+      if (initId === this.#safeOwnerApprovalInitId) {
+        this.safeOwnerApprovalRequestId = requestId ?? null
+        this.emitUpdate()
+      }
+    }
+  }
+
+  async #initSafeOwnerApproval(ownerAddr: string, initId: number) {
+    const owner = this.#accounts.accounts.find(
+      (account) => account.addr.toLowerCase() === ownerAddr.toLowerCase()
+    )
+    if (!owner || !this.safeSmartAccountOwners.includes(owner.addr)) {
+      this.emitError({
+        level: 'major',
+        message: "This account can't approve this transaction.",
+        error: new Error(`initSafeOwnerApproval: ${ownerAddr} is not a smart account Safe owner`)
+      })
+      return
+    }
+
+    // already approved or on its way
+    if (this.accountOp.signed?.includes(owner.addr)) return
+    if (this.pendingSafeOwnerApprovals.includes(owner.addr)) return
+    // the approval being sent is shown again; picking another owner has to wait for it
+    if (this.safeOwnerApproval?.isSignAndBroadcastInProgress) {
+      if (this.safeOwnerApproval.account.addr !== owner.addr) this.#refuseToReplaceSentApproval()
+      return
+    }
+
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.account.addr,
+      this.accountOp.chainId
+    )
+    if (initId !== this.#safeOwnerApprovalInitId) return
+    if (!accountState) throw new Error('initSafeOwnerApproval: missing the Safe account state')
+
+    const { safeTxnHash } = this.#getSafeSigningData(accountState)
+    // e.g. approved before the window was closed, from the Safe app, or by an approval sent
+    // from here that was confirmed only after the wallet stopped waiting for it
+    const isAlreadyApproved = await this.#recordSafeOwnerApproval(owner.addr, safeTxnHash)
+    if (isAlreadyApproved || initId !== this.#safeOwnerApprovalInitId) return
+
+    if (this.#canReuseSafeOwnerApproval(owner.addr, safeTxnHash)) {
+      this.emitUpdate()
+      return
+    }
+
+    const ownerState = await this.#accounts.getOrFetchAccountOnChainState(
+      owner.addr,
+      this.accountOp.chainId
+    )
+    if (initId !== this.#safeOwnerApprovalInitId) return
+    if (!ownerState) throw new Error('initSafeOwnerApproval: missing the owner account state')
+    if (this.safeOwnerApproval?.isSignAndBroadcastInProgress) {
+      this.#refuseToReplaceSentApproval()
+      return
+    }
+
+    this.#destroySafeOwnerApproval()
+    await this.#signAccountOpPreference.initialLoadPromise
+    if (initId !== this.#safeOwnerApprovalInitId) return
+
+    const approval = new SignAccountOpController({
+      type: 'safe-owner-approval',
+      callRelayer: this.#callRelayer,
+      accounts: this.#accounts,
+      networks: this.#networks,
+      keystore: this.#keystore,
+      portfolio: this.#portfolio,
+      featureFlags: this.#featureFlags,
+      platform: this.#platform,
+      signAccountOpPreference: this.#signAccountOpPreference,
+      externalSignerControllers: this.#externalSignerControllers,
+      activity: this.#activity,
+      account: owner,
+      network: this.#network,
+      provider: this.provider,
+      phishing: this.#phishing,
+      dapps: this.#dapps,
+      erc7730: this.#erc7730,
+      contractInfo: this.#contractInfo,
+      // not a request of its own, so broadcasting it doesn't resolve any request
+      fromRequestId: `${this.fromRequestId}-safe-owner-approval-${owner.addr}`,
+      accountOp: getSafeOwnerApprovalAccountOp({
+        ownerAddr: owner.addr,
+        chainId: this.accountOp.chainId,
+        nonce: ownerState.nonce,
+        safeAddr: this.account.addr,
+        safeTxnHash
+      }),
+      shouldSimulate: false,
+      onBroadcastSuccess: async (props) => {
+        await this.#onBroadcastSuccess(props)
+        // this approval, even if another one took its place in the meantime
+        this.#onSafeOwnerApprovalBroadcast(
+          approval,
+          owner.addr,
+          safeTxnHash,
+          props.submittedAccountOp
+        )
+      },
+      onBroadcastFailed: this.#onBroadcastFailed
+    })
+    approval.onUpdate((forceEmit) => this.propagateUpdate(forceEmit), 'safeOwnerApproval')
+    approval.onError((error) => this.emitError(error), 'safeOwnerApproval')
+
+    this.safeOwnerApproval = approval
+    this.#safeOwnerApprovalHash = safeTxnHash
+    this.emitUpdate()
+  }
+
+  /**
+   * Whether safeOwnerApproval is the approval of this owner for this Safe transaction that can
+   * be shown again. A signed one can't be signed again (e.g. it was sent, but never confirmed),
+   * so it's prepared anew, unless it's still being sent and is the one to wait for
+   */
+  #canReuseSafeOwnerApproval(ownerAddr: string, safeTxnHash: string): boolean {
+    const approval = this.safeOwnerApproval
+    if (!approval || approval.account.addr !== ownerAddr) return false
+    if (this.#safeOwnerApprovalHash !== safeTxnHash) return false
+
+    return approval.isSignAndBroadcastInProgress || approval.status?.type !== SigningStatus.Done
+  }
+
+  /**
+   * safeOwnerApproval can't be replaced while it's being signed or sent, as its send goes on
+   * regardless and would be left without the controller that tracks it
+   */
+  #refuseToReplaceSentApproval() {
+    this.emitError({
+      level: 'major',
+      message: 'Wait until the approval in progress is sent, then try again.',
+      error: new Error('initSafeOwnerApproval: the current approval is being signed or sent')
+    })
+  }
+
+  #destroySafeOwnerApproval() {
+    this.safeOwnerApproval?.destroy()
+    this.safeOwnerApproval = null
+    this.#safeOwnerApprovalHash = null
+  }
+
+  /** Lets the UI call the methods of safeOwnerApproval, like the ones of this controller */
+  async callSafeOwnerApprovalMethod<M extends SafeOwnerApprovalUiMethod>(
+    method: M,
+    args: Parameters<SignAccountOpController[M]>
+  ) {
+    if (!this.safeOwnerApproval) return
+
+    try {
+      await (this.safeOwnerApproval[method] as (...a: unknown[]) => unknown)(...args)
+    } catch (error: any) {
+      this.emitError({
+        level: 'major',
+        message: 'Something went wrong with the approval. Please try again.',
+        error
+      })
+    }
+  }
+
+  /**
+   * Signs and broadcasts safeOwnerApproval, once it's certain it still approves this Safe
+   * transaction. If the transaction changed in the meantime, the approval is prepared again
+   */
+  async signAndBroadcastSafeOwnerApproval() {
+    const approval = this.safeOwnerApproval
+    if (!approval) return
+
+    let isForCurrentTxn: boolean
+    try {
+      const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+        this.account.addr,
+        this.accountOp.chainId
+      )
+      isForCurrentTxn =
+        !!accountState &&
+        this.#getSafeSigningData(accountState).safeTxnHash === this.#safeOwnerApprovalHash
+    } catch (error: any) {
+      this.emitError({
+        level: 'major',
+        message: 'Unable to send the approval. Please try again.',
+        error
+      })
+      return
+    }
+    if (isForCurrentTxn) {
+      await approval.signAndBroadcast()
+      return
+    }
+
+    const ownerAddr = approval.account.addr
+    this.#destroySafeOwnerApproval()
+    this.emitError({
+      level: 'major',
+      message: 'The transaction changed. Review the approval again before sending it.',
+      error: new Error('signAndBroadcastSafeOwnerApproval: the Safe transaction hash changed')
+    })
+    // done for the UI request that sent it, so the UI closes the approval to review it again
+    await this.initSafeOwnerApproval(ownerAddr, this.safeOwnerApprovalRequestId ?? undefined)
+  }
+
+  #onSafeOwnerApprovalBroadcast(
+    approval: SignAccountOpController,
+    ownerAddr: string,
+    safeTxnHash: string,
+    submittedAccountOp: SubmittedAccountOp
+  ) {
+    this.pendingSafeOwnerApprovals = [
+      ...this.pendingSafeOwnerApprovals.filter((owner) => owner !== ownerAddr),
+      ownerAddr
+    ]
+    // sent, so nothing is left to estimate
+    approval.pause()
+    this.emitUpdate()
+
+    void this.#confirmSafeOwnerApproval(ownerAddr, safeTxnHash, submittedAccountOp).catch(
+      (error: any) => {
+        // never leave the owner pending, it couldn't approve again for this transaction
+        this.pendingSafeOwnerApprovals = this.pendingSafeOwnerApprovals.filter(
+          (owner) => owner !== ownerAddr
+        )
+        this.emitError({
+          level: 'major',
+          message:
+            "The approval isn't confirmed yet. Check its status in your activity before approving again.",
+          error
+        })
+        this.emitUpdate()
+      }
+    )
+  }
+
+  /**
+   * Adds the approval as a signature of its owner once it's onchain. Asks the Safe itself, as
+   * it's what checks the approval when it executes, and stops early if the approval failed
+   */
+  async #confirmSafeOwnerApproval(
+    ownerAddr: string,
+    safeTxnHash: string,
+    submittedAccountOp: SubmittedAccountOp
+  ) {
+    const approvalWait = waitForSafeOwnerApproval({
+      safeAddr: this.account.addr,
+      ownerAddr,
+      safeTxnHash,
+      provider: this.provider,
+      getSentApprovalStatus: () =>
+        this.#activity.findByIdentifiedBy(
+          submittedAccountOp.identifiedBy,
+          submittedAccountOp.accountAddr,
+          submittedAccountOp.chainId
+        )?.status,
+      onCheckError: (error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Checking the Safe owner approval onchain failed',
+          error
+        })
+    })
+    this.#safeOwnerApprovalWaits.add(approvalWait)
+    const { isApproved, hasFailed } = await approvalWait.result.finally(() =>
+      this.#safeOwnerApprovalWaits.delete(approvalWait)
+    )
+    if (this.#isDestroyed) return
+
+    let isRecorded = false
+    if (isApproved) {
+      try {
+        isRecorded = await this.#recordSafeOwnerApproval(ownerAddr, safeTxnHash)
+      } catch (error: any) {
+        this.emitError({
+          level: 'silent',
+          message: 'Adding the Safe owner approval as a signature failed',
+          error
+        })
+      }
+    }
+    if (this.#isDestroyed) return
+
+    this.pendingSafeOwnerApprovals = this.pendingSafeOwnerApprovals.filter(
+      (owner) => owner !== ownerAddr
+    )
+    if (!isRecorded) {
+      this.emitError({
+        level: 'major',
+        message: getSafeOwnerApprovalFailureMessage({ isApproved, hasFailed }),
+        error: new Error(
+          `confirmSafeOwnerApproval: not recorded. Approved: ${isApproved}. Failed: ${hasFailed}`
+        )
+      })
+    }
+    this.emitUpdate()
+  }
+
+  /**
+   * Adds the onchain approval of a smart account owner as its Safe signature, if the approval is
+   * onchain and still for this Safe transaction. Returns whether the owner has signed now
+   */
+  async #recordSafeOwnerApproval(ownerAddr: string, safeTxnHash: string): Promise<boolean> {
+    if (this.accountOp.signed?.includes(ownerAddr)) return true
+
+    const isApproved = await isSafeHashApproved(
+      this.account.addr,
+      ownerAddr,
+      safeTxnHash,
+      this.provider
+    )
+    if (!isApproved || this.accountOp.signed?.includes(ownerAddr)) return isApproved
+
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.account.addr,
+      this.accountOp.chainId
+    )
+    if (!accountState) return false
+    // the Safe transaction may have changed while the approval was being confirmed
+    const { safeTxn, safeTxnHash: currentSafeTxnHash } = this.#getSafeSigningData(accountState)
+    if (currentSafeTxnHash !== safeTxnHash) return false
+
+    const signature = getSafeApprovedHashSignature(ownerAddr)
+    await this.#shareSafeSignature({
+      safeTxn,
+      safeTxnHash,
+      owner: ownerAddr as Hex,
+      signature,
+      shouldPropose: this.#shouldProposeSafeTxn(getSigs(this.accountOp.signature))
+    })
+
+    this.#addSafeOwnerSignature(ownerAddr, signature, safeTxnHash)
+    this.updateStatus()
+    return true
+  }
+
+  /**
+   * Adds the signature of an owner to the ones the Safe transaction has now. They're read when
+   * it's added, not before the owner signed, as another owner may have signed meanwhile (e.g. a
+   * smart account approval got confirmed while a hardware wallet was signing). Otherwise that
+   * signature would be lost while its owner still counts as signed
+   */
+  #addSafeOwnerSignature(owner: string, signature: Hex, safeTxnHash: string) {
+    const signed = this.accountOp.signed || []
+    if (signed.includes(owner)) return
+
+    this.#updateAccountOp({
+      signature: sortSigs(
+        getSigs(this.accountOp.signature).concat([signature]),
+        safeTxnHash,
+        this.accountOp.safeTx?.confirmations
+      ),
+      signed: signed.concat([owner]),
+      txnId: safeTxnHash
+    })
+  }
+
+  /**
+   * Whether the next owner signature proposes the Safe transaction to the Safe Transaction
+   * Service. Not when it came from there, even if it has no signatures yet, e.g. one proposed
+   * by a delegate - it exists already, so the signature is a confirmation
+   */
+  #shouldProposeSafeTxn(prevSignedSigs: Hex[]): boolean {
+    return !prevSignedSigs.length && !this.accountOp.safeTx
+  }
+
+  /**
+   * Sends an owner signature to the Safe Transaction Service, so the other owners see it.
+   * With `shouldPropose` it proposes the Safe transaction. Failures don't stop signing
+   */
+  async #shareSafeSignature({
+    safeTxn,
+    safeTxnHash,
+    owner,
+    signature,
+    shouldPropose
+  }: {
+    safeTxn: SafeTx
+    safeTxnHash: string
+    owner: Hex
+    signature: Hex
+    shouldPropose: boolean
+  }) {
+    if (shouldPropose) {
+      // propose the txn to Safe Global upon first entry
+      await withTimeout(
+        () =>
+          propose(
+            safeTxn,
+            this.accountOp.chainId,
+            this.account.addr as Hex,
+            owner,
+            signature,
+            safeTxnHash
+          ),
+        {
+          timeoutMs: SAFE_API_TIMEOUT_MS,
+          message: `Safe API: propose transaction timed out after ${SAFE_API_TIMEOUT_MS}ms`
+        }
+      ).catch((e) => {
+        this.hasSafeApiFailed = true
+        console.log('Safe API: failed to propose txn', e)
+      })
+      return
+    }
+
+    // add extra confirmations
+    await withTimeout(() => confirm(this.accountOp.chainId, signature, safeTxnHash), {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe API: confirm transaction timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    }).catch((e) => {
+      this.hasSafeApiFailed = true
+      console.log('Safe API: failed to confirm txn', e)
+    })
+  }
+
   get feePayerKeyStoreKeys(): Key[] {
     const feePayer = this.#accounts.accounts.find(
       ({ addr }) => addr === this.accountOp.gasFeePayment?.paidBy
@@ -4081,7 +4630,7 @@ export class SignAccountOpController
     const signingKeyAddr = this.accountOp.signingKeyAddr
     const signingKeyType = this.accountOp.signingKeyType
 
-    if (!isSafeDeploy && (!signingKeyAddr || !signingKeyType)) {
+    if (!isSafeDeploy && !this.#isSafeFullySigned && (!signingKeyAddr || !signingKeyType)) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
@@ -4188,9 +4737,6 @@ export class SignAccountOpController
         !isSafeDeploy &&
         (this.#accountOp.signed?.length || 0) < this.threshold
       ) {
-        const prevSignedSigs = getSigs(this.accountOp.signature)
-        const nowSignedSigs: Hex[] = []
-
         const safeSigner = await this.#keystore.getSigner(signingKeyAddr!, signingKeyType!)
         if (safeSigner.init) safeSigner.init(this.#externalSignerControllers[signingKeyType!])
 
@@ -4202,12 +4748,6 @@ export class SignAccountOpController
             provider: this.provider
           })
         )) as Hex
-        nowSignedSigs.push(signature)
-
-        // all the signers that have signed
-        const allSigners = this.accountOp.signed
-          ? this.accountOp.signed.concat([signingKeyAddr!])
-          : [signingKeyAddr!]
 
         // The first free nonce, past this device's own pending txns, still goes out in one click.
         // So does a Replace, which takes the nonce of the pending txn to go through in its place
@@ -4220,49 +4760,19 @@ export class SignAccountOpController
             this.#customSafeNonce === this.#getAccountNextNonce(accountState.nonce) ||
             isReplacingWithPendingNonce)
         if (!isQuickBroadcast) {
-          if (!prevSignedSigs.length) {
-            // propose the txn to Safe Global upon first entry
-            await withTimeout(
-              () =>
-                propose(
-                  safeTxn,
-                  this.accountOp.chainId,
-                  this.account.addr as Hex,
-                  this.#accountOp.signingKeyAddr as Hex,
-                  signature,
-                  safeTxnHash
-                ),
-              {
-                timeoutMs: SAFE_API_TIMEOUT_MS,
-                message: `Safe API: propose transaction timed out after ${SAFE_API_TIMEOUT_MS}ms`
-              }
-            ).catch((e) => {
-              this.hasSafeApiFailed = true
-              console.log('Safe API: failed to propose txn', e)
-            })
-          } else {
-            // add extra confirmations
-            await withTimeout(() => confirm(this.accountOp.chainId, signature, safeTxnHash), {
-              timeoutMs: SAFE_API_TIMEOUT_MS,
-              message: `Safe API: confirm transaction timed out after ${SAFE_API_TIMEOUT_MS}ms`
-            }).catch((e) => {
-              this.hasSafeApiFailed = true
-              console.log('Safe API: failed to confirm txn', e)
-            })
-          }
+          await this.#shareSafeSignature({
+            safeTxn,
+            safeTxnHash,
+            owner: this.#accountOp.signingKeyAddr as Hex,
+            signature,
+            // read now, as another owner may have proposed it while this one was signing
+            shouldPropose: this.#shouldProposeSafeTxn(getSigs(this.accountOp.signature))
+          })
 
           this.status = { type: SigningStatus.Queued }
         }
 
-        this.#updateAccountOp({
-          signature: sortSigs(
-            prevSignedSigs.concat(nowSignedSigs),
-            safeTxnHash,
-            this.accountOp.safeTx?.confirmations
-          ),
-          signed: allSigners,
-          txnId: safeTxnHash
-        })
+        this.#addSafeOwnerSignature(signingKeyAddr!, signature, safeTxnHash)
 
         // change to quick broadcast mode so we could sign immediately
         // the userOp and broadcast it
@@ -4665,7 +5175,10 @@ export class SignAccountOpController
       !accountOp ||
       !estimation ||
       !requestId ||
-      (!accountOp.meta?.isSafeDeploy && (!accountOp.signingKeyAddr || !accountOp.signingKeyType)) ||
+      // a fully signed Safe transaction is sent by its fee payer, with no key of the Safe
+      (!accountOp.meta?.isSafeDeploy &&
+        !this.#isSafeFullySigned &&
+        (!accountOp.signingKeyAddr || !accountOp.signingKeyType)) ||
       !accountOp.signature ||
       !bundlerSwitcher ||
       !accountOp.gasFeePayment
@@ -5624,6 +6137,7 @@ export class SignAccountOpController
       readyToSign: this.readyToSign,
       safetyChecksLoading: this.safetyChecksLoading,
       accountKeyStoreKeys: this.accountKeyStoreKeys,
+      safeSmartAccountOwners: this.safeSmartAccountOwners,
       feePayerKeyStoreKeys: this.feePayerKeyStoreKeys,
       feeToken: this.feeToken,
       feeTokenPreference: this.feeTokenPreference,
