@@ -1,3 +1,5 @@
+import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
+
 import { describe, expect, test } from '@jest/globals'
 
 import { getSignedDomain, getSignedMessage, pruneDomainContentAndTypes } from './signedFields'
@@ -51,6 +53,57 @@ describe('getSignedMessage', () => {
     expect(getSignedMessage(types, 'Mail', { contents: 'Hello!' })).toEqual({
       contents: 'Hello!'
     })
+  })
+
+  test('reads the declared fields from a string or an array where a struct is expected', () => {
+    // The signature reads `length` from the value, so the pruned value must hold exactly that
+    const lengthTypes = {
+      EIP712Domain: [{ name: 'name', type: 'string' }],
+      P: [{ name: 'length', type: 'uint256' }],
+      M: [{ name: 'p', type: 'P' }]
+    }
+    const withString = {
+      types: lengthTypes,
+      domain: { name: 'App' },
+      primaryType: 'M',
+      message: { p: 'Send 1000 ETH' }
+    }
+    const withArray = { ...withString, message: { p: [1, 2, 3] } }
+
+    expect(pruneDomainContentAndTypes(withString).message).toEqual({ p: { length: 13 } })
+    expect(pruneDomainContentAndTypes(withArray).message).toEqual({ p: { length: 3 } })
+    ;[withString, withArray].forEach((typedData) => {
+      expect(
+        TypedDataUtils.eip712Hash(
+          pruneDomainContentAndTypes(typedData) as any,
+          SignTypedDataVersion.V4
+        ).toString('hex')
+      ).toBe(TypedDataUtils.eip712Hash(typedData as any, SignTypedDataVersion.V4).toString('hex'))
+    })
+  })
+
+  test('keeps a missing struct value as it is', () => {
+    expect(getSignedMessage(types, 'Mail', { from: null })).toEqual({ from: null })
+    expect(getSignedMessage(types, 'Mail', { from: undefined })).toEqual({ from: undefined })
+  })
+
+  test('narrows a struct with a very large number of fields quickly', () => {
+    const fieldCount = 10000
+    const fields = Array.from({ length: fieldCount }, (_, i) => ({
+      name: `field${i}`,
+      type: 'uint256'
+    }))
+    const message = Object.fromEntries(fields.map((field) => [field.name, 1]))
+    const started = Date.now()
+
+    const signedMessage = getSignedMessage({ Wide: fields }, 'Wide', {
+      ...message,
+      extraKey: 'extra'
+    })
+
+    expect(signedMessage).toEqual(message)
+    // Copying the object for every field takes more than 10 seconds for this input
+    expect(Date.now() - started).toBeLessThan(1000)
   })
 
   test('does not change the message it receives', () => {
@@ -139,6 +192,29 @@ describe('pruneDomainContentAndTypes', () => {
 
     expect(Object.keys(pruned.types)).toEqual(['EIP712Domain', 'Inner', 'Middle', 'Outer'])
     expect(pruned.message).toEqual({ middle: { inner: [[{ value: 1n }, { value: 2n }]] } })
+  })
+
+  test('finds the reachable types with the same rule as the software signer', () => {
+    // the signer reads the type name of `Foo-bar[]` up to the first non word character: `Foo`
+    const typedDataWithOddTypeName = {
+      types: {
+        EIP712Domain: [{ name: 'name', type: 'string' }],
+        Foo: [{ name: 'a', type: 'uint256' }],
+        Unused: [{ name: 'b', type: 'uint256' }],
+        M: [{ name: 'f', type: 'Foo-bar[]' }]
+      },
+      domain: { name: 'App' },
+      primaryType: 'M',
+      message: { f: [] }
+    }
+    const pruned = pruneDomainContentAndTypes(typedDataWithOddTypeName)
+
+    expect(Object.keys(pruned.types)).toEqual(['EIP712Domain', 'Foo', 'M'])
+    expect(TypedDataUtils.eip712Hash(pruned as any, SignTypedDataVersion.V4).toString('hex')).toBe(
+      TypedDataUtils.eip712Hash(typedDataWithOddTypeName as any, SignTypedDataVersion.V4).toString(
+        'hex'
+      )
+    )
   })
 
   test('keeps the types that EIP712Domain reaches', () => {
