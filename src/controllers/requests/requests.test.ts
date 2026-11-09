@@ -5921,7 +5921,7 @@ describe('RequestsController ', () => {
       expect(controller.userRequests.length).toBe(0)
     })
 
-    test('rejects when a type has two fields with the same name', async () => {
+    test('accepts a field declared twice with the same type and shows the signed value', async () => {
       const { controller } = await prepareTest(true)
       const typedData = {
         ...VALID_TYPED_DATA,
@@ -5930,8 +5930,28 @@ describe('RequestsController ', () => {
           Mail: [...VALID_TYPED_DATA.types.Mail, { name: 'contents', type: 'string' }]
         }
       }
+      // the signer reads the same `contents` value for both declarations
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      expect((controller.userRequests[0]! as any).meta.params.message).toEqual(
+        VALID_TYPED_DATA.message
+      )
+    })
+
+    test('rejects one field name declared as two different structs', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        types: {
+          ...VALID_TYPED_DATA.types,
+          A: [{ name: 'a', type: 'uint256' }],
+          B: [{ name: 'b', type: 'uint256' }],
+          Mail: [...VALID_TYPED_DATA.types.Mail, { name: 'x', type: 'A' }, { name: 'x', type: 'B' }]
+        },
+        // both `a` and `b` are signed, but a narrowed message keeps one struct per key
+        message: { ...VALID_TYPED_DATA.message, x: { a: 1, b: 2 } }
+      }
       await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
-        'A type has two fields with the same name'
+        'The message contents did not match the provided types.'
       )
       expect(controller.userRequests.length).toBe(0)
     })

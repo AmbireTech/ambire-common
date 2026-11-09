@@ -3,19 +3,6 @@ import { TypedDataUtils } from '@metamask/eth-sig-util'
 /** The struct definitions of an EIP-712 typed message, as passed in `types` */
 type TypedDataTypes = Record<string, Array<{ name: string; type: string }>>
 
-/**
- * Whether a struct in `types` declares two fields with the same name. A Solidity struct cannot do
- * this, but the signing libraries accept it: they read the same message key once for every
- * declaration. A narrowed message holds one value per key, so it cannot keep what both
- * declarations need, and the digest would change. Such typed data should not be accepted.
- */
-export function hasDuplicateFieldNames(types: TypedDataTypes): boolean {
-  return Object.values(types).some((fields) => {
-    if (!Array.isArray(fields)) return false
-
-    return new Set(fields.map((field) => field?.name)).size < fields.length
-  })
-}
 const isAtomic = (t: string) =>
   t === 'address' ||
   t === 'bool' ||

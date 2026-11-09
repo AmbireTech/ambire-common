@@ -122,10 +122,7 @@ import {
   isCallToSelfOrAmbireOp
 } from '../../libs/signMessage/signMessage'
 import { getSwapAndBridgeRequestParams } from '../../libs/swapAndBridge/swapAndBridge'
-import {
-  hasDuplicateFieldNames,
-  pruneDomainContentAndTypes
-} from '../../libs/typedData/signedFields'
+import { pruneDomainContentAndTypes } from '../../libs/typedData/signedFields'
 import {
   getClaimWalletRequestParams,
   getIntentRequestParams,
@@ -2864,8 +2861,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // do not agree on it (the Safe service rejects it too), so there is nothing meaningful to show
     if (typedData.primaryType === 'EIP712Domain')
       throw ethErrors.rpc.invalidParams('The primary data type cannot be EIP712Domain')
-    if (hasDuplicateFieldNames(typedData.types))
-      throw ethErrors.rpc.invalidParams('A type has two fields with the same name')
     let typedDataHash: string
     try {
       // viem checks the values against their types (addresses, number ranges, byte sizes)
