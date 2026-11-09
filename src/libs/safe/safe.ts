@@ -478,8 +478,26 @@ export async function isSafeContract(safeAddr: string, provider: RPCProvider): P
 }
 
 /**
+ * The fallback handler a Safe is set up with, or null when it has none. Also null when the setup
+ * data isn't a `setup` call this code can read (e.g. of a Safe older than v1.1.1), as there is
+ * nothing to check then.
+ */
+function getSetupFallbackHandler(setupData: Hex): Hex | null {
+  let decodedSetup
+  try {
+    decodedSetup = safeSetupInterface.decodeFunctionData('setup', setupData)
+  } catch (error) {
+    console.warn('the Safe setup data has no readable fallback handler', error)
+    return null
+  }
+
+  const fallbackHandler = getAddress(decodedSetup.fallbackHandler)
+  return fallbackHandler === ZeroAddress ? null : (fallbackHandler as Hex)
+}
+
+/**
  * Builds a Safe deployment call only when the stored creation data derives the imported address
- * and the configured singleton is deployed on the target network.
+ * and the configured singleton and fallback handler are deployed on the target network.
  */
 export async function getSafeDeploymentCall(
   account: Account,
@@ -496,8 +514,15 @@ export async function getSafeDeploymentCall(
       return null
     }
 
-    const singletonCode = await provider.getCode(account.safeCreation.singleton)
+    const fallbackHandler = getSetupFallbackHandler(account.safeCreation.setupData)
+    const [singletonCode, fallbackHandlerCode] = await Promise.all([
+      provider.getCode(account.safeCreation.singleton),
+      fallbackHandler ? provider.getCode(fallbackHandler) : null
+    ])
     if (singletonCode === '0x') return null
+    // Without its fallback handler the Safe would still be deployed, but it couldn't confirm
+    // the messages its owners sign (EIP-1271) on this network, so it isn't activated here either
+    if (fallbackHandlerCode === '0x') return null
 
     return {
       to: account.safeCreation.factoryAddr,

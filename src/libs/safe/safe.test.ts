@@ -18,7 +18,7 @@ import {
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
-import { SAFE_SENTINEL_OWNER } from '../../consts/safe'
+import { SAFE_SENTINEL_OWNER, SAFE_V1_4_1 } from '../../consts/safe'
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
 import {
   canHotOwnersMeetSafeThreshold,
@@ -34,6 +34,7 @@ import {
   isSafeHashApproved,
   sortSigs,
   getSafeDeploymentCall,
+  getSafeProxyAddress,
   hasCompleteSafeCreationData,
   isSafeContract,
   normalizeSafeGlobalMessage,
@@ -617,6 +618,76 @@ describe('Safe deployment data', () => {
       )
     ).resolves.toBeNull()
     restore()
+  })
+
+  describe('the fallback handler of a new Safe', () => {
+    // Checksummed from lowercase, as getNewSafeAccount rejects an address with a wrong checksum
+    const ownerA = getAddress(OWNER.toLowerCase()) as Hex
+    const ownerB = getAddress(OTHER_OWNER.toLowerCase()) as Hex
+    const newSafeAccount = getNewSafeAccount([ownerA, ownerB], 2, [])
+    const encodedV141ProxyCreationCode = new AbiCoder().encode(
+      ['bytes'],
+      [SAFE_V1_4_1.proxyCreationCode]
+    )
+    const getProvider = (missingContract?: string) =>
+      ({
+        call: jest.fn(async () => encodedV141ProxyCreationCode),
+        getCode: jest.fn(async (address: string) =>
+          address.toLowerCase() === missingContract?.toLowerCase() ? '0x' : '0x6000'
+        )
+      }) as unknown as RPCProvider
+
+    test('builds the factory call when the singleton and the fallback handler are deployed', async () => {
+      const provider = getProvider()
+
+      await expect(getSafeDeploymentCall(newSafeAccount, provider)).resolves.toMatchObject({
+        to: SAFE_V1_4_1.proxyFactory
+      })
+      expect(provider.getCode).toHaveBeenCalledWith(SAFE_V1_4_1.compatibilityFallbackHandler)
+    })
+
+    test('returns null when the fallback handler is not deployed on the network', async () => {
+      const provider = getProvider(SAFE_V1_4_1.compatibilityFallbackHandler)
+
+      await expect(getSafeDeploymentCall(newSafeAccount, provider)).resolves.toBeNull()
+    })
+
+    test('returns null when the singleton is not deployed, even with the fallback handler', async () => {
+      const provider = getProvider(SAFE_V1_4_1.singletonL2)
+
+      await expect(getSafeDeploymentCall(newSafeAccount, provider)).resolves.toBeNull()
+    })
+
+    test('does not check a fallback handler for a Safe set up without one', async () => {
+      const setupWithoutFallbackHandler = new Interface([
+        'function setup(address[] _owners,uint256 _threshold,address to,bytes data,address fallbackHandler,address paymentToken,uint256 payment,address paymentReceiver)'
+      ]).encodeFunctionData('setup', [
+        [ownerA],
+        1,
+        ZeroAddress,
+        '0x',
+        ZeroAddress,
+        ZeroAddress,
+        0,
+        ZeroAddress
+      ]) as Hex
+      const safeCreation = {
+        ...newSafeAccount.safeCreation!,
+        setupData: setupWithoutFallbackHandler
+      }
+      const safeWithoutFallbackHandler = {
+        ...newSafeAccount,
+        addr: getSafeProxyAddress(safeCreation, SAFE_V1_4_1.proxyCreationCode),
+        safeCreation
+      }
+      const provider = getProvider()
+
+      await expect(
+        getSafeDeploymentCall(safeWithoutFallbackHandler, provider)
+      ).resolves.not.toBeNull()
+      expect(provider.getCode).toHaveBeenCalledTimes(1)
+      expect(provider.getCode).toHaveBeenCalledWith(SAFE_V1_4_1.singletonL2)
+    })
   })
 })
 
