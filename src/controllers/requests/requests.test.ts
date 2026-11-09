@@ -5202,6 +5202,17 @@ describe('RequestsController ', () => {
       })
     })
 
+    test('drops the types that the primary type does not use', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        types: { ...VALID_TYPED_DATA.types, Unused: [{ name: 'a', type: 'uint256' }] }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      const req = controller.userRequests[0]! as any
+      expect(req.meta.params.types).toEqual(VALID_TYPED_DATA.types)
+    })
+
     test('keeps the digest of the message the same after dropping the undeclared fields', async () => {
       const { controller } = await prepareTest(true)
       const typedData = {
@@ -5215,6 +5226,32 @@ describe('RequestsController ', () => {
       expect(TypedDataEncoder.hash(domain, typesWithoutDomain, message)).toBe(
         TypedDataEncoder.hash(VALID_TYPED_DATA.domain, typesWithoutDomain, VALID_TYPED_DATA.message)
       )
+    })
+
+    test('drops the undeclared fields of a typed message that comes from the Safe service', async () => {
+      const { controller } = await prepareTest(true)
+      await controller.build({
+        type: 'safeSignMessageRequest',
+        params: {
+          chainId: 1n,
+          signed: [],
+          message: {
+            ...VALID_TYPED_DATA,
+            domain: { ...VALID_TYPED_DATA.domain, extraField: 'extra' },
+            message: { ...VALID_TYPED_DATA.message, extraTopLevel: 'extra' }
+          } as any,
+          messageHash: '0x1111111111111111111111111111111111111111111111111111111111111111',
+          created: 1,
+          signatures: []
+        }
+      })
+      expect(controller.userRequests.length).toBe(1)
+      const req = controller.userRequests[0]! as any
+      expect(req.kind).toBe('typedMessage')
+      expect(req.meta.params.domain).toEqual(VALID_TYPED_DATA.domain)
+      expect(req.meta.params.message).toEqual(VALID_TYPED_DATA.message)
+      expect(req.meta.params.types).toEqual(VALID_TYPED_DATA.types)
+      expect(req.meta.params.primaryType).toBe(VALID_TYPED_DATA.primaryType)
     })
 
     const SELECTED_ACCOUNT = FROM

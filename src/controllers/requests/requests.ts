@@ -116,7 +116,7 @@ import {
   isCallToSelfOrAmbireOp
 } from '../../libs/signMessage/signMessage'
 import { getSwapAndBridgeRequestParams } from '../../libs/swapAndBridge/swapAndBridge'
-import { getSignedDomain, getSignedMessage } from '../../libs/typedData/signedFields'
+import { pruneDomainContentAndTypes } from '../../libs/typedData/signedFields'
 import {
   getClaimWalletRequestParams,
   getIntentRequestParams,
@@ -2608,30 +2608,26 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
 
     // The signature covers only the fields declared in the types. Every other field is dropped
-    // here (in the domain and at every level of the message), so the rest of the app, such as
-    // the humanizers and the hardware wallets, works only with what is actually signed.
-    const signedDomain = getSignedDomain(typedData.types, typedData.domain)
-    const signedMessage = getSignedMessage(
-      typedData.types,
-      typedData.primaryType,
-      typedData.message
-    )
+    // here (in the domain and at every level of the message), and so are the types that are
+    // not used, so the rest of the app, such as the humanizers and the hardware wallets, works
+    // only with what is actually signed.
+    const prunedTypedData = pruneDomainContentAndTypes(typedData)
 
-    let signedDataHash: string
+    let prunedTypedDataHash: string
     try {
-      signedDataHash = hashTypedData({
-        types: typedData.types,
-        primaryType: typedData.primaryType,
-        message: signedMessage,
-        domain: signedDomain
+      prunedTypedDataHash = hashTypedData({
+        types: prunedTypedData.types,
+        primaryType: prunedTypedData.primaryType,
+        message: prunedTypedData.message,
+        domain: prunedTypedData.domain
       })
     } catch (e) {
       console.error(e)
       throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
     }
 
-    // Removing the fields that are not signed must never change what is signed
-    if (signedDataHash !== typedDataHash) {
+    // Removing what is not signed must never change what is signed
+    if (prunedTypedDataHash !== typedDataHash) {
       throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
     }
 
@@ -2640,10 +2636,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       kind: 'typedMessage',
       meta: {
         params: {
-          types: typedData.types,
-          domain: signedDomain,
-          message: signedMessage,
-          primaryType: typedData.primaryType
+          types: prunedTypedData.types,
+          domain: prunedTypedData.domain,
+          message: prunedTypedData.message,
+          primaryType: prunedTypedData.primaryType
         },
         accountAddr: msgAddress,
         // The domain may not declare a chainId, so the network is the source of truth
@@ -2817,6 +2813,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       typedData.domain.salt = hexlify(new Uint8Array(typedData.domain.salt))
     }
 
+    // The message was created by another signer of the Safe, so, like the ones that come
+    // from an app, it is narrowed to what the signature covers. Without a primaryType there is
+    // nothing to narrow it by, and signing refuses such a message anyway
+    const prunedTypedData = pruneDomainContentAndTypes(typedData)
+
     // eip-712
     const req: TypedMessageUserRequest = {
       id: uuidv4(),
@@ -2825,7 +2826,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       meta: {
         // basically, it's the same eip-712 message but one is coming
         // from Safe with the Safe typehints, and other is ethers
-        params: typedData as {
+        params: prunedTypedData as {
           domain: TypedDataDomain
           types: Record<string, Array<TypedDataField>>
           message: Record<string, any>
