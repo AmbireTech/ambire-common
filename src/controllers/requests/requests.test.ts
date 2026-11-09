@@ -5907,6 +5907,20 @@ describe('RequestsController ', () => {
       restore()
     })
 
+    test('rejects when the primary type is EIP712Domain', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        primaryType: 'EIP712Domain',
+        // not signed with this primary type, but it would still be shown
+        message: { name: 'Send 1000 ETH to the attacker' }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'The primary data type cannot be EIP712Domain'
+      )
+      expect(controller.userRequests.length).toBe(0)
+    })
+
     test('rejects when message contents do not match the declared types', async () => {
       const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
