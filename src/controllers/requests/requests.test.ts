@@ -5161,20 +5161,34 @@ describe('RequestsController ', () => {
       expect(req.meta.params.domain).toEqual({ ...VALID_TYPED_DATA.domain, chainId: 1n })
     })
 
-    test('does not add the chainId when EIP712Domain is missing from the types', async () => {
+    test('rejects typed data without EIP712Domain in the types', async () => {
       const { controller } = await prepareTest(true)
-      const typesWithoutDomain = { Mail: VALID_TYPED_DATA.types.Mail }
       const typedData = {
         ...VALID_TYPED_DATA,
-        types: typesWithoutDomain,
+        types: { Mail: VALID_TYPED_DATA.types.Mail },
+        // the software signer signs an empty domain here, so none of this would be signed
         domain: { name: VALID_TYPED_DATA.domain.name, version: VALID_TYPED_DATA.domain.version }
       }
-      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
-      const req = controller.userRequests[0]! as any
-      expect(req.meta.params.domain).toEqual({
-        name: VALID_TYPED_DATA.domain.name,
-        version: VALID_TYPED_DATA.domain.version
-      })
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'so it cannot be signed'
+      )
+      expect(controller.userRequests.length).toBe(0)
+    })
+
+    test('rejects a value that viem accepts but the software signer cannot sign', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        message: {
+          ...VALID_TYPED_DATA.message,
+          // viem hashes this the same as the string 'Hi', but `note` is not signed
+          contents: { 0: 72, 1: 105, length: 2, note: 'Send all funds' }
+        }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'The message contents did not match the provided types.'
+      )
+      expect(controller.userRequests.length).toBe(0)
     })
 
     test('accepts typed data with no domain.chainId regardless of current network', async () => {
@@ -5271,7 +5285,59 @@ describe('RequestsController ', () => {
       )
     })
 
-    test('skips a Safe-service message that has a type with two fields of the same name', async () => {
+    test('rejects a fixed array that has more items than its type declares', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        types: {
+          ...VALID_TYPED_DATA.types,
+          Mail: [...VALID_TYPED_DATA.types.Mail, { name: 'ids', type: 'uint256[2]' }]
+        },
+        // the extra item is part of the digest of the data as sent, but it is cut when the
+        // message is narrowed, so the two digests do not match
+        message: { ...VALID_TYPED_DATA.message, ids: [1, 2, 3] }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'The message contents did not match the provided types.'
+      )
+      expect(controller.userRequests.length).toBe(0)
+    })
+
+    test('accepts a fixed array that has the declared number of items', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        types: {
+          ...VALID_TYPED_DATA.types,
+          Mail: [...VALID_TYPED_DATA.types.Mail, { name: 'ids', type: 'uint256[2]' }]
+        },
+        message: { ...VALID_TYPED_DATA.message, ids: [1, 2] }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      expect((controller.userRequests[0]! as any).meta.params.message.ids).toEqual([1, 2])
+    })
+
+    test('shows a signed field named __proto__ instead of hiding it', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        types: {
+          ...VALID_TYPED_DATA.types,
+          Mail: [...VALID_TYPED_DATA.types.Mail, { name: '__proto__', type: 'Hidden' }],
+          Hidden: [{ name: 'amount', type: 'uint256' }]
+        },
+        // JSON.parse creates `__proto__` as an own key, the same way a dapp payload arrives
+        message: JSON.parse(
+          JSON.stringify(VALID_TYPED_DATA.message).replace(/}$/, ',"__proto__":{"amount":"1000"}}')
+        )
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      const { message } = (controller.userRequests[0]! as any).meta.params
+      // the signed struct reaches the UI, which receives the params as JSON
+      expect(JSON.parse(JSON.stringify(message)).__proto__).toEqual({ amount: '1000' })
+    })
+
+    test('narrows a Safe-service message whose struct is named like an atomic type', async () => {
       const { controller } = await prepareTest(true)
       await controller.build({
         type: 'safeSignMessageRequest',
@@ -5279,18 +5345,22 @@ describe('RequestsController ', () => {
           chainId: 1n,
           signed: [],
           message: {
-            ...VALID_TYPED_DATA,
             types: {
-              ...VALID_TYPED_DATA.types,
-              Mail: [...VALID_TYPED_DATA.types.Mail, { name: 'contents', type: 'string' }]
-            }
+              EIP712Domain: VALID_TYPED_DATA.types.EIP712Domain,
+              string: [{ name: 'a', type: 'uint256' }]
+            },
+            primaryType: 'string',
+            domain: VALID_TYPED_DATA.domain,
+            // only `a` is signed
+            message: { a: 1, spender: '0x1111111111111111111111111111111111111111' }
           } as any,
           messageHash: '0x1111111111111111111111111111111111111111111111111111111111111111',
           created: 1,
           signatures: []
         }
       })
-      expect(controller.userRequests.length).toBe(0)
+      expect(controller.userRequests.length).toBe(1)
+      expect((controller.userRequests[0]! as any).meta.params.message).toEqual({ a: 1 })
     })
 
     test('drops the undeclared fields of a typed message that comes from the Safe service', async () => {

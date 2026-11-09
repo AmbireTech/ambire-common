@@ -4,7 +4,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import {
   getSignedDomain,
-  getSignedMessage,
+  reduceMessageTo,
   hasDuplicateFieldNames,
   pruneDomainContentAndTypes
 } from './signedFields'
@@ -25,7 +25,7 @@ const types = {
   ]
 }
 
-describe('getSignedMessage', () => {
+describe('reduceMessageTo', () => {
   test('keeps a message that has only declared fields as it is', () => {
     const message = {
       from: { wallet: ADDRESS },
@@ -34,11 +34,11 @@ describe('getSignedMessage', () => {
       contents: 'Hello!'
     }
 
-    expect(getSignedMessage(types, 'Mail', message)).toEqual(message)
+    expect(reduceMessageTo(types, 'Mail', message)).toEqual(message)
   })
 
   test('drops undeclared fields at the top level, in structs and in arrays of structs', () => {
-    const signedMessage = getSignedMessage(types, 'Mail', {
+    const signedMessage = reduceMessageTo(types, 'Mail', {
       from: { wallet: ADDRESS, extraNested: 1 },
       to: [{ wallet: ADDRESS, extraInArray: 2 }],
       ids: [1n, 2n, 3n],
@@ -54,8 +54,40 @@ describe('getSignedMessage', () => {
     })
   })
 
+  test('keeps string and bytes fields', () => {
+    const withBytes = {
+      ...types,
+      Data: [
+        { name: 'note', type: 'string' },
+        { name: 'payload', type: 'bytes' }
+      ]
+    }
+
+    expect(reduceMessageTo(withBytes, 'Data', { note: 'Hi', payload: '0x01', extra: 1 })).toEqual({
+      note: 'Hi',
+      payload: '0x01'
+    })
+  })
+
+  test('keeps every item of a dynamic array, also an empty one', () => {
+    expect(reduceMessageTo(types, 'Mail', { to: [] })).toEqual({ to: [] })
+    expect(
+      reduceMessageTo(types, 'Mail', { to: [{ wallet: ADDRESS }, { wallet: ADDRESS, extra: 1 }] })
+    ).toEqual({ to: [{ wallet: ADDRESS }, { wallet: ADDRESS }] })
+  })
+
+  test('drops the items of a fixed array after the declared length', () => {
+    expect(reduceMessageTo(types, 'Mail', { ids: [1n, 2n, 3n, 4n] })).toEqual({
+      ids: [1n, 2n, 3n]
+    })
+  })
+
+  test('does not fill in a fixed array that has fewer items than the declared length', () => {
+    expect(reduceMessageTo(types, 'Mail', { ids: [1n] })).toEqual({ ids: [1n] })
+  })
+
   test('does not add declared fields that the message does not have', () => {
-    expect(getSignedMessage(types, 'Mail', { contents: 'Hello!' })).toEqual({
+    expect(reduceMessageTo(types, 'Mail', { contents: 'Hello!' })).toEqual({
       contents: 'Hello!'
     })
   })
@@ -87,9 +119,41 @@ describe('getSignedMessage', () => {
     })
   })
 
+  test('reads a struct that is named like an atomic type as a struct, as the signers do', () => {
+    const typesWithStringStruct = { string: [{ name: 'a', type: 'uint256' }] }
+
+    expect(reduceMessageTo(typesWithStringStruct, 'string', { a: 1, spender: '0x1' })).toEqual({
+      a: 1
+    })
+  })
+
+  test('does not read a type from the prototype of types', () => {
+    const typesWithPrototypeName = { M: [{ name: 'a', type: 'toString' }] }
+
+    expect(reduceMessageTo(typesWithPrototypeName, 'M', { a: { b: 1 } })).toEqual({ a: undefined })
+  })
+
+  test('keeps a signed field named __proto__ as an own key, not as the prototype', () => {
+    const typesWithProtoField = {
+      Claim: [
+        { name: 'note', type: 'string' },
+        { name: '__proto__', type: 'Hidden' }
+      ],
+      Hidden: [{ name: 'amount', type: 'uint256' }]
+    }
+    // JSON.parse creates `__proto__` as an own key, the same way a dapp payload arrives
+    const message = JSON.parse('{"note":"Claim","__proto__":{"amount":"1000"}}')
+
+    const reduced = reduceMessageTo(typesWithProtoField, 'Claim', message)
+
+    expect(Object.getPrototypeOf(reduced)).toBe(Object.prototype)
+    expect(Object.keys(reduced)).toEqual(['note', '__proto__'])
+    expect(JSON.parse(JSON.stringify(reduced))).toEqual(message)
+  })
+
   test('keeps a missing struct value as it is', () => {
-    expect(getSignedMessage(types, 'Mail', { from: null })).toEqual({ from: null })
-    expect(getSignedMessage(types, 'Mail', { from: undefined })).toEqual({ from: undefined })
+    expect(reduceMessageTo(types, 'Mail', { from: null })).toEqual({ from: null })
+    expect(reduceMessageTo(types, 'Mail', { from: undefined })).toEqual({ from: undefined })
   })
 
   test('narrows a struct with a very large number of fields quickly', () => {
@@ -101,7 +165,7 @@ describe('getSignedMessage', () => {
     const message = Object.fromEntries(fields.map((field) => [field.name, 1]))
     const started = Date.now()
 
-    const signedMessage = getSignedMessage({ Wide: fields }, 'Wide', {
+    const signedMessage = reduceMessageTo({ Wide: fields }, 'Wide', {
       ...message,
       extraKey: 'extra'
     })
@@ -113,21 +177,21 @@ describe('getSignedMessage', () => {
 
   test('does not change the message it receives', () => {
     const message = { contents: 'Hello!', extraTopLevel: 3 }
-    getSignedMessage(types, 'Mail', message)
+    reduceMessageTo(types, 'Mail', message)
 
     expect(message).toEqual({ contents: 'Hello!', extraTopLevel: 3 })
   })
 
   test('returns an empty object when the primary type declares no fields', () => {
-    expect(getSignedMessage({ Empty: [] }, 'Empty', { a: 1 })).toEqual({})
+    expect(reduceMessageTo({ Empty: [] }, 'Empty', { a: 1 })).toEqual({})
   })
 
   test('returns the message as it is when the primary type is not declared', () => {
-    expect(getSignedMessage(types, 'Unknown', { a: 1 })).toEqual({ a: 1 })
+    expect(reduceMessageTo(types, 'Unknown', { a: 1 })).toEqual({ a: 1 })
   })
 
   test('keeps values that do not match the declared shape instead of throwing', () => {
-    expect(getSignedMessage(types, 'Mail', { from: null, to: 'not-an-array' })).toEqual({
+    expect(reduceMessageTo(types, 'Mail', { from: null, to: 'not-an-array' })).toEqual({
       from: null,
       to: 'not-an-array'
     })

@@ -113,6 +113,7 @@ import {
 } from '../../libs/safe/safe'
 import {
   AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
+  getEIP712Hash,
   isCallToSelfOrAmbireOp
 } from '../../libs/signMessage/signMessage'
 import { getSwapAndBridgeRequestParams } from '../../libs/swapAndBridge/swapAndBridge'
@@ -2582,6 +2583,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         'Invalid typedData format - only typedData v4 is supported'
       )
     }
+    // The signing refuses typed data without EIP712Domain, and the signers do not agree on what
+    // such a domain covers (viem builds it from up to five known keys, the software signer signs
+    // an empty domain). So it is rejected before any of its domain is shown as if it were signed
+    if (!Array.isArray(typedData.types.EIP712Domain))
+      throw ethErrors.rpc.invalidParams(
+        'The message does not describe the app or contract it is for (EIP712Domain), so it cannot be signed'
+      )
 
     const domainChainId = BigInt(typedData.domain.chainId || 0)
     if (domainChainId !== 0n && domainChainId !== network.chainId)
@@ -2590,9 +2598,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       )
     // The chain that is signed is always the current network, so a chainId that the app left out
     // or set to 0 is filled in. It is set only when the domain declares it: an undeclared chainId
-    // is not signed, and the pruning below would not remove it if EIP712Domain is missing
-    const domainTypes = typedData.types.EIP712Domain
-    if (Array.isArray(domainTypes) && domainTypes.some((field) => field?.name === 'chainId'))
+    // is not signed
+    if (typedData.types.EIP712Domain.some((field) => field?.name === 'chainId'))
       typedData.domain.chainId = network.chainId
 
     if (!typedData.types[typedData.primaryType])
@@ -2605,12 +2612,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       throw ethErrors.rpc.invalidParams('A type has two fields with the same name')
     let typedDataHash: string
     try {
-      typedDataHash = hashTypedData({
+      // viem checks the values against their types (addresses, number ranges, byte sizes)
+      hashTypedData({
         types: typedData.types,
         primaryType: typedData.primaryType,
         message: typedData.message,
         domain: typedData.domain
       })
+      // The digest is calculated the same way the software signer and the Safe wrapper calculate
+      // it. viem does not always agree with them, so a digest from viem could hide a difference
+      typedDataHash = getEIP712Hash(typedData)
     } catch (e) {
       console.error(e)
       throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
@@ -2630,12 +2641,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     let prunedTypedDataHash: string
     try {
-      prunedTypedDataHash = hashTypedData({
-        types: prunedTypedData.types,
-        primaryType: prunedTypedData.primaryType,
-        message: prunedTypedData.message,
-        domain: prunedTypedData.domain
-      })
+      prunedTypedDataHash = getEIP712Hash(prunedTypedData)
     } catch (e) {
       console.error(e)
       throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
@@ -2826,16 +2832,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const typedData = message as EIP712TypedData
     if (typedData.domain.salt && typeof typedData.domain.salt !== 'string') {
       typedData.domain.salt = hexlify(new Uint8Array(typedData.domain.salt))
-    }
-
-    if (hasDuplicateFieldNames(typedData.types)) {
-      this.emitError({
-        level: 'silent',
-        message:
-          'A Safe message was skipped because one of its types has two fields with the same name.',
-        error: new Error('requestsController: a Safe message has a type with duplicate field names')
-      })
-      return
     }
 
     // The message was created by another signer of the Safe, so, like the ones that come
