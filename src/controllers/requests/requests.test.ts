@@ -5096,7 +5096,7 @@ describe('RequestsController ', () => {
       )
     })
 
-    test('keeps the domain.chainId the app signs for, even when it is 0', async () => {
+    test('replaces domain.chainId with the current network chainId when it is 0', async () => {
       const { controller } = await prepareTest(true)
       const typedData = {
         ...VALID_TYPED_DATA,
@@ -5105,12 +5105,11 @@ describe('RequestsController ', () => {
       await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
       expect(controller.userRequests.length).toBe(1)
       const req = controller.userRequests[0]! as any
-      // The domain is signed as the app sent it, it is not rewritten to the current network
-      expect(req.meta.params.domain.chainId).toBe(0)
+      expect(req.meta.params.domain.chainId).toBe(1n)
       expect(req.meta.chainId).toBe(1n)
     })
 
-    test('keeps the domain.chainId as the app sent it when it is a hex string', async () => {
+    test('normalizes a hex string domain.chainId to the current network chainId', async () => {
       const { controller } = await prepareTest(true)
       const typedData = {
         ...VALID_TYPED_DATA,
@@ -5118,20 +5117,35 @@ describe('RequestsController ', () => {
       }
       await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
       const req = controller.userRequests[0]! as any
-      expect(req.meta.params.domain.chainId).toBe('0x1')
+      expect(req.meta.params.domain.chainId).toBe(1n)
       expect(req.meta.chainId).toBe(1n)
     })
 
-    test('rejects when EIP712Domain declares chainId but the domain has no value for it', async () => {
+    test('fills in the current network chainId when EIP712Domain declares it but the domain has no value', async () => {
       const { controller } = await prepareTest(true)
       const typedData = {
         ...VALID_TYPED_DATA,
         domain: { name: VALID_TYPED_DATA.domain.name, version: VALID_TYPED_DATA.domain.version }
       }
-      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
-        'The message contents did not match the provided types.'
-      )
-      expect(controller.userRequests.length).toBe(0)
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      const req = controller.userRequests[0]! as any
+      expect(req.meta.params.domain).toEqual({ ...VALID_TYPED_DATA.domain, chainId: 1n })
+    })
+
+    test('does not add the chainId when EIP712Domain is missing from the types', async () => {
+      const { controller } = await prepareTest(true)
+      const typesWithoutDomain = { Mail: VALID_TYPED_DATA.types.Mail }
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        types: typesWithoutDomain,
+        domain: { name: VALID_TYPED_DATA.domain.name, version: VALID_TYPED_DATA.domain.version }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
+      const req = controller.userRequests[0]! as any
+      expect(req.meta.params.domain).toEqual({
+        name: VALID_TYPED_DATA.domain.name,
+        version: VALID_TYPED_DATA.domain.version
+      })
     })
 
     test('accepts typed data with no domain.chainId regardless of current network', async () => {
@@ -5169,7 +5183,7 @@ describe('RequestsController ', () => {
       }
       await expect(buildSignTypedDataRequest(controller, typedData)).resolves.toBeUndefined()
       const req = controller.userRequests[0]! as any
-      expect(req.meta.params.domain).toEqual(VALID_TYPED_DATA.domain)
+      expect(req.meta.params.domain).toEqual({ ...VALID_TYPED_DATA.domain, chainId: 1n })
     })
 
     test('drops message fields that are not declared, at every level', async () => {
