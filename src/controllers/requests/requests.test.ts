@@ -5921,6 +5921,21 @@ describe('RequestsController ', () => {
       expect(controller.userRequests.length).toBe(0)
     })
 
+    test('rejects when a type has two fields with the same name', async () => {
+      const { controller } = await prepareTest(true)
+      const typedData = {
+        ...VALID_TYPED_DATA,
+        types: {
+          ...VALID_TYPED_DATA.types,
+          Mail: [...VALID_TYPED_DATA.types.Mail, { name: 'contents', type: 'string' }]
+        }
+      }
+      await expect(buildSignTypedDataRequest(controller, typedData)).rejects.toThrow(
+        'A type has two fields with the same name'
+      )
+      expect(controller.userRequests.length).toBe(0)
+    })
+
     test('rejects when message contents do not match the declared types', async () => {
       const { restore } = suppressConsole()
       const { controller } = await prepareTest(true)
@@ -6102,6 +6117,28 @@ describe('RequestsController ', () => {
       expect(TypedDataEncoder.hash(domain, typesWithoutDomain, message)).toBe(
         TypedDataEncoder.hash(VALID_TYPED_DATA.domain, typesWithoutDomain, VALID_TYPED_DATA.message)
       )
+    })
+
+    test('skips a Safe-service message that has a type with two fields of the same name', async () => {
+      const { controller } = await prepareTest(true)
+      await controller.build({
+        type: 'safeSignMessageRequest',
+        params: {
+          chainId: 1n,
+          signed: [],
+          message: {
+            ...VALID_TYPED_DATA,
+            types: {
+              ...VALID_TYPED_DATA.types,
+              Mail: [...VALID_TYPED_DATA.types.Mail, { name: 'contents', type: 'string' }]
+            }
+          } as any,
+          messageHash: '0x1111111111111111111111111111111111111111111111111111111111111111',
+          created: 1,
+          signatures: []
+        }
+      })
+      expect(controller.userRequests.length).toBe(0)
     })
 
     test('drops the undeclared fields of a typed message that comes from the Safe service', async () => {

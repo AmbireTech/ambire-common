@@ -121,7 +121,10 @@ import {
   isCallToSelfOrAmbireOp
 } from '../../libs/signMessage/signMessage'
 import { getSwapAndBridgeRequestParams } from '../../libs/swapAndBridge/swapAndBridge'
-import { pruneDomainContentAndTypes } from '../../libs/typedData/signedFields'
+import {
+  hasDuplicateFieldNames,
+  pruneDomainContentAndTypes
+} from '../../libs/typedData/signedFields'
 import {
   getClaimWalletRequestParams,
   getIntentRequestParams,
@@ -2854,6 +2857,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // do not agree on it (the Safe service rejects it too), so there is nothing meaningful to show
     if (typedData.primaryType === 'EIP712Domain')
       throw ethErrors.rpc.invalidParams('The primary data type cannot be EIP712Domain')
+    if (hasDuplicateFieldNames(typedData.types))
+      throw ethErrors.rpc.invalidParams('A type has two fields with the same name')
     let typedDataHash: string
     try {
       typedDataHash = hashTypedData({
@@ -3077,6 +3082,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const typedData = message as EIP712TypedData
     if (typedData.domain.salt && typeof typedData.domain.salt !== 'string') {
       typedData.domain.salt = hexlify(new Uint8Array(typedData.domain.salt))
+    }
+
+    if (hasDuplicateFieldNames(typedData.types)) {
+      this.emitError({
+        level: 'silent',
+        message:
+          'A Safe message was skipped because one of its types has two fields with the same name.',
+        error: new Error('requestsController: a Safe message has a type with duplicate field names')
+      })
+      return
     }
 
     // The message was created by another signer of the Safe, so, like the ones that come
