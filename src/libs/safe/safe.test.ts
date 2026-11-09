@@ -13,13 +13,19 @@ import {
   zeroPadValue
 } from 'ethers'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
+import SafeApiKit from '@safe-global/api-kit'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
 import {
   canHotOwnersMeetSafeThreshold,
+  fetchExecutedTransactions,
   findDeployData,
+  getLatestMessages,
+  getMessage,
+  getPendingTransactions,
   getSafeAccountByOwner,
   getSafeDeploymentCall,
   hasCompleteSafeCreationData,
@@ -112,9 +118,7 @@ describe('isSafeContract', () => {
     const provider = createProvider(async () => new AbiCoder().encode(['uint256'], [2]))
 
     await expect(isSafeContract(SAFE_ADDRESS, provider)).resolves.toBe(true)
-    expect(provider.call).toHaveBeenCalledWith(
-      expect.objectContaining({ data: getThresholdData })
-    )
+    expect(provider.call).toHaveBeenCalledWith(expect.objectContaining({ data: getThresholdData }))
   })
 
   test('returns false when the contract has no getThreshold() and returns no data', async () => {
@@ -809,5 +813,160 @@ describe('canHotOwnersMeetSafeThreshold', () => {
 
   test('is false when there are no imported owners', () => {
     expect(canHotOwnersMeetSafeThreshold([], 1)).toBe(false)
+  })
+})
+
+describe('getPendingTransactions', () => {
+  const originalApiKey = process.env.SAFE_API_KEY
+  const emptyListResponse = { count: 0, next: null, previous: null, results: [] }
+
+  beforeEach(() => {
+    // getApiKit refuses to build a client without one; no request leaves the test
+    process.env.SAFE_API_KEY = 'test-api-key'
+  })
+
+  afterEach(() => {
+    process.env.SAFE_API_KEY = originalApiKey
+    jest.restoreAllMocks()
+  })
+
+  test('asks only for the not executed txns from the passed nonce, without fetching the Safe info', async () => {
+    const getMultisigTransactions = jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockResolvedValue(emptyListResponse)
+    const getSafeInfo = jest.spyOn(SafeApiKit.prototype, 'getSafeInfo')
+
+    const response = await getPendingTransactions(1n, SAFE_ADDRESS, 12n)
+
+    expect(getMultisigTransactions).toHaveBeenCalledTimes(1)
+    expect(getMultisigTransactions).toHaveBeenCalledWith(SAFE_ADDRESS, {
+      executed: false,
+      nonce__gte: '12',
+      ordering: 'nonce'
+    })
+    expect(getSafeInfo).not.toHaveBeenCalled()
+    expect(response).toEqual({ ...emptyListResponse, chainId: 1n, type: 'txn' })
+  })
+
+  test('does not fetch the Safe info for a Safe that has not executed a txn yet (nonce 0)', async () => {
+    const getMultisigTransactions = jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockResolvedValue(emptyListResponse)
+    const getSafeInfo = jest.spyOn(SafeApiKit.prototype, 'getSafeInfo')
+
+    await getPendingTransactions(1n, SAFE_ADDRESS, 0n)
+
+    expect(getMultisigTransactions).toHaveBeenCalledWith(
+      SAFE_ADDRESS,
+      expect.objectContaining({ executed: false, nonce__gte: '0' })
+    )
+    expect(getSafeInfo).not.toHaveBeenCalled()
+  })
+
+  test('passes the Safe API error on to the caller', async () => {
+    jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockRejectedValue(new Error('Too many requests'))
+
+    await expect(getPendingTransactions(1n, SAFE_ADDRESS, 3n)).rejects.toThrow('Too many requests')
+  })
+})
+
+describe('Safe API requests made by the background Safe checks', () => {
+  const originalApiKey = process.env.SAFE_API_KEY
+  const emptyListResponse = { count: 0, next: null, previous: null, results: [] }
+  const never = <T>() => new Promise<T>(() => {})
+  let restoreConsole: (() => void) | undefined
+
+  beforeEach(() => {
+    // getApiKit refuses to build a client without one; no request leaves the test
+    process.env.SAFE_API_KEY = 'test-api-key'
+    jest.useFakeTimers()
+  })
+
+  afterEach(() => {
+    restoreConsole?.()
+    restoreConsole = undefined
+    jest.useRealTimers()
+    process.env.SAFE_API_KEY = originalApiKey
+    jest.restoreAllMocks()
+  })
+
+  test('the pending txns request stops waiting for a Safe API that never answers', async () => {
+    jest.spyOn(SafeApiKit.prototype, 'getMultisigTransactions').mockImplementation(() => never())
+
+    const request = getPendingTransactions(1n, SAFE_ADDRESS, 3n)
+    const assertion = expect(request).rejects.toThrow(
+      `Safe API: get pending transactions timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    )
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+    await assertion
+  })
+
+  test('the pending txns request is not cut short just before the timeout', async () => {
+    let answer: ((response: typeof emptyListResponse) => void) | undefined
+    jest.spyOn(SafeApiKit.prototype, 'getMultisigTransactions').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve
+        })
+    )
+
+    const request = getPendingTransactions(1n, SAFE_ADDRESS, 3n)
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS - 1)
+    answer?.(emptyListResponse)
+
+    await expect(request).resolves.toEqual({ ...emptyListResponse, chainId: 1n, type: 'txn' })
+    // the timeout timer is cleared once the Safe API answers
+    expect(jest.getTimerCount()).toBe(0)
+  })
+
+  test('the messages request stops waiting for a Safe API that never answers', async () => {
+    jest.spyOn(SafeApiKit.prototype, 'getMessages').mockImplementation(() => never())
+
+    const request = getLatestMessages(1n, SAFE_ADDRESS)
+    const assertion = expect(request).rejects.toThrow(
+      `Safe API: get messages timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    )
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+    await assertion
+  })
+
+  test('a message that never arrives is treated as not found', async () => {
+    restoreConsole = suppressConsole().restore
+    jest.spyOn(SafeApiKit.prototype, 'getMessage').mockImplementation(() => never())
+
+    const request = getMessage({ chainId: 1n, threshold: 1, messageHash: '0x01' })
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+    await expect(request).resolves.toBeNull()
+  })
+
+  test('the executed txns of the chains that answer are returned when another chain never answers', async () => {
+    restoreConsole = suppressConsole().restore
+    const executedTxn = buildSafeTransaction({
+      nonce: '4',
+      transactionHash: `0x${'2'.repeat(64)}`
+    })
+    jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockImplementationOnce(() => never())
+      .mockResolvedValueOnce({ ...emptyListResponse, count: 1, results: [executedTxn] })
+
+    const request = fetchExecutedTransactions(SAFE_ADDRESS, [
+      { chainId: 1n, minNonce: 4 },
+      { chainId: 10n, minNonce: 4 }
+    ])
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+    await expect(request).resolves.toEqual([
+      {
+        safeTxnHash: executedTxn.safeTxHash,
+        transactionHash: executedTxn.transactionHash,
+        nonce: '4'
+      }
+    ])
   })
 })

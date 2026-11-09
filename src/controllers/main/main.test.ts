@@ -196,7 +196,127 @@ describe('Main Controller ', () => {
     fetchSafeTxnsSpy.mockRestore()
   })
 
-  test('fetches the other Safes pending counts after the selected Safe on focus, only when unlocked', async () => {
+  test('refetches the Safe transactions only on the chains a reload is filtered by', async () => {
+    const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
+    const updateAccountStateSpy = jest
+      .spyOn(controller.accounts, 'updateAccountState')
+      .mockResolvedValue()
+    const updatePortfolioSpy = jest
+      .spyOn(controller, 'updateSelectedAccountPortfolio')
+      .mockResolvedValue()
+    const previousSelectedAccount = controller.selectedAccount.account
+    controller.selectedAccount.account = accounts[0] as any
+
+    try {
+      await controller.reloadSelectedAccount({ chainIds: [10n] })
+      expect(fetchSafeTxnsSpy).toHaveBeenLastCalledWith([10n], true)
+
+      // without a filter, every chain is refetched
+      await controller.reloadSelectedAccount()
+      expect(fetchSafeTxnsSpy).toHaveBeenLastCalledWith([], true)
+    } finally {
+      controller.selectedAccount.account = previousSelectedAccount
+      fetchSafeTxnsSpy.mockRestore()
+      updateAccountStateSpy.mockRestore()
+      updatePortfolioSpy.mockRestore()
+    }
+  })
+
+  test('fetches the pending Safe transactions from the on-chain nonce, on the deployed chains only', async () => {
+    const previousSelectedAccount = controller.selectedAccount.account
+    const safeAccount = {
+      ...accounts[0],
+      safeCreation: { factoryAddr: '0x', singleton: '0x', setupData: '0x', saltNonce: '0x' }
+    }
+    controller.selectedAccount.account = safeAccount as any
+    const getAccountStatesSpy = jest
+      .spyOn(controller.accounts, 'getOrFetchAccountStates')
+      .mockResolvedValue({
+        '1': { isDeployed: true, threshold: 2, nonce: 4n },
+        '10': { isDeployed: false, threshold: 0, nonce: 0n },
+        '137': { isDeployed: true, threshold: 1, nonce: 9n }
+      } as any)
+    const fetchPendingSpy = jest.spyOn(controller.safe, 'fetchPending').mockResolvedValue(null)
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get').mockReturnValue(true)
+
+    try {
+      // a chain the Safe is not deployed on is skipped even when asked for
+      await controller.fetchSafeTxns([137n, 10n], true)
+      expect(fetchPendingSpy.mock.calls).toEqual([
+        [safeAccount.addr, [{ chainId: 137n, threshold: 1, nonce: 9n }]]
+      ])
+
+      fetchPendingSpy.mockClear()
+      await controller.fetchSafeTxns([], true)
+      expect(fetchPendingSpy.mock.calls).toEqual([
+        [safeAccount.addr, [{ chainId: 1n, threshold: 2, nonce: 4n }]],
+        [safeAccount.addr, [{ chainId: 137n, threshold: 1, nonce: 9n }]]
+      ])
+    } finally {
+      controller.selectedAccount.account = previousSelectedAccount
+      getAccountStatesSpy.mockRestore()
+      fetchPendingSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('stops fetching the pending Safe transactions on the remaining chains once the wallet gets locked', async () => {
+    const previousSelectedAccount = controller.selectedAccount.account
+    controller.selectedAccount.account = {
+      ...accounts[0],
+      safeCreation: { factoryAddr: '0x', singleton: '0x', setupData: '0x', saltNonce: '0x' }
+    } as any
+    const getAccountStatesSpy = jest
+      .spyOn(controller.accounts, 'getOrFetchAccountStates')
+      .mockResolvedValue({
+        '1': { isDeployed: true, threshold: 1, nonce: 0n },
+        '137': { isDeployed: true, threshold: 1, nonce: 0n }
+      } as any)
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get').mockReturnValue(true)
+    const fetchPendingSpy = jest.spyOn(controller.safe, 'fetchPending').mockImplementation(async () => {
+      // the wallet gets locked while the first chain is fetched
+      isUnlockedSpy.mockReturnValue(false)
+      return null
+    })
+
+    try {
+      await controller.fetchSafeTxns([], true)
+
+      expect(fetchPendingSpy).toHaveBeenCalledTimes(1)
+      expect(controller.statuses.fetchSafeTxns).toBe('INITIAL')
+    } finally {
+      controller.selectedAccount.account = previousSelectedAccount
+      getAccountStatesSpy.mockRestore()
+      fetchPendingSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('does not fetch the pending Safe transactions while the wallet is locked', async () => {
+    const previousSelectedAccount = controller.selectedAccount.account
+    controller.selectedAccount.account = {
+      ...accounts[0],
+      safeCreation: { factoryAddr: '0x', singleton: '0x', setupData: '0x', saltNonce: '0x' }
+    } as any
+    const getAccountStatesSpy = jest.spyOn(controller.accounts, 'getOrFetchAccountStates')
+    const fetchPendingSpy = jest.spyOn(controller.safe, 'fetchPending').mockResolvedValue(null)
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get').mockReturnValue(false)
+
+    try {
+      // a forced refetch, like the dashboard refresh, does not get past the lock either
+      await controller.fetchSafeTxns([], true)
+
+      expect(getAccountStatesSpy).not.toHaveBeenCalled()
+      expect(fetchPendingSpy).not.toHaveBeenCalled()
+    } finally {
+      controller.selectedAccount.account = previousSelectedAccount
+      getAccountStatesSpy.mockRestore()
+      fetchPendingSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('fetches the selected Safe and then the other Safes pending counts on focus, only when unlocked', async () => {
     const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
     const updateOtherSafesSpy = jest
       .spyOn(controller.safe, 'updateOtherSafesPendingCounts')
@@ -209,13 +329,15 @@ describe('Main Controller ', () => {
       controller.ui.uiEvent.emit('viewFocus', view)
       await wait(0)
 
-      expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([])
+      // no Safe API requests at all while the wallet is locked
+      expect(fetchSafeTxnsSpy).not.toHaveBeenCalled()
       expect(updateOtherSafesSpy).not.toHaveBeenCalled()
 
       isUnlockedSpy.mockReturnValue(true)
       controller.ui.uiEvent.emit('viewFocus', view)
       await wait(0)
 
+      expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([])
       expect(updateOtherSafesSpy).toHaveBeenCalledTimes(1)
       expect(updateOtherSafesSpy).toHaveBeenCalledWith(controller.selectedAccount.account?.addr)
     } finally {
@@ -362,6 +484,8 @@ describe('Main Controller ', () => {
         })
     )
 
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get').mockReturnValue(true)
+
     try {
       const fetchPromise = controller.fetchSafeTxns([1n])
       await fetchStarted
@@ -377,6 +501,7 @@ describe('Main Controller ', () => {
       controller.selectedAccount.account = originalSelectedAccount
       getAccountStatesSpy.mockRestore()
       fetchPendingSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
     }
   })
 
