@@ -2,7 +2,12 @@ import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { getSignedDomain, getSignedMessage, pruneDomainContentAndTypes } from './signedFields'
+import {
+  getSignedDomain,
+  getSignedMessage,
+  hasDuplicateFieldNames,
+  pruneDomainContentAndTypes
+} from './signedFields'
 
 const ADDRESS = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 
@@ -302,5 +307,41 @@ describe('pruneDomainContentAndTypes', () => {
       name: 'App',
       chainId: 1n
     })
+  })
+})
+
+describe('hasDuplicateFieldNames', () => {
+  test('is false when every struct has different field names', () => {
+    expect(hasDuplicateFieldNames(types)).toBe(false)
+  })
+
+  test('is true when a struct declares the same field name twice, with the same or other type', () => {
+    expect(
+      hasDuplicateFieldNames({
+        M: [
+          { name: 'x', type: 'uint256' },
+          { name: 'x', type: 'uint256' }
+        ]
+      })
+    ).toBe(true)
+    expect(
+      hasDuplicateFieldNames({
+        P1: [{ name: 'x', type: 'uint256' }],
+        P2: [{ name: 'y', type: 'uint256' }],
+        M: [
+          { name: 'f', type: 'P1' },
+          { name: 'f', type: 'P2' }
+        ]
+      })
+    ).toBe(true)
+  })
+
+  test('allows the same field name in different structs', () => {
+    expect(
+      hasDuplicateFieldNames({
+        A: [{ name: 'x', type: 'uint256' }],
+        B: [{ name: 'x', type: 'uint256' }]
+      })
+    ).toBe(false)
   })
 })

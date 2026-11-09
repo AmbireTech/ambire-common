@@ -50,6 +50,20 @@ function getSignedValue(types: TypedDataTypes, typeName: string, value: unknown)
 }
 
 /**
+ * Whether a struct in `types` declares two fields with the same name. A Solidity struct cannot do
+ * this, but the signing libraries accept it: they read the same message key once for every
+ * declaration. A narrowed message holds one value per key, so it cannot keep what both
+ * declarations need, and the digest would change. Such typed data should not be accepted.
+ */
+export function hasDuplicateFieldNames(types: TypedDataTypes): boolean {
+  return Object.values(types).some((fields) => {
+    if (!Array.isArray(fields)) return false
+
+    return new Set(fields.map((field) => field?.name)).size < fields.length
+  })
+}
+
+/**
  * Returns only the part of a typed message that the signature actually covers.
  * The EIP-712 hash includes just the fields declared in `types[primaryType]` (and the structs
  * they reference), including the ones nested in other structs and arrays. Any other key in
