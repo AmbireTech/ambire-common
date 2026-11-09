@@ -2594,6 +2594,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (!typedData.types[typedData.primaryType])
       throw ethErrors.rpc.invalidParams('The primary data type is missing from the provided types')
+    // With this primary type the signature covers only the domain, never the message. Libraries
+    // do not agree on it (the Safe service rejects it too), so there is nothing meaningful to show
+    if (typedData.primaryType === 'EIP712Domain')
+      throw ethErrors.rpc.invalidParams('The primary data type cannot be EIP712Domain')
     let typedDataHash: string
     try {
       typedDataHash = hashTypedData({
