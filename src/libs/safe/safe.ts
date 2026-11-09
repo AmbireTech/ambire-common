@@ -69,6 +69,18 @@ export function getApiKit(chainId: bigint) {
   })
 }
 
+/**
+ * Rejects when the Safe API doesn't answer within `SAFE_API_TIMEOUT_MS`. api-kit's requests
+ * have no timeout of their own, so a request that never answers would otherwise stall the
+ * background Safe checks waiting on it for good. The request itself is not cancelled.
+ */
+function withSafeApiTimeout<T>(request: () => Promise<T>, requestName: string): Promise<T> {
+  return withTimeout(request, {
+    timeoutMs: SAFE_API_TIMEOUT_MS,
+    message: `Safe API: ${requestName} timed out after ${SAFE_API_TIMEOUT_MS}ms`
+  })
+}
+
 type SafeDeploymentApiKitFactory = (
   chainId: bigint
 ) => Pick<ReturnType<typeof getApiKit>, 'getSafeCreationInfo'>
@@ -544,10 +556,12 @@ export async function getMessage({
   messageHash: Hex
 }): Promise<ExtendedSafeMessage | null> {
   const apiKit = getApiKit(chainId)
-  const msg = await apiKit.getMessage(messageHash).catch((e) => {
-    console.log('safe message not found', e)
-    return null
-  })
+  const msg = await withSafeApiTimeout(() => apiKit.getMessage(messageHash), 'get message').catch(
+    (e) => {
+      console.log('safe message not found', e)
+      return null
+    }
+  )
   if (!msg) return null
   return {
     ...msg,
@@ -574,11 +588,15 @@ export async function getPendingTransactions(
 ): Promise<SafeMultisigTransactionListResponse & { chainId: bigint; type: string }> {
   const apiKit = getApiKit(chainId)
   // The double underscore is the filter syntax of the Safe Transaction Service, not a typo
-  const response = await apiKit.getMultisigTransactions(safeAddress, {
-    executed: false,
-    nonce__gte: currentNonce.toString(),
-    ordering: 'nonce'
-  })
+  const response = await withSafeApiTimeout(
+    () =>
+      apiKit.getMultisigTransactions(safeAddress, {
+        executed: false,
+        nonce__gte: currentNonce.toString(),
+        ordering: 'nonce'
+      }),
+    'get pending transactions'
+  )
   return { ...response, chainId, type: 'txn' }
 }
 
@@ -594,10 +612,14 @@ export async function getLatestMessages(
   safeAddress: Hex
 ): Promise<SafeMessageListResponse & { chainId: bigint; type: string }> {
   const apiKit = getApiKit(chainId)
-  const response = await apiKit.getMessages(safeAddress, {
-    ordering: '-created',
-    limit: 15
-  })
+  const response = await withSafeApiTimeout(
+    () =>
+      apiKit.getMessages(safeAddress, {
+        ordering: '-created',
+        limit: 15
+      }),
+    'get messages'
+  )
   const currentTime = new Date().getTime()
   const oneWeek = 7 * 24 * 60 * 60 * 1000
   // filter messages older than one week
@@ -916,15 +938,17 @@ export async function fetchExecutedTransactions(
         // everything below minNonce can no longer execute, so it cannot resolve a
         // request we are waiting on. The double underscore is the filter syntax of
         // the Safe Transaction Service, not a typo
-        const res = await apiKit
-          .getMultisigTransactions(safeAddr, {
-            ordering: 'nonce',
-            nonce__gte: minNonce
-          })
-          .catch((error: unknown) => {
-            console.log(`failed to call getMultisigTransactions on ${chainId}`, error)
-            return null
-          })
+        const res = await withSafeApiTimeout(
+          () =>
+            apiKit.getMultisigTransactions(safeAddr, {
+              ordering: 'nonce',
+              nonce__gte: minNonce
+            }),
+          'get transactions'
+        ).catch((error: unknown) => {
+          console.log(`failed to call getMultisigTransactions on ${chainId}`, error)
+          return null
+        })
         return res
       })
     )
