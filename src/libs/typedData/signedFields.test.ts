@@ -217,6 +217,28 @@ describe('pruneDomainContentAndTypes', () => {
     )
   })
 
+  test('treats a name that is declared in types as a struct, even if it looks like an array', () => {
+    const typedDataWithBracketName = {
+      types: {
+        EIP712Domain: [{ name: 'name', type: 'string' }],
+        'T[]': [{ name: 'x', type: 'uint256' }],
+        M: [{ name: 'f', type: 'T[]' }]
+      },
+      domain: { name: 'App' },
+      primaryType: 'M',
+      message: { f: { x: 1, extra: 'unsigned' } }
+    }
+    const pruned = pruneDomainContentAndTypes(typedDataWithBracketName)
+
+    expect(Object.keys(pruned.types)).toEqual(['EIP712Domain', 'T[]', 'M'])
+    expect(pruned.message).toEqual({ f: { x: 1 } })
+    expect(TypedDataUtils.eip712Hash(pruned as any, SignTypedDataVersion.V4).toString('hex')).toBe(
+      TypedDataUtils.eip712Hash(typedDataWithBracketName as any, SignTypedDataVersion.V4).toString(
+        'hex'
+      )
+    )
+  })
+
   test('keeps the types that EIP712Domain reaches', () => {
     const pruned = pruneDomainContentAndTypes({
       types: {

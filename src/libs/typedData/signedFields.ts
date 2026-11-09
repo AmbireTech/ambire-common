@@ -7,14 +7,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/**
+ * The signers decide what a field type is in this order: a name that is declared in `types` is a
+ * struct (even if the name looks like an array, for example `T[]`), otherwise a name that ends
+ * with `]` is an array, otherwise it is an atomic type
+ */
+function getStructFields(types: TypedDataTypes, typeName: string) {
+  const fields = Object.prototype.hasOwnProperty.call(types, typeName) ? types[typeName] : undefined
+
+  return Array.isArray(fields) ? fields : undefined
+}
+
 function getSignedValue(types: TypedDataTypes, typeName: string, value: unknown): unknown {
-  if (typeName.endsWith(']')) {
+  const fields = getStructFields(types, typeName)
+
+  if (!fields && typeName.endsWith(']')) {
     if (!Array.isArray(value)) return value
     const elementTypeName = typeName.slice(0, typeName.lastIndexOf('['))
     return value.map((element) => getSignedValue(types, elementTypeName, element))
   }
 
-  const fields = types[typeName]
   // Atomic types (address, uint256, etc.) have no fields to narrow down
   if (!fields) return value
   // A missing struct is hashed as zero, so there is nothing to narrow
@@ -65,6 +77,26 @@ export function getSignedDomain(
   return getSignedMessage(types, 'EIP712Domain', domain)
 }
 
+/** The types that are needed to encode a value of the given type, found with the signer's order */
+function getEncodedTypeNames(
+  types: TypedDataTypes,
+  typeName: string,
+  reachable: Set<string> = new Set()
+): Set<string> {
+  const fields = getStructFields(types, typeName)
+
+  if (fields) {
+    if (reachable.has(typeName)) return reachable
+
+    reachable.add(typeName)
+    fields.forEach((field) => getEncodedTypeNames(types, field.type, reachable))
+  } else if (typeName.endsWith(']')) {
+    getEncodedTypeNames(types, typeName.slice(0, typeName.lastIndexOf('[')), reachable)
+  }
+
+  return reachable
+}
+
 /**
  * Narrows a typed message to what the signature actually covers:
  * - the domain keeps only the fields declared in `types.EIP712Domain`
@@ -86,10 +118,14 @@ export function pruneDomainContentAndTypes<
   const { types, domain, message, primaryType } = typedData
   if (!primaryType || !types[primaryType]) return typedData
 
-  // The same dependency rule that the software signer uses to encode the types
+  // The types that the signer lists in the type string, found with its own rule, plus the types
+  // that it needs to encode the values. Both can differ for unusual type names (for example a
+  // struct named `T[]`), and dropping either changes the digest
   const reachableTypeNames = new Set([
     ...TypedDataUtils.findTypeDependencies(primaryType, types),
-    ...TypedDataUtils.findTypeDependencies('EIP712Domain', types)
+    ...TypedDataUtils.findTypeDependencies('EIP712Domain', types),
+    ...getEncodedTypeNames(types, primaryType),
+    ...getEncodedTypeNames(types, 'EIP712Domain')
   ])
 
   return {
