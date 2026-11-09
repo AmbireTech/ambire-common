@@ -1,3 +1,5 @@
+import { TypedDataUtils } from '@metamask/eth-sig-util'
+
 /** The struct definitions of an EIP-712 typed message, as passed in `types` */
 type TypedDataTypes = Record<string, Array<{ name: string; type: string }>>
 
@@ -110,6 +112,26 @@ export function getSignedDomain(
   return reduceMessageTo(types, 'EIP712Domain', domain)
 }
 
+/** The types that are needed to encode a value of the given type, found with the signer's order */
+function getEncodedTypeNames(
+  types: TypedDataTypes,
+  typeName: string,
+  reachable: Set<string> = new Set()
+): Set<string> {
+  const fields = getStructFields(types, typeName)
+
+  if (fields) {
+    if (reachable.has(typeName)) return reachable
+
+    reachable.add(typeName)
+    fields.forEach((field) => getEncodedTypeNames(types, field.type, reachable))
+  } else if (typeName.endsWith(']')) {
+    getEncodedTypeNames(types, typeName.slice(0, typeName.lastIndexOf('[')), reachable)
+  }
+
+  return reachable
+}
+
 /**
  * Narrows a typed message to what the signature actually covers:
  * - the domain keeps only the fields declared in `types.EIP712Domain`
@@ -131,11 +153,21 @@ export function pruneDomainContentAndTypes<
   const { types, domain, message, primaryType } = typedData
   if (!primaryType || !types[primaryType]) return typedData
 
+  // The types that the signer lists in the type string, found with its own rule, plus the types
+  // that it needs to encode the values. Both can differ for unusual type names (for example a
+  // struct named `T[]`), and dropping either changes the digest
+  const reachableTypeNames = new Set([
+    ...TypedDataUtils.findTypeDependencies(primaryType, types),
+    ...TypedDataUtils.findTypeDependencies('EIP712Domain', types),
+    ...getEncodedTypeNames(types, primaryType),
+    ...getEncodedTypeNames(types, 'EIP712Domain')
+  ])
+
   return {
     ...typedData,
-    // types: Object.fromEntries(
-    //   Object.entries(types).filter(([typeName]) => reachableTypeNames.has(typeName))
-    // ),
+    types: Object.fromEntries(
+      Object.entries(types).filter(([typeName]) => reachableTypeNames.has(typeName))
+    ),
     domain: getSignedDomain(types, domain),
     message: reduceMessageTo(types, primaryType, message)
   }
