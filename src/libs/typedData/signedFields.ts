@@ -1,3 +1,5 @@
+import { TypedDataUtils } from '@metamask/eth-sig-util'
+
 /** The struct definitions of an EIP-712 typed message, as passed in `types` */
 type TypedDataTypes = Record<string, Array<{ name: string; type: string }>>
 
@@ -14,13 +16,25 @@ function getSignedValue(types: TypedDataTypes, typeName: string, value: unknown)
 
   const fields = types[typeName]
   // Atomic types (address, uint256, etc.) have no fields to narrow down
-  if (!fields || !isRecord(value)) return value
+  if (!fields) return value
+  // A missing struct is hashed as zero, so there is nothing to narrow
+  if (value === null || value === undefined) return value
 
-  return fields.reduce<Record<string, unknown>>((signedValue, field) => {
-    if (!(field.name in value)) return signedValue
+  // The signature reads every declared field from the value as it is, also when it is a string or
+  // an array (for example their `length`). So the fields are read the same way here, and the rest
+  // of the value, which is not signed, is dropped
+  const source = Object(value)
 
-    return { ...signedValue, [field.name]: getSignedValue(types, field.type, value[field.name]) }
-  }, {})
+  // One object, filled in one pass. Copying the object for every field would make the cost grow
+  // with the square of the number of fields, and an app decides how many fields a struct has
+  const signedValue: Record<string, unknown> = {}
+  fields.forEach((field) => {
+    if (!(field.name in source)) return
+
+    signedValue[field.name] = getSignedValue(types, field.type, source[field.name])
+  })
+
+  return signedValue
 }
 
 /**
@@ -51,32 +65,6 @@ export function getSignedDomain(
   return getSignedMessage(types, 'EIP712Domain', domain)
 }
 
-/** The base type name of a field type, without any array suffix (`Person[]` -> `Person`) */
-function getBaseTypeName(typeName: string): string {
-  const arrayStart = typeName.indexOf('[')
-
-  return arrayStart === -1 ? typeName : typeName.slice(0, arrayStart)
-}
-
-function getReachableTypeNames(
-  types: TypedDataTypes,
-  rootTypeNames: string[],
-  reachable: Set<string> = new Set()
-): Set<string> {
-  rootTypeNames.forEach((typeName) => {
-    if (reachable.has(typeName) || !types[typeName]) return
-
-    reachable.add(typeName)
-    getReachableTypeNames(
-      types,
-      types[typeName].map((field) => getBaseTypeName(field.type)),
-      reachable
-    )
-  })
-
-  return reachable
-}
-
 /**
  * Narrows a typed message to what the signature actually covers:
  * - the domain keeps only the fields declared in `types.EIP712Domain`
@@ -98,7 +86,11 @@ export function pruneDomainContentAndTypes<
   const { types, domain, message, primaryType } = typedData
   if (!primaryType || !types[primaryType]) return typedData
 
-  const reachableTypeNames = getReachableTypeNames(types, [primaryType, 'EIP712Domain'])
+  // The same dependency rule that the software signer uses to encode the types
+  const reachableTypeNames = new Set([
+    ...TypedDataUtils.findTypeDependencies(primaryType, types),
+    ...TypedDataUtils.findTypeDependencies('EIP712Domain', types)
+  ])
 
   return {
     ...typedData,
