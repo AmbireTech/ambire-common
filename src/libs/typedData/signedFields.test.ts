@@ -186,14 +186,15 @@ describe('reduceMessageTo', () => {
     expect(reduceMessageTo({ Empty: [] }, 'Empty', { a: 1 })).toEqual({})
   })
 
-  test('returns the message as it is when the primary type is not declared', () => {
-    expect(reduceMessageTo(types, 'Unknown', { a: 1 })).toEqual({ a: 1 })
+  test('returns undefined for a type that is not declared, so nothing unsigned is kept', () => {
+    expect(reduceMessageTo(types, 'Unknown', { a: 1 })).toBeUndefined()
   })
 
-  test('keeps values that do not match the declared shape instead of throwing', () => {
+  test('drops a value that is not an array for an array type instead of throwing', () => {
+    // no signer can encode it, so it is never signed
     expect(reduceMessageTo(types, 'Mail', { from: null, to: 'not-an-array' })).toEqual({
       from: null,
-      to: 'not-an-array'
+      to: undefined
     })
   })
 })
