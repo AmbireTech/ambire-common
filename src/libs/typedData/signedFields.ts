@@ -50,3 +50,62 @@ export function getSignedDomain(
 ): Record<string, any> {
   return getSignedMessage(types, 'EIP712Domain', domain)
 }
+
+/** The base type name of a field type, without any array suffix (`Person[]` -> `Person`) */
+function getBaseTypeName(typeName: string): string {
+  const arrayStart = typeName.indexOf('[')
+
+  return arrayStart === -1 ? typeName : typeName.slice(0, arrayStart)
+}
+
+function getReachableTypeNames(
+  types: TypedDataTypes,
+  rootTypeNames: string[],
+  reachable: Set<string> = new Set()
+): Set<string> {
+  rootTypeNames.forEach((typeName) => {
+    if (reachable.has(typeName) || !types[typeName]) return
+
+    reachable.add(typeName)
+    getReachableTypeNames(
+      types,
+      types[typeName].map((field) => getBaseTypeName(field.type)),
+      reachable
+    )
+  })
+
+  return reachable
+}
+
+/**
+ * Narrows a typed message to what the signature actually covers:
+ * - the domain keeps only the fields declared in `types.EIP712Domain`
+ * - the message keeps only the fields declared in the types, at every level
+ * - `types` keeps only the types that the primary type and `EIP712Domain` can reach
+ *
+ * Returns a new object and never changes the one it receives. Only the levels that are narrowed
+ * are copied, the values inside them are shared. When there is no primary type, or it is not
+ * declared in `types`, there is nothing to narrow it by and the typed message is returned as it is.
+ */
+export function pruneDomainContentAndTypes<
+  T extends {
+    types: TypedDataTypes
+    domain: Record<string, any>
+    message: Record<string, any>
+    primaryType?: string
+  }
+>(typedData: T): T {
+  const { types, domain, message, primaryType } = typedData
+  if (!primaryType || !types[primaryType]) return typedData
+
+  const reachableTypeNames = getReachableTypeNames(types, [primaryType, 'EIP712Domain'])
+
+  return {
+    ...typedData,
+    types: Object.fromEntries(
+      Object.entries(types).filter(([typeName]) => reachableTypeNames.has(typeName))
+    ),
+    domain: getSignedDomain(types, domain),
+    message: getSignedMessage(types, primaryType, message)
+  }
+}
