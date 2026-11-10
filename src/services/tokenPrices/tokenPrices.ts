@@ -55,9 +55,9 @@ export type GetTokenDataResult = {
 export type TokenPriceRequest = { url: string; tokenAddresses: string[] }
 
 /**
- * Lowercases, deduplicates and sorts the addresses, keeping the casing they were first
- * passed with, as some token ids are mapped by their checksummed address (see `geckoIdMapper`).
- * Sorting makes a request for the same tokens always split into the same pages.
+ * Deduplicates the addresses regardless of their casing and sorts them, keeping the casing
+ * they were first passed with. Sorting makes a request for the same tokens always split into
+ * the same pages.
  */
 const getUniqueSortedAddresses = (addresses: string[]): string[] => {
   const addressByKey = new Map<string, string>()
@@ -134,7 +134,8 @@ const EMPTY_RESULT = (): GetTokenDataResult => ({ tokenData: new Map(), error: n
  * Every request for an account and network carries the account's whole token list (from every
  * feature that priced tokens through it) together with the Privacy Pools assets, so that no
  * request reveals what a single feature or action is about. Requests never carry the tokens of
- * more than one account.
+ * more than one account. The one exception is `getStandaloneTokenData`, for tokens that aren't
+ * part of an account (e.g. the token being swapped to), which are requested on their own.
  *
  * Nothing is requested, read or stored while the user has opted out of token prices.
  */
@@ -258,6 +259,62 @@ export class TokenPricesService {
     }
   }
 
+  /**
+   * Prices tokens that don't belong to an account's token list, e.g. the token being swapped to,
+   * or the tokens of a transaction whose info is being looked up. Tokens answered (with a price or
+   * with "no price") within `maxAgeMs` come from the cache; cena is asked only for the rest, on
+   * their own: the request never carries an account's tokens or the Privacy Pools assets, and
+   * never waits for an account's request.
+   *
+   * When the request fails, the cached prices younger than `maxAgeMs` are returned with the error.
+   */
+  async getStandaloneTokenData({
+    network,
+    tokenAddresses: requestedAddresses,
+    maxAgeMs,
+    baseCurrency = 'usd'
+  }: {
+    network: Network
+    tokenAddresses: string[]
+    maxAgeMs: number
+    baseCurrency?: string
+  }): Promise<GetTokenDataResult> {
+    if (!this.#getIsEnabled()) return EMPTY_RESULT()
+
+    const tokenAddresses = getUniqueSortedAddresses(requestedAddresses)
+    const callStartedAt = Date.now()
+    const isFresh = (cachedAt: number) => callStartedAt - cachedAt <= maxAgeMs
+    const unansweredAddresses = tokenAddresses.filter(
+      (address) => !this.#getCacheEntry(network.chainId, address, isFresh)
+    )
+
+    // Without a CoinGecko platform cena has nothing to look the tokens up by
+    if (!unansweredAddresses.length || !network.platformId) {
+      return {
+        tokenData: this.#readTokenData(network, tokenAddresses, baseCurrency, isFresh),
+        error: null
+      }
+    }
+
+    let error: Error | null = null
+    try {
+      await this.#requestTokens(network, unansweredAddresses, baseCurrency)
+    } catch (e: unknown) {
+      error = TokenPricesService.#toPriceRequestError(e, network)
+    }
+    if (!this.#getIsEnabled()) return EMPTY_RESULT()
+
+    return {
+      tokenData: this.#readTokenData(
+        network,
+        tokenAddresses,
+        baseCurrency,
+        (cachedAt) => cachedAt >= callStartedAt || isFresh(cachedAt)
+      ),
+      error
+    }
+  }
+
   /** A cached entry younger than `maxAgeMs`, without requesting it (e.g. NFT floor prices) */
   getCachedTokenData(
     chainId: bigint,
@@ -354,8 +411,7 @@ export class TokenPricesService {
 
   /**
    * Requests the account's whole token list along with the requested tokens and the Privacy
-   * Pools assets, and caches every answer, including "no price". Pages that succeed are cached
-   * even if another page fails, after which the first failure is thrown.
+   * Pools assets (see `#requestTokens`).
    */
   async #requestAccountTokens(
     network: Network,
@@ -372,8 +428,16 @@ export class TokenPricesService {
       ...privacyPoolsAssets
     ])
 
+    await this.#requestTokens(network, allTokens, baseCurrency)
+  }
+
+  /**
+   * Requests exactly the given tokens and caches every answer, including "no price". Pages that
+   * succeed are cached even if another page fails, after which the first failure is thrown.
+   */
+  async #requestTokens(network: Network, tokenAddresses: string[], baseCurrency: string) {
     const results = await Promise.allSettled(
-      getTokenPriceRequests(network, allTokens, baseCurrency).map(async (request) => ({
+      getTokenPriceRequests(network, tokenAddresses, baseCurrency).map(async (request) => ({
         request,
         body: await this.#fetchPrices(request.url)
       }))

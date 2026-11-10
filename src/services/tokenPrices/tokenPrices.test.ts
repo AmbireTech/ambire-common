@@ -526,6 +526,191 @@ describe('TokenPricesService', () => {
     })
   })
 
+  describe('getStandaloneTokenData', () => {
+    test("asks for the tokens alone, never with an account's tokens or the Privacy Pools assets", async () => {
+      const { fetch, urls } = createPriceFetch({ price: 2 })
+      const service = createService(fetch)
+      await service.getTokenData({
+        network: ethereum,
+        accountAddr: ACCOUNT_A,
+        source: 'portfolio',
+        tokenAddresses: [TOKEN_1],
+        maxAgeMs: 5 * MINUTE
+      })
+      urls.length = 0
+
+      const { tokenData, error } = await service.getStandaloneTokenData({
+        network: ethereum,
+        tokenAddresses: [TOKEN_2, TOKEN_3],
+        maxAgeMs: 5 * MINUTE
+      })
+
+      expect(error).toBeNull()
+      expect(tokenData.get(TOKEN_2)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 2 }])
+      expect(tokenData.get(TOKEN_3)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 2 }])
+      expect(getAllRequestedIds(urls)).toEqual([TOKEN_2, TOKEN_3])
+    })
+
+    test('asks only for the tokens missing from the cache, reusing what the portfolio cached', async () => {
+      const { fetch, urls } = createPriceFetch({ price: 2 })
+      const service = createService(fetch)
+      await service.getTokenData({
+        network: ethereum,
+        accountAddr: ACCOUNT_A,
+        source: 'portfolio',
+        tokenAddresses: [TOKEN_1],
+        maxAgeMs: 5 * MINUTE
+      })
+      urls.length = 0
+
+      // TOKEN_1 was cached by the portfolio's request, and is passed in a different casing
+      const { tokenData } = await service.getStandaloneTokenData({
+        network: ethereum,
+        tokenAddresses: [TOKEN_1.toUpperCase().replace('0X', '0x'), TOKEN_3],
+        maxAgeMs: 5 * MINUTE
+      })
+
+      expect(getAllRequestedIds(urls)).toEqual([TOKEN_3])
+      expect(tokenData.has(TOKEN_1)).toBe(true)
+      expect(tokenData.has(TOKEN_3)).toBe(true)
+    })
+
+    test('sends nothing when every token was answered within maxAgeMs', async () => {
+      const { fetch } = createPriceFetch({ unpriced: [TOKEN_3] })
+      const service = createService(fetch)
+      const params = { network: base, tokenAddresses: [TOKEN_2, TOKEN_3], maxAgeMs: 5 * MINUTE }
+
+      await service.getStandaloneTokenData(params)
+      const { tokenData } = await service.getStandaloneTokenData(params)
+
+      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(tokenData.has(TOKEN_2)).toBe(true)
+      // A recent "no price" answer counts as cached too, and is left out of the result
+      expect(tokenData.has(TOKEN_3)).toBe(false)
+    })
+
+    test('asks again for tokens answered longer than maxAgeMs ago', async () => {
+      const { fetch } = createPriceFetch()
+      const service = createService(fetch)
+      const params = { network: base, tokenAddresses: [TOKEN_3], maxAgeMs: 5 * MINUTE }
+
+      const now = Date.now()
+      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(now)
+      await service.getStandaloneTokenData(params)
+      dateSpy.mockReturnValue(now + 6 * MINUTE)
+      await service.getStandaloneTokenData(params)
+      dateSpy.mockRestore()
+
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+
+    test('never remembers the tokens for the next account request', async () => {
+      const { fetch, urls } = createPriceFetch()
+      const service = createService(fetch)
+
+      await service.getStandaloneTokenData({
+        network: base,
+        tokenAddresses: [TOKEN_3],
+        maxAgeMs: 5 * MINUTE
+      })
+      urls.length = 0
+      await service.getTokenData({
+        network: base,
+        accountAddr: ACCOUNT_A,
+        source: 'portfolio',
+        tokenAddresses: [TOKEN_1],
+        maxAgeMs: 5 * MINUTE
+      })
+
+      expect(getAllRequestedIds(urls)).toEqual([TOKEN_1])
+    })
+
+    test("doesn't wait for an account's request in flight", async () => {
+      let resolveAccountRequest: () => void = () => {}
+      const fetch = jest.fn(async (url: any) => {
+        const ids = getRequestedIds(url)
+        if (ids.includes(TOKEN_1)) {
+          await new Promise<void>((resolve) => {
+            resolveAccountRequest = resolve
+          })
+        }
+        return {
+          status: 200,
+          json: async () => Object.fromEntries(ids.map((id) => [id, { usd: 5 }]))
+        } as any
+      })
+      const service = createService(fetch)
+
+      const accountRequest = service.getTokenData({
+        network: base,
+        accountAddr: ACCOUNT_A,
+        source: 'portfolio',
+        tokenAddresses: [TOKEN_1],
+        maxAgeMs: 5 * MINUTE
+      })
+      const { tokenData } = await service.getStandaloneTokenData({
+        network: base,
+        tokenAddresses: [TOKEN_3],
+        maxAgeMs: 5 * MINUTE
+      })
+      resolveAccountRequest()
+      await accountRequest
+
+      expect(tokenData.get(TOKEN_3)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 5 }])
+    })
+
+    test('sends nothing while token prices are turned off', async () => {
+      const { fetch } = createPriceFetch()
+      const service = createService(fetch)
+      isEnabled = false
+
+      const { tokenData } = await service.getStandaloneTokenData({
+        network: base,
+        tokenAddresses: [TOKEN_3],
+        maxAgeMs: 5 * MINUTE
+      })
+
+      expect(tokenData.size).toBe(0)
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
+    test('returns the error and the fresh cached prices when the request fails', async () => {
+      const working = createPriceFetch({ price: 3 })
+      const service = createService(working.fetch)
+      await service.getStandaloneTokenData({
+        network: base,
+        tokenAddresses: [TOKEN_2],
+        maxAgeMs: 5 * MINUTE
+      })
+      working.fetch.mockImplementation(async () => {
+        throw new Error('cena is down')
+      })
+
+      const { tokenData, error } = await service.getStandaloneTokenData({
+        network: base,
+        tokenAddresses: [TOKEN_2, TOKEN_3],
+        maxAgeMs: 5 * MINUTE
+      })
+
+      expect(error?.message).toBe('cena is down')
+      expect(tokenData.get(TOKEN_2)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 3 }])
+      expect(tokenData.has(TOKEN_3)).toBe(false)
+    })
+
+    test('names the network when the request times out', async () => {
+      const hangingFetch = jest.fn(() => new Promise(() => {}))
+      const service = new TokenPricesService({ fetch: hangingFetch as any, timeoutMs: 10 })
+
+      const { error } = await service.getStandaloneTokenData({
+        network: base,
+        tokenAddresses: [TOKEN_3],
+        maxAgeMs: 5 * MINUTE
+      })
+
+      expect(error?.message).toBe(`Cena request timed out on ${base.name}`)
+    })
+  })
+
   describe('getTokenPriceRequests', () => {
     test('looks native tokens up by coin id and joins ids with a literal comma', () => {
       const requests = getTokenPriceRequests(ethereum, [ZeroAddress, TOKEN_1, TOKEN_2], 'usd')
@@ -533,6 +718,17 @@ describe('TokenPricesService', () => {
       expect(requests.map(({ url }) => url)).toEqual([
         'https://cena.ambire.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
         `https://cena.ambire.com/api/v3/simple/token_price/ethereum?contract_addresses=${TOKEN_1},${TOKEN_2}&vs_currencies=usd`
+      ])
+    })
+
+    test('looks an aliased token up by coin id even when its address is lowercased', () => {
+      const lowercasedStkAave = '0x4da27a545c0c5b758a6ba100e3a049001de870f5'
+
+      expect(getTokenPriceRequests(ethereum, [lowercasedStkAave], 'usd')).toEqual([
+        {
+          url: 'https://cena.ambire.com/api/v3/simple/price?ids=aave&vs_currencies=usd',
+          tokenAddresses: [lowercasedStkAave]
+        }
       ])
     })
 

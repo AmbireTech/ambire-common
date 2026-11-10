@@ -28,7 +28,8 @@ export async function executeBatchedFetch(
   const options: Partial<GetOptions> = {
     additionalErc20Hints: allAddresses,
     additionalErc721Hints: Object.fromEntries(allAddresses.map((i) => [i, [1n]])),
-    preventTokenBlacklisting: true
+    preventTokenBlacklisting: true,
+    isStandaloneLookup: true
   }
   const portfolioResponse = await portfolio.get(RANDOM_ADDRESS, options)
 

@@ -1859,6 +1859,59 @@ describe('Portfolio Controller ', () => {
     })
   })
 
+  describe('DeFi asset prices', () => {
+    suppressConsoleBeforeEach()
+
+    test("are requested only after the portfolio update set the account's token list", async () => {
+      const { controller } = await prepareTest()
+      const steps: string[] = []
+
+      jest
+        // @ts-expect-error test
+        .spyOn(controller, 'batchedPortfolioDiscovery')
+        // @ts-expect-error test
+        .mockResolvedValue(null)
+      jest
+        .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+        .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] })
+      // The portfolio update is slower than the DeFi positions, as it may be on startup
+      jest.spyOn(Portfolio.prototype, 'get').mockImplementation(async () => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 50)
+        })
+        steps.push('portfolio')
+        return {
+          updateStarted: Date.now(),
+          discoveryTime: 0,
+          oracleCallTime: 0,
+          priceUpdateTime: 0,
+          tokens: [],
+          feeTokens: [],
+          toBeLearned: { erc20s: [], erc721s: {} },
+          fetchedTokenMetadata: [],
+          fetchedCollectionMetadata: [],
+          tokenErrors: [],
+          collectionErrors: [],
+          collections: [],
+          errors: [],
+          blockNumber: 0,
+          beforeNonce: 0n,
+          afterNonce: 0n
+        } as any
+      })
+      jest
+        .spyOn(defiPricesLib, 'updatePositionsByProviderAssetPrices')
+        .mockImplementation(async (_tokenPrices, { positionsByProvider }) => {
+          steps.push('defi prices')
+          return { positionsByProvider, error: null }
+        })
+
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      expect(steps).toEqual(['portfolio', 'defi prices'])
+    })
+  })
+
   describe('Pinned tokens', () => {
     test('Pinned tokens are set in an account with no tokens', async () => {
       const { controller } = await prepareTest()

@@ -53,7 +53,8 @@ import {
   getIsExternalApiDefiPositionsCallSuccessful,
   getNewDefiState,
   getUniqueMergedPositions,
-  mergeDefiUpdateModes
+  mergeDefiUpdateModes,
+  priceCustomProviderPositions
 } from '../../libs/defiPositions/defiPositions'
 import {
   NetworksWithPositions,
@@ -72,6 +73,7 @@ import {
   getAssetCacheKey,
   getCollectibleCacheKey,
   getHintsError,
+  getTokenDataCacheKey,
   getTotal,
   validateCollectibleOwnership,
   validateERC20Token,
@@ -1311,17 +1313,29 @@ export class PortfolioController
     }
   }
 
-  async getTokenPrice(accountId: AccountId, chainId: bigint, address: string) {
+  /**
+   * The price of a single token that isn't necessarily held, e.g. the token being swapped to.
+   * It's looked up on its own, never together with an account's tokens (see
+   * `TokenPricesService.getStandaloneTokenData`). Throws if the request fails and there's no
+   * cached price.
+   */
+  async getTokenPrice(chainId: bigint, address: string): Promise<number | undefined> {
     const network = this.#networks.networks.find((x) => x.chainId === chainId)
 
     if (!network) throw new Error(`Network with chainId ${chainId} not found`)
 
-    const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, chainId, network)
-    if (!portfolioLib) return undefined
-
-    return portfolioLib.getTokenPrice(accountId, address, {
-      tokenDataRecency: TOKEN_PRICE_CACHE_TTL
+    const { tokenData, error } = await this.#tokenPrices.getStandaloneTokenData({
+      network,
+      tokenAddresses: [address],
+      maxAgeMs: TOKEN_PRICE_CACHE_TTL
     })
+    const price = tokenData
+      .get(getTokenDataCacheKey(address))
+      ?.priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')?.price
+
+    if (error && price === undefined) throw error
+
+    return price
   }
 
   async #getAdditionalPortfolio(accountId: AccountId, maxDataAgeMs?: number) {
@@ -1831,7 +1845,7 @@ export class PortfolioController
       }
 
       // Fetch the portfolio and custom defi positions in parallel
-      const [portfolioResult, customPositionsResult] = await Promise.all([
+      const [portfolioResult, unpricedCustomPositions] = await Promise.all([
         portfolioLib.get(account.addr, {
           tokenDataRecency: 60000 * 5,
           isFullPortfolioUpdate: true,
@@ -1849,10 +1863,17 @@ export class PortfolioController
           network,
           state.result?.defiPositions.positionsByProvider || [],
           discoveryData?.data?.defi?.positions,
-          getIsExternalApiDefiPositionsCallSuccessful(discoveryData),
-          this.#tokenPrices
+          getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
         )
       ])
+
+      // Priced only after the portfolio update, which sets the account's token list that every
+      // price request carries, so that the DeFi tokens are never requested on their own
+      const customPositionsResult = await priceCustomProviderPositions(this.#tokenPrices, {
+        network,
+        accountAddr: account.addr,
+        customPositions: unpricedCustomPositions
+      })
 
       const stkWalletToken =
         portfolioResult.tokens.find(

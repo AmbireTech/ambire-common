@@ -1,10 +1,12 @@
 import { describe, expect, jest, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { networks } from '../../consts/networks'
 import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
 import { TokenDataCacheValue } from '../portfolio/interfaces'
+import { priceCustomProviderPositions } from './defiPositions'
 import { updatePositionsByProviderAssetPrices } from './defiPrices'
-import { AssetType, PositionAsset, PositionsByProvider } from './types'
+import { AssetType, DeFiPositionsError, PositionAsset, PositionsByProvider } from './types'
 
 const ethereum = networks.find(({ chainId }) => chainId === 1n)!
 const ACCOUNT = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -187,5 +189,65 @@ describe('updatePositionsByProviderAssetPrices', () => {
 
     expect(error?.message).toBe('cena is down')
     expect(positionsByProvider[0]!.positions[0]!.assets[0]!.priceIn).toBeUndefined()
+  })
+})
+
+describe('priceCustomProviderPositions', () => {
+  test('prices the custom positions and keeps their provider errors', async () => {
+    const { tokenPrices } = createTokenPrices(2)
+    const providerErrors = [{ providerName: 'AAVE v3', error: 'RPC is down' }]
+
+    const result = await priceCustomProviderPositions(tokenPrices, {
+      network: ethereum,
+      accountAddr: ACCOUNT,
+      customPositions: {
+        positionsByProvider: [provider('Uniswap V3', [asset(USDC)])],
+        providerErrors,
+        error: null
+      }
+    })
+
+    expect(result.error).toBeNull()
+    expect(result.providerErrors).toBe(providerErrors)
+    expect(result.positionsByProvider[0]!.positions[0]!.assets[0]!.priceIn).toEqual({
+      baseCurrency: 'usd',
+      price: 2
+    })
+  })
+
+  test('reports a price error when the prices cannot be fetched', async () => {
+    const { restore } = suppressConsole()
+    const { tokenPrices } = createTokenPrices(2, new Error('cena is down'))
+
+    const result = await priceCustomProviderPositions(tokenPrices, {
+      network: ethereum,
+      accountAddr: ACCOUNT,
+      customPositions: {
+        positionsByProvider: [provider('Uniswap V3', [asset(USDC)])],
+        providerErrors: [],
+        error: null
+      }
+    })
+    restore()
+
+    expect(result.error).toBe(DeFiPositionsError.AssetPriceError)
+  })
+
+  test('keeps a critical error of the positions call over a price error', async () => {
+    const { restore } = suppressConsole()
+    const { tokenPrices } = createTokenPrices(2, new Error('cena is down'))
+
+    const result = await priceCustomProviderPositions(tokenPrices, {
+      network: ethereum,
+      accountAddr: ACCOUNT,
+      customPositions: {
+        positionsByProvider: [provider('Uniswap V3', [asset(USDC)])],
+        providerErrors: [],
+        error: DeFiPositionsError.CriticalError
+      }
+    })
+    restore()
+
+    expect(result.error).toBe(DeFiPositionsError.CriticalError)
   })
 })

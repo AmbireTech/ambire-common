@@ -21,7 +21,6 @@ import {
   getTokenDataCacheKey,
   getVisibleCollectibles,
   mergeCollectionHints,
-  mergeERC721s,
   planAssetMetadata,
   tokenFilter
 } from './helpers'
@@ -115,6 +114,7 @@ export class Portfolio {
       tokenDataRecencyOnFailure,
       tokenDataRecency,
       isFullPortfolioUpdate,
+      isStandaloneLookup,
       blacklist,
       preventTokenBlacklisting,
       deployless,
@@ -440,17 +440,26 @@ export class Portfolio {
 
     const oracleCallDone = Date.now()
 
+    const tokenAddressesToPrice = tokensWithoutPrices.map((token) => token.address)
     // Every token's price comes from a single call, which either answers from the cache or
-    // requests the account's whole token list again
-    const { tokenData, error: priceError } = await this.tokenPrices.getTokenData({
-      network: this.network,
-      accountAddr,
-      source: isFullPortfolioUpdate ? 'portfolio' : undefined,
-      tokenAddresses: tokensWithoutPrices.map((token) => token.address),
-      maxAgeMs: tokenDataRecency,
-      maxAgeOnFailureMs: tokenDataRecencyOnFailure,
-      baseCurrency
-    })
+    // requests the account's whole token list again (or, for a standalone lookup, only the
+    // tokens missing from the cache)
+    const { tokenData, error: priceError } = isStandaloneLookup
+      ? await this.tokenPrices.getStandaloneTokenData({
+          network: this.network,
+          tokenAddresses: tokenAddressesToPrice,
+          maxAgeMs: tokenDataRecency,
+          baseCurrency
+        })
+      : await this.tokenPrices.getTokenData({
+          network: this.network,
+          accountAddr,
+          source: isFullPortfolioUpdate ? 'portfolio' : undefined,
+          tokenAddresses: tokenAddressesToPrice,
+          maxAgeMs: tokenDataRecency,
+          maxAgeOnFailureMs: tokenDataRecencyOnFailure,
+          baseCurrency
+        })
 
     const tokensWithPrices: TokenResult[] = tokensWithoutPrices.map(
       (token: Omit<TokenResult, 'priceIn' | 'marketDataIn' | 'meta'>) => ({
@@ -534,38 +543,5 @@ export class Portfolio {
         marketDataIn: token.marketDataIn || []
       }
     ])
-  }
-
-  /**
-   * The price of a single token, e.g. the one being swapped to. It is requested along with the
-   * account's whole token list, but isn't added to it, so it isn't requested again later.
-   * Throws if the price request fails.
-   */
-  async getTokenPrice(
-    accountAddr: string,
-    address: string,
-    {
-      baseCurrency = 'usd',
-      tokenDataRecency = 0
-    }: {
-      baseCurrency?: string
-      tokenDataRecency?: number
-    } = {}
-  ): Promise<number | undefined> {
-    const { tokenData, error } = await this.tokenPrices.getTokenData({
-      network: this.network,
-      accountAddr,
-      tokenAddresses: [address],
-      maxAgeMs: tokenDataRecency,
-      baseCurrency
-    })
-
-    const price = tokenData
-      .get(getTokenDataCacheKey(address))
-      ?.priceIn.find((tokenPrice) => tokenPrice.baseCurrency === baseCurrency)?.price
-
-    if (error && price === undefined) throw error
-
-    return price
   }
 }
