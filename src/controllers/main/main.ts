@@ -55,6 +55,7 @@ import { TransactionManagerController } from '@/controllers/transaction/transact
 import { TransferController } from '@/controllers/transfer/transfer'
 import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
+import { TokenPricesController } from '@/controllers/tokenPrices/tokenPrices'
 import { VerificationController } from '@/controllers/verification/verification'
 import { WalletTokenController } from '@/controllers/walletToken/walletToken'
 import { Account, IAccountsController } from '@/interfaces/account'
@@ -125,7 +126,6 @@ import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketV3API } from '@/services/socketv3/api'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
-import { TokenPricesService } from '@/services/tokenPrices/tokenPrices'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
 import { getIsViewOnly } from '@/utils/accounts'
@@ -347,24 +347,21 @@ export class MainController extends EventEmitter implements IMainController {
       featureFlags: this.featureFlags
     })
 
+    // The only source of token prices, shared so that every feature reads one cache
+    const tokenPrices = new TokenPricesController({
+      fetch: this.fetch,
+      isTokenPricesEnabled: () => this.featureFlags.isFeatureEnabled('tokenPrices')
+    })
     this.providers = new ProvidersController({
       eventEmitterRegistry,
       storage: this.storage,
       getNetworks: () => this.networks.allNetworks,
-      featureFlags: this.featureFlags,
-      sendUiMessage: this.ui.message.sendUiMessage
-    })
-    // The only source of token prices, shared so that every feature reads one cache
-    const tokenPrices = new TokenPricesService({
-      fetch: this.fetch,
-      isTokenPricesEnabled: () => this.featureFlags.isFeatureEnabled('tokenPrices')
+      sendUiMessage: this.ui.message.sendUiMessage,
+      tokenPrices
     })
     this.verification = new VerificationController({
       eventEmitterRegistry,
-      networks: this.networks,
-      fetch: this.fetch,
-      featureFlags: this.featureFlags,
-      tokenPrices
+      networks: this.networks
     })
     this.accounts = new AccountsController(
       this.storage,
@@ -484,10 +481,10 @@ export class MainController extends EventEmitter implements IMainController {
       this.banner,
       this.featureFlags,
       this.ui,
+      tokenPrices,
       eventEmitterRegistry,
       this.verification,
-      platform,
-      tokenPrices
+      platform
     )
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(

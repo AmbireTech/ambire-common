@@ -1,6 +1,7 @@
 import { geckoIdMapper } from '../../consts/coingecko'
 import { AMBIRE_API_TIMEOUT } from '../../consts/portfolio'
 import { getPrivacyPoolsChainConfig } from '../../consts/privacyPools'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import {
@@ -14,34 +15,21 @@ import {
 } from '../../libs/portfolio/interfaces'
 import { fetchWithTimeout } from '../../utils/fetch'
 import { paginate } from '../../utils/paginate'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 const CENA_API_URL = 'https://cena.ambire.com'
 // max tokens per request; we seem to have faster results when it's lower
 const BATCH_LIMIT = 40
 
-/**
- * The feature a token list comes from. Each feature's latest list is remembered per
- * account and network, and every request for that account and network carries all of them.
- */
-export type TokenPriceSource = 'portfolio' | 'defi'
+/** Tokens answered (with a price or with "no price") within this are read from the cache */
+export const TOKEN_PRICE_MAX_AGE_MS = 5 * 60 * 1000
+
+/** When a request fails, cached prices younger than this are returned instead */
+export const TOKEN_PRICE_MAX_AGE_ON_FAILURE_MS = 60 * 60 * 1000
 
 export type GetTokenDataParams = {
   network: Network
   tokenAddresses: string[]
-  /**
-   * The account the tokens belong to. A request carries every token remembered for this
-   * account, never tokens of another account. Left out for lookups that belong to no
-   * account, in which case only the requested tokens and the Privacy Pools assets are sent.
-   */
-  accountAddr?: string
-  /** Remembers `tokenAddresses` as this feature's token list for the account */
-  source?: TokenPriceSource
-  /** Cached prices younger than this are used instead of requesting them again */
-  maxAgeMs: number
-  /** When the request fails, cached prices younger than this are returned instead */
-  maxAgeOnFailureMs?: number
-  /** Requests the prices even if all of them are cached */
-  ignoreCache?: boolean
   baseCurrency?: string
 }
 
@@ -123,167 +111,71 @@ export const getTokenPriceRequests = (
 const getResponseKey = (address: string, network: Network): string =>
   geckoIdMapper(address, network) || getTokenDataCacheKey(address)
 
-const getRequestKey = (chainId: bigint, accountAddr?: string): string =>
-  `${chainId.toString()}:${accountAddr ? accountAddr.toLowerCase() : ''}`
+const getRequestInFlightKey = (chainId: bigint, address: string): string =>
+  `${chainId.toString()}:${getTokenDataCacheKey(address)}`
 
 const EMPTY_RESULT = (): GetTokenDataResult => ({ tokenData: new Map(), error: null })
 
 /**
  * The only place that asks our price API (cena) for token prices, and the cache they are kept in.
  *
- * Every request for an account and network carries the account's whole token list (from every
- * feature that priced tokens through it) together with the Privacy Pools assets, so that no
- * request reveals what a single feature or action is about. Requests never carry the tokens of
- * more than one account. The one exception is `getStandaloneTokenData`, for tokens that aren't
- * part of an account (e.g. the token being swapped to), which are requested on their own.
+ * The cache belongs to no account: every token keeps the time it was last answered at, and a
+ * token answered (with a price or with "no price") within TOKEN_PRICE_MAX_AGE_MS is read from
+ * the cache, whichever account or feature asked for it. Only the tokens missing from the cache
+ * are requested. A call never adds its tokens to the request of another call, so a request
+ * never carries the tokens of two accounts. Every request also carries the Privacy Pools assets,
+ * which are the same for every user, so that pricing them reveals nothing.
  *
- * Nothing is requested, read or stored while the user has opted out of token prices.
+ * The cache is private: features read the prices through `getTokenData`, and the portfolio
+ * keeps them on its tokens. Nothing is requested, read or stored while the user has opted out
+ * of token prices.
  */
-export class TokenPricesService {
+export class TokenPricesController extends EventEmitter {
   #fetch: Fetch
 
   #isTokenPricesEnabled: () => boolean
 
   #timeoutMs: number
 
-  /** chainId -> token data cache, shared by all accounts */
+  /** chainId -> token data cache */
   #cacheByChainId = new Map<string, TokenDataCache>()
 
-  /** `${chainId}:${account}` -> the latest token list of each feature */
-  #accountTokensByRequestKey = new Map<string, Map<TokenPriceSource, string[]>>()
-
-  /** `${chainId}:${account}` -> the request in flight, so that an account sends one at a time */
+  /** `${chainId}:${lowercased address}` -> the request in flight that asks for the token */
   #requestsInFlight = new Map<string, Promise<void>>()
 
   constructor({
     fetch,
     isTokenPricesEnabled = () => true,
-    timeoutMs = AMBIRE_API_TIMEOUT
+    timeoutMs = AMBIRE_API_TIMEOUT,
+    eventEmitterRegistry
   }: {
     fetch: Fetch
     isTokenPricesEnabled?: () => boolean
     timeoutMs?: number
+    eventEmitterRegistry?: IEventEmitterRegistryController
   }) {
+    super(eventEmitterRegistry)
     this.#fetch = fetch
     this.#isTokenPricesEnabled = isTokenPricesEnabled
     this.#timeoutMs = timeoutMs
   }
 
   /**
-   * Returns the prices of the given tokens. They come from the cache when all of them were
-   * answered (with a price or with "no price") within `maxAgeMs`; otherwise (or with
-   * `ignoreCache`) the account's whole token list is requested again and cached.
+   * Returns the prices of the given tokens. Tokens answered within TOKEN_PRICE_MAX_AGE_MS come
+   * from the cache; the rest are requested (or, if another call is already requesting them,
+   * waited for). When a request fails, the cached prices younger than
+   * TOKEN_PRICE_MAX_AGE_ON_FAILURE_MS are returned along with the error.
    */
-  async getTokenData(params: GetTokenDataParams): Promise<GetTokenDataResult> {
-    const {
-      network,
-      accountAddr,
-      source,
-      maxAgeMs,
-      maxAgeOnFailureMs = 0,
-      ignoreCache = false,
-      baseCurrency = 'usd'
-    } = params
-
-    if (!this.#getIsEnabled()) return EMPTY_RESULT()
-
-    const tokenAddresses = getUniqueSortedAddresses(params.tokenAddresses)
-    const requestKey = getRequestKey(network.chainId, accountAddr)
-    const callStartedAt = Date.now()
-    const isFresh = (cachedAt: number) => callStartedAt - cachedAt <= maxAgeMs
-
-    if (accountAddr && source) this.#rememberAccountTokens(requestKey, source, tokenAddresses)
-
-    const freshTokenData = this.#readTokenData(network, tokenAddresses, baseCurrency, isFresh)
-    // A recent "no price" answer counts as cached too, so that a token cena can't price
-    // (e.g. a spam token) doesn't make every call request the whole list again
-    const isAllFresh = tokenAddresses.every(
-      (address) => !!this.#getCacheEntry(network.chainId, address, isFresh)
-    )
-
-    // Without a CoinGecko platform cena has nothing to look the tokens up by
-    if ((!ignoreCache && isAllFresh) || !network.platformId) {
-      return { tokenData: freshTokenData, error: null }
-    }
-
-    const requestInFlight = this.#requestsInFlight.get(requestKey)
-    if (requestInFlight && !ignoreCache) {
-      // The error of that request is returned to the call that started it
-      await requestInFlight.catch(() => {})
-
-      if (!this.#getIsEnabled()) return EMPTY_RESULT()
-
-      const isAnsweredOrFresh = (cachedAt: number) => cachedAt >= callStartedAt || isFresh(cachedAt)
-      const hasUnansweredTokens = tokenAddresses.some(
-        (address) => !this.#getCacheEntry(network.chainId, address, isAnsweredOrFresh)
-      )
-
-      if (!hasUnansweredTokens) {
-        return {
-          tokenData: this.#readTokenData(network, tokenAddresses, baseCurrency, isAnsweredOrFresh),
-          error: null
-        }
-      }
-    }
-
-    const request = this.#requestAccountTokens(network, requestKey, tokenAddresses, baseCurrency)
-    this.#requestsInFlight.set(requestKey, request)
-
-    try {
-      await request
-      if (!this.#getIsEnabled()) return EMPTY_RESULT()
-
-      const isAnsweredOrFresh = (cachedAt: number) => cachedAt >= callStartedAt || isFresh(cachedAt)
-
-      return {
-        tokenData: this.#readTokenData(network, tokenAddresses, baseCurrency, isAnsweredOrFresh),
-        error: null
-      }
-    } catch (e: unknown) {
-      const error = TokenPricesService.#toPriceRequestError(e, network)
-      if (!this.#getIsEnabled()) return EMPTY_RESULT()
-
-      return {
-        tokenData: this.#readTokenData(
-          network,
-          tokenAddresses,
-          baseCurrency,
-          (cachedAt) => callStartedAt - cachedAt <= maxAgeOnFailureMs
-        ),
-        error
-      }
-    } finally {
-      if (this.#requestsInFlight.get(requestKey) === request) {
-        this.#requestsInFlight.delete(requestKey)
-      }
-    }
-  }
-
-  /**
-   * Prices tokens that don't belong to an account's token list, e.g. the token being swapped to,
-   * or the tokens of a transaction whose info is being looked up. Tokens answered (with a price or
-   * with "no price") within `maxAgeMs` come from the cache; cena is asked only for the rest, on
-   * their own: the request never carries an account's tokens or the Privacy Pools assets, and
-   * never waits for an account's request.
-   *
-   * When the request fails, the cached prices younger than `maxAgeMs` are returned with the error.
-   */
-  async getStandaloneTokenData({
+  async getTokenData({
     network,
     tokenAddresses: requestedAddresses,
-    maxAgeMs,
     baseCurrency = 'usd'
-  }: {
-    network: Network
-    tokenAddresses: string[]
-    maxAgeMs: number
-    baseCurrency?: string
-  }): Promise<GetTokenDataResult> {
+  }: GetTokenDataParams): Promise<GetTokenDataResult> {
     if (!this.#getIsEnabled()) return EMPTY_RESULT()
 
     const tokenAddresses = getUniqueSortedAddresses(requestedAddresses)
     const callStartedAt = Date.now()
-    const isFresh = (cachedAt: number) => callStartedAt - cachedAt <= maxAgeMs
+    const isFresh = (cachedAt: number) => callStartedAt - cachedAt <= TOKEN_PRICE_MAX_AGE_MS
     const unansweredAddresses = tokenAddresses.filter(
       (address) => !this.#getCacheEntry(network.chainId, address, isFresh)
     )
@@ -296,36 +188,69 @@ export class TokenPricesService {
       }
     }
 
-    let error: Error | null = null
-    try {
-      await this.#requestTokens(network, unansweredAddresses, baseCurrency)
-    } catch (e: unknown) {
-      error = TokenPricesService.#toPriceRequestError(e, network)
+    const requestsInFlight = new Set<Promise<void>>()
+    const addressesToRequest: string[] = []
+    unansweredAddresses.forEach((address) => {
+      const requestInFlight = this.#requestsInFlight.get(
+        getRequestInFlightKey(network.chainId, address)
+      )
+      if (requestInFlight) requestsInFlight.add(requestInFlight)
+      else addressesToRequest.push(address)
+    })
+
+    const requests = [...requestsInFlight]
+    if (addressesToRequest.length) {
+      requests.push(this.#requestTokens(network, addressesToRequest, baseCurrency))
     }
+
+    const failedRequest = (await Promise.allSettled(requests)).find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    )
     if (!this.#getIsEnabled()) return EMPTY_RESULT()
+
+    const isAnswered = (cachedAt: number) => cachedAt >= callStartedAt
+
+    if (!failedRequest) {
+      return {
+        tokenData: this.#readTokenData(
+          network,
+          tokenAddresses,
+          baseCurrency,
+          (cachedAt) => isAnswered(cachedAt) || isFresh(cachedAt)
+        ),
+        error: null
+      }
+    }
 
     return {
       tokenData: this.#readTokenData(
         network,
         tokenAddresses,
         baseCurrency,
-        (cachedAt) => cachedAt >= callStartedAt || isFresh(cachedAt)
+        (cachedAt) =>
+          isAnswered(cachedAt) || callStartedAt - cachedAt <= TOKEN_PRICE_MAX_AGE_ON_FAILURE_MS
       ),
-      error
+      error: TokenPricesController.#toPriceRequestError(failedRequest.reason, network)
     }
   }
 
-  /** A cached entry younger than `maxAgeMs`, without requesting it (e.g. NFT floor prices) */
+  /**
+   * A cached entry younger than TOKEN_PRICE_MAX_AGE_MS, without requesting it (e.g. NFT floor
+   * prices, which only come with Velcro's discovery response)
+   */
   getCachedTokenData(
     chainId: bigint,
     address: string,
-    maxAgeMs: number,
     baseCurrency: string = 'usd'
   ): TokenDataCacheValue | null {
     if (!this.#getIsEnabled()) return null
 
     const now = Date.now()
-    const entry = this.#getCacheEntry(chainId, address, (cachedAt) => now - cachedAt <= maxAgeMs)
+    const entry = this.#getCacheEntry(
+      chainId,
+      address,
+      (cachedAt) => now - cachedAt <= TOKEN_PRICE_MAX_AGE_MS
+    )
     if (!entry || !entry.priceIn.some((price) => price.baseCurrency === baseCurrency)) return null
 
     return entry
@@ -343,28 +268,12 @@ export class TokenPricesService {
     })
   }
 
-  /** Forgets the token lists of a removed account */
-  forgetAccount(accountAddr: string) {
-    const accountSuffix = `:${accountAddr.toLowerCase()}`
-
-    Array.from(this.#accountTokensByRequestKey.keys()).forEach((requestKey) => {
-      if (requestKey.endsWith(accountSuffix)) this.#accountTokensByRequestKey.delete(requestKey)
-    })
-  }
-
   /** Whether prices may be used; drops everything that was stored if not */
   #getIsEnabled(): boolean {
     if (this.#isTokenPricesEnabled()) return true
 
     this.#cacheByChainId.clear()
-    this.#accountTokensByRequestKey.clear()
     return false
-  }
-
-  #rememberAccountTokens(requestKey: string, source: TokenPriceSource, tokenAddresses: string[]) {
-    const accountTokens = this.#accountTokensByRequestKey.get(requestKey) || new Map()
-    accountTokens.set(source, tokenAddresses)
-    this.#accountTokensByRequestKey.set(requestKey, accountTokens)
   }
 
   #getOrCreateCache(chainId: bigint): TokenDataCache {
@@ -410,32 +319,37 @@ export class TokenPricesService {
   }
 
   /**
-   * Requests the account's whole token list along with the requested tokens and the Privacy
-   * Pools assets (see `#requestTokens`).
+   * Requests the tokens together with the Privacy Pools assets of the network, and marks all of
+   * them as in flight until the request settles, so that other calls wait for it instead of
+   * requesting them again.
    */
-  async #requestAccountTokens(
-    network: Network,
-    requestKey: string,
-    tokenAddresses: string[],
-    baseCurrency: string
-  ): Promise<void> {
-    const accountTokens = [...(this.#accountTokensByRequestKey.get(requestKey)?.values() || [])]
+  #requestTokens(network: Network, tokenAddresses: string[], baseCurrency: string): Promise<void> {
     const privacyPoolsAssets =
       getPrivacyPoolsChainConfig(network.chainId)?.assets.map(({ address }) => address) || []
-    const allTokens = getUniqueSortedAddresses([
-      ...accountTokens.flat(),
-      ...tokenAddresses,
-      ...privacyPoolsAssets
-    ])
+    const allTokens = getUniqueSortedAddresses([...tokenAddresses, ...privacyPoolsAssets])
+    const inFlightKeys = allTokens.map((address) =>
+      getRequestInFlightKey(network.chainId, address)
+    )
 
-    await this.#requestTokens(network, allTokens, baseCurrency)
+    const request = this.#fetchAndCacheTokens(network, allTokens, baseCurrency)
+    inFlightKeys.forEach((key) => this.#requestsInFlight.set(key, request))
+
+    const forgetRequest = () => {
+      inFlightKeys.forEach((key) => {
+        if (this.#requestsInFlight.get(key) === request) this.#requestsInFlight.delete(key)
+      })
+    }
+    // Its outcome (and error) reaches the callers through `request` itself
+    request.then(forgetRequest, forgetRequest)
+
+    return request
   }
 
   /**
    * Requests exactly the given tokens and caches every answer, including "no price". Pages that
    * succeed are cached even if another page fails, after which the first failure is thrown.
    */
-  async #requestTokens(network: Network, tokenAddresses: string[], baseCurrency: string) {
+  async #fetchAndCacheTokens(network: Network, tokenAddresses: string[], baseCurrency: string) {
     const results = await Promise.allSettled(
       getTokenPriceRequests(network, tokenAddresses, baseCurrency).map(async (request) => ({
         request,

@@ -1,4 +1,5 @@
 import { Network } from '../../interfaces/network'
+import { ITokenPricesController } from '../../interfaces/tokenPrices'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
 import { getRpcProvider } from '../provider'
 
@@ -7,6 +8,8 @@ const scheduledActions: {
   [chainId: string]:
     | {
         promise: Promise<any>
+        /** Prices every token of the batch if any of its lookups asked for prices */
+        tokenPrices?: ITokenPricesController
         data: {
           callback: (arg: { tokenInfo?: TokenResult; nftInfo?: { name: string } }) => void
           address: string
@@ -15,21 +18,23 @@ const scheduledActions: {
     | undefined
 } = {}
 
-export async function executeBatchedFetch(
-  network: Network,
-  isTokenPricesEnabled: () => boolean
-): Promise<void> {
+export async function executeBatchedFetch(network: Network): Promise<void> {
   const rpcUrl = network.selectedRpcUrl || network.rpcUrls[0]!
   const provider = getRpcProvider([rpcUrl], network.chainId)
   const allAddresses =
     Array.from(new Set(scheduledActions[network.chainId.toString()]?.data.map((i) => i.address))) ||
     []
-  const portfolio = new Portfolio(fetch as any, provider, network, isTokenPricesEnabled)
+  const portfolio = new Portfolio(
+    provider,
+    network,
+    scheduledActions[network.chainId.toString()]?.tokenPrices
+  )
   const options: Partial<GetOptions> = {
     additionalErc20Hints: allAddresses,
     additionalErc721Hints: Object.fromEntries(allAddresses.map((i) => [i, [1n]])),
     preventTokenBlacklisting: true,
-    isStandaloneLookup: true
+    // Only the looked up tokens are needed
+    fetchPinned: false
   }
   const portfolioResponse = await portfolio.get(RANDOM_ADDRESS, options)
 
@@ -50,27 +55,31 @@ export async function executeBatchedFetch(
 }
 
 /**
- * Resolves symbol and decimals for tokens or name for nfts.
+ * Resolves symbol and decimals for tokens or name for nfts. The tokens are priced only when
+ * `tokenPrices` is passed (e.g. to show a fee in USD).
  */
 export async function resolveAssetInfo(
   address: string,
   network: Network,
   callback: (arg: { tokenInfo?: TokenResult; nftInfo?: { name: string } }) => void,
-  isTokenPricesEnabled: () => boolean
+  tokenPrices?: ITokenPricesController
 ): Promise<void> {
-  if (!scheduledActions[network.chainId.toString()]?.data?.length) {
+  const scheduledAction = scheduledActions[network.chainId.toString()]
+  if (!scheduledAction?.data?.length) {
     scheduledActions[network.chainId.toString()] = {
       promise: new Promise((resolve, reject) => {
         setTimeout(async () => {
-          await executeBatchedFetch(network, isTokenPricesEnabled).catch(reject)
+          await executeBatchedFetch(network).catch(reject)
           scheduledActions[network.chainId.toString()] = undefined
           resolve(0)
         }, 500)
       }),
+      tokenPrices,
       data: [{ address, callback }]
     }
   } else {
-    scheduledActions[network.chainId.toString()]?.data.push({ address, callback })
+    scheduledAction.data.push({ address, callback })
+    scheduledAction.tokenPrices = scheduledAction.tokenPrices || tokenPrices
   }
   // we are returning a promise so we can await the full execution
   return scheduledActions[network.chainId.toString()]?.promise

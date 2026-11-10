@@ -6,7 +6,7 @@ import { getSanitizedAmount } from '@/libs/transfer/amount'
 import { AccountId } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
-import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
+import { ITokenPricesController } from '../../interfaces/tokenPrices'
 import {
   numberToDecimalString,
   safeTokenAmountAndNumberMultiplication
@@ -138,14 +138,10 @@ const getCustomProviderPositions = async (
 
 /**
  * Prices the assets of the custom positions that are left without a price (e.g. a new Uniswap V3
- * position Debank doesn't know about yet) through the token prices service.
- *
- * Call it only after the portfolio update of the same account and network has priced its tokens.
- * That update sets the account's portfolio token list in the service, and every price request
- * must carry that list, so that it never reveals the DeFi tokens on their own.
+ * position Debank doesn't know about yet) through the token prices controller.
  */
 const priceCustomProviderPositions = async (
-  tokenPrices: TokenPricesService,
+  tokenPrices: ITokenPricesController,
   {
     network,
     accountAddr,
@@ -158,7 +154,6 @@ const priceCustomProviderPositions = async (
 ): Promise<CustomProviderPositionsResult> => {
   const { positionsByProvider, error } = await updatePositionsByProviderAssetPrices(tokenPrices, {
     network,
-    accountAddr,
     positionsByProvider: customPositions.positionsByProvider
   })
 

@@ -664,21 +664,6 @@ export interface GetOptions {
    * The collection counterpart of `knownTokenMetadata`.
    */
   knownCollectionMetadata?: KnownCollectionMetadata
-  tokenDataRecency: number
-  tokenDataRecencyOnFailure?: number
-  /**
-   * Whether the tokens of this call are the account's whole portfolio on the network. If so,
-   * they become the account's portfolio token list in the token prices service, which every
-   * later price request for the account carries. Set only by the main portfolio update:
-   * lookups of a few tokens (e.g. previewing a custom token) would shrink the list.
-   */
-  isFullPortfolioUpdate?: boolean
-  /**
-   * Prices the tokens on their own, without any account's token list, for lookups that belong to
-   * no account (e.g. resolving the info of the tokens in a transaction). See
-   * `TokenPricesService.getStandaloneTokenData`.
-   */
-  isStandaloneLookup?: boolean
   fetchPinned: boolean
   /**
    * Hints for ERC20 tokens with a type

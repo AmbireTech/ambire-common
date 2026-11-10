@@ -185,6 +185,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **SwapAndBridgeController** – Manages swap and bridge quotes, routes, and active cross-chain transactions.
 - **TransferController** – Builds and validates simple token-transfer transactions.
 - **UiController** – Manages UI windows, popups, and view stacks.
+- **TokenPricesController** – The only place that requests token prices from cena: keeps one cache with a fetch time per token, shared by every account and feature, and requests only the tokens missing from it.
 - **TransfersScannerController** – Scans blockchain logs for incoming token transfers to user accounts.
 - **TransactionManagerController** – Coordinates the transaction flow, delegating to form state and intent controllers
 - **TransactionFormState** – Manages the shared transaction form state (amount, tokens, validation)

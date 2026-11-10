@@ -7,10 +7,9 @@ import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
+import { ITokenPricesController } from '../../interfaces/tokenPrices'
 import { paginate } from '../../utils/paginate'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import { isBlacklistedAsset, prepareBlacklistPatterns, STATIC_BLACKLIST } from './blacklist'
@@ -31,6 +30,7 @@ import {
   Limits,
   LimitsOptions,
   PortfolioLibGetResult,
+  TokenDataCacheValue,
   TokenError,
   TokenMetadataFetchPlan,
   TokenResult
@@ -68,9 +68,7 @@ export const getEmptyHints = (): Hints => ({
 const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
-  tokenDataRecency: 0,
-  fetchPinned: true,
-  tokenDataRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
+  fetchPinned: true
 }
 
 export class Portfolio {
@@ -78,22 +76,18 @@ export class Portfolio {
 
   provider: RPCProvider
 
-  /** Where token prices come from and are cached; shared between libs when passed in */
-  private tokenPrices: TokenPricesService
+  /**
+   * Where token prices come from and are cached. Without it no token is priced, e.g. for lookups
+   * that only need the token info.
+   */
+  private tokenPrices?: ITokenPricesController
 
   private deploylessTokens: Deployless
 
   private deploylessNfts: Deployless
 
-  constructor(
-    fetch: Fetch,
-    provider: RPCProvider,
-    network: Network,
-    isTokenPricesEnabled: () => boolean = () => true,
-    tokenPrices?: TokenPricesService
-  ) {
-    // One-off libs (e.g. asset info lookups) get their own, so they keep working without one
-    this.tokenPrices = tokenPrices || new TokenPricesService({ fetch, isTokenPricesEnabled })
+  constructor(provider: RPCProvider, network: Network, tokenPrices?: ITokenPricesController) {
+    this.tokenPrices = tokenPrices
     this.provider = provider
     this.network = network
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
@@ -111,10 +105,6 @@ export class Portfolio {
       specialErc20Hints,
       specialErc721Hints,
       blockTag,
-      tokenDataRecencyOnFailure,
-      tokenDataRecency,
-      isFullPortfolioUpdate,
-      isStandaloneLookup,
       blacklist,
       preventTokenBlacklisting,
       deployless,
@@ -426,10 +416,9 @@ export class Portfolio {
           flags: { isCustom, isHidden },
           // Collection prices are never requested, they only come with Velcro's discovery response
           priceIn:
-            this.tokenPrices.getCachedTokenData(
+            this.tokenPrices?.getCachedTokenData(
               this.network.chainId,
               collection.address,
-              tokenDataRecency,
               baseCurrency
             )?.priceIn || []
         })
@@ -440,26 +429,15 @@ export class Portfolio {
 
     const oracleCallDone = Date.now()
 
-    const tokenAddressesToPrice = tokensWithoutPrices.map((token) => token.address)
-    // Every token's price comes from a single call, which either answers from the cache or
-    // requests the account's whole token list again (or, for a standalone lookup, only the
-    // tokens missing from the cache)
-    const { tokenData, error: priceError } = isStandaloneLookup
-      ? await this.tokenPrices.getStandaloneTokenData({
+    // Every token's price comes from a single call, which answers from the cache and requests
+    // only the tokens missing from it
+    const { tokenData, error: priceError } = this.tokenPrices
+      ? await this.tokenPrices.getTokenData({
           network: this.network,
-          tokenAddresses: tokenAddressesToPrice,
-          maxAgeMs: tokenDataRecency,
+          tokenAddresses: tokensWithoutPrices.map((token) => token.address),
           baseCurrency
         })
-      : await this.tokenPrices.getTokenData({
-          network: this.network,
-          accountAddr,
-          source: isFullPortfolioUpdate ? 'portfolio' : undefined,
-          tokenAddresses: tokenAddressesToPrice,
-          maxAgeMs: tokenDataRecency,
-          maxAgeOnFailureMs: tokenDataRecencyOnFailure,
-          baseCurrency
-        })
+      : { tokenData: new Map<string, TokenDataCacheValue>(), error: null }
 
     const tokensWithPrices: TokenResult[] = tokensWithoutPrices.map(
       (token: Omit<TokenResult, 'priceIn' | 'marketDataIn' | 'meta'>) => ({

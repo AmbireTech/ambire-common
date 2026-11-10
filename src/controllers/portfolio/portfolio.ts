@@ -35,6 +35,7 @@ import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { ITokenPricesController } from '../../interfaces/tokenPrices'
 import { IUiController } from '../../interfaces/ui'
 import { IVerificationController } from '../../interfaces/verification'
 import { isBasicAccount } from '../../libs/account/account'
@@ -109,7 +110,6 @@ import { getFlags } from '../../libs/portfolio/tokenProcessing'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import { getWalletStakingShareValue } from '../../libs/walletStaking/shareValue'
-import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
 import batcher from '../../utils/batcher'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
@@ -118,7 +118,6 @@ const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
   static: 60 * 60 * 1000
 }
-const TOKEN_PRICE_CACHE_TTL = 5 * 60 * 1000
 export const EXCHANGE_LIST_URL = 'https://cena.ambire.com/api/v3/exchanges'
 const EXCHANGE_LIST_MAX_RETRIES = 5
 const EXCHANGE_LIST_RETRY_DELAY = 10 * 60 * 1000
@@ -221,8 +220,8 @@ export class PortfolioController
 
   #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
-  /** The only source of token prices and their cache; shared with other controllers when passed in */
-  #tokenPrices: TokenPricesService
+  /** The only source of token prices and their cache, shared with the other controllers */
+  #tokenPrices: ITokenPricesController
 
   #providers: IProvidersController
 
@@ -300,10 +299,11 @@ export class PortfolioController
     banner: IBannerController,
     featureFlags: IFeatureFlagsController,
     ui: IUiController,
+    /** The only source of token prices, shared with the other controllers that price tokens */
+    tokenPrices: ITokenPricesController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
     verification?: IVerificationController,
-    platform: Platform = 'default',
-    tokenPrices?: TokenPricesService
+    platform: Platform = 'default'
   ) {
     super(eventEmitterRegistry)
 
@@ -312,12 +312,7 @@ export class PortfolioController
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#fetch = fetch
-    this.#tokenPrices =
-      tokenPrices ||
-      new TokenPricesService({
-        fetch,
-        isTokenPricesEnabled: () => featureFlags.isFeatureEnabled('tokenPrices')
-      })
+    this.#tokenPrices = tokenPrices
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#velcroUrl = velcroUrl
     this.#providers = providers
@@ -1211,16 +1206,7 @@ export class PortfolioController
       try {
         const provider = providers[network.chainId.toString()]
         if (!provider) return null
-        this.#portfolioLibs.set(
-          key,
-          new Portfolio(
-            this.#fetch,
-            provider,
-            network,
-            () => this.#featureFlags.isFeatureEnabled('tokenPrices'),
-            this.#tokenPrices
-          )
-        )
+        this.#portfolioLibs.set(key, new Portfolio(provider, network, this.#tokenPrices))
       } catch (e: any) {
         this.emitError({
           level: 'silent',
@@ -1285,7 +1271,6 @@ export class PortfolioController
       }
 
       const result = await portfolioLib.get(accountId, {
-        tokenDataRecency: 60000 * 5,
         additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)]
       })
       this.temporaryTokens[network.chainId.toString()] = {
@@ -1315,19 +1300,17 @@ export class PortfolioController
 
   /**
    * The price of a single token that isn't necessarily held, e.g. the token being swapped to.
-   * It's looked up on its own, never together with an account's tokens (see
-   * `TokenPricesService.getStandaloneTokenData`). Throws if the request fails and there's no
-   * cached price.
+   * Read from the cache when it was answered recently, requested otherwise (see
+   * `TokenPricesController.getTokenData`). Throws if the request fails and there's no cached price.
    */
   async getTokenPrice(chainId: bigint, address: string): Promise<number | undefined> {
     const network = this.#networks.networks.find((x) => x.chainId === chainId)
 
     if (!network) throw new Error(`Network with chainId ${chainId} not found`)
 
-    const { tokenData, error } = await this.#tokenPrices.getStandaloneTokenData({
+    const { tokenData, error } = await this.#tokenPrices.getTokenData({
       network,
-      tokenAddresses: [address],
-      maxAgeMs: TOKEN_PRICE_CACHE_TTL
+      tokenAddresses: [address]
     })
     const price = tokenData
       .get(getTokenDataCacheKey(address))
@@ -1845,10 +1828,8 @@ export class PortfolioController
       }
 
       // Fetch the portfolio and custom defi positions in parallel
-      const [portfolioResult, unpricedCustomPositions] = await Promise.all([
+      const [portfolioResult, customPositionsResult] = await Promise.all([
         portfolioLib.get(account.addr, {
-          tokenDataRecency: 60000 * 5,
-          isFullPortfolioUpdate: true,
           knownTokenMetadata: this.hints.getKnownTokenMetadata(network.chainId),
           knownCollectionMetadata: this.hints.getKnownCollectionMetadata(network.chainId),
           fetchPinned: !hasNonZeroTokens,
@@ -1864,16 +1845,14 @@ export class PortfolioController
           state.result?.defiPositions.positionsByProvider || [],
           discoveryData?.data?.defi?.positions,
           getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
+        ).then((customPositions) =>
+          priceCustomProviderPositions(this.#tokenPrices, {
+            network,
+            accountAddr: account.addr,
+            customPositions
+          })
         )
       ])
-
-      // Priced only after the portfolio update, which sets the account's token list that every
-      // price request carries, so that the DeFi tokens are never requested on their own
-      const customPositionsResult = await priceCustomProviderPositions(this.#tokenPrices, {
-        network,
-        accountAddr: account.addr,
-        customPositions: unpricedCustomPositions
-      })
 
       const stkWalletToken =
         portfolioResult.tokens.find(
@@ -2010,7 +1989,6 @@ export class PortfolioController
             network,
             rpcResult: portfolioResult,
             getOptions: {
-              tokenDataRecency: 60000 * 5,
               fetchPinned: !hasNonZeroTokens,
               ...allHints,
               ...portfolioProps,
@@ -2554,7 +2532,6 @@ export class PortfolioController
   removeAccountData(address: Account['addr']) {
     delete this.#state[address]
     delete this.#networksWithAssetsByAccounts[address]
-    this.#tokenPrices.forgetAccount(address)
 
     this.#networks.networks.forEach((network) => {
       const key = `${network.chainId}:${address}`

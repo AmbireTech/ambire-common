@@ -16,7 +16,7 @@ import { getBaseAccount } from '../account/getBaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { ERC20 } from '../humanizer/const/abis'
-import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
+import { TokenPricesController } from '../../controllers/tokenPrices/tokenPrices'
 import { TokenResult } from './interfaces'
 import { Portfolio, PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
 
@@ -54,8 +54,9 @@ describe('Portfolio', () => {
   const provider = getRpcProvider(['https://invictus.ambire.com/ethereum'], 1n)
   const providerArbitrum = getRpcProvider(['https://invictus.ambire.com/arbitrum'], 42161n)
 
-  const portfolio = new Portfolio(fetch, provider, ethereum)
-  const portfolioArbitrum = new Portfolio(fetch, providerArbitrum, arbitrum)
+  const tokenPrices = new TokenPricesController({ fetch: fetch as any })
+  const portfolio = new Portfolio(provider, ethereum, tokenPrices)
+  const portfolioArbitrum = new Portfolio(providerArbitrum, arbitrum, tokenPrices)
 
   async function getNonce(address: string) {
     const accountContract = new Contract(address, AmbireAccount.abi, provider)
@@ -213,29 +214,25 @@ describe('Portfolio', () => {
 
   test('price cache works', async () => {
     await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-    const resultTwo = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-      tokenDataRecency: 60000
-    })
+    const resultTwo = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
     expect(resultTwo.priceUpdateTime).toBeLessThanOrEqual(3)
     expect(resultTwo.tokens.every((x) => x.priceIn.length)).toBe(true)
   })
 
   describe('reusing cached prices', () => {
     const ACCOUNT_WITH_ETH = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    const TOKEN_DATA_RECENCY = 5 * 60 * 1000
-    const TOKEN_DATA_RECENCY_ON_FAILURE = 60 * 60 * 1000
 
     /** A portfolio lib whose price cache holds an ETH price cached `ageMs` ago */
     const createPortfolioWithCachedEthPrice = (priceFetch: any, price: number, ageMs: number) => {
-      const tokenPrices = new TokenPricesService({ fetch: priceFetch })
+      const cachedPrices = new TokenPricesController({ fetch: priceFetch })
       const cachedAt = Date.now() - ageMs
       const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(cachedAt)
-      tokenPrices.setTokenData(1n, [
+      cachedPrices.setTokenData(1n, [
         [ZeroAddress, { priceIn: [{ baseCurrency: 'usd', price }], marketDataIn: [] }]
       ])
       dateSpy.mockRestore()
 
-      return new Portfolio(priceFetch, provider, ethereum, () => true, tokenPrices)
+      return new Portfolio(provider, ethereum, cachedPrices)
     }
     const getNativePriceIn = (tokens: TokenResult[]) =>
       tokens.find((t) => t.address === ZeroAddress)?.priceIn
@@ -246,7 +243,7 @@ describe('Portfolio', () => {
         throw new Error('price API is down')
       })
 
-    test('refetches a cached price older than tokenDataRecency, even if newer than tokenDataRecencyOnFailure', async () => {
+    test('refetches a cached price older than 5 minutes, even if newer than an hour', async () => {
       const priceFetch = workingPriceFetch()
       const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
         priceFetch,
@@ -254,16 +251,13 @@ describe('Portfolio', () => {
         10 * 60 * 1000
       )
 
-      const { tokens } = await portfolioWithCachedPrice.get(ACCOUNT_WITH_ETH, {
-        tokenDataRecency: TOKEN_DATA_RECENCY,
-        tokenDataRecencyOnFailure: TOKEN_DATA_RECENCY_ON_FAILURE
-      })
+      const { tokens } = await portfolioWithCachedPrice.get(ACCOUNT_WITH_ETH)
 
       expect(priceFetch).toHaveBeenCalled()
       expect(getNativePriceIn(tokens)).toEqual([{ baseCurrency: 'usd', price: 2000 }])
     })
 
-    test('falls back to a cached price within tokenDataRecencyOnFailure when the price request fails', async () => {
+    test('falls back to a cached price younger than an hour when the price request fails', async () => {
       const priceFetch = failingPriceFetch()
       const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
         priceFetch,
@@ -271,26 +265,20 @@ describe('Portfolio', () => {
         10 * 60 * 1000
       )
 
-      const { tokens } = await portfolioWithCachedPrice.get(ACCOUNT_WITH_ETH, {
-        tokenDataRecency: TOKEN_DATA_RECENCY,
-        tokenDataRecencyOnFailure: TOKEN_DATA_RECENCY_ON_FAILURE
-      })
+      const { tokens } = await portfolioWithCachedPrice.get(ACCOUNT_WITH_ETH)
 
       expect(priceFetch).toHaveBeenCalled()
       expect(getNativePriceIn(tokens)).toEqual([{ baseCurrency: 'usd', price: 1000 }])
     })
 
-    test('drops a cached price older than tokenDataRecencyOnFailure when the price request fails', async () => {
+    test('drops a cached price older than an hour when the price request fails', async () => {
       const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
         failingPriceFetch(),
         1000,
         2 * 60 * 60 * 1000
       )
 
-      const { tokens, errors } = await portfolioWithCachedPrice.get(ACCOUNT_WITH_ETH, {
-        tokenDataRecency: TOKEN_DATA_RECENCY,
-        tokenDataRecencyOnFailure: TOKEN_DATA_RECENCY_ON_FAILURE
-      })
+      const { tokens, errors } = await portfolioWithCachedPrice.get(ACCOUNT_WITH_ETH)
 
       expect(getNativePriceIn(tokens)).toEqual([])
       expect(errors.some(({ name }) => name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError)).toBe(
@@ -299,50 +287,41 @@ describe('Portfolio', () => {
     })
   })
 
-  describe("the account's portfolio token list for price requests", () => {
+  describe('token prices', () => {
     const ACCOUNT_WITH_ETH = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     const CUSTOM_TOKEN = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     const priceFetch = (): any =>
       jest.fn(async () => ({ status: 200, json: async () => ({ ethereum: { usd: 2000 } }) }))
 
-    test('is set by a full portfolio update', async () => {
-      const tokenPrices = new TokenPricesService({ fetch: priceFetch() })
-      const getTokenDataSpy = jest.spyOn(tokenPrices, 'getTokenData')
-      const portfolioLib = new Portfolio(priceFetch(), provider, ethereum, () => true, tokenPrices)
+    test('are read through the price controller for every token found', async () => {
+      const priceController = new TokenPricesController({ fetch: priceFetch() })
+      const getTokenDataSpy = jest.spyOn(priceController, 'getTokenData')
+      const portfolioLib = new Portfolio(provider, ethereum, priceController)
 
-      await portfolioLib.get(ACCOUNT_WITH_ETH, { isFullPortfolioUpdate: true })
-
-      expect(getTokenDataSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ accountAddr: ACCOUNT_WITH_ETH, source: 'portfolio' })
-      )
-    })
-
-    test('is left as it is by a lookup of a few tokens, such as previewing a custom token', async () => {
-      const tokenPrices = new TokenPricesService({ fetch: priceFetch() })
-      const getTokenDataSpy = jest.spyOn(tokenPrices, 'getTokenData')
-      const portfolioLib = new Portfolio(priceFetch(), provider, ethereum, () => true, tokenPrices)
-
-      await portfolioLib.get(ACCOUNT_WITH_ETH, { additionalErc20Hints: [CUSTOM_TOKEN] })
-
-      expect(getTokenDataSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ accountAddr: ACCOUNT_WITH_ETH, source: undefined })
-      )
-    })
-
-    test('is never used by a standalone lookup, such as resolving the tokens of a transaction', async () => {
-      const tokenPrices = new TokenPricesService({ fetch: priceFetch() })
-      const getTokenDataSpy = jest.spyOn(tokenPrices, 'getTokenData')
-      const getStandaloneTokenDataSpy = jest.spyOn(tokenPrices, 'getStandaloneTokenData')
-      const portfolioLib = new Portfolio(priceFetch(), provider, ethereum, () => true, tokenPrices)
-
-      await portfolioLib.get(ACCOUNT_WITH_ETH, {
-        additionalErc20Hints: [CUSTOM_TOKEN],
-        isStandaloneLookup: true
+      const { tokens } = await portfolioLib.get(ACCOUNT_WITH_ETH, {
+        additionalErc20Hints: [CUSTOM_TOKEN]
       })
 
-      expect(getTokenDataSpy).not.toHaveBeenCalled()
-      expect(getStandaloneTokenDataSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ tokenAddresses: expect.arrayContaining([CUSTOM_TOKEN]) })
+      expect(getTokenDataSpy).toHaveBeenCalledTimes(1)
+      expect(getTokenDataSpy.mock.calls[0]![0].tokenAddresses).toEqual(
+        tokens.map(({ address }) => address)
+      )
+      expect(tokens.find(({ address }) => address === ZeroAddress)?.priceIn).toEqual([
+        { baseCurrency: 'usd', price: 2000 }
+      ])
+    })
+
+    test('are left out without a price controller, e.g. for lookups that need only the token info', async () => {
+      const portfolioLib = new Portfolio(provider, ethereum)
+
+      const { tokens, errors } = await portfolioLib.get(ACCOUNT_WITH_ETH, {
+        additionalErc20Hints: [CUSTOM_TOKEN]
+      })
+
+      expect(tokens.length).toBeGreaterThan(0)
+      expect(tokens.every(({ priceIn }) => priceIn.length === 0)).toBe(true)
+      expect(errors.some(({ name }) => name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError)).toBe(
+        false
       )
     })
   })
@@ -739,7 +718,7 @@ describe('Portfolio', () => {
     const { restore } = suppressConsole()
     const failingProvider = getRpcProvider(['https://invictus.ambire.com/ethereum-fail'], 1n)
 
-    const failingPortfolio = new Portfolio(fetch, failingProvider, ethereum)
+    const failingPortfolio = new Portfolio(failingProvider, ethereum)
 
     let didThrow = false
 
@@ -759,7 +738,7 @@ describe('Portfolio', () => {
   describe('Hints', () => {
     test('Hints are deduped', async () => {
       const additionalErc20Hints = [USDT_ADDRESS, USDT_ADDRESS.toLowerCase()]
-      const portfolioInner = new Portfolio(fetch, provider, ethereum)
+      const portfolioInner = new Portfolio(provider, ethereum, tokenPrices)
 
       const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
         additionalErc20Hints
@@ -775,7 +754,7 @@ describe('Portfolio', () => {
       const additionalErc20Hints = [
         `${USDT_ADDRESS.slice(-1)}4` // Bad hint
       ]
-      const portfolioInner = new Portfolio(fetch, provider, ethereum)
+      const portfolioInner = new Portfolio(provider, ethereum, tokenPrices)
 
       const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
         additionalErc20Hints

@@ -125,6 +125,7 @@ import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { SurveyController } from '../survey/survey'
+import { TokenPricesController } from '../tokenPrices/tokenPrices'
 import { UiController } from '../ui/ui'
 import { clearDiscoverTxnTokensCache } from './discoverTxnTokens'
 import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
@@ -648,7 +649,11 @@ const init = async (
     velcroUrl,
     bannerCtrl,
     featureFlagsCtrl,
-    ui
+    ui,
+    new TokenPricesController({
+      fetch,
+      isTokenPricesEnabled: () => featureFlagsCtrl.isFeatureEnabled('tokenPrices')
+    })
   )
   const continuouslyUpdatePhishingSpy = options?.dapps
     ? jest

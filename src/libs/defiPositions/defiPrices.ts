@@ -1,5 +1,5 @@
 import { Network } from '../../interfaces/network'
-import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
+import { ITokenPricesController } from '../../interfaces/tokenPrices'
 import { getTokenDataCacheKey } from '../portfolio/helpers'
 import { TokenDataCacheValue } from '../portfolio/interfaces'
 import { getAssetValue, getProviderId } from './helpers'
@@ -19,22 +19,16 @@ const getIsMissingPrice = (asset: PositionAsset): asset is PositionAsset & { add
 /**
  * Prices the assets of the provided positions that have no price yet - such as Uniswap V3
  * positions read from the chain that Debank doesn't know about (yet) - through the token
- * prices service, and updates their values. Prices that are already set (e.g. by Debank) are
- * never replaced.
- *
- * The service is called even when no asset is missing a price, so that the account's DeFi token
- * list it remembers is replaced by an empty one and stops being sent along with other requests.
- * Nothing is requested in that case.
+ * prices controller, and updates their values. Prices that are already set (e.g. by Debank) are
+ * never replaced, and nothing is requested when no asset is missing a price.
  */
 export async function updatePositionsByProviderAssetPrices(
-  tokenPrices: TokenPricesService,
+  tokenPrices: ITokenPricesController,
   {
     network,
-    accountAddr,
     positionsByProvider
   }: {
     network: Network
-    accountAddr: string
     positionsByProvider: PositionsByProvider[]
   }
 ): Promise<{ positionsByProvider: PositionsByProvider[]; error: Error | null }> {
@@ -44,12 +38,11 @@ export async function updatePositionsByProviderAssetPrices(
     .filter(getIsMissingPrice)
     .map(({ address }) => address)
 
+  if (!addressesMissingAPrice.length) return { positionsByProvider, error: null }
+
   const { tokenData, error } = await tokenPrices.getTokenData({
     network,
-    accountAddr,
-    source: 'defi',
-    tokenAddresses: addressesMissingAPrice,
-    maxAgeMs: 5 * 60 * 1000
+    tokenAddresses: addressesMissingAPrice
   })
 
   const withFetchedPrice = (asset: PositionAsset): PositionAsset => {

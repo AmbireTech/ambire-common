@@ -1,5 +1,4 @@
 import { Contract, Interface, ZeroAddress } from 'ethers'
-import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -97,7 +96,7 @@ describe('Portfolio simulation', () => {
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
 
   const provider = getRpcProvider(['https://invictus.ambire.com/ethereum'], 1n)
-  const portfolio = new Portfolio(fetch, provider, ethereum)
+  const portfolio = new Portfolio(provider, ethereum)
   const balanceGetterInterface = new Interface(BalanceGetter.abi)
 
   async function getNonce(address: string) {

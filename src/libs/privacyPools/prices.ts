@@ -3,7 +3,7 @@ import { formatUnits } from 'ethers'
 import { getPrivacyPoolsChainConfig } from '../../consts/privacyPools'
 import { Network } from '../../interfaces/network'
 import { PrivacyPoolsTokenBalance } from '../../interfaces/privacyPools'
-import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
+import { ITokenPricesController } from '../../interfaces/tokenPrices'
 import { getTokenDataCacheKey } from '../portfolio/helpers'
 
 /** How a price is keyed: `${chainId}:${tokenAddress}`, the address lowercase, native as zero. */
@@ -51,18 +51,16 @@ export const getPrivacyPoolsValuePerChain = (
  * USD prices of every asset the pools accept on the given networks. Asks for all of them, not only
  * the held ones, so the request reveals nothing about the account. Unpriced assets are left out.
  *
- * They come through the token prices service, which sends these assets with every request on the
- * networks the pools are on, so they are usually answered from its cache without a request.
+ * They come through the token prices controller, which sends these assets with every request on
+ * the networks the pools are on, so they are usually answered from its cache without a request.
  * Throws if a price request fails, so that the previous prices are kept.
  */
 export const fetchPrivacyPoolsPrices = async ({
   tokenPrices,
-  networks,
-  maxAgeMs
+  networks
 }: {
-  tokenPrices: TokenPricesService
+  tokenPrices: ITokenPricesController
   networks: Network[]
-  maxAgeMs: number
 }): Promise<{ [priceKey: string]: number }> => {
   const prices: { [priceKey: string]: number } = {}
 
@@ -73,8 +71,7 @@ export const fetchPrivacyPoolsPrices = async ({
 
       const { tokenData, error } = await tokenPrices.getTokenData({
         network,
-        tokenAddresses: config.assets.map(({ address }) => address),
-        maxAgeMs
+        tokenAddresses: config.assets.map(({ address }) => address)
       })
       if (error) throw error
 

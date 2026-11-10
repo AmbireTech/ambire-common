@@ -1,8 +1,6 @@
 import { BALANCE_GETTER, NFT_GETTER } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-import { Fetch } from '../../interfaces/fetch'
-import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { INetworksController, Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { VerificationStatuses } from '../../interfaces/verification'
@@ -11,7 +9,6 @@ import { getDefaultColibriProverUrls } from '../../libs/networks/colibri'
 import { GetOptions, Portfolio } from '../../libs/portfolio'
 import { PortfolioLibGetResult, PortfolioVerification } from '../../libs/portfolio/interfaces'
 import { getColibriRpcProvider } from '../../services/provider/colibri'
-import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -51,13 +48,6 @@ const isOutOfSyncError = (error: any) =>
 export class VerificationController extends EventEmitter {
   #networks: INetworksController
 
-  #fetch: Fetch
-
-  #featureFlags?: IFeatureFlagsController
-
-  // Shared with the portfolio, so the prices the RPC update just cached are reused
-  #tokenPrices?: TokenPricesService
-
   initialLoadPromise?: Promise<void>
 
   statusesByChainId: VerificationStatuses = {}
@@ -80,22 +70,13 @@ export class VerificationController extends EventEmitter {
 
   constructor({
     eventEmitterRegistry,
-    networks,
-    fetch,
-    featureFlags,
-    tokenPrices
+    networks
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     networks: INetworksController
-    fetch: Fetch
-    featureFlags?: IFeatureFlagsController
-    tokenPrices?: TokenPricesService
   }) {
     super(eventEmitterRegistry)
     this.#networks = networks
-    this.#fetch = fetch
-    this.#tokenPrices = tokenPrices
-    this.#featureFlags = featureFlags
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -141,14 +122,13 @@ export class VerificationController extends EventEmitter {
       this.#verificationPortfolioLibs.set(
         key,
         new Portfolio(
-          this.#fetch,
           provider,
           // Colibri verification must not use state overrides or deployless
           // contract-creation calls. The actual verifier calls are routed to
           // deployed getter contracts through GetOptions.deployless below.
-          { ...network, rpcNoStateOverride: true },
-          () => this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false,
-          this.#tokenPrices
+          // No price controller is passed: only the balances are compared, so
+          // pricing the tokens would be wasted work (and requests).
+          { ...network, rpcNoStateOverride: true }
         )
       )
     }

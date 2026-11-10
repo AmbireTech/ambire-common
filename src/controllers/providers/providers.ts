@@ -1,10 +1,10 @@
 import { Contract } from 'ethers'
 
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
-import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { ITokenPricesController } from '../../interfaces/tokenPrices'
 import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
@@ -36,7 +36,7 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
 
   #sendUiMessage: (params: {}) => void
 
-  #featureFlags?: IFeatureFlagsController
+  #tokenPrices?: ITokenPricesController
 
   #providers: RPCProviders = {}
 
@@ -72,19 +72,20 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     getNetworks,
     sendUiMessage,
     eventEmitterRegistry,
-    featureFlags
+    tokenPrices
   }: {
     storage: IStorageController
     getNetworks: () => Network[]
     sendUiMessage: (params: {}) => void
     eventEmitterRegistry?: IEventEmitterRegistryController
-    featureFlags?: IFeatureFlagsController
+    /** Prices the tokens whose info is looked up; without it they are left unpriced */
+    tokenPrices?: ITokenPricesController
   }) {
     super(eventEmitterRegistry)
     this.#storage = storage
     this.#getNetworks = getNetworks
     this.#sendUiMessage = sendUiMessage
-    this.#featureFlags = featureFlags
+    this.#tokenPrices = tokenPrices
 
     /**
      * Proxy over the providers map that:
@@ -508,12 +509,8 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     }
 
     try {
-      const portfolio = new Portfolio(
-        fetch as any,
-        provider,
-        network,
-        () => this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false
-      )
+      // Only the balances are read, so no token is priced
+      const portfolio = new Portfolio(provider, network)
 
       // create a wrapper function so that we could pass it correctly
       // to the required type for getAccountOpBalanceChanges.
@@ -565,15 +562,15 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         )
       ) || []
     const portfolio = new Portfolio(
-      fetch as any,
       this.providers[network.chainId.toString()]!,
       network,
-      () => this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false
+      this.#tokenPrices
     )
     const options: Partial<GetOptions> = {
       additionalErc20Hints: allAddresses,
       additionalErc721Hints: Object.fromEntries(allAddresses.map((i) => [i, [1n]])),
-      isStandaloneLookup: true
+      // Only the looked up tokens are needed
+      fetchPinned: false
     }
     const portfolioResponse = await portfolio.get(RANDOM_ADDRESS, options)
 
@@ -622,18 +619,23 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     return this.#scheduledResolveAssetInfoActions[network.chainId.toString()]?.promise
   }
 
-  // TODO: Implement on the FE once the refactor is complete and
-  // all controllers from the MainController are shared across Benzin, Legends, Extension, and Mobile
+  /**
+   * `resolveAssetInfo` for the UI, through `dispatchAndWait`. The tokens are priced through the
+   * price controller this controller was given, if any (e.g. Benzin's fee in USD).
+   */
+  // TODO: Use it in TokenOrNft too once all controllers from the MainController are shared
+  // across Benzin, Legends, Extension, and Mobile
   // TODO: remove src/services/assetInfo/assetInfo.ts
-  async resolveAssetInfoAndSendResToUi({
-    requestId,
-    address,
-    network
-  }: {
+  async resolveAssetInfoAndSendResToUi(
+    {
+      address,
+      network
+    }: {
+      address: string
+      network: Network
+    },
     requestId: string
-    address: string
-    network: Network
-  }) {
+  ) {
     this.resolveAssetInfo(address, network, (_assetInfo: any) => {
       this.#sendUiMessage({
         type: 'ResolveAssetInfo',
