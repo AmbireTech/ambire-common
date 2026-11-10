@@ -11,6 +11,7 @@ import {
   SecretType
 } from '../../interfaces/emailVault'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { IStorageController } from '../../interfaces/storage'
@@ -53,6 +54,15 @@ export type SessionKeys = {
 function base64UrlEncode(str: string) {
   return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
+
+/** Thrown by any Email Vault action while the user has turned Email Vault off in the privacy settings */
+const getEmailVaultTurnedOffError = () =>
+  new EmittableError({
+    message: 'Email Vault is turned off. Turn it on to use email recovery.',
+    level: 'expected',
+    sendCrashReport: false,
+    error: new Error('emailVault: turned off by the user')
+  })
 
 const STATUS_WRAPPED_METHODS = {
   getEmailVaultInfo: 'INITIAL',
@@ -99,6 +109,8 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
 
   #keyStore: IKeystoreController
 
+  #featureFlags?: IFeatureFlagsController
+
   isReady: boolean = false
 
   lastUpdate: Date = new Date()
@@ -121,9 +133,11 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     relayerUrl: string,
     keyStore: IKeystoreController,
     options?: { autoConfirmMagicLink?: boolean },
-    eventEmitterRegistry?: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController,
+    featureFlags?: IFeatureFlagsController
   ) {
     super(eventEmitterRegistry)
+    this.#featureFlags = featureFlags
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
     this.#storage = storage
@@ -159,6 +173,11 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     this.emitUpdate()
   }
 
+  /** Whether the user turned Email Vault off in the privacy settings, so nothing may reach the relayer */
+  #isTurnedOff() {
+    return this.#featureFlags?.isFeatureEnabled('emailVault') === false
+  }
+
   get currentState(): EmailVaultState {
     if (!this.isReady) return EmailVaultState.Loading
     if (this.#isWaitingEmailConfirmation) return EmailVaultState.WaitingEmailConfirmation
@@ -181,6 +200,10 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
 
   async handleMagicLinkKey(email: string, fn?: Function, flow?: MagicLinkFlow) {
     await this.#initialLoadPromise
+    if (this.#isTurnedOff()) {
+      this.emitError(getEmailVaultTurnedOffError())
+      return
+    }
     const currentKey = (await this.#getMagicLinkKey(email))?.key
     if (currentKey) {
       this.#isWaitingEmailConfirmation = false
@@ -243,7 +266,11 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       () => {
         this.#isWaitingEmailConfirmation = false
       },
-      () => this.#shouldStopConfirmationPolling,
+      () => {
+        // Turning Email Vault off stops the polling like a cancel, so no request reaches the relayer
+        if (this.#isTurnedOff()) this.cancelEmailConfirmation()
+        return this.#shouldStopConfirmationPolling
+      },
       3 * 60 * 1000,
       1000
     )
@@ -311,6 +338,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   }
 
   async #getEmailVaultInfo(email: string, flow?: MagicLinkFlow): Promise<void> {
+    if (this.#isTurnedOff()) throw getEmailVaultTurnedOffError()
     const [existsSessionKey, magicLinkKey] = await Promise.all([
       this.#getSessionKey(email),
       this.#getMagicLinkKey(email)
@@ -351,6 +379,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   }
 
   async #uploadKeyStoreSecret(email: string) {
+    if (this.#isTurnedOff()) throw getEmailVaultTurnedOffError()
     if (!this.emailVaultStates.email[email]) {
       await this.#getEmailVaultInfo(email, 'setup')
     }
@@ -409,6 +438,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   }
 
   async #removeKeyStoreSecret(email: string) {
+    if (this.#isTurnedOff()) throw getEmailVaultTurnedOffError()
     // A cancel from a previous attempt leaves the flag on, which would skip the email confirmation
     this.#shouldStopConfirmationPolling = false
 
@@ -469,6 +499,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   }
 
   async #recoverKeyStore(email: string, newPassword: string): Promise<void> {
+    if (this.#isTurnedOff()) throw getEmailVaultTurnedOffError()
     const uid = await this.#keyStore.getKeyStoreUid()
     const state = this.emailVaultStates
     if (!state.email[email]) {
@@ -557,6 +588,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   }
 
   async #requestKeysSync(email: string, keys: string[]) {
+    if (this.#isTurnedOff()) throw getEmailVaultTurnedOffError()
     const [magicLinkKey, keyStoreUid] = await Promise.all([
       this.#getMagicLinkKey(email),
       this.#keyStore.getKeyStoreUid()
@@ -580,6 +612,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   }
 
   async #finalizeSyncKeys(email: string, operations: EmailVaultOperation[]) {
+    if (this.#isTurnedOff()) throw getEmailVaultTurnedOffError()
     const authKey = (await this.#getMagicLinkKey(email))?.key || (await this.#getSessionKey(email))
     if (authKey) {
       const cloudOperations = await this.#emailVault
@@ -640,6 +673,10 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   // - exports the encrypted private key and sends it back to the relayer (fulfills)
   // @TODO add password
   async fulfillSyncRequests(email: string, password: string) {
+    if (this.#isTurnedOff()) {
+      this.emitError(getEmailVaultTurnedOffError())
+      return
+    }
     await this.#getEmailVaultInfo(email)
     const operations = this.emailVaultStates.email[email]?.operations
     const key = (await this.#getMagicLinkKey(email))?.key || (await this.#getSessionKey(email))
