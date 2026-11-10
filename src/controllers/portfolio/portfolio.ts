@@ -72,7 +72,6 @@ import {
   getAssetCacheKey,
   getCollectibleCacheKey,
   getHintsError,
-  getTokenDataCacheKey,
   getTotal,
   validateCollectibleOwnership,
   validateERC20Token,
@@ -98,7 +97,6 @@ import {
   ScheduledUpdates,
   TemporaryTokens,
   TokenBlacklist,
-  TokenDataCache,
   TokenDataCacheValue,
   TokenError,
   TokenResult,
@@ -109,6 +107,7 @@ import { getFlags } from '../../libs/portfolio/tokenProcessing'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import { getWalletStakingShareValue } from '../../libs/walletStaking/shareValue'
+import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
 import batcher from '../../utils/batcher'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
@@ -220,7 +219,8 @@ export class PortfolioController
 
   #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
-  protected tokenDataCache: { [chainId: string]: TokenDataCache } = {}
+  /** The only source of token prices and their cache; shared with other controllers when passed in */
+  #tokenPrices: TokenPricesService
 
   #providers: IProvidersController
 
@@ -300,7 +300,8 @@ export class PortfolioController
     ui: IUiController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
     verification?: IVerificationController,
-    platform: Platform = 'default'
+    platform: Platform = 'default',
+    tokenPrices?: TokenPricesService
   ) {
     super(eventEmitterRegistry)
 
@@ -309,6 +310,12 @@ export class PortfolioController
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#fetch = fetch
+    this.#tokenPrices =
+      tokenPrices ||
+      new TokenPricesService({
+        fetch,
+        isTokenPricesEnabled: () => featureFlags.isFeatureEnabled('tokenPrices')
+      })
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#velcroUrl = velcroUrl
     this.#providers = providers
@@ -1204,8 +1211,12 @@ export class PortfolioController
         if (!provider) return null
         this.#portfolioLibs.set(
           key,
-          new Portfolio(this.#fetch, provider, network, () =>
-            this.#featureFlags.isFeatureEnabled('tokenPrices')
+          new Portfolio(
+            this.#fetch,
+            provider,
+            network,
+            () => this.#featureFlags.isFeatureEnabled('tokenPrices'),
+            this.#tokenPrices
           )
         )
       } catch (e: any) {
@@ -1308,15 +1319,9 @@ export class PortfolioController
     const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, chainId, network)
     if (!portfolioLib) return undefined
 
-    const networkTokenDataCache = this.tokenDataCache[chainId.toString()] || new Map()
-    const price = await portfolioLib.getTokenPrice(address, {
-      tokenDataCache: networkTokenDataCache,
+    return portfolioLib.getTokenPrice(accountId, address, {
       tokenDataRecency: TOKEN_PRICE_CACHE_TTL
     })
-
-    this.tokenDataCache[chainId.toString()] = networkTokenDataCache
-
-    return price
   }
 
   async #getAdditionalPortfolio(accountId: AccountId, maxDataAgeMs?: number) {
@@ -1694,19 +1699,16 @@ export class PortfolioController
 
     // Update the price cache so the lib can use the latest prices from velcro
     if (response.prices) {
-      const networkTokenDataCache: TokenDataCache =
-        this.tokenDataCache[chainId.toString()] || new Map<string, [number, TokenDataCacheValue]>()
-
-      for (const [key, priceData] of Object.entries(response.prices)) {
-        if (!priceData || !('price' in priceData) || !('baseCurrency' in priceData)) continue
-
-        networkTokenDataCache.set(getTokenDataCacheKey(key), [
-          Date.now(),
+      const velcroTokenData = Object.entries(response.prices)
+        .filter(
+          ([, priceData]) => !!priceData && 'price' in priceData && 'baseCurrency' in priceData
+        )
+        .map(([address, priceData]): [string, TokenDataCacheValue] => [
+          address,
           convertApiTokenDataToTokenDataCache(priceData as ExternalAPITokenMarketDataResponse)
         ])
-      }
 
-      this.tokenDataCache[chainId.toString()] = networkTokenDataCache
+      this.#tokenPrices.setTokenData(chainId, velcroTokenData)
     }
 
     response.lastUpdate = Date.now()
@@ -1793,8 +1795,6 @@ export class PortfolioController
           `a portfolio library is not initialized for ${network.name} (${network.chainId})`
         )
 
-      const networkTokenDataCache = this.tokenDataCache[network.chainId.toString()] || new Map()
-
       const hintsResponse =
         this.#state[account.addr]?.[network.chainId.toString()]?.result?.lastExternalApiUpdateData
       const discoveryData = await this.getPortfolioFromApiDiscovery({
@@ -1834,7 +1834,7 @@ export class PortfolioController
       const [portfolioResult, customPositionsResult] = await Promise.all([
         portfolioLib.get(account.addr, {
           tokenDataRecency: 60000 * 5,
-          tokenDataCache: networkTokenDataCache,
+          isFullPortfolioUpdate: true,
           knownTokenMetadata: this.hints.getKnownTokenMetadata(network.chainId),
           knownCollectionMetadata: this.hints.getKnownCollectionMetadata(network.chainId),
           fetchPinned: !hasNonZeroTokens,
@@ -1847,11 +1847,10 @@ export class PortfolioController
           account.addr,
           portfolioLib.provider,
           network,
-          this.#fetch,
           state.result?.defiPositions.positionsByProvider || [],
           discoveryData?.data?.defi?.positions,
           getIsExternalApiDefiPositionsCallSuccessful(discoveryData),
-          this.#featureFlags.isFeatureEnabled('tokenPrices')
+          this.#tokenPrices
         )
       ])
 
@@ -1881,8 +1880,6 @@ export class PortfolioController
       )
 
       const combinedErrors = [...portfolioResult.errors, ...(discoveryData?.errors || [])]
-
-      this.tokenDataCache[network.chainId.toString()] = portfolioResult.tokenDataCache
 
       const rpcUrl = network.selectedRpcUrl
 
@@ -1997,8 +1994,7 @@ export class PortfolioController
               ...allHints,
               ...portfolioProps,
               blacklist: this.#blacklist
-            },
-            tokenDataCache: portfolioResult.tokenDataCache
+            }
           })
           .then((verificationResult) => {
             if (this.#state[account.addr]?.[network.chainId.toString()] !== verifiedState) return
@@ -2537,6 +2533,7 @@ export class PortfolioController
   removeAccountData(address: Account['addr']) {
     delete this.#state[address]
     delete this.#networksWithAssetsByAccounts[address]
+    this.#tokenPrices.forgetAccount(address)
 
     this.#networks.networks.forEach((network) => {
       const key = `${network.chainId}:${address}`
@@ -2654,9 +2651,8 @@ export class PortfolioController
       tokenPreferences: this.tokenPreferences,
       scheduledUpdateChainIds: this.scheduledUpdateChainIds,
       // Left out of the UI state. The hints already reach it through customTokens and
-      // tokenPreferences, and the UI never reads the token data cache
-      hints: undefined,
-      tokenDataCache: undefined
+      // tokenPreferences
+      hints: undefined
     }
   }
 }

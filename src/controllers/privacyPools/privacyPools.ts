@@ -35,6 +35,7 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { createKohakuStorage } from '../../libs/kohaku/host'
 import { fetchPrivacyPoolsPrices, getPrivacyPoolsPriceKey } from '../../libs/privacyPools/prices'
+import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
 import {
   createProverFactory,
   PrivacyPoolsProverFactory,
@@ -95,7 +96,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #ui: IUiController
 
-  #fetch: Fetch
+  #tokenPrices: TokenPricesService
 
   /** Lets the selection move off a removed account. Also fired when a phrase is deleted. */
   #onAccountsRemoved: (seedIds: string[]) => Promise<void>
@@ -172,7 +173,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     proverFactory,
     onAccountsRemoved,
     getPendingAccountOps,
-    eventEmitterRegistry
+    eventEmitterRegistry,
+    tokenPrices
   }: {
     keystore: IKeystoreController
     featureFlags: IFeatureFlagsController
@@ -193,6 +195,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     /** The transactions broadcast but not confirmed, and the current request batch. */
     getPendingAccountOps: () => PendingAccountOp[]
     eventEmitterRegistry?: IEventEmitterRegistryController
+    /** Where the prices come from; shared with the portfolio so they share one cache */
+    tokenPrices?: TokenPricesService
   }) {
     super(eventEmitterRegistry)
     this.#keystore = keystore
@@ -202,7 +206,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#selectedAccount = selectedAccount
     this.#storage = storage
     this.#ui = ui
-    this.#fetch = fetch
+    this.#tokenPrices =
+      tokenPrices ||
+      new TokenPricesService({
+        fetch,
+        isTokenPricesEnabled: () => featureFlags.isFeatureEnabled('tokenPrices')
+      })
     this.#onAccountsRemoved = onAccountsRemoved
 
     const ctx: PrivacyPoolsContext = {
@@ -582,10 +591,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#pricesRequest = (async () => {
       try {
         const prices = await fetchPrivacyPoolsPrices({
-          fetch: this.#fetch,
+          tokenPrices: this.#tokenPrices,
           networks: this.#networks.networks.filter(({ chainId }) =>
             this.supportedChainIds.includes(chainId.toString())
-          )
+          ),
+          maxAgeMs: PRICES_MAX_AGE_MS
         })
         // Opted out while the request was in flight
         if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) return

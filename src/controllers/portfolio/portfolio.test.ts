@@ -45,6 +45,7 @@ import { stringify } from '../../libs/richJson/richJson'
 import { getRpcProvider } from '../../services/provider'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
+import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
 import { StorageController } from '../storage/storage'
 import { COLIBRI_CATCH_UP_RETRY_INTERVAL } from '../verification/verification'
 import { EXCHANGE_LIST_URL, PortfolioController } from './portfolio'
@@ -491,7 +492,6 @@ describe('Portfolio Controller ', () => {
       discoveryTime: 0,
       oracleCallTime: 0,
       priceUpdateTime: 0,
-      tokenDataCache: new Map(),
       tokens: [makeToken(amount, chainId)],
       feeTokens: [],
       toBeLearned: { erc20s: [], erc721s: {} },
@@ -1315,7 +1315,6 @@ describe('Portfolio Controller ', () => {
       discoveryTime: 0,
       oracleCallTime: 0,
       priceUpdateTime: 0,
-      tokenDataCache: new Map(),
       tokens: [],
       feeTokens: [],
       toBeLearned: { erc20s: [], erc721s: {} },
@@ -3011,9 +3010,10 @@ describe('Portfolio Controller ', () => {
 
       jest
         .spyOn(defiPricesLib, 'updatePositionsByProviderAssetPrices')
-        .mockImplementationOnce(async () => {
-          throw new Error('Asset price error')
-        })
+        .mockImplementationOnce(async (_tokenPrices, { positionsByProvider }) => ({
+          positionsByProvider,
+          error: new Error('Asset price error')
+        }))
 
       const { controller } = await prepareTest()
 
@@ -3606,8 +3606,8 @@ describe('Portfolio Controller ', () => {
       otherNetworksDefiCounts: {}
     })
 
-    // @ts-expect-error test
-    expect(controller.tokenDataCache['137']).toBe(undefined)
+    const setTokenDataSpy = jest.spyOn(TokenPricesService.prototype, 'setTokenData')
+    expect(setTokenDataSpy).not.toHaveBeenCalled()
 
     jest
       // @ts-expect-error test
@@ -3642,10 +3642,10 @@ describe('Portfolio Controller ', () => {
       externalApiHintsResponse: null
     })
 
-    // @ts-expect-error test
-    expect(controller.tokenDataCache['137']).toBeDefined()
-    // @ts-expect-error test
-    expect(controller.tokenDataCache['137'].size).toBeGreaterThan(0)
+    expect(setTokenDataSpy).toHaveBeenCalledWith(137n, [
+      [ZeroAddress, expect.objectContaining({ priceIn: [{ baseCurrency: 'usd', price: 1 }] })]
+    ])
+    setTokenDataSpy.mockRestore()
   })
   it('A defi error is not returned if canSkipDefiUpdate=true', async () => {
     const { restore } = suppressConsole()
@@ -3877,8 +3877,7 @@ describe('Portfolio Controller ', () => {
         'hints',
         'mobileInviteKeys',
         'defiSessionIds',
-        'defiPositionsCountOnDisabledNetworks',
-        'tokenDataCache'
+        'defiPositionsCountOnDisabledNetworks'
       ].forEach((hiddenKey) => expect(serializedKeys).not.toContain(hiddenKey))
       ;[
         'customTokens',

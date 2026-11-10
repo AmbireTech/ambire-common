@@ -9,12 +9,9 @@ import { VerificationStatuses } from '../../interfaces/verification'
 import { DeploylessMode } from '../../libs/deployless/deployless'
 import { getDefaultColibriProverUrls } from '../../libs/networks/colibri'
 import { GetOptions, Portfolio } from '../../libs/portfolio'
-import {
-  PortfolioLibGetResult,
-  PortfolioVerification,
-  TokenDataCache
-} from '../../libs/portfolio/interfaces'
+import { PortfolioLibGetResult, PortfolioVerification } from '../../libs/portfolio/interfaces'
 import { getColibriRpcProvider } from '../../services/provider/colibri'
+import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -43,11 +40,9 @@ export type VerifyPortfolioParams = {
   // The RPC portfolio result to be verified. Its `blockNumber` is the block the
   // balances were fetched at and the exact block Colibri will be asked to prove.
   rpcResult: PortfolioLibGetResult
-  // Everything the RPC `get` was called with, except `blockTag` and
-  // `tokenDataCache` (those are supplied by the verifier itself), so Colibri
-  // discovers the exact same token set.
+  // Everything the RPC `get` was called with, except `blockTag` (supplied by the
+  // verifier itself), so Colibri discovers the exact same token set.
   getOptions: Partial<GetOptions>
-  tokenDataCache: TokenDataCache
 }
 
 const isOutOfSyncError = (error: any) =>
@@ -59,6 +54,9 @@ export class VerificationController extends EventEmitter {
   #fetch: Fetch
 
   #featureFlags?: IFeatureFlagsController
+
+  // Shared with the portfolio, so the prices the RPC update just cached are reused
+  #tokenPrices?: TokenPricesService
 
   initialLoadPromise?: Promise<void>
 
@@ -84,16 +82,19 @@ export class VerificationController extends EventEmitter {
     eventEmitterRegistry,
     networks,
     fetch,
-    featureFlags
+    featureFlags,
+    tokenPrices
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     networks: INetworksController
     fetch: Fetch
     featureFlags?: IFeatureFlagsController
+    tokenPrices?: TokenPricesService
   }) {
     super(eventEmitterRegistry)
     this.#networks = networks
     this.#fetch = fetch
+    this.#tokenPrices = tokenPrices
     this.#featureFlags = featureFlags
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -146,7 +147,8 @@ export class VerificationController extends EventEmitter {
           // contract-creation calls. The actual verifier calls are routed to
           // deployed getter contracts through GetOptions.deployless below.
           { ...network, rpcNoStateOverride: true },
-          () => this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false
+          () => this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false,
+          this.#tokenPrices
         )
       )
     }
@@ -168,7 +170,7 @@ export class VerificationController extends EventEmitter {
    *   then verify or report a warning
    */
   async verifyPortfolio(params: VerifyPortfolioParams): Promise<PortfolioVerification> {
-    const { account, network, rpcResult, getOptions, tokenDataCache } = params
+    const { account, network, rpcResult, getOptions } = params
     const rpcBlockNumber = BigInt(rpcResult.blockNumber)
     const updatedAt = Date.now()
 
@@ -236,7 +238,6 @@ export class VerificationController extends EventEmitter {
     try {
       verifiedResult = await portfolioLib.get(account.addr, {
         ...getOptions,
-        tokenDataCache: new Map(tokenDataCache),
         blockTag: Number(rpcBlockNumber),
         deployless: {
           erc20: { mode: DeploylessMode.Predeployed, to: BALANCE_GETTER },

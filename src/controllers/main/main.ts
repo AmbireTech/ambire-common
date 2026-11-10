@@ -125,6 +125,7 @@ import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketV3API } from '@/services/socketv3/api'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
+import { TokenPricesService } from '@/services/tokenPrices/tokenPrices'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
 import { getIsViewOnly } from '@/utils/accounts'
@@ -353,11 +354,17 @@ export class MainController extends EventEmitter implements IMainController {
       featureFlags: this.featureFlags,
       sendUiMessage: this.ui.message.sendUiMessage
     })
+    // The only source of token prices, shared so that every feature reads one cache
+    const tokenPrices = new TokenPricesService({
+      fetch: this.fetch,
+      isTokenPricesEnabled: () => this.featureFlags.isFeatureEnabled('tokenPrices')
+    })
     this.verification = new VerificationController({
       eventEmitterRegistry,
       networks: this.networks,
       fetch: this.fetch,
-      featureFlags: this.featureFlags
+      featureFlags: this.featureFlags,
+      tokenPrices
     })
     this.accounts = new AccountsController(
       this.storage,
@@ -461,7 +468,8 @@ export class MainController extends EventEmitter implements IMainController {
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
       onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds),
-      getPendingAccountOps: () => this.getPendingAccountOps()
+      getPendingAccountOps: () => this.getPendingAccountOps(),
+      tokenPrices
     })
 
     this.portfolio = new PortfolioController(
@@ -478,7 +486,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.ui,
       eventEmitterRegistry,
       this.verification,
-      platform
+      platform,
+      tokenPrices
     )
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(

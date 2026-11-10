@@ -6,6 +6,7 @@ import { getSanitizedAmount } from '@/libs/transfer/amount'
 import { AccountId } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
+import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
 import {
   numberToDecimalString,
   safeTokenAmountAndNumberMultiplication
@@ -47,22 +48,22 @@ export const getIsExternalApiDefiPositionsCallSuccessful = (
 
 /**
  * Fetches the defi positions of certain protocols using RPC calls and custom logic.
- * Cena is used for most of the positions, but some protocols require additional data
- * that is not available in Cena. This function fetches those positions on ENABLED
+ * Velcro (Debank) is used for most of the positions, but some protocols require additional data
+ * that is not available in Velcro. This function fetches those positions on ENABLED
  * networks only.
  *
  * Returns the old positions if the call fails. Some positions, like that of Uniswap V3,
- * are merged with the data from Cena/Debank.
+ * are merged with the data from Velcro/Debank. Assets left without a price (e.g. a new Uniswap V3
+ * position Debank doesn't know about yet) are priced through `tokenPrices`, when passed.
  */
 const getCustomProviderPositions = async (
   addr: string,
   provider: RPCProvider,
   network: Network,
-  fetch: Function,
   previousPositions: PositionsByProvider[],
   debankNetworkPositionsByProvider: PositionsByProvider[] | undefined,
   isDebankCallSuccessful: boolean,
-  shouldFetchTokenPrices: boolean = true
+  tokenPrices?: TokenPricesService
 ): Promise<{
   positionsByProvider: PositionsByProvider[]
   providerErrors: ProviderError[]
@@ -108,13 +109,19 @@ const getCustomProviderPositions = async (
       ])
     ).filter(Boolean) as PositionsByProvider[]
 
-    if (newPositions.length && shouldFetchTokenPrices) {
-      try {
-        newPositions =
-          (await updatePositionsByProviderAssetPrices(fetch, newPositions, network.platformId)) ||
-          newPositions
-      } catch (e) {
-        console.error(`#setAssetPrices error for ${addr} on ${network.name}:`, e)
+    if (tokenPrices) {
+      const pricedPositions = await updatePositionsByProviderAssetPrices(tokenPrices, {
+        network,
+        accountAddr: addr,
+        positionsByProvider: newPositions
+      })
+      newPositions = pricedPositions.positionsByProvider
+
+      if (pricedPositions.error) {
+        console.error(
+          `#setAssetPrices error for ${addr} on ${network.name}:`,
+          pricedPositions.error
+        )
         error = DeFiPositionsError.AssetPriceError
       }
     }

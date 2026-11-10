@@ -341,7 +341,6 @@ export interface PortfolioLibGetResult {
   discoveryTime: number
   oracleCallTime: number
   priceUpdateTime: number
-  tokenDataCache: TokenDataCache
   tokens: TokenResult[]
   feeTokens: TokenResult[]
   /**
@@ -414,7 +413,6 @@ export type PortfolioNetworkResult = CommonResultProps &
     | 'tokenErrors'
     | 'collectionErrors'
     | 'blockNumber'
-    | 'tokenDataCache'
     | 'toBeLearned'
     | 'fetchedTokenMetadata'
     | 'fetchedCollectionMetadata'
@@ -656,7 +654,6 @@ export interface GetOptions {
    */
   blockTag: 'latest' | 'pending' | 'both' | number
   simulation?: GetOptionsSimulation
-  tokenDataCache?: TokenDataCache
   /**
    * Token metadata the caller already has for this network. Tokens found here are
    * fetched with their balance only, which makes the response much cheaper to decode.
@@ -669,6 +666,13 @@ export interface GetOptions {
   knownCollectionMetadata?: KnownCollectionMetadata
   tokenDataRecency: number
   tokenDataRecencyOnFailure?: number
+  /**
+   * Whether the tokens of this call are the account's whole portfolio on the network. If so,
+   * they become the account's portfolio token list in the token prices service, which every
+   * later price request for the account carries. Set only by the main portfolio update:
+   * lookups of a few tokens (e.g. previewing a custom token) would shrink the list.
+   */
+  isFullPortfolioUpdate?: boolean
   fetchPinned: boolean
   /**
    * Hints for ERC20 tokens with a type

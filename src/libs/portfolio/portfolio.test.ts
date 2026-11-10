@@ -1,4 +1,4 @@
-import { AbiCoder, Contract, ethers } from 'ethers'
+import { AbiCoder, Contract, ethers, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -16,7 +16,9 @@ import { getBaseAccount } from '../account/getBaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { ERC20 } from '../humanizer/const/abis'
-import { Portfolio } from './portfolio'
+import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
+import { TokenResult } from './interfaces'
+import { Portfolio, PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -42,6 +44,8 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
 
 describe('Portfolio', () => {
   const USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+  // Any account works, a single token's price is requested along with the account's tokens
+  const PRICE_LOOKUP_ACCOUNT = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
   const ethereum = networks.find((n) => n.chainId === 1n)
   const arbitrum = networks.find((n) => n.chainId === 42161n)
 
@@ -209,9 +213,8 @@ describe('Portfolio', () => {
   })
 
   test('price cache works', async () => {
-    const { tokenDataCache } = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+    await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
     const resultTwo = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-      tokenDataCache,
       tokenDataRecency: 60000
     })
     expect(resultTwo.priceUpdateTime).toBeLessThanOrEqual(3)
@@ -228,43 +231,156 @@ describe('Portfolio', () => {
       })
     }))
     const portfolioWithMockedPriceFetch = new Portfolio(priceFetch as any, provider, ethereum)
-    const tokenDataCache = new Map()
 
     await expect(
-      portfolioWithMockedPriceFetch.getTokenPrice(USDT_ADDRESS, {
-        tokenDataCache,
+      portfolioWithMockedPriceFetch.getTokenPrice(PRICE_LOOKUP_ACCOUNT, USDT_ADDRESS, {
         tokenDataRecency: 60000
       })
     ).resolves.toBe(0.99785)
+    const requestsAfterFirstLookup = priceFetch.mock.calls.length
+
     await expect(
-      portfolioWithMockedPriceFetch.getTokenPrice(USDT_ADDRESS.toLowerCase(), {
-        tokenDataCache,
+      portfolioWithMockedPriceFetch.getTokenPrice(PRICE_LOOKUP_ACCOUNT, USDT_ADDRESS.toLowerCase(), {
         tokenDataRecency: 60000
       })
     ).resolves.toBe(0.99785)
-    expect(priceFetch).toHaveBeenCalledTimes(1)
+    expect(requestsAfterFirstLookup).toBeGreaterThan(0)
+    expect(priceFetch).toHaveBeenCalledTimes(requestsAfterFirstLookup)
   })
 
   test('finds a cached price the price API stored under a differently cased address', async () => {
     const priceFetch = jest.fn(async () => ({ status: 200, json: async () => ({}) }))
-    const portfolioWithMockedPriceFetch = new Portfolio(priceFetch as any, provider, ethereum)
+    const tokenPrices = new TokenPricesService({ fetch: priceFetch as any })
+    const portfolioWithMockedPriceFetch = new Portfolio(
+      priceFetch as any,
+      provider,
+      ethereum,
+      () => true,
+      tokenPrices
+    )
     // Keyed the way the external price API returns it, which is not the casing our
     // own token results carry. An exact-match lookup misses this entry and refetches
     // a price that was already there.
-    const tokenDataCache = new Map<string, [number, any]>([
-      [
-        USDT_ADDRESS.toLowerCase(),
-        [Date.now(), { priceIn: [{ baseCurrency: 'usd', price: 1.5 }], marketDataIn: [] }]
-      ]
+    tokenPrices.setTokenData(1n, [
+      [USDT_ADDRESS.toLowerCase(), { priceIn: [{ baseCurrency: 'usd', price: 1.5 }], marketDataIn: [] }]
     ])
 
     await expect(
-      portfolioWithMockedPriceFetch.getTokenPrice(USDT_ADDRESS, {
-        tokenDataCache,
+      portfolioWithMockedPriceFetch.getTokenPrice(PRICE_LOOKUP_ACCOUNT, USDT_ADDRESS, {
         tokenDataRecency: 60000
       })
     ).resolves.toBe(1.5)
     expect(priceFetch).not.toHaveBeenCalled()
+  })
+
+  describe('reusing cached prices', () => {
+    const ACCOUNT_WITH_ETH = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const TOKEN_DATA_RECENCY = 5 * 60 * 1000
+    const TOKEN_DATA_RECENCY_ON_FAILURE = 60 * 60 * 1000
+
+    /** A portfolio lib whose price cache holds an ETH price cached `ageMs` ago */
+    const createPortfolioWithCachedEthPrice = (priceFetch: any, price: number, ageMs: number) => {
+      const tokenPrices = new TokenPricesService({ fetch: priceFetch })
+      const cachedAt = Date.now() - ageMs
+      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(cachedAt)
+      tokenPrices.setTokenData(1n, [
+        [ZeroAddress, { priceIn: [{ baseCurrency: 'usd', price }], marketDataIn: [] }]
+      ])
+      dateSpy.mockRestore()
+
+      return new Portfolio(priceFetch, provider, ethereum, () => true, tokenPrices)
+    }
+    const getNativePriceIn = (tokens: TokenResult[]) =>
+      tokens.find((t) => t.address === ZeroAddress)?.priceIn
+    const workingPriceFetch = () =>
+      jest.fn(async () => ({ status: 200, json: async () => ({ ethereum: { usd: 2000 } }) }))
+    const failingPriceFetch = () =>
+      jest.fn(async () => {
+        throw new Error('price API is down')
+      })
+
+    test('refetches a cached price older than tokenDataRecency, even if newer than tokenDataRecencyOnFailure', async () => {
+      const priceFetch = workingPriceFetch()
+      const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
+        priceFetch,
+        1000,
+        10 * 60 * 1000
+      )
+
+      const { tokens } = await portfolioWithCachedPrice.get(ACCOUNT_WITH_ETH, {
+        tokenDataRecency: TOKEN_DATA_RECENCY,
+        tokenDataRecencyOnFailure: TOKEN_DATA_RECENCY_ON_FAILURE
+      })
+
+      expect(priceFetch).toHaveBeenCalled()
+      expect(getNativePriceIn(tokens)).toEqual([{ baseCurrency: 'usd', price: 2000 }])
+    })
+
+    test('falls back to a cached price within tokenDataRecencyOnFailure when the price request fails', async () => {
+      const priceFetch = failingPriceFetch()
+      const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
+        priceFetch,
+        1000,
+        10 * 60 * 1000
+      )
+
+      const { tokens } = await portfolioWithCachedPrice.get(ACCOUNT_WITH_ETH, {
+        tokenDataRecency: TOKEN_DATA_RECENCY,
+        tokenDataRecencyOnFailure: TOKEN_DATA_RECENCY_ON_FAILURE
+      })
+
+      expect(priceFetch).toHaveBeenCalled()
+      expect(getNativePriceIn(tokens)).toEqual([{ baseCurrency: 'usd', price: 1000 }])
+    })
+
+    test('drops a cached price older than tokenDataRecencyOnFailure when the price request fails', async () => {
+      const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
+        failingPriceFetch(),
+        1000,
+        2 * 60 * 60 * 1000
+      )
+
+      const { tokens, errors } = await portfolioWithCachedPrice.get(ACCOUNT_WITH_ETH, {
+        tokenDataRecency: TOKEN_DATA_RECENCY,
+        tokenDataRecencyOnFailure: TOKEN_DATA_RECENCY_ON_FAILURE
+      })
+
+      expect(getNativePriceIn(tokens)).toEqual([])
+      expect(errors.some(({ name }) => name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError)).toBe(
+        true
+      )
+    })
+  })
+
+  describe("the account's portfolio token list for price requests", () => {
+    const ACCOUNT_WITH_ETH = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const CUSTOM_TOKEN = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+    const priceFetch = () =>
+      jest.fn(async () => ({ status: 200, json: async () => ({ ethereum: { usd: 2000 } }) }))
+
+    test('is set by a full portfolio update', async () => {
+      const tokenPrices = new TokenPricesService({ fetch: priceFetch() })
+      const getTokenDataSpy = jest.spyOn(tokenPrices, 'getTokenData')
+      const portfolioLib = new Portfolio(priceFetch(), provider, ethereum, () => true, tokenPrices)
+
+      await portfolioLib.get(ACCOUNT_WITH_ETH, { isFullPortfolioUpdate: true })
+
+      expect(getTokenDataSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ accountAddr: ACCOUNT_WITH_ETH, source: 'portfolio' })
+      )
+    })
+
+    test('is left as it is by a lookup of a few tokens, such as previewing a custom token', async () => {
+      const tokenPrices = new TokenPricesService({ fetch: priceFetch() })
+      const getTokenDataSpy = jest.spyOn(tokenPrices, 'getTokenData')
+      const portfolioLib = new Portfolio(priceFetch(), provider, ethereum, () => true, tokenPrices)
+
+      await portfolioLib.get(ACCOUNT_WITH_ETH, { additionalErc20Hints: [CUSTOM_TOKEN] })
+
+      expect(getTokenDataSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ accountAddr: ACCOUNT_WITH_ETH, source: undefined })
+      )
+    })
   })
 
   test('simulation works for EOAs', async () => {
@@ -978,8 +1094,7 @@ describe('Portfolio', () => {
     const hangingFetch = () => new Promise(() => {}) as any
 
     const getPriceOf = (portfolioInstance: Portfolio) =>
-      portfolioInstance.getTokenPrice(USDT_ADDRESS, {
-        tokenDataCache: new Map(),
+      portfolioInstance.getTokenPrice(PRICE_LOOKUP_ACCOUNT, USDT_ADDRESS, {
         tokenDataRecency: 0
       })
 
@@ -992,13 +1107,13 @@ describe('Portfolio', () => {
         const onSettled = jest.fn()
         pricePromise.then(onSettled, onSettled)
 
-        // Flushes the batcher debounce, so the request is actually in flight
+        // Lets the request start, so it is actually in flight
         await jest.advanceTimersByTimeAsync(0)
         await jest.advanceTimersByTimeAsync(2999)
         expect(onSettled).not.toHaveBeenCalled()
 
         await jest.advanceTimersByTimeAsync(1)
-        await expect(pricePromise).rejects.toThrow('request-timeout')
+        await expect(pricePromise).rejects.toThrow(`Cena request timed out on ${ethereum.name}`)
       } finally {
         jest.useRealTimers()
         restore()

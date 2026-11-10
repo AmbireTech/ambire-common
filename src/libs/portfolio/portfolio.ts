@@ -7,22 +7,18 @@ import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { AMBIRE_API_TIMEOUT } from '../../consts/portfolio'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import batcher from '../../utils/batcher'
+import { TokenPricesService } from '../../services/tokenPrices/tokenPrices'
 import { paginate } from '../../utils/paginate'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import { isBlacklistedAsset, prepareBlacklistPatterns, STATIC_BLACKLIST } from './blacklist'
 import { portfolioDebugLog } from './debug'
 import { PORTFOLIO_LIB_ERROR_NAMES } from './errorNames'
-import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
-  convertApiTokenDataToTokenDataCache,
   getTokenDataCacheKey,
-  getHardcodedCitreaPrices,
   getVisibleCollectibles,
   mergeCollectionHints,
   mergeERC721s,
@@ -36,8 +32,6 @@ import {
   Limits,
   LimitsOptions,
   PortfolioLibGetResult,
-  TokenDataCache,
-  TokenDataCacheValue,
   TokenError,
   TokenMetadataFetchPlan,
   TokenResult
@@ -85,9 +79,8 @@ export class Portfolio {
 
   provider: RPCProvider
 
-  private batchedGecko: Function
-
-  private isTokenPricesEnabled: () => boolean
+  /** Where token prices come from and are cached; shared between libs when passed in */
+  private tokenPrices: TokenPricesService
 
   private deploylessTokens: Deployless
 
@@ -97,17 +90,13 @@ export class Portfolio {
     fetch: Fetch,
     provider: RPCProvider,
     network: Network,
-    isTokenPricesEnabled: () => boolean = () => true
+    isTokenPricesEnabled: () => boolean = () => true,
+    tokenPrices?: TokenPricesService
   ) {
-    this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
-      timeoutSettings: {
-        timeoutAfter: AMBIRE_API_TIMEOUT,
-        timeoutErrorMessage: `Cena request timed out on ${network.name}`
-      }
-    })
+    // One-off libs (e.g. asset info lookups) get their own, so they keep working without one
+    this.tokenPrices = tokenPrices || new TokenPricesService({ fetch, isTokenPricesEnabled })
     this.provider = provider
     this.network = network
-    this.isTokenPricesEnabled = isTokenPricesEnabled
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
   }
@@ -124,8 +113,8 @@ export class Portfolio {
       specialErc721Hints,
       blockTag,
       tokenDataRecencyOnFailure,
-      tokenDataCache: paramsTokenDataCache,
       tokenDataRecency,
+      isFullPortfolioUpdate,
       blacklist,
       preventTokenBlacklisting,
       deployless,
@@ -197,7 +186,6 @@ export class Portfolio {
     // Remove duplicates and always add ZeroAddress
     hints.erc20s = [...new Set(filteredChecksummedHints.concat(ZeroAddress))]
 
-    const tokenDataCache: TokenDataCache = paramsTokenDataCache || new Map()
     const collectionsHints = Object.entries(hints.erc721s)
 
     // Decided once for the whole update so that every page agrees on which assets
@@ -254,33 +242,6 @@ export class Portfolio {
     const fetchedCollectionMetadata: PortfolioLibGetResult['fetchedCollectionMetadata'] = []
 
     // Re-map/filter into our format
-    const getTokenDataFromCache = (
-      address: string,
-      _tokenDataRecency: number = tokenDataRecency
-    ): TokenDataCacheValue | null => {
-      // hardcode citrea prices
-      if (this.network.chainId === 4114n) {
-        const citreaTokenPrice = getHardcodedCitreaPrices(address)
-        if (citreaTokenPrice)
-          return {
-            marketDataIn: [],
-            priceIn: [citreaTokenPrice]
-          }
-      }
-
-      const cached = tokenDataCache.get(getTokenDataCacheKey(address))
-      if (!cached) return null
-      const [timestamp, entry] = cached
-      const eligible = entry.priceIn.find((p) => p.baseCurrency === baseCurrency)
-
-      if (!eligible) return null
-
-      // by using `start` instead of `Date.now()`, we make sure that prices updated from Velcro will not be updated again
-      // even if priceRecency is 0
-      const isStale = start - timestamp > _tokenDataRecency
-      return isStale ? null : entry
-    }
-
     const nativeToken = tokensWithErrResult.find(
       ([, result]) => result.address === ZeroAddress
     )?.[1]
@@ -463,7 +424,14 @@ export class Portfolio {
           collectibles: visibleCollectibles,
           // Collections have no flags until this point
           flags: { isCustom, isHidden },
-          priceIn: getTokenDataFromCache(collection.address)?.priceIn || []
+          // Collection prices are never requested, they only come with Velcro's discovery response
+          priceIn:
+            this.tokenPrices.getCachedTokenData(
+              this.network.chainId,
+              collection.address,
+              tokenDataRecency,
+              baseCurrency
+            )?.priceIn || []
         })
         return acc
       },
@@ -472,101 +440,35 @@ export class Portfolio {
 
     const oracleCallDone = Date.now()
 
-    // Update prices and set the priceIn for each token by reference,
-    // updating the final tokens array as a result
-    const tokensWithPrices: TokenResult[] = await Promise.all(
-      tokensWithoutPrices.map(
-        async (token: Omit<TokenResult, 'priceIn' | 'marketDataIn' | 'meta'>) => {
-          let hasPrice = false
-          const cachedTokenData = getTokenDataFromCache(token.address, tokenDataRecencyOnFailure)
+    // Every token's price comes from a single call, which either answers from the cache or
+    // requests the account's whole token list again
+    const { tokenData, error: priceError } = await this.tokenPrices.getTokenData({
+      network: this.network,
+      accountAddr,
+      source: isFullPortfolioUpdate ? 'portfolio' : undefined,
+      tokenAddresses: tokensWithoutPrices.map((token) => token.address),
+      maxAgeMs: tokenDataRecency,
+      maxAgeOnFailureMs: tokenDataRecencyOnFailure,
+      baseCurrency
+    })
 
-          if (cachedTokenData && cachedTokenData.priceIn && cachedTokenData.priceIn.length > 0) {
-            hasPrice = true
-
-            return {
-              ...(token as TokenResult),
-              ...cachedTokenData
-            }
-          }
-
-          if (!this.network.platformId || !this.isTokenPricesEnabled()) {
-            return {
-              ...token,
-              priceIn: [],
-              marketDataIn: []
-            }
-          }
-
-          try {
-            const tokenData = await this.batchedGecko({
-              ...token,
-              network: this.network,
-              baseCurrency,
-              // this is what to look for in the coingecko response object
-              responseIdentifier: geckoResponseIdentifier(token.address, this.network)
-            })
-
-            const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData)
-
-            if (
-              formattedTokenData &&
-              formattedTokenData.priceIn &&
-              formattedTokenData.priceIn.length > 0
-            ) {
-              hasPrice = true
-            }
-
-            tokenDataCache.set(getTokenDataCacheKey(token.address), [
-              Date.now(),
-              formattedTokenData
-            ])
-
-            return {
-              ...token,
-              ...formattedTokenData
-            }
-          } catch (error: any) {
-            const errorMessage = error?.message || 'Unknown error'
-
-            const olderCachedTokenData = getTokenDataFromCache(
-              token.address,
-              tokenDataRecencyOnFailure
-            )
-
-            if (
-              olderCachedTokenData &&
-              olderCachedTokenData.priceIn &&
-              olderCachedTokenData.priceIn.length > 0
-            ) {
-              hasPrice = true
-            }
-
-            if (
-              // Avoid duplicate errors, because this.bachedGecko is called for each token and if
-              // there is an error it will most likely be the same for all tokens
-              !errors.find(
-                (x) =>
-                  x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage
-              ) &&
-              // Don't display an error if there is a cached price
-              !hasPrice
-            ) {
-              errors.push({
-                name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
-                message: errorMessage,
-                level: 'warning'
-              })
-            }
-
-            return {
-              ...token,
-              priceIn: olderCachedTokenData?.priceIn || [],
-              marketDataIn: olderCachedTokenData?.marketDataIn || []
-            }
-          }
-        }
-      )
+    const tokensWithPrices: TokenResult[] = tokensWithoutPrices.map(
+      (token: Omit<TokenResult, 'priceIn' | 'marketDataIn' | 'meta'>) => ({
+        ...token,
+        priceIn: [],
+        marketDataIn: [],
+        ...tokenData.get(getTokenDataCacheKey(token.address))
+      })
     )
+
+    // Don't display an error if every token still has a (cached) price
+    if (priceError && tokensWithPrices.some((token) => !token.priceIn.length)) {
+      errors.push({
+        name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
+        message: priceError.message,
+        level: 'warning'
+      })
+    }
 
     const priceUpdateDone = Date.now()
 
@@ -579,7 +481,6 @@ export class Portfolio {
       discoveryTime: discoveryDone - start,
       oracleCallTime: oracleCallDone - discoveryDone,
       priceUpdateTime: priceUpdateDone - oracleCallDone,
-      tokenDataCache,
       tokens: tokensWithPrices,
       feeTokens: tokensWithPrices.filter((t) => {
         // return the native token
@@ -635,36 +536,36 @@ export class Portfolio {
     ])
   }
 
+  /**
+   * The price of a single token, e.g. the one being swapped to. It is requested along with the
+   * account's whole token list, but isn't added to it, so it isn't requested again later.
+   * Throws if the price request fails.
+   */
   async getTokenPrice(
+    accountAddr: string,
     address: string,
     {
       baseCurrency = 'usd',
-      tokenDataCache = new Map(),
       tokenDataRecency = 0
     }: {
       baseCurrency?: string
-      tokenDataCache?: TokenDataCache
       tokenDataRecency?: number
     } = {}
   ): Promise<number | undefined> {
-    const cachedTokenData = tokenDataCache.get(getTokenDataCacheKey(address))
-
-    if (cachedTokenData && Date.now() - cachedTokenData[0] <= tokenDataRecency) {
-      return cachedTokenData[1].priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
-    }
-
-    if (!this.network.platformId || !this.isTokenPricesEnabled()) return undefined
-
-    const tokenData = await this.batchedGecko({
-      address,
+    const { tokenData, error } = await this.tokenPrices.getTokenData({
       network: this.network,
-      baseCurrency,
-      responseIdentifier: geckoResponseIdentifier(address, this.network)
+      accountAddr,
+      tokenAddresses: [address],
+      maxAgeMs: tokenDataRecency,
+      baseCurrency
     })
-    const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData)
 
-    tokenDataCache.set(getTokenDataCacheKey(address), [Date.now(), formattedTokenData])
+    const price = tokenData
+      .get(getTokenDataCacheKey(address))
+      ?.priceIn.find((tokenPrice) => tokenPrice.baseCurrency === baseCurrency)?.price
 
-    return formattedTokenData.priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
+    if (error && price === undefined) throw error
+
+    return price
   }
 }
