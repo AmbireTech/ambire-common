@@ -478,9 +478,3 @@ export type PrivacyPoolsWithdrawalPrivacyCheck = {
   /** Amounts that spend whole deposits and leave none partly sent, smallest first. */
   wholeNoteAmounts: bigint[]
 }
-
-/**
- * Which times the community screen was shown. It explains that privacy grows with the pool, once
- * when the first Privacy Pools account is added and once before the first deposit.
- */
-export type PrivacyPoolsCommunityNotice = 'not-shown' | 'shown-on-add' | 'shown-before-deposit'

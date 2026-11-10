@@ -1173,7 +1173,6 @@ describe('PrivacyPoolsController', () => {
           'accounts',
           'balances',
           'chains',
-          'communityNotice',
           'depositAssetConfigs',
           'hasPersistedSendForm',
           'hasSyncedAnyChain',
@@ -5236,22 +5235,6 @@ describe('PrivacyPoolsController', () => {
         sameAmount: 0
       })
       expect(runningSyncs).toHaveLength(0)
-    })
-  })
-
-  describe('community notice', () => {
-    it('is shown once on adding an account and once before a deposit, and never again after a restart', async () => {
-      const storage = new StorageController(produceMemoryStore())
-      const { controller } = await prepareTest({ storage })
-      expect(controller.communityNotice).toBe('not-shown')
-
-      // An account added before the screen existed sees it first before a deposit
-      await controller.markCommunityNoticeShown('before-deposit')
-      await controller.markCommunityNoticeShown('on-add')
-      expect(controller.communityNotice).toBe('shown-before-deposit')
-
-      const { controller: restarted } = await prepareTest({ storage })
-      expect(restarted.communityNotice).toBe('shown-before-deposit')
     })
   })
 })
