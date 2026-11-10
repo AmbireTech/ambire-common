@@ -1,4 +1,4 @@
-import { AbiCoder, Contract, ethers } from 'ethers'
+import { AbiCoder, Contract, ethers, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -16,6 +16,8 @@ import { getBaseAccount } from '../account/getBaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { ERC20 } from '../humanizer/const/abis'
+import { getTokenDataCacheKey } from './helpers'
+import { TokenDataCache, TokenResult } from './interfaces'
 import { Portfolio } from './portfolio'
 
 const providers = Object.fromEntries(
@@ -243,6 +245,84 @@ describe('Portfolio', () => {
       })
     ).resolves.toBe(0.99785)
     expect(priceFetch).toHaveBeenCalledTimes(1)
+  })
+
+  describe('reusing cached prices', () => {
+    const ACCOUNT_WITH_ETH = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const TOKEN_DATA_RECENCY = 5 * 60 * 1000
+    const getCacheWithNativePrice = (price: number, ageMs: number): TokenDataCache =>
+      new Map([
+        [
+          getTokenDataCacheKey(ZeroAddress),
+          [Date.now() - ageMs, { priceIn: [{ baseCurrency: 'usd', price }], marketDataIn: [] }]
+        ]
+      ])
+    const getNativePriceIn = (tokens: TokenResult[]) =>
+      tokens.find((t) => t.address === ZeroAddress)?.priceIn
+
+    test('refetches a cached price older than tokenDataRecency, even if newer than tokenDataRecencyOnFailure', async () => {
+      const priceFetch = jest.fn(async () => ({
+        status: 200,
+        json: async () => ({ ethereum: { usd: 2000 } })
+      }))
+      const portfolioWithMockedPriceFetch = new Portfolio(priceFetch as any, provider, ethereum)
+
+      const { tokens } = await portfolioWithMockedPriceFetch.get(ACCOUNT_WITH_ETH, {
+        tokenDataCache: getCacheWithNativePrice(1000, 10 * 60 * 1000),
+        tokenDataRecency: TOKEN_DATA_RECENCY,
+        tokenDataRecencyOnFailure: 60 * 60 * 1000
+      })
+
+      expect(priceFetch).toHaveBeenCalled()
+      expect(getNativePriceIn(tokens)).toEqual([{ baseCurrency: 'usd', price: 2000 }])
+    })
+
+    test('reuses a cached price within tokenDataRecency without refetching it', async () => {
+      const priceFetch = jest.fn(async () => ({
+        status: 200,
+        json: async () => ({ ethereum: { usd: 2000 } })
+      }))
+      const portfolioWithMockedPriceFetch = new Portfolio(priceFetch as any, provider, ethereum)
+
+      const { tokens } = await portfolioWithMockedPriceFetch.get(ACCOUNT_WITH_ETH, {
+        tokenDataCache: getCacheWithNativePrice(1000, 60 * 1000),
+        tokenDataRecency: TOKEN_DATA_RECENCY,
+        fetchPinned: false
+      })
+
+      expect(getNativePriceIn(tokens)).toEqual([{ baseCurrency: 'usd', price: 1000 }])
+    })
+
+    test('falls back to a cached price within tokenDataRecencyOnFailure when the price request fails', async () => {
+      const priceFetch = jest.fn(async () => {
+        throw new Error('price API is down')
+      })
+      const portfolioWithMockedPriceFetch = new Portfolio(priceFetch as any, provider, ethereum)
+
+      const { tokens } = await portfolioWithMockedPriceFetch.get(ACCOUNT_WITH_ETH, {
+        tokenDataCache: getCacheWithNativePrice(1000, 10 * 60 * 1000),
+        tokenDataRecency: TOKEN_DATA_RECENCY,
+        tokenDataRecencyOnFailure: 60 * 60 * 1000
+      })
+
+      expect(priceFetch).toHaveBeenCalled()
+      expect(getNativePriceIn(tokens)).toEqual([{ baseCurrency: 'usd', price: 1000 }])
+    })
+
+    test('drops a cached price older than tokenDataRecencyOnFailure when the price request fails', async () => {
+      const priceFetch = jest.fn(async () => {
+        throw new Error('price API is down')
+      })
+      const portfolioWithMockedPriceFetch = new Portfolio(priceFetch as any, provider, ethereum)
+
+      const { tokens } = await portfolioWithMockedPriceFetch.get(ACCOUNT_WITH_ETH, {
+        tokenDataCache: getCacheWithNativePrice(1000, 2 * 60 * 60 * 1000),
+        tokenDataRecency: TOKEN_DATA_RECENCY,
+        tokenDataRecencyOnFailure: 60 * 60 * 1000
+      })
+
+      expect(getNativePriceIn(tokens)).toEqual([])
+    })
   })
 
   test('finds a cached price the price API stored under a differently cased address', async () => {
