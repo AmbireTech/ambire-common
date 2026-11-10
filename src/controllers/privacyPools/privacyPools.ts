@@ -3,8 +3,11 @@ import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '../../consts/activity'
 import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig,
+  getPrivacyPoolsTokenId,
   isPrivacyPoolsNativeAsset,
   PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY,
+  PRIVACY_POOLS_COMMUNITY_NOTICE_STORAGE_KEY,
+  PRIVACY_POOLS_DEPOSIT_CHIPS,
   PRIVACY_POOLS_SUPPORTED_CHAIN_IDS
 } from '../../consts/privacyPools'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
@@ -18,14 +21,18 @@ import {
   PrivacyPoolsAccountChainState,
   PrivacyPoolsChainPoolStats,
   PrivacyPoolsChainState,
+  PrivacyPoolsCommunityNotice,
   PrivacyPoolsDepositAssetConfig,
+  PrivacyPoolsDepositPrivacy,
   PrivacyPoolsHistoryFilters,
   PrivacyPoolsHistorySession,
   PrivacyPoolsOperation,
   PrivacyPoolsRagequitDeposit,
   PrivacyPoolsSendForm,
   PrivacyPoolsTokenBalance,
-  PrivacyPoolsUnavailableReason
+  PrivacyPoolsUnavailableReason,
+  PrivacyPoolsWithdrawalPrivacyCheck,
+  PrivacyPoolsWithdrawalPrivacyParams
 } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -34,6 +41,7 @@ import { IUiController, View } from '../../interfaces/ui'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { createKohakuStorage } from '../../libs/kohaku/host'
+import { getPrivacyPoolsDepositPrivacy } from '../../libs/privacyPools/leaks/leaks'
 import { fetchPrivacyPoolsPrices, getPrivacyPoolsPriceKey } from '../../libs/privacyPools/prices'
 import {
   createProverFactory,
@@ -68,6 +76,13 @@ import {
 } from './withdrawal'
 
 const PRICES_MAX_AGE_MS = 5 * 60 * 1000
+
+/** The order the community screen is shown in. The stored value only moves forward. */
+const COMMUNITY_NOTICE_ORDER: PrivacyPoolsCommunityNotice[] = [
+  'not-shown',
+  'shown-on-add',
+  'shown-before-deposit'
+]
 
 /** A chain read more recently than this is not read again when the account is opened. */
 export const OPEN_SYNC_MAX_AGE_MS = 2 * 60 * 1000
@@ -150,12 +165,16 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * Per chain, its pools' numbers for a token's details, so they are there when it opens. The same
    * for every account, so they outlive a lock. Computed from this device's copy of the history
    * after each sync of it, before the balances it reads show - see `PrivacyPoolsPoolStatsReader`.
-   * Not on load: a stored history is read only when the user opens a Privacy Pools account.
+   * Not on load: a stored history is read only when the user opens a Privacy Pools account, or a
+   * deposit into one.
    */
   poolStats: { [chainId: string]: PrivacyPoolsChainPoolStats } = {}
 
   /** At most one per stored recovery phrase, and removed with it. */
   accounts: PrivacyPoolsAccount[] = []
+
+  /** Which times the community screen was shown. Shared by all accounts, so it is shown twice. */
+  communityNotice: PrivacyPoolsCommunityNotice = 'not-shown'
 
   initialLoadPromise?: Promise<void>
 
@@ -172,6 +191,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     proverFactory,
     onAccountsRemoved,
     getPendingAccountOps,
+    isWalletAccount,
     eventEmitterRegistry
   }: {
     keystore: IKeystoreController
@@ -192,6 +212,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     onAccountsRemoved: (seedIds: string[]) => Promise<void>
     /** The transactions broadcast but not confirmed, and the current request batch. */
     getPendingAccountOps: () => PendingAccountOp[]
+    /** Whether an address is one of the wallet's accounts, which a send to it would link. */
+    isWalletAccount: (address: string) => boolean
     eventEmitterRegistry?: IEventEmitterRegistryController
   }) {
     super(eventEmitterRegistry)
@@ -254,9 +276,15 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       this.#builtCalls,
       this.#expectedChanges
     )
-    this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
-    this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync, this.#builtCalls)
     this.#poolStatsReader = new PrivacyPoolsPoolStatsReader(ctx)
+    this.#withdrawal = new PrivacyPoolsWithdrawal(
+      ctx,
+      this.#registry,
+      this.#sync,
+      this.#poolStatsReader,
+      isWalletAccount
+    )
+    this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync, this.#builtCalls)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
     this.#history = new PrivacyPoolsHistory(ctx, this.#sync, {
       getSupportedChainIds: () => this.supportedChainIds,
@@ -288,6 +316,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     await this.#selectedAccount.initialLoadPromise
 
     this.accounts = await this.#storage.get(PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY, [])
+    this.communityNotice = await this.#storage.get(
+      PRIVACY_POOLS_COMMUNITY_NOTICE_STORAGE_KEY,
+      'not-shown'
+    )
     // Phrases deleted while this controller was not running
     await this.#forgetAccountsOfDeletedSeeds()
 
@@ -305,11 +337,15 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     const isLatest = () => this.#poolStatsRefreshIds[chainId] === refreshId
 
     try {
-      const byToken = await this.#poolStatsReader.read(chainId)
+      const pools = await this.#poolStatsReader.read(chainId)
       // Before the chain's first sync there is nothing to show yet, not an error
-      if (!byToken || !isLatest()) return
+      if (!pools || !isLatest()) return
 
-      this.poolStats = { ...this.poolStats, [chainId]: { byToken, error: null } }
+      this.poolStats = {
+        ...this.poolStats,
+        [chainId]: { byToken: pools.statsByToken, error: null }
+      }
+      this.#poolStatsReader.setDepositIndexes(chainId, pools.depositIndexes)
     } catch (error: any) {
       const emittableError = privacyPoolsErrors.poolStatsReadFailed(error)
       this.emitError(emittableError)
@@ -356,6 +392,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         // The form it was proved from is gone; one being sent finishes, hidden
         this.#withdrawal.dropUnsent()
         this.#sendForm.clear()
+        this.#withdrawal.dropPrivacyCheck()
         if (selectedAccountId) this.#syncOnOpen()
         this.propagateUpdate(forceEmit)
       }, 'privacyPools'),
@@ -507,6 +544,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase), read once per Send session. */
   get depositAssetConfigs(): { [key: string]: PrivacyPoolsDepositAssetConfig } {
     return this.#deposits.assetConfigs
+  }
+
+  /**
+   * The privacy of the transfer the Send form last asked about - see `checkWithdrawalPrivacy`.
+   * Dropped with the form.
+   */
+  get withdrawalPrivacy(): PrivacyPoolsWithdrawalPrivacyCheck | null {
+    return this.#withdrawal.getWithdrawalPrivacyCheck(this.#getSelectedSeedId())
   }
 
   /** The selected account's Send form. Dropped on switching accounts, like the regular one. */
@@ -797,7 +842,37 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     tokenAddress: string,
     sessionId: string | null
   ): Promise<PrivacyPoolsDepositAssetConfig> {
+    // The deposit's privacy check needs the pool's deposits, which a sync may not have read yet
+    if (!this.#poolStatsReader.hasDepositIndexes(chainId))
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#refreshPoolStats(chainId).then(() => this.emitUpdate())
+
     return this.#deposits.loadAssetConfig(chainId, tokenAddress, sessionId)
+  }
+
+  /**
+   * The privacy of a deposit that puts `amount` into a pool, of at most `maxAmount`, both after the
+   * vetting fee. For `TransferController`. Rated `unchecked` before the pool's deposits are read -
+   * see `loadDepositAssetConfig`.
+   */
+  getDepositPrivacy({
+    chainId,
+    tokenAddress,
+    amount,
+    maxAmount
+  }: {
+    chainId: string
+    tokenAddress: string
+    amount: bigint
+    maxAmount: bigint
+  }): PrivacyPoolsDepositPrivacy {
+    return getPrivacyPoolsDepositPrivacy({
+      amount,
+      maxAmount,
+      depositIndex: this.#poolStatsReader.getDepositIndex(chainId, tokenAddress),
+      commonAmounts:
+        PRIVACY_POOLS_DEPOSIT_CHIPS[getPrivacyPoolsTokenId(chainId, tokenAddress)] ?? []
+    })
   }
 
   /**
@@ -886,6 +961,31 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (hasDeleted) this.emitUpdate()
   }
 
+  /**
+   * Checks what the Send form's transfer gives away, from the selected account's notes and this
+   * device's copy of the pool. The result arrives in `withdrawalPrivacy`. A newer check replaces
+   * an older one still running.
+   */
+  async checkWithdrawalPrivacy(
+    params: Omit<PrivacyPoolsWithdrawalPrivacyParams, 'seedId'>
+  ): Promise<void> {
+    try {
+      const seedId = this.#assertAvailableAndGetSeedId()
+
+      if (await this.#withdrawal.checkWithdrawalPrivacy({ ...params, seedId })) this.emitUpdate()
+    } catch (error: any) {
+      this.emitError(
+        error instanceof EmittableError
+          ? error
+          : {
+              level: 'silent',
+              message: 'Could not check the privacy of this transfer.',
+              error: error instanceof Error ? error : new Error('privacyPools: leak check failed')
+            }
+      )
+    }
+  }
+
   updateSendForm(update: Partial<PrivacyPoolsSendForm>) {
     this.#sendForm.update(update)
     this.emitUpdate()
@@ -899,8 +999,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #leaveSendForm() {
     const hasDroppedWithdrawal = this.#withdrawal.dropUnsent()
     const hasClearedForm = this.#sendForm.clear()
+    const hasDroppedPrivacyCheck = this.#withdrawal.dropPrivacyCheck()
 
-    if (hasDroppedWithdrawal || hasClearedForm) this.emitUpdate()
+    if (hasDroppedWithdrawal || hasClearedForm || hasDroppedPrivacyCheck) this.emitUpdate()
   }
 
   #onAddView = () => {
@@ -1053,6 +1154,34 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     const seedId = this.#assertAvailableAndGetSeedId()
 
     return this.#ragequit.buildCalls({ seedId, chainId, label })
+  }
+
+  /**
+   * Records that the community screen was shown when an account was added, or before a deposit.
+   * Never moves back, so a screen is not shown again.
+   */
+  async markCommunityNoticeShown(stage: 'on-add' | 'before-deposit'): Promise<void> {
+    await this.initialLoadPromise
+
+    const communityNotice = stage === 'on-add' ? 'shown-on-add' : 'shown-before-deposit'
+    if (
+      COMMUNITY_NOTICE_ORDER.indexOf(communityNotice) <=
+      COMMUNITY_NOTICE_ORDER.indexOf(this.communityNotice)
+    )
+      return
+
+    this.communityNotice = communityNotice
+    this.emitUpdate()
+
+    try {
+      await this.#storage.set(PRIVACY_POOLS_COMMUNITY_NOTICE_STORAGE_KEY, communityNotice)
+    } catch (error: any) {
+      this.emitError({
+        message: 'Could not save that you have seen the Privacy Pools introduction.',
+        level: 'silent',
+        error: error instanceof Error ? error : new Error('privacyPools: notice write failed')
+      })
+    }
   }
 
   /** The name a new account gets until the user renames it, e.g. "Private account 2". */
@@ -1228,6 +1357,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       operation: this.operation,
       depositAssetConfigs: this.depositAssetConfigs,
       history: this.history,
+      withdrawalPrivacy: this.withdrawalPrivacy,
       sendForm: this.sendForm,
       sendFormResetCounter: this.sendFormResetCounter,
       hasPersistedSendForm: this.hasPersistedSendForm

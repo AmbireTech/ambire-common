@@ -14,9 +14,9 @@ The controller is the only `EventEmitter`. The work is done by plain classes tha
 | `deposits.ts` | Deposit requirements and the next deposit's precommitment |
 | `builtCalls.ts` | The deposit and ragequit calls this wallet built, and the change recorded for each once broadcast |
 | `expectedChanges.ts` | The deposits, withdrawals and ragequits sent that the notes do not show yet: their amounts count until the notes show them, or until the sync after them is done |
-| `withdrawal.ts` | The operation, the proved-but-unsent withdrawal, and the preparation queue and its cancellation |
+| `withdrawal.ts` | The operation, the proved-but-unsent withdrawal, the preparation queue and its cancellation, and the Send form's privacy check |
 | `ragequit.ts` | Nothing of its own. Lists the deposits still being verified with the account each came from, and builds their public reclaim |
-| `poolStats.ts` | The pools' deposits' labels. Computes a pool's numbers for a token's details from the synced history |
+| `poolStats.ts` | The pools' deposits' labels, and each pool's deposit index for the privacy checks. Computes a pool's numbers for a token's details from the synced history |
 | `sendForm.ts` | The Send form, and which view changes leave it |
 | `errors.ts` | The errors the actions throw |
 

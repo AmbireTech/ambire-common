@@ -128,6 +128,12 @@ export type PrivacyPoolsNote = {
   depositorAddr: Hex
   /** The account's deposits are numbered in the order they were made, so a higher one is newer. */
   depositIndex: number
+  /** What the deposit put into the pool, after the vetting fee. `amount` is what is left of it. */
+  depositValue: bigint
+  /** How many sends were already made from this note. */
+  withdrawCount: number
+  /** The block of the deposit. */
+  blockNumber: bigint
 }
 
 /**
@@ -334,6 +340,8 @@ export type PrivacyPoolsOperation = {
    * the simulation. Set with `quote`.
    */
   humanization: IrCall | null
+  /** The privacy of the proved withdrawal, from the deposits it spends. Set with `quote`. */
+  privacy: PrivacyPoolsWithdrawalPrivacy | null
   // Set when `status` is 'failed', in the same plain language the toast would have used
   error: string | null
 }
@@ -365,3 +373,114 @@ export type PrivacyPoolsDepositAssetConfig = {
 
 /** 'pending' means "not observed as complete yet". It resolves from the broadcast result. */
 export type PrivacyPoolsOperationStatus = 'pending' | 'success' | 'failed'
+
+/**
+ * A privacy leak a transfer can have. Deposits that stand out (`cover`) and deposits that are too
+ * recent are not leaks: the user is shown how many deposits hide theirs and decides.
+ */
+export type PrivacyPoolsLeakId =
+  /** The send spends a whole deposit whose amount no other deposit has. */
+  | 'unique-amount'
+  /** The send goes back to the address a deposit came from, and not as a whole untouched deposit. */
+  | 'send-to-depositor'
+  /** The send uses up a deposit that earlier sends already took part of. */
+  | 'empties-partly-sent-deposit'
+  /** No deposit has put this amount into the pool yet. */
+  | 'unusual-deposit-amount'
+  /** The send spends more than one deposit, which links them. */
+  | 'several-deposits'
+  /** The recipient is another account in this wallet that was never used on the network. */
+  | 'own-account'
+  /** The recipient is another account in this wallet that was already used on the network. */
+  | 'own-account-used'
+  /** The recipient has no ETH to move the tokens with. */
+  | 'recipient-has-no-eth'
+  /** The send spends a deposit made in the last day, so its timing can point to the user. */
+  | 'fresh-deposit'
+
+/** A change the user can make to fix a leak. */
+export type PrivacyPoolsLeakAction = {
+  actionName: 'set-amount'
+  meta: { amount: bigint }
+} & {
+  /** English, to translate as it is. The amount is shown next to it. */
+  label: string
+}
+
+export type PrivacyPoolsLeak = {
+  id: PrivacyPoolsLeakId
+  title: string
+  text?: string
+  /**
+   * 'error' breaks privacy (Traceable), 'warning' weakens it (Weak privacy). 'info' is only a
+   * note and does not lower the rating.
+   */
+  type: 'error' | 'warning' | 'info'
+  actions: PrivacyPoolsLeakAction[]
+}
+
+/**
+ * How well a transfer hides. `strong` is not returned yet, as it needs a relayer and larger pools.
+ * `unchecked` means the pool's deposits are not read yet, so nothing could be checked.
+ */
+export type PrivacyPoolsRating = 'strong' | 'basic' | 'weak' | 'traceable' | 'unchecked'
+
+/**
+ * How many recent deposits (see `PRIVACY_POOLS_COVER_WINDOW_DAYS`) hide a send. Each is the
+ * smallest over the deposits it spends, as the least hidden one is what can link it.
+ */
+export type PrivacyPoolsSendCover = {
+  /** Deposits large enough to pay the part spent from each deposit. */
+  bigEnough: number
+  /** Deposits of exactly the part spent from each deposit. */
+  sameAmount: number
+}
+
+/** The privacy of a send from a Privacy Pools account. */
+export type PrivacyPoolsWithdrawalPrivacy = {
+  rating: PrivacyPoolsRating
+  leaks: PrivacyPoolsLeak[]
+  cover: PrivacyPoolsSendCover
+  /** How many deposits the send spends. */
+  notesCount: number
+}
+
+/** The privacy of a deposit into a pool. */
+export type PrivacyPoolsDepositPrivacy = {
+  rating: PrivacyPoolsRating
+  leaks: PrivacyPoolsLeak[]
+  /** Recent deposits (see `PRIVACY_POOLS_COVER_WINDOW_DAYS`) of exactly this amount. */
+  sameAmount: number
+}
+
+/** A send from a Privacy Pools account to check, as the Send form has it. */
+export type PrivacyPoolsWithdrawalPrivacyParams = {
+  seedId: string
+  chainId: string
+  tokenAddress: string
+  amount: bigint
+  /** Null before the user enters one, so only the amount is checked. */
+  recipient: string | null
+}
+
+/**
+ * The privacy of a send the Send form asked about, with what it was asked for, so the screen can
+ * tell whether it still matches the form. `privacy` is null when the notes cannot pay `amount`,
+ * as before one is entered.
+ */
+export type PrivacyPoolsWithdrawalPrivacyCheck = {
+  chainId: string
+  tokenAddress: string
+  amount: bigint
+  /** Null before the user enters one. */
+  recipient: string | null
+  privacy: PrivacyPoolsWithdrawalPrivacy | null
+  /** Amounts that spend whole deposits and leave none partly sent, smallest first. */
+  wholeNoteAmounts: bigint[]
+}
+
+/**
+ * Which times the community screen was shown. It explains that privacy grows with the pool, once
+ * when the first Privacy Pools account is added and once before the first deposit.
+ */
+export type PrivacyPoolsCommunityNotice = 'not-shown' | 'shown-on-add' | 'shown-before-deposit'

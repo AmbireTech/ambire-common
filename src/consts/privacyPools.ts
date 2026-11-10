@@ -213,6 +213,9 @@ export const PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS = 15 * 1000
 /** Storage key holding the wallet's Privacy Pools accounts. */
 export const PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY = 'privacyPoolsAccounts'
 
+/** Where `PrivacyPoolsCommunityNotice` is stored. */
+export const PRIVACY_POOLS_COMMUNITY_NOTICE_STORAGE_KEY = 'privacyPoolsCommunityNotice'
+
 export const getPrivacyPoolsChainConfig = (chainId: bigint): PrivacyPoolsChainConfig | undefined =>
   PRIVACY_POOLS_CHAINS[chainId.toString()]
 
@@ -225,6 +228,39 @@ export const getPrivacyPoolsStoreKey = ({
   entrypointAddress
 }: PrivacyPoolsChainConfig): string =>
   `privacy-pool-state-${chainId.toString()}-${BigInt(entrypointAddress).toString()}`
+
+/** How far back the deposits the user is shown as hiding a transfer go. */
+export const PRIVACY_POOLS_COVER_WINDOW_DAYS = 90n
+
+const ETH_UNIT = 10n ** 18n
+const USD_STABLECOIN_UNIT = 10n ** 6n
+const USD_STABLECOIN_DEPOSIT_CHIPS = [25n, 100n, 500n, 1_000n, 5_000n, 10_000n].map(
+  (amount) => amount * USD_STABLECOIN_UNIT
+)
+
+/**
+ * The most common amounts deposits put into each pool, smallest first, by token id (see
+ * `getPrivacyPoolsTokenId`). A deposit of one of them hides among many others. None is below the
+ * pool's minimum deposit. The ETH ones match the amounts the Privacy Pools website recommends.
+ */
+export const PRIVACY_POOLS_DEPOSIT_CHIPS: { [tokenId: string]: bigint[] } = {
+  [`1:${ZERO_ADDRESS}`]: [1n, 10n, 50n, 100n, 1_000n].map((tenths) => (tenths * ETH_UNIT) / 10n),
+  '1:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': USD_STABLECOIN_DEPOSIT_CHIPS,
+  '1:0xdac17f958d2ee523a2206206994597c13d831ec7': USD_STABLECOIN_DEPOSIT_CHIPS
+}
+
+/**
+ * Fewer deposits than this to hide among reads as a warning, even without a leak. Shown, not
+ * counted as a leak, as the user decides whether it is enough.
+ */
+export const PRIVACY_POOLS_MIN_REASSURING_COVER = 5
+
+/**
+ * Shown when a transfer's privacy is `unchecked`, as the pool's deposits are not read yet. In
+ * English, to translate as it is.
+ */
+export const PRIVACY_POOLS_UNCHECKED_PRIVACY_TEXT =
+  "We are unable to check this transfer's privacy yet. Please wait a few seconds and try again."
 
 /** Whether the address is the wallet's native token address (`ZERO_ADDRESS`). */
 export const isPrivacyPoolsNativeAsset = (address: string): boolean =>

@@ -461,7 +461,11 @@ export class MainController extends EventEmitter implements IMainController {
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
       onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds),
-      getPendingAccountOps: () => this.getPendingAccountOps()
+      getPendingAccountOps: () => this.getPendingAccountOps(),
+      isWalletAccount: (address) =>
+        this.accounts.accounts.some(
+          (account) => account.addr.toLowerCase() === address.toLowerCase()
+        )
     })
 
     this.portfolio = new PortfolioController(

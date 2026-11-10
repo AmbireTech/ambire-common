@@ -4,7 +4,7 @@ import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
 import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { getPrivacyPoolsDepositAsset } from '../../consts/privacyPools'
+import { getPrivacyPoolsDepositAsset, getPrivacyPoolsTokenId } from '../../consts/privacyPools'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
@@ -19,7 +19,11 @@ import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
-import { IPrivacyPoolsController } from '../../interfaces/privacyPools'
+import {
+  IPrivacyPoolsController,
+  PrivacyPoolsDepositAssetConfig,
+  PrivacyPoolsDepositPrivacy
+} from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
@@ -39,6 +43,10 @@ import { AssetType } from '../../libs/defiPositions/types'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
+import {
+  getDepositAmountWithVettingFee,
+  getMaxDepositPoolValue
+} from '../../libs/privacyPools/entrypointAssetConfig'
 import { TokenResult } from '../../libs/portfolio'
 import {
   getCollectibleCacheKey,
@@ -830,8 +838,60 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   /**
-   * Checks the amount against the configured maximum and the entrypoint's minimum (once read).
-   * Null when it passes or the transfer is not to a Privacy Pools account.
+   * The privacy of the deposit into a Privacy Pools account the form has, with the common amounts
+   * the balance can pay, also before an amount is typed. Rated `unchecked` until the pool's
+   * deposits are read. Null for other transfers.
+   */
+  get privacyPoolsDepositPrivacy(): PrivacyPoolsDepositPrivacy | null {
+    const token = this.selectedToken
+    if (!this.#privacyPools || !this.privacyPoolsRecipient || !token) return null
+
+    return this.#privacyPools.getDepositPrivacy({
+      chainId: token.chainId.toString(),
+      tokenAddress: token.address,
+      amount: this.#getTypedTokenAmount(token),
+      // Only limits the suggested amounts, so the balance stands in until the fee is read
+      maxAmount: this.privacyPoolsMaxAmount ?? getTokenAmount(token)
+    })
+  }
+
+  /**
+   * The most a deposit into a Privacy Pools account can put into the pool, as the pool's fee comes
+   * on top. Null for other transfers, and until the fee is read.
+   */
+  get privacyPoolsMaxAmount(): bigint | null {
+    const token = this.selectedToken
+    const config = this.#getPrivacyPoolsDepositAssetConfig()
+    if (!token || !config) return null
+
+    return getMaxDepositPoolValue(getTokenAmount(token), config.vettingFeeBPS)
+  }
+
+  /**
+   * The pool's fee a deposit into a Privacy Pools account pays on top of the typed amount. Null
+   * for other transfers, and until the fee is read.
+   */
+  get privacyPoolsFeeAmount(): bigint | null {
+    const token = this.selectedToken
+    const config = this.#getPrivacyPoolsDepositAssetConfig()
+    if (!token || !config) return null
+
+    const amount = this.#getTypedTokenAmount(token)
+
+    return getDepositAmountWithVettingFee(amount, config.vettingFeeBPS) - amount
+  }
+
+  #getTypedTokenAmount(token: TokenResult): bigint {
+    return parseUnits(
+      getSafeAmountFromFieldValue(this.amount, token.decimals) || '0',
+      token.decimals
+    )
+  }
+
+  /**
+   * Checks the amount and the pool's fee on top of it against the balance, the configured maximum
+   * and the entrypoint's minimum (the fee and minimum once read). Null when it passes or the
+   * transfer is not to a Privacy Pools account.
    */
   #getPrivacyPoolsAmountError(): string | null {
     const token = this.selectedToken
@@ -840,10 +900,15 @@ export class TransferController extends EventEmitter implements ITransferControl
     const asset = getPrivacyPoolsDepositAsset(token.chainId, token.address)
     if (!asset) return 'This token cannot be sent to a Privacy Pools account.'
 
-    const amount = parseUnits(
-      getSafeAmountFromFieldValue(this.amount, token.decimals) || '0',
-      token.decimals
-    )
+    // What leaves the account: the pool's fee comes on top of the amount, once it is read
+    const config = this.#getPrivacyPoolsDepositAssetConfig()
+    const typedAmount = this.#getTypedTokenAmount(token)
+    const amount = config
+      ? getDepositAmountWithVettingFee(typedAmount, config.vettingFeeBPS)
+      : typedAmount
+
+    if (amount > getTokenAmount(token))
+      return `You don't have enough ${asset.symbol} to also pay the Privacy Pools fee.`
 
     if (amount > asset.maxDeposit)
       return `A Privacy Pools account accepts at most ${formatUnits(
@@ -851,8 +916,6 @@ export class TransferController extends EventEmitter implements ITransferControl
         asset.decimals
       )} ${asset.symbol} at a time.`
 
-    const config =
-      this.#privacyPools?.depositAssetConfigs[`${token.chainId}:${token.address.toLowerCase()}`]
     if (config && amount < config.minimumDepositAmount)
       return `A Privacy Pools account accepts at least ${formatUnits(
         config.minimumDepositAmount,
@@ -1143,7 +1206,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   #getMaxAmountAfterFeeReservation() {
     if (!this.selectedToken) return this.maxAmount
 
-    const totalTokenAmount = getTokenAmount(this.selectedToken)
+    const totalTokenAmount = this.#getSpendableTokenAmount(this.selectedToken)
     const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
 
     if (!this.#shouldReserveFeeFromTransferredToken() || !gasFeePayment) {
@@ -1153,6 +1216,28 @@ export class TransferController extends EventEmitter implements ITransferControl
     return formatUnits(
       getAmountAfterFeeReserve(totalTokenAmount, gasFeePayment.amount),
       this.selectedToken.decimals
+    )
+  }
+
+  /**
+   * The part of the selected token's balance the typed amount can use. A deposit into a Privacy
+   * Pools account pays the pool's fee on top, so it can use none until the fee is read.
+   */
+  #getSpendableTokenAmount(token: TokenResult): bigint {
+    if (!this.privacyPoolsRecipient) return getTokenAmount(token)
+
+    return this.privacyPoolsMaxAmount ?? 0n
+  }
+
+  /** The selected token's deposit requirements when sending to a Privacy Pools account, once read. */
+  #getPrivacyPoolsDepositAssetConfig(): PrivacyPoolsDepositAssetConfig | null {
+    const token = this.selectedToken
+    if (!this.privacyPoolsRecipient || !token) return null
+
+    return (
+      this.#privacyPools?.depositAssetConfigs[
+        getPrivacyPoolsTokenId(token.chainId.toString(), token.address)
+      ] ?? null
     )
   }
 
@@ -1236,7 +1321,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (!this.amount || !this.selectedToken || typeof this.selectedToken.decimals !== 'number')
       return false
 
-    const totalTokenAmount = getTokenAmount(this.selectedToken)
+    const totalTokenAmount = this.#getSpendableTokenAmount(this.selectedToken)
     const shouldReserveFee = this.#shouldReserveFeeFromTransferredToken()
     const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
     const fee = shouldReserveFee ? gasFeePayment?.amount || 0n : 0n
@@ -1289,7 +1374,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals),
       this.selectedToken.decimals
     )
-    const feeAmount = getTokenAmount(this.selectedToken) - currentAmount
+    const feeAmount = this.#getSpendableTokenAmount(this.selectedToken) - currentAmount
 
     if (feeAmount <= 0n) return null
 
@@ -1741,6 +1826,9 @@ export class TransferController extends EventEmitter implements ITransferControl
       isRecipientAddressViewOnly: this.isRecipientAddressViewOnly,
       isRecipientAddressBlacklisted: this.isRecipientAddressBlacklisted,
       amountAdjustmentInfo: this.amountAdjustmentInfo,
+      privacyPoolsDepositPrivacy: this.privacyPoolsDepositPrivacy,
+      privacyPoolsMaxAmount: this.privacyPoolsMaxAmount,
+      privacyPoolsFeeAmount: this.privacyPoolsFeeAmount,
       amountAdjustmentWarning: this.amountAdjustmentWarning
     }
   }
