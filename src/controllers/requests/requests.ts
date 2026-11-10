@@ -118,9 +118,11 @@ import {
 } from '../../libs/safe/safe'
 import {
   AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
+  getEIP712Hash,
   isCallToSelfOrAmbireOp
 } from '../../libs/signMessage/signMessage'
 import { getSwapAndBridgeRequestParams } from '../../libs/swapAndBridge/swapAndBridge'
+import { pruneDomainContentAndTypes } from '../../libs/typedData/signedFields'
 import {
   getClaimWalletRequestParams,
   getIntentRequestParams,
@@ -2834,31 +2836,71 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         'Invalid typedData format - only typedData v4 is supported'
       )
     }
+    // The signing refuses typed data without EIP712Domain, and the signers do not agree on what
+    // such a domain covers (viem builds it from up to five known keys, the software signer signs
+    // an empty domain). So it is rejected before any of its domain is shown as if it were signed
+    if (!Array.isArray(typedData.types.EIP712Domain))
+      throw ethErrors.rpc.invalidParams(
+        'The message does not describe the app or contract it is for (EIP712Domain), so it cannot be signed'
+      )
 
     const domainChainId = BigInt(typedData.domain.chainId || 0)
     if (domainChainId !== 0n && domainChainId !== network.chainId)
       throw ethErrors.rpc.invalidRequest(
         `The domain chainId (${typedData.domain.chainId}) does not match the current network chainId (${network.chainId})`
       )
-    typedData.domain.chainId = network.chainId
+    // The chain that is signed is always the current network, so a chainId that the app left out
+    // or set to 0 is filled in. It is set only when the domain declares it: an undeclared chainId
+    // is not signed
+    if (typedData.types.EIP712Domain.some((field) => field?.name === 'chainId'))
+      typedData.domain.chainId = network.chainId
 
     if (!typedData.types[typedData.primaryType])
       throw ethErrors.rpc.invalidParams('The primary data type is missing from the provided types')
+    // With this primary type the signature covers only the domain, never the message. Libraries
+    // do not agree on it (the Safe service rejects it too), so there is nothing meaningful to show
+    if (typedData.primaryType === 'EIP712Domain')
+      throw ethErrors.rpc.invalidParams('The primary data type cannot be EIP712Domain')
+    let typedDataHash: string
     try {
-      // we ignore the result because we only care if the func will fail
+      // viem checks the values against their types (addresses, number ranges, byte sizes)
       hashTypedData({
         types: typedData.types,
         primaryType: typedData.primaryType,
         message: typedData.message,
         domain: typedData.domain
       })
+      // The digest is calculated the same way the software signer and the Safe wrapper calculate
+      // it. viem does not always agree with them, so a digest from viem could hide a difference
+      typedDataHash = getEIP712Hash(typedData)
     } catch (e) {
       console.error(e)
       throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
     }
 
+    // Runs on the data as the app sent it, so unused types and extra fields can only make
+    // this check stricter, never weaker
     if (isCallToSelfOrAmbireOp(typedData, this.#selectedAccount.account)) {
       throw ethErrors.rpc.methodNotSupported(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
+    }
+
+    // The signature covers only the fields declared in the types. Every other field is dropped
+    // here (in the domain and at every level of the message), and so are the types that are
+    // not used, so the rest of the app, such as the humanizers and the hardware wallets, works
+    // only with what is actually signed.
+    const prunedTypedData = pruneDomainContentAndTypes(typedData)
+
+    let prunedTypedDataHash: string
+    try {
+      prunedTypedDataHash = getEIP712Hash(prunedTypedData)
+    } catch (e) {
+      console.error(e)
+      throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
+    }
+
+    // Removing what is not signed must never change what is signed
+    if (prunedTypedDataHash !== typedDataHash) {
+      throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
     }
 
     return {
@@ -2866,13 +2908,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       kind: 'typedMessage',
       meta: {
         params: {
-          types: typedData.types,
-          domain: typedData.domain,
-          message: typedData.message,
-          primaryType: typedData.primaryType
+          types: prunedTypedData.types,
+          domain: prunedTypedData.domain,
+          message: prunedTypedData.message,
+          primaryType: prunedTypedData.primaryType
         },
         accountAddr: msgAddress,
-        chainId: typedData.domain.chainId
+        // The domain may not declare a chainId, so the network is the source of truth
+        chainId: network.chainId
       },
       dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
     } as TypedMessageUserRequest
@@ -3042,6 +3085,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       typedData.domain.salt = hexlify(new Uint8Array(typedData.domain.salt))
     }
 
+    // The message was created by another signer of the Safe, so, like the ones that come
+    // from an app, it is narrowed to what the signature covers. Without a primaryType there is
+    // nothing to narrow it by, and signing refuses such a message anyway
+    const prunedTypedData = pruneDomainContentAndTypes(typedData)
+
     // eip-712
     const req: TypedMessageUserRequest = {
       id: uuidv4(),
@@ -3050,7 +3098,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       meta: {
         // basically, it's the same eip-712 message but one is coming
         // from Safe with the Safe typehints, and other is ethers
-        params: typedData as {
+        params: prunedTypedData as {
           domain: TypedDataDomain
           types: Record<string, Array<TypedDataField>>
           message: Record<string, any>
