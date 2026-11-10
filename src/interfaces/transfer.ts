@@ -25,6 +25,11 @@ export interface TransferUpdate {
   /** Selecting a token switches the form out of NFT mode, if it was in it */
   selectedToken?: TokenResult
   amount?: string
+  /**
+   * Set when `amount` comes from outside the amount field, such as a suggested amount. The field
+   * shows the controller's amount only when told to, so typing isn't reset, and this tells it to.
+   */
+  isAmountUpdateFromOutsideField?: boolean
   shouldSetMaxAmount?: boolean
   addressState?: AddressStateOptional
   isRecipientAddressUnknownAgreed?: boolean

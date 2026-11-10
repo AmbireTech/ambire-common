@@ -975,6 +975,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     humanizerInfo,
     selectedToken,
     amount,
+    isAmountUpdateFromOutsideField,
     shouldSetMaxAmount,
     addressState,
     isRecipientAddressUnknownAgreed,
@@ -1008,7 +1009,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#isMaxAmountSelected = false
       this.#wasAmountAdjustedForFee = false
       this.#resetMaxFeeReservation()
-      this.#setAmount(amount)
+      this.#setAmount(amount, isAmountUpdateFromOutsideField)
     }
 
     if (shouldSetMaxAmount && !this.selectedNft) {

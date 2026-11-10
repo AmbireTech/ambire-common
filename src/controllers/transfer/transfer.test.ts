@@ -171,6 +171,26 @@ describe('Transfer Controller', () => {
     expect(transferController.amountFieldMode).toBe('fiat')
     expect(transferController.amount).toBe(transferController.maxAmount)
   })
+  test('should show an amount set from outside the amount field in the field', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const ethOnEthereum = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    await transferController.update({ selectedToken: ethOnEthereum, amountFieldMode: 'token' })
+    await transferController.update({ amount: '5' })
+    const counterAfterTyping = transferController.programmaticUpdateCounter
+
+    // The UI reads the controller into the field only when this counter changes. The mode is
+    // already token, so a mode change can't make the field show the new amount either.
+    await transferController.update({
+      amountFieldMode: 'token',
+      amount: '0.1',
+      isAmountUpdateFromOutsideField: true
+    })
+
+    expect(transferController.programmaticUpdateCounter).not.toBe(counterAfterTyping)
+    expect(transferController.amountFieldMode).toBe('token')
+    expect(transferController.amount).toBe('0.1')
+  })
   test('should keep the fiat amount at a displayable precision when switching to fiat mode', async () => {
     const { transferController, tokens } = await prepareTest()
 
