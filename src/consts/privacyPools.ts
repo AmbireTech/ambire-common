@@ -1,5 +1,9 @@
 import { Hex } from '../interfaces/hex'
-import { PrivacyPoolsAsset, PrivacyPoolsChainConfig } from '../interfaces/privacyPools'
+import {
+  PrivacyPoolsAsset,
+  PrivacyPoolsChainConfig,
+  PrivacyPoolsLeakId
+} from '../interfaces/privacyPools'
 import { ZERO_ADDRESS } from '../services/socket/constants'
 
 /**
@@ -254,6 +258,22 @@ export const PRIVACY_POOLS_DEPOSIT_CHIPS: { [tokenId: string]: bigint[] } = {
  * counted as a leak, as the user decides whether it is enough.
  */
 export const PRIVACY_POOLS_MIN_REASSURING_COVER = 5
+
+/** Leaks of a send that come from where it goes, which another recipient avoids. */
+export const PRIVACY_POOLS_RECIPIENT_LEAK_IDS: PrivacyPoolsLeakId[] = [
+  'send-to-depositor',
+  'own-account-used',
+  'own-account',
+  'recipient-has-no-eth'
+]
+
+/** Leaks of a send that come from its amount and the deposits it spends, which another amount can avoid. */
+export const PRIVACY_POOLS_AMOUNT_LEAK_IDS: PrivacyPoolsLeakId[] = [
+  'unique-amount',
+  'empties-partly-sent-deposit',
+  'several-deposits',
+  'fresh-deposit'
+]
 
 /**
  * Shown when a transfer's privacy is `unchecked`, as the pool's deposits are not read yet. In

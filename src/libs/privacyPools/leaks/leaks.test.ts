@@ -6,7 +6,6 @@ import { getPrivacyPoolsDepositPrivacy, getPrivacyPoolsWithdrawalPrivacy } from 
 import { buildPrivacyPoolsDepositIndex } from '../poolStats'
 
 const DEPOSITOR: Hex = '0x00000000000000000000000000000000000000d1'
-const OTHER_DEPOSITOR: Hex = '0x00000000000000000000000000000000000000d2'
 const STRANGER = '0x00000000000000000000000000000000000000a1'
 const USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 const COMMON_AMOUNTS = [10n, 50n, 100n]
@@ -305,11 +304,11 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
   })
 
   describe('back to the depositor', () => {
-    test('suggests sending all of it when part of an unsent deposit goes back', () => {
+    test('is a leak to send part of an unsent deposit back', () => {
       const privacy = getWithdrawalPrivacy({ amount: 40n, notes: [note()], recipient: DEPOSITOR })
 
       expect(privacy.rating).toBe('traceable')
-      expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [100n] }])
+      expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [] }])
     })
 
     test('checks only the amount before a recipient is entered', () => {
@@ -319,7 +318,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       expect(summarizeLeaks(privacy)).toEqual([])
     })
 
-    test('suggests nothing when earlier sends were made from the deposit', () => {
+    test('is a leak to send part of a partly sent deposit back, in any address case', () => {
       const partlySentNote = note({ amount: 60n, withdrawCount: 1 })
       const privacy = getWithdrawalPrivacy({
         amount: 20n,
@@ -330,7 +329,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [] }])
     })
 
-    test('is a leak to send all of a partly sent deposit back, with nothing to suggest', () => {
+    test('is a leak to send all of a partly sent deposit back', () => {
       const partlySentNote = note({ amount: 60n, withdrawCount: 1 })
       const privacy = getWithdrawalPrivacy({
         amount: 60n,
@@ -341,20 +340,6 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       expect(summarizeLeaks(privacy)).toEqual([
         { id: 'send-to-depositor', amounts: [] },
         { id: 'empties-partly-sent-deposit', amounts: [] }
-      ])
-    })
-
-    test('suggests nothing when that amount would be paid from a larger note', () => {
-      // Of another deposit than the 100, which the user's own would otherwise be the only one of
-      const notes = [
-        note({ depositorAddr: OTHER_DEPOSITOR }),
-        note({ amount: 30n, depositValue: 50n })
-      ]
-      const privacy = getWithdrawalPrivacy({ amount: 120n, notes, recipient: DEPOSITOR })
-
-      expect(summarizeLeaks(privacy)).toEqual([
-        { id: 'send-to-depositor', amounts: [] },
-        { id: 'several-deposits', amounts: [100n] }
       ])
     })
 
@@ -480,6 +465,51 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
 
       expect(privacy.leaks.map(({ id }) => id)).toEqual(['recipient-has-no-eth', 'own-account'])
       expect(privacy.rating).toBe('weak')
+    })
+  })
+
+  describe('with no amount yet', () => {
+    test('checks the recipient, with no cover', () => {
+      const privacy = getWithdrawalPrivacy({
+        amount: 0n,
+        notes: [note()],
+        isOwnAccount: true,
+        isRecipientUsed: true,
+        recipientHasEth: false
+      })
+
+      expect(summarizeLeaks(privacy)).toEqual([
+        { id: 'own-account-used', amounts: [] },
+        { id: 'recipient-has-no-eth', amounts: [] }
+      ])
+      expect(privacy.rating).toBe('weak')
+      expect(privacy.cover).toEqual({ bigEnough: 0, sameAmount: 0 })
+      expect(privacy.notesCount).toBe(0)
+    })
+
+    test('finds no leak of the amount or the deposits, which none is spent from yet', () => {
+      // A fresh deposit and a partly sent one, to their depositor, would each leak with an amount
+      const notes = [note({ blockNumber: 91n }), note({ amount: 60n, withdrawCount: 1 })]
+
+      const privacy = getWithdrawalPrivacy({ amount: 0n, notes, recipient: DEPOSITOR })
+      expect(privacy.leaks).toEqual([])
+      expect(privacy.rating).toBe('basic')
+    })
+
+    test('is null for a negative amount', () => {
+      const privacy = getPrivacyPoolsWithdrawalPrivacy({
+        amount: -1n,
+        notes: [note()],
+        tokenAddress: ZERO_ADDRESS,
+        recipient: STRANGER,
+        isOwnAccount: false,
+        isRecipientUsed: null,
+        recipientHasEth: null,
+        depositIndex: DEPOSIT_INDEX,
+        commonAmounts: COMMON_AMOUNTS
+      })
+
+      expect(privacy).toBeNull()
     })
   })
 

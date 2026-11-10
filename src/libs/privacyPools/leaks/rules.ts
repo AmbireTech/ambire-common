@@ -1,5 +1,5 @@
 import { countPrivacyPoolsDepositsOf } from '../poolStats'
-import { countOthers, findNearest, getPrivacyPoolsNotesToSpend, setAmountAction } from './helpers'
+import { countOthers, findNearest, setAmountAction } from './helpers'
 import { DepositFacts, LeakRule, PrivacyPoolsNoteSpend, WithdrawalFacts } from './types'
 
 const COMMON_AMOUNT_LABEL = 'Use a common amount'
@@ -64,22 +64,7 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
     type: 'error',
     title: 'You are sending back to the address that deposited',
     text: 'Everyone can see that this address made the deposit. Sending to it shows the deposit is still yours. Anyone can then connect the rest of this deposit, and any earlier transfers from it, to you. Send to an address that has never been linked to you instead.',
-    applies: isRevealingSendToDepositor,
-    // Sending all of the deposit leaves nothing to link later, unless earlier sends already were
-    getActions: ({ notes, tokenAddress, spends, recipient }) =>
-      spends
-        .filter(
-          (spend) =>
-            isToDepositor(spend, recipient) &&
-            spend.amount < spend.note.amount &&
-            spend.note.withdrawCount === 0
-        )
-        .filter(({ note }) => {
-          const wholeNoteSpends = getPrivacyPoolsNotesToSpend(notes, tokenAddress, note.amount)
-
-          return wholeNoteSpends?.length === 1 && wholeNoteSpends[0]!.note === note
-        })
-        .map(({ note }) => setAmountAction(note.amount, 'Send all of it'))
+    applies: isRevealingSendToDepositor
   },
   {
     id: 'empties-partly-sent-deposit',

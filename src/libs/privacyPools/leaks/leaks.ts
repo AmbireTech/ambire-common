@@ -3,6 +3,7 @@ import {
   PrivacyPoolsLeak,
   PrivacyPoolsNote,
   PrivacyPoolsRating,
+  PrivacyPoolsSendCover,
   PrivacyPoolsWithdrawalPrivacy
 } from '../../../interfaces/privacyPools'
 import { RPCProvider } from '../../../interfaces/provider'
@@ -10,6 +11,8 @@ import { countPrivacyPoolsDepositsOf, PrivacyPoolsDepositIndex } from '../poolSt
 import { getOwnDepositValues, getPrivacyPoolsNotesToSpend, getSendCover } from './helpers'
 import { DEPOSIT_LEAKS, WITHDRAWAL_LEAKS } from './rules'
 import { LeakRule, WithdrawalFacts } from './types'
+
+const NO_COVER: PrivacyPoolsSendCover = { bigEnough: 0, sameAmount: 0 }
 
 /** The leaks the facts have, in the order of `rules`. */
 const findLeaks = <Facts>(rules: LeakRule<Facts>[], facts: Facts): PrivacyPoolsLeak[] =>
@@ -36,8 +39,8 @@ const getRating = (leaks: PrivacyPoolsLeak[]): PrivacyPoolsRating => {
 
 /**
  * The privacy of a send of `amount` of a token from the account's notes. Rated `unchecked`, with no
- * leaks and no cover, without the pool's deposits. Null when the notes cannot pay it, or it is not
- * positive.
+ * leaks and no cover, without the pool's deposits. With a 0 amount, as before one is entered, only
+ * the recipient is checked, with no cover. Null when the notes cannot pay it, or it is negative.
  */
 export const getPrivacyPoolsWithdrawalPrivacy = ({
   amount,
@@ -65,36 +68,42 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   commonAmounts: bigint[]
 }): PrivacyPoolsWithdrawalPrivacy | null => {
   const { notes, tokenAddress, depositIndex } = params
-  const spends = getPrivacyPoolsNotesToSpend(notes, tokenAddress, amount)
+  // Nothing is spent yet, which leaves only what the recipient gives away
+  const isRecipientOnly = amount === 0n
+  const spends = isRecipientOnly ? [] : getPrivacyPoolsNotesToSpend(notes, tokenAddress, amount)
   if (!spends) return null
 
   if (!depositIndex)
     return {
       rating: 'unchecked',
       leaks: [],
-      cover: { bigEnough: 0, sameAmount: 0 },
+      cover: NO_COVER,
       notesCount: spends.length
     }
 
   const ownDepositValues = getOwnDepositValues(notes, tokenAddress, depositIndex)
-  const commonAmountCovers = commonAmounts.flatMap((commonAmount) => {
-    const commonAmountSpends = getPrivacyPoolsNotesToSpend(notes, tokenAddress, commonAmount)
-    if (!commonAmountSpends) return []
+  // Only fixes of the amount use them, and there is no amount to fix
+  const commonAmountCovers = isRecipientOnly
+    ? []
+    : commonAmounts.flatMap((commonAmount) => {
+        const commonAmountSpends = getPrivacyPoolsNotesToSpend(notes, tokenAddress, commonAmount)
+        if (!commonAmountSpends) return []
 
-    return [
-      {
-        amount: commonAmount,
-        cover: getSendCover(depositIndex, ownDepositValues, commonAmountSpends)
-      }
-    ]
-  })
+        return [
+          {
+            amount: commonAmount,
+            cover: getSendCover(depositIndex, ownDepositValues, commonAmountSpends)
+          }
+        ]
+      })
   const facts: WithdrawalFacts = {
     ...params,
     depositIndex,
     ownDepositValues,
     amount,
     spends,
-    cover: getSendCover(depositIndex, ownDepositValues, spends),
+    // The smallest cover of no spends would be Infinity
+    cover: isRecipientOnly ? NO_COVER : getSendCover(depositIndex, ownDepositValues, spends),
     commonAmountCovers
   }
   const leaks = findLeaks(WITHDRAWAL_LEAKS, facts)
