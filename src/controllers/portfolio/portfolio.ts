@@ -1847,11 +1847,9 @@ export class PortfolioController
           account.addr,
           portfolioLib.provider,
           network,
-          this.#fetch,
           state.result?.defiPositions.positionsByProvider || [],
           discoveryData?.data?.defi?.positions,
-          getIsExternalApiDefiPositionsCallSuccessful(discoveryData),
-          this.#featureFlags.isFeatureEnabled('tokenPrices')
+          getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
         )
       ])
 

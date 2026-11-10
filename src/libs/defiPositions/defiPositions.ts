@@ -17,7 +17,6 @@ import {
   FormattedPortfolioDiscoveryResponse,
   PortfolioNetworkResult
 } from '../portfolio/interfaces'
-import { updatePositionsByProviderAssetPrices } from './defiPrices'
 import { getAssetValue, getProviderId, isTokenPriceWithinHalfPercent } from './helpers'
 import {
   getAAVEPositions,
@@ -47,22 +46,23 @@ export const getIsExternalApiDefiPositionsCallSuccessful = (
 
 /**
  * Fetches the defi positions of certain protocols using RPC calls and custom logic.
- * Cena is used for most of the positions, but some protocols require additional data
- * that is not available in Cena. This function fetches those positions on ENABLED
+ * Velcro (Debank) is used for most of the positions, but some protocols require additional data
+ * that is not available in Velcro. This function fetches those positions on ENABLED
  * networks only.
  *
  * Returns the old positions if the call fails. Some positions, like that of Uniswap V3,
- * are merged with the data from Cena/Debank.
+ * are merged with the data from Velcro/Debank.
+ *
+ * Positions are not priced here: Aave V3 positions are priced by the Aave oracle, and Uniswap V3
+ * positions keep the Debank prices they are merged with.
  */
 const getCustomProviderPositions = async (
   addr: string,
   provider: RPCProvider,
   network: Network,
-  fetch: Function,
   previousPositions: PositionsByProvider[],
   debankNetworkPositionsByProvider: PositionsByProvider[] | undefined,
-  isDebankCallSuccessful: boolean,
-  shouldFetchTokenPrices: boolean = true
+  isDebankCallSuccessful: boolean
 ): Promise<{
   positionsByProvider: PositionsByProvider[]
   providerErrors: ProviderError[]
@@ -76,9 +76,8 @@ const getCustomProviderPositions = async (
 
   try {
     const providerErrors: ProviderError[] = []
-    let error: any
 
-    let newPositions = (
+    const newPositions = (
       await Promise.all([
         getAAVEPositions(addr, provider, network).catch((e: any) => {
           providerErrors.push({
@@ -108,17 +107,6 @@ const getCustomProviderPositions = async (
       ])
     ).filter(Boolean) as PositionsByProvider[]
 
-    if (newPositions.length && shouldFetchTokenPrices) {
-      try {
-        newPositions =
-          (await updatePositionsByProviderAssetPrices(fetch, newPositions, network.platformId)) ||
-          newPositions
-      } catch (e) {
-        console.error(`#setAssetPrices error for ${addr} on ${network.name}:`, e)
-        error = DeFiPositionsError.AssetPriceError
-      }
-    }
-
     // Get the previous custom positions that were not updated in this call
     // This is done so the user doesn't lose their custom positions when the
     // new update fails
@@ -132,8 +120,7 @@ const getCustomProviderPositions = async (
 
     return {
       positionsByProvider: [...filteredPrevious, ...newPositions],
-      providerErrors,
-      error
+      providerErrors
     }
   } catch (e: any) {
     console.error('Critical error fetching custom defi positions:', e)
@@ -709,6 +696,5 @@ export {
   getHasNonceChangedSinceLastUpdate,
   getNewDefiState,
   getUniqueMergedPositions,
-  mergeDefiUpdateModes,
-  updatePositionsByProviderAssetPrices
+  mergeDefiUpdateModes
 }

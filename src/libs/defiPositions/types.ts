@@ -14,7 +14,6 @@ export enum AssetType {
 }
 
 export enum DeFiPositionsError {
-  AssetPriceError = 'AssetPriceError',
   CriticalError = 'CriticalError'
 }
 

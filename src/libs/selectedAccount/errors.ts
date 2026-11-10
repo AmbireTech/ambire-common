@@ -24,7 +24,6 @@ export type SelectedAccountBalanceError = {
     | 'loading-too-long'
     | 'defi-critical'
     | 'defi-apps'
-    | 'defi-prices'
     | `${string}-defi-positions-error`
     | keyof typeof PORTFOLIO_LIB_ERROR_NAMES
   networkNames: string[]
@@ -373,7 +372,6 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({
   networksWithPositions: NetworksWithPositions
 }) => {
   const networkNamesWithUnknownCriticalError: string[] = []
-  const networkNamesWithAssetPriceCriticalError: string[] = []
   const providersWithErrors: {
     [providerName: string]: string[]
   } = {}
@@ -409,12 +407,8 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({
     )
       return
 
-    if (defiState.error) {
-      if (defiState.error === DeFiPositionsError.AssetPriceError) {
-        networkNamesWithAssetPriceCriticalError.push(network.name)
-      } else if (defiState.error === DeFiPositionsError.CriticalError) {
-        networkNamesWithUnknownCriticalError.push(network.name)
-      }
+    if (defiState.error === DeFiPositionsError.CriticalError) {
+      networkNamesWithUnknownCriticalError.push(network.name)
     }
 
     const providerNamesWithErrors =
@@ -458,16 +452,6 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({
         ', '
       )}`,
       networkNames: networkNamesWithUnknownCriticalError
-    })
-  }
-  if (networkNamesWithAssetPriceCriticalError.length) {
-    errors.push({
-      id: 'defi-prices',
-      type: 'warning',
-      title: `Failed to retrieve asset prices for DeFi positions on ${networkNamesWithAssetPriceCriticalError.join(
-        ', '
-      )}`,
-      networkNames: networkNamesWithAssetPriceCriticalError
     })
   }
 

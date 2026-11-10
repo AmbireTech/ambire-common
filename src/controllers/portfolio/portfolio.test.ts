@@ -21,7 +21,6 @@ import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp, areAccountOpsEqual } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import * as defiPositionsLib from '../../libs/defiPositions/defiPositions'
-import * as defiPricesLib from '../../libs/defiPositions/defiPrices'
 import { getProviderId } from '../../libs/defiPositions/helpers'
 import * as defiProviders from '../../libs/defiPositions/providers'
 import { AssetType, DeFiPositionsError } from '../../libs/defiPositions/types'
@@ -3006,21 +3005,15 @@ describe('Portfolio Controller ', () => {
       })
     })
 
-    it('portfolio discovery critical error is prioritized over price errors', async () => {
+    it('a failed portfolio discovery replaces a successful update with a critical error', async () => {
       const { restore } = suppressConsole()
-
-      jest
-        .spyOn(defiPricesLib, 'updatePositionsByProviderAssetPrices')
-        .mockImplementationOnce(async () => {
-          throw new Error('Asset price error')
-        })
 
       const { controller } = await prepareTest()
 
       await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
       const result = controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result
 
-      expect(result?.defiPositions.error).toBe(DeFiPositionsError.AssetPriceError)
+      expect(result?.defiPositions.error).toBeFalsy()
 
       jest
         // @ts-expect-error test
