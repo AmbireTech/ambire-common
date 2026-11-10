@@ -1503,6 +1503,17 @@ export class MainController extends EventEmitter implements IMainController {
         })
     }
 
+    // A signed message can let a dapp move the account's funds later (e.g. Monerium burning EURe
+    // for a bank transfer), so the balances are refreshed once that dapp's transaction has landed.
+    // Logins move no funds and would only spend the per-account cache bypass budget.
+    if (signedMessage.content.kind !== 'siwe') {
+      this.portfolio.scheduleUpdate({
+        accountId: signedMessage.accountAddr,
+        chainId: signedMessage.chainId,
+        bypassServerSideCache: true
+      })
+    }
+
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
 
     await this.requests.resolveUserRequest(

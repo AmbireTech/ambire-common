@@ -10,6 +10,7 @@ import {
 import { PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS } from '@/consts/privacyPools'
 import { AccountOnchainState } from '@/interfaces/account'
 import { ErrorRef } from '@/interfaces/eventEmitter'
+import { SignMessageStatus } from '@/interfaces/signMessage'
 import { Hex } from '@/interfaces/hex'
 import { DappConnectRequest, Message, PlainTextMessageUserRequest } from '@/interfaces/userRequest'
 import { isSmartAccount } from '@/libs/account/account'
@@ -164,6 +165,69 @@ describe('Main Controller ', () => {
     await mainCtrl.handleSignMessage()
 
     expect(signSpy).not.toHaveBeenCalled()
+  })
+
+  describe('portfolio update after a signed message', () => {
+    const signAndGetScheduledChainIds = async (content: Message['content']) => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+      const accountAddr = accounts[0]!.addr
+      const messageToSign: Message = {
+        fromRequestId: 1,
+        content,
+        accountAddr,
+        chainId: 1n,
+        signature: null
+      }
+      mainCtrl.signMessage.messageToSign = messageToSign
+      mainCtrl.accounts.accountStates[accountAddr] = { '1': {} as AccountOnchainState }
+      jest.spyOn(mainCtrl.signMessage, 'sign').mockImplementation(async () => {
+        mainCtrl.signMessage.signedMessage = {
+          ...messageToSign,
+          signature: '0x01',
+          timestamp: Date.now(),
+          dapp: null
+        }
+        mainCtrl.signMessage.status = SignMessageStatus.Done
+      })
+      jest.spyOn(mainCtrl.activity, 'addSignedMessage').mockResolvedValue(undefined)
+      jest.spyOn(mainCtrl.requests, 'resolveUserRequest').mockResolvedValue(undefined)
+
+      await mainCtrl.handleSignMessage()
+
+      return mainCtrl.portfolio.scheduledUpdateChainIds[accountAddr]
+    }
+
+    test('schedules an update on the message chain, as a dapp may move funds after it', async () => {
+      const scheduledChainIds = await signAndGetScheduledChainIds({
+        kind: 'message',
+        message: '0x74657374'
+      })
+
+      expect(scheduledChainIds).toEqual([1n])
+    })
+
+    test('does not schedule an update after a login message', async () => {
+      const scheduledChainIds = await signAndGetScheduledChainIds({
+        kind: 'siwe',
+        message: '0x74657374',
+        parsedMessage: {
+          address: accounts[0]!.addr as Hex,
+          chainId: 1,
+          domain: 'example.com',
+          nonce: 'abcdefgh',
+          uri: 'https://example.com',
+          version: '1'
+        },
+        siweValidityStatus: 'invalid',
+        autoLoginStatus: 'no-policy',
+        isAutoLoginEnabledByUser: false,
+        autoLoginDuration: 0
+      })
+
+      expect(scheduledChainIds).toBeUndefined()
+    })
   })
 
   test('refreshes Safe transactions once while a manual refresh is in progress', async () => {
