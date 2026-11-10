@@ -1,8 +1,11 @@
+import { Account } from '../../interfaces/account'
+import { AddressPoisoningMatch } from '../../interfaces/transfer'
 import {
   ScoredAddressPoisoningMatch,
   getAddressPoisoningMatchCounts,
   isNearIdenticalAddressMatch,
-  pickBetterPoisoningMatch
+  pickBetterPoisoningMatch,
+  pickPoisoningMatchWithOwnAccounts
 } from './address-poisoning'
 
 describe('address poisoning helpers', () => {
@@ -219,6 +222,73 @@ describe('address poisoning helpers', () => {
         100
       )
       expect(pickBetterPoisoningMatch(best, sameStrengthOlderCandidate)).toEqual(best)
+    })
+  })
+
+  describe('pickPoisoningMatchWithOwnAccounts', () => {
+    const ownAccountAddress = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
+    const ownAccounts: Account[] = [
+      {
+        addr: ownAccountAddress,
+        associatedKeys: [ownAccountAddress],
+        initialPrivileges: [],
+        creation: null,
+        preferences: { label: 'Savings', pfp: ownAccountAddress }
+      }
+    ]
+    const lookalike4to4 = '0xF0cDaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37DB'
+    const sentToMatch = (
+      matchedPrefixCharsCount: number,
+      matchedSuffixCharsCount: number,
+      differingCharsCount: number
+    ): AddressPoisoningMatch => ({
+      matchedAddress: '0x1000000000000000000000000000000000000001',
+      matchedPrefixCharsCount,
+      matchedSuffixCharsCount,
+      differingCharsCount
+    })
+
+    test('should catch a lookalike of an own account that was never sent to', () => {
+      expect(pickPoisoningMatchWithOwnAccounts(lookalike4to4, ownAccounts, null)).toEqual({
+        matchedAddress: ownAccountAddress,
+        matchedPrefixCharsCount: 4,
+        matchedSuffixCharsCount: 4,
+        differingCharsCount: 32,
+        matchedOwnAccountLabel: 'Savings'
+      })
+    })
+
+    test('should return the sent-to match as is when no own account matches', () => {
+      const match = sentToMatch(4, 4, 32)
+      expect(
+        pickPoisoningMatchWithOwnAccounts(
+          '0xAb12eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeCDef',
+          ownAccounts,
+          match
+        )
+      ).toEqual(match)
+      expect(pickPoisoningMatchWithOwnAccounts(lookalike4to4, [], null)).toBeNull()
+    })
+
+    test('should keep the sent-to match when both are equally strong', () => {
+      const match = sentToMatch(4, 4, 32)
+      expect(pickPoisoningMatchWithOwnAccounts(lookalike4to4, ownAccounts, match)).toEqual(match)
+    })
+
+    test('should prefer a likely typo of an own account over a poisoning match', () => {
+      expect(
+        pickPoisoningMatchWithOwnAccounts(
+          '0xf0cd725d2195b1d3f4bd138c3786005b793237db',
+          ownAccounts,
+          sentToMatch(6, 6, 28)
+        )
+      ).toEqual({
+        matchedAddress: ownAccountAddress,
+        matchedPrefixCharsCount: 20,
+        matchedSuffixCharsCount: 19,
+        differingCharsCount: 1,
+        matchedOwnAccountLabel: 'Savings'
+      })
     })
   })
 })

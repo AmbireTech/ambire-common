@@ -41,6 +41,9 @@ export type AddressPoisoningMatch = {
   matchedSuffixCharsCount: number
   // Number of positions where the address body differs. A very low count means a likely typo.
   differingCharsCount: number
+  // Set when the matched address is one of the user's own accounts, instead of an address
+  // they have sent to before
+  matchedOwnAccountLabel?: string
 }
 
 export type AmountAdjustmentInfo = {
