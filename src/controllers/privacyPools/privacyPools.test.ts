@@ -5190,7 +5190,7 @@ describe('PrivacyPoolsController', () => {
       )
     })
 
-    it('reports a proof that spends a different number of deposits than predicted, and shows its count', async () => {
+    it('rates a proof that spends a different number of deposits than predicted as unchecked, and reports it', async () => {
       const { restore } = suppressConsole()
       notesBySeed['seed-a'] = [
         { label: 1n, amount: WITHDRAWAL_AMOUNT, approved: true, blockNumber: 1000n }
@@ -5203,7 +5203,8 @@ describe('PrivacyPoolsController', () => {
 
       expect(controller.operation).toMatchObject({
         phase: 'ready',
-        privacy: { notesCount: 2, leaks: expect.any(Array) }
+        // The one predicted deposit rates Basic, which says nothing about linking two deposits
+        privacy: { rating: 'unchecked', notesCount: 2, leaks: [] }
       })
       expect(controller.emittedErrors.at(-1)).toMatchObject({
         level: 'silent',

@@ -32,6 +32,7 @@ import {
 import { getPrivacyPoolsWholeNoteAmounts } from '../../libs/privacyPools/leaks/helpers'
 import {
   getPrivacyPoolsWithdrawalPrivacy,
+  getUncheckedPrivacyPoolsWithdrawalPrivacy,
   readPrivacyPoolsRecipientState
 } from '../../libs/privacyPools/leaks/leaks'
 import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdrawal'
@@ -460,8 +461,8 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
   /**
    * The privacy of a proved withdrawal, from the notes the SDK proved with. The notes it spends are
-   * predicted the way the SDK picks them, so a proof that spends a different number of them is
-   * reported, and its count is shown.
+   * predicted the way the SDK picks them. A proof that spends a different number of them is
+   * reported and rated `unchecked`, as the rules ran on spends the proof does not make.
    */
   async #getProvedWithdrawalPrivacy(
     params: PrivacyPoolsWithdrawalPrivacyParams,
@@ -479,7 +480,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       )
     })
 
-    return { ...privacy, notesCount: provedNoteCount }
+    return getUncheckedPrivacyPoolsWithdrawalPrivacy(provedNoteCount)
   }
 
   /**

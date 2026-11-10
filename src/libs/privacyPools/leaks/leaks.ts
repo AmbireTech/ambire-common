@@ -14,6 +14,19 @@ import { LeakRule, WithdrawalFacts } from './types'
 
 const NO_COVER: PrivacyPoolsSendCover = { bigEnough: 0, sameAmount: 0 }
 
+/**
+ * The privacy of a send of `notesCount` deposits that could not be checked, with no leaks and no
+ * cover. The user is asked to confirm it, as anything in it could link it to them.
+ */
+export const getUncheckedPrivacyPoolsWithdrawalPrivacy = (
+  notesCount: number
+): PrivacyPoolsWithdrawalPrivacy => ({
+  rating: 'unchecked',
+  leaks: [],
+  cover: NO_COVER,
+  notesCount
+})
+
 /** The leaks the facts have, in the order of `rules`. */
 const findLeaks = <Facts>(rules: LeakRule<Facts>[], facts: Facts): PrivacyPoolsLeak[] =>
   rules
@@ -73,13 +86,7 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   const spends = isRecipientOnly ? [] : getPrivacyPoolsNotesToSpend(notes, tokenAddress, amount)
   if (!spends) return null
 
-  if (!depositIndex)
-    return {
-      rating: 'unchecked',
-      leaks: [],
-      cover: NO_COVER,
-      notesCount: spends.length
-    }
+  if (!depositIndex) return getUncheckedPrivacyPoolsWithdrawalPrivacy(spends.length)
 
   const ownDepositValues = getOwnDepositValues(notes, tokenAddress, depositIndex)
   // Only fixes of the amount use them, and there is no amount to fix
