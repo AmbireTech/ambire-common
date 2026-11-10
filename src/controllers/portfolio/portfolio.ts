@@ -74,8 +74,8 @@ import {
   getAssetCacheKey,
   getCollectibleCacheKey,
   getHintsError,
-  getTokenDataCacheKey,
   getTotal,
+  getUsdPriceIn,
   validateCollectibleOwnership,
   validateERC20Token,
   validateERC721Token
@@ -1312,9 +1312,7 @@ export class PortfolioController
       network,
       tokenAddresses: [address]
     })
-    const price = tokenData
-      .get(getTokenDataCacheKey(address))
-      ?.priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')?.price
+    const price = getUsdPriceIn(tokenData, address)?.price
 
     if (error && price === undefined) throw error
 

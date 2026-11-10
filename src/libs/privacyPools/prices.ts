@@ -4,7 +4,7 @@ import { getPrivacyPoolsChainConfig } from '../../consts/privacyPools'
 import { Network } from '../../interfaces/network'
 import { PrivacyPoolsTokenBalance } from '../../interfaces/privacyPools'
 import { ITokenPricesController } from '../../interfaces/tokenPrices'
-import { getTokenDataCacheKey } from '../portfolio/helpers'
+import { getUsdPriceIn } from '../portfolio/helpers'
 
 /** How a price is keyed: `${chainId}:${tokenAddress}`, the address lowercase, native as zero. */
 export const getPrivacyPoolsPriceKey = (chainId: string | bigint, tokenAddress: string) =>
@@ -76,9 +76,7 @@ export const fetchPrivacyPoolsPrices = async ({
       if (error) throw error
 
       config.assets.forEach(({ address }) => {
-        const price = tokenData
-          .get(getTokenDataCacheKey(address))
-          ?.priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')?.price
+        const price = getUsdPriceIn(tokenData, address)?.price
 
         if (typeof price === 'number')
           prices[getPrivacyPoolsPriceKey(network.chainId, address)] = price

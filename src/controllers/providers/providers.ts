@@ -561,11 +561,16 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
           )
         )
       ) || []
-    const portfolio = new Portfolio(
-      this.providers[network.chainId.toString()]!,
-      network,
-      this.#tokenPrices
-    )
+    // The lookup may be for a network that has no provider yet (e.g. a gas tank fee on Ethereum
+    // for a transaction on another network), and the providers proxy only starts creating one
+    // in the background, so it's created here and waited for. An existing provider is never
+    // replaced, even if the passed network carries another RPC url.
+    const chainKey = network.chainId.toString()
+    if (!this.#providers[chainKey]) await this.setProvider(network)
+    const provider = this.#providers[chainKey]
+    if (!provider) throw new Error(`No provider for ${network.name} (${network.chainId})`)
+
+    const portfolio = new Portfolio(provider, network, this.#tokenPrices)
     const options: Partial<GetOptions> = {
       additionalErc20Hints: allAddresses,
       additionalErc721Hints: Object.fromEntries(allAddresses.map((i) => [i, [1n]])),

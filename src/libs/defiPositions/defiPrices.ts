@@ -1,7 +1,6 @@
 import { Network } from '../../interfaces/network'
 import { ITokenPricesController } from '../../interfaces/tokenPrices'
-import { getTokenDataCacheKey } from '../portfolio/helpers'
-import { TokenDataCacheValue } from '../portfolio/interfaces'
+import { getUsdPriceIn } from '../portfolio/helpers'
 import { getAssetValue, getProviderId } from './helpers'
 import { PositionAsset, PositionsByProvider } from './types'
 
@@ -48,10 +47,7 @@ export async function updatePositionsByProviderAssetPrices(
   const withFetchedPrice = (asset: PositionAsset): PositionAsset => {
     if (!getIsMissingPrice(asset)) return asset
 
-    const assetTokenData: TokenDataCacheValue | undefined = tokenData.get(
-      getTokenDataCacheKey(asset.address)
-    )
-    const priceIn = assetTokenData?.priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')
+    const priceIn = getUsdPriceIn(tokenData, asset.address)
     if (!priceIn) return asset
 
     return {

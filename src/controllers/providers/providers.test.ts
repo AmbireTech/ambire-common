@@ -10,6 +10,7 @@ import {
 } from '../../libs/walletStaking/shareValue'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { Network } from '../../interfaces/network'
+import { Portfolio } from '../../libs/portfolio/portfolio'
 import { ProvidersController } from './providers'
 
 const chainId = 10n
@@ -112,6 +113,69 @@ describe('ProvidersController', () => {
       requestId,
       ok: false,
       error: 'The WALLET staking conversion rate took too long to load.'
+    })
+  })
+
+  describe('resolveAssetInfoAndSendResToUi', () => {
+    const WETH = '0x4200000000000000000000000000000000000006'
+    const resolvedToken = { address: WETH, symbol: 'WETH', decimals: 18, priceIn: [] }
+
+    const mockPortfolioLookup = () =>
+      jest
+        .spyOn(Portfolio.prototype, 'get')
+        .mockResolvedValue({ tokens: [resolvedToken], collections: [] } as any)
+
+    test('replies to the request id that dispatchAndWait appends as the last argument', async () => {
+      mockPortfolioLookup()
+      const { providersController, sendUiMessage } = await getProvidersController(jest.fn() as any)
+
+      await providersController.resolveAssetInfoAndSendResToUi({ address: WETH, network }, requestId)
+      await new Promise((resolve) => {
+        setTimeout(resolve, 600)
+      })
+
+      expect(sendUiMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestId,
+          ok: true,
+          res: expect.objectContaining({ tokenInfo: resolvedToken })
+        })
+      )
+    })
+
+    test('creates the provider of a network that has none yet before looking the token up', async () => {
+      mockPortfolioLookup()
+      const otherNetwork = { chainId: 1n, name: 'Ethereum' } as Network
+      const { providersController, sendUiMessage } = await getProvidersController(jest.fn() as any)
+      const setProviderSpy = jest
+        .spyOn(providersController, 'setProvider')
+        .mockImplementation(async (networkToSet) => {
+          providersController.providers[networkToSet.chainId.toString()] = {} as RPCProvider
+        })
+
+      await providersController.resolveAssetInfoAndSendResToUi(
+        { address: WETH, network: otherNetwork },
+        requestId
+      )
+      await new Promise((resolve) => {
+        setTimeout(resolve, 600)
+      })
+
+      expect(setProviderSpy).toHaveBeenCalledWith(otherNetwork)
+      expect(sendUiMessage).toHaveBeenCalledWith(expect.objectContaining({ requestId, ok: true }))
+    })
+
+    test('keeps the existing provider of the network', async () => {
+      mockPortfolioLookup()
+      const { providersController } = await getProvidersController(jest.fn() as any)
+      const setProviderSpy = jest.spyOn(providersController, 'setProvider')
+
+      await providersController.resolveAssetInfoAndSendResToUi({ address: WETH, network }, requestId)
+      await new Promise((resolve) => {
+        setTimeout(resolve, 600)
+      })
+
+      expect(setProviderSpy).not.toHaveBeenCalled()
     })
   })
 })

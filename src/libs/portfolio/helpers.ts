@@ -4,6 +4,7 @@ import { getAddress } from 'viem'
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import IERC721 from '../../../contracts/compiled/IERC721.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import { Price } from '../../interfaces/assets'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { AssetType } from '../defiPositions/types'
@@ -951,6 +952,18 @@ export const getHintsError = (
  * The API may return the token checksummed or lowercase so we normalize it to lowercase to avoid cache misses.
  */
 export const getTokenDataCacheKey = (address: string): string => address.toLowerCase()
+
+/**
+ * The USD price of a token in the token data returned by the token prices controller
+ * (keyed by the lowercased address), if it has one.
+ */
+export const getUsdPriceIn = (
+  tokenData: Map<string, TokenDataCacheValue>,
+  address: string
+): Price | undefined =>
+  tokenData
+    .get(getTokenDataCacheKey(address))
+    ?.priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')
 
 export const convertApiTokenDataToTokenDataCache = (
   tokenData: ExternalAPITokenMarketDataResponse | null
