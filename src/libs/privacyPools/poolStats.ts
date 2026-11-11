@@ -1,6 +1,7 @@
 import { solidityPackedKeccak256 } from 'ethers'
 
 import { PrivacyPoolsPoolStats } from '../../interfaces/privacyPools'
+import compareBigInts from '../../utils/numbers/compareBigInts'
 
 /** The field the pools reduce labels into, BN254's scalar field. */
 const SNARK_SCALAR_FIELD =
@@ -69,8 +70,6 @@ const readPoolEvents = (
   readPoolEntries(tuples, sliceName, poolField, poolAddress).map((entry) =>
     readPoolEvent(entry, sliceName)
   )
-
-const compareBigInts = (a: bigint, b: bigint) => (a < b ? -1 : a > b ? 1 : 0)
 
 const sumValues = (events: StoredPoolEvent[]) =>
   events.reduce((total, { value }) => total + value, 0n)
