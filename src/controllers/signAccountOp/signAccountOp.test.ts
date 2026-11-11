@@ -617,7 +617,8 @@ const init = async (
     storageCtrl,
     () => ({ status: 'no-selected-account' }),
     surveyCtrl,
-    'test'
+    'test',
+    new FeatureFlagsController({}, storageCtrl)
   )
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
