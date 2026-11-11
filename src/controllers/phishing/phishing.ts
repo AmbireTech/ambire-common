@@ -587,7 +587,9 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     addresses: string[],
     callback?: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
-    await this.initialLoadPromise
+    // Loads the stored list on demand, as on mobile init() is deferred until the dashboard shows
+    // and a check can start before that (e.g. Swap & Bridge opened right after a cold start)
+    await this.init()
     // only unique addresses
     addresses = [...new Set(addresses)]
 

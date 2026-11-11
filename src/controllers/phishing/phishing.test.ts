@@ -484,10 +484,12 @@ describe('PhishingController', () => {
 
     const prepareNoListTest = async ({
       isListDownloadFailing = false,
+      isListDownloadHanging = false,
       storedDomains = [],
       storedAddresses = [SCAM_ADDRESS]
     }: {
       isListDownloadFailing?: boolean
+      isListDownloadHanging?: boolean
       storedDomains?: string[]
       storedAddresses?: string[]
     } = {}) => {
@@ -496,6 +498,8 @@ describe('PhishingController', () => {
         if (!url.startsWith(SCAMCHECKER_BASE_URL)) return (fetch as any)(url, options)
 
         scamcheckerRequests.push({ url, body: options?.body })
+
+        if (isListDownloadHanging) return new Promise(() => {})
 
         return Promise.resolve({
           ok: !isListDownloadFailing,
@@ -642,23 +646,14 @@ describe('PhishingController', () => {
       cleanup()
     })
 
-    test('waits as LOADING for the downloaded list, resolves addresses from it, and never sends them', async () => {
+    test('a check started before init() starts the list download itself, resolves from it, and never sends the addresses', async () => {
       const { controller, callback, scamcheckerRequests, cleanup } = await prepareNoListTest()
+
+      // init() is never called by the test, as on mobile before the dashboard is shown.
       // Resolves with the final status only once the list is here, so safety checks stay loading
-      const addressesPromise = controller.updateAddressesBlacklistedStatus(addresses, callback)
-      await flushPendingWork()
+      await controller.updateAddressesBlacklistedStatus(addresses, callback)
 
-      expect(callback).toHaveBeenCalledTimes(1)
-      expect(callback).toHaveBeenLastCalledWith({
-        [SCAM_ADDRESS]: 'LOADING',
-        [SAFE_ADDRESS]: 'LOADING'
-      })
-
-      await controller.init()
-      await controller.updatePhishingInterval.promise
-      await addressesPromise
-
-      expect(callback).toHaveBeenCalledTimes(2)
+      expect(controller.isReady).toBe(true)
       expect(callback).toHaveBeenLastCalledWith({
         [SCAM_ADDRESS]: 'BLACKLISTED',
         [SAFE_ADDRESS]: 'VERIFIED'
@@ -689,8 +684,11 @@ describe('PhishingController', () => {
       cleanup()
     })
 
-    test('addresses end as FAILED_TO_GET, not LOADING, when no list download ever runs', async () => {
-      const { controller, callback, scamcheckerRequests } = await prepareNoListTest()
+    test('addresses end as FAILED_TO_GET, not LOADING, when the list download never finishes', async () => {
+      const { controller, callback, scamcheckerRequests, cleanup } = await prepareNoListTest({
+        isListDownloadHanging: true
+      })
+      // After the setup, which waits on real timers
       jest.useFakeTimers()
 
       const addressesPromise = controller.updateAddressesBlacklistedStatus(addresses, callback)
@@ -701,7 +699,30 @@ describe('PhishingController', () => {
         [SCAM_ADDRESS]: 'FAILED_TO_GET',
         [SAFE_ADDRESS]: 'FAILED_TO_GET'
       })
+      // Only the public list was asked for - no request carries a checked address
+      expect(scamcheckerRequests.map(({ url }) => url)).toEqual([`${SCAMCHECKER_BASE_URL}/data`])
+      expect(scamcheckerRequests.every(({ body }) => body === undefined)).toBe(true)
+
+      cleanup()
+    })
+
+    test('a check started before init() answers at once from the list in storage, with nothing sent', async () => {
+      const { controller, callback, scamcheckerRequests, cleanup } = await prepareNoListTest({
+        storedDomains: [SCAM_DOMAIN]
+      })
+
+      // init() is never called by the test, as on mobile when Swap & Bridge or a dApp request is
+      // opened before the dashboard calls it
+      await controller.updateAddressesBlacklistedStatus(addresses, callback)
+
+      expect(callback).toHaveBeenCalledTimes(1)
+      expect(callback).toHaveBeenCalledWith({
+        [SCAM_ADDRESS]: 'BLACKLISTED',
+        [SAFE_ADDRESS]: 'VERIFIED'
+      })
       expect(scamcheckerRequests).toHaveLength(0)
+
+      cleanup()
     })
 
     test('addresses are answered at once from a list read from storage, with nothing sent', async () => {
