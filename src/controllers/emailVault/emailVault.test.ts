@@ -1,4 +1,4 @@
-import { expect } from '@jest/globals'
+import { expect, jest } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { fetchWithAppVersion as fetch, produceMemoryStore } from '../../../test/helpers'
@@ -8,6 +8,7 @@ import { CustomResponse, Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { KeystoreController } from '../keystore/keystore'
 import { StorageController } from '../storage/storage'
@@ -307,5 +308,112 @@ describe('removeKeyStoreSecret without a confirmed email', () => {
     expect(removeStatuses).toContain('ERROR')
     expect(removeStatuses).not.toContain('SUCCESS')
     expect(ev.emittedErrors).toHaveLength(1)
+  })
+})
+
+describe('with Email Vault turned off', () => {
+  const vaultEmail = 'turned-off@ambire.com'
+
+  const relayerDownResponse = async () =>
+    ({
+      status: 500,
+      text: async () => JSON.stringify({ success: false, message: 'Internal error' })
+    }) as unknown as CustomResponse
+
+  const createController = (isEmailVaultOn: boolean, respond: Fetch = relayerDownResponse) => {
+    const memoryStorageCtrl = new StorageController(produceMemoryStore())
+    const keystoreCtrl = new KeystoreController(
+      'default',
+      memoryStorageCtrl,
+      keystoreSigners,
+      uiCtrl
+    )
+    const featureFlags = new FeatureFlagsController(
+      { emailVault: isEmailVaultOn },
+      memoryStorageCtrl
+    )
+    const fetchFn = jest.fn<Fetch>(respond)
+    const ev = new EmailVaultController(
+      memoryStorageCtrl,
+      fetchFn,
+      relayerUrl,
+      keystoreCtrl,
+      undefined,
+      undefined,
+      featureFlags
+    )
+
+    return { ev, fetchFn, featureFlags }
+  }
+
+  test('the status-wrapped actions end with ERROR and send nothing to the relayer', async () => {
+    const { ev, fetchFn } = createController(false)
+    const statuses: string[] = []
+    ev.onUpdate(() => statuses.push(...Object.values(ev.statuses)))
+
+    await ev.recoverKeyStore(vaultEmail, 'new-password')
+    await ev.removeKeyStoreSecret(vaultEmail)
+    await ev.getEmailVaultInfo(vaultEmail)
+    await ev.uploadKeyStoreSecret(vaultEmail)
+    await ev.requestKeysSync(vaultEmail, ['0x1'])
+    await ev.finalizeSyncKeys(vaultEmail, [], 'password')
+
+    expect(fetchFn).not.toHaveBeenCalled()
+    expect(statuses).toContain('ERROR')
+    expect(statuses).not.toContain('SUCCESS')
+    expect(ev.emittedErrors).toHaveLength(6)
+    expect(ev.emittedErrors.every((e) => e.level === 'expected')).toBe(true)
+  })
+
+  test('requesting a magic link or fulfilling sync requests sends nothing', async () => {
+    const { ev, fetchFn } = createController(false)
+
+    await ev.handleMagicLinkKey(vaultEmail)
+    await ev.fulfillSyncRequests(vaultEmail, 'password')
+
+    expect(fetchFn).not.toHaveBeenCalled()
+    expect(ev.currentState).not.toBe(EmailVaultState.WaitingEmailConfirmation)
+    expect(ev.emittedErrors).toHaveLength(2)
+  })
+
+  test('requests a magic link when Email Vault is on', async () => {
+    const { ev, fetchFn } = createController(true)
+
+    await ev.handleMagicLinkKey(vaultEmail)
+
+    expect(fetchFn).toHaveBeenCalled()
+  })
+
+  test('turning Email Vault off stops waiting for the email confirmation', async () => {
+    // The magic link is sent, but the email is never confirmed, so the relayer keeps answering 401
+    const unconfirmedEmailFetch: Fetch = async (url) =>
+      ({
+        status: String(url).includes('/email-vault/request-key/') ? 200 : 401,
+        text: async () =>
+          JSON.stringify(
+            String(url).includes('/email-vault/request-key/')
+              ? { success: true, data: { key: 'magic-link-key', expiry: Date.now() + 60000 } }
+              : { success: false, message: 'Email not confirmed' }
+          )
+      }) as unknown as CustomResponse
+    const { ev, fetchFn, featureFlags } = createController(true, unconfirmedEmailFetch)
+    const waitingForConfirmation = new Promise<void>((resolve) => {
+      const unsub = ev.onUpdate(() => {
+        if (ev.currentState !== EmailVaultState.WaitingEmailConfirmation) return
+        unsub()
+        resolve()
+      })
+    })
+
+    const requesting = ev.handleMagicLinkKey(vaultEmail)
+    await waitingForConfirmation
+    await featureFlags.setFeatureFlags({ emailVault: false })
+    const callsWhenTurnedOff = fetchFn.mock.calls.length
+    await requesting
+
+    // At most the one check already on its way when the setting changed
+    expect(fetchFn.mock.calls.length).toBeLessThanOrEqual(callsWhenTurnedOff + 1)
+    expect(ev.currentState).not.toBe(EmailVaultState.WaitingEmailConfirmation)
+    expect(ev.emittedErrors).toHaveLength(0)
   })
 })

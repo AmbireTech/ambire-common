@@ -487,7 +487,8 @@ export class MainController extends EventEmitter implements IMainController {
         relayerUrl,
         this.keystore,
         undefined,
-        eventEmitterRegistry
+        eventEmitterRegistry,
+        this.featureFlags
       )
     }
     this.accountPicker = new AccountPickerController({
