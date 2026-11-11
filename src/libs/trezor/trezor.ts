@@ -24,6 +24,15 @@ export const getMessageFromTrezorErrorCode = (
     return 'Please set "Safety checks" to "Prompt" in Trezor Suite (Settings - Device) to use your Trezor (with Ledger Live HD paths) as a key for your Ambire smart account. This is flagged as non-standard and blocked otherwise.'
   }
 
+  // The EIP-7702 authorization is an experimental firmware field, refused unless
+  // the "experimental features" device setting is on (not toggleable in Trezor Suite yet)
+  if (errorMsg?.toLowerCase()?.includes('experimental features are disabled'))
+    return 'To upgrade your account with Trezor, first turn on "experimental features" on your Trezor device. This option is not available in Trezor Suite yet.'
+
+  // The firmware allows upgrading only to the account types it knows, per network
+  if (errorMsg?.toLowerCase()?.includes('unknown eip-7702 delegate address'))
+    return 'Your Trezor does not support the Ambire account upgrade on this network yet.'
+
   if (errorCode === 'Method_Interrupted')
     return 'Closing the Trezor popup interrupted the connection.'
 
