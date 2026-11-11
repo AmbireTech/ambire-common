@@ -1,3 +1,4 @@
+import { IFeatureFlagsController } from '@/interfaces/featureFlags'
 import { ISurveyController } from '@/interfaces/survey'
 
 import { Banner, IBannerController } from '../../interfaces/banner'
@@ -28,6 +29,10 @@ export class BannerController extends EventEmitter implements IBannerController 
 
   #appVersion: string
 
+  #featureFlags: IFeatureFlagsController
+
+  #isAmbireAnalyticsEnabled: boolean
+
   #getAccountData: () => AccountData
 
   // Used for testing
@@ -41,6 +46,7 @@ export class BannerController extends EventEmitter implements IBannerController 
     getAccountData: () => AccountData,
     survey: ISurveyController,
     appVersion: string,
+    featureFlags: IFeatureFlagsController,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
@@ -48,6 +54,18 @@ export class BannerController extends EventEmitter implements IBannerController 
     this.#survey = survey
     this.#getAccountData = getAccountData
     this.#appVersion = appVersion
+    this.#featureFlags = featureFlags
+    this.#isAmbireAnalyticsEnabled = featureFlags.isFeatureEnabled('ambireAnalytics')
+
+    // Survey banners depend on the `ambireAnalytics` opt-out, so the visible banners
+    // have to be recalculated when the user changes it
+    this.#featureFlags.onUpdate((forceEmit) => {
+      const isEnabled = this.#featureFlags.isFeatureEnabled('ambireAnalytics')
+      if (isEnabled === this.#isAmbireAnalyticsEnabled) return
+
+      this.#isAmbireAnalyticsEnabled = isEnabled
+      this.propagateUpdate(forceEmit)
+    })
 
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -77,6 +95,8 @@ export class BannerController extends EventEmitter implements IBannerController 
   #shouldShowBanner(banner: Banner, accData: AccountData) {
     // when survey, enforce survey controller data to be loaded
     if (banner.actions?.[0]?.actionName === 'survey') {
+      // Users who opted out of analytics are not asked to take part in surveys
+      if (!this.#isAmbireAnalyticsEnabled) return false
       if (!this.#survey.isReady) return false
       if (this.#survey.isSurveyAnswered(banner.actions[0].meta.surveyId)) return false
     }
