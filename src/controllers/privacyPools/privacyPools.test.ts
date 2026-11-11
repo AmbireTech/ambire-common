@@ -5086,7 +5086,7 @@ describe('PrivacyPoolsController', () => {
 
       expect(getLeakIds(controller)).toContain('own-account')
       expect(getLeakIds(controller)).not.toContain('own-account-used')
-      expect(controller.withdrawalPrivacy?.privacy?.rating).toBe('basic')
+      expect(controller.withdrawalPrivacy?.privacy?.rating).toBe('standard')
     })
 
     it.each([
@@ -5240,7 +5240,7 @@ describe('PrivacyPoolsController', () => {
 
       expect(controller.operation).toMatchObject({
         phase: 'ready',
-        // The one predicted deposit rates Basic, which says nothing about linking two deposits
+        // The one predicted deposit rates standard, which says nothing about linking two deposits
         privacy: { rating: 'unchecked', notesCount: 2, leaks: [] }
       })
       expect(controller.emittedErrors.at(-1)).toMatchObject({
@@ -5265,11 +5265,11 @@ describe('PrivacyPoolsController', () => {
       await waitUntil(() => !!controller.poolStats['1'])
 
       expect(controller.getDepositPrivacy(deposit)).toMatchObject({
-        rating: 'basic',
+        rating: 'standard',
         sameAmount: 3
       })
       expect(controller.getDepositPrivacy({ ...deposit, amount: 11n })).toMatchObject({
-        rating: 'basic',
+        rating: 'standard',
         sameAmount: 0
       })
       expect(runningSyncs).toHaveLength(0)

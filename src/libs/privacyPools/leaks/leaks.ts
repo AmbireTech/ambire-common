@@ -40,7 +40,7 @@ const findLeaks = <Facts>(rules: LeakRule<Facts>[], facts: Facts): PrivacyPoolsL
     }))
 
 /**
- * The worst leak sets the rating, and info leaks do not count. With no leaks it is `basic`, and
+ * The worst leak sets the rating, and info leaks do not count. With no leaks it is `standard`, and
  * the cover shown to the user tells how well the send hides. Never `unchecked`, which only a
  * missing deposit index gives.
  */
@@ -48,7 +48,7 @@ const getRating = (leaks: PrivacyPoolsLeak[]): PrivacyPoolsRating => {
   if (leaks.some(({ type }) => type === 'error')) return 'traceable'
   if (leaks.some(({ type }) => type === 'warning')) return 'weak'
 
-  return 'basic'
+  return 'standard'
 }
 
 /**

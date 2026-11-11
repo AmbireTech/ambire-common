@@ -108,10 +108,10 @@ describe('getPrivacyPoolsNotesToSpend', () => {
 })
 
 describe('getPrivacyPoolsWithdrawalPrivacy', () => {
-  test('rates a send with no leak basic and counts the deposits that hide it', () => {
+  test('rates a send with no leak standard and counts the deposits that hide it', () => {
     const privacy = getWithdrawalPrivacy({ amount: 60n, notes: [note()] })
 
-    expect(privacy.rating).toBe('basic')
+    expect(privacy.rating).toBe('standard')
     expect(privacy.leaks).toEqual([])
     // At least 60: the two 100s and the 500, less the user's own 100. Of exactly 60: none
     expect(privacy.cover).toEqual({ bigEnough: 2, sameAmount: 0 })
@@ -304,7 +304,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
     test('checks only the amount before a recipient is entered', () => {
       const privacy = getWithdrawalPrivacy({ amount: 40n, notes: [note()], recipient: null })
 
-      expect(privacy.rating).toBe('basic')
+      expect(privacy.rating).toBe('standard')
       expect(summarizeLeaks(privacy)).toEqual([])
     })
 
@@ -407,7 +407,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
 
       expect(summarizeLeaks(privacy)).toEqual([{ id: 'own-account', amounts: [] }])
       expect(privacy.leaks[0]?.type).toBe('info')
-      expect(privacy.rating).toBe('basic')
+      expect(privacy.rating).toBe('standard')
     })
 
     test('weakens privacy when the account was used', () => {
@@ -483,7 +483,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
 
       const privacy = getWithdrawalPrivacy({ amount: 0n, notes, recipient: DEPOSITOR })
       expect(privacy.leaks).toEqual([])
-      expect(privacy.rating).toBe('basic')
+      expect(privacy.rating).toBe('standard')
     })
 
     test('is null for a negative amount', () => {
@@ -542,10 +542,10 @@ describe('getPrivacyPoolsDepositPrivacy', () => {
       commonAmounts
     })
 
-  test('rates a common amount basic', () => {
+  test('rates a common amount standard', () => {
     const privacy = getDepositPrivacy(50n)
 
-    expect(privacy.rating).toBe('basic')
+    expect(privacy.rating).toBe('standard')
     expect(privacy.leaks).toEqual([])
     expect(privacy.sameAmount).toBe(2)
   })
@@ -554,7 +554,7 @@ describe('getPrivacyPoolsDepositPrivacy', () => {
     // 20 is lower and nearer, but nobody deposited it
     const privacy = getDepositPrivacy(42n, 1_000n, [10n, 20n, 50n])
 
-    expect(privacy.rating).toBe('basic')
+    expect(privacy.rating).toBe('standard')
     expect(privacy.leaks[0]?.type).toBe('info')
     expect(privacy.leaks.map(({ id, actions }) => ({ id, actions }))).toEqual([
       {
@@ -584,6 +584,6 @@ describe('getPrivacyPoolsDepositPrivacy', () => {
     const privacy = getDepositPrivacy(0n, 60n)
 
     expect(privacy.leaks).toEqual([])
-    expect(privacy.rating).toBe('basic')
+    expect(privacy.rating).toBe('standard')
   })
 })

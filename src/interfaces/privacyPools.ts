@@ -429,7 +429,7 @@ export type PrivacyPoolsLeak = {
  * How well a transfer hides. `unchecked` means nothing could be checked, as when the pool's
  * deposits are not read yet.
  */
-export type PrivacyPoolsRating = 'basic' | 'weak' | 'traceable' | 'unchecked'
+export type PrivacyPoolsRating = 'standard' | 'weak' | 'traceable' | 'unchecked'
 
 /**
  * How many recent deposits (see `PRIVACY_POOLS_COVER_WINDOW_DAYS`) hide a send. Each is the
