@@ -222,26 +222,15 @@ describe('Portfolio', () => {
   describe('reusing cached prices', () => {
     const ACCOUNT_WITH_ETH = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
 
-    /**
-     * A portfolio lib whose price cache holds an ETH price answered `ageMs` ago. Later price
-     * requests go to `priceFetch`.
-     */
-    const createPortfolioWithCachedEthPrice = async (
-      priceFetch: any,
-      price: number,
-      ageMs: number
-    ) => {
-      let currentFetch: any = async () => ({
-        status: 200,
-        json: async () => ({ ethereum: { usd: price } })
-      })
-      const cachedPrices = new TokenPricesController({
-        fetch: ((...args: any[]) => currentFetch(...args)) as any
-      })
-      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() - ageMs)
-      await cachedPrices.getTokenData({ network: ethereum, tokenAddresses: [ZeroAddress] })
+    /** A portfolio lib whose price cache holds an ETH price cached `ageMs` ago */
+    const createPortfolioWithCachedEthPrice = (priceFetch: any, price: number, ageMs: number) => {
+      const cachedPrices = new TokenPricesController({ fetch: priceFetch })
+      const cachedAt = Date.now() - ageMs
+      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(cachedAt)
+      cachedPrices.setTokenData(1n, [
+        [ZeroAddress, { priceIn: [{ baseCurrency: 'usd', price }], marketDataIn: [] }]
+      ])
       dateSpy.mockRestore()
-      currentFetch = priceFetch
 
       return new Portfolio(provider, ethereum, cachedPrices)
     }
@@ -256,7 +245,7 @@ describe('Portfolio', () => {
 
     test('reuses a cached price younger than 5 minutes without refetching it', async () => {
       const priceFetch = workingPriceFetch()
-      const portfolioWithCachedPrice = await createPortfolioWithCachedEthPrice(
+      const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
         priceFetch,
         1000,
         60 * 1000
@@ -271,7 +260,7 @@ describe('Portfolio', () => {
 
     test('refetches a cached price older than 5 minutes, even if newer than an hour', async () => {
       const priceFetch = workingPriceFetch()
-      const portfolioWithCachedPrice = await createPortfolioWithCachedEthPrice(
+      const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
         priceFetch,
         1000,
         10 * 60 * 1000
@@ -285,7 +274,7 @@ describe('Portfolio', () => {
 
     test('falls back to a cached price younger than an hour when the price request fails', async () => {
       const priceFetch = failingPriceFetch()
-      const portfolioWithCachedPrice = await createPortfolioWithCachedEthPrice(
+      const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
         priceFetch,
         1000,
         10 * 60 * 1000
@@ -298,7 +287,7 @@ describe('Portfolio', () => {
     })
 
     test('drops a cached price older than an hour when the price request fails', async () => {
-      const portfolioWithCachedPrice = await createPortfolioWithCachedEthPrice(
+      const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
         failingPriceFetch(),
         1000,
         2 * 60 * 60 * 1000
@@ -349,6 +338,55 @@ describe('Portfolio', () => {
       expect(errors.some(({ name }) => name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError)).toBe(
         false
       )
+    })
+
+    describe('of collections', () => {
+      const ACCOUNT_WITH_COLLECTION = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      const COLLECTION_ADDRESS = '0x026224A2940bFE258D0dbE947919B62fE321F042'
+      const collectionPriceIn = [{ baseCurrency: 'usd', price: 42 }]
+
+      /** Gets the collection with its price cached (as Velcro's discovery does) `ageMs` ago */
+      const getCollectionWithCachedPrice = async (ageMs: number) => {
+        const fetchSpy = priceFetch()
+        const priceController = new TokenPricesController({ fetch: fetchSpy })
+        const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() - ageMs)
+        priceController.setTokenData(1n, [
+          [COLLECTION_ADDRESS, { priceIn: collectionPriceIn, marketDataIn: [] }]
+        ])
+        dateSpy.mockRestore()
+
+        const { collections } = await new Portfolio(provider, ethereum, priceController).get(
+          ACCOUNT_WITH_COLLECTION,
+          { additionalErc721Hints: { [COLLECTION_ADDRESS]: [] }, fetchPinned: false }
+        )
+        const requestedUrls: string[] = fetchSpy.mock.calls.map(([url]: [string]) =>
+          url.toLowerCase()
+        )
+
+        return {
+          collection: collections.find(({ address }) => address === COLLECTION_ADDRESS),
+          requestedUrls
+        }
+      }
+
+      test('are read from the cache and never requested', async () => {
+        const { collection, requestedUrls } = await getCollectionWithCachedPrice(60 * 1000)
+
+        expect(collection?.priceIn).toEqual(collectionPriceIn)
+        expect(requestedUrls.some((url) => url.includes(COLLECTION_ADDRESS.toLowerCase()))).toBe(
+          false
+        )
+      })
+
+      test('are left out once older than 5 minutes, still without requesting them', async () => {
+        const { collection, requestedUrls } = await getCollectionWithCachedPrice(6 * 60 * 1000)
+
+        expect(collection).toBeDefined()
+        expect(collection?.priceIn).toEqual([])
+        expect(requestedUrls.some((url) => url.includes(COLLECTION_ADDRESS.toLowerCase()))).toBe(
+          false
+        )
+      })
     })
   })
 

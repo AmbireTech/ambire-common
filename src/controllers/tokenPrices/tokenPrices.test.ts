@@ -232,6 +232,81 @@ describe('TokenPricesController', () => {
       expect(fetch).toHaveBeenCalledTimes(1)
       expect(tokenData.has(TOKEN_1)).toBe(true)
     })
+
+    test('getCachedTokenData reads what setTokenData stored, for 5 minutes', () => {
+      const { fetch } = createPriceFetch()
+      const controller = createController(fetch)
+      const tokenData = { priceIn: [{ baseCurrency: 'usd', price: 5 }], marketDataIn: [] }
+
+      controller.setTokenData(1n, [[TOKEN_1.toUpperCase().replace('0X', '0x'), tokenData]])
+
+      expect(controller.getCachedTokenData(1n, TOKEN_1)).toEqual(tokenData)
+      expect(controller.getCachedTokenData(1n, TOKEN_1, 'eur')).toBeNull()
+      expect(controller.getCachedTokenData(8453n, TOKEN_1)).toBeNull()
+      expect(fetch).not.toHaveBeenCalled()
+
+      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 6 * MINUTE)
+      expect(controller.getCachedTokenData(1n, TOKEN_1)).toBeNull()
+      dateSpy.mockRestore()
+    })
+
+    test('reuses prices set from elsewhere (e.g. Velcro) without requesting them', async () => {
+      const { fetch } = createPriceFetch()
+      const controller = createController(fetch)
+      controller.setTokenData(base.chainId, [
+        [TOKEN_1, { priceIn: [{ baseCurrency: 'usd', price: 7 }], marketDataIn: [] }]
+      ])
+
+      const { tokenData } = await controller.getTokenData({
+        network: base,
+        tokenAddresses: [TOKEN_1]
+      })
+
+      expect(fetch).not.toHaveBeenCalled()
+      expect(tokenData.get(TOKEN_1)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 7 }])
+    })
+
+    test('ignores entries without a price set from elsewhere, so cena is still asked', async () => {
+      const { fetch, urls } = createPriceFetch({ price: 3 })
+      const controller = createController(fetch)
+      controller.setTokenData(base.chainId, [[TOKEN_1, { priceIn: [], marketDataIn: [] }]])
+
+      expect(controller.getCachedTokenData(base.chainId, TOKEN_1)).toBeNull()
+
+      const { tokenData } = await controller.getTokenData({
+        network: base,
+        tokenAddresses: [TOKEN_1]
+      })
+
+      expect(getAllRequestedIds(urls)).toEqual([TOKEN_1])
+      expect(tokenData.get(TOKEN_1)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 3 }])
+    })
+
+    test('keeps a cached price when an entry without a price is set from elsewhere', async () => {
+      const { fetch } = createPriceFetch({ price: 3 })
+      const controller = createController(fetch)
+      await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
+
+      controller.setTokenData(base.chainId, [[TOKEN_1, { priceIn: [], marketDataIn: [] }]])
+
+      expect(controller.getCachedTokenData(base.chainId, TOKEN_1)?.priceIn).toEqual([
+        { baseCurrency: 'usd', price: 3 }
+      ])
+    })
+
+    test('requests a price set from elsewhere again once it is older than 5 minutes', async () => {
+      const { fetch, urls } = createPriceFetch()
+      const controller = createController(fetch)
+      controller.setTokenData(base.chainId, [
+        [TOKEN_1, { priceIn: [{ baseCurrency: 'usd', price: 7 }], marketDataIn: [] }]
+      ])
+
+      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 6 * MINUTE)
+      await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
+      dateSpy.mockRestore()
+
+      expect(getAllRequestedIds(urls)).toEqual([TOKEN_1])
+    })
   })
 
   describe('opting out of token prices', () => {
@@ -256,13 +331,23 @@ describe('TokenPricesController', () => {
       await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
 
       isEnabled = false
-      await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
+      expect(controller.getCachedTokenData(base.chainId, TOKEN_1)).toBeNull()
 
-      // Turned back on, the price is requested again instead of read from the old cache
       isEnabled = true
-      await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
+      expect(controller.getCachedTokenData(base.chainId, TOKEN_1)).toBeNull()
+    })
 
-      expect(fetch).toHaveBeenCalledTimes(2)
+    test('ignores token data set while opted out', () => {
+      const { fetch } = createPriceFetch()
+      const controller = createController(fetch)
+      isEnabled = false
+
+      controller.setTokenData(base.chainId, [
+        [TOKEN_1, { priceIn: [{ baseCurrency: 'usd', price: 7 }], marketDataIn: [] }]
+      ])
+
+      isEnabled = true
+      expect(controller.getCachedTokenData(base.chainId, TOKEN_1)).toBeNull()
     })
   })
 

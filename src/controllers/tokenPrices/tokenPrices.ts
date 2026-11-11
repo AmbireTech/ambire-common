@@ -127,9 +127,11 @@ const EMPTY_RESULT = (): GetTokenDataResult => ({ tokenData: new Map(), error: n
  * that aren't fresh in the cache, which are the same for every user, so that pricing them
  * reveals nothing and the Privacy Pools lookups are answered from the cache.
  *
- * The cache is private: features read the prices through `getTokenData`, and the portfolio
- * keeps them on its tokens. Nothing is requested, read or stored while the user has opted out
- * of token prices.
+ * Features read the prices through `getTokenData`, and the portfolio keeps them on its tokens.
+ * The prices that come with Velcro's discovery response are cached too (`setTokenData`), with
+ * the same 5-minute age, so they aren't requested again; NFT collection prices come only from
+ * there and are read without ever being requested (`getCachedTokenData`). Nothing is requested,
+ * read or stored while the user has opted out of token prices.
  */
 export class TokenPricesController extends EventEmitter {
   #fetch: Fetch
@@ -242,6 +244,49 @@ export class TokenPricesController extends EventEmitter {
       ),
       error: TokenPricesController.#toPriceRequestError(failedRequest.reason, network)
     }
+  }
+
+  /**
+   * A cached entry younger than TOKEN_PRICE_MAX_AGE_MS, without requesting it (e.g. NFT floor
+   * prices, which only come with Velcro's discovery response)
+   */
+  getCachedTokenData(
+    chainId: bigint,
+    address: string,
+    baseCurrency: string = 'usd'
+  ): TokenDataCacheValue | null {
+    if (!this.#getIsEnabled()) return null
+
+    const now = Date.now()
+    const entry = this.#getCacheEntry(
+      chainId,
+      address,
+      (cachedAt) => now - cachedAt <= TOKEN_PRICE_MAX_AGE_MS
+    )
+    if (!entry || !entry.priceIn.some((price) => price.baseCurrency === baseCurrency)) return null
+
+    return entry
+  }
+
+  /**
+   * Caches token data that came from an outside service (e.g. Velcro's discovery response).
+   * Use it only for data from outside services; cena's answers are cached by `getTokenData`.
+   *
+   * Only entries with a price are cached. An entry without one would count as a recent
+   * "no price" answer, and its token wouldn't be requested from cena for TOKEN_PRICE_MAX_AGE_MS.
+   */
+  setTokenData(chainId: bigint, entries: [address: string, tokenData: TokenDataCacheValue][]) {
+    if (!this.#getIsEnabled()) return
+
+    const pricedEntries = entries.filter(([, tokenData]) => tokenData.priceIn.length > 0)
+    if (!pricedEntries.length) return
+
+    const cache = this.#getOrCreateCache(chainId)
+    const cachedAt = Date.now()
+
+    pricedEntries.forEach(([address, tokenData]) => {
+      cache.set(getTokenDataCacheKey(address), [cachedAt, tokenData])
+    })
   }
 
   /** Whether prices may be used; drops everything that was stored if not */

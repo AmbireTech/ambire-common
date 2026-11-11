@@ -46,6 +46,7 @@ import { getRpcProvider } from '../../services/provider'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { StorageController } from '../storage/storage'
+import { TokenPricesController } from '../tokenPrices/tokenPrices'
 import { COLIBRI_CATCH_UP_RETRY_INTERVAL } from '../verification/verification'
 import { EXCHANGE_LIST_URL, PortfolioController } from './portfolio'
 
@@ -3573,6 +3574,78 @@ describe('Portfolio Controller ', () => {
     expect(lastSuccessfulUpdate3).toBe(0)
 
     restore()
+  })
+  it('Price cache is updated after portfolio discovery', async () => {
+    const { controller } = await prepareTest()
+
+    // Make the test deterministic: we only want to verify that discovery prices
+    // populate the controller cache, not that the external API is reachable.
+    // @ts-expect-error test
+    controller.batchedPortfolioDiscovery = jest.fn().mockResolvedValue({
+      networkId: '137',
+      chainId: 137,
+      accountAddr: account.addr,
+      erc20s: [],
+      erc721s: {},
+      hasHints: true,
+      prices: {
+        '0x0000000000000000000000000000000000000000': {
+          baseCurrency: 'usd',
+          price: 1,
+          usd_24h_change: 0,
+          usd_market_cap: 1,
+          usd_24h_vol: 1,
+          exchanges: []
+        }
+      },
+      lastUpdate: Date.now(),
+      defi: {
+        positions: [],
+        updatedAt: Date.now()
+      },
+      otherNetworksDefiCounts: {}
+    })
+
+    const setTokenDataSpy = jest.spyOn(TokenPricesController.prototype, 'setTokenData')
+    expect(setTokenDataSpy).not.toHaveBeenCalled()
+
+    jest
+      // @ts-expect-error test
+      .spyOn(controller, 'batchedPortfolioDiscovery')
+      // @ts-expect-error test
+      .mockResolvedValueOnce({
+        networkId: 'polygon',
+        chainId: 137,
+        accountAddr: account.addr,
+        erc20s: [ZeroAddress],
+        erc721s: {},
+        prices: {
+          [ZeroAddress]: {
+            baseCurrency: 'usd',
+            price: 1
+          }
+        },
+        hasHints: true,
+        defi: {
+          updatedAt: Date.now(),
+          positions: []
+        },
+        otherNetworksDefiCounts: {}
+      })
+
+    // @ts-expect-error test
+    await controller.getPortfolioFromApiDiscovery({
+      chainId: 137n,
+      account,
+      hasKeys: true,
+      baseCurrency: 'usd',
+      externalApiHintsResponse: null
+    })
+
+    expect(setTokenDataSpy).toHaveBeenCalledWith(137n, [
+      [ZeroAddress, expect.objectContaining({ priceIn: [{ baseCurrency: 'usd', price: 1 }] })]
+    ])
+    setTokenDataSpy.mockRestore()
   })
   it('A defi error is not returned if canSkipDefiUpdate=true', async () => {
     const { restore } = suppressConsole()
