@@ -105,8 +105,10 @@ describe('Asset info service', () => {
 
     expect(callback).toHaveBeenCalledTimes(1)
     expect(getTokenDataSpy).toHaveBeenCalledTimes(1)
-    expect(getTokenDataSpy.mock.calls[0]![0].tokenAddresses).toEqual(
-      expect.arrayContaining([WETH_ADDRESS])
+    // The lib passes the addresses checksummed
+    const pricedAddresses = getTokenDataSpy.mock.calls[0]![0].tokenAddresses.map((address) =>
+      address.toLowerCase()
     )
+    expect(pricedAddresses).toContain(WETH_ADDRESS)
   })
 })
