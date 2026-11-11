@@ -6,7 +6,9 @@ import { makeMainController } from '../../../test/helpers/mainController'
 import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
+import { StoredKey } from '../../interfaces/keystore'
 import { CollectionResult, TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
@@ -554,6 +556,123 @@ describe('Transfer Controller', () => {
     const { transferController } = await prepareTest()
 
     expect(transferController.toJSON()).toBeDefined()
+  })
+})
+
+describe('Transfer Controller - address poisoning against own accounts', () => {
+  // An account of the wallet with an imported (Ledger) key, so it is not view-only
+  const OWN_ACCOUNT_ADDRESS = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
+  // 4 matching chars on each side of OWN_ACCOUNT_ADDRESS
+  const OWN_ACCOUNT_LOOKALIKE = '0xf0cdaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa37db'
+  const ownAccount = {
+    addr: OWN_ACCOUNT_ADDRESS,
+    initialPrivileges: [],
+    associatedKeys: [OWN_ACCOUNT_ADDRESS],
+    creation: null,
+    preferences: { label: 'Savings', pfp: OWN_ACCOUNT_ADDRESS }
+  }
+  const ownAccountKey: StoredKey = {
+    addr: OWN_ACCOUNT_ADDRESS,
+    type: 'ledger',
+    label: 'Ledger',
+    dedicatedToOneSA: false,
+    privKey: null,
+    meta: {
+      deviceId: '',
+      deviceModel: '',
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      index: 0,
+      createdAt: null
+    }
+  }
+
+  const prepareOwnAccountsTest = async ({
+    isOwnAccountViewOnly = false,
+    sentToRecipients = {}
+  }: {
+    isOwnAccountViewOnly?: boolean
+    sentToRecipients?: { [toAddress: string]: number }
+  } = {}) => {
+    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', [account, ownAccount])
+      await storageCtrl.set('selectedAccount', account.addr)
+      await storageCtrl.set('keystoreKeys', isOwnAccountViewOnly ? [] : [ownAccountKey])
+      await storageCtrl.set('sentToHistory', {
+        domains: {},
+        recipients: { [account.addr]: sentToRecipients }
+      })
+    })
+    await mainCtrl.selectedAccount.select({ account })
+    mainCtrl.transfer.resetForm()
+
+    return mainCtrl.transfer
+  }
+
+  const setRecipient = (
+    transferController: Awaited<ReturnType<typeof prepareOwnAccountsTest>>,
+    fieldValue: string
+  ) =>
+    transferController.update({
+      addressState: {
+        fieldValue,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+  test('should warn about a lookalike of an own account that was never sent to', async () => {
+    const transferController = await prepareOwnAccountsTest()
+
+    await setRecipient(transferController, OWN_ACCOUNT_LOOKALIKE)
+
+    expect(transferController.addressPoisoningMatch).toEqual({
+      matchedAddress: OWN_ACCOUNT_ADDRESS,
+      matchedPrefixCharsCount: 4,
+      matchedSuffixCharsCount: 4,
+      differingCharsCount: 32,
+      matchedOwnAccountLabel: 'Savings'
+    })
+    expect(transferController.validationFormMsgs.recipientAddress.message).toContain(
+      'looks similar to your account "Savings"'
+    )
+    expect(transferController.validationFormMsgs.recipientAddress.shouldHold).toBe(true)
+  })
+
+  test('should not compare with view-only accounts', async () => {
+    const transferController = await prepareOwnAccountsTest({ isOwnAccountViewOnly: true })
+
+    await setRecipient(transferController, OWN_ACCOUNT_LOOKALIKE)
+
+    expect(transferController.addressPoisoningMatch).toBeNull()
+  })
+
+  test('should not warn about poisoning when sending to an own account', async () => {
+    // The user once sent to a lookalike of their own account, so their own account now looks
+    // like an address they have sent to before
+    const transferController = await prepareOwnAccountsTest({
+      sentToRecipients: { [getAddress(OWN_ACCOUNT_LOOKALIKE)]: 1_700_000_000_000 }
+    })
+
+    await setRecipient(transferController, OWN_ACCOUNT_ADDRESS)
+
+    expect(transferController.isRecipientAddressFirstTimeSend).toBe(true)
+    expect(transferController.addressPoisoningMatch).toBeNull()
+  })
+
+  test('should still warn when sending to a view-only account that looks like a past recipient', async () => {
+    const transferController = await prepareOwnAccountsTest({
+      isOwnAccountViewOnly: true,
+      sentToRecipients: { [getAddress(OWN_ACCOUNT_LOOKALIKE)]: 1_700_000_000_000 }
+    })
+
+    await setRecipient(transferController, OWN_ACCOUNT_ADDRESS)
+
+    expect(transferController.addressPoisoningMatch).toMatchObject({
+      matchedAddress: getAddress(OWN_ACCOUNT_LOOKALIKE),
+      matchedPrefixCharsCount: 4,
+      matchedSuffixCharsCount: 4
+    })
   })
 })
 

@@ -107,7 +107,7 @@ export const predefinedDapps: Dapp[] = [
   },
   {
     id: 'drops.bot',
-    url: 'https://www.drops.bot/?r=ambire',
+    url: 'https://www.drops.bot',
     name: 'Drops',
     icon: 'https://avatars.githubusercontent.com/u/175563563?v=4',
     description: 'Check any crypto wallet address for unclaimed airdrops with Drops.',

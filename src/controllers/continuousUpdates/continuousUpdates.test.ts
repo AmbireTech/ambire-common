@@ -5,6 +5,9 @@ import { makeMainController } from '../../../test/helpers/mainController'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import {
   ACTIVITY_REFRESH_INTERVAL,
+  SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL,
+  SAFE_RESOLVE_INACTIVE_INTERVAL,
+  SAFE_RESOLVE_MAX_INACTIVE_INTERVAL,
   TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
   TRENDING_TOKENS_FAILED_UPDATE_INTERVAL,
   TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
@@ -217,7 +220,7 @@ describe('ContinuousUpdatesController intervals', () => {
     jest
       .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
       .mockReturnValue(Object.fromEntries(mainCtrl.accounts.accounts.map((a) => [a.addr, []])))
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.activity.emitUpdate()
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.stop).toHaveBeenCalled()
@@ -362,27 +365,27 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
       initialFnExecutionsCount
     )
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
 
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout)
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
 
     expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
       initialFnExecutionsCount + 1
     )
-    // @ts-expect-error
+    // @ts-expect-error no-desc no-desc
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
-    // @ts-expect-error
+    // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
 
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout)
@@ -480,5 +483,141 @@ describe('ContinuousUpdatesController intervals', () => {
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
     await waitForFnToBeCalledAndExecuted(interval)
     expect(updateSpy).not.toHaveBeenCalled()
+  })
+
+  describe('Safe message checks', () => {
+    const SAFE_ADDR = accounts[2]!.addr
+    const safeCreation = {
+      factoryAddr: '0x',
+      singleton: '0x',
+      setupData: '0x',
+      saltNonce: '0x'
+    } as const
+
+    const prepareSafeMessageTest = async () => {
+      const { mainCtrl } = await prepareTest()
+      await waitForContinuousUpdatesCtrlReady(mainCtrl)
+
+      const safeAccount = { ...accounts[2]!, safeCreation }
+      // The stored account is made a Safe too, as every accounts update replaces the selected
+      // account with the stored one, which would stop the checks after the first one
+      mainCtrl.accounts.accounts = mainCtrl.accounts.accounts.map((account) =>
+        account.addr === SAFE_ADDR ? safeAccount : account
+      )
+      mainCtrl.selectedAccount.account = safeAccount
+      // opening a view fetches the pending Safe txns too, which is not under test here
+      jest.spyOn(mainCtrl, 'fetchSafeTxns').mockResolvedValue()
+      const isUnlockedSpy = jest.spyOn(mainCtrl.keystore, 'isUnlocked', 'get').mockReturnValue(true)
+      jest
+        .spyOn(mainCtrl.accounts, 'getOrFetchAccountStates')
+        .mockResolvedValue({ '1': { isDeployed: true, threshold: 3, nonce: 0n } } as any)
+      mainCtrl.requests.userRequests = [
+        {
+          id: 'safe-message-request',
+          kind: 'message',
+          dappPromises: [],
+          meta: { accountAddr: SAFE_ADDR, chainId: 1n, hash: '0x01', signed: [SAFE_ADDR] }
+        } as any
+      ]
+      const getMessagesByHashSpy = jest
+        .spyOn(mainCtrl.safe, 'getMessagesByHash')
+        .mockResolvedValue([
+          { messageHash: '0x01', confirmations: [{}], isConfirmed: false } as any
+        ])
+
+      return {
+        mainCtrl,
+        interval: mainCtrl.continuousUpdates!.safeGlobalMessageInterval,
+        isUnlockedSpy,
+        getMessagesByHashSpy
+      }
+    }
+
+    test('keeps checking while no wallet window is open, slower, and slows down further while nothing changes', async () => {
+      const { interval, getMessagesByHashSpy } = await prepareSafeMessageTest()
+
+      const timeoutsAfterEachCheck: number[] = []
+      for (let i = 0; i < 6; i++) {
+        await waitForFnToBeCalledAndExecuted(interval)
+        timeoutsAfterEachCheck.push(interval.currentTimeout)
+      }
+
+      expect(getMessagesByHashSpy).toHaveBeenCalledTimes(6)
+      expect(timeoutsAfterEachCheck).toEqual([
+        SAFE_RESOLVE_INACTIVE_INTERVAL,
+        SAFE_RESOLVE_INACTIVE_INTERVAL,
+        SAFE_RESOLVE_INACTIVE_INTERVAL,
+        SAFE_RESOLVE_INACTIVE_INTERVAL * 2,
+        SAFE_RESOLVE_INACTIVE_INTERVAL * 4,
+        SAFE_RESOLVE_MAX_INACTIVE_INTERVAL
+      ])
+    })
+
+    test('goes back to the base interval once another owner signs', async () => {
+      const { interval, getMessagesByHashSpy } = await prepareSafeMessageTest()
+      for (let i = 0; i < 5; i++) await waitForFnToBeCalledAndExecuted(interval)
+      expect(interval.currentTimeout).toBeGreaterThan(SAFE_RESOLVE_INACTIVE_INTERVAL)
+
+      getMessagesByHashSpy.mockResolvedValue([
+        { messageHash: '0x01', confirmations: [{}, {}], isConfirmed: false } as any
+      ])
+      await waitForFnToBeCalledAndExecuted(interval)
+
+      expect(interval.currentTimeout).toBe(SAFE_RESOLVE_INACTIVE_INTERVAL)
+    })
+
+    test('goes back to the fast interval when a wallet window opens', async () => {
+      const { mainCtrl, interval } = await prepareSafeMessageTest()
+      for (let i = 0; i < 5; i++) await waitForFnToBeCalledAndExecuted(interval)
+      expect(interval.currentTimeout).toBeGreaterThan(SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL)
+
+      mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
+      await jest.advanceTimersByTimeAsync(0)
+      expect(interval.currentTimeout).toBe(SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL)
+
+      await waitForFnToBeCalledAndExecuted(interval)
+      // with a window open, it stays on the fast interval until checks keep finding nothing new
+      expect(interval.currentTimeout).toBe(SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL)
+    })
+
+    test('does not restart a check that is still running when a wallet window opens', async () => {
+      const { mainCtrl, interval, getMessagesByHashSpy } = await prepareSafeMessageTest()
+      for (let i = 0; i < 5; i++) await waitForFnToBeCalledAndExecuted(interval)
+      expect(interval.currentTimeout).toBeGreaterThan(SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL)
+
+      let finishCheck: (() => void) | undefined
+      getMessagesByHashSpy.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishCheck = () =>
+              resolve([{ messageHash: '0x01', confirmations: [{}], isConfirmed: false } as any])
+          })
+      )
+      const restartSpy = jest.spyOn(interval, 'restart')
+      await jest.advanceTimersByTimeAsync(interval.currentTimeout)
+      expect(interval.promise).toBeDefined()
+
+      mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
+      await jest.advanceTimersByTimeAsync(0)
+      // a restart would let the next check start while this one is still running
+      expect(restartSpy).not.toHaveBeenCalled()
+
+      if (!finishCheck) throw new Error('The Safe message check did not start')
+      finishCheck()
+      while (interval.promise) await jest.advanceTimersByTimeAsync(1)
+
+      // the check that was running picks the fast interval by itself
+      expect(interval.currentTimeout).toBe(SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL)
+      expect(getMessagesByHashSpy).toHaveBeenCalledTimes(6)
+    })
+
+    test('does not ask the Safe API about messages while the wallet is locked', async () => {
+      const { interval, isUnlockedSpy, getMessagesByHashSpy } = await prepareSafeMessageTest()
+      isUnlockedSpy.mockReturnValue(false)
+
+      await waitForFnToBeCalledAndExecuted(interval)
+
+      expect(getMessagesByHashSpy).not.toHaveBeenCalled()
+    })
   })
 })

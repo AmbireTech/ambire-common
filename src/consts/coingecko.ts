@@ -6,20 +6,19 @@ import { STK_WALLET, WALLET_STAKING_ADDR, WALLET_TOKEN } from './addresses'
 const COINGECKO_API_BASE_URL = 'https://api.coingecko.com/api/v3/coins/'
 const COINGECKO_BASE_URL = 'https://www.coingecko.com/en/coins/'
 
+const isSameAddress = (addressA: string, addressB: string) =>
+  addressA.toLowerCase() === addressB.toLowerCase()
+
 // @TODO some form of a constants list
+/**
+ * The CoinGecko coin id a token is priced by instead of its contract address, if any.
+ * The address may be passed in any casing.
+ */
 export function geckoIdMapper(address: string, network: Network): string | null {
-  if (address === ZeroAddress) return network.nativeAssetId
-
-  // citrea wrapepd cbtc
-  if (network.chainId === 4114n && address === '0x3100000000000000000000000000000000000006')
-    return network.nativeAssetId
-
-  // citrea wbtc
-  if (network.chainId === 4114n && address === '0xDF240DC08B0FdaD1d93b74d5048871232f6BEA3d')
-    return 'wrapped-bitcoin'
+  if (isSameAddress(address, ZeroAddress)) return network.nativeAssetId
 
   // we currently can't map aave so we're leaving this
-  if (address === '0x4da27a545c0c5B758a6BA100e3a049001de870f5') return 'aave'
+  if (isSameAddress(address, '0x4da27a545c0c5B758a6BA100e3a049001de870f5')) return 'aave'
 
   return null
 }

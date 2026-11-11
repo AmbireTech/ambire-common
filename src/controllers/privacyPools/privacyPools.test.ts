@@ -35,6 +35,7 @@ import { getRpcProvider } from '../../services/provider'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
+import { TokenPricesController } from '../tokenPrices/tokenPrices'
 import { PendingAccountOp } from './context'
 import { OPEN_SYNC_MAX_AGE_MS, PrivacyPoolsController } from './privacyPools'
 
@@ -813,7 +814,11 @@ const prepareTest = async ({
     onAccountsRemoved,
     getPendingAccountOps: () => pendingAccountOps,
     isWalletAccount: (address) =>
-      walletAccounts.some((account) => account.toLowerCase() === address.toLowerCase())
+      walletAccounts.some((account) => account.toLowerCase() === address.toLowerCase()),
+    tokenPrices: new TokenPricesController({
+      fetch: fakeFetch as any,
+      isTokenPricesEnabled: () => featureFlags.isFeatureEnabled('tokenPrices') === true
+    })
   })
   await controller.initialLoadPromise
 
@@ -1128,7 +1133,8 @@ describe('PrivacyPoolsController', () => {
         circuitsBaseUrl: '',
         onAccountsRemoved: jest.fn(async () => {}),
         getPendingAccountOps: () => [],
-        isWalletAccount: () => false
+        isWalletAccount: () => false,
+        tokenPrices: new TokenPricesController({ fetch: fakeFetch as any })
       })
       await controller.initialLoadPromise
 
@@ -1154,7 +1160,8 @@ describe('PrivacyPoolsController', () => {
         circuitsBaseUrl: '',
         onAccountsRemoved,
         getPendingAccountOps: () => [],
-        isWalletAccount: () => false
+        isWalletAccount: () => false,
+        tokenPrices: new TokenPricesController({ fetch: fakeFetch as any })
       })
       await controller.initialLoadPromise
       keystore.fireUpdate()

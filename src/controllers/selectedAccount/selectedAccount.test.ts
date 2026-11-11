@@ -897,7 +897,6 @@ describe('SelectedAccount Controller', () => {
           usd: 0
         },
         discoveryTime: 0,
-        tokenDataCache: new Map(),
         tokenErrors: [],
         collectionErrors: [],
         collections: [],

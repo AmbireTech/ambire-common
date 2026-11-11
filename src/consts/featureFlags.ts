@@ -54,6 +54,18 @@ export interface FeatureFlags {
   namoshiDomains: boolean
   /** Resolve GNS names (.gwei) on Ethereum. */
   gnsDomains: boolean
+  /**
+   * Allow the user to opt out of the Email Vault (extension password recovery by email).
+   * When disabled, the Email Vault sends nothing to the relayer. Requires `ambireAnalytics`,
+   * because the relayer accepts the recovery requests only from apps that send their version.
+   */
+  emailVault: boolean
+  /**
+   * Allow the user to opt out of the `x-app-*` headers (build channel, app version and an
+   * installation id) and the balance hint sent with every request to Ambire's APIs.
+   * Disabling it also disables `emailVault`.
+   */
+  ambireAnalytics: boolean
 }
 
 export const defaultFeatureFlags: FeatureFlags = {
@@ -77,7 +89,9 @@ export const defaultFeatureFlags: FeatureFlags = {
   walletStakingWithdrawalsLookup: true,
   // @TODO: Introduce a setting and flip to false
   namoshiDomains: true,
-  gnsDomains: true
+  gnsDomains: true,
+  emailVault: true,
+  ambireAnalytics: true
 }
 
 /**
@@ -105,7 +119,9 @@ export const featureFlagScopes = {
   ledgerSigningReports: 'user',
   walletStakingWithdrawalsLookup: 'user',
   namoshiDomains: 'internal',
-  gnsDomains: 'internal'
+  gnsDomains: 'internal',
+  emailVault: 'user',
+  ambireAnalytics: 'user'
 } as const satisfies Record<keyof FeatureFlags, 'user' | 'internal'>
 
 /** A feature flag the user controls, see `featureFlagScopes` */

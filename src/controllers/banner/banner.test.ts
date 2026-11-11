@@ -4,6 +4,7 @@ import { mockUiManager } from '@test/helpers/ui'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { Banner } from '../../interfaces/banner'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { StorageController } from '../storage/storage'
 import { ANSWERED_SURVEYS_STORAGE_KEY, SurveyController } from '../survey/survey'
 import { UiController } from '../ui/ui'
@@ -11,6 +12,7 @@ import { AccountData, BannerController } from './banner'
 
 const prepareTest = async () => {
   const storage = new StorageController(produceMemoryStore())
+  const featureFlags = new FeatureFlagsController({}, storage)
   const { uiManager } = mockUiManager()
 
   await storage.set(ANSWERED_SURVEYS_STORAGE_KEY, ['test-banner4'])
@@ -32,11 +34,12 @@ const prepareTest = async () => {
       isBalanceReady: true
     }),
     surveyCtrl,
-    '1.0.0'
+    '1.0.0',
+    featureFlags
   )
   await bannersCtrl.initialLoadPromise
 
-  return { bannersCtrl, surveyCtrl, storage }
+  return { bannersCtrl, surveyCtrl, featureFlags, storage }
 }
 
 describe('BannerController', () => {
@@ -113,6 +116,79 @@ describe('BannerController', () => {
       }
     })
     expect(controller.bannersData.banners).toHaveLength(1)
+  })
+  it('should hide survey banners when the user opted out of analytics', async () => {
+    const { bannersCtrl: controller, featureFlags } = await prepareTest()
+    await featureFlags.initialLoadPromise
+    controller.maxBannerCount = 10
+
+    controller.addBanner({
+      id: 'survey-banner',
+      title: 'Survey Banner',
+      type: 'info',
+      actions: [{ actionName: 'survey', meta: { surveyId: 'survey' } }]
+    })
+    controller.addBanner({
+      id: 'info-banner',
+      title: 'Info Banner',
+      type: 'info',
+      actions: []
+    })
+    expect(controller.bannersData.banners.map(({ id }) => id)).toEqual([
+      'survey-banner',
+      'info-banner'
+    ])
+
+    const onUpdate = jest.fn()
+    const unsubscribe = controller.onUpdate(onUpdate)
+
+    await featureFlags.setFeatureFlag('ambireAnalytics', false)
+    expect(onUpdate).toHaveBeenCalled()
+    expect(controller.bannersData.banners.map(({ id }) => id)).toEqual(['info-banner'])
+
+    await featureFlags.setFeatureFlag('ambireAnalytics', true)
+    expect(controller.bannersData.banners.map(({ id }) => id)).toEqual([
+      'survey-banner',
+      'info-banner'
+    ])
+    unsubscribe()
+  })
+  it('should hide survey banners when the analytics opt-out is loaded from storage', async () => {
+    const storage = new StorageController(produceMemoryStore())
+    await storage.set('flags', { ambireAnalytics: false })
+    const { uiManager } = mockUiManager()
+    const featureFlags = new FeatureFlagsController({}, storage)
+    const surveyCtrl = new SurveyController({
+      fetch: fetch as any,
+      relayerUrl: '',
+      storage,
+      ui: new UiController({ uiManager }),
+      dismissBanner: () => {}
+    })
+    const bannersCtrl = new BannerController(
+      storage,
+      () => ({
+        status: 'has-selected-account',
+        address: ZeroAddress,
+        hasKeys: true,
+        numberOfTransactions: 10,
+        totalUsdBalance: 10,
+        isBalanceReady: true
+      }),
+      surveyCtrl,
+      '1.0.0',
+      featureFlags
+    )
+    await Promise.all([bannersCtrl.initialLoadPromise, featureFlags.initialLoadPromise])
+    await surveyCtrl.initialLoadPromise
+
+    bannersCtrl.addBanner({
+      id: 'survey-banner',
+      title: 'Survey Banner',
+      type: 'info',
+      actions: [{ actionName: 'survey', meta: { surveyId: 'survey' } }]
+    })
+    expect(bannersCtrl.bannersData.banners).toHaveLength(0)
   })
   it('should not add a banner with the same id', async () => {
     const { bannersCtrl: controller } = await prepareTest()
@@ -222,7 +298,8 @@ describe('BannerController', () => {
         return accData
       },
       surveyCtrl,
-      '1.0.0'
+      '1.0.0',
+      new FeatureFlagsController({}, storage)
     )
     await bannersCtrl.initialLoadPromise
 

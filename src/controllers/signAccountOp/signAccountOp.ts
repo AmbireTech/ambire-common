@@ -81,7 +81,7 @@ import {
 } from '../../interfaces/signAccountOp'
 import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import { UserRequest } from '../../interfaces/userRequest'
-import { getContractImplementation } from '../../libs/7702/7702'
+import { getContractImplementation, getUserOpDelegator } from '../../libs/7702/7702'
 import {
   canBecomeSmarter,
   isAmbireV1LinkedAccount,
@@ -1939,12 +1939,14 @@ export class SignAccountOpController
       return
     }
 
-    // The owners can differ per chain, so the chain's state wins over the ones from the import
+    // The owners can differ per chain, so the chain's state wins over the ones from the import.
+    // A Safe that isn't deployed yet has no owners on chain, so the ones from the import are used
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-    const owners = (accountState?.associatedKeys || this.account.associatedKeys).map((addr) =>
-      addr.toLowerCase()
-    )
+    const ownersSource = accountState?.isDeployed
+      ? accountState.associatedKeys
+      : this.account.associatedKeys
+    const owners = ownersSource.map((addr) => addr.toLowerCase())
     // Ordered from the one that paid last
     const feePayers = this.#activity
       .getFeePayers(this.account.addr, this.#network.chainId)
@@ -5019,9 +5021,12 @@ export class SignAccountOpController
           // the Ambire4337AccountOp typed data in unprotected mode, while the
           // GridPlus one expects the standard AmbireOperation wrapping that smart
           // accounts use. Getting this wrong fails the userOp with AA24.
-          const delegator =
-            accountState.delegatedContract ??
-            getContractImplementation(this.#network.chainId, this.accountKeyStoreKeys)
+          const delegator = getUserOpDelegator({
+            eip7702Auth: userOperation.eip7702Auth,
+            delegatedContract: accountState.delegatedContract,
+            chainId: this.#network.chainId,
+            accountKeys: this.accountKeyStoreKeys
+          })
           const signsAsAmbire7702Eoa =
             accountState.isEOA && delegator.toLowerCase() === EIP_7702_AMBIRE_ACCOUNT.toLowerCase()
           if (!signsAsAmbire7702Eoa) {
