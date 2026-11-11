@@ -80,6 +80,58 @@ describe('TokenPricesController', () => {
       expect(requested).toHaveLength(2 + privacyPoolsAssets.length)
     })
 
+    test('no Privacy Pools assets that are fresh in the cache, e.g. after an account switch', async () => {
+      const { fetch, urls } = createPriceFetch()
+      const controller = createController(fetch)
+
+      await controller.getTokenData({ network: ethereum, tokenAddresses: [TOKEN_1] })
+      urls.length = 0
+      await controller.getTokenData({ network: ethereum, tokenAddresses: [TOKEN_2] })
+
+      // A single request, without the separate coin id one for the native asset
+      expect(urls.map(getRequestedIds)).toEqual([[TOKEN_2]])
+    })
+
+    test('the Privacy Pools assets again once they were answered more than 5 minutes ago', async () => {
+      const { fetch, urls } = createPriceFetch()
+      const controller = createController(fetch)
+
+      const now = Date.now()
+      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(now)
+      await controller.getTokenData({ network: ethereum, tokenAddresses: [TOKEN_1] })
+      dateSpy.mockReturnValue(now + 6 * MINUTE)
+      urls.length = 0
+      await controller.getTokenData({ network: ethereum, tokenAddresses: [TOKEN_2] })
+      dateSpy.mockRestore()
+
+      const requested = getAllRequestedIds(urls)
+      expect(requested).toEqual(expect.arrayContaining([TOKEN_2, ...privacyPoolsAssets]))
+      expect(requested).toHaveLength(1 + privacyPoolsAssets.length)
+    })
+
+    test('no Privacy Pools assets that a request in flight already asks for', async () => {
+      const { fetch, urls } = createPriceFetch()
+      const controller = createController(fetch)
+
+      await Promise.all([
+        controller.getTokenData({ network: ethereum, tokenAddresses: [TOKEN_1] }),
+        controller.getTokenData({ network: ethereum, tokenAddresses: [TOKEN_2] })
+      ])
+
+      const requestedPerCall = urls.map(getRequestedIds)
+      expect(requestedPerCall[requestedPerCall.length - 1]).toEqual([TOKEN_2])
+      expect(getAllRequestedIds(urls)).toHaveLength(2 + privacyPoolsAssets.length)
+    })
+
+    test('no Privacy Pools assets when the controller is told not to add them', async () => {
+      const { fetch, urls } = createPriceFetch()
+      const controller = new TokenPricesController({ fetch, addsPrivacyPoolsAssets: false })
+
+      await controller.getTokenData({ network: ethereum, tokenAddresses: [TOKEN_1] })
+
+      expect(getAllRequestedIds(urls)).toEqual([TOKEN_1])
+    })
+
     test('no Privacy Pools assets on the networks they are not on', async () => {
       const { fetch, urls } = createPriceFetch()
       const controller = createController(fetch)
@@ -180,7 +232,6 @@ describe('TokenPricesController', () => {
       expect(fetch).toHaveBeenCalledTimes(1)
       expect(tokenData.has(TOKEN_1)).toBe(true)
     })
-
   })
 
   describe('opting out of token prices', () => {
@@ -265,6 +316,21 @@ describe('TokenPricesController', () => {
     test('names the network when the request times out', async () => {
       const hangingFetch = jest.fn(() => new Promise(() => {}))
       const controller = new TokenPricesController({ fetch: hangingFetch as any, timeoutMs: 10 })
+
+      const { error } = await controller.getTokenData({
+        network: base,
+        tokenAddresses: [TOKEN_1]
+      })
+
+      expect(error?.message).toBe(`Cena request timed out on ${base.name}`)
+    })
+
+    test('times out when the response arrives but its body never finishes', async () => {
+      const stallingFetch = jest.fn(async () => ({
+        status: 200,
+        json: () => new Promise(() => {})
+      }))
+      const controller = new TokenPricesController({ fetch: stallingFetch as any, timeoutMs: 10 })
 
       const { error } = await controller.getTokenData({
         network: base,

@@ -2,7 +2,7 @@ import { geckoIdMapper } from '../../consts/coingecko'
 import { AMBIRE_API_TIMEOUT } from '../../consts/portfolio'
 import { getPrivacyPoolsChainConfig } from '../../consts/privacyPools'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-import { Fetch } from '../../interfaces/fetch'
+import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import {
   convertApiTokenDataToTokenDataCache,
@@ -123,8 +123,9 @@ const EMPTY_RESULT = (): GetTokenDataResult => ({ tokenData: new Map(), error: n
  * token answered (with a price or with "no price") within TOKEN_PRICE_MAX_AGE_MS is read from
  * the cache, whichever account or feature asked for it. Only the tokens missing from the cache
  * are requested. A call never adds its tokens to the request of another call, so a request
- * never carries the tokens of two accounts. Every request also carries the Privacy Pools assets,
- * which are the same for every user, so that pricing them reveals nothing.
+ * never carries the tokens of two accounts. Every request also carries the Privacy Pools assets
+ * that aren't fresh in the cache, which are the same for every user, so that pricing them
+ * reveals nothing and the Privacy Pools lookups are answered from the cache.
  *
  * The cache is private: features read the prices through `getTokenData`, and the portfolio
  * keeps them on its tokens. Nothing is requested, read or stored while the user has opted out
@@ -137,6 +138,8 @@ export class TokenPricesController extends EventEmitter {
 
   #timeoutMs: number
 
+  #addsPrivacyPoolsAssets: boolean
+
   /** chainId -> token data cache */
   #cacheByChainId = new Map<string, TokenDataCache>()
 
@@ -147,17 +150,24 @@ export class TokenPricesController extends EventEmitter {
     fetch,
     isTokenPricesEnabled = () => true,
     timeoutMs = AMBIRE_API_TIMEOUT,
+    addsPrivacyPoolsAssets = true,
     eventEmitterRegistry
   }: {
     fetch: Fetch
     isTokenPricesEnabled?: () => boolean
     timeoutMs?: number
+    /**
+     * Whether requests carry the Privacy Pools assets as cover. Off where no Privacy Pools
+     * account can exist (e.g. the standalone Benzin), as there is nothing to cover there.
+     */
+    addsPrivacyPoolsAssets?: boolean
     eventEmitterRegistry?: IEventEmitterRegistryController
   }) {
     super(eventEmitterRegistry)
     this.#fetch = fetch
     this.#isTokenPricesEnabled = isTokenPricesEnabled
     this.#timeoutMs = timeoutMs
+    this.#addsPrivacyPoolsAssets = addsPrivacyPoolsAssets
   }
 
   /**
@@ -200,7 +210,7 @@ export class TokenPricesController extends EventEmitter {
 
     const requests = [...requestsInFlight]
     if (addressesToRequest.length) {
-      requests.push(this.#requestTokens(network, addressesToRequest, baseCurrency))
+      requests.push(this.#requestTokens(network, addressesToRequest, baseCurrency, isFresh))
     }
 
     const failedRequest = (await Promise.allSettled(requests)).find(
@@ -285,13 +295,17 @@ export class TokenPricesController extends EventEmitter {
   }
 
   /**
-   * Requests the tokens together with the Privacy Pools assets of the network, and marks all of
-   * them as in flight until the request settles, so that other calls wait for it instead of
-   * requesting them again.
+   * Requests the tokens together with the Privacy Pools assets of the network that are neither
+   * fresh in the cache nor already requested, and marks all of them as in flight until the
+   * request settles, so that other calls wait for it instead of requesting them again.
    */
-  #requestTokens(network: Network, tokenAddresses: string[], baseCurrency: string): Promise<void> {
-    const privacyPoolsAssets =
-      getPrivacyPoolsChainConfig(network.chainId)?.assets.map(({ address }) => address) || []
+  #requestTokens(
+    network: Network,
+    tokenAddresses: string[],
+    baseCurrency: string,
+    isFresh: (cachedAt: number) => boolean
+  ): Promise<void> {
+    const privacyPoolsAssets = this.#getPrivacyPoolsAssetsToRequest(network.chainId, isFresh)
     const allTokens = getUniqueSortedAddresses([...tokenAddresses, ...privacyPoolsAssets])
     const inFlightKeys = allTokens.map((address) => getRequestInFlightKey(network.chainId, address))
 
@@ -307,6 +321,23 @@ export class TokenPricesController extends EventEmitter {
     request.then(forgetRequest, forgetRequest)
 
     return request
+  }
+
+  /** The Privacy Pools assets of the network that are neither fresh in the cache nor in flight */
+  #getPrivacyPoolsAssetsToRequest(
+    chainId: bigint,
+    isFresh: (cachedAt: number) => boolean
+  ): string[] {
+    if (!this.#addsPrivacyPoolsAssets) return []
+
+    const assetAddresses =
+      getPrivacyPoolsChainConfig(chainId)?.assets.map(({ address }) => address) || []
+
+    return assetAddresses.filter(
+      (address) =>
+        !this.#getCacheEntry(chainId, address, isFresh) &&
+        !this.#requestsInFlight.has(getRequestInFlightKey(chainId, address))
+    )
   }
 
   /**
@@ -355,8 +386,16 @@ export class TokenPricesController extends EventEmitter {
   async #fetchPrices(
     url: string
   ): Promise<{ [responseKey: string]: ExternalAPITokenMarketDataResponse | undefined }> {
-    const response = await fetchWithTimeout(this.#fetch, url, {}, this.#timeoutMs)
-    const body = await response.json()
+    // The body is read within the timeout too, as a response can arrive and then stall
+    const { response, body } = await fetchWithTimeout(
+      async (requestUrl: string, options: RequestInitWithCustomHeaders) => {
+        const priceResponse = await this.#fetch(requestUrl, options)
+        return { response: priceResponse, body: await priceResponse.json() }
+      },
+      url,
+      {},
+      this.#timeoutMs
+    )
 
     const isSuccessful = response.ok ?? response.status === 200
     if (!isSuccessful) throw new Error(`Price request failed with status ${response.status}`)
