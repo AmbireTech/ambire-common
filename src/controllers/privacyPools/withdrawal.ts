@@ -29,7 +29,6 @@ import {
   PrivacyPoolsWithdrawalFeeEstimate,
   PrivacyPoolsWithdrawalWouldFailError
 } from '../../libs/privacyPools/estimateWithdrawal'
-import { getPrivacyPoolsWholeNoteAmounts } from '../../libs/privacyPools/leaks/helpers'
 import {
   getPrivacyPoolsWithdrawalPrivacy,
   getUncheckedPrivacyPoolsWithdrawalPrivacy,
@@ -189,7 +188,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
   /** Bumped by each check of the Send form, so an older one finishing later writes nothing. */
   #checkId = 0
 
-  /** The Send form's latest check. Phrase-derived, as it tells which amounts spend whole notes. */
+  /** The Send form's latest check. Phrase-derived, as it tells what the phrase's notes give away. */
   #privacyCheck: { seedId: string; check: PrivacyPoolsWithdrawalPrivacyCheck } | null = null
 
   constructor(
@@ -385,14 +384,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     if (checkId !== this.#checkId || !this.#ctx.lock.isCurrent(lockGeneration)) return false
 
     const { seedId, ...checkedParams } = params
-    const notes = this.#getNotes(seedId, params.chainId)
-    const wholeNoteAmounts = notes
-      ? getPrivacyPoolsWholeNoteAmounts(notes, params.tokenAddress)
-      : []
-    this.#privacyCheck = {
-      seedId,
-      check: { ...checkedParams, privacy, wholeNoteAmounts }
-    }
+    this.#privacyCheck = { seedId, check: { ...checkedParams, privacy } }
 
     return true
   }
@@ -431,8 +423,12 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     })
   }
 
+  /** The notes the privacy checks need, the spent ones too. Undefined before the chain's sync. */
   #getNotes(seedId: string, chainId: string): PrivacyPoolsNote[] | undefined {
-    return this.#sync.getAccountChainStates(seedId)[chainId]?.notes
+    const state = this.#sync.getAccountChainStates(seedId)[chainId]
+    if (!state) return undefined
+
+    return [...state.notes, ...state.spentNotes]
   }
 
   /**

@@ -52,25 +52,6 @@ export const getPrivacyPoolsNotesToSpend = (
   return remaining > 0n ? null : spends
 }
 
-/**
- * The amounts a send of a token can have to spend whole notes and leave none partly sent,
- * smallest first. Empty when no note can be spent.
- */
-export const getPrivacyPoolsWholeNoteAmounts = (
-  /** In the order the SDK lists them, as the sync keeps them. */
-  notes: PrivacyPoolsNote[],
-  tokenAddress: string
-): bigint[] => {
-  let wholeNoteAmount = 0n
-
-  // The SDK spends the largest notes first, so only their running totals spend whole notes
-  return getSpendableNotes(notes, tokenAddress).map((note) => {
-    wholeNoteAmount += note.amount
-
-    return wholeNoteAmount
-  })
-}
-
 /** The approved deposits of the account's notes of the token, as the deposit index counts them. */
 export const getOwnDepositValues = (
   notes: PrivacyPoolsNote[],

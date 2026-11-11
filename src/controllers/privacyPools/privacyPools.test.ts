@@ -513,11 +513,16 @@ class FakeProtocol {
   }
 
   // The real one syncs before every read unless told not to, so the fake does too: a controller
-  // that also calls `sync()` itself is caught by the sync counts
-  async notes(_assets?: unknown, _includeSpent?: boolean, { sync = true } = {}) {
+  // that also calls `sync()` itself is caught by the sync counts. Like the real one, it leaves out
+  // notes with no balance unless asked for them.
+  async notes(_assets?: unknown, includeSpent = false, { sync = true } = {}) {
     if (sync) await this.sync()
 
-    return (notesBySeed[this.seedId as string] || []).map((note) => ({
+    const notes = (notesBySeed[this.seedId as string] || []).filter(
+      (note) => includeSpent || note.amount > 0n
+    )
+
+    return notes.map((note) => ({
       label: note.label,
       assetAddress: note.assetAddress ?? 0n,
       balance: note.amount,
@@ -5145,6 +5150,39 @@ describe('PrivacyPoolsController', () => {
       await checking
 
       expect(controller.withdrawalPrivacy).toBeNull()
+    })
+
+    it("does not count the user's own deposits sent in full as others' that hide a send", async () => {
+      storedPoolState = toStoredPoolState({
+        deposits: [
+          { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 998n },
+          { pool: ETHEREUM_ETH_POOL, value: 37n, blockNumber: 999n },
+          { pool: ETHEREUM_ETH_POOL, value: 37n, blockNumber: 1000n }
+        ],
+        isEveryDepositApproved: true,
+        lastSyncedBlock: 1000n + getPrivacyPoolsChainConfig(1n)!.blocksPerDay
+      })
+      // Both 37s are seed-a's, and the first one was already sent in full
+      notesBySeed['seed-a'] = [
+        {
+          label: 3n,
+          amount: 0n,
+          value: 37n,
+          withdraw: 1,
+          approved: true,
+          blockNumber: 999n
+        },
+        { label: 4n, amount: 37n, approved: true, blockNumber: 1000n }
+      ]
+      const { controller } = await prepareSynced()
+
+      await controller.checkWithdrawalPrivacy({ ...ETH_TRANSFER, amount: 37n })
+
+      expect(getLeakIds(controller)).toEqual(['unique-amount'])
+      expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+        rating: 'traceable',
+        cover: { bigEnough: 0, sameAmount: 0 }
+      })
     })
 
     it('rates a send unchecked when the pool could not be read, without asking about the recipient', async () => {

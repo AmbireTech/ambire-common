@@ -14,9 +14,9 @@ import { PhraseScopedModule, PrivacyPoolsContext } from './context'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 
 /**
- * The account's notes with a balance, as the plugin holds them. `shouldSync` false reads what the
- * plugin's last sync left, e.g. right after a proof that synced it. Throws if the plugin has no
- * notes, so an SDK that drops them fails clearly.
+ * The account's notes as the plugin holds them, the fully sent ones too, with an `amount` of 0.
+ * `shouldSync` false reads what the plugin's last sync left, e.g. right after a proof that synced
+ * it. Throws if the plugin has no notes, so an SDK that drops them fails clearly.
  */
 export const readPrivacyPoolsNotes = async (
   protocol: PrivacyPoolsV1Protocol,
@@ -25,7 +25,7 @@ export const readPrivacyPoolsNotes = async (
   // Optional on the plugin interface
   if (!protocol.notes) throw new Error('privacyPools: plugin does not expose notes')
 
-  const notes = await protocol.notes([], false, { sync: shouldSync })
+  const notes = await protocol.notes([], true, { sync: shouldSync })
 
   return notes.map((note) => ({
     label: note.label,
@@ -48,6 +48,7 @@ const IDLE_ACCOUNT_CHAIN_STATE: PrivacyPoolsAccountChainState = {
   lastSyncedAt: null,
   lastSyncDuration: null,
   notes: [],
+  spentNotes: [],
   history: null,
   isHistoryCurrent: false,
   historyError: null
@@ -324,7 +325,8 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
 
       // The plugin syncs before every read, costing seconds even with no new blocks, so a
       // `sync()` first would pay twice
-      const syncedNotes = await readPrivacyPoolsNotes(protocol, true)
+      const allNotes = await readPrivacyPoolsNotes(protocol, true)
+      const syncedNotes = allNotes.filter(({ amount }) => amount > 0n)
       this.#syncedProtocols.add(protocol)
       // The plugin has persisted the shared state by now
       initialRead?.resolve()
@@ -344,6 +346,7 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
         lastSyncedAt: Date.now(),
         lastSyncDuration: syncDuration,
         notes: syncedNotes,
+        spentNotes: allNotes.filter(({ amount }) => amount === 0n),
         // Kept, as a stale list beats a blank one, until the history is read again
         isHistoryCurrent: false
       })

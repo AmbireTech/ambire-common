@@ -226,7 +226,13 @@ export type PrivacyPoolsAccountChainState = Pick<
   PrivacyPoolsChainState,
   'syncStatus' | 'syncStartedAt' | 'error' | 'lastSyncedAt' | 'lastSyncDuration'
 > & {
+  /** The notes with a balance. */
   notes: PrivacyPoolsNote[]
+  /**
+   * The notes sent in full or taken back, apart from `notes` as only the privacy checks need them,
+   * to tell the user's own deposits from others'.
+   */
+  spentNotes: PrivacyPoolsNote[]
   /** Newest first. Null until read: it is read only while the UI shows it. */
   history: PrivacyPoolsHistoryEntry[] | null
   /** Whether `history` was read by the sync that read `notes`. Kept, though stale, until reread. */
@@ -475,6 +481,4 @@ export type PrivacyPoolsWithdrawalPrivacyCheck = {
   /** Null before the user enters one. */
   recipient: string | null
   privacy: PrivacyPoolsWithdrawalPrivacy | null
-  /** Amounts that spend whole deposits and leave none partly sent, smallest first. */
-  wholeNoteAmounts: bigint[]
 }

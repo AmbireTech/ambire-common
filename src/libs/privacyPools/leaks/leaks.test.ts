@@ -1,7 +1,7 @@
 import { Hex } from '../../../interfaces/hex'
 import { PrivacyPoolsNote } from '../../../interfaces/privacyPools'
 import { ZERO_ADDRESS } from '../../../services/socket/constants'
-import { getPrivacyPoolsNotesToSpend, getPrivacyPoolsWholeNoteAmounts } from './helpers'
+import { getPrivacyPoolsNotesToSpend } from './helpers'
 import { getPrivacyPoolsDepositPrivacy, getPrivacyPoolsWithdrawalPrivacy } from './leaks'
 import { buildPrivacyPoolsDepositIndex } from '../poolStats'
 
@@ -140,16 +140,6 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       notesCount: 1
     })
     expect(getPrivacy(38n)).toBeNull()
-  })
-
-  test('lists the amounts that spend whole notes as the SDK picks them', () => {
-    const notes = [
-      note({ amount: 30n }),
-      note({ amount: 100n }),
-      note({ amount: 70n, approval: 'pending' })
-    ]
-
-    expect(getPrivacyPoolsWholeNoteAmounts(notes, ZERO_ADDRESS)).toEqual([100n, 130n])
   })
 
   describe('unique amount', () => {
