@@ -70,7 +70,7 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
     id: 'empties-partly-sent-deposit',
     type: 'warning',
     title: 'Consider sending the rest later',
-    text: 'Your transfers from this deposit add up to it, which makes them easier to connect. More activity in the pool makes this harder.',
+    text: 'This transfer sends all that is left of your deposit. Together with your earlier transfers, it adds up to exactly what you deposited, so someone can tell they all came from that deposit. Waiting while more people use the pool makes this harder to see.',
     applies: ({ spends }) =>
       spends.some(({ note, amount }) => note.withdrawCount > 0 && amount === note.amount)
   },
