@@ -68,7 +68,6 @@ import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import { PortfolioDebugFlow } from '../../libs/portfolio/debug'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
-  convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
   getAccountPortfolioTotal,
   getAssetCacheKey,
@@ -88,7 +87,6 @@ import {
   ExchangeInfoMap,
   ExtendedError,
   ExtendedErrorWithLevel,
-  ExternalAPITokenMarketDataResponse,
   ExternalPortfolioDiscoveryResponse,
   FormattedPortfolioDiscoveryResponse,
   GasTankTokenResult,
@@ -100,7 +98,6 @@ import {
   ScheduledUpdates,
   TemporaryTokens,
   TokenBlacklist,
-  TokenDataCacheValue,
   TokenError,
   TokenResult,
   TokenValidationResult
@@ -1691,20 +1688,6 @@ export class PortfolioController
         discoveryTime,
         errors
       }
-
-    // Update the price cache so the lib can use the latest prices from velcro
-    if (response.prices) {
-      const velcroTokenData = Object.entries(response.prices)
-        .filter(
-          ([, priceData]) => !!priceData && 'price' in priceData && 'baseCurrency' in priceData
-        )
-        .map(([address, priceData]): [string, TokenDataCacheValue] => [
-          address,
-          convertApiTokenDataToTokenDataCache(priceData as ExternalAPITokenMarketDataResponse)
-        ])
-
-      this.#tokenPrices.setTokenData(chainId, velcroTokenData)
-    }
 
     response.lastUpdate = Date.now()
 

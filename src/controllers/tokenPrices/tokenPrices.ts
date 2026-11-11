@@ -22,10 +22,10 @@ const CENA_API_URL = 'https://cena.ambire.com'
 const BATCH_LIMIT = 40
 
 /** Tokens answered (with a price or with "no price") within this are read from the cache */
-export const TOKEN_PRICE_MAX_AGE_MS = 5 * 60 * 1000
+export const TOKEN_PRICE_MAX_AGE_MS = 5 * 60 * 1000 // 5 min
 
 /** When a request fails, cached prices younger than this are returned instead */
-export const TOKEN_PRICE_MAX_AGE_ON_FAILURE_MS = 60 * 60 * 1000
+export const TOKEN_PRICE_MAX_AGE_ON_FAILURE_MS = 60 * 60 * 1000 // 1h
 
 export type GetTokenDataParams = {
   network: Network
@@ -234,40 +234,6 @@ export class TokenPricesController extends EventEmitter {
     }
   }
 
-  /**
-   * A cached entry younger than TOKEN_PRICE_MAX_AGE_MS, without requesting it (e.g. NFT floor
-   * prices, which only come with Velcro's discovery response)
-   */
-  getCachedTokenData(
-    chainId: bigint,
-    address: string,
-    baseCurrency: string = 'usd'
-  ): TokenDataCacheValue | null {
-    if (!this.#getIsEnabled()) return null
-
-    const now = Date.now()
-    const entry = this.#getCacheEntry(
-      chainId,
-      address,
-      (cachedAt) => now - cachedAt <= TOKEN_PRICE_MAX_AGE_MS
-    )
-    if (!entry || !entry.priceIn.some((price) => price.baseCurrency === baseCurrency)) return null
-
-    return entry
-  }
-
-  /** Caches token data that came from elsewhere (e.g. Velcro's discovery response) */
-  setTokenData(chainId: bigint, entries: [address: string, tokenData: TokenDataCacheValue][]) {
-    if (!this.#getIsEnabled()) return
-
-    const cache = this.#getOrCreateCache(chainId)
-    const cachedAt = Date.now()
-
-    entries.forEach(([address, tokenData]) => {
-      cache.set(getTokenDataCacheKey(address), [cachedAt, tokenData])
-    })
-  }
-
   /** Whether prices may be used; drops everything that was stored if not */
   #getIsEnabled(): boolean {
     if (this.#isTokenPricesEnabled()) return true
@@ -327,9 +293,7 @@ export class TokenPricesController extends EventEmitter {
     const privacyPoolsAssets =
       getPrivacyPoolsChainConfig(network.chainId)?.assets.map(({ address }) => address) || []
     const allTokens = getUniqueSortedAddresses([...tokenAddresses, ...privacyPoolsAssets])
-    const inFlightKeys = allTokens.map((address) =>
-      getRequestInFlightKey(network.chainId, address)
-    )
+    const inFlightKeys = allTokens.map((address) => getRequestInFlightKey(network.chainId, address))
 
     const request = this.#fetchAndCacheTokens(network, allTokens, baseCurrency)
     inFlightKeys.forEach((key) => this.#requestsInFlight.set(key, request))

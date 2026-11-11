@@ -181,38 +181,6 @@ describe('TokenPricesController', () => {
       expect(tokenData.has(TOKEN_1)).toBe(true)
     })
 
-    test('getCachedTokenData reads what setTokenData stored, for 5 minutes', () => {
-      const { fetch } = createPriceFetch()
-      const controller = createController(fetch)
-      const tokenData = { priceIn: [{ baseCurrency: 'usd', price: 5 }], marketDataIn: [] }
-
-      controller.setTokenData(1n, [[TOKEN_1.toUpperCase().replace('0X', '0x'), tokenData]])
-
-      expect(controller.getCachedTokenData(1n, TOKEN_1)).toEqual(tokenData)
-      expect(controller.getCachedTokenData(1n, TOKEN_1, 'eur')).toBeNull()
-      expect(controller.getCachedTokenData(8453n, TOKEN_1)).toBeNull()
-      expect(fetch).not.toHaveBeenCalled()
-
-      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 6 * MINUTE)
-      expect(controller.getCachedTokenData(1n, TOKEN_1)).toBeNull()
-      dateSpy.mockRestore()
-    })
-
-    test('reuses prices set from elsewhere (e.g. Velcro) without requesting them', async () => {
-      const { fetch } = createPriceFetch()
-      const controller = createController(fetch)
-      controller.setTokenData(base.chainId, [
-        [TOKEN_1, { priceIn: [{ baseCurrency: 'usd', price: 7 }], marketDataIn: [] }]
-      ])
-
-      const { tokenData } = await controller.getTokenData({
-        network: base,
-        tokenAddresses: [TOKEN_1]
-      })
-
-      expect(fetch).not.toHaveBeenCalled()
-      expect(tokenData.get(TOKEN_1)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 7 }])
-    })
   })
 
   describe('opting out of token prices', () => {
@@ -237,23 +205,13 @@ describe('TokenPricesController', () => {
       await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
 
       isEnabled = false
-      expect(controller.getCachedTokenData(base.chainId, TOKEN_1)).toBeNull()
+      await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
 
+      // Turned back on, the price is requested again instead of read from the old cache
       isEnabled = true
-      expect(controller.getCachedTokenData(base.chainId, TOKEN_1)).toBeNull()
-    })
+      await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
 
-    test('ignores token data set while opted out', () => {
-      const { fetch } = createPriceFetch()
-      const controller = createController(fetch)
-      isEnabled = false
-
-      controller.setTokenData(base.chainId, [
-        [TOKEN_1, { priceIn: [{ baseCurrency: 'usd', price: 7 }], marketDataIn: [] }]
-      ])
-
-      isEnabled = true
-      expect(controller.getCachedTokenData(base.chainId, TOKEN_1)).toBeNull()
+      expect(fetch).toHaveBeenCalledTimes(2)
     })
   })
 

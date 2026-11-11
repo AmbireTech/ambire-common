@@ -414,13 +414,8 @@ export class Portfolio {
           collectibles: visibleCollectibles,
           // Collections have no flags until this point
           flags: { isCustom, isHidden },
-          // Collection prices are never requested, they only come with Velcro's discovery response
-          priceIn:
-            this.tokenPrices?.getCachedTokenData(
-              this.network.chainId,
-              collection.address,
-              baseCurrency
-            )?.priceIn || []
+          // Collections are not priced: token prices come only from cena, which has no NFT prices
+          priceIn: []
         })
         return acc
       },

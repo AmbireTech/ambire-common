@@ -222,15 +222,26 @@ describe('Portfolio', () => {
   describe('reusing cached prices', () => {
     const ACCOUNT_WITH_ETH = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
 
-    /** A portfolio lib whose price cache holds an ETH price cached `ageMs` ago */
-    const createPortfolioWithCachedEthPrice = (priceFetch: any, price: number, ageMs: number) => {
-      const cachedPrices = new TokenPricesController({ fetch: priceFetch })
-      const cachedAt = Date.now() - ageMs
-      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(cachedAt)
-      cachedPrices.setTokenData(1n, [
-        [ZeroAddress, { priceIn: [{ baseCurrency: 'usd', price }], marketDataIn: [] }]
-      ])
+    /**
+     * A portfolio lib whose price cache holds an ETH price answered `ageMs` ago. Later price
+     * requests go to `priceFetch`.
+     */
+    const createPortfolioWithCachedEthPrice = async (
+      priceFetch: any,
+      price: number,
+      ageMs: number
+    ) => {
+      let currentFetch: any = async () => ({
+        status: 200,
+        json: async () => ({ ethereum: { usd: price } })
+      })
+      const cachedPrices = new TokenPricesController({
+        fetch: ((...args: any[]) => currentFetch(...args)) as any
+      })
+      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() - ageMs)
+      await cachedPrices.getTokenData({ network: ethereum, tokenAddresses: [ZeroAddress] })
       dateSpy.mockRestore()
+      currentFetch = priceFetch
 
       return new Portfolio(provider, ethereum, cachedPrices)
     }
@@ -245,7 +256,7 @@ describe('Portfolio', () => {
 
     test('refetches a cached price older than 5 minutes, even if newer than an hour', async () => {
       const priceFetch = workingPriceFetch()
-      const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
+      const portfolioWithCachedPrice = await createPortfolioWithCachedEthPrice(
         priceFetch,
         1000,
         10 * 60 * 1000
@@ -259,7 +270,7 @@ describe('Portfolio', () => {
 
     test('falls back to a cached price younger than an hour when the price request fails', async () => {
       const priceFetch = failingPriceFetch()
-      const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
+      const portfolioWithCachedPrice = await createPortfolioWithCachedEthPrice(
         priceFetch,
         1000,
         10 * 60 * 1000
@@ -272,7 +283,7 @@ describe('Portfolio', () => {
     })
 
     test('drops a cached price older than an hour when the price request fails', async () => {
-      const portfolioWithCachedPrice = createPortfolioWithCachedEthPrice(
+      const portfolioWithCachedPrice = await createPortfolioWithCachedEthPrice(
         failingPriceFetch(),
         1000,
         2 * 60 * 60 * 1000
