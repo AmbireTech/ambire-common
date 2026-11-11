@@ -472,7 +472,7 @@ export type PrivacyPoolsWithdrawalPrivacyParams = {
 /**
  * The privacy of a send the Send form asked about, with what it was asked for, so the screen can
  * tell whether it still matches the form. `privacy` is null when the notes cannot pay `amount`,
- * as before one is entered.
+ * or before the chain's first sync.
  */
 export type PrivacyPoolsWithdrawalPrivacyCheck = {
   chainId: string

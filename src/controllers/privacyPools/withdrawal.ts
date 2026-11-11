@@ -188,7 +188,10 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
   /** Bumped by each check of the Send form, so an older one finishing later writes nothing. */
   #checkId = 0
 
-  /** The Send form's latest check. Phrase-derived, as it tells what the phrase's notes give away. */
+  /**
+   * The Send form's latest check. Phrase-derived (see the README), so a lock drops it, as it tells
+   * what the phrase's notes give away.
+   */
   #privacyCheck: { seedId: string; check: PrivacyPoolsWithdrawalPrivacyCheck } | null = null
 
   constructor(
@@ -403,7 +406,8 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     const isOwnAccount = !!recipient && this.#isWalletAccount(recipient)
     // ETH can be moved with itself, so only a token's recipient needs some
     const needsEthCheck = !!recipient && !isPrivacyPoolsNativeAsset(tokenAddress)
-    // One balance read serves both facts. Not made when nothing can be checked.
+    // One read answers both questions. Skipped when there is nothing to ask about the recipient,
+    // or the pool's deposits are not read yet
     const recipientState =
       depositIndex && recipient && (isOwnAccount || needsEthCheck)
         ? await this.#readRecipientState(chainId, recipient, isOwnAccount)

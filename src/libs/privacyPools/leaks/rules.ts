@@ -27,7 +27,10 @@ const isRevealingSendToDepositor = ({ spends, recipient }: WithdrawalFacts) =>
       (spend.amount < spend.note.amount || spend.note.withdrawCount > 0)
   )
 
-/** Sending back to the depositor already says more than sending to an account of the wallet. */
+/**
+ * Whether the send goes to another account in this wallet. A send that reveals its depositor is
+ * left out, as `send-to-depositor` already warns about something worse.
+ */
 const isOwnAccountSend = (facts: WithdrawalFacts) =>
   facts.isOwnAccount && !isRevealingSendToDepositor(facts)
 
@@ -41,7 +44,8 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
     type: 'error',
     title: 'This amount matches only your deposit',
     text: 'Nobody else has deposited this amount. This transfer will be linked to the address you deposited from, and to everything that address did.',
-    // All deposits, as one of someone else's older than the recent ones still hides it
+    // Counts all deposits, not only recent ones, as an older deposit of the same amount by
+    // someone else still hides this one
     applies: ({ spends, depositIndex, ownDepositValues }) =>
       spends.some(
         ({ note, amount }) =>

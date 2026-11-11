@@ -106,8 +106,8 @@ export const getSendCover = (
 })
 
 /**
- * The closest of `candidates` (smallest first) that `isValid` accepts and is not above `amount`,
- * else the closest above it. Undefined when none is valid.
+ * The closest of `candidates` (smallest first) below `amount` that `isValid` accepts, else the
+ * closest above it. A candidate equal to `amount` is never picked. Undefined when none is valid.
  */
 export const findNearest = <Candidate>(
   amount: bigint,

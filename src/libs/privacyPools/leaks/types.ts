@@ -13,8 +13,8 @@ export type PrivacyPoolsNoteSpend = { note: PrivacyPoolsNote; amount: bigint }
 export type CommonAmountCover = { amount: bigint; cover: PrivacyPoolsSendCover }
 
 /**
- * What the account's own deposits put into the pool, of all time and recent ones. They hide
- * nobody, as they all point to the user.
+ * The values the account's own deposits put into the pool, of all time in `all` and of the last
+ * `PRIVACY_POOLS_COVER_WINDOW_DAYS` in `recent`. They hide nobody, as they all point to the user.
  */
 export type OwnDepositValues = { all: bigint[]; recent: bigint[] }
 

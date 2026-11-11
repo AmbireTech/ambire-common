@@ -850,7 +850,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       chainId: token.chainId.toString(),
       tokenAddress: token.address,
       amount: this.#getTypedTokenAmount(token),
-      // Only limits the suggested amounts, so the balance stands in until the fee is read
+      // `maxAmount` only caps the suggested amounts, so the full balance is used until the fee
+      // is read
       maxAmount: this.privacyPoolsMaxAmount ?? getTokenAmount(token)
     })
   }

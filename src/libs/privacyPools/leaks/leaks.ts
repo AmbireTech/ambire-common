@@ -40,8 +40,9 @@ const findLeaks = <Facts>(rules: LeakRule<Facts>[], facts: Facts): PrivacyPoolsL
     }))
 
 /**
- * The worst leak sets the rating, and info leaks do not count. With none, privacy depends on the
- * cover the user is shown. Never `unchecked`, which only a missing deposit index gives.
+ * The worst leak sets the rating, and info leaks do not count. With no leaks it is `basic`, and
+ * the cover shown to the user tells how well the send hides. Never `unchecked`, which only a
+ * missing deposit index gives.
  */
 const getRating = (leaks: PrivacyPoolsLeak[]): PrivacyPoolsRating => {
   if (leaks.some(({ type }) => type === 'error')) return 'traceable'
@@ -52,8 +53,9 @@ const getRating = (leaks: PrivacyPoolsLeak[]): PrivacyPoolsRating => {
 
 /**
  * The privacy of a send of `amount` of a token from the account's notes. Rated `unchecked`, with no
- * leaks and no cover, without the pool's deposits. With a 0 amount, as before one is entered, only
- * the recipient is checked, with no cover. Null when the notes cannot pay it, or it is negative.
+ * leaks and no cover, until the pool's deposits are read. An `amount` of 0 means none is entered
+ * yet, so only the recipient is checked and there is no cover. Null when the notes cannot pay
+ * `amount`, or it is negative.
  */
 export const getPrivacyPoolsWithdrawalPrivacy = ({
   amount,
@@ -81,7 +83,7 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   commonAmounts: bigint[]
 }): PrivacyPoolsWithdrawalPrivacy | null => {
   const { notes, tokenAddress, depositIndex } = params
-  // Nothing is spent yet, which leaves only what the recipient gives away
+  // No amount is entered yet, so only the recipient can be checked
   const isRecipientOnly = amount === 0n
   const spends = isRecipientOnly ? [] : getPrivacyPoolsNotesToSpend(notes, tokenAddress, amount)
   if (!spends) return null
@@ -89,7 +91,7 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   if (!depositIndex) return getUncheckedPrivacyPoolsWithdrawalPrivacy(spends.length)
 
   const ownDepositValues = getOwnDepositValues(notes, tokenAddress, depositIndex)
-  // Only fixes of the amount use them, and there is no amount to fix
+  // Common amounts are only suggested in place of an entered amount
   const commonAmountCovers = isRecipientOnly
     ? []
     : commonAmounts.flatMap((commonAmount) => {
@@ -109,7 +111,7 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
     ownDepositValues,
     amount,
     spends,
-    // The smallest cover of no spends would be Infinity
+    // `getSendCover` takes the smallest count over the spends, which is Infinity with none
     cover: isRecipientOnly ? NO_COVER : getSendCover(depositIndex, ownDepositValues, spends),
     commonAmountCovers
   }

@@ -230,7 +230,7 @@ export const getPrivacyPoolsStoreKey = ({
 }: PrivacyPoolsChainConfig): string =>
   `privacy-pool-state-${chainId.toString()}-${BigInt(entrypointAddress).toString()}`
 
-/** How far back the deposits the user is shown as hiding a transfer go. */
+/** How many days back the deposits that hide a transfer are counted in what the user sees. */
 export const PRIVACY_POOLS_COVER_WINDOW_DAYS = 90n
 
 const ETH_UNIT = 10n ** 18n
@@ -251,8 +251,8 @@ export const PRIVACY_POOLS_DEPOSIT_CHIPS: { [tokenId: string]: bigint[] } = {
 }
 
 /**
- * Fewer deposits than this to hide among reads as a warning, even without a leak. Shown, not
- * counted as a leak, as the user decides whether it is enough.
+ * A send hidden among fewer deposits than this is shown as a warning, even with no leak. It does
+ * not count as a leak, as the user decides whether that many is enough.
  */
 export const PRIVACY_POOLS_MIN_REASSURING_COVER = 5
 
