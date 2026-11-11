@@ -68,8 +68,6 @@ import {
   PrivacyPoolsWithdrawalParams
 } from './withdrawal'
 
-const PRICES_MAX_AGE_MS = 5 * 60 * 1000
-
 /** A chain read more recently than this is not read again when the account is opened. */
 export const OPEN_SYNC_MAX_AGE_MS = 2 * 60 * 1000
 
@@ -142,10 +140,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * which has no selected account while a Privacy Pools account is selected.
    */
   prices: { [priceKey: string]: number } = {}
-
-  #pricesFetchedAt = 0
-
-  #pricesRequest: Promise<void> | null = null
 
   /**
    * Per chain, its pools' numbers for a token's details, so they are there when it opens. The same
@@ -578,43 +572,32 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return this.#sync.queue(chainId, seedId)
   }
 
-  /** Refetches stale prices, one request at a time, unless token prices are opted out of. */
+  /**
+   * Reads the prices from the price controller, which answers from its cache when they are
+   * fresh, joins a request already in flight, and answers with none while the user has opted
+   * out of token prices.
+   */
   async #refreshPrices() {
-    if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) return
-    if (this.#pricesRequest || Date.now() - this.#pricesFetchedAt < PRICES_MAX_AGE_MS) return
-
-    this.#pricesRequest = (async () => {
-      try {
-        const prices = await fetchPrivacyPoolsPrices({
-          tokenPrices: this.#tokenPrices,
-          networks: this.#networks.networks.filter(({ chainId }) =>
-            this.supportedChainIds.includes(chainId.toString())
-          )
-        })
-        // Opted out while the request was in flight
-        if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) return
-
-        this.prices = prices
-        this.#pricesFetchedAt = Date.now()
-        this.emitUpdate()
-      } catch (error: any) {
-        // Previous prices, if any, stay
-        this.emitError({
-          level: 'silent',
-          message: 'Could not load the prices of what is in Privacy Pools.',
-          error: error instanceof Error ? error : new Error('privacyPools: prices request failed')
-        })
-      } finally {
-        this.#pricesRequest = null
-      }
-    })()
-
-    await this.#pricesRequest
+    try {
+      this.prices = await fetchPrivacyPoolsPrices({
+        tokenPrices: this.#tokenPrices,
+        networks: this.#networks.networks.filter(({ chainId }) =>
+          this.supportedChainIds.includes(chainId.toString())
+        )
+      })
+      this.emitUpdate()
+    } catch (error: any) {
+      // Previous prices, if any, stay
+      this.emitError({
+        level: 'silent',
+        message: 'Could not load the prices of what is in Privacy Pools.',
+        error: error instanceof Error ? error : new Error('privacyPools: prices request failed')
+      })
+    }
   }
 
   #dropPrices() {
     this.prices = {}
-    this.#pricesFetchedAt = 0
   }
 
   /**
