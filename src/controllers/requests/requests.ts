@@ -4319,12 +4319,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     )
   }
 
+  /**
+   * Keeps a Safe message request that still needs other owners' signatures alive and
+   * records who signed it and its Safe message hash, which is what matches it to the
+   * Safe API message once the other owners sign, so the app gets the final signature.
+   */
   setPartiallyCompleteRequest(
     requestId: UserRequest['id'],
     meta?: { signed?: string[]; hash?: Hex }
   ): void {
     const req = this.userRequests.find((uReq) => uReq.id === requestId)
-    if (!req || (req.kind !== 'message' && req.kind !== 'typedMessage')) return
+    if (!req || (req.kind !== 'message' && req.kind !== 'typedMessage' && req.kind !== 'siwe'))
+      return
 
     req.meta.keepRequestAlive = true
     if (meta?.signed) req.meta.signed = meta.signed
