@@ -21,11 +21,10 @@ import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
   convertApiTokenDataToTokenDataCache,
-  getTokenDataCacheKey,
   getHardcodedCitreaPrices,
+  getTokenDataCacheKey,
   getVisibleCollectibles,
   mergeCollectionHints,
-  mergeERC721s,
   planAssetMetadata,
   tokenFilter
 } from './helpers'
@@ -478,7 +477,9 @@ export class Portfolio {
       tokensWithoutPrices.map(
         async (token: Omit<TokenResult, 'priceIn' | 'marketDataIn' | 'meta'>) => {
           let hasPrice = false
-          const cachedTokenData = getTokenDataFromCache(token.address, tokenDataRecencyOnFailure)
+          // `tokenDataRecencyOnFailure` is only for falling back to an older price when the
+          // price request fails - reusing a price that old here would skip refetching it
+          const cachedTokenData = getTokenDataFromCache(token.address)
 
           if (cachedTokenData && cachedTokenData.priceIn && cachedTokenData.priceIn.length > 0) {
             hasPrice = true

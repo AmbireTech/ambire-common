@@ -10,6 +10,7 @@ import {
 import { FeatureFlags } from '@/consts/featureFlags'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
 import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
+import { PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS } from '@/consts/privacyPools'
 import {
   AccountPickerController,
   PreparedAccounts
@@ -37,6 +38,7 @@ import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
+import { privacyPoolsErrors } from '@/controllers/privacyPools/errors'
 import { PrivacyPoolsController } from '@/controllers/privacyPools/privacyPools'
 import { ProvidersController } from '@/controllers/providers/providers'
 import { RequestsController } from '@/controllers/requests/requests'
@@ -103,7 +105,7 @@ import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
 import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
-import { AccountOp } from '@/libs/accountOp/accountOp'
+import { AccountOp, isSameChainAndSender } from '@/libs/accountOp/accountOp'
 import {
   getCallsWithTxnIds,
   getDappIdentifier,
@@ -125,11 +127,13 @@ import { SocketV3API } from '@/services/socketv3/api'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
+import { getIsViewOnly } from '@/utils/accounts'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
 import { getReceiptBlockNumberByChainId } from '@/utils/nonce'
 import { generateUuid } from '@/utils/uuid'
 import wait from '@/utils/wait'
 import { waitForBlockNumber } from '@/utils/waitForBlockNumber'
+import { withTimeout } from '@/utils/with-timeout'
 
 type AccountsUpdate = {
   accountsToAdd: Account[]
@@ -524,6 +528,7 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       networks: this.networks,
       phishing: this.phishing,
+      providers: this.providers,
       ui: this.ui,
       selectedAccount: this.selectedAccount,
       featureFlags: this.featureFlags
@@ -1125,6 +1130,78 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
+   * Takes back a deposit of the selected Privacy Pools account that is still being verified:
+   * publicly and in full, to the account that made it. Only that account can, so it is selected
+   * and the call is added to its requests for the user to sign. If that call is already waiting
+   * to be signed, its request is opened instead.
+   */
+  async privacyPoolsRagequit({ chainId, label }: { chainId: string; label: bigint }) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'privacyPoolsRagequit',
+      async () => {
+        // Checked before proving, as a second call for the same deposit would make the whole
+        // transaction fail
+        const depositorAddr = this.privacyPools.getRagequitDepositorAddr({ chainId, label })
+        const waitingRequest =
+          depositorAddr &&
+          this.requests.findPrivacyPoolsRagequitRequest({
+            accountAddr: depositorAddr,
+            chainId: BigInt(chainId),
+            label
+          })
+        if (waitingRequest) {
+          const { accountAddr: waitingAccountAddr } = waitingRequest.meta
+          if (this.selectedAccount.account?.addr !== waitingAccountAddr)
+            await this.#selectAccount(waitingAccountAddr)
+
+          await this.requests.setCurrentUserRequestById(waitingRequest.id)
+          return
+        }
+
+        const { accountAddr, calls } = await this.privacyPools.buildRagequitCalls({
+          chainId,
+          label
+        })
+        const depositor = this.accounts.accounts.find(
+          ({ addr }) => addr.toLowerCase() === accountAddr.toLowerCase()
+        )
+        if (!depositor) throw privacyPoolsErrors.ragequitDepositorNotInWallet()
+        if (getIsViewOnly(this.keystore.keys, depositor.associatedKeys))
+          throw privacyPoolsErrors.ragequitDepositorViewOnly()
+
+        // What the request is built from, loaded before the account is switched, so a failure
+        // leaves the user on the Privacy Pools account rather than on another one with nothing
+        // to sign. Limited in time, as the fetch can wait behind other fetches of the account
+        const network = this.networks.networks.find((net) => net.chainId === BigInt(chainId))
+        const accountState =
+          network &&
+          (await withTimeout(
+            () => this.accounts.getOrFetchAccountOnChainState(depositor.addr, network.chainId),
+            {
+              timeoutMs: PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS,
+              message: "privacyPools: loading the depositor's account state timed out"
+            }
+          ).catch((error: unknown) => {
+            throw privacyPoolsErrors.ragequitDepositorStateLoadFailed(error)
+          }))
+        if (!accountState) throw privacyPoolsErrors.ragequitDepositorStateUnavailable()
+
+        if (this.selectedAccount.account?.addr !== depositor.addr)
+          await this.#selectAccount(depositor.addr)
+
+        await this.requests.build({
+          type: 'privacyPoolsRagequitRequest',
+          params: { accountAddr: depositor.addr, chainId: BigInt(chainId), calls }
+        })
+      },
+      // As `selectAccount`, which it runs
+      true
+    )
+  }
+
+  /**
    * Once the selected account is gone, selects the first regular account, else the first Privacy
    * Pools account, else nothing (signed out).
    */
@@ -1310,11 +1387,12 @@ export class MainController extends EventEmitter implements IMainController {
 
     let isSignAndBroadcastInProgressOnThisAccountAndChain = false
 
+    // All accounts are checked, as another account can share the fee payer of this op
     if (
-      this.requests.visibleUserRequests.some(
+      this.requests.userRequests.some(
         (r) =>
           r.kind === 'calls' &&
-          r.signAccountOp.accountOp.chainId === signAccountOp.accountOp.chainId &&
+          isSameChainAndSender(r.signAccountOp.accountOp, signAccountOp.accountOp) &&
           r.signAccountOp.isSignAndBroadcastInProgress
       )
     ) {
@@ -1322,19 +1400,20 @@ export class MainController extends EventEmitter implements IMainController {
     } else if (
       type !== 'one-click-swap-and-bridge' &&
       this.swapAndBridge.signAccountOpController &&
-      this.swapAndBridge.signAccountOpController.accountOp.accountAddr ===
-        signAccountOp.accountOp.accountAddr &&
-      this.swapAndBridge.signAccountOpController.accountOp.chainId ===
-        signAccountOp.accountOp.chainId &&
+      isSameChainAndSender(
+        this.swapAndBridge.signAccountOpController.accountOp,
+        signAccountOp.accountOp
+      ) &&
       this.swapAndBridge.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true
     } else if (
       type !== 'one-click-transfer' &&
       this.transfer.signAccountOpController &&
-      this.transfer.signAccountOpController.accountOp.accountAddr ===
-        signAccountOp.accountOp.accountAddr &&
-      this.transfer.signAccountOpController.accountOp.chainId === signAccountOp.accountOp.chainId &&
+      isSameChainAndSender(
+        this.transfer.signAccountOpController.accountOp,
+        signAccountOp.accountOp
+      ) &&
       this.transfer.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true
@@ -1424,6 +1503,17 @@ export class MainController extends EventEmitter implements IMainController {
         })
     }
 
+    // A signed message can let a dapp move the account's funds later (e.g. Monerium burning EURe
+    // for a bank transfer), so the balances are refreshed once that dapp's transaction has landed.
+    // Logins move no funds and would only spend the per-account cache bypass budget.
+    if (signedMessage.content.kind !== 'siwe') {
+      this.portfolio.scheduleUpdate({
+        accountId: signedMessage.accountAddr,
+        chainId: signedMessage.chainId,
+        bypassServerSideCache: true
+      })
+    }
+
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
 
     await this.requests.resolveUserRequest(
@@ -1433,14 +1523,18 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleSignMessage() {
-    const accountAddr = this.signMessage.messageToSign?.accountAddr
-    const chainId = this.signMessage.messageToSign?.chainId
+    const approvedMessage = this.signMessage.messageToSign
+    const accountAddr = approvedMessage?.accountAddr
+    const chainId = approvedMessage?.chainId
 
     // Could (rarely) happen if not even a single account state is fetched yet
     const shouldForceUpdateAndWaitForAccountState =
       accountAddr && chainId && !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]
-    if (shouldForceUpdateAndWaitForAccountState)
+    if (shouldForceUpdateAndWaitForAccountState) {
       await this.accounts.updateAccountState(accountAddr, 'latest', [chainId])
+      // A request that replaced the message during the fetch was never approved
+      if (this.signMessage.messageToSign !== approvedMessage) return
+    }
 
     const isAccountStateStillMissing =
       !accountAddr || !chainId || !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]
@@ -2053,7 +2147,8 @@ export class MainController extends EventEmitter implements IMainController {
         maxDataAgeMs
       })
     ])
-    this.fetchSafeTxns([], true).catch((e) => e) // we catch the error inside
+    // Refetch only the chains the dashboard is filtered by, if it is filtered
+    this.fetchSafeTxns(chainIds ?? [], true).catch((e) => e) // we catch the error inside
   }
 
   /**
@@ -2072,12 +2167,16 @@ export class MainController extends EventEmitter implements IMainController {
 
   /**
    * Fetches the pending txns of the selected Safe, and then the pending counts of the other
-   * Safes, one after the other so they don't compete for the Safe API's rate limit
+   * Safes, one after the other so they don't compete for the Safe API's rate limit.
+   * Nothing is fetched while the wallet is locked, as unlocking fetches them again.
    */
   async #fetchAllSafesPending() {
+    // do not make Safe requests if the wallet is locked
+    if (!this.keystore.isUnlocked) return
+
     await this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
 
-    // do not make Safe requests for the other Safes if the wallet is locked
+    // the wallet may have been locked while the selected Safe was fetched
     if (!this.keystore.isUnlocked) return
 
     await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
@@ -2091,6 +2190,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
     if (!this.selectedAccount?.account?.safeCreation) return
+    // do not make Safe requests if the wallet is locked
+    if (!this.keystore.isUnlocked) return
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex
 
@@ -2102,20 +2203,16 @@ export class MainController extends EventEmitter implements IMainController {
     const accountState = await this.accounts.getOrFetchAccountStates(safeAddr)
     if (!accountState) return
 
-    const finalChainIds = chainIds.length
-      ? chainIds
-      : this.networks.networks
-          .filter((n) => {
-            // fetch info only about deployed safes
-            const state = accountState?.[n.chainId.toString()]
-            return state?.isDeployed
-          })
-          .map((n) => n.chainId)
+    // fetch info only about deployed safes, and only on the passed chains if there are any.
+    // A chain without an account state has no nonce to fetch the pending txns from either
+    const networksAndThresholds = this.networks.networks.flatMap(({ chainId }) => {
+      if (chainIds.length && !chainIds.includes(chainId)) return []
 
-    const networksAndThresholds = finalChainIds.map((c) => ({
-      chainId: c,
-      threshold: accountState[c.toString()]?.threshold || 0
-    }))
+      const chainAccountState = accountState[chainId.toString()]
+      if (!chainAccountState?.isDeployed) return []
+
+      return [{ chainId, threshold: chainAccountState.threshold, nonce: chainAccountState.nonce }]
+    })
 
     if (!networksAndThresholds.length) return
 
@@ -2123,6 +2220,10 @@ export class MainController extends EventEmitter implements IMainController {
       'fetchSafeTxns',
       async () => {
         for (let i = 0; i < networksAndThresholds.length; i++) {
+          // stop once the wallet gets locked, instead of pausing before each remaining chain.
+          // If it gets locked during the pause below, `fetchPending` makes no request either
+          if (!this.keystore.isUnlocked) break
+
           // wait a second to not hit 5 request per minute API limit
           if (i !== 0) await wait(600)
 

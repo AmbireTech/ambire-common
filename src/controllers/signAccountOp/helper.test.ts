@@ -1,4 +1,4 @@
-import { makeError } from 'ethers'
+import { JsonRpcProvider, makeError, Network } from 'ethers'
 
 import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
@@ -8,6 +8,9 @@ import {
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
   getSafeGasRefundWarning,
+  isNonceTooLow,
+  isReplacementRefused,
+  isTxnAlreadyKnown,
   isUnderpriced
 } from './helper'
 
@@ -166,6 +169,43 @@ describe('getSafeGasRefundWarning', () => {
   })
 })
 
+describe('broadcast error checks', () => {
+  const provider = new JsonRpcProvider('http://127.0.0.1:1', Network.from(1), {
+    staticNetwork: Network.from(1)
+  })
+  afterAll(() => provider.destroy())
+
+  // Built the way ethers builds them from a node answer to eth_sendRawTransaction
+  const nodeError = (message: string) =>
+    provider.getRpcError(
+      { method: 'eth_sendRawTransaction', params: ['0x00'], id: 1, jsonrpc: '2.0' },
+      { id: 1, error: { code: -32000, message } }
+    )
+
+  test('isReplacementRefused matches the node refusal, also without the ethers mapping', () => {
+    expect(isReplacementRefused(nodeError('replacement transaction underpriced'))).toBe(true)
+    expect(isReplacementRefused(new Error('replacement transaction underpriced'))).toBe(true)
+    expect(isReplacementRefused(nodeError('nonce too low'))).toBe(false)
+    expect(isReplacementRefused(nodeError('transaction underpriced'))).toBe(false)
+  })
+
+  test('isNonceTooLow matches the node answer in any form', () => {
+    expect(isNonceTooLow(nodeError('nonce too low'))).toBe(true)
+    expect(isNonceTooLow(nodeError('nonce too low: next nonce 8, tx nonce 7'))).toBe(true)
+    expect(isNonceTooLow(new Error('nonce too low'))).toBe(true)
+    expect(isNonceTooLow(nodeError('replacement transaction underpriced'))).toBe(false)
+  })
+
+  test('isTxnAlreadyKnown matches only a node that already has the txn', () => {
+    expect(isTxnAlreadyKnown(nodeError('already known'))).toBe(true)
+    expect(isTxnAlreadyKnown(new Error('already known'))).toBe(true)
+    // The txn never went out, so it must not count as sent
+    expect(isTxnAlreadyKnown(nodeError('unknown transaction type'))).toBe(false)
+    expect(isTxnAlreadyKnown(nodeError('nonce too low'))).toBe(false)
+    expect(isTxnAlreadyKnown(nodeError('replacement transaction underpriced'))).toBe(false)
+    expect(isTxnAlreadyKnown('already known')).toBe(false)
+  })
+})
 describe('getBroadcastServiceErrorMessage', () => {
   const userOpPayload = {
     method: 'eth_sendUserOperation',
@@ -208,7 +248,8 @@ describe('getBroadcastServiceErrorMessage', () => {
   test('falls back to the short message when ethers has no service error', () => {
     const error = makeError('timeout', 'TIMEOUT', {
       operation: 'eth_sendUserOperation',
-      info: { payload: userOpPayload }
+      info: { payload: userOpPayload },
+      reason: 'timeout'
     })
 
     expect(getBroadcastServiceErrorMessage(error)).toBe('timeout')

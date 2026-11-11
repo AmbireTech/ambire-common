@@ -7,6 +7,8 @@ import {
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
+  SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL,
+  SAFE_TXNS_RESOLVE_ACTIVE_INTERVAL,
   TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
   TRENDING_TOKENS_FAILED_UPDATE_INTERVAL,
   TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
@@ -20,6 +22,13 @@ import { getAccountOpNonce } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
+import {
+  getNextSafeResolvePollState,
+  getSafeResolveTimeout,
+  INITIAL_SAFE_RESOLVE_POLL_STATE,
+  SafeResolvePollState,
+  toSafeResolveFingerprint
+} from '../../libs/safe/resolvePolling'
 import { sortSigs } from '../../libs/safe/safe'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -73,7 +82,20 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   #safeGlobalTxnInterval: IRecurringTimeout
 
+  get safeGlobalTxnInterval() {
+    return this.#safeGlobalTxnInterval
+  }
+
   #safeGlobalMessageInterval: IRecurringTimeout
+
+  get safeGlobalMessageInterval() {
+    return this.#safeGlobalMessageInterval
+  }
+
+  /** What the last checks for resolved Safe txns and messages found, to slow them down */
+  #safeTxnsPollState: SafeResolvePollState = INITIAL_SAFE_RESOLVE_POLL_STATE
+
+  #safeMessagesPollState: SafeResolvePollState = INITIAL_SAFE_RESOLVE_POLL_STATE
 
   #updateTrendingTokensInterval: IRecurringTimeout
 
@@ -160,19 +182,26 @@ export class ContinuousUpdatesController extends EventEmitter {
       'fastAccountStateReFetchTimeout'
     )
 
+    // The Safe checks run fast while a wallet window is open, slower while none is, and slow
+    // down further while they keep finding nothing new (see `getSafeResolveTimeout`)
     this.#safeGlobalTxnInterval = new RecurringTimeout(
-      this.#resolveConfirmedSafeTxns.bind(this),
-      10000,
+      this.#pollConfirmedSafeTxns.bind(this),
+      SAFE_TXNS_RESOLVE_ACTIVE_INTERVAL,
       this.emitError.bind(this),
       'safeGlobalTxnInterval'
     )
 
     this.#safeGlobalMessageInterval = new RecurringTimeout(
-      this.#resolveConfirmedSafeMessages.bind(this),
-      11000,
+      this.#pollConfirmedSafeMessages.bind(this),
+      SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL,
       this.emitError.bind(this),
       'resolveConfirmedSafeMessages'
     )
+
+    // The user opening or coming back to the wallet may be waiting on the other owners, so
+    // the Safe checks go back to the fast interval instead of waiting out a long one
+    this.#main.ui.uiEvent.on('addView', () => this.#speedUpSafeChecks())
+    this.#main.ui.uiEvent.on('viewFocus', () => this.#speedUpSafeChecks())
 
     // Trending tokens poll frequently only while the extension is active and back off to a long
     // cadence otherwise. On becoming active we refresh immediately, but the freshness guard in
@@ -470,7 +499,80 @@ export class ContinuousUpdatesController extends EventEmitter {
     this.#fastAccountStateReFetchTimeout.updateTimeout({ timeout: updateTime })
   }
 
-  async #resolveConfirmedSafeTxns() {
+  #isUiActive() {
+    return !!this.#main.ui.views.length
+  }
+
+  /**
+   * Resets the slowdown of the Safe checks and, if one is waiting out a longer interval than
+   * the fast one, reschedules it to run at the fast interval. A check that is running is not
+   * rescheduled: a restart doesn't stop it, so the next check could start while it's still
+   * running and both could resolve the same request. When it finishes, it picks the fast
+   * interval by itself, as the slowdown is reset here.
+   */
+  #speedUpSafeChecks() {
+    this.#safeTxnsPollState = {
+      ...this.#safeTxnsPollState,
+      unchangedChecksCount: 0
+    }
+    this.#safeMessagesPollState = {
+      ...this.#safeMessagesPollState,
+      unchangedChecksCount: 0
+    }
+
+    const safeChecks = [
+      { interval: this.#safeGlobalTxnInterval, activeTimeout: SAFE_TXNS_RESOLVE_ACTIVE_INTERVAL },
+      {
+        interval: this.#safeGlobalMessageInterval,
+        activeTimeout: SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL
+      }
+    ]
+    safeChecks.forEach(({ interval, activeTimeout }) => {
+      const isCheckRunning = !!interval.promise
+      if (!interval.running || isCheckRunning || interval.currentTimeout <= activeTimeout) return
+
+      interval.restart({ timeout: activeTimeout })
+    })
+  }
+
+  async #pollConfirmedSafeTxns() {
+    try {
+      const fingerprint = await this.#resolveConfirmedSafeTxns()
+      this.#safeTxnsPollState = getNextSafeResolvePollState(this.#safeTxnsPollState, fingerprint)
+    } finally {
+      this.#safeGlobalTxnInterval.updateTimeout({
+        timeout: getSafeResolveTimeout({
+          activeTimeout: SAFE_TXNS_RESOLVE_ACTIVE_INTERVAL,
+          isUiActive: this.#isUiActive(),
+          unchangedChecksCount: this.#safeTxnsPollState.unchangedChecksCount
+        })
+      })
+    }
+  }
+
+  async #pollConfirmedSafeMessages() {
+    try {
+      const fingerprint = await this.#resolveConfirmedSafeMessages()
+      this.#safeMessagesPollState = getNextSafeResolvePollState(
+        this.#safeMessagesPollState,
+        fingerprint
+      )
+    } finally {
+      this.#safeGlobalMessageInterval.updateTimeout({
+        timeout: getSafeResolveTimeout({
+          activeTimeout: SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL,
+          isUiActive: this.#isUiActive(),
+          unchangedChecksCount: this.#safeMessagesPollState.unchangedChecksCount
+        })
+      })
+    }
+  }
+
+  /**
+   * Resolves the selected Safe's signed txns that were executed or got more signatures.
+   * Returns the fingerprint of the check, or undefined when there was nothing to check.
+   */
+  async #resolveConfirmedSafeTxns(): Promise<string | undefined> {
     await this.initialLoadPromise
 
     // call only if the selected account is a safe
@@ -486,6 +588,8 @@ export class ContinuousUpdatesController extends EventEmitter {
     // Ask each chain only for the transactions that can still resolve a request we
     // are waiting on, which is everything from the smallest pending nonce upwards
     const minNonceByChainId = new Map<bigint, bigint>()
+    // A request that is added or signed changes the fingerprint, which resets the slowdown
+    const checkedRequestParts: string[] = []
     this.#main.requests.userRequests.forEach((r) => {
       if (
         r.meta.accountAddr !== safeAddr ||
@@ -499,6 +603,9 @@ export class ContinuousUpdatesController extends EventEmitter {
       const { accountOp } = r.signAccountOp
       // A request with no nonce cannot narrow the range, so fetch the chain in full
       const nonce = getAccountOpNonce(accountOp) ?? 0n
+      checkedRequestParts.push(
+        `request:${accountOp.chainId}:${accountOp.txnId}:${accountOp.signed?.length ?? 0}`
+      )
 
       const currentMin = minNonceByChainId.get(accountOp.chainId)
       if (currentMin === undefined || nonce < currentMin)
@@ -516,7 +623,16 @@ export class ContinuousUpdatesController extends EventEmitter {
       console.log('failed to retrieve executed Safe txns', e)
       return []
     })
-    if (!confirmed.length) return
+    // A failed fetch also counts as nothing new, so the checks slow down while the Safe API
+    // is down or rate limiting us instead of retrying it at the fast interval
+    const fingerprint = toSafeResolveFingerprint([
+      ...checkedRequestParts,
+      ...confirmed.map(
+        ({ safeTxnHash, transactionHash, confirmations }) =>
+          `txn:${safeTxnHash}:${transactionHash ?? ''}:${confirmations?.length ?? 0}`
+      )
+    ])
+    if (!confirmed.length) return fingerprint
 
     // resolve each request
     for (const oneConfirmed of confirmed) {
@@ -584,14 +700,23 @@ export class ContinuousUpdatesController extends EventEmitter {
         })
       }
     }
+
+    return fingerprint
   }
 
-  async #resolveConfirmedSafeMessages() {
+  /**
+   * Resolves the selected Safe's signed messages that got all the owner signatures they need.
+   * Returns the fingerprint of the check, or undefined when there was nothing to check.
+   */
+  async #resolveConfirmedSafeMessages(): Promise<string | undefined> {
     await this.initialLoadPromise
 
     // call only if the selected account is a safe
     if (!this.#main.selectedAccount.account || !this.#main.selectedAccount.account.safeCreation)
       return
+
+    // do not make Safe requests if the extension is locked
+    if (!this.#main.keystore.isUnlocked) return
 
     const accountStates = await this.#main.accounts.getOrFetchAccountStates(
       this.#main.selectedAccount.account.addr
@@ -611,14 +736,25 @@ export class ContinuousUpdatesController extends EventEmitter {
           chainId: r.meta.chainId,
           threshold: accountStates[r.meta.chainId]?.threshold || 0,
           messageHash: r.meta.hash,
-          requestId: r.id
+          requestId: r.id,
+          signedCount: r.meta.signed?.length ?? 0
         }
       })
     if (!pendingSafeMessages.length) return
 
-    const msgs = (await this.#main.safe.getMessagesByHash(pendingSafeMessages)).filter(
-      (m) => m.isConfirmed
-    )
+    const fetchedMsgs = await this.#main.safe.getMessagesByHash(pendingSafeMessages)
+    // A request that is added or signed, or a message that gets more signatures, changes the
+    // fingerprint, which resets the slowdown
+    const fingerprint = toSafeResolveFingerprint([
+      ...pendingSafeMessages.map(
+        ({ chainId, messageHash, signedCount }) =>
+          `request:${chainId}:${messageHash}:${signedCount}`
+      ),
+      ...fetchedMsgs.map(
+        ({ messageHash, confirmations }) => `message:${messageHash}:${confirmations.length}`
+      )
+    ])
+    const msgs = fetchedMsgs.filter((m) => m.isConfirmed)
 
     // resolve each request
     for (let i = 0; i < msgs.length; i++) {
@@ -631,5 +767,7 @@ export class ContinuousUpdatesController extends EventEmitter {
       if (!userR) continue
       await this.#main.requests.resolveUserRequest({ hash: msg.preparedSignature }, userR.id)
     }
+
+    return fingerprint
   }
 }

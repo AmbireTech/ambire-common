@@ -1,5 +1,6 @@
 import { IrCall } from '../libs/humanizer/interfaces'
 import { ControllerInterface } from './controller'
+import { Pagination, PaginationResult } from '../utils/paginate'
 import { Hex } from './hex'
 
 export type IPrivacyPoolsController = ControllerInterface<
@@ -34,12 +35,19 @@ export type PrivacyPoolsChainConfig = {
   entrypointAddress: Hex
   /** Where a first sync starts reading the entrypoint's history. */
   deploymentBlock: bigint
+  /** About a day of blocks, to count the pool's recent activity by block instead of by time. */
+  blocksPerDay: bigint
   /** 0xBow's association-set API for this chain. */
   aspUrl: string
   /** The saga-sync CDN serving the pools' history. Without it, a first sync is slow. */
   sagaSyncUrl?: string
   /** The ERC-4337 paymaster for withdrawals. Without it, withdrawals are unavailable. */
   paymaster?: PrivacyPoolsPaymasterConfig
+  /**
+   * Pool address (lowercase) to the wallet's address of the asset it holds. Only calls to these are
+   * shown as Privacy Pools calls, and only their deposits can be taken back from the wallet.
+   */
+  pools: { [poolAddress: string]: Hex }
   /** In the order the UI offers them. */
   assets: PrivacyPoolsAsset[]
 }
@@ -90,6 +98,46 @@ export type PrivacyPoolsNote = {
   tokenAddress: string
   amount: bigint
   approval: PrivacyPoolsApprovalStatus
+  /** The address the deposit was made from, the only one that can take it back (ragequit). */
+  depositorAddr: Hex
+  /** The account's deposits are numbered in the order they were made, so a higher one is newer. */
+  depositIndex: number
+}
+
+/**
+ * A deposit still being verified. Only the account it was made from can take it back, publicly and
+ * in full (ragequit).
+ */
+export type PrivacyPoolsRagequitDeposit = {
+  label: bigint
+  /** What goes back: the whole deposit, as nothing of it can have been sent yet. */
+  amount: bigint
+  /** The address the deposit was made from, the only one it can go back to. */
+  depositorAddr: Hex
+}
+
+/**
+ * What everyone's deposits in a pool add up to, as of the chain's last sync. Mostly from this
+ * device's copy of the pool's history, the rest from the pool itself - see `getPrivacyPoolsPoolStats`.
+ */
+export type PrivacyPoolsPoolStats = {
+  /** What the pool holds: deposits less withdrawals and deposits taken back. */
+  totalAmount: bigint
+  /** Deposits ever verified. The more there are, the harder a withdrawal is to tell apart. */
+  approvedDepositsCount: number
+  depositsCount24h: number
+  withdrawalsCount24h: number
+}
+
+/**
+ * A chain's pool numbers, computed after each sync of its history - see
+ * `PrivacyPoolsController.poolStats`.
+ */
+export type PrivacyPoolsChainPoolStats = {
+  /** By the pool's token address, in lowercase. Empty when they could not be read. */
+  byToken: { [tokenAddress: string]: PrivacyPoolsPoolStats }
+  /** Why they could not be read, or null. */
+  error: string | null
 }
 
 /** Notes summed per token. Only `approvedAmount` can be withdrawn. */
@@ -127,11 +175,74 @@ export type PrivacyPoolsChainState = {
   lastSyncDuration: number | null
 }
 
-/** The part that belongs to one account: its sync of the chain, and its notes in the chain's pools. */
+/**
+ * The part that belongs to one account: its sync of the chain, its notes in the chain's pools, and
+ * its history there when asked for (see `PrivacyPoolsController.filterHistory`).
+ */
 export type PrivacyPoolsAccountChainState = Pick<
   PrivacyPoolsChainState,
   'syncStatus' | 'syncStartedAt' | 'error' | 'lastSyncedAt' | 'lastSyncDuration'
-> & { notes: PrivacyPoolsNote[] }
+> & {
+  notes: PrivacyPoolsNote[]
+  /** Newest first. Null until read: it is read only while the UI shows it. */
+  history: PrivacyPoolsHistoryEntry[] | null
+  /** Whether `history` was read by the sync that read `notes`. Kept, though stale, until reread. */
+  isHistoryCurrent: boolean
+  /** Why the last read of the history failed, or null. */
+  historyError: string | null
+}
+
+/** A deposit into the account, a withdrawal from it, or a deposit taken back (ragequit). */
+export type PrivacyPoolsHistoryEntryType = 'deposit' | 'withdrawal' | 'ragequit'
+
+/**
+ * One event of the account's history, read from this device's copy of the pools' history, so
+ * nothing about it is asked of the network.
+ */
+export type PrivacyPoolsHistoryEntry = {
+  /** Unique within the account's history and the same across reads, for list keys. */
+  id: string
+  type: PrivacyPoolsHistoryEntryType
+  chainId: string
+  /** In the wallet's form - `ZERO_ADDRESS` for native. */
+  tokenAddress: string
+  /**
+   * What the event moved: a deposit's amount after the pool's fee, the whole amount a withdrawal
+   * took out (its fee included), or all of a deposit taken back.
+   */
+  amount: bigint
+  /** In ms. Estimated from the blocks around it, so it can be off by a minute or two. */
+  timestamp: number
+  /** Null when this device's copy of the history did not record it. */
+  txnId: Hex | null
+  /**
+   * The public address on the other side: the one a deposit came from, or a deposit taken back
+   * went to. Null for a withdrawal, as where it went is not in the pool's records.
+   */
+  counterpartyAddr: Hex | null
+  /**
+   * A deposit's review: 'pending' while it is still being verified, so it cannot be sent privately
+   * yet, or 'approved' once the checks approved it, so it could be. Null for a withdrawal or a
+   * ragequit, and for the deposit a ragequit took back, as it is no longer being verified.
+   */
+  status: PrivacyPoolsApprovalStatus | null
+}
+
+/** What a history page is narrowed to. */
+export type PrivacyPoolsHistoryFilters = {
+  /** One network, or all of them when left out. */
+  chainId?: string
+}
+
+/** A page of the selected account's history, as one screen (session) shows it. */
+export type PrivacyPoolsHistorySession = {
+  filters: PrivacyPoolsHistoryFilters
+  pagination: Pagination
+  /** Null until every network shown has been read once, so an empty page means no activity. */
+  result: PaginationResult<PrivacyPoolsHistoryEntry> | null
+  /** Why a network shown could not be read, or null. What was read before is still in `result`. */
+  error: string | null
+}
 
 /**
  * A prepared withdrawal's cost. The fee is decoded from the signed userOp, not taken from the SDK

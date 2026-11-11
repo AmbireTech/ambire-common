@@ -2,8 +2,10 @@ import { getAddress } from 'ethers'
 
 import { FETCH_OTHER_SAFES_PENDING, FETCH_SAFE_TXNS } from '../../consts/intervals'
 import {
+  NOT_A_SAFE_ACCOUNT_MESSAGE,
   SAFE_API_BATCH_SIZE,
   SAFE_API_TIMEOUT_MS,
+  SAFE_INFO_FETCH_FAILED_MESSAGE,
   SAFE_NETWORKS,
   safeNullOwner
 } from '../../consts/safe'
@@ -12,7 +14,7 @@ import { IEventEmitterRegistryController, Statuses } from '../../interfaces/even
 import { Hex } from '../../interfaces/hex'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
-import { IProvidersController } from '../../interfaces/provider'
+import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { ISafeController, SafeAccountByOwner } from '../../interfaces/safe'
 import { IStorageController } from '../../interfaces/storage'
 import {
@@ -23,6 +25,8 @@ import {
   getApiKit,
   getMessage,
   getSafeAccountByOwner,
+  isSafeContract,
+  SafePendingFetchNetwork,
   SafeResults
 } from '../../libs/safe/safe'
 import wait from '../../utils/wait'
@@ -166,13 +170,16 @@ export class SafeController extends EventEmitter implements ISafeController {
     const provider = this.#providers.providers[deployedOn.chainId.toString()]!
     const [safeInfo, safeCreation]: [SafeInfoResponse | Error, SafeAccountCreation | Error] =
       await Promise.all([
-        apiKit.getSafeInfo(safeAddr).catch((e) => e),
+        withTimeout(() => apiKit.getSafeInfo(safeAddr), {
+          timeoutMs: SAFE_API_TIMEOUT_MS,
+          message: `Safe API: get Safe info timed out after ${SAFE_API_TIMEOUT_MS}ms`
+        }).catch((e) => e),
         findDeployData(safeAddr, deployedOn.chainId, provider)
       ])
     if (safeInfo instanceof Error) {
       this.importError = {
         address: safeAddr,
-        message: 'Failed to retrieve information about the Safe. Please try again'
+        message: await this.#getSafeInfoFailedMessage(safeAddr, provider, safeInfo)
       }
       return
     }
@@ -191,6 +198,39 @@ export class SafeController extends EventEmitter implements ISafeController {
       deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId),
       requiresModules: safeInfo.owners.length === 1 && safeInfo.owners[0] === safeNullOwner
     }
+  }
+
+  /**
+   * The Safe API doesn't know addresses that aren't Safe accounts (e.g. an older Gnosis
+   * MultiSigWallet), so when it fails, check on chain whether the contract is a Safe at all.
+   * Telling the user to try again only makes sense if it is.
+   * The check is time-bound so an unresponsive network can't keep the import loading for minutes.
+   */
+  async #getSafeInfoFailedMessage(
+    safeAddr: string,
+    provider: RPCProvider,
+    safeInfoError: Error
+  ): Promise<string> {
+    try {
+      const isSafe = await withTimeout(() => isSafeContract(safeAddr, provider), {
+        timeoutMs: SAFE_API_TIMEOUT_MS,
+        message: `Safe check: getThreshold() call timed out after ${SAFE_API_TIMEOUT_MS}ms`
+      })
+      if (!isSafe) return NOT_A_SAFE_ACCOUNT_MESSAGE
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to check if the imported address is a Safe account',
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+    }
+
+    this.emitError({
+      level: 'silent',
+      message: 'Failed to retrieve information about the imported Safe account',
+      error: safeInfoError
+    })
+    return SAFE_INFO_FETCH_FAILED_MESSAGE
   }
 
   async findSafe(safeAddr: string) {
@@ -380,10 +420,17 @@ export class SafeController extends EventEmitter implements ISafeController {
     return fetchedAt !== undefined && Date.now() - fetchedAt < maxAge
   }
 
+  /**
+   * Fetches the pending txns and messages of a Safe and updates its pending counts.
+   * Returns null without asking the Safe API while the wallet is locked.
+   */
   async fetchPending(
     safeAddr: Hex,
-    networks: { chainId: bigint; threshold: number }[]
+    networks: SafePendingFetchNetwork[]
   ): Promise<SafeResults | null> {
+    // do not make Safe requests if the extension is locked
+    if (!this.#keystore.isUnlocked) return null
+
     this.#pendingFetchedAt[safeAddr] = Date.now()
     const pending = await fetchAllPending(networks, safeAddr)
     if (!pending) return null
@@ -448,7 +495,31 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.emitUpdate()
   }
 
+  /**
+   * Returns the on-chain states of a Safe that is not selected, refreshed on the chains it's
+   * deployed on. Only the selected account's state is kept fresh, so the stored one may be
+   * from long ago, and an old nonce would count replaced txns that can never execute as
+   * pending. A failed refresh keeps the previous state, as the accounts controller does.
+   */
+  async #getFreshOtherSafeStates(safeAddr: string) {
+    const hadAccountState = !!this.#accounts.accountStates[safeAddr]
+    const accountState = await this.#accounts.getOrFetchAccountStates(safeAddr)
+    // A state that was just fetched is fresh already
+    if (!hadAccountState) return accountState
+
+    const deployedChainIds = this.#networks.networks
+      .filter(({ chainId }) => accountState?.[chainId.toString()]?.isDeployed)
+      .map(({ chainId }) => chainId)
+    if (!deployedChainIds.length) return accountState
+
+    await this.#accounts.updateAccountState(safeAddr, 'latest', deployedChainIds)
+    return this.#accounts.accountStates[safeAddr]
+  }
+
   async #updateOtherSafesPendingCounts(selectedAccountAddr?: string) {
+    // do not make Safe requests if the extension is locked
+    if (!this.#keystore.isUnlocked) return
+
     this.#clearCountsOfSafesWithoutOwner(selectedAccountAddr)
 
     const safesToUpdate = this.#accounts.accounts.filter(
@@ -462,23 +533,31 @@ export class SafeController extends EventEmitter implements ISafeController {
 
     // One chain of one Safe at a time, to stay under the Safe API's rate limit
     for (const safe of safesToUpdate) {
-      const accountState = await this.#accounts.getOrFetchAccountStates(safe.addr)
+      const accountState = await this.#getFreshOtherSafeStates(safe.addr)
       const deployedChains = this.#networks.networks.filter(
         ({ chainId }) => accountState?.[chainId.toString()]?.isDeployed
       )
 
       for (const { chainId } of deployedChains) {
+        const chainAccountState = accountState?.[chainId.toString()]
+        if (!chainAccountState) continue
+
         if (!isFirstRequest) await wait(SAFE_PENDING_REQUEST_PAUSE)
         isFirstRequest = false
 
-        const threshold = accountState[chainId.toString()]?.threshold || 0
-        await this.fetchPending(safe.addr as Hex, [{ chainId, threshold }]).catch((error) => {
-          this.emitError({
-            level: 'silent',
-            message: 'Failed to fetch the pending transactions of a Safe account',
-            error
-          })
-        })
+        // the wallet may get locked while the Safes are updated one after the other
+        if (!this.#keystore.isUnlocked) return
+
+        const { threshold, nonce } = chainAccountState
+        await this.fetchPending(safe.addr as Hex, [{ chainId, threshold, nonce }]).catch(
+          (error) => {
+            this.emitError({
+              level: 'silent',
+              message: 'Failed to fetch the pending transactions of a Safe account',
+              error
+            })
+          }
+        )
       }
     }
   }
@@ -494,6 +573,9 @@ export class SafeController extends EventEmitter implements ISafeController {
       confirmations?: SafeMultisigConfirmationResponse[]
     }[]
   > {
+    // do not make Safe requests if the extension is locked
+    if (!this.#keystore.isUnlocked) return []
+
     return fetchExecutedTransactions(safeAddr, chains)
   }
 
@@ -512,6 +594,9 @@ export class SafeController extends EventEmitter implements ISafeController {
   ): Promise<ExtendedSafeMessage[]> {
     const messages = []
     for (let i = 0; i < data.length; i++) {
+      // do not make Safe requests if the extension is locked, even if it got locked midway
+      if (!this.#keystore.isUnlocked) break
+
       const entry = data[i]!
       const msg = await getMessage(entry).catch((e) => e)
       if (!msg || msg instanceof Error) continue

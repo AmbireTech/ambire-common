@@ -1,23 +1,35 @@
 import { getAddress } from 'ethers'
 
-import { beforeEach, describe, expect, it, jest } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
+import {
+  NOT_A_SAFE_ACCOUNT_MESSAGE,
+  SAFE_API_TIMEOUT_MS,
+  SAFE_INFO_FETCH_FAILED_MESSAGE
+} from '../../consts/safe'
 import { Hex } from '../../interfaces/hex'
 import { SafeAccountByOwner } from '../../interfaces/safe'
 import {
   fetchAllPending,
+  fetchExecutedTransactions,
   findDeployData,
   getApiKit,
-  getSafeAccountByOwner
+  getMessage,
+  getSafeAccountByOwner,
+  isSafeContract
 } from '../../libs/safe/safe'
 import { SafeController } from './safe'
 
 jest.mock('../../libs/safe/safe', () => ({
-  ...jest.requireActual('../../libs/safe/safe'),
+  ...jest.requireActual<typeof import('../../libs/safe/safe')>('../../libs/safe/safe'),
   fetchAllPending: jest.fn(),
+  fetchExecutedTransactions: jest.fn(),
   findDeployData: jest.fn(),
   getApiKit: jest.fn(),
-  getSafeAccountByOwner: jest.fn()
+  getMessage: jest.fn(),
+  getSafeAccountByOwner: jest.fn(),
+  isSafeContract: jest.fn()
 }))
 
 // The pause between requests to the Safe API is not what is tested
@@ -59,6 +71,143 @@ describe('SafeController findSafe', () => {
   beforeEach(() => {
     jest.mocked(findDeployData).mockReset()
     jest.mocked(getApiKit).mockReset()
+    jest.mocked(isSafeContract).mockReset()
+  })
+
+  const mockSafeApiFailure = () => {
+    jest.mocked(getApiKit).mockReturnValue({
+      getSafeInfo: jest.fn(async () => {
+        throw new Error('Not Found')
+      })
+    } as any)
+    jest.mocked(findDeployData).mockResolvedValue(new Error('Not Found'))
+  }
+
+  it('tells the user the address is not a Safe when the contract on chain is not one', async () => {
+    const provider = { getCode: jest.fn(async () => '0x1234') }
+    mockSafeApiFailure()
+    jest.mocked(isSafeContract).mockResolvedValue(false)
+    const controller = createController([1n], { '1': provider })
+
+    await controller.findSafe(SAFE_A)
+
+    expect(isSafeContract).toHaveBeenCalledWith(SAFE_A, provider)
+    expect(controller.safeInfo).toBeUndefined()
+    expect(controller.importError).toEqual({ address: SAFE_A, message: NOT_A_SAFE_ACCOUNT_MESSAGE })
+  })
+
+  it('asks the user to try again when the Safe API fails for a real Safe', async () => {
+    const provider = { getCode: jest.fn(async () => '0x1234') }
+    mockSafeApiFailure()
+    jest.mocked(isSafeContract).mockResolvedValue(true)
+    const controller = createController([1n], { '1': provider })
+
+    await controller.findSafe(SAFE_A)
+
+    expect(controller.safeInfo).toBeUndefined()
+    expect(controller.importError).toEqual({
+      address: SAFE_A,
+      message: SAFE_INFO_FETCH_FAILED_MESSAGE
+    })
+  })
+
+  it('asks the user to try again when it cannot check whether the contract is a Safe', async () => {
+    const provider = { getCode: jest.fn(async () => '0x1234') }
+    mockSafeApiFailure()
+    jest.mocked(isSafeContract).mockRejectedValue(new Error('fetch failed'))
+    const controller = createController([1n], { '1': provider })
+
+    await controller.findSafe(SAFE_A)
+
+    // a failed check must not be reported as "not a Safe" - the address may still be one
+    expect(controller.importError).toEqual({
+      address: SAFE_A,
+      message: SAFE_INFO_FETCH_FAILED_MESSAGE
+    })
+  })
+
+  it('does not check the contract on chain when the Safe API knows the Safe', async () => {
+    const provider = { getCode: jest.fn(async () => '0x1234') }
+    jest.mocked(getApiKit).mockReturnValue({
+      getSafeInfo: jest.fn(async () => ({ address: SAFE_A, owners: [OWNER], version: '1.4.1' }))
+    } as any)
+    jest.mocked(findDeployData).mockResolvedValue({
+      factoryAddr: '0x',
+      singleton: '0x',
+      setupData: '0x',
+      saltNonce: '0x'
+    })
+    const controller = createController([1n], { '1': provider })
+
+    await controller.findSafe(SAFE_A)
+
+    expect(isSafeContract).not.toHaveBeenCalled()
+    expect(controller.importError).toBeUndefined()
+  })
+
+  describe('when a request never answers', () => {
+    const never = <T>() => new Promise<T>(() => {})
+
+    beforeEach(() => {
+      jest.useFakeTimers()
+    })
+
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    it('stops waiting for the on-chain Safe check and asks the user to try again', async () => {
+      const provider = { getCode: jest.fn(async () => '0x1234') }
+      mockSafeApiFailure()
+      jest.mocked(isSafeContract).mockImplementation(() => never<boolean>())
+      const controller = createController([1n], { '1': provider })
+
+      const findSafePromise = controller.findSafe(SAFE_A)
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+      await findSafePromise
+
+      expect(controller.statuses.findSafe).toBe('INITIAL')
+      expect(controller.importError).toEqual({
+        address: SAFE_A,
+        message: SAFE_INFO_FETCH_FAILED_MESSAGE
+      })
+    })
+
+    it('stops waiting for the Safe API and still tells a non-Safe address apart', async () => {
+      const provider = { getCode: jest.fn(async () => '0x1234') }
+      jest.mocked(getApiKit).mockReturnValue({
+        getSafeInfo: jest.fn(() => never())
+      } as any)
+      jest.mocked(findDeployData).mockResolvedValue(new Error('Not Found'))
+      jest.mocked(isSafeContract).mockResolvedValue(false)
+      const controller = createController([1n], { '1': provider })
+
+      const findSafePromise = controller.findSafe(SAFE_A)
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+      await findSafePromise
+
+      expect(controller.statuses.findSafe).toBe('INITIAL')
+      expect(controller.importError).toEqual({
+        address: SAFE_A,
+        message: NOT_A_SAFE_ACCOUNT_MESSAGE
+      })
+    })
+
+    it('does not give up before the timeout', async () => {
+      const provider = { getCode: jest.fn(async () => '0x1234') }
+      mockSafeApiFailure()
+      jest.mocked(isSafeContract).mockImplementation(() => never<boolean>())
+      const controller = createController([1n], { '1': provider })
+
+      const findSafePromise = controller.findSafe(SAFE_A)
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS - 1)
+
+      expect(controller.statuses.findSafe).toBe('LOADING')
+      expect(controller.importError).toBeUndefined()
+
+      await jest.advanceTimersByTimeAsync(1)
+      await findSafePromise
+    })
   })
 
   it('uses recovered deployment data when importing a Safe', async () => {
@@ -225,6 +374,7 @@ describe('SafeController findSafesByOwner', () => {
   })
 
   it('keeps results from successful networks and reports failed networks', async () => {
+    const { restore } = suppressConsole()
     const mainnetApi = createApi({ safes: [SAFE_A] })
     const optimismApi = createApi({ safes: [] })
     optimismApi.getSafesByOwner.mockRejectedValue(new Error('Service unavailable'))
@@ -239,6 +389,7 @@ describe('SafeController findSafesByOwner', () => {
     expect(getOwnerSearch(controller)?.failedNetworks).toEqual([10n])
     expect(getOwnerSearch(controller)?.searchedNetworks).toEqual([1n, 10n])
     expect(getOwnerSearch(controller)?.updatedAt).toBeGreaterThan(0)
+    restore()
   })
 
   it('keeps search results separate for each owner', async () => {
@@ -285,6 +436,7 @@ describe('SafeController findSafesByOwner', () => {
   })
 
   it('does not cancel an active owner search when another owner search fails', async () => {
+    const { restore } = suppressConsole()
     let resolveSearch!: (value: { safes: string[] }) => void
     let markSearchAsStarted!: () => void
     const searchStarted = new Promise<void>((resolve) => {
@@ -314,6 +466,7 @@ describe('SafeController findSafesByOwner', () => {
     ])
     expect(getOwnerSearch(controller, OTHER_OWNER)?.failedNetworks).toEqual([1n])
     expect(getOwnerSearch(controller, OTHER_OWNER)?.status).toBe('DONE')
+    restore()
   })
 
   it('debounces a repeated search for the same owner while loading', async () => {
@@ -352,13 +505,22 @@ describe('SafeController pending counts', () => {
   const safeCreation = { factoryAddr: '0x', singleton: '0x', setupData: '0x', saltNonce: '0x' }
   const safeAccount = (addr: string) => ({ addr, safeCreation, associatedKeys: [OWNER] })
 
+  type PendingCountsAccountStates = Record<
+    string,
+    Record<string, { isDeployed: boolean; threshold: number; nonce: bigint }>
+  >
+
   const createPendingCountsController = ({
     accountStates,
-    importedKeyAddrs = [OWNER]
+    importedKeyAddrs = [OWNER],
+    refreshedAccountStates = {}
   }: {
-    accountStates: Record<string, Record<string, { isDeployed: boolean; threshold: number }>>
+    accountStates: PendingCountsAccountStates
     importedKeyAddrs?: string[]
+    // what a refresh of the account states returns, per Safe
+    refreshedAccountStates?: PendingCountsAccountStates
   }) => {
+    const keystoreState = { isUnlocked: true }
     const accounts = {
       accounts: [
         safeAccount(SAFE_A),
@@ -367,7 +529,11 @@ describe('SafeController pending counts', () => {
       ],
       accountStates,
       initialLoadPromise: Promise.resolve(),
-      getOrFetchAccountStates: jest.fn(async (addr: string) => accountStates[addr])
+      getOrFetchAccountStates: jest.fn(async (addr: string) => accountStates[addr]),
+      updateAccountState: jest.fn(async (addr: string) => {
+        const refreshed = refreshedAccountStates[addr]
+        if (refreshed) accountStates[addr] = { ...accountStates[addr], ...refreshed }
+      })
     }
     const controller = new SafeController({
       accounts: accounts as any,
@@ -378,6 +544,9 @@ describe('SafeController pending counts', () => {
       providers: { providers: {} } as any,
       storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any,
       keystore: {
+        get isUnlocked() {
+          return keystoreState.isUnlocked
+        },
         getAccountKeys: ({ associatedKeys }: { associatedKeys: string[] }) =>
           importedKeyAddrs
             .filter((addr) => associatedKeys.includes(addr))
@@ -385,7 +554,7 @@ describe('SafeController pending counts', () => {
       } as any
     })
 
-    return { controller, accounts, importedKeyAddrs }
+    return { controller, accounts, importedKeyAddrs, keystoreState }
   }
 
   const pendingResponse = (
@@ -412,13 +581,13 @@ describe('SafeController pending counts', () => {
 
   it('counts the pending txns and the messages that still need signatures, per chain', async () => {
     const { controller } = createPendingCountsController({
-      accountStates: { [SAFE_A]: { '1': { isDeployed: true, threshold: 2 } } }
+      accountStates: { [SAFE_A]: { '1': { isDeployed: true, threshold: 2, nonce: 0n } } }
     })
     await controller.initialLoadPromise
     // the message with 2 of 2 confirmations is complete, so it's not pending
     jest.mocked(fetchAllPending).mockResolvedValueOnce(pendingResponse(1n, 2, [1, 2]) as any)
 
-    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 2 }])
+    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 2, nonce: 0n }])
 
     expect(controller.pendingCountBySafe[SAFE_A]).toEqual({ '1': 3 })
   })
@@ -427,29 +596,29 @@ describe('SafeController pending counts', () => {
     const { controller } = createPendingCountsController({
       accountStates: {
         [SAFE_A]: {
-          '1': { isDeployed: true, threshold: 1 },
-          '10': { isDeployed: true, threshold: 1 }
+          '1': { isDeployed: true, threshold: 1, nonce: 0n },
+          '10': { isDeployed: true, threshold: 1, nonce: 0n }
         }
       }
     })
     await controller.initialLoadPromise
     jest.mocked(fetchAllPending).mockResolvedValueOnce(pendingResponse(1n, 2, []) as any)
-    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1 }])
+    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1, nonce: 0n }])
     jest.mocked(fetchAllPending).mockResolvedValueOnce(pendingResponse(10n, 0, []) as any)
 
-    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 10n, threshold: 1 }])
+    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 10n, threshold: 1, nonce: 0n }])
 
     expect(controller.pendingCountBySafe[SAFE_A]).toEqual({ '1': 2, '10': 0 })
   })
 
-  it('fetches the other Safes on their deployed chains only, skipping the selected one and non-Safes', async () => {
+  it('fetches the other Safes on their deployed chains only, from their on-chain nonce, skipping the selected one and non-Safes', async () => {
     const { controller } = createPendingCountsController({
       accountStates: {
-        [SAFE_A]: { '1': { isDeployed: true, threshold: 1 } },
+        [SAFE_A]: { '1': { isDeployed: true, threshold: 1, nonce: 0n } },
         [SAFE_B]: {
-          '1': { isDeployed: true, threshold: 1 },
-          '10': { isDeployed: false, threshold: 0 },
-          '8453': { isDeployed: true, threshold: 2 }
+          '1': { isDeployed: true, threshold: 1, nonce: 5n },
+          '10': { isDeployed: false, threshold: 0, nonce: 0n },
+          '8453': { isDeployed: true, threshold: 2, nonce: 7n }
         }
       }
     })
@@ -458,8 +627,8 @@ describe('SafeController pending counts', () => {
     await controller.updateOtherSafesPendingCounts(SAFE_A)
 
     expect(jest.mocked(fetchAllPending).mock.calls).toEqual([
-      [[{ chainId: 1n, threshold: 1 }], SAFE_B],
-      [[{ chainId: 8453n, threshold: 2 }], SAFE_B]
+      [[{ chainId: 1n, threshold: 1, nonce: 5n }], SAFE_B],
+      [[{ chainId: 8453n, threshold: 2, nonce: 7n }], SAFE_B]
     ])
     expect(controller.pendingCountBySafe).toEqual({ [SAFE_B]: { '1': 1, '8453': 1 } })
   })
@@ -467,8 +636,8 @@ describe('SafeController pending counts', () => {
   it('skips the Safes without an imported owner, as the user cannot sign what is pending', async () => {
     const { controller } = createPendingCountsController({
       accountStates: {
-        [SAFE_A]: { '1': { isDeployed: true, threshold: 1 } },
-        [SAFE_B]: { '1': { isDeployed: true, threshold: 1 } }
+        [SAFE_A]: { '1': { isDeployed: true, threshold: 1, nonce: 0n } },
+        [SAFE_B]: { '1': { isDeployed: true, threshold: 1, nonce: 0n } }
       },
       importedKeyAddrs: [OTHER_OWNER]
     })
@@ -482,7 +651,7 @@ describe('SafeController pending counts', () => {
 
   it('clears the counts of a Safe whose owners were removed and fetches them again once one is back', async () => {
     const { controller, importedKeyAddrs } = createPendingCountsController({
-      accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1 } } }
+      accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1, nonce: 0n } } }
     })
     await controller.initialLoadPromise
     await controller.updateOtherSafesPendingCounts(SAFE_A)
@@ -503,7 +672,7 @@ describe('SafeController pending counts', () => {
   it('keeps the counts of the selected Safe without owners, as it is not refreshed from here', async () => {
     const { controller, importedKeyAddrs } = createPendingCountsController({ accountStates: {} })
     await controller.initialLoadPromise
-    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1 }])
+    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1, nonce: 0n }])
 
     importedKeyAddrs.splice(0)
     await controller.updateOtherSafesPendingCounts(SAFE_A)
@@ -513,7 +682,7 @@ describe('SafeController pending counts', () => {
 
   it('skips a Safe whose counts are younger than 15 minutes and fetches it again after', async () => {
     const { controller } = createPendingCountsController({
-      accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1 } } }
+      accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1, nonce: 0n } } }
     })
     await controller.initialLoadPromise
     const now = Date.now()
@@ -537,24 +706,25 @@ describe('SafeController pending counts', () => {
     const { controller } = createPendingCountsController({ accountStates: {} })
     await controller.initialLoadPromise
 
-    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1 }])
+    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1, nonce: 0n }])
 
     expect(controller.shouldSkipFetchPending(SAFE_A)).toBe(true)
     expect(controller.shouldSkipFetchPending(SAFE_B)).toBe(false)
   })
 
   it('keeps the last counts and goes on with the next chain when a fetch fails', async () => {
+    const { restore } = suppressConsole()
     const { controller } = createPendingCountsController({
       accountStates: {
         [SAFE_B]: {
-          '1': { isDeployed: true, threshold: 1 },
-          '10': { isDeployed: true, threshold: 1 }
+          '1': { isDeployed: true, threshold: 1, nonce: 0n },
+          '10': { isDeployed: true, threshold: 1, nonce: 0n }
         }
       }
     })
     await controller.initialLoadPromise
     jest.mocked(fetchAllPending).mockResolvedValueOnce(pendingResponse(1n, 4, []) as any)
-    await controller.fetchPending(SAFE_B as Hex, [{ chainId: 1n, threshold: 1 }])
+    await controller.fetchPending(SAFE_B as Hex, [{ chainId: 1n, threshold: 1, nonce: 0n }])
     const onError = jest.fn()
     controller.onError(onError)
     jest
@@ -571,11 +741,12 @@ describe('SafeController pending counts', () => {
 
     expect(controller.pendingCountBySafe[SAFE_B]).toEqual({ '1': 4, '10': 1 })
     expect(onError).toHaveBeenCalledTimes(1)
+    restore()
   })
 
   it('runs a single update at a time', async () => {
     const { controller, accounts } = createPendingCountsController({
-      accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1 } } }
+      accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1, nonce: 0n } } }
     })
     await controller.initialLoadPromise
 
@@ -586,5 +757,124 @@ describe('SafeController pending counts', () => {
 
     expect(accounts.getOrFetchAccountStates).toHaveBeenCalledTimes(1)
     expect(fetchAllPending).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes the stored state of another Safe on its deployed chains and counts from the fresh nonce', async () => {
+    const { controller, accounts } = createPendingCountsController({
+      accountStates: {
+        [SAFE_B]: {
+          '1': { isDeployed: true, threshold: 1, nonce: 2n },
+          '10': { isDeployed: false, threshold: 0, nonce: 0n }
+        }
+      },
+      refreshedAccountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1, nonce: 9n } } }
+    })
+    await controller.initialLoadPromise
+
+    await controller.updateOtherSafesPendingCounts(SAFE_A)
+
+    expect(accounts.updateAccountState).toHaveBeenCalledWith(SAFE_B, 'latest', [1n])
+    expect(jest.mocked(fetchAllPending).mock.calls).toEqual([
+      [[{ chainId: 1n, threshold: 1, nonce: 9n }], SAFE_B]
+    ])
+  })
+
+  it('does not refresh a Safe state that was fetched just now', async () => {
+    const accountStates: Record<
+      string,
+      Record<string, { isDeployed: boolean; threshold: number; nonce: bigint }>
+    > = {}
+    const { controller, accounts } = createPendingCountsController({ accountStates })
+    accounts.getOrFetchAccountStates.mockImplementation(async (addr: string) => {
+      accountStates[addr] = { '1': { isDeployed: true, threshold: 1, nonce: 4n } }
+      return accountStates[addr]
+    })
+    await controller.initialLoadPromise
+
+    await controller.updateOtherSafesPendingCounts(SAFE_A)
+
+    expect(accounts.updateAccountState).not.toHaveBeenCalled()
+    expect(jest.mocked(fetchAllPending).mock.calls).toEqual([
+      [[{ chainId: 1n, threshold: 1, nonce: 4n }], SAFE_B]
+    ])
+  })
+
+  it('counts from the stored nonce when refreshing the Safe state fails', async () => {
+    // the accounts controller keeps the previous state when a refresh fails
+    const { controller } = createPendingCountsController({
+      accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1, nonce: 3n } } }
+    })
+    await controller.initialLoadPromise
+
+    await controller.updateOtherSafesPendingCounts(SAFE_A)
+
+    expect(jest.mocked(fetchAllPending).mock.calls).toEqual([
+      [[{ chainId: 1n, threshold: 1, nonce: 3n }], SAFE_B]
+    ])
+  })
+
+  describe('while the wallet is locked', () => {
+    it('does not update the other Safes', async () => {
+      const { controller, accounts, keystoreState } = createPendingCountsController({
+        accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1, nonce: 0n } } }
+      })
+      await controller.initialLoadPromise
+      keystoreState.isUnlocked = false
+
+      await controller.updateOtherSafesPendingCounts(SAFE_A)
+
+      expect(accounts.getOrFetchAccountStates).not.toHaveBeenCalled()
+      expect(fetchAllPending).not.toHaveBeenCalled()
+    })
+
+    it('stops before the next Safe request when it gets locked midway', async () => {
+      const { controller, keystoreState } = createPendingCountsController({
+        accountStates: {
+          [SAFE_B]: {
+            '1': { isDeployed: true, threshold: 1, nonce: 0n },
+            '10': { isDeployed: true, threshold: 1, nonce: 0n }
+          }
+        }
+      })
+      await controller.initialLoadPromise
+      jest.mocked(fetchAllPending).mockImplementationOnce(async (networks) => {
+        keystoreState.isUnlocked = false
+        return pendingResponse(networks[0]!.chainId, 1, []) as any
+      })
+
+      await controller.updateOtherSafesPendingCounts(SAFE_A)
+
+      expect(fetchAllPending).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not fetch the pending txns and does not mark the Safe as fetched', async () => {
+      const { controller, keystoreState } = createPendingCountsController({ accountStates: {} })
+      await controller.initialLoadPromise
+      keystoreState.isUnlocked = false
+
+      const result = await controller.fetchPending(SAFE_A as Hex, [
+        { chainId: 1n, threshold: 1, nonce: 0n }
+      ])
+
+      expect(result).toBe(null)
+      expect(fetchAllPending).not.toHaveBeenCalled()
+      // so the first fetch after unlocking is not skipped
+      expect(controller.shouldSkipFetchPending(SAFE_A)).toBe(false)
+    })
+
+    it('does not fetch the executed txns or the messages', async () => {
+      const { controller, keystoreState } = createPendingCountsController({ accountStates: {} })
+      await controller.initialLoadPromise
+      keystoreState.isUnlocked = false
+
+      await expect(
+        controller.fetchExecuted(SAFE_A as Hex, [{ chainId: 1n, minNonce: 0 }])
+      ).resolves.toEqual([])
+      await expect(
+        controller.getMessagesByHash([{ chainId: 1n, threshold: 1, messageHash: '0x01' }])
+      ).resolves.toEqual([])
+      expect(fetchExecutedTransactions).not.toHaveBeenCalled()
+      expect(getMessage).not.toHaveBeenCalled()
+    })
   })
 })

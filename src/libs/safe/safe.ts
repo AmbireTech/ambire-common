@@ -7,6 +7,7 @@ import {
   hexlify,
   id,
   Interface,
+  isError,
   keccak256,
   recoverAddress,
   toBeHex,
@@ -65,6 +66,18 @@ export function getApiKit(chainId: bigint) {
   return new SafeApiKit({
     chainId,
     apiKey: process.env.SAFE_API_KEY
+  })
+}
+
+/**
+ * Rejects when the Safe API doesn't answer within `SAFE_API_TIMEOUT_MS`. api-kit's requests
+ * have no timeout of their own, so a request that never answers would otherwise stall the
+ * background Safe checks waiting on it for good. The request itself is not cancelled.
+ */
+function withSafeApiTimeout<T>(request: () => Promise<T>, requestName: string): Promise<T> {
+  return withTimeout(request, {
+    timeoutMs: SAFE_API_TIMEOUT_MS,
+    message: `Safe API: ${requestName} timed out after ${SAFE_API_TIMEOUT_MS}ms`
   })
 }
 
@@ -369,6 +382,26 @@ export async function findDeployData(
   return safeCreation
 }
 
+const safeThresholdInterface = new Interface(['function getThreshold() view returns (uint256)'])
+
+/**
+ * Checks on chain whether the contract at `safeAddr` is a Safe account by calling `getThreshold()`,
+ * which every Safe version has. Other shared wallets, like the older Gnosis MultiSigWallet, don't
+ * have it, so the call reverts or returns no data.
+ * Throws when the network request itself fails, so callers can tell "not a Safe" apart from
+ * "couldn't check".
+ */
+export async function isSafeContract(safeAddr: string, provider: RPCProvider): Promise<boolean> {
+  const safe = new Contract(safeAddr, safeThresholdInterface, provider)
+  try {
+    await safe.getFunction('getThreshold').staticCall()
+    return true
+  } catch (error) {
+    if (isError(error, 'CALL_EXCEPTION') || isError(error, 'BAD_DATA')) return false
+    throw error
+  }
+}
+
 /**
  * Builds a Safe deployment call only when the stored creation data derives the imported address
  * and the configured singleton is deployed on the target network.
@@ -523,10 +556,12 @@ export async function getMessage({
   messageHash: Hex
 }): Promise<ExtendedSafeMessage | null> {
   const apiKit = getApiKit(chainId)
-  const msg = await apiKit.getMessage(messageHash).catch((e) => {
-    console.log('safe message not found', e)
-    return null
-  })
+  const msg = await withSafeApiTimeout(() => apiKit.getMessage(messageHash), 'get message').catch(
+    (e) => {
+      console.log('safe message not found', e)
+      return null
+    }
+  )
   if (!msg) return null
   return {
     ...msg,
@@ -539,14 +574,29 @@ export async function addMessageSignature(chainId: bigint, hash: string, signatu
   return apiKit.addMessageSignature(hash, signature)
 }
 
+/**
+ * Fetches the Safe txns that are not executed yet, starting from `currentNonce` - the nonce
+ * of the Safe on-chain, as everything below it can no longer execute.
+ * api-kit's `getPendingTransactions` is not used on purpose: it fetches the Safe info first
+ * to read the nonce from the Safe API (on every call where `currentNonce` is falsy, so 0
+ * included), which costs an extra request per chain on every fetch.
+ */
 export async function getPendingTransactions(
   chainId: bigint,
-  safeAddress: Hex
+  safeAddress: Hex,
+  currentNonce: bigint
 ): Promise<SafeMultisigTransactionListResponse & { chainId: bigint; type: string }> {
   const apiKit = getApiKit(chainId)
-  const response = await apiKit.getPendingTransactions(safeAddress, {
-    ordering: 'nonce'
-  })
+  // The double underscore is the filter syntax of the Safe Transaction Service, not a typo
+  const response = await withSafeApiTimeout(
+    () =>
+      apiKit.getMultisigTransactions(safeAddress, {
+        executed: false,
+        nonce__gte: currentNonce.toString(),
+        ordering: 'nonce'
+      }),
+    'get pending transactions'
+  )
   return { ...response, chainId, type: 'txn' }
 }
 
@@ -562,10 +612,14 @@ export async function getLatestMessages(
   safeAddress: Hex
 ): Promise<SafeMessageListResponse & { chainId: bigint; type: string }> {
   const apiKit = getApiKit(chainId)
-  const response = await apiKit.getMessages(safeAddress, {
-    ordering: '-created',
-    limit: 15
-  })
+  const response = await withSafeApiTimeout(
+    () =>
+      apiKit.getMessages(safeAddress, {
+        ordering: '-created',
+        limit: 15
+      }),
+    'get messages'
+  )
   const currentTime = new Date().getTime()
   const oneWeek = 7 * 24 * 60 * 60 * 1000
   // filter messages older than one week
@@ -575,15 +629,21 @@ export async function getLatestMessages(
   return { ...response, results: finalRes, chainId, type: 'message' }
 }
 
+/**
+ * A chain to fetch the pending Safe txns and messages on. `threshold` is how many owner
+ * signatures confirm a message, and `nonce` is the nonce of the Safe on-chain.
+ */
+export type SafePendingFetchNetwork = { chainId: bigint; threshold: number; nonce: bigint }
+
 export async function fetchAllPending(
-  networks: { chainId: bigint; threshold: number }[],
+  networks: SafePendingFetchNetwork[],
   safeAddr: Hex
 ): Promise<SafeResults | null> {
   const results: SafeResults = {}
   for (let i = 0; i < networks.length; i++) {
     const network = networks[i]!
     const responses = await Promise.all([
-      getPendingTransactions(network.chainId, safeAddr),
+      getPendingTransactions(network.chainId, safeAddr, network.nonce),
       getLatestMessages(network.chainId, safeAddr)
     ])
     responses.forEach((r) => {
@@ -878,15 +938,17 @@ export async function fetchExecutedTransactions(
         // everything below minNonce can no longer execute, so it cannot resolve a
         // request we are waiting on. The double underscore is the filter syntax of
         // the Safe Transaction Service, not a typo
-        const res = await apiKit
-          .getMultisigTransactions(safeAddr, {
-            ordering: 'nonce',
-            nonce__gte: minNonce
-          })
-          .catch((error: unknown) => {
-            console.log(`failed to call getMultisigTransactions on ${chainId}`, error)
-            return null
-          })
+        const res = await withSafeApiTimeout(
+          () =>
+            apiKit.getMultisigTransactions(safeAddr, {
+              ordering: 'nonce',
+              nonce__gte: minNonce
+            }),
+          'get transactions'
+        ).catch((error: unknown) => {
+          console.log(`failed to call getMultisigTransactions on ${chainId}`, error)
+          return null
+        })
         return res
       })
     )

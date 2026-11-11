@@ -8,7 +8,7 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { GasSpeeds } from '../../services/bundlers/types'
-import { SpeedUp } from './speedUp'
+import { TxnReplacement } from './txnReplacement'
 
 const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
 const otherAddr = '0x1111111111111111111111111111111111111111'
@@ -50,7 +50,7 @@ const createActivity = (initialStatus?: AccountOpStatus) => {
     listener = undefined
   })
   const activity = {
-    onUpdate: jest.fn((cb: () => void, _id?: string) => {
+    onUpdate: jest.fn((cb: () => void) => {
       listener = cb
       return unsubscribe
     }),
@@ -84,21 +84,21 @@ const toGas = (maxFeePerGas: bigint, maxPriorityFeePerGas: bigint) => ({
   maxPriorityFeePerGas: toBeHex(maxPriorityFeePerGas) as Hex
 })
 
-describe('SpeedUp', () => {
+describe('TxnReplacement', () => {
   describe('isSpeedUp', () => {
     test('is true only for account ops marked as a speed up', () => {
-      expect(SpeedUp.isSpeedUp(createAccountOp())).toBe(true)
-      expect(SpeedUp.isSpeedUp(createAccountOp({ meta: {} }))).toBe(false)
-      expect(SpeedUp.isSpeedUp(createAccountOp({ meta: undefined }))).toBe(false)
-      expect(SpeedUp.isSpeedUp(createAccountOp({ meta: { speedUp: { enabled: false } } }))).toBe(
-        false
-      )
+      expect(TxnReplacement.isSpeedUp(createAccountOp())).toBe(true)
+      expect(TxnReplacement.isSpeedUp(createAccountOp({ meta: {} }))).toBe(false)
+      expect(TxnReplacement.isSpeedUp(createAccountOp({ meta: undefined }))).toBe(false)
+      expect(
+        TxnReplacement.isSpeedUp(createAccountOp({ meta: { speedUp: { enabled: false } } }))
+      ).toBe(false)
     })
   })
 
   describe('applyMinFees', () => {
     test('raises the speeds below the minimum and keeps the ones above it', () => {
-      const speedUp = new SpeedUp({
+      const speedUp = new TxnReplacement({
         accountOp: createAccountOp(),
         activity: createActivity().activity
       })
@@ -119,7 +119,7 @@ describe('SpeedUp', () => {
     })
 
     test('returns no gas prices when there are none yet', () => {
-      const speedUp = new SpeedUp({
+      const speedUp = new TxnReplacement({
         accountOp: createAccountOp(),
         activity: createActivity().activity
       })
@@ -128,7 +128,7 @@ describe('SpeedUp', () => {
     })
 
     test('keeps the gas prices as they are when the replaced fees are unknown', () => {
-      const speedUp = new SpeedUp({
+      const speedUp = new TxnReplacement({
         accountOp: createAccountOp({ meta: { speedUp: { enabled: true } } }),
         activity: createActivity().activity
       })
@@ -147,7 +147,7 @@ describe('SpeedUp', () => {
     const nativeOption = createFeeOption(accountAddr, '0x0000000000000000000000000000000000000000')
 
     test('finds the option the pending transaction was paid with', () => {
-      const speedUp = new SpeedUp({
+      const speedUp = new TxnReplacement({
         accountOp: createAccountOp(),
         activity: createActivity().activity
       })
@@ -161,7 +161,7 @@ describe('SpeedUp', () => {
     })
 
     test('does not mix up the gas tank with the same token in the account', () => {
-      const speedUp = new SpeedUp({
+      const speedUp = new TxnReplacement({
         accountOp: createAccountOp(),
         activity: createActivity().activity
       })
@@ -177,7 +177,7 @@ describe('SpeedUp', () => {
     })
 
     test('does not match the same token on another network', () => {
-      const speedUp = new SpeedUp({
+      const speedUp = new TxnReplacement({
         accountOp: createAccountOp(),
         activity: createActivity().activity
       })
@@ -192,7 +192,7 @@ describe('SpeedUp', () => {
 
     test('keeps the original fee option after the account op gets a new fee', () => {
       const accountOp = createAccountOp()
-      const speedUp = new SpeedUp({ accountOp, activity: createActivity().activity })
+      const speedUp = new TxnReplacement({ accountOp, activity: createActivity().activity })
       // SignAccountOpController replaces the account op's gasFeePayment with the selected fee
       accountOp.gasFeePayment = { ...accountOp.gasFeePayment!, paidBy: otherAddr }
 
@@ -200,7 +200,7 @@ describe('SpeedUp', () => {
     })
 
     test('finds nothing when the pending transaction had no fee payment', () => {
-      const speedUp = new SpeedUp({
+      const speedUp = new TxnReplacement({
         accountOp: createAccountOp({ gasFeePayment: null }),
         activity: createActivity().activity
       })
@@ -213,7 +213,7 @@ describe('SpeedUp', () => {
     const nativeOption = createFeeOption(accountAddr, '0x0000000000000000000000000000000000000000')
 
     test('is false when the option the pending transaction was paid with is available', () => {
-      const speedUp = new SpeedUp({
+      const speedUp = new TxnReplacement({
         accountOp: createAccountOp(),
         activity: createActivity().activity
       })
@@ -222,7 +222,7 @@ describe('SpeedUp', () => {
     })
 
     test('is true when only other ways to pay are available', () => {
-      const speedUp = new SpeedUp({
+      const speedUp = new TxnReplacement({
         accountOp: createAccountOp(),
         activity: createActivity().activity
       })
@@ -238,7 +238,7 @@ describe('SpeedUp', () => {
     })
 
     test('is true when there are no fee options at all', () => {
-      const speedUp = new SpeedUp({
+      const speedUp = new TxnReplacement({
         accountOp: createAccountOp(),
         activity: createActivity().activity
       })
@@ -247,7 +247,7 @@ describe('SpeedUp', () => {
     })
 
     test('is false when it is unknown how the pending transaction was paid', () => {
-      const speedUp = new SpeedUp({
+      const speedUp = new TxnReplacement({
         accountOp: createAccountOp({ gasFeePayment: null }),
         activity: createActivity().activity
       })
@@ -259,7 +259,7 @@ describe('SpeedUp', () => {
   describe('watchReplacedTransaction', () => {
     test('calls back right away when the pending transaction was already processed', () => {
       const { activity, findByIdentifiedBy } = createActivity(AccountOpStatus.Success)
-      const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
+      const speedUp = new TxnReplacement({ accountOp: createAccountOp(), activity })
       const onProcessed = jest.fn(() => false)
 
       speedUp.watchReplacedTransaction(onProcessed)
@@ -276,7 +276,7 @@ describe('SpeedUp', () => {
       const { activity, setStatus, emitUpdate } = createActivity(
         AccountOpStatus.BroadcastedButNotConfirmed
       )
-      const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
+      const speedUp = new TxnReplacement({ accountOp: createAccountOp(), activity })
       const onProcessed = jest.fn(() => false)
       speedUp.watchReplacedTransaction(onProcessed)
       expect(onProcessed).not.toHaveBeenCalled()
@@ -293,7 +293,7 @@ describe('SpeedUp', () => {
       AccountOpStatus.Pending
     ])('does not call back while the pending transaction has the %s status', (status) => {
       const { activity, emitUpdate } = createActivity(status)
-      const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
+      const speedUp = new TxnReplacement({ accountOp: createAccountOp(), activity })
       const onProcessed = jest.fn(() => false)
 
       speedUp.watchReplacedTransaction(onProcessed)
@@ -304,7 +304,7 @@ describe('SpeedUp', () => {
 
     test('does not call back when the pending transaction is not in the activity', () => {
       const { activity, emitUpdate } = createActivity()
-      const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
+      const speedUp = new TxnReplacement({ accountOp: createAccountOp(), activity })
       const onProcessed = jest.fn(() => false)
 
       speedUp.watchReplacedTransaction(onProcessed)
@@ -315,7 +315,7 @@ describe('SpeedUp', () => {
 
     test('never calls back when it is unknown which transaction is replaced', () => {
       const { activity, findByIdentifiedBy, emitUpdate } = createActivity(AccountOpStatus.Success)
-      const speedUp = new SpeedUp({
+      const speedUp = new TxnReplacement({
         accountOp: createAccountOp({ meta: { speedUp: { enabled: true } } }),
         activity
       })
@@ -330,7 +330,7 @@ describe('SpeedUp', () => {
 
     test('stops watching once the caller is done with the speed up', () => {
       const { activity, unsubscribe, emitUpdate } = createActivity(AccountOpStatus.Success)
-      const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
+      const speedUp = new TxnReplacement({ accountOp: createAccountOp(), activity })
       const onProcessed = jest.fn(() => true)
 
       speedUp.watchReplacedTransaction(onProcessed)
@@ -342,10 +342,10 @@ describe('SpeedUp', () => {
 
     test('listens with an id of its own, so closing one speed up does not stop another', () => {
       const { activity, onUpdate } = createActivity(AccountOpStatus.BroadcastedButNotConfirmed)
-      new SpeedUp({ accountOp: createAccountOp(), activity }).watchReplacedTransaction(
+      new TxnReplacement({ accountOp: createAccountOp(), activity }).watchReplacedTransaction(
         jest.fn(() => false)
       )
-      new SpeedUp({ accountOp: createAccountOp(), activity }).watchReplacedTransaction(
+      new TxnReplacement({ accountOp: createAccountOp(), activity }).watchReplacedTransaction(
         jest.fn(() => false)
       )
 
@@ -356,7 +356,7 @@ describe('SpeedUp', () => {
 
     test('keeps calling back while the caller is busy, so it can act later', () => {
       const { activity, unsubscribe, emitUpdate } = createActivity(AccountOpStatus.Success)
-      const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
+      const speedUp = new TxnReplacement({ accountOp: createAccountOp(), activity })
       // e.g. in the middle of signing
       const onProcessed = jest.fn(() => false)
 
@@ -371,7 +371,7 @@ describe('SpeedUp', () => {
       const { activity, unsubscribe, setStatus, emitUpdate } = createActivity(
         AccountOpStatus.BroadcastedButNotConfirmed
       )
-      const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
+      const speedUp = new TxnReplacement({ accountOp: createAccountOp(), activity })
       const onProcessed = jest.fn(() => false)
       speedUp.watchReplacedTransaction(onProcessed)
 
@@ -385,7 +385,7 @@ describe('SpeedUp', () => {
 
     test('replaces the previous listener when watching again', () => {
       const { activity, unsubscribe } = createActivity(AccountOpStatus.BroadcastedButNotConfirmed)
-      const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
+      const speedUp = new TxnReplacement({ accountOp: createAccountOp(), activity })
 
       speedUp.watchReplacedTransaction(jest.fn(() => false))
       speedUp.watchReplacedTransaction(jest.fn(() => false))
@@ -396,17 +396,17 @@ describe('SpeedUp', () => {
   })
 })
 
-describe('SpeedUp of a cancel', () => {
+describe('TxnReplacement of a cancel', () => {
   test('is a cancel only when the speed up is marked as one', () => {
     const cancel = createAccountOp({
       meta: { speedUp: { enabled: true, isCancel: true, replacedIdentifiedBy } }
     })
 
-    expect(SpeedUp.isCancel(cancel)).toBe(true)
-    expect(SpeedUp.isCancel(createAccountOp())).toBe(false)
-    expect(new SpeedUp({ accountOp: cancel, activity: createActivity().activity }).isCancel).toBe(
-      true
-    )
+    expect(TxnReplacement.isCancel(cancel)).toBe(true)
+    expect(TxnReplacement.isCancel(createAccountOp())).toBe(false)
+    expect(
+      new TxnReplacement({ accountOp: cancel, activity: createActivity().activity }).kind
+    ).toBe('cancel')
   })
 
   test('takes the nonce of the pending transaction from what the cancel recorded', () => {
@@ -415,13 +415,13 @@ describe('SpeedUp of a cancel', () => {
       meta: { speedUp: { enabled: true, isCancel: true, replacedNonce: 7n, replacedIdentifiedBy } }
     })
 
-    const speedUp = new SpeedUp({ accountOp: cancel, activity: createActivity().activity })
+    const speedUp = new TxnReplacement({ accountOp: cancel, activity: createActivity().activity })
 
     expect(speedUp.replacedNonce).toBe(7n)
   })
 
   test('falls back to the account op nonce when nothing was recorded', () => {
-    const speedUp = new SpeedUp({
+    const speedUp = new TxnReplacement({
       accountOp: createAccountOp({ nonce: 8n }),
       activity: createActivity().activity
     })
@@ -435,17 +435,33 @@ describe('SpeedUp of a cancel', () => {
       meta: { speedUp: { enabled: true, isCancel: true, replacedNonce: 0n, replacedIdentifiedBy } }
     })
 
-    const speedUp = new SpeedUp({ accountOp: cancel, activity: createActivity().activity })
+    const speedUp = new TxnReplacement({ accountOp: cancel, activity: createActivity().activity })
 
     expect(speedUp.replacedNonce).toBe(0n)
   })
 })
 
-describe('SpeedUp of a new cancel', () => {
+describe('TxnReplacement with new calls', () => {
+  test('is neither a speed up nor a cancel, even when it replaces a pending cancel', () => {
+    const replacingCancel = new TxnReplacement({
+      accountOp: createAccountOp({
+        signature: null,
+        meta: { speedUp: { enabled: true, isCancel: true, replacedIdentifiedBy } }
+      }),
+      activity: createActivity().activity,
+      withNewCalls: true
+    })
+
+    expect(replacingCancel.kind).toBe('newCalls')
+    expect(replacingCancel.isNewCancel).toBe(false)
+  })
+})
+
+describe('TxnReplacement of a new cancel', () => {
   const cancelMeta = { speedUp: { enabled: true, isCancel: true, replacedIdentifiedBy } }
 
   test('a cancel without signatures is signed anew', () => {
-    const speedUp = new SpeedUp({
+    const speedUp = new TxnReplacement({
       accountOp: createAccountOp({ signature: null, meta: cancelMeta }),
       activity: createActivity().activity
     })
@@ -454,17 +470,17 @@ describe('SpeedUp of a new cancel', () => {
   })
 
   test('a pending cancel being sped up keeps its signatures', () => {
-    const speedUp = new SpeedUp({
+    const speedUp = new TxnReplacement({
       accountOp: createAccountOp({ signature: '0xcancelsignature', meta: cancelMeta }),
       activity: createActivity().activity
     })
 
-    expect(speedUp.isCancel).toBe(true)
+    expect(speedUp.kind).toBe('cancel')
     expect(speedUp.isNewCancel).toBe(false)
   })
 
   test('a speed up that is not a cancel is not a new cancel', () => {
-    const speedUp = new SpeedUp({
+    const speedUp = new TxnReplacement({
       accountOp: createAccountOp({ signature: null }),
       activity: createActivity().activity
     })

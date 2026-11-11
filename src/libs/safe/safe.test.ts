@@ -7,20 +7,29 @@ import {
   id,
   Interface,
   keccak256,
+  makeError,
   solidityPacked,
   ZeroAddress,
   zeroPadValue
 } from 'ethers'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
+import SafeApiKit from '@safe-global/api-kit'
 
+import { suppressConsole } from '../../../test/helpers/console'
+import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
 import {
   canHotOwnersMeetSafeThreshold,
+  fetchExecutedTransactions,
   findDeployData,
+  getLatestMessages,
+  getMessage,
+  getPendingTransactions,
   getSafeAccountByOwner,
   getSafeDeploymentCall,
   hasCompleteSafeCreationData,
+  isSafeContract,
   normalizeSafeGlobalMessage,
   toCallsUserRequest
 } from './safe'
@@ -29,7 +38,6 @@ import type { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/ap
 import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 import type { Hex } from '../../interfaces/hex'
 import type { RPCProvider } from '../../interfaces/provider'
-
 const OWNER: Hex = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
 const OTHER_OWNER = '0x94b0080A00579C1307B0eF2C499AD98A8ce58e58'
 const SAFE_ADDRESS: Hex = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
@@ -97,6 +105,52 @@ const getSafeCreationInfo = (): SafeCreationInfoResponse => ({
 const createApi = (owners: string[] = [OWNER]) => ({
   getSafeCreationInfo: jest.fn(async () => getSafeCreationInfo()),
   getSafeInfo: jest.fn(async () => getSafeInfo(owners))
+})
+
+describe('isSafeContract', () => {
+  const getThresholdData = new Interface([
+    'function getThreshold() view returns (uint256)'
+  ]).encodeFunctionData('getThreshold')
+  const createProvider = (call: () => Promise<string>) =>
+    ({ call: jest.fn(call) }) as unknown as RPCProvider
+
+  test('returns true when the contract answers getThreshold()', async () => {
+    const provider = createProvider(async () => new AbiCoder().encode(['uint256'], [2]))
+
+    await expect(isSafeContract(SAFE_ADDRESS, provider)).resolves.toBe(true)
+    expect(provider.call).toHaveBeenCalledWith(expect.objectContaining({ data: getThresholdData }))
+  })
+
+  test('returns false when the contract has no getThreshold() and returns no data', async () => {
+    // e.g. an older Gnosis MultiSigWallet, whose fallback accepts any call and returns nothing
+    const provider = createProvider(async () => '0x')
+
+    await expect(isSafeContract(SAFE_ADDRESS, provider)).resolves.toBe(false)
+  })
+
+  test('returns false when the getThreshold() call reverts', async () => {
+    const provider = createProvider(async () => {
+      throw makeError('execution reverted', 'CALL_EXCEPTION', {
+        action: 'call',
+        data: '0x',
+        reason: null,
+        transaction: { to: SAFE_ADDRESS, data: getThresholdData },
+        invocation: null,
+        revert: null
+      })
+    })
+
+    await expect(isSafeContract(SAFE_ADDRESS, provider)).resolves.toBe(false)
+  })
+
+  test('throws when the network request fails, instead of claiming it is not a Safe', async () => {
+    const networkError = new Error('fetch failed')
+    const provider = createProvider(async () => {
+      throw networkError
+    })
+
+    await expect(isSafeContract(SAFE_ADDRESS, provider)).rejects.toBe(networkError)
+  })
 })
 
 describe('Safe deployment data', () => {
@@ -507,6 +561,7 @@ describe('Safe deployment data', () => {
   })
 
   test('returns null when the singleton deployment cannot be checked', async () => {
+    const { restore } = suppressConsole()
     const provider = {
       call: jest.fn(async () => encodedProxyCreationCode),
       getCode: jest.fn(async () => {
@@ -515,6 +570,7 @@ describe('Safe deployment data', () => {
     } as unknown as RPCProvider
 
     await expect(getSafeDeploymentCall(account, provider)).resolves.toBeNull()
+    restore()
   })
 
   test('rejects saved creation data that derives a different account address', async () => {
@@ -528,6 +584,7 @@ describe('Safe deployment data', () => {
   })
 
   test('returns null when the factory deployment data cannot be read on the network', async () => {
+    const { restore } = suppressConsole()
     const provider = {
       call: jest.fn(async () => {
         throw new Error('factory unavailable')
@@ -535,9 +592,11 @@ describe('Safe deployment data', () => {
     } as unknown as RPCProvider
 
     await expect(getSafeDeploymentCall(account, provider)).resolves.toBeNull()
+    restore()
   })
 
   test('returns null when the saved creation data is malformed', async () => {
+    const { restore } = suppressConsole()
     const provider = {
       call: jest.fn(async () => encodedProxyCreationCode)
     } as unknown as RPCProvider
@@ -551,6 +610,7 @@ describe('Safe deployment data', () => {
         provider
       )
     ).resolves.toBeNull()
+    restore()
   })
 })
 
@@ -580,6 +640,7 @@ describe('toCallsUserRequest', () => {
 
 describe('getSafeAccountByOwner', () => {
   test('falls back to the next deployed network when fetching Safe details fails', async () => {
+    const { restore } = suppressConsole()
     const mainnetApi = createApi()
     mainnetApi.getSafeInfo.mockRejectedValue(new Error('Service unavailable'))
     const optimismApi = createApi()
@@ -597,6 +658,7 @@ describe('getSafeAccountByOwner', () => {
       deployedOn: [1n, 10n]
     })
     expect(result.failed).toBe(false)
+    restore()
   })
 
   test('falls back to the next deployed network when the first one does not include the owner', async () => {
@@ -751,5 +813,160 @@ describe('canHotOwnersMeetSafeThreshold', () => {
 
   test('is false when there are no imported owners', () => {
     expect(canHotOwnersMeetSafeThreshold([], 1)).toBe(false)
+  })
+})
+
+describe('getPendingTransactions', () => {
+  const originalApiKey = process.env.SAFE_API_KEY
+  const emptyListResponse = { count: 0, next: null, previous: null, results: [] }
+
+  beforeEach(() => {
+    // getApiKit refuses to build a client without one; no request leaves the test
+    process.env.SAFE_API_KEY = 'test-api-key'
+  })
+
+  afterEach(() => {
+    process.env.SAFE_API_KEY = originalApiKey
+    jest.restoreAllMocks()
+  })
+
+  test('asks only for the not executed txns from the passed nonce, without fetching the Safe info', async () => {
+    const getMultisigTransactions = jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockResolvedValue(emptyListResponse)
+    const getSafeInfo = jest.spyOn(SafeApiKit.prototype, 'getSafeInfo')
+
+    const response = await getPendingTransactions(1n, SAFE_ADDRESS, 12n)
+
+    expect(getMultisigTransactions).toHaveBeenCalledTimes(1)
+    expect(getMultisigTransactions).toHaveBeenCalledWith(SAFE_ADDRESS, {
+      executed: false,
+      nonce__gte: '12',
+      ordering: 'nonce'
+    })
+    expect(getSafeInfo).not.toHaveBeenCalled()
+    expect(response).toEqual({ ...emptyListResponse, chainId: 1n, type: 'txn' })
+  })
+
+  test('does not fetch the Safe info for a Safe that has not executed a txn yet (nonce 0)', async () => {
+    const getMultisigTransactions = jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockResolvedValue(emptyListResponse)
+    const getSafeInfo = jest.spyOn(SafeApiKit.prototype, 'getSafeInfo')
+
+    await getPendingTransactions(1n, SAFE_ADDRESS, 0n)
+
+    expect(getMultisigTransactions).toHaveBeenCalledWith(
+      SAFE_ADDRESS,
+      expect.objectContaining({ executed: false, nonce__gte: '0' })
+    )
+    expect(getSafeInfo).not.toHaveBeenCalled()
+  })
+
+  test('passes the Safe API error on to the caller', async () => {
+    jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockRejectedValue(new Error('Too many requests'))
+
+    await expect(getPendingTransactions(1n, SAFE_ADDRESS, 3n)).rejects.toThrow('Too many requests')
+  })
+})
+
+describe('Safe API requests made by the background Safe checks', () => {
+  const originalApiKey = process.env.SAFE_API_KEY
+  const emptyListResponse = { count: 0, next: null, previous: null, results: [] }
+  const never = <T>() => new Promise<T>(() => {})
+  let restoreConsole: (() => void) | undefined
+
+  beforeEach(() => {
+    // getApiKit refuses to build a client without one; no request leaves the test
+    process.env.SAFE_API_KEY = 'test-api-key'
+    jest.useFakeTimers()
+  })
+
+  afterEach(() => {
+    restoreConsole?.()
+    restoreConsole = undefined
+    jest.useRealTimers()
+    process.env.SAFE_API_KEY = originalApiKey
+    jest.restoreAllMocks()
+  })
+
+  test('the pending txns request stops waiting for a Safe API that never answers', async () => {
+    jest.spyOn(SafeApiKit.prototype, 'getMultisigTransactions').mockImplementation(() => never())
+
+    const request = getPendingTransactions(1n, SAFE_ADDRESS, 3n)
+    const assertion = expect(request).rejects.toThrow(
+      `Safe API: get pending transactions timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    )
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+    await assertion
+  })
+
+  test('the pending txns request is not cut short just before the timeout', async () => {
+    let answer: ((response: typeof emptyListResponse) => void) | undefined
+    jest.spyOn(SafeApiKit.prototype, 'getMultisigTransactions').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve
+        })
+    )
+
+    const request = getPendingTransactions(1n, SAFE_ADDRESS, 3n)
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS - 1)
+    answer?.(emptyListResponse)
+
+    await expect(request).resolves.toEqual({ ...emptyListResponse, chainId: 1n, type: 'txn' })
+    // the timeout timer is cleared once the Safe API answers
+    expect(jest.getTimerCount()).toBe(0)
+  })
+
+  test('the messages request stops waiting for a Safe API that never answers', async () => {
+    jest.spyOn(SafeApiKit.prototype, 'getMessages').mockImplementation(() => never())
+
+    const request = getLatestMessages(1n, SAFE_ADDRESS)
+    const assertion = expect(request).rejects.toThrow(
+      `Safe API: get messages timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    )
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+    await assertion
+  })
+
+  test('a message that never arrives is treated as not found', async () => {
+    restoreConsole = suppressConsole().restore
+    jest.spyOn(SafeApiKit.prototype, 'getMessage').mockImplementation(() => never())
+
+    const request = getMessage({ chainId: 1n, threshold: 1, messageHash: '0x01' })
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+    await expect(request).resolves.toBeNull()
+  })
+
+  test('the executed txns of the chains that answer are returned when another chain never answers', async () => {
+    restoreConsole = suppressConsole().restore
+    const executedTxn = buildSafeTransaction({
+      nonce: '4',
+      transactionHash: `0x${'2'.repeat(64)}`
+    })
+    jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockImplementationOnce(() => never())
+      .mockResolvedValueOnce({ ...emptyListResponse, count: 1, results: [executedTxn] })
+
+    const request = fetchExecutedTransactions(SAFE_ADDRESS, [
+      { chainId: 1n, minNonce: 4 },
+      { chainId: 10n, minNonce: 4 }
+    ])
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+    await expect(request).resolves.toEqual([
+      {
+        safeTxnHash: executedTxn.safeTxHash,
+        transactionHash: executedTxn.transactionHash,
+        nonce: '4'
+      }
+    ])
   })
 })

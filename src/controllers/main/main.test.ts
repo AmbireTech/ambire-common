@@ -1,22 +1,28 @@
 import { toBeHex, Wallet } from 'ethers'
 
+import EmittableError from '@/classes/EmittableError'
 import { Session } from '@/classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import {
-  LEGACY_POPULAR_DERIVATION_TEMPLATE,
-  BIP44_STANDARD_DERIVATION_TEMPLATE
+  BIP44_STANDARD_DERIVATION_TEMPLATE,
+  LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '@/consts/derivation'
+import { PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS } from '@/consts/privacyPools'
 import { AccountOnchainState } from '@/interfaces/account'
 import { ErrorRef } from '@/interfaces/eventEmitter'
-import { DappConnectRequest, PlainTextMessageUserRequest } from '@/interfaces/userRequest'
-import { AccountOpStatus } from '@/libs/accountOp/types'
+import { SignMessageStatus } from '@/interfaces/signMessage'
+import { Hex } from '@/interfaces/hex'
+import { DappConnectRequest, Message, PlainTextMessageUserRequest } from '@/interfaces/userRequest'
 import { isSmartAccount } from '@/libs/account/account'
+import { AccountOpStatus } from '@/libs/accountOp/types'
 import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
+import * as magicLinkLib from '@/libs/magicLink/magicLink'
 import { stringify } from '@/libs/richJson/richJson'
 import wait from '@/utils/wait'
 import { describe, expect, jest, test } from '@jest/globals'
 import { makeMainController } from '@test/helpers/mainController'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { MainController } from './main'
 
 describe('Main Controller ', () => {
@@ -30,6 +36,7 @@ describe('Main Controller ', () => {
           '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
       },
+      initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
         pfp: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
@@ -44,6 +51,7 @@ describe('Main Controller ', () => {
           '0x7f1e7646e4695bead8bb0596679b0caf3a7ff6c4e04d2ad79103c8fa61fb6337f47fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
       },
+      initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
         pfp: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd'
@@ -58,6 +66,7 @@ describe('Main Controller ', () => {
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
       },
+      initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
         pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -94,7 +103,20 @@ describe('Main Controller ', () => {
   // })
 
   test('backup keyStore secret emailVault', async () => {
-    void controller.emailVault?.uploadKeyStoreSecret('unufri@ambire.com')
+    // Nobody confirms the magic link here, and the relayer often refuses to send one because of
+    // its rate limit. Both end in an error that is expected.
+    const { restore } = suppressConsole()
+    const { requestMagicLink } = magicLinkLib
+    let magicLinkAnswered: Promise<unknown> | undefined
+    const magicLinkRequested = new Promise<void>((resolve) => {
+      jest.spyOn(magicLinkLib, 'requestMagicLink').mockImplementation((...args) => {
+        const request = requestMagicLink(...args)
+        magicLinkAnswered = request.catch(() => {})
+        resolve()
+        return request
+      })
+    })
+    const upload = controller.emailVault?.uploadKeyStoreSecret('unufri@ambire.com')
 
     await new Promise((resolve) => {
       if (controller.emailVault) {
@@ -109,6 +131,103 @@ describe('Main Controller ', () => {
     // Assert the emailVault sub-controller is present and its status was updated
     expect(controller.emailVault).not.toBeNull()
     expect(controller.emailVault?.statuses).toBeDefined()
+
+    // Stops the wait for the confirmation, which would otherwise poll for 3 minutes. Only once the
+    // magic link request is answered, as the polling that follows resets the stop.
+    await magicLinkRequested
+    await magicLinkAnswered
+    controller.emailVault?.cancelEmailConfirmation()
+    await upload
+    jest.spyOn(magicLinkLib, 'requestMagicLink').mockRestore()
+    restore()
+  })
+
+  test('does not sign a message that replaced the approved one while its account state loads', async () => {
+    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
+    })
+    const accountAddr = accounts[0]!.addr
+    const approvedMessage: Message = {
+      fromRequestId: 1,
+      content: { kind: 'message', message: '0x74657374' },
+      accountAddr,
+      chainId: 1n,
+      signature: null
+    }
+    mainCtrl.signMessage.messageToSign = approvedMessage
+    delete mainCtrl.accounts.accountStates[accountAddr]
+    jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockImplementation(async () => {
+      mainCtrl.accounts.accountStates[accountAddr] = { '1': {} as AccountOnchainState }
+      mainCtrl.signMessage.messageToSign = { ...approvedMessage, fromRequestId: 2 }
+    })
+    const signSpy = jest.spyOn(mainCtrl.signMessage, 'sign').mockResolvedValue(undefined)
+
+    await mainCtrl.handleSignMessage()
+
+    expect(signSpy).not.toHaveBeenCalled()
+  })
+
+  describe('portfolio update after a signed message', () => {
+    const signAndGetScheduledChainIds = async (content: Message['content']) => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+      const accountAddr = accounts[0]!.addr
+      const messageToSign: Message = {
+        fromRequestId: 1,
+        content,
+        accountAddr,
+        chainId: 1n,
+        signature: null
+      }
+      mainCtrl.signMessage.messageToSign = messageToSign
+      mainCtrl.accounts.accountStates[accountAddr] = { '1': {} as AccountOnchainState }
+      jest.spyOn(mainCtrl.signMessage, 'sign').mockImplementation(async () => {
+        mainCtrl.signMessage.signedMessage = {
+          ...messageToSign,
+          signature: '0x01',
+          timestamp: Date.now(),
+          dapp: null
+        }
+        mainCtrl.signMessage.status = SignMessageStatus.Done
+      })
+      jest.spyOn(mainCtrl.activity, 'addSignedMessage').mockResolvedValue(undefined)
+      jest.spyOn(mainCtrl.requests, 'resolveUserRequest').mockResolvedValue(undefined)
+
+      await mainCtrl.handleSignMessage()
+
+      return mainCtrl.portfolio.scheduledUpdateChainIds[accountAddr]
+    }
+
+    test('schedules an update on the message chain, as a dapp may move funds after it', async () => {
+      const scheduledChainIds = await signAndGetScheduledChainIds({
+        kind: 'message',
+        message: '0x74657374'
+      })
+
+      expect(scheduledChainIds).toEqual([1n])
+    })
+
+    test('does not schedule an update after a login message', async () => {
+      const scheduledChainIds = await signAndGetScheduledChainIds({
+        kind: 'siwe',
+        message: '0x74657374',
+        parsedMessage: {
+          address: accounts[0]!.addr as Hex,
+          chainId: 1,
+          domain: 'example.com',
+          nonce: 'abcdefgh',
+          uri: 'https://example.com',
+          version: '1'
+        },
+        siweValidityStatus: 'invalid',
+        autoLoginStatus: 'no-policy',
+        isAutoLoginEnabledByUser: false,
+        autoLoginDuration: 0
+      })
+
+      expect(scheduledChainIds).toBeUndefined()
+    })
   })
 
   test('refreshes Safe transactions once while a manual refresh is in progress', async () => {
@@ -141,7 +260,127 @@ describe('Main Controller ', () => {
     fetchSafeTxnsSpy.mockRestore()
   })
 
-  test('fetches the other Safes pending counts after the selected Safe on focus, only when unlocked', async () => {
+  test('refetches the Safe transactions only on the chains a reload is filtered by', async () => {
+    const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
+    const updateAccountStateSpy = jest
+      .spyOn(controller.accounts, 'updateAccountState')
+      .mockResolvedValue()
+    const updatePortfolioSpy = jest
+      .spyOn(controller, 'updateSelectedAccountPortfolio')
+      .mockResolvedValue()
+    const previousSelectedAccount = controller.selectedAccount.account
+    controller.selectedAccount.account = accounts[0] as any
+
+    try {
+      await controller.reloadSelectedAccount({ chainIds: [10n] })
+      expect(fetchSafeTxnsSpy).toHaveBeenLastCalledWith([10n], true)
+
+      // without a filter, every chain is refetched
+      await controller.reloadSelectedAccount()
+      expect(fetchSafeTxnsSpy).toHaveBeenLastCalledWith([], true)
+    } finally {
+      controller.selectedAccount.account = previousSelectedAccount
+      fetchSafeTxnsSpy.mockRestore()
+      updateAccountStateSpy.mockRestore()
+      updatePortfolioSpy.mockRestore()
+    }
+  })
+
+  test('fetches the pending Safe transactions from the on-chain nonce, on the deployed chains only', async () => {
+    const previousSelectedAccount = controller.selectedAccount.account
+    const safeAccount = {
+      ...accounts[0],
+      safeCreation: { factoryAddr: '0x', singleton: '0x', setupData: '0x', saltNonce: '0x' }
+    }
+    controller.selectedAccount.account = safeAccount as any
+    const getAccountStatesSpy = jest
+      .spyOn(controller.accounts, 'getOrFetchAccountStates')
+      .mockResolvedValue({
+        '1': { isDeployed: true, threshold: 2, nonce: 4n },
+        '10': { isDeployed: false, threshold: 0, nonce: 0n },
+        '137': { isDeployed: true, threshold: 1, nonce: 9n }
+      } as any)
+    const fetchPendingSpy = jest.spyOn(controller.safe, 'fetchPending').mockResolvedValue(null)
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get').mockReturnValue(true)
+
+    try {
+      // a chain the Safe is not deployed on is skipped even when asked for
+      await controller.fetchSafeTxns([137n, 10n], true)
+      expect(fetchPendingSpy.mock.calls).toEqual([
+        [safeAccount.addr, [{ chainId: 137n, threshold: 1, nonce: 9n }]]
+      ])
+
+      fetchPendingSpy.mockClear()
+      await controller.fetchSafeTxns([], true)
+      expect(fetchPendingSpy.mock.calls).toEqual([
+        [safeAccount.addr, [{ chainId: 1n, threshold: 2, nonce: 4n }]],
+        [safeAccount.addr, [{ chainId: 137n, threshold: 1, nonce: 9n }]]
+      ])
+    } finally {
+      controller.selectedAccount.account = previousSelectedAccount
+      getAccountStatesSpy.mockRestore()
+      fetchPendingSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('stops fetching the pending Safe transactions on the remaining chains once the wallet gets locked', async () => {
+    const previousSelectedAccount = controller.selectedAccount.account
+    controller.selectedAccount.account = {
+      ...accounts[0],
+      safeCreation: { factoryAddr: '0x', singleton: '0x', setupData: '0x', saltNonce: '0x' }
+    } as any
+    const getAccountStatesSpy = jest
+      .spyOn(controller.accounts, 'getOrFetchAccountStates')
+      .mockResolvedValue({
+        '1': { isDeployed: true, threshold: 1, nonce: 0n },
+        '137': { isDeployed: true, threshold: 1, nonce: 0n }
+      } as any)
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get').mockReturnValue(true)
+    const fetchPendingSpy = jest.spyOn(controller.safe, 'fetchPending').mockImplementation(async () => {
+      // the wallet gets locked while the first chain is fetched
+      isUnlockedSpy.mockReturnValue(false)
+      return null
+    })
+
+    try {
+      await controller.fetchSafeTxns([], true)
+
+      expect(fetchPendingSpy).toHaveBeenCalledTimes(1)
+      expect(controller.statuses.fetchSafeTxns).toBe('INITIAL')
+    } finally {
+      controller.selectedAccount.account = previousSelectedAccount
+      getAccountStatesSpy.mockRestore()
+      fetchPendingSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('does not fetch the pending Safe transactions while the wallet is locked', async () => {
+    const previousSelectedAccount = controller.selectedAccount.account
+    controller.selectedAccount.account = {
+      ...accounts[0],
+      safeCreation: { factoryAddr: '0x', singleton: '0x', setupData: '0x', saltNonce: '0x' }
+    } as any
+    const getAccountStatesSpy = jest.spyOn(controller.accounts, 'getOrFetchAccountStates')
+    const fetchPendingSpy = jest.spyOn(controller.safe, 'fetchPending').mockResolvedValue(null)
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get').mockReturnValue(false)
+
+    try {
+      // a forced refetch, like the dashboard refresh, does not get past the lock either
+      await controller.fetchSafeTxns([], true)
+
+      expect(getAccountStatesSpy).not.toHaveBeenCalled()
+      expect(fetchPendingSpy).not.toHaveBeenCalled()
+    } finally {
+      controller.selectedAccount.account = previousSelectedAccount
+      getAccountStatesSpy.mockRestore()
+      fetchPendingSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('fetches the selected Safe and then the other Safes pending counts on focus, only when unlocked', async () => {
     const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
     const updateOtherSafesSpy = jest
       .spyOn(controller.safe, 'updateOtherSafesPendingCounts')
@@ -154,13 +393,15 @@ describe('Main Controller ', () => {
       controller.ui.uiEvent.emit('viewFocus', view)
       await wait(0)
 
-      expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([])
+      // no Safe API requests at all while the wallet is locked
+      expect(fetchSafeTxnsSpy).not.toHaveBeenCalled()
       expect(updateOtherSafesSpy).not.toHaveBeenCalled()
 
       isUnlockedSpy.mockReturnValue(true)
       controller.ui.uiEvent.emit('viewFocus', view)
       await wait(0)
 
+      expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([])
       expect(updateOtherSafesSpy).toHaveBeenCalledTimes(1)
       expect(updateOtherSafesSpy).toHaveBeenCalledWith(controller.selectedAccount.account?.addr)
     } finally {
@@ -307,6 +548,8 @@ describe('Main Controller ', () => {
         })
     )
 
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get').mockReturnValue(true)
+
     try {
       const fetchPromise = controller.fetchSafeTxns([1n])
       await fetchStarted
@@ -322,6 +565,7 @@ describe('Main Controller ', () => {
       controller.selectedAccount.account = originalSelectedAccount
       getAccountStatesSpy.mockRestore()
       fetchPendingSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
     }
   })
 
@@ -466,12 +710,13 @@ describe('Main Controller ', () => {
     test('adds the accounts prepared by a flow without keys (view-only)', async () => {
       const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
       const before = snapshot()
+      // Not in the wallet yet, as adding an account it has already keeps that one's name
       const viewOnlyAccount = {
-        addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
         associatedKeys: [],
         initialPrivileges: [],
         creation: null,
-        preferences: { label: 'Watched', pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' }
+        preferences: { label: 'Watched', pfp: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }
       }
 
       await picker.prepareAccounts({ accounts: [viewOnlyAccount] })
@@ -816,6 +1061,7 @@ describe('Main Controller ', () => {
     })
 
     test('rejects more private keys than the maximum', async () => {
+      const { restore } = suppressConsole()
       const privateKeys = Array.from({ length: MAX_BULK_PRIVATE_KEYS + 1 }, (_, i) =>
         toPrivateKey(i + 1)
       )
@@ -828,18 +1074,22 @@ describe('Main Controller ', () => {
         `You can import up to ${MAX_BULK_PRIVATE_KEYS} private keys at once. Please remove some and try again.`
       )
       expect(emittedErrors[0]!.level).toBe('major')
+      restore()
     })
 
     test('rejects an empty list', async () => {
+      const { restore } = suppressConsole()
       const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([])
 
       expect(initParams).toBeUndefined()
       expect(emittedErrors.map((e) => e.message)).toEqual([
         'Please enter at least one private key.'
       ])
+      restore()
     })
 
     test('rejects the whole list if any private key is invalid, without exposing the keys', async () => {
+      const { restore } = suppressConsole()
       const validPrivateKey = toPrivateKey(1)
       const invalidPrivateKey = `${toPrivateKey(2).slice(0, -1)}z`
 
@@ -856,9 +1106,11 @@ describe('Main Controller ', () => {
       const reportedError = `${emittedErrors[0]!.message} ${emittedErrors[0]!.error?.message}`
       expect(reportedError).not.toContain(validPrivateKey.slice(2))
       expect(reportedError).not.toContain(invalidPrivateKey.slice(2))
+      restore()
     })
 
     test('rejects a recovery phrase passed as one of the private keys', async () => {
+      const { restore } = suppressConsole()
       const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([
         toPrivateKey(1),
         process.env.SEED!
@@ -867,6 +1119,7 @@ describe('Main Controller ', () => {
       expect(initParams).toBeUndefined()
       expect(emittedErrors).toHaveLength(1)
       expect(emittedErrors[0]!.error?.message).not.toContain(process.env.SEED!)
+      restore()
     })
   })
 
@@ -1706,6 +1959,220 @@ describe('Main Controller ', () => {
       const [storedAccountOp] = jest.mocked(mainCtrl.activity.addAccountOp).mock.calls[0]!
       expect(storedAccountOp.meta).not.toHaveProperty('quote')
       expect(storedAccountOp.meta?.swapTxn?.activeRouteId).toBe(SIGNED_ROUTE_ID)
+    })
+  })
+
+  describe('privacyPoolsRagequit', () => {
+    const [depositor, otherAccount, viewOnlyAccount] = accounts
+    const RAGEQUIT_CALL = {
+      to: '0xF241d57C6DebAe225c0F2e6eA1529373C9A9C9fB',
+      value: 0n,
+      data: '0x1234'
+    }
+
+    const setupController = async ({ depositorAddr }: { depositorAddr: string }) => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+        await storageCtrl.set('selectedAccount', otherAccount!.addr)
+      })
+      await mainCtrl.initialLoadPromise
+      // Every account but the view-only one has its key in the wallet
+      jest.spyOn(mainCtrl.keystore, 'keys', 'get').mockReturnValue(
+        [depositor!, otherAccount!].map(({ associatedKeys }) => ({
+          addr: associatedKeys[0]
+        })) as any
+      )
+      jest
+        .spyOn(mainCtrl.privacyPools, 'getRagequitDepositorAddr')
+        .mockReturnValue(depositorAddr as Hex)
+      jest
+        .spyOn(mainCtrl.privacyPools, 'buildRagequitCalls')
+        .mockResolvedValue({ accountAddr: depositorAddr, calls: [RAGEQUIT_CALL] })
+      jest
+        .spyOn(mainCtrl.accounts, 'getOrFetchAccountOnChainState')
+        .mockResolvedValue({} as AccountOnchainState)
+      jest.spyOn(mainCtrl.requests, 'build').mockResolvedValue(undefined)
+      const errors: ErrorRef[] = []
+      mainCtrl.onError((error) => errors.push(error))
+      const statuses: string[] = []
+      mainCtrl.onUpdate(() => statuses.push(mainCtrl.statuses.privacyPoolsRagequit))
+
+      return { mainCtrl, errors, statuses }
+    }
+
+    test('selects the account the deposit came from and adds the call for it to sign', async () => {
+      // Lowercase, as an address read from the chain's history may be
+      const { mainCtrl, errors } = await setupController({
+        depositorAddr: depositor!.addr.toLowerCase()
+      })
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors).toEqual([])
+      expect(mainCtrl.privacyPools.buildRagequitCalls).toHaveBeenCalledWith({
+        chainId: '1',
+        label: 3n
+      })
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(depositor!.addr)
+      expect(mainCtrl.requests.build).toHaveBeenCalledWith({
+        type: 'privacyPoolsRagequitRequest',
+        params: { accountAddr: depositor!.addr, chainId: 1n, calls: [RAGEQUIT_CALL] }
+      })
+    })
+
+    test("looks for a waiting call of that deposit, on the depositor's account", async () => {
+      const { mainCtrl } = await setupController({ depositorAddr: depositor!.addr })
+      jest.spyOn(mainCtrl.requests, 'findPrivacyPoolsRagequitRequest')
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(mainCtrl.requests.findPrivacyPoolsRagequitRequest).toHaveBeenCalledWith({
+        accountAddr: depositor!.addr,
+        chainId: 1n,
+        label: 3n
+      })
+      expect(mainCtrl.requests.build).toHaveBeenCalled()
+    })
+
+    // Proving it again would add a second call spending the same deposit, failing the batch
+    test('opens the request already taking back the deposit instead of proving it again', async () => {
+      const { mainCtrl, errors, statuses } = await setupController({
+        depositorAddr: depositor!.addr
+      })
+      jest
+        .spyOn(mainCtrl.requests, 'findPrivacyPoolsRagequitRequest')
+        .mockReturnValue({ id: 'waiting-ragequit', meta: { accountAddr: depositor!.addr } } as any)
+      jest.spyOn(mainCtrl.requests, 'setCurrentUserRequestById').mockResolvedValue(undefined)
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors).toEqual([])
+      expect(statuses).toContain('SUCCESS')
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(depositor!.addr)
+      expect(mainCtrl.requests.setCurrentUserRequestById).toHaveBeenCalledWith('waiting-ragequit')
+      expect(mainCtrl.privacyPools.buildRagequitCalls).not.toHaveBeenCalled()
+      expect(mainCtrl.requests.build).not.toHaveBeenCalled()
+    })
+
+    test('proves the deposit when its account is not known before proving', async () => {
+      const { mainCtrl, errors } = await setupController({ depositorAddr: depositor!.addr })
+      jest.spyOn(mainCtrl.privacyPools, 'getRagequitDepositorAddr').mockReturnValue(undefined)
+      jest.spyOn(mainCtrl.requests, 'findPrivacyPoolsRagequitRequest')
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors).toEqual([])
+      expect(mainCtrl.requests.findPrivacyPoolsRagequitRequest).not.toHaveBeenCalled()
+      expect(mainCtrl.privacyPools.buildRagequitCalls).toHaveBeenCalled()
+      expect(mainCtrl.requests.build).toHaveBeenCalled()
+    })
+
+    test('adds nothing for an account that is not in the wallet', async () => {
+      const { mainCtrl, errors } = await setupController({
+        depositorAddr: '0x0000000000000000000000000000000000000001'
+      })
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors.map(({ message }) => message)).toEqual([
+        'This deposit was made from an account that is not in your wallet. Add that account to take the deposit back.'
+      ])
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
+      expect(mainCtrl.requests.build).not.toHaveBeenCalled()
+    })
+
+    test("switches nothing when the depositor's account cannot be loaded", async () => {
+      const { mainCtrl, errors, statuses } = await setupController({
+        depositorAddr: depositor!.addr
+      })
+      jest.spyOn(mainCtrl.accounts, 'getOrFetchAccountOnChainState').mockResolvedValue(undefined)
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors.map(({ message }) => message)).toEqual([
+        'Could not load the account this deposit was made from. Please try again.'
+      ])
+      expect(statuses).toContain('ERROR')
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
+      expect(mainCtrl.requests.build).not.toHaveBeenCalled()
+    })
+
+    test("gives up and switches nothing when the depositor's account takes too long to load", async () => {
+      const { mainCtrl, errors, statuses } = await setupController({
+        depositorAddr: depositor!.addr
+      })
+      const fetchSpy = jest
+        .spyOn(mainCtrl.accounts, 'getOrFetchAccountOnChainState')
+        .mockReturnValue(new Promise(() => {}))
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] })
+
+      try {
+        const ragequitPromise = mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+        // The time limit starts with the fetch, after status updates that each wait a millisecond
+        while (!fetchSpy.mock.calls.length) await jest.advanceTimersByTimeAsync(1)
+
+        await jest.advanceTimersByTimeAsync(PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS - 1)
+        expect(errors).toEqual([])
+        expect(mainCtrl.statuses.privacyPoolsRagequit).toBe('LOADING')
+
+        await jest.advanceTimersByTimeAsync(1)
+        expect(errors.map(({ message }) => message)).toEqual([
+          'Could not load the account this deposit was made from. Please try again.'
+        ])
+
+        // The status updates after the error
+        await jest.advanceTimersByTimeAsync(10)
+        await ragequitPromise
+      } finally {
+        jest.useRealTimers()
+      }
+
+      expect(errors[0]!.error.message).toBe(
+        "privacyPools: loading the depositor's account state timed out"
+      )
+      expect(statuses).toContain('ERROR')
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
+      expect(mainCtrl.requests.build).not.toHaveBeenCalled()
+    })
+
+    test('switches nothing on a network the wallet does not have', async () => {
+      const { mainCtrl, errors } = await setupController({ depositorAddr: depositor!.addr })
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '424242', label: 3n })
+
+      expect(errors.map(({ message }) => message)).toEqual([
+        'Could not load the account this deposit was made from. Please try again.'
+      ])
+      expect(mainCtrl.accounts.getOrFetchAccountOnChainState).not.toHaveBeenCalled()
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
+    })
+
+    test('reports a request it could not add as failed, not done', async () => {
+      const { mainCtrl, errors, statuses } = await setupController({
+        depositorAddr: depositor!.addr
+      })
+      const message = 'Could not prepare taking back this deposit. Please try again.'
+      jest
+        .spyOn(mainCtrl.requests, 'build')
+        .mockRejectedValue(new EmittableError({ level: 'major', message }))
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors.map((error) => error.message)).toEqual([message])
+      expect(statuses).toContain('ERROR')
+      expect(statuses).not.toContain('SUCCESS')
+    })
+
+    test('adds nothing for a view-only account, which could not sign it', async () => {
+      const { mainCtrl, errors } = await setupController({ depositorAddr: viewOnlyAccount!.addr })
+
+      await mainCtrl.privacyPoolsRagequit({ chainId: '1', label: 3n })
+
+      expect(errors.map(({ message }) => message)).toEqual([
+        'This deposit was made from an account you can only view. Import its key to take the deposit back.'
+      ])
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(otherAccount!.addr)
+      expect(mainCtrl.requests.build).not.toHaveBeenCalled()
     })
   })
 })
