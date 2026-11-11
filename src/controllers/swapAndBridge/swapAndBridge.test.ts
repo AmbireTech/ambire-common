@@ -221,7 +221,8 @@ const bannerCtrl = new BannerController(
     isBalanceReady: true
   }),
   surveyCtrl,
-  '1.0.0'
+  '1.0.0',
+  new FeatureFlagsController({}, storageCtrl)
 )
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,

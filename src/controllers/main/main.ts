@@ -441,6 +441,7 @@ export class MainController extends EventEmitter implements IMainController {
       },
       this.survey,
       this.#appVersion,
+      this.featureFlags,
       eventEmitterRegistry
     )
     this.selectedAccount = new SelectedAccountController({
@@ -493,7 +494,8 @@ export class MainController extends EventEmitter implements IMainController {
         relayerUrl,
         this.keystore,
         undefined,
-        eventEmitterRegistry
+        eventEmitterRegistry,
+        this.featureFlags
       )
     }
     this.accountPicker = new AccountPickerController({
@@ -1583,6 +1585,17 @@ export class MainController extends EventEmitter implements IMainController {
         })
     }
 
+    // A signed message can let a dapp move the account's funds later (e.g. Monerium burning EURe
+    // for a bank transfer), so the balances are refreshed once that dapp's transaction has landed.
+    // Logins move no funds and would only spend the per-account cache bypass budget.
+    if (signedMessage.content.kind !== 'siwe') {
+      this.portfolio.scheduleUpdate({
+        accountId: signedMessage.accountAddr,
+        chainId: signedMessage.chainId,
+        bypassServerSideCache: true
+      })
+    }
+
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
 
     await this.requests.resolveUserRequest(
@@ -1912,6 +1925,12 @@ export class MainController extends EventEmitter implements IMainController {
    * Sets the account picker up for a hardware wallet under the method's status, and replies
    * to `requestId` once done, so the connect screen moves on only then - the status alone
    * is transient and can be missed.
+   *
+   * Runs alongside other actions, like the recovery phrase and private key set ups: it only
+   * talks to the device and sets the picker up. Otherwise a background action (e.g. fetching
+   * a Safe's pending transactions on every portfolio reload) makes it refuse the user's press,
+   * which looks like the connect button doing nothing. A second set up of the same wallet is
+   * still refused while the first one waits on the device.
    */
   async #setUpPickerForHardwareWallet(
     callName: keyof typeof STATUS_WRAPPED_METHODS,
@@ -1919,10 +1938,14 @@ export class MainController extends EventEmitter implements IMainController {
     requestId?: string
   ) {
     let isSetUp = false
-    await this.withStatus(callName, async () => {
-      await setUp()
-      isSetUp = true
-    })
+    await this.withStatus(
+      callName,
+      async () => {
+        await setUp()
+        isSetUp = true
+      },
+      true
+    )
 
     this.#replyToRequest(
       requestId,
@@ -2227,7 +2250,8 @@ export class MainController extends EventEmitter implements IMainController {
         maxDataAgeMs
       })
     ])
-    this.fetchSafeTxns([], true).catch((e) => e) // we catch the error inside
+    // Refetch only the chains the dashboard is filtered by, if it is filtered
+    this.fetchSafeTxns(chainIds ?? [], true).catch((e) => e) // we catch the error inside
   }
 
   /**
@@ -2246,12 +2270,16 @@ export class MainController extends EventEmitter implements IMainController {
 
   /**
    * Fetches the pending txns of the selected Safe, and then the pending counts of the other
-   * Safes, one after the other so they don't compete for the Safe API's rate limit
+   * Safes, one after the other so they don't compete for the Safe API's rate limit.
+   * Nothing is fetched while the wallet is locked, as unlocking fetches them again.
    */
   async #fetchAllSafesPending() {
+    // do not make Safe requests if the wallet is locked
+    if (!this.keystore.isUnlocked) return
+
     await this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
 
-    // do not make Safe requests for the other Safes if the wallet is locked
+    // the wallet may have been locked while the selected Safe was fetched
     if (!this.keystore.isUnlocked) return
 
     await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
@@ -2265,6 +2293,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
     if (!this.selectedAccount?.account?.safeCreation) return
+    // do not make Safe requests if the wallet is locked
+    if (!this.keystore.isUnlocked) return
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex
 
@@ -2276,20 +2306,16 @@ export class MainController extends EventEmitter implements IMainController {
     const accountState = await this.accounts.getOrFetchAccountStates(safeAddr)
     if (!accountState) return
 
-    const finalChainIds = chainIds.length
-      ? chainIds
-      : this.networks.networks
-          .filter((n) => {
-            // fetch info only about deployed safes
-            const state = accountState?.[n.chainId.toString()]
-            return state?.isDeployed
-          })
-          .map((n) => n.chainId)
+    // fetch info only about deployed safes, and only on the passed chains if there are any.
+    // A chain without an account state has no nonce to fetch the pending txns from either
+    const networksAndThresholds = this.networks.networks.flatMap(({ chainId }) => {
+      if (chainIds.length && !chainIds.includes(chainId)) return []
 
-    const networksAndThresholds = finalChainIds.map((c) => ({
-      chainId: c,
-      threshold: accountState[c.toString()]?.threshold || 0
-    }))
+      const chainAccountState = accountState[chainId.toString()]
+      if (!chainAccountState?.isDeployed) return []
+
+      return [{ chainId, threshold: chainAccountState.threshold, nonce: chainAccountState.nonce }]
+    })
 
     if (!networksAndThresholds.length) return
 
@@ -2297,6 +2323,10 @@ export class MainController extends EventEmitter implements IMainController {
       'fetchSafeTxns',
       async () => {
         for (let i = 0; i < networksAndThresholds.length; i++) {
+          // stop once the wallet gets locked, instead of pausing before each remaining chain.
+          // If it gets locked during the pause below, `fetchPending` makes no request either
+          if (!this.keystore.isUnlocked) break
+
           // wait a second to not hit 5 request per minute API limit
           if (i !== 0) await wait(600)
 

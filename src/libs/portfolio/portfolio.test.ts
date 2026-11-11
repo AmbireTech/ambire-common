@@ -254,6 +254,21 @@ describe('Portfolio', () => {
         throw new Error('price API is down')
       })
 
+    test('reuses a cached price younger than 5 minutes without refetching it', async () => {
+      const priceFetch = workingPriceFetch()
+      const portfolioWithCachedPrice = await createPortfolioWithCachedEthPrice(
+        priceFetch,
+        1000,
+        60 * 1000
+      )
+
+      const { tokens } = await portfolioWithCachedPrice.get(ACCOUNT_WITH_ETH, {
+        fetchPinned: false
+      })
+
+      expect(getNativePriceIn(tokens)).toEqual([{ baseCurrency: 'usd', price: 1000 }])
+    })
+
     test('refetches a cached price older than 5 minutes, even if newer than an hour', async () => {
       const priceFetch = workingPriceFetch()
       const portfolioWithCachedPrice = await createPortfolioWithCachedEthPrice(

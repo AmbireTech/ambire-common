@@ -618,7 +618,8 @@ const init = async (
     storageCtrl,
     () => ({ status: 'no-selected-account' }),
     surveyCtrl,
-    'test'
+    'test',
+    new FeatureFlagsController({}, storageCtrl)
   )
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
@@ -1279,6 +1280,53 @@ describe('SignAccountOp Controller ', () => {
     controller.update({ accountOpData: { nonce: 0n } })
 
     expect(controller.canBroadcast).toBe(false)
+  })
+
+  describe('Safe owners among the fee payers', () => {
+    const onChainOwner = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const importedOwners = safeAccount.associatedKeys.map((addr) => addr.toLowerCase())
+
+    /**
+     * Returns the Safe owners among the fee payers, read again with the given account state.
+     * The controller re-estimates right after init, so the estimation is set back to a success,
+     * otherwise the update doesn't read the owners again and the ones from init are left.
+     */
+    const getOwnersWithSafeState = async (overrides: {
+      isDeployed: boolean
+      associatedKeys: string[]
+    }) => {
+      const { controller, accountsCtrl } = await initSafeNonce()
+      controller.pause()
+      const chainKey = controller.accountOp.chainId.toString()
+      const safeStates = accountsCtrl.accountStates[controller.accountOp.accountAddr]!
+      safeStates[chainKey] = { ...safeStates[chainKey]!, ...overrides }
+      controller.estimation.status = EstimationStatus.Success
+
+      controller.update({ hasNewEstimation: true, gasPrices: defaultFeeSelectionGasPrices })
+
+      return controller.safeFeePayerLinks?.owners
+    }
+
+    test('takes the owners from the import for a Safe that is not deployed yet', async () => {
+      const owners = await getOwnersWithSafeState({ isDeployed: false, associatedKeys: [] })
+
+      expect(owners).toEqual(importedOwners)
+    })
+
+    test('takes the owners from the chain for a deployed Safe', async () => {
+      const owners = await getOwnersWithSafeState({
+        isDeployed: true,
+        associatedKeys: [onChainOwner]
+      })
+
+      expect(owners).toEqual([onChainOwner.toLowerCase()])
+    })
+
+    test('has no owners for a deployed Safe whose owners on chain are none', async () => {
+      const owners = await getOwnersWithSafeState({ isDeployed: true, associatedKeys: [] })
+
+      expect(owners).toEqual([])
+    })
   })
 
   test('does not block a Safe speed up for keeping the nonce of the transaction it replaces', async () => {
