@@ -85,7 +85,7 @@ A deposit, withdrawal or ragequit should show in the balance as soon as it is se
 
 An entry is deleted after one sync, which runs once our RPC has reached the transaction's block. `main.ts` starts it for deposits and ragequits, and `broadcastWithdrawal` for withdrawals, with the block from the bundler so our RPC never sees the withdrawal. A failed transaction deletes its entry at once, and a lock deletes them all.
 
-Another sync, for example from opening the account, can read the change first. So each entry remembers the notes from when it was sent, and is ignored once they show the change. For a withdrawal, that is the total of the token's approved notes, less the withdrawals sent before it that the notes do not show yet, as another withdrawal may have spent a different note. Until then, a new deposit is blocked, as it would reuse the same precommitment.
+Another sync, for example from opening the account, can read the change first. So each entry remembers the notes from when it was sent, and is ignored once they show the change. A deposit takes them from the plugin when it is built, after `prepareShield`'s own sync, so the receiving account needs no sync of ours first. For a withdrawal, that is the total of the token's approved notes, less the withdrawals sent before it that the notes do not show yet, as another withdrawal may have spent a different note. Until then, a new deposit is blocked, as it would reuse the same precommitment.
 
 ## Persistence
 
