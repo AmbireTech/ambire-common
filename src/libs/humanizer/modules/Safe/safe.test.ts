@@ -6,9 +6,9 @@ import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../../../broadcast/broadcast'
 import { HumanizerMeta, IrCall } from '../../interfaces'
-import { compareHumanizerVisualizations } from '../../testHelpers'
-import { getAction, getAddressVisualization, getLabel } from '../../utils'
-import SafeModule, { getSafeHumanization } from './'
+import { compareHumanizerVisualizations, compareVisualizations } from '../../testHelpers'
+import { getAction, getAddressVisualization, getBreak, getLabel, getText } from '../../utils'
+import SafeModule, { getSafeHumanization, SAFE_APPROVE_HASH_ACTION } from './'
 
 const buildSafeTxFixture = (
   overrides: Partial<SafeMultisigTransactionResponse>
@@ -302,6 +302,57 @@ describe('Safe', () => {
       })
       const result = getSafeHumanization(accountOp.accountAddr, accountOp.accountAddr, 0n, data)
       expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_DOMAIN_VERIFIER')).toBe(true)
+    })
+  })
+
+  describe('approveHash', () => {
+    const approveHashAbi = parseAbi(['function approveHash(bytes32 hashToApprove)'])
+    const safeAddr = '0x5aFE000000000000000000000000000000000001'
+    const safeTxHash = '0xd72ffa789b6fae41254d0b5a13e6e1e92ed947ec6a251edf1cf0b6c02c257b40'
+    const data = encodeFunctionData({ abi: approveHashAbi, args: [safeTxHash] })
+    const hashVisualization = [getBreak(), getLabel('Safe transaction hash'), getText(safeTxHash)]
+
+    test('an owner approving a Safe transaction onchain is shown as approving it, with its hash', () => {
+      // e.g. sent by a smart account owner of the Safe, so the call is not to its own account
+      const ownerAccountOp: AccountOp = { ...accountOp, calls: [{ to: safeAddr, value: 0n, data }] }
+      const irCalls = ownerAccountOp.calls.map((c) =>
+        SafeModule(ownerAccountOp, c, humanizerInfo as HumanizerMeta)
+      )
+      compareHumanizerVisualizations(irCalls, [
+        [
+          getAction(SAFE_APPROVE_HASH_ACTION),
+          getLabel('of'),
+          getAddressVisualization(safeAddr),
+          ...hashVisualization
+        ]
+      ])
+      expect(irCalls[0]!.warnings ?? []).toEqual([])
+    })
+
+    test('is shown over the Safe clear signing descriptor, which some networks lack', () => {
+      const ownerAccountOp: AccountOp = { ...accountOp, calls: [{ to: safeAddr, value: 0n, data }] }
+      const [irCall] = ownerAccountOp.calls.map((c) =>
+        SafeModule(ownerAccountOp, c, humanizerInfo as HumanizerMeta)
+      )
+      expect(irCall!.preferredOverErc7730).toBe(true)
+    })
+
+    test('without a known Safe address only the action and the hash are shown', () => {
+      const result = getSafeHumanization(accountOp.accountAddr, undefined, 0n, data)
+      compareVisualizations(result?.visuals ?? [], [
+        getAction(SAFE_APPROVE_HASH_ACTION),
+        ...hashVisualization
+      ])
+    })
+
+    test('a call with another selector is not shown as an approval, nor preferred', () => {
+      const otherData = encodeFunctionData({
+        abi: parseAbi(['function changeThreshold(uint256 _threshold)']),
+        args: [2n]
+      })
+      const result = getSafeHumanization(accountOp.accountAddr, safeAddr, 0n, otherData)
+      expect(result?.visuals?.[0]?.content).not.toBe(SAFE_APPROVE_HASH_ACTION)
+      expect(result?.preferredOverErc7730).toBeFalsy()
     })
   })
 })

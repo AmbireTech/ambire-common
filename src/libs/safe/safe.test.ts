@@ -9,6 +9,8 @@ import {
   keccak256,
   makeError,
   solidityPacked,
+  toUtf8Bytes,
+  Wallet,
   ZeroAddress,
   zeroPadValue
 } from 'ethers'
@@ -17,20 +19,30 @@ import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globa
 import SafeApiKit from '@safe-global/api-kit'
 
 import { suppressConsole } from '../../../test/helpers/console'
-import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
+import { SAFE_API_TIMEOUT_MS, SAFE_SENTINEL_OWNER, SAFE_V1_4_1 } from '../../consts/safe'
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
 import {
   canHotOwnersMeetSafeThreshold,
+  decodeSetupData,
   fetchExecutedTransactions,
   findDeployData,
+  getAlreadySignedOwners,
   getLatestMessages,
   getMessage,
+  getNewSafeAccount,
+  getNewSafeCreation,
   getPendingTransactions,
   getSafeAccountByOwner,
+  getSafeApprovedHashSignature,
+  getSafeApproveHashCall,
   getSafeDeploymentCall,
+  getSafeProxyAddress,
+  getSigs,
   hasCompleteSafeCreationData,
   isSafeContract,
+  isSafeHashApproved,
   normalizeSafeGlobalMessage,
+  sortSigs,
   toCallsUserRequest
 } from './safe'
 
@@ -612,6 +624,76 @@ describe('Safe deployment data', () => {
     ).resolves.toBeNull()
     restore()
   })
+
+  describe('the fallback handler of a new Safe', () => {
+    // Checksummed from lowercase, as getNewSafeAccount rejects an address with a wrong checksum
+    const ownerA = getAddress(OWNER.toLowerCase()) as Hex
+    const ownerB = getAddress(OTHER_OWNER.toLowerCase()) as Hex
+    const newSafeAccount = getNewSafeAccount([ownerA, ownerB], 2, [])
+    const encodedV141ProxyCreationCode = new AbiCoder().encode(
+      ['bytes'],
+      [SAFE_V1_4_1.proxyCreationCode]
+    )
+    const getProvider = (missingContract?: string) =>
+      ({
+        call: jest.fn(async () => encodedV141ProxyCreationCode),
+        getCode: jest.fn(async (address: string) =>
+          address.toLowerCase() === missingContract?.toLowerCase() ? '0x' : '0x6000'
+        )
+      }) as unknown as RPCProvider
+
+    test('builds the factory call when the singleton and the fallback handler are deployed', async () => {
+      const provider = getProvider()
+
+      await expect(getSafeDeploymentCall(newSafeAccount, provider)).resolves.toMatchObject({
+        to: SAFE_V1_4_1.proxyFactory
+      })
+      expect(provider.getCode).toHaveBeenCalledWith(SAFE_V1_4_1.compatibilityFallbackHandler)
+    })
+
+    test('returns null when the fallback handler is not deployed on the network', async () => {
+      const provider = getProvider(SAFE_V1_4_1.compatibilityFallbackHandler)
+
+      await expect(getSafeDeploymentCall(newSafeAccount, provider)).resolves.toBeNull()
+    })
+
+    test('returns null when the singleton is not deployed, even with the fallback handler', async () => {
+      const provider = getProvider(SAFE_V1_4_1.singletonL2)
+
+      await expect(getSafeDeploymentCall(newSafeAccount, provider)).resolves.toBeNull()
+    })
+
+    test('does not check a fallback handler for a Safe set up without one', async () => {
+      const setupWithoutFallbackHandler = new Interface([
+        'function setup(address[] _owners,uint256 _threshold,address to,bytes data,address fallbackHandler,address paymentToken,uint256 payment,address paymentReceiver)'
+      ]).encodeFunctionData('setup', [
+        [ownerA],
+        1,
+        ZeroAddress,
+        '0x',
+        ZeroAddress,
+        ZeroAddress,
+        0,
+        ZeroAddress
+      ]) as Hex
+      const safeCreation = {
+        ...newSafeAccount.safeCreation!,
+        setupData: setupWithoutFallbackHandler
+      }
+      const safeWithoutFallbackHandler = {
+        ...newSafeAccount,
+        addr: getSafeProxyAddress(safeCreation, SAFE_V1_4_1.proxyCreationCode),
+        safeCreation
+      }
+      const provider = getProvider()
+
+      await expect(
+        getSafeDeploymentCall(safeWithoutFallbackHandler, provider)
+      ).resolves.not.toBeNull()
+      expect(provider.getCode).toHaveBeenCalledTimes(1)
+      expect(provider.getCode).toHaveBeenCalledWith(SAFE_V1_4_1.singletonL2)
+    })
+  })
 })
 
 describe('toCallsUserRequest', () => {
@@ -813,6 +895,136 @@ describe('canHotOwnersMeetSafeThreshold', () => {
 
   test('is false when there are no imported owners', () => {
     expect(canHotOwnersMeetSafeThreshold([], 1)).toBe(false)
+  })
+})
+
+describe('new Safe accounts', () => {
+  const ownerA = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78' as Hex
+  const ownerB = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5' as Hex
+
+  // Verified against createProxyWithNonce of the v1.4.1 SafeProxyFactory on Base and Ethereum
+  test.each([
+    [[ownerA], 1, '0xb89598D5fe26dD671f51F3292096FcDA38B63625'],
+    [[ownerA, ownerB], 2, '0x913F170e793293e71749ee6CA674DF0469Ee3735']
+  ])('derives the counterfactual address of %j with threshold %i', (owners, threshold, addr) => {
+    expect(getNewSafeAccount(owners as Hex[], threshold, []).addr).toBe(addr)
+  })
+
+  test('builds a Safe v1.4.1 account with a zero salt nonce', () => {
+    const account = getNewSafeAccount([ownerA, ownerB], 1, [])
+
+    expect(account.safeCreation).toEqual({
+      factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
+      singleton: '0x29fcB43b46531BcA003ddC8FCB67FFE91900C762',
+      setupData: expect.any(String),
+      saltNonce: zeroPadValue('0x00', 32)
+    })
+    expect(decodeSetupData(account.safeCreation!.setupData)).toEqual([ownerA, ownerB])
+    expect(account.associatedKeys).toEqual([ownerA, ownerB])
+    expect(account.initialPrivileges).toEqual([
+      [ownerA, '0x01'],
+      [ownerB, '0x01']
+    ])
+    expect(account.creation).toBeNull()
+    expect(account.preferences).toEqual({ label: 'Account 1', pfp: account.addr })
+  })
+
+  test('labels the new Safe after the accounts already in the wallet', () => {
+    const prevAccount = getNewSafeAccount([ownerA], 1, [])
+
+    expect(getNewSafeAccount([ownerB], 1, [prevAccount]).preferences.label).toBe('Account 2')
+  })
+
+  test('derives a different address for a different threshold or owners order', () => {
+    const addr = getNewSafeAccount([ownerA, ownerB], 1, []).addr
+
+    expect(getNewSafeAccount([ownerA, ownerB], 2, []).addr).not.toBe(addr)
+    expect(getNewSafeAccount([ownerB, ownerA], 1, []).addr).not.toBe(addr)
+  })
+
+  test('rejects invalid setups', () => {
+    expect(() => getNewSafeCreation([], 1)).toThrow('at least one owner')
+    expect(() => getNewSafeCreation([ownerA, ownerA.toLowerCase() as Hex], 1)).toThrow('only once')
+    expect(() => getNewSafeCreation([ownerA, ZeroAddress as Hex], 1)).toThrow('cannot be an owner')
+    expect(() => getNewSafeCreation([SAFE_SENTINEL_OWNER as Hex, ownerA], 1)).toThrow(
+      'cannot be an owner'
+    )
+    expect(() => getNewSafeCreation([ownerA], 0)).toThrow('required confirmations')
+    expect(() => getNewSafeCreation([ownerA], 2)).toThrow('required confirmations')
+    expect(() => getNewSafeCreation([ownerA, ownerB], 1.5)).toThrow('required confirmations')
+  })
+})
+
+describe('Safe owner approvals (approveHash)', () => {
+  const SAFE_TX_HASH = keccak256(toUtf8Bytes('safe transaction'))
+  const ownerKey = new Wallet(keccak256(toUtf8Bytes('owner key')))
+  const SMART_ACCOUNT_OWNER = '0x4C71d299f23eFC660b3295D1f631724693aE22Ac'
+  const ecdsaSignature = ownerKey.signingKey.sign(SAFE_TX_HASH).serialized as Hex
+
+  test('an approved hash signature is the owner in r, an empty s and v = 1', () => {
+    const signature = getSafeApprovedHashSignature(SMART_ACCOUNT_OWNER.toLowerCase())
+
+    expect(getBytes(signature)).toHaveLength(65)
+    expect(signature).toBe(
+      concat([zeroPadValue(SMART_ACCOUNT_OWNER, 32), zeroPadValue('0x', 32), '0x01']).toLowerCase()
+    )
+  })
+
+  test('recovers the owner of an approved hash signature next to ECDSA ones', () => {
+    const approvedSignature = getSafeApprovedHashSignature(SMART_ACCOUNT_OWNER)
+    const combined = sortSigs([approvedSignature, ecdsaSignature], SAFE_TX_HASH)
+    const expectedOrder =
+      BigInt(SMART_ACCOUNT_OWNER) < BigInt(ownerKey.address)
+        ? [SMART_ACCOUNT_OWNER, ownerKey.address]
+        : [ownerKey.address, SMART_ACCOUNT_OWNER]
+
+    expect(getAlreadySignedOwners(combined, SAFE_TX_HASH)).toEqual(expectedOrder)
+    expect(getSigs(combined)).toHaveLength(2)
+    expect(getSigs(combined)).toContain(approvedSignature)
+  })
+
+  test('does not take the r of an ECDSA signature as its owner', () => {
+    expect(getAlreadySignedOwners(ecdsaSignature, SAFE_TX_HASH)).toEqual([ownerKey.address])
+  })
+
+  test('builds the approveHash call to the Safe', () => {
+    const call = getSafeApproveHashCall(SAFE_ADDRESS, SAFE_TX_HASH)
+
+    expect(call.to).toBe(getAddress(SAFE_ADDRESS))
+    expect(call.value).toBe(0n)
+    expect(
+      new Interface(['function approveHash(bytes32)']).decodeFunctionData('approveHash', call.data)[0]
+    ).toBe(SAFE_TX_HASH)
+  })
+
+  test('reads whether an owner approved the hash onchain', async () => {
+    const approvedHashesInterface = new Interface([
+      'function approvedHashes(address, bytes32) view returns (uint256)'
+    ])
+    const getProvider = (approved: bigint) => {
+      const call = jest.fn(async () =>
+        approvedHashesInterface.encodeFunctionResult('approvedHashes', [approved])
+      )
+      return { provider: { call } as unknown as RPCProvider, call }
+    }
+
+    const approved = getProvider(1n)
+    await expect(
+      isSafeHashApproved(SAFE_ADDRESS, SMART_ACCOUNT_OWNER, SAFE_TX_HASH, approved.provider)
+    ).resolves.toBe(true)
+    expect(approved.call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: approvedHashesInterface.encodeFunctionData('approvedHashes', [
+          SMART_ACCOUNT_OWNER,
+          SAFE_TX_HASH
+        ])
+      })
+    )
+
+    const notApproved = getProvider(0n)
+    await expect(
+      isSafeHashApproved(SAFE_ADDRESS, SMART_ACCOUNT_OWNER, SAFE_TX_HASH, notApproved.provider)
+    ).resolves.toBe(false)
   })
 })
 

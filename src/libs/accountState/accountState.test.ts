@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
@@ -12,9 +12,11 @@ import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { getRpcProvider } from '../../services/provider'
+import { Deployless } from '../deployless/deployless'
+import { RPC_HARDCODED_ERRORS } from '../errorDecoder/handlers/rpc'
 import { get4437Bytecode, getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
-import { getAccountState } from './accountState'
+import { EOA_REQUESTS_TIMEOUT_MS, getAccountState } from './accountState'
 
 // import { get4437Bytecode } from ''
 
@@ -406,5 +408,67 @@ describe('AccountState', () => {
     expect(state[0]!.safeVersion).toBeNull()
     expect(state[1]!.isDeployed).toBeFalsy()
     expect(state[1]!.safeVersion).toBeNull()
+  })
+
+  describe('when the RPC answers the account state call, but not the EOA requests', () => {
+    const never = <T>() => new Promise<T>(() => {})
+    const eoaAddr = ethers.Wallet.createRandom().address
+    const eoa: Account = {
+      addr: eoaAddr,
+      associatedKeys: [eoaAddr],
+      initialPrivileges: [],
+      creation: null,
+      preferences: { label: DEFAULT_ACCOUNT_LABEL, pfp: eoaAddr }
+    }
+    const ethereumWith7702 = { ...ethereum, has7702: true }
+
+    const prepareHangingRpc = (hangingRequest: 'getTransactionCount' | 'getCode') => {
+      const hangingProvider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+      jest.spyOn(Deployless.prototype, 'call').mockResolvedValue([])
+      jest.spyOn(hangingProvider, 'getTransactionCount').mockResolvedValue(0)
+      jest.spyOn(hangingProvider, 'getCode').mockResolvedValue('0x')
+      jest.spyOn(hangingProvider, hangingRequest).mockImplementation(() => never())
+      jest.useFakeTimers()
+
+      return { hangingProvider }
+    }
+
+    afterEach(() => {
+      jest.useRealTimers()
+      jest.restoreAllMocks()
+    })
+
+    test.each(['getTransactionCount', 'getCode'] as const)(
+      'should fail with an RPC timeout when %s never answers',
+      async (hangingRequest) => {
+        const { hangingProvider } = prepareHangingRpc(hangingRequest)
+
+        const statePromise = getAccountState(hangingProvider, ethereumWith7702, [eoa], [])
+        const assertion = expect(statePromise).rejects.toMatchObject({
+          message: RPC_HARDCODED_ERRORS.rpcTimeout
+        })
+        await jest.advanceTimersByTimeAsync(EOA_REQUESTS_TIMEOUT_MS)
+
+        await assertion
+      }
+    )
+
+    test('should keep waiting for the EOA requests until the timeout', async () => {
+      const { hangingProvider } = prepareHangingRpc('getTransactionCount')
+
+      let isSettled = false
+      const statePromise = getAccountState(hangingProvider, ethereumWith7702, [eoa], []).finally(
+        () => {
+          isSettled = true
+        }
+      )
+      await jest.advanceTimersByTimeAsync(EOA_REQUESTS_TIMEOUT_MS - 1)
+
+      expect(isSettled).toBe(false)
+
+      const assertion = expect(statePromise).rejects.toThrow(RPC_HARDCODED_ERRORS.rpcTimeout)
+      await jest.advanceTimersByTimeAsync(1)
+      await assertion
+    })
   })
 })

@@ -12,7 +12,8 @@ import {
   parseEther,
   toBeHex,
   verifyMessage,
-  Wallet
+  Wallet,
+  ZeroAddress
 } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -124,6 +125,7 @@ import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { SurveyController } from '../survey/survey'
+import { TokenPricesController } from '../tokenPrices/tokenPrices'
 import { UiController } from '../ui/ui'
 import { clearDiscoverTxnTokensCache } from './discoverTxnTokens'
 import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
@@ -398,6 +400,27 @@ const safeAccount: Account = {
   }
 }
 
+const e2esmartAccount: Account = {
+  addr: '0x4C71d299f23eFC660b3295D1f631724693aE22Ac',
+  associatedKeys: ['0xa18fe725A4a0E25A02411Ab28073E4F35D32d8e2'],
+  creation: {
+    factoryAddr: '0x26cE6745A633030A6faC5e64e41D21fb6246dc2d',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027fca32523c64c36083b1291dd9ad1e268d3731e36174438cb702336b275ccb8295553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  initialPrivileges: [
+    [
+      '0xa18fe725A4a0E25A02411Ab28073E4F35D32d8e2',
+      '0x0000000000000000000000000000000000000000000000000000000000000001'
+    ]
+  ],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x4C71d299f23eFC660b3295D1f631724693aE22Ac'
+  }
+}
+
 const nativeFeeToken: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
   symbol: 'ETH',
@@ -595,7 +618,8 @@ const init = async (
     storageCtrl,
     () => ({ status: 'no-selected-account' }),
     surveyCtrl,
-    'test'
+    'test',
+    new FeatureFlagsController({}, storageCtrl)
   )
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
@@ -626,7 +650,11 @@ const init = async (
     velcroUrl,
     bannerCtrl,
     featureFlagsCtrl,
-    ui
+    ui,
+    new TokenPricesController({
+      fetch,
+      isTokenPricesEnabled: () => featureFlagsCtrl.isFeatureEnabled('tokenPrices')
+    })
   )
   const continuouslyUpdatePhishingSpy = options?.dapps
     ? jest
@@ -1533,6 +1561,403 @@ describe('SignAccountOp Controller ', () => {
     controller.setSafeNonce(42n)
     controller.update({ hasNewEstimation: true })
     expect(controller.accountOp.nonce).toBe(42n)
+  })
+
+  describe('Safe smart account owner approvals', () => {
+    const SAFE_APPROVE_HASH_ABI = ['function approveHash(bytes32 hashToApprove)']
+    const anotherSmartAccountOwner: Account = {
+      ...e2esmartAccount,
+      addr: '0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326'
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    /** A Safe owned by an EOA key and by smart accounts imported in the wallet */
+    const initSafeWithSmartAccountOwners = async ({ isApprovedOnchain = false } = {}) => {
+      const isSafeHashApprovedSpy = jest
+        .spyOn(safeLib, 'isSafeHashApproved')
+        .mockResolvedValue(isApprovedOnchain)
+      const proposeSpy = jest.spyOn(safeLib, 'propose').mockResolvedValue(undefined)
+      const confirmSpy = jest.spyOn(safeLib, 'confirm').mockResolvedValue(undefined as never)
+
+      const result = await initSafeNonce()
+      const { controller, accountsCtrl } = result
+      const chainId = controller.accountOp.chainId.toString()
+      const safeState = accountsCtrl.accountStates[safeAccount.addr]![chainId]!
+      ;[e2esmartAccount, anotherSmartAccountOwner].forEach((owner, i) => {
+        accountsCtrl.accounts.push(owner)
+        safeState.associatedKeys.push(owner.addr)
+        accountsCtrl.accountStates[owner.addr] = {
+          [chainId]: {
+            ...safeState,
+            accountAddr: owner.addr,
+            associatedKeys: [eoaSigner.keyPublicAddress],
+            isDeployed: true,
+            isV2: true,
+            nonce: 7n + BigInt(i),
+            threshold: 0,
+            safeVersion: null
+          }
+        }
+      })
+
+      return { ...result, isSafeHashApprovedSpy, proposeSpy, confirmSpy }
+    }
+
+    test('preparing an approval keeps the Safe nonce set by the request', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+      const getNonceSpy = jest.spyOn(safeLib, 'getNonce').mockResolvedValue(9n)
+      const nonce = controller.accountOp.nonce
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+
+      expect(getNonceSpy).not.toHaveBeenCalled()
+      expect(controller.accountOp.nonce).toBe(nonce)
+    })
+
+    test('lists the owners that are imported smart accounts', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+
+      expect(controller.safeSmartAccountOwners).toEqual([
+        e2esmartAccount.addr,
+        anotherSmartAccountOwner.addr
+      ])
+      // the EOA key owner signs with its key
+      expect(controller.safeSmartAccountOwners).not.toContain(eoaSigner.keyPublicAddress)
+      controller.destroy()
+    })
+
+    test('prepares a transaction of the owner that approves the Safe transaction hash', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+
+      const approval = controller.safeOwnerApproval!
+      expect(approval).toBeTruthy()
+      expect(approval.type).toBe('safe-owner-approval')
+      expect(approval.account.addr).toBe(e2esmartAccount.addr)
+      expect(approval.accountOp.nonce).toBe(7n)
+      // not a request of its own, so broadcasting it can't resolve the Safe request
+      expect(approval.fromRequestId).not.toBe(controller.fromRequestId)
+      expect(approval.accountOp.calls).toHaveLength(1)
+      const [call] = approval.accountOp.calls
+      expect(call!.to).toBe(getAddress(safeAccount.addr))
+      expect(call!.value).toBe(0n)
+      const [approvedHash] = new Interface(SAFE_APPROVE_HASH_ABI).decodeFunctionData(
+        'approveHash',
+        call!.data
+      )
+      expect(approvedHash).toMatch(/^0x[0-9a-f]{64}$/)
+      // an approval doesn't take approvals itself
+      expect(approval.safeSmartAccountOwners).toEqual([])
+      controller.destroy()
+    })
+
+    test('reports which request the approval is the result of', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr, 'first-request')
+      expect(controller.safeOwnerApprovalRequestId).toBe('first-request')
+
+      // also when it fails, so the UI stops waiting for it
+      await controller.initSafeOwnerApproval(eoaSigner.keyPublicAddress, 'failing-request')
+      expect(controller.safeOwnerApprovalRequestId).toBe('failing-request')
+      controller.destroy()
+    })
+
+    test('keeps the approval of the same owner and replaces it when another owner is picked', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const firstApproval = controller.safeOwnerApproval!
+      const destroySpy = jest.spyOn(firstApproval, 'destroy')
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      expect(controller.safeOwnerApproval).toBe(firstApproval)
+      expect(destroySpy).not.toHaveBeenCalled()
+
+      await controller.initSafeOwnerApproval(anotherSmartAccountOwner.addr)
+      expect(destroySpy).toHaveBeenCalled()
+      expect(controller.safeOwnerApproval!.account.addr).toBe(anotherSmartAccountOwner.addr)
+      controller.destroy()
+    })
+
+    test('prepares the approval again when the one sent before was never confirmed', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const sentApproval = controller.safeOwnerApproval!
+      // e.g. stuck with a fee too low, until the wallet stopped waiting for it
+      sentApproval.updateStatus(SigningStatus.Done)
+      const destroySpy = jest.spyOn(sentApproval, 'destroy')
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr, 'approve-again')
+
+      expect(destroySpy).toHaveBeenCalled()
+      const newApproval = controller.safeOwnerApproval!
+      expect(newApproval).not.toBe(sentApproval)
+      expect(newApproval.account.addr).toBe(e2esmartAccount.addr)
+      expect(newApproval.status?.type).not.toBe(SigningStatus.Done)
+      expect(controller.safeOwnerApprovalRequestId).toBe('approve-again')
+      controller.destroy()
+    })
+
+    test('keeps a signed approval of the same owner while it is still being sent', async () => {
+      const { controller, isSafeHashApprovedSpy } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const approval = controller.safeOwnerApproval!
+      approval.updateStatus(SigningStatus.Done)
+      const isInProgressSpy = jest
+        .spyOn(approval, 'isSignAndBroadcastInProgress', 'get')
+        .mockReturnValue(false)
+      // starts being sent while it's checked whether the owner approved onchain already
+      isSafeHashApprovedSpy.mockImplementation(async () => {
+        isInProgressSpy.mockReturnValue(true)
+        return false
+      })
+      const destroySpy = jest.spyOn(approval, 'destroy')
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+
+      expect(controller.safeOwnerApproval).toBe(approval)
+      expect(destroySpy).not.toHaveBeenCalled()
+      expect(onError).not.toHaveBeenCalled()
+      controller.destroy()
+    })
+
+    test('counts an approval confirmed after the wallet stopped waiting for it', async () => {
+      const { controller, isSafeHashApprovedSpy } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      controller.safeOwnerApproval!.updateStatus(SigningStatus.Done)
+      // e.g. confirmed later on a slow network
+      isSafeHashApprovedSpy.mockResolvedValue(true)
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+
+      expect(controller.accountOp.signed).toEqual([e2esmartAccount.addr])
+      expect(controller.accountOp.signature).toBe(
+        safeLib.getSafeApprovedHashSignature(e2esmartAccount.addr)
+      )
+      controller.destroy()
+    })
+
+    test('counts an approval made onchain meanwhile instead of showing the one not sent yet', async () => {
+      const { controller, isSafeHashApprovedSpy } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      // e.g. from the Safe app, while the approval here was left unsent
+      isSafeHashApprovedSpy.mockResolvedValue(true)
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+
+      expect(controller.accountOp.signed).toEqual([e2esmartAccount.addr])
+      controller.destroy()
+    })
+
+    test('does not replace an approval while it is being signed or sent', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const approval = controller.safeOwnerApproval!
+      jest.spyOn(approval, 'isSignAndBroadcastInProgress', 'get').mockReturnValue(true)
+      const destroySpy = jest.spyOn(approval, 'destroy')
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      // the same owner gets the approval being sent back, with no error
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr, 'same-owner')
+      expect(onError).not.toHaveBeenCalled()
+
+      await controller.initSafeOwnerApproval(anotherSmartAccountOwner.addr, 'another-owner')
+
+      expect(destroySpy).not.toHaveBeenCalled()
+      expect(controller.safeOwnerApproval).toBe(approval)
+      // done, so the UI stops waiting for an approval of the other owner
+      expect(controller.safeOwnerApprovalRequestId).toBe('another-owner')
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Wait until the approval in progress is sent, then try again.'
+        })
+      )
+      controller.destroy()
+    })
+
+    test('does not prepare an approval for an owner that is not a smart account', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await controller.initSafeOwnerApproval(eoaSigner.keyPublicAddress)
+      await controller.initSafeOwnerApproval('0x000000000000000000000000000000000000dEaD')
+
+      expect(controller.safeOwnerApproval).toBeNull()
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "This account can't approve this transaction." })
+      )
+      controller.destroy()
+    })
+
+    test('counts an approval already made onchain as the owner signature', async () => {
+      const { controller, proposeSpy } = await initSafeWithSmartAccountOwners({
+        isApprovedOnchain: true
+      })
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+
+      expect(controller.safeOwnerApproval).toBeNull()
+      expect(controller.accountOp.signed).toEqual([e2esmartAccount.addr])
+      expect(controller.accountOp.signature).toBe(
+        safeLib.getSafeApprovedHashSignature(e2esmartAccount.addr)
+      )
+      // the first signature proposes the Safe transaction, so the other owners see it
+      expect(proposeSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        controller.accountOp.chainId,
+        safeAccount.addr,
+        e2esmartAccount.addr,
+        safeLib.getSafeApprovedHashSignature(e2esmartAccount.addr),
+        controller.accountOp.txnId
+      )
+      controller.destroy()
+    })
+
+    test('confirms instead of proposing a Safe transaction that came from Safe Global', async () => {
+      const { controller, proposeSpy, confirmSpy } = await initSafeWithSmartAccountOwners({
+        isApprovedOnchain: true
+      })
+      // e.g. proposed by a delegate, so it has no signatures yet
+      controller.update({
+        accountOpData: {
+          safeTx: {
+            to: ZeroAddress,
+            value: '0',
+            data: '0x',
+            operation: 0,
+            safeTxGas: '0',
+            baseGas: '0',
+            gasPrice: '0',
+            gasToken: ZeroAddress,
+            refundReceiver: ZeroAddress,
+            nonce: '3',
+            confirmations: []
+          } as unknown as AccountOp['safeTx']
+        }
+      })
+
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+
+      expect(controller.accountOp.signed).toEqual([e2esmartAccount.addr])
+      expect(proposeSpy).not.toHaveBeenCalled()
+      expect(confirmSpy).toHaveBeenCalledWith(
+        controller.accountOp.chainId,
+        safeLib.getSafeApprovedHashSignature(e2esmartAccount.addr),
+        controller.accountOp.txnId
+      )
+      controller.destroy()
+    })
+
+    test('reports an error instead of throwing when calling the approval fails', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const retryError = new Error('retry failed')
+      jest.spyOn(controller.safeOwnerApproval!, 'retry').mockRejectedValue(retryError)
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await expect(
+        controller.callSafeOwnerApprovalMethod('retry', ['simulate'])
+      ).resolves.toBeUndefined()
+
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ level: 'major', error: retryError })
+      )
+      controller.destroy()
+    })
+
+    test('reports an error when the Safe state cannot be read before sending the approval', async () => {
+      const { controller, accountsCtrl } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const approval = controller.safeOwnerApproval!
+      const signAndBroadcastSpy = jest
+        .spyOn(approval, 'signAndBroadcast')
+        .mockResolvedValue(undefined)
+      const fetchError = new Error('RPC timeout')
+      jest.spyOn(accountsCtrl, 'getOrFetchAccountOnChainState').mockRejectedValueOnce(fetchError)
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await expect(controller.signAndBroadcastSafeOwnerApproval()).resolves.toBeUndefined()
+
+      expect(signAndBroadcastSpy).not.toHaveBeenCalled()
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Unable to send the approval. Please try again.',
+          error: fetchError
+        })
+      )
+      controller.destroy()
+    })
+
+    test('sends the approval only while it is for the current Safe transaction', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const approval = controller.safeOwnerApproval!
+      const signAndBroadcastSpy = jest
+        .spyOn(approval, 'signAndBroadcast')
+        .mockResolvedValue(undefined)
+
+      await controller.signAndBroadcastSafeOwnerApproval()
+      expect(signAndBroadcastSpy).toHaveBeenCalledTimes(1)
+
+      // a different nonce makes it a different Safe transaction
+      controller.setSafeNonce(4n)
+      const onError = jest.fn()
+      controller.onError(onError)
+      await controller.signAndBroadcastSafeOwnerApproval()
+
+      expect(signAndBroadcastSpy).toHaveBeenCalledTimes(1)
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'The transaction changed. Review the approval again before sending it.'
+        })
+      )
+      // prepared again, for the transaction with the new nonce
+      expect(controller.safeOwnerApproval).not.toBe(approval)
+      expect(controller.safeOwnerApproval!.account.addr).toBe(e2esmartAccount.addr)
+      controller.destroy()
+    })
+
+    test('resumes the approval with the Safe request only while it is not signed', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const approval = controller.safeOwnerApproval!
+      const resumeSpy = jest.spyOn(approval, 'resume')
+
+      controller.resume()
+      expect(resumeSpy).toHaveBeenCalledTimes(1)
+
+      // e.g. sent, so nothing is left to estimate
+      approval.updateStatus(SigningStatus.Done)
+      controller.resume()
+      expect(resumeSpy).toHaveBeenCalledTimes(1)
+      controller.destroy()
+    })
+
+    test('pauses and destroys the approval together with the Safe request', async () => {
+      const { controller } = await initSafeWithSmartAccountOwners()
+      await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+      const approval = controller.safeOwnerApproval!
+      const pauseSpy = jest.spyOn(approval, 'pause')
+      const destroySpy = jest.spyOn(approval, 'destroy')
+
+      controller.pause()
+      expect(pauseSpy).toHaveBeenCalled()
+
+      controller.destroy()
+      expect(destroySpy).toHaveBeenCalled()
+      expect(controller.safeOwnerApproval).toBeNull()
+    })
   })
 
   test('does not change a Safe nonce while signing is in progress', async () => {
@@ -7197,23 +7622,29 @@ describe('an earlier pending transaction', () => {
 
     /**
      * A Safe op at `nonce` that `threshold` owners must sign, `signed` of them already did. Its
-     * fee is paid by `paidBy`, the Safe itself by default
+     * fee is paid by `paidBy`, the Safe itself by default. Unless `hasOwnerKey` is false, the
+     * key of the first owner is in this wallet. `signature` holds the signatures collected so far
      */
     const initSafe = async ({
       threshold,
       signed,
       nonce = 3n,
-      paidBy = safeAccount.addr
+      paidBy = safeAccount.addr,
+      hasOwnerKey = true,
+      signature
     }: {
       threshold: number
       signed: string[]
       nonce?: bigint
       paidBy?: string
+      hasOwnerKey?: boolean
+      signature?: string
     }) => {
       const feePaymentOptions = [nativeFeeOption(paidBy)]
       const accountOp = createAccountOp(safeAccount, chainId)
       accountOp.op.nonce = nonce
       accountOp.op.signed = signed
+      if (signature) accountOp.op.signature = signature
       jest.spyOn(EstimationController.prototype, 'estimate').mockResolvedValue(undefined)
 
       const ctrl = await init(
@@ -7248,9 +7679,9 @@ describe('an earlier pending transaction', () => {
       accountState.isDeployed = true
       accountState.associatedKeys = owners
       // Only the first owner's key is in this wallet
-      accountState.importedAccountKeys = [
-        { addr: eoaSigner.keyPublicAddress, type: 'internal', label: 'Key 1' } as any
-      ]
+      accountState.importedAccountKeys = hasOwnerKey
+        ? [{ addr: eoaSigner.keyPublicAddress, type: 'internal', label: 'Key 1' } as any]
+        : []
       ctrl.controller.update({ hasNewEstimation: true })
       return ctrl
     }
@@ -7266,6 +7697,170 @@ describe('an earlier pending transaction', () => {
       expect(hasEarlierPendingError(controller)).toBe(true)
       // Sent through a bundler, which holds the transaction, so it can't be replaced
       expect(controller.earlierPendingAccountOp?.canReplace).toBe(false)
+    })
+
+    test('executes once fully signed, even with no key of the Safe in this wallet', async () => {
+      // e.g. approved onchain by its only owner, a smart account, and paid by an EOA
+      const { controller } = await initSafe({
+        threshold: 1,
+        signed: [owners[1]!],
+        paidBy: eoaSigner.keyPublicAddress,
+        hasOwnerKey: false,
+        signature: safeLib.getSafeApprovedHashSignature(owners[1]!)
+      })
+      expect(controller.accountOp.signingKeyAddr).toBeFalsy()
+      expect(controller.readyToSign).toBe(true)
+      jest
+        .spyOn(broadcastLib, 'buildRawTransaction')
+        .mockResolvedValue({ to: '0x', value: 0n } as any)
+      jest.spyOn(KeystoreSigner.prototype, 'signRawTransaction').mockResolvedValue('0xsigned')
+      const broadcastTransactionSpy = jest
+        .spyOn(broadcastLib, 'broadcastTransaction')
+        .mockResolvedValue({ hash: '0xhash' } as any)
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await controller.signAndBroadcast()
+
+      expect(onError).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Missing mandatory transaction details')
+        })
+      )
+      expect(broadcastTransactionSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not execute with no key of the Safe in this wallet before it is fully signed', async () => {
+      const { controller } = await initSafe({
+        threshold: 2,
+        signed: [owners[1]!],
+        paidBy: eoaSigner.keyPublicAddress,
+        hasOwnerKey: false
+      })
+      const broadcastTransactionSpy = jest
+        .spyOn(broadcastLib, 'broadcastTransaction')
+        .mockResolvedValue({ hash: '0xhash' } as any)
+
+      await controller.signAndBroadcast()
+
+      expect(broadcastTransactionSpy).not.toHaveBeenCalled()
+    })
+
+    test('cannot be signed or executed while the Safe details are not loaded', async () => {
+      // the threshold reads 0 when the account state couldn't be loaded. It must never count as
+      // a Safe that needs no signatures, even with no key of the Safe in this wallet
+      const { controller } = await initSafe({
+        threshold: 0,
+        signed: [],
+        paidBy: eoaSigner.keyPublicAddress,
+        hasOwnerKey: false
+      })
+      const broadcastTransactionSpy = jest
+        .spyOn(broadcastLib, 'broadcastTransaction')
+        .mockResolvedValue({ hash: '0xhash' } as any)
+
+      expect(controller.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            title: expect.stringContaining("We couldn't load the details of your Safe account")
+          })
+        ])
+      )
+      expect(controller.readyToSign).toBe(false)
+
+      await controller.signAndBroadcast()
+
+      expect(broadcastTransactionSpy).not.toHaveBeenCalled()
+    })
+
+    test('a loaded Safe that needs signatures shows no error about its details', async () => {
+      const { controller } = await initSafe({ threshold: 2, signed: [] })
+
+      expect(
+        controller.errors.some((error) =>
+          error.title.includes("We couldn't load the details of your Safe account")
+        )
+      ).toBe(false)
+    })
+
+    describe('a smart account owner approval added while a key owner signs', () => {
+      /** A 2/2 Safe of the EOA key here and an Ambire smart account that approves onchain */
+      const initWithSmartAccountOwner = async () => {
+        const ctrl = await initSafe({ threshold: 2, signed: [] })
+        const { controller, accountsCtrl } = ctrl
+        const safeState = accountsCtrl.accountStates[safeAccount.addr]![chainId.toString()]!
+        accountsCtrl.accounts.push(e2esmartAccount)
+        safeState.associatedKeys = [eoaSigner.keyPublicAddress, e2esmartAccount.addr]
+        controller.update({
+          signingKeyAddr: eoaSigner.keyPublicAddress,
+          signingKeyType: 'internal'
+        })
+        jest.spyOn(safeLib, 'isSafeHashApproved').mockResolvedValue(true)
+        jest.spyOn(safeLib, 'confirm').mockResolvedValue(undefined as never)
+        return ctrl
+      }
+
+      const expectBothSignatures = (controller: SignAccountOpController) => {
+        expect([...(controller.accountOp.signed || [])].sort()).toEqual(
+          [eoaSigner.keyPublicAddress, e2esmartAccount.addr].sort()
+        )
+        const sigs = safeLib.getSigs(controller.accountOp.signature)
+        expect(sigs).toHaveLength(2)
+        expect(sigs).toContain(safeLib.getSafeApprovedHashSignature(e2esmartAccount.addr))
+      }
+
+      test('keeps the approval confirmed while the key was signing', async () => {
+        const { controller } = await initWithSmartAccountOwner()
+        const proposeSpy = jest.spyOn(safeLib, 'propose').mockResolvedValue(undefined)
+        const originalSignTypedData = KeystoreSigner.prototype.signTypedData
+        jest
+          .spyOn(KeystoreSigner.prototype, 'signTypedData')
+          .mockImplementation(async function signWhileApproved(
+            this: KeystoreSigner,
+            ...args: Parameters<KeystoreSigner['signTypedData']>
+          ) {
+            // e.g. a hardware wallet waits for the user, and the approval confirms meanwhile
+            await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+            return originalSignTypedData.apply(this, args)
+          })
+
+        await controller.sign()
+
+        expectBothSignatures(controller)
+        // the approval proposed it, so the key signature only confirms it
+        expect(proposeSpy).toHaveBeenCalledTimes(1)
+      })
+
+      test('keeps the key signature added while the approval was shared', async () => {
+        const { controller } = await initWithSmartAccountOwner()
+        let hasKeySigned = false
+        jest.spyOn(safeLib, 'propose').mockImplementation(async () => {
+          if (hasKeySigned) return
+          hasKeySigned = true
+          // the key owner signs while the approval is being sent to the Safe app
+          await controller.sign()
+        })
+
+        await controller.initSafeOwnerApproval(e2esmartAccount.addr)
+
+        expectBothSignatures(controller)
+      })
+    })
+
+    test('signing keeps the Safe nonce set by the request, even if the Safe moved on', async () => {
+      const { controller } = await initSafe({ threshold: 2, signed: [], nonce: 4n })
+      controller.update({
+        signingKeyAddr: eoaSigner.keyPublicAddress,
+        signingKeyType: 'internal'
+      })
+      const getNonceSpy = jest.spyOn(safeLib, 'getNonce').mockResolvedValue(9n)
+      jest.spyOn(safeLib, 'propose').mockResolvedValue(undefined)
+
+      await controller.sign()
+
+      expect(getNonceSpy).not.toHaveBeenCalled()
+      expect(controller.accountOp.nonce).toBe(4n)
+      expect(controller.accountOp.signed).toEqual([eoaSigner.keyPublicAddress])
     })
 
     test('the owners can still sign behind a pending transaction', async () => {

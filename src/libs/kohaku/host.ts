@@ -6,6 +6,7 @@ import type { EthereumProvider } from '@kohaku-eth/provider'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { IStorageController } from '../../interfaces/storage'
+import { fetchWithTimeout } from '../../utils/fetch'
 
 /**
  * Adapters for the `Host` every `@kohaku-eth/*` plugin binds against. Keep them protocol-agnostic;
@@ -84,7 +85,7 @@ export const createKohakuStorage = ({
 /**
  * Derives plugin keys without giving the plugin the recovery phrase, unlike the SDK's
  * `MnemonicKeystore`. `deriveKey` must whitelist its paths - see
- * `KeystoreController.derivePrivacyPoolsKey`.
+ * `KeystoreController.derivePrivacyKey`.
  *
  * Cached because the SDK asks for its signing key on every note it signs, and each derivation is a
  * pbkdf2 over the seed. Cached as a promise, so chains syncing at once share one derivation, and
@@ -110,9 +111,20 @@ export const createKohakuKeystore = (deriveKey: (path: string) => Promise<Hex>):
   }
 }
 
-/** Gives plugins the app's own fetch, so platform wiring and interception stay in one place. */
-export const createKohakuNetwork = (fetch: Fetch): Network => ({
-  fetch: (input, init) => fetch(input as any, init as any) as unknown as Promise<Response>
+/**
+ * Gives plugins the app's own fetch, so platform wiring and interception stay in one place. A GET
+ * to a URL fails after `readTimeout` ms. Other requests have no timeout, as they may broadcast and
+ * must not be given up on while they could still land.
+ */
+export const createKohakuNetwork = (fetch: Fetch, readTimeout: number): Network => ({
+  fetch: (input, init) => {
+    const isRead =
+      (typeof input === 'string' || input instanceof URL) &&
+      (!init?.method || init.method.toUpperCase() === 'GET')
+    if (!isRead) return fetch(input as any, init as any) as unknown as Promise<Response>
+
+    return fetchWithTimeout(fetch, input.toString(), init ?? {}, readTimeout)
+  }
 })
 
 /**

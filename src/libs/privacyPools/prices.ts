@@ -1,24 +1,32 @@
 import { formatUnits } from 'ethers'
 
 import { getPrivacyPoolsChainConfig } from '../../consts/privacyPools'
-import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { PrivacyPoolsTokenBalance } from '../../interfaces/privacyPools'
-
-const PRICES_API_URL = 'https://cena.ambire.com/api/v3/simple'
-
-/** USD price per asset id or contract address. */
-type PricesResponse = { [id: string]: { usd?: number } | undefined }
-
-const NO_PRICES: PricesResponse = {}
+import { ITokenPricesController } from '../../interfaces/tokenPrices'
+import { getUsdPriceIn } from '../portfolio/helpers'
 
 /** How a price is keyed: `${chainId}:${tokenAddress}`, the address lowercase, native as zero. */
 export const getPrivacyPoolsPriceKey = (chainId: string | bigint, tokenAddress: string) =>
   `${chainId.toString()}:${tokenAddress.toLowerCase()}`
 
 /**
- * USD value per chain of the balances, the pending part included, as the account holds it. An
- * unpriced token adds nothing rather than making the chain's value unknown.
+ * What the account will hold of a token once what is on its way shows in its notes. Not below
+ * zero, as a sync that is ahead of what was expected must not show a negative balance.
+ */
+export const getPrivacyPoolsProjectedAmount = ({
+  totalAmount,
+  simulationAmount
+}: Pick<PrivacyPoolsTokenBalance, 'totalAmount' | 'simulationAmount'>): bigint => {
+  const projectedAmount = totalAmount + simulationAmount
+
+  return projectedAmount > 0n ? projectedAmount : 0n
+}
+
+/**
+ * USD value per chain of the balances, the pending part included, as the account will hold it
+ * once what is on its way shows - see `getPrivacyPoolsProjectedAmount`. An unpriced
+ * token adds nothing rather than making the chain's value unknown.
  */
 export const getPrivacyPoolsValuePerChain = (
   balances: { [chainId: string]: PrivacyPoolsTokenBalance[] },
@@ -31,7 +39,10 @@ export const getPrivacyPoolsValuePerChain = (
         const price = prices[getPrivacyPoolsPriceKey(chainId, balance.tokenAddress)]
         if (price === undefined) return total
 
-        return total + Number(formatUnits(balance.totalAmount, balance.decimals)) * price
+        return (
+          total +
+          Number(formatUnits(getPrivacyPoolsProjectedAmount(balance), balance.decimals)) * price
+        )
       }, 0)
     ])
   )
@@ -39,12 +50,16 @@ export const getPrivacyPoolsValuePerChain = (
 /**
  * USD prices of every asset the pools accept on the given networks. Asks for all of them, not only
  * the held ones, so the request reveals nothing about the account. Unpriced assets are left out.
+ *
+ * They come through the token prices controller, which sends these assets with every request on
+ * the networks the pools are on, so they are usually answered from its cache without a request.
+ * Throws if a price request fails, so that the previous prices are kept.
  */
 export const fetchPrivacyPoolsPrices = async ({
-  fetch,
+  tokenPrices,
   networks
 }: {
-  fetch: Fetch
+  tokenPrices: ITokenPricesController
   networks: Network[]
 }): Promise<{ [priceKey: string]: number }> => {
   const prices: { [priceKey: string]: number } = {}
@@ -54,32 +69,15 @@ export const fetchPrivacyPoolsPrices = async ({
       const config = getPrivacyPoolsChainConfig(network.chainId)
       if (!config) return
 
-      const nativeAsset = config.assets.find(({ isNative }) => isNative)
-      const tokens = config.assets.filter(({ isNative }) => !isNative)
+      const { tokenData, error } = await tokenPrices.getTokenData({
+        network,
+        tokenAddresses: config.assets.map(({ address }) => address)
+      })
+      if (error) throw error
 
-      const [nativePrices, tokenPrices] = await Promise.all([
-        nativeAsset && network.nativeAssetId
-          ? fetchJson(
-              fetch,
-              `${PRICES_API_URL}/price?ids=${network.nativeAssetId}&vs_currencies=usd`
-            )
-          : NO_PRICES,
-        tokens.length && network.platformId
-          ? fetchJson(
-              fetch,
-              `${PRICES_API_URL}/token_price/${network.platformId}?contract_addresses=${tokens
-                .map(({ address }) => address.toLowerCase())
-                .join(',')}&vs_currencies=usd`
-            )
-          : NO_PRICES
-      ])
+      config.assets.forEach(({ address }) => {
+        const price = getUsdPriceIn(tokenData, address)?.price
 
-      const nativePrice = nativePrices[network.nativeAssetId]?.usd
-      if (nativeAsset && typeof nativePrice === 'number')
-        prices[getPrivacyPoolsPriceKey(network.chainId, nativeAsset.address)] = nativePrice
-
-      tokens.forEach(({ address }) => {
-        const price = tokenPrices[address.toLowerCase()]?.usd
         if (typeof price === 'number')
           prices[getPrivacyPoolsPriceKey(network.chainId, address)] = price
       })
@@ -87,11 +85,4 @@ export const fetchPrivacyPoolsPrices = async ({
   )
 
   return prices
-}
-
-const fetchJson = async (fetch: Fetch, url: string): Promise<PricesResponse> => {
-  const response = await fetch(url)
-  if (!response.ok) throw new Error(`privacyPools: price request failed with ${response.status}`)
-
-  return response.json()
 }

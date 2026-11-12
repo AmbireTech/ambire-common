@@ -2,7 +2,9 @@ import {
   AbiCoder,
   concat,
   Contract,
+  dataSlice,
   getAddress,
+  getBytes,
   getCreate2Address,
   hexlify,
   id,
@@ -13,6 +15,7 @@ import {
   toBeHex,
   toUtf8Bytes,
   TransactionResponse,
+  ZeroAddress,
   zeroPadValue
 } from 'ethers'
 
@@ -20,7 +23,7 @@ import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 import SafeApiKit from '@safe-global/api-kit'
 
 import SafeAbi from '../../../contracts/compiled/Safe.json'
-import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
+import { SAFE_API_TIMEOUT_MS, SAFE_SENTINEL_OWNER, SAFE_V1_4_1 } from '../../consts/safe'
 import { Account, SafeAccountCreation } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Key } from '../../interfaces/keystore'
@@ -30,6 +33,7 @@ import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/user
 import { paginate } from '../../utils/paginate'
 import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
+import { getDefaultAccountPreferences } from '../account/account'
 import { Call } from '../accountOp/types'
 import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
 import {
@@ -170,13 +174,25 @@ export async function getCalculatedSafeAddress(
   )
 }
 
+/**
+ * Derives the CREATE2 address a SafeProxyFactory deploys a Safe proxy to,
+ * the same way its createProxyWithNonce does.
+ */
+export function getSafeProxyAddress(creation: SafeAccountCreation, proxyCreationCode: Hex): Hex {
+  const salt = keccak256(
+    concat([keccak256(creation.setupData), zeroPadValue(creation.saltNonce, 32)])
+  )
+  const bytecode = concat([
+    proxyCreationCode,
+    new AbiCoder().encode(['address'], [creation.singleton])
+  ]) as Hex
+  return getCreate2Address(creation.factoryAddr, salt, keccak256(bytecode)) as Hex
+}
+
 async function getCalculatedSafeAddressFromCreation(
   creation: SafeAccountCreation,
   provider: RPCProvider
 ): Promise<Hex | null> {
-  const salt = keccak256(
-    concat([keccak256(creation.setupData), zeroPadValue(creation.saltNonce, 32)])
-  )
   const factoryAbi = ['function proxyCreationCode() view returns (bytes)']
   const factory = new Contract(creation.factoryAddr, factoryAbi, provider)
   let proxyCreationCode
@@ -189,12 +205,83 @@ async function getCalculatedSafeAddressFromCreation(
     )
     return null
   }
-  const abiCoder = new AbiCoder()
-  const bytecode = concat([
-    proxyCreationCode,
-    abiCoder.encode(['address'], [creation.singleton])
-  ]) as Hex
-  return getCreate2Address(creation.factoryAddr, salt, keccak256(bytecode)) as Hex
+  return getSafeProxyAddress(creation, proxyCreationCode)
+}
+
+const safeSetupInterface = new Interface([
+  'function setup(address[] calldata _owners,uint256 _threshold,address to,bytes calldata data,address fallbackHandler,address paymentToken,uint256 payment,address payable paymentReceiver)'
+])
+
+/**
+ * Whether Safe accepts the address as an owner. Its `setup` reverts for the zero address and
+ * the sentinel address, so a Safe with either one as an owner could never be activated.
+ */
+export function isAllowedSafeOwner(owner: string): boolean {
+  const normalizedOwner = owner.toLowerCase()
+
+  return normalizedOwner !== ZeroAddress && normalizedOwner !== SAFE_SENTINEL_OWNER
+}
+
+/**
+ * Builds the creation data of a new Safe v1.4.1 account with the given owners and threshold.
+ * The salt nonce is always zero, so the same owners (in the same order) and threshold
+ * always result in the same Safe address.
+ */
+export function getNewSafeCreation(owners: Hex[], threshold: number): SafeAccountCreation {
+  if (!owners.length) throw new Error('A Safe account needs at least one owner.')
+  if (new Set(owners.map((owner) => owner.toLowerCase())).size !== owners.length) {
+    throw new Error('Each Safe account owner can be added only once.')
+  }
+  if (!owners.every(isAllowedSafeOwner)) {
+    throw new Error('This address cannot be an owner of a Safe account.')
+  }
+  if (!Number.isInteger(threshold) || threshold < 1 || threshold > owners.length) {
+    throw new Error(
+      'The number of required confirmations must be between one and the number of owners.'
+    )
+  }
+
+  return {
+    factoryAddr: SAFE_V1_4_1.proxyFactory,
+    singleton: SAFE_V1_4_1.singletonL2,
+    setupData: safeSetupInterface.encodeFunctionData('setup', [
+      owners.map((owner) => getAddress(owner)),
+      threshold,
+      // no delegate call during setup
+      ZeroAddress,
+      '0x',
+      SAFE_V1_4_1.compatibilityFallbackHandler,
+      // no deployment payment
+      ZeroAddress,
+      0,
+      ZeroAddress
+    ]) as Hex,
+    saltNonce: toBeHex(0, 32) as Hex
+  }
+}
+
+/**
+ * Builds a new, not yet deployed Safe v1.4.1 account with the given owners and threshold.
+ * Its address is the counterfactual address the Safe will be deployed to. The accounts
+ * already in the wallet are used to give it the next default label.
+ */
+export function getNewSafeAccount(
+  owners: Hex[],
+  threshold: number,
+  prevAccounts: Account[]
+): Account {
+  const safeCreation = getNewSafeCreation(owners, threshold)
+  const addr = getAddress(getSafeProxyAddress(safeCreation, SAFE_V1_4_1.proxyCreationCode))
+  const associatedKeys = owners.map((owner) => getAddress(owner))
+
+  return {
+    addr,
+    associatedKeys,
+    initialPrivileges: associatedKeys.map((owner) => [owner, '0x01']),
+    creation: null,
+    safeCreation,
+    preferences: getDefaultAccountPreferences(addr, prevAccounts)
+  }
 }
 
 const safeProxyFactoryInterface = new Interface([
@@ -403,8 +490,26 @@ export async function isSafeContract(safeAddr: string, provider: RPCProvider): P
 }
 
 /**
+ * The fallback handler a Safe is set up with, or null when it has none. Also null when the setup
+ * data isn't a `setup` call this code can read (e.g. of a Safe older than v1.1.1), as there is
+ * nothing to check then.
+ */
+function getSetupFallbackHandler(setupData: Hex): Hex | null {
+  let decodedSetup
+  try {
+    decodedSetup = safeSetupInterface.decodeFunctionData('setup', setupData)
+  } catch (error) {
+    console.warn('the Safe setup data has no readable fallback handler', error)
+    return null
+  }
+
+  const fallbackHandler = getAddress(decodedSetup.fallbackHandler)
+  return fallbackHandler === ZeroAddress ? null : (fallbackHandler as Hex)
+}
+
+/**
  * Builds a Safe deployment call only when the stored creation data derives the imported address
- * and the configured singleton is deployed on the target network.
+ * and the configured singleton and fallback handler are deployed on the target network.
  */
 export async function getSafeDeploymentCall(
   account: Account,
@@ -421,8 +526,15 @@ export async function getSafeDeploymentCall(
       return null
     }
 
-    const singletonCode = await provider.getCode(account.safeCreation.singleton)
+    const fallbackHandler = getSetupFallbackHandler(account.safeCreation.setupData)
+    const [singletonCode, fallbackHandlerCode] = await Promise.all([
+      provider.getCode(account.safeCreation.singleton),
+      fallbackHandler ? provider.getCode(fallbackHandler) : null
+    ])
     if (singletonCode === '0x') return null
+    // Without its fallback handler the Safe would still be deployed, but it couldn't confirm
+    // the messages its owners sign (EIP-1271) on this network, so it isn't activated here either
+    if (fallbackHandlerCode === '0x') return null
 
     return {
       to: account.safeCreation.factoryAddr,
@@ -823,11 +935,56 @@ function getOwnerFromSafeTx(
   return confirmations?.find((c) => c.signature === sig)?.owner
 }
 
+/** The `v` of an approved hash signature, see getSafeApprovedHashSignature */
+const SAFE_APPROVED_HASH_SIGNATURE_V = 1
+
+/**
+ * The signature of an owner that approved the Safe transaction hash onchain, with
+ * `approveHash`, instead of signing it: {owner as r}{empty s}{v = 1}.
+ * The Safe accepts it if `approvedHashes(owner, safeTxHash)` is set when it executes
+ */
+export function getSafeApprovedHashSignature(owner: string): Hex {
+  return concat([
+    zeroPadValue(getAddress(owner), 32),
+    zeroPadValue('0x', 32),
+    toBeHex(SAFE_APPROVED_HASH_SIGNATURE_V, 1)
+  ]) as Hex
+}
+
+const isSafeApprovedHashSignature = (sig: string): boolean =>
+  getBytes(sig)[64] === SAFE_APPROVED_HASH_SIGNATURE_V
+
+const safeInterface = new Interface(SafeAbi)
+
+/** The call that approves a Safe transaction hash onchain on behalf of the caller (an owner) */
+export function getSafeApproveHashCall(safeAddr: string, safeTxHash: string): Call {
+  return {
+    to: getAddress(safeAddr),
+    value: 0n,
+    data: safeInterface.encodeFunctionData('approveHash', [safeTxHash]) as Hex
+  }
+}
+
+/** Whether the owner has approved the Safe transaction hash onchain, see getSafeApproveHashCall */
+export async function isSafeHashApproved(
+  safeAddr: string,
+  owner: string,
+  safeTxHash: string,
+  provider: RPCProvider
+): Promise<boolean> {
+  const safe = new Contract(safeAddr, SafeAbi, provider) as any
+  const approved: bigint = await safe.approvedHashes(owner, safeTxHash)
+  return approved !== 0n
+}
+
 function recoverOwner(
   sig: string,
   hash: string,
   confirmations?: { owner: string; signature: string }[]
 ) {
+  // approved hash signatures carry the owner in `r`
+  if (isSafeApprovedHashSignature(sig)) return getAddress(dataSlice(sig, 12, 32))
+
   // a transaction from Safe Global may have signatures that are not
   // ecdsa; therefore, we cannot extract the owner from them by using
   // a plain recoverAddress. We rely on the Safe Global information
