@@ -2614,6 +2614,20 @@ describe('PrivacyPoolsController', () => {
       expect(controller.hasPersistedSendForm).toBe(false)
     })
 
+    it('keeps a deposit the form picked when the screen is opened for its token', async () => {
+      const { controller, selectedAccount, ui } = await prepareTest()
+      selectedAccount.select('seed-a')
+      ui.open('view-1', 'popup', 'dashboard')
+      controller.updateSendForm({ tokenId: '1:0xabcd:2' })
+
+      ui.navigate('view-1', SEND_ROUTE, { chainId: '1', address: '0xAbCd' })
+      expect(controller.sendForm.tokenId).toBe('1:0xabcd:2')
+
+      // Not a deposit of it: a token whose address starts the same
+      ui.navigate('view-1', SEND_ROUTE, { chainId: '1', address: '0xAb' })
+      expect(controller.sendForm.tokenId).toBe('1:0xab')
+    })
+
     it('keeps the token pick of the form when the screen is opened without one', async () => {
       const { controller, selectedAccount, ui } = await prepareTest()
       selectedAccount.select('seed-a')

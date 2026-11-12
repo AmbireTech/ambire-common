@@ -53,7 +53,7 @@ export class PrivacyPoolsSendFormState {
 
   /**
    * Picks the token the view opened the screen for (`?chainId=1&address=0x...`, like the regular
-   * Send). Returns whether the form changed.
+   * Send), keeping a deposit of it the form already picked. Returns whether the form changed.
    */
   isTokenPickedByViewUpdate(view: View): boolean {
     if (view.currentRoute !== SEND_ROUTE) return false
@@ -62,7 +62,9 @@ export class PrivacyPoolsSendFormState {
     if (!chainId || !address) return false
 
     const tokenId = getPrivacyPoolsTokenId(chainId, address)
-    if (tokenId === this.form.tokenId) return false
+    const isTokenPicked =
+      this.form.tokenId === tokenId || this.form.tokenId.startsWith(`${tokenId}:`)
+    if (isTokenPicked) return false
 
     this.update({ tokenId })
 

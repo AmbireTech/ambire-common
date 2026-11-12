@@ -307,6 +307,16 @@ export const isPrivacyPoolsNativeAsset = (address: string): boolean =>
 export const getPrivacyPoolsTokenId = (chainId: string, tokenAddress: string): string =>
   `${chainId}:${tokenAddress.toLowerCase()}`
 
+/**
+ * A deposit of a token as the Send form picks it: the token's id with the deposit's number - see
+ * `PrivacyPoolsSendableDeposit.number`.
+ */
+export const getPrivacyPoolsDepositId = (
+  chainId: string,
+  tokenAddress: string,
+  depositNumber: number
+): string => `${getPrivacyPoolsTokenId(chainId, tokenAddress)}:${depositNumber}`
+
 /** Looks up a configured asset (see `PrivacyPoolsAsset`) by the wallet's address for it. */
 export const getPrivacyPoolsAsset = (
   chainId: bigint,

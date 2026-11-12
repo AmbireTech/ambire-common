@@ -398,7 +398,10 @@ export type PrivacyPoolsOperation = {
 export type PrivacyPoolsSendForm = {
   /** The recipient field as typed. A domain name in it is resolved again when the screen opens. */
   recipientFieldValue: string
-  /** The picked token's id (`${chainId}:${tokenAddress}`), or '' for the screen's default. */
+  /**
+   * The picked token's id (`${chainId}:${tokenAddress}`), or the id of one of its deposits (see
+   * `getPrivacyPoolsDepositId`), or '' for the screen's default.
+   */
   tokenId: string
   amount: string
   amountInFiat: string
