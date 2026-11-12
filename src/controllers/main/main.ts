@@ -350,7 +350,9 @@ export class MainController extends EventEmitter implements IMainController {
     // The only source of token prices, shared so that every feature reads one cache
     const tokenPrices = new TokenPricesController({
       fetch: this.fetch,
-      isTokenPricesEnabled: () => this.featureFlags.isFeatureEnabled('tokenPrices')
+      isTokenPricesEnabled: () => this.featureFlags.isFeatureEnabled('tokenPrices'),
+      // Read lazily, as the providers controller is created right after (and depends on this one)
+      getProvider: (chainId) => this.providers.providers[chainId.toString()]
     })
     this.providers = new ProvidersController({
       eventEmitterRegistry,

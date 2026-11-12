@@ -4903,7 +4903,7 @@ describe('PrivacyPoolsController', () => {
       expect(fakeFetch.mock.calls.length).toBe(requestsAfterFirst)
     })
 
-    it('asks for no prices while the user has opted out of them, and drops those it had', async () => {
+    it('keeps the prices it had when the user opts out, and asks our price API for no new ones', async () => {
       const { controller, featureFlags, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-a')
 
@@ -4911,17 +4911,25 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-a')
       await first
       await waitUntil(() => Object.keys(controller.prices).length > 0)
+      const pricesBeforeOptOut = controller.prices
 
       featureFlags.set('tokenPrices', false)
-      expect(controller.prices).toEqual({})
+      expect(controller.prices).toEqual(pricesBeforeOptOut)
 
+      // Once the cached prices are older than the price cache keeps them
+      const realNow = Date.now.bind(Date)
+      const dateSpy = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + 6 * 60 * 1000)
       fakeFetch.mockClear()
-      const second = controller.syncChain('1')
-      await releaseSync('seed-a')
-      await second
+      try {
+        const second = controller.syncChain('1')
+        await releaseSync('seed-a')
+        await second
+        await flush()
+      } finally {
+        dateSpy.mockRestore()
+      }
 
       expect(fakeFetch).not.toHaveBeenCalled()
-      expect(controller.prices).toEqual({})
     })
   })
 })

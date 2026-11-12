@@ -4,6 +4,7 @@ import { getPrivacyPoolsChainConfig } from '../../consts/privacyPools'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import {
   convertApiTokenDataToTokenDataCache,
   getTokenDataCacheKey
@@ -13,6 +14,7 @@ import {
   TokenDataCache,
   TokenDataCacheValue
 } from '../../libs/portfolio/interfaces'
+import { canGetRpcTokenPrices, getRpcTokenPrices } from '../../libs/tokenPrices/rpcTokenPrices'
 import { fetchWithTimeout } from '../../utils/fetch'
 import { paginate } from '../../utils/paginate'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -38,6 +40,12 @@ export type GetTokenDataResult = {
   tokenData: Map<string, TokenDataCacheValue>
   error: Error | null
 }
+
+/**
+ * Where token prices come from: our price API (cena), or the network's RPC alone when the user
+ * opted out of the price API
+ */
+export type TokenPriceSource = 'cena' | 'rpc'
 
 /** A single cena request and the tokens (in their original casing) it asks for */
 export type TokenPriceRequest = { url: string; tokenAddresses: string[] }
@@ -114,10 +122,10 @@ const getResponseKey = (address: string, network: Network): string =>
 const getRequestInFlightKey = (chainId: bigint, address: string): string =>
   `${chainId.toString()}:${getTokenDataCacheKey(address)}`
 
-const EMPTY_RESULT = (): GetTokenDataResult => ({ tokenData: new Map(), error: null })
-
 /**
- * The only place that asks our price API (cena) for token prices, and the cache they are kept in.
+ * The only place that asks for token prices, and the cache they are kept in. They come from our
+ * price API (cena), or, when the user opted out of it, from the network's RPC alone (see
+ * `getRpcTokenPrices`).
  *
  * The cache belongs to no account: every token keeps the time it was last answered at, and a
  * token answered (with a price or with "no price") within TOKEN_PRICE_MAX_AGE_MS is read from
@@ -130,8 +138,12 @@ const EMPTY_RESULT = (): GetTokenDataResult => ({ tokenData: new Map(), error: n
  * Features read the prices through `getTokenData`, and the portfolio keeps them on its tokens.
  * The prices that come with Velcro's discovery response are cached too (`setTokenData`), with
  * the same 5-minute age, so they aren't requested again; NFT collection prices come only from
- * there and are read without ever being requested (`getCachedTokenData`). Nothing is requested,
- * read or stored while the user has opted out of token prices.
+ * there and are read without ever being requested (`getCachedTokenData`).
+ *
+ * Prices are prices, wherever they come from: the cache holds them all, and a token answered by
+ * one source is read from the cache after the user switches to the other, until it expires.
+ * While opted out of the price API, nothing new is requested from it, and requests to the RPC
+ * carry no Privacy Pools assets, as the RPC already sees the Privacy Pools calls.
  */
 export class TokenPricesController extends EventEmitter {
   #fetch: Fetch
@@ -141,6 +153,8 @@ export class TokenPricesController extends EventEmitter {
   #timeoutMs: number
 
   #addsPrivacyPoolsAssets: boolean
+
+  #getProvider?: (chainId: bigint) => RPCProvider | undefined
 
   /** chainId -> token data cache */
   #cacheByChainId = new Map<string, TokenDataCache>()
@@ -153,9 +167,11 @@ export class TokenPricesController extends EventEmitter {
     isTokenPricesEnabled = () => true,
     timeoutMs = AMBIRE_API_TIMEOUT,
     addsPrivacyPoolsAssets = true,
+    getProvider,
     eventEmitterRegistry
   }: {
     fetch: Fetch
+    /** Whether the user allows our price API. When not, prices are read from the RPC instead. */
     isTokenPricesEnabled?: () => boolean
     timeoutMs?: number
     /**
@@ -163,6 +179,11 @@ export class TokenPricesController extends EventEmitter {
      * account can exist (e.g. the standalone Benzin), as there is nothing to cover there.
      */
     addsPrivacyPoolsAssets?: boolean
+    /**
+     * The provider of a network, for reading prices from the RPC. Without it, no prices are read
+     * while the user has opted out of the price API.
+     */
+    getProvider?: (chainId: bigint) => RPCProvider | undefined
     eventEmitterRegistry?: IEventEmitterRegistryController
   }) {
     super(eventEmitterRegistry)
@@ -170,6 +191,7 @@ export class TokenPricesController extends EventEmitter {
     this.#isTokenPricesEnabled = isTokenPricesEnabled
     this.#timeoutMs = timeoutMs
     this.#addsPrivacyPoolsAssets = addsPrivacyPoolsAssets
+    this.#getProvider = getProvider
   }
 
   /**
@@ -183,8 +205,7 @@ export class TokenPricesController extends EventEmitter {
     tokenAddresses: requestedAddresses,
     baseCurrency = 'usd'
   }: GetTokenDataParams): Promise<GetTokenDataResult> {
-    if (!this.#getIsEnabled()) return EMPTY_RESULT()
-
+    const source = this.#getSource()
     const tokenAddresses = getUniqueSortedAddresses(requestedAddresses)
     const callStartedAt = Date.now()
     const isFresh = (cachedAt: number) => callStartedAt - cachedAt <= TOKEN_PRICE_MAX_AGE_MS
@@ -192,8 +213,7 @@ export class TokenPricesController extends EventEmitter {
       (address) => !this.#getCacheEntry(network.chainId, address, isFresh)
     )
 
-    // Without a CoinGecko platform cena has nothing to look the tokens up by
-    if (!unansweredAddresses.length || !network.platformId) {
+    if (!unansweredAddresses.length || !this.#canRequest(network, source, baseCurrency)) {
       return {
         tokenData: this.#readTokenData(network, tokenAddresses, baseCurrency, isFresh),
         error: null
@@ -212,14 +232,20 @@ export class TokenPricesController extends EventEmitter {
 
     const requests = [...requestsInFlight]
     if (addressesToRequest.length) {
-      requests.push(this.#requestTokens(network, addressesToRequest, baseCurrency, isFresh))
+      requests.push(
+        this.#requestTokens({
+          source,
+          network,
+          tokenAddresses: addressesToRequest,
+          baseCurrency,
+          isFresh
+        })
+      )
     }
 
     const failedRequest = (await Promise.allSettled(requests)).find(
       (result): result is PromiseRejectedResult => result.status === 'rejected'
     )
-    if (!this.#getIsEnabled()) return EMPTY_RESULT()
-
     const isAnswered = (cachedAt: number) => cachedAt >= callStartedAt
 
     if (!failedRequest) {
@@ -255,8 +281,6 @@ export class TokenPricesController extends EventEmitter {
     address: string,
     baseCurrency: string = 'usd'
   ): TokenDataCacheValue | null {
-    if (!this.#getIsEnabled()) return null
-
     const now = Date.now()
     const entry = this.#getCacheEntry(
       chainId,
@@ -273,11 +297,11 @@ export class TokenPricesController extends EventEmitter {
    * Use it only for data from outside services; cena's answers are cached by `getTokenData`.
    *
    * Only entries with a price are cached. An entry without one would count as a recent
-   * "no price" answer, and its token wouldn't be requested from cena for TOKEN_PRICE_MAX_AGE_MS.
+   * "no price" answer, and its token wouldn't be requested for TOKEN_PRICE_MAX_AGE_MS. Cached
+   * while the user has opted out of the price API too: e.g. Velcro is called for the token
+   * discovery anyway, so keeping the prices it returns sends nothing more.
    */
   setTokenData(chainId: bigint, entries: [address: string, tokenData: TokenDataCacheValue][]) {
-    if (!this.#getIsEnabled()) return
-
     const pricedEntries = entries.filter(([, tokenData]) => tokenData.priceIn.length > 0)
     if (!pricedEntries.length) return
 
@@ -289,12 +313,18 @@ export class TokenPricesController extends EventEmitter {
     })
   }
 
-  /** Whether prices may be used; drops everything that was stored if not */
-  #getIsEnabled(): boolean {
-    if (this.#isTokenPricesEnabled()) return true
+  /** Where new prices are requested from: cena, or the RPC when the user opted out of cena */
+  #getSource(): TokenPriceSource {
+    return this.#isTokenPricesEnabled() ? 'cena' : 'rpc'
+  }
 
-    this.#cacheByChainId.clear()
-    return false
+  /** Whether the tokens of the network can be requested from the source */
+  #canRequest(network: Network, source: TokenPriceSource, baseCurrency: string): boolean {
+    // Without a CoinGecko platform cena has nothing to look the tokens up by
+    if (source === 'cena') return !!network.platformId
+
+    // The RPC prices are only in USD
+    return baseCurrency === 'usd' && !!this.#getProvider && canGetRpcTokenPrices(network)
   }
 
   #getOrCreateCache(chainId: bigint): TokenDataCache {
@@ -344,17 +374,28 @@ export class TokenPricesController extends EventEmitter {
    * fresh in the cache nor already requested, and marks all of them as in flight until the
    * request settles, so that other calls wait for it instead of requesting them again.
    */
-  #requestTokens(
-    network: Network,
-    tokenAddresses: string[],
-    baseCurrency: string,
+  #requestTokens({
+    source,
+    network,
+    tokenAddresses,
+    baseCurrency,
+    isFresh
+  }: {
+    source: TokenPriceSource
+    network: Network
+    tokenAddresses: string[]
+    baseCurrency: string
     isFresh: (cachedAt: number) => boolean
-  ): Promise<void> {
-    const privacyPoolsAssets = this.#getPrivacyPoolsAssetsToRequest(network.chainId, isFresh)
+  }): Promise<void> {
+    const privacyPoolsAssets =
+      source === 'cena' ? this.#getPrivacyPoolsAssetsToRequest(network.chainId, isFresh) : []
     const allTokens = getUniqueSortedAddresses([...tokenAddresses, ...privacyPoolsAssets])
     const inFlightKeys = allTokens.map((address) => getRequestInFlightKey(network.chainId, address))
 
-    const request = this.#fetchAndCacheTokens(network, allTokens, baseCurrency)
+    const request =
+      source === 'cena'
+        ? this.#fetchAndCacheTokens(network, allTokens, baseCurrency)
+        : this.#readAndCacheRpcTokens(network, allTokens)
     inFlightKeys.forEach((key) => this.#requestsInFlight.set(key, request))
 
     const forgetRequest = () => {
@@ -418,6 +459,28 @@ export class TokenPricesController extends EventEmitter {
     })
 
     if (firstError) throw firstError
+  }
+
+  /**
+   * Reads the prices of exactly the given tokens from the network's RPC and caches every answer,
+   * including "no price". Throws, caching nothing, if the network couldn't be priced.
+   */
+  async #readAndCacheRpcTokens(network: Network, tokenAddresses: string[]) {
+    const provider = this.#getProvider?.(network.chainId)
+    if (!provider) throw new Error(`Not connected to ${network.name} to read token prices from`)
+
+    const prices = await getRpcTokenPrices({ provider, network, tokenAddresses })
+
+    const cache = this.#getOrCreateCache(network.chainId)
+    const cachedAt = Date.now()
+
+    tokenAddresses.forEach((address) => {
+      const price = prices.get(getTokenDataCacheKey(address)) ?? null
+      cache.set(getTokenDataCacheKey(address), [
+        cachedAt,
+        { priceIn: price === null ? [] : [{ baseCurrency: 'usd', price }], marketDataIn: [] }
+      ])
+    })
   }
 
   static #toPriceRequestError(error: unknown, network: Network): Error {
