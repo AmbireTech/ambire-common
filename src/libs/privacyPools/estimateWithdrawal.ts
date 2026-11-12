@@ -1,8 +1,9 @@
-import { concat, getAddress, id, Interface, toQuantity } from 'ethers'
+import { concat, getAddress, id, Interface, isError, toQuantity } from 'ethers'
 
 import { isPrivacyPoolsNativeAsset } from '../../consts/privacyPools'
 import { RPCProvider } from '../../interfaces/provider'
 import { getPackedUserOp } from '../userOperation/userOperation'
+import { PrivacyPoolsRelayedWithdrawalPayload } from './relayedWithdrawal'
 
 /** The parts of the SDK's serialized userOp a simulation reads. Not exported by the SDK. */
 export type PrivacyPoolsSerializedUserOperation = {
@@ -207,5 +208,71 @@ export const estimatePaymasterWithdrawalFee = async ({
     expectedFee: fee - refund,
     gasUsed: BigInt(userOperationResult.actualGasUsed),
     gasCost: BigInt(userOperationResult.actualGasCost)
+  }
+}
+
+const RELAY_INTERFACE = new Interface([
+  'function relay((address processooor, bytes data) withdrawal, (uint256[2] pA, uint256[2][2] pB, uint256[2] pC, uint256[8] pubSignals) proof, uint256 scope)'
+])
+
+/** Reads one coordinate of a snarkjs proof, which must be there. */
+const toProofCoordinate = (coordinates: string[] | undefined, index: number): bigint => {
+  const coordinate = coordinates?.[index]
+  if (coordinate === undefined) throw new Error('privacyPools: the withdrawal proof is incomplete')
+
+  return BigInt(coordinate)
+}
+
+/**
+ * The `Entrypoint.relay` call the relayer makes from what it is handed. The verifier takes each
+ * coordinate pair of `pi_b` in the reverse of the order snarkjs outputs it, as the SDK encodes it.
+ */
+const encodeRelayCall = ({
+  withdrawalPayload,
+  proof: { proof, publicSignals },
+  scope
+}: PrivacyPoolsRelayedWithdrawalPayload['rawData']) =>
+  RELAY_INTERFACE.encodeFunctionData('relay', [
+    withdrawalPayload,
+    {
+      pA: [toProofCoordinate(proof.pi_a, 0), toProofCoordinate(proof.pi_a, 1)],
+      pB: [0, 1].map((row) => [
+        toProofCoordinate(proof.pi_b[row], 1),
+        toProofCoordinate(proof.pi_b[row], 0)
+      ]),
+      pC: [toProofCoordinate(proof.pi_c, 0), toProofCoordinate(proof.pi_c, 1)],
+      pubSignals: publicSignals.map(BigInt)
+    },
+    scope
+  ])
+
+/**
+ * Runs a prepared relayed withdrawal on the latest block, as the relayer will submit it: the
+ * `Entrypoint.relay` call of the withdrawal, proof and scope it is handed. Anyone may make that
+ * call, so nothing is overridden. The fee needs no running: the relayer refunds nothing of it.
+ *
+ * Throws when the node cannot run it, or `PrivacyPoolsWithdrawalWouldFailError` when the
+ * withdrawal would fail, as over an association set root that moved on.
+ */
+export const simulateRelayedWithdrawal = async ({
+  provider,
+  entrypointAddress,
+  withdrawal
+}: {
+  provider: RPCProvider
+  entrypointAddress: string
+  withdrawal: PrivacyPoolsRelayedWithdrawalPayload
+}): Promise<void> => {
+  const data = encodeRelayCall(withdrawal.rawData)
+
+  try {
+    await provider.call({ to: entrypointAddress, data })
+  } catch (error: unknown) {
+    if (!isError(error, 'CALL_EXCEPTION')) throw error
+
+    throw new PrivacyPoolsWithdrawalWouldFailError(
+      `privacyPools: the withdrawal would fail on chain (${error.shortMessage})`,
+      { cause: error.data }
+    )
   }
 }

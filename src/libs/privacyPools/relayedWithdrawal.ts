@@ -7,7 +7,11 @@ import { AbiCoder, getAddress } from 'ethers'
  */
 export type PrivacyPoolsRelayedWithdrawalPayload = {
   rawData: {
-    proof: { publicSignals: string[] }
+    /** A Groth16 proof as snarkjs outputs it, with its public signals. */
+    proof: {
+      proof: { pi_a: string[]; pi_b: string[][]; pi_c: string[] }
+      publicSignals: string[]
+    }
     withdrawalPayload: { processooor: string; data: string }
     scope: bigint
   }

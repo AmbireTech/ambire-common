@@ -47,7 +47,18 @@ const buildWithdrawal = ({
   relayerId?: string
 } = {}): PrivacyPoolsRelayedWithdrawalPayload => ({
   rawData: {
-    proof: { publicSignals: ['11', '12', withdrawnValue.toString(), '14', '15', '16', '17', '18'] },
+    proof: {
+      proof: {
+        pi_a: ['1', '2', '1'],
+        pi_b: [
+          ['3', '4'],
+          ['5', '6'],
+          ['1', '0']
+        ],
+        pi_c: ['7', '8', '1']
+      },
+      publicSignals: ['11', '12', withdrawnValue.toString(), '14', '15', '16', '17', '18']
+    },
     withdrawalPayload: { processooor, data: relayData },
     scope
   },

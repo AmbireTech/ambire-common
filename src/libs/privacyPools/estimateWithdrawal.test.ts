@@ -1,13 +1,16 @@
-import { getAddress, Interface, toBeHex, ZeroHash } from 'ethers'
+import { getAddress, Interface, makeError, toBeHex, ZeroHash } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { RPCProvider } from '../../interfaces/provider'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import {
+  estimatePaymasterWithdrawalFee,
   PrivacyPoolsSerializedUserOperation,
-  estimatePaymasterWithdrawalFee
+  PrivacyPoolsWithdrawalWouldFailError,
+  simulateRelayedWithdrawal
 } from './estimateWithdrawal'
+import { PrivacyPoolsRelayedWithdrawalPayload } from './relayedWithdrawal'
 
 // Taken from a real ETH withdrawal on Ethereum (tx 0x7bda295d…e518)
 const SENDER = getAddress('0xA3a4D83896ec4b595668fA3d5430157cd235F720')
@@ -231,5 +234,100 @@ describe('estimatePaymasterWithdrawalFee', () => {
       estimate(provider, { userOperation: { ...USER_OPERATION, eip7702Auth: undefined } })
     ).rejects.toThrow('no 7702 authorization')
     expect(send).not.toHaveBeenCalled()
+  })
+})
+
+describe('simulateRelayedWithdrawal', () => {
+  const ENTRYPOINT = getAddress('0x6818809EefCe719E480a7526D76bD3e561526b46')
+  const relayInterface = new Interface([
+    'function relay((address processooor, bytes data) withdrawal, (uint256[2] pA, uint256[2][2] pB, uint256[2] pC, uint256[8] pubSignals) proof, uint256 scope)'
+  ])
+  const WITHDRAWAL: PrivacyPoolsRelayedWithdrawalPayload = {
+    rawData: {
+      proof: {
+        proof: {
+          pi_a: ['1', '2', '1'],
+          pi_b: [
+            ['3', '4'],
+            ['5', '6'],
+            ['1', '0']
+          ],
+          pi_c: ['7', '8', '1']
+        },
+        publicSignals: ['11', '12', '13', '14', '15', '16', '17', '18']
+      },
+      withdrawalPayload: { processooor: ENTRYPOINT, data: '0xabcdef' },
+      scope: 1234n
+    },
+    quoteData: {
+      quote: { feeBPS: '18', feeCommitment: { expiration: 0, withdrawalData: '0xabcdef' } },
+      relayerId: 'Fast Relay'
+    }
+  }
+
+  const mockCallProvider = (call: () => Promise<string>) => {
+    const callMock = jest.fn<(tx: { to: string; data: string }) => Promise<string>>(call)
+
+    return { provider: { call: callMock } as unknown as RPCProvider, call: callMock }
+  }
+
+  const simulate = (provider: RPCProvider, withdrawal = WITHDRAWAL) =>
+    simulateRelayedWithdrawal({ provider, entrypointAddress: ENTRYPOINT, withdrawal })
+
+  test('calls relay on the entrypoint with what the relayer is handed, pi_b pairs swapped', async () => {
+    const { provider, call } = mockCallProvider(async () => '0x')
+
+    await simulate(provider)
+
+    const [tx] = call.mock.calls[0]!
+    expect(tx.to).toBe(ENTRYPOINT)
+    const [withdrawal, proof, scope] = relayInterface.decodeFunctionData('relay', tx.data)
+    expect(withdrawal.processooor).toBe(ENTRYPOINT)
+    expect(withdrawal.data).toBe('0xabcdef')
+    expect(scope).toBe(1234n)
+    expect(proof.pA).toEqual([1n, 2n])
+    expect(proof.pB).toEqual([
+      [4n, 3n],
+      [6n, 5n]
+    ])
+    expect(proof.pC).toEqual([7n, 8n])
+    expect(proof.pubSignals).toEqual([11n, 12n, 13n, 14n, 15n, 16n, 17n, 18n])
+  })
+
+  test('tells a withdrawal that would revert apart from a node that could not run it', async () => {
+    const reverting = mockCallProvider(async () => {
+      throw makeError('execution reverted', 'CALL_EXCEPTION', {
+        action: 'call',
+        data: '0x12345678',
+        reason: null,
+        transaction: { to: ENTRYPOINT, data: '0x' },
+        invocation: null,
+        revert: null
+      })
+    })
+    await expect(simulate(reverting.provider)).rejects.toBeInstanceOf(
+      PrivacyPoolsWithdrawalWouldFailError
+    )
+
+    const unreachable = mockCallProvider(async () => {
+      throw new Error('fetch failed')
+    })
+    const failure = simulate(unreachable.provider)
+    await expect(failure).rejects.toThrow('fetch failed')
+    await expect(failure).rejects.not.toBeInstanceOf(PrivacyPoolsWithdrawalWouldFailError)
+  })
+
+  test('refuses an incomplete proof without calling the node', async () => {
+    const { provider, call } = mockCallProvider(async () => '0x')
+    const withdrawal = {
+      ...WITHDRAWAL,
+      rawData: {
+        ...WITHDRAWAL.rawData,
+        proof: { ...WITHDRAWAL.rawData.proof, proof: { pi_a: ['1'], pi_b: [], pi_c: [] } }
+      }
+    }
+
+    await expect(simulate(provider, withdrawal)).rejects.toThrow(/proof is incomplete/)
+    expect(call).not.toHaveBeenCalled()
   })
 })
