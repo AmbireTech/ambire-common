@@ -9,6 +9,8 @@ export type PrivacyPoolsEntrypointAssetConfig = {
   minimumDepositAmount: bigint
   /** The share of a deposit the entrypoint keeps, in basis points (1 = 0.01%). */
   vettingFeeBPS: bigint
+  /** The largest share of a withdrawal the entrypoint lets a relayer keep, in basis points. */
+  maxRelayFeeBPS: bigint
 }
 
 const BASIS_POINTS_DENOMINATOR = 10_000n
@@ -39,8 +41,31 @@ export const readEntrypointAssetConfig = async ({
   return {
     poolAddress: decoded.pool,
     minimumDepositAmount: BigInt(decoded.minimumDepositAmount),
-    vettingFeeBPS: BigInt(decoded.vettingFeeBPS)
+    vettingFeeBPS: BigInt(decoded.vettingFeeBPS),
+    maxRelayFeeBPS: BigInt(decoded.maxRelayFeeBPS)
   }
+}
+
+const POOL_INTERFACE = new Interface(['function SCOPE() view returns (uint256)'])
+
+/**
+ * Reads a pool's scope, which a relayed withdrawal names its pool by: the entrypoint looks the pool
+ * up from it.
+ */
+export const readPrivacyPoolsPoolScope = async ({
+  provider,
+  poolAddress
+}: {
+  provider: JsonRpcProvider
+  poolAddress: string
+}): Promise<bigint> => {
+  const data = await provider.call({
+    to: poolAddress,
+    data: POOL_INTERFACE.encodeFunctionData('SCOPE')
+  })
+  const [scope] = POOL_INTERFACE.decodeFunctionResult('SCOPE', data)
+
+  return BigInt(scope)
 }
 
 /**

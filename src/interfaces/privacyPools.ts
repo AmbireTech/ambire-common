@@ -44,6 +44,11 @@ export type PrivacyPoolsChainConfig = {
   /** The ERC-4337 paymaster for withdrawals. Without it, withdrawals are unavailable. */
   paymaster?: PrivacyPoolsPaymasterConfig
   /**
+   * 0xBow's relayers for withdrawals, by name, each URL with the `/relayer` path the service
+   * mounts its routes on. The SDK takes the cheapest quote, the first one on a tie.
+   */
+  relayers?: { [name: string]: string }
+  /**
    * Pool address (lowercase) to the wallet's address of the asset it holds. Only calls to these are
    * shown as Privacy Pools calls, and only their deposits can be taken back from the wallet.
    */

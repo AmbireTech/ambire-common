@@ -72,6 +72,11 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
     blocksPerDay: 7200n,
     aspUrl: 'https://api.0xbow.io',
     sagaSyncUrl: PRIVACY_POOLS_SAGA_SYNC_URL,
+    // Fast Relay first: it relays most withdrawals, so a send through it blends in best
+    relayers: {
+      'Fast Relay': 'https://fastrelay.xyz/relayer',
+      'Cloaked Relay': 'https://api.clkd.xyz/relayer'
+    },
     paymaster: {
       entryPointAddress: '0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108',
       paymasterAddress: '0xe06CB96C57D2442f8F60F5017354BC08F7e91308',
