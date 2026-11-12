@@ -83,7 +83,7 @@ Updates are sent from one place, so the same rules hold for every module:
 
 A deposit, withdrawal or ragequit should show in the balance as soon as it is sent, before a sync reads it from the chain. `expectedChanges.ts` keeps one entry per change, and `balances` adds its amount to the token's `simulationAmount`. A withdrawal also lowers `approvedAmountPostSimulation`, the part that can be sent now.
 
-An entry is deleted after one sync, which runs once our RPC has reached the transaction's block. `main.ts` starts it for deposits and ragequits, and `broadcastWithdrawal` for withdrawals, with the block from the bundler so our RPC never sees the withdrawal. A failed transaction deletes its entry at once, and a lock deletes them all.
+An entry is deleted after one sync, which runs once our RPC has reached the transaction's block. `main.ts` starts it for deposits and ragequits, and `broadcastWithdrawal` for withdrawals, so our RPC never sees the withdrawal: through Kohaku with the block from the bundler, through 0xBow 3 blocks after the latest, as the relayer answers before the withdrawal lands. A failed transaction deletes its entry at once, and a lock deletes them all.
 
 Another sync, for example from opening the account, can read the change first. So each entry remembers the notes from when it was sent, and is ignored once they show the change. For a withdrawal, that is the total of the token's approved notes, less the withdrawals sent before it that the notes do not show yet, as another withdrawal may have spent a different note. Until then, a new deposit is blocked, as it would reuse the same precommitment.
 
