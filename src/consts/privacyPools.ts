@@ -242,10 +242,12 @@ const USD_STABLECOIN_DEPOSIT_CHIPS = [25n, 100n, 500n, 1_000n, 5_000n, 10_000n].
 /**
  * The most common amounts deposits put into each pool, smallest first, by token id (see
  * `getPrivacyPoolsTokenId`). A deposit of one of them hides among many others. None is below the
- * pool's minimum deposit. The ETH ones match the amounts the Privacy Pools website recommends.
+ * pool's minimum deposit. The ETH ones are the most common deposits of the last 90 days.
  */
 export const PRIVACY_POOLS_DEPOSIT_CHIPS: { [tokenId: string]: bigint[] } = {
-  [`1:${ZERO_ADDRESS}`]: [1n, 10n, 50n, 100n, 1_000n].map((tenths) => (tenths * ETH_UNIT) / 10n),
+  [`1:${ZERO_ADDRESS}`]: [1n, 10n, 50n, 100n, 500n].map(
+    (hundredths) => (hundredths * ETH_UNIT) / 100n
+  ),
   '1:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': USD_STABLECOIN_DEPOSIT_CHIPS,
   '1:0xdac17f958d2ee523a2206206994597c13d831ec7': USD_STABLECOIN_DEPOSIT_CHIPS
 }
