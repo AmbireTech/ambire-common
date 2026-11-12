@@ -398,6 +398,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
         privacy,
         humanization: humanizePrivacyPoolsWithdrawal({
           chainId,
+          broadcaster,
           withdrawal: proved.withdrawal,
           expectedFeeAmount,
           usdPrice: this.#ctx.getTokenPrice(chainId, tokenAddress)
@@ -519,6 +520,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       quote: { ...operation.quote, expectedFeeAmount },
       humanization: humanizePrivacyPoolsWithdrawal({
         chainId: operation.chainId,
+        broadcaster: pendingWithdrawal.broadcaster,
         withdrawal: pendingWithdrawal.withdrawal,
         expectedFeeAmount,
         usdPrice: this.#ctx.getTokenPrice(operation.chainId, operation.tokenAddress)

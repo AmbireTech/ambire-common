@@ -200,6 +200,7 @@ describe('Privacy Pools humanizer', () => {
     ) =>
       humanizePrivacyPoolsWithdrawal({
         chainId: CHAIN_ID,
+        broadcaster: 'kohaku',
         withdrawal: {
           ...withdrawal,
           ...(overrides.tokenAddress && { tokenAddress: overrides.tokenAddress }),
@@ -280,6 +281,28 @@ describe('Privacy Pools humanizer', () => {
         [humanize(10n ** 15n, { tokenAddress: ZeroAddress, amount: 10n ** 18n })],
         [expectedCard(ZeroAddress, 10n ** 18n, 300_000n, 10n ** 15n)]
       )
+    })
+
+    test('shows the exact fee through 0xBow, whose relayer refunds nothing of it', () => {
+      const card = humanizePrivacyPoolsWithdrawal({
+        chainId: CHAIN_ID,
+        broadcaster: '0xbow',
+        withdrawal,
+        expectedFeeAmount: withdrawal.fee,
+        usdPrice: USD_PRICE
+      }).fullVisualization?.[0]
+      if (card?.type !== 'erc7730') throw new Error('Expected a clear-signing card')
+      const rows = card.fields.flatMap((row) => (row.type === 'single-value' ? [row] : []))
+
+      expect(rows.map(({ label, valuePrefix }) => [label, valuePrefix])).toEqual([
+        ['Amount to Send', undefined],
+        ['Recipient Receives', undefined],
+        ['Recipient', undefined],
+        ['Fee', undefined]
+      ])
+      const receives = rows[1]?.value
+      if (receives?.type !== 'token') throw new Error('Expected a token row')
+      expect(receives.value).toBe(withdrawal.amount - withdrawal.fee)
     })
 
     test('carries no raw call, so nothing of the single-use sender is shown', () => {
