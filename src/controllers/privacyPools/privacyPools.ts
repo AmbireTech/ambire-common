@@ -3,8 +3,10 @@ import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '../../consts/activity'
 import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig,
+  getPrivacyPoolsTokenId,
   isPrivacyPoolsNativeAsset,
   PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY,
+  PRIVACY_POOLS_DEPOSIT_CHIPS,
   PRIVACY_POOLS_SUPPORTED_CHAIN_IDS
 } from '../../consts/privacyPools'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
@@ -19,13 +21,16 @@ import {
   PrivacyPoolsChainPoolStats,
   PrivacyPoolsChainState,
   PrivacyPoolsDepositAssetConfig,
+  PrivacyPoolsDepositPrivacy,
   PrivacyPoolsHistoryFilters,
   PrivacyPoolsHistorySession,
   PrivacyPoolsOperation,
   PrivacyPoolsRagequitDeposit,
   PrivacyPoolsSendForm,
   PrivacyPoolsTokenBalance,
-  PrivacyPoolsUnavailableReason
+  PrivacyPoolsUnavailableReason,
+  PrivacyPoolsWithdrawalPrivacyCheck,
+  PrivacyPoolsWithdrawalPrivacyParams
 } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -35,6 +40,7 @@ import { IUiController, View } from '../../interfaces/ui'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { createKohakuStorage } from '../../libs/kohaku/host'
+import { getPrivacyPoolsDepositPrivacy } from '../../libs/privacyPools/leaks/leaks'
 import { fetchPrivacyPoolsPrices, getPrivacyPoolsPriceKey } from '../../libs/privacyPools/prices'
 import {
   createProverFactory,
@@ -145,7 +151,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * Per chain, its pools' numbers for a token's details, so they are there when it opens. The same
    * for every account, so they outlive a lock. Computed from this device's copy of the history
    * after each sync of it, before the balances it reads show - see `PrivacyPoolsPoolStatsReader`.
-   * Not on load: a stored history is read only when the user opens a Privacy Pools account.
+   * Not on load: a stored history is read only when the user opens a Privacy Pools account, or a
+   * deposit into one.
    */
   poolStats: { [chainId: string]: PrivacyPoolsChainPoolStats } = {}
 
@@ -252,9 +259,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       this.#builtCalls,
       this.#expectedChanges
     )
-    this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
-    this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync, this.#builtCalls)
     this.#poolStatsReader = new PrivacyPoolsPoolStatsReader(ctx)
+    this.#withdrawal = new PrivacyPoolsWithdrawal(
+      ctx,
+      this.#registry,
+      this.#sync,
+      this.#poolStatsReader
+    )
+    this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync, this.#builtCalls)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
     this.#history = new PrivacyPoolsHistory(ctx, this.#sync, {
       getSupportedChainIds: () => this.supportedChainIds,
@@ -303,11 +315,15 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     const isLatest = () => this.#poolStatsRefreshIds[chainId] === refreshId
 
     try {
-      const byToken = await this.#poolStatsReader.read(chainId)
+      const pools = await this.#poolStatsReader.read(chainId)
       // Before the chain's first sync there is nothing to show yet, not an error
-      if (!byToken || !isLatest()) return
+      if (!pools || !isLatest()) return
 
-      this.poolStats = { ...this.poolStats, [chainId]: { byToken, error: null } }
+      this.poolStats = {
+        ...this.poolStats,
+        [chainId]: { byToken: pools.statsByToken, error: null }
+      }
+      this.#poolStatsReader.setDepositIndexes(chainId, pools.depositIndexes)
     } catch (error: any) {
       const emittableError = privacyPoolsErrors.poolStatsReadFailed(error)
       this.emitError(emittableError)
@@ -354,6 +370,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         // The form it was proved from is gone; one being sent finishes, hidden
         this.#withdrawal.dropUnsent()
         this.#sendForm.clear()
+        this.#withdrawal.dropPrivacyCheck()
         if (selectedAccountId) this.#syncOnOpen()
         this.propagateUpdate(forceEmit)
       }, 'privacyPools'),
@@ -505,6 +522,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase), read once per Send session. */
   get depositAssetConfigs(): { [key: string]: PrivacyPoolsDepositAssetConfig } {
     return this.#deposits.assetConfigs
+  }
+
+  /**
+   * The privacy of the transfer the Send form last asked about - see `checkWithdrawalPrivacy`.
+   * Dropped with the form.
+   */
+  get withdrawalPrivacy(): PrivacyPoolsWithdrawalPrivacyCheck | null {
+    return this.#withdrawal.getWithdrawalPrivacyCheck(this.#getSelectedSeedId())
   }
 
   /** The selected account's Send form. Dropped on switching accounts, like the regular one. */
@@ -784,7 +809,37 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     tokenAddress: string,
     sessionId: string | null
   ): Promise<PrivacyPoolsDepositAssetConfig> {
+    // The deposit's privacy check needs the pool's deposits, which a sync may not have read yet
+    if (!this.#poolStatsReader.hasDepositIndexes(chainId))
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#refreshPoolStats(chainId).then(() => this.emitUpdate())
+
     return this.#deposits.loadAssetConfig(chainId, tokenAddress, sessionId)
+  }
+
+  /**
+   * The privacy of a deposit that puts `amount` into a pool, of at most `maxAmount`, both after the
+   * vetting fee. For `TransferController`. Rated `unchecked` before the pool's deposits are read -
+   * see `loadDepositAssetConfig`.
+   */
+  getDepositPrivacy({
+    chainId,
+    tokenAddress,
+    amount,
+    maxAmount
+  }: {
+    chainId: string
+    tokenAddress: string
+    amount: bigint
+    maxAmount: bigint
+  }): PrivacyPoolsDepositPrivacy {
+    return getPrivacyPoolsDepositPrivacy({
+      amount,
+      maxAmount,
+      depositIndex: this.#poolStatsReader.getDepositIndex(chainId, tokenAddress),
+      commonAmounts:
+        PRIVACY_POOLS_DEPOSIT_CHIPS[getPrivacyPoolsTokenId(chainId, tokenAddress)] ?? []
+    })
   }
 
   /**
@@ -873,6 +928,30 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (hasDeleted) this.emitUpdate()
   }
 
+  /**
+   * Checks what the Send form's transfer gives away, from the selected account's notes and this
+   * device's copy of the pool. The result arrives in `withdrawalPrivacy`, in place of the previous
+   * check's.
+   */
+  checkWithdrawalPrivacy(params: Omit<PrivacyPoolsWithdrawalPrivacyParams, 'seedId'>) {
+    try {
+      const seedId = this.#assertAvailableAndGetSeedId()
+
+      this.#withdrawal.checkWithdrawalPrivacy({ ...params, seedId })
+      this.emitUpdate()
+    } catch (error: any) {
+      this.emitError(
+        error instanceof EmittableError
+          ? error
+          : {
+              level: 'silent',
+              message: 'Could not check the privacy of this transfer.',
+              error: error instanceof Error ? error : new Error('privacyPools: leak check failed')
+            }
+      )
+    }
+  }
+
   updateSendForm(update: Partial<PrivacyPoolsSendForm>) {
     this.#sendForm.update(update)
     this.emitUpdate()
@@ -886,8 +965,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #leaveSendForm() {
     const hasDroppedWithdrawal = this.#withdrawal.dropUnsent()
     const hasClearedForm = this.#sendForm.clear()
+    const hasDroppedPrivacyCheck = this.#withdrawal.dropPrivacyCheck()
 
-    if (hasDroppedWithdrawal || hasClearedForm) this.emitUpdate()
+    if (hasDroppedWithdrawal || hasClearedForm || hasDroppedPrivacyCheck) this.emitUpdate()
   }
 
   #onAddView = () => {
@@ -1215,6 +1295,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       operation: this.operation,
       depositAssetConfigs: this.depositAssetConfigs,
       history: this.history,
+      withdrawalPrivacy: this.withdrawalPrivacy,
       sendForm: this.sendForm,
       sendFormResetCounter: this.sendFormResetCounter,
       hasPersistedSendForm: this.hasPersistedSendForm
