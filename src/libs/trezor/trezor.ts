@@ -37,6 +37,10 @@ export const getMessageFromTrezorErrorCode = (
   )
     return 'Trezor device got disconnected.'
 
+  // On Firefox, Trezor works only through the Trezor Suite desktop app
+  if (errorCode === 'Desktop_ConnectionMissing')
+    return 'To use Trezor in Firefox, make sure the Trezor Suite desktop app is open and stays open.'
+
   if (errorCode === 'Device_CallInProgress')
     return 'Trezor device busy. Please make sure there are no pending requests on the device.'
 
