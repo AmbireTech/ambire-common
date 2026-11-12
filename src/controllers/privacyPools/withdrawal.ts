@@ -1,11 +1,14 @@
 import { isAddress } from 'ethers'
 
-import { createPPv1Broadcaster, PrivacyPoolsV1Protocol } from '@kohaku-eth/privacy-pools'
+import {
+  createPPv1Broadcaster,
+  PPv1UnshieldOptions,
+  PrivacyPoolsV1Protocol
+} from '@kohaku-eth/privacy-pools'
 
 import EmittableError from '../../classes/EmittableError'
 import {
   getPrivacyPoolsAsset,
-  getPrivacyPoolsChainConfig,
   getPrivacyPoolsTokenId,
   isPrivacyPoolsNativeAsset,
   PRIVACY_POOLS_DEPOSIT_CHIPS,
@@ -13,28 +16,37 @@ import {
 } from '../../consts/privacyPools'
 import { Hex } from '../../interfaces/hex'
 import {
+  PrivacyPoolsBroadcaster,
   PrivacyPoolsNote,
   PrivacyPoolsOperation,
-  PrivacyPoolsPaymasterConfig,
   PrivacyPoolsWithdrawalPrivacy,
   PrivacyPoolsWithdrawalPrivacyCheck,
   PrivacyPoolsWithdrawalPrivacyParams
 } from '../../interfaces/privacyPools'
 import { RPCProvider } from '../../interfaces/provider'
 import { humanizePrivacyPoolsWithdrawal } from '../../libs/humanizer/modules/PrivacyPools/privacyPoolsModule'
-import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
+import {
+  readEntrypointAssetConfig,
+  readPrivacyPoolsPoolScope
+} from '../../libs/privacyPools/entrypointAssetConfig'
 import {
   estimatePaymasterWithdrawalFee,
-  PrivacyPoolsSerializedUserOperation,
-  PrivacyPoolsWithdrawalFeeEstimate,
-  PrivacyPoolsWithdrawalWouldFailError
+  PrivacyPoolsWithdrawalWouldFailError,
+  simulateRelayedWithdrawal
 } from '../../libs/privacyPools/estimateWithdrawal'
 import { getPrivacyPoolsWithdrawalPrivacy } from '../../libs/privacyPools/leaks/leaks'
 import {
   findSendablePrivacyPoolsNote,
   getSdkPickedPrivacyPoolsNote
 } from '../../libs/privacyPools/notes'
-import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdrawal'
+import {
+  PrivacyPoolsPaymasterWithdrawal,
+  readPaymasterWithdrawal
+} from '../../libs/privacyPools/paymasterWithdrawal'
+import {
+  PrivacyPoolsRelayedWithdrawal,
+  readRelayedWithdrawal
+} from '../../libs/privacyPools/relayedWithdrawal'
 import { toPrivacyPoolsSdkError } from '../../libs/privacyPools/sdkError'
 import { getRpcProvider } from '../../services/provider'
 import { generateUuid } from '../../utils/uuid'
@@ -61,6 +73,19 @@ const WITHDRAWAL_ESTIMATION_TIMEOUT_MS = 8 * 1000
  */
 const WITHDRAWAL_RECHECK_AFTER_MS = 30 * 1000
 
+/**
+ * How long a relayer's offer must still run when a withdrawal is handed to it: the relayer checks
+ * it on arrival, after a last check of the withdrawal and the trip there.
+ */
+const RELAYED_WITHDRAWAL_MIN_REMAINING_MS = 10 * 1000
+
+/**
+ * How many blocks after the latest a relayed withdrawal is read at. The relayer answers once it
+ * has sent it, before it lands, and asking for its receipt would tell our node who sent it - so the
+ * account is read once the withdrawal has most likely landed, with a block to spare.
+ */
+const RELAYED_WITHDRAWAL_BLOCKS_AHEAD = 3
+
 /** Shown in the confirmation sheet when a proved withdrawal can no longer be sent as it is. */
 const STALE_WITHDRAWAL_MESSAGE = 'This transfer has expired. Go back to prepare it again.'
 
@@ -70,12 +95,37 @@ const STALE_WITHDRAWAL_MESSAGE = 'This transfer has expired. Go back to prepare 
  */
 const FEE_ABOVE_AMOUNT_SDK_MESSAGE = 'Withdrawal amount too small to cover the sponsored gas fee'
 
-/** Makes the fee-above-amount SDK error readable; passes anything else through as an `Error`. */
+/**
+ * The SDK's errors when no relayer gave a usable quote: each failed, or quoted a fee above what the
+ * pool allows. Matched by wording, like `FEE_ABOVE_AMOUNT_SDK_MESSAGE`.
+ */
+const NO_RELAYER_QUOTE_SDK_MESSAGES = [
+  'All relayers failed to provide a quote',
+  'Failed to get quote from relayers'
+]
+
+/** Makes the SDK errors the user can act on readable; passes anything else through as an `Error`. */
 const toReadableWithdrawalError = (error: unknown) => {
   const sdkError = toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
-  if (!sdkError.message.includes(FEE_ABOVE_AMOUNT_SDK_MESSAGE)) return sdkError
+  if (sdkError.message.includes(FEE_ABOVE_AMOUNT_SDK_MESSAGE))
+    return privacyPoolsErrors.withdrawalFeeAboveAmount(sdkError)
+  if (NO_RELAYER_QUOTE_SDK_MESSAGES.some((message) => sdkError.message.includes(message)))
+    return privacyPoolsErrors.withdrawalRelayersUnavailable(sdkError)
 
-  return privacyPoolsErrors.withdrawalFeeAboveAmount(sdkError)
+  return sdkError
+}
+
+/**
+ * How the SDK is asked to prove for `broadcaster`. Through Kohaku the unused gas is refunded to the
+ * recipient, which is the SDK's default too, so a different default can't send it elsewhere.
+ */
+const getUnshieldOptions = (
+  broadcaster: PrivacyPoolsBroadcaster,
+  recipient: Hex
+): PPv1UnshieldOptions => {
+  if (broadcaster === 'kohaku') return { mode: 'paymaster', refundRecipient: recipient }
+
+  return { mode: 'relayer' }
 }
 
 const WITHDRAWAL_CANCELLED_MESSAGE = 'privacyPools: the withdrawal was cancelled'
@@ -99,6 +149,8 @@ const untilWithdrawalCancelled = <T>(promise: Promise<T>, signal: AbortSignal): 
 
 /** A withdrawal from the selected Privacy Pools account to any address. */
 export type PrivacyPoolsWithdrawalParams = AssetRef & {
+  /** Who proves and sends it - see `PrivacyPoolsController.broadcaster`. */
+  broadcaster: PrivacyPoolsBroadcaster
   chainId: string
   /** The deposit to send from. A send spends exactly one. */
   noteLabel: bigint
@@ -107,23 +159,15 @@ export type PrivacyPoolsWithdrawalParams = AssetRef & {
 }
 
 /**
- * A withdrawal handed to the bundler. `isSent` when it went through while still the current
- * operation - not after a lock or a newer one replaced it. `blockNumber` is the block it landed
- * in, or null when it failed or the block is unknown.
+ * A withdrawal handed to the bundler or the relayer. `isSent` when it went through while still the
+ * current operation - not after a lock or a newer one replaced it. `blockNumber` is the block it
+ * landed in - through 0xBow, a block by which it most likely has - or null when it failed or the
+ * block is unknown.
  */
 export type PrivacyPoolsBroadcastAttempt = {
   operation: PrivacyPoolsOperation
   isSent: boolean
   blockNumber: number | null
-}
-
-type WithdrawalSimulationParams = AssetRef & {
-  chainId: string
-  userOperation: PrivacyPoolsSerializedUserOperation
-  paymaster: PrivacyPoolsPaymasterConfig
-  recipient: string
-  /** The fee locked into the proof. */
-  fee: bigint
 }
 
 /**
@@ -136,21 +180,45 @@ type PreparedPaymasterWithdrawal = Extract<
 >
 
 /**
- * A proved-but-unsent withdrawal, with what was read from its payload and when it was last known to
- * go through: when proved, or when run again since.
+ * A relayed withdrawal: the proof, and the relayer's signed quote it was proved against. Narrowed
+ * from the `prepareUnshield` union, as the SDK does not export the variant.
  */
-type PendingWithdrawal = {
-  privateOp: PreparedPaymasterWithdrawal
-  paymasterWithdrawal: ReturnType<typeof readPaymasterWithdrawal>
-  checkedAt: number
-}
+type PreparedRelayedWithdrawal = Extract<
+  Awaited<ReturnType<PrivacyPoolsV1Protocol['prepareUnshield']>>,
+  { mode?: 'relayer' }
+>
+
+/** A proved withdrawal, with what was read from its payload. */
+type ProvedWithdrawal =
+  | {
+      broadcaster: 'kohaku'
+      privateOp: PreparedPaymasterWithdrawal
+      withdrawal: PrivacyPoolsPaymasterWithdrawal
+    }
+  | {
+      broadcaster: '0xbow'
+      privateOp: PreparedRelayedWithdrawal
+      withdrawal: PrivacyPoolsRelayedWithdrawal
+    }
+
+/**
+ * A proved-but-unsent withdrawal, and when it was last known to go through: when proved, or when
+ * run again since.
+ */
+type PendingWithdrawal = ProvedWithdrawal & { checkedAt: number }
+
+/**
+ * The token's pool, as the entrypoint lists it, with what checking a withdrawal from it needs: the
+ * relayer fee it allows, and its scope - read only for a relayed withdrawal, which names it.
+ */
+type WithdrawalPool = { poolAddress: string; maxRelayFeeBPS: bigint; scope: bigint | null }
 
 /**
  * Running a proved withdrawal on the latest block: it 'ran', it 'would-fail', or it is
  * 'unavailable' - the node cannot run it, or did not answer in time.
  */
 type WithdrawalSimulation =
-  | { status: 'ran'; estimate: PrivacyPoolsWithdrawalFeeEstimate }
+  | { status: 'ran'; expectedFee: bigint }
   | { status: 'would-fail' | 'unavailable'; error: Error | null }
 
 /**
@@ -169,7 +237,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
   /** The latest withdrawal of any phrase. */
   #operation: PrivacyPoolsOperation | null = null
 
-  /** The proved-but-unsent withdrawal. Private: it holds the proof and the signed userOp. */
+  /** The proved-but-unsent withdrawal. Private: it holds the proof, and the signed userOp. */
   #pendingWithdrawal: PendingWithdrawal | null = null
 
   /** Cancels the withdrawal being prepared, if any. See `dropUnsent`. */
@@ -218,16 +286,18 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
    */
   async prepare({
     seedId,
+    broadcaster,
     chainId,
     tokenAddress,
     noteLabel,
     amount,
     recipient
   }: PrivacyPoolsWithdrawalParams & { seedId: string }): Promise<void> {
-    const { paymaster } = getChainConfig(chainId)
-    if (!paymaster) throw privacyPoolsErrors.withdrawalUnsupportedNetwork(chainId)
+    const { paymaster, relayers } = getChainConfig(chainId)
+    const hasBroadcaster = broadcaster === 'kohaku' ? !!paymaster : !!relayers
+    if (!hasBroadcaster) throw privacyPoolsErrors.withdrawalUnsupportedNetwork(chainId, broadcaster)
 
-    this.#assertBundlerIsAllowed()
+    if (broadcaster === 'kohaku') this.#assertBundlerIsAllowed()
 
     // Not only in the form: a proof to a malformed or zero address would burn the funds
     if (!isAddress(recipient) || BigInt(recipient) === 0n)
@@ -240,6 +310,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
     const operation = this.#startOperation({
       seedId,
+      broadcaster,
       chainId,
       tokenAddress,
       isNative: isPrivacyPoolsNativeAsset(tokenAddress),
@@ -261,7 +332,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       throwIfWithdrawalCancelled(signal)
       this.#provingSignal = signal
 
-      const poolAddress = await this.#assertPoolIsSponsored(chainId, tokenAddress)
+      const pool = await this.#readWithdrawalPool(chainId, tokenAddress, broadcaster)
       throwIfWithdrawalCancelled(signal)
 
       // The SDK syncs before proving, outside the queue, so only wait for this account's sync of
@@ -284,46 +355,35 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
       // Checked by `isAddress` above
       const sdkRecipient = recipient as Hex
-      // Prices gas, proves and signs the userOp. Spends one deposit, which the SDK picks itself -
-      // checked to be the chosen one. The unused gas is refunded to the recipient, which is the
-      // SDK's default too, so a different default can't send it elsewhere.
+      // Through Kohaku it prices gas, proves and signs the userOp; through 0xBow it takes the
+      // cheapest relayer's quote and proves against it. Spends one deposit, which the SDK picks
+      // itself - checked to be the chosen one.
       const privateOp = await protocol.prepareUnshield(
         {
           asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
           amount
         },
         sdkRecipient,
-        { mode: 'paymaster', refundRecipient: sdkRecipient }
+        getUnshieldOptions(broadcaster, sdkRecipient)
       )
-
-      // Only paymaster mode is asked for, so anything else means the SDK ignored it
-      if (privateOp.mode !== 'paymaster')
-        throw new Error('privacyPools: the withdrawal came back in an unsupported form')
 
       // The SDK synced before proving, so its notes may be newer than the last sync's
       const provedNotes = await readPrivacyPoolsNotes(protocol, false)
       this.#assertSdkSpendsNote(provedNotes, spentNote)
 
-      const paymasterWithdrawal = readPaymasterWithdrawal({
-        withdrawal: privateOp.withdrawal,
-        paymaster,
-        poolAddress,
+      const proved = this.#readProvedWithdrawal({
+        broadcaster,
+        chainId,
+        privateOp,
+        pool,
         recipient,
         tokenAddress,
         amount
       })
-      const { fee } = paymasterWithdrawal
+      const { fee } = proved.withdrawal
 
-      const feeEstimate = await this.#getExpectedWithdrawalFee({
-        chainId,
-        userOperation: privateOp.withdrawal.userOperation,
-        paymaster,
-        recipient,
-        tokenAddress,
-        fee
-      })
+      const expectedFeeAmount = await this.#getExpectedWithdrawalFee(proved, operation)
       throwIfWithdrawalCancelled(signal)
-      const expectedFeeAmount = feeEstimate?.expectedFee ?? null
 
       const privacy = this.#getWithdrawalPrivacy(
         { seedId, chainId, tokenAddress, noteLabel, amount, recipient },
@@ -338,14 +398,13 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
         privacy,
         humanization: humanizePrivacyPoolsWithdrawal({
           chainId,
-          withdrawal: paymasterWithdrawal,
+          withdrawal: proved.withdrawal,
           expectedFeeAmount,
           usdPrice: this.#ctx.getTokenPrice(chainId, tokenAddress)
         })
       })
       // Not kept if a lock or a cancel superseded it
-      if (isStillCurrent)
-        this.#pendingWithdrawal = { privateOp, paymasterWithdrawal, checkedAt: Date.now() }
+      if (isStillCurrent) this.#pendingWithdrawal = { ...proved, checkedAt: Date.now() }
     } catch (error: any) {
       // Whatever it failed with: the user left, so there is nothing to tell them
       if (!signal.aborted)
@@ -442,7 +501,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     if (operation?.status !== 'pending' || operation.phase !== 'ready' || !pendingWithdrawal) return
     if (!this.#isDueForCheck(pendingWithdrawal)) return
 
-    const { isStale, estimate } = await this.#checkWithdrawal(operation, pendingWithdrawal)
+    const { isStale, expectedFee } = await this.#checkWithdrawal(operation, pendingWithdrawal)
     // Sent, dropped or proved again meanwhile
     if (this.#pendingWithdrawal !== pendingWithdrawal) return
 
@@ -451,16 +510,16 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       return
     }
     // Not run, so it is still due: sending checks it again
-    if (!estimate || !operation.quote) return
+    if (expectedFee === null || !operation.quote) return
 
     this.#pendingWithdrawal = { ...pendingWithdrawal, checkedAt: Date.now() }
-    const expectedFeeAmount = estimate.expectedFee
+    const expectedFeeAmount = expectedFee
     this.#updateOperation({
       ...operation,
       quote: { ...operation.quote, expectedFeeAmount },
       humanization: humanizePrivacyPoolsWithdrawal({
         chainId: operation.chainId,
-        withdrawal: pendingWithdrawal.paymasterWithdrawal,
+        withdrawal: pendingWithdrawal.withdrawal,
         expectedFeeAmount,
         usdPrice: this.#ctx.getTokenPrice(operation.chainId, operation.tokenAddress)
       })
@@ -476,21 +535,20 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
   }
 
   /**
-   * Sends the proved withdrawal of `operation` to the bundler and waits for it. Null when it was
-   * not handed over: it went stale, or a lock came while it was checked again.
+   * Sends the proved withdrawal of `operation` to the bundler or the relayer and waits for it. Null
+   * when it was not handed over: it went stale, or a lock came while it was checked again.
    */
   async broadcast(operation: PrivacyPoolsOperation): Promise<PrivacyPoolsBroadcastAttempt | null> {
     const pendingWithdrawal = this.#getPendingToSend(operation)
-    this.#assertBundlerIsAllowed()
+    if (pendingWithdrawal.broadcaster === 'kohaku') this.#assertBundlerIsAllowed()
     const { seedId } = operation
 
     this.#updateOperation({ ...operation, phase: 'broadcasting' })
     this.#ctx.emitUpdate()
 
-    // Sent once: the sender is single-use (nonce 0), so a retry could only fail or duplicate. A
-    // failed send is prepared again from scratch.
+    // Sent once: the sender is single-use (nonce 0), and a deposit's proof spends it once, so a
+    // retry could only fail or duplicate. A failed send is prepared again from scratch.
     this.#discardPending()
-    const { privateOp } = pendingWithdrawal
 
     if (
       this.#isDueForCheck(pendingWithdrawal) &&
@@ -506,9 +564,14 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
     try {
       const host = this.#registry.getHost(operation.chainId, seedId)
-      // No relayers: a paymaster withdrawal goes to the bundler URL carried in the payload.
-      const broadcaster = createPPv1Broadcaster(host, { broadcasterUrl: {} })
-      const { requestId } = await broadcaster.broadcast(privateOp)
+      // A paymaster withdrawal goes to the bundler URL carried in the payload; a relayed one to
+      // the relayer whose quote it was proved against
+      const broadcasterUrl =
+        pendingWithdrawal.broadcaster === '0xbow'
+          ? (getChainConfig(operation.chainId).relayers ?? {})
+          : {}
+      const broadcaster = createPPv1Broadcaster(host, { broadcasterUrl })
+      const { requestId } = await broadcaster.broadcast(pendingWithdrawal.privateOp)
 
       const isCurrentOperation = this.#updateOperation({
         ...operation,
@@ -518,11 +581,14 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       this.#ctx.emitUpdate()
 
       // After the UI is told, as the sheet need not wait for it
-      const blockNumber = await this.#readBlockNumber(
-        requestId,
-        operation.chainId,
-        privateOp.withdrawal.bundlerUrl
-      )
+      const blockNumber =
+        pendingWithdrawal.broadcaster === 'kohaku'
+          ? await this.#readBlockNumber(
+              requestId,
+              operation.chainId,
+              pendingWithdrawal.privateOp.withdrawal.bundlerUrl
+            )
+          : await this.#getRelayedBlockNumber(operation.chainId)
 
       return { operation, isSent: isCurrentOperation, blockNumber }
     } catch (error: any) {
@@ -569,6 +635,30 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       return null
     } finally {
       provider?.destroy()
+    }
+  }
+
+  /**
+   * A block by which a withdrawal just handed to the relayer has most likely landed, or null if
+   * unknown. Not its receipt, which would tell our node who sent it - see
+   * `RELAYED_WITHDRAWAL_BLOCKS_AHEAD`.
+   */
+  async #getRelayedBlockNumber(chainId: string): Promise<number | null> {
+    try {
+      const latestBlockNumber = await getChainProvider(
+        this.#ctx.providers,
+        chainId
+      ).getBlockNumber()
+
+      return latestBlockNumber + RELAYED_WITHDRAWAL_BLOCKS_AHEAD
+    } catch (error: any) {
+      this.#ctx.emitError({
+        level: 'silent',
+        message: 'Could not read the latest block after the Privacy Pools withdrawal.',
+        error: error instanceof Error ? error : new Error('privacyPools: block number read failed')
+      })
+
+      return null
     }
   }
 
@@ -631,6 +721,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
   #startOperation(params: {
     seedId: string
+    broadcaster: PrivacyPoolsBroadcaster
     chainId: string
     tokenAddress: string
     isNative: boolean
@@ -676,15 +767,19 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
   }
 
   /**
-   * The expected fee of a proved withdrawal, by simulating it, or null when it cannot be run.
-   * Best effort: the proof's fee is already the cap. A simulated failure does not fail it here, as
+   * The fee a proved withdrawal is expected to take, or null when it cannot be run. Through 0xBow
+   * it is exact, as the relayer refunds nothing. Through Kohaku it comes from running it: best
+   * effort, as the proof's fee is already the cap. A simulated failure does not fail it here, as
    * the bundler checks it again.
    */
   async #getExpectedWithdrawalFee(
-    params: WithdrawalSimulationParams
-  ): Promise<PrivacyPoolsWithdrawalFeeEstimate | null> {
-    const simulation = await this.#simulateWithdrawal(params)
-    if (simulation.status === 'ran') return simulation.estimate
+    proved: ProvedWithdrawal,
+    { chainId, recipient, tokenAddress }: PrivacyPoolsOperation
+  ): Promise<bigint | null> {
+    if (proved.broadcaster === '0xbow') return proved.withdrawal.fee
+
+    const simulation = await this.#simulateWithdrawal(proved, { chainId, recipient, tokenAddress })
+    if (simulation.status === 'ran') return simulation.expectedFee
 
     if (simulation.error)
       this.#ctx.emitError({
@@ -696,38 +791,34 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     return null
   }
 
-  /** Runs a proved withdrawal on the latest block, as the bundler will submit it. */
-  async #simulateWithdrawal({
-    chainId,
-    userOperation,
-    paymaster,
-    recipient,
-    tokenAddress,
-    fee
-  }: WithdrawalSimulationParams): Promise<WithdrawalSimulation> {
+  /**
+   * Runs a proved withdrawal on the latest block, as the bundler or the relayer will submit it, and
+   * returns the fee it takes.
+   */
+  async #simulateWithdrawal(
+    proved: ProvedWithdrawal,
+    {
+      chainId,
+      recipient,
+      tokenAddress
+    }: Pick<PrivacyPoolsOperation, 'chainId' | 'recipient' | 'tokenAddress'>
+  ): Promise<WithdrawalSimulation> {
     const network = this.#ctx.networks.networks.find((n) => n.chainId.toString() === chainId)
-    // The sender only has code to run through a state override
-    if (!network || network.rpcNoStateOverride) return { status: 'unavailable', error: null }
+    if (!network) return { status: 'unavailable', error: null }
+    // The paymaster's single-use sender only has code to run through a state override
+    if (proved.broadcaster === 'kohaku' && network.rpcNoStateOverride)
+      return { status: 'unavailable', error: null }
 
     try {
-      const estimate = await withTimeout(
-        () =>
-          estimatePaymasterWithdrawalFee({
-            provider: getChainProvider(this.#ctx.providers, chainId),
-            userOperation,
-            entryPointAddress: paymaster.entryPointAddress,
-            paymasterAddress: paymaster.paymasterAddress,
-            recipient,
-            tokenAddress,
-            fee
-          }),
+      const expectedFee = await withTimeout(
+        () => this.#runWithdrawal(proved, { chainId, recipient, tokenAddress }),
         {
           timeoutMs: WITHDRAWAL_ESTIMATION_TIMEOUT_MS,
           message: 'privacyPools: the withdrawal fee estimation timed out'
         }
       )
 
-      return { status: 'ran', estimate }
+      return { status: 'ran', expectedFee }
     } catch (error: any) {
       return {
         status:
@@ -740,52 +831,103 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     }
   }
 
-  /** Whether a proved withdrawal has gone unchecked long enough for the chain to have moved on. */
-  #isDueForCheck({ checkedAt }: PendingWithdrawal) {
-    return Date.now() - checkedAt >= WITHDRAWAL_RECHECK_AFTER_MS
+  /** The run of `#simulateWithdrawal`, without its timeout. */
+  async #runWithdrawal(
+    proved: ProvedWithdrawal,
+    {
+      chainId,
+      recipient,
+      tokenAddress
+    }: Pick<PrivacyPoolsOperation, 'chainId' | 'recipient' | 'tokenAddress'>
+  ): Promise<bigint> {
+    const provider = getChainProvider(this.#ctx.providers, chainId)
+    const { entrypointAddress, paymaster } = getChainConfig(chainId)
+
+    if (proved.broadcaster === '0xbow') {
+      await simulateRelayedWithdrawal({ provider, entrypointAddress, withdrawal: proved.privateOp })
+
+      // Exact: the relayer refunds nothing of it
+      return proved.withdrawal.fee
+    }
+
+    if (!paymaster) throw new Error(`privacyPools: no paymaster for chain ${chainId}`)
+
+    const { expectedFee } = await estimatePaymasterWithdrawalFee({
+      provider,
+      userOperation: proved.privateOp.withdrawal.userOperation,
+      entryPointAddress: paymaster.entryPointAddress,
+      paymasterAddress: paymaster.paymasterAddress,
+      recipient,
+      tokenAddress,
+      fee: proved.withdrawal.fee
+    })
+
+    return expectedFee
   }
 
   /**
-   * Runs a proved withdrawal again. Stale when it fails on the latest block (e.g. the association
-   * set's root moved on), or the network's base fee has outgrown the gas price signed into it,
-   * which no bundler would submit at. `estimate` is its fee as of now, when it could be run.
-   *
-   * One that cannot be checked is not stale: a stale one is refused by the bundler before anything
-   * is spent, while calling it stale would send the user back to prove again over a flaky node.
+   * Whether a proved withdrawal has gone unchecked long enough for the chain to have moved on, or
+   * the relayer's offer it was proved against is running out.
    */
-  async #checkWithdrawal(
-    operation: PrivacyPoolsOperation,
-    { privateOp }: PendingWithdrawal
-  ): Promise<{ isStale: boolean; estimate: PrivacyPoolsWithdrawalFeeEstimate | null }> {
-    const paymaster = getPrivacyPoolsChainConfig(BigInt(operation.chainId))?.paymaster
-    if (!paymaster || !operation.quote) return { isStale: false, estimate: null }
+  #isDueForCheck(pendingWithdrawal: PendingWithdrawal) {
+    if (this.#isOfferRunningOut(pendingWithdrawal)) return true
 
-    const { userOperation } = privateOp.withdrawal
+    return Date.now() - pendingWithdrawal.checkedAt >= WITHDRAWAL_RECHECK_AFTER_MS
+  }
+
+  /** Whether the relayer would refuse a relayed withdrawal by the time it gets it. */
+  #isOfferRunningOut(proved: ProvedWithdrawal) {
+    if (proved.broadcaster !== '0xbow') return false
+
+    return proved.withdrawal.expiresAt - Date.now() < RELAYED_WITHDRAWAL_MIN_REMAINING_MS
+  }
+
+  /**
+   * Whether a proved withdrawal can no longer be sent at the price it was proved with. Through
+   * 0xBow, once the relayer's offer runs out. Through Kohaku, once the network's base fee has
+   * outgrown the gas price signed into it, which no bundler would submit at.
+   */
+  async #hasOutlivedItsPrice(chainId: string, proved: ProvedWithdrawal): Promise<boolean> {
+    if (proved.broadcaster === '0xbow') return this.#isOfferRunningOut(proved)
 
     try {
-      const latestBlock = await getChainProvider(this.#ctx.providers, operation.chainId).getBlock(
-        'latest'
-      )
+      const latestBlock = await getChainProvider(this.#ctx.providers, chainId).getBlock('latest')
       const baseFee = latestBlock?.baseFeePerGas
-      if (baseFee != null && BigInt(userOperation.maxFeePerGas) < baseFee)
-        return { isStale: true, estimate: null }
+
+      return (
+        baseFee != null && BigInt(proved.privateOp.withdrawal.userOperation.maxFeePerGas) < baseFee
+      )
     } catch (error: any) {
       this.#ctx.emitError({
         message: 'Could not check the network fee of the transfer again.',
         level: 'silent',
         error: error instanceof Error ? error : new Error('privacyPools: base fee read failed')
       })
-    }
 
-    const simulation = await this.#simulateWithdrawal({
-      chainId: operation.chainId,
-      userOperation,
-      paymaster,
-      recipient: operation.recipient,
-      tokenAddress: operation.tokenAddress,
-      fee: operation.quote.feeAmount
-    })
-    if (simulation.status === 'ran') return { isStale: false, estimate: simulation.estimate }
+      return false
+    }
+  }
+
+  /**
+   * Runs a proved withdrawal again. Stale when it fails on the latest block (e.g. the association
+   * set's root moved on), or it has outlived its price - see `#hasOutlivedItsPrice`. `expectedFee`
+   * is its fee as of now, when it could be run.
+   *
+   * One that cannot be checked is not stale: a stale one is refused by the bundler or the relayer
+   * before anything is spent, while calling it stale would send the user back to prove again over
+   * a flaky node.
+   */
+  async #checkWithdrawal(
+    operation: PrivacyPoolsOperation,
+    pendingWithdrawal: PendingWithdrawal
+  ): Promise<{ isStale: boolean; expectedFee: bigint | null }> {
+    if (!operation.quote) return { isStale: false, expectedFee: null }
+
+    if (await this.#hasOutlivedItsPrice(operation.chainId, pendingWithdrawal))
+      return { isStale: true, expectedFee: null }
+
+    const simulation = await this.#simulateWithdrawal(pendingWithdrawal, operation)
+    if (simulation.status === 'ran') return { isStale: false, expectedFee: simulation.expectedFee }
 
     if (simulation.status === 'unavailable' && simulation.error)
       this.#ctx.emitError({
@@ -794,7 +936,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
         error: simulation.error
       })
 
-    return { isStale: simulation.status === 'would-fail', estimate: null }
+    return { isStale: simulation.status === 'would-fail', expectedFee: null }
   }
 
   /** Drops a stale withdrawal. Nothing was sent: the sheet says so and goes back to the form. */
@@ -809,7 +951,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     this.#ctx.emitUpdate()
   }
 
-  /** A transfer out goes through an ERC-4337 bundler, which the user can opt out of. */
+  /** A transfer out through Kohaku goes through an ERC-4337 bundler, which the user can opt out of. */
   #assertBundlerIsAllowed() {
     if (this.#ctx.featureFlags.isFeatureEnabled('erc4337')) return
 
@@ -817,24 +959,104 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
   }
 
   /**
-   * Refuses before proving a token whose pool has no paymaster adapter (the SDK does so only after
-   * syncing). The pool is read from the entrypoint, so a replaced pool is caught. Returns the pool,
+   * Refuses before proving a token whose pool `broadcaster` cannot send from - one without a
+   * paymaster adapter for Kohaku (the SDK refuses only after syncing), one not configured for
+   * 0xBow. The pool is read from the entrypoint, so a replaced pool is caught. Returns the pool,
    * which the proved withdrawal must be from.
    */
-  async #assertPoolIsSponsored(chainId: string, tokenAddress: string): Promise<string> {
-    const config = getPrivacyPoolsChainConfig(BigInt(chainId))
-    if (!config?.paymaster) throw new Error(`privacyPools: no paymaster for chain ${chainId}`)
-
-    const { poolAddress } = await readEntrypointAssetConfig({
-      provider: getChainProvider(this.#ctx.providers, chainId),
+  async #readWithdrawalPool(
+    chainId: string,
+    tokenAddress: string,
+    broadcaster: PrivacyPoolsBroadcaster
+  ): Promise<WithdrawalPool> {
+    const config = getChainConfig(chainId)
+    const provider = getChainProvider(this.#ctx.providers, chainId)
+    const { poolAddress, maxRelayFeeBPS } = await readEntrypointAssetConfig({
+      provider,
       entrypointAddress: config.entrypointAddress,
       assetAddress: toPrivacyPoolsAssetAddress(tokenAddress)
     })
+    const poolKey = poolAddress.toLowerCase()
+    const isSupported =
+      broadcaster === 'kohaku' ? !!config.paymaster?.poolAdapters[poolKey] : !!config.pools[poolKey]
 
-    if (config.paymaster.poolAdapters[poolAddress.toLowerCase()]) return poolAddress
+    if (!isSupported) {
+      const symbol = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)?.symbol || 'this token'
+      throw privacyPoolsErrors.withdrawalUnsupportedToken(symbol, poolAddress)
+    }
 
-    const symbol = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)?.symbol || 'this token'
-    throw privacyPoolsErrors.withdrawalUnsupportedToken(symbol, poolAddress)
+    // A relayed withdrawal names its pool by scope, so it is checked against this pool's
+    const scope =
+      broadcaster === '0xbow' ? await readPrivacyPoolsPoolScope({ provider, poolAddress }) : null
+
+    return { poolAddress, maxRelayFeeBPS, scope }
+  }
+
+  /**
+   * Reads what a proved withdrawal does from its payload, checked against the request - see
+   * `readPaymasterWithdrawal` and `readRelayedWithdrawal`. A relayer's offer that runs out before
+   * the user could confirm it is refused, as the relayer would refuse it.
+   */
+  #readProvedWithdrawal({
+    broadcaster,
+    chainId,
+    privateOp,
+    pool,
+    recipient,
+    tokenAddress,
+    amount
+  }: {
+    broadcaster: PrivacyPoolsBroadcaster
+    chainId: string
+    privateOp: PreparedPaymasterWithdrawal | PreparedRelayedWithdrawal
+    pool: WithdrawalPool
+    recipient: string
+    tokenAddress: string
+    amount: bigint
+  }): ProvedWithdrawal {
+    const { entrypointAddress, paymaster, relayers } = getChainConfig(chainId)
+
+    // Only the asked-for form is accepted, so anything else means the SDK ignored the choice
+    if (broadcaster === 'kohaku' && privateOp.mode === 'paymaster' && paymaster)
+      return {
+        broadcaster,
+        privateOp,
+        withdrawal: readPaymasterWithdrawal({
+          withdrawal: privateOp.withdrawal,
+          paymaster,
+          poolAddress: pool.poolAddress,
+          recipient,
+          tokenAddress,
+          amount
+        })
+      }
+
+    if (
+      broadcaster === '0xbow' &&
+      privateOp.mode !== 'paymaster' &&
+      relayers &&
+      pool.scope !== null
+    ) {
+      const proved: ProvedWithdrawal = {
+        broadcaster,
+        privateOp,
+        withdrawal: readRelayedWithdrawal({
+          withdrawal: privateOp,
+          relayers,
+          entrypointAddress,
+          poolScope: pool.scope,
+          maxRelayFeeBPS: pool.maxRelayFeeBPS,
+          recipient,
+          tokenAddress,
+          amount
+        })
+      }
+      if (this.#isOfferRunningOut(proved)) throw privacyPoolsErrors.withdrawalOfferExpired()
+
+      return proved
+    }
+
+    throw new Error('privacyPools: the withdrawal came back in an unsupported form')
   }
 
   /** Drops the unsent withdrawal, so its proof is not sent later at a stale gas price. */

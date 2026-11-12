@@ -126,6 +126,8 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
       // Not the SDK's IPFS default, which needs ipfs.io up and the last root update's CID pinned
       aspServiceFactory: () =>
         new OxBowAspService({ network: host.network, aspUrl: config.aspUrl }),
+      // Empty without relayers, so the SDK refuses a relayed withdrawal rather than guess one
+      relayersList: config.relayers ?? {},
       // Not the SDK's built-in table: withdrawals are built with the adapters
       // `readPaymasterWithdrawal` checks, and reach the bundler with our key. Empty without a
       // paymaster, so the SDK refuses rather than falls back to its table.

@@ -6,6 +6,9 @@ import {
   getPrivacyPoolsTokenId,
   isPrivacyPoolsNativeAsset,
   PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY,
+  PRIVACY_POOLS_BROADCASTER_STORAGE_KEY,
+  PRIVACY_POOLS_BROADCASTERS,
+  PRIVACY_POOLS_DEFAULT_BROADCASTER,
   PRIVACY_POOLS_DEPOSIT_CHIPS,
   PRIVACY_POOLS_SUPPORTED_CHAIN_IDS
 } from '../../consts/privacyPools'
@@ -18,6 +21,7 @@ import {
   IPrivacyPoolsController,
   PrivacyPoolsAccount,
   PrivacyPoolsAccountChainState,
+  PrivacyPoolsBroadcaster,
   PrivacyPoolsChainPoolStats,
   PrivacyPoolsChainState,
   PrivacyPoolsDepositAssetConfig,
@@ -165,6 +169,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /** At most one per stored recovery phrase, and removed with it. */
   accounts: PrivacyPoolsAccount[] = []
 
+  /** Who proves and sends transfers out of Privacy Pools accounts, as the user chose. */
+  broadcaster: PrivacyPoolsBroadcaster = PRIVACY_POOLS_DEFAULT_BROADCASTER
+
   initialLoadPromise?: Promise<void>
 
   constructor({
@@ -304,6 +311,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     await this.#selectedAccount.initialLoadPromise
 
     this.accounts = await this.#storage.get(PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY, [])
+    const storedBroadcaster = await this.#storage.get(
+      PRIVACY_POOLS_BROADCASTER_STORAGE_KEY,
+      PRIVACY_POOLS_DEFAULT_BROADCASTER
+    )
+    // One no longer offered falls back to the default
+    if (PRIVACY_POOLS_BROADCASTERS.includes(storedBroadcaster)) this.broadcaster = storedBroadcaster
     // Phrases deleted while this controller was not running
     await this.#forgetAccountsOfDeletedSeeds()
 
@@ -1010,16 +1023,41 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /**
    * Proves a withdrawal without sending it, so the user sees the fee before anything is sent.
    *
-   * A single-use sender derived from the phrase submits an ERC-4337 userOp whose gas a paymaster
-   * pays, taking a fee from the withdrawn amount - so no user-owned address pays gas.
+   * Sent through `broadcaster`, which pays the gas and takes a fee from the withdrawn amount - so
+   * no user-owned address pays gas. Through 0xBow a relayer submits it; through Kohaku a single-use
+   * sender derived from the phrase submits an ERC-4337 userOp whose gas a paymaster pays.
    *
    * Not in `withStatus`: proving is long. Progress is in `operation`. Leaving the form cancels it -
    * see `PrivacyPoolsWithdrawal.dropUnsent`.
    */
-  async prepareWithdrawal(params: PrivacyPoolsWithdrawalParams): Promise<void> {
+  async prepareWithdrawal(
+    params: Omit<PrivacyPoolsWithdrawalParams, 'broadcaster'>
+  ): Promise<void> {
     const seedId = this.#assertAvailableAndGetSeedId()
 
-    await this.#withdrawal.prepare({ ...params, seedId })
+    await this.#withdrawal.prepare({ ...params, broadcaster: this.broadcaster, seedId })
+  }
+
+  /**
+   * Chooses who proves and sends transfers out of Privacy Pools accounts. Drops a transfer proved,
+   * or being proved, for the other one, which could only be sent through it.
+   */
+  async setBroadcaster(broadcaster: PrivacyPoolsBroadcaster): Promise<void> {
+    if (broadcaster === this.broadcaster) return
+
+    this.broadcaster = broadcaster
+    this.#withdrawal.dropUnsent()
+    this.emitUpdate()
+
+    try {
+      await this.#storage.set(PRIVACY_POOLS_BROADCASTER_STORAGE_KEY, broadcaster)
+    } catch (error: any) {
+      this.emitError({
+        message: 'Could not save your choice of who sends your private transfers on this device.',
+        level: 'major',
+        error: error instanceof Error ? error : new Error('privacyPools: broadcaster write failed')
+      })
+    }
   }
 
   /**

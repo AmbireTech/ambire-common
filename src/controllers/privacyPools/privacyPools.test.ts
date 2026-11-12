@@ -1,4 +1,4 @@
-import { AbiCoder, Interface, toBeHex, ZeroHash } from 'ethers'
+import { AbiCoder, Interface, makeError, toBeHex, ZeroHash } from 'ethers'
 import { EventEmitter as NodeEventEmitter } from 'events'
 
 import { expect, jest } from '@jest/globals'
@@ -17,6 +17,7 @@ import {
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { PrivacyPoolsBroadcaster } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IUiController, View } from '../../interfaces/ui'
@@ -100,6 +101,23 @@ const SIMULATION_LOGS_INTERFACE = new Interface([
 
 const WITHDRAWAL_SENDER = '0xA3a4D83896ec4b595668fA3d5430157cd235F720'
 
+/** The ETH pool's scope, which a relayed withdrawal names its pool by. */
+const ETH_POOL_SCOPE = 4321n
+/** 0.18%, as Fast Relay quotes a send of 0.1 ETH. */
+const RELAY_FEE_BPS = 18n
+const RELAYED_WITHDRAWAL_FEE = (WITHDRAWAL_AMOUNT * RELAY_FEE_BPS) / 10_000n
+const RELAYER_FEE_RECIPIENT = '0xEC15c20015e72748F03065ed80c41cb882E3fB66'
+const RELAYED_BROADCAST_RESULT = {
+  success: true,
+  timestamp: 1,
+  requestId: 'relayer-request',
+  txHash: `0x${'ab'.repeat(32)}`
+}
+const POOL_SCOPE_INTERFACE = new Interface(['function SCOPE() view returns (uint256)'])
+const RELAY_INTERFACE = new Interface([
+  'function relay((address processooor, bytes data) withdrawal, (uint256[2] pA, uint256[2][2] pB, uint256[2] pC, uint256[8] pubSignals) proof, uint256 scope)'
+])
+
 /** A pool's ragequit the way the SDK encodes it, public signals `[commitment, nullifierHash, value, label]`. */
 const encodeRagequit = (amount: bigint, label: bigint) =>
   POOL_RAGEQUIT_INTERFACE.encodeFunctionData('ragequit', [
@@ -123,6 +141,58 @@ const toFakeProof = (withdrawnValue: bigint) => ({
   pC: [7n, 8n],
   pubSignals: [11n, 12n, withdrawnValue, 14n, 15n, 16n, 17n, 18n]
 })
+
+/**
+ * A relayed withdrawal the way the SDK hands it over, proved against Fast Relay's quote, which runs
+ * out `expiresIn` from now.
+ */
+const buildPreparedRelayedWithdrawal = ({
+  expiresIn = 50_000,
+  recipient = WITHDRAWAL_RECIPIENT
+}: { expiresIn?: number; recipient?: string } = {}) => {
+  const withdrawalData = AbiCoder.defaultAbiCoder().encode(
+    ['tuple(address recipient, address feeRecipient, uint256 relayFeeBPS)'],
+    [{ recipient, feeRecipient: RELAYER_FEE_RECIPIENT, relayFeeBPS: RELAY_FEE_BPS }]
+  )
+
+  return {
+    mode: 'relayer',
+    rawData: {
+      context: 1n,
+      relayData: { recipient, feeRecipient: RELAYER_FEE_RECIPIENT, relayFeeBps: RELAY_FEE_BPS },
+      proof: {
+        proof: {
+          pi_a: ['1', '2', '1'],
+          pi_b: [
+            ['3', '4'],
+            ['5', '6'],
+            ['1', '0']
+          ],
+          pi_c: ['7', '8', '1']
+        },
+        publicSignals: ['11', '12', WITHDRAWAL_AMOUNT.toString(), '14', '15', '16', '17', '18']
+      },
+      withdrawalPayload: { processooor: ETHEREUM_ENTRYPOINT, data: withdrawalData },
+      chainId: 1n,
+      scope: ETH_POOL_SCOPE
+    },
+    txData: { to: ETHEREUM_ENTRYPOINT, data: '0x', value: 0n },
+    quoteData: {
+      quote: {
+        baseFeeBPS: '10',
+        feeBPS: RELAY_FEE_BPS.toString(),
+        gasPrice: '1',
+        feeCommitment: {
+          expiration: Date.now() + expiresIn,
+          withdrawalData,
+          signedRelayerCommitment: '0x'
+        },
+        detail: {}
+      },
+      relayerId: 'Fast Relay'
+    }
+  }
+}
 
 /**
  * A proved withdrawal the way the SDK hands it over, with the fee, recipient and amount encoded
@@ -343,7 +413,12 @@ let ragequitTxns: { to: string; data: string; value: bigint }[] | null = null
 /** Holds `ragequit` until the test releases it, when set. */
 let ragequitGate: Deferred | null = null
 /** What `prepareUnshield` returns, or null for it to fail like proving did. */
-let preparedWithdrawal: ReturnType<typeof buildPreparedWithdrawal> | null = null
+let preparedWithdrawal:
+  | ReturnType<typeof buildPreparedWithdrawal>
+  | ReturnType<typeof buildPreparedRelayedWithdrawal>
+  | null = null
+/** What a run of a relayed withdrawal throws, when set: the node's revert, or its failure. */
+let relayFailure: unknown = null
 /** What `prepareUnshield` throws instead, when set - the SDK's thunks throw plain objects, not `Error`s. */
 let prepareUnshieldFailure: unknown = null
 /** Whether `prepareUnshield` proves through the controller's prover first, as the SDK does. */
@@ -648,6 +723,13 @@ const fakeFetch = jest.fn(async (url: string) => ({
 
 /** Answers the only two reads a deposit makes: the entrypoint's asset config and an allowance. */
 const fakeProviderCall = async ({ data }: { to: string; data: string }) => {
+  if (data.startsWith(POOL_SCOPE_INTERFACE.getFunction('SCOPE')!.selector))
+    return POOL_SCOPE_INTERFACE.encodeFunctionResult('SCOPE', [ETH_POOL_SCOPE])
+  if (data.startsWith(RELAY_INTERFACE.getFunction('relay')!.selector)) {
+    if (relayFailure) throw relayFailure
+
+    return '0x'
+  }
   if (data.startsWith(ENTRYPOINT_INTERFACE.getFunction('assetConfig')!.selector)) {
     assetConfigReadCount += 1
     if (assetConfigReadFailure) throw assetConfigReadFailure
@@ -742,17 +824,23 @@ const prepareTest = async ({
   storage = new StorageController(produceMemoryStore()),
   proverFactory,
   // Adds `OTHER_CHAIN_ID` to the user's networks, with a provider
-  hasOtherChain = false
+  hasOtherChain = false,
+  // The paymaster, which most of these tests prove through. Null leaves the choice unset
+  storedBroadcaster = 'kohaku'
 }: {
   accounts?: string[]
   storage?: StorageController
   proverFactory?: PrivacyPoolsProverFactory
   hasOtherChain?: boolean
+  storedBroadcaster?: string | null
 } = {}) => {
   await storage.set(
     'privacyPoolsAccounts',
     accounts.map((seedId) => ({ seedId, createdAt: 1 }))
   )
+  // Typed loosely, to also store a choice no longer offered
+  if (storedBroadcaster !== null)
+    await storage.set('privacyPoolsBroadcaster', storedBroadcaster as PrivacyPoolsBroadcaster)
 
   const keystore = new FakeKeystore()
   const featureFlags = new FakeFeatureFlags()
@@ -910,6 +998,7 @@ describe('PrivacyPoolsController', () => {
     fakeFetch.mockClear()
     preparedDepositTarget = ETHEREUM_ENTRYPOINT
     preparedWithdrawal = null
+    relayFailure = null
     prepareUnshieldFailure = null
     isProvingOnUnshield = false
     latestBaseFee = 10n ** 8n
@@ -1153,6 +1242,7 @@ describe('PrivacyPoolsController', () => {
         [
           'accounts',
           'balances',
+          'broadcaster',
           'chains',
           'depositAssetConfigs',
           'hasPersistedSendForm',
@@ -3707,6 +3797,222 @@ describe('PrivacyPoolsController', () => {
       })
     })
   })
+  describe('choosing who sends', () => {
+    it('sends through 0xBow unless the user chose otherwise, also over a choice no longer offered', async () => {
+      const unset = await prepareTest({ storedBroadcaster: null })
+      expect(unset.controller.broadcaster).toBe('0xbow')
+
+      const unknown = await prepareTest({ storedBroadcaster: 'railgun' })
+      expect(unknown.controller.broadcaster).toBe('0xbow')
+    })
+
+    it('keeps the choice after a restart', async () => {
+      const storage = new StorageController(produceMemoryStore())
+      const { controller } = await prepareTest({ storage, storedBroadcaster: null })
+
+      await controller.setBroadcaster('kohaku')
+      expect(controller.broadcaster).toBe('kohaku')
+
+      const restarted = await prepareTest({ storage, storedBroadcaster: null })
+      expect(restarted.controller.broadcaster).toBe('kohaku')
+    })
+
+    it('drops a transfer proved for the other one, which only it could send', async () => {
+      notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH, approved: true }]
+      preparedWithdrawal = buildPreparedWithdrawal()
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+      await controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        noteLabel: 1n,
+        amount: WITHDRAWAL_AMOUNT,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+      expect(controller.operation?.phase).toBe('ready')
+
+      await controller.setBroadcaster('0xbow')
+
+      expect(controller.operation).toBeNull()
+      await expect(controller.broadcastWithdrawal()).rejects.toThrow(EmittableError)
+    })
+  })
+
+  describe('sending through the 0xBow relayers', () => {
+    beforeEach(() => {
+      notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH, approved: true }]
+      jest.mocked(createPPv1Broadcaster).mockClear()
+    })
+
+    const prepareRelayedWithdrawal = async (
+      withdrawal: ReturnType<typeof buildPreparedRelayedWithdrawal> | null = null,
+      beforePreparing: (test: Awaited<ReturnType<typeof prepareTest>>) => void = () => {}
+    ) => {
+      preparedWithdrawal = withdrawal ?? buildPreparedRelayedWithdrawal()
+      const test = await prepareTest({ storedBroadcaster: '0xbow' })
+      test.selectedAccount.select('seed-a')
+      beforePreparing(test)
+
+      await test.controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        noteLabel: 1n,
+        amount: WITHDRAWAL_AMOUNT,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+
+      return test
+    }
+
+    const OFFER_EXPIRED_ERROR =
+      'The price for sending this ran out while the transfer was being prepared. Please try again.'
+
+    it('asks the SDK for a relayed withdrawal and shows its fee as exact, without running it', async () => {
+      const { controller, providers } = await prepareRelayedWithdrawal()
+
+      expect(protocols[0]?.unshieldOptions).toEqual({ mode: 'relayer' })
+      expect(protocols[0]?.params.relayersList).toEqual(getPrivacyPoolsChainConfig(1n)!.relayers)
+      expect(controller.operation).toMatchObject({
+        broadcaster: '0xbow',
+        status: 'pending',
+        phase: 'ready',
+        quote: {
+          feeAmount: RELAYED_WITHDRAWAL_FEE,
+          amountAfterFee: WITHDRAWAL_AMOUNT - RELAYED_WITHDRAWAL_FEE,
+          expectedFeeAmount: RELAYED_WITHDRAWAL_FEE
+        }
+      })
+      // The fee is exact, so there is nothing to run for it
+      expect(providers.providers['1'].send).not.toHaveBeenCalled()
+    })
+
+    it('does not need ERC-4337 smart account features, which only Kohaku goes through', async () => {
+      const { controller } = await prepareRelayedWithdrawal(null, ({ featureFlags }) =>
+        featureFlags.set('erc4337', false)
+      )
+
+      expect(controller.operation).toMatchObject({ status: 'pending', phase: 'ready' })
+    })
+
+    it('refuses a relayed withdrawal that pays out to someone else', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareRelayedWithdrawal(
+        buildPreparedRelayedWithdrawal({ recipient: RELAYER_FEE_RECIPIENT })
+      )
+
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error: 'The transfer could not be prepared. Please try again.'
+      })
+      restore()
+    })
+
+    it('refuses an offer that runs out before the user could confirm it', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareRelayedWithdrawal(
+        buildPreparedRelayedWithdrawal({ expiresIn: 5_000 })
+      )
+
+      expect(controller.operation).toMatchObject({ status: 'failed', error: OFFER_EXPIRED_ERROR })
+      restore()
+    })
+
+    it('explains when no relayer gave a usable price', async () => {
+      const { restore } = suppressConsole()
+      prepareUnshieldFailure = new Error('All relayers failed to provide a quote')
+
+      const { controller } = await prepareRelayedWithdrawal()
+
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error:
+          'The 0xBow relayers could not take this transfer right now. Please try again in a moment, or choose Kohaku in the send settings.'
+      })
+      restore()
+    })
+
+    it('sends it to the relayers, and reads the account a few blocks on without asking for its receipt', async () => {
+      const { controller, providers } = await prepareRelayedWithdrawal()
+      const broadcast = jest.fn(async () => RELAYED_BROADCAST_RESULT)
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast } as any)
+      const syncCount = getSyncCount()
+
+      const broadcasting = controller.broadcastWithdrawal()
+      await waitUntil(() => controller.operation?.status === 'success')
+      expect(jest.mocked(createPPv1Broadcaster).mock.calls[0]![1]).toEqual({
+        broadcasterUrl: getPrivacyPoolsChainConfig(1n)!.relayers
+      })
+      expect(broadcast).toHaveBeenCalledWith(preparedWithdrawal)
+
+      // Waits for our node to pass the block it most likely lands in
+      await waitUntil(() => providers.providers['1'].getBlockNumber.mock.calls.length >= 2)
+      expect(runningSyncs).toHaveLength(0)
+      nodeBlockNumber = WITHDRAWAL_BLOCK + 3
+      await releaseSync('seed-a')
+      await broadcasting
+
+      expect(getSyncCount()).toBe(syncCount + 1)
+      // Neither the bundler nor anyone else is asked about the transaction
+      expect(getRpcProvider).not.toHaveBeenCalled()
+      expect(providers.providers['1'].send).not.toHaveBeenCalled()
+    })
+
+    describe('sent a while after it was proved', () => {
+      let now: number
+
+      beforeEach(() => {
+        now = Date.now()
+        jest.spyOn(Date, 'now').mockImplementation(() => now)
+      })
+
+      afterEach(() => {
+        jest.mocked(Date.now).mockRestore()
+      })
+
+      const STALE_ERROR = 'This transfer has expired. Go back to prepare it again.'
+
+      it('goes stale once the offer runs out, and is never sent', async () => {
+        const { controller } = await prepareRelayedWithdrawal()
+
+        // Before the recheck interval, but too close to the offer's end for the relayer
+        now += 41_000
+        await controller.broadcastWithdrawal()
+
+        expect(controller.operation).toMatchObject({ status: 'failed', error: STALE_ERROR })
+        expect(createPPv1Broadcaster).not.toHaveBeenCalled()
+      })
+
+      it('runs an older one again, and goes stale when it would now fail on chain', async () => {
+        const { controller } = await prepareRelayedWithdrawal()
+        relayFailure = makeError('execution reverted', 'CALL_EXCEPTION', {
+          action: 'call',
+          data: '0x',
+          reason: null,
+          transaction: { to: ETHEREUM_ENTRYPOINT, data: '0x' },
+          invocation: null,
+          revert: null
+        })
+
+        now += 31_000
+        await controller.recheckWithdrawal()
+
+        expect(controller.operation).toMatchObject({ status: 'failed', error: STALE_ERROR })
+      })
+
+      it('keeps an older one the node cannot run, for the relayer to check', async () => {
+        const { restore } = suppressConsole()
+        const { controller } = await prepareRelayedWithdrawal()
+        relayFailure = new Error('fetch failed')
+
+        now += 31_000
+        await controller.recheckWithdrawal()
+
+        expect(controller.operation).toMatchObject({ status: 'pending', phase: 'ready' })
+        restore()
+      })
+    })
+  })
+
   describe('cancelling a transfer', () => {
     beforeEach(() => {
       // A deposit that pays a send of WITHDRAWAL_AMOUNT

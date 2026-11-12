@@ -84,7 +84,7 @@ export const privacyPoolsErrors = {
   depositUnsupportedPool: (symbol: string, poolAddress: string) =>
     expectedError(
       `Sending ${symbol} to a Privacy Pools account is not supported yet.`,
-      `no paymaster adapter for pool ${poolAddress}`
+      `pool ${poolAddress} cannot be sent from`
     ),
   depositAwaitingChain: () =>
     expectedError(
@@ -105,15 +105,15 @@ export const privacyPoolsErrors = {
     ),
 
   // Withdrawals
-  withdrawalUnsupportedNetwork: (chainId: string) =>
+  withdrawalUnsupportedNetwork: (chainId: string, broadcaster: string) =>
     expectedError(
       'Sending from a Privacy Pools account is not available on this network yet.',
-      `no paymaster configured for chain ${chainId}`
+      `no ${broadcaster} broadcaster configured for chain ${chainId}`
     ),
   withdrawalUnsupportedToken: (symbol: string, poolAddress: string) =>
     expectedError(
       `Sending ${symbol} from a Privacy Pools account is not supported yet.`,
-      `no paymaster adapter for pool ${poolAddress}`
+      `pool ${poolAddress} cannot be sent from`
     ),
   withdrawalBundlerOptedOut: () =>
     expectedError(
@@ -144,6 +144,18 @@ export const privacyPoolsErrors = {
       level: 'expected',
       error: sdkError
     }),
+  withdrawalRelayersUnavailable: (sdkError: Error) =>
+    new EmittableError({
+      message:
+        'The 0xBow relayers could not take this transfer right now. Please try again in a moment, or choose Kohaku in the send settings.',
+      level: 'expected',
+      error: sdkError
+    }),
+  withdrawalOfferExpired: () =>
+    expectedError(
+      'The price for sending this ran out while the transfer was being prepared. Please try again.',
+      'the relayer quote expired while proving'
+    ),
   withdrawalNotReady: () =>
     expectedError('There is no transfer ready to send.', 'no prepared withdrawal'),
 

@@ -305,15 +305,25 @@ export type PrivacyPoolsHistorySession = {
  */
 export type PrivacyPoolsQuote = {
   /**
-   * The cap, in the token's units: the fee locked into the proof. The paymaster refunds what gas
-   * does not use to the recipient in the same transaction.
+   * The fee locked into the proof, in the token's units. Through Kohaku it is a cap: the paymaster
+   * refunds what gas does not use to the recipient in the same transaction. Through 0xBow it is
+   * exact.
    */
   feeAmount: bigint
   /** The least the recipient receives. */
   amountAfterFee: bigint
-  /** `feeAmount` minus the refund. Null when the simulation failed. */
+  /**
+   * `feeAmount` minus the refund, or `feeAmount` itself through 0xBow. Null when the simulation
+   * failed.
+   */
   expectedFeeAmount: bigint | null
 }
+
+/**
+ * Who sends a transfer out of a Privacy Pools account and pays its gas, for a fee taken out of it:
+ * 0xBow's relayers, which most transfers out of the pools use, or Kohaku's ERC-4337 paymaster.
+ */
+export type PrivacyPoolsBroadcaster = '0xbow' | 'kohaku'
 
 /**
  * A withdrawal's progress. The SDK reports none while it works, so these are the observable
@@ -341,6 +351,8 @@ export type PrivacyPoolsOperation = {
   isNative: boolean
   amount: bigint
   recipient: string
+  /** Who proves and sends it, as chosen when it was started. */
+  broadcaster: PrivacyPoolsBroadcaster
   status: PrivacyPoolsOperationStatus
   phase: PrivacyPoolsOperationPhase
   startedAt: number

@@ -23,7 +23,7 @@ import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
-import { PrivacyPoolsAccount } from './privacyPools'
+import { PrivacyPoolsAccount, PrivacyPoolsBroadcaster } from './privacyPools'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 import type { FeeSpeed } from './signAccountOp'
@@ -122,6 +122,8 @@ export type StorageProps = {
   privacyPoolsState: { [key: string]: string }
   /** The wallet's Privacy Pools accounts, at most one per stored recovery phrase. */
   privacyPoolsAccounts: PrivacyPoolsAccount[]
+  /** Who sends transfers out of Privacy Pools accounts, as the user chose. */
+  privacyPoolsBroadcaster: PrivacyPoolsBroadcaster
   // Other
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'

@@ -1,6 +1,7 @@
 import { Hex } from '../interfaces/hex'
 import {
   PrivacyPoolsAsset,
+  PrivacyPoolsBroadcaster,
   PrivacyPoolsChainConfig,
   PrivacyPoolsLeakId
 } from '../interfaces/privacyPools'
@@ -221,6 +222,17 @@ export const PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS = 15 * 1000
 
 /** Storage key holding the wallet's Privacy Pools accounts. */
 export const PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY = 'privacyPoolsAccounts'
+
+export const PRIVACY_POOLS_BROADCASTER_STORAGE_KEY = 'privacyPoolsBroadcaster'
+
+/**
+ * 0xBow's relayers: most transfers out of the pools go through them, so one more blends in best.
+ * Kohaku's paymaster has sent only a few so far.
+ */
+export const PRIVACY_POOLS_DEFAULT_BROADCASTER: PrivacyPoolsBroadcaster = '0xbow'
+
+/** Every broadcaster, to check a stored choice against. */
+export const PRIVACY_POOLS_BROADCASTERS: PrivacyPoolsBroadcaster[] = ['0xbow', 'kohaku']
 
 export const getPrivacyPoolsChainConfig = (chainId: bigint): PrivacyPoolsChainConfig | undefined =>
   PRIVACY_POOLS_CHAINS[chainId.toString()]
