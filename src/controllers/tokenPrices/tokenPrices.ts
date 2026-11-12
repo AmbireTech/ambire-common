@@ -463,24 +463,31 @@ export class TokenPricesController extends EventEmitter {
 
   /**
    * Reads the prices of exactly the given tokens from the network's RPC and caches every answer,
-   * including "no price". Throws, caching nothing, if the network couldn't be priced.
+   * including "no price". Pages that succeed are cached even if another page fails, after which
+   * its error is thrown, as with cena. Throws, caching nothing, if the network couldn't be priced.
    */
   async #readAndCacheRpcTokens(network: Network, tokenAddresses: string[]) {
     const provider = this.#getProvider?.(network.chainId)
     if (!provider) throw new Error(`Not connected to ${network.name} to read token prices from`)
 
-    const prices = await getRpcTokenPrices({ provider, network, tokenAddresses })
+    const { prices, error } = await getRpcTokenPrices({ provider, network, tokenAddresses })
 
     const cache = this.#getOrCreateCache(network.chainId)
     const cachedAt = Date.now()
 
     tokenAddresses.forEach((address) => {
-      const price = prices.get(getTokenDataCacheKey(address)) ?? null
-      cache.set(getTokenDataCacheKey(address), [
+      const key = getTokenDataCacheKey(address)
+      // Left out when its page failed, so that it isn't taken as having no price
+      if (!prices.has(key)) return
+
+      const price = prices.get(key) ?? null
+      cache.set(key, [
         cachedAt,
         { priceIn: price === null ? [] : [{ baseCurrency: 'usd', price }], marketDataIn: [] }
       ])
     })
+
+    if (error) throw error
   }
 
   static #toPriceRequestError(error: unknown, network: Network): Error {

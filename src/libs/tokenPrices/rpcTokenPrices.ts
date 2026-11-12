@@ -1,13 +1,14 @@
 import { formatUnits, ZeroAddress } from 'ethers'
 
 import PriceGetter from '../../../contracts/compiled/PriceGetter.json'
+import { getPrivacyPoolsChainConfig } from '../../consts/privacyPools'
 import { getRpcTokenPriceConfig, RpcTokenPriceConfig } from '../../consts/rpcTokenPrices'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import isSameAddr from '../../utils/isSameAddr'
 import { paginate } from '../../utils/paginate'
 import { fromDescriptor } from '../deployless/deployless'
-import { isKnownTokenOnChain } from '../portfolio/tokenProcessing'
+import { getFeeToken } from '../portfolio/tokenProcessing'
 
 /** Pools with less liquidity than this percentage of the token's most liquid pool are left out */
 const LIQUIDITY_THRESHOLD_PERCENT = 10n
@@ -17,13 +18,13 @@ const TOKENS_PER_CALL = 20
 const RATE_DECIMALS = 36
 /**
  * A token whose most liquid pool holds less than this much of the native token, in USD, has no
- * price, unless it's one of our known tokens. A pool that small is cheap to set up with any price,
- * which is how scam tokens show a convincing value: e.g. a drained pool left with $0.02 of ETH on
- * each side of a made-up ratio.
+ * price, unless it's one of our curated tokens (see `isCuratedToken`). A pool that small is cheap
+ * to set up with any price, which is how scam tokens show a convincing value: e.g. a drained pool
+ * left with $0.02 of ETH on each side of a made-up ratio.
  *
  * The depth is exact only for pools paired directly with the native token. For a token that trades
- * mostly against a stablecoin (e.g. USDe), it comes out far too low, which is why known tokens
- * skip this check.
+ * mostly against a stablecoin (e.g. USDe), it comes out far too low, which is why the curated
+ * tokens skip this check.
  */
 export const MIN_POOL_DEPTH_USD = 1000
 /** The native token of every network with a config has 18 decimals */
@@ -31,6 +32,16 @@ const NATIVE_DECIMALS = 18
 
 /** The USD price of each token, keyed by the lowercased address. Null when it has no price. */
 export type RpcTokenPrices = Map<string, number | null>
+
+export type RpcTokenPricesResult = {
+  /**
+   * The tokens that were answered, with a price or with "no price". Tokens in a call that failed
+   * are left out, so that they aren't taken as having no price.
+   */
+  prices: RpcTokenPrices
+  /** The first failed call, if any */
+  error: Error | null
+}
 
 type NativeUsdPrice = { answer: bigint; decimals: number }
 
@@ -54,6 +65,14 @@ type GetPricesResult = {
 /** Whether token prices can be read from the network's RPC */
 export const canGetRpcTokenPrices = (network: Network): boolean =>
   !!getRpcTokenPriceConfig(network.chainId)
+
+/**
+ * Whether the token is on one of the short lists of liquid tokens we keep for the chain: the Gas
+ * Tank fee tokens, and the assets the Privacy Pools accept
+ */
+const isCuratedToken = (address: string, chainId: bigint): boolean =>
+  !!getFeeToken(address, chainId) ||
+  !!getPrivacyPoolsChainConfig(chainId)?.assets.some((asset) => isSameAddr(asset.address, address))
 
 /** The native token and its wrapped version, both priced by the native token's feed */
 const isNativeOrWrappedNative = (address: string, network: Network): boolean =>
@@ -112,12 +131,14 @@ const getRates = async (
  * native token's price from its Chainlink feed, and every other token's price in the native
  * token from 1inch's spot price aggregator, which averages the token's DEX pools by liquidity.
  * A token that trades in no pool, or whose most liquid pool holds less than MIN_POOL_DEPTH_USD of
- * the native token (unless it's one of our known tokens), has no price. Pools far smaller than the
+ * the native token (unless it's one of our curated tokens), has no price. Pools far smaller than the
  * token's most liquid one are left out of its price.
  *
- * There is no market data (e.g. the 24h change), and only USD prices.
- * Throws if the network can't be priced: no config, or the native token's price is missing or
- * outdated.
+ * There is no market data (e.g. the 24h change), and only USD prices. The tokens are read in
+ * pages, and a page that fails doesn't cost the others their prices: its tokens are left out and
+ * the error is returned along with the rest.
+ * Throws if the network can't be priced at all: no config, or every page failed (e.g. the native
+ * token's price is missing or outdated).
  */
 export const getRpcTokenPrices = async ({
   provider,
@@ -127,7 +148,7 @@ export const getRpcTokenPrices = async ({
   provider: RPCProvider
   network: Network
   tokenAddresses: string[]
-}): Promise<RpcTokenPrices> => {
+}): Promise<RpcTokenPricesResult> => {
   const config = getRpcTokenPriceConfig(network.chainId)
   if (!config) throw new Error(`Token prices can't be read from the network on ${network.name}`)
 
@@ -163,36 +184,54 @@ export const getRpcTokenPrices = async ({
     : []
   // Every call reads the native token's price; one with no tokens reads only that
   const pages = tokensToRate.length ? paginate(tokensToRate, TOKENS_PER_CALL) : [[]]
-  const results = await Promise.all(pages.map((page) => getRates(call, page, network)))
-  const { nativeUsdPrice } = results[0]!
+  const settledPages = await Promise.allSettled(pages.map((page) => getRates(call, page, network)))
+  const firstFailure = settledPages.find(
+    (result): result is PromiseRejectedResult => result.status === 'rejected'
+  )
+  const answeredPages = pages.flatMap((page, pageIndex) => {
+    const settled = settledPages[pageIndex]!
+    return settled.status === 'fulfilled' ? [{ page, result: settled.value }] : []
+  })
+  if (!answeredPages.length) throw firstFailure!.reason
+
+  const { nativeUsdPrice } = answeredPages[0]!.result
   const nativePrice = Number(formatUnits(nativeUsdPrice.answer, nativeUsdPrice.decimals))
   const hasEnoughLiquidity = (address: string, { poolDepth, isNative }: TokenRate) =>
     isNative ||
-    isKnownTokenOnChain(address, network.chainId) ||
+    isCuratedToken(address, network.chainId) ||
     Number(formatUnits(poolDepth, NATIVE_DECIMALS)) * nativePrice >= MIN_POOL_DEPTH_USD
 
-  const priceByAddress = new Map<string, number>()
-  pages.forEach((page, pageIndex) => {
-    page.forEach((address, index) => {
-      const rate = results[pageIndex]!.rates[index]!
-      const { rateToNative, decimals } = rate
-      if (!rateToNative || !hasEnoughLiquidity(address, rate)) return
+  const getPrice = (address: string, rate: TokenRate): number | null => {
+    const { rateToNative, decimals } = rate
+    if (!rateToNative || !hasEnoughLiquidity(address, rate)) return null
 
-      // The rate times the native price, in a single division so that no precision is lost
-      const price = formatUnits(
+    // The rate times the native price, in a single division so that no precision is lost
+    return Number(
+      formatUnits(
         rateToNative * 10n ** BigInt(decimals) * nativeUsdPrice.answer,
         RATE_DECIMALS + nativeUsdPrice.decimals
       )
-      priceByAddress.set(address.toLowerCase(), Number(price))
+    )
+  }
+
+  const prices: RpcTokenPrices = new Map()
+  answeredPages.forEach(({ page, result }) => {
+    page.forEach((address, index) => {
+      prices.set(address.toLowerCase(), getPrice(address, result.rates[index]!))
     })
   })
+  tokenAddresses.forEach((address) => {
+    if (isNativeOrWrappedNative(address, network)) prices.set(address.toLowerCase(), nativePrice)
+    // Without the aggregator only the native token is priced: the rest have no price
+    else if (!config.spotPriceOracle) prices.set(address.toLowerCase(), null)
+  })
 
-  return new Map(
-    tokenAddresses.map((address) => [
-      address.toLowerCase(),
-      isNativeOrWrappedNative(address, network)
-        ? nativePrice
-        : (priceByAddress.get(address.toLowerCase()) ?? null)
-    ])
-  )
+  return {
+    prices,
+    error: firstFailure
+      ? firstFailure.reason instanceof Error
+        ? firstFailure.reason
+        : new Error(`Failed to read some token prices on ${network.name}`)
+      : null
+  }
 }

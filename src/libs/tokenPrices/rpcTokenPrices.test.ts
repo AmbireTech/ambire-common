@@ -76,7 +76,7 @@ describe('getRpcTokenPrices', () => {
       // 0.0005 ETH per token unit of a 6 decimals token: scaled by 1e18 and by 1e(18 - 6)
       mockContract({ rateOf: () => ({ rateToNative: 5n * 10n ** 26n, decimals: 6 }) })
 
-      const prices = await getRpcTokenPrices({
+      const { prices } = await getRpcTokenPrices({
         provider,
         network: ethereum,
         tokenAddresses: [USDC]
@@ -88,7 +88,7 @@ describe('getRpcTokenPrices', () => {
     test('prices the native and wrapped native tokens by the feed alone', async () => {
       mockContract()
 
-      const prices = await getRpcTokenPrices({
+      const { prices } = await getRpcTokenPrices({
         provider,
         network: ethereum,
         tokenAddresses: [ZeroAddress, WETH]
@@ -105,7 +105,7 @@ describe('getRpcTokenPrices', () => {
       const poolDepth = (BigInt(MIN_POOL_DEPTH_USD) * 10n ** 18n * 99n) / 2000n / 100n
       mockContract({ rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18, poolDepth }) })
 
-      const prices = await getRpcTokenPrices({
+      const { prices } = await getRpcTokenPrices({
         provider,
         network: ethereum,
         tokenAddresses: [TOKEN_1]
@@ -118,7 +118,7 @@ describe('getRpcTokenPrices', () => {
       const poolDepth = (BigInt(MIN_POOL_DEPTH_USD) * 10n ** 18n) / 2000n
       mockContract({ rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18, poolDepth }) })
 
-      const prices = await getRpcTokenPrices({
+      const { prices } = await getRpcTokenPrices({
         provider,
         network: ethereum,
         tokenAddresses: [TOKEN_1]
@@ -127,20 +127,68 @@ describe('getRpcTokenPrices', () => {
       expect(prices.get(TOKEN_1)).toBe(2)
     })
 
-    test('prices one of our known tokens even when its pools look shallow', async () => {
+    test('prices one of our fee tokens even when its pools look shallow', async () => {
+      // A stablecoin traded mostly against other stablecoins, where the depth comes out too low
+      mockContract({
+        rateOf: () => ({ rateToNative: 5n * 10n ** 26n, decimals: 6, poolDepth: 0n })
+      })
+
+      const { prices } = await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [USDC]
+      })
+
+      expect(prices.get(USDC.toLowerCase())).toBe(1)
+    })
+
+    test('prices a Privacy Pools asset even when its pools look shallow', async () => {
       // USDe trades mostly against stablecoins, where the depth comes out far too low
       const USDE = '0x4c9EDD5852cd905f086C759E8383e09bff1E68B3'
       mockContract({
         rateOf: () => ({ rateToNative: 5n * 10n ** 14n, decimals: 18, poolDepth: 0n })
       })
 
-      const prices = await getRpcTokenPrices({
+      const { prices } = await getRpcTokenPrices({
         provider,
         network: ethereum,
-        tokenAddresses: [USDE]
+        tokenAddresses: [USDE.toLowerCase()]
       })
 
       expect(prices.get(USDE.toLowerCase())).toBe(1)
+    })
+
+    test('applies the floor to a token on our naming list that is neither curated list', async () => {
+      // CHAI: on the humanizer's list of known addresses, which is for naming and isn't kept
+      // liquid (CHAI is deprecated)
+      const CHAI = '0x06AF07097C9Eeb7fD685c692751D5C66dB49c215'
+      mockContract({
+        rateOf: () => ({ rateToNative: 5n * 10n ** 14n, decimals: 18, poolDepth: 0n })
+      })
+
+      const { prices } = await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [CHAI]
+      })
+
+      expect(prices.get(CHAI.toLowerCase())).toBeNull()
+    })
+
+    test('applies the floor to a Privacy Pools asset on a chain it is not accepted on', async () => {
+      const USDE = '0x4c9EDD5852cd905f086C759E8383e09bff1E68B3'
+      mockContract({
+        rateOf: () => ({ rateToNative: 5n * 10n ** 14n, decimals: 18, poolDepth: 0n })
+      })
+      const baseNetwork = networks.find(({ chainId }) => chainId === 8453n)!
+
+      const { prices } = await getRpcTokenPrices({
+        provider,
+        network: baseNetwork,
+        tokenAddresses: [USDE]
+      })
+
+      expect(prices.get(USDE.toLowerCase())).toBeNull()
     })
 
     test('prices a token that wraps the native token without checking its pools', async () => {
@@ -148,7 +196,7 @@ describe('getRpcTokenPrices', () => {
         rateOf: () => ({ rateToNative: 10n ** 18n, decimals: 18, poolDepth: 0n, isNative: true })
       })
 
-      const prices = await getRpcTokenPrices({
+      const { prices } = await getRpcTokenPrices({
         provider,
         network: ethereum,
         tokenAddresses: [TOKEN_1]
@@ -160,7 +208,7 @@ describe('getRpcTokenPrices', () => {
     test('reports a token with a rate of 0 as having no price', async () => {
       mockContract()
 
-      const prices = await getRpcTokenPrices({
+      const { prices } = await getRpcTokenPrices({
         provider,
         network: ethereum,
         tokenAddresses: [TOKEN_1]
@@ -175,7 +223,7 @@ describe('getRpcTokenPrices', () => {
         checkedPerCall: 2
       })
 
-      const prices = await getRpcTokenPrices({
+      const { prices } = await getRpcTokenPrices({
         provider,
         network: ethereum,
         tokenAddresses: [TOKEN_1, TOKEN_2, TOKEN_3]
@@ -187,6 +235,41 @@ describe('getRpcTokenPrices', () => {
       ])
       // 0.001 ETH at $2000
       ;[TOKEN_1, TOKEN_2, TOKEN_3].forEach((token) => expect(prices.get(token)).toBe(2))
+    })
+
+    test('keeps the prices of the pages that succeed when another page fails', async () => {
+      mockContract({ rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18 }) })
+      const pricedCall = callSpy.getMockImplementation()!
+      // The second page of 20 tokens fails, e.g. it times out
+      callSpy.mockImplementation(async (method: string, args: any[]) => {
+        if (args[2].includes(TOKEN_2)) throw new Error('rpc-timeout')
+        return pricedCall(method, args)
+      })
+      const firstPage = Array.from(
+        { length: 20 },
+        (_, i) => `0x${(i + 16).toString(16).padStart(40, '0')}`
+      )
+
+      const { prices, error } = await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [ZeroAddress, ...firstPage, TOKEN_2]
+      })
+
+      expect(error?.message).toBe('rpc-timeout')
+      firstPage.forEach((token) => expect(prices.get(token)).toBe(2))
+      expect(prices.get(ZeroAddress)).toBe(2000)
+      // Left out rather than taken as having no price
+      expect(prices.has(TOKEN_2)).toBe(false)
+    })
+
+    test('throws when every page fails', async () => {
+      mockContract()
+      callSpy.mockRejectedValue(new Error('rpc-timeout'))
+
+      await expect(
+        getRpcTokenPrices({ provider, network: ethereum, tokenAddresses: [TOKEN_1] })
+      ).rejects.toThrow('rpc-timeout')
     })
 
     test('throws when not a single token price fits in the gas of a call', async () => {
@@ -218,7 +301,7 @@ describe('getRpcTokenPrices', () => {
     test('prices only the native token on a network without the price aggregator', async () => {
       mockContract({ rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18 }) })
 
-      const prices = await getRpcTokenPrices({
+      const { prices } = await getRpcTokenPrices({
         provider,
         network: scroll,
         tokenAddresses: [ZeroAddress, TOKEN_1]
@@ -246,7 +329,7 @@ describe('getRpcTokenPrices', () => {
       const USDE = '0x4c9EDD5852cd905f086C759E8383e09bff1E68B3'
 
       try {
-        const prices = await getRpcTokenPrices({
+        const { prices } = await getRpcTokenPrices({
           provider,
           network: ethereum,
           tokenAddresses: [ZeroAddress, WETH, USDC, USDE, DEAD]
@@ -256,7 +339,7 @@ describe('getRpcTokenPrices', () => {
         expect(prices.get(WETH.toLowerCase())).toBe(prices.get(ZeroAddress))
         expect(prices.get(USDC.toLowerCase())).toBeGreaterThan(0.95)
         expect(prices.get(USDC.toLowerCase())).toBeLessThan(1.05)
-        // A known token, priced although its pools (against stablecoins) look shallow
+        // A Privacy Pools asset, priced although its pools (against stablecoins) look shallow
         expect(prices.get(USDE.toLowerCase())).toBeGreaterThan(0.95)
         expect(prices.get(USDE.toLowerCase())).toBeLessThan(1.05)
         expect(prices.get(DEAD.toLowerCase())).toBeNull()
@@ -274,7 +357,7 @@ describe('getRpcTokenPrices', () => {
       const AERO = '0x940181a94A35A4569E4529A3CDfB74e38FD98631'
 
       try {
-        const prices = await getRpcTokenPrices({
+        const { prices } = await getRpcTokenPrices({
           provider,
           network: baseNetwork,
           tokenAddresses: [FORTUNE, CZ, AERO]
@@ -293,7 +376,7 @@ describe('getRpcTokenPrices', () => {
       const SCROLL_USDC = '0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4'
 
       try {
-        const prices = await getRpcTokenPrices({
+        const { prices } = await getRpcTokenPrices({
           provider,
           network: scroll,
           tokenAddresses: [ZeroAddress, SCROLL_USDC]

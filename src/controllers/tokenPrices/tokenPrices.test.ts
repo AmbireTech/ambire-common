@@ -372,14 +372,15 @@ describe('TokenPricesController', () => {
 
     /** Prices every requested token at `price`, except the ones in `unpriced` */
     const mockRpcPrices = ({ price = 5, unpriced = [] as string[] } = {}) =>
-      getRpcTokenPricesSpy.mockImplementation(async ({ tokenAddresses }) => {
-        return new Map(
+      getRpcTokenPricesSpy.mockImplementation(async ({ tokenAddresses }) => ({
+        prices: new Map(
           tokenAddresses.map((address) => [
             address.toLowerCase(),
             unpriced.includes(address.toLowerCase()) ? null : price
           ])
-        )
-      })
+        ),
+        error: null
+      }))
 
     const createRpcController = (fetch: any) =>
       new TokenPricesController({
@@ -440,6 +441,34 @@ describe('TokenPricesController', () => {
       expect(getRpcTokenPricesSpy).toHaveBeenCalledTimes(2)
     })
 
+    test('never asks cena while opted out, whatever the network, currency or failure', async () => {
+      const { fetch } = createPriceFetch()
+      const controller = createRpcController(fetch)
+      const networkWithoutRpcConfig = { ...base, chainId: 123456789n }
+      const now = Date.now()
+      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(now)
+
+      // The network the Privacy Pools assets are on
+      await controller.getTokenData({ network: ethereum, tokenAddresses: [TOKEN_1] })
+      // A network cena could price but the RPC can't
+      await controller.getTokenData({ network: networkWithoutRpcConfig, tokenAddresses: [TOKEN_1] })
+      // A currency only cena has
+      await controller.getTokenData({
+        network: base,
+        tokenAddresses: [TOKEN_2],
+        baseCurrency: 'eur'
+      })
+      // The RPC failing, once the cached prices are stale
+      getRpcTokenPricesSpy.mockRejectedValue(new Error('the RPC is down'))
+      dateSpy.mockReturnValue(now + 6 * MINUTE)
+      await controller.getTokenData({ network: ethereum, tokenAddresses: [TOKEN_1, TOKEN_3] })
+      // Cached lookups, e.g. the NFT collection prices
+      controller.getCachedTokenData(base.chainId, TOKEN_1)
+      dateSpy.mockRestore()
+
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
     test('carries no Privacy Pools assets', async () => {
       const controller = createRpcController(createPriceFetch().fetch)
 
@@ -465,6 +494,26 @@ describe('TokenPricesController', () => {
       expect(error?.message).toBe('the RPC is down')
       expect(tokenData.has(TOKEN_1)).toBe(true)
       expect(tokenData.has(TOKEN_2)).toBe(false)
+    })
+
+    test('caches the tokens of the pages that succeeded and returns the error of the one that failed', async () => {
+      getRpcTokenPricesSpy.mockResolvedValue({
+        prices: new Map([[TOKEN_1, 5]]),
+        error: new Error('rpc-timeout')
+      })
+      const controller = createRpcController(createPriceFetch().fetch)
+
+      const { tokenData, error } = await controller.getTokenData({
+        network: base,
+        tokenAddresses: [TOKEN_1, TOKEN_2]
+      })
+
+      expect(error?.message).toBe('rpc-timeout')
+      expect(tokenData.get(TOKEN_1)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 5 }])
+      // TOKEN_2's page failed, so it's asked for again rather than cached as having no price
+      mockRpcPrices()
+      await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1, TOKEN_2] })
+      expect(getRpcTokenPricesSpy.mock.calls[1]![0].tokenAddresses).toEqual([TOKEN_2])
     })
 
     test('returns an error when the network has no provider', async () => {

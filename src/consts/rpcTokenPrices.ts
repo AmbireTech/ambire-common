@@ -1,6 +1,9 @@
 /** What reading token prices from a network's RPC needs */
 export type RpcTokenPriceConfig = {
-  /** The Chainlink feed of the native token's USD price */
+  /**
+   * The feed of the native token's USD price: Chainlink's, or another provider's that answers the
+   * same way (`latestRoundData` and `decimals`)
+   */
   nativeUsdFeed: string
   /**
    * A native token price older than this is not used. The feed's heartbeat (how often it updates
@@ -97,6 +100,73 @@ export const RPC_TOKEN_PRICE_CONFIGS: { [chainId: string]: RpcTokenPriceConfig }
   '4663': {
     nativeUsdFeed: '0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9',
     nativeUsdFeedMaxAgeSeconds: 86400 + SLACK_SECONDS
+  },
+  // Celo, CELO / USD. 1inch's aggregator isn't deployed here.
+  '42220': {
+    nativeUsdFeed: '0x0568fD19986748cEfF3301e55c0eb1E729E0Ab7e',
+    nativeUsdFeedMaxAgeSeconds: 240 + SLACK_SECONDS
+  },
+  // Metis, METIS / USD. 1inch's aggregator isn't deployed here.
+  '1088': {
+    nativeUsdFeed: '0xD4a5Bb03B5D66d9bf81507379302Ac2C2DFDFa6D',
+    nativeUsdFeedMaxAgeSeconds: 86400 + SLACK_SECONDS
+  },
+  // HyperEVM, HYPE / USD. 1inch's aggregator isn't deployed here.
+  '999': {
+    nativeUsdFeed: '0xa5a72eF19F82A579431186402425593a559ed352',
+    nativeUsdFeedMaxAgeSeconds: 86400 + SLACK_SECONDS
+  },
+  // Monad, MON / USD. 1inch's aggregator isn't deployed here.
+  '143': {
+    nativeUsdFeed: '0xBcD78f76005B7515837af6b50c7C52BCf73822fb',
+    nativeUsdFeedMaxAgeSeconds: 3600 + SLACK_SECONDS
+  },
+  // MegaETH, ETH / USD. 1inch's aggregator isn't deployed here.
+  '4326': {
+    nativeUsdFeed: '0xcA4e254D95637DE95E2a2F79244b03380d697feD',
+    nativeUsdFeedMaxAgeSeconds: 86400 + SLACK_SECONDS
+  },
+  // Plasma, XPL / USD. 1inch's aggregator isn't deployed here.
+  '9745': {
+    nativeUsdFeed: '0xF932477C37715aE6657Ab884414Bd9876FE3f750',
+    nativeUsdFeedMaxAgeSeconds: 86400 + SLACK_SECONDS
+  },
+  // Katana, ETH / USD. 1inch's aggregator isn't deployed here.
+  '747474': {
+    nativeUsdFeed: '0x7BdBDB772f4a073BadD676A567C6ED82049a8eEE',
+    nativeUsdFeedMaxAgeSeconds: 86400 + SLACK_SECONDS
+  },
+  // Arc, USDC / USD, as its native token is USDC. 1inch's aggregator isn't deployed here.
+  '5042': {
+    nativeUsdFeed: '0x84EA90AC252Dc437031461836DB5164219147905',
+    nativeUsdFeedMaxAgeSeconds: 86400 + SLACK_SECONDS
+  },
+  // Berachain, BERA / USD from RedStone (multi-feed). 1inch's aggregator isn't deployed here.
+  '80094': {
+    nativeUsdFeed: '0x29d2fEC890B037B2d34f061F9a50f76F85ddBcAE',
+    nativeUsdFeedMaxAgeSeconds: 21600 + SLACK_SECONDS
+  },
+  // Etherlink, XTZ / USD from RedStone, updated every few seconds. 1inch's aggregator isn't
+  // deployed here.
+  '42793': {
+    nativeUsdFeed: '0xe92c00BC72dD12e26E61212c04E8D93aa09624F2',
+    nativeUsdFeedMaxAgeSeconds: SLACK_SECONDS
+  },
+  // Somnia, SOMI / USD from API3. 1inch's aggregator isn't deployed here.
+  '5031': {
+    nativeUsdFeed: '0x3fCD429c7b492Be06066DA84E9885c720a2B71c2',
+    nativeUsdFeedMaxAgeSeconds: 86400 + SLACK_SECONDS
+  },
+  // Citrea, BTC / USD from RedStone (multi-feed), as cBTC is pegged to BTC. 1inch's aggregator
+  // isn't deployed here.
+  '4114': {
+    nativeUsdFeed: '0xc555c100DB24dF36D406243642C169CC5A937f09',
+    nativeUsdFeedMaxAgeSeconds: 21600 + SLACK_SECONDS
+  },
+  // Kaia, KAIA / USD from RedStone (multi-feed). 1inch's aggregator isn't deployed here.
+  '8217': {
+    nativeUsdFeed: '0xa2F3430ac9cfc37aEF88449DADf36af676211A64',
+    nativeUsdFeedMaxAgeSeconds: 43200 + SLACK_SECONDS
   },
   // Scroll, ETH / USD. 1inch's aggregator isn't deployed here.
   '534352': {
