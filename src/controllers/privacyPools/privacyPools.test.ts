@@ -5117,7 +5117,7 @@ describe('PrivacyPoolsController', () => {
       await controller.prepareWithdrawal({ ...ETH_TRANSFER, amount: WITHDRAWAL_AMOUNT })
 
       expect(controller.operation?.phase).toBe('ready')
-      expect(controller.operation?.privacy?.rating).toBe('traceable')
+      expect(controller.operation?.privacy?.rating).toBe('weak')
       expect(controller.operation?.privacy?.leaks.map(({ id }) => id)).toContain(
         'send-to-depositor'
       )

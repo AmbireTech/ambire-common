@@ -14,22 +14,30 @@ const findBetterCommonAmount = ({ amount, commonAmountCovers }: WithdrawalFacts,
     (commonAmountCover) => commonAmountCover.cover.sameAmount > least
   )
 
+type DepositorSendFacts = Pick<WithdrawalFacts, 'spends' | 'recipient'>
+
 const isToDepositor = ({ note }: PrivacyPoolsNoteSpend, recipient: string | null) =>
   !!recipient && note.depositorAddr.toLowerCase() === recipient.toLowerCase()
+
+/** Part of a deposit no send has touched goes back, so its rest can be matched to later sends. */
+const isPartOfUnsentDepositToDepositor = ({ spends, recipient }: DepositorSendFacts) =>
+  spends.some(
+    (spend) =>
+      isToDepositor(spend, recipient) &&
+      spend.note.withdrawCount === 0 &&
+      spend.amount < spend.note.amount
+  )
+
+/** Any of a deposit that earlier sends took part of goes back, which links those sends to it. */
+const isPartlySentDepositToDepositor = ({ spends, recipient }: DepositorSendFacts) =>
+  spends.some((spend) => isToDepositor(spend, recipient) && spend.note.withdrawCount > 0)
 
 /**
  * Sending a whole deposit back that no send has touched is fine, as it leaves nothing to link
  * later. Anything else lets the rest of the deposit be matched to the depositor's other sends.
  */
-const isRevealingSendToDepositor = ({
-  spends,
-  recipient
-}: Pick<WithdrawalFacts, 'spends' | 'recipient'>) =>
-  spends.some(
-    (spend) =>
-      isToDepositor(spend, recipient) &&
-      (spend.amount < spend.note.amount || spend.note.withdrawCount > 0)
-  )
+const isRevealingSendToDepositor = (facts: DepositorSendFacts) =>
+  isPartOfUnsentDepositToDepositor(facts) || isPartlySentDepositToDepositor(facts)
 
 /**
  * The amount that sends all of the deposit this send takes only part of. Undefined when that
@@ -83,18 +91,27 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
       return [setAmountAction(commonAmountCover.amount, COMMON_AMOUNT_LABEL)]
     }
   },
+  // Warnings, as the rest of the deposit and the other sends can still hide behind common amounts
   {
     id: 'send-to-depositor',
-    type: 'error',
-    title: 'Sending part of your deposit back here makes the rest easier to trace',
-    text: 'Anyone can see this address made the deposit, so the remainder of the deposit is easy to match to your other sends. Send the whole deposit, or change the recipient.',
-    applies: isRevealingSendToDepositor,
+    type: 'warning',
+    title: 'Sending part of your deposit back here can make the rest easier to trace',
+    text: 'Anyone can see this address made the deposit, so the rest of it may be matched to your other sends, mostly when their amounts are unusual. Send the whole deposit, or change the recipient.',
+    applies: isPartOfUnsentDepositToDepositor,
     getActions: (facts) => {
       const wholeDepositAmount = findWholeDepositAmount(facts)
       if (wholeDepositAmount === undefined) return []
 
       return [setAmountAction(wholeDepositAmount, WHOLE_DEPOSIT_LABEL)]
     }
+  },
+  // No amount fixes it, as the part sent earlier can't be sent back whole
+  {
+    id: 'send-rest-to-depositor',
+    type: 'warning',
+    title: 'This address made the deposit, so sending here may link your earlier sends to you',
+    text: 'Anyone can see this address made the deposit. Part of it was already sent elsewhere, so sending more of it here can help match those sends to you, mostly when their amounts are unusual. Send to a different address.',
+    applies: isPartlySentDepositToDepositor
   },
   // TODO: bring these two back once each deposit shows as its own balance and the SDK keeps part
   // of each deposit it spends (`obfuscateAmounts`, kohaku#388). Until then the user can see

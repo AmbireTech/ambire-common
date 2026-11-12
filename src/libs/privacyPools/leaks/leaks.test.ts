@@ -273,7 +273,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
     test('is a leak to send part of an unsent deposit back', () => {
       const privacy = getWithdrawalPrivacy({ amount: 40n, notes: [note()], recipient: DEPOSITOR })
 
-      expect(privacy.rating).toBe('traceable')
+      expect(privacy.rating).toBe('weak')
       expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [100n] }])
     })
 
@@ -295,7 +295,10 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         recipient: DEPOSITOR
       })
 
-      expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [] }])
+      expect(summarizeLeaks(privacy)).toEqual([
+        { id: 'send-to-depositor', amounts: [] },
+        { id: 'send-rest-to-depositor', amounts: [] }
+      ])
     })
 
     test('checks only the amount before a recipient is entered', () => {
@@ -313,7 +316,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         recipient: DEPOSITOR.toUpperCase().replace('0X', '0x')
       })
 
-      expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [] }])
+      expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-rest-to-depositor', amounts: [] }])
     })
 
     test('is a leak to send all of a partly sent deposit back', () => {
@@ -324,7 +327,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         recipient: DEPOSITOR
       })
 
-      expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [] }])
+      expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-rest-to-depositor', amounts: [] }])
     })
 
     test('is not a leak to send all of an unsent deposit back', () => {

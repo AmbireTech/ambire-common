@@ -387,8 +387,10 @@ export type PrivacyPoolsOperationStatus = 'pending' | 'success' | 'failed'
 export type PrivacyPoolsLeakId =
   /** The send spends a whole deposit whose amount no other deposit has. */
   | 'unique-amount'
-  /** The send goes back to the address a deposit came from, and not as a whole untouched deposit. */
+  /** The send takes part of an untouched deposit back to the address it came from. */
   | 'send-to-depositor'
+  /** The send takes any of a deposit that earlier sends took part of back to where it came from. */
+  | 'send-rest-to-depositor'
   /** The send uses up a deposit that earlier sends already took part of. */
   | 'empties-partly-sent-deposit'
   /** No deposit has put this amount into the pool yet. */
