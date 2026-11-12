@@ -33,7 +33,6 @@ export type WithdrawalFacts = {
 export type DepositFacts = {
   amount: bigint
   maxAmount: bigint
-  sameAmount: number
   depositIndex: PrivacyPoolsDepositIndex
   commonAmounts: bigint[]
 }

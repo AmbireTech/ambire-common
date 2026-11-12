@@ -133,9 +133,7 @@ export const getPrivacyPoolsDepositPrivacy = ({
   const sameAmount = countPrivacyPoolsDepositsOf(depositIndex.recent, amount)
   // No amount yet, so there is nothing to warn about
   const leaks =
-    amount > 0n
-      ? findLeaks(DEPOSIT_LEAKS, { amount, maxAmount, sameAmount, depositIndex, commonAmounts })
-      : []
+    amount > 0n ? findLeaks(DEPOSIT_LEAKS, { amount, maxAmount, depositIndex, commonAmounts }) : []
 
   return { rating: getRating(leaks), leaks, sameAmount }
 }

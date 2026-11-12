@@ -1,8 +1,9 @@
 import { countPrivacyPoolsDepositsOf } from '../poolStats'
-import { countOthers, findNearest, setAmountAction } from './helpers'
+import { countOthers, findNearest, getPrivacyPoolsNotesToSpend, setAmountAction } from './helpers'
 import { DepositFacts, LeakRule, PrivacyPoolsNoteSpend, WithdrawalFacts } from './types'
 
 const COMMON_AMOUNT_LABEL = 'Use a common amount'
+const WHOLE_DEPOSIT_LABEL = 'Send the whole deposit'
 
 /** The common amount nearest to the send's that more than `least` deposits have exactly. */
 const findBetterCommonAmount = ({ amount, commonAmountCovers }: WithdrawalFacts, least: number) =>
@@ -18,14 +19,40 @@ const isToDepositor = ({ note }: PrivacyPoolsNoteSpend, recipient: string | null
 
 /**
  * Sending a whole deposit back that no send has touched is fine, as it leaves nothing to link
- * later. Anything else reveals that the deposit is still the depositor's.
+ * later. Anything else lets the rest of the deposit be matched to the depositor's other sends.
  */
-const isRevealingSendToDepositor = ({ spends, recipient }: WithdrawalFacts) =>
+const isRevealingSendToDepositor = ({
+  spends,
+  recipient
+}: Pick<WithdrawalFacts, 'spends' | 'recipient'>) =>
   spends.some(
     (spend) =>
       isToDepositor(spend, recipient) &&
       (spend.amount < spend.note.amount || spend.note.withdrawCount > 0)
   )
+
+/**
+ * The amount that sends all of the deposit this send takes only part of. Undefined when that
+ * still reveals the depositor, as for a deposit that earlier sends already took part of.
+ */
+const findWholeDepositAmount = ({
+  amount,
+  notes,
+  tokenAddress,
+  spends,
+  recipient
+}: WithdrawalFacts) => {
+  // Every spend but the last takes its whole deposit, as the SDK spends them in that order
+  const lastSpend = spends[spends.length - 1]
+  if (!lastSpend || lastSpend.amount === lastSpend.note.amount) return undefined
+
+  const wholeDepositAmount = amount + lastSpend.note.amount - lastSpend.amount
+  const wholeDepositSpends = getPrivacyPoolsNotesToSpend(notes, tokenAddress, wholeDepositAmount)
+  if (!wholeDepositSpends || isRevealingSendToDepositor({ spends: wholeDepositSpends, recipient }))
+    return undefined
+
+  return wholeDepositAmount
+}
 
 /**
  * The leaks a send can have. Written worst first (error, warning, info), which is the order the
@@ -35,8 +62,8 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
   {
     id: 'unique-amount',
     type: 'error',
-    title: 'This amount matches only your deposit',
-    text: 'Nobody else has deposited this amount. This transfer will be linked to the address you deposited from, and to everything that address did.',
+    title: 'Only you deposited this amount, making this send traceable',
+    text: 'Anyone can match a send to a deposit of the same unique amount, which links the recipient to the address you deposited from. Send a common amount so it blends in.',
     // Counts all deposits, not only recent ones, as an older deposit of the same amount by
     // someone else still hides this one
     applies: ({ spends, depositIndex, ownDepositValues }) =>
@@ -59,9 +86,15 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
   {
     id: 'send-to-depositor',
     type: 'error',
-    title: 'This is the address you deposited from',
-    text: 'Sending here shows the deposit is still yours. It also links this transfer and any earlier ones from this deposit to that address.',
-    applies: isRevealingSendToDepositor
+    title: 'Sending part of your deposit back here makes the rest easier to trace',
+    text: 'Anyone can see this address made the deposit, so the remainder of the deposit is easy to match to your other sends. Send the whole deposit, or change the recipient.',
+    applies: isRevealingSendToDepositor,
+    getActions: (facts) => {
+      const wholeDepositAmount = findWholeDepositAmount(facts)
+      if (wholeDepositAmount === undefined) return []
+
+      return [setAmountAction(wholeDepositAmount, WHOLE_DEPOSIT_LABEL)]
+    }
   },
   // TODO: bring these two back once each deposit shows as its own balance and the SDK keeps part
   // of each deposit it spends (`obfuscateAmounts`, kohaku#388). Until then the user can see
@@ -85,8 +118,8 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
   {
     id: 'fresh-deposit',
     type: 'warning',
-    title: 'Consider waiting a day',
-    text: 'Few people have deposited since you did, so sending now makes the timing easier to match.',
+    title: 'This deposit is less than a day old, making it easier to link to you',
+    text: 'Anyone can see when you deposited and when you send, and a send soon after a deposit is an easy match. Wait a day or more, so more people deposit in between.',
     applies: ({ spends, depositIndex }) =>
       spends.some(({ note }) => note.blockNumber > depositIndex.freshAfterBlock)
   }
@@ -100,9 +133,10 @@ export const DEPOSIT_LEAKS: LeakRule<DepositFacts>[] = [
   {
     id: 'unusual-deposit-amount',
     type: 'info',
-    title: 'Nobody else has deposited this amount',
-    text: 'This is fine if you later send other amounts. Sending all of it in one transfer would link it to you.',
-    applies: ({ sameAmount }) => sameAmount === 0,
+    title: 'No one else has deposited this amount, so it stands out',
+    text: 'You can still send it privately, just never all of it in one send, as that points straight back to this deposit. A common amount makes it harder to make mistakes later.',
+    // Counts all deposits, not only recent ones, the same as `unique-amount` does for the send
+    applies: ({ amount, depositIndex }) => countPrivacyPoolsDepositsOf(depositIndex, amount) === 0,
     getActions: ({ amount, maxAmount, depositIndex, commonAmounts }) => {
       const commonAmount = findNearest(
         amount,

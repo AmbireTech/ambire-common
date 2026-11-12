@@ -274,6 +274,27 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       const privacy = getWithdrawalPrivacy({ amount: 40n, notes: [note()], recipient: DEPOSITOR })
 
       expect(privacy.rating).toBe('traceable')
+      expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [100n] }])
+    })
+
+    test('suggests the whole of the deposit taken part of, after the ones taken whole', () => {
+      const privacy = getWithdrawalPrivacy({
+        amount: 120n,
+        notes: [note(), note({ amount: 50n, depositValue: 50n })],
+        recipient: DEPOSITOR
+      })
+
+      expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [150n] }])
+    })
+
+    test('suggests nothing when a deposit that earlier sends took part of still goes back', () => {
+      // The whole of the untouched 50 would still send the partly sent 60 back
+      const privacy = getWithdrawalPrivacy({
+        amount: 80n,
+        notes: [note({ amount: 60n, withdrawCount: 1 }), note({ amount: 50n, depositValue: 50n })],
+        recipient: DEPOSITOR
+      })
+
       expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [] }])
     })
 
@@ -382,6 +403,26 @@ describe('getPrivacyPoolsDepositPrivacy', () => {
         actions: [{ actionName: 'set-amount', meta: { amount: 10n }, label: 'Use a common amount' }]
       }
     ])
+  })
+
+  test('does not note an amount that only older deposits have', () => {
+    const depositIndex = buildPrivacyPoolsDepositIndex(
+      [
+        { value: 42n, blockNumber: 5n },
+        ...[10n, 50n].map((value) => ({ value, blockNumber: 20n }))
+      ],
+      10n,
+      90n
+    )
+    const privacy = getPrivacyPoolsDepositPrivacy({
+      amount: 42n,
+      maxAmount: 1_000n,
+      depositIndex,
+      commonAmounts: COMMON_AMOUNTS
+    })
+
+    expect(privacy.sameAmount).toBe(0)
+    expect(privacy.leaks).toEqual([])
   })
 
   test('suggests a higher common amount only when the balance pays it', () => {
