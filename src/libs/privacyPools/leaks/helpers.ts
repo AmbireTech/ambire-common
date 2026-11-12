@@ -15,15 +15,15 @@ import { OwnDepositValues, PrivacyPoolsNoteSpend } from './types'
  * What a send of `amount` spends: part or all of the approved deposit with `noteLabel`, as one send
  * spends one deposit. Null when that deposit cannot pay `amount`, or it is not positive.
  */
-export const getPrivacyPoolsNoteSpends = (
+export const getPrivacyPoolsNoteSpend = (
   notes: PrivacyPoolsNote[],
   tokenAddress: string,
   noteLabel: bigint,
   amount: bigint
-): PrivacyPoolsNoteSpend[] | null => {
+): PrivacyPoolsNoteSpend | null => {
   const note = findSendablePrivacyPoolsNote(notes, tokenAddress, noteLabel, amount)
 
-  return note ? [{ note, amount }] : null
+  return note ? { note, amount } : null
 }
 
 /** The approved deposits of the account's notes of the token, as the deposit index counts them. */
@@ -53,29 +53,21 @@ export const countOthers = (
   // Never below 0, as the notes can be newer than the deposit index
   Math.max(counted - ownValues.filter(isCounted).length, 0)
 
-/** How many recent deposits of others hide a send that spends `spends`. */
+/** How many recent deposits of others hide a send that spends `spend`. */
 export const getSendCover = (
   { recent }: PrivacyPoolsDepositIndex,
   ownDepositValues: OwnDepositValues,
-  spends: PrivacyPoolsNoteSpend[]
+  { amount }: PrivacyPoolsNoteSpend
 ): PrivacyPoolsSendCover => ({
-  bigEnough: Math.min(
-    ...spends.map(({ amount }) =>
-      countOthers(
-        countPrivacyPoolsDepositsOfAtLeast(recent, amount),
-        ownDepositValues.recent,
-        (value) => value >= amount
-      )
-    )
+  bigEnough: countOthers(
+    countPrivacyPoolsDepositsOfAtLeast(recent, amount),
+    ownDepositValues.recent,
+    (value) => value >= amount
   ),
-  sameAmount: Math.min(
-    ...spends.map(({ amount }) =>
-      countOthers(
-        countPrivacyPoolsDepositsOf(recent, amount),
-        ownDepositValues.recent,
-        (value) => value === amount
-      )
-    )
+  sameAmount: countOthers(
+    countPrivacyPoolsDepositsOf(recent, amount),
+    ownDepositValues.recent,
+    (value) => value === amount
   )
 })
 

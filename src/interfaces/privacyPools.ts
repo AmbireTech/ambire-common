@@ -427,14 +427,11 @@ export type PrivacyPoolsLeak = {
  */
 export type PrivacyPoolsRating = 'standard' | 'weak' | 'traceable' | 'unchecked'
 
-/**
- * How many recent deposits (see `PRIVACY_POOLS_COVER_WINDOW_DAYS`) hide a send. Each is the
- * smallest over the deposits it spends, as the least hidden one is what can link it.
- */
+/** How many recent deposits (see `PRIVACY_POOLS_COVER_WINDOW_DAYS`) hide a send. */
 export type PrivacyPoolsSendCover = {
-  /** Deposits large enough to pay the part spent from each deposit. */
+  /** Deposits large enough to pay the amount sent. */
   bigEnough: number
-  /** Deposits of exactly the part spent from each deposit. */
+  /** Deposits of exactly the amount sent. */
   sameAmount: number
 }
 

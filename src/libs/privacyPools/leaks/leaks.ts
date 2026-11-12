@@ -7,7 +7,7 @@ import {
   PrivacyPoolsWithdrawalPrivacy
 } from '../../../interfaces/privacyPools'
 import { countPrivacyPoolsDepositsOf, PrivacyPoolsDepositIndex } from '../poolStats'
-import { getOwnDepositValues, getPrivacyPoolsNoteSpends, getSendCover } from './helpers'
+import { getOwnDepositValues, getPrivacyPoolsNoteSpend, getSendCover } from './helpers'
 import { DEPOSIT_LEAKS, WITHDRAWAL_LEAKS } from './rules'
 import { LeakRule, WithdrawalFacts } from './types'
 
@@ -71,44 +71,41 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   /** The pool's common amounts, smallest first - see `PRIVACY_POOLS_DEPOSIT_CHIPS`. */
   commonAmounts: bigint[]
 }): PrivacyPoolsWithdrawalPrivacy | null => {
-  const { notes, tokenAddress, noteLabel, depositIndex } = params
+  const { notes, tokenAddress, noteLabel, recipient, depositIndex } = params
   // No amount is entered yet, so only the recipient can be checked
   const isRecipientOnly = amount === 0n
-  const spends = isRecipientOnly
-    ? []
-    : getPrivacyPoolsNoteSpends(notes, tokenAddress, noteLabel, amount)
-  if (!spends) return null
+  const spend = getPrivacyPoolsNoteSpend(notes, tokenAddress, noteLabel, amount)
+  if (!isRecipientOnly && !spend) return null
 
   if (!depositIndex) return UNCHECKED_WITHDRAWAL_PRIVACY
 
   const ownDepositValues = getOwnDepositValues(notes, tokenAddress, depositIndex)
   // Common amounts are only suggested in place of an entered amount
-  const commonAmountCovers = isRecipientOnly
-    ? []
-    : commonAmounts.flatMap((commonAmount) => {
-        const commonAmountSpends = getPrivacyPoolsNoteSpends(
+  const commonAmountCovers = spend
+    ? commonAmounts.flatMap((commonAmount) => {
+        const commonAmountSpend = getPrivacyPoolsNoteSpend(
           notes,
           tokenAddress,
           noteLabel,
           commonAmount
         )
-        if (!commonAmountSpends) return []
+        if (!commonAmountSpend) return []
 
         return [
           {
             amount: commonAmount,
-            cover: getSendCover(depositIndex, ownDepositValues, commonAmountSpends)
+            cover: getSendCover(depositIndex, ownDepositValues, commonAmountSpend)
           }
         ]
       })
+    : []
   const facts: WithdrawalFacts = {
-    ...params,
+    amount,
+    spend,
+    recipient,
     depositIndex,
     ownDepositValues,
-    amount,
-    spends,
-    // `getSendCover` takes the smallest count over the spends, which is Infinity with none
-    cover: isRecipientOnly ? NO_COVER : getSendCover(depositIndex, ownDepositValues, spends),
+    cover: spend ? getSendCover(depositIndex, ownDepositValues, spend) : NO_COVER,
     commonAmountCovers
   }
   const leaks = findLeaks(WITHDRAWAL_LEAKS, facts)
