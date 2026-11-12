@@ -1,3 +1,12 @@
+import { STK_WALLET, WALLET_TOKEN } from './addresses'
+
+/** A token that isn't traded on its own, but is always worth exactly one of another token */
+export type TokenPricedAs = {
+  token: string
+  /** The token whose price it takes */
+  pricedAs: string
+}
+
 /** What reading token prices from a network's RPC needs */
 export type RpcTokenPriceConfig = {
   /**
@@ -15,6 +24,8 @@ export type RpcTokenPriceConfig = {
    * token (and its wrapped version) is priced.
    */
   spotPriceOracle?: string
+  /** Tokens priced with another token's price, as no pool trades them */
+  tokensPricedAs?: TokenPricedAs[]
 }
 
 const SLACK_SECONDS = 60 * 60
@@ -29,7 +40,9 @@ export const RPC_TOKEN_PRICE_CONFIGS: { [chainId: string]: RpcTokenPriceConfig }
   '1': {
     nativeUsdFeed: '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419',
     nativeUsdFeedMaxAgeSeconds: 3600 + SLACK_SECONDS,
-    spotPriceOracle: ONE_INCH_SPOT_PRICE_ORACLE
+    spotPriceOracle: ONE_INCH_SPOT_PRICE_ORACLE,
+    // Staked WALLET: each stkWALLET is backed by exactly one WALLET in the staking pool
+    tokensPricedAs: [{ token: STK_WALLET, pricedAs: WALLET_TOKEN }]
   },
   // Polygon, POL / USD
   '137': {

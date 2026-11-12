@@ -165,7 +165,8 @@ const getRates = async (
  * token from 1inch's spot price aggregator, which averages the token's DEX pools by liquidity.
  * A token that trades in no pool, or whose most liquid pool holds less than MIN_POOL_DEPTH_USD of
  * the native token (unless it's one of our curated tokens), has no price. Pools far smaller than the
- * token's most liquid one are left out of its price.
+ * token's most liquid one are left out of its price. A token the config prices as another token
+ * (e.g. stkWALLET as WALLET) takes that token's price.
  *
  * There is no market data (e.g. the 24h change), and only USD prices. The tokens are read in
  * pages, and a page that fails doesn't cost the others their prices: its tokens are left out and
@@ -204,8 +205,14 @@ export const getRpcTokenPrices = async ({
     ]
   }
 
+  /** The token whose price the token takes: itself, unless the config prices it as another */
+  const getPriceSource = (address: string): string =>
+    config.tokensPricedAs?.find(({ token }) => isSameAddr(token, address))?.pricedAs || address
+
   const tokensToRate = config.spotPriceOracle
-    ? tokenAddresses.filter((address) => !isNativeOrWrappedNative(address, network))
+    ? [...new Set(tokenAddresses.map(getPriceSource))].filter(
+        (address) => !isNativeOrWrappedNative(address, network)
+      )
     : []
   // Every call reads the native token's price; one with no tokens reads only that
   const pages = tokensToRate.length ? paginate(tokensToRate, TOKENS_PER_CALL) : [[]]
@@ -238,17 +245,29 @@ export const getRpcTokenPrices = async ({
     )
   }
 
-  const prices: RpcTokenPrices = new Map()
+  const rateByKey = new Map<string, TokenRate>()
   answeredPages.forEach(({ rateByAddress }) => {
-    rateByAddress.forEach((rate, address) => {
-      prices.set(getTokenDataCacheKey(address), getPrice(address, rate))
-    })
+    rateByAddress.forEach((rate, address) => rateByKey.set(getTokenDataCacheKey(address), rate))
   })
+
+  const prices: RpcTokenPrices = new Map()
   tokenAddresses.forEach((address) => {
-    if (isNativeOrWrappedNative(address, network))
-      prices.set(getTokenDataCacheKey(address), nativePrice)
+    const key = getTokenDataCacheKey(address)
+    const priceSource = getPriceSource(address)
+
+    if (isNativeOrWrappedNative(priceSource, network)) {
+      prices.set(key, nativePrice)
+      return
+    }
     // Without the aggregator only the native token is priced: the rest have no price
-    else if (!config.spotPriceOracle) prices.set(getTokenDataCacheKey(address), null)
+    if (!config.spotPriceOracle) {
+      prices.set(key, null)
+      return
+    }
+
+    // Missing when its page failed or ran out of gas, so it's left out rather than unpriced
+    const rate = rateByKey.get(getTokenDataCacheKey(priceSource))
+    if (rate) prices.set(key, getPrice(priceSource, rate))
   })
 
   const pageError = answeredPages.find((page) => page.error)?.error

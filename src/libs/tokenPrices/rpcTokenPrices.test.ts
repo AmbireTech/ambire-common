@@ -2,6 +2,7 @@ import { ZeroAddress } from 'ethers'
 
 import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
+import { STK_WALLET, WALLET_TOKEN } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { RPC_TOKEN_PRICE_CONFIGS } from '../../consts/rpcTokenPrices'
 import { Network } from '../../interfaces/network'
@@ -337,6 +338,64 @@ describe('getRpcTokenPrices', () => {
       ).rejects.toThrow(`The price feed of ${ethereum.name} reported no price`)
     })
 
+    test('prices stkWALLET with the price of WALLET, which backs it one to one', async () => {
+      // 0.0001 ETH per WALLET, so $0.2
+      mockContract({
+        rateOf: (token) =>
+          token === WALLET_TOKEN
+            ? { rateToNative: 10n ** 14n, decimals: 18 }
+            : { rateToNative: 0n, decimals: 18 }
+      })
+
+      const { prices } = await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [STK_WALLET, WALLET_TOKEN]
+      })
+
+      expect(prices.get(STK_WALLET.toLowerCase())).toBe(0.2)
+      expect(prices.get(WALLET_TOKEN.toLowerCase())).toBe(0.2)
+      // WALLET is asked for once, and stkWALLET, which no pool trades, not at all
+      expect(callSpy.mock.calls.map(([, [, , tokens]]) => tokens)).toEqual([[WALLET_TOKEN]])
+    })
+
+    test('leaves stkWALLET out, rather than unpriced, when reading WALLET fails', async () => {
+      mockContract({
+        rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18 }),
+        checkedPerCall: 1
+      })
+      const pricedCall = callSpy.getMockImplementation()!
+      callSpy.mockImplementation(async (method: string, args: any[]) => {
+        // The follow-up call, for WALLET, times out
+        if (args[2][0] === WALLET_TOKEN) throw new Error('rpc-timeout')
+        return pricedCall(method, args)
+      })
+
+      const { prices, error } = await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [TOKEN_1, STK_WALLET]
+      })
+
+      expect(error?.message).toBe('rpc-timeout')
+      expect(prices.get(TOKEN_1)).toBe(2)
+      expect(prices.has(STK_WALLET.toLowerCase())).toBe(false)
+    })
+
+    test('prices stkWALLET as itself on a network where it is not mapped', async () => {
+      const base = networks.find(({ chainId }) => chainId === 8453n)!
+      mockContract({ rateOf: () => ({ rateToNative: 0n, decimals: 18 }) })
+
+      const { prices } = await getRpcTokenPrices({
+        provider,
+        network: base,
+        tokenAddresses: [STK_WALLET]
+      })
+
+      expect(prices.get(STK_WALLET.toLowerCase())).toBeNull()
+      expect(callSpy.mock.calls.map(([, [, , tokens]]) => tokens)).toEqual([[STK_WALLET]])
+    })
+
     test('prices only the native token on a network without the price aggregator', async () => {
       mockContract({ rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18 }) })
 
@@ -382,6 +441,22 @@ describe('getRpcTokenPrices', () => {
         expect(prices.get(USDE.toLowerCase())).toBeGreaterThan(0.95)
         expect(prices.get(USDE.toLowerCase())).toBeLessThan(1.05)
         expect(prices.get(DEAD.toLowerCase())).toBeNull()
+      } finally {
+        provider.destroy()
+      }
+    })
+
+    test('prices stkWALLET, which no pool trades, the same as WALLET', async () => {
+      const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+
+      try {
+        const { prices } = await getRpcTokenPrices({
+          provider,
+          network: ethereum,
+          tokenAddresses: [STK_WALLET]
+        })
+
+        expect(prices.get(STK_WALLET.toLowerCase())).toBeGreaterThan(0)
       } finally {
         provider.destroy()
       }
