@@ -395,12 +395,8 @@ export type PrivacyPoolsLeakId =
   | 'unusual-deposit-amount'
   /** The send spends more than one deposit, which links them. */
   | 'several-deposits'
-  /** The recipient is another account in this wallet that was never used on the network. */
+  /** The recipient is another account in this wallet. */
   | 'own-account'
-  /** The recipient is another account in this wallet that was already used on the network. */
-  | 'own-account-used'
-  /** The recipient has no ETH to move the tokens with. */
-  | 'recipient-has-no-eth'
   /** The send spends a deposit made in the last day, so its timing can point to the user. */
   | 'fresh-deposit'
 

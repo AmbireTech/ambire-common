@@ -951,16 +951,15 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Checks what the Send form's transfer gives away, from the selected account's notes and this
-   * device's copy of the pool. The result arrives in `withdrawalPrivacy`. A newer check replaces
-   * an older one still running.
+   * device's copy of the pool. The result arrives in `withdrawalPrivacy`, in place of the previous
+   * check's.
    */
-  async checkWithdrawalPrivacy(
-    params: Omit<PrivacyPoolsWithdrawalPrivacyParams, 'seedId'>
-  ): Promise<void> {
+  checkWithdrawalPrivacy(params: Omit<PrivacyPoolsWithdrawalPrivacyParams, 'seedId'>) {
     try {
       const seedId = this.#assertAvailableAndGetSeedId()
 
-      if (await this.#withdrawal.checkWithdrawalPrivacy({ ...params, seedId })) this.emitUpdate()
+      this.#withdrawal.checkWithdrawalPrivacy({ ...params, seedId })
+      this.emitUpdate()
     } catch (error: any) {
       this.emitError(
         error instanceof EmittableError

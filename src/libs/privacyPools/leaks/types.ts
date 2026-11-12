@@ -27,9 +27,6 @@ export type WithdrawalFacts = {
   commonAmountCovers: CommonAmountCover[]
   recipient: string | null
   isOwnAccount: boolean
-  /** Whether the own account was used on the send's network. Null when not checked. */
-  isRecipientUsed: boolean | null
-  recipientHasEth: boolean | null
   depositIndex: PrivacyPoolsDepositIndex
   ownDepositValues: OwnDepositValues
 }

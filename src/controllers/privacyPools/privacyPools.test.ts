@@ -5034,127 +5034,34 @@ describe('PrivacyPoolsController', () => {
       ]
     })
 
-    /**
-     * seed-a, synced, with the recipient's ETH balance, transaction count and code read through
-     * the provider. The recipient is unused unless a test says otherwise.
-     */
+    /** seed-a, synced. */
     const prepareSynced = async () => {
       const prepared = await prepareTest()
-      const getBalance = jest.fn<(address: string) => Promise<bigint>>(async () => 0n)
-      const getTransactionCount = jest.fn<(address: string) => Promise<number>>(async () => 0)
-      const getCode = jest.fn<(address: string) => Promise<string>>(async () => '0x')
-      Object.assign(prepared.providers.providers['1'], { getBalance, getTransactionCount, getCode })
       prepared.selectedAccount.select('seed-a')
       const syncing = prepared.controller.syncChain('1')
       await releaseSync('seed-a')
       await syncing
 
-      return { ...prepared, getBalance, getTransactionCount, getCode }
+      return prepared
     }
 
-    it('keeps the answer to the newest send the form asked about, when an older one ends later', async () => {
-      const { controller, getBalance: getEthBalance } = await prepareSynced()
-      const balanceGate = createDeferred()
-      getEthBalance.mockImplementationOnce(async () => {
-        await balanceGate.promise
-
-        return 0n
-      })
-
-      const older = controller.checkWithdrawalPrivacy(USDC_TRANSFER)
-      await controller.checkWithdrawalPrivacy(ETH_TRANSFER)
-      balanceGate.resolve()
-      await older
-
-      expect(controller.withdrawalPrivacy).toMatchObject({
-        tokenAddress: ZERO_ADDRESS,
-        amount: 10n
-      })
-    })
-
-    it("warns when a token goes to a recipient with no ETH, and never asks about an ETH send's recipient", async () => {
-      const { controller, getBalance: getEthBalance } = await prepareSynced()
-
-      await controller.checkWithdrawalPrivacy(USDC_TRANSFER)
-      expect(getEthBalance).toHaveBeenCalledWith(WITHDRAWAL_RECIPIENT)
-      expect(getLeakIds(controller)).toContain('recipient-has-no-eth')
-
-      getEthBalance.mockClear()
-      await controller.checkWithdrawalPrivacy(ETH_TRANSFER)
-      expect(getEthBalance).not.toHaveBeenCalled()
-      expect(getLeakIds(controller)).not.toContain('recipient-has-no-eth')
-    })
-
-    it('only notes a send to an account of this wallet that was never used', async () => {
+    it('only notes a send to an account of this wallet', async () => {
       const { controller, walletAccounts } = await prepareSynced()
       walletAccounts.push(WITHDRAWAL_RECIPIENT.toLowerCase())
 
-      await controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+      controller.checkWithdrawalPrivacy(ETH_TRANSFER)
 
-      expect(getLeakIds(controller)).toContain('own-account')
-      expect(getLeakIds(controller)).not.toContain('own-account-used')
+      expect(getLeakIds(controller)).toEqual(['own-account'])
       expect(controller.withdrawalPrivacy?.privacy?.rating).toBe('standard')
     })
 
-    it.each([
-      ['has sent a transaction', { transactionCount: 3 }],
-      ['holds ETH', { balance: 1n }],
-      ['is a deployed contract account with no transactions', { code: '0x6080' }]
-    ])('warns about a send to an account of this wallet that %s', async (_name, used) => {
-      const { controller, walletAccounts, getBalance, getTransactionCount, getCode } =
-        await prepareSynced()
-      walletAccounts.push(WITHDRAWAL_RECIPIENT.toLowerCase())
-      getBalance.mockResolvedValue(used.balance ?? 0n)
-      getTransactionCount.mockResolvedValue(used.transactionCount ?? 0)
-      getCode.mockResolvedValue(used.code ?? '0x')
-
-      await controller.checkWithdrawalPrivacy(ETH_TRANSFER)
-
-      expect(getLeakIds(controller)).toContain('own-account-used')
-      expect(getLeakIds(controller)).not.toContain('own-account')
-      expect(controller.withdrawalPrivacy?.privacy?.rating).toBe('weak')
-    })
-
-    it('treats an account of this wallet as used when a read fails, and reports it silently', async () => {
-      const { controller, walletAccounts, getCode } = await prepareSynced()
-      walletAccounts.push(WITHDRAWAL_RECIPIENT.toLowerCase())
-      getCode.mockRejectedValue(new Error('rpc down'))
-
-      await controller.checkWithdrawalPrivacy(ETH_TRANSFER)
-
-      expect(getLeakIds(controller)).toContain('own-account-used')
-      expect(controller.emittedErrors.at(-1)).toMatchObject({ level: 'silent' })
-    })
-
-    it('reads the balance once for a token sent to an account of this wallet', async () => {
-      const { controller, walletAccounts, getBalance } = await prepareSynced()
-      walletAccounts.push(WITHDRAWAL_RECIPIENT.toLowerCase())
-
-      await controller.checkWithdrawalPrivacy(USDC_TRANSFER)
-
-      expect(getBalance).toHaveBeenCalledTimes(1)
-      expect(getLeakIds(controller)).toEqual(
-        expect.arrayContaining(['own-account', 'recipient-has-no-eth'])
-      )
-    })
-
-    it('drops the answer on lock, and an answer that comes after it', async () => {
-      const { controller, keystore, getBalance: getEthBalance } = await prepareSynced()
-      await controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+    it('drops the answer on lock', async () => {
+      const { controller, keystore } = await prepareSynced()
+      controller.checkWithdrawalPrivacy(ETH_TRANSFER)
       expect(controller.withdrawalPrivacy).not.toBeNull()
-      const balanceGate = createDeferred()
-      getEthBalance.mockImplementationOnce(async () => {
-        await balanceGate.promise
 
-        return 0n
-      })
-
-      const checking = controller.checkWithdrawalPrivacy(USDC_TRANSFER)
       keystore.isUnlocked = false
       keystore.fireUpdate()
-      expect(controller.withdrawalPrivacy).toBeNull()
-      balanceGate.resolve()
-      await checking
 
       expect(controller.withdrawalPrivacy).toBeNull()
     })
@@ -5183,7 +5090,7 @@ describe('PrivacyPoolsController', () => {
       ]
       const { controller } = await prepareSynced()
 
-      await controller.checkWithdrawalPrivacy({ ...ETH_TRANSFER, amount: 37n })
+      controller.checkWithdrawalPrivacy({ ...ETH_TRANSFER, amount: 37n })
 
       expect(getLeakIds(controller)).toEqual(['unique-amount'])
       expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
@@ -5192,19 +5099,18 @@ describe('PrivacyPoolsController', () => {
       })
     })
 
-    it('rates a send unchecked when the pool could not be read, without asking about the recipient', async () => {
+    it('rates a send unchecked when the pool could not be read', async () => {
       const { restore } = suppressConsole()
       storedPoolState = 'not a stored state'
-      const { controller, getBalance } = await prepareSynced()
+      const { controller } = await prepareSynced()
 
-      await controller.checkWithdrawalPrivacy(USDC_TRANSFER)
+      controller.checkWithdrawalPrivacy(USDC_TRANSFER)
 
       expect(controller.poolStats['1']?.error).not.toBeNull()
       expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
         rating: 'unchecked',
         leaks: []
       })
-      expect(getBalance).not.toHaveBeenCalled()
       restore()
     })
 

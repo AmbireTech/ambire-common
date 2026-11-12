@@ -70,40 +70,25 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
     text: 'Sending here shows the deposit is still yours. It also links this transfer and any earlier ones from this deposit to that address.',
     applies: isRevealingSendToDepositor
   },
-  {
-    id: 'empties-partly-sent-deposit',
-    type: 'warning',
-    title: 'Consider sending the rest later',
-    text: 'This transfer sends all that is left of your deposit. Together with your earlier transfers, it adds up to exactly what you deposited, so someone can tell they all came from that deposit. Waiting while more people use the pool makes this harder to see.',
-    applies: ({ spends }) =>
-      spends.some(({ note, amount }) => note.withdrawCount > 0 && amount === note.amount)
-  },
-  {
-    id: 'several-deposits',
-    type: 'warning',
-    title: 'This transfer uses several deposits',
-    text: 'This shows they all belong to the same person. If one of them is ever linked to you, all of them will be.',
-    applies: ({ spends }) => spends.length > 1,
-    getActions: ({ spends }) => [
-      // The SDK spends the largest note first, so this amount spends it alone
-      setAmountAction(spends[0]!.note.amount, 'Send from one deposit')
-    ]
-  },
-  // Excludes the `own-account` leak, which is the same send to an account that was not used
-  {
-    id: 'own-account-used',
-    type: 'warning',
-    title: 'This account was already used',
-    text: 'If it was ever used together with the account you deposited from, this transfer will be linked to you. Consider a new account.',
-    applies: (facts) => isOwnAccountSend(facts) && facts.isRecipientUsed === true
-  },
-  {
-    id: 'recipient-has-no-eth',
-    type: 'warning',
-    title: 'The recipient will need ETH for fees',
-    text: 'If you send it ETH from an address you already use, these tokens will be linked to you. Send the ETH from Privacy Pools too.',
-    applies: ({ recipientHasEth }) => recipientHasEth === false
-  },
+  // TODO: bring these two back once each deposit shows as its own balance and the SDK keeps part
+  // of each deposit it spends (`obfuscateAmounts`, kohaku#388). Until then the user can see
+  // neither which deposits a send uses nor how much is left in them, and the only fix either rule
+  // could offer is to send less than they need to.
+  // {
+  //   id: 'empties-partly-sent-deposit',
+  //   type: 'warning',
+  //   title: 'Consider sending the rest later',
+  //   text: 'This transfer sends all that is left of your deposit. Together with your earlier transfers, it adds up to exactly what you deposited, so someone can tell they all came from that deposit. Waiting while more people use the pool makes this harder to see.',
+  //   applies: ({ spends }) =>
+  //     spends.some(({ note, amount }) => note.withdrawCount > 0 && amount === note.amount)
+  // },
+  // {
+  //   id: 'several-deposits',
+  //   type: 'warning',
+  //   title: 'This transfer uses several deposits',
+  //   text: 'This shows they all belong to the same person. If one of them is ever linked to you, all of them will be.',
+  //   applies: ({ spends }) => spends.length > 1
+  // },
   {
     id: 'fresh-deposit',
     type: 'warning',
@@ -112,13 +97,12 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
     applies: ({ spends, depositIndex }) =>
       spends.some(({ note }) => note.blockNumber > depositIndex.freshAfterBlock)
   },
-  // Excludes the `own-account-used` leak, which is the same send to an account that was already used
   {
     id: 'own-account',
     type: 'info',
-    title: 'Keep these accounts apart',
-    text: 'This account is in your wallet. If it is ever used together with the account you deposited from, this transfer will be linked to you.',
-    applies: (facts) => isOwnAccountSend(facts) && facts.isRecipientUsed !== true
+    title: 'This account is in your wallet',
+    text: 'You can use it with apps as usual. Only avoid moving funds between it and the account you deposited from, as that would link this transfer to you.',
+    applies: isOwnAccountSend
   }
 ]
 

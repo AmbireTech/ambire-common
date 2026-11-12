@@ -31,8 +31,7 @@ import {
 } from '../../libs/privacyPools/estimateWithdrawal'
 import {
   getPrivacyPoolsWithdrawalPrivacy,
-  getUncheckedPrivacyPoolsWithdrawalPrivacy,
-  readPrivacyPoolsRecipientState
+  getUncheckedPrivacyPoolsWithdrawalPrivacy
 } from '../../libs/privacyPools/leaks/leaks'
 import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdrawal'
 import { toPrivacyPoolsSdkError } from '../../libs/privacyPools/sdkError'
@@ -185,9 +184,6 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
    */
   #preparationQueue: Promise<void> = Promise.resolve()
 
-  /** Bumped by each check of the Send form, so an older one finishing later writes nothing. */
-  #checkId = 0
-
   /**
    * The Send form's latest check. Phrase-derived (see the README), so a lock drops it, as it tells
    * what the phrase's notes give away.
@@ -285,6 +281,8 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       // withdrawal): the SDK's plain withdrawal may pick a pending deposit, failing the proof.
       // The unused gas is refunded to the recipient, which is the SDK's default too, so a
       // different default can't leave it on a batch's single-use sender.
+      // TODO: pass `obfuscateAmounts: true` once the SDK ships it (kohaku#388), so a batch keeps
+      // part of each deposit it spends and its amounts do not add up to the user's deposits.
       const privateOp = await protocol.prepareUnshield(
         {
           asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
@@ -327,7 +325,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       if (noteCount > 1 && expectedFeeAmount === null)
         throw privacyPoolsErrors.withdrawalBatchNotSimulated()
 
-      const privacy = await this.#getProvedWithdrawalPrivacy(
+      const privacy = this.#getProvedWithdrawalPrivacy(
         { seedId, chainId, tokenAddress, amount, recipient },
         provedNotes,
         noteCount
@@ -374,53 +372,30 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     return this.#privacyCheck.check
   }
 
-  /**
-   * Checks the Send form's transfer and keeps the result, unless a newer check or a lock came
-   * meanwhile. Returns whether it kept it.
-   */
-  async checkWithdrawalPrivacy(params: PrivacyPoolsWithdrawalPrivacyParams): Promise<boolean> {
-    this.#checkId += 1
-    const checkId = this.#checkId
-    const lockGeneration = this.#ctx.lock.current
-
-    const privacy = await this.#getWithdrawalPrivacy(params)
-    if (checkId !== this.#checkId || !this.#ctx.lock.isCurrent(lockGeneration)) return false
-
+  /** Checks the Send form's transfer and keeps the result in place of the previous one. */
+  checkWithdrawalPrivacy(params: PrivacyPoolsWithdrawalPrivacyParams) {
+    const privacy = this.#getWithdrawalPrivacy(params)
     const { seedId, ...checkedParams } = params
     this.#privacyCheck = { seedId, check: { ...checkedParams, privacy } }
-
-    return true
   }
 
   /**
    * The privacy of a send from `notes`, by default the account's as of its last sync. Rated
    * `unchecked` before the pool's deposits are read. Null when the notes cannot pay `amount`.
    */
-  async #getWithdrawalPrivacy(
+  #getWithdrawalPrivacy(
     { seedId, chainId, tokenAddress, amount, recipient }: PrivacyPoolsWithdrawalPrivacyParams,
     notes: PrivacyPoolsNote[] | undefined = this.#getNotes(seedId, chainId)
-  ): Promise<PrivacyPoolsWithdrawalPrivacy | null> {
+  ): PrivacyPoolsWithdrawalPrivacy | null {
     const depositIndex = this.#poolStatsReader.getDepositIndex(chainId, tokenAddress)
     if (!notes) return null
-
-    const isOwnAccount = !!recipient && this.#isWalletAccount(recipient)
-    // ETH can be moved with itself, so only a token's recipient needs some
-    const needsEthCheck = !!recipient && !isPrivacyPoolsNativeAsset(tokenAddress)
-    // One read answers both questions. Skipped when there is nothing to ask about the recipient,
-    // or the pool's deposits are not read yet
-    const recipientState =
-      depositIndex && recipient && (isOwnAccount || needsEthCheck)
-        ? await this.#readRecipientState(chainId, recipient, isOwnAccount)
-        : null
 
     return getPrivacyPoolsWithdrawalPrivacy({
       amount,
       notes,
       tokenAddress,
       recipient,
-      isOwnAccount,
-      isRecipientUsed: isOwnAccount ? (recipientState?.isUsed ?? true) : null,
-      recipientHasEth: needsEthCheck ? (recipientState?.hasEth ?? null) : null,
+      isOwnAccount: !!recipient && this.#isWalletAccount(recipient),
       depositIndex,
       commonAmounts:
         PRIVACY_POOLS_DEPOSIT_CHIPS[getPrivacyPoolsTokenId(chainId, tokenAddress)] ?? []
@@ -436,40 +411,16 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
   }
 
   /**
-   * Null when a read failed, so the check leaves the recipient's ETH out and treats the account as
-   * used.
-   */
-  async #readRecipientState(
-    chainId: string,
-    address: string,
-    isOwnAccount: boolean
-  ): Promise<{ hasEth: boolean; isUsed: boolean } | null> {
-    try {
-      const provider = getChainProvider(this.#ctx.providers, chainId)
-
-      return await readPrivacyPoolsRecipientState(provider, address, isOwnAccount)
-    } catch (error: any) {
-      this.#ctx.emitError({
-        level: 'silent',
-        message: 'Could not check the recipient on the network.',
-        error: error instanceof Error ? error : new Error('privacyPools: recipient read failed')
-      })
-
-      return null
-    }
-  }
-
-  /**
    * The privacy of a proved withdrawal, from the notes the SDK proved with. The notes it spends are
    * predicted the way the SDK picks them. A proof that spends a different number of them is
    * reported and rated `unchecked`, as the rules ran on spends the proof does not make.
    */
-  async #getProvedWithdrawalPrivacy(
+  #getProvedWithdrawalPrivacy(
     params: PrivacyPoolsWithdrawalPrivacyParams,
     provedNotes: PrivacyPoolsNote[],
     provedNoteCount: number
-  ): Promise<PrivacyPoolsWithdrawalPrivacy | null> {
-    const privacy = await this.#getWithdrawalPrivacy(params, provedNotes)
+  ): PrivacyPoolsWithdrawalPrivacy | null {
+    const privacy = this.#getWithdrawalPrivacy(params, provedNotes)
     if (!privacy || privacy.notesCount === provedNoteCount) return privacy
 
     this.#ctx.emitError({
@@ -649,9 +600,8 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     return true
   }
 
-  /** Drops the Send form's check, and any running one. Returns whether there was one. */
+  /** Drops the Send form's check. Returns whether there was one. */
   dropPrivacyCheck(): boolean {
-    this.#checkId += 1
     const hadCheck = !!this.#privacyCheck
     this.#privacyCheck = null
 

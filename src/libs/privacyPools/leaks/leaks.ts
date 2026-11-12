@@ -6,7 +6,6 @@ import {
   PrivacyPoolsSendCover,
   PrivacyPoolsWithdrawalPrivacy
 } from '../../../interfaces/privacyPools'
-import { RPCProvider } from '../../../interfaces/provider'
 import { countPrivacyPoolsDepositsOf, PrivacyPoolsDepositIndex } from '../poolStats'
 import { getOwnDepositValues, getPrivacyPoolsNotesToSpend, getSendCover } from './helpers'
 import { DEPOSIT_LEAKS, WITHDRAWAL_LEAKS } from './rules'
@@ -70,13 +69,6 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   recipient: string | null
   /** Whether the recipient is another account in this wallet. */
   isOwnAccount: boolean
-  /**
-   * Whether the recipient was used on the send's network. Null when not checked, which is always
-   * the case when it is not an account of this wallet.
-   */
-  isRecipientUsed: boolean | null
-  /** Null when not checked, as for ETH, which the recipient can move without more ETH. */
-  recipientHasEth: boolean | null
   /** Null before the pool's deposits are read. */
   depositIndex: PrivacyPoolsDepositIndex | null
   /** The pool's common amounts, smallest first - see `PRIVACY_POOLS_DEPOSIT_CHIPS`. */
@@ -148,24 +140,4 @@ export const getPrivacyPoolsDepositPrivacy = ({
       : []
 
   return { rating: getRating(leaks), leaks, sameAmount }
-}
-
-/**
- * Whether the recipient has ETH and, for an account of this wallet, whether it was used on the
- * chain. An account counts as used with any transaction, any ETH or deployed code, as a smart
- * account keeps its transaction count at 0. Throws when a read fails.
- */
-export const readPrivacyPoolsRecipientState = async (
-  provider: RPCProvider,
-  address: string,
-  isOwnAccount: boolean
-): Promise<{ hasEth: boolean; isUsed: boolean }> => {
-  const [balance, transactionCount, code] = await Promise.all([
-    provider.getBalance(address),
-    isOwnAccount ? provider.getTransactionCount(address) : 0,
-    isOwnAccount ? provider.getCode(address) : '0x'
-  ])
-  const hasEth = balance > 0n
-
-  return { hasEth, isUsed: hasEth || transactionCount > 0 || code !== '0x' }
 }
