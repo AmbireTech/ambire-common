@@ -127,10 +127,15 @@ export const privacyPoolsErrors = {
       'Another transfer from a Privacy Pools account is still in progress. Please wait for it to finish.',
       'a withdrawal is already in flight'
     ),
-  withdrawalBatchNotSimulated: () =>
+  withdrawalDepositUnavailable: () =>
     expectedError(
-      'This transfer combines several of your deposits, and we could not confirm it would go through, so it was not sent. Please try again in a moment, or send a smaller amount.',
-      'a batch withdrawal could not be simulated'
+      'This deposit does not have enough left for this amount. Please send less, or pick another deposit.',
+      'the chosen note is missing, not approved or too small'
+    ),
+  withdrawalOtherDepositPicked: () =>
+    expectedError(
+      'This amount cannot be sent from this deposit yet. Please send all of it, or pick another deposit.',
+      'the SDK would spend another note than the chosen one'
     ),
   withdrawalFeeAboveAmount: (sdkError: Error) =>
     new EmittableError({

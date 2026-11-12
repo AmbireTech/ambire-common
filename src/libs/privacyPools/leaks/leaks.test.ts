@@ -1,7 +1,7 @@
 import { Hex } from '../../../interfaces/hex'
 import { PrivacyPoolsNote } from '../../../interfaces/privacyPools'
 import { ZERO_ADDRESS } from '../../../services/socket/constants'
-import { getPrivacyPoolsNotesToSpend } from './helpers'
+import { getPrivacyPoolsNoteSpends } from './helpers'
 import { getPrivacyPoolsDepositPrivacy, getPrivacyPoolsWithdrawalPrivacy } from './leaks'
 import { buildPrivacyPoolsDepositIndex } from '../poolStats'
 
@@ -43,19 +43,23 @@ const note = (overrides: Partial<PrivacyPoolsNote> = {}): PrivacyPoolsNote => {
   }
 }
 
+/** A send from `spentNote`, by default the first of `notes`. */
 const getWithdrawalPrivacy = ({
   amount,
   notes,
+  spentNote = notes[0]!,
   recipient = STRANGER
 }: {
   amount: bigint
   notes: PrivacyPoolsNote[]
+  spentNote?: PrivacyPoolsNote
   recipient?: string | null
 }) => {
   const privacy = getPrivacyPoolsWithdrawalPrivacy({
     amount,
     notes,
     tokenAddress: ZERO_ADDRESS,
+    noteLabel: spentNote.label,
     recipient,
     depositIndex: DEPOSIT_INDEX,
     commonAmounts: COMMON_AMOUNTS
@@ -69,32 +73,41 @@ const getWithdrawalPrivacy = ({
 const summarizeLeaks = (privacy: ReturnType<typeof getWithdrawalPrivacy>) =>
   privacy.leaks.map(({ id, actions }) => ({ id, amounts: actions.map(({ meta }) => meta.amount) }))
 
-describe('getPrivacyPoolsNotesToSpend', () => {
-  test('spends approved notes of the token largest first, ties in the order listed', () => {
-    const small = note({ amount: 30n })
-    const firstTied = note({ amount: 60n })
-    const secondTied = note({ amount: 60n })
-    const notes = [
-      small,
-      note({ amount: 500n, approval: 'pending' }),
-      note({ amount: 500n, tokenAddress: USDC }),
-      note({ amount: 0n }),
-      firstTied,
-      secondTied
-    ]
+describe('getPrivacyPoolsNoteSpends', () => {
+  test('spends the amount from the chosen deposit only', () => {
+    const chosen = note({ amount: 60n })
+    const notes = [note({ amount: 500n }), chosen, note({ amount: 30n })]
 
-    expect(getPrivacyPoolsNotesToSpend(notes, ZERO_ADDRESS, 130n)).toEqual([
-      { note: firstTied, amount: 60n },
-      { note: secondTied, amount: 60n },
-      { note: small, amount: 10n }
+    expect(getPrivacyPoolsNoteSpends(notes, ZERO_ADDRESS, chosen.label, 40n)).toEqual([
+      { note: chosen, amount: 40n }
+    ])
+    expect(getPrivacyPoolsNoteSpends(notes, ZERO_ADDRESS, chosen.label, 60n)).toEqual([
+      { note: chosen, amount: 60n }
     ])
   })
 
-  test('spends nothing when the notes cannot pay, or for no amount', () => {
-    const notes = [note({ amount: 30n }), note({ amount: 500n, approval: 'pending' })]
+  test('spends nothing when the chosen deposit cannot pay, even if others could together', () => {
+    const chosen = note({ amount: 30n })
+    const notes = [chosen, note({ amount: 30n })]
 
-    expect(getPrivacyPoolsNotesToSpend(notes, ZERO_ADDRESS, 31n)).toBeNull()
-    expect(getPrivacyPoolsNotesToSpend(notes, ZERO_ADDRESS, 0n)).toBeNull()
+    expect(getPrivacyPoolsNoteSpends(notes, ZERO_ADDRESS, chosen.label, 31n)).toBeNull()
+  })
+
+  test('spends nothing from a pending deposit, one of another token, or an unknown one', () => {
+    const pending = note({ amount: 500n, approval: 'pending' })
+    const usdc = note({ amount: 500n, tokenAddress: USDC })
+    const notes = [pending, usdc, note()]
+
+    expect(getPrivacyPoolsNoteSpends(notes, ZERO_ADDRESS, pending.label, 10n)).toBeNull()
+    expect(getPrivacyPoolsNoteSpends(notes, ZERO_ADDRESS, usdc.label, 10n)).toBeNull()
+    expect(getPrivacyPoolsNoteSpends(notes, ZERO_ADDRESS, 9_999n, 10n)).toBeNull()
+  })
+
+  test('spends nothing for no amount or a negative one', () => {
+    const chosen = note()
+
+    expect(getPrivacyPoolsNoteSpends([chosen], ZERO_ADDRESS, chosen.label, 0n)).toBeNull()
+    expect(getPrivacyPoolsNoteSpends([chosen], ZERO_ADDRESS, chosen.label, -1n)).toBeNull()
   })
 })
 
@@ -106,15 +119,16 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
     expect(privacy.leaks).toEqual([])
     // At least 60: the two 100s and the 500, less the user's own 100. Of exactly 60: none
     expect(privacy.cover).toEqual({ bigEnough: 2, sameAmount: 0 })
-    expect(privacy.notesCount).toBe(1)
   })
 
   test('rates a send unchecked before the pool is read, and still has none the notes cannot pay', () => {
+    const spentNote = note({ amount: 37n, depositValue: 37n })
     const getPrivacy = (amount: bigint) =>
       getPrivacyPoolsWithdrawalPrivacy({
         amount,
-        notes: [note({ amount: 37n, depositValue: 37n })],
+        notes: [spentNote],
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: spentNote.label,
         recipient: DEPOSITOR,
         depositIndex: null,
         commonAmounts: COMMON_AMOUNTS
@@ -124,8 +138,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
     expect(getPrivacy(10n)).toEqual({
       rating: 'unchecked',
       leaks: [],
-      cover: { bigEnough: 0, sameAmount: 0 },
-      notesCount: 1
+      cover: { bigEnough: 0, sameAmount: 0 }
     })
     expect(getPrivacy(38n)).toBeNull()
   })
@@ -149,13 +162,14 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       expect(getWithdrawalPrivacy({ amount: 100n, notes: [note()] }).leaks).toEqual([])
     })
 
-    test('is traceable when it is one of several notes spent', () => {
-      const privacy = getWithdrawalPrivacy({ amount: 137n, notes: [note(), uniqueNote] })
+    test('checks only the deposit spent, not the others of the account', () => {
+      const notes = [note(), uniqueNote]
+      const uniqueSend = getWithdrawalPrivacy({ amount: 37n, notes, spentNote: uniqueNote })
 
-      expect(privacy.rating).toBe('traceable')
+      expect(uniqueSend.rating).toBe('traceable')
       // The only 37 is the user's own
-      expect(privacy.cover.sameAmount).toBe(0)
-      expect(privacy.leaks.map(({ id }) => id)).toEqual(['unique-amount'])
+      expect(uniqueSend.cover.sameAmount).toBe(0)
+      expect(getWithdrawalPrivacy({ amount: 100n, notes }).leaks).toEqual([])
     })
 
     test('counts an old deposit of the user, so one recent deposit of the amount still hides it', () => {
@@ -173,6 +187,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         amount: 37n,
         notes: [uniqueNote],
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: uniqueNote.label,
         recipient: STRANGER,
         depositIndex,
         commonAmounts: COMMON_AMOUNTS
@@ -198,6 +213,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         amount: 37n,
         notes: [uniqueNote, note({ amount: 37n, depositValue: 37n, blockNumber: 50n })],
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: uniqueNote.label,
         recipient: STRANGER,
         depositIndex,
         commonAmounts: COMMON_AMOUNTS
@@ -223,6 +239,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         // Not verified yet, so it is not among the pool's counted deposits either
         notes: [uniqueNote, note({ amount: 37n, depositValue: 37n, approval: 'pending' })],
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: uniqueNote.label,
         recipient: STRANGER,
         depositIndex,
         commonAmounts: COMMON_AMOUNTS
@@ -247,13 +264,13 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       ).toEqual([])
     })
 
-    test('is weak when only one of several spent deposits is fresh', () => {
+    test('is not a leak when only another deposit of the account is fresh', () => {
       const privacy = getWithdrawalPrivacy({
-        amount: 150n,
+        amount: 100n,
         notes: [note(), note({ amount: 50n, depositValue: 50n, blockNumber: 95n })]
       })
 
-      expect(privacy.leaks.map(({ id }) => id)).toEqual(['fresh-deposit'])
+      expect(privacy.leaks).toEqual([])
     })
 
     test('lists errors first, then warnings', () => {
@@ -277,28 +294,16 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [100n] }])
     })
 
-    test('suggests the whole of the deposit taken part of, after the ones taken whole', () => {
+    test('suggests the whole of the deposit spent, not of the others', () => {
+      const spentNote = note({ amount: 50n, depositValue: 50n })
       const privacy = getWithdrawalPrivacy({
-        amount: 120n,
-        notes: [note(), note({ amount: 50n, depositValue: 50n })],
+        amount: 40n,
+        notes: [note(), spentNote],
+        spentNote,
         recipient: DEPOSITOR
       })
 
-      expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [150n] }])
-    })
-
-    test('suggests nothing when a deposit that earlier sends took part of still goes back', () => {
-      // The whole of the untouched 50 would still send the partly sent 60 back
-      const privacy = getWithdrawalPrivacy({
-        amount: 80n,
-        notes: [note({ amount: 60n, withdrawCount: 1 }), note({ amount: 50n, depositValue: 50n })],
-        recipient: DEPOSITOR
-      })
-
-      expect(summarizeLeaks(privacy)).toEqual([
-        { id: 'send-to-depositor', amounts: [] },
-        { id: 'send-rest-to-depositor', amounts: [] }
-      ])
+      expect(summarizeLeaks(privacy)).toEqual([{ id: 'send-to-depositor', amounts: [50n] }])
     })
 
     test('checks only the amount before a recipient is entered', () => {
@@ -346,14 +351,15 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       expect(privacy.leaks).toEqual([])
       expect(privacy.rating).toBe('standard')
       expect(privacy.cover).toEqual({ bigEnough: 0, sameAmount: 0 })
-      expect(privacy.notesCount).toBe(0)
     })
 
     test('is null for a negative amount', () => {
+      const spentNote = note()
       const privacy = getPrivacyPoolsWithdrawalPrivacy({
         amount: -1n,
-        notes: [note()],
+        notes: [spentNote],
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: spentNote.label,
         recipient: STRANGER,
         depositIndex: DEPOSIT_INDEX,
         commonAmounts: COMMON_AMOUNTS
@@ -363,12 +369,15 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
     })
   })
 
-  test('has no privacy for an amount the notes cannot pay', () => {
+  test('has no privacy for an amount the deposit cannot pay, even if others could together', () => {
+    const spentNote = note()
+
     expect(
       getPrivacyPoolsWithdrawalPrivacy({
         amount: 101n,
-        notes: [note()],
+        notes: [spentNote, note()],
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: spentNote.label,
         recipient: STRANGER,
         depositIndex: DEPOSIT_INDEX,
         commonAmounts: COMMON_AMOUNTS

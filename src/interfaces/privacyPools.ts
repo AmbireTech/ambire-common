@@ -443,8 +443,6 @@ export type PrivacyPoolsWithdrawalPrivacy = {
   rating: PrivacyPoolsRating
   leaks: PrivacyPoolsLeak[]
   cover: PrivacyPoolsSendCover
-  /** How many deposits the send spends. */
-  notesCount: number
 }
 
 /** The privacy of a deposit into a pool. */
@@ -460,6 +458,8 @@ export type PrivacyPoolsWithdrawalPrivacyParams = {
   seedId: string
   chainId: string
   tokenAddress: string
+  /** The deposit the send spends. */
+  noteLabel: bigint
   amount: bigint
   /** Null before the user enters one, so only the amount is checked. */
   recipient: string | null
@@ -467,12 +467,13 @@ export type PrivacyPoolsWithdrawalPrivacyParams = {
 
 /**
  * The privacy of a send the Send form asked about, with what it was asked for, so the screen can
- * tell whether it still matches the form. `privacy` is null when the notes cannot pay `amount`,
+ * tell whether it still matches the form. `privacy` is null when the deposit cannot pay `amount`,
  * or before the chain's first sync.
  */
 export type PrivacyPoolsWithdrawalPrivacyCheck = {
   chainId: string
   tokenAddress: string
+  noteLabel: bigint
   amount: bigint
   /** Null before the user enters one. */
   recipient: string | null

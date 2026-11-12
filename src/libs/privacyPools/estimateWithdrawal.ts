@@ -91,7 +91,7 @@ export type PrivacyPoolsWithdrawalFeeEstimate = {
  * the latest block, as the bundler will submit it.
  *
  * The proof's fee is a cap (all gas limits at the max gas price, plus a margin); the paymaster
- * refunds the unspent part to the recipient - a batch's too, as `readPaymasterWithdrawal` checks.
+ * refunds the unspent part to the recipient, as `readPaymasterWithdrawal` checks.
  *
  * A simulated call carries no 7702 authorization, so the sender's delegated code is set by a state
  * override; everything else is real on-chain state.

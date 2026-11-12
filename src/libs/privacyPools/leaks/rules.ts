@@ -1,5 +1,5 @@
 import { countPrivacyPoolsDepositsOf } from '../poolStats'
-import { countOthers, findNearest, getPrivacyPoolsNotesToSpend, setAmountAction } from './helpers'
+import { countOthers, findNearest, getPrivacyPoolsNoteSpends, setAmountAction } from './helpers'
 import { DepositFacts, LeakRule, PrivacyPoolsNoteSpend, WithdrawalFacts } from './types'
 
 const COMMON_AMOUNT_LABEL = 'Use a common amount'
@@ -55,7 +55,12 @@ const findWholeDepositAmount = ({
   if (!lastSpend || lastSpend.amount === lastSpend.note.amount) return undefined
 
   const wholeDepositAmount = amount + lastSpend.note.amount - lastSpend.amount
-  const wholeDepositSpends = getPrivacyPoolsNotesToSpend(notes, tokenAddress, wholeDepositAmount)
+  const wholeDepositSpends = getPrivacyPoolsNoteSpends(
+    notes,
+    tokenAddress,
+    lastSpend.note.label,
+    wholeDepositAmount
+  )
   if (!wholeDepositSpends || isRevealingSendToDepositor({ spends: wholeDepositSpends, recipient }))
     return undefined
 

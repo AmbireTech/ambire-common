@@ -3,6 +3,7 @@ import {
   PrivacyPoolsNote,
   PrivacyPoolsSendCover
 } from '../../../interfaces/privacyPools'
+import { findSendablePrivacyPoolsNote, isPrivacyPoolsNoteOfToken } from '../notes'
 import {
   countPrivacyPoolsDepositsOf,
   countPrivacyPoolsDepositsOfAtLeast,
@@ -10,46 +11,19 @@ import {
 } from '../poolStats'
 import { OwnDepositValues, PrivacyPoolsNoteSpend } from './types'
 
-/** Whether the note is of the token, whatever the casing of the addresses. */
-const isNoteOfToken = (note: PrivacyPoolsNote, tokenAddress: string) =>
-  note.tokenAddress.toLowerCase() === tokenAddress.toLowerCase()
-
 /**
- * The notes of a token a send can spend, in the order the SDK spends them: approved ones with a
- * balance, largest first, ties in the order the SDK lists them.
+ * What a send of `amount` spends: part or all of the approved deposit with `noteLabel`, as one send
+ * spends one deposit. Null when that deposit cannot pay `amount`, or it is not positive.
  */
-const getSpendableNotes = (notes: PrivacyPoolsNote[], tokenAddress: string) =>
-  notes
-    .filter(
-      (note) =>
-        isNoteOfToken(note, tokenAddress) && note.approval === 'approved' && note.amount > 0n
-    )
-    // Stable, so ties keep the SDK's order
-    .sort((a, b) => (a.amount > b.amount ? -1 : a.amount < b.amount ? 1 : 0))
-
-/**
- * The notes the SDK spends for a send of `amount`, as its `getNotesToSpendSelector` picks them
- * (it does not export it). Null when they cannot pay `amount`, or it is not positive.
- */
-export const getPrivacyPoolsNotesToSpend = (
-  /** In the order the SDK lists them, as the sync keeps them. */
+export const getPrivacyPoolsNoteSpends = (
   notes: PrivacyPoolsNote[],
   tokenAddress: string,
+  noteLabel: bigint,
   amount: bigint
 ): PrivacyPoolsNoteSpend[] | null => {
-  if (amount <= 0n) return null
+  const note = findSendablePrivacyPoolsNote(notes, tokenAddress, noteLabel, amount)
 
-  const spends: PrivacyPoolsNoteSpend[] = []
-  let remaining = amount
-  for (const note of getSpendableNotes(notes, tokenAddress)) {
-    if (remaining <= 0n) break
-
-    const spentAmount = note.amount < remaining ? note.amount : remaining
-    spends.push({ note, amount: spentAmount })
-    remaining -= spentAmount
-  }
-
-  return remaining > 0n ? null : spends
+  return note ? [{ note, amount }] : null
 }
 
 /** The approved deposits of the account's notes of the token, as the deposit index counts them. */
@@ -59,7 +33,7 @@ export const getOwnDepositValues = (
   { recentAfterBlock }: PrivacyPoolsDepositIndex
 ): OwnDepositValues => {
   const ownDeposits = notes.filter(
-    (note) => isNoteOfToken(note, tokenAddress) && note.approval === 'approved'
+    (note) => isPrivacyPoolsNoteOfToken(note, tokenAddress) && note.approval === 'approved'
   )
 
   return {

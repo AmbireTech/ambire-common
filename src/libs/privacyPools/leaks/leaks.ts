@@ -7,24 +7,21 @@ import {
   PrivacyPoolsWithdrawalPrivacy
 } from '../../../interfaces/privacyPools'
 import { countPrivacyPoolsDepositsOf, PrivacyPoolsDepositIndex } from '../poolStats'
-import { getOwnDepositValues, getPrivacyPoolsNotesToSpend, getSendCover } from './helpers'
+import { getOwnDepositValues, getPrivacyPoolsNoteSpends, getSendCover } from './helpers'
 import { DEPOSIT_LEAKS, WITHDRAWAL_LEAKS } from './rules'
 import { LeakRule, WithdrawalFacts } from './types'
 
 const NO_COVER: PrivacyPoolsSendCover = { bigEnough: 0, sameAmount: 0 }
 
 /**
- * The privacy of a send of `notesCount` deposits that could not be checked, with no leaks and no
- * cover. The user is asked to confirm it, as anything in it could link it to them.
+ * The privacy of a send that could not be checked, with no leaks and no cover. The user is asked to
+ * confirm it, as anything in it could link it to them.
  */
-export const getUncheckedPrivacyPoolsWithdrawalPrivacy = (
-  notesCount: number
-): PrivacyPoolsWithdrawalPrivacy => ({
+const UNCHECKED_WITHDRAWAL_PRIVACY: PrivacyPoolsWithdrawalPrivacy = {
   rating: 'unchecked',
   leaks: [],
-  cover: NO_COVER,
-  notesCount
-})
+  cover: NO_COVER
+}
 
 /** The leaks the facts have, in the order of `rules`. */
 const findLeaks = <Facts>(rules: LeakRule<Facts>[], facts: Facts): PrivacyPoolsLeak[] =>
@@ -51,10 +48,10 @@ const getRating = (leaks: PrivacyPoolsLeak[]): PrivacyPoolsRating => {
 }
 
 /**
- * The privacy of a send of `amount` of a token from the account's notes. Rated `unchecked`, with no
- * leaks and no cover, until the pool's deposits are read. An `amount` of 0 means none is entered
- * yet, so only the recipient is checked and there is no cover. Null when the notes cannot pay
- * `amount`, or it is negative.
+ * The privacy of a send of `amount` of a token from the deposit with `noteLabel`. Rated
+ * `unchecked`, with no leaks and no cover, until the pool's deposits are read. An `amount` of 0
+ * means none is entered yet, so only the recipient is checked and there is no cover. Null when the
+ * deposit cannot pay `amount`, or it is negative.
  */
 export const getPrivacyPoolsWithdrawalPrivacy = ({
   amount,
@@ -65,6 +62,8 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   /** The account's notes on the chain, in the order the SDK lists them. */
   notes: PrivacyPoolsNote[]
   tokenAddress: string
+  /** The deposit the send spends. */
+  noteLabel: bigint
   /** Null before the user enters one, so only the amount is checked. */
   recipient: string | null
   /** Null before the pool's deposits are read. */
@@ -72,20 +71,27 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   /** The pool's common amounts, smallest first - see `PRIVACY_POOLS_DEPOSIT_CHIPS`. */
   commonAmounts: bigint[]
 }): PrivacyPoolsWithdrawalPrivacy | null => {
-  const { notes, tokenAddress, depositIndex } = params
+  const { notes, tokenAddress, noteLabel, depositIndex } = params
   // No amount is entered yet, so only the recipient can be checked
   const isRecipientOnly = amount === 0n
-  const spends = isRecipientOnly ? [] : getPrivacyPoolsNotesToSpend(notes, tokenAddress, amount)
+  const spends = isRecipientOnly
+    ? []
+    : getPrivacyPoolsNoteSpends(notes, tokenAddress, noteLabel, amount)
   if (!spends) return null
 
-  if (!depositIndex) return getUncheckedPrivacyPoolsWithdrawalPrivacy(spends.length)
+  if (!depositIndex) return UNCHECKED_WITHDRAWAL_PRIVACY
 
   const ownDepositValues = getOwnDepositValues(notes, tokenAddress, depositIndex)
   // Common amounts are only suggested in place of an entered amount
   const commonAmountCovers = isRecipientOnly
     ? []
     : commonAmounts.flatMap((commonAmount) => {
-        const commonAmountSpends = getPrivacyPoolsNotesToSpend(notes, tokenAddress, commonAmount)
+        const commonAmountSpends = getPrivacyPoolsNoteSpends(
+          notes,
+          tokenAddress,
+          noteLabel,
+          commonAmount
+        )
         if (!commonAmountSpends) return []
 
         return [
@@ -107,7 +113,7 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   }
   const leaks = findLeaks(WITHDRAWAL_LEAKS, facts)
 
-  return { rating: getRating(leaks), leaks, cover: facts.cover, notesCount: spends.length }
+  return { rating: getRating(leaks), leaks, cover: facts.cover }
 }
 
 /**

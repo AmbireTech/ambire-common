@@ -29,10 +29,11 @@ import {
   PrivacyPoolsWithdrawalFeeEstimate,
   PrivacyPoolsWithdrawalWouldFailError
 } from '../../libs/privacyPools/estimateWithdrawal'
+import { getPrivacyPoolsWithdrawalPrivacy } from '../../libs/privacyPools/leaks/leaks'
 import {
-  getPrivacyPoolsWithdrawalPrivacy,
-  getUncheckedPrivacyPoolsWithdrawalPrivacy
-} from '../../libs/privacyPools/leaks/leaks'
+  findSendablePrivacyPoolsNote,
+  getSdkPickedPrivacyPoolsNote
+} from '../../libs/privacyPools/notes'
 import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdrawal'
 import { toPrivacyPoolsSdkError } from '../../libs/privacyPools/sdkError'
 import { getRpcProvider } from '../../services/provider'
@@ -99,6 +100,8 @@ const untilWithdrawalCancelled = <T>(promise: Promise<T>, signal: AbortSignal): 
 /** A withdrawal from the selected Privacy Pools account to any address. */
 export type PrivacyPoolsWithdrawalParams = AssetRef & {
   chainId: string
+  /** The deposit to send from. A send spends exactly one. */
+  noteLabel: bigint
   amount: bigint
   recipient: string
 }
@@ -217,6 +220,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     seedId,
     chainId,
     tokenAddress,
+    noteLabel,
     amount,
     recipient
   }: PrivacyPoolsWithdrawalParams & { seedId: string }): Promise<void> {
@@ -268,24 +272,28 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
         signal
       )
 
+      const spentNote = { tokenAddress, noteLabel, amount }
+      // Before proving, as a proof takes a while. Against the notes of the last sync, which the
+      // SDK's own sync rarely changes - checked again against its notes after proving, also when
+      // the chain has not synced yet.
+      const syncedNotes = this.#getNotes(seedId, chainId)
+      if (syncedNotes) this.#assertSdkSpendsNote(syncedNotes, spentNote)
+
       const protocol = await this.#registry.getProtocol(chainId, seedId)
       throwIfWithdrawalCancelled(signal)
 
       // Checked by `isAddress` above
       const sdkRecipient = recipient as Hex
-      // Prices gas, proves and signs the userOp. Always a batch (a batch of one equals a plain
-      // withdrawal): the SDK's plain withdrawal may pick a pending deposit, failing the proof.
-      // The unused gas is refunded to the recipient, which is the SDK's default too, so a
-      // different default can't leave it on a batch's single-use sender.
-      // TODO: pass `obfuscateAmounts: true` once the SDK ships it (kohaku#388), so a batch keeps
-      // part of each deposit it spends and its amounts do not add up to the user's deposits.
+      // Prices gas, proves and signs the userOp. Spends one deposit, which the SDK picks itself -
+      // checked to be the chosen one. The unused gas is refunded to the recipient, which is the
+      // SDK's default too, so a different default can't send it elsewhere.
       const privateOp = await protocol.prepareUnshield(
         {
           asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
           amount
         },
         sdkRecipient,
-        { mode: 'paymaster', batch: true, refundRecipient: sdkRecipient }
+        { mode: 'paymaster', refundRecipient: sdkRecipient }
       )
 
       // Only paymaster mode is asked for, so anything else means the SDK ignored it
@@ -294,6 +302,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
       // The SDK synced before proving, so its notes may be newer than the last sync's
       const provedNotes = await readPrivacyPoolsNotes(protocol, false)
+      this.#assertSdkSpendsNote(provedNotes, spentNote)
 
       const paymasterWithdrawal = readPaymasterWithdrawal({
         withdrawal: privateOp.withdrawal,
@@ -303,7 +312,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
         tokenAddress,
         amount
       })
-      const { fee, noteCount } = paymasterWithdrawal
+      const { fee } = paymasterWithdrawal
 
       const feeEstimate = await this.#getExpectedWithdrawalFee({
         chainId,
@@ -316,15 +325,9 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       throwIfWithdrawalCancelled(signal)
       const expectedFeeAmount = feeEstimate?.expectedFee ?? null
 
-      // A batch must simulate first: if its calls fail on chain, the largest deposit is still paid
-      // to the single-use sender, out of the wallet's reach
-      if (noteCount > 1 && expectedFeeAmount === null)
-        throw privacyPoolsErrors.withdrawalBatchNotSimulated()
-
-      const privacy = this.#getProvedWithdrawalPrivacy(
-        { seedId, chainId, tokenAddress, amount, recipient },
-        provedNotes,
-        noteCount
+      const privacy = this.#getWithdrawalPrivacy(
+        { seedId, chainId, tokenAddress, noteLabel, amount, recipient },
+        provedNotes
       )
       throwIfWithdrawalCancelled(signal)
 
@@ -377,10 +380,17 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
   /**
    * The privacy of a send from `notes`, by default the account's as of its last sync. Rated
-   * `unchecked` before the pool's deposits are read. Null when the notes cannot pay `amount`.
+   * `unchecked` before the pool's deposits are read. Null when the deposit cannot pay `amount`.
    */
   #getWithdrawalPrivacy(
-    { seedId, chainId, tokenAddress, amount, recipient }: PrivacyPoolsWithdrawalPrivacyParams,
+    {
+      seedId,
+      chainId,
+      tokenAddress,
+      noteLabel,
+      amount,
+      recipient
+    }: PrivacyPoolsWithdrawalPrivacyParams,
     notes: PrivacyPoolsNote[] | undefined = this.#getNotes(seedId, chainId)
   ): PrivacyPoolsWithdrawalPrivacy | null {
     const depositIndex = this.#poolStatsReader.getDepositIndex(chainId, tokenAddress)
@@ -390,11 +400,29 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       amount,
       notes,
       tokenAddress,
+      noteLabel,
       recipient,
       depositIndex,
       commonAmounts:
         PRIVACY_POOLS_DEPOSIT_CHIPS[getPrivacyPoolsTokenId(chainId, tokenAddress)] ?? []
     })
+  }
+
+  /**
+   * Throws unless the SDK, given `amount`, spends the chosen deposit: it picks the deposit itself
+   * and cannot be told which (see `getSdkPickedPrivacyPoolsNote`).
+   *
+   * TODO: delete once the SDK takes the deposit to spend, and pass it the chosen one instead.
+   */
+  #assertSdkSpendsNote(
+    notes: PrivacyPoolsNote[],
+    { tokenAddress, noteLabel, amount }: { tokenAddress: string; noteLabel: bigint; amount: bigint }
+  ) {
+    if (!findSendablePrivacyPoolsNote(notes, tokenAddress, noteLabel, amount))
+      throw privacyPoolsErrors.withdrawalDepositUnavailable()
+
+    if (getSdkPickedPrivacyPoolsNote(notes, tokenAddress, amount)?.label !== noteLabel)
+      throw privacyPoolsErrors.withdrawalOtherDepositPicked()
   }
 
   /** The notes the privacy checks need, the spent ones too. Undefined before the chain's sync. */
@@ -403,30 +431,6 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     if (!state) return undefined
 
     return [...state.notes, ...state.spentNotes]
-  }
-
-  /**
-   * The privacy of a proved withdrawal, from the notes the SDK proved with. The notes it spends are
-   * predicted the way the SDK picks them. A proof that spends a different number of them is
-   * reported and rated `unchecked`, as the rules ran on spends the proof does not make.
-   */
-  #getProvedWithdrawalPrivacy(
-    params: PrivacyPoolsWithdrawalPrivacyParams,
-    provedNotes: PrivacyPoolsNote[],
-    provedNoteCount: number
-  ): PrivacyPoolsWithdrawalPrivacy | null {
-    const privacy = this.#getWithdrawalPrivacy(params, provedNotes)
-    if (!privacy || privacy.notesCount === provedNoteCount) return privacy
-
-    this.#ctx.emitError({
-      level: 'silent',
-      message: 'Could not check the privacy of this transfer.',
-      error: new Error(
-        `privacyPools: the proof spends ${provedNoteCount} notes, ${privacy.notesCount} were predicted`
-      )
-    })
-
-    return getUncheckedPrivacyPoolsWithdrawalPrivacy(provedNoteCount)
   }
 
   /**
@@ -674,8 +678,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
   /**
    * The expected fee of a proved withdrawal, by simulating it, or null when it cannot be run.
    * Best effort: the proof's fee is already the cap. A simulated failure does not fail it here, as
-   * the bundler checks it again. The bundler checks only the sponsored part of a batch, though, so
-   * `prepare` refuses a batch this cannot run.
+   * the bundler checks it again.
    */
   async #getExpectedWithdrawalFee(
     params: WithdrawalSimulationParams

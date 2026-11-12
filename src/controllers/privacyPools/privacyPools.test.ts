@@ -125,44 +125,18 @@ const toFakeProof = (withdrawnValue: bigint) => ({
 })
 
 /**
- * What a batch of two deposits runs once the larger one is paid to the sender: the sender withdraws
- * the other one itself, then forwards everything minus the fee.
- */
-const encodeBatchCalls = (sponsoredValue: bigint) =>
-  new Interface([
-    'function executeBatch((address target, uint256 value, bytes data)[] calls)'
-  ]).encodeFunctionData('executeBatch', [
-    [
-      {
-        target: ETHEREUM_ETH_POOL,
-        value: 0n,
-        data: new Interface([
-          'function withdraw((address processooor, bytes data) withdrawal, (uint256[2] pA, uint256[2][2] pB, uint256[2] pC, uint256[8] pubSignals) proof)'
-        ]).encodeFunctionData('withdraw', [
-          { processooor: WITHDRAWAL_SENDER, data: '0x' },
-          toFakeProof(WITHDRAWAL_AMOUNT - sponsoredValue)
-        ])
-      },
-      { target: WITHDRAWAL_RECIPIENT, value: WITHDRAWAL_AMOUNT - WITHDRAWAL_FEE, data: '0x' }
-    ]
-  ])
-
-/**
  * A proved withdrawal the way the SDK hands it over, with the fee, recipient and amount encoded
  * where `readPaymasterWithdrawal` checks them. The proof itself is never verified off chain.
- *
- * As a batch, it spends two deposits: the sponsored one is paid to the sender, which forwards it.
- * The unused gas is refunded to the recipient either way.
+ * It spends one deposit, paid to the recipient, who also gets the unused gas back.
  */
-const buildPreparedWithdrawal = ({ isBatch = false }: { isBatch?: boolean } = {}) => {
+const buildPreparedWithdrawal = () => {
   const coder = AbiCoder.defaultAbiCoder()
   const adapter = ETHEREUM_PAYMASTER.poolAdapters[ETHEREUM_ETH_POOL]!
-  const sponsoredValue = isBatch ? (WITHDRAWAL_AMOUNT * 3n) / 5n : WITHDRAWAL_AMOUNT
   const feeData = coder.encode(
     ['tuple(address recipient, address feeRecipient, uint256 fee, address refundRecipient)'],
     [
       {
-        recipient: isBatch ? WITHDRAWAL_SENDER : WITHDRAWAL_RECIPIENT,
+        recipient: WITHDRAWAL_RECIPIENT,
         feeRecipient: ETHEREUM_PAYMASTER.paymasterAddress,
         fee: WITHDRAWAL_FEE,
         refundRecipient: WITHDRAWAL_RECIPIENT
@@ -176,7 +150,7 @@ const buildPreparedWithdrawal = ({ isBatch = false }: { isBatch?: boolean } = {}
     [
       {
         withdrawal: { processooor: adapter, data: feeData },
-        proof: toFakeProof(sponsoredValue)
+        proof: toFakeProof(WITHDRAWAL_AMOUNT)
       }
     ]
   )
@@ -191,8 +165,8 @@ const buildPreparedWithdrawal = ({ isBatch = false }: { isBatch?: boolean } = {}
       userOperation: {
         sender: WITHDRAWAL_SENDER,
         nonce: '0x0',
-        callData: isBatch ? encodeBatchCalls(sponsoredValue) : '0x',
-        callGasLimit: isBatch ? toBeHex(580_000n) : '0x0',
+        callData: '0x',
+        callGasLimit: '0x0',
         verificationGasLimit: toBeHex(50_000n),
         preVerificationGas: toBeHex(100_000n),
         maxFeePerGas: toBeHex(10n ** 9n),
@@ -487,6 +461,8 @@ class FakeProtocol {
   async prepareUnshield(_assets: unknown, _to: unknown, options: unknown) {
     this.syncCountWhenProving = this.syncCount
     this.unshieldOptions = options
+    // The real one syncs first, so it knows the phrase's notes after proving
+    this.seedId = await this.host.keystore.deriveAt("m/28784'/1'/0'/0")
     if (isProvingOnUnshield) {
       const prover = await this.params.proverFactory()
       await prover.prove('withdraw', { existingSecret: 1n })
@@ -1651,6 +1627,7 @@ describe('PrivacyPoolsController', () => {
       await controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: 1n,
         amount: 10n ** 17n,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -2637,6 +2614,11 @@ describe('PrivacyPoolsController', () => {
   })
 
   describe('sending from a Privacy Pools account', () => {
+    beforeEach(() => {
+      // A deposit that pays a send of WITHDRAWAL_AMOUNT
+      notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH, approved: true }]
+    })
+
     it('refuses to prove a transfer to something that is not an address', async () => {
       const { controller, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-a')
@@ -2645,6 +2627,7 @@ describe('PrivacyPoolsController', () => {
         controller.prepareWithdrawal({
           chainId: '1',
           tokenAddress: ZERO_ADDRESS,
+          noteLabel: 1n,
           amount: 10n ** 17n,
           recipient: 'vitalik'
         })
@@ -2653,6 +2636,7 @@ describe('PrivacyPoolsController', () => {
         controller.prepareWithdrawal({
           chainId: '1',
           tokenAddress: ZERO_ADDRESS,
+          noteLabel: 1n,
           amount: 10n ** 17n,
           recipient: ZERO_ADDRESS
         })
@@ -2671,6 +2655,7 @@ describe('PrivacyPoolsController', () => {
         controller.prepareWithdrawal({
           chainId: '1',
           tokenAddress: ZERO_ADDRESS,
+          noteLabel: 1n,
           amount: 10n ** 17n,
           recipient: WITHDRAWAL_RECIPIENT
         })
@@ -2688,6 +2673,7 @@ describe('PrivacyPoolsController', () => {
       await controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: 1n,
         amount: 10n ** 17n,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -2714,6 +2700,7 @@ describe('PrivacyPoolsController', () => {
       const preparing = controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: 1n,
         amount: 10n ** 17n,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -2731,14 +2718,15 @@ describe('PrivacyPoolsController', () => {
       restore()
     })
 
-    const prepareSignedWithdrawal = async ({ isBatch = false }: { isBatch?: boolean } = {}) => {
-      preparedWithdrawal = buildPreparedWithdrawal({ isBatch })
+    const prepareSignedWithdrawal = async () => {
+      preparedWithdrawal = buildPreparedWithdrawal()
       const test = await prepareTest()
       test.selectedAccount.select('seed-a')
 
       await test.controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: 1n,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -2760,6 +2748,7 @@ describe('PrivacyPoolsController', () => {
       await test.controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: 1n,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -3157,6 +3146,7 @@ describe('PrivacyPoolsController', () => {
           await controller.prepareWithdrawal({
             chainId: '1',
             tokenAddress: ZERO_ADDRESS,
+            noteLabel: 1n,
             amount: WITHDRAWAL_AMOUNT,
             recipient: WITHDRAWAL_RECIPIENT
           })
@@ -3328,9 +3318,9 @@ describe('PrivacyPoolsController', () => {
 
         // Nothing left the account, so none of it shows as on its way
         expect(getBalance(controller)).toMatchObject({
-          totalAmount: 10n,
+          totalAmount: ONE_ETH,
           simulationAmount: 0n,
-          approvedAmountPostSimulation: 10n
+          approvedAmountPostSimulation: ONE_ETH
         })
       })
 
@@ -3509,6 +3499,7 @@ describe('PrivacyPoolsController', () => {
       const preparing = test.controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: 1n,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -3578,101 +3569,157 @@ describe('PrivacyPoolsController', () => {
       expect(providers.providers['1'].send).not.toHaveBeenCalled()
     })
 
-    it('asks the SDK for a batch, whose selection skips pending deposits', async () => {
+    it('asks the SDK for one deposit, with the unused gas refunded to the recipient', async () => {
       await prepareSignedWithdrawal()
 
       const [protocol] = protocols
       expect(protocol?.unshieldOptions).toEqual({
         mode: 'paymaster',
-        batch: true,
         refundRecipient: WITHDRAWAL_RECIPIENT
       })
     })
 
-    describe('combining deposits', () => {
-      it('describes it by the forward to the recipient, not by the single-use sender', async () => {
-        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+    describe('the deposit it is sent from', () => {
+      /** seed-a with `notes`, synced, proving a send of `WITHDRAWAL_AMOUNT` from `noteLabel`. */
+      const prepareFromDeposit = async (notes: (typeof notesBySeed)[string], noteLabel: bigint) => {
+        notesBySeed['seed-a'] = notes
+        preparedWithdrawal = buildPreparedWithdrawal()
+        const test = await prepareTest()
+        test.selectedAccount.select('seed-a')
+        const syncing = test.controller.syncChain('1')
+        await releaseSync('seed-a')
+        await syncing
 
-        // Its refund goes to the recipient too, so they get the amount net of the expected fee
-        expect(describeHumanization(controller.operation?.humanization)).toEqual(
-          humanizedSend(WITHDRAWAL_FEE - WITHDRAWAL_REFUND)
+        await test.controller.prepareWithdrawal({
+          chainId: '1',
+          tokenAddress: ZERO_ADDRESS,
+          noteLabel,
+          amount: WITHDRAWAL_AMOUNT,
+          recipient: WITHDRAWAL_RECIPIENT
+        })
+
+        return test
+      }
+
+      const DEPOSIT_UNAVAILABLE_ERROR =
+        'This deposit does not have enough left for this amount. Please send less, or pick another deposit.'
+      const OTHER_DEPOSIT_PICKED_ERROR =
+        'This amount cannot be sent from this deposit yet. Please send all of it, or pick another deposit.'
+
+      it('proves a send from the deposit the SDK picks for the amount', async () => {
+        const { controller } = await prepareFromDeposit(
+          [
+            { label: 1n, amount: ONE_ETH, approved: true },
+            { label: 2n, amount: WITHDRAWAL_AMOUNT, approved: true }
+          ],
+          2n
         )
+
+        expect(controller.operation).toMatchObject({ status: 'pending', phase: 'ready' })
       })
 
-      it('shows the fee net of the refund, which goes to the recipient', async () => {
-        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
-
-        expect(controller.operation).toMatchObject({
-          status: 'pending',
-          phase: 'ready',
-          quote: {
-            feeAmount: WITHDRAWAL_FEE,
-            amountAfterFee: WITHDRAWAL_AMOUNT - WITHDRAWAL_FEE,
-            expectedFeeAmount: WITHDRAWAL_FEE - WITHDRAWAL_REFUND
-          }
-        })
-      })
-
-      it('does not count a refund to the single-use sender', async () => {
-        simulateWithdrawal = async () => successfulSimulation(WITHDRAWAL_SENDER)
-
-        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
-
-        expect(controller.operation?.quote?.expectedFeeAmount).toBe(WITHDRAWAL_FEE)
-      })
-
-      const batchNotConfirmedError =
-        'This transfer combines several of your deposits, and we could not confirm it would go through, so it was not sent. Please try again in a moment, or send a smaller amount.'
-
-      it('refuses one the node cannot run', async () => {
+      it('refuses, before proving, a deposit the SDK would not pick for the amount', async () => {
         const { restore } = suppressConsole()
-        simulateWithdrawal = async () => {
-          throw new Error('the method eth_simulateV1 does not exist/is not available')
-        }
-
-        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+        // The SDK spends the deposit with the least left that covers the amount
+        const { controller } = await prepareFromDeposit(
+          [
+            { label: 1n, amount: ONE_ETH, approved: true },
+            { label: 2n, amount: WITHDRAWAL_AMOUNT, approved: true }
+          ],
+          1n
+        )
 
         expect(controller.operation).toMatchObject({
           status: 'failed',
-          error: batchNotConfirmedError
+          error: OTHER_DEPOSIT_PICKED_ERROR
+        })
+        expect(protocols[0]?.syncCountWhenProving).toBeNull()
+        restore()
+      })
+
+      it('refuses a deposit the SDK would skip for a smaller pending one', async () => {
+        const { restore } = suppressConsole()
+        const { controller } = await prepareFromDeposit(
+          [
+            { label: 1n, amount: ONE_ETH, approved: true },
+            { label: 2n, amount: WITHDRAWAL_AMOUNT, approved: false }
+          ],
+          1n
+        )
+
+        expect(controller.operation).toMatchObject({
+          status: 'failed',
+          error: OTHER_DEPOSIT_PICKED_ERROR
         })
         restore()
       })
 
-      it('refuses one the simulation says would revert', async () => {
+      it('refuses a pending deposit, one too small, and one the account does not have', async () => {
         const { restore } = suppressConsole()
-        simulateWithdrawal = async () => [{ calls: [{ status: '0x0', logs: [] }] }]
+        const pending = await prepareFromDeposit(
+          [{ label: 1n, amount: ONE_ETH, approved: false }],
+          1n
+        )
+        expect(pending.controller.operation?.error).toBe(DEPOSIT_UNAVAILABLE_ERROR)
 
-        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+        const tooSmall = await prepareFromDeposit(
+          [{ label: 1n, amount: WITHDRAWAL_AMOUNT - 1n, approved: true }],
+          1n
+        )
+        expect(tooSmall.controller.operation?.error).toBe(DEPOSIT_UNAVAILABLE_ERROR)
 
-        expect(controller.operation).toMatchObject({
-          status: 'failed',
-          error: batchNotConfirmedError
-        })
+        const unknown = await prepareFromDeposit(
+          [{ label: 1n, amount: ONE_ETH, approved: true }],
+          9n
+        )
+        expect(unknown.controller.operation?.error).toBe(DEPOSIT_UNAVAILABLE_ERROR)
         restore()
       })
 
-      it('refuses one on a node without state overrides', async () => {
+      it("refuses a proof once the SDK's own sync shows it would pick another deposit", async () => {
         const { restore } = suppressConsole()
-        rpcNoStateOverride = true
+        notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH, approved: true }]
+        preparedWithdrawal = buildPreparedWithdrawal()
+        const { controller, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-a')
+        const syncing = controller.syncChain('1')
+        await releaseSync('seed-a')
+        await syncing
+        // A deposit the last sync did not see, which the SDK spends instead
+        notesBySeed['seed-a'] = [
+          { label: 1n, amount: ONE_ETH, approved: true },
+          { label: 2n, amount: WITHDRAWAL_AMOUNT, approved: true }
+        ]
 
-        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+        await controller.prepareWithdrawal({
+          chainId: '1',
+          tokenAddress: ZERO_ADDRESS,
+          noteLabel: 1n,
+          amount: WITHDRAWAL_AMOUNT,
+          recipient: WITHDRAWAL_RECIPIENT
+        })
 
         expect(controller.operation).toMatchObject({
           status: 'failed',
-          error: batchNotConfirmedError
+          error: OTHER_DEPOSIT_PICKED_ERROR
         })
         restore()
       })
     })
   })
   describe('cancelling a transfer', () => {
+    beforeEach(() => {
+      // A deposit that pays a send of WITHDRAWAL_AMOUNT
+      notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH, approved: true }]
+    })
+
     const SEND_ROUTE = 'privacy-pools-send'
 
     const startWithdrawal = (controller: PrivacyPoolsController) =>
       controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        noteLabel: 1n,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -3788,6 +3835,7 @@ describe('PrivacyPoolsController', () => {
     })
 
     it('cancels it on switching accounts, and proves the next one only once it has stopped', async () => {
+      notesBySeed['seed-b'] = [{ label: 1n, amount: ONE_ETH, approved: true }]
       const { controller, selectedAccount, proofs, preparing } = await startProving()
 
       selectedAccount.select('seed-b')
@@ -4997,10 +5045,11 @@ describe('PrivacyPoolsController', () => {
     const ETH_TRANSFER = {
       chainId: '1',
       tokenAddress: ZERO_ADDRESS,
+      noteLabel: 1n,
       amount: 10n,
       recipient: WITHDRAWAL_RECIPIENT
     }
-    const USDC_TRANSFER = { ...ETH_TRANSFER, tokenAddress: USDC, amount: 7n }
+    const USDC_TRANSFER = { ...ETH_TRANSFER, tokenAddress: USDC, noteLabel: 2n, amount: 7n }
 
     const getLeakIds = (controller: PrivacyPoolsController) =>
       controller.withdrawalPrivacy?.privacy?.leaks.map(({ id }) => id)
@@ -5073,7 +5122,7 @@ describe('PrivacyPoolsController', () => {
       ]
       const { controller } = await prepareSynced()
 
-      controller.checkWithdrawalPrivacy({ ...ETH_TRANSFER, amount: 37n })
+      controller.checkWithdrawalPrivacy({ ...ETH_TRANSFER, noteLabel: 4n, amount: 37n })
 
       expect(getLeakIds(controller)).toEqual(['unique-amount'])
       expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
@@ -5097,15 +5146,15 @@ describe('PrivacyPoolsController', () => {
       restore()
     })
 
-    it('rates the deposits the proof spends, not the ones of the last sync', async () => {
+    it('rates the deposit as the SDK has it after proving, not as the last sync did', async () => {
       notesBySeed['seed-a'] = [
-        { label: 1n, amount: WITHDRAWAL_AMOUNT, approved: true, blockNumber: 1000n }
+        { label: 1n, amount: 2n * WITHDRAWAL_AMOUNT, approved: true, blockNumber: 1000n }
       ]
       const { controller } = await prepareSynced()
-      // Seen only by the sync the SDK runs before proving: a larger deposit from the recipient
+      // Seen only by the sync the SDK runs before proving: the deposit was made by the recipient
       notesBySeed['seed-a'] = [
         {
-          label: 3n,
+          label: 1n,
           amount: 2n * WITHDRAWAL_AMOUNT,
           approved: true,
           blockNumber: 1000n,
@@ -5121,31 +5170,6 @@ describe('PrivacyPoolsController', () => {
       expect(controller.operation?.privacy?.leaks.map(({ id }) => id)).toContain(
         'send-to-depositor'
       )
-    })
-
-    it('rates a proof that spends a different number of deposits than predicted as unchecked, and reports it', async () => {
-      const { restore } = suppressConsole()
-      notesBySeed['seed-a'] = [
-        { label: 1n, amount: WITHDRAWAL_AMOUNT, approved: true, blockNumber: 1000n }
-      ]
-      const { controller } = await prepareSynced()
-      // Spends two deposits, while the one note pays the whole amount
-      preparedWithdrawal = buildPreparedWithdrawal({ isBatch: true })
-
-      await controller.prepareWithdrawal({ ...ETH_TRANSFER, amount: WITHDRAWAL_AMOUNT })
-
-      expect(controller.operation).toMatchObject({
-        phase: 'ready',
-        // The one predicted deposit rates standard, which says nothing about linking two deposits
-        privacy: { rating: 'unchecked', notesCount: 2, leaks: [] }
-      })
-      expect(controller.emittedErrors.at(-1)).toMatchObject({
-        level: 'silent',
-        error: expect.objectContaining({
-          message: 'privacyPools: the proof spends 2 notes, 1 were predicted'
-        })
-      })
-      restore()
     })
 
     it('reads the pool for a deposit form when no sync has read it, without syncing', async () => {
