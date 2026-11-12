@@ -1,5 +1,9 @@
 import { Hex } from '../interfaces/hex'
-import { PrivacyPoolsAsset, PrivacyPoolsChainConfig } from '../interfaces/privacyPools'
+import {
+  PrivacyPoolsAsset,
+  PrivacyPoolsChainConfig,
+  PrivacyPoolsLeakId
+} from '../interfaces/privacyPools'
 import { ZERO_ADDRESS } from '../services/socket/constants'
 
 /**
@@ -225,6 +229,55 @@ export const getPrivacyPoolsStoreKey = ({
   entrypointAddress
 }: PrivacyPoolsChainConfig): string =>
   `privacy-pool-state-${chainId.toString()}-${BigInt(entrypointAddress).toString()}`
+
+/** How many days back the deposits that hide a transfer are counted in what the user sees. */
+export const PRIVACY_POOLS_COVER_WINDOW_DAYS = 90n
+
+const ETH_UNIT = 10n ** 18n
+const USD_STABLECOIN_UNIT = 10n ** 6n
+const USD_STABLECOIN_DEPOSIT_CHIPS = [25n, 100n, 500n, 1_000n, 5_000n, 10_000n].map(
+  (amount) => amount * USD_STABLECOIN_UNIT
+)
+
+/**
+ * The most common amounts deposits put into each pool, smallest first, by token id (see
+ * `getPrivacyPoolsTokenId`). A deposit of one of them hides among many others. None is below the
+ * pool's minimum deposit. The ETH ones are the most common deposits of the last 90 days.
+ */
+export const PRIVACY_POOLS_DEPOSIT_CHIPS: { [tokenId: string]: bigint[] } = {
+  [`1:${ZERO_ADDRESS}`]: [1n, 10n, 50n, 100n, 500n].map(
+    (hundredths) => (hundredths * ETH_UNIT) / 100n
+  ),
+  '1:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': USD_STABLECOIN_DEPOSIT_CHIPS,
+  '1:0xdac17f958d2ee523a2206206994597c13d831ec7': USD_STABLECOIN_DEPOSIT_CHIPS
+}
+
+/**
+ * A send hidden among fewer deposits than this is shown as a warning, even with no leak. It does
+ * not count as a leak, as the user decides whether that many is enough.
+ */
+export const PRIVACY_POOLS_MIN_REASSURING_COVER = 5
+
+/** Leaks of a send that come from where it goes, which another recipient avoids. */
+export const PRIVACY_POOLS_RECIPIENT_LEAK_IDS: PrivacyPoolsLeakId[] = [
+  'send-to-depositor',
+  'send-rest-to-depositor'
+]
+
+/** Leaks of a send that come from its amount and the deposits it spends, which another amount can avoid. */
+export const PRIVACY_POOLS_AMOUNT_LEAK_IDS: PrivacyPoolsLeakId[] = [
+  'unique-amount',
+  'empties-partly-sent-deposit',
+  'several-deposits',
+  'fresh-deposit'
+]
+
+/**
+ * Shown when a transfer's privacy is `unchecked`, as the pool's deposits are not read yet. In
+ * English, to translate as it is.
+ */
+export const PRIVACY_POOLS_UNCHECKED_PRIVACY_TEXT =
+  "We are unable to check this transfer's privacy yet. Please wait a few seconds and try again."
 
 /** Whether the address is the wallet's native token address (`ZERO_ADDRESS`). */
 export const isPrivacyPoolsNativeAsset = (address: string): boolean =>

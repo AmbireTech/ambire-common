@@ -6,7 +6,7 @@ import { PrivacyPoolsDepositAssetConfig } from '../../interfaces/privacyPools'
 import { Call } from '../../libs/accountOp/types'
 import { encodePrivacyPoolsDeposit, readPrivacyPoolsDeposit } from '../../libs/privacyPools/deposit'
 import {
-  getDepositAmountAfterVettingFee,
+  getDepositAmountWithVettingFee,
   PrivacyPoolsEntrypointAssetConfig,
   readEntrypointAssetConfig
 } from '../../libs/privacyPools/entrypointAssetConfig'
@@ -50,6 +50,7 @@ export type PrivacyPoolsDepositParams = AssetRef & {
   /** The wallet account sending them. */
   accountAddr: string
   chainId: string
+  /** What goes into the pool. The vetting fee is added on top, as on the 0xBow website. */
   amount: bigint
 }
 
@@ -120,14 +121,16 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     const asset = getPrivacyPoolsDepositAsset(BigInt(chainId), tokenAddress)
     if (!asset) throw privacyPoolsErrors.depositUnsupportedToken(tokenAddress, chainId)
 
-    if (amount > asset.maxDeposit)
-      throw privacyPoolsErrors.depositAboveMaximum(asset.maxDeposit, asset)
-
     // The last read, made when the Send session started; a pool replaced since is seen next session
     const { minimumDepositAmount, poolAddress, vettingFeeBPS } =
       this.#lastAssetConfigs.get(getAssetConfigKey(chainId, tokenAddress))?.assetConfig ??
       (await this.#readAssetConfig(chainId, tokenAddress, null))
-    if (amount < minimumDepositAmount)
+    const depositAmount = getDepositAmountWithVettingFee(amount, vettingFeeBPS)
+
+    if (depositAmount > asset.maxDeposit)
+      throw privacyPoolsErrors.depositAboveMaximum(asset.maxDeposit, asset)
+
+    if (depositAmount < minimumDepositAmount)
       throw privacyPoolsErrors.depositBelowMinimum(minimumDepositAmount, asset)
 
     // A pool the paymaster has no adapter for, e.g. one 0xBow replaced, could not be sent out of
@@ -145,7 +148,7 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
       ...encodePrivacyPoolsDeposit({
         isNative: asset.isNative,
         assetAddress: asset.address,
-        amount,
+        amount: depositAmount,
         precommitment
       })
     }
@@ -155,12 +158,15 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
       seedId,
       kind: 'deposit',
       tokenAddress: asset.address,
-      amount: getDepositAmountAfterVettingFee(amount, vettingFeeBPS)
+      amount
     })
 
     if (asset.isNative) return [depositCall]
 
-    return [...(await this.#approvalCallIfNeeded(chainId, asset, amount, accountAddr)), depositCall]
+    return [
+      ...(await this.#approvalCallIfNeeded(chainId, asset, depositAmount, accountAddr)),
+      depositCall
+    ]
   }
 
   /**
