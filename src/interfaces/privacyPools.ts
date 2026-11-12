@@ -200,8 +200,28 @@ export type PrivacyPoolsTokenBalance = {
 }
 
 /**
+ * A deposit of a Privacy Pools account that a send can spend, as its Send form lists it: one each,
+ * as a send spends exactly one deposit.
+ */
+export type PrivacyPoolsSendableDeposit = {
+  tokenAddress: string
+  symbol: string
+  decimals: number
+  isNative: boolean
+  /**
+   * Its place among the account's deposits of the token on the chain, from 1, oldest first. Kept
+   * as later deposits arrive and earlier ones are sent in full. What the UI names a deposit by,
+   * as the deposit's label would point to it on chain.
+   */
+  number: number
+  /** What is left in it, less what sends on their way take out of it. What can be sent now. */
+  availableAmount: bigint
+}
+
+/**
  * One chain as the UI reads it: the account's sync of the chain, merged with what this device knows
- * of the chain's shared state. Notes reach the UI only as per-token `balances`.
+ * of the chain's shared state. Notes reach the UI only as per-token `balances`, and as the deposits
+ * a send can spend.
  */
 export type PrivacyPoolsChainState = {
   chainId: string
@@ -351,6 +371,8 @@ export type PrivacyPoolsOperation = {
   isNative: boolean
   amount: bigint
   recipient: string
+  /** The deposit it is sent from, by its number - see `PrivacyPoolsSendableDeposit.number`. */
+  depositNumber: number
   /** Who proves and sends it, as chosen when it was started. */
   broadcaster: PrivacyPoolsBroadcaster
   status: PrivacyPoolsOperationStatus
@@ -472,8 +494,8 @@ export type PrivacyPoolsWithdrawalPrivacyParams = {
   seedId: string
   chainId: string
   tokenAddress: string
-  /** The deposit the send spends. */
-  noteLabel: bigint
+  /** The deposit the send spends, by its number - see `PrivacyPoolsSendableDeposit.number`. */
+  depositNumber: number
   amount: bigint
   /** Null before the user enters one, so only the amount is checked. */
   recipient: string | null
@@ -487,7 +509,7 @@ export type PrivacyPoolsWithdrawalPrivacyParams = {
 export type PrivacyPoolsWithdrawalPrivacyCheck = {
   chainId: string
   tokenAddress: string
-  noteLabel: bigint
+  depositNumber: number
   amount: bigint
   /** Null before the user enters one. */
   recipient: string | null

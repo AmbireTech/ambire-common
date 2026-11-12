@@ -1255,6 +1255,7 @@ describe('PrivacyPoolsController', () => {
           'operation',
           'poolStats',
           'prices',
+          'sendableDeposits',
           'sendForm',
           'sendFormResetCounter',
           'statuses',
@@ -1497,9 +1498,12 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-a')
       await syncing
 
-      const { chains, balances } = controller.toJSON()
+      const { chains, balances, sendableDeposits } = controller.toJSON()
       expect(chains['1']).not.toHaveProperty('notes')
       expect(balances['1']).toHaveLength(1)
+      // Named by number: a label would point to the deposit on chain
+      expect(sendableDeposits['1']).toEqual([expect.objectContaining({ number: 1 })])
+      expect(sendableDeposits['1']?.[0]).not.toHaveProperty('label')
     })
 
     it('keeps notes across account switches without syncing again', async () => {
@@ -1717,7 +1721,7 @@ describe('PrivacyPoolsController', () => {
       await controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
-        noteLabel: 1n,
+        depositNumber: 1,
         amount: 10n ** 17n,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -2717,7 +2721,7 @@ describe('PrivacyPoolsController', () => {
         controller.prepareWithdrawal({
           chainId: '1',
           tokenAddress: ZERO_ADDRESS,
-          noteLabel: 1n,
+          depositNumber: 1,
           amount: 10n ** 17n,
           recipient: 'vitalik'
         })
@@ -2726,7 +2730,7 @@ describe('PrivacyPoolsController', () => {
         controller.prepareWithdrawal({
           chainId: '1',
           tokenAddress: ZERO_ADDRESS,
-          noteLabel: 1n,
+          depositNumber: 1,
           amount: 10n ** 17n,
           recipient: ZERO_ADDRESS
         })
@@ -2745,7 +2749,7 @@ describe('PrivacyPoolsController', () => {
         controller.prepareWithdrawal({
           chainId: '1',
           tokenAddress: ZERO_ADDRESS,
-          noteLabel: 1n,
+          depositNumber: 1,
           amount: 10n ** 17n,
           recipient: WITHDRAWAL_RECIPIENT
         })
@@ -2763,7 +2767,7 @@ describe('PrivacyPoolsController', () => {
       await controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
-        noteLabel: 1n,
+        depositNumber: 1,
         amount: 10n ** 17n,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -2790,7 +2794,7 @@ describe('PrivacyPoolsController', () => {
       const preparing = controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
-        noteLabel: 1n,
+        depositNumber: 1,
         amount: 10n ** 17n,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -2816,7 +2820,7 @@ describe('PrivacyPoolsController', () => {
       await test.controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
-        noteLabel: 1n,
+        depositNumber: 1,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -2838,7 +2842,7 @@ describe('PrivacyPoolsController', () => {
       await test.controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
-        noteLabel: 1n,
+        depositNumber: 1,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -3221,6 +3225,41 @@ describe('PrivacyPoolsController', () => {
           })
         })
 
+        it('shows the amount as gone from the deposit it is sent from, and only from it', async () => {
+          const { controller } = await prepareReadWithdrawal([
+            { label: 1n, amount: ONE_ETH, approved: true, deposit: 0 },
+            { label: 2n, amount: ONE_ETH, approved: true, deposit: 1 }
+          ])
+          const block = holdBlockRead()
+          mockBroadcastResult()
+
+          const broadcasting = controller.broadcastWithdrawal()
+          await waitUntil(() => bundlerProvider.send.mock.calls.length === 1)
+
+          expect(
+            controller.sendableDeposits['1']?.map(({ number, availableAmount }) => ({
+              number,
+              availableAmount
+            }))
+          ).toEqual([
+            { number: 1, availableAmount: ONE_ETH - WITHDRAWAL_AMOUNT },
+            { number: 2, availableAmount: ONE_ETH }
+          ])
+
+          notesBySeed['seed-a'] = [
+            { label: 1n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true, deposit: 0 },
+            { label: 2n, amount: ONE_ETH, approved: true, deposit: 1 }
+          ]
+          block.resolve()
+          await releaseSync('seed-a')
+          await broadcasting
+
+          // Not taken out twice once the notes show it
+          expect(controller.sendableDeposits['1']?.[0]?.availableAmount).toBe(
+            ONE_ETH - WITHDRAWAL_AMOUNT
+          )
+        })
+
         it('keeps showing a transfer when the notes only show another one, sent before it, that spent a different note of the token', async () => {
           const { controller } = await prepareReadWithdrawal([
             { label: 1n, amount: ONE_ETH, approved: true },
@@ -3236,7 +3275,7 @@ describe('PrivacyPoolsController', () => {
           await controller.prepareWithdrawal({
             chainId: '1',
             tokenAddress: ZERO_ADDRESS,
-            noteLabel: 1n,
+            depositNumber: 1,
             amount: WITHDRAWAL_AMOUNT,
             recipient: WITHDRAWAL_RECIPIENT
           })
@@ -3589,7 +3628,7 @@ describe('PrivacyPoolsController', () => {
       const preparing = test.controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
-        noteLabel: 1n,
+        depositNumber: 1,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -3670,8 +3709,11 @@ describe('PrivacyPoolsController', () => {
     })
 
     describe('the deposit it is sent from', () => {
-      /** seed-a with `notes`, synced, proving a send of `WITHDRAWAL_AMOUNT` from `noteLabel`. */
-      const prepareFromDeposit = async (notes: (typeof notesBySeed)[string], noteLabel: bigint) => {
+      /** seed-a with `notes`, synced, proving a send of `WITHDRAWAL_AMOUNT` from `depositNumber`. */
+      const prepareFromDeposit = async (
+        notes: (typeof notesBySeed)[string],
+        depositNumber: number
+      ) => {
         notesBySeed['seed-a'] = notes
         preparedWithdrawal = buildPreparedWithdrawal()
         const test = await prepareTest()
@@ -3683,7 +3725,7 @@ describe('PrivacyPoolsController', () => {
         await test.controller.prepareWithdrawal({
           chainId: '1',
           tokenAddress: ZERO_ADDRESS,
-          noteLabel,
+          depositNumber,
           amount: WITHDRAWAL_AMOUNT,
           recipient: WITHDRAWAL_RECIPIENT
         })
@@ -3702,7 +3744,7 @@ describe('PrivacyPoolsController', () => {
             { label: 1n, amount: ONE_ETH, approved: true },
             { label: 2n, amount: WITHDRAWAL_AMOUNT, approved: true }
           ],
-          2n
+          2
         )
 
         expect(controller.operation).toMatchObject({ status: 'pending', phase: 'ready' })
@@ -3716,7 +3758,7 @@ describe('PrivacyPoolsController', () => {
             { label: 1n, amount: ONE_ETH, approved: true },
             { label: 2n, amount: WITHDRAWAL_AMOUNT, approved: true }
           ],
-          1n
+          1
         )
 
         expect(controller.operation).toMatchObject({
@@ -3734,7 +3776,7 @@ describe('PrivacyPoolsController', () => {
             { label: 1n, amount: ONE_ETH, approved: true },
             { label: 2n, amount: WITHDRAWAL_AMOUNT, approved: false }
           ],
-          1n
+          1
         )
 
         expect(controller.operation).toMatchObject({
@@ -3748,19 +3790,19 @@ describe('PrivacyPoolsController', () => {
         const { restore } = suppressConsole()
         const pending = await prepareFromDeposit(
           [{ label: 1n, amount: ONE_ETH, approved: false }],
-          1n
+          1
         )
         expect(pending.controller.operation?.error).toBe(DEPOSIT_UNAVAILABLE_ERROR)
 
         const tooSmall = await prepareFromDeposit(
           [{ label: 1n, amount: WITHDRAWAL_AMOUNT - 1n, approved: true }],
-          1n
+          1
         )
         expect(tooSmall.controller.operation?.error).toBe(DEPOSIT_UNAVAILABLE_ERROR)
 
         const unknown = await prepareFromDeposit(
           [{ label: 1n, amount: ONE_ETH, approved: true }],
-          9n
+          9
         )
         expect(unknown.controller.operation?.error).toBe(DEPOSIT_UNAVAILABLE_ERROR)
         restore()
@@ -3784,7 +3826,7 @@ describe('PrivacyPoolsController', () => {
         await controller.prepareWithdrawal({
           chainId: '1',
           tokenAddress: ZERO_ADDRESS,
-          noteLabel: 1n,
+          depositNumber: 1,
           amount: WITHDRAWAL_AMOUNT,
           recipient: WITHDRAWAL_RECIPIENT
         })
@@ -3825,7 +3867,7 @@ describe('PrivacyPoolsController', () => {
       await controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
-        noteLabel: 1n,
+        depositNumber: 1,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -3856,7 +3898,7 @@ describe('PrivacyPoolsController', () => {
       await test.controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
-        noteLabel: 1n,
+        depositNumber: 1,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -4025,7 +4067,7 @@ describe('PrivacyPoolsController', () => {
       controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
-        noteLabel: 1n,
+        depositNumber: 1,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -5351,11 +5393,11 @@ describe('PrivacyPoolsController', () => {
     const ETH_TRANSFER = {
       chainId: '1',
       tokenAddress: ZERO_ADDRESS,
-      noteLabel: 1n,
+      depositNumber: 1,
       amount: 10n,
       recipient: WITHDRAWAL_RECIPIENT
     }
-    const USDC_TRANSFER = { ...ETH_TRANSFER, tokenAddress: USDC, noteLabel: 2n, amount: 7n }
+    const USDC_TRANSFER = { ...ETH_TRANSFER, tokenAddress: USDC, amount: 7n }
 
     const getLeakIds = (controller: PrivacyPoolsController) =>
       controller.withdrawalPrivacy?.privacy?.leaks.map(({ id }) => id)
@@ -5422,13 +5464,14 @@ describe('PrivacyPoolsController', () => {
           value: 37n,
           withdraw: 1,
           approved: true,
-          blockNumber: 999n
+          blockNumber: 999n,
+          deposit: 0
         },
-        { label: 4n, amount: 37n, approved: true, blockNumber: 1000n }
+        { label: 4n, amount: 37n, approved: true, blockNumber: 1000n, deposit: 1 }
       ]
       const { controller } = await prepareSynced()
 
-      controller.checkWithdrawalPrivacy({ ...ETH_TRANSFER, noteLabel: 4n, amount: 37n })
+      controller.checkWithdrawalPrivacy({ ...ETH_TRANSFER, depositNumber: 2, amount: 37n })
 
       expect(getLeakIds(controller)).toEqual(['unique-amount'])
       expect(controller.withdrawalPrivacy?.privacy).toMatchObject({

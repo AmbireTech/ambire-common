@@ -30,6 +30,7 @@ import {
   PrivacyPoolsHistorySession,
   PrivacyPoolsOperation,
   PrivacyPoolsRagequitDeposit,
+  PrivacyPoolsSendableDeposit,
   PrivacyPoolsSendForm,
   PrivacyPoolsTokenBalance,
   PrivacyPoolsUnavailableReason,
@@ -45,6 +46,10 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { createKohakuStorage } from '../../libs/kohaku/host'
 import { getPrivacyPoolsDepositPrivacy } from '../../libs/privacyPools/leaks/leaks'
+import {
+  findPrivacyPoolsDepositLabel,
+  getPrivacyPoolsSendableDeposits
+} from '../../libs/privacyPools/notes'
 import { fetchPrivacyPoolsPrices, getPrivacyPoolsPriceKey } from '../../libs/privacyPools/prices'
 import {
   createProverFactory,
@@ -526,6 +531,32 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         )
 
         return [chainId, [...byToken.values()]]
+      })
+    )
+  }
+
+  /**
+   * Per chain, the selected account's deposits a send can spend, one per row of its Send form - see
+   * `getPrivacyPoolsSendableDeposits`.
+   */
+  get sendableDeposits(): { [chainId: string]: PrivacyPoolsSendableDeposit[] } {
+    const seedId = this.#getSelectedSeedId()
+    const accountChains = this.#getSelectedAccountStates()
+
+    return Object.fromEntries(
+      Object.keys(this.chains).map((chainId) => {
+        const state = accountChains[chainId]
+
+        return [
+          chainId,
+          getPrivacyPoolsSendableDeposits({
+            chainId,
+            notes: state ? [...state.notes, ...state.spentNotes] : [],
+            withdrawingAmounts: seedId
+              ? this.#expectedChanges.getWithdrawingAmountsByNote(seedId, chainId)
+              : new Map()
+          })
+        ]
       })
     )
   }
@@ -1039,6 +1070,28 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
+   * The label of the account's deposit the UI names by its number, or undefined when the account
+   * has no such deposit, or has not synced the chain yet. For the withdrawal on its way from it.
+   */
+  #findDepositLabel(
+    seedId: string,
+    {
+      chainId,
+      tokenAddress,
+      depositNumber
+    }: { chainId: string; tokenAddress: string; depositNumber: number }
+  ): bigint | undefined {
+    const state = this.#sync.getAccountChainStates(seedId)[chainId]
+    if (!state) return undefined
+
+    return findPrivacyPoolsDepositLabel(
+      [...state.notes, ...state.spentNotes],
+      tokenAddress,
+      depositNumber
+    )
+  }
+
+  /**
    * Chooses who proves and sends transfers out of Privacy Pools accounts. Drops a transfer proved,
    * or being proved, for the other one, which could only be sent through it.
    */
@@ -1088,7 +1141,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       chainId,
       kind: 'withdrawal',
       tokenAddress: operation.tokenAddress,
-      amount: -operation.amount
+      amount: -operation.amount,
+      label: this.#findDepositLabel(seedId, operation)
     })
     this.emitUpdate()
 
@@ -1346,6 +1400,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       isAvailableForSelectedAccount: this.isAvailableForSelectedAccount,
       chains: this.chains,
       balances: this.balances,
+      sendableDeposits: this.sendableDeposits,
       hasSyncedAnyChain: this.hasSyncedAnyChain,
       operation: this.operation,
       depositAssetConfigs: this.depositAssetConfigs,

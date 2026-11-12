@@ -36,6 +36,7 @@ import {
 } from '../../libs/privacyPools/estimateWithdrawal'
 import { getPrivacyPoolsWithdrawalPrivacy } from '../../libs/privacyPools/leaks/leaks'
 import {
+  findPrivacyPoolsDepositLabel,
   findSendablePrivacyPoolsNote,
   getSdkPickedPrivacyPoolsNote
 } from '../../libs/privacyPools/notes'
@@ -152,8 +153,11 @@ export type PrivacyPoolsWithdrawalParams = AssetRef & {
   /** Who proves and sends it - see `PrivacyPoolsController.broadcaster`. */
   broadcaster: PrivacyPoolsBroadcaster
   chainId: string
-  /** The deposit to send from. A send spends exactly one. */
-  noteLabel: bigint
+  /**
+   * The deposit to send from, by its number - see `PrivacyPoolsSendableDeposit.number`. A send
+   * spends exactly one.
+   */
+  depositNumber: number
   amount: bigint
   recipient: string
 }
@@ -289,7 +293,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     broadcaster,
     chainId,
     tokenAddress,
-    noteLabel,
+    depositNumber,
     amount,
     recipient
   }: PrivacyPoolsWithdrawalParams & { seedId: string }): Promise<void> {
@@ -312,6 +316,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       seedId,
       broadcaster,
       chainId,
+      depositNumber,
       tokenAddress,
       isNative: isPrivacyPoolsNativeAsset(tokenAddress),
       amount,
@@ -343,12 +348,12 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
         signal
       )
 
-      const spentNote = { tokenAddress, noteLabel, amount }
+      const spentDeposit = { tokenAddress, depositNumber, amount }
       // Before proving, as a proof takes a while. Against the notes of the last sync, which the
       // SDK's own sync rarely changes - checked again against its notes after proving, also when
       // the chain has not synced yet.
       const syncedNotes = this.#getNotes(seedId, chainId)
-      if (syncedNotes) this.#assertSdkSpendsNote(syncedNotes, spentNote)
+      if (syncedNotes) this.#assertSdkSpendsDeposit(syncedNotes, spentDeposit)
 
       const protocol = await this.#registry.getProtocol(chainId, seedId)
       throwIfWithdrawalCancelled(signal)
@@ -369,7 +374,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
       // The SDK synced before proving, so its notes may be newer than the last sync's
       const provedNotes = await readPrivacyPoolsNotes(protocol, false)
-      this.#assertSdkSpendsNote(provedNotes, spentNote)
+      const noteLabel = this.#assertSdkSpendsDeposit(provedNotes, spentDeposit)
 
       const proved = this.#readProvedWithdrawal({
         broadcaster,
@@ -386,7 +391,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       throwIfWithdrawalCancelled(signal)
 
       const privacy = this.#getWithdrawalPrivacy(
-        { seedId, chainId, tokenAddress, noteLabel, amount, recipient },
+        { seedId, chainId, tokenAddress, depositNumber, noteLabel, amount, recipient },
         provedNotes
       )
       throwIfWithdrawalCancelled(signal)
@@ -431,9 +436,16 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     return this.#privacyCheck.check
   }
 
-  /** Checks the Send form's transfer and keeps the result in place of the previous one. */
+  /**
+   * Checks the Send form's transfer and keeps the result in place of the previous one. There is no
+   * privacy to check for a deposit the account does not have, or before the chain's sync.
+   */
   checkWithdrawalPrivacy(params: PrivacyPoolsWithdrawalPrivacyParams) {
-    const privacy = this.#getWithdrawalPrivacy(params)
+    const notes = this.#getNotes(params.seedId, params.chainId)
+    const noteLabel =
+      notes && findPrivacyPoolsDepositLabel(notes, params.tokenAddress, params.depositNumber)
+    const privacy =
+      noteLabel === undefined ? null : this.#getWithdrawalPrivacy({ ...params, noteLabel }, notes)
     const { seedId, ...checkedParams } = params
     this.#privacyCheck = { seedId, check: { ...checkedParams, privacy } }
   }
@@ -450,7 +462,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       noteLabel,
       amount,
       recipient
-    }: PrivacyPoolsWithdrawalPrivacyParams,
+    }: PrivacyPoolsWithdrawalPrivacyParams & { noteLabel: bigint },
     notes: PrivacyPoolsNote[] | undefined = this.#getNotes(seedId, chainId)
   ): PrivacyPoolsWithdrawalPrivacy | null {
     const depositIndex = this.#poolStatsReader.getDepositIndex(chainId, tokenAddress)
@@ -469,20 +481,32 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
   }
 
   /**
-   * Throws unless the SDK, given `amount`, spends the chosen deposit: it picks the deposit itself
-   * and cannot be told which (see `getSdkPickedPrivacyPoolsNote`).
+   * Throws unless the chosen deposit of `notes` can pay `amount`, and the SDK, given `amount`,
+   * spends it: it picks the deposit itself and cannot be told which (see
+   * `getSdkPickedPrivacyPoolsNote`). Returns the deposit's label.
    *
-   * TODO: delete once the SDK takes the deposit to spend, and pass it the chosen one instead.
+   * TODO: once the SDK takes the deposit to spend, pass it the chosen one and drop the check of
+   * its pick.
    */
-  #assertSdkSpendsNote(
+  #assertSdkSpendsDeposit(
     notes: PrivacyPoolsNote[],
-    { tokenAddress, noteLabel, amount }: { tokenAddress: string; noteLabel: bigint; amount: bigint }
-  ) {
-    if (!findSendablePrivacyPoolsNote(notes, tokenAddress, noteLabel, amount))
+    {
+      tokenAddress,
+      depositNumber,
+      amount
+    }: { tokenAddress: string; depositNumber: number; amount: bigint }
+  ): bigint {
+    const noteLabel = findPrivacyPoolsDepositLabel(notes, tokenAddress, depositNumber)
+    if (
+      noteLabel === undefined ||
+      !findSendablePrivacyPoolsNote(notes, tokenAddress, noteLabel, amount)
+    )
       throw privacyPoolsErrors.withdrawalDepositUnavailable()
 
     if (getSdkPickedPrivacyPoolsNote(notes, tokenAddress, amount)?.label !== noteLabel)
       throw privacyPoolsErrors.withdrawalOtherDepositPicked()
+
+    return noteLabel
   }
 
   /** The notes the privacy checks need, the spent ones too. Undefined before the chain's sync. */
@@ -725,6 +749,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     seedId: string
     broadcaster: PrivacyPoolsBroadcaster
     chainId: string
+    depositNumber: number
     tokenAddress: string
     isNative: boolean
     amount: bigint

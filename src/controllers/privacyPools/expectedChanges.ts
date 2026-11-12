@@ -44,6 +44,8 @@ export type ExpectedChange = {
   tokenAddress: string
   /** Positive for what arrives (a deposit), negative for what leaves (a withdrawal or ragequit). */
   amount: bigint
+  /** The deposit a withdrawal is sent from, or a ragequit takes back. */
+  label?: bigint
   check: ExpectedChangeCheck
 }
 
@@ -77,8 +79,9 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
   }
 
   /**
-   * Adds a change to the balance and returns its id. `label` is the deposit a ragequit takes back.
-   * Returns null when the account has not synced on this network yet, or a ragequit has no label.
+   * Adds a change to the balance and returns its id. `label` is the deposit a withdrawal is sent
+   * from, or a ragequit takes back. Returns null when the account has not synced on this network
+   * yet, or a ragequit has no label.
    */
   add({
     seedId,
@@ -111,6 +114,7 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
       chainId,
       tokenAddress: tokenAddress.toLowerCase(),
       amount,
+      label,
       check
     })
 
@@ -137,6 +141,21 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
       if (check.kind === 'withdrawal') tokenAmounts.withdrawingAmount -= amount
 
       amounts[tokenAddress] = tokenAmounts
+    })
+
+    return amounts
+  }
+
+  /**
+   * Per deposit label, how much the withdrawals on their way take out of it, positive. Ones the
+   * notes already include are ignored.
+   */
+  getWithdrawingAmountsByNote(seedId: string, chainId: string): Map<bigint, bigint> {
+    const amounts = new Map<bigint, bigint>()
+    this.#getUnshownChanges(seedId, chainId).forEach(({ label, amount, check }) => {
+      if (check.kind !== 'withdrawal' || label === undefined) return
+
+      amounts.set(label, (amounts.get(label) ?? 0n) - amount)
     })
 
     return amounts
