@@ -6,6 +6,7 @@ import { networks } from '../../consts/networks'
 import { RPC_TOKEN_PRICE_CONFIGS } from '../../consts/rpcTokenPrices'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
+import PriceGetter from '../../../contracts/compiled/PriceGetter.json'
 import * as deployless from '../deployless/deployless'
 import { canGetRpcTokenPrices, getRpcTokenPrices, MIN_POOL_DEPTH_USD } from './rpcTokenPrices'
 
@@ -272,12 +273,50 @@ describe('getRpcTokenPrices', () => {
       ).rejects.toThrow('rpc-timeout')
     })
 
-    test('throws when not a single token price fits in the gas of a call', async () => {
-      mockContract({ checkedPerCall: 0 })
+    test('skips a token that needs more gas than the RPC gives a call, and reads the rest', async () => {
+      mockContract({ rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18 }) })
+      const pricedCall = callSpy.getMockImplementation()!
+      // TOKEN_1 needs more gas than the RPC gives a call, so the contract checks nothing
+      callSpy.mockImplementation(async (method: string, args: any[]) => {
+        const result = await pricedCall(method, args)
+        return args[2][0] === TOKEN_1 ? [result[0], result[1], 0n] : result
+      })
 
-      await expect(
-        getRpcTokenPrices({ provider, network: ethereum, tokenAddresses: [TOKEN_1] })
-      ).rejects.toThrow(`Not enough gas to read a single token price on ${ethereum.name}`)
+      const { prices, error } = await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [TOKEN_1, TOKEN_2, TOKEN_3]
+      })
+
+      expect(error?.message).toBe(`Not enough gas to read some token prices on ${ethereum.name}`)
+      // Left out rather than taken as having no price
+      expect(prices.has(TOKEN_1)).toBe(false)
+      expect(prices.get(TOKEN_2)).toBe(2)
+      expect(prices.get(TOKEN_3)).toBe(2)
+    })
+
+    test('keeps what a page read when a follow-up call for the rest of it fails', async () => {
+      mockContract({
+        rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18 }),
+        checkedPerCall: 2
+      })
+      const pricedCall = callSpy.getMockImplementation()!
+      callSpy.mockImplementation(async (method: string, args: any[]) => {
+        // The follow-up call, for the token the first one didn't get to, times out
+        if (args[2][0] === TOKEN_3) throw new Error('rpc-timeout')
+        return pricedCall(method, args)
+      })
+
+      const { prices, error } = await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [TOKEN_1, TOKEN_2, TOKEN_3]
+      })
+
+      expect(error?.message).toBe('rpc-timeout')
+      expect(prices.get(TOKEN_1)).toBe(2)
+      expect(prices.get(TOKEN_2)).toBe(2)
+      expect(prices.has(TOKEN_3)).toBe(false)
     })
 
     test('throws when the native price is outdated', async () => {
@@ -366,6 +405,31 @@ describe('getRpcTokenPrices', () => {
         expect(prices.get(FORTUNE.toLowerCase())).toBeNull()
         expect(prices.get(CZ.toLowerCase())).toBeNull()
         expect(prices.get(AERO.toLowerCase())).toBeGreaterThan(0)
+      } finally {
+        provider.destroy()
+      }
+    })
+
+    test('the contract still prices tokens in a call capped well below the per-token limit', async () => {
+      const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+      const DAI = '0x6B175474E89094C44Da98b954EedeAC495271d0F'
+
+      try {
+        const priceGetter = deployless.fromDescriptor(provider, PriceGetter, true)
+        const [, rates, checkedCount] = await priceGetter.call(
+          'getPrices',
+          [
+            RPC_TOKEN_PRICE_CONFIGS['1']!.nativeUsdFeed,
+            RPC_TOKEN_PRICE_CONFIGS['1']!.spotPriceOracle,
+            [DAI, USDC],
+            10n
+          ],
+          // An RPC that gives a call 12M gas, less than the 15M a single token is allowed
+          { gasLimit: '0xb71b00' }
+        )
+
+        expect(Number(checkedCount)).toBeGreaterThan(0)
+        expect(rates[0].rateToNative).toBeGreaterThan(0n)
       } finally {
         provider.destroy()
       }

@@ -57,6 +57,8 @@ contract PriceGetter {
   // The aggregator walks every pool it knows of for a token, which can take over 10M gas.
   // The limit keeps a single token from using up the gas of the whole call.
   uint256 private constant TOKEN_GAS_LIMIT = 15_000_000;
+  // With less gas than this left, no further token is tried
+  uint256 private constant MIN_TOKEN_GAS = 1_000_000;
   // Left for finishing the loop and returning the results once the tokens stop being checked
   uint256 private constant GAS_RESERVE = 500_000;
 
@@ -126,7 +128,9 @@ contract PriceGetter {
    * @return nativePrice the native token's USD price, as the feed reports it
    * @return rates the rate and pool depth of each token, in the order of `tokens`
    * @return checkedCount how many tokens, from the start of `tokens`, were checked before the
-   * gas the call was given ran low. The rest were not checked and should be asked for again.
+   * gas the call was given ran low. The rest were not checked and should be asked for again. On
+   * an RPC that gives a call less gas than TOKEN_GAS_LIMIT, it can be 0 for a token that needs
+   * more than the RPC allows.
    */
   function getPrices(
     IPriceFeed nativeUsdFeed,
@@ -143,17 +147,27 @@ contract PriceGetter {
 
     rates = new TokenRate[](tokens.length);
     for (; checkedCount < tokens.length; checkedCount++) {
-      // Stopping here, rather than giving the token less gas, keeps it from failing for lack of
-      // gas and being reported as having no price
-      if (gasleft() < TOKEN_GAS_LIMIT + GAS_RESERVE) break;
+      uint256 available = gasleft();
+      if (available < MIN_TOKEN_GAS + GAS_RESERVE) break;
 
+      // Up to TOKEN_GAS_LIMIT, or what's left when that's less (e.g. an RPC that gives a call
+      // less gas), keeping in mind that a call is given at most 63/64 of the remaining gas
+      uint256 tokenGas = available - GAS_RESERVE - available / 64;
+      if (tokenGas > TOKEN_GAS_LIMIT) tokenGas = TOKEN_GAS_LIMIT;
+
+      uint256 gasBeforeCall = gasleft();
       try
-        this.getTokenRate{ gas: TOKEN_GAS_LIMIT }(oracle, tokens[checkedCount], thresholdFilter)
+        this.getTokenRate{ gas: tokenGas }(oracle, tokens[checkedCount], thresholdFilter)
       returns (TokenRate memory rate) {
         rates[checkedCount] = rate;
       } catch {
-        // The token has no pools, isn't a token, or its pools can't be read: its rate stays 0,
-        // which reports it as having no price
+        // It used up all the gas it was given, so it ran out of gas rather than having no
+        // price. With less than the full allowance, it's left unchecked, to be asked for again
+        // in a call with more gas, instead of being reported as having no price.
+        if (tokenGas < TOKEN_GAS_LIMIT && gasBeforeCall - gasleft() >= tokenGas) break;
+
+        // Otherwise the token has no pools, isn't a token, its pools can't be read, or it needs
+        // more than TOKEN_GAS_LIMIT: its rate stays 0, which reports it as having no price
       }
     }
   }

@@ -351,8 +351,17 @@ export class MainController extends EventEmitter implements IMainController {
     const tokenPrices = new TokenPricesController({
       fetch: this.fetch,
       isTokenPricesEnabled: () => this.featureFlags.isFeatureEnabled('tokenPrices'),
-      // Read lazily, as the providers controller is created right after (and depends on this one)
-      getProvider: (chainId) => this.providers.providers[chainId.toString()]
+      // Read lazily, as the providers controller is created right after (and depends on this one).
+      // A provider that isn't set up yet (e.g. right after startup) is waited for.
+      getProvider: async (chainId) => {
+        const chainKey = chainId.toString()
+        if (!this.providers.providers[chainKey]) {
+          const network = this.networks.allNetworks.find((n) => n.chainId === chainId)
+          if (network) await this.providers.setProvider(network)
+        }
+
+        return this.providers.providers[chainKey]
+      }
     })
     this.providers = new ProvidersController({
       eventEmitterRegistry,

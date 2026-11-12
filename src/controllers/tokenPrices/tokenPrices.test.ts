@@ -516,6 +516,26 @@ describe('TokenPricesController', () => {
       expect(getRpcTokenPricesSpy.mock.calls[1]![0].tokenAddresses).toEqual([TOKEN_2])
     })
 
+    test('waits for a provider that is still being set up', async () => {
+      let resolveProvider: (value: any) => void = () => {}
+      const controller = new TokenPricesController({
+        fetch: createPriceFetch().fetch,
+        isTokenPricesEnabled: () => isEnabled,
+        getProvider: () =>
+          new Promise((resolve) => {
+            resolveProvider = resolve
+          })
+      })
+
+      const call = controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
+      resolveProvider(provider)
+      const { tokenData, error } = await call
+
+      expect(error).toBeNull()
+      expect(getRpcTokenPricesSpy.mock.calls[0]![0].provider).toBe(provider)
+      expect(tokenData.get(TOKEN_1)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 5 }])
+    })
+
     test('returns an error when the network has no provider', async () => {
       const controller = new TokenPricesController({
         fetch: createPriceFetch().fetch,

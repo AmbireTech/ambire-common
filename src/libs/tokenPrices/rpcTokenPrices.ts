@@ -8,6 +8,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import isSameAddr from '../../utils/isSameAddr'
 import { paginate } from '../../utils/paginate'
 import { fromDescriptor } from '../deployless/deployless'
+import { getTokenDataCacheKey } from '../portfolio/helpers'
 import { getFeeToken } from '../portfolio/tokenProcessing'
 
 /** Pools with less liquidity than this percentage of the token's most liquid pool are left out */
@@ -30,16 +31,17 @@ export const MIN_POOL_DEPTH_USD = 1000
 /** The native token of every network with a config has 18 decimals */
 const NATIVE_DECIMALS = 18
 
-/** The USD price of each token, keyed by the lowercased address. Null when it has no price. */
+/** The USD price of each token, keyed like the price cache (`getTokenDataCacheKey`). Null when it has no price. */
 export type RpcTokenPrices = Map<string, number | null>
 
 export type RpcTokenPricesResult = {
   /**
-   * The tokens that were answered, with a price or with "no price". Tokens in a call that failed
-   * are left out, so that they aren't taken as having no price.
+   * The tokens that were answered, with a price or with "no price". Tokens in a call that failed,
+   * or that need more gas than the RPC gives a call, are left out, so that they aren't taken as
+   * having no price.
    */
   prices: RpcTokenPrices
-  /** The first failed call, if any */
+  /** Why some tokens were left out, if any were */
   error: Error | null
 }
 
@@ -58,9 +60,21 @@ type TokenRate = {
 
 type GetPricesResult = {
   nativeUsdPrice: NativeUsdPrice
-  /** Each checked token's rate */
+  /** Each checked token's rate, in the order the tokens were passed */
   rates: TokenRate[]
 }
+
+/** What a page of tokens read */
+type PageRates = {
+  nativeUsdPrice: NativeUsdPrice
+  /** The rate of each token that was checked, by its address */
+  rateByAddress: Map<string, TokenRate>
+  /** Why some of the page's tokens weren't checked, if any weren't */
+  error: Error | null
+}
+
+const toError = (error: unknown, network: Network): Error =>
+  error instanceof Error ? error : new Error(`Failed to read some token prices on ${network.name}`)
 
 /** Whether token prices can be read from the network's RPC */
 export const canGetRpcTokenPrices = (network: Network): boolean =>
@@ -102,28 +116,47 @@ const getNativeUsdPrice = (
 
 /**
  * Asks for the rates of the tokens, again for those the contract didn't get to before the call
- * ran low on gas, until every token was checked.
+ * ran low on gas, until every token was checked. A token that needs more gas than the RPC gives
+ * a call is skipped, so that it doesn't hold up the rest. Throws if nothing could be read; when a
+ * later call fails, what the earlier ones read is kept and the error is returned along with it.
  */
 const getRates = async (
   call: (tokens: string[]) => Promise<[GetPricesResult, number]>,
   tokens: string[],
   network: Network
-): Promise<GetPricesResult> => {
-  const rates: GetPricesResult['rates'] = []
+): Promise<PageRates> => {
+  const rateByAddress = new Map<string, TokenRate>()
   let nativeUsdPrice: NativeUsdPrice | null = null
+  let error: Error | null = null
   let remainingTokens = tokens
 
   do {
-    const [result, checkedCount] = await call(remainingTokens)
-    if (remainingTokens.length && !checkedCount)
-      throw new Error(`Not enough gas to read a single token price on ${network.name}`)
+    let result: GetPricesResult
+    let checkedCount: number
+    try {
+      ;[result, checkedCount] = await call(remainingTokens)
+    } catch (callError) {
+      if (!nativeUsdPrice) throw callError
+
+      error = toError(callError, network)
+      break
+    }
 
     nativeUsdPrice = result.nativeUsdPrice
-    rates.push(...result.rates.slice(0, checkedCount))
-    remainingTokens = remainingTokens.slice(checkedCount)
+    remainingTokens
+      .slice(0, checkedCount)
+      .forEach((address, index) => rateByAddress.set(address, result.rates[index]!))
+
+    if (remainingTokens.length && !checkedCount) {
+      // Left out rather than reported as having no price, and the rest are still read
+      error = new Error(`Not enough gas to read some token prices on ${network.name}`)
+      remainingTokens = remainingTokens.slice(1)
+    } else {
+      remainingTokens = remainingTokens.slice(checkedCount)
+    }
   } while (remainingTokens.length)
 
-  return { nativeUsdPrice, rates }
+  return { nativeUsdPrice, rateByAddress, error }
 }
 
 /**
@@ -166,15 +199,7 @@ export const getRpcTokenPrices = async ({
     )
 
     return [
-      {
-        nativeUsdPrice: getNativeUsdPrice(nativePrice, config, network),
-        rates: rates.map(({ rateToNative, decimals, poolDepth, isNative }) => ({
-          rateToNative,
-          decimals,
-          poolDepth,
-          isNative
-        }))
-      },
+      { nativeUsdPrice: getNativeUsdPrice(nativePrice, config, network), rates: [...rates] },
       Number(checkedCount)
     ]
   }
@@ -188,13 +213,12 @@ export const getRpcTokenPrices = async ({
   const firstFailure = settledPages.find(
     (result): result is PromiseRejectedResult => result.status === 'rejected'
   )
-  const answeredPages = pages.flatMap((page, pageIndex) => {
-    const settled = settledPages[pageIndex]!
-    return settled.status === 'fulfilled' ? [{ page, result: settled.value }] : []
-  })
+  const answeredPages = settledPages.flatMap((settled) =>
+    settled.status === 'fulfilled' ? [settled.value] : []
+  )
   if (!answeredPages.length) throw firstFailure!.reason
 
-  const { nativeUsdPrice } = answeredPages[0]!.result
+  const { nativeUsdPrice } = answeredPages[0]!
   const nativePrice = Number(formatUnits(nativeUsdPrice.answer, nativeUsdPrice.decimals))
   const hasEnoughLiquidity = (address: string, { poolDepth, isNative }: TokenRate) =>
     isNative ||
@@ -215,23 +239,21 @@ export const getRpcTokenPrices = async ({
   }
 
   const prices: RpcTokenPrices = new Map()
-  answeredPages.forEach(({ page, result }) => {
-    page.forEach((address, index) => {
-      prices.set(address.toLowerCase(), getPrice(address, result.rates[index]!))
+  answeredPages.forEach(({ rateByAddress }) => {
+    rateByAddress.forEach((rate, address) => {
+      prices.set(getTokenDataCacheKey(address), getPrice(address, rate))
     })
   })
   tokenAddresses.forEach((address) => {
-    if (isNativeOrWrappedNative(address, network)) prices.set(address.toLowerCase(), nativePrice)
+    if (isNativeOrWrappedNative(address, network))
+      prices.set(getTokenDataCacheKey(address), nativePrice)
     // Without the aggregator only the native token is priced: the rest have no price
-    else if (!config.spotPriceOracle) prices.set(address.toLowerCase(), null)
+    else if (!config.spotPriceOracle) prices.set(getTokenDataCacheKey(address), null)
   })
 
+  const pageError = answeredPages.find((page) => page.error)?.error
   return {
     prices,
-    error: firstFailure
-      ? firstFailure.reason instanceof Error
-        ? firstFailure.reason
-        : new Error(`Failed to read some token prices on ${network.name}`)
-      : null
+    error: firstFailure ? toError(firstFailure.reason, network) : pageError || null
   }
 }

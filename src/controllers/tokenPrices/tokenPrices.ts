@@ -154,7 +154,7 @@ export class TokenPricesController extends EventEmitter {
 
   #addsPrivacyPoolsAssets: boolean
 
-  #getProvider?: (chainId: bigint) => RPCProvider | undefined
+  #getProvider?: (chainId: bigint) => RPCProvider | undefined | Promise<RPCProvider | undefined>
 
   /** chainId -> token data cache */
   #cacheByChainId = new Map<string, TokenDataCache>()
@@ -180,10 +180,10 @@ export class TokenPricesController extends EventEmitter {
      */
     addsPrivacyPoolsAssets?: boolean
     /**
-     * The provider of a network, for reading prices from the RPC. Without it, no prices are read
-     * while the user has opted out of the price API.
+     * The provider of a network, for reading prices from the RPC, or a promise of it while it's
+     * being set up. Without it, no prices are read while the user has opted out of the price API.
      */
-    getProvider?: (chainId: bigint) => RPCProvider | undefined
+    getProvider?: (chainId: bigint) => RPCProvider | undefined | Promise<RPCProvider | undefined>
     eventEmitterRegistry?: IEventEmitterRegistryController
   }) {
     super(eventEmitterRegistry)
@@ -467,7 +467,7 @@ export class TokenPricesController extends EventEmitter {
    * its error is thrown, as with cena. Throws, caching nothing, if the network couldn't be priced.
    */
   async #readAndCacheRpcTokens(network: Network, tokenAddresses: string[]) {
-    const provider = this.#getProvider?.(network.chainId)
+    const provider = await this.#getProvider?.(network.chainId)
     if (!provider) throw new Error(`Not connected to ${network.name} to read token prices from`)
 
     const { prices, error } = await getRpcTokenPrices({ provider, network, tokenAddresses })
