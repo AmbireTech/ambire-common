@@ -787,8 +787,6 @@ const prepareTest = async ({
   // What `MainController` reports as waiting for the chain: broadcast, or in the request batch
   const pendingAccountOps: PendingAccountOp[] = []
   const onAccountsRemoved = jest.fn<(seedIds: string[]) => Promise<void>>(async () => {})
-  // The wallet's own accounts, which a send to would link
-  const walletAccounts: string[] = []
 
   if (hasOtherChain) {
     networks.networks.push({
@@ -813,8 +811,6 @@ const prepareTest = async ({
     proverFactory,
     onAccountsRemoved,
     getPendingAccountOps: () => pendingAccountOps,
-    isWalletAccount: (address) =>
-      walletAccounts.some((account) => account.toLowerCase() === address.toLowerCase()),
     tokenPrices: new TokenPricesController({
       fetch: fakeFetch as any,
       isTokenPricesEnabled: () => featureFlags.isFeatureEnabled('tokenPrices') === true
@@ -831,8 +827,7 @@ const prepareTest = async ({
     ui,
     storage,
     onAccountsRemoved,
-    pendingAccountOps,
-    walletAccounts
+    pendingAccountOps
   }
 }
 
@@ -1133,7 +1128,6 @@ describe('PrivacyPoolsController', () => {
         circuitsBaseUrl: '',
         onAccountsRemoved: jest.fn(async () => {}),
         getPendingAccountOps: () => [],
-        isWalletAccount: () => false,
         tokenPrices: new TokenPricesController({ fetch: fakeFetch as any })
       })
       await controller.initialLoadPromise
@@ -1160,7 +1154,6 @@ describe('PrivacyPoolsController', () => {
         circuitsBaseUrl: '',
         onAccountsRemoved,
         getPendingAccountOps: () => [],
-        isWalletAccount: () => false,
         tokenPrices: new TokenPricesController({ fetch: fakeFetch as any })
       })
       await controller.initialLoadPromise
@@ -5044,16 +5037,6 @@ describe('PrivacyPoolsController', () => {
 
       return prepared
     }
-
-    it('only notes a send to an account of this wallet', async () => {
-      const { controller, walletAccounts } = await prepareSynced()
-      walletAccounts.push(WITHDRAWAL_RECIPIENT.toLowerCase())
-
-      controller.checkWithdrawalPrivacy(ETH_TRANSFER)
-
-      expect(getLeakIds(controller)).toEqual(['own-account'])
-      expect(controller.withdrawalPrivacy?.privacy?.rating).toBe('standard')
-    })
 
     it('drops the answer on lock', async () => {
       const { controller, keystore } = await prepareSynced()

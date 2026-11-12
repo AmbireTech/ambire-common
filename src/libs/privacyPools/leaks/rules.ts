@@ -28,13 +28,6 @@ const isRevealingSendToDepositor = ({ spends, recipient }: WithdrawalFacts) =>
   )
 
 /**
- * Whether the send goes to another account in this wallet. A send that reveals its depositor is
- * left out, as `send-to-depositor` already warns about something worse.
- */
-const isOwnAccountSend = (facts: WithdrawalFacts) =>
-  facts.isOwnAccount && !isRevealingSendToDepositor(facts)
-
-/**
  * The leaks a send can have. Written worst first (error, warning, info), which is the order the
  * user sees them in.
  */
@@ -96,13 +89,6 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
     text: 'Few people have deposited since you did, so sending now makes the timing easier to match.',
     applies: ({ spends, depositIndex }) =>
       spends.some(({ note }) => note.blockNumber > depositIndex.freshAfterBlock)
-  },
-  {
-    id: 'own-account',
-    type: 'info',
-    title: 'This account is in your wallet',
-    text: 'You can use it with apps as usual. Only avoid moving funds between it and the account you deposited from, as that would link this transfer to you.',
-    applies: isOwnAccountSend
   }
 ]
 

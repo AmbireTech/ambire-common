@@ -259,10 +259,7 @@ export const PRIVACY_POOLS_DEPOSIT_CHIPS: { [tokenId: string]: bigint[] } = {
 export const PRIVACY_POOLS_MIN_REASSURING_COVER = 5
 
 /** Leaks of a send that come from where it goes, which another recipient avoids. */
-export const PRIVACY_POOLS_RECIPIENT_LEAK_IDS: PrivacyPoolsLeakId[] = [
-  'send-to-depositor',
-  'own-account'
-]
+export const PRIVACY_POOLS_RECIPIENT_LEAK_IDS: PrivacyPoolsLeakId[] = ['send-to-depositor']
 
 /** Leaks of a send that come from its amount and the deposits it spends, which another amount can avoid. */
 export const PRIVACY_POOLS_AMOUNT_LEAK_IDS: PrivacyPoolsLeakId[] = [

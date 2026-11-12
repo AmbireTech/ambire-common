@@ -46,20 +46,17 @@ const note = (overrides: Partial<PrivacyPoolsNote> = {}): PrivacyPoolsNote => {
 const getWithdrawalPrivacy = ({
   amount,
   notes,
-  recipient = STRANGER,
-  isOwnAccount = false
+  recipient = STRANGER
 }: {
   amount: bigint
   notes: PrivacyPoolsNote[]
   recipient?: string | null
-  isOwnAccount?: boolean
 }) => {
   const privacy = getPrivacyPoolsWithdrawalPrivacy({
     amount,
     notes,
     tokenAddress: ZERO_ADDRESS,
     recipient,
-    isOwnAccount,
     depositIndex: DEPOSIT_INDEX,
     commonAmounts: COMMON_AMOUNTS
   })
@@ -119,7 +116,6 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         notes: [note({ amount: 37n, depositValue: 37n })],
         tokenAddress: ZERO_ADDRESS,
         recipient: DEPOSITOR,
-        isOwnAccount: false,
         depositIndex: null,
         commonAmounts: COMMON_AMOUNTS
       })
@@ -178,7 +174,6 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         notes: [uniqueNote],
         tokenAddress: ZERO_ADDRESS,
         recipient: STRANGER,
-        isOwnAccount: false,
         depositIndex,
         commonAmounts: COMMON_AMOUNTS
       })
@@ -204,7 +199,6 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         notes: [uniqueNote, note({ amount: 37n, depositValue: 37n, blockNumber: 50n })],
         tokenAddress: ZERO_ADDRESS,
         recipient: STRANGER,
-        isOwnAccount: false,
         depositIndex,
         commonAmounts: COMMON_AMOUNTS
       })
@@ -230,7 +224,6 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         notes: [uniqueNote, note({ amount: 37n, depositValue: 37n, approval: 'pending' })],
         tokenAddress: ZERO_ADDRESS,
         recipient: STRANGER,
-        isOwnAccount: false,
         depositIndex,
         commonAmounts: COMMON_AMOUNTS
       })
@@ -263,17 +256,15 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       expect(privacy.leaks.map(({ id }) => id)).toEqual(['fresh-deposit'])
     })
 
-    test('lists errors first, then warnings, then notes', () => {
+    test('lists errors first, then warnings', () => {
       const privacy = getWithdrawalPrivacy({
         amount: 37n,
-        notes: [note({ amount: 37n, depositValue: 37n, blockNumber: 91n })],
-        isOwnAccount: true
+        notes: [note({ amount: 37n, depositValue: 37n, blockNumber: 91n })]
       })
 
       expect(privacy.leaks.map(({ id, type }) => `${type} ${id}`)).toEqual([
         'error unique-amount',
-        'warning fresh-deposit',
-        'info own-account'
+        'warning fresh-deposit'
       ])
     })
   })
@@ -320,69 +311,9 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
 
       expect(privacy.leaks).toEqual([])
     })
-
-    test('is told instead of the own account leak', () => {
-      const partial = getWithdrawalPrivacy({
-        amount: 40n,
-        notes: [note()],
-        recipient: DEPOSITOR,
-        isOwnAccount: true
-      })
-      const whole = getWithdrawalPrivacy({
-        amount: 100n,
-        notes: [note()],
-        recipient: DEPOSITOR,
-        isOwnAccount: true
-      })
-
-      expect(partial.leaks.map(({ id }) => id)).toEqual(['send-to-depositor'])
-      expect(whole.leaks.map(({ id }) => id)).toEqual(['own-account'])
-    })
-  })
-
-  describe('to another account in the wallet', () => {
-    test('only notes it, and keeps the rating', () => {
-      const privacy = getWithdrawalPrivacy({
-        amount: 40n,
-        notes: [note()],
-        isOwnAccount: true
-      })
-
-      expect(summarizeLeaks(privacy)).toEqual([{ id: 'own-account', amounts: [] }])
-      expect(privacy.leaks[0]?.type).toBe('info')
-      expect(privacy.rating).toBe('standard')
-    })
-
-    test('has no leak when the recipient is not in the wallet', () => {
-      expect(getWithdrawalPrivacy({ amount: 40n, notes: [note()] }).leaks).toEqual([])
-    })
-
-    test('keeps a warning rating when an info leak comes with a warning', () => {
-      const privacy = getWithdrawalPrivacy({
-        amount: 40n,
-        notes: [note({ blockNumber: 91n })],
-        isOwnAccount: true
-      })
-
-      expect(privacy.leaks.map(({ id }) => id)).toEqual(['fresh-deposit', 'own-account'])
-      expect(privacy.rating).toBe('weak')
-    })
   })
 
   describe('with no amount yet', () => {
-    test('checks the recipient, with no cover', () => {
-      const privacy = getWithdrawalPrivacy({
-        amount: 0n,
-        notes: [note()],
-        isOwnAccount: true
-      })
-
-      expect(summarizeLeaks(privacy)).toEqual([{ id: 'own-account', amounts: [] }])
-      expect(privacy.rating).toBe('standard')
-      expect(privacy.cover).toEqual({ bigEnough: 0, sameAmount: 0 })
-      expect(privacy.notesCount).toBe(0)
-    })
-
     test('finds no leak of the amount or the deposits, which none is spent from yet', () => {
       // A fresh deposit and a partly sent one, to their depositor, would each leak with an amount
       const notes = [note({ blockNumber: 91n }), note({ amount: 60n, withdrawCount: 1 })]
@@ -390,6 +321,8 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       const privacy = getWithdrawalPrivacy({ amount: 0n, notes, recipient: DEPOSITOR })
       expect(privacy.leaks).toEqual([])
       expect(privacy.rating).toBe('standard')
+      expect(privacy.cover).toEqual({ bigEnough: 0, sameAmount: 0 })
+      expect(privacy.notesCount).toBe(0)
     })
 
     test('is null for a negative amount', () => {
@@ -398,7 +331,6 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         notes: [note()],
         tokenAddress: ZERO_ADDRESS,
         recipient: STRANGER,
-        isOwnAccount: false,
         depositIndex: DEPOSIT_INDEX,
         commonAmounts: COMMON_AMOUNTS
       })
@@ -414,7 +346,6 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         notes: [note()],
         tokenAddress: ZERO_ADDRESS,
         recipient: STRANGER,
-        isOwnAccount: false,
         depositIndex: DEPOSIT_INDEX,
         commonAmounts: COMMON_AMOUNTS
       })

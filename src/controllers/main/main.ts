@@ -467,10 +467,6 @@ export class MainController extends EventEmitter implements IMainController {
       proverFactory: privacyPoolsProverFactory,
       onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds),
       getPendingAccountOps: () => this.getPendingAccountOps(),
-      isWalletAccount: (address) =>
-        this.accounts.accounts.some(
-          (account) => account.addr.toLowerCase() === address.toLowerCase()
-        ),
       tokenPrices
     })
 

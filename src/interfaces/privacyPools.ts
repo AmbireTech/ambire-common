@@ -395,8 +395,6 @@ export type PrivacyPoolsLeakId =
   | 'unusual-deposit-amount'
   /** The send spends more than one deposit, which links them. */
   | 'several-deposits'
-  /** The recipient is another account in this wallet. */
-  | 'own-account'
   /** The send spends a deposit made in the last day, so its timing can point to the user. */
   | 'fresh-deposit'
 

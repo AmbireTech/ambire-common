@@ -26,7 +26,6 @@ export type WithdrawalFacts = {
   cover: PrivacyPoolsSendCover
   commonAmountCovers: CommonAmountCover[]
   recipient: string | null
-  isOwnAccount: boolean
   depositIndex: PrivacyPoolsDepositIndex
   ownDepositValues: OwnDepositValues
 }

@@ -180,7 +180,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     proverFactory,
     onAccountsRemoved,
     getPendingAccountOps,
-    isWalletAccount,
     eventEmitterRegistry,
     tokenPrices
   }: {
@@ -202,8 +201,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     onAccountsRemoved: (seedIds: string[]) => Promise<void>
     /** The transactions broadcast but not confirmed, and the current request batch. */
     getPendingAccountOps: () => PendingAccountOp[]
-    /** Whether an address is one of the wallet's accounts, which a send to it would link. */
-    isWalletAccount: (address: string) => boolean
     eventEmitterRegistry?: IEventEmitterRegistryController
     /** Where the prices come from; shared with the portfolio so they share one cache */
     tokenPrices: ITokenPricesController
@@ -273,8 +270,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       ctx,
       this.#registry,
       this.#sync,
-      this.#poolStatsReader,
-      isWalletAccount
+      this.#poolStatsReader
     )
     this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync, this.#builtCalls)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)

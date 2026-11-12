@@ -67,8 +67,6 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   tokenAddress: string
   /** Null before the user enters one, so only the amount is checked. */
   recipient: string | null
-  /** Whether the recipient is another account in this wallet. */
-  isOwnAccount: boolean
   /** Null before the pool's deposits are read. */
   depositIndex: PrivacyPoolsDepositIndex | null
   /** The pool's common amounts, smallest first - see `PRIVACY_POOLS_DEPOSIT_CHIPS`. */

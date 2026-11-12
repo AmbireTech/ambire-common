@@ -163,8 +163,6 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
   #poolStatsReader: PrivacyPoolsPoolStatsReader
 
-  #isWalletAccount: (address: string) => boolean
-
   /** The latest withdrawal of any phrase. */
   #operation: PrivacyPoolsOperation | null = null
 
@@ -194,14 +192,12 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     ctx: PrivacyPoolsContext,
     registry: PrivacyPoolsProtocolRegistry,
     sync: PrivacyPoolsSync,
-    poolStatsReader: PrivacyPoolsPoolStatsReader,
-    isWalletAccount: (address: string) => boolean
+    poolStatsReader: PrivacyPoolsPoolStatsReader
   ) {
     this.#ctx = ctx
     this.#registry = registry
     this.#sync = sync
     this.#poolStatsReader = poolStatsReader
-    this.#isWalletAccount = isWalletAccount
   }
 
   /** The latest withdrawal of any phrase - see `PrivacyPoolsController.operation`. */
@@ -395,7 +391,6 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       notes,
       tokenAddress,
       recipient,
-      isOwnAccount: !!recipient && this.#isWalletAccount(recipient),
       depositIndex,
       commonAmounts:
         PRIVACY_POOLS_DEPOSIT_CHIPS[getPrivacyPoolsTokenId(chainId, tokenAddress)] ?? []
