@@ -1926,6 +1926,40 @@ describe('PrivacyPoolsController', () => {
         })
       })
 
+      it('shows a deposit right away into an account not read since a restart, without reading it first', async () => {
+        const storage = new StorageController(produceMemoryStore())
+        await storage.set('privacyPoolsState', {
+          [getPrivacyPoolsStoreKey(getPrivacyPoolsChainConfig(1n)!)]: toStoredPoolState()
+        })
+        const { controller, selectedAccount } = await prepareTest({ storage })
+        selectedAccount.select('seed-a')
+
+        // The network is on this device, so only the plugin's own sync in prepareShield runs
+        const calls = await buildDeposit(controller)
+        controller.onAccountOpBroadcast({ chainId: 1n, calls })
+        expect(getSyncCount('seed-b')).toBe(0)
+
+        selectedAccount.select('seed-b')
+        expect(getBalance(controller)).toMatchObject({ totalAmount: 0n, simulationAmount: ONE_ETH })
+
+        const readBeforeLanding = controller.syncChain('1')
+        await releaseSync('seed-b')
+        await readBeforeLanding
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n,
+          simulationAmount: ONE_ETH
+        })
+
+        landDeposit()
+        const readAfterLanding = controller.syncChain('1')
+        await releaseSync('seed-b')
+        await readAfterLanding
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n + ONE_ETH,
+          simulationAmount: 0n
+        })
+      })
+
       it('does not count the deposit twice when a read shows its note before the transaction is finalized', async () => {
         const { controller, selectedAccount } = await prepareTest()
         selectedAccount.select('seed-b')
