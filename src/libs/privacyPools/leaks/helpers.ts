@@ -6,9 +6,10 @@ import {
 import {
   countPrivacyPoolsDepositsOf,
   countPrivacyPoolsDepositsOfAtLeast,
-  PrivacyPoolsDepositIndex
+  getRecentPrivacyPoolsDeposits,
+  PrivacyPoolsPoolCover
 } from '../poolStats'
-import { OwnDepositValues, PrivacyPoolsNoteSpend } from './types'
+import { PrivacyPoolsNoteSpend } from './types'
 
 /** Whether the note is of the token, whatever the casing of the addresses. */
 const isNoteOfToken = (note: PrivacyPoolsNote, tokenAddress: string) =>
@@ -52,58 +53,61 @@ export const getPrivacyPoolsNotesToSpend = (
   return remaining > 0n ? null : spends
 }
 
-/** The approved deposits of the account's notes of the token, as the deposit index counts them. */
-export const getOwnDepositValues = (
+/**
+ * The deposits of other people that a send of `spends` can hide among. The user's own deposits are
+ * left out, as they all lead back to the user.
+ *
+ * Anyone can see that a send was made with Kohaku. So when one of the spent deposits has a Kohaku
+ * client fingerprint, the send hides only among other deposits that have one. Until a depositor is
+ * checked, the user's deposit counts as having the fingerprint and someone else's does not, so the
+ * result is never larger than the real one.
+ *
+ * The cover is null before the pool's deposits are read. It is also null when the send must hide
+ * among fingerprinted deposits and no depositor of the chain is checked yet.
+ */
+export const getSendPoolCover = (
+  spends: PrivacyPoolsNoteSpend[],
+  /** All the account's notes, as each is one of its own deposits. */
   notes: PrivacyPoolsNote[],
-  tokenAddress: string,
-  { recentAfterBlock }: PrivacyPoolsDepositIndex
-): OwnDepositValues => {
-  const ownDeposits = notes.filter(
-    (note) => isNoteOfToken(note, tokenAddress) && note.approval === 'approved'
+  /** Null before the pool's deposits are read. */
+  poolCover: PrivacyPoolsPoolCover | null,
+  /**
+   * Whether each depositor has a Kohaku client fingerprint, by its address in lowercase. Null
+   * before any depositor of the chain is checked.
+   */
+  fingerprints: ReadonlyMap<string, boolean> | null
+): { poolCover: PrivacyPoolsPoolCover | null; isFingerprintedCover: boolean } => {
+  const isFingerprintedCover = spends.some(
+    ({ note }) => fingerprints?.get(note.depositorAddr.toLowerCase()) !== false
+  )
+  if (!poolCover || (isFingerprintedCover && !fingerprints))
+    return { poolCover: null, isFingerprintedCover }
+
+  const ownLabels = new Set(notes.map(({ label }) => label))
+  const deposits = poolCover.deposits.filter(
+    ({ label, depositor }) =>
+      !ownLabels.has(label) && (!isFingerprintedCover || fingerprints?.get(depositor) === true)
   )
 
-  return {
-    all: ownDeposits.map(({ depositValue }) => depositValue),
-    recent: ownDeposits
-      .filter(({ blockNumber }) => blockNumber > recentAfterBlock)
-      .map(({ depositValue }) => depositValue)
-  }
+  return { poolCover: { ...poolCover, deposits }, isFingerprintedCover }
 }
 
-/** How many of `counted` deposits are not one of the user's `ownValues`. */
-export const countOthers = (
-  counted: number,
-  ownValues: bigint[],
-  isCounted: (value: bigint) => boolean
-) =>
-  // Never below 0, as the notes can be newer than the deposit index
-  Math.max(counted - ownValues.filter(isCounted).length, 0)
-
-/** How many recent deposits of others hide a send that spends `spends`. */
+/** How many recent deposits of `poolCover` hide a send that spends `spends`. */
 export const getSendCover = (
-  { recent }: PrivacyPoolsDepositIndex,
-  ownDepositValues: OwnDepositValues,
+  poolCover: PrivacyPoolsPoolCover,
   spends: PrivacyPoolsNoteSpend[]
-): PrivacyPoolsSendCover => ({
-  bigEnough: Math.min(
-    ...spends.map(({ amount }) =>
-      countOthers(
-        countPrivacyPoolsDepositsOfAtLeast(recent, amount),
-        ownDepositValues.recent,
-        (value) => value >= amount
-      )
+): PrivacyPoolsSendCover => {
+  const recentDeposits = getRecentPrivacyPoolsDeposits(poolCover)
+
+  return {
+    bigEnough: Math.min(
+      ...spends.map(({ amount }) => countPrivacyPoolsDepositsOfAtLeast(recentDeposits, amount))
+    ),
+    sameAmount: Math.min(
+      ...spends.map(({ amount }) => countPrivacyPoolsDepositsOf(recentDeposits, amount))
     )
-  ),
-  sameAmount: Math.min(
-    ...spends.map(({ amount }) =>
-      countOthers(
-        countPrivacyPoolsDepositsOf(recent, amount),
-        ownDepositValues.recent,
-        (value) => value === amount
-      )
-    )
-  )
-})
+  }
+}
 
 /**
  * The closest of `candidates` (smallest first) below `amount` that `isValid` accepts, else the

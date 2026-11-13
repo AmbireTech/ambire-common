@@ -10,13 +10,16 @@ const SNARK_SCALAR_FIELD =
 /** An event of a pool as the SDK persists it: what it moved and when. */
 type StoredPoolEvent = { value: bigint; blockNumber: bigint }
 
+/** A deposit as the entrypoint reported it, with the address it came from in lowercase. */
+type StoredPoolDeposit = StoredPoolEvent & { depositor: string }
+
 /** One pool's part of the SDK's persisted public state of its chain. */
 export type PrivacyPoolsPoolHistory = {
   lastSyncedBlock: bigint
   /** What each deposit's label is derived from - see `getPrivacyPoolsPoolLabels`. */
   scope: bigint
   /** Every deposit, as the entrypoint reported it, each one's value after the vetting fee. */
-  deposits: StoredPoolEvent[]
+  deposits: StoredPoolDeposit[]
   withdrawals: StoredPoolEvent[]
   ragequits: StoredPoolEvent[]
   /** Labels of the deposits taken back. */
@@ -58,6 +61,15 @@ const readPoolEntries = (
 const readPoolEvent = (entry: any, sliceName: string): StoredPoolEvent => ({
   value: readBigInt(entry.value, `${sliceName} value`),
   blockNumber: readBigInt(entry.blockNumber, `${sliceName} block`)
+})
+
+/** The SDK persists an address as the hex of its number, which drops its leading zeros. */
+const readAddress = (value: unknown, field: string): string =>
+  `0x${readBigInt(value, field).toString(16).padStart(40, '0')}`
+
+const readPoolDeposit = (entry: any): StoredPoolDeposit => ({
+  ...readPoolEvent(entry, 'entrypoint deposits'),
+  depositor: readAddress(entry.depositor, 'entrypoint deposit depositor')
 })
 
 /** A slice's events of one pool, each tagged with its pool in `poolField`. */
@@ -116,12 +128,12 @@ export const readPrivacyPoolsPoolHistory = (
   return {
     lastSyncedBlock,
     scope: readBigInt(registeredPool.scope, 'pool scope'),
-    deposits: readPoolEvents(
+    deposits: readPoolEntries(
       state.entrypointDeposits?.entrypointDepositsTuples,
       'entrypoint deposits',
       'poolAddress',
       pool
-    ),
+    ).map(readPoolDeposit),
     withdrawals: readPoolEvents(state.withdrawals?.withdrawalsTuples, 'withdrawals', 'pool', pool),
     ragequits: ragequitEntries.map((entry) => readPoolEvent(entry, 'ragequits')),
     ragequitLabels: new Set(
@@ -179,96 +191,59 @@ export const getPrivacyPoolsPoolStats = ({
   }
 }
 
+/** A deposit that can hide a send, with its label - see `getPrivacyPoolsCoverDeposits`. */
+export type PrivacyPoolsCoverDeposit = StoredPoolDeposit & { label: bigint }
+
 /**
- * The deposits that can hide a send: verified ones that were not taken back. Anyone can deposit an
- * amount and take it back for only the fee, and an unverified deposit can never be sent from, so
- * neither hides anybody.
+ * The deposits that can hide a send: verified ones that were not taken back, and not empty. Anyone
+ * can deposit an amount and take it back for only the fee, and an unverified deposit can never be
+ * sent from, so neither hides anybody.
  */
 export const getPrivacyPoolsCoverDeposits = (
   { deposits, ragequitLabels, approvedLabels }: PrivacyPoolsPoolHistory,
   /** The labels of all the pool's deposits - see `getPrivacyPoolsPoolLabels`. */
   poolLabels: bigint[]
-): PrivacyPoolsPoolHistory['deposits'] =>
+): PrivacyPoolsCoverDeposit[] =>
   // Each deposit's label comes from its nonce, which follows the deposits' order on chain. The
   // stored deposits are keyed by commitment, so they are put back in block order first.
   [...deposits]
     .sort((a, b) => compareBigInts(a.blockNumber, b.blockNumber))
-    .filter((_, i) => {
+    .flatMap((deposit, i) => {
       const label = poolLabels[i]
+      const isCover =
+        label !== undefined &&
+        deposit.value > 0n &&
+        approvedLabels.has(label) &&
+        !ragequitLabels.has(label)
 
-      return label !== undefined && approvedLabels.has(label) && !ragequitLabels.has(label)
+      return isCover ? [{ ...deposit, label }] : []
     })
 
-/** Deposits counted by value, so the privacy checks can count them quickly. */
-export type PrivacyPoolsDepositCounts = {
-  countByValue: Map<bigint, number>
-  /** Smallest first. */
-  sortedValues: bigint[]
-}
-
 /**
- * A pool's deposits, arranged so the privacy checks can count them quickly. Built once per sync
- * with `buildPrivacyPoolsDepositIndex`. Deposits of value 0 are left out, as they hide nobody.
+ * A pool's deposits that a send can hide among, as read after a sync. The privacy checks filter
+ * and count this list every time. That stays fast, as the largest pool has only a few thousand.
  */
-export type PrivacyPoolsDepositIndex = PrivacyPoolsDepositCounts & {
+export type PrivacyPoolsPoolCover = {
+  deposits: PrivacyPoolsCoverDeposit[]
   /**
-   * Only the deposits of the last `PRIVACY_POOLS_COVER_WINDOW_DAYS`, the ones the user is shown,
-   * as old deposits say little about who uses the pool now.
+   * A deposit after this block is recent, one of the last `PRIVACY_POOLS_COVER_WINDOW_DAYS`. Only
+   * those are shown to the user, as old deposits say little about who uses the pool now.
    */
-  recent: PrivacyPoolsDepositCounts
-  /** A deposit after this block is in `recent`. */
   recentAfterBlock: bigint
   /** A deposit after this block was made in the last day, so sending it out soon stands out. */
   freshAfterBlock: bigint
 }
 
-/** The first position in an ascending `sorted` whose item is not below `target`, or its length. */
-const findFirstNotBelow = (sorted: bigint[], target: bigint): number => {
-  let low = 0
-  let high = sorted.length
-  while (low < high) {
-    const middle = (low + high) >> 1
-    if (sorted[middle]! < target) low = middle + 1
-    else high = middle
-  }
+/** The deposits of the cover made after its `recentAfterBlock`. */
+export const getRecentPrivacyPoolsDeposits = ({
+  deposits,
+  recentAfterBlock
+}: PrivacyPoolsPoolCover) => deposits.filter(({ blockNumber }) => blockNumber > recentAfterBlock)
 
-  return low
-}
+/** How many of `deposits` put exactly `value` into the pool. */
+export const countPrivacyPoolsDepositsOf = (deposits: StoredPoolEvent[], value: bigint) =>
+  deposits.filter((deposit) => deposit.value === value).length
 
-const buildDepositCounts = (
-  deposits: PrivacyPoolsPoolHistory['deposits']
-): PrivacyPoolsDepositCounts => {
-  const countByValue = new Map<bigint, number>()
-  deposits.forEach(({ value }) => countByValue.set(value, (countByValue.get(value) || 0) + 1))
-
-  return { countByValue, sortedValues: deposits.map(({ value }) => value).sort(compareBigInts) }
-}
-
-export const buildPrivacyPoolsDepositIndex = (
-  deposits: PrivacyPoolsPoolHistory['deposits'],
-  /** Deposits after this block count as recent. */
-  recentAfterBlock: bigint,
-  /** Deposits after this block count as fresh - see `PrivacyPoolsDepositIndex.freshAfterBlock`. */
-  freshAfterBlock: bigint
-): PrivacyPoolsDepositIndex => {
-  const nonZeroDeposits = deposits.filter(({ value }) => value > 0n)
-
-  return {
-    ...buildDepositCounts(nonZeroDeposits),
-    recent: buildDepositCounts(
-      nonZeroDeposits.filter(({ blockNumber }) => blockNumber > recentAfterBlock)
-    ),
-    recentAfterBlock,
-    freshAfterBlock
-  }
-}
-
-/** How many deposits put exactly `value` into the pool. */
-export const countPrivacyPoolsDepositsOf = (counts: PrivacyPoolsDepositCounts, value: bigint) =>
-  counts.countByValue.get(value) || 0
-
-/** How many deposits put at least `value` into the pool, so any of them could pay a send of it. */
-export const countPrivacyPoolsDepositsOfAtLeast = (
-  counts: PrivacyPoolsDepositCounts,
-  value: bigint
-) => counts.sortedValues.length - findFirstNotBelow(counts.sortedValues, value)
+/** How many of `deposits` put at least `value` into the pool, so any of them could pay a send of it. */
+export const countPrivacyPoolsDepositsOfAtLeast = (deposits: StoredPoolEvent[], value: bigint) =>
+  deposits.filter((deposit) => deposit.value >= value).length

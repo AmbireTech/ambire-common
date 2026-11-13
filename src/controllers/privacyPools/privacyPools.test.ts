@@ -3,15 +3,14 @@ import { EventEmitter as NodeEventEmitter } from 'events'
 
 import { expect, jest } from '@jest/globals'
 import { createPPv1Broadcaster } from '@kohaku-eth/privacy-pools'
-import type { PPv1HistoryEvent } from '@kohaku-eth/privacy-pools'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import EmittableError from '../../classes/EmittableError'
 import {
   getPrivacyPoolsAsset,
-  getPrivacyPoolsDepositAsset,
   getPrivacyPoolsChainConfig,
+  getPrivacyPoolsDepositAsset,
   getPrivacyPoolsStoreKey
 } from '../../consts/privacyPools'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
@@ -23,6 +22,7 @@ import { IUiController, View } from '../../interfaces/ui'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { IrCall } from '../../libs/humanizer/interfaces'
+import { checkKohakuFingerprints } from '../../libs/privacyPools/kohakuFingerprints'
 import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
 import {
   getDepositAmountWithVettingFee,
@@ -38,6 +38,8 @@ import { StorageController } from '../storage/storage'
 import { TokenPricesController } from '../tokenPrices/tokenPrices'
 import { PendingAccountOp } from './context'
 import { OPEN_SYNC_MAX_AGE_MS, PrivacyPoolsController } from './privacyPools'
+
+import type { PPv1HistoryEvent } from '@kohaku-eth/privacy-pools'
 
 /**
  * Stands in for the SDK plugin. Each `sync()` waits until the test releases it, so a test can see
@@ -64,6 +66,19 @@ const USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 const ETHEREUM_ETH_POOL = '0xf241d57c6debae225c0f2e6ea1529373c9a9c9fb'
 const WITHDRAWAL_RECIPIENT = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
 const DEPOSITOR = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+
+/** Answers the check of which depositors are Ambire accounts: those in `ambireDepositors`. */
+const answerFingerprintCheck = (ambireDepositors: string[] = []) => {
+  const ambireKeys = new Set(ambireDepositors.map((address) => address.toLowerCase()))
+  jest
+    .mocked(checkKohakuFingerprints)
+    .mockImplementation(
+      async ({ addresses }) =>
+        new Map(
+          addresses.map((address) => address.toLowerCase()).map((key) => [key, ambireKeys.has(key)])
+        )
+    )
+}
 
 const ENTRYPOINT_INTERFACE = new Interface([
   'function deposit(uint256 _precommitment) payable returns (uint256)',
@@ -302,8 +317,16 @@ const historyEvent = (overrides: Partial<PPv1HistoryEvent> = {}): PPv1HistoryEve
 /** Scope of a chain's first pool. Each next one in the config has the next number. */
 const FIRST_POOL_SCOPE = 42n
 
-/** A pool's event, for `toStoredPoolState`. Made in block 1000 when `blockNumber` is not set. */
-type StoredPoolEventInput = { pool: string; value: bigint; blockNumber?: bigint }
+/**
+ * A pool's event, for `toStoredPoolState`. Made in block 1000 when `blockNumber` is not set, and a
+ * deposit by `DEPOSITOR` when `depositor` is not set.
+ */
+type StoredPoolEventInput = {
+  pool: string
+  value: bigint
+  blockNumber?: bigint
+  depositor?: string
+}
 
 /**
  * A chain's public history as the SDK persists it, synced up to `lastSyncedBlock` (1000 when not
@@ -339,9 +362,15 @@ const toStoredPoolState = ({
       })
     : []
   const toTuples = (events: StoredPoolEventInput[], poolField: 'pool' | 'poolAddress') =>
-    events.map(({ pool, value, blockNumber = 1000n }, index) => [
+    events.map(({ pool, value, blockNumber = 1000n, depositor = DEPOSITOR }, index) => [
       hex(BigInt(index + 1)),
-      { value: hex(value), blockNumber: hex(blockNumber), [poolField]: hex(BigInt(pool)) }
+      {
+        value: hex(value),
+        blockNumber: hex(blockNumber),
+        [poolField]: hex(BigInt(pool)),
+        // The SDK keeps who made an entrypoint deposit, not who withdrew
+        ...(poolField === 'poolAddress' && { depositor: hex(BigInt(depositor)) })
+      }
     ])
 
   return JSON.stringify({
@@ -548,6 +577,14 @@ jest.mock('@kohaku-eth/privacy-pools', () => ({
 jest.mock('../../services/provider', () => ({
   ...jest.requireActual<typeof import('../../services/provider')>('../../services/provider'),
   getRpcProvider: jest.fn()
+}))
+
+// Asks the network otherwise, which the fake providers do not answer
+jest.mock('../../libs/privacyPools/kohakuFingerprints', () => ({
+  ...jest.requireActual<typeof import('../../libs/privacyPools/kohakuFingerprints')>(
+    '../../libs/privacyPools/kohakuFingerprints'
+  ),
+  checkKohakuFingerprints: jest.fn()
 }))
 
 jest.mock('../../libs/privacyPools/dataService', () => ({
@@ -945,6 +982,8 @@ describe('PrivacyPoolsController', () => {
     nodeBlockNumber = WITHDRAWAL_BLOCK
     jest.mocked(getRpcProvider).mockReset()
     jest.mocked(getRpcProvider).mockReturnValue(bundlerProvider as any)
+    jest.mocked(checkKohakuFingerprints).mockReset()
+    answerFingerprintCheck()
     bundlerProvider.send.mockReset()
     bundlerProvider.send.mockImplementation(async () => toUserOpReceipt())
     bundlerProvider.destroy.mockReset()
@@ -1180,6 +1219,7 @@ describe('PrivacyPoolsController', () => {
           'chains',
           'depositAssetConfigs',
           'hasPersistedSendForm',
+          'hasPrivacyDataFailed',
           'hasSyncedAnyChain',
           'history',
           'id',
@@ -4844,7 +4884,12 @@ describe('PrivacyPoolsController', () => {
       return { ...prepared, call, getBalance }
     }
 
-    it('computes them with a sync, from the synced history alone, asking the network nothing', async () => {
+    it('computes them with a sync, from the synced history alone, without waiting for the depositors check', async () => {
+      const depositorsCheck = createDeferred()
+      jest.mocked(checkKohakuFingerprints).mockImplementationOnce(async () => {
+        await depositorsCheck.promise
+        return new Map()
+      })
       const { controller, providers, call, getBalance } = await prepareSynced()
 
       expect(controller.poolStats['1']).toEqual({
@@ -4868,6 +4913,25 @@ describe('PrivacyPoolsController', () => {
       expect(call).not.toHaveBeenCalled()
       expect(getBalance).not.toHaveBeenCalled()
       expect(providers.providers['1'].send).not.toHaveBeenCalled()
+      depositorsCheck.resolve()
+    })
+
+    it('checks the depositors of every pool together, so the network cannot tell which one the user looks at', async () => {
+      const USDC_DEPOSITOR = '0x0000000000000000000000000000000000000abc'
+      storedPoolState = toStoredPoolState({
+        deposits: [
+          { pool: ETHEREUM_ETH_POOL, value: 100n },
+          { pool: USDC_POOL, value: 7n, depositor: USDC_DEPOSITOR }
+        ],
+        isEveryDepositApproved: true
+      })
+      await prepareSynced()
+
+      expect(checkKohakuFingerprints).toHaveBeenCalledTimes(1)
+      expect(jest.mocked(checkKohakuFingerprints).mock.calls[0]![0].addresses).toEqual([
+        DEPOSITOR.toLowerCase(),
+        USDC_DEPOSITOR
+      ])
     })
 
     it("counts the deposits made since, whichever account's sync read them", async () => {
@@ -5035,6 +5099,8 @@ describe('PrivacyPoolsController', () => {
       recipient: WITHDRAWAL_RECIPIENT
     }
     const USDC_TRANSFER = { ...ETH_TRANSFER, tokenAddress: USDC, amount: 7n }
+    // The ETH pool's first deposits. It is the first pool, so it has the first scope
+    const ETH_LABELS = getPrivacyPoolsPoolLabels(FIRST_POOL_SCOPE, 1n, 3n)
 
     const getLeakIds = (controller: PrivacyPoolsController) =>
       controller.withdrawalPrivacy?.privacy?.leaks.map(({ id }) => id)
@@ -5056,7 +5122,7 @@ describe('PrivacyPoolsController', () => {
         lastSyncedBlock: 1000n + getPrivacyPoolsChainConfig(1n)!.blocksPerDay
       })
       notesBySeed['seed-a'] = [
-        { label: 1n, amount: 10n, approved: true, blockNumber: 1000n },
+        { label: ETH_LABELS[1]!, amount: 10n, approved: true, blockNumber: 1000n },
         { label: 2n, amount: 7n, approved: true, assetAddress: BigInt(USDC), blockNumber: 1000n }
       ]
     })
@@ -5096,14 +5162,14 @@ describe('PrivacyPoolsController', () => {
       // Both 37s are seed-a's, and the first one was already sent in full
       notesBySeed['seed-a'] = [
         {
-          label: 3n,
+          label: ETH_LABELS[1]!,
           amount: 0n,
           value: 37n,
           withdraw: 1,
           approved: true,
           blockNumber: 999n
         },
-        { label: 4n, amount: 37n, approved: true, blockNumber: 1000n }
+        { label: ETH_LABELS[2]!, amount: 37n, approved: true, blockNumber: 1000n }
       ]
       const { controller } = await prepareSynced()
 
@@ -5124,6 +5190,7 @@ describe('PrivacyPoolsController', () => {
       controller.checkWithdrawalPrivacy(USDC_TRANSFER)
 
       expect(controller.poolStats['1']?.error).not.toBeNull()
+      expect(controller.hasPrivacyDataFailed['1']).toBe(true)
       expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
         rating: 'unchecked',
         leaks: []
@@ -5188,21 +5255,187 @@ describe('PrivacyPoolsController', () => {
         [getPrivacyPoolsStoreKey(getPrivacyPoolsChainConfig(1n)!)]: storedPoolState!
       })
       const { controller } = await prepareTest({ storage })
-      const deposit = { chainId: '1', tokenAddress: ZERO_ADDRESS, amount: 10n, maxAmount: 100n }
-      expect(controller.getDepositPrivacy(deposit).rating).toBe('unchecked')
+      const deposit = {
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        amount: 10n,
+        maxAmount: 100n
+      }
+      expect(controller.getDepositPrivacy(deposit)).toMatchObject({
+        rating: 'unchecked',
+        isLoading: true
+      })
 
       await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, 'transfer-session')
       await waitUntil(() => !!controller.poolStats['1'])
 
       expect(controller.getDepositPrivacy(deposit)).toMatchObject({
         rating: 'standard',
-        sameAmount: 3
+        // The three 10s and the 50, not the 9
+        bigEnough: 4
       })
       expect(controller.getDepositPrivacy({ ...deposit, amount: 11n })).toMatchObject({
         rating: 'standard',
-        sameAmount: 0
+        bigEnough: 1
       })
       expect(runningSyncs).toHaveLength(0)
+    })
+
+    describe('when the send can be told to come from Ambire', () => {
+      const AMBIRE_DEPOSITOR = '0x00000000000000000000000000000000000a4b1e'
+      const PLAIN_DEPOSITOR = '0x0000000000000000000000000000000000000e0a'
+      const NEW_DEPOSITOR = '0x0000000000000000000000000000000000000ee1'
+      const LAST_SYNCED_BLOCK = 1000n + getPrivacyPoolsChainConfig(1n)!.blocksPerDay
+      // seed-a's own 10 is `DEPOSITOR`'s, which is an Ambire account, so only Ambire deposits count
+      const deposits = [
+        { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 999n, depositor: PLAIN_DEPOSITOR },
+        { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 1000n },
+        { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 1001n, depositor: AMBIRE_DEPOSITOR },
+        { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 1002n, depositor: PLAIN_DEPOSITOR }
+      ]
+
+      beforeEach(() => {
+        storedPoolState = toStoredPoolState({
+          deposits,
+          isEveryDepositApproved: true,
+          lastSyncedBlock: LAST_SYNCED_BLOCK
+        })
+        answerFingerprintCheck([DEPOSITOR, AMBIRE_DEPOSITOR])
+      })
+
+      const syncAgain = async ({ controller, selectedAccount }: PreparedTest) => {
+        const checksCount = jest.mocked(checkKohakuFingerprints).mock.calls.length
+        selectedAccount.select('seed-a')
+        const syncing = controller.syncChain('1')
+        await releaseSync('seed-a')
+        await syncing
+        await waitUntil(() => jest.mocked(checkKohakuFingerprints).mock.calls.length > checksCount)
+        // The check is answered at once, so its result is in after one turn
+        await flush()
+      }
+
+      const getCheckedAddresses = (call: number) =>
+        jest.mocked(checkKohakuFingerprints).mock.calls[call]![0].addresses
+
+      it('counts only the deposits from Ambire accounts for a send, and all of them for a deposit', async () => {
+        const prepared = await prepareSynced()
+        await flush()
+        const { controller } = prepared
+
+        controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+
+        expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+          isFingerprintedCover: true,
+          cover: { sameAmount: 1 }
+        })
+        // Its sends are not chosen yet, so a relayer may hide them among all deposits
+        expect(
+          controller.getDepositPrivacy({
+            chainId: '1',
+            tokenAddress: ZERO_ADDRESS,
+            amount: 10n,
+            maxAmount: 100n
+          })
+        ).toMatchObject({ bigEnough: 4 })
+      })
+
+      it('rates the send unchecked when the first check fails, until a retry succeeds', async () => {
+        const { restore } = suppressConsole()
+        jest.mocked(checkKohakuFingerprints).mockRejectedValueOnce(new Error('rpc down'))
+        const prepared = await prepareSynced()
+        await flush()
+        const { controller } = prepared
+        controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+
+        // Nothing tells which deposits are from Ambire accounts, so none can be counted
+        expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+          rating: 'unchecked',
+          isFingerprintedCover: true
+        })
+        expect(controller.hasPrivacyDataFailed['1']).toBe(true)
+
+        // The Retry button
+        controller.readPrivacyData('1')
+        await waitUntil(() => jest.mocked(checkKohakuFingerprints).mock.calls.length > 1)
+        await flush()
+
+        expect(controller.hasPrivacyDataFailed['1']).toBe(false)
+        expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+          rating: 'standard',
+          isFingerprintedCover: true,
+          cover: { sameAmount: 1 }
+        })
+        restore()
+      })
+
+      it('checks only the new depositors, and leaves one out of the cover until a retry of a failed check succeeds', async () => {
+        const { restore } = suppressConsole()
+        const prepared = await prepareSynced()
+        await flush()
+        const { controller } = prepared
+        controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+
+        storedPoolState = toStoredPoolState({
+          deposits: [
+            ...deposits,
+            { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 1003n, depositor: NEW_DEPOSITOR }
+          ],
+          isEveryDepositApproved: true,
+          lastSyncedBlock: LAST_SYNCED_BLOCK
+        })
+        jest.mocked(checkKohakuFingerprints).mockRejectedValueOnce(new Error('rpc down'))
+        await syncAgain(prepared)
+
+        expect(getCheckedAddresses(1)).toEqual([NEW_DEPOSITOR])
+        expect(controller.emittedErrors.at(-1)).toMatchObject({
+          level: 'silent',
+          message: 'Could not check which deposits were made with Ambire.'
+        })
+        // Counted against the Ambire deposits checked before, as the new one may not be one
+        expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+          rating: 'standard',
+          isFingerprintedCover: true,
+          cover: { sameAmount: 1 }
+        })
+        expect(controller.hasPrivacyDataFailed['1']).toBe(true)
+
+        // The Retry button, without waiting for the next sync
+        answerFingerprintCheck([DEPOSITOR, AMBIRE_DEPOSITOR, NEW_DEPOSITOR])
+        controller.readPrivacyData('1')
+        expect(controller.hasPrivacyDataFailed['1']).toBe(false)
+        await waitUntil(() => jest.mocked(checkKohakuFingerprints).mock.calls.length > 2)
+        await flush()
+
+        expect(getCheckedAddresses(2)).toEqual([NEW_DEPOSITOR])
+        expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+          isFingerprintedCover: true,
+          cover: { sameAmount: 2 }
+        })
+        restore()
+      })
+
+      it('keeps the check of a newer sync over a slower one of an older sync', async () => {
+        const staleCheck = createDeferred()
+        // The older sync's check says no depositor is an Ambire account
+        jest.mocked(checkKohakuFingerprints).mockImplementationOnce(async ({ addresses }) => {
+          await staleCheck.promise
+          return new Map(addresses.map((address) => [address.toLowerCase(), false]))
+        })
+        const prepared = await prepareSynced()
+        const { controller } = prepared
+        controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+
+        await syncAgain(prepared)
+        staleCheck.resolve()
+        await flush()
+        // Checked again, so it reads what the reader holds now and not only what the newer sync set
+        controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+
+        expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+          isFingerprintedCover: true,
+          cover: { sameAmount: 1 }
+        })
+      })
     })
   })
 })

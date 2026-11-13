@@ -1,31 +1,61 @@
 import { Hex } from '../../../interfaces/hex'
 import { PrivacyPoolsNote } from '../../../interfaces/privacyPools'
 import { ZERO_ADDRESS } from '../../../services/socket/constants'
+import { PrivacyPoolsCoverDeposit, PrivacyPoolsPoolCover } from '../poolStats'
 import { getPrivacyPoolsNotesToSpend } from './helpers'
 import { getPrivacyPoolsDepositPrivacy, getPrivacyPoolsWithdrawalPrivacy } from './leaks'
-import { buildPrivacyPoolsDepositIndex } from '../poolStats'
 
 const DEPOSITOR: Hex = '0x00000000000000000000000000000000000000d1'
 const STRANGER = '0x00000000000000000000000000000000000000a1'
 const USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 const COMMON_AMOUNTS = [10n, 50n, 100n]
 
+let nextLabel = 1n
+
+/** A stranger's deposit, with a label of its own unless one is given. */
+const poolDeposit = (
+  value: bigint,
+  blockNumber: bigint,
+  overrides: Partial<PrivacyPoolsCoverDeposit> = {}
+): PrivacyPoolsCoverDeposit => ({
+  value,
+  blockNumber,
+  depositor: STRANGER,
+  label: nextLabel++,
+  ...overrides
+})
+
+/** A pool of `deposits`, all recent, of which those after block 90 are fresh. */
+const poolCoverOf = (
+  deposits: PrivacyPoolsCoverDeposit[],
+  recentAfterBlock = 0n
+): PrivacyPoolsPoolCover => ({ deposits, recentAfterBlock, freshAfterBlock: 90n })
+
 /**
  * The pool: three of 10, two of 50 and of 100, one each of 37 and 500, oldest first, at blocks 10
  * to 90. All are recent, and none is fresh.
  */
-const DEPOSIT_INDEX = buildPrivacyPoolsDepositIndex(
-  [10n, 10n, 10n, 37n, 50n, 50n, 100n, 100n, 500n].map((value, i) => ({
-    value,
-    blockNumber: BigInt(i + 1) * 10n
-  })),
-  0n,
-  90n
+const POOL_DEPOSITS = [10n, 10n, 10n, 37n, 50n, 50n, 100n, 100n, 500n].map((value, i) =>
+  poolDeposit(value, BigInt(i + 1) * 10n)
 )
+const POOL_COVER = poolCoverOf(POOL_DEPOSITS)
+/** Of the pool's deposits, the 37 and the first 100 are the user's, as `note` makes them. */
+const OWN_37_LABEL = POOL_DEPOSITS[3]!.label
+const OWN_100_LABEL = POOL_DEPOSITS[6]!.label
 
-let nextLabel = 1n
+/** No depositor is an Ambire account, so every send hides among all deposits. */
+const countingAllDeposits = (poolCover: PrivacyPoolsPoolCover | null) => ({
+  poolCover,
+  fingerprints: new Map([
+    [DEPOSITOR, false],
+    [STRANGER, false]
+  ])
+})
 
-/** An approved ETH note from `DEPOSITOR`, never sent from, of its whole 100 deposit at block 70. */
+/**
+ * An approved ETH note from `DEPOSITOR`, never sent from, of its whole 100 deposit at block 70,
+ * which is not one of the pool's deposits unless its label is.
+ */
 const note = (overrides: Partial<PrivacyPoolsNote> = {}): PrivacyPoolsNote => {
   const label = nextLabel++
 
@@ -46,18 +76,20 @@ const note = (overrides: Partial<PrivacyPoolsNote> = {}): PrivacyPoolsNote => {
 const getWithdrawalPrivacy = ({
   amount,
   notes,
-  recipient = STRANGER
+  recipient = STRANGER,
+  poolCover = POOL_COVER
 }: {
   amount: bigint
   notes: PrivacyPoolsNote[]
   recipient?: string | null
+  poolCover?: PrivacyPoolsPoolCover
 }) => {
   const privacy = getPrivacyPoolsWithdrawalPrivacy({
     amount,
     notes,
     tokenAddress: ZERO_ADDRESS,
     recipient,
-    depositIndex: DEPOSIT_INDEX,
+    ...countingAllDeposits(poolCover),
     commonAmounts: COMMON_AMOUNTS
   })
   if (!privacy) throw new Error(`The notes cannot pay ${amount}`)
@@ -100,7 +132,7 @@ describe('getPrivacyPoolsNotesToSpend', () => {
 
 describe('getPrivacyPoolsWithdrawalPrivacy', () => {
   test('rates a send with no leak standard and counts the deposits that hide it', () => {
-    const privacy = getWithdrawalPrivacy({ amount: 60n, notes: [note()] })
+    const privacy = getWithdrawalPrivacy({ amount: 60n, notes: [note({ label: OWN_100_LABEL })] })
 
     expect(privacy.rating).toBe('standard')
     expect(privacy.leaks).toEqual([])
@@ -116,7 +148,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         notes: [note({ amount: 37n, depositValue: 37n })],
         tokenAddress: ZERO_ADDRESS,
         recipient: DEPOSITOR,
-        depositIndex: null,
+        ...countingAllDeposits(null),
         commonAmounts: COMMON_AMOUNTS
       })
 
@@ -125,13 +157,19 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       rating: 'unchecked',
       leaks: [],
       cover: { bigEnough: 0, sameAmount: 0 },
-      notesCount: 1
+      notesCount: 1,
+      isFingerprintedCover: false
     })
     expect(getPrivacy(38n)).toBeNull()
   })
 
   describe('unique amount', () => {
-    const uniqueNote = note({ amount: 37n, depositValue: 37n, blockNumber: 40n })
+    const uniqueNote = note({
+      amount: 37n,
+      depositValue: 37n,
+      blockNumber: 40n,
+      label: OWN_37_LABEL
+    })
 
     test('is traceable when a whole deposit no other has the amount of is spent', () => {
       const privacy = getWithdrawalPrivacy({ amount: 37n, notes: [uniqueNote] })
@@ -160,21 +198,20 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
 
     test('counts an old deposit of the user, so one recent deposit of the amount still hides it', () => {
       // The user's 37 at block 40 is older than the recent ones, the other 37 at block 90 is not
-      const depositIndex = buildPrivacyPoolsDepositIndex(
+      const poolCover = poolCoverOf(
         [
-          { value: 37n, blockNumber: 40n },
-          { value: 37n, blockNumber: 90n },
-          { value: 100n, blockNumber: 30n }
+          poolDeposit(37n, 40n, { label: uniqueNote.label }),
+          poolDeposit(37n, 90n),
+          poolDeposit(100n, 30n)
         ],
-        50n,
-        90n
+        50n
       )
       const privacy = getPrivacyPoolsWithdrawalPrivacy({
         amount: 37n,
         notes: [uniqueNote],
         tokenAddress: ZERO_ADDRESS,
         recipient: STRANGER,
-        depositIndex,
+        ...countingAllDeposits(poolCover),
         commonAmounts: COMMON_AMOUNTS
       })
 
@@ -185,21 +222,18 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
 
     test("is traceable when the other deposits of the amount are the user's own", () => {
       // Two deposits of 37, both made by the user from the same address
-      const depositIndex = buildPrivacyPoolsDepositIndex(
-        [
-          { value: 37n, blockNumber: 40n },
-          { value: 37n, blockNumber: 50n },
-          { value: 100n, blockNumber: 30n }
-        ],
-        0n,
-        90n
-      )
+      const otherOwnNote = note({ amount: 37n, depositValue: 37n, blockNumber: 50n })
+      const poolCover = poolCoverOf([
+        poolDeposit(37n, 40n, { label: uniqueNote.label }),
+        poolDeposit(37n, 50n, { label: otherOwnNote.label }),
+        poolDeposit(100n, 30n)
+      ])
       const privacy = getPrivacyPoolsWithdrawalPrivacy({
         amount: 37n,
-        notes: [uniqueNote, note({ amount: 37n, depositValue: 37n, blockNumber: 50n })],
+        notes: [uniqueNote, otherOwnNote],
         tokenAddress: ZERO_ADDRESS,
         recipient: STRANGER,
-        depositIndex,
+        ...countingAllDeposits(poolCover),
         commonAmounts: COMMON_AMOUNTS
       })
 
@@ -210,21 +244,17 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
     })
 
     test("counts another account's deposit of the amount, but not a pending note of the user", () => {
-      const depositIndex = buildPrivacyPoolsDepositIndex(
-        [
-          { value: 37n, blockNumber: 40n },
-          { value: 37n, blockNumber: 50n }
-        ],
-        0n,
-        90n
-      )
+      const poolCover = poolCoverOf([
+        poolDeposit(37n, 40n, { label: uniqueNote.label }),
+        poolDeposit(37n, 50n)
+      ])
       const privacy = getPrivacyPoolsWithdrawalPrivacy({
         amount: 37n,
         // Not verified yet, so it is not among the pool's counted deposits either
         notes: [uniqueNote, note({ amount: 37n, depositValue: 37n, approval: 'pending' })],
         tokenAddress: ZERO_ADDRESS,
         recipient: STRANGER,
-        depositIndex,
+        ...countingAllDeposits(poolCover),
         commonAmounts: COMMON_AMOUNTS
       })
 
@@ -257,10 +287,13 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
     })
 
     test('lists errors first, then warnings', () => {
-      const privacy = getWithdrawalPrivacy({
-        amount: 37n,
-        notes: [note({ amount: 37n, depositValue: 37n, blockNumber: 91n })]
-      })
+      const freshNote = note({ amount: 37n, depositValue: 37n, blockNumber: 91n })
+      // The pool's only 37 is the user's fresh one
+      const poolCover = poolCoverOf([
+        ...POOL_DEPOSITS.filter(({ label }) => label !== OWN_37_LABEL),
+        poolDeposit(37n, 91n, { label: freshNote.label })
+      ])
+      const privacy = getWithdrawalPrivacy({ amount: 37n, notes: [freshNote], poolCover })
 
       expect(privacy.leaks.map(({ id, type }) => `${type} ${id}`)).toEqual([
         'error unique-amount',
@@ -355,7 +388,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         notes: [note()],
         tokenAddress: ZERO_ADDRESS,
         recipient: STRANGER,
-        depositIndex: DEPOSIT_INDEX,
+        ...countingAllDeposits(POOL_COVER),
         commonAmounts: COMMON_AMOUNTS
       })
 
@@ -370,7 +403,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
         notes: [note()],
         tokenAddress: ZERO_ADDRESS,
         recipient: STRANGER,
-        depositIndex: DEPOSIT_INDEX,
+        ...countingAllDeposits(POOL_COVER),
         commonAmounts: COMMON_AMOUNTS
       })
     ).toBeNull()
@@ -382,16 +415,17 @@ describe('getPrivacyPoolsDepositPrivacy', () => {
     getPrivacyPoolsDepositPrivacy({
       amount,
       maxAmount,
-      depositIndex: DEPOSIT_INDEX,
+      poolCover: POOL_COVER,
       commonAmounts
     })
 
-  test('rates a common amount standard', () => {
+  test('rates a common amount standard, hidden by every deposit that could pay all of it', () => {
     const privacy = getDepositPrivacy(50n)
 
     expect(privacy.rating).toBe('standard')
     expect(privacy.leaks).toEqual([])
-    expect(privacy.sameAmount).toBe(2)
+    // The two 50s, the two 100s and the 500
+    expect(privacy.bigEnough).toBe(5)
   })
 
   test('only notes an unusual amount, and suggests the nearest lower common one others deposited', () => {
@@ -409,22 +443,19 @@ describe('getPrivacyPoolsDepositPrivacy', () => {
   })
 
   test('does not note an amount that only older deposits have', () => {
-    const depositIndex = buildPrivacyPoolsDepositIndex(
-      [
-        { value: 42n, blockNumber: 5n },
-        ...[10n, 50n].map((value) => ({ value, blockNumber: 20n }))
-      ],
-      10n,
-      90n
+    const poolCover = poolCoverOf(
+      [poolDeposit(42n, 5n), ...[10n, 50n].map((value) => poolDeposit(value, 20n))],
+      10n
     )
     const privacy = getPrivacyPoolsDepositPrivacy({
       amount: 42n,
       maxAmount: 1_000n,
-      depositIndex,
+      poolCover,
       commonAmounts: COMMON_AMOUNTS
     })
 
-    expect(privacy.sameAmount).toBe(0)
+    // Only the recent 50, as the 42 is too old to count
+    expect(privacy.bigEnough).toBe(1)
     expect(privacy.leaks).toEqual([])
   })
 
@@ -438,10 +469,10 @@ describe('getPrivacyPoolsDepositPrivacy', () => {
       getPrivacyPoolsDepositPrivacy({
         amount: 42n,
         maxAmount: 1_000n,
-        depositIndex: null,
+        poolCover: null,
         commonAmounts: COMMON_AMOUNTS
       })
-    ).toEqual({ rating: 'unchecked', leaks: [], sameAmount: 0 })
+    ).toEqual({ rating: 'unchecked', leaks: [], bigEnough: 0 })
   })
 
   test('has no leak before an amount is typed', () => {
@@ -449,5 +480,147 @@ describe('getPrivacyPoolsDepositPrivacy', () => {
 
     expect(privacy.leaks).toEqual([])
     expect(privacy.rating).toBe('standard')
+  })
+})
+
+describe('counting only the deposits from Ambire accounts', () => {
+  const AMBIRE_USER: Hex = '0x00000000000000000000000000000000000000b1'
+  const AMBIRE_OTHER = '0x00000000000000000000000000000000000000b2'
+  /** Checked as plain: `DEPOSITOR` and `STRANGER`. Not checked yet: anyone else. */
+  const FINGERPRINTS = new Map([
+    [AMBIRE_USER, true],
+    [AMBIRE_OTHER, true],
+    [DEPOSITOR, false],
+    [STRANGER, false]
+  ])
+  // Checksummed, as the notes keep it
+  const ambireNote = note({
+    amount: 37n,
+    depositValue: 37n,
+    blockNumber: 10n,
+    depositorAddr: '0x00000000000000000000000000000000000000B1'
+  })
+  const plainNote = note({ amount: 50n, depositValue: 50n, blockNumber: 20n })
+  /**
+   * The user's 37 from `AMBIRE_USER` and 50 from `DEPOSITOR`, a 37 and a 10 from a stranger, and a
+   * 50 and a 100 from another Ambire account. All recent, none fresh.
+   */
+  const POOL_DEPOSITS_BY_ACCOUNTS = [
+    poolDeposit(37n, 10n, { depositor: AMBIRE_USER, label: ambireNote.label }),
+    poolDeposit(50n, 20n, { depositor: DEPOSITOR, label: plainNote.label }),
+    poolDeposit(37n, 30n),
+    poolDeposit(50n, 40n, { depositor: AMBIRE_OTHER }),
+    poolDeposit(100n, 50n, { depositor: AMBIRE_OTHER }),
+    poolDeposit(10n, 60n)
+  ]
+
+  const getPrivacy = ({
+    amount,
+    notes,
+    fingerprints = FINGERPRINTS,
+    deposits = POOL_DEPOSITS_BY_ACCOUNTS,
+    commonAmounts = COMMON_AMOUNTS
+  }: {
+    amount: bigint
+    notes: PrivacyPoolsNote[]
+    fingerprints?: ReadonlyMap<string, boolean> | null
+    deposits?: PrivacyPoolsCoverDeposit[]
+    commonAmounts?: bigint[]
+  }) =>
+    getPrivacyPoolsWithdrawalPrivacy({
+      amount,
+      notes,
+      tokenAddress: ZERO_ADDRESS,
+      recipient: STRANGER,
+      poolCover: poolCoverOf(deposits),
+      fingerprints,
+      commonAmounts
+    })
+
+  test('counts all deposits when every spent deposit came from a plain address', () => {
+    const privacy = getPrivacy({ amount: 50n, notes: [plainNote] })
+
+    expect(privacy?.isFingerprintedCover).toBe(false)
+    // Of at least 50: the other 50 and the 100, not the user's own 50
+    expect(privacy?.cover).toEqual({ bigEnough: 2, sameAmount: 1 })
+  })
+
+  test('counts only Ambire deposits when one spent deposit came from an Ambire account', () => {
+    // Spends the plain 50 whole, then the Ambire 37 whole
+    const privacy = getPrivacy({ amount: 87n, notes: [plainNote, ambireNote] })
+
+    expect(privacy?.isFingerprintedCover).toBe(true)
+    // At least 50 among Ambire deposits: the other 50 and the 100. At least 37: the same two, as
+    // the user's own 37 hides nobody
+    expect(privacy?.cover).toEqual({ bigEnough: 2, sameAmount: 0 })
+  })
+
+  test('counts only Ambire deposits when a spent deposit is not checked yet', () => {
+    const newNote = note({
+      amount: 50n,
+      depositValue: 50n,
+      depositorAddr: '0x00000000000000000000000000000000000000c1'
+    })
+
+    expect(getPrivacy({ amount: 50n, notes: [newNote] })).toMatchObject({
+      isFingerprintedCover: true,
+      rating: 'standard',
+      cover: { bigEnough: 2, sameAmount: 1 }
+    })
+  })
+
+  test('leaves out the deposits of others not checked yet, so they never add cover', () => {
+    const privacy = getPrivacy({
+      amount: 37n,
+      notes: [ambireNote],
+      deposits: [
+        ...POOL_DEPOSITS_BY_ACCOUNTS,
+        poolDeposit(37n, 70n, { depositor: '0x00000000000000000000000000000000000000c2' })
+      ]
+    })
+
+    // The new 37 may well be from an Ambire account, but is not counted until it is checked
+    expect(privacy?.leaks.map(({ id }) => id)).toEqual(['unique-amount'])
+    expect(privacy?.cover).toEqual({ bigEnough: 2, sameAmount: 0 })
+  })
+
+  test('is unchecked before any depositor is checked, never all deposits', () => {
+    expect(getPrivacy({ amount: 37n, notes: [ambireNote], fingerprints: null })).toEqual({
+      rating: 'unchecked',
+      leaks: [],
+      cover: { bigEnough: 0, sameAmount: 0 },
+      notesCount: 1,
+      isFingerprintedCover: true
+    })
+    // Even a deposit from a plain address, as nothing tells it is plain yet
+    expect(getPrivacy({ amount: 50n, notes: [plainNote], fingerprints: null })?.rating).toBe(
+      'unchecked'
+    )
+  })
+
+  test('is traceable when the only other deposits of the amount came from plain addresses', () => {
+    const ambirePrivacy = getPrivacy({ amount: 37n, notes: [ambireNote] })
+    expect(ambirePrivacy?.rating).toBe('traceable')
+    expect(ambirePrivacy?.leaks.map(({ id }) => id)).toEqual(['unique-amount'])
+
+    // The same amount from a plain address hides behind the other 37s
+    const plainPrivacy = getPrivacy({
+      amount: 37n,
+      notes: [note({ amount: 37n, depositValue: 37n, blockNumber: 10n })]
+    })
+    expect(plainPrivacy?.leaks).toEqual([])
+  })
+
+  test('suggests a common amount by the deposits its own spends hide among', () => {
+    // Spends both deposits whole, so the Ambire 37 hides only among Ambire deposits
+    const privacy = getPrivacy({
+      amount: 87n,
+      notes: [ambireNote, plainNote],
+      commonAmounts: [10n]
+    })
+
+    expect(privacy?.leaks.map(({ id }) => id)).toEqual(['unique-amount'])
+    // A send of 10 spends only the plain 50, so the stranger's 10 hides it
+    expect(privacy?.leaks[0]?.actions.map(({ meta }) => meta.amount)).toEqual([10n])
   })
 })

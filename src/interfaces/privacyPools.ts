@@ -1,6 +1,6 @@
 import { IrCall } from '../libs/humanizer/interfaces'
-import { ControllerInterface } from './controller'
 import { Pagination, PaginationResult } from '../utils/paginate'
+import { ControllerInterface } from './controller'
 import { Hex } from './hex'
 
 export type IPrivacyPoolsController = ControllerInterface<
@@ -445,14 +445,24 @@ export type PrivacyPoolsWithdrawalPrivacy = {
   cover: PrivacyPoolsSendCover
   /** How many deposits the send spends. */
   notesCount: number
+  /**
+   * Whether the send hides only among deposits with a Kohaku client fingerprint. Anyone can see that
+   * a send was made with Kohaku, so this is true when a spent deposit has the fingerprint.
+   */
+  isFingerprintedCover: boolean
 }
 
 /** The privacy of a deposit into a pool. */
 export type PrivacyPoolsDepositPrivacy = {
   rating: PrivacyPoolsRating
   leaks: PrivacyPoolsLeak[]
-  /** Recent deposits (see `PRIVACY_POOLS_COVER_WINDOW_DAYS`) of exactly this amount. */
-  sameAmount: number
+  /**
+   * How many recent deposits (see `PRIVACY_POOLS_COVER_WINDOW_DAYS`) are at least this amount. When
+   * the user later sends all of it at once, only those deposits could have paid that send.
+   */
+  bigEnough: number
+  /** Whether it is `unchecked` only because the pool's deposits are still being read. */
+  isLoading: boolean
 }
 
 /** A send from a Privacy Pools account to check, as the Send form has it. */
