@@ -8,7 +8,7 @@ The controller is the only `EventEmitter`. The work is done by plain classes tha
 
 | Module | Holds |
 | --- | --- |
-| `protocolRegistry.ts` | The SDK plugins, one per chain and phrase, their keystores, and the chain versions |
+| `protocolRegistry.ts` | The SDK plugins, one per chain and phrase, and their keystores |
 | `sync.ts` | The sync queue, the first read of each chain's shared state, account states (notes, and the history once read), and sync epochs |
 | `history.ts` | The screens showing the history and their pages. Reads the history of the networks a screen shows whose history is not current, and syncs only those whose plugin has not |
 | `deposits.ts` | Deposit requirements and the next deposit's precommitment |
@@ -53,7 +53,8 @@ Some state is kept on purpose, because none of it comes from a phrase, or becaus
 
 | Kept | Why |
 | --- | --- |
-| The first read of each chain (`sync.ts`), chain versions (`protocolRegistry.ts`) | The chain's shared state, the same for every phrase. It takes minutes to read the first time |
+| The first read of each chain (`sync.ts`) | The chain's shared state, the same for every phrase. It takes minutes to read the first time |
+| The chains' state in memory (`ctx.chainStorage`) | Public and the same for every phrase. The SDK keeps one copy per `chainStorage` object, which is made once, for the wallet's lifetime, as the SDK asks. So an unlock does not load it again |
 | Built and broadcast deposit and ragequit calls (`builtCalls.ts`) | A deposit made before a lock may be sent or land after it. It must still be recognised, and still sync its account's chain once it lands. Nothing in them comes from a phrase: the account id, token, amount and block are public or local |
 | Expected changes (`expectedChanges.ts`) | Each keeps a check taken from the account's notes, so a lock deletes them all. The amounts then stop counting |
 | Deposit requirements, prices, pool numbers, the account list, the Send form | Not derived from a phrase |
@@ -66,7 +67,6 @@ A sync or a proof cannot be stopped midway, so each one checks, before it writes
 
 - **`LockGeneration`** - a sync captures the generation when it starts. `#writeAccountState` writes nothing after a lock, nor for a removed account.
 - **Operation id** - a withdrawal updates the operation only while it is still the current one. A lock, a cancel or a newer withdrawal replaces it. A proved withdrawal is not sent if a lock came while it was checked again.
-- **Chain versions** - a sync that persists a chain's history bumps its version. The other phrases' plugins on that chain are rebuilt on next use, so they start from the stored history instead of reading it again.
 - **Sync epochs** - the next deposit's precommitment is cached until the account's next sync, which may have seen a deposit land. A history read is kept only if no sync of the account's chain ended since it started. The epoch tells, not the time, as two syncs can end in the same millisecond.
 - **First chain read** - only the first sync of a chain reads its shared state. The other syncs of that chain wait for it, and a failed read is retried by the next sync.
 - **Preparation queue** - a cancelled withdrawal may still be proving. The next one waits for it rather than prove beside it on the same plugin.
@@ -90,7 +90,7 @@ Another sync, for example from opening the account, can read the change first. S
 ## Persistence
 
 - **The account list** is stored under `PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY`.
-- **The plugins' state** (pool history and notes) is stored by the SDK under `privacyPoolsState`. All plugins share one storage adapter (`kohakuStorage`). Adapters per plugin would overwrite each other's progress.
+- **The chains' state** (the pools' history) is stored by the SDK under `privacyPoolsState`, the same for every phrase. Every plugin gets the same `chainStorage`, so the phrases also share one copy of it in memory, and a sync by any of them updates it for all. A second adapter would overwrite the first one's progress. Notes are not stored: the SDK derives them from the phrase again on every load.
 - **Deposits and withdrawals are not persisted**, as a local log would link a deposit to its withdrawal.
 
 ## History
@@ -101,7 +101,7 @@ The account's deposits, withdrawals and deposits taken back, for its Activity sc
 - **Stores read before hashes were kept are not read again.** Their events up to the upgrade have no hash, so they are listed without a link, while newer ones have it. Privacy Pools has reached only dev and Ambire Next builds, so a one-time rebuild of such stores (about 18 s from the CDN, beside the syncs) is not worth its cost.
 - **Read while a screen shows it, and after a transfer.** A screen opens a session with `filterHistory` and closes it with `resetHistoryFilters` (sessions in `history.ts`). While one is open, each sync of the selected account reads the history right after the notes, in the same turn of the queue. The balances are shown before the history is read. A sent withdrawal reads it along with its sync even with no screen open, so the Activity lists it at once.
 - **Read without syncing again.** `history()` would sync the plugin first, which costs seconds even with no new blocks, so it is asked not to (`{ sync: false }`, from 0.1.0-alpha.35) and reads the state the notes were just read from. So a deposit is listed exactly when its note is. A sync reads it from the plugin that read the notes, even if the registry has dropped it since: a new plugin has not found the account's deposits yet, as the SDK does not store them, and would list none.
-- **A screen opened later reads it from the current plugin.** After a sync that did not read the history, a screen reads it from the chain's current plugin (`readHistoryWithoutSync`), if a sync has read the account's notes with that plugin, so the balances are not shown as loading again. A plugin built since - after the first read of a chain from the CDN, a provider change, or another account's sync of the chain - knows none of the account's deposits, so the chain is synced instead.
+- **A screen opened later reads it from the current plugin.** After a sync that did not read the history, a screen reads it from the chain's current plugin (`readHistoryWithoutSync`), if a sync has read the account's notes with that plugin, so the balances are not shown as loading again. A plugin built since - after the first read of a chain from the CDN, or a provider change - knows none of the account's deposits, so the chain is synced instead.
 - **It still asks the network for block times.** Each read fetches the time of the latest block synced to date the events, which took about 0.8 s on Ethereum when measured. Those blocks are the same for every account.
 - **A stale list is kept.** A sync with no screen open leaves the history marked as not current. The next screen shows it at once, and reads it again.
 - **Paged here, not by the SDK.** The SDK returns the whole history per chain, newest first. `history.ts` merges the chains newest first and serves each session one page in `history`, in the same shape as `ActivityController`'s.

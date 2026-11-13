@@ -235,7 +235,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       networks,
       providers,
       fetch,
-      kohakuStorage: createKohakuStorage({
+      chainStorage: createKohakuStorage({
         storage,
         storageKey: 'privacyPoolsState',
         // States of older SDKs and dropped chains, a few MB each that each sync would otherwise rewrite

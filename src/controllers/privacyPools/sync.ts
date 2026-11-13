@@ -358,7 +358,7 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
         [chainId]: this.getEpoch(chainId, seedId) + 1
       }
 
-      this.#registry.markChainSynced(chainId, seedId)
+      this.#registry.markChainSynced(chainId)
 
       // In the same turn of the queue and from the same plugin, so it reads the state the notes
       // were read from, without syncing again. The balances are shown meanwhile.

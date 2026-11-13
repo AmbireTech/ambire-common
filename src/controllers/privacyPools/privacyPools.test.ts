@@ -1488,7 +1488,7 @@ describe('PrivacyPoolsController', () => {
       expect(controller.chains['1']?.syncStatus).toBe('ready')
     })
 
-    it('rebuilds a plugin once another phrase has persisted newer history', async () => {
+    it("keeps a plugin through another phrase's sync of the network, as they share its state", async () => {
       const { controller, selectedAccount } = await prepareTest()
 
       selectedAccount.select('seed-a')
@@ -1506,7 +1506,34 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-a')
       await secondA
 
-      expect(protocols.filter((protocol) => protocol.seedId === 'seed-a')).toHaveLength(2)
+      expect(protocols.filter((protocol) => protocol.seedId === 'seed-a')).toHaveLength(1)
+    })
+
+    // Sharing follows the object: plugins given different ones would each keep a copy in memory
+    it('gives every plugin the same chain storage, on every network and after a lock', async () => {
+      const { controller, keystore, selectedAccount } = await prepareTest({ hasOtherChain: true })
+
+      selectedAccount.select('seed-a')
+      const syncA = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncA
+      selectedAccount.select('seed-b')
+      const syncB = controller.syncChain(OTHER_CHAIN_ID.toString())
+      await releaseSync('seed-b', OTHER_CHAIN_ID)
+      await syncB
+
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      keystore.isUnlocked = true
+      keystore.fireUpdate()
+      const syncAfterLock = controller.syncChain(OTHER_CHAIN_ID.toString())
+      await releaseSync('seed-b', OTHER_CHAIN_ID)
+      await syncAfterLock
+
+      expect(protocols).toHaveLength(3)
+      const [{ params: first }] = protocols
+      expect(first.chainStorage).toBeDefined()
+      protocols.forEach(({ params }) => expect(params.chainStorage).toBe(first.chainStorage))
     })
 
     it('counts only approved notes as what a transfer can send', async () => {
@@ -4464,19 +4491,20 @@ describe('PrivacyPoolsController', () => {
         expect(getAmounts(controller)).toEqual([10n, 4n])
       })
 
-      it("syncs again once another account's sync of the network has replaced its plugin", async () => {
+      it("is read without syncing again after another account's sync of the network", async () => {
         const { controller, selectedAccount } = await prepareSelected()
         await syncFirst(controller)
         selectedAccount.select('seed-b')
         await syncFirst(controller, 'seed-b')
         selectedAccount.select('seed-a')
 
-        await openHistory(controller)
+        await controller.filterHistory(SESSION)
 
-        // seed-a's, seed-b's, then seed-a's again, built from what seed-b's sync stored
-        expect(protocols).toHaveLength(3)
-        expect(protocols[0]!.historyCount).toBe(0)
-        expect(protocols[2]!.historyCount).toBe(1)
+        // seed-a's plugin is kept, as seed-b's sync updated the state they share
+        expect(protocols).toHaveLength(2)
+        expect(runningSyncs).toHaveLength(0)
+        expect(protocols[0]!.syncCount).toBe(1)
+        expect(protocols[0]!.historyCount).toBe(1)
         expect(getAmounts(controller)).toEqual([10n, 4n])
       })
 

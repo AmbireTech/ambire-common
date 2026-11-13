@@ -60,7 +60,7 @@ export class PrivacyPoolsPoolStatsReader {
     depositIndexes: { [tokenAddress: string]: PrivacyPoolsDepositIndex }
   } | null> {
     const config = getChainConfig(chainId)
-    const storedState = await this.#ctx.kohakuStorage.get(getPrivacyPoolsChainStateKey(config))
+    const storedState = await this.#ctx.chainStorage.get(getPrivacyPoolsChainStateKey(config))
     if (!storedState) return null
 
     // Parsed once for all the chain's pools, as it holds the whole chain's history

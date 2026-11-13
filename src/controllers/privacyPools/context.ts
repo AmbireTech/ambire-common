@@ -43,10 +43,12 @@ export type PrivacyPoolsContext = {
   providers: IProvidersController
   fetch: Fetch
   /**
-   * Shared by all plugins: the adapter caches the whole blob and rewrites it on every save, so
-   * per-plugin adapters (two phrases) would overwrite each other's progress.
+   * The SDK's `chainStorage`, created once and given to every plugin, so all phrases share one copy
+   * of each chain's state, in memory and in storage. Sharing follows the object: plugins given
+   * another one would each keep their own copy. Also the only adapter on the stored blob, which it
+   * caches whole and rewrites on every save, so a second adapter would overwrite its progress.
    */
-  kohakuStorage: Storage
+  chainStorage: Storage
   lock: LockGeneration
   hasAccount: (seedId: string) => boolean
   /**
