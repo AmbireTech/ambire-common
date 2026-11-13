@@ -1,15 +1,12 @@
 import { isAddress } from 'ethers'
 
-import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
+import { HumanizerTypedMessageFunction, HumanizerVisualization } from '../interfaces'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import { getAction, getAddressVisualization, getBreak, getLabel } from '../utils'
 
-export const safeMessageModule: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind === 'message' || typeof message.content.message === 'string')
-    return { fullVisualization: [] }
-  if (message.content.primaryType !== 'SafeTx') return { fullVisualization: [] }
+/** Humanizes a Safe{WALLET} transaction (primary type `SafeTx`) */
+export const humanizeSafeTx: HumanizerTypedMessageFunction = (message) => {
   const { to, value, data, operation, nonce } = message.content.message
   const { accountAddr } = message
   const { verifyingContract } = message.content.domain
@@ -23,7 +20,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
     nonce
   )
   const fullVisualization: HumanizerVisualization[] = []
-  if (!isAddress(verifyingContract)) return {}
+  if (!isAddress(verifyingContract)) return null
   fullVisualization.push(
     ...[
       getAction('Safe{WALLET} transaction'),

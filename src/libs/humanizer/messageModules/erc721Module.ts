@@ -1,6 +1,15 @@
-import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
+import { HumanizerTypedMessageFunction, HumanizerVisualization } from '../interfaces'
+import {
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getLabel,
+  getToken,
+  isTypeDeclaringFields
+} from '../utils'
+
+/** Fields of an ERC-4494 (NFT) `Permit` */
+export const ERC721_PERMIT_FIELD_NAMES = ['spender', 'tokenId', 'nonce', 'deadline']
 
 const visualizePermit = (
   spender: string,
@@ -17,12 +26,17 @@ const visualizePermit = (
   if (getDeadline(deadline)) res.push(getDeadline(deadline) as HumanizerVisualization)
   return res
 }
-export const erc721Module: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind !== 'typedMessage') return { fullVisualization: [] }
+
+/**
+ * Humanizes an ERC-4494 (NFT) `Permit`. ERC-20 permits use the same primary type,
+ * so it checks the fields declared in `types.Permit`. Extra keys in `message` are
+ * not signed, so they must not make another permit look like an NFT permit.
+ */
+export const humanizeErc721Permit: HumanizerTypedMessageFunction = (message) => {
   const tm = message.content
   if (
-    tm.types.Permit &&
-    tm.primaryType === 'Permit' &&
+    isTypeDeclaringFields(tm.types, 'Permit', ERC721_PERMIT_FIELD_NAMES) &&
+    tm.domain.verifyingContract &&
     tm.message.spender &&
     tm.message.tokenId &&
     tm.message.nonce &&
@@ -33,9 +47,9 @@ export const erc721Module: HumanizerTypedMessageModule = (message: Message) => {
         tm.message.spender,
         tm.message.tokenId,
         tm.message.deadline,
-        tm.domain.verifyingContract as string
+        tm.domain.verifyingContract
       )
     }
   }
-  return { fullVisualization: [] }
+  return null
 }

@@ -1,9 +1,8 @@
-import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule } from '../interfaces'
-import { getAction, getDeadline, getLabel } from '../utils'
+import { HumanizerTypedMessageFunction } from '../interfaces'
+import { getAction, getLabel } from '../utils'
 
-export const snapshotModule: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind !== 'typedMessage') return { fullVisualization: [] }
+/** Humanizes a Snapshot vote (primary type `Vote`) */
+export const humanizeSnapshotVote: HumanizerTypedMessageFunction = (message) => {
   if (
     message.content.domain.name === 'snapshot' &&
     message.content.message.choice &&
@@ -18,5 +17,5 @@ export const snapshotModule: HumanizerTypedMessageModule = (message: Message) =>
       ]
     }
   }
-  return { fullVisualization: [] }
+  return null
 }

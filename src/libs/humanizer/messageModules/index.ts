@@ -1,27 +1,96 @@
-import { cowSwapModule } from './cowSwapModule'
+import { HumanizerMessageResult, HumanizerTypedMessageFunction } from '../interfaces'
+import { humanizeCowSwapOrder, humanizeCowSwapOrderCancellations } from './cowSwapModule'
 import { eip7702AuthorizationModule } from './eip7702AuthorizationModule'
-import { ensMessageModule } from './ensModule'
-import { entryPointModule } from './entryPointModule'
-import { erc20Module } from './erc20Module'
-import { erc721Module } from './erc721Module'
+import { humanizeEnsUpload } from './ensModule'
+import { humanizeEntryPointAuthorization } from './entryPointModule'
+import { humanizeErc20Permit } from './erc20Module'
+import { ERC721_PERMIT_FIELD_NAMES, humanizeErc721Permit } from './erc721Module'
+import { fallbackShortPlaintext } from './fallbackShortPlaintext'
 import { legendsMessageModule } from './legendsModule'
-import { openseaMessageModule } from './openseaModule'
-import { permit2Module } from './permit2Module'
-import { safeMessageModule } from './safeModule'
-import { snapshotModule } from './snapshotModule'
+import { humanizeSeaportOrder, openseaLoginMessageModule } from './openseaModule'
+import {
+  humanizePermit2Batch,
+  humanizePermit2Single,
+  humanizePermit2Transfer,
+  humanizePermit2WitnessTransfer
+} from './permit2Module'
+import { humanizeSafeTx } from './safeModule'
+import { humanizeSnapshotVote } from './snapshotModule'
 import { zealyMessageModule } from './zealyModule'
+import { isTypeDeclaringFields } from '../utils'
 
-export {
-  ensMessageModule,
-  entryPointModule,
-  erc20Module,
-  erc721Module,
-  legendsMessageModule,
-  cowSwapModule,
-  permit2Module,
-  openseaMessageModule,
-  zealyMessageModule,
-  eip7702AuthorizationModule,
-  snapshotModule,
-  safeMessageModule
+/**
+ * Runs the plain text modules in order and returns the first result that is not null.
+ * A module that throws is logged and skipped, so it does not block the others.
+ */
+export const getFirstHumanization = <TMessage>(
+  humanizers: ((message: TMessage) => HumanizerMessageResult | null)[],
+  message: TMessage
+): HumanizerMessageResult | null => {
+  for (const humanize of humanizers) {
+    try {
+      const humanization = humanize(message)
+      if (humanization) return humanization
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  return null
 }
+
+/**
+ * ERC-20 (EIP-2612 and DAI-style) and ERC-721 permits share the `Permit` primary
+ * type. The humanizer is chosen from the fields declared in `types.Permit` (signed),
+ * not by trying one and falling back to the other.
+ */
+const humanizePermit: HumanizerTypedMessageFunction = (message) =>
+  isTypeDeclaringFields(message.content.types, 'Permit', ERC721_PERMIT_FIELD_NAMES)
+    ? humanizeErc721Permit(message)
+    : humanizeErc20Permit(message)
+
+/**
+ * Typed message humanizers keyed by the EIP-712 primary type they expect. Only
+ * the primary type and the types it references are signed, so the humanizer is
+ * chosen from it, never from other entries in `types` or keys in `message`.
+ */
+const typedMessageHumanizers: Readonly<Record<string, HumanizerTypedMessageFunction>> = {
+  Permit: humanizePermit,
+  PermitSingle: humanizePermit2Single,
+  PermitBatch: humanizePermit2Batch,
+  PermitTransferFrom: humanizePermit2Transfer,
+  PermitWitnessTransferFrom: humanizePermit2WitnessTransfer,
+  PermitBatchWitnessTransferFrom: humanizePermit2WitnessTransfer,
+  Order: humanizeCowSwapOrder,
+  OrderCancellations: humanizeCowSwapOrderCancellations,
+  OrderComponents: humanizeSeaportOrder,
+  SafeTx: humanizeSafeTx,
+  Vote: humanizeSnapshotVote,
+  Upload: humanizeEnsUpload,
+  AmbireOperation: humanizeEntryPointAuthorization
+}
+
+/**
+ * Returns the humanizer for a primary type, or undefined when there is none.
+ * Only own keys are read, so a primary type such as `constructor` or `__proto__`
+ * cannot return a function from `Object.prototype`.
+ */
+export const getTypedMessageHumanizer = (
+  primaryType: string
+): HumanizerTypedMessageFunction | undefined =>
+  Object.hasOwn(typedMessageHumanizers, primaryType)
+    ? typedMessageHumanizers[primaryType]
+    : undefined
+
+/**
+ * Plain text message modules, from least generic to most generic.
+ * The visualization and warnings come from the first module that matches.
+ */
+export const plainTextMessageModules = [
+  legendsMessageModule,
+  openseaLoginMessageModule,
+  zealyMessageModule,
+  fallbackShortPlaintext
+]
+
+export { eip7702AuthorizationModule }

@@ -1,7 +1,10 @@
 import { isAddress, isHex, zeroAddress } from 'viem'
 
-import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
+import {
+  HumanizerTypedMessage,
+  HumanizerTypedMessageFunction,
+  HumanizerVisualization
+} from '../interfaces'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
 
 const COW_SWAP_SETTLEMENT_ADDRESS = '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
@@ -26,37 +29,42 @@ const getOrderUidVisualization = (
   ]
 }
 
-export const cowSwapModule: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind !== 'typedMessage') return { fullVisualization: [] }
+/** Tells if the message is signed for the CoW Protocol settlement contract */
+const isCowSwapMessage = (message: HumanizerTypedMessage): boolean => {
+  const { domain } = message.content
+  const verifyingContract = domain.verifyingContract
+  return (
+    !!verifyingContract &&
+    isAddress(verifyingContract) &&
+    verifyingContract.toLowerCase() === COW_SWAP_SETTLEMENT_ADDRESS &&
+    domain.name === 'Gnosis Protocol' &&
+    domain.version === 'v2'
+  )
+}
 
+/** Humanizes the cancellation of CoW Swap orders (primary type `OrderCancellations`) */
+export const humanizeCowSwapOrderCancellations: HumanizerTypedMessageFunction = (message) => {
   const tm = message.content
-  const verifyingContract = tm.domain.verifyingContract
-  if (
-    !verifyingContract ||
-    !isAddress(verifyingContract) ||
-    verifyingContract.toLowerCase() !== COW_SWAP_SETTLEMENT_ADDRESS ||
-    tm.domain.name !== 'Gnosis Protocol' ||
-    tm.domain.version !== 'v2'
-  ) {
-    return { fullVisualization: [] }
+  if (!isCowSwapMessage(message) || !tm.types.OrderCancellations) return null
+
+  const { orderUids } = tm.message
+  if (!Array.isArray(orderUids) || !orderUids.length) return null
+
+  return {
+    fullVisualization: [
+      getAction(orderUids.length === 1 ? 'Cancel CowSwap order' : 'Cancel CowSwap orders'),
+      ...orderUids.flatMap((orderUid, index) => [
+        ...(index ? [getLabel('and')] : []),
+        ...getOrderUidVisualization(orderUid, message.accountAddr)
+      ])
+    ]
   }
+}
 
-  if (tm.primaryType === 'OrderCancellations' && tm.types.OrderCancellations) {
-    const { orderUids } = tm.message
-    if (!Array.isArray(orderUids) || !orderUids.length) return { fullVisualization: [] }
-
-    return {
-      fullVisualization: [
-        getAction(orderUids.length === 1 ? 'Cancel CowSwap order' : 'Cancel CowSwap orders'),
-        ...orderUids.flatMap((orderUid, index) => [
-          ...(index ? [getLabel('and')] : []),
-          ...getOrderUidVisualization(orderUid, message.accountAddr)
-        ])
-      ]
-    }
-  }
-
-  if (tm.primaryType !== 'Order' || !tm.types.Order) return { fullVisualization: [] }
+/** Humanizes a CoW Swap order (primary type `Order`) */
+export const humanizeCowSwapOrder: HumanizerTypedMessageFunction = (message) => {
+  const tm = message.content
+  if (!isCowSwapMessage(message) || !tm.types.Order) return null
 
   const {
     sellToken,
@@ -82,7 +90,7 @@ export const cowSwapModule: HumanizerTypedMessageModule = (message: Message) => 
     validTo === null ||
     !['buy', 'sell'].includes(kind)
   ) {
-    return { fullVisualization: [] }
+    return null
   }
 
   const fullVisualization: HumanizerVisualization[] =
