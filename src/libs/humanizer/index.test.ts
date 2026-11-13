@@ -449,7 +449,7 @@ describe('TypedMessages', () => {
       },
       types: { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] },
       message,
-      primaryType: 'Permit'
+      primaryType: 'PermitBatch'
     }
     const fullMessage = {
       fromRequestId: 1,
@@ -4857,8 +4857,8 @@ describe('ERC-7730 descriptors', () => {
   // now decodes `multiSend` batches itself (via `decodeMultiSend`, src/libs/safe/helpers.ts) and
   // recurses per leg, checking each leg's own `operation`, since the ERC-7730 pipeline's `Call`
   // type has no `operation` field and can't carry it (erc7730/utils.ts#getSafeTxCallsFromMessage,
-  // erc7730/registry.ts); (2) `humanizeMessage` now merges the warnings humanizerTMModules found
-  // (which is where that recursive check runs, via safeMessageModule) into the ERC-7730 result
+  // erc7730/registry.ts); (2) `humanizeMessage` now merges the warnings the message modules found
+  // (which is where that recursive check runs, via humanizeSafeTx) into the ERC-7730 result
   // instead of discarding them when an ERC-7730 descriptor resolves the message. This is the
   // exact "Attack B" pattern from the leaked safe-poc.html: a benign leg 0 plus a hidden
   // delegatecall leg 1 into attacker-controlled code that runs in the Safe's own storage context.

@@ -1,9 +1,10 @@
 import { isAddress, zeroAddress } from 'viem'
 
 import { PANCAKE_SWAP_PERMIT_2_ADDRESS, PERMIT_2_ADDRESS } from '../../../consts/addresses'
-import { Message } from '../../../interfaces/userRequest'
 import {
-  HumanizerTypedMessageModule,
+  HumanizerMessageResult,
+  HumanizerTypedMessage,
+  HumanizerTypedMessageFunction,
   HumanizerVisualization,
   HumanizerWarning
 } from '../interfaces'
@@ -11,6 +12,7 @@ import {
   getAction,
   getAddressVisualization,
   getDeadline,
+  getDeclaredFieldType,
   getLabel,
   getRecipientText,
   getToken,
@@ -66,135 +68,156 @@ function isCompletePermission(
 // address that receives the tokens can be under any of these common names
 const WITNESS_RECIPIENT_FIELD_NAMES = ['recipient', 'receiver', 'to']
 
-function getWitnessRecipient(witness: Record<string, any> | undefined): string | undefined {
+/** Name of the Permit2 field that holds the app-defined witness struct */
+const WITNESS_FIELD_NAME = 'witness'
+
+function getWitnessRecipient(message: HumanizerTypedMessage): string | undefined {
+  const { types, primaryType } = message.content
+  const witness: Record<string, any> | undefined = message.content.message[WITNESS_FIELD_NAME]
   if (!witness) return undefined
+
+  // Only declared fields are signed. An undeclared `witness` key, or a recipient
+  // key that the witness type does not declare, is not signed and must not be shown
+  const witnessTypeName = getDeclaredFieldType(types, primaryType, WITNESS_FIELD_NAME)
+  if (!witnessTypeName) return undefined
 
   const recipientFieldName = WITNESS_RECIPIENT_FIELD_NAMES.find((fieldName) => {
     const value = witness[fieldName]
-    return typeof value === 'string' && isAddress(value)
+    return (
+      getDeclaredFieldType(types, witnessTypeName, fieldName) === 'address' &&
+      typeof value === 'string' &&
+      isAddress(value)
+    )
   })
 
   return recipientFieldName ? witness[recipientFieldName] : undefined
 }
 
-export const permit2Module: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind !== 'typedMessage') return { fullVisualization: [] }
-  const tm = message.content
-  if (
-    !tm?.domain?.verifyingContract ||
-    ![PERMIT_2_ADDRESS.toLowerCase(), PANCAKE_SWAP_PERMIT_2_ADDRESS.toLocaleLowerCase()].includes(
-      tm.domain.verifyingContract.toLowerCase()
-    )
-  )
-    return { fullVisualization: [] }
+const EMPTY_HUMANIZATION: HumanizerMessageResult = { fullVisualization: [] }
 
-  const witnessMessageType =
-    tm.types?.PermitWitnessTransferFrom?.[0]?.type ||
-    tm.types?.PermitBatchWitnessTransferFrom?.[0]?.type
+const PERMIT_2_CONTRACTS = [
+  PERMIT_2_ADDRESS.toLowerCase(),
+  PANCAKE_SWAP_PERMIT_2_ADDRESS.toLowerCase()
+]
 
-  if (
-    witnessMessageType &&
-    ['TokenPermissions', 'TokenPermissions[]'].includes(witnessMessageType)
-  ) {
-    const { permitted, spender, nonce, deadline, witness } = tm.message
-    if ([permitted, spender, nonce, deadline].some((field) => field === undefined))
-      return { fullVisualization: [] }
+/** Tells if the message is signed for a known Permit2 contract (Uniswap or PancakeSwap) */
+const isPermit2Message = (message: HumanizerTypedMessage): boolean => {
+  const verifyingContract = message.content.domain?.verifyingContract
+  return !!verifyingContract && PERMIT_2_CONTRACTS.includes(verifyingContract.toLowerCase())
+}
 
-    const permissions: TokenPermissions[] = Array.isArray(permitted) ? permitted : [permitted]
-    const completePermissions = permissions.filter(isCompletePermission)
-    if (!completePermissions.length || completePermissions.length !== permissions.length)
-      return { fullVisualization: [] }
+/**
+ * Humanizes a Permit2 signature transfer with an app-defined witness struct.
+ * Primary types: `PermitWitnessTransferFrom` (one token) and
+ * `PermitBatchWitnessTransferFrom` (many tokens).
+ */
+export const humanizePermit2WitnessTransfer: HumanizerTypedMessageFunction = (message) => {
+  if (!isPermit2Message(message)) return EMPTY_HUMANIZATION
 
-    const tokenVisualizations = completePermissions
-      .map(({ token, amount }) => [getToken(token, amount), getLabel('and')])
-      .flat()
-      .slice(0, -1)
+  const { permitted, spender, nonce, deadline } = message.content.message
+  if ([permitted, spender, nonce, deadline].some((field) => field === undefined))
+    return EMPTY_HUMANIZATION
 
-    const recipient = getWitnessRecipient(witness)
-    // A zero recipient does not mean the tokens are burned. Permit2 only checks
-    // the signature, so whoever executes the transfer picks where the tokens go
-    const isRecipientChosenLater = !!recipient && recipient.toLowerCase() === zeroAddress
-    const warnings: HumanizerWarning[] = isRecipientChosenLater
-      ? [
-          getWarning(
-            'This request does not say who receives the tokens. Whoever submits it decides where the tokens go. Sign it only if you fully trust the app.',
-            'PERMIT2_MISSING_RECIPIENT'
-          )
-        ]
-      : []
+  const permissions: TokenPermissions[] = Array.isArray(permitted) ? permitted : [permitted]
+  const completePermissions = permissions.filter(isCompletePermission)
+  if (!completePermissions.length || completePermissions.length !== permissions.length)
+    return EMPTY_HUMANIZATION
 
-    const recipientVisualizations = () => {
-      if (isRecipientChosenLater) return [getLabel('and send them to anyone', true)]
-      if (!recipient) return []
+  const tokenVisualizations = completePermissions
+    .map(({ token, amount }) => [getToken(token, amount), getLabel('and')])
+    .flat()
+    .slice(0, -1)
 
-      return getRecipientText(message.accountAddr, recipient)
-    }
+  const recipient = getWitnessRecipient(message)
+  // A zero recipient does not mean the tokens are burned. Permit2 only checks
+  // the signature, so whoever executes the transfer picks where the tokens go
+  const isRecipientChosenLater = !!recipient && recipient.toLowerCase() === zeroAddress
+  const warnings: HumanizerWarning[] = isRecipientChosenLater
+    ? [
+        getWarning(
+          'This request does not say who receives the tokens. Whoever submits it decides where the tokens go. Sign it only if you fully trust the app.',
+          'PERMIT2_MISSING_RECIPIENT'
+        )
+      ]
+    : []
 
-    return {
-      fullVisualization: [
-        getAction('Approve'),
-        getAddressVisualization(spender),
-        getLabel('to transfer'),
-        ...tokenVisualizations,
-        ...recipientVisualizations(),
-        getDeadline(deadline)
-      ],
-      warnings
-    }
+  const recipientVisualizations = () => {
+    if (isRecipientChosenLater) return [getLabel('and send them to anyone', true)]
+    if (!recipient) return []
+
+    return getRecipientText(message.accountAddr, recipient)
   }
 
-  const messageType =
-    tm?.types?.PermitSingle?.[0]?.type ||
-    tm?.types?.PermitBatch?.[0]?.type ||
-    tm.types?.PermitTransferFrom?.[0]?.type
-
-  if (!messageType) return { fullVisualization: [] }
-  if (messageType === 'TokenPermissions') {
-    const { spender, nonce, deadline, permitted } = tm.message
-    if ([spender, nonce, deadline, permitted].some((a) => a === undefined))
-      return { fullVisualization: [] }
-    const { token, amount } = permitted
-    if (token === undefined || amount === undefined) return { fullVisualization: [] }
-    return {
-      fullVisualization: [
-        getAction('Approve'),
-        getAddressVisualization(spender),
-        getLabel('to use'),
-        getToken(token, amount),
-        getDeadline(deadline)
-      ]
-    }
-  } else if (['PermitDetails', 'PermitDetails[]'].includes(messageType)) {
-    if (!tm.message.details) return { fullVisualization: [] }
-    const permits: { token: string; amount: bigint }[] = (
-      messageType === 'PermitDetails' ? [tm.message.details] : tm.message.details
-    ).map((d: PermitDetails) => ({
-      token: d.token,
-      amount: d.amount
-    }))
-    if (permits.some((p) => p.amount === undefined || p.token === undefined))
-      return { fullVisualization: [] }
-
-    if (!permits.length) return { fullVisualization: [] }
-
-    const permitVisualizations = permits
-      .map(({ token, amount }) => [
-        getAddressVisualization(tm.message.spender),
-        getLabel('to use'),
-        getToken(token, amount),
-        getLabel('and')
-      ])
-      .flat()
-      .slice(0, -1)
-
-    return {
-      fullVisualization: [
-        getAction('Approve'),
-        ...permitVisualizations,
-        getDeadline(tm.message.sigDeadline) as HumanizerVisualization
-      ]
-    }
+  return {
+    fullVisualization: [
+      getAction('Approve'),
+      getAddressVisualization(spender),
+      getLabel('to transfer'),
+      ...tokenVisualizations,
+      ...recipientVisualizations(),
+      getDeadline(deadline)
+    ],
+    warnings
   }
+}
 
-  return { fullVisualization: [] }
+/** Humanizes a Permit2 signature transfer of one token (primary type `PermitTransferFrom`) */
+export const humanizePermit2Transfer: HumanizerTypedMessageFunction = (message) => {
+  if (!isPermit2Message(message)) return EMPTY_HUMANIZATION
+
+  const { spender, nonce, deadline, permitted } = message.content.message
+  if ([spender, nonce, deadline, permitted].some((a) => a === undefined)) return EMPTY_HUMANIZATION
+  const { token, amount } = permitted
+  if (token === undefined || amount === undefined) return EMPTY_HUMANIZATION
+  return {
+    fullVisualization: [
+      getAction('Approve'),
+      getAddressVisualization(spender),
+      getLabel('to use'),
+      getToken(token, amount),
+      getDeadline(deadline)
+    ]
+  }
+}
+
+const humanizePermit2Allowance = (
+  message: HumanizerTypedMessage,
+  details: PermitDetails[]
+): HumanizerMessageResult => {
+  if (!details.length || !details.every(isCompletePermission)) return EMPTY_HUMANIZATION
+
+  const { spender, sigDeadline } = message.content.message
+  const permitVisualizations = details
+    .map(({ token, amount }) => [
+      getAddressVisualization(spender),
+      getLabel('to use'),
+      getToken(token, amount),
+      getLabel('and')
+    ])
+    .flat()
+    .slice(0, -1)
+
+  return {
+    fullVisualization: [
+      getAction('Approve'),
+      ...permitVisualizations,
+      getDeadline(sigDeadline) as HumanizerVisualization
+    ]
+  }
+}
+
+/** Humanizes a Permit2 allowance for one token (primary type `PermitSingle`) */
+export const humanizePermit2Single: HumanizerTypedMessageFunction = (message) => {
+  const { details } = message.content.message
+  if (!isPermit2Message(message) || !details || Array.isArray(details)) return EMPTY_HUMANIZATION
+
+  return humanizePermit2Allowance(message, [details])
+}
+
+/** Humanizes a Permit2 allowance for many tokens (primary type `PermitBatch`) */
+export const humanizePermit2Batch: HumanizerTypedMessageFunction = (message) => {
+  const { details } = message.content.message
+  if (!isPermit2Message(message) || !Array.isArray(details)) return EMPTY_HUMANIZATION
+
+  return humanizePermit2Allowance(message, details)
 }

@@ -1,9 +1,8 @@
-import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule } from '../interfaces'
+import { HumanizerTypedMessageFunction } from '../interfaces'
 import { getAction, getDeadline, getLabel } from '../utils'
 
-export const ensMessageModule: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind !== 'typedMessage') return { fullVisualization: [] }
+/** Humanizes an ENS profile picture upload (primary type `Upload`) */
+export const humanizeEnsUpload: HumanizerTypedMessageFunction = (message) => {
   if (message.content.domain.name === 'Ethereum Name Service') {
     if (
       message.content.message.upload === 'avatar' &&

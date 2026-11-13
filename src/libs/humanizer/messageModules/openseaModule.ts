@@ -1,7 +1,6 @@
 import { isHexString, toUtf8String } from 'ethers'
 
-import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule } from '../interfaces'
+import { HumanizerPlainTextMessageModule, HumanizerTypedMessageFunction } from '../interfaces'
 import { getAction, getLabel, getToken } from '../utils'
 
 const SEAPORT_ADDRESS = [
@@ -18,8 +17,9 @@ const SEAPORT_ADDRESS = [
   '0x0000f00000627D293Ab4Dfb40082001724dB006F'
 ]
 
-export const openseaMessageModule: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind === 'message' && typeof message.content.message === 'string') {
+/** Humanizes the OpenSea and OpenSea Pro log in and terms of service messages */
+export const openseaLoginMessageModule: HumanizerPlainTextMessageModule = (message) => {
+  if (typeof message.content.message === 'string') {
     let messageAsText: string = message.content.message
     if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
       try {
@@ -58,37 +58,43 @@ export const openseaMessageModule: HumanizerTypedMessageModule = (message: Messa
       }
     }
   }
-  if (message.content.kind === 'typedMessage') {
-    if (
-      message.content.domain.name === 'Seaport' &&
-      message.content.domain.version === '1.6' &&
-      SEAPORT_ADDRESS.includes(message.content.domain.verifyingContract || '')
-    ) {
-      const considerations = message.content.message.consideration
-      const offer = message.content.message.offer
-
-      const extractItems = ({ itemType, token, identifierOrCriteria, startAmount }: any) => {
-        if (itemType === '0') return { address: token, amountOrId: BigInt(startAmount) }
-        if (itemType === '1') return { address: token, amountOrId: BigInt(startAmount) }
-        if (itemType === '2') return { address: token, amountOrId: BigInt(identifierOrCriteria) }
-        if (itemType === '3') return { address: token, amountOrId: BigInt(identifierOrCriteria) }
-        return null
-      }
-      const itemsToList = offer.map(extractItems).filter((x: any) => x)
-      const itemsToGet = considerations
-        .filter(({ recipient }: any) => recipient === message.accountAddr)
-        .map(extractItems)
-        .filter((x: any) => x)
-
-      return {
-        fullVisualization: [
-          getAction('Make offer to swap'),
-          ...itemsToList.map(({ address, amountOrId }: any) => getToken(address, amountOrId)),
-          getLabel('for'),
-          ...itemsToGet.map(({ address, amountOrId }: any) => getToken(address, amountOrId))
-        ]
-      }
-    }
-  }
   return { fullVisualization: [] }
+}
+
+/**
+ * Humanizes a single Seaport order (primary type `OrderComponents`). Other Seaport
+ * primary types (e.g. `BulkOrder`) sign different fields, so they are not shown here.
+ */
+export const humanizeSeaportOrder: HumanizerTypedMessageFunction = (message) => {
+  if (
+    message.content.domain.name !== 'Seaport' ||
+    message.content.domain.version !== '1.6' ||
+    !SEAPORT_ADDRESS.includes(message.content.domain.verifyingContract || '')
+  )
+    return { fullVisualization: [] }
+
+  const considerations = message.content.message.consideration
+  const offer = message.content.message.offer
+
+  const extractItems = ({ itemType, token, identifierOrCriteria, startAmount }: any) => {
+    if (itemType === '0') return { address: token, amountOrId: BigInt(startAmount) }
+    if (itemType === '1') return { address: token, amountOrId: BigInt(startAmount) }
+    if (itemType === '2') return { address: token, amountOrId: BigInt(identifierOrCriteria) }
+    if (itemType === '3') return { address: token, amountOrId: BigInt(identifierOrCriteria) }
+    return null
+  }
+  const itemsToList = offer.map(extractItems).filter((x: any) => x)
+  const itemsToGet = considerations
+    .filter(({ recipient }: any) => recipient === message.accountAddr)
+    .map(extractItems)
+    .filter((x: any) => x)
+
+  return {
+    fullVisualization: [
+      getAction('Make offer to swap'),
+      ...itemsToList.map(({ address, amountOrId }: any) => getToken(address, amountOrId)),
+      getLabel('for'),
+      ...itemsToGet.map(({ address, amountOrId }: any) => getToken(address, amountOrId))
+    ]
+  }
 }

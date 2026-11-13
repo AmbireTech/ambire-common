@@ -1,13 +1,12 @@
 import { isHexString, toUtf8Bytes, toUtf8String } from 'ethers'
 
 import { Hex } from '../../../interfaces/hex'
-import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule } from '../interfaces'
+import { HumanizerPlainTextMessageModule } from '../interfaces'
 import { getAction, getAddressVisualization, getLabel } from '../utils'
 
-export const legendsMessageModule: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind !== 'message' || typeof message.content.message !== 'string')
-    return { fullVisualization: [] }
+/** Humanizes the message that links an account to Ambire Rewards */
+export const legendsMessageModule: HumanizerPlainTextMessageModule = (message) => {
+  if (typeof message.content.message !== 'string') return { fullVisualization: [] }
   let messageAsText: Hex | string = message.content.message
   if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
     messageAsText = toUtf8String(toUtf8Bytes(message.content.message))

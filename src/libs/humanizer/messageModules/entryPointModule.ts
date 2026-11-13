@@ -1,11 +1,12 @@
-import { Message } from '../../../interfaces/userRequest'
 import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../userOperation/userOperation'
-import { HumanizerTypedMessageModule } from '../interfaces'
+import { HumanizerTypedMessageFunction } from '../interfaces'
 import { getAction, getAddressVisualization, getLabel } from '../utils'
 
-export const entryPointModule: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind !== 'typedMessage') return { fullVisualization: [] }
-
+/**
+ * Humanizes the old entry point authorization (primary type `AmbireOperation`).
+ * The wallet no longer asks for it, but it can still be in the signed message history.
+ */
+export const humanizeEntryPointAuthorization: HumanizerTypedMessageFunction = (message) => {
   if (message.fromRequestId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID)
     return {
       fullVisualization: [

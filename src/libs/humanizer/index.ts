@@ -8,42 +8,47 @@ import {
   humanizeCallWithErc7730,
   humanizeMessageWithErc7730
 } from './erc7730'
-import { IrCall, IrMessage } from './interfaces'
 import {
-  cowSwapModule,
+  HumanizerAuthorizationMessage,
+  HumanizerMessageResult,
+  HumanizerPlainTextMessage,
+  HumanizerTypedMessage,
+  IrCall,
+  IrMessage
+} from './interfaces'
+import {
   eip7702AuthorizationModule,
-  ensMessageModule,
-  entryPointModule,
-  erc20Module,
-  erc721Module,
-  legendsMessageModule,
-  openseaMessageModule,
-  permit2Module,
-  safeMessageModule,
-  snapshotModule,
-  zealyMessageModule
+  getFirstHumanization,
+  getTypedMessageHumanizer,
+  plainTextMessageModules
 } from './messageModules'
-import { fallbackShortPlaintext } from './messageModules/fallbackShortPlaintext'
 import { dedupeWarnings } from './utils'
 
-// from least generic to most generic
-// the final visualization and warnings are from the first triggered module
-const humanizerTMModules = [
-  safeMessageModule,
-  erc20Module,
-  erc721Module,
-  permit2Module,
-  cowSwapModule,
-  entryPointModule,
-  legendsMessageModule,
-  ensMessageModule,
-  openseaMessageModule,
-  zealyMessageModule,
-  safeMessageModule,
-  eip7702AuthorizationModule,
-  snapshotModule,
-  fallbackShortPlaintext
-]
+const isTypedMessage = (message: Message): message is HumanizerTypedMessage =>
+  message.content.kind === 'typedMessage'
+
+const isPlainTextMessage = (message: Message): message is HumanizerPlainTextMessage =>
+  message.content.kind === 'message'
+
+const isAuthorizationMessage = (message: Message): message is HumanizerAuthorizationMessage =>
+  message.content.kind === 'authorization-7702'
+
+/**
+ * Humanizes a message with the message modules. A typed message uses only the
+ * humanizer for its primary type. A plain text message uses the first plain text
+ * module that matches. Other kinds (e.g. sign in with Ethereum) are not humanized here.
+ */
+const humanizeMessageWithModules = (message: Message): HumanizerMessageResult => {
+  if (isTypedMessage(message)) {
+    const humanizeTypedMessage = getTypedMessageHumanizer(message.content.primaryType)
+    return humanizeTypedMessage ? getFirstHumanization([humanizeTypedMessage], message) : {}
+  }
+  if (isPlainTextMessage(message)) return getFirstHumanization(plainTextMessageModules, message)
+  if (isAuthorizationMessage(message))
+    return getFirstHumanization([eip7702AuthorizationModule], message)
+
+  return {}
+}
 
 type HumanizeAccountOpOptions = {
   erc7730Descriptors?: Erc7730CallDescriptors
@@ -99,24 +104,14 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
   const message = parse(stringify(_message))
 
   try {
-    // runs all modules and takes the first non empty array
     const { fullVisualization, warnings, canHideDropdownArrow } =
-      humanizerTMModules
-        .map((m) => {
-          try {
-            return m(message)
-          } catch (error) {
-            console.error(error)
-            return {}
-          }
-        })
-        .filter((p) => p.fullVisualization?.length)[0] || {}
+      humanizeMessageWithModules(message)
 
     if (options?.erc7730Descriptor) {
       const erc7730Message = humanizeMessageWithErc7730(message, options.erc7730Descriptor)
       if (erc7730Message) {
         // The descriptor builds its result from the raw message, so it starts with no warnings.
-        // The warnings humanizerTMModules found are still about the same message, so keep both.
+        // The warnings the message modules found are still about the same message, so keep both.
         return {
           ...erc7730Message,
           warnings: dedupeWarnings([...(warnings || []), ...(erc7730Message.warnings || [])])

@@ -1,12 +1,11 @@
-import { MaxUint256, parseEther } from 'ethers'
+import { hexlify, MaxUint256, parseEther, toUtf8Bytes } from 'ethers'
 
 import { beforeEach, describe, expect } from '@jest/globals'
 
 import { Message, TypedMessageUserRequest } from '../../interfaces/userRequest'
 import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../userOperation/userOperation'
 import { humanizeMessage } from './index'
-import { cowSwapModule, erc20Module, erc721Module, permit2Module } from './messageModules'
-import { entryPointModule } from './messageModules/entryPointModule'
+import { getTypedMessageHumanizer } from './messageModules'
 import { compareVisualizations } from './testHelpers'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
 
@@ -169,7 +168,115 @@ const typedMessages = {
   ]
 }
 
+const ERC2612_PERMIT_FIELDS = [
+  { name: 'owner', type: 'address' },
+  { name: 'spender', type: 'address' },
+  { name: 'value', type: 'uint256' },
+  { name: 'nonce', type: 'uint256' },
+  { name: 'deadline', type: 'uint256' }
+]
+const DAI_PERMIT_FIELDS = [
+  { name: 'holder', type: 'address' },
+  { name: 'spender', type: 'address' },
+  { name: 'nonce', type: 'uint256' },
+  { name: 'expiry', type: 'uint256' },
+  { name: 'allowed', type: 'bool' }
+]
+
+const ERC721_PERMIT_FIELDS = [
+  { name: 'spender', type: 'address' },
+  { name: 'tokenId', type: 'uint256' },
+  { name: 'nonce', type: 'uint256' },
+  { name: 'deadline', type: 'uint256' }
+]
+const PERMIT2_TOKEN_PERMISSIONS_FIELDS = [
+  { name: 'token', type: 'address' },
+  { name: 'amount', type: 'uint256' }
+]
+const PERMIT2_EXAMPLE_WITNESS_FIELDS = [
+  { name: 'recipient', type: 'address' },
+  { name: 'orderId', type: 'uint256' }
+]
+const getPermit2WitnessTransferFields = (permittedType: string) => [
+  { name: 'permitted', type: permittedType },
+  { name: 'spender', type: 'address' },
+  { name: 'nonce', type: 'uint256' },
+  { name: 'deadline', type: 'uint256' },
+  { name: 'witness', type: 'ExampleWitness' }
+]
+const PERMIT2_WITNESS_TRANSFER_TYPES = {
+  PermitWitnessTransferFrom: getPermit2WitnessTransferFields('TokenPermissions'),
+  TokenPermissions: PERMIT2_TOKEN_PERMISSIONS_FIELDS,
+  ExampleWitness: PERMIT2_EXAMPLE_WITNESS_FIELDS
+}
+
+const SEAPORT_ADDRESS = '0x0000000000000068F116a894984e2DB1123eB395'
+const SEAPORT_ORDER_COMPONENTS_FIELDS = [
+  { name: 'offerer', type: 'address' },
+  { name: 'zone', type: 'address' },
+  { name: 'offer', type: 'OfferItem[]' },
+  { name: 'consideration', type: 'ConsiderationItem[]' },
+  { name: 'orderType', type: 'uint8' },
+  { name: 'startTime', type: 'uint256' },
+  { name: 'endTime', type: 'uint256' },
+  { name: 'zoneHash', type: 'bytes32' },
+  { name: 'salt', type: 'uint256' },
+  { name: 'conduitKey', type: 'bytes32' },
+  { name: 'counter', type: 'uint256' }
+]
+const getSeaportOrder = (offerTokenId: string) => ({
+  offerer: address1,
+  zone: '0x0000000000000000000000000000000000000000',
+  offer: [
+    {
+      itemType: '2',
+      token: NFT_ADDRESS,
+      identifierOrCriteria: offerTokenId,
+      startAmount: '1',
+      endAmount: '1'
+    }
+  ],
+  consideration: [
+    {
+      itemType: '1',
+      token: WETH_ADDRESS,
+      identifierOrCriteria: '0',
+      startAmount: '1000',
+      endAmount: '1000',
+      recipient: address1
+    }
+  ]
+})
+
+const SNAPSHOT_VOTE_FIELDS = [
+  { name: 'from', type: 'address' },
+  { name: 'space', type: 'string' },
+  { name: 'timestamp', type: 'uint64' },
+  { name: 'proposal', type: 'bytes32' },
+  { name: 'choice', type: 'uint32' },
+  { name: 'reason', type: 'string' },
+  { name: 'app', type: 'string' },
+  { name: 'metadata', type: 'string' }
+]
+const SNAPSHOT_ALIAS_FIELDS = [
+  { name: 'from', type: 'address' },
+  { name: 'alias', type: 'address' },
+  { name: 'timestamp', type: 'uint64' }
+]
+const ENS_UPLOAD_FIELDS = [
+  { name: 'upload', type: 'string' },
+  { name: 'expiry', type: 'string' },
+  { name: 'name', type: 'string' },
+  { name: 'hash', type: 'string' }
+]
+
 let messageTemplate: Message
+
+/** Humanizes the message through the real entry point, so the primary type routing is tested too */
+const humanize = (message: Message) => {
+  const { fullVisualization = [], warnings } = humanizeMessage(message)
+  return { fullVisualization, warnings }
+}
 describe('typed message tests', () => {
   beforeEach(() => {
     messageTemplate = {
@@ -186,7 +293,7 @@ describe('typed message tests', () => {
           verifyingContract: WETH_ADDRESS,
           salt: '1'
         },
-        types: { EIP712Domain: [], Permit: [] },
+        types: { EIP712Domain: [], Permit: ERC2612_PERMIT_FIELDS },
         message: {},
         primaryType: 'Permit'
       }
@@ -203,10 +310,18 @@ describe('typed message tests', () => {
     ]
 
     messageTemplate.content.message = typedMessages.erc20[0]!
-    const { fullVisualization } = erc20Module(messageTemplate)
+    const { fullVisualization } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
+  const setDaiPermitMessage = (message: Record<string, any>) => {
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
+      EIP712Domain: [],
+      Permit: DAI_PERMIT_FIELDS
+    }
+    messageTemplate.content.message = message
+  }
+
   test('erc20 module with DAI-style permit (grant)', () => {
     const expectedVisualization = [
       getAction('Grant approval'),
@@ -217,11 +332,11 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
 
-    messageTemplate.content.message = typedMessages.daiPermit[0]!
+    setDaiPermitMessage(typedMessages.daiPermit[0]!)
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = DAI_ADDRESS
-    const { fullVisualization } = erc20Module(messageTemplate)
+    const { fullVisualization } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
@@ -234,11 +349,11 @@ describe('typed message tests', () => {
       getAddressVisualization(address2)
     ]
 
-    messageTemplate.content.message = typedMessages.daiPermit[1]!
+    setDaiPermitMessage(typedMessages.daiPermit[1]!)
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = DAI_ADDRESS
-    const { fullVisualization } = erc20Module(messageTemplate)
+    const { fullVisualization } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
@@ -250,12 +365,34 @@ describe('typed message tests', () => {
       getAddressVisualization(address2)
     ]
 
-    messageTemplate.content.message = typedMessages.daiPermit[2]!
+    setDaiPermitMessage(typedMessages.daiPermit[2]!)
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = DAI_ADDRESS
-    const { fullVisualization } = erc20Module(messageTemplate)
+    const { fullVisualization } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+  test('erc20 module shows a DAI-style permit with unsigned EIP-2612 keys as unlimited', () => {
+    const expectedVisualization = [
+      getAction('Grant approval'),
+      getLabel('for'),
+      getToken(DAI_ADDRESS, MaxUint256),
+      getLabel('to'),
+      getAddressVisualization(address2)
+    ]
+
+    // `owner`, `value` and `deadline` are not in the DAI Permit type, so they are not signed
+    setDaiPermitMessage({
+      ...typedMessages.daiPermit[1]!,
+      owner: address1,
+      value: parseEther('1'),
+      deadline: 968187600n
+    })
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = DAI_ADDRESS
+    const { fullVisualization } = humanize(messageTemplate)
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
   test('erc721 module', () => {
@@ -267,13 +404,41 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
 
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
+      EIP712Domain: [],
+      Permit: ERC721_PERMIT_FIELDS
+    }
     messageTemplate.content.message = typedMessages.erc721[0]!
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = NFT_ADDRESS
-    const { fullVisualization } = erc721Module(messageTemplate)
+    const { fullVisualization } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+  test('erc721 module ignores unsigned NFT permit keys in a permit with other fields', () => {
+    // `amount` instead of `value` is not recognized by the erc20 module. `tokenId`
+    // and `deadline` are not in the signed Permit type, so they must not be shown
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
+      EIP712Domain: [],
+      Permit: [
+        { name: 'owner', type: 'address' },
+        { name: 'spender', type: 'address' },
+        { name: 'amount', type: 'uint256' },
+        { name: 'nonce', type: 'uint256' },
+        { name: 'expiry', type: 'uint256' }
+      ]
+    }
+    messageTemplate.content.message = {
+      owner: address1,
+      spender: address2,
+      amount: MaxUint256,
+      nonce: 1n,
+      expiry: 968187600n,
+      tokenId: 1n,
+      deadline: 968187600n
+    }
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
   })
 
   test('permit2 single module', () => {
@@ -288,11 +453,13 @@ describe('typed message tests', () => {
       EIP712Domain: [],
       PermitSingle: [{ name: 'details', type: 'PermitDetails' }]
     }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
+      'PermitSingle'
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
     messageTemplate.content.message = typedMessages.permit2[0]!
-    const { fullVisualization } = permit2Module(messageTemplate)
+    const { fullVisualization } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedSingleVisualization)
   })
@@ -313,16 +480,18 @@ describe('typed message tests', () => {
       EIP712Domain: [],
       PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }]
     }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
+      'PermitBatch'
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
     messageTemplate.content.message = typedMessages.permit2[1]!
-    const { fullVisualization } = permit2Module(messageTemplate)
+    const { fullVisualization } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedBatchVisualization)
   })
 
-  test('permit2 module batch permit', () => {
+  test('permit2 module permit transfer from', () => {
     const expectedBatchVisualization = [
       getAction('Approve'),
       getAddressVisualization('0x1fa57f879417e029ef57d7ce915b0aa56a507c31'),
@@ -332,13 +501,15 @@ describe('typed message tests', () => {
     ]
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
       EIP712Domain: [],
-      PermitBatch: [{ name: 'details', type: 'TokenPermissions' }]
+      PermitTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }]
     }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
+      'PermitTransferFrom'
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
     messageTemplate.content.message = typedMessages.PermitTransferFrom[0]!
-    const { fullVisualization } = permit2Module(messageTemplate)
+    const { fullVisualization } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedBatchVisualization)
   })
@@ -351,6 +522,8 @@ describe('typed message tests', () => {
       EIP712Domain: [],
       ...types
     }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
+      Object.keys(types)[0]!
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
@@ -368,10 +541,10 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
     setPermit2WitnessMessage(
-      { PermitWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }] },
+      PERMIT2_WITNESS_TRANSFER_TYPES,
       typedMessages.PermitWitnessTransferFrom[0]!
     )
-    const { fullVisualization, warnings } = permit2Module(messageTemplate)
+    const { fullVisualization, warnings } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
     expect(warnings).toHaveLength(0)
@@ -387,10 +560,10 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
     setPermit2WitnessMessage(
-      { PermitWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }] },
+      PERMIT2_WITNESS_TRANSFER_TYPES,
       typedMessages.PermitWitnessTransferFrom[1]!
     )
-    const { fullVisualization, warnings } = permit2Module(messageTemplate)
+    const { fullVisualization, warnings } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
     expect(
@@ -416,8 +589,63 @@ describe('typed message tests', () => {
       { PermitBatchWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions[]' }] },
       typedMessages.PermitWitnessTransferFrom[2]!
     )
-    const { fullVisualization, warnings } = permit2Module(messageTemplate)
+    const { fullVisualization, warnings } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+    expect(warnings).toHaveLength(0)
+  })
+
+  test('permit2 witness transfer does not show a recipient from an undeclared witness field', () => {
+    const expectedVisualization = [
+      getAction('Approve'),
+      getAddressVisualization(address2),
+      getLabel('to transfer'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getDeadline(968187600n)
+    ]
+    // The signed witness field is `order`, so the `witness` key is not signed
+    setPermit2WitnessMessage(
+      {
+        PermitWitnessTransferFrom: [
+          ...getPermit2WitnessTransferFields('TokenPermissions').filter(
+            (field) => field.name !== 'witness'
+          ),
+          { name: 'order', type: 'ExampleWitness' }
+        ],
+        TokenPermissions: PERMIT2_TOKEN_PERMISSIONS_FIELDS,
+        ExampleWitness: PERMIT2_EXAMPLE_WITNESS_FIELDS
+      },
+      {
+        ...typedMessages.PermitWitnessTransferFrom[0]!,
+        order: { recipient: address2, orderId: 1n },
+        witness: { recipient: address3 }
+      }
+    )
+    const { fullVisualization, warnings } = humanize(messageTemplate)
+    compareVisualizations(fullVisualization!, expectedVisualization)
+    expect(warnings).toHaveLength(0)
+  })
+
+  test('permit2 witness transfer does not show a recipient that the witness type does not declare', () => {
+    const expectedVisualization = [
+      getAction('Approve'),
+      getAddressVisualization(address2),
+      getLabel('to transfer'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getDeadline(968187600n)
+    ]
+    // ExampleWitness declares only `orderId`, so `recipient` is not signed
+    setPermit2WitnessMessage(
+      {
+        ...PERMIT2_WITNESS_TRANSFER_TYPES,
+        ExampleWitness: [{ name: 'orderId', type: 'uint256' }]
+      },
+      {
+        ...typedMessages.PermitWitnessTransferFrom[0]!,
+        witness: { recipient: address3, orderId: 1n }
+      }
+    )
+    const { fullVisualization, warnings } = humanize(messageTemplate)
     compareVisualizations(fullVisualization!, expectedVisualization)
     expect(warnings).toHaveLength(0)
   })
@@ -433,7 +661,155 @@ describe('typed message tests', () => {
         witness: { recipient: address3 }
       }
     )
-    expect(permit2Module(messageTemplate).fullVisualization).toHaveLength(0)
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
+  })
+
+  test('permit2 single with an unused witness type and unsigned keys shows the signed details', () => {
+    const expectedVisualization = [
+      getAction('Approve'),
+      getAddressVisualization(address2),
+      getLabel('to use'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getDeadline(968187600n)
+    ]
+    // PermitWitnessTransferFrom, `permitted` and `deadline` are not part of PermitSingle,
+    // so they are not signed and must not change what is shown
+    setPermit2WitnessMessage(
+      {
+        PermitSingle: [{ name: 'details', type: 'PermitDetails' }],
+        PermitWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }]
+      },
+      {
+        ...typedMessages.permit2[0]!,
+        permitted: { token: WETH_ADDRESS, amount: 1n },
+        nonce: 1n,
+        deadline: 1n
+      }
+    )
+    const { fullVisualization } = humanize(messageTemplate)
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+
+  const setSeaportMessage = (
+    primaryType: string,
+    types: Record<string, { name: string; type: string }[]>,
+    message: Record<string, any>
+  ) => {
+    const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    content.domain = {
+      name: 'Seaport',
+      version: '1.6',
+      chainId: 1n,
+      verifyingContract: SEAPORT_ADDRESS
+    }
+    content.types = { EIP712Domain: [], ...types }
+    content.primaryType = primaryType
+    messageTemplate.content.message = message
+  }
+
+  test('opensea module single Seaport order', () => {
+    const expectedVisualization = [
+      getAction('Make offer to swap'),
+      getToken(NFT_ADDRESS, 1n),
+      getLabel('for'),
+      getToken(WETH_ADDRESS, 1000n)
+    ]
+    setSeaportMessage(
+      'OrderComponents',
+      { OrderComponents: SEAPORT_ORDER_COMPONENTS_FIELDS },
+      getSeaportOrder('1')
+    )
+    const { fullVisualization } = humanize(messageTemplate)
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+
+  test('opensea module ignores unsigned top-level order keys in a Seaport bulk order', () => {
+    // A bulk order signs only `tree`, so the top-level `offer` and `consideration` are a decoy
+    setSeaportMessage(
+      'BulkOrder',
+      {
+        BulkOrder: [{ name: 'tree', type: 'OrderComponents[2]' }],
+        OrderComponents: SEAPORT_ORDER_COMPONENTS_FIELDS
+      },
+      {
+        tree: [getSeaportOrder('1'), getSeaportOrder('2')],
+        ...getSeaportOrder('3')
+      }
+    )
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
+  })
+
+  const setSnapshotMessage = (
+    primaryType: string,
+    fields: { name: string; type: string }[],
+    message: Record<string, any>
+  ) => {
+    const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    content.domain = { name: 'snapshot', version: '0.1.4' }
+    content.types = { EIP712Domain: [], [primaryType]: fields }
+    content.primaryType = primaryType
+    messageTemplate.content.message = message
+  }
+
+  test('snapshot module vote', () => {
+    const expectedVisualization = [
+      getAction('Vote'),
+      getLabel('in'),
+      getLabel('Snapshot:', true),
+      getLabel('ambire.eth', true)
+    ]
+    setSnapshotMessage('Vote', SNAPSHOT_VOTE_FIELDS, {
+      from: address1,
+      space: 'ambire.eth',
+      timestamp: 1n,
+      proposal: `0x${'11'.repeat(32)}`,
+      choice: 1,
+      reason: '',
+      app: 'snapshot',
+      metadata: '{}'
+    })
+    const { fullVisualization } = humanize(messageTemplate)
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+
+  test('snapshot module does not show a vote for an alias with unsigned vote keys', () => {
+    // An alias lets another address act for the user. `choice` and `space` are not signed
+    setSnapshotMessage('Alias', SNAPSHOT_ALIAS_FIELDS, {
+      from: address1,
+      alias: address2,
+      timestamp: 1n,
+      choice: 1,
+      space: 'ambire.eth'
+    })
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
+  })
+
+  const setEnsUploadMessage = (
+    fields: { name: string; type: string }[],
+    message: Record<string, any>
+  ) => {
+    const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    content.domain = { name: 'Ethereum Name Service', version: '1' }
+    content.types = { EIP712Domain: [], Upload: fields }
+    content.primaryType = 'Upload'
+    messageTemplate.content.message = message
+  }
+
+  test('ens module avatar upload', () => {
+    const expectedVisualization = [
+      getAction('Update'),
+      getLabel('ENS profile pic of'),
+      getLabel('ambire.eth'),
+      getDeadline(968187600n)
+    ]
+    setEnsUploadMessage(ENS_UPLOAD_FIELDS, {
+      upload: 'avatar',
+      expiry: '968187600000',
+      name: 'ambire.eth',
+      hash: '0x1234'
+    })
+    const { fullVisualization } = humanize(messageTemplate)
+    compareVisualizations(fullVisualization!, expectedVisualization)
   })
 
   test('cowswap module sell order', () => {
@@ -497,12 +873,9 @@ describe('typed message tests', () => {
       buyTokenBalance: 'erc20'
     }
 
-    const { fullVisualization } = cowSwapModule(messageTemplate)
+    const { fullVisualization } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
-
-    const irMessage = humanizeMessage(messageTemplate)
-    compareVisualizations(irMessage.fullVisualization!, expectedVisualization)
   })
 
   test('cowswap module order cancellations', () => {
@@ -537,22 +910,117 @@ describe('typed message tests', () => {
       'OrderCancellations'
     messageTemplate.content.message = { orderUids: [orderUid] }
 
-    const { fullVisualization } = cowSwapModule(messageTemplate)
+    const { fullVisualization } = humanize(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
-
-    const irMessage = humanizeMessage(messageTemplate)
-    compareVisualizations(irMessage.fullVisualization!, expectedVisualization)
   })
 
   test('Entry point module', () => {
     messageTemplate.fromRequestId = ENTRY_POINT_AUTHORIZATION_REQUEST_ID
-    const { fullVisualization: received } = entryPointModule(messageTemplate)
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
+      'AmbireOperation'
+    const { fullVisualization: received } = humanize(messageTemplate)
     const expected = [
       getAction('Authorize entry point'),
       getLabel('for'),
       getAddressVisualization(messageTemplate.accountAddr)
     ]
     compareVisualizations(expected, received!)
+  })
+
+  test('a typed message is humanized only by the humanizer of its primary type', () => {
+    // Only `Mail` is signed. The unused `PermitSingle` type and the permit keys are not
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
+      EIP712Domain: [],
+      Mail: [{ name: 'contents', type: 'string' }],
+      PermitSingle: [{ name: 'details', type: 'PermitDetails' }]
+    }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType = 'Mail'
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+    messageTemplate.content.message = { contents: 'hello', ...typedMessages.permit2[0]! }
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
+  })
+
+  test.each(['constructor', '__proto__', 'toString', 'hasOwnProperty'])(
+    'primary type %s does not reach Object.prototype',
+    (primaryType) => {
+      expect(getTypedMessageHumanizer(primaryType)).toBeUndefined()
+      ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
+        primaryType
+      messageTemplate.content.message = typedMessages.erc20[0]!
+      expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
+    }
+  )
+
+  test('every primary type in the record has a humanizer', () => {
+    ;[
+      'Permit',
+      'PermitSingle',
+      'PermitBatch',
+      'PermitTransferFrom',
+      'PermitWitnessTransferFrom',
+      'PermitBatchWitnessTransferFrom',
+      'Order',
+      'OrderCancellations',
+      'OrderComponents',
+      'SafeTx',
+      'Vote',
+      'Upload',
+      'AmbireOperation'
+    ].forEach((primaryType) =>
+      expect(getTypedMessageHumanizer(primaryType)).toBeInstanceOf(Function)
+    )
+  })
+})
+
+describe('plain text and authorization messages', () => {
+  const getPlainTextMessage = (text: string): Message => ({
+    fromRequestId: 'randomActionId',
+    accountAddr: address1,
+    chainId: 1n,
+    signature: null,
+    content: { kind: 'message', message: hexlify(toUtf8Bytes(text)) as `0x${string}` }
+  })
+
+  test('a short plain text message uses the plain text fallback', () => {
+    const { fullVisualization } = humanize(getPlainTextMessage(`Hello ${address2}`))
+    compareVisualizations(fullVisualization, [
+      getAction('Message: '),
+      getLabel('Hello'),
+      getAddressVisualization(address2)
+    ])
+  })
+
+  test('a plain text module that matches comes before the fallback', () => {
+    const { fullVisualization } = humanize(
+      getPlainTextMessage(`Welcome to OpenSea! Wallet address: ${address1}`)
+    )
+    compareVisualizations(fullVisualization, [getAction('Log in'), getLabel('OpenSea', true)])
+  })
+
+  test('a plain text message that reads like a typed message is not humanized as one', () => {
+    const { fullVisualization } = humanize(getPlainTextMessage('Permit'))
+    compareVisualizations(fullVisualization, [getAction('Message: '), getLabel('Permit')])
+  })
+
+  test('an EIP-7702 authorization uses its own humanizer', () => {
+    const { fullVisualization } = humanize({
+      fromRequestId: 'randomActionId',
+      accountAddr: address1,
+      chainId: 1n,
+      signature: null,
+      content: {
+        kind: 'authorization-7702',
+        message: '0x',
+        contractAddr: address2,
+        nonce: 1n
+      }
+    })
+    expect(fullVisualization[0]).toMatchObject({
+      type: 'action',
+      content: 'EIP-7702 Authorization'
+    })
   })
 })

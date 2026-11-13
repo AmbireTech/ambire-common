@@ -15,6 +15,32 @@ export function isHexCall(call: IrCall): call is HexIrCall {
   return isHex(call.data)
 }
 
+/** EIP-712 type definitions of a typed message, keyed by type name */
+type TypedDataTypes = Record<string, { name: string; type: string }[]> | undefined
+
+/**
+ * Tells if an EIP-712 type declares all of the given fields. Only the declared
+ * fields of `primaryType` (and the types it references) are signed. A key in the
+ * message that is not declared is not signed, so it must not change what we show.
+ */
+export function isTypeDeclaringFields(
+  types: TypedDataTypes,
+  typeName: string,
+  fieldNames: string[]
+): boolean {
+  const declaredFieldNames = types?.[typeName]?.map((field) => field.name) ?? []
+  return fieldNames.every((fieldName) => declaredFieldNames.includes(fieldName))
+}
+
+/** Returns the declared EIP-712 type of a field, or undefined when the field is not declared (not signed) */
+export function getDeclaredFieldType(
+  types: TypedDataTypes,
+  typeName: string,
+  fieldName: string
+): string | undefined {
+  return types?.[typeName]?.find((field) => field.name === fieldName)?.type
+}
+
 export function getWarning(
   content: string,
   code: HumanizerWarning['code'],
