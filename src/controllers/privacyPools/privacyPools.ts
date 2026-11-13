@@ -5,7 +5,6 @@ import {
   getPrivacyPoolsChainConfig,
   getPrivacyPoolsTokenId,
   isPrivacyPoolsNativeAsset,
-  isPrivacyPoolsObsoleteStoreKey,
   PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY,
   PRIVACY_POOLS_BROADCASTER_STORAGE_KEY,
   PRIVACY_POOLS_BROADCASTERS,
@@ -58,6 +57,7 @@ import {
   withCancellableProving
 } from '../../libs/privacyPools/prover'
 import { readPrivacyPoolsRagequit } from '../../libs/privacyPools/ragequit'
+import { isPrivacyPoolsObsoleteStoreKey } from '../../libs/privacyPools/storeKeys'
 import { Pagination } from '../../utils/paginate'
 import { waitForBlockNumber } from '../../utils/waitForBlockNumber'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -238,7 +238,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       kohakuStorage: createKohakuStorage({
         storage,
         storageKey: 'privacyPoolsState',
-        // Stored by SDKs before 0.1.0-alpha.39, a few MB that each sync would otherwise rewrite
+        // States of older SDKs and dropped chains, a few MB each that each sync would otherwise rewrite
         isObsoleteKey: isPrivacyPoolsObsoleteStoreKey,
         onError: (error, message) =>
           this.emitError({

@@ -76,7 +76,7 @@ const sumValues = (events: StoredPoolEvent[]) =>
 
 /**
  * A pool's history from the SDK's persisted public state of its chain (stored under
- * `getPrivacyPoolsStoreKey`): its scope, every deposit, withdrawal and taken-back deposit in the
+ * `getPrivacyPoolsChainStateKey`): its scope, every deposit, withdrawal and taken-back deposit in the
  * pool, and the labels of the verified deposits, as synced in bulk. So nothing is asked of the
  * network, not even which pool the user looks at.
  *

@@ -1,4 +1,4 @@
-import { getPrivacyPoolsStoreKey, PRIVACY_POOLS_COVER_WINDOW_DAYS } from '../../consts/privacyPools'
+import { PRIVACY_POOLS_COVER_WINDOW_DAYS } from '../../consts/privacyPools'
 import { PrivacyPoolsPoolStats } from '../../interfaces/privacyPools'
 import {
   buildPrivacyPoolsDepositIndex,
@@ -8,6 +8,7 @@ import {
   PrivacyPoolsDepositIndex,
   readPrivacyPoolsPoolHistory
 } from '../../libs/privacyPools/poolStats'
+import { getPrivacyPoolsChainStateKey } from '../../libs/privacyPools/storeKeys'
 import { getChainConfig, PrivacyPoolsContext } from './context'
 
 /**
@@ -59,7 +60,7 @@ export class PrivacyPoolsPoolStatsReader {
     depositIndexes: { [tokenAddress: string]: PrivacyPoolsDepositIndex }
   } | null> {
     const config = getChainConfig(chainId)
-    const storedState = await this.#ctx.kohakuStorage.get(getPrivacyPoolsStoreKey(config))
+    const storedState = await this.#ctx.kohakuStorage.get(getPrivacyPoolsChainStateKey(config))
     if (!storedState) return null
 
     // Parsed once for all the chain's pools, as it holds the whole chain's history

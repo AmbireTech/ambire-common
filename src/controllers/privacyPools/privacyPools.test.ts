@@ -15,8 +15,7 @@ import EmittableError from '../../classes/EmittableError'
 import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsDepositAsset,
-  getPrivacyPoolsChainConfig,
-  getPrivacyPoolsStoreKey
+  getPrivacyPoolsChainConfig
 } from '../../consts/privacyPools'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -36,6 +35,7 @@ import {
 import { getPrivacyPoolsPoolLabels } from '../../libs/privacyPools/poolStats'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
+import { getPrivacyPoolsChainStateKey } from '../../libs/privacyPools/storeKeys'
 import { getRpcProvider } from '../../services/provider'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -495,7 +495,7 @@ class FakeProtocol {
     const config = getPrivacyPoolsChainConfig(chainId)
     if (config)
       await this.host.storage.set(
-        getPrivacyPoolsStoreKey(config),
+        getPrivacyPoolsChainStateKey(config),
         storedPoolState ?? toStoredPoolState()
       )
   }
@@ -603,6 +603,9 @@ jest.mock('@kohaku-eth/privacy-pools', () => ({
     .mockImplementation((host: any, params: any) => new FakeProtocol(host, params)),
   OxBowAspService: jest.fn(),
   createPPv1Broadcaster: jest.fn(),
+  getPPv1ChainStateKey: jest.requireActual<typeof import('../../../test/mocks/privacyPoolsSdk')>(
+    '../../../test/mocks/privacyPoolsSdk'
+  ).getPPv1ChainStateKey,
   PPv1NoteUnavailableError: class PPv1NoteUnavailableError extends Error {},
   PaymasterBroadcastError: class PaymasterBroadcastError extends Error {
     failure: string
@@ -5587,7 +5590,7 @@ describe('PrivacyPoolsController', () => {
     it('reads the pool for a deposit form when no sync has read it, without syncing', async () => {
       const storage = new StorageController(produceMemoryStore())
       await storage.set('privacyPoolsState', {
-        [getPrivacyPoolsStoreKey(getPrivacyPoolsChainConfig(1n)!)]: storedPoolState!
+        [getPrivacyPoolsChainStateKey(getPrivacyPoolsChainConfig(1n)!)]: storedPoolState!
       })
       const { controller } = await prepareTest({ storage })
       const deposit = { chainId: '1', tokenAddress: ZERO_ADDRESS, amount: 10n, maxAmount: 100n }
@@ -5609,7 +5612,7 @@ describe('PrivacyPoolsController', () => {
 
     it('removes what older SDKs stored, on any chain, when it first reads the stored state', async () => {
       const storage = new StorageController(produceMemoryStore())
-      const currentKey = getPrivacyPoolsStoreKey(getPrivacyPoolsChainConfig(1n)!)
+      const currentKey = getPrivacyPoolsChainStateKey(getPrivacyPoolsChainConfig(1n)!)
       await storage.set('privacyPoolsState', {
         [currentKey]: storedPoolState!,
         'privacy-pool-state-1-123': 'state of an older SDK',

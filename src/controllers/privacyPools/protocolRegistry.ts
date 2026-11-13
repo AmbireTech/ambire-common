@@ -9,7 +9,6 @@ import type { Host, Keystore } from '@kohaku-eth/plugins'
 
 import {
   getPrivacyPoolsBundlerUrl,
-  getPrivacyPoolsStoreKey,
   PRIVACY_POOLS_ACCOUNT_INDEX,
   PRIVACY_POOLS_READ_TIMEOUT
 } from '../../consts/privacyPools'
@@ -21,6 +20,7 @@ import {
 } from '../../libs/kohaku/host'
 import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
+import { getPrivacyPoolsChainStateKey } from '../../libs/privacyPools/storeKeys'
 import {
   getChainConfig,
   getChainProvider,
@@ -133,7 +133,7 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
   async isChainCold(config: PrivacyPoolsChainConfig): Promise<boolean> {
     try {
       // The shared adapter, not the raw store, so another phrase's in-flight save counts
-      return !(await this.#ctx.kohakuStorage.get(getPrivacyPoolsStoreKey(config)))
+      return !(await this.#ctx.kohakuStorage.get(getPrivacyPoolsChainStateKey(config)))
     } catch {
       // Treated as cold: reading from the CDN is the cheaper way to be wrong
       return true
