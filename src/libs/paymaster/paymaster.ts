@@ -6,6 +6,7 @@ import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { AMBIRE_SPONSOR } from '../../consts/sponsors'
 import { Account } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
@@ -68,10 +69,7 @@ function getSwapSponsorshipEstimationData(): PaymasterEstimationData {
   const paymasterData = getPaymasterDataForEstimate()
   return {
     ...paymasterData,
-    sponsor: {
-      name: 'Ambire Wallet',
-      icon: 'https://cena.ambire.com/public/ambire-logos/symbol-color.svg'
-    }
+    sponsor: { ...AMBIRE_SPONSOR }
   }
 }
 
