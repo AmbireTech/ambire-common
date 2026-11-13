@@ -1,4 +1,6 @@
 export const PROXY_AMBIRE_ACCOUNT = '0x0F2AA7bcda3d9D210dF69a394b6965CB2566c828'
+/** The master contract of Ambire v1 accounts, the ones linked from the old Ambire wallet. */
+export const PROXY_AMBIRE_V1_ACCOUNT = '0x2A2b85EB1054d6f0c6c2E37dA05eD3E5feA684EF'
 export const AMBIRE_ACCOUNT_FACTORY = '0x26cE6745A633030A6faC5e64e41D21fb6246dc2d'
 /**
  * The only paymaster the relayer signs for. Unlike the previous one

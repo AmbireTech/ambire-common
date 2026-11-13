@@ -233,6 +233,12 @@ export const getPrivacyPoolsStoreKey = ({
 /** How many days back the deposits that hide a transfer are counted in what the user sees. */
 export const PRIVACY_POOLS_COVER_WINDOW_DAYS = 90n
 
+/**
+ * Depositors checked for a Kohaku client fingerprint in one call. Their packed addresses stay under the
+ * 24 KB calldata limit of RPCs without state override, and the call far below the gas cap.
+ */
+export const PRIVACY_POOLS_FINGERPRINT_CHECK_BATCH_SIZE = 1000
+
 const ETH_UNIT = 10n ** 18n
 const USD_STABLECOIN_UNIT = 10n ** 6n
 const USD_STABLECOIN_DEPOSIT_CHIPS = [25n, 100n, 500n, 1_000n, 5_000n, 10_000n].map(
@@ -271,13 +277,6 @@ export const PRIVACY_POOLS_AMOUNT_LEAK_IDS: PrivacyPoolsLeakId[] = [
   'several-deposits',
   'fresh-deposit'
 ]
-
-/**
- * Shown when a transfer's privacy is `unchecked`, as the pool's deposits are not read yet. In
- * English, to translate as it is.
- */
-export const PRIVACY_POOLS_UNCHECKED_PRIVACY_TEXT =
-  "We are unable to check this transfer's privacy yet. Please wait a few seconds and try again."
 
 /** Whether the address is the wallet's native token address (`ZERO_ADDRESS`). */
 export const isPrivacyPoolsNativeAsset = (address: string): boolean =>

@@ -375,15 +375,26 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     this.#privacyCheck = { seedId, check: { ...checkedParams, privacy } }
   }
 
+  /** Checks the Send form's last transfer again, as when the deposits it is counted against change. */
+  recheckWithdrawalPrivacy() {
+    if (!this.#privacyCheck) return
+
+    const {
+      seedId,
+      check: { chainId, tokenAddress, amount, recipient }
+    } = this.#privacyCheck
+    this.checkWithdrawalPrivacy({ seedId, chainId, tokenAddress, amount, recipient })
+  }
+
   /**
    * The privacy of a send from `notes`, by default the account's as of its last sync. Rated
-   * `unchecked` before the pool's deposits are read. Null when the notes cannot pay `amount`.
+   * `unchecked` before the deposits it hides among are read. Null when the notes cannot pay
+   * `amount`.
    */
   #getWithdrawalPrivacy(
     { seedId, chainId, tokenAddress, amount, recipient }: PrivacyPoolsWithdrawalPrivacyParams,
     notes: PrivacyPoolsNote[] | undefined = this.#getNotes(seedId, chainId)
   ): PrivacyPoolsWithdrawalPrivacy | null {
-    const depositIndex = this.#poolStatsReader.getDepositIndex(chainId, tokenAddress)
     if (!notes) return null
 
     return getPrivacyPoolsWithdrawalPrivacy({
@@ -391,7 +402,8 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       notes,
       tokenAddress,
       recipient,
-      depositIndex,
+      poolCover: this.#poolStatsReader.getPoolCover(chainId, tokenAddress),
+      fingerprints: this.#poolStatsReader.getFingerprints(chainId),
       commonAmounts:
         PRIVACY_POOLS_DEPOSIT_CHIPS[getPrivacyPoolsTokenId(chainId, tokenAddress)] ?? []
     })

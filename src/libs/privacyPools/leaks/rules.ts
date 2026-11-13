@@ -1,5 +1,5 @@
-import { countPrivacyPoolsDepositsOf } from '../poolStats'
-import { countOthers, findNearest, getPrivacyPoolsNotesToSpend, setAmountAction } from './helpers'
+import { countPrivacyPoolsDepositsOf, getRecentPrivacyPoolsDeposits } from '../poolStats'
+import { findNearest, getPrivacyPoolsNotesToSpend, setAmountAction } from './helpers'
 import { DepositFacts, LeakRule, PrivacyPoolsNoteSpend, WithdrawalFacts } from './types'
 
 const COMMON_AMOUNT_LABEL = 'Use a common amount'
@@ -74,15 +74,11 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
     text: 'Anyone can match a send to a deposit of the same unique amount, which links the recipient to the address you deposited from. Send a common amount so it blends in.',
     // Counts all deposits, not only recent ones, as an older deposit of the same amount by
     // someone else still hides this one
-    applies: ({ spends, depositIndex, ownDepositValues }) =>
+    applies: ({ spends, poolCover }) =>
       spends.some(
         ({ note, amount }) =>
           amount === note.depositValue &&
-          countOthers(
-            countPrivacyPoolsDepositsOf(depositIndex, amount),
-            ownDepositValues.all,
-            (value) => value === amount
-          ) === 0
+          countPrivacyPoolsDepositsOf(poolCover.deposits, amount) === 0
       ),
     getActions: (facts) => {
       const commonAmountCover = findBetterCommonAmount(facts, facts.cover.sameAmount)
@@ -137,8 +133,8 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
     type: 'warning',
     title: 'This deposit is less than a day old, making it easier to link to you',
     text: 'Anyone can see when you deposited and when you send, and a send soon after a deposit is an easy match. Wait a day or more, so more people deposit in between.',
-    applies: ({ spends, depositIndex }) =>
-      spends.some(({ note }) => note.blockNumber > depositIndex.freshAfterBlock)
+    applies: ({ spends, poolCover }) =>
+      spends.some(({ note }) => note.blockNumber > poolCover.freshAfterBlock)
   }
 ]
 
@@ -153,14 +149,16 @@ export const DEPOSIT_LEAKS: LeakRule<DepositFacts>[] = [
     title: 'No one else has deposited this amount, so it stands out',
     text: 'You can still send it privately, just never all of it in one send, as that points straight back to this deposit. A common amount makes it harder to make mistakes later.',
     // Counts all deposits, not only recent ones, the same as `unique-amount` does for the send
-    applies: ({ amount, depositIndex }) => countPrivacyPoolsDepositsOf(depositIndex, amount) === 0,
-    getActions: ({ amount, maxAmount, depositIndex, commonAmounts }) => {
+    applies: ({ amount, poolCover }) =>
+      countPrivacyPoolsDepositsOf(poolCover.deposits, amount) === 0,
+    getActions: ({ amount, maxAmount, poolCover, commonAmounts }) => {
+      const recentDeposits = getRecentPrivacyPoolsDeposits(poolCover)
       const commonAmount = findNearest(
         amount,
         commonAmounts,
         (candidate) => candidate,
         (candidate) =>
-          candidate <= maxAmount && countPrivacyPoolsDepositsOf(depositIndex.recent, candidate) > 0
+          candidate <= maxAmount && countPrivacyPoolsDepositsOf(recentDeposits, candidate) > 0
       )
       if (commonAmount === undefined) return []
 
