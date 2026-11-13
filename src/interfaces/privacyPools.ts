@@ -445,11 +445,6 @@ export type PrivacyPoolsWithdrawalPrivacy = {
   cover: PrivacyPoolsSendCover
   /** How many deposits the send spends. */
   notesCount: number
-  /**
-   * Whether the send hides only among deposits with a Kohaku client fingerprint. Anyone can see that
-   * a send was made with Kohaku, so this is true when a spent deposit has the fingerprint.
-   */
-  isFingerprintedCover: boolean
 }
 
 /** The privacy of a deposit into a pool. */

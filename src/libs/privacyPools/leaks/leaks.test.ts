@@ -157,8 +157,7 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       rating: 'unchecked',
       leaks: [],
       cover: { bigEnough: 0, sameAmount: 0 },
-      notesCount: 1,
-      isFingerprintedCover: false
+      notesCount: 1
     })
     expect(getPrivacy(38n)).toBeNull()
   })
@@ -538,18 +537,18 @@ describe('counting only the deposits from Ambire accounts', () => {
     })
 
   test('counts all deposits when every spent deposit came from a plain address', () => {
-    const privacy = getPrivacy({ amount: 50n, notes: [plainNote] })
+    // Paid from the plain 50 alone, as it comes first
+    const privacy = getPrivacy({ amount: 37n, notes: [plainNote, ambireNote] })
 
-    expect(privacy?.isFingerprintedCover).toBe(false)
-    // Of at least 50: the other 50 and the 100, not the user's own 50
-    expect(privacy?.cover).toEqual({ bigEnough: 2, sameAmount: 1 })
+    // Of at least 37: the stranger's 37, the other 50 and the 100, not the user's own 37. Only
+    // Ambire deposits would give 2 and 0
+    expect(privacy?.cover).toEqual({ bigEnough: 3, sameAmount: 1 })
   })
 
   test('counts only Ambire deposits when one spent deposit came from an Ambire account', () => {
     // Spends the plain 50 whole, then the Ambire 37 whole
     const privacy = getPrivacy({ amount: 87n, notes: [plainNote, ambireNote] })
 
-    expect(privacy?.isFingerprintedCover).toBe(true)
     // At least 50 among Ambire deposits: the other 50 and the 100. At least 37: the same two, as
     // the user's own 37 hides nobody
     expect(privacy?.cover).toEqual({ bigEnough: 2, sameAmount: 0 })
@@ -563,7 +562,6 @@ describe('counting only the deposits from Ambire accounts', () => {
     })
 
     expect(getPrivacy({ amount: 50n, notes: [newNote] })).toMatchObject({
-      isFingerprintedCover: true,
       rating: 'standard',
       cover: { bigEnough: 2, sameAmount: 1 }
     })
@@ -589,8 +587,7 @@ describe('counting only the deposits from Ambire accounts', () => {
       rating: 'unchecked',
       leaks: [],
       cover: { bigEnough: 0, sameAmount: 0 },
-      notesCount: 1,
-      isFingerprintedCover: true
+      notesCount: 1
     })
     // Even a deposit from a plain address, as nothing tells it is plain yet
     expect(getPrivacy({ amount: 50n, notes: [plainNote], fingerprints: null })?.rating).toBe(

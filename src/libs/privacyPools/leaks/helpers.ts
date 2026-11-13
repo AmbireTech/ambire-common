@@ -57,13 +57,12 @@ export const getPrivacyPoolsNotesToSpend = (
  * The deposits of other people that a send of `spends` can hide among. The user's own deposits are
  * left out, as they all lead back to the user.
  *
- * Anyone can see that a send was made with Kohaku. So when one of the spent deposits has a Kohaku
- * client fingerprint, the send hides only among other deposits that have one. Until a depositor is
- * checked, the user's deposit counts as having the fingerprint and someone else's does not, so the
- * result is never larger than the real one.
+ * When one of the spent deposits has a Kohaku client fingerprint, the send hides only among other
+ * deposits that have one. Until a depositor is checked, the user's deposit counts as having the
+ * fingerprint and someone else's does not, so the result is never larger than the real one.
  *
- * The cover is null before the pool's deposits are read. It is also null when the send must hide
- * among fingerprinted deposits and no depositor of the chain is checked yet.
+ * Null before the pool's deposits are read. Also null when the send must hide among fingerprinted
+ * deposits and no depositor of the chain is checked yet.
  */
 export const getSendPoolCover = (
   spends: PrivacyPoolsNoteSpend[],
@@ -76,12 +75,11 @@ export const getSendPoolCover = (
    * before any depositor of the chain is checked.
    */
   fingerprints: ReadonlyMap<string, boolean> | null
-): { poolCover: PrivacyPoolsPoolCover | null; isFingerprintedCover: boolean } => {
+): PrivacyPoolsPoolCover | null => {
   const isFingerprintedCover = spends.some(
     ({ note }) => fingerprints?.get(note.depositorAddr.toLowerCase()) !== false
   )
-  if (!poolCover || (isFingerprintedCover && !fingerprints))
-    return { poolCover: null, isFingerprintedCover }
+  if (!poolCover || (isFingerprintedCover && !fingerprints)) return null
 
   const ownLabels = new Set(notes.map(({ label }) => label))
   const deposits = poolCover.deposits.filter(
@@ -89,7 +87,7 @@ export const getSendPoolCover = (
       !ownLabels.has(label) && (!isFingerprintedCover || fingerprints?.get(depositor) === true)
   )
 
-  return { poolCover: { ...poolCover, deposits }, isFingerprintedCover }
+  return { ...poolCover, deposits }
 }
 
 /** How many recent deposits of `poolCover` hide a send that spends `spends`. */

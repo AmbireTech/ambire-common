@@ -438,7 +438,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       )
     })
 
-    return getUncheckedPrivacyPoolsWithdrawalPrivacy(provedNoteCount, privacy.isFingerprintedCover)
+    return getUncheckedPrivacyPoolsWithdrawalPrivacy(provedNoteCount)
   }
 
   /**

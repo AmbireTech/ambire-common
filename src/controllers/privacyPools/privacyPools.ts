@@ -484,11 +484,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * The withdrawal in flight, or the last one until dismissed. Hidden, not dropped, while another
-   * phrase is selected: one being sent cannot be stopped, and switching back must show how it
-   * went. One not sent yet is dropped on switching - see `PrivacyPoolsWithdrawal.dropUnsent`.
-   */
-  /**
    * Per chain, whether the last read of the pools' deposits or the last check of which depositors
    * have a Kohaku client fingerprint failed. `readPrivacyData` tries both again.
    */
@@ -507,6 +502,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return !!this.poolStats[chainId]?.error || !!this.#hasFailedFingerprintCheck[chainId]
   }
 
+  /**
+   * The withdrawal in flight, or the last one until dismissed. Hidden, not dropped, while another
+   * phrase is selected: one being sent cannot be stopped, and switching back must show how it
+   * went. One not sent yet is dropped on switching - see `PrivacyPoolsWithdrawal.dropUnsent`.
+   */
   get operation(): PrivacyPoolsOperation | null {
     const { operation } = this.#withdrawal
     if (operation?.seedId !== this.#getSelectedSeedId()) return null

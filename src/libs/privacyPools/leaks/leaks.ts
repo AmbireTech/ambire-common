@@ -22,15 +22,12 @@ const NO_COVER: PrivacyPoolsSendCover = { bigEnough: 0, sameAmount: 0 }
  * cover. The user is asked to confirm it, as anything in it could link it to them.
  */
 export const getUncheckedPrivacyPoolsWithdrawalPrivacy = (
-  notesCount: number,
-  /** See `PrivacyPoolsWithdrawalPrivacy.isFingerprintedCover`. */
-  isFingerprintedCover: boolean
+  notesCount: number
 ): PrivacyPoolsWithdrawalPrivacy => ({
   rating: 'unchecked',
   leaks: [],
   cover: NO_COVER,
-  notesCount,
-  isFingerprintedCover
+  notesCount
 })
 
 /** The leaks the facts have, in the order of `rules`. */
@@ -73,11 +70,9 @@ const getCommonAmountCovers = (
     if (!commonAmountSpends) return []
 
     const sendPoolCover = getSendPoolCover(commonAmountSpends, notes, poolCover, fingerprints)
-    if (!sendPoolCover.poolCover) return []
+    if (!sendPoolCover) return []
 
-    return [
-      { amount: commonAmount, cover: getSendCover(sendPoolCover.poolCover, commonAmountSpends) }
-    ]
+    return [{ amount: commonAmount, cover: getSendCover(sendPoolCover, commonAmountSpends) }]
   })
 
 /**
@@ -113,17 +108,15 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   if (!spends) return null
 
   const sendPoolCover = getSendPoolCover(spends, notes, poolCover, fingerprints)
-  const { isFingerprintedCover } = sendPoolCover
-  if (!sendPoolCover.poolCover)
-    return getUncheckedPrivacyPoolsWithdrawalPrivacy(spends.length, isFingerprintedCover)
+  if (!sendPoolCover) return getUncheckedPrivacyPoolsWithdrawalPrivacy(spends.length)
 
   const facts: WithdrawalFacts = {
     ...params,
-    poolCover: sendPoolCover.poolCover,
+    poolCover: sendPoolCover,
     amount,
     spends,
     // `getSendCover` takes the smallest count over the spends, which is Infinity with none
-    cover: isRecipientOnly ? NO_COVER : getSendCover(sendPoolCover.poolCover, spends),
+    cover: isRecipientOnly ? NO_COVER : getSendCover(sendPoolCover, spends),
     // Common amounts are only suggested in place of an entered amount
     commonAmountCovers: isRecipientOnly
       ? []
@@ -131,13 +124,7 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   }
   const leaks = findLeaks(WITHDRAWAL_LEAKS, facts)
 
-  return {
-    rating: getRating(leaks),
-    leaks,
-    cover: facts.cover,
-    notesCount: spends.length,
-    isFingerprintedCover
-  }
+  return { rating: getRating(leaks), leaks, cover: facts.cover, notesCount: spends.length }
 }
 
 /**

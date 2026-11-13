@@ -5325,7 +5325,6 @@ describe('PrivacyPoolsController', () => {
         controller.checkWithdrawalPrivacy(ETH_TRANSFER)
 
         expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
-          isFingerprintedCover: true,
           cover: { sameAmount: 1 }
         })
         // Its sends are not chosen yet, so a relayer may hide them among all deposits
@@ -5349,8 +5348,7 @@ describe('PrivacyPoolsController', () => {
 
         // Nothing tells which deposits are from Ambire accounts, so none can be counted
         expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
-          rating: 'unchecked',
-          isFingerprintedCover: true
+          rating: 'unchecked'
         })
         expect(controller.hasPrivacyDataFailed['1']).toBe(true)
 
@@ -5362,7 +5360,6 @@ describe('PrivacyPoolsController', () => {
         expect(controller.hasPrivacyDataFailed['1']).toBe(false)
         expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
           rating: 'standard',
-          isFingerprintedCover: true,
           cover: { sameAmount: 1 }
         })
         restore()
@@ -5394,7 +5391,6 @@ describe('PrivacyPoolsController', () => {
         // Counted against the Ambire deposits checked before, as the new one may not be one
         expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
           rating: 'standard',
-          isFingerprintedCover: true,
           cover: { sameAmount: 1 }
         })
         expect(controller.hasPrivacyDataFailed['1']).toBe(true)
@@ -5408,7 +5404,6 @@ describe('PrivacyPoolsController', () => {
 
         expect(getCheckedAddresses(2)).toEqual([NEW_DEPOSITOR])
         expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
-          isFingerprintedCover: true,
           cover: { sameAmount: 2 }
         })
         restore()
@@ -5432,7 +5427,6 @@ describe('PrivacyPoolsController', () => {
         controller.checkWithdrawalPrivacy(ETH_TRANSFER)
 
         expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
-          isFingerprintedCover: true,
           cover: { sameAmount: 1 }
         })
       })

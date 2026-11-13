@@ -1,5 +1,6 @@
 import { concat, getAddress, id, Interface, toQuantity } from 'ethers'
 
+import { EIP_7702_DELEGATION_PREFIX } from '../../consts/7702'
 import { isPrivacyPoolsNativeAsset } from '../../consts/privacyPools'
 import { RPCProvider } from '../../interfaces/provider'
 import { getPackedUserOp } from '../userOperation/userOperation'
@@ -22,9 +23,6 @@ export type PrivacyPoolsSerializedUserOperation = {
   /** Signed by the single-use sender; `address` is the contract whose code it takes on. */
   eip7702Auth?: { address: string }
 }
-
-/** EIP-7702 delegated code: this prefix followed by the delegate's address. */
-const EIP7702_DESIGNATOR_PREFIX = '0xef0100'
 
 /** `eth_simulateV1` with `traceTransfers` reports native transfers as `Transfer` logs from here. */
 const SIMULATED_NATIVE_TRANSFER_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
@@ -136,7 +134,7 @@ export const estimatePaymasterWithdrawalFee = async ({
           // Without validation the base fee is otherwise zero, inflating the paymaster's refund
           blockOverrides: { baseFeePerGas: toQuantity(latestBlock.baseFeePerGas) },
           stateOverrides: {
-            [userOperation.sender]: { code: concat([EIP7702_DESIGNATOR_PREFIX, delegate]) },
+            [userOperation.sender]: { code: concat([EIP_7702_DELEGATION_PREFIX, delegate]) },
             [SIMULATION_CALLER]: { balance: MAX_BALANCE }
           },
           calls: [

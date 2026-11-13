@@ -1,7 +1,7 @@
 import { concat, getBytes, isHexString, keccak256 } from 'ethers'
 
 import AmbireDepositorFlags from '../../../contracts/compiled/AmbireDepositorFlags.json'
-import { eip7702AmbireContracts } from '../../consts/7702'
+import { EIP_7702_DELEGATION_PREFIX, eip7702AmbireContracts } from '../../consts/7702'
 import {
   PROXY_AMBIRE_4337_ACCOUNT,
   PROXY_AMBIRE_ACCOUNT,
@@ -15,15 +15,14 @@ import { getProxyRuntimeCode } from '../proxyDeploy/deploy'
 import { PrivacyPoolsCoverDeposit } from './poolStats'
 import { retryPrivacyPoolsRequest } from './retry'
 
-const EIP_7702_DELEGATION_PREFIX = '0xef0100'
 const ADDRESS_BYTES = 20
 /** What `AmbireDepositorFlags` returns for an address whose code is an Ambire account's. */
 const AMBIRE_ACCOUNT_FLAG = 1
 
 /**
- * The code hashes anyone can see on an Ambire account: an EOA delegated to one of Ambire's 7702
- * contracts, or a smart account proxy of Ambire's, v1 or v2. The hash of a delegated EOA is that of
- * its delegation, not of the contract it delegates to.
+ * The code hashes of Ambire accounts: an EOA delegated to one of Ambire's 7702 contracts, or a
+ * smart account proxy of Ambire's, v1 or v2. The hash of a delegated EOA is that of its
+ * delegation, not of the contract it delegates to.
  */
 export const getAmbireAccountCodeHashes = (): string[] => [
   ...eip7702AmbireContracts.map((delegator) =>

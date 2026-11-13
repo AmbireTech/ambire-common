@@ -37,7 +37,7 @@ export class PrivacyPoolsPoolStatsReader {
 
   /**
    * Per chain, whether each depositor checked so far has a Kohaku client fingerprint, by its
-   * address in lowercase. Kept after the wallet locks, as anyone can read it on chain. Each sync checks only
+   * address in lowercase. Kept after the wallet locks, as it is public data. Each sync checks only
    * the depositors that are new, so it grows only as the pools grow.
    */
   #fingerprints: { [chainId: string]: Map<string, boolean> } = {}
