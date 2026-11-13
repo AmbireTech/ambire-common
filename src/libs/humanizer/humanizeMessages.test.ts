@@ -943,6 +943,44 @@ describe('typed message tests', () => {
     expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
   })
 
+  test.each([
+    {
+      primaryType: 'Order',
+      fields: [{ name: 'salt', type: 'uint256' }],
+      verifyingContract: '0x111111125421ca6dc452d289314280a0f8842a65'
+    },
+    {
+      primaryType: 'Permit',
+      fields: [
+        { name: 'owner', type: 'address' },
+        { name: 'amount', type: 'uint256' }
+      ],
+      verifyingContract: WETH_ADDRESS
+    },
+    {
+      primaryType: 'Vote',
+      fields: [{ name: 'choice', type: 'uint32' }],
+      verifyingContract: WETH_ADDRESS
+    },
+    {
+      primaryType: 'PermitSingle',
+      fields: [{ name: 'details', type: 'PermitDetails' }],
+      verifyingContract: WETH_ADDRESS
+    }
+  ])(
+    'an unrecognized $primaryType gives no visualization, not an empty one',
+    ({ primaryType, fields, verifyingContract }) => {
+      // An empty array is truthy. The sign screen would treat it as humanized and
+      // let the user sign without reading the raw message
+      const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
+      content.types = { EIP712Domain: [], [primaryType]: fields }
+      content.primaryType = primaryType
+      content.domain.verifyingContract = verifyingContract
+      messageTemplate.content.message = { salt: 1n, choice: 1, space: 'x', details: {} }
+      expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+    }
+  )
+
   test.each(['constructor', '__proto__', 'toString', 'hasOwnProperty'])(
     'primary type %s does not reach Object.prototype',
     (primaryType) => {
