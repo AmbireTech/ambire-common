@@ -4,7 +4,7 @@ import { eip7702AuthorizationModule } from './eip7702AuthorizationModule'
 import { humanizeEnsUpload } from './ensModule'
 import { humanizeEntryPointAuthorization } from './entryPointModule'
 import { humanizeErc20Permit } from './erc20Module'
-import { humanizeErc721Permit } from './erc721Module'
+import { ERC721_PERMIT_FIELD_NAMES, humanizeErc721Permit } from './erc721Module'
 import { fallbackShortPlaintext } from './fallbackShortPlaintext'
 import { legendsMessageModule } from './legendsModule'
 import { humanizeSeaportOrder, openseaLoginMessageModule } from './openseaModule'
@@ -17,10 +17,11 @@ import {
 import { humanizeSafeTx } from './safeModule'
 import { humanizeSnapshotVote } from './snapshotModule'
 import { zealyMessageModule } from './zealyModule'
+import { isTypeDeclaringFields } from '../utils'
 
 /**
- * Runs the humanizers in order and returns the first result with a visualization.
- * A humanizer that throws is logged and skipped, so it does not block the others.
+ * Runs the plain text modules in order and returns the first result with a visualization.
+ * A module that throws is logged and skipped, so it does not block the others.
  */
 export const getFirstHumanization = <TMessage>(
   humanizers: ((message: TMessage) => HumanizerMessageResult)[],
@@ -38,9 +39,15 @@ export const getFirstHumanization = <TMessage>(
   return {}
 }
 
-/** ERC-20 (EIP-2612 and DAI-style) and ERC-721 permits share the `Permit` primary type */
+/**
+ * ERC-20 (EIP-2612 and DAI-style) and ERC-721 permits share the `Permit` primary
+ * type. The humanizer is chosen from the fields declared in `types.Permit` (signed),
+ * not by trying one and falling back to the other.
+ */
 const humanizePermit: HumanizerTypedMessageFunction = (message) =>
-  getFirstHumanization([humanizeErc20Permit, humanizeErc721Permit], message)
+  isTypeDeclaringFields(message.content.types, 'Permit', ERC721_PERMIT_FIELD_NAMES)
+    ? humanizeErc721Permit(message)
+    : humanizeErc20Permit(message)
 
 /**
  * Typed message humanizers keyed by the EIP-712 primary type they expect. Only

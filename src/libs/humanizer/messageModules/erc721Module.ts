@@ -9,7 +9,7 @@ import {
 } from '../utils'
 
 /** Fields of an ERC-4494 (NFT) `Permit` */
-const ERC721_PERMIT_FIELD_NAMES = ['spender', 'tokenId', 'nonce', 'deadline']
+export const ERC721_PERMIT_FIELD_NAMES = ['spender', 'tokenId', 'nonce', 'deadline']
 
 const visualizePermit = (
   spender: string,

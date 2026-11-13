@@ -35,17 +35,22 @@ const isAuthorizationMessage = (message: Message): message is HumanizerAuthoriza
 
 /**
  * Humanizes a message with the message modules. A typed message uses only the
- * humanizer for its primary type. A plain text message uses the first plain text
- * module that matches. Other kinds (e.g. sign in with Ethereum) are not humanized here.
+ * humanizer for its primary type, with no fallback to other typed humanizers.
+ * A plain text message uses the first plain text module that matches. Other
+ * kinds (e.g. sign in with Ethereum) are not humanized here.
  */
 const humanizeMessageWithModules = (message: Message): HumanizerMessageResult => {
-  if (isTypedMessage(message)) {
-    const humanizeTypedMessage = getTypedMessageHumanizer(message.content.primaryType)
-    return humanizeTypedMessage ? getFirstHumanization([humanizeTypedMessage], message) : {}
+  try {
+    if (isTypedMessage(message)) {
+      const humanizeTypedMessage = getTypedMessageHumanizer(message.content.primaryType)
+      return humanizeTypedMessage ? humanizeTypedMessage(message) : {}
+    }
+    if (isPlainTextMessage(message)) return getFirstHumanization(plainTextMessageModules, message)
+    if (isAuthorizationMessage(message)) return eip7702AuthorizationModule(message)
+  } catch (error) {
+    // A humanizer that throws shows no visualization, but the ERC-7730 descriptor can still be used
+    console.error(error)
   }
-  if (isPlainTextMessage(message)) return getFirstHumanization(plainTextMessageModules, message)
-  if (isAuthorizationMessage(message))
-    return getFirstHumanization([eip7702AuthorizationModule], message)
 
   return {}
 }
