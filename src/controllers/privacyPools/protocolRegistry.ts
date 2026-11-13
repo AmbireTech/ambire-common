@@ -10,6 +10,7 @@ import type { Host, Keystore } from '@kohaku-eth/plugins'
 import {
   getPrivacyPoolsBundlerUrl,
   getPrivacyPoolsChainConfig,
+  getPrivacyPoolsInitialStateKey,
   getPrivacyPoolsStoreKey,
   PRIVACY_POOLS_ACCOUNT_INDEX,
   PRIVACY_POOLS_READ_TIMEOUT,
@@ -61,7 +62,7 @@ const resolveInitialState = async (): Promise<Record<string, any>> =>
 
     return {
       ...state,
-      [getPrivacyPoolsStoreKey(config)]: {
+      [getPrivacyPoolsInitialStateKey(config)]: {
         sync: { lastSyncedBlock: `0x${config.deploymentBlock.toString(16)}` }
       }
     }

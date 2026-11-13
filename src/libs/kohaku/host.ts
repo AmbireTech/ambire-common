@@ -23,17 +23,40 @@ import { fetchWithTimeout } from '../../utils/fetch'
 export const createKohakuStorage = ({
   storage,
   storageKey,
+  obsoleteKeys = [],
   onError
 }: {
   storage: IStorageController
   /** Which `StorageProps` entry holds this plugin's blob. */
   storageKey: 'privacyPoolsState'
+  /** Keys the plugin no longer reads, removed from the blob when it is first read. */
+  obsoleteKeys?: string[]
   onError: (error: unknown, message?: string) => void
 }): Storage => {
   let cache: Record<string, string> | null = null
   let hydratePromise: Promise<Record<string, string>> | null = null
   // Serializes writes: two chains can finish syncing at once, and `storage.set` must not overlap
   let writeQueue: Promise<void> = Promise.resolve()
+
+  const persist = (blob: Record<string, string>) => {
+    writeQueue = writeQueue
+      .then(() => storage.set(storageKey, blob))
+      .catch((error) => onError(error, 'Privacy Pools could not save its progress on this device.'))
+
+    return writeQueue
+  }
+
+  /**
+   * Not awaited by the read, and `persist` reports a failure itself: a failed removal only leaves
+   * the keys for the next start.
+   */
+  const dropObsoleteKeys = (blob: Record<string, string>) => {
+    const storedObsoleteKeys = obsoleteKeys.filter((key) => key in blob)
+    if (!storedObsoleteKeys.length) return
+
+    storedObsoleteKeys.forEach((key) => delete blob[key])
+    void persist(blob)
+  }
 
   const hydrate = (): Promise<Record<string, string>> => {
     if (cache) return Promise.resolve(cache)
@@ -43,7 +66,10 @@ export const createKohakuStorage = ({
         .get(storageKey, {})
         .then((blob) => {
           // A concurrent hydrate may have set it already - keep that object, as writes mutate it
-          cache = cache || blob
+          if (!cache) {
+            cache = blob
+            dropObsoleteKeys(cache)
+          }
           return cache
         })
         .catch((error) => {
@@ -71,13 +97,7 @@ export const createKohakuStorage = ({
 
       blob[key] = value
 
-      writeQueue = writeQueue
-        .then(() => storage.set(storageKey, blob))
-        .catch((error) =>
-          onError(error, 'Privacy Pools could not save its progress on this device.')
-        )
-
-      await writeQueue
+      await persist(blob)
     }
   }
 }

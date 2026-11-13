@@ -238,10 +238,22 @@ export const getPrivacyPoolsChainConfig = (chainId: bigint): PrivacyPoolsChainCo
   PRIVACY_POOLS_CHAINS[chainId.toString()]
 
 /**
- * The plugin's storage key for a chain's history, mirrored as the SDK does not export it. Needed
- * before a plugin exists: to seed its starting state and tell whether the chain has history yet.
+ * The plugin's storage key for a chain's history, mirroring the SDK's `getPPv1ChainStateKey` so
+ * that the consts do not pull in the SDK. Needed before a plugin exists: to tell whether the chain
+ * has history yet, and to read the pools' numbers.
  */
 export const getPrivacyPoolsStoreKey = ({
+  chainId,
+  entrypointAddress
+}: PrivacyPoolsChainConfig): string =>
+  `privacy-pool-state-v2-${chainId.toString()}-${BigInt(entrypointAddress).toString()}`
+
+/**
+ * The key of a chain's starting state in the plugin's `initialState`, mirrored as the SDK does not
+ * export it. Plugins before 0.1.0-alpha.39 also stored the chain's history under it, which the SDK
+ * no longer reads - see `getPrivacyPoolsStoreKey`.
+ */
+export const getPrivacyPoolsInitialStateKey = ({
   chainId,
   entrypointAddress
 }: PrivacyPoolsChainConfig): string =>
