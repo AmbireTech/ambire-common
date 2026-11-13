@@ -25,8 +25,8 @@ const RATE_DECIMALS = 36
  * v3 position with a few dollars in it.
  *
  * Only the pools of the network's main DEXes are looked up (see `SpotPriceConfig.poolFactories`),
- * so a token that trades only elsewhere (e.g. Uniswap v4 or Curve, like USDe) needs to be curated
- * to have a price.
+ * so a token that trades only elsewhere (e.g. Uniswap v4, Balancer, or Curve pools older than its
+ * "ng" factories) needs to be curated to have a price.
  */
 export const MIN_POOL_DEPTH_USD = 1000
 /** The native token of every network with a config has 18 decimals */
@@ -39,9 +39,9 @@ export type RpcTokenPrices = Map<string, number | null>
 
 export type RpcTokenPricesResult = {
   /**
-   * The tokens that were answered, with a price or with "no price". Tokens in a call that failed,
-   * or that need more gas than the RPC gives a call, are left out, so that they aren't taken as
-   * having no price.
+   * The tokens that were answered, with a price or with "no price". Tokens in a call that failed
+   * are left out, so that they aren't taken as having no price. A token that needs more gas than
+   * the RPC gives a call has no price, as it never will on that RPC.
    */
   prices: RpcTokenPrices
   /** Why some tokens were left out, if any were */
@@ -67,6 +67,15 @@ type GetPricesResult = {
   nativeUsdPrice: NativeUsdPrice
   /** Each checked token's rate, in the order the tokens were passed */
   rates: TokenRate[]
+}
+
+/** The rate of a token that wasn't priced */
+const NO_RATE: TokenRate = {
+  rateToNative: 0n,
+  decimals: 0,
+  nativeReserve: 0n,
+  stableReserve: 0n,
+  isNative: false
 }
 
 /** What a page of tokens read */
@@ -122,8 +131,8 @@ const getNativeUsdPrice = (
 /**
  * Asks for the rates of the tokens, again for those the contract didn't get to before the call
  * ran low on gas, until every token was checked. A token that needs more gas than the RPC gives
- * a call is skipped, so that it doesn't hold up the rest. Throws if nothing could be read; when a
- * later call fails, what the earlier ones read is kept and the error is returned along with it.
+ * a call gets no rate, so that it doesn't hold up the rest. Throws if nothing could be read; when
+ * a later call fails, what the earlier ones read is kept and the error is returned along with it.
  */
 const getRates = async (
   call: (tokens: string[]) => Promise<[GetPricesResult, number]>,
@@ -153,8 +162,14 @@ const getRates = async (
       .forEach((address, index) => rateByAddress.set(address, result.rates[index]!))
 
     if (remainingTokens.length && !checkedCount) {
-      // Left out rather than reported as having no price, and the rest are still read
-      error = new Error(`Not enough gas to read some token prices on ${network.name}`)
+      // Reported as having no price rather than as an error: it would be the same on every
+      // update, so the balance would always show a price warning for one odd token. It's asked
+      // for again once its "no price" expires from the cache, and the rest are still read.
+      const [tokenOverGasLimit] = remainingTokens
+      console.warn(
+        `rpcTokenPrices: ${tokenOverGasLimit} needs more gas than the RPC of ${network.name} allows`
+      )
+      rateByAddress.set(tokenOverGasLimit!, NO_RATE)
       remainingTokens = remainingTokens.slice(1)
     } else {
       remainingTokens = remainingTokens.slice(checkedCount)

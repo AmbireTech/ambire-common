@@ -4,7 +4,7 @@ import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
 import { STK_WALLET, WALLET_TOKEN } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
-import { RPC_TOKEN_PRICE_CONFIGS } from '../../consts/rpcTokenPrices'
+import { PoolFactoryKind, RPC_TOKEN_PRICE_CONFIGS } from '../../consts/rpcTokenPrices'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import PriceGetter from '../../../contracts/compiled/PriceGetter.json'
@@ -346,7 +346,7 @@ describe('getRpcTokenPrices', () => {
       ).rejects.toThrow('rpc-timeout')
     })
 
-    test('skips a token that needs more gas than the RPC gives a call, and reads the rest', async () => {
+    test('gives no price, without an error, to a token that needs more gas than the RPC gives a call', async () => {
       mockContract({ rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18 }) })
       const pricedCall = callSpy.getMockImplementation()!
       // TOKEN_1 needs more gas than the RPC gives a call, so the contract checks nothing
@@ -361,9 +361,9 @@ describe('getRpcTokenPrices', () => {
         tokenAddresses: [TOKEN_1, TOKEN_2, TOKEN_3]
       })
 
-      expect(error?.message).toBe(`Not enough gas to read some token prices on ${ethereum.name}`)
-      // Left out rather than taken as having no price
-      expect(prices.has(TOKEN_1)).toBe(false)
+      // An error would show a price warning on every update, for a token that will never fit
+      expect(error).toBeNull()
+      expect(prices.get(TOKEN_1)).toBeNull()
       expect(prices.get(TOKEN_2)).toBe(2)
       expect(prices.get(TOKEN_3)).toBe(2)
     })
@@ -552,6 +552,48 @@ describe('getRpcTokenPrices', () => {
         expect(prices.get(FORTUNE.toLowerCase())).toBeNull()
         expect(prices.get(CZ.toLowerCase())).toBeNull()
         expect(prices.get(AERO.toLowerCase())).toBeGreaterThan(0)
+      } finally {
+        provider.destroy()
+      }
+    })
+
+    test("finds a token's Curve pools and reads what they really hold", async () => {
+      // USDe trades mostly on Curve, against USDC and USDT. Only the Curve factories are looked
+      // up, so the reserve comes from its Curve pools alone.
+      const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+      const USDE = '0x4c9EDD5852cd905f086C759E8383e09bff1E68B3'
+
+      try {
+        const priceGetter = deployless.fromDescriptor(provider, PriceGetter, true)
+        const spotPrices = RPC_TOKEN_PRICE_CONFIGS['1']!.spotPrices!
+        type Factories = typeof spotPrices.poolFactories
+        const toSearch = (factories: Factories) => ({
+          wrappedNative: spotPrices.wrappedNative,
+          stablecoins: spotPrices.stablecoins,
+          factories: factories.map(({ factory, kind, params }) => ({
+            factory,
+            kind,
+            params: params.map(BigInt)
+          }))
+        })
+        const readStableReserve = async (factories: Factories) => {
+          const [, rates] = await priceGetter.call('getPrices', [
+            RPC_TOKEN_PRICE_CONFIGS['1']!.nativeUsdFeed,
+            spotPrices.oracle,
+            [USDE],
+            10n,
+            toSearch(factories)
+          ])
+          return rates[0].stableReserve as bigint
+        }
+        const curveFactories = spotPrices.poolFactories.filter(
+          ({ kind }) => kind === PoolFactoryKind.Curve
+        )
+
+        // USDe's USDC and USDT pools on Curve hold far more than the floor
+        expect(await readStableReserve(curveFactories)).toBeGreaterThan(
+          BigInt(MIN_POOL_DEPTH_USD) * 10n ** 18n
+        )
       } finally {
         provider.destroy()
       }

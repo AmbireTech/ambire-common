@@ -16,7 +16,9 @@ export enum PoolFactoryKind {
   /** `getPool(tokenA, tokenB, stable)`: Velodrome v2, Aerodrome and their forks */
   Solidly = 2,
   /** `getPool(tokenA, tokenB, tickSpacing)`, for each of its tick spacings: Velodrome's and Aerodrome's concentrated liquidity */
-  Slipstream = 3
+  Slipstream = 3,
+  /** `find_pool_for_coins(tokenA, tokenB, i)`: Curve's stableswap-ng, twocrypto-ng and tricrypto-ng */
+  Curve = 4
 }
 
 /** A DEX factory, looked up for a token's pools to tell how much liquidity the token has */
@@ -37,7 +39,8 @@ export type SpotPriceConfig = {
   /**
    * The factories of the network's main DEXes. A token's liquidity is how much of the wrapped
    * native token or of a stablecoin its pools in these hold, so a token that trades only
-   * elsewhere (e.g. Uniswap v4 or Curve) has no price, unless it's one of our curated tokens.
+   * elsewhere (e.g. Uniswap v4, Balancer, or Curve pools older than its "ng" factories) has no
+   * price, unless it's one of our curated tokens.
    */
   poolFactories: PoolFactory[]
 }
@@ -70,6 +73,8 @@ const PANCAKESWAP_V3_FEES = [100, 500, 2500, 10000]
 const SLIPSTREAM_TICK_SPACINGS = [1, 10, 50, 100, 200, 2000]
 /** The same address on Ethereum, BNB Smart Chain, Arbitrum and Linea */
 const PANCAKESWAP_V3_FACTORY = '0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865'
+/** Curve's twocrypto-ng factory, at the same address on every network it's on except Base */
+const CURVE_TWOCRYPTO_NG_FACTORY = '0x98EE851a00abeE0d95D08cF4CA2BdCE32aeaAF7F'
 /** SushiSwap v2's factory on Polygon, Avalanche, Arbitrum and Gnosis, and SushiSwap v3's on Base */
 const SUSHISWAP_FACTORY = '0xc35DADB65012eC5796536bD9864eD8773aBc74C4'
 
@@ -86,6 +91,11 @@ const uniswapV3 = (factory: string, fees = UNISWAP_V3_FEES): PoolFactory => ({
 const solidly = (factory: string): PoolFactory => ({
   factory,
   kind: PoolFactoryKind.Solidly,
+  params: []
+})
+const curve = (factory: string): PoolFactory => ({
+  factory,
+  kind: PoolFactoryKind.Curve,
   params: []
 })
 const slipstream = (factory: string): PoolFactory => ({
@@ -119,7 +129,10 @@ export const RPC_TOKEN_PRICE_CONFIGS: { [chainId: string]: RpcTokenPriceConfig }
         uniswapV2('0xF14421F0BCf9401d8930872C2d44d8e67e40529a'),
         uniswapV2('0x115934131916C8b277DD010Ee02de363c09d037c'),
         uniswapV3('0x1F98431c8aD98523631AE4a59f267346ea31F984'), // Uniswap v3
-        uniswapV3(PANCAKESWAP_V3_FACTORY, PANCAKESWAP_V3_FEES)
+        uniswapV3(PANCAKESWAP_V3_FACTORY, PANCAKESWAP_V3_FEES),
+        curve('0x6A8cbed756804B16E05E741eDaBd5cB544AE21bf'), // Curve stableswap-ng
+        curve(CURVE_TWOCRYPTO_NG_FACTORY), // Curve twocrypto-ng
+        curve('0x0c0e5f2fF0ff18a3be9b835635039256dC4B4963') // Curve tricrypto-ng
       ]
     },
     // Staked WALLET: each stkWALLET is backed by exactly one WALLET in the staking pool
@@ -140,7 +153,10 @@ export const RPC_TOKEN_PRICE_CONFIGS: { [chainId: string]: RpcTokenPriceConfig }
         uniswapV2('0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32'), // QuickSwap
         uniswapV2(SUSHISWAP_FACTORY),
         uniswapV2('0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C'), // Uniswap v2
-        uniswapV3('0x1F98431c8aD98523631AE4a59f267346ea31F984') // Uniswap v3
+        uniswapV3('0x1F98431c8aD98523631AE4a59f267346ea31F984'), // Uniswap v3
+        curve('0x1764ee18e8B3ccA4787249Ceb249356192594585'), // Curve stableswap-ng
+        curve(CURVE_TWOCRYPTO_NG_FACTORY), // Curve twocrypto-ng
+        curve('0xC1b393EfEF38140662b91441C6710Aa704973228') // Curve tricrypto-ng
       ]
     }
   },
@@ -159,7 +175,10 @@ export const RPC_TOKEN_PRICE_CONFIGS: { [chainId: string]: RpcTokenPriceConfig }
         uniswapV2('0x0c3c1c532F1e39EdF36BE9Fe0bE1410313E074Bf'), // Uniswap v2
         uniswapV3('0x1F98431c8aD98523631AE4a59f267346ea31F984'), // Uniswap v3
         solidly('0xF1046053aa5682b4F9a81b5481394DA16BE5FF5a'), // Velodrome v2
-        slipstream('0xCc0bDDB707055e04e497aB22a59c2aF4391cd12F') // Velodrome Slipstream
+        slipstream('0xCc0bDDB707055e04e497aB22a59c2aF4391cd12F'), // Velodrome Slipstream
+        curve('0x5eeE3091f747E60a045a2E715a4c71e600e31F6E'), // Curve stableswap-ng
+        curve(CURVE_TWOCRYPTO_NG_FACTORY), // Curve twocrypto-ng
+        curve('0xc6C09471Ee39C7E30a067952FcC89c8922f9Ab53') // Curve tricrypto-ng
       ]
     }
   },
@@ -179,7 +198,8 @@ export const RPC_TOKEN_PRICE_CONFIGS: { [chainId: string]: RpcTokenPriceConfig }
         uniswapV2('0xefa94DE7a4656D787667C749f7E1223D71E9FD88'), // Pangolin
         uniswapV2(SUSHISWAP_FACTORY),
         uniswapV2('0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C'), // Uniswap v2
-        uniswapV3('0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD') // Uniswap v3
+        uniswapV3('0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD'), // Uniswap v3
+        curve('0x1764ee18e8B3ccA4787249Ceb249356192594585') // Curve stableswap-ng
       ]
     }
   },
@@ -199,7 +219,10 @@ export const RPC_TOKEN_PRICE_CONFIGS: { [chainId: string]: RpcTokenPriceConfig }
         uniswapV2(SUSHISWAP_FACTORY),
         uniswapV2('0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9'), // Uniswap v2
         uniswapV3('0x1F98431c8aD98523631AE4a59f267346ea31F984'), // Uniswap v3
-        uniswapV3(PANCAKESWAP_V3_FACTORY, PANCAKESWAP_V3_FEES)
+        uniswapV3(PANCAKESWAP_V3_FACTORY, PANCAKESWAP_V3_FEES),
+        curve('0x9AF14D26075f142eb3F292D5065EB3faa646167b'), // Curve stableswap-ng
+        curve(CURVE_TWOCRYPTO_NG_FACTORY), // Curve twocrypto-ng
+        curve('0xbC0797015fcFc47d9C1856639CaE50D0e69FbEE8') // Curve tricrypto-ng
       ]
     }
   },
@@ -219,7 +242,10 @@ export const RPC_TOKEN_PRICE_CONFIGS: { [chainId: string]: RpcTokenPriceConfig }
         uniswapV3('0x33128a8fC17869897dcE68Ed026d694621f6FDfD', [100, 400, 500, 3000, 10000]), // Uniswap v3
         uniswapV3('0x3D237AC6D2f425D2E890Cc99198818cc1FA48870', PANCAKESWAP_V3_FEES),
         solidly('0x420DD381b31aEf6683db6B902084cB0FFECe40Da'), // Aerodrome
-        slipstream('0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A') // Aerodrome Slipstream
+        slipstream('0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A'), // Aerodrome Slipstream
+        curve('0xd2002373543Ce3527023C75e7518C274A51ce712'), // Curve stableswap-ng
+        curve('0xc9Fe0C63Af9A39402e8a5514f9c43Af0322b665F'), // Curve twocrypto-ng
+        curve('0xA5961898870943c68037F6848d2D866Ed2016bcB') // Curve tricrypto-ng
       ]
     }
   },
@@ -243,7 +269,9 @@ export const RPC_TOKEN_PRICE_CONFIGS: { [chainId: string]: RpcTokenPriceConfig }
         uniswapV2('0xaC653cE27E04C6ac565FD87F18128aD33ca03Ba2'),
         uniswapV2('0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6'), // Uniswap v2
         uniswapV3('0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7'), // Uniswap v3
-        uniswapV3(PANCAKESWAP_V3_FACTORY, PANCAKESWAP_V3_FEES)
+        uniswapV3(PANCAKESWAP_V3_FACTORY, PANCAKESWAP_V3_FEES),
+        curve('0xd7E72f3615aa65b92A4DBdC211E296a35512988B'), // Curve stableswap-ng
+        curve(CURVE_TWOCRYPTO_NG_FACTORY) // Curve twocrypto-ng
       ]
     }
   },
@@ -300,7 +328,9 @@ export const RPC_TOKEN_PRICE_CONFIGS: { [chainId: string]: RpcTokenPriceConfig }
         uniswapV2('0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7'), // Honeyswap
         uniswapV2('0x965769C9CeA8A7667246058504dcdcDb1E2975A5'),
         uniswapV2('0x5D48C95AdfFD4B40c1AAADc4e08fc44117E02179'), // Swapr
-        uniswapV2(SUSHISWAP_FACTORY)
+        uniswapV2(SUSHISWAP_FACTORY),
+        curve('0xbC0797015fcFc47d9C1856639CaE50D0e69FbEE8'), // Curve stableswap-ng
+        curve(CURVE_TWOCRYPTO_NG_FACTORY) // Curve twocrypto-ng
       ]
     }
   },

@@ -363,6 +363,26 @@ export class MainController extends EventEmitter implements IMainController {
         return this.providers.providers[chainKey]
       }
     })
+    // Switching the price source empties the price cache (see TokenPricesController), so the
+    // portfolio is updated right away to show what the setting changed, instead of keeping the
+    // other source's prices until the next scheduled update
+    let isTokenPricesEnabled = this.featureFlags.isFeatureEnabled('tokenPrices')
+    this.featureFlags.onUpdate(() => {
+      const isEnabled = this.featureFlags.isFeatureEnabled('tokenPrices')
+      if (isEnabled === isTokenPricesEnabled) return
+
+      isTokenPricesEnabled = isEnabled
+      // Loaded from storage at startup, before any portfolio update: nothing to refresh yet
+      if (this.featureFlags.initialLoadPromise) return
+
+      this.updateSelectedAccountPortfolio().catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the portfolio after the token prices setting changed',
+          error
+        })
+      )
+    })
     this.providers = new ProvidersController({
       eventEmitterRegistry,
       storage: this.storage,

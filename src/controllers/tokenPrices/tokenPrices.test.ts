@@ -326,28 +326,20 @@ describe('TokenPricesController', () => {
       expect(error).toBeNull()
     })
 
-    test('keeps the prices cached before the user opted out, until they expire', async () => {
+    test('drops the prices cached before the user opted out', async () => {
       const { fetch } = createPriceFetch({ price: 3 })
       const controller = createController(fetch)
-      const now = Date.now()
-      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(now)
       await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
 
       isEnabled = false
-      dateSpy.mockReturnValue(now + 4 * MINUTE)
       const { tokenData } = await controller.getTokenData({
         network: base,
         tokenAddresses: [TOKEN_1]
       })
-      dateSpy.mockReturnValue(now + 6 * MINUTE)
-      const afterExpiry = await controller.getTokenData({
-        network: base,
-        tokenAddresses: [TOKEN_1]
-      })
-      dateSpy.mockRestore()
 
-      expect(tokenData.get(TOKEN_1)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 3 }])
-      expect(afterExpiry.tokenData.size).toBe(0)
+      // No market data or prices from the price API are shown after opting out
+      expect(tokenData.size).toBe(0)
+      expect(controller.getCachedTokenData(base.chainId, TOKEN_1)).toBeNull()
       expect(fetch).toHaveBeenCalledTimes(1)
     })
 
@@ -591,65 +583,38 @@ describe('TokenPricesController', () => {
       expect(tokenData.get(TOKEN_1)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 7 }])
     })
 
-    test("keeps cena's prices after an opt-out, and reads the RPC once they expire", async () => {
+    test("reads the RPC right after an opt-out, instead of cena's cached prices", async () => {
       isEnabled = true
       const { fetch } = createPriceFetch({ price: 3 })
       const controller = createRpcController(fetch)
-      const now = Date.now()
-      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(now)
       await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
 
       isEnabled = false
-      const beforeExpiry = await controller.getTokenData({
+      const { tokenData } = await controller.getTokenData({
         network: base,
         tokenAddresses: [TOKEN_1]
       })
-      dateSpy.mockReturnValue(now + 6 * MINUTE)
-      const afterExpiry = await controller.getTokenData({
-        network: base,
-        tokenAddresses: [TOKEN_1]
-      })
-      dateSpy.mockRestore()
 
-      expect(beforeExpiry.tokenData.get(TOKEN_1)?.priceIn).toEqual([
-        { baseCurrency: 'usd', price: 3 }
-      ])
       expect(getRpcTokenPricesSpy).toHaveBeenCalledTimes(1)
-      expect(afterExpiry.tokenData.get(TOKEN_1)?.priceIn).toEqual([
-        { baseCurrency: 'usd', price: 5 }
-      ])
+      expect(tokenData.get(TOKEN_1)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 5 }])
     })
 
-    test("keeps the RPC's prices after an opt-in, and asks cena once they expire", async () => {
+    test("asks cena right after an opt-in, instead of the RPC's cached prices", async () => {
       const { fetch } = createPriceFetch({ price: 3 })
       const controller = createRpcController(fetch)
-      const now = Date.now()
-      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(now)
       await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
 
       isEnabled = true
-      const beforeExpiry = await controller.getTokenData({
+      const { tokenData } = await controller.getTokenData({
         network: base,
         tokenAddresses: [TOKEN_1]
       })
-      expect(fetch).not.toHaveBeenCalled()
-      dateSpy.mockReturnValue(now + 6 * MINUTE)
-      const afterExpiry = await controller.getTokenData({
-        network: base,
-        tokenAddresses: [TOKEN_1]
-      })
-      dateSpy.mockRestore()
 
-      expect(beforeExpiry.tokenData.get(TOKEN_1)?.priceIn).toEqual([
-        { baseCurrency: 'usd', price: 5 }
-      ])
       expect(fetch).toHaveBeenCalledTimes(1)
-      expect(afterExpiry.tokenData.get(TOKEN_1)?.priceIn).toEqual([
-        { baseCurrency: 'usd', price: 3 }
-      ])
+      expect(tokenData.get(TOKEN_1)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 3 }])
     })
 
-    test('keeps a cena answer that arrives after the user opted out', async () => {
+    test('drops a cena answer that arrives after the user opted out, and reads the RPC', async () => {
       isEnabled = true
       let answerCena: () => void = () => {}
       const fetch = jest.fn(
@@ -663,17 +628,45 @@ describe('TokenPricesController', () => {
 
       const cenaCall = controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
       isEnabled = false
-      // A call made meanwhile waits for the request already in flight for its token
+      // A call made meanwhile doesn't wait for the cena request, but asks the RPC
       const rpcModeCall = controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
       answerCena()
 
+      expect((await cenaCall).tokenData.size).toBe(0)
+      expect((await rpcModeCall).tokenData.get(TOKEN_1)?.priceIn).toEqual([
+        { baseCurrency: 'usd', price: 5 }
+      ])
+      expect(getRpcTokenPricesSpy).toHaveBeenCalledTimes(1)
+      // Nor is the late cena answer cached afterwards
+      expect(controller.getCachedTokenData(base.chainId, TOKEN_1)?.priceIn).toEqual([
+        { baseCurrency: 'usd', price: 5 }
+      ])
+    })
+
+    test('drops an RPC answer that arrives after the user opted back in', async () => {
+      let answerRpc: () => void = () => {}
+      getRpcTokenPricesSpy.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            answerRpc = () => resolve({ prices: new Map([[TOKEN_1, 5]]), error: null })
+          })
+      )
+      const { fetch } = createPriceFetch({ price: 3 })
+      const controller = createRpcController(fetch)
+
+      const rpcCall = controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
+      // Let the request reach the RPC before the switch
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
+      isEnabled = true
+      const cenaCall = controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
+      answerRpc()
+
+      expect((await rpcCall).tokenData.size).toBe(0)
       expect((await cenaCall).tokenData.get(TOKEN_1)?.priceIn).toEqual([
         { baseCurrency: 'usd', price: 3 }
       ])
-      expect((await rpcModeCall).tokenData.get(TOKEN_1)?.priceIn).toEqual([
-        { baseCurrency: 'usd', price: 3 }
-      ])
-      expect(getRpcTokenPricesSpy).not.toHaveBeenCalled()
     })
   })
 

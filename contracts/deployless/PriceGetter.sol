@@ -67,6 +67,12 @@ interface ISlipstreamFactory {
   function getPool(address tokenA, address tokenB, int24 tickSpacing) external view returns (address);
 }
 
+/// Curve's stableswap-ng, twocrypto-ng and tricrypto-ng factories
+interface ICurveFactory {
+  /// The `i`th pool of the two coins, or no address once there are no more. Some revert instead.
+  function find_pool_for_coins(address from, address to, uint256 i) external view returns (address);
+}
+
 /**
  * Reads token prices from the chain alone: the native token's USD price from its Chainlink
  * feed, and each token's rate to the native token from 1inch's spot price aggregator, along with
@@ -81,6 +87,8 @@ contract PriceGetter {
   uint256 private constant MIN_TOKEN_GAS = 1_000_000;
   // Left for finishing the loop and returning the results once the tokens stop being checked
   uint256 private constant GAS_RESERVE = 500_000;
+  // The most Curve pools of two coins looked up in one factory, as each lookup costs gas
+  uint256 private constant MAX_CURVE_POOLS_PER_PAIR = 4;
 
   struct NativePrice {
     int256 answer;
@@ -97,7 +105,9 @@ contract PriceGetter {
     /// `getPool(tokenA, tokenB, stable)`, for both a stable and a volatile pool
     Solidly,
     /// `getPool(tokenA, tokenB, tickSpacing)`, for each tick spacing in `params`
-    Slipstream
+    Slipstream,
+    /// `find_pool_for_coins(tokenA, tokenB, i)`, for up to MAX_CURVE_POOLS_PER_PAIR pools
+    Curve
   }
 
   struct PoolFactory {
@@ -217,6 +227,22 @@ contract PriceGetter {
           uint256 reserve = getReserve(pool, pairedToken);
           if (reserve > deepest) deepest = reserve;
         } catch {}
+      }
+      return deepest;
+    }
+
+    if (poolFactory.kind == FactoryKind.Curve) {
+      for (uint256 i = 0; i < MAX_CURVE_POOLS_PER_PAIR; i++) {
+        try ICurveFactory(poolFactory.factory).find_pool_for_coins(token, pairedToken, i) returns (
+          address pool
+        ) {
+          if (pool == address(0)) break;
+
+          uint256 reserve = getReserve(pool, pairedToken);
+          if (reserve > deepest) deepest = reserve;
+        } catch {
+          break;
+        }
       }
       return deepest;
     }

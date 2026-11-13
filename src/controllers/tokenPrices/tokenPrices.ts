@@ -140,10 +140,12 @@ const getRequestInFlightKey = (chainId: bigint, address: string): string =>
  * the same 5-minute age, so they aren't requested again; NFT collection prices come only from
  * there and are read without ever being requested (`getCachedTokenData`).
  *
- * Prices are prices, wherever they come from: the cache holds them all, and a token answered by
- * one source is read from the cache after the user switches to the other, until it expires.
- * While opted out of the price API, nothing new is requested from it, and requests to the RPC
- * carry no Privacy Pools assets, as the RPC already sees the Privacy Pools calls.
+ * When the user switches the source (opts out of the price API or back in), the cache is
+ * emptied and the answers of the requests made before the switch are dropped, so that what the
+ * setting changed shows right away: no market data from the price API after opting out, and no
+ * gaps left by the RPC after opting back in. While opted out of the price API, nothing new is
+ * requested from it, and requests to the RPC carry no Privacy Pools assets, as the RPC already
+ * sees the Privacy Pools calls.
  */
 export class TokenPricesController extends EventEmitter {
   #fetch: Fetch
@@ -161,6 +163,15 @@ export class TokenPricesController extends EventEmitter {
 
   /** `${chainId}:${lowercased address}` -> the request in flight that asks for the token */
   #requestsInFlight = new Map<string, Promise<void>>()
+
+  /** The source the cache holds answers of. Null until the first call. */
+  #cacheSource: TokenPriceSource | null = null
+
+  /**
+   * Increased each time the cache is emptied, so that a request made before can tell that its
+   * answers are no longer wanted
+   */
+  #cacheVersion = 0
 
   constructor({
     fetch,
@@ -205,7 +216,7 @@ export class TokenPricesController extends EventEmitter {
     tokenAddresses: requestedAddresses,
     baseCurrency = 'usd'
   }: GetTokenDataParams): Promise<GetTokenDataResult> {
-    const source = this.#getSource()
+    const source = this.#syncSource()
     const tokenAddresses = getUniqueSortedAddresses(requestedAddresses)
     const callStartedAt = Date.now()
     const isFresh = (cachedAt: number) => callStartedAt - cachedAt <= TOKEN_PRICE_MAX_AGE_MS
@@ -281,6 +292,7 @@ export class TokenPricesController extends EventEmitter {
     address: string,
     baseCurrency: string = 'usd'
   ): TokenDataCacheValue | null {
+    this.#syncSource()
     const now = Date.now()
     const entry = this.#getCacheEntry(
       chainId,
@@ -302,6 +314,7 @@ export class TokenPricesController extends EventEmitter {
    * discovery anyway, so keeping the prices it returns sends nothing more.
    */
   setTokenData(chainId: bigint, entries: [address: string, tokenData: TokenDataCacheValue][]) {
+    this.#syncSource()
     const pricedEntries = entries.filter(([, tokenData]) => tokenData.priceIn.length > 0)
     if (!pricedEntries.length) return
 
@@ -316,6 +329,23 @@ export class TokenPricesController extends EventEmitter {
   /** Where new prices are requested from: cena, or the RPC when the user opted out of cena */
   #getSource(): TokenPriceSource {
     return this.#isTokenPricesEnabled() ? 'cena' : 'rpc'
+  }
+
+  /**
+   * Returns the current source, emptying the cache first if it changed since the cache was
+   * filled. The requests in flight are forgotten, and their answers dropped when they arrive
+   * (see `#cacheVersion`), so that the next call asks the new source.
+   */
+  #syncSource(): TokenPriceSource {
+    const source = this.#getSource()
+    if (this.#cacheSource !== null && this.#cacheSource !== source) {
+      this.#cacheByChainId.clear()
+      this.#requestsInFlight.clear()
+      this.#cacheVersion++
+    }
+    this.#cacheSource = source
+
+    return source
   }
 
   /** Whether the tokens of the network can be requested from the source */
@@ -392,10 +422,11 @@ export class TokenPricesController extends EventEmitter {
     const allTokens = getUniqueSortedAddresses([...tokenAddresses, ...privacyPoolsAssets])
     const inFlightKeys = allTokens.map((address) => getRequestInFlightKey(network.chainId, address))
 
+    const cacheVersion = this.#cacheVersion
     const request =
       source === 'cena'
-        ? this.#fetchAndCacheTokens(network, allTokens, baseCurrency)
-        : this.#readAndCacheRpcTokens(network, allTokens)
+        ? this.#fetchAndCacheTokens(network, allTokens, baseCurrency, cacheVersion)
+        : this.#readAndCacheRpcTokens(network, allTokens, cacheVersion)
     inFlightKeys.forEach((key) => this.#requestsInFlight.set(key, request))
 
     const forgetRequest = () => {
@@ -429,14 +460,22 @@ export class TokenPricesController extends EventEmitter {
   /**
    * Requests exactly the given tokens and caches every answer, including "no price". Pages that
    * succeed are cached even if another page fails, after which the first failure is thrown.
+   * Nothing is cached if the cache was emptied since the request was made (`cacheVersion`).
    */
-  async #fetchAndCacheTokens(network: Network, tokenAddresses: string[], baseCurrency: string) {
+  async #fetchAndCacheTokens(
+    network: Network,
+    tokenAddresses: string[],
+    baseCurrency: string,
+    cacheVersion: number
+  ) {
     const results = await Promise.allSettled(
       getTokenPriceRequests(network, tokenAddresses, baseCurrency).map(async (request) => ({
         request,
         body: await this.#fetchPrices(request.url)
       }))
     )
+    // Asked for before the user switched the source, so the answers are no longer wanted
+    if (cacheVersion !== this.#cacheVersion) return
 
     const cache = this.#getOrCreateCache(network.chainId)
     const cachedAt = Date.now()
@@ -465,12 +504,15 @@ export class TokenPricesController extends EventEmitter {
    * Reads the prices of exactly the given tokens from the network's RPC and caches every answer,
    * including "no price". Pages that succeed are cached even if another page fails, after which
    * its error is thrown, as with cena. Throws, caching nothing, if the network couldn't be priced.
+   * Nothing is cached if the cache was emptied since the request was made (`cacheVersion`).
    */
-  async #readAndCacheRpcTokens(network: Network, tokenAddresses: string[]) {
+  async #readAndCacheRpcTokens(network: Network, tokenAddresses: string[], cacheVersion: number) {
     const provider = await this.#getProvider?.(network.chainId)
     if (!provider) throw new Error(`Not connected to ${network.name} to read token prices from`)
 
     const { prices, error } = await getRpcTokenPrices({ provider, network, tokenAddresses })
+    // Asked for before the user switched the source, so the answers are no longer wanted
+    if (cacheVersion !== this.#cacheVersion) return
 
     const cache = this.#getOrCreateCache(network.chainId)
     const cachedAt = Date.now()
