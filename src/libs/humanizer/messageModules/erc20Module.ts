@@ -15,8 +15,14 @@ export const erc20Module: HumanizerTypedMessageModule = (message: Message) => {
   )
     return { fullVisualization: [] }
 
+  // Only the fields declared in `types.Permit` are signed. Extra keys in
+  // `message` are ignored by the signature, so they must not pick the branch
+  const permitFieldNames = tm.types.Permit.map((field) => field.name)
+  const isPermitDeclaringFields = (fieldNames: string[]) =>
+    fieldNames.every((fieldName) => permitFieldNames.includes(fieldName))
+
   // EIP-2612 permit
-  if (['owner', 'spender', 'value', 'nonce', 'deadline'].every((i) => i in tm.message)) {
+  if (isPermitDeclaringFields(['owner', 'spender', 'value', 'nonce', 'deadline'])) {
     return {
       fullVisualization: [
         getAction('Grant approval'),
@@ -32,7 +38,7 @@ export const erc20Module: HumanizerTypedMessageModule = (message: Message) => {
   // DAI-style permit (pre EIP-2612): no `value`, only a boolean `allowed` that
   // grants an unlimited allowance when true and revokes it when false.
   // `expiry` of 0 means the permit never expires
-  if (['holder', 'spender', 'nonce', 'expiry', 'allowed'].every((i) => i in tm.message)) {
+  if (isPermitDeclaringFields(['holder', 'spender', 'nonce', 'expiry', 'allowed'])) {
     const isGranting = Boolean(tm.message.allowed)
     if (!isGranting)
       return {
