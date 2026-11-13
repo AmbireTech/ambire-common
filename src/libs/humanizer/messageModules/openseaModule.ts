@@ -26,7 +26,7 @@ export const openseaLoginMessageModule: HumanizerPlainTextMessageModule = (messa
         messageAsText = toUtf8String(message.content.message)
       } catch (e) {
         console.log("open sea module: couldn't do toUtf8String on message")
-        return { fullVisualization: [] }
+        return null
       }
     }
     const OPENSEA_LOGIN_MESSAGE_PREFIX = 'Welcome to OpenSea!'
@@ -58,7 +58,7 @@ export const openseaLoginMessageModule: HumanizerPlainTextMessageModule = (messa
       }
     }
   }
-  return { fullVisualization: [] }
+  return null
 }
 
 /**
@@ -71,7 +71,7 @@ export const humanizeSeaportOrder: HumanizerTypedMessageFunction = (message) => 
     message.content.domain.version !== '1.6' ||
     !SEAPORT_ADDRESS.includes(message.content.domain.verifyingContract || '')
   )
-    return { fullVisualization: [] }
+    return null
 
   const considerations = message.content.message.consideration
   const offer = message.content.message.offer

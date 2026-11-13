@@ -93,8 +93,6 @@ function getWitnessRecipient(message: HumanizerTypedMessage): string | undefined
   return recipientFieldName ? witness[recipientFieldName] : undefined
 }
 
-const EMPTY_HUMANIZATION: HumanizerMessageResult = { fullVisualization: [] }
-
 const PERMIT_2_CONTRACTS = [
   PERMIT_2_ADDRESS.toLowerCase(),
   PANCAKE_SWAP_PERMIT_2_ADDRESS.toLowerCase()
@@ -112,16 +110,14 @@ const isPermit2Message = (message: HumanizerTypedMessage): boolean => {
  * `PermitBatchWitnessTransferFrom` (many tokens).
  */
 export const humanizePermit2WitnessTransfer: HumanizerTypedMessageFunction = (message) => {
-  if (!isPermit2Message(message)) return EMPTY_HUMANIZATION
+  if (!isPermit2Message(message)) return null
 
   const { permitted, spender, nonce, deadline } = message.content.message
-  if ([permitted, spender, nonce, deadline].some((field) => field === undefined))
-    return EMPTY_HUMANIZATION
+  if ([permitted, spender, nonce, deadline].some((field) => field === undefined)) return null
 
   const permissions: TokenPermissions[] = Array.isArray(permitted) ? permitted : [permitted]
   const completePermissions = permissions.filter(isCompletePermission)
-  if (!completePermissions.length || completePermissions.length !== permissions.length)
-    return EMPTY_HUMANIZATION
+  if (!completePermissions.length || completePermissions.length !== permissions.length) return null
 
   const tokenVisualizations = completePermissions
     .map(({ token, amount }) => [getToken(token, amount), getLabel('and')])
@@ -163,12 +159,12 @@ export const humanizePermit2WitnessTransfer: HumanizerTypedMessageFunction = (me
 
 /** Humanizes a Permit2 signature transfer of one token (primary type `PermitTransferFrom`) */
 export const humanizePermit2Transfer: HumanizerTypedMessageFunction = (message) => {
-  if (!isPermit2Message(message)) return EMPTY_HUMANIZATION
+  if (!isPermit2Message(message)) return null
 
   const { spender, nonce, deadline, permitted } = message.content.message
-  if ([spender, nonce, deadline, permitted].some((a) => a === undefined)) return EMPTY_HUMANIZATION
+  if ([spender, nonce, deadline, permitted].some((a) => a === undefined)) return null
   const { token, amount } = permitted
-  if (token === undefined || amount === undefined) return EMPTY_HUMANIZATION
+  if (token === undefined || amount === undefined) return null
   return {
     fullVisualization: [
       getAction('Approve'),
@@ -183,8 +179,8 @@ export const humanizePermit2Transfer: HumanizerTypedMessageFunction = (message) 
 const humanizePermit2Allowance = (
   message: HumanizerTypedMessage,
   details: PermitDetails[]
-): HumanizerMessageResult => {
-  if (!details.length || !details.every(isCompletePermission)) return EMPTY_HUMANIZATION
+): HumanizerMessageResult | null => {
+  if (!details.length || !details.every(isCompletePermission)) return null
 
   const { spender, sigDeadline } = message.content.message
   const permitVisualizations = details
@@ -209,7 +205,7 @@ const humanizePermit2Allowance = (
 /** Humanizes a Permit2 allowance for one token (primary type `PermitSingle`) */
 export const humanizePermit2Single: HumanizerTypedMessageFunction = (message) => {
   const { details } = message.content.message
-  if (!isPermit2Message(message) || !details || Array.isArray(details)) return EMPTY_HUMANIZATION
+  if (!isPermit2Message(message) || !details || Array.isArray(details)) return null
 
   return humanizePermit2Allowance(message, [details])
 }
@@ -217,7 +213,7 @@ export const humanizePermit2Single: HumanizerTypedMessageFunction = (message) =>
 /** Humanizes a Permit2 allowance for many tokens (primary type `PermitBatch`) */
 export const humanizePermit2Batch: HumanizerTypedMessageFunction = (message) => {
   const { details } = message.content.message
-  if (!isPermit2Message(message) || !Array.isArray(details)) return EMPTY_HUMANIZATION
+  if (!isPermit2Message(message) || !Array.isArray(details)) return null
 
   return humanizePermit2Allowance(message, details)
 }

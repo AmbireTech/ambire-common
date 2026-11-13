@@ -1,7 +1,6 @@
 import { isAddress, isHex, zeroAddress } from 'viem'
 
 import {
-  HumanizerMessageResult,
   HumanizerTypedMessage,
   HumanizerTypedMessageFunction,
   HumanizerVisualization
@@ -30,8 +29,6 @@ const getOrderUidVisualization = (
   ]
 }
 
-const EMPTY_HUMANIZATION: HumanizerMessageResult = { fullVisualization: [] }
-
 /** Tells if the message is signed for the CoW Protocol settlement contract */
 const isCowSwapMessage = (message: HumanizerTypedMessage): boolean => {
   const { domain } = message.content
@@ -48,10 +45,10 @@ const isCowSwapMessage = (message: HumanizerTypedMessage): boolean => {
 /** Humanizes the cancellation of CoW Swap orders (primary type `OrderCancellations`) */
 export const humanizeCowSwapOrderCancellations: HumanizerTypedMessageFunction = (message) => {
   const tm = message.content
-  if (!isCowSwapMessage(message) || !tm.types.OrderCancellations) return EMPTY_HUMANIZATION
+  if (!isCowSwapMessage(message) || !tm.types.OrderCancellations) return null
 
   const { orderUids } = tm.message
-  if (!Array.isArray(orderUids) || !orderUids.length) return EMPTY_HUMANIZATION
+  if (!Array.isArray(orderUids) || !orderUids.length) return null
 
   return {
     fullVisualization: [
@@ -67,7 +64,7 @@ export const humanizeCowSwapOrderCancellations: HumanizerTypedMessageFunction = 
 /** Humanizes a CoW Swap order (primary type `Order`) */
 export const humanizeCowSwapOrder: HumanizerTypedMessageFunction = (message) => {
   const tm = message.content
-  if (!isCowSwapMessage(message) || !tm.types.Order) return EMPTY_HUMANIZATION
+  if (!isCowSwapMessage(message) || !tm.types.Order) return null
 
   const {
     sellToken,
@@ -93,7 +90,7 @@ export const humanizeCowSwapOrder: HumanizerTypedMessageFunction = (message) => 
     validTo === null ||
     !['buy', 'sell'].includes(kind)
   ) {
-    return EMPTY_HUMANIZATION
+    return null
   }
 
   const fullVisualization: HumanizerVisualization[] =

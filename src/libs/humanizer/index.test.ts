@@ -18,6 +18,7 @@ import { getCowSwapOrderUid } from '../../services/cowswap/helper'
 import { AccountOp } from '../accountOp/accountOp'
 import { EMPTY_ERC7730_KNOWN, Erc7730CallDescriptors, resolveErc7730Descriptors } from './erc7730'
 import { humanizeAccountOp, humanizeMessage } from './index'
+import * as erc20Module from './messageModules/erc20Module'
 import {
   erc20TransferAbi,
   erc20TransferFromAbi,
@@ -3729,6 +3730,63 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     })
+  })
+
+  test('shows the ERC-7730 descriptor when the typed message humanizer throws', async () => {
+    const moneriumEure = '0x39b8b6385416f4ca36a20319f70d28621895279d'
+    const permitMessage = {
+      fromRequestId: 1,
+      accountAddr: '0xd8293ad21678c6f09da139b4b62d38e514a03b78',
+      content: {
+        kind: 'typedMessage',
+        types: {
+          Permit: [
+            { name: 'owner', type: 'address' },
+            { name: 'spender', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' }
+          ]
+        },
+        domain: {
+          name: 'Monerium EURe',
+          version: '1',
+          chainId: '0x1',
+          verifyingContract: moneriumEure
+        },
+        message: {
+          owner: '0xd8293ad21678c6f09da139b4b62d38e514a03b78',
+          spender: address2,
+          value: '1',
+          nonce: '0',
+          deadline: '1781335603'
+        },
+        primaryType: 'Permit'
+      },
+      signature: null,
+      chainId: 1n
+    }
+    const callRelayer = jest.fn(async () => ({ success: true, data: {}, errorState: [] }))
+    const descriptor = await getTestErc7730MessageDescriptor(permitMessage as any, callRelayer)
+    const humanizeErc20PermitSpy = jest
+      .spyOn(erc20Module, 'humanizeErc20Permit')
+      .mockImplementation(() => {
+        throw new Error('humanizer failed')
+      })
+    const { restore } = suppressConsole()
+
+    try {
+      const irMessage = humanizeMessage(permitMessage as any, {
+        erc7730Descriptor: descriptor || undefined
+      })
+
+      expect(humanizeErc20PermitSpy).toHaveBeenCalledTimes(1)
+      expect(console.error).toHaveBeenCalledTimes(1)
+      expect(irMessage.fullVisualization?.[0]).toMatchObject({ type: 'erc7730' })
+    } finally {
+      humanizeErc20PermitSpy.mockRestore()
+      restore()
+    }
   })
 
   test('prioritizes descriptor EIP-712 humanization over local modules', async () => {

@@ -15,5 +15,5 @@ export const humanizeEntryPointAuthorization: HumanizerTypedMessageFunction = (m
         getAddressVisualization(message.accountAddr)
       ]
     }
-  return { fullVisualization: [] }
+  return null
 }

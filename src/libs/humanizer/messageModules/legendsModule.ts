@@ -6,7 +6,7 @@ import { getAction, getAddressVisualization, getLabel } from '../utils'
 
 /** Humanizes the message that links an account to Ambire Rewards */
 export const legendsMessageModule: HumanizerPlainTextMessageModule = (message) => {
-  if (typeof message.content.message !== 'string') return { fullVisualization: [] }
+  if (typeof message.content.message !== 'string') return null
   let messageAsText: Hex | string = message.content.message
   if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
     messageAsText = toUtf8String(toUtf8Bytes(message.content.message))
@@ -26,5 +26,5 @@ export const legendsMessageModule: HumanizerPlainTextMessageModule = (message) =
         getLabel('for Ambire Rewards', true)
       ]
     }
-  return { fullVisualization: [] }
+  return null
 }

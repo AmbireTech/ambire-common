@@ -4,7 +4,9 @@ import { beforeEach, describe, expect } from '@jest/globals'
 
 import { Message, TypedMessageUserRequest } from '../../interfaces/userRequest'
 import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../userOperation/userOperation'
+import { suppressConsole } from '../../../test/helpers/console'
 import { humanizeMessage } from './index'
+import { HumanizerTypedMessage } from './interfaces'
 import { getTypedMessageHumanizer } from './messageModules'
 import { compareVisualizations } from './testHelpers'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
@@ -268,6 +270,23 @@ const ENS_UPLOAD_FIELDS = [
   { name: 'expiry', type: 'string' },
   { name: 'name', type: 'string' },
   { name: 'hash', type: 'string' }
+]
+
+/** Primary types that have a humanizer in the typed message record */
+const PRIMARY_TYPES_WITH_HUMANIZER = [
+  'Permit',
+  'PermitSingle',
+  'PermitBatch',
+  'PermitTransferFrom',
+  'PermitWitnessTransferFrom',
+  'PermitBatchWitnessTransferFrom',
+  'Order',
+  'OrderCancellations',
+  'OrderComponents',
+  'SafeTx',
+  'Vote',
+  'Upload',
+  'AmbireOperation'
 ]
 
 let messageTemplate: Message
@@ -993,23 +1012,94 @@ describe('typed message tests', () => {
   )
 
   test('every primary type in the record has a humanizer', () => {
-    ;[
-      'Permit',
-      'PermitSingle',
-      'PermitBatch',
-      'PermitTransferFrom',
-      'PermitWitnessTransferFrom',
-      'PermitBatchWitnessTransferFrom',
-      'Order',
-      'OrderCancellations',
-      'OrderComponents',
-      'SafeTx',
-      'Vote',
-      'Upload',
-      'AmbireOperation'
-    ].forEach((primaryType) =>
+    PRIMARY_TYPES_WITH_HUMANIZER.forEach((primaryType) =>
       expect(getTypedMessageHumanizer(primaryType)).toBeInstanceOf(Function)
     )
+  })
+
+  test.each(PRIMARY_TYPES_WITH_HUMANIZER)(
+    'the %s humanizer returns null, not an empty result, for a message it cannot humanize',
+    (primaryType) => {
+      // No verifying contract, no known domain name, no fields: no humanizer knows it
+      const unknownMessage: HumanizerTypedMessage = {
+        fromRequestId: 'randomActionId',
+        accountAddr: address1,
+        chainId: 1n,
+        signature: null,
+        content: {
+          kind: 'typedMessage',
+          domain: { name: 'random contract', version: '1', chainId: 1n },
+          types: { EIP712Domain: [], [primaryType]: [] },
+          primaryType,
+          message: {}
+        }
+      }
+      expect(getTypedMessageHumanizer(primaryType)!(unknownMessage)).toBeNull()
+    }
+  )
+
+  test.each([
+    { primaryType: 'PermitSingle', details: [{ token: WETH_ADDRESS, amount: 1n }] },
+    { primaryType: 'PermitBatch', details: { token: WETH_ADDRESS, amount: 1n } }
+  ])(
+    'a $primaryType with the wrong shape of details is not humanized',
+    ({ primaryType, details }) => {
+      const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
+      content.types = {
+        EIP712Domain: [],
+        [primaryType]: [{ name: 'details', type: 'PermitDetails' }]
+      }
+      content.primaryType = primaryType
+      content.domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+      messageTemplate.content.message = { details, spender: address2, sigDeadline: 968187600n }
+      expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+    }
+  )
+
+  test('a Permit that declares the ERC-20 and the ERC-721 fields is shown as an NFT permit', () => {
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
+      EIP712Domain: [],
+      Permit: [...ERC2612_PERMIT_FIELDS, { name: 'tokenId', type: 'uint256' }]
+    }
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = NFT_ADDRESS
+    messageTemplate.content.message = { ...typedMessages.erc20[0]!, tokenId: 1n }
+    compareVisualizations(humanize(messageTemplate).fullVisualization, [
+      getAction('Permit use of'),
+      getToken(NFT_ADDRESS, 1n),
+      getLabel('to'),
+      getAddressVisualization(address2),
+      getDeadline(968187600n)
+    ])
+  })
+
+  test('a typed message humanizer that throws gives no visualization and does not break humanizeMessage', () => {
+    const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    content.domain = {
+      name: 'Gnosis Protocol',
+      version: 'v2',
+      chainId: 1n,
+      verifyingContract: '0x9008D19f58AAbD9eD0D60971565AA8510560ab41'
+    }
+    content.types = { EIP712Domain: [], Order: [{ name: 'sellAmount', type: 'uint256' }] }
+    content.primaryType = 'Order'
+    // `BigInt('not a number')` throws inside the CoW Swap humanizer
+    messageTemplate.content.message = {
+      sellToken: WETH_ADDRESS,
+      buyToken: DAI_ADDRESS,
+      sellAmount: 'not a number',
+      buyAmount: '1',
+      validTo: '1',
+      kind: 'sell'
+    }
+    const { restore } = suppressConsole()
+    try {
+      expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+      expect(console.error).toHaveBeenCalledTimes(1)
+    } finally {
+      restore()
+    }
   })
 })
 
@@ -1041,6 +1131,21 @@ describe('plain text and authorization messages', () => {
   test('a plain text message that reads like a typed message is not humanized as one', () => {
     const { fullVisualization } = humanize(getPlainTextMessage('Permit'))
     compareVisualizations(fullVisualization, [getAction('Message: '), getLabel('Permit')])
+  })
+
+  test('a plain text module that throws is skipped, and no visualization is given', () => {
+    // 0xff is not valid UTF-8, so the modules that decode the text throw
+    const { restore } = suppressConsole()
+    try {
+      const irMessage = humanizeMessage({
+        ...getPlainTextMessage(''),
+        content: { kind: 'message', message: '0xff' }
+      })
+      expect(irMessage.fullVisualization).toBeUndefined()
+      expect(console.error).toHaveBeenCalled()
+    } finally {
+      restore()
+    }
   })
 
   test('an EIP-7702 authorization uses its own humanizer', () => {

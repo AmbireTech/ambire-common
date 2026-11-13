@@ -20,23 +20,23 @@ import { zealyMessageModule } from './zealyModule'
 import { isTypeDeclaringFields } from '../utils'
 
 /**
- * Runs the plain text modules in order and returns the first result with a visualization.
+ * Runs the plain text modules in order and returns the first result that is not null.
  * A module that throws is logged and skipped, so it does not block the others.
  */
 export const getFirstHumanization = <TMessage>(
-  humanizers: ((message: TMessage) => HumanizerMessageResult)[],
+  humanizers: ((message: TMessage) => HumanizerMessageResult | null)[],
   message: TMessage
-): HumanizerMessageResult => {
+): HumanizerMessageResult | null => {
   for (const humanize of humanizers) {
     try {
       const humanization = humanize(message)
-      if (humanization.fullVisualization?.length) return humanization
+      if (humanization) return humanization
     } catch (error) {
       console.error(error)
     }
   }
 
-  return {}
+  return null
 }
 
 /**
@@ -54,7 +54,7 @@ const humanizePermit: HumanizerTypedMessageFunction = (message) =>
  * the primary type and the types it references are signed, so the humanizer is
  * chosen from it, never from other entries in `types` or keys in `message`.
  */
-export const typedMessageHumanizers: Readonly<Record<string, HumanizerTypedMessageFunction>> = {
+const typedMessageHumanizers: Readonly<Record<string, HumanizerTypedMessageFunction>> = {
   Permit: humanizePermit,
   PermitSingle: humanizePermit2Single,
   PermitBatch: humanizePermit2Batch,

@@ -17,5 +17,5 @@ export const humanizeSnapshotVote: HumanizerTypedMessageFunction = (message) => 
       ]
     }
   }
-  return { fullVisualization: [] }
+  return null
 }

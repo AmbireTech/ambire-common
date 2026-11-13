@@ -22,8 +22,7 @@ const DAI_PERMIT_FIELD_NAMES = ['holder', 'spender', 'nonce', 'expiry', 'allowed
  */
 export const humanizeErc20Permit: HumanizerTypedMessageFunction = (message) => {
   const tm = message.content
-  if (!tm.types.Permit || !tm.message || !tm.domain.verifyingContract)
-    return { fullVisualization: [] }
+  if (!tm.types.Permit || !tm.message || !tm.domain.verifyingContract) return null
 
   const token = tm.domain.verifyingContract
 
@@ -67,5 +66,5 @@ export const humanizeErc20Permit: HumanizerTypedMessageFunction = (message) => {
     }
   }
 
-  return { fullVisualization: [] }
+  return null
 }

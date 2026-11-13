@@ -20,7 +20,7 @@ export const humanizeSafeTx: HumanizerTypedMessageFunction = (message) => {
     nonce
   )
   const fullVisualization: HumanizerVisualization[] = []
-  if (!isAddress(verifyingContract)) return {}
+  if (!isAddress(verifyingContract)) return null
   fullVisualization.push(
     ...[
       getAction('Safe{WALLET} transaction'),

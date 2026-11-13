@@ -51,5 +51,5 @@ export const humanizeErc721Permit: HumanizerTypedMessageFunction = (message) => 
       )
     }
   }
-  return { fullVisualization: [] }
+  return null
 }

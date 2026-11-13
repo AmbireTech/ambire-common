@@ -18,5 +18,5 @@ export const humanizeEnsUpload: HumanizerTypedMessageFunction = (message) => {
         ]
       }
   }
-  return { fullVisualization: [] }
+  return null
 }

@@ -8,14 +8,7 @@ import {
   humanizeCallWithErc7730,
   humanizeMessageWithErc7730
 } from './erc7730'
-import {
-  HumanizerAuthorizationMessage,
-  HumanizerMessageResult,
-  HumanizerPlainTextMessage,
-  HumanizerTypedMessage,
-  IrCall,
-  IrMessage
-} from './interfaces'
+import { HumanizerMessageResult, IrCall, IrMessage } from './interfaces'
 import {
   eip7702AuthorizationModule,
   getFirstHumanization,
@@ -24,45 +17,31 @@ import {
 } from './messageModules'
 import { dedupeWarnings } from './utils'
 
-const isTypedMessage = (message: Message): message is HumanizerTypedMessage =>
-  message.content.kind === 'typedMessage'
-
-const isPlainTextMessage = (message: Message): message is HumanizerPlainTextMessage =>
-  message.content.kind === 'message'
-
-const isAuthorizationMessage = (message: Message): message is HumanizerAuthorizationMessage =>
-  message.content.kind === 'authorization-7702'
-
-/**
- * Returns the result only when it has a visualization. A humanizer that does not
- * recognize the message returns an empty visualization, and the UI must treat that
- * as "not humanized" (e.g. it then asks the user to read the raw message before
- * signing). An empty array is truthy, so it must not reach the UI.
- */
-const keepOnlyVisualizedResult = (result: HumanizerMessageResult): HumanizerMessageResult =>
-  result.fullVisualization?.length ? result : {}
-
 /**
  * Humanizes a message with the message modules. A typed message uses only the
  * humanizer for its primary type, with no fallback to other typed humanizers.
  * A plain text message uses the first plain text module that matches. Other
  * kinds (e.g. sign in with Ethereum) are not humanized here.
  */
-const humanizeMessageWithModules = (message: Message): HumanizerMessageResult => {
+const humanizeMessageWithModules = (message: Message): HumanizerMessageResult | null => {
+  // `message.content.kind` narrows only `content`, not `message`. A new object with
+  // the narrowed `content` gives each humanizer its message type without a cast
+  const { content } = message
   try {
-    if (isTypedMessage(message)) {
-      const humanizeTypedMessage = getTypedMessageHumanizer(message.content.primaryType)
-      return humanizeTypedMessage ? keepOnlyVisualizedResult(humanizeTypedMessage(message)) : {}
+    if (content.kind === 'typedMessage') {
+      const humanizeTypedMessage = getTypedMessageHumanizer(content.primaryType)
+      return humanizeTypedMessage ? humanizeTypedMessage({ ...message, content }) : null
     }
-    if (isPlainTextMessage(message)) return getFirstHumanization(plainTextMessageModules, message)
-    if (isAuthorizationMessage(message))
-      return keepOnlyVisualizedResult(eip7702AuthorizationModule(message))
+    if (content.kind === 'message')
+      return getFirstHumanization(plainTextMessageModules, { ...message, content })
+    if (content.kind === 'authorization-7702')
+      return eip7702AuthorizationModule({ ...message, content })
   } catch (error) {
     // A humanizer that throws shows no visualization, but the ERC-7730 descriptor can still be used
     console.error(error)
   }
 
-  return {}
+  return null
 }
 
 type HumanizeAccountOpOptions = {
@@ -119,8 +98,10 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
   const message = parse(stringify(_message))
 
   try {
+    // Null means no module could humanize the message, so it has no visualization
+    // and the UI shows the raw message
     const { fullVisualization, warnings, canHideDropdownArrow } =
-      humanizeMessageWithModules(message)
+      humanizeMessageWithModules(message) ?? {}
 
     if (options?.erc7730Descriptor) {
       const erc7730Message = humanizeMessageWithErc7730(message, options.erc7730Descriptor)
