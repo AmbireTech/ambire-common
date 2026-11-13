@@ -127,16 +127,14 @@ export const privacyPoolsErrors = {
       'Another transfer from a Privacy Pools account is still in progress. Please wait for it to finish.',
       'a withdrawal is already in flight'
     ),
-  withdrawalDepositUnavailable: () =>
-    expectedError(
-      'This deposit does not have enough left for this amount. Please send less, or pick another deposit.',
-      'the chosen note is missing, not approved or too small'
-    ),
-  withdrawalOtherDepositPicked: () =>
-    expectedError(
-      'This amount cannot be sent from this deposit yet. Please send all of it, or pick another deposit.',
-      'the SDK would spend another note than the chosen one'
-    ),
+  withdrawalDepositUnavailable: (sdkError?: Error) =>
+    new EmittableError({
+      message:
+        'This deposit does not have enough left for this amount. Please send less, or pick another deposit.',
+      level: 'expected',
+      error:
+        sdkError ?? new Error('privacyPools: the chosen note is missing, not approved or too small')
+    }),
   withdrawalFeeAboveAmount: (sdkError: Error) =>
     new EmittableError({
       message:
@@ -155,6 +153,18 @@ export const privacyPoolsErrors = {
     expectedError(
       'The price for sending this ran out while the transfer was being prepared. Please try again.',
       'the relayer quote expired while proving'
+    ),
+  withdrawalNotAccepted: (sdkError: Error) =>
+    new EmittableError({
+      message: 'The transfer was not sent, so nothing left your account. Please try again.',
+      level: 'expected',
+      error: sdkError
+    }),
+  withdrawalReverted: (sdkError: Error) =>
+    majorError(
+      'The transfer did not go through. Please check your balance before you send it again.',
+      sdkError,
+      'the withdrawal userOp reverted'
     ),
   withdrawalNotReady: () =>
     expectedError('There is no transfer ready to send.', 'no prepared withdrawal'),

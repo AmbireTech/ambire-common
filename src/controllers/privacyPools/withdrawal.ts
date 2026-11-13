@@ -2,6 +2,8 @@ import { isAddress } from 'ethers'
 
 import {
   createPPv1Broadcaster,
+  PaymasterBroadcastError,
+  PPv1NoteUnavailableError,
   PPv1UnshieldOptions,
   PrivacyPoolsV1Protocol
 } from '@kohaku-eth/privacy-pools'
@@ -37,8 +39,7 @@ import {
 import { getPrivacyPoolsWithdrawalPrivacy } from '../../libs/privacyPools/leaks/leaks'
 import {
   findPrivacyPoolsDepositLabel,
-  findSendablePrivacyPoolsNote,
-  getSdkPickedPrivacyPoolsNote
+  findSendablePrivacyPoolsNote
 } from '../../libs/privacyPools/notes'
 import {
   PrivacyPoolsPaymasterWithdrawal,
@@ -107,6 +108,10 @@ const NO_RELAYER_QUOTE_SDK_MESSAGES = [
 
 /** Makes the SDK errors the user can act on readable; passes anything else through as an `Error`. */
 const toReadableWithdrawalError = (error: unknown) => {
+  // The SDK's sync before proving found the chosen deposit can no longer pay
+  if (error instanceof PPv1NoteUnavailableError)
+    return privacyPoolsErrors.withdrawalDepositUnavailable(error)
+
   const sdkError = toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
   if (sdkError.message.includes(FEE_ABOVE_AMOUNT_SDK_MESSAGE))
     return privacyPoolsErrors.withdrawalFeeAboveAmount(sdkError)
@@ -114,6 +119,18 @@ const toReadableWithdrawalError = (error: unknown) => {
     return privacyPoolsErrors.withdrawalRelayersUnavailable(sdkError)
 
   return sdkError
+}
+
+/**
+ * What the user reads when sending through Kohaku fails in a way the SDK can tell apart. Anything
+ * else, as a withdrawal that may still land, is read as not confirmed yet.
+ */
+const toReadableBroadcastError = (error: unknown) => {
+  if (!(error instanceof PaymasterBroadcastError)) return error
+  if (error.failure === 'not-accepted') return privacyPoolsErrors.withdrawalNotAccepted(error)
+  if (error.failure === 'reverted') return privacyPoolsErrors.withdrawalReverted(error)
+
+  return error
 }
 
 /**
@@ -348,33 +365,38 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
         signal
       )
 
-      const spentDeposit = { tokenAddress, depositNumber, amount }
-      // Before proving, as a proof takes a while. Against the notes of the last sync, which the
-      // SDK's own sync rarely changes - checked again against its notes after proving, also when
-      // the chain has not synced yet.
-      const syncedNotes = this.#getNotes(seedId, chainId)
-      if (syncedNotes) this.#assertSdkSpendsDeposit(syncedNotes, spentDeposit)
-
       const protocol = await this.#registry.getProtocol(chainId, seedId)
       throwIfWithdrawalCancelled(signal)
+
+      // The deposit is told to the SDK by its label, read from the account's notes: synced here
+      // if the chain never was since the start, as after a restart with the form kept
+      if (!this.#getNotes(seedId, chainId))
+        await untilWithdrawalCancelled(this.#sync.queue(chainId, seedId), signal)
+
+      // Before proving, as a proof takes a while. Against the notes of the last sync, which the
+      // SDK's own sync rarely changes - the SDK refuses the deposit itself if its sync before
+      // proving finds it can no longer pay.
+      const noteLabel = this.#findSpentDeposit(this.#getNotes(seedId, chainId) ?? [], {
+        tokenAddress,
+        depositNumber,
+        amount
+      })
 
       // Checked by `isAddress` above
       const sdkRecipient = recipient as Hex
       // Through Kohaku it prices gas, proves and signs the userOp; through 0xBow it takes the
-      // cheapest relayer's quote and proves against it. Spends one deposit, which the SDK picks
-      // itself - checked to be the chosen one.
+      // cheapest relayer's quote and proves against it. Spends only the chosen deposit.
       const privateOp = await protocol.prepareUnshield(
         {
           asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
           amount
         },
         sdkRecipient,
-        getUnshieldOptions(broadcaster, sdkRecipient)
+        { ...getUnshieldOptions(broadcaster, sdkRecipient), label: noteLabel }
       )
 
       // The SDK synced before proving, so its notes may be newer than the last sync's
       const provedNotes = await readPrivacyPoolsNotes(protocol, false)
-      const noteLabel = this.#assertSdkSpendsDeposit(provedNotes, spentDeposit)
 
       const proved = this.#readProvedWithdrawal({
         broadcaster,
@@ -480,15 +502,8 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     })
   }
 
-  /**
-   * Throws unless the chosen deposit of `notes` can pay `amount`, and the SDK, given `amount`,
-   * spends it: it picks the deposit itself and cannot be told which (see
-   * `getSdkPickedPrivacyPoolsNote`). Returns the deposit's label.
-   *
-   * TODO: once the SDK takes the deposit to spend, pass it the chosen one and drop the check of
-   * its pick.
-   */
-  #assertSdkSpendsDeposit(
+  /** The label of the chosen deposit of `notes`. Throws unless it can pay `amount`. */
+  #findSpentDeposit(
     notes: PrivacyPoolsNote[],
     {
       tokenAddress,
@@ -502,9 +517,6 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       !findSendablePrivacyPoolsNote(notes, tokenAddress, noteLabel, amount)
     )
       throw privacyPoolsErrors.withdrawalDepositUnavailable()
-
-    if (getSdkPickedPrivacyPoolsNote(notes, tokenAddress, amount)?.label !== noteLabel)
-      throw privacyPoolsErrors.withdrawalOtherDepositPicked()
 
     return noteLabel
   }
@@ -597,7 +609,12 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
           ? (getChainConfig(operation.chainId).relayers ?? {})
           : {}
       const broadcaster = createPPv1Broadcaster(host, { broadcasterUrl })
-      const { requestId } = await broadcaster.broadcast(pendingWithdrawal.privateOp)
+      const response = await broadcaster.broadcast(pendingWithdrawal.privateOp)
+      // Through Kohaku it resolves once the bundler accepts the withdrawal, and through 0xBow once
+      // it landed - so wait for it to land, as the sheet reads success as sent
+      if ('wait' in response) await response.wait()
+      // The userOp hash through Kohaku
+      const { requestId } = response
 
       const isCurrentOperation = this.#updateOperation({
         ...operation,
@@ -621,7 +638,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       // Silent: the confirmation sheet is open and shows the error itself
       this.#failOperation(
         { ...operation, phase: 'broadcasting' },
-        error,
+        toReadableBroadcastError(error),
         'We could not confirm the transfer yet. Check your balance before you send it again.',
         'silent'
       )

@@ -4,8 +4,7 @@ import { ZERO_ADDRESS } from '../../services/socket/constants'
 import {
   findPrivacyPoolsDepositLabel,
   findSendablePrivacyPoolsNote,
-  getPrivacyPoolsSendableDeposits,
-  getSdkPickedPrivacyPoolsNote
+  getPrivacyPoolsSendableDeposits
 } from './notes'
 
 const DEPOSITOR: Hex = '0x00000000000000000000000000000000000000d1'
@@ -59,35 +58,6 @@ describe('findSendablePrivacyPoolsNote', () => {
 
     expect(findSendablePrivacyPoolsNote([chosen], ZERO_ADDRESS, chosen.label, 0n)).toBeUndefined()
     expect(findSendablePrivacyPoolsNote([chosen], ZERO_ADDRESS, chosen.label, -1n)).toBeUndefined()
-  })
-})
-
-describe('getSdkPickedPrivacyPoolsNote', () => {
-  test('picks the deposit with the least left that covers the amount', () => {
-    const smallest = note({ amount: 50n })
-    const notes = [note({ amount: 500n }), smallest, note({ amount: 20n })]
-
-    expect(getSdkPickedPrivacyPoolsNote(notes, ZERO_ADDRESS, 40n)).toBe(smallest)
-    expect(getSdkPickedPrivacyPoolsNote(notes, ZERO_ADDRESS, 50n)).toBe(smallest)
-  })
-
-  test('picks a pending deposit too, as the SDK does not skip them', () => {
-    const pending = note({ amount: 50n, approval: 'pending' })
-
-    expect(getSdkPickedPrivacyPoolsNote([note(), pending], ZERO_ADDRESS, 40n)).toBe(pending)
-  })
-
-  test('keeps the listed order on ties', () => {
-    const first = note({ amount: 60n })
-    const notes = [first, note({ amount: 60n })]
-
-    expect(getSdkPickedPrivacyPoolsNote(notes, ZERO_ADDRESS, 60n)).toBe(first)
-  })
-
-  test("skips other tokens' deposits and picks none when none covers the amount", () => {
-    const notes = [note({ amount: 500n, tokenAddress: USDC }), note({ amount: 30n })]
-
-    expect(getSdkPickedPrivacyPoolsNote(notes, ZERO_ADDRESS, 40n)).toBeUndefined()
   })
 })
 

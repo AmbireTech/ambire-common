@@ -26,28 +26,6 @@ export const findSendablePrivacyPoolsNote = (
   )
 }
 
-/**
- * The deposit the SDK spends for a send of `amount`, as its `getNoteSelector` picks it (it does not
- * export it): the one with the least left that covers `amount`, pending ones too, ties in the order
- * the SDK lists them. Undefined when none covers it.
- *
- * TODO: delete once the SDK takes the deposit to spend, and pass it the chosen one instead.
- */
-export const getSdkPickedPrivacyPoolsNote = (
-  /** In the order the SDK lists them, as the sync keeps them. */
-  notes: PrivacyPoolsNote[],
-  tokenAddress: string,
-  amount: bigint
-): PrivacyPoolsNote | undefined =>
-  notes
-    .filter((note) => isPrivacyPoolsNoteOfToken(note, tokenAddress) && note.amount >= amount)
-    // Stable, so ties keep the SDK's order
-    .sort((a, b) => {
-      if (a.amount === b.amount) return 0
-
-      return a.amount < b.amount ? -1 : 1
-    })[0]
-
 /** The account's deposits of the token, oldest first, as `PrivacyPoolsSendableDeposit` numbers them. */
 const getTokenNotesInDepositOrder = (notes: PrivacyPoolsNote[], tokenAddress: string) =>
   notes
