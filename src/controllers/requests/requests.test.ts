@@ -6419,3 +6419,127 @@ describe('a request that arrives while the request window is closing', () => {
     expect(sheet.isOpen).toBe(true)
   })
 })
+
+describe('dapp verification banners of the current request', () => {
+  const BLACKLISTED_BANNER = {
+    id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
+    type: 'error' as const,
+    title: 'Potentially harmful app',
+    text: "This app didn't pass our safety check. Proceed at your own risk."
+  }
+
+  const makeDappRequest = (kind: UserRequest['kind'], session = MOCK_SESSION): UserRequest =>
+    ({
+      id: `${kind}-request`,
+      kind,
+      meta: { params: [] },
+      dappPromises: [{ id: 'a', resolve: () => {}, reject: () => {}, session, meta: {} }]
+    }) as unknown as UserRequest
+
+  test.each([
+    'walletAddEthereumChain',
+    'walletWatchAsset',
+    'ethGetEncryptionPublicKey',
+    'ethDecrypt'
+  ])('warns about a flagged app on a %s request', async (kind) => {
+    const { controller, dappsCtrl } = await prepareTest()
+    const getBanner = jest
+      .spyOn(dappsCtrl, 'getDappVerificationBanner')
+      .mockReturnValue(BLACKLISTED_BANNER)
+    controller.currentUserRequest = makeDappRequest(kind as UserRequest['kind'])
+
+    expect(controller.currentRequestDappVerificationBanners).toEqual([BLACKLISTED_BANNER])
+    // Checks the page the request came from, so an embedded frame is judged by its context
+    expect(getBanner).toHaveBeenCalledWith([MOCK_SESSION.origin], {
+      includeDappNamesInText: false,
+      sessionId: MOCK_SESSION.sessionId
+    })
+    expect(controller.toJSON().currentRequestDappVerificationBanners).toEqual([BLACKLISTED_BANNER])
+  })
+
+  test('leaves signing and connect requests to their own flows', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    jest.spyOn(dappsCtrl, 'getDappVerificationBanner').mockReturnValue(BLACKLISTED_BANNER)
+
+    controller.currentUserRequest = makeDappRequest('message')
+    expect(controller.currentRequestDappVerificationBanners).toEqual([])
+
+    controller.currentUserRequest = makeDappRequest('dappConnect')
+    expect(controller.currentRequestDappVerificationBanners).toEqual([])
+  })
+
+  test('has no banners without a current request', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    jest.spyOn(dappsCtrl, 'getDappVerificationBanner').mockReturnValue(BLACKLISTED_BANNER)
+    controller.currentUserRequest = null
+
+    expect(controller.currentRequestDappVerificationBanners).toEqual([])
+  })
+
+  test('has no banners when the request has no app behind it', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    jest.spyOn(dappsCtrl, 'getDappVerificationBanner').mockReturnValue(BLACKLISTED_BANNER)
+    controller.currentUserRequest = {
+      ...makeDappRequest('walletWatchAsset'),
+      dappPromises: []
+    } as unknown as UserRequest
+
+    expect(controller.currentRequestDappVerificationBanners).toEqual([])
+  })
+
+  test('skips the "not in catalog" banner, as on the sign message screen', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    jest.spyOn(dappsCtrl, 'getDappVerificationBanner').mockReturnValue({
+      id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
+      type: 'warning',
+      text: 'Not in catalog'
+    })
+    controller.currentUserRequest = makeDappRequest('walletAddEthereumChain')
+
+    expect(controller.currentRequestDappVerificationBanners).toEqual([])
+  })
+
+  test('has no banners when the app passes the check', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    jest.spyOn(dappsCtrl, 'getDappVerificationBanner').mockReturnValue(null)
+    controller.currentUserRequest = makeDappRequest('ethDecrypt')
+
+    expect(controller.currentRequestDappVerificationBanners).toEqual([])
+  })
+
+  test('updates the screen when the verification of the app changes', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    controller.currentUserRequest = makeDappRequest('walletWatchAsset')
+    const onUpdate = jest.fn()
+    const unsubscribe = controller.onUpdate(onUpdate)
+
+    await dappsCtrl.addDapp(
+      makeDapp({
+        id: 'verification-update.com',
+        name: 'Update',
+        url: 'https://verification-update.com'
+      })
+    )
+    unsubscribe()
+
+    expect(onUpdate).toHaveBeenCalled()
+  })
+
+  test('does not re-emit for app updates while no such request is shown', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    controller.currentUserRequest = makeDappRequest('dappConnect')
+    const onUpdate = jest.fn()
+    const unsubscribe = controller.onUpdate(onUpdate)
+
+    await dappsCtrl.addDapp(
+      makeDapp({
+        id: 'verification-update.com',
+        name: 'Update',
+        url: 'https://verification-update.com'
+      })
+    )
+    unsubscribe()
+
+    expect(onUpdate).not.toHaveBeenCalled()
+  })
+})
