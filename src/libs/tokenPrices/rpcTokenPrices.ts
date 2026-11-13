@@ -103,9 +103,8 @@ const isCuratedToken = (address: string, chainId: bigint): boolean =>
   !!getPrivacyPoolsChainConfig(chainId)?.assets.some((asset) => isSameAddr(asset.address, address))
 
 /** The native token and its wrapped version, both priced by the native token's feed */
-const isNativeOrWrappedNative = (address: string, network: Network): boolean =>
-  isSameAddr(address, ZeroAddress) ||
-  (!!network.wrappedAddr && isSameAddr(address, network.wrappedAddr))
+const isNativeOrWrappedNative = (address: string, wrappedNative: string | undefined): boolean =>
+  isSameAddr(address, ZeroAddress) || (!!wrappedNative && isSameAddr(address, wrappedNative))
 
 /** What the contract returns, as decoded */
 type PriceGetterResult = readonly [
@@ -143,6 +142,19 @@ const getRates = async (
   let nativeUsdPrice: NativeUsdPrice | null = null
   let error: Error | null = null
   let remainingTokens = tokens
+  // A call that checks no token means either that its first token needs more gas than the RPC
+  // gives a call, or that the RPC gives too little gas for any token. The token is set aside
+  // until the next call tells which.
+  let tokenNeedingMoreGas: string | null = null
+
+  const setAsOverGasLimit = (address: string) => {
+    // Reported as having no price rather than as an error: it would be the same on every update,
+    // so the balance would always show a price warning for one odd token. It's asked for again
+    // once its "no price" expires from the cache.
+    console.warn(`rpcTokenPrices: ${address} needs more gas than the RPC of ${network.name} allows`)
+    rateByAddress.set(address, NO_RATE)
+  }
+  const notEnoughGasError = new Error(`Not enough gas to read some token prices on ${network.name}`)
 
   do {
     let result: GetPricesResult
@@ -157,24 +169,36 @@ const getRates = async (
     }
 
     nativeUsdPrice = result.nativeUsdPrice
-    remainingTokens
-      .slice(0, checkedCount)
-      .forEach((address, index) => rateByAddress.set(address, result.rates[index]!))
 
-    if (remainingTokens.length && !checkedCount) {
-      // Reported as having no price rather than as an error: it would be the same on every
-      // update, so the balance would always show a price warning for one odd token. It's asked
-      // for again once its "no price" expires from the cache, and the rest are still read.
-      const [tokenOverGasLimit] = remainingTokens
-      console.warn(
-        `rpcTokenPrices: ${tokenOverGasLimit} needs more gas than the RPC of ${network.name} allows`
-      )
-      rateByAddress.set(tokenOverGasLimit!, NO_RATE)
+    const [firstToken] = remainingTokens
+    if (!checkedCount && firstToken) {
+      // Two calls in a row checked nothing, so it's the RPC: the tokens are left out, as with a
+      // failed call, rather than all taken as having no price
+      if (tokenNeedingMoreGas) {
+        error = notEnoughGasError
+        break
+      }
+
+      tokenNeedingMoreGas = firstToken
       remainingTokens = remainingTokens.slice(1)
     } else {
+      // Another token fit in a call, so the one set aside is the one that needs more gas
+      if (tokenNeedingMoreGas) setAsOverGasLimit(tokenNeedingMoreGas)
+      tokenNeedingMoreGas = null
+
+      remainingTokens
+        .slice(0, checkedCount)
+        .forEach((address, index) => rateByAddress.set(address, result.rates[index]!))
       remainingTokens = remainingTokens.slice(checkedCount)
     }
   } while (remainingTokens.length)
+
+  // The page's last token was set aside, so no later call can tell: it's the token's fault only
+  // if another of the page's tokens fit in a call
+  if (tokenNeedingMoreGas && !error) {
+    if (rateByAddress.size) setAsOverGasLimit(tokenNeedingMoreGas)
+    else error = notEnoughGasError
+  }
 
   return { nativeUsdPrice, rateByAddress, error }
 }
@@ -208,11 +232,13 @@ export const getRpcTokenPrices = async ({
   if (!config) throw new Error(`Token prices can't be read from the network on ${network.name}`)
 
   const { spotPrices } = config
+  // The config's, as the networks that come from the relayer have no `wrappedAddr`
+  const wrappedNative = spotPrices?.wrappedNative || network.wrappedAddr
   const priceGetter = fromDescriptor(provider, PriceGetter, !network.rpcNoStateOverride)
   // Where the contract looks for each token's pools. Empty without the aggregator, as no token
   // other than the native one is asked for.
   const poolSearch = {
-    wrappedNative: spotPrices?.wrappedNative || ZeroAddress,
+    wrappedNative: wrappedNative || ZeroAddress,
     stablecoins: spotPrices?.stablecoins || [],
     factories: (spotPrices?.poolFactories || []).map(({ factory, kind, params }) => ({
       factory,
@@ -229,7 +255,9 @@ export const getRpcTokenPrices = async ({
         spotPrices?.oracle || ZeroAddress,
         tokens,
         LIQUIDITY_THRESHOLD_PERCENT,
-        poolSearch
+        poolSearch,
+        // The curated tokens skip the liquidity check, so looking up their pools would be wasted
+        tokens.map((address) => !isCuratedToken(address, network.chainId))
       ]
     )
 
@@ -245,7 +273,7 @@ export const getRpcTokenPrices = async ({
 
   const tokensToRate = spotPrices
     ? [...new Set(tokenAddresses.map(getPriceSource))].filter(
-        (address) => !isNativeOrWrappedNative(address, network)
+        (address) => !isNativeOrWrappedNative(address, wrappedNative)
       )
     : []
   // Every call reads the native token's price; one with no tokens reads only that
@@ -294,7 +322,7 @@ export const getRpcTokenPrices = async ({
     const key = getTokenDataCacheKey(address)
     const priceSource = getPriceSource(address)
 
-    if (isNativeOrWrappedNative(priceSource, network)) {
+    if (isNativeOrWrappedNative(priceSource, wrappedNative)) {
       prices.set(key, nativePrice)
       return
     }

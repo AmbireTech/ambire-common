@@ -33,6 +33,7 @@ import { Erc7730Controller } from '@/controllers/erc7730/erc7730'
 import { EstimationStatus } from '@/controllers/estimation/types'
 import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '@/controllers/featureFlags/featureFlags'
+import { onFeatureFlagChange } from '@/controllers/featureFlags/onFeatureFlagChange'
 import { InviteController } from '@/controllers/invite/invite'
 import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
@@ -366,15 +367,7 @@ export class MainController extends EventEmitter implements IMainController {
     // Switching the price source empties the price cache (see TokenPricesController), so the
     // portfolio is updated right away to show what the setting changed, instead of keeping the
     // other source's prices until the next scheduled update
-    let isTokenPricesEnabled = this.featureFlags.isFeatureEnabled('tokenPrices')
-    this.featureFlags.onUpdate(() => {
-      const isEnabled = this.featureFlags.isFeatureEnabled('tokenPrices')
-      if (isEnabled === isTokenPricesEnabled) return
-
-      isTokenPricesEnabled = isEnabled
-      // Loaded from storage at startup, before any portfolio update: nothing to refresh yet
-      if (this.featureFlags.initialLoadPromise) return
-
+    onFeatureFlagChange(this.featureFlags, 'tokenPrices', () => {
       this.updateSelectedAccountPortfolio().catch((error) =>
         this.emitError({
           level: 'silent',

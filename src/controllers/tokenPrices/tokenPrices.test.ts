@@ -632,7 +632,11 @@ describe('TokenPricesController', () => {
       const rpcModeCall = controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
       answerCena()
 
-      expect((await cenaCall).tokenData.size).toBe(0)
+      // The call that asked cena never gets its answer. Whether it already sees the RPC's
+      // depends on which request settles first, so only cena's price is ruled out.
+      expect((await cenaCall).tokenData.get(TOKEN_1)?.priceIn).not.toEqual([
+        { baseCurrency: 'usd', price: 3 }
+      ])
       expect((await rpcModeCall).tokenData.get(TOKEN_1)?.priceIn).toEqual([
         { baseCurrency: 'usd', price: 5 }
       ])
@@ -641,6 +645,31 @@ describe('TokenPricesController', () => {
       expect(controller.getCachedTokenData(base.chainId, TOKEN_1)?.priceIn).toEqual([
         { baseCurrency: 'usd', price: 5 }
       ])
+    })
+
+    test('logs the failure of a cena request whose answers were dropped by an opt-out', async () => {
+      isEnabled = true
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      let failCena: () => void = () => {}
+      const fetch = jest.fn(
+        () =>
+          new Promise((_, reject) => {
+            failCena = () => reject(new Error('cena is down'))
+          })
+      )
+      const controller = createRpcController(fetch)
+
+      const cenaCall = controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
+      isEnabled = false
+      await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
+      failCena()
+      await cenaCall
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        'tokenPrices: a request made before the price source changed failed',
+        expect.objectContaining({ message: 'cena is down' })
+      )
+      warnSpy.mockRestore()
     })
 
     test('drops an RPC answer that arrives after the user opted back in', async () => {
@@ -663,8 +692,15 @@ describe('TokenPricesController', () => {
       const cenaCall = controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
       answerRpc()
 
-      expect((await rpcCall).tokenData.size).toBe(0)
+      // As above: the call that asked the RPC may already see cena's answer, never the RPC's
+      expect((await rpcCall).tokenData.get(TOKEN_1)?.priceIn).not.toEqual([
+        { baseCurrency: 'usd', price: 5 }
+      ])
       expect((await cenaCall).tokenData.get(TOKEN_1)?.priceIn).toEqual([
+        { baseCurrency: 'usd', price: 3 }
+      ])
+      // Nor is the late RPC answer cached afterwards
+      expect(controller.getCachedTokenData(base.chainId, TOKEN_1)?.priceIn).toEqual([
         { baseCurrency: 'usd', price: 3 }
       ])
     })

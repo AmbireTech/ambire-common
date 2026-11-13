@@ -114,6 +114,21 @@ describe('getRpcTokenPrices', () => {
       expect(callSpy.mock.calls[0]![1][2]).toEqual([])
     })
 
+    test('prices the wrapped native token by the feed on a network without its address (e.g. one from the relayer)', async () => {
+      mockContract()
+      const networkFromRelayer: Network = { ...ethereum, wrappedAddr: undefined }
+
+      const { prices } = await getRpcTokenPrices({
+        provider,
+        network: networkFromRelayer,
+        tokenAddresses: [WETH]
+      })
+
+      expect(prices.get(WETH.toLowerCase())).toBe(2000)
+      // Read from the config, so it isn't asked of the aggregator
+      expect(callSpy.mock.calls[0]![1][2]).toEqual([])
+    })
+
     test('gives no price to a token whose deepest pool is below the liquidity floor', async () => {
       // 1% under the floor's worth of ETH at $2000
       const nativeReserve = (BigInt(MIN_POOL_DEPTH_USD) * 10n ** 18n * 99n) / 2000n / 100n
@@ -185,7 +200,7 @@ describe('getRpcTokenPrices', () => {
 
       await getRpcTokenPrices({ provider, network: ethereum, tokenAddresses: [TOKEN_1] })
 
-      const poolSearch = callSpy.mock.calls[0]![1][4]
+      const [, , , , poolSearch, checksLiquidity] = callSpy.mock.calls[0]![1]
       const { spotPrices } = RPC_TOKEN_PRICE_CONFIGS['1']!
       expect(poolSearch.wrappedNative).toBe(spotPrices!.wrappedNative)
       expect(poolSearch.stablecoins).toEqual(spotPrices!.stablecoins)
@@ -194,6 +209,22 @@ describe('getRpcTokenPrices', () => {
         kind: 1,
         params: [100n, 500n, 3000n, 10000n]
       })
+      expect(checksLiquidity).toEqual([true])
+    })
+
+    test('skips the pool lookup for curated tokens, whose liquidity is never checked', async () => {
+      mockContract()
+
+      await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [TOKEN_1, USDC, STK_WALLET]
+      })
+
+      const [, , tokens, , , checksLiquidity] = callSpy.mock.calls[0]![1]
+      // USDC is a fee token, and stkWALLET is asked for as WALLET, another fee token
+      expect(tokens).toEqual([TOKEN_1, USDC, WALLET_TOKEN])
+      expect(checksLiquidity).toEqual([true, false, false])
     })
 
     test('prices one of our fee tokens even when its pools look shallow', async () => {
@@ -366,6 +397,64 @@ describe('getRpcTokenPrices', () => {
       expect(prices.get(TOKEN_1)).toBeNull()
       expect(prices.get(TOKEN_2)).toBe(2)
       expect(prices.get(TOKEN_3)).toBe(2)
+    })
+
+    test('gives no price to the last token of a page when it alone needs more gas', async () => {
+      mockContract({ rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18 }) })
+      const pricedCall = callSpy.getMockImplementation()!
+      // The first call checks TOKEN_1 only; the one for TOKEN_2 checks nothing
+      callSpy.mockImplementation(async (method: string, args: any[]) => {
+        const result = await pricedCall(method, args)
+        return args[2][0] === TOKEN_2 ? [result[0], result[1], 0n] : [result[0], result[1], 1n]
+      })
+
+      const { prices, error } = await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [TOKEN_1, TOKEN_2]
+      })
+
+      expect(error).toBeNull()
+      expect(prices.get(TOKEN_1)).toBe(2)
+      expect(prices.get(TOKEN_2)).toBeNull()
+    })
+
+    test('returns an error, pricing nothing, when the RPC gives too little gas for any token', async () => {
+      mockContract({
+        rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18 }),
+        checkedPerCall: 0
+      })
+
+      const { prices, error } = await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [TOKEN_1, TOKEN_2, TOKEN_3]
+      })
+
+      expect(error?.message).toBe(`Not enough gas to read some token prices on ${ethereum.name}`)
+      // Left out rather than taken as having no price, so they're asked for again
+      expect(prices.has(TOKEN_1)).toBe(false)
+      expect(prices.has(TOKEN_2)).toBe(false)
+      expect(prices.has(TOKEN_3)).toBe(false)
+      // It stops after two calls that check nothing, instead of one call per token
+      expect(callSpy).toHaveBeenCalledTimes(2)
+    })
+
+    test('returns an error when a page with a single token checks nothing', async () => {
+      mockContract({
+        rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18 }),
+        checkedPerCall: 0
+      })
+
+      const { prices, error } = await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [TOKEN_1]
+      })
+
+      // Nothing tells the token apart from the RPC, so it isn't taken as having no price
+      expect(error?.message).toBe(`Not enough gas to read some token prices on ${ethereum.name}`)
+      expect(prices.has(TOKEN_1)).toBe(false)
     })
 
     test('keeps what a page read when a follow-up call for the rest of it fails', async () => {
@@ -582,7 +671,8 @@ describe('getRpcTokenPrices', () => {
             spotPrices.oracle,
             [USDE],
             10n,
-            toSearch(factories)
+            toSearch(factories),
+            [true]
           ])
           return rates[0].stableReserve as bigint
         }
@@ -635,9 +725,10 @@ describe('getRpcTokenPrices', () => {
             RPC_TOKEN_PRICE_CONFIGS['1']!.spotPrices!.oracle,
             [DAI, USDC],
             10n,
-            { wrappedNative: WETH, stablecoins: [], factories: [] }
+            { wrappedNative: WETH, stablecoins: [], factories: [] },
+            [true, true]
           ],
-          // An RPC that gives a call 12M gas, less than the 15M a single token is allowed
+          // An RPC that gives a call 12M gas, less than the 16M a single token is allowed
           { gasLimit: '0xb71b00' }
         )
 

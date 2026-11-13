@@ -80,15 +80,18 @@ interface ICurveFactory {
  * main DEXes hold. Meant to be called off-chain, without being deployed.
  */
 contract PriceGetter {
-  // The aggregator walks every pool it knows of for a token, which can take over 10M gas.
-  // The limit keeps a single token from using up the gas of the whole call.
-  uint256 private constant TOKEN_GAS_LIMIT = 15_000_000;
+  // The aggregator walks every pool it knows of for a token, which can take over 10M gas (about
+  // 12.6M for USDC on Ethereum), and the pool search after it about 0.4M more: 15M for the walk
+  // and 1M for the search. The limit keeps a single token from using up the gas of the whole call.
+  uint256 private constant TOKEN_GAS_LIMIT = 16_000_000;
   // With less gas than this left, no further token is tried
   uint256 private constant MIN_TOKEN_GAS = 1_000_000;
   // Left for finishing the loop and returning the results once the tokens stop being checked
   uint256 private constant GAS_RESERVE = 500_000;
-  // The most Curve pools of two coins looked up in one factory, as each lookup costs gas
-  uint256 private constant MAX_CURVE_POOLS_PER_PAIR = 4;
+  // The most Curve pools of two coins looked up in one factory, as each lookup costs gas. A
+  // factory lists them in the order they were created, empty ones included, so a deep pool can
+  // come after several empty ones (e.g. PYUSD and USDC on Ethereum: third, after two empty ones).
+  uint256 private constant MAX_CURVE_POOLS_PER_PAIR = 10;
 
   struct NativePrice {
     int256 answer;
@@ -142,7 +145,8 @@ contract PriceGetter {
     ISpotPriceOracle oracle,
     address token,
     uint256 thresholdFilter,
-    PoolSearch calldata search
+    PoolSearch calldata search,
+    bool checksLiquidity
   ) external view returns (TokenRate memory rate) {
     rate.decimals = IERC20Like(token).decimals();
 
@@ -176,6 +180,8 @@ contract PriceGetter {
 
     if (totalWeight == 0) return rate;
     rate.rateToNative = weightedRateSum / totalWeight;
+    // A token whose liquidity isn't checked (e.g. one we know to be liquid) leaves its reserves at 0
+    if (!checksLiquidity) return rate;
 
     // The aggregator's weights can't tell how much a pool really holds: in a concentrated
     // liquidity pool (e.g. Uniswap v3) a narrow position worth a few dollars weighs as much as a
@@ -301,6 +307,7 @@ contract PriceGetter {
    * @param thresholdFilter leaves out the pools whose liquidity is below this percentage of the
    * token's most liquid pool
    * @param search where to look for each token's pools, to read how much liquidity it has
+   * @param checksLiquidity whether to look for each token's pools, in the order of `tokens`
    * @return nativePrice the native token's USD price, as the feed reports it
    * @return rates the rate and pool reserves of each token, in the order of `tokens`
    * @return checkedCount how many tokens, from the start of `tokens`, were checked before the
@@ -313,7 +320,8 @@ contract PriceGetter {
     ISpotPriceOracle oracle,
     address[] calldata tokens,
     uint256 thresholdFilter,
-    PoolSearch calldata search
+    PoolSearch calldata search,
+    bool[] calldata checksLiquidity
   )
     external
     view
@@ -334,7 +342,13 @@ contract PriceGetter {
 
       uint256 gasBeforeCall = gasleft();
       try
-        this.getTokenRate{ gas: tokenGas }(oracle, tokens[checkedCount], thresholdFilter, search)
+        this.getTokenRate{ gas: tokenGas }(
+          oracle,
+          tokens[checkedCount],
+          thresholdFilter,
+          search,
+          checksLiquidity[checkedCount]
+        )
       returns (TokenRate memory rate) {
         rates[checkedCount] = rate;
       } catch {

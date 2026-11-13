@@ -475,7 +475,13 @@ export class TokenPricesController extends EventEmitter {
       }))
     )
     // Asked for before the user switched the source, so the answers are no longer wanted
-    if (cacheVersion !== this.#cacheVersion) return
+    if (cacheVersion !== this.#cacheVersion) {
+      const failure = results.find(
+        (result): result is PromiseRejectedResult => result.status === 'rejected'
+      )
+      TokenPricesController.#logDroppedRequestError(failure?.reason, network)
+      return
+    }
 
     const cache = this.#getOrCreateCache(network.chainId)
     const cachedAt = Date.now()
@@ -512,7 +518,10 @@ export class TokenPricesController extends EventEmitter {
 
     const { prices, error } = await getRpcTokenPrices({ provider, network, tokenAddresses })
     // Asked for before the user switched the source, so the answers are no longer wanted
-    if (cacheVersion !== this.#cacheVersion) return
+    if (cacheVersion !== this.#cacheVersion) {
+      TokenPricesController.#logDroppedRequestError(error, network)
+      return
+    }
 
     const cache = this.#getOrCreateCache(network.chainId)
     const cachedAt = Date.now()
@@ -530,6 +539,19 @@ export class TokenPricesController extends EventEmitter {
     })
 
     if (error) throw error
+  }
+
+  /**
+   * Logs why a request whose answers were dropped after a switch of the source failed, if it did.
+   * Its callers aren't told: they asked the old source, and the next call asks the new one.
+   */
+  static #logDroppedRequestError(error: unknown, network: Network) {
+    if (!error) return
+
+    console.warn(
+      'tokenPrices: a request made before the price source changed failed',
+      TokenPricesController.#toPriceRequestError(error, network)
+    )
   }
 
   static #toPriceRequestError(error: unknown, network: Network): Error {
