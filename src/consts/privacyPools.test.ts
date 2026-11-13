@@ -5,7 +5,9 @@ import {
   fromPrivacyPoolsAssetAddress,
   getPrivacyPoolsAsset,
   getPrivacyPoolsDepositAsset,
+  getPrivacyPoolsStoreKey,
   isPrivacyPoolsNativeAsset,
+  isPrivacyPoolsObsoleteStoreKey,
   PRIVACY_POOLS_CHAINS,
   PRIVACY_POOLS_NATIVE_ASSET_ADDRESS,
   toPrivacyPoolsAssetAddress
@@ -130,6 +132,29 @@ describe('consts/privacyPools', () => {
         const addresses = chain.assets.map((asset) => asset.address.toLowerCase())
         expect(new Set(addresses).size).toBe(addresses.length)
       })
+    })
+  })
+
+  describe('isPrivacyPoolsObsoleteStoreKey', () => {
+    it('keeps the chain state key of the current SDK on every chain', () => {
+      Object.values(PRIVACY_POOLS_CHAINS).forEach((chain) => {
+        expect(isPrivacyPoolsObsoleteStoreKey(getPrivacyPoolsStoreKey(chain))).toBe(false)
+      })
+    })
+
+    it('keeps the history times the current SDK stores', () => {
+      expect(isPrivacyPoolsObsoleteStoreKey('privacy-pool-timestamps-1-123')).toBe(false)
+    })
+
+    it('drops the chain state and history times older SDKs stored, also on removed chains', () => {
+      expect(isPrivacyPoolsObsoleteStoreKey('privacy-pool-state-1-123')).toBe(true)
+      expect(isPrivacyPoolsObsoleteStoreKey('privacy-pool-history-1-123')).toBe(true)
+      expect(isPrivacyPoolsObsoleteStoreKey('privacy-pool-state-11155111-123')).toBe(true)
+    })
+
+    it('keeps keys it does not know', () => {
+      expect(isPrivacyPoolsObsoleteStoreKey('privacy-pool-state')).toBe(false)
+      expect(isPrivacyPoolsObsoleteStoreKey('something-else')).toBe(false)
     })
   })
 })

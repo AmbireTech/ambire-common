@@ -5606,5 +5606,23 @@ describe('PrivacyPoolsController', () => {
       })
       expect(runningSyncs).toHaveLength(0)
     })
+
+    it('removes what older SDKs stored, on any chain, when it first reads the stored state', async () => {
+      const storage = new StorageController(produceMemoryStore())
+      const currentKey = getPrivacyPoolsStoreKey(getPrivacyPoolsChainConfig(1n)!)
+      await storage.set('privacyPoolsState', {
+        [currentKey]: storedPoolState!,
+        'privacy-pool-state-1-123': 'state of an older SDK',
+        'privacy-pool-history-1-123': 'history times of an older SDK',
+        'privacy-pool-state-11155111-456': 'state of a chain no longer supported'
+      })
+      const { controller } = await prepareTest({ storage })
+
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, 'transfer-session')
+      await waitUntil(() => !!controller.poolStats['1'])
+      await flush()
+
+      expect(await storage.get('privacyPoolsState', {})).toEqual({ [currentKey]: storedPoolState })
+    })
   })
 })

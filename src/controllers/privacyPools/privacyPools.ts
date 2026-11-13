@@ -3,9 +3,9 @@ import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '../../consts/activity'
 import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig,
-  getPrivacyPoolsInitialStateKey,
   getPrivacyPoolsTokenId,
   isPrivacyPoolsNativeAsset,
+  isPrivacyPoolsObsoleteStoreKey,
   PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY,
   PRIVACY_POOLS_BROADCASTER_STORAGE_KEY,
   PRIVACY_POOLS_BROADCASTERS,
@@ -239,10 +239,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         storage,
         storageKey: 'privacyPoolsState',
         // Stored by SDKs before 0.1.0-alpha.39, a few MB that each sync would otherwise rewrite
-        obsoleteKeys: PRIVACY_POOLS_SUPPORTED_CHAIN_IDS.flatMap((chainId) => {
-          const config = getPrivacyPoolsChainConfig(chainId)
-          return config ? [getPrivacyPoolsInitialStateKey(config)] : []
-        }),
+        isObsoleteKey: isPrivacyPoolsObsoleteStoreKey,
         onError: (error, message) =>
           this.emitError({
             message:

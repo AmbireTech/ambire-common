@@ -249,15 +249,14 @@ export const getPrivacyPoolsStoreKey = ({
   `privacy-pool-state-v2-${chainId.toString()}-${BigInt(entrypointAddress).toString()}`
 
 /**
- * The key of a chain's starting state in the plugin's `initialState`, mirrored as the SDK does not
- * export it. Plugins before 0.1.0-alpha.39 also stored the chain's history under it, which the SDK
- * no longer reads - see `getPrivacyPoolsStoreKey`.
+ * Whether a key in the plugin's storage holds data that only SDKs before 0.1.0-alpha.39 read: a
+ * chain's history under the unversioned `privacy-pool-state-` key, on any chain (also on Sepolia,
+ * which is no longer supported), or the times of an account's history. Matched by prefix, since
+ * the chains those SDKs synced are not all in the config any more.
  */
-export const getPrivacyPoolsInitialStateKey = ({
-  chainId,
-  entrypointAddress
-}: PrivacyPoolsChainConfig): string =>
-  `privacy-pool-state-${chainId.toString()}-${BigInt(entrypointAddress).toString()}`
+export const isPrivacyPoolsObsoleteStoreKey = (key: string): boolean =>
+  key.startsWith('privacy-pool-history-') ||
+  (key.startsWith('privacy-pool-state-') && !key.startsWith('privacy-pool-state-v2-'))
 
 /** How many days back the deposits that hide a transfer are counted in what the user sees. */
 export const PRIVACY_POOLS_COVER_WINDOW_DAYS = 90n

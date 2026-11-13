@@ -159,7 +159,7 @@ describe('createKohakuStorage', () => {
     const kohakuStorage = createKohakuStorage({
       storage,
       storageKey: 'privacyPoolsState',
-      obsoleteKeys: [OBSOLETE_KEY],
+      isObsoleteKey: (key) => key === OBSOLETE_KEY,
       onError
     })
 

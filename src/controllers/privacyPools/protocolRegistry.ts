@@ -9,12 +9,9 @@ import type { Host, Keystore } from '@kohaku-eth/plugins'
 
 import {
   getPrivacyPoolsBundlerUrl,
-  getPrivacyPoolsChainConfig,
-  getPrivacyPoolsInitialStateKey,
   getPrivacyPoolsStoreKey,
   PRIVACY_POOLS_ACCOUNT_INDEX,
-  PRIVACY_POOLS_READ_TIMEOUT,
-  PRIVACY_POOLS_SUPPORTED_CHAIN_IDS
+  PRIVACY_POOLS_READ_TIMEOUT
 } from '../../consts/privacyPools'
 import { PrivacyPoolsChainConfig } from '../../interfaces/privacyPools'
 import {
@@ -50,23 +47,6 @@ type ProtocolEntry = {
 }
 
 const toEntryKey = (chainId: string, seedId: string) => `${chainId}:${seedId}`
-
-/**
- * Starts a cold chain's entrypoint walk at its deployment block instead of block zero (22M blocks
- * of `eth_getLogs` before the first event). Pools are left empty, so they are read in full.
- */
-const resolveInitialState = async (): Promise<Record<string, any>> =>
-  PRIVACY_POOLS_SUPPORTED_CHAIN_IDS.reduce((state, chainId) => {
-    const config = getPrivacyPoolsChainConfig(chainId)
-    if (!config) return state
-
-    return {
-      ...state,
-      [getPrivacyPoolsInitialStateKey(config)]: {
-        sync: { lastSyncedBlock: `0x${config.deploymentBlock.toString(16)}` }
-      }
-    }
-  }, {})
 
 /** The Privacy Pools plugins, one per chain and recovery phrase, and what they are built from. */
 export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
@@ -115,9 +95,9 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
       // Pinned rather than the SDK's default: the schemes derive different notes, so a default that
       // changes in a bump would hide every note made before it
       secretManager: SignatureSecretManager,
-      // Skipped once this chain has a persisted store
-      initialState: resolveInitialState,
       dataService,
+      // No `initialState`: the SDK starts a chain with nothing stored at `deploymentBlock` itself,
+      // instead of block zero (22M blocks of `eth_getLogs` before the first event)
       entrypoint: {
         address: BigInt(config.entrypointAddress),
         deploymentBlock: config.deploymentBlock

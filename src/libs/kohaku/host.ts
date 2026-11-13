@@ -23,14 +23,14 @@ import { fetchWithTimeout } from '../../utils/fetch'
 export const createKohakuStorage = ({
   storage,
   storageKey,
-  obsoleteKeys = [],
+  isObsoleteKey = () => false,
   onError
 }: {
   storage: IStorageController
   /** Which `StorageProps` entry holds this plugin's blob. */
   storageKey: 'privacyPoolsState'
-  /** Keys the plugin no longer reads, removed from the blob when it is first read. */
-  obsoleteKeys?: string[]
+  /** Picks the keys the plugin no longer reads, removed from the blob when it is first read. */
+  isObsoleteKey?: (key: string) => boolean
   onError: (error: unknown, message?: string) => void
 }): Storage => {
   let cache: Record<string, string> | null = null
@@ -51,7 +51,7 @@ export const createKohakuStorage = ({
    * the keys for the next start.
    */
   const dropObsoleteKeys = (blob: Record<string, string>) => {
-    const storedObsoleteKeys = obsoleteKeys.filter((key) => key in blob)
+    const storedObsoleteKeys = Object.keys(blob).filter(isObsoleteKey)
     if (!storedObsoleteKeys.length) return
 
     storedObsoleteKeys.forEach((key) => delete blob[key])
