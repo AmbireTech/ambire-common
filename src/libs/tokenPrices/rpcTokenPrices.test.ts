@@ -30,7 +30,8 @@ describe('getRpcTokenPrices', () => {
     type MockedRate = {
       rateToNative: bigint
       decimals: number
-      poolDepth?: bigint
+      nativeReserve?: bigint
+      stableReserve?: bigint
       isNative?: boolean
     }
     let callSpy: jest.Mock<(...args: any[]) => Promise<any>>
@@ -61,8 +62,19 @@ describe('getRpcTokenPrices', () => {
           },
           tokens.map((token: string, index: number) =>
             index < checkedCount
-              ? { poolDepth: DEEP_POOL, isNative: false, ...rateOf(token) }
-              : { rateToNative: 0n, decimals: 0, poolDepth: 0n, isNative: false }
+              ? {
+                  nativeReserve: DEEP_POOL,
+                  stableReserve: 0n,
+                  isNative: false,
+                  ...rateOf(token)
+                }
+              : {
+                  rateToNative: 0n,
+                  decimals: 0,
+                  nativeReserve: 0n,
+                  stableReserve: 0n,
+                  isNative: false
+                }
           ),
           BigInt(checkedCount)
         ]
@@ -102,10 +114,10 @@ describe('getRpcTokenPrices', () => {
       expect(callSpy.mock.calls[0]![1][2]).toEqual([])
     })
 
-    test('gives no price to a token whose most liquid pool is below the liquidity floor', async () => {
+    test('gives no price to a token whose deepest pool is below the liquidity floor', async () => {
       // 1% under the floor's worth of ETH at $2000
-      const poolDepth = (BigInt(MIN_POOL_DEPTH_USD) * 10n ** 18n * 99n) / 2000n / 100n
-      mockContract({ rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18, poolDepth }) })
+      const nativeReserve = (BigInt(MIN_POOL_DEPTH_USD) * 10n ** 18n * 99n) / 2000n / 100n
+      mockContract({ rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18, nativeReserve }) })
 
       const { prices } = await getRpcTokenPrices({
         provider,
@@ -116,9 +128,9 @@ describe('getRpcTokenPrices', () => {
       expect(prices.get(TOKEN_1)).toBeNull()
     })
 
-    test('prices a token whose most liquid pool reaches the liquidity floor', async () => {
-      const poolDepth = (BigInt(MIN_POOL_DEPTH_USD) * 10n ** 18n) / 2000n
-      mockContract({ rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18, poolDepth }) })
+    test('prices a token whose deepest pool reaches the liquidity floor', async () => {
+      const nativeReserve = (BigInt(MIN_POOL_DEPTH_USD) * 10n ** 18n) / 2000n
+      mockContract({ rateOf: () => ({ rateToNative: 10n ** 15n, decimals: 18, nativeReserve }) })
 
       const { prices } = await getRpcTokenPrices({
         provider,
@@ -129,10 +141,65 @@ describe('getRpcTokenPrices', () => {
       expect(prices.get(TOKEN_1)).toBe(2)
     })
 
+    test('prices a token whose pool against a stablecoin reaches the liquidity floor', async () => {
+      mockContract({
+        rateOf: () => ({
+          rateToNative: 10n ** 15n,
+          decimals: 18,
+          nativeReserve: 0n,
+          stableReserve: BigInt(MIN_POOL_DEPTH_USD) * 10n ** 18n
+        })
+      })
+
+      const { prices } = await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [TOKEN_1]
+      })
+
+      expect(prices.get(TOKEN_1)).toBe(2)
+    })
+
+    test('gives no price when neither the native nor the stablecoin pool reaches the floor', async () => {
+      // Each just under the floor: they aren't added up
+      mockContract({
+        rateOf: () => ({
+          rateToNative: 10n ** 15n,
+          decimals: 18,
+          nativeReserve: (BigInt(MIN_POOL_DEPTH_USD) * 10n ** 18n * 99n) / 2000n / 100n,
+          stableReserve: (BigInt(MIN_POOL_DEPTH_USD) * 10n ** 18n * 99n) / 100n
+        })
+      })
+
+      const { prices } = await getRpcTokenPrices({
+        provider,
+        network: ethereum,
+        tokenAddresses: [TOKEN_1]
+      })
+
+      expect(prices.get(TOKEN_1)).toBeNull()
+    })
+
+    test("passes the network's pools to look up, with the fees as uint256", async () => {
+      mockContract()
+
+      await getRpcTokenPrices({ provider, network: ethereum, tokenAddresses: [TOKEN_1] })
+
+      const poolSearch = callSpy.mock.calls[0]![1][4]
+      const { spotPrices } = RPC_TOKEN_PRICE_CONFIGS['1']!
+      expect(poolSearch.wrappedNative).toBe(spotPrices!.wrappedNative)
+      expect(poolSearch.stablecoins).toEqual(spotPrices!.stablecoins)
+      expect(poolSearch.factories).toContainEqual({
+        factory: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
+        kind: 1,
+        params: [100n, 500n, 3000n, 10000n]
+      })
+    })
+
     test('prices one of our fee tokens even when its pools look shallow', async () => {
       // A stablecoin traded mostly against other stablecoins, where the depth comes out too low
       mockContract({
-        rateOf: () => ({ rateToNative: 5n * 10n ** 26n, decimals: 6, poolDepth: 0n })
+        rateOf: () => ({ rateToNative: 5n * 10n ** 26n, decimals: 6, nativeReserve: 0n })
       })
 
       const { prices } = await getRpcTokenPrices({
@@ -148,7 +215,7 @@ describe('getRpcTokenPrices', () => {
       // USDe trades mostly against stablecoins, where the depth comes out far too low
       const USDE = '0x4c9EDD5852cd905f086C759E8383e09bff1E68B3'
       mockContract({
-        rateOf: () => ({ rateToNative: 5n * 10n ** 14n, decimals: 18, poolDepth: 0n })
+        rateOf: () => ({ rateToNative: 5n * 10n ** 14n, decimals: 18, nativeReserve: 0n })
       })
 
       const { prices } = await getRpcTokenPrices({
@@ -165,7 +232,7 @@ describe('getRpcTokenPrices', () => {
       // liquid (CHAI is deprecated)
       const CHAI = '0x06AF07097C9Eeb7fD685c692751D5C66dB49c215'
       mockContract({
-        rateOf: () => ({ rateToNative: 5n * 10n ** 14n, decimals: 18, poolDepth: 0n })
+        rateOf: () => ({ rateToNative: 5n * 10n ** 14n, decimals: 18, nativeReserve: 0n })
       })
 
       const { prices } = await getRpcTokenPrices({
@@ -180,7 +247,7 @@ describe('getRpcTokenPrices', () => {
     test('applies the floor to a Privacy Pools asset on a chain it is not accepted on', async () => {
       const USDE = '0x4c9EDD5852cd905f086C759E8383e09bff1E68B3'
       mockContract({
-        rateOf: () => ({ rateToNative: 5n * 10n ** 14n, decimals: 18, poolDepth: 0n })
+        rateOf: () => ({ rateToNative: 5n * 10n ** 14n, decimals: 18, nativeReserve: 0n })
       })
       const baseNetwork = networks.find(({ chainId }) => chainId === 8453n)!
 
@@ -195,7 +262,12 @@ describe('getRpcTokenPrices', () => {
 
     test('prices a token that wraps the native token without checking its pools', async () => {
       mockContract({
-        rateOf: () => ({ rateToNative: 10n ** 18n, decimals: 18, poolDepth: 0n, isNative: true })
+        rateOf: () => ({
+          rateToNative: 10n ** 18n,
+          decimals: 18,
+          nativeReserve: 0n,
+          isNative: true
+        })
       })
 
       const { prices } = await getRpcTokenPrices({
@@ -485,6 +557,29 @@ describe('getRpcTokenPrices', () => {
       }
     })
 
+    test('gives no price to a fake WALLET whose only pool is a narrow position with a few dollars', async () => {
+      const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+      // Its only pool, a Uniswap v3 one, holds about 0.004 WETH, but its in-range liquidity
+      // weighs as much as a pool with over 1.6 ETH
+      const FAKE_WALLET = '0xd2f34c7e9732b88086f186758eb732f91388ed45'
+      const WALLET = '0x88800092fF476844f74dC2FC427974BBee2794Ae'
+      const UNI = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984'
+
+      try {
+        const { prices } = await getRpcTokenPrices({
+          provider,
+          network: ethereum,
+          tokenAddresses: [FAKE_WALLET, WALLET, UNI]
+        })
+
+        expect(prices.get(FAKE_WALLET)).toBeNull()
+        expect(prices.get(WALLET.toLowerCase())).toBeGreaterThan(0)
+        expect(prices.get(UNI.toLowerCase())).toBeGreaterThan(0)
+      } finally {
+        provider.destroy()
+      }
+    })
+
     test('the contract still prices tokens in a call capped well below the per-token limit', async () => {
       const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
       const DAI = '0x6B175474E89094C44Da98b954EedeAC495271d0F'
@@ -495,9 +590,10 @@ describe('getRpcTokenPrices', () => {
           'getPrices',
           [
             RPC_TOKEN_PRICE_CONFIGS['1']!.nativeUsdFeed,
-            RPC_TOKEN_PRICE_CONFIGS['1']!.spotPriceOracle,
+            RPC_TOKEN_PRICE_CONFIGS['1']!.spotPrices!.oracle,
             [DAI, USDC],
-            10n
+            10n,
+            { wrappedNative: WETH, stablecoins: [], factories: [] }
           ],
           // An RPC that gives a call 12M gas, less than the 15M a single token is allowed
           { gasLimit: '0xb71b00' }

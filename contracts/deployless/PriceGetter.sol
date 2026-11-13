@@ -43,15 +43,35 @@ interface IPriceFeed {
   function decimals() external view returns (uint8);
 }
 
-interface ITokenDecimals {
+interface IERC20Like {
   function decimals() external view returns (uint8);
+
+  function balanceOf(address account) external view returns (uint256);
+}
+
+interface IUniswapV2Factory {
+  function getPair(address tokenA, address tokenB) external view returns (address);
+}
+
+interface IUniswapV3Factory {
+  function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address);
+}
+
+/// Velodrome v2, Aerodrome and their forks
+interface ISolidlyFactory {
+  function getPool(address tokenA, address tokenB, bool stable) external view returns (address);
+}
+
+/// Velodrome's and Aerodrome's concentrated liquidity (Slipstream)
+interface ISlipstreamFactory {
+  function getPool(address tokenA, address tokenB, int24 tickSpacing) external view returns (address);
 }
 
 /**
  * Reads token prices from the chain alone: the native token's USD price from its Chainlink
  * feed, and each token's rate to the native token from 1inch's spot price aggregator, along with
- * how much of the native token its most liquid pool holds. Meant to be called off-chain, without
- * being deployed.
+ * how much of the wrapped native token and of the main stablecoins its pools on the network's
+ * main DEXes hold. Meant to be called off-chain, without being deployed.
  */
 contract PriceGetter {
   // The aggregator walks every pool it knows of for a token, which can take over 10M gas.
@@ -68,23 +88,53 @@ contract PriceGetter {
     uint256 updatedAt;
   }
 
+  /// How the factory looks up the pool of two tokens
+  enum FactoryKind {
+    /// `getPair(tokenA, tokenB)`
+    UniswapV2,
+    /// `getPool(tokenA, tokenB, fee)`, for each fee in `params`
+    UniswapV3,
+    /// `getPool(tokenA, tokenB, stable)`, for both a stable and a volatile pool
+    Solidly,
+    /// `getPool(tokenA, tokenB, tickSpacing)`, for each tick spacing in `params`
+    Slipstream
+  }
+
+  struct PoolFactory {
+    address factory;
+    FactoryKind kind;
+    /// The fees (UniswapV3) or tick spacings (Slipstream) to look up pools for
+    uint256[] params;
+  }
+
+  /// Where to look for a token's pools, to tell how much liquidity it really has
+  struct PoolSearch {
+    address wrappedNative;
+    /// USD stablecoins, each counted as worth $1
+    address[] stablecoins;
+    PoolFactory[] factories;
+  }
+
   struct TokenRate {
     /// The rate to the native token, scaled by 1e18 and by the difference in decimals. 0 when
     /// the token has no price.
     uint256 rateToNative;
     uint8 decimals;
-    /// How much of the native token (in wei) the token's most liquid pool holds
-    uint256 poolDepth;
-    /// Whether the token is the native token or wraps it, which leaves `poolDepth` unknown
+    /// How much of the wrapped native token (in wei) the token's deepest pool against it holds
+    uint256 nativeReserve;
+    /// How many stablecoins (scaled to 18 decimals) the token's deepest pool against one holds
+    uint256 stableReserve;
+    /// Whether the token is the native token or wraps it, which leaves the reserves unknown
     bool isNative;
   }
 
   function getTokenRate(
     ISpotPriceOracle oracle,
     address token,
-    uint256 thresholdFilter
+    uint256 thresholdFilter,
+    PoolSearch calldata search
   ) external view returns (TokenRate memory rate) {
-    rate.decimals = ITokenDecimals(token).decimals();
+    rate.decimals = IERC20Like(token).decimals();
 
     (uint256 wrappedPrice, ISpotPriceOracle.OraclePrices memory prices) = oracle
       .getRatesAndWeightsToEthWithCustomConnectors(token, false, new address[](0), thresholdFilter);
@@ -112,21 +162,121 @@ contract PriceGetter {
 
       weightedRateSum += price.rate * price.weight;
       totalWeight += price.weight;
-
-      // A pool's weight is the geometric mean of its two reserves, and its rate their ratio,
-      // so the weight times the square root of the rate is its native token reserve
-      uint256 poolDepth = (price.weight * sqrt(price.rate * 1e18)) / 1e18;
-      if (poolDepth > rate.poolDepth) rate.poolDepth = poolDepth;
     }
 
-    if (totalWeight > 0) rate.rateToNative = weightedRateSum / totalWeight;
+    if (totalWeight == 0) return rate;
+    rate.rateToNative = weightedRateSum / totalWeight;
+
+    // The aggregator's weights can't tell how much a pool really holds: in a concentrated
+    // liquidity pool (e.g. Uniswap v3) a narrow position worth a few dollars weighs as much as a
+    // deep pool, and a route through another token is weighed by both of its pools. So the
+    // liquidity is read from what the token's pools actually hold of the tokens it's paired with.
+    rate.nativeReserve = getDeepestReserve(search.factories, token, search.wrappedNative);
+    for (uint256 i = 0; i < search.stablecoins.length; i++) {
+      address stablecoin = search.stablecoins[i];
+      if (stablecoin == token) continue;
+
+      uint256 stableReserve = toEighteenDecimals(
+        getDeepestReserve(search.factories, token, stablecoin),
+        IERC20Like(stablecoin).decimals()
+      );
+      if (stableReserve > rate.stableReserve) rate.stableReserve = stableReserve;
+    }
+  }
+
+  /// How much of `pairedToken` the deepest pool of `token` against it holds, across the factories
+  function getDeepestReserve(
+    PoolFactory[] calldata factories,
+    address token,
+    address pairedToken
+  ) internal view returns (uint256 deepest) {
+    for (uint256 i = 0; i < factories.length; i++) {
+      uint256 reserve = getFactoryDeepestReserve(factories[i], token, pairedToken);
+      if (reserve > deepest) deepest = reserve;
+    }
+  }
+
+  function getFactoryDeepestReserve(
+    PoolFactory calldata poolFactory,
+    address token,
+    address pairedToken
+  ) internal view returns (uint256 deepest) {
+    if (poolFactory.kind == FactoryKind.UniswapV2) {
+      try IUniswapV2Factory(poolFactory.factory).getPair(token, pairedToken) returns (address pool) {
+        return getReserve(pool, pairedToken);
+      } catch {
+        return 0;
+      }
+    }
+
+    if (poolFactory.kind == FactoryKind.Solidly) {
+      for (uint256 i = 0; i < 2; i++) {
+        try ISolidlyFactory(poolFactory.factory).getPool(token, pairedToken, i == 1) returns (
+          address pool
+        ) {
+          uint256 reserve = getReserve(pool, pairedToken);
+          if (reserve > deepest) deepest = reserve;
+        } catch {}
+      }
+      return deepest;
+    }
+
+    for (uint256 i = 0; i < poolFactory.params.length; i++) {
+      address pool = getConcentratedPool(poolFactory, token, pairedToken, poolFactory.params[i]);
+      uint256 reserve = getReserve(pool, pairedToken);
+      if (reserve > deepest) deepest = reserve;
+    }
+  }
+
+  /// The UniswapV3 or Slipstream pool for the fee or tick spacing, or no address
+  function getConcentratedPool(
+    PoolFactory calldata poolFactory,
+    address token,
+    address pairedToken,
+    uint256 param
+  ) internal view returns (address) {
+    if (poolFactory.kind == FactoryKind.UniswapV3) {
+      try IUniswapV3Factory(poolFactory.factory).getPool(token, pairedToken, uint24(param)) returns (
+        address pool
+      ) {
+        return pool;
+      } catch {
+        return address(0);
+      }
+    }
+
+    try
+      ISlipstreamFactory(poolFactory.factory).getPool(token, pairedToken, int24(int256(param)))
+    returns (address pool) {
+      return pool;
+    } catch {
+      return address(0);
+    }
+  }
+
+  /// How much of `pairedToken` the pool holds: what it really has, not what its liquidity
+  /// suggests
+  function getReserve(address pool, address pairedToken) internal view returns (uint256) {
+    if (pool == address(0)) return 0;
+
+    try IERC20Like(pairedToken).balanceOf(pool) returns (uint256 balance) {
+      return balance;
+    } catch {
+      return 0;
+    }
+  }
+
+  function toEighteenDecimals(uint256 amount, uint8 decimals) internal pure returns (uint256) {
+    if (decimals <= 18) return amount * 10 ** (18 - decimals);
+    return amount / 10 ** (decimals - 18);
   }
 
   /**
    * @param thresholdFilter leaves out the pools whose liquidity is below this percentage of the
    * token's most liquid pool
+   * @param search where to look for each token's pools, to read how much liquidity it has
    * @return nativePrice the native token's USD price, as the feed reports it
-   * @return rates the rate and pool depth of each token, in the order of `tokens`
+   * @return rates the rate and pool reserves of each token, in the order of `tokens`
    * @return checkedCount how many tokens, from the start of `tokens`, were checked before the
    * gas the call was given ran low. The rest were not checked and should be asked for again. On
    * an RPC that gives a call less gas than TOKEN_GAS_LIMIT, it can be 0 for a token that needs
@@ -136,7 +286,8 @@ contract PriceGetter {
     IPriceFeed nativeUsdFeed,
     ISpotPriceOracle oracle,
     address[] calldata tokens,
-    uint256 thresholdFilter
+    uint256 thresholdFilter,
+    PoolSearch calldata search
   )
     external
     view
@@ -157,7 +308,7 @@ contract PriceGetter {
 
       uint256 gasBeforeCall = gasleft();
       try
-        this.getTokenRate{ gas: tokenGas }(oracle, tokens[checkedCount], thresholdFilter)
+        this.getTokenRate{ gas: tokenGas }(oracle, tokens[checkedCount], thresholdFilter, search)
       returns (TokenRate memory rate) {
         rates[checkedCount] = rate;
       } catch {
@@ -169,17 +320,6 @@ contract PriceGetter {
         // Otherwise the token has no pools, isn't a token, its pools can't be read, or it needs
         // more than TOKEN_GAS_LIMIT: its rate stays 0, which reports it as having no price
       }
-    }
-  }
-
-  /// The integer square root, rounded down (Babylonian method)
-  function sqrt(uint256 x) internal pure returns (uint256 y) {
-    if (x == 0) return 0;
-    uint256 z = x / 2 + 1;
-    y = x;
-    while (z < y) {
-      y = z;
-      z = (x / z + z) / 2;
     }
   }
 }

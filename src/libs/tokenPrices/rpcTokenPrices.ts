@@ -18,18 +18,21 @@ const TOKENS_PER_CALL = 20
 /** The aggregator's rate is scaled by 1e18, and by 1e18 over the token's decimals */
 const RATE_DECIMALS = 36
 /**
- * A token whose most liquid pool holds less than this much of the native token, in USD, has no
- * price, unless it's one of our curated tokens (see `isCuratedToken`). A pool that small is cheap
- * to set up with any price, which is how scam tokens show a convincing value: e.g. a drained pool
- * left with $0.02 of ETH on each side of a made-up ratio.
+ * A token whose deepest pool holds less than this much, in USD, of the wrapped native token or of
+ * a stablecoin has no price, unless it's one of our curated tokens (see `isCuratedToken`). A pool
+ * that small is cheap to set up with any price, which is how scam tokens show a convincing value:
+ * e.g. a drained pool left with $0.02 of ETH on each side of a made-up ratio, or a narrow Uniswap
+ * v3 position with a few dollars in it.
  *
- * The depth is exact only for pools paired directly with the native token. For a token that trades
- * mostly against a stablecoin (e.g. USDe), it comes out far too low, which is why the curated
- * tokens skip this check.
+ * Only the pools of the network's main DEXes are looked up (see `SpotPriceConfig.poolFactories`),
+ * so a token that trades only elsewhere (e.g. Uniswap v4 or Curve, like USDe) needs to be curated
+ * to have a price.
  */
 export const MIN_POOL_DEPTH_USD = 1000
 /** The native token of every network with a config has 18 decimals */
 const NATIVE_DECIMALS = 18
+/** The contract scales the stablecoin reserves to 18 decimals */
+const STABLE_RESERVE_DECIMALS = 18
 
 /** The USD price of each token, keyed like the price cache (`getTokenDataCacheKey`). Null when it has no price. */
 export type RpcTokenPrices = Map<string, number | null>
@@ -52,9 +55,11 @@ type TokenRate = {
   /** The rate to the native token, 0 when the token has no price */
   rateToNative: bigint
   decimals: number
-  /** How much of the native token (in wei) the token's most liquid pool holds */
-  poolDepth: bigint
-  /** Whether the token is the native token or wraps it, which leaves `poolDepth` unknown */
+  /** How much of the wrapped native token (in wei) the token's deepest pool against it holds */
+  nativeReserve: bigint
+  /** How many stablecoins (scaled to 18 decimals) the token's deepest pool against one holds */
+  stableReserve: bigint
+  /** Whether the token is the native token or wraps it, which leaves the reserves unknown */
   isNative: boolean
 }
 
@@ -163,9 +168,10 @@ const getRates = async (
  * Reads the USD prices of the tokens from the network's RPC alone, without our price API: the
  * native token's price from its Chainlink feed, and every other token's price in the native
  * token from 1inch's spot price aggregator, which averages the token's DEX pools by liquidity.
- * A token that trades in no pool, or whose most liquid pool holds less than MIN_POOL_DEPTH_USD of
- * the native token (unless it's one of our curated tokens), has no price. Pools far smaller than the
- * token's most liquid one are left out of its price. A token the config prices as another token
+ * A token that trades in no pool, or whose deepest pool on the network's main DEXes holds less
+ * than MIN_POOL_DEPTH_USD of the wrapped native token or of a stablecoin (unless it's one of our
+ * curated tokens), has no price. Pools far smaller than the token's most liquid one are left out
+ * of its price. A token the config prices as another token
  * (e.g. stkWALLET as WALLET) takes that token's price.
  *
  * There is no market data (e.g. the 24h change), and only USD prices. The tokens are read in
@@ -186,16 +192,29 @@ export const getRpcTokenPrices = async ({
   const config = getRpcTokenPriceConfig(network.chainId)
   if (!config) throw new Error(`Token prices can't be read from the network on ${network.name}`)
 
+  const { spotPrices } = config
   const priceGetter = fromDescriptor(provider, PriceGetter, !network.rpcNoStateOverride)
+  // Where the contract looks for each token's pools. Empty without the aggregator, as no token
+  // other than the native one is asked for.
+  const poolSearch = {
+    wrappedNative: spotPrices?.wrappedNative || ZeroAddress,
+    stablecoins: spotPrices?.stablecoins || [],
+    factories: (spotPrices?.poolFactories || []).map(({ factory, kind, params }) => ({
+      factory,
+      kind,
+      params: params.map(BigInt)
+    }))
+  }
   // The call has its own timeout (see `Deployless.call`)
   const call = async (tokens: string[]): Promise<[GetPricesResult, number]> => {
     const [nativePrice, rates, checkedCount]: PriceGetterResult = await priceGetter.call(
       'getPrices',
       [
         config.nativeUsdFeed,
-        config.spotPriceOracle || ZeroAddress,
+        spotPrices?.oracle || ZeroAddress,
         tokens,
-        LIQUIDITY_THRESHOLD_PERCENT
+        LIQUIDITY_THRESHOLD_PERCENT,
+        poolSearch
       ]
     )
 
@@ -209,7 +228,7 @@ export const getRpcTokenPrices = async ({
   const getPriceSource = (address: string): string =>
     config.tokensPricedAs?.find(({ token }) => isSameAddr(token, address))?.pricedAs || address
 
-  const tokensToRate = config.spotPriceOracle
+  const tokensToRate = spotPrices
     ? [...new Set(tokenAddresses.map(getPriceSource))].filter(
         (address) => !isNativeOrWrappedNative(address, network)
       )
@@ -227,10 +246,15 @@ export const getRpcTokenPrices = async ({
 
   const { nativeUsdPrice } = answeredPages[0]!
   const nativePrice = Number(formatUnits(nativeUsdPrice.answer, nativeUsdPrice.decimals))
-  const hasEnoughLiquidity = (address: string, { poolDepth, isNative }: TokenRate) =>
-    isNative ||
+  const getDeepestPoolUsd = ({ nativeReserve, stableReserve }: TokenRate): number =>
+    Math.max(
+      Number(formatUnits(nativeReserve, NATIVE_DECIMALS)) * nativePrice,
+      Number(formatUnits(stableReserve, STABLE_RESERVE_DECIMALS))
+    )
+  const hasEnoughLiquidity = (address: string, rate: TokenRate) =>
+    rate.isNative ||
     isCuratedToken(address, network.chainId) ||
-    Number(formatUnits(poolDepth, NATIVE_DECIMALS)) * nativePrice >= MIN_POOL_DEPTH_USD
+    getDeepestPoolUsd(rate) >= MIN_POOL_DEPTH_USD
 
   const getPrice = (address: string, rate: TokenRate): number | null => {
     const { rateToNative, decimals } = rate
@@ -260,7 +284,7 @@ export const getRpcTokenPrices = async ({
       return
     }
     // Without the aggregator only the native token is priced: the rest have no price
-    if (!config.spotPriceOracle) {
+    if (!spotPrices) {
       prices.set(key, null)
       return
     }
