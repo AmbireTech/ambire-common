@@ -8,6 +8,7 @@ import {
   BIP44_STANDARD_DERIVATION_TEMPLATE
 } from '@/consts/derivation'
 import { FeatureFlags } from '@/consts/featureFlags'
+import { HARDWARE_WALLET_DEVICE_NAMES } from '@/consts/hardwareWallets'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
 import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
 import { PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS } from '@/consts/privacyPools'
@@ -1703,28 +1704,35 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  /**
+   * Sets up the picker for the devices that run Trezor's firmware: a Trezor, and the
+   * Ambire Ice, whose keys are of their own type, served by their own controller.
+   */
   async #handleAccountPickerInitTrezor(
-    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */
+    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    keyType: 'trezor' | 'ambireIce' = 'trezor'
   ) {
+    const deviceName = HARDWARE_WALLET_DEVICE_NAMES[keyType]
+
     try {
-      const trezorCtrl = this.#externalSignerControllers.trezor
+      const trezorCtrl = this.#externalSignerControllers[keyType]
 
       if (!trezorCtrl) {
-        const message =
-          'Could not initialize connection with your Trezor device. Please try again later or contact Ambire support.'
+        const message = `Could not initialize connection with your ${deviceName} device. Please try again later or contact Ambire support.`
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
       const { walletSDK } = trezorCtrl
       await this.accountPicker.setInitParams({
-        keyIterator: new TrezorKeyIterator({ walletSDK }),
+        keyIterator: new TrezorKeyIterator({ walletSDK, keyType }),
         hdPathTemplate,
         pageSize: 5,
         shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
-      const message = error?.message || 'Could not unlock the Trezor device. Please try again.'
+      const message =
+        error?.message || `Could not unlock the ${deviceName} device. Please try again.`
       throw new EmittableError({ message, level: 'major', error })
     }
   }
@@ -1736,6 +1744,17 @@ export class MainController extends EventEmitter implements IMainController {
     await this.#setUpPickerForHardwareWallet(
       'handleAccountPickerInitTrezor',
       () => this.#handleAccountPickerInitTrezor(TrezorKeyIterator),
+      requestId
+    )
+  }
+
+  async handleAccountPickerInitAmbireIce(
+    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    requestId?: string
+  ) {
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitAmbireIce',
+      () => this.#handleAccountPickerInitTrezor(TrezorKeyIterator, 'ambireIce'),
       requestId
     )
   }
