@@ -90,10 +90,6 @@ type PageRates = {
 const toError = (error: unknown, network: Network): Error =>
   error instanceof Error ? error : new Error(`Failed to read some token prices on ${network.name}`)
 
-/** Whether token prices can be read from the network's RPC */
-export const canGetRpcTokenPrices = (network: Network): boolean =>
-  !!getRpcTokenPriceConfig(network.chainId)
-
 /**
  * Whether the token is on one of the short lists of liquid tokens we keep for the chain: the Gas
  * Tank fee tokens, and the assets the Privacy Pools accept

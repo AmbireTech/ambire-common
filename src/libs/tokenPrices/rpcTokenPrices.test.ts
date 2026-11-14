@@ -9,7 +9,8 @@ import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import PriceGetter from '../../../contracts/compiled/PriceGetter.json'
 import * as deployless from '../deployless/deployless'
-import { canGetRpcTokenPrices, getRpcTokenPrices, MIN_POOL_DEPTH_USD } from './rpcTokenPrices'
+import { canPriceNetwork } from './canPriceNetwork'
+import { getRpcTokenPrices, MIN_POOL_DEPTH_USD } from './rpcTokenPrices'
 
 const ethereum = networks.find(({ chainId }) => chainId === 1n)!
 const scroll = networks.find(({ chainId }) => chainId === 534352n)!
@@ -574,7 +575,7 @@ describe('getRpcTokenPrices', () => {
     test('throws on a network it has no config for', async () => {
       const network: Network = { ...ethereum, chainId: 123456789n, name: 'Unknown' }
 
-      expect(canGetRpcTokenPrices(network)).toBe(false)
+      expect(canPriceNetwork(network, false)).toBe(false)
       await expect(
         getRpcTokenPrices({ provider, network, tokenAddresses: [TOKEN_1] })
       ).rejects.toThrow("Token prices can't be read from the network on Unknown")

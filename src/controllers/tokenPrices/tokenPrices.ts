@@ -14,7 +14,8 @@ import {
   TokenDataCache,
   TokenDataCacheValue
 } from '../../libs/portfolio/interfaces'
-import { canGetRpcTokenPrices, getRpcTokenPrices } from '../../libs/tokenPrices/rpcTokenPrices'
+import { canPriceNetwork } from '../../libs/tokenPrices/canPriceNetwork'
+import { getRpcTokenPrices } from '../../libs/tokenPrices/rpcTokenPrices'
 import { fetchWithTimeout } from '../../utils/fetch'
 import { paginate } from '../../utils/paginate'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -350,11 +351,11 @@ export class TokenPricesController extends EventEmitter {
 
   /** Whether the tokens of the network can be requested from the source */
   #canRequest(network: Network, source: TokenPriceSource, baseCurrency: string): boolean {
-    // Without a CoinGecko platform cena has nothing to look the tokens up by
-    if (source === 'cena') return !!network.platformId
+    if (!canPriceNetwork(network, source === 'cena')) return false
+    if (source === 'cena') return true
 
     // The RPC prices are only in USD
-    return baseCurrency === 'usd' && !!this.#getProvider && canGetRpcTokenPrices(network)
+    return baseCurrency === 'usd' && !!this.#getProvider
   }
 
   #getOrCreateCache(chainId: bigint): TokenDataCache {
