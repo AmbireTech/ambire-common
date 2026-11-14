@@ -13,6 +13,7 @@ import mockChains from '../../consts/dapps/mockChains'
 import mockDapps from '../../consts/dapps/mockDapps'
 import { DAPP_SILENCE_DURATION } from '../../consts/safeguards/dappRequestSpam'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp'
+import { Messenger } from '../../interfaces/messenger'
 import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
 import * as ensContenthashModule from '../../services/ensDomains/ensContenthash'
@@ -2682,6 +2683,206 @@ describe('DappsController', () => {
       const stored = controller.getDapp('aave.com')!
       expect(stored.connectedSources).toEqual(['injected'])
       expect(stored.isConnected).toBe(true)
+    })
+
+    test('revokes only wc-in-app when the in-app browser session ends, keeping an external wc session', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.addDapp(wcDapp(), 'wc-in-app')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-external'
+      })
+      await controller.getOrCreateDappSession({
+        tabId: 1000002,
+        url: 'https://aave.com',
+        wcTopic: 'topic-in-app',
+        isWcFromInAppBrowser: true
+      })
+
+      controller.disconnectWcSessionByTopic('topic-in-app')
+
+      expect(controller.getDappSessionByWcTopic('topic-external')).toBeDefined()
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc'])
+      expect(controller.hasPermission('aave.com', 'wc-in-app')).toBe(false)
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(true)
+    })
+
+    test('revokes only wc when the external session ends, keeping an in-app browser session', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.addDapp(wcDapp(), 'wc-in-app')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-external'
+      })
+      await controller.getOrCreateDappSession({
+        tabId: 1000002,
+        url: 'https://aave.com',
+        wcTopic: 'topic-in-app',
+        isWcFromInAppBrowser: true
+      })
+
+      controller.disconnectWcSessionByTopic('topic-external')
+
+      expect(controller.getDappSessionByWcTopic('topic-in-app')).toBeDefined()
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc-in-app'])
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(false)
+      expect(controller.hasPermission('aave.com', 'wc-in-app')).toBe(true)
+    })
+  })
+
+  describe('dropWcSourcesWithoutSessions', () => {
+    const makeConnectedDapp = (id: string, isCustom = false): Dapp =>
+      makeDapp({
+        id,
+        name: id,
+        url: `https://${id}`,
+        isCustom,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+
+    const prepare = async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      return controller
+    }
+
+    test('drops WalletConnect sources without a live session and keeps the injected one', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'injected')
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc')
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc-in-app')
+
+      await controller.dropWcSourcesWithoutSessions()
+
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['injected'])
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(false)
+      expect(controller.hasPermission('aave.com', 'wc-in-app')).toBe(false)
+    })
+
+    test('keeps each WalletConnect source that a live session of the same kind backs', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc')
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc-in-app')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-in-app',
+        isWcFromInAppBrowser: true
+      })
+
+      await controller.dropWcSourcesWithoutSessions()
+
+      // Only the in-app session is live, so the external connection is the stale one
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc-in-app'])
+    })
+
+    test('removes a custom dapp whose only source was a stale WalletConnect one', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('custom-wc-dapp.com', true), 'wc')
+
+      await controller.dropWcSourcesWithoutSessions()
+
+      expect(controller.getDapp('custom-wc-dapp.com')).toBeUndefined()
+    })
+
+    test('leaves the dapps untouched when every source is backed', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-external'
+      })
+      const emitUpdateSpy = jest.spyOn(controller, 'emitUpdate')
+
+      await controller.dropWcSourcesWithoutSessions()
+
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc'])
+      expect(emitUpdateSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('wc-in-app source', () => {
+    const inAppDapp = (): Dapp =>
+      makeDapp({
+        id: 'aave.com',
+        name: 'Aave',
+        url: 'https://aave.com',
+        isCustom: false,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+
+    const makeMessengerMock = () => ({ send: jest.fn() }) as unknown as Messenger
+
+    test('disconnectDappSource broadcasts disconnect only to the sessions of that source', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.addDapp(inAppDapp(), 'injected')
+      await controller.addDapp(inAppDapp(), 'wc')
+      await controller.addDapp(inAppDapp(), 'wc-in-app')
+
+      const injectedSession = await controller.getOrCreateDappSession({
+        tabId: 1,
+        url: 'https://aave.com'
+      })
+      const externalSession = await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-external'
+      })
+      const inAppSession = await controller.getOrCreateDappSession({
+        tabId: 1000002,
+        url: 'https://aave.com',
+        wcTopic: 'topic-in-app',
+        isWcFromInAppBrowser: true
+      })
+      const injectedMessenger = makeMessengerMock()
+      const externalMessenger = makeMessengerMock()
+      const inAppMessenger = makeMessengerMock()
+      controller.setSessionMessenger(injectedSession.sessionId, injectedMessenger, false)
+      controller.setSessionMessenger(externalSession.sessionId, externalMessenger, false)
+      controller.setSessionMessenger(inAppSession.sessionId, inAppMessenger, false)
+
+      await controller.disconnectDappSource('aave.com', 'wc-in-app')
+
+      expect(inAppMessenger.send).toHaveBeenCalledWith(
+        'broadcast',
+        expect.objectContaining({ event: 'disconnect' }),
+        expect.anything()
+      )
+      expect(injectedMessenger.send).not.toHaveBeenCalled()
+      expect(externalMessenger.send).not.toHaveBeenCalled()
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['injected', 'wc'])
+      expect(controller.getDappSessionByWcTopic('topic-in-app')).toBeUndefined()
+      expect(controller.getDappSessionByWcTopic('topic-external')).toBeDefined()
+    })
+
+    test('a wc connection does not grant the wc-in-app permission (and vice versa)', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.addDapp(inAppDapp(), 'wc')
+
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(true)
+      expect(controller.hasPermission('aave.com', 'wc-in-app')).toBe(false)
+      expect(controller.hasPermission('aave.com', 'injected')).toBe(false)
+
+      await controller.disconnectDappSource('aave.com', 'wc')
+      await controller.addDapp(inAppDapp(), 'wc-in-app')
+
+      expect(controller.hasPermission('aave.com', 'wc-in-app')).toBe(true)
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(false)
     })
   })
 
