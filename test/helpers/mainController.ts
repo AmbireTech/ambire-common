@@ -175,13 +175,25 @@ export const makeMainController = async (
       await wait(1)
     })
 
-  const featureFlags: Partial<FeatureFlags> = {
+  const initialFeatureFlags: Partial<FeatureFlags> = {
     withContinuousUpdatesController: !skipContinuousUpdates,
     ...overrides.featureFlags
   }
 
+  // MainController takes no flags from its callers, so only a subclass can set the starting values
+  class MainControllerWithFeatureFlags extends MainController {
+    // The registry and the UI know the controller by its class name
+    override get name() {
+      return 'MainController'
+    }
+
+    protected override getInitialFeatureFlags() {
+      return initialFeatureFlags
+    }
+  }
+
   const { uiManager, eventEmitter, getWindowId } = mockUiManager()
-  const mainCtrl = new MainController({
+  const mainCtrl = new MainControllerWithFeatureFlags({
     appVersion: overrides.appVersion ?? '1.0.0',
     platform: overrides.platform ?? 'browser-webkit',
     storageAPI: storage,
@@ -192,7 +204,6 @@ export const makeMainController = async (
     cowSwapApiKey: overrides.cowSwapApiKey ?? '',
     bungeeApiKey: overrides.bungeeApiKey ?? '',
     uniswapApiKey: overrides.uniswapApiKey ?? '',
-    featureFlags,
     keystoreSigners: overrides.keystoreSigners ?? { internal: KeystoreSigner },
     externalSignerControllers: overrides.externalSignerControllers ?? {},
     uiManager,
