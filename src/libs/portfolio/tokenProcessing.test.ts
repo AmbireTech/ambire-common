@@ -7,6 +7,7 @@ import {
   getFeeToken,
   getFlags,
   isFiatLikeSymbol,
+  isKnownTokenOnChain,
   isSuspectedRegardsKnownAddresses,
   isSuspectedToken
 } from './tokenProcessing'
@@ -303,5 +304,22 @@ describe('getFlags fiat symbols', () => {
       'suspected'
     )
     expect(getFlags({}, '1', 1n, NOT_A_FEE_TOKEN, 'Dollar', '$').suspectedType).toBeNull()
+  })
+})
+
+describe('isKnownTokenOnChain', () => {
+  const USDE_ETHEREUM = '0x4c9EDD5852cd905f086C759E8383e09bff1E68B3'
+
+  it('trusts a known token on a chain it is listed for, in any casing', () => {
+    expect(isKnownTokenOnChain(USDE_ETHEREUM, 1n)).toBe(true)
+    expect(isKnownTokenOnChain(USDE_ETHEREUM.toLowerCase(), 1n)).toBe(true)
+  })
+
+  it('does not trust a known token on a chain it is not listed for', () => {
+    expect(isKnownTokenOnChain(USDE_ETHEREUM, 8453n)).toBe(false)
+  })
+
+  it('does not trust an unknown token', () => {
+    expect(isKnownTokenOnChain('0x1c0c8DF96D723872Df5f84a580b033f6C13F1740', 8453n)).toBe(false)
   })
 })

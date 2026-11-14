@@ -320,29 +320,32 @@ const SUSPICION_RULES: SuspicionRule[] = [
   (_address, symbol) => (isFiatLikeSymbol(symbol) ? 'suspected' : null)
 ]
 
+/**
+ * Whether the token is on our list of known tokens for the given chain, which makes it trusted.
+ * A token on the list for other chains only is not.
+ */
+export const isKnownTokenOnChain = (address: string, chainId: bigint): boolean => {
+  // 1) lookup known token by address
+  const knownToken = knownAddresses?.[normalizeAddress(address)]
+
+  // 2) Only trusted if known token exists AND chainIds is defined AND includes chainId
+  return !!knownToken?.chainIds?.includes(Number(chainId))
+}
+
 export const isSuspectedToken = (
   address: string,
   symbol: string,
   chainId: bigint
 ): SuspectedType => {
-  const normalizedAddr = normalizeAddress(address)
-  const numericChainId = Number(chainId)
+  if (isKnownTokenOnChain(address, chainId)) return null // trusted
 
-  // 1) lookup known token by address
-  const knownToken = knownAddresses?.[normalizedAddr]
-
-  // 2) Only auto-accept if known token exists AND chainIds is defined AND includes chainId
-  if (knownToken?.chainIds?.includes(numericChainId)) {
-    return null // trusted
-  }
-
-  // 3) Run the suspicion rules in order and return the first reason found
+  // Run the suspicion rules in order and return the first reason found
   for (const rule of SUSPICION_RULES) {
     const reason = rule(address, symbol, chainId)
     if (reason) return reason
   }
 
-  // 4) Not flagged
+  // Not flagged
   return null
 }
 
