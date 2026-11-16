@@ -387,11 +387,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         'privacyPools'
       ),
 
-      this.#featureFlags.onUpdate((forceEmit) => {
-        if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) this.#dropPrices()
-
-        this.#propagateIfHasAccounts(forceEmit)
-      }, 'privacyPools')
+      this.#featureFlags.onUpdate(
+        (forceEmit) => this.#propagateIfHasAccounts(forceEmit),
+        'privacyPools'
+      )
     )
   }
 
@@ -619,10 +618,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         error: error instanceof Error ? error : new Error('privacyPools: prices request failed')
       })
     }
-  }
-
-  #dropPrices() {
-    this.prices = {}
   }
 
   /**

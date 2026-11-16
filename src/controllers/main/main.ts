@@ -33,6 +33,7 @@ import { Erc7730Controller } from '@/controllers/erc7730/erc7730'
 import { EstimationStatus } from '@/controllers/estimation/types'
 import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '@/controllers/featureFlags/featureFlags'
+import { onFeatureFlagChange } from '@/controllers/featureFlags/onFeatureFlagChange'
 import { InviteController } from '@/controllers/invite/invite'
 import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
@@ -350,7 +351,30 @@ export class MainController extends EventEmitter implements IMainController {
     // The only source of token prices, shared so that every feature reads one cache
     const tokenPrices = new TokenPricesController({
       fetch: this.fetch,
-      isTokenPricesEnabled: () => this.featureFlags.isFeatureEnabled('tokenPrices')
+      isTokenPricesEnabled: () => this.featureFlags.isFeatureEnabled('tokenPrices'),
+      // Read lazily, as the providers controller is created right after (and depends on this one).
+      // A provider that isn't set up yet (e.g. right after startup) is waited for.
+      getProvider: async (chainId) => {
+        const chainKey = chainId.toString()
+        if (!this.providers.providers[chainKey]) {
+          const network = this.networks.allNetworks.find((n) => n.chainId === chainId)
+          if (network) await this.providers.setProvider(network)
+        }
+
+        return this.providers.providers[chainKey]
+      }
+    })
+    // Switching the price source empties the price cache (see TokenPricesController), so the
+    // portfolio is updated right away to show what the setting changed, instead of keeping the
+    // other source's prices until the next scheduled update
+    onFeatureFlagChange(this.featureFlags, 'tokenPrices', () => {
+      this.updateSelectedAccountPortfolio().catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the portfolio after the token prices setting changed',
+          error
+        })
+      )
     })
     this.providers = new ProvidersController({
       eventEmitterRegistry,
