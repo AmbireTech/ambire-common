@@ -5,7 +5,8 @@ import { expect, jest } from '@jest/globals'
 import {
   createPPv1Broadcaster,
   PaymasterBroadcastError,
-  PPv1NoteUnavailableError
+  PPv1NoteUnavailableError,
+  PPv1RelayerQuoteError
 } from '@kohaku-eth/privacy-pools'
 import type { PPv1HistoryEvent } from '@kohaku-eth/privacy-pools'
 
@@ -607,6 +608,14 @@ jest.mock('@kohaku-eth/privacy-pools', () => ({
     '../../../test/mocks/privacyPoolsSdk'
   ).getPPv1ChainStateKey,
   PPv1NoteUnavailableError: class PPv1NoteUnavailableError extends Error {},
+  PPv1RelayerQuoteError: class PPv1RelayerQuoteError extends Error {
+    failures: readonly object[]
+
+    constructor(failures: readonly object[]) {
+      super('All relayers failed to provide a quote')
+      this.failures = failures
+    }
+  },
   PaymasterBroadcastError: class PaymasterBroadcastError extends Error {
     failure: string
 
@@ -4052,7 +4061,45 @@ describe('PrivacyPoolsController', () => {
       restore()
     })
 
-    it('explains when no relayer gave a usable price', async () => {
+    const RELAYERS_UNAVAILABLE_ERROR =
+      'The 0xBow relayers could not take this transfer right now. Please try again in a moment, or choose Kohaku in the send settings.'
+    const RELAYER_FEE_TOO_HIGH_ERROR =
+      'The 0xBow relayers are asking a higher fee than this pool allows right now. Please try again later, or choose Kohaku in the send settings.'
+    const QUOTE_FAILED = {
+      relayerId: 'fastrelay',
+      relayerUrl: 'https://fastrelay.xyz/relayer',
+      message: 'Quote request failed (HTTP 503)',
+      reason: 'quote-failed'
+    }
+    const FEE_TOO_HIGH = {
+      relayerId: 'cloaked',
+      relayerUrl: 'https://api.clkd.xyz/relayer',
+      message: 'withdrawalData fee 120 bps exceeds the pool maxRelayFeeBPS 100',
+      reason: 'fee-too-high',
+      requiredFeeBPS: 120n,
+      maxRelayFeeBPS: 100n
+    }
+
+    it.each([
+      ['no relayer could be reached', [QUOTE_FAILED], RELAYERS_UNAVAILABLE_ERROR],
+      ['no relayer is configured', [], RELAYERS_UNAVAILABLE_ERROR],
+      [
+        'one relayer asked too much and another could not be reached',
+        [FEE_TOO_HIGH, QUOTE_FAILED],
+        RELAYERS_UNAVAILABLE_ERROR
+      ],
+      ['every relayer asked more than the pool allows', [FEE_TOO_HIGH], RELAYER_FEE_TOO_HIGH_ERROR]
+    ])('explains when %s', async (_case, failures, error) => {
+      const { restore } = suppressConsole()
+      prepareUnshieldFailure = new (PPv1RelayerQuoteError as any)(failures)
+
+      const { controller } = await prepareRelayedWithdrawal()
+
+      expect(controller.operation).toMatchObject({ status: 'failed', error })
+      restore()
+    })
+
+    it('does not read a plain error that only mentions the relayers as a quote failure', async () => {
       const { restore } = suppressConsole()
       prepareUnshieldFailure = new Error('All relayers failed to provide a quote')
 
@@ -4060,8 +4107,7 @@ describe('PrivacyPoolsController', () => {
 
       expect(controller.operation).toMatchObject({
         status: 'failed',
-        error:
-          'The 0xBow relayers could not take this transfer right now. Please try again in a moment, or choose Kohaku in the send settings.'
+        error: 'The transfer could not be prepared. Please try again.'
       })
       restore()
     })

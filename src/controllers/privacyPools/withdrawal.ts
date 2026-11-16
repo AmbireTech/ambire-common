@@ -4,6 +4,7 @@ import {
   createPPv1Broadcaster,
   PaymasterBroadcastError,
   PPv1NoteUnavailableError,
+  PPv1RelayerQuoteError,
   PPv1UnshieldOptions,
   PrivacyPoolsV1Protocol
 } from '@kohaku-eth/privacy-pools'
@@ -98,25 +99,26 @@ const STALE_WITHDRAWAL_MESSAGE = 'This transfer has expired. Go back to prepare 
 const FEE_ABOVE_AMOUNT_SDK_MESSAGE = 'Withdrawal amount too small to cover the sponsored gas fee'
 
 /**
- * The SDK's errors when no relayer gave a usable quote: each failed, or quoted a fee above what the
- * pool allows. Matched by wording, like `FEE_ABOVE_AMOUNT_SDK_MESSAGE`.
+ * Whether every relayer answered, but each asked a higher fee than the pool allows. Retrying soon
+ * won't help then, unlike when a relayer could not be reached.
  */
-const NO_RELAYER_QUOTE_SDK_MESSAGES = [
-  'All relayers failed to provide a quote',
-  'Failed to get quote from relayers'
-]
+const isEveryRelayerFeeTooHigh = ({ failures }: PPv1RelayerQuoteError) =>
+  failures.length > 0 && failures.every(({ reason }) => reason === 'fee-too-high')
 
 /** Makes the SDK errors the user can act on readable; passes anything else through as an `Error`. */
 const toReadableWithdrawalError = (error: unknown) => {
   // The SDK's sync before proving found the chosen deposit can no longer pay
   if (error instanceof PPv1NoteUnavailableError)
     return privacyPoolsErrors.withdrawalDepositUnavailable(error)
+  // No relayer gave a usable quote: each failed, or quoted a fee above what the pool allows
+  if (error instanceof PPv1RelayerQuoteError && isEveryRelayerFeeTooHigh(error))
+    return privacyPoolsErrors.withdrawalRelayerFeeTooHigh(error)
+  if (error instanceof PPv1RelayerQuoteError)
+    return privacyPoolsErrors.withdrawalRelayersUnavailable(error)
 
   const sdkError = toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
   if (sdkError.message.includes(FEE_ABOVE_AMOUNT_SDK_MESSAGE))
     return privacyPoolsErrors.withdrawalFeeAboveAmount(sdkError)
-  if (NO_RELAYER_QUOTE_SDK_MESSAGES.some((message) => sdkError.message.includes(message)))
-    return privacyPoolsErrors.withdrawalRelayersUnavailable(sdkError)
 
   return sdkError
 }

@@ -149,6 +149,13 @@ export const privacyPoolsErrors = {
       level: 'expected',
       error: sdkError
     }),
+  withdrawalRelayerFeeTooHigh: (sdkError: Error) =>
+    new EmittableError({
+      message:
+        'The 0xBow relayers are asking a higher fee than this pool allows right now. Please try again later, or choose Kohaku in the send settings.',
+      level: 'expected',
+      error: sdkError
+    }),
   withdrawalOfferExpired: () =>
     expectedError(
       'The price for sending this ran out while the transfer was being prepared. Please try again.',
