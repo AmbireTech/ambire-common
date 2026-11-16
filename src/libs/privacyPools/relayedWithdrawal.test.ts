@@ -15,6 +15,8 @@ const AMOUNT = 10n ** 17n
 const POOL_SCOPE = 1234n
 /** 0.18%, as Fast Relay quotes a send of 0.1 ETH. */
 const FEE_BPS = 18n
+/** The relayers' own 0.1%, the rest of `FEE_BPS` being what they charge for gas. */
+const BASE_FEE_BPS = 10n
 const MAX_RELAY_FEE_BPS = 1_000n
 const EXPIRATION = 1_700_000_060_000
 
@@ -33,6 +35,7 @@ const buildWithdrawal = ({
   relayData = encodeRelayData(),
   committedData = relayData,
   quotedFeeBPS = FEE_BPS,
+  baseFeeBPS = BASE_FEE_BPS.toString(),
   processooor = ENTRYPOINT,
   scope = POOL_SCOPE,
   withdrawnValue = AMOUNT,
@@ -41,6 +44,7 @@ const buildWithdrawal = ({
   relayData?: string
   committedData?: string
   quotedFeeBPS?: bigint
+  baseFeeBPS?: string
   processooor?: string
   scope?: bigint
   withdrawnValue?: bigint
@@ -65,6 +69,7 @@ const buildWithdrawal = ({
   quoteData: {
     quote: {
       feeBPS: quotedFeeBPS.toString(),
+      baseFeeBPS,
       feeCommitment: { expiration: EXPIRATION, withdrawalData: committedData }
     },
     relayerId
@@ -90,8 +95,52 @@ describe('libs/privacyPools/relayedWithdrawal', () => {
       tokenAddress: NATIVE,
       amount: AMOUNT,
       fee: (AMOUNT * FEE_BPS) / 10_000n,
+      serviceFee: (AMOUNT * BASE_FEE_BPS) / 10_000n,
       expiresAt: EXPIRATION
     })
+  })
+
+  it('keeps the service fee within the fee, rounded down as the entrypoint rounds it', () => {
+    // 1,234,567 wei: 18 bps is 2,222.2 wei and 10 bps 1,234.5 wei, both rounded down
+    const amount = 1_234_567n
+    const { fee, serviceFee } = readRelayedWithdrawal({
+      withdrawal: buildWithdrawal({ withdrawnValue: amount }),
+      relayers: RELAYERS,
+      entrypointAddress: ENTRYPOINT,
+      poolScope: POOL_SCOPE,
+      maxRelayFeeBPS: MAX_RELAY_FEE_BPS,
+      recipient: RECIPIENT,
+      tokenAddress: NATIVE,
+      amount
+    })
+
+    expect(fee).toBe(2_222n)
+    expect(serviceFee).toBe(1_234n)
+  })
+
+  it('shows no more than the committed fee as the service fee, so the network fee is never negative', () => {
+    const withdrawal = buildWithdrawal({
+      relayData: encodeRelayData({ relayFeeBPS: 5n }),
+      baseFeeBPS: '10'
+    })
+
+    const { fee, serviceFee } = read(withdrawal)
+
+    expect(serviceFee).toBe(fee)
+  })
+
+  it.each([
+    ['is missing', undefined],
+    ['is empty', ''],
+    ['is negative', '-10'],
+    ['is not a whole number', '10.5'],
+    ['is in hex', '0x0a'],
+    ['has spaces around it', ' 10 ']
+  ])('refuses a quote whose service fee %s', (_case, baseFeeBPS) => {
+    const withdrawal = buildWithdrawal()
+    ;(withdrawal.quoteData.quote as { baseFeeBPS?: string }).baseFeeBPS = baseFeeBPS
+
+    expect(() => read(withdrawal)).toThrow(/no valid service fee/)
   })
 
   it('returns the recipient as the payload pays it, checksummed', () => {

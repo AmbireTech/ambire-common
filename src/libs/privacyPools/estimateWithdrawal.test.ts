@@ -260,7 +260,11 @@ describe('simulateRelayedWithdrawal', () => {
       scope: 1234n
     },
     quoteData: {
-      quote: { feeBPS: '18', feeCommitment: { expiration: 0, withdrawalData: '0xabcdef' } },
+      quote: {
+        feeBPS: '18',
+        baseFeeBPS: '10',
+        feeCommitment: { expiration: 0, withdrawalData: '0xabcdef' }
+      },
       relayerId: 'Fast Relay'
     }
   }

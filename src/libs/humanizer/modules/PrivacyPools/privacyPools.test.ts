@@ -283,26 +283,81 @@ describe('Privacy Pools humanizer', () => {
       )
     })
 
-    test('shows the exact fee through 0xBow, whose relayer refunds nothing of it', () => {
-      const card = humanizePrivacyPoolsWithdrawal({
-        chainId: CHAIN_ID,
-        broadcaster: '0xbow',
-        withdrawal,
-        expectedFeeAmount: withdrawal.fee,
-        usdPrice: USD_PRICE
-      }).fullVisualization?.[0]
-      if (card?.type !== 'erc7730') throw new Error('Expected a clear-signing card')
-      const rows = card.fields.flatMap((row) => (row.type === 'single-value' ? [row] : []))
+    describe('through 0xBow', () => {
+      /** 0.18% of 5 USDC, of which the relayer's own 0.1%. */
+      const relayedWithdrawal = {
+        recipient: RECIPIENT,
+        tokenAddress: USDC,
+        amount: 5_000_000n,
+        fee: 9_000n,
+        serviceFee: 5_000n,
+        expiresAt: 1_700_000_060_000
+      }
 
-      expect(rows.map(({ label, valuePrefix }) => [label, valuePrefix])).toEqual([
-        ['Amount to Send', undefined],
-        ['Recipient Receives', undefined],
-        ['Recipient', undefined],
-        ['Fee', undefined]
+      const getRows = (withdrawal: typeof relayedWithdrawal) => {
+        const card = humanizePrivacyPoolsWithdrawal({
+          chainId: CHAIN_ID,
+          broadcaster: '0xbow',
+          withdrawal,
+          expectedFeeAmount: withdrawal.fee,
+          usdPrice: USD_PRICE
+        }).fullVisualization?.[0]
+        if (card?.type !== 'erc7730') throw new Error('Expected a clear-signing card')
+
+        return card.fields.flatMap((row) => (row.type === 'single-value' ? [row] : []))
+      }
+      const getTokenValue = (row: { value: HumanizerVisualization } | undefined) => {
+        if (row?.value.type !== 'token') throw new Error('Expected a token row')
+
+        return row.value.value
+      }
+
+      test('shows the exact fee as the service fee and the network fee, as no part is refunded', () => {
+        const rows = getRows(relayedWithdrawal)
+
+        expect(
+          rows.map(({ label, valuePrefix, hasSeparatorBefore }) => [
+            label,
+            valuePrefix,
+            !!hasSeparatorBefore
+          ])
+        ).toEqual([
+          ['Amount to Send', undefined, false],
+          ['Recipient Receives', undefined, false],
+          ['Recipient', undefined, true],
+          ['Service fee', undefined, true],
+          ['Network fee', undefined, false]
+        ])
+        expect(getTokenValue(rows[1])).toBe(4_991_000n)
+        expect(getTokenValue(rows[3])).toBe(5_000n)
+        expect(getTokenValue(rows[4])).toBe(4_000n)
+      })
+
+      test('prices both fees', () => {
+        const [, , , serviceFeeRow, networkFeeRow] = getRows(relayedWithdrawal)
+
+        expect(serviceFeeRow?.value).toMatchObject({ usdPrice: USD_PRICE })
+        expect(networkFeeRow?.value).toMatchObject({ usdPrice: USD_PRICE })
+      })
+
+      test('still shows the network fee when the relayer charges nothing for it', () => {
+        const rows = getRows({ ...relayedWithdrawal, fee: 5_000n })
+
+        expect(rows[4]?.label).toBe('Network fee')
+        expect(getTokenValue(rows[4])).toBe(0n)
+      })
+    })
+
+    test('shows no service fee through Kohaku, whose paymaster takes only the network fee', () => {
+      const card = humanize(120_000n).fullVisualization?.[0]
+      if (card?.type !== 'erc7730') throw new Error('Expected a clear-signing card')
+
+      expect(card.fields.map((row) => row.type === 'single-value' && row.label)).toEqual([
+        'Amount to Send',
+        'Recipient Receives',
+        'Recipient',
+        'Network fee'
       ])
-      const receives = rows[1]?.value
-      if (receives?.type !== 'token') throw new Error('Expected a token row')
-      expect(receives.value).toBe(withdrawal.amount - withdrawal.fee)
     })
 
     test('carries no raw call, so nothing of the single-use sender is shown', () => {

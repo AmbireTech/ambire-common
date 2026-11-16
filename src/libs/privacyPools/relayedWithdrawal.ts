@@ -19,6 +19,11 @@ export type PrivacyPoolsRelayedWithdrawalPayload = {
     quote: {
       /** The fee the relayer quoted, in basis points. */
       feeBPS: string
+      /**
+       * The relayer's own part of `feeBPS`, before what it charges for gas, in basis points. Only
+       * shown: what the entrypoint takes is the fee committed in `withdrawalData`.
+       */
+      baseFeeBPS: string
       feeCommitment: {
         /** When the relayer stops accepting the withdrawal, in milliseconds. */
         expiration: number
@@ -43,6 +48,18 @@ const BASIS_POINTS_DENOMINATOR = 10_000n
 
 const isSameAddress = (a: string, b: string) => getAddress(a) === getAddress(b)
 
+/** Reads basis points the relayer sent as a decimal string, or null when they are not that. */
+const parseBasisPoints = (value: unknown): bigint | null => {
+  if (
+    typeof value !== 'string' ||
+    value === '' ||
+    [...value].some((char) => char < '0' || char > '9')
+  )
+    return null
+
+  return BigInt(value)
+}
+
 /**
  * What a prepared relayed withdrawal does, read from the bytes the relayer and the entrypoint act
  * on, so it can be shown as what will happen rather than as what was asked for.
@@ -56,6 +73,8 @@ export type PrivacyPoolsRelayedWithdrawal = {
   amount: bigint
   /** The relayer's fee, taken out of `amount`. Exact: the relayer refunds nothing. */
   fee: bigint
+  /** The relayer's own part of `fee`. The rest is what it charges for the network fee. */
+  serviceFee: bigint
   /** When the relayer stops accepting the withdrawal, in milliseconds. */
   expiresAt: number
 }
@@ -127,12 +146,19 @@ export const readRelayedWithdrawal = ({
   const fee = (amount * relayFeeBPS) / BASIS_POINTS_DENOMINATOR
   if (fee >= amount) throw new Error('privacyPools: the withdrawal fee would take the whole amount')
 
+  const baseFeeBPS = parseBasisPoints(quoteData.quote.baseFeeBPS)
+  if (baseFeeBPS === null) throw new Error('privacyPools: the relayer quoted no valid service fee')
+  // Only shown, so a relayer that committed to less than its own fee cannot make the rest negative
+  const serviceFeeBPS = baseFeeBPS < relayFeeBPS ? baseFeeBPS : relayFeeBPS
+
   return {
     recipient: getAddress(relayData.recipient),
     // The pool's token: the scope is checked above to be that of the pool the entrypoint lists
     tokenAddress,
     amount: withdrawnAmount,
     fee,
+    // Rounded down like `fee`, so it is never more than it
+    serviceFee: (amount * serviceFeeBPS) / BASIS_POINTS_DENOMINATOR,
     expiresAt: feeCommitment.expiration
   }
 }
