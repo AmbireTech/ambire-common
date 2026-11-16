@@ -1,3 +1,5 @@
+import type { MerkleTreeBuilder } from '@kohaku-eth/privacy-pools'
+
 import EmittableError from '../../classes/EmittableError'
 import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '../../consts/activity'
 import {
@@ -191,6 +193,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     fetch,
     circuitsBaseUrl,
     proverFactory,
+    merkleTreeBuilder,
     onAccountsRemoved,
     getPendingAccountOps,
     eventEmitterRegistry,
@@ -211,6 +214,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
      * proofs run here from `circuitsBaseUrl`.
      */
     proverFactory?: PrivacyPoolsProverFactory
+    /**
+     * Builds the pools' Merkle trees outside this context (the extension's offscreen document).
+     * Absent, the SDK builds them here. Passed to every plugin as it is, as the SDK caches its
+     * trees per builder.
+     */
+    merkleTreeBuilder?: MerkleTreeBuilder
     onAccountsRemoved: (seedIds: string[]) => Promise<void>
     /** The transactions broadcast but not confirmed, and the current request batch. */
     getPendingAccountOps: () => PendingAccountOp[]
@@ -263,7 +272,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       (circuit) => (circuit === 'withdraw' ? this.#withdrawal.provingSignal : null)
     )
 
-    this.#registry = new PrivacyPoolsProtocolRegistry(ctx, cancellableProverFactory)
+    this.#registry = new PrivacyPoolsProtocolRegistry(
+      ctx,
+      cancellableProverFactory,
+      merkleTreeBuilder
+    )
     this.#sync = new PrivacyPoolsSync(
       ctx,
       this.#registry,

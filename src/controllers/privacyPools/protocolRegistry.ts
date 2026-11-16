@@ -1,6 +1,7 @@
 import { JsonRpcProvider } from 'ethers'
 
 import {
+  MerkleTreeBuilder,
   OxBowAspService,
   PrivacyPoolsV1Protocol,
   SignatureSecretManager
@@ -52,15 +53,23 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
 
   #proverFactory: PrivacyPoolsProverFactory
 
+  /** Absent, the SDK's own builder. One for all plugins, as the SDK caches its trees per builder. */
+  #merkleTreeBuilder?: MerkleTreeBuilder
+
   /** Per `${chainId}:${seedId}`. */
   #entries = new Map<string, ProtocolEntry>()
 
   /** Per phrase, outliving its plugins, so a rebuilt plugin skips re-deriving keys (pbkdf2). */
   #kohakuKeystores = new Map<string, Keystore>()
 
-  constructor(ctx: PrivacyPoolsContext, proverFactory: PrivacyPoolsProverFactory) {
+  constructor(
+    ctx: PrivacyPoolsContext,
+    proverFactory: PrivacyPoolsProverFactory,
+    merkleTreeBuilder?: MerkleTreeBuilder
+  ) {
     this.#ctx = ctx
     this.#proverFactory = proverFactory
+    this.#merkleTreeBuilder = merkleTreeBuilder
   }
 
   getHost(chainId: string, seedId: string): Host {
@@ -98,6 +107,7 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
       },
       // The SDK types it as the circuits package's whole `Prover`, but only ever calls `prove`
       proverFactory: this.#proverFactory as SdkProverFactory,
+      merkleTreeBuilder: this.#merkleTreeBuilder,
       // Not the SDK's IPFS default, which needs ipfs.io up and the last root update's CID pinned
       aspServiceFactory: () =>
         new OxBowAspService({ network: host.network, aspUrl: config.aspUrl }),

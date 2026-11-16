@@ -118,6 +118,7 @@ import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
 import { PrivacyPoolsProverFactory } from '@/libs/privacyPools/prover'
+import type { MerkleTreeBuilder } from '@kohaku-eth/privacy-pools'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
@@ -272,6 +273,7 @@ export class MainController extends EventEmitter implements IMainController {
     uiManager,
     privacyPoolsCircuitsBaseUrl,
     privacyPoolsProverFactory,
+    privacyPoolsMerkleTreeBuilder,
     idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -293,6 +295,8 @@ export class MainController extends EventEmitter implements IMainController {
     privacyPoolsCircuitsBaseUrl: string
     /** Where to generate Privacy Pools proofs if not here - see `PrivacyPoolsController`. */
     privacyPoolsProverFactory?: PrivacyPoolsProverFactory
+    /** Where to build Privacy Pools' large Merkle trees if not here - see `PrivacyPoolsController`. */
+    privacyPoolsMerkleTreeBuilder?: MerkleTreeBuilder
     idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
@@ -465,6 +469,7 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
+      merkleTreeBuilder: privacyPoolsMerkleTreeBuilder,
       onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds),
       getPendingAccountOps: () => this.getPendingAccountOps(),
       tokenPrices

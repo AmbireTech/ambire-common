@@ -8,7 +8,7 @@ import {
   PPv1NoteUnavailableError,
   PPv1RelayerQuoteError
 } from '@kohaku-eth/privacy-pools'
-import type { PPv1HistoryEvent } from '@kohaku-eth/privacy-pools'
+import type { MerkleTreeBuilder, PPv1HistoryEvent } from '@kohaku-eth/privacy-pools'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
@@ -853,6 +853,7 @@ const prepareTest = async ({
   // Passed to start again from what an earlier controller left in storage, as after a restart
   storage = new StorageController(produceMemoryStore()),
   proverFactory,
+  merkleTreeBuilder,
   // Adds `OTHER_CHAIN_ID` to the user's networks, with a provider
   hasOtherChain = false,
   // The paymaster, which most of these tests prove through. Null leaves the choice unset
@@ -861,6 +862,7 @@ const prepareTest = async ({
   accounts?: string[]
   storage?: StorageController
   proverFactory?: PrivacyPoolsProverFactory
+  merkleTreeBuilder?: MerkleTreeBuilder
   hasOtherChain?: boolean
   storedBroadcaster?: string | null
 } = {}) => {
@@ -903,6 +905,7 @@ const prepareTest = async ({
     fetch: fakeFetch as any,
     circuitsBaseUrl: '',
     proverFactory,
+    merkleTreeBuilder,
     onAccountsRemoved,
     getPendingAccountOps: () => pendingAccountOps,
     tokenPrices: new TokenPricesController({
@@ -5430,8 +5433,14 @@ describe('PrivacyPoolsController', () => {
   })
 
   describe('proving', () => {
-    const syncedProtocol = async (proverFactory?: PrivacyPoolsProverFactory) => {
-      const { controller, selectedAccount } = await prepareTest({ proverFactory })
+    const syncedProtocol = async (
+      proverFactory?: PrivacyPoolsProverFactory,
+      merkleTreeBuilder?: MerkleTreeBuilder
+    ) => {
+      const { controller, selectedAccount } = await prepareTest({
+        proverFactory,
+        merkleTreeBuilder
+      })
       selectedAccount.select('seed-a')
       const syncing = controller.syncChain('1')
       await releaseSync('seed-a')
@@ -5462,6 +5471,20 @@ describe('PrivacyPoolsController', () => {
       await expect(protocol.params.proverFactory()).rejects.toThrow(
         'privacyPools: proving is not available on this platform (no circuit artifacts)'
       )
+    })
+
+    it('hands the SDK the platform tree builder as it is, as the SDK caches its trees per builder', async () => {
+      const merkleTreeBuilder: MerkleTreeBuilder = jest.fn(async () => ({}) as any)
+
+      const protocol = await syncedProtocol(undefined, merkleTreeBuilder)
+
+      expect(protocol.params.merkleTreeBuilder).toBe(merkleTreeBuilder)
+    })
+
+    it('leaves the SDK its own tree builder without one', async () => {
+      const protocol = await syncedProtocol()
+
+      expect(protocol.params.merkleTreeBuilder).toBeUndefined()
     })
   })
 
