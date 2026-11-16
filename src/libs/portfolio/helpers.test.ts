@@ -8,6 +8,7 @@ import {
   erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
   getAssetCacheKey,
+  getBorrowedValueInTotal,
   getErc721Validity,
   getHintsError,
   getSpecialHints,
@@ -829,6 +830,38 @@ describe('Portfolio helpers', () => {
       const total = getTotal([], defiState)
 
       expect(total.usd).toBeGreaterThan(0)
+    })
+    it('Counts a lending position at its net value when its only supplied token is hidden', () => {
+      const ethereumState = structuredClone(PORTFOLIO_STATE['1'])!
+      const tokens = ethereumState.result!.tokens.map((token) =>
+        token.symbol === 'aBasWETH'
+          ? { ...token, flags: { ...token.flags, isHidden: true } }
+          : token
+      )
+
+      const total = getTotal(tokens, ethereumState.result!.defiPositions)
+
+      // The $100 aBasWETH is no longer counted, the $170 net Aave position is counted instead
+      expect(total.usd).toBeCloseTo(140.05 - 100 + 170)
+      expect(getBorrowedValueInTotal(tokens, ethereumState.result!.defiPositions)).toBe(0)
+    })
+  })
+  describe('getBorrowedValueInTotal', () => {
+    it('Returns the borrowed value of the positions counted through wallet tokens', () => {
+      const ethereumState = PORTFOLIO_STATE['1']!
+
+      // $20 GHO and $10 EURC borrowed against the aBasWETH in the wallet
+      expect(
+        getBorrowedValueInTotal(ethereumState.result!.tokens, ethereumState.result!.defiPositions)
+      ).toBe(30)
+    })
+    it('Returns 0 when the supplied token has no price, as the total then uses the net value', () => {
+      const ethereumState = structuredClone(PORTFOLIO_STATE['1'])!
+      const tokens = ethereumState.result!.tokens.map((token) =>
+        token.symbol === 'aBasWETH' ? { ...token, priceIn: [] } : token
+      )
+
+      expect(getBorrowedValueInTotal(tokens, ethereumState.result!.defiPositions)).toBe(0)
     })
   })
   describe('getHintsError', () => {

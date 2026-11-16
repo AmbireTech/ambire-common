@@ -584,6 +584,49 @@ export const sortTokensByBalanceInUSD = <T extends TokenResult>(tokens: T[]): T[
     .sort((a, b) => b.balanceInUSD - a.balanceInUSD)
     .map(({ token }) => token)
 
+/**
+ * Ids of the DeFi positions whose supplied funds the total already counts through the
+ * position's tokens in the wallet (e.g. Aave's aTokens). A hidden token is not counted,
+ * so its position is counted at its own value instead and is not in the result.
+ */
+const getPositionIdsCountedByTokens = (
+  tokens: TokenResult[],
+  includeHiddenTokens: boolean
+): Set<string> =>
+  new Set(
+    tokens
+      .filter(
+        (token) =>
+          token.flags.defiPositionId &&
+          token.flags.defiTokenType === AssetType.Collateral &&
+          (includeHiddenTokens || !token.flags.isHidden) &&
+          // If the token doesn't have a price we must add the value from the position to the total
+          token.priceIn.length > 0
+      )
+      .map((token) => token.flags.defiPositionId!)
+  )
+
+/**
+ * The USD value borrowed in the positions whose supplied funds `getTotal` counts through
+ * wallet tokens. `getTotal` does not subtract it, so subtract it from the total to get the
+ * net balance. The other positions are counted at their net value and are not part of it.
+ */
+export const getBorrowedValueInTotal = (
+  tokens: TokenResult[],
+  defiState: PortfolioNetworkResult['defiPositions'] | null | undefined
+): number => {
+  if (!defiState) return 0
+
+  const positionIdsCountedByTokens = getPositionIdsCountedByTokens(tokens, false)
+  if (!positionIdsCountedByTokens.size) return 0
+
+  return defiState.positionsByProvider
+    .flatMap(({ positions }) => positions)
+    .filter(({ id }) => positionIdsCountedByTokens.has(id))
+    .flatMap(({ assets }) => assets)
+    .reduce((sum, asset) => (asset.type === AssetType.Borrow ? sum + (asset.value || 0) : sum), 0)
+}
+
 export const getTotal = (
   t: TokenResult[],
   defiState: PortfolioNetworkResult['defiPositions'] | null,
@@ -630,15 +673,7 @@ export const getTotal = (
   if (defiState) {
     // The portfolio handles at least one collateral token,
     // thus we must exclude them from the defi total to avoid double counting
-    const positionsToExclude: string[] = t
-      .filter(
-        (token) =>
-          token.flags.defiPositionId &&
-          token.flags.defiTokenType === AssetType.Collateral &&
-          // If the token doesn't have a price we must add the value from the position to the total
-          token.priceIn.length > 0
-      )
-      .map((token) => token.flags.defiPositionId!)
+    const positionsToExclude = getPositionIdsCountedByTokens(t, includeHiddenTokens)
 
     defiTotal = defiState.positionsByProvider.reduce(
       (cur, position) => {
@@ -646,7 +681,7 @@ export const getTotal = (
 
         positionsFlat.forEach((p) => {
           // stkWallet is an internal position, created from the stkWallet token
-          if (positionsToExclude.includes(p.id) || p.id === 'stk-wallet') return
+          if (positionsToExclude.has(p.id) || p.id === 'stk-wallet') return
 
           cur.usd += p.additionalData.positionInUSD || 0
         })
