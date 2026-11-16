@@ -23,8 +23,10 @@ import { getAssetValue, getProviderId, isTokenPriceWithinHalfPercent } from './h
 import {
   getAAVEPositions,
   getDebankEnhancedUniV3Positions,
+  getMorphoPositions,
   getStakedWalletPositions
 } from './providers'
+import { MORPHO_PROVIDER_NAME } from './providers/morpho'
 import {
   AssetType,
   DeFiPositionsError,
@@ -59,9 +61,15 @@ type CustomProviderPositionsResult = {
  * that is not available in Velcro. This function fetches those positions on ENABLED
  * networks only.
  *
- * Returns the old positions if the call fails. Some positions, like that of Uniswap V3,
- * are merged with the data from Velcro/Debank. Assets left without a price (e.g. a new Uniswap V3
- * position Debank doesn't know about yet) are priced separately, by `priceCustomProviderPositions`.
+ * Returns the old positions of a provider if its call fails. Some positions, like that of
+ * Uniswap V3, are merged with the data from Velcro/Debank. Assets left without a price (e.g. a new
+ * Uniswap V3 position Debank doesn't know about yet) are priced separately, by
+ * `priceCustomProviderPositions`.
+ *
+ * When the user has turned off auto discovery, there is no Velcro/Debank data, so more
+ * positions (Morpho) are read from the chain. `tokenAddresses` are the tokens the account holds
+ * on the network, as some of these positions are represented by a token (e.g. the shares of a
+ * Morpho vault).
  */
 const getCustomProviderPositions = async (
   addr: string,
@@ -69,7 +77,11 @@ const getCustomProviderPositions = async (
   network: Network,
   previousPositions: PositionsByProvider[],
   debankNetworkPositionsByProvider: PositionsByProvider[] | undefined,
-  isDebankCallSuccessful: boolean
+  isDebankCallSuccessful: boolean,
+  {
+    isAutoDiscoveryEnabled = true,
+    tokenAddresses = []
+  }: { isAutoDiscoveryEnabled?: boolean; tokenAddresses?: string[] } = {}
 ): Promise<CustomProviderPositionsResult> => {
   if (network.disabled)
     return {
@@ -106,18 +118,39 @@ const getCustomProviderPositions = async (
           })
 
           return null
-        })
+        }),
+        // With auto discovery on, Debank returns the Morpho positions
+        isAutoDiscoveryEnabled
+          ? null
+          : getMorphoPositions(addr, provider, network, tokenAddresses).catch((e: any) => {
+              console.error(`Failed to fetch the Morpho positions on ${network.name}:`, e)
+              providerErrors.push({
+                providerName: MORPHO_PROVIDER_NAME,
+                error: e?.message || 'Unknown error'
+              })
+
+              return null
+            })
       ])
     ).filter(Boolean) as PositionsByProvider[]
 
-    // Get the previous custom positions that were not updated in this call
+    // Get the previous custom positions of the providers whose call failed
     // This is done so the user doesn't lose their custom positions when the
-    // new update fails
+    // new update fails. A provider that returned nothing has no positions (anymore),
+    // so its old positions are dropped
+    const providersToKeepPreviousPositions = providerErrors.map(({ providerName }) => providerName)
+
+    // Providers not called, as Debank returns their positions with auto discovery on. Their
+    // old positions are kept while the Debank call fails (e.g. right after it's turned on)
+    if (isAutoDiscoveryEnabled && !isDebankCallSuccessful) {
+      providersToKeepPreviousPositions.push(MORPHO_PROVIDER_NAME)
+    }
+
     const filteredPrevious = previousPositions.filter(
       (prev) =>
         prev.source === 'custom' &&
-        !newPositions.some(
-          (n) => getProviderId(n.providerName) === getProviderId(prev.providerName)
+        providersToKeepPreviousPositions.some(
+          (providerName) => getProviderId(providerName) === getProviderId(prev.providerName)
         )
     )
 
@@ -135,6 +168,15 @@ const getCustomProviderPositions = async (
     }
   }
 }
+
+/**
+ * Returns the addresses of the tokens the account holds, except rewards and Gas Tank tokens,
+ * which are held elsewhere. Used to find positions that are represented by a token.
+ */
+const getHeldTokenAddresses = (tokens: TokenResult[] | undefined): string[] =>
+  (tokens || [])
+    .filter((token) => token.amount > 0n && !token.flags.rewardsType && !token.flags.onGasTank)
+    .map((token) => token.address)
 
 /**
  * Prices the assets of the custom positions that are left without a price (e.g. a new Uniswap V3
@@ -192,7 +234,11 @@ const getUniqueMergedPositions = (
     debankPositionMap.set(key, stkWalletPosition)
   }
 
-  let positionsArray = Array.from(debankPositionMap.values())
+  // A custom provider without positions replaces outdated positions of the same provider from
+  // Debank (e.g. kept from before auto discovery was turned off), but is not displayed
+  let positionsArray = Array.from(debankPositionMap.values()).filter(
+    (providerPositions) => providerPositions.positions.length > 0
+  )
 
   // Sort the assets, positions by provider and provider positions by their value in USD descending
   positionsArray = positionsArray.map((providerPositions) => ({
@@ -491,9 +537,24 @@ const enhancePortfolioTokensWithDefiPositions = (
           pos.assets.forEach((asset) => {
             const protocolAsset = asset.protocolAsset || null
 
-            const tokenCorrespondingToProtocolAsset = protocolAsset?.address
-              ? findTokenByProtocolAssetAddress(tokensByAddress, protocolAsset.address)
-              : findTokenBySimilarSymbolAndValue(portfolioTokens, asset)
+            // Positions read on-chain set the token that represents an asset, if any (as
+            // `protocolAsset` or `pool.controller`), so a token is never guessed for them: e.g. the
+            // collateral of a Morpho loan would match the same token in the wallet, which would
+            // leave the whole position, debt included, out of the total
+            const canGuessToken = posByProvider.source !== 'custom'
+            let tokenCorrespondingToProtocolAsset: TokenResult | undefined
+
+            if (protocolAsset?.address) {
+              tokenCorrespondingToProtocolAsset = findTokenByProtocolAssetAddress(
+                tokensByAddress,
+                protocolAsset.address
+              )
+            } else if (canGuessToken) {
+              tokenCorrespondingToProtocolAsset = findTokenBySimilarSymbolAndValue(
+                portfolioTokens,
+                asset
+              )
+            }
 
             if (tokenCorrespondingToProtocolAsset) {
               defiAssetsMap.set(tokenCorrespondingToProtocolAsset.address.toLowerCase(), {
@@ -731,6 +792,7 @@ export {
   getDefiUpdateMode,
   getFormattedApiPositions,
   getHasNonceChangedSinceLastUpdate,
+  getHeldTokenAddresses,
   getNewDefiState,
   getUniqueMergedPositions,
   mergeDefiUpdateModes,

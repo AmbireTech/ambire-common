@@ -51,6 +51,7 @@ import {
   getDefiUpdateMode,
   getFormattedApiPositions,
   getHasNonceChangedSinceLastUpdate,
+  getHeldTokenAddresses,
   getIsExternalApiDefiPositionsCallSuccessful,
   getNewDefiState,
   getUniqueMergedPositions,
@@ -1842,7 +1843,14 @@ export class PortfolioController
           network,
           state.result?.defiPositions.positionsByProvider || [],
           discoveryData?.data?.defi?.positions,
-          getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
+          getIsExternalApiDefiPositionsCallSuccessful(discoveryData),
+          {
+            isAutoDiscoveryEnabled: this.#featureFlags.isFeatureEnabled(
+              'tokenAndDefiAutoDiscovery'
+            ),
+            // The tokens of this update aren't fetched yet, so those of the previous one are used
+            tokenAddresses: getHeldTokenAddresses(state.result?.tokens)
+          }
         ).then((customPositions) =>
           priceCustomProviderPositions(this.#tokenPrices, {
             network,

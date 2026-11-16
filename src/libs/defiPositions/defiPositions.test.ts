@@ -12,8 +12,10 @@ import {
   DefiUpdateMode,
   enhancePortfolioTokensWithDefiPositions,
   getAllAssetsAsHints,
+  getCustomProviderPositions,
   getDefiUpdateMode,
   getFormattedApiPositions,
+  getHeldTokenAddresses,
   getUniqueMergedPositions
 } from './defiPositions'
 import {
@@ -152,6 +154,119 @@ describe('DeFi positions providers', () => {
         jest.useRealTimers()
       }
     })
+  })
+})
+
+describe('getCustomProviderPositions', () => {
+  // Has a Morpho borrow position on Base. If it's closed, find another account with
+  // https://api.morpho.org/graphql (marketPositions on chain 8453)
+  const morphoBorrower = '0x3658D261247Dd37ADff2F3B925153A8401628B61'
+
+  const base = networks.find((n) => n.chainId === 8453n)
+  if (!base) throw new Error('unable to find base network in consts')
+
+  const providerBase = getRpcProvider(['https://invictus.ambire.com/base'], 8453n)
+
+  const previousMorpho: PositionsByProvider = {
+    providerName: 'Morpho',
+    chainId: 8453n,
+    iconUrl: '',
+    siteUrl: 'https://app.morpho.org',
+    source: 'custom',
+    type: 'lending',
+    positions: [{ id: 'previous-morpho-position', assets: [], additionalData: {} }]
+  }
+
+  const getMorpho = ({ positionsByProvider }: { positionsByProvider: PositionsByProvider[] }) =>
+    positionsByProvider.find(({ providerName }) => providerName === 'Morpho')
+
+  it('reads Morpho positions on-chain only when auto discovery is off', async () => {
+    const withAutoDiscovery = await getCustomProviderPositions(
+      morphoBorrower,
+      providerBase,
+      base,
+      [],
+      [],
+      true
+    )
+    const withoutAutoDiscovery = await getCustomProviderPositions(
+      morphoBorrower,
+      providerBase,
+      base,
+      [],
+      undefined,
+      true,
+      { isAutoDiscoveryEnabled: false }
+    )
+
+    expect(getMorpho(withAutoDiscovery)).toBeUndefined()
+    expect(getMorpho(withoutAutoDiscovery)?.positions.length).toBeGreaterThan(0)
+  })
+
+  it('drops the previous on-chain Morpho positions once auto discovery is on, as Debank returns them', async () => {
+    const result = await getCustomProviderPositions(
+      morphoBorrower,
+      providerBase,
+      base,
+      [previousMorpho],
+      [],
+      true,
+      { isAutoDiscoveryEnabled: true }
+    )
+
+    expect(getMorpho(result)).toBeUndefined()
+  })
+
+  it('keeps the previous on-chain Morpho positions while the Debank call fails after auto discovery is turned on', async () => {
+    const result = await getCustomProviderPositions(
+      morphoBorrower,
+      providerBase,
+      base,
+      [previousMorpho],
+      undefined,
+      false,
+      { isAutoDiscoveryEnabled: true }
+    )
+
+    expect(getMorpho(result)).toBe(previousMorpho)
+  })
+
+  it('returns a Morpho provider without positions for an account without any, with auto discovery off', async () => {
+    // An address that never used Morpho
+    const result = await getCustomProviderPositions(
+      '0x000000000000000000000000000000000000dEaD',
+      providerBase,
+      base,
+      [],
+      undefined,
+      true,
+      { isAutoDiscoveryEnabled: false }
+    )
+
+    expect(getMorpho(result)?.positions).toEqual([])
+  })
+
+  it('keeps the previous positions of a provider whose call failed', async () => {
+    const { restore } = suppressConsole()
+    // Every call fails at once, without waiting for a network timeout
+    const failingProvider = getRpcProvider(['https://invictus.ambire.com/base'], 8453n)
+    const send = jest.spyOn(failingProvider, 'send').mockRejectedValue(new Error('RPC is down'))
+
+    const result = await getCustomProviderPositions(
+      morphoBorrower,
+      failingProvider,
+      base,
+      [previousMorpho],
+      undefined,
+      true,
+      { isAutoDiscoveryEnabled: false }
+    )
+    send.mockRestore()
+    failingProvider.destroy()
+    restore()
+
+    expect(result.providerErrors.map(({ providerName }) => providerName)).toContain('Morpho')
+    expect(getMorpho(result)).toBe(previousMorpho)
   })
 })
 
@@ -459,6 +574,133 @@ describe('Defi positions helper and portfolio functions', () => {
           })
         })
       })
+    })
+  })
+  describe('getUniqueMergedPositions with a custom provider without positions', () => {
+    it('hides the outdated Debank provider of the same name, and is not displayed itself', () => {
+      const debankPositions = structuredClone(DEBANK_UNI_V3)
+      const emptyCustomProvider: PositionsByProvider = {
+        ...debankPositions[0]!,
+        source: 'custom',
+        positions: []
+      }
+
+      const mergedPositions = getUniqueMergedPositions(debankPositions, [emptyCustomProvider], null)
+
+      expect(
+        mergedPositions.some(
+          ({ providerName }) => providerName === emptyCustomProvider.providerName
+        )
+      ).toBe(false)
+    })
+  })
+  describe('enhancePortfolioTokensWithDefiPositions - tokens guessed by symbol and value', () => {
+    const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+    // A Morpho vault share token, worth the same as the USDC lent in the position below
+    const walletSteakUsdc: TokenResult = {
+      address: '0xBEEF01735c132Ada46AA9aA4c54623cAA92A64CB',
+      symbol: 'steakUSDC',
+      name: 'Steakhouse USDC',
+      decimals: 18,
+      amount: 1000n * 10n ** 18n,
+      priceIn: [{ baseCurrency: 'usd', price: 1 }],
+      chainId: 1n,
+      marketDataIn: [],
+      flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: false, isFeeToken: false }
+    }
+    const lendingProvider = (source: PositionsByProvider['source']): PositionsByProvider => ({
+      providerName: 'Morpho',
+      chainId: 1n,
+      iconUrl: '',
+      siteUrl: '',
+      source,
+      type: 'lending',
+      positions: [
+        {
+          id: 'usdc-lending',
+          additionalData: { positionInUSD: 1000 },
+          assets: [
+            {
+              address: USDC,
+              symbol: 'USDC',
+              name: 'USD Coin',
+              decimals: 6,
+              amount: 1000n * 10n ** 6n,
+              priceIn: { baseCurrency: 'usd', price: 1 },
+              value: 1000,
+              iconUrl: '',
+              type: AssetType.Collateral
+            }
+          ]
+        }
+      ]
+    })
+
+    it('guesses the wallet token of a Debank position', () => {
+      const [token] = enhancePortfolioTokensWithDefiPositions([walletSteakUsdc], {
+        positionsByProvider: [lendingProvider('debank')]
+      })
+
+      expect(token!.flags.defiPositionId).toBe('usdc-lending')
+    })
+
+    it('never guesses the wallet token of a position read on-chain', () => {
+      // Linking the vault token to the USDC lent in a market would leave the whole market
+      // position out of the total
+      const [token] = enhancePortfolioTokensWithDefiPositions([walletSteakUsdc], {
+        positionsByProvider: [lendingProvider('custom')]
+      })
+
+      expect(token!.flags.defiPositionId).toBeUndefined()
+    })
+  })
+  describe('getHeldTokenAddresses', () => {
+    const token = (address: string, overrides: Partial<TokenResult> = {}): TokenResult => ({
+      address,
+      amount: 1n,
+      priceIn: [],
+      chainId: 1n,
+      symbol: 'TKN',
+      name: 'Token',
+      decimals: 18,
+      marketDataIn: [],
+      ...overrides,
+      flags: {
+        onGasTank: false,
+        rewardsType: null,
+        canTopUpGasTank: false,
+        isFeeToken: false,
+        ...overrides.flags
+      }
+    })
+
+    it('returns only the tokens with a balance in the account itself', () => {
+      const held = '0x0000000000000000000000000000000000000001'
+      const tokens = [
+        token(held),
+        token('0x0000000000000000000000000000000000000002', { amount: 0n }),
+        token('0x0000000000000000000000000000000000000003', {
+          flags: {
+            onGasTank: true,
+            rewardsType: null,
+            canTopUpGasTank: false,
+            isFeeToken: false
+          }
+        }),
+        token('0x0000000000000000000000000000000000000004', {
+          flags: {
+            onGasTank: false,
+            rewardsType: 'wallet-rewards',
+            canTopUpGasTank: false,
+            isFeeToken: false
+          }
+        })
+      ]
+
+      expect(getHeldTokenAddresses(tokens)).toEqual([held])
+    })
+    it('returns nothing before the first portfolio update', () => {
+      expect(getHeldTokenAddresses(undefined)).toEqual([])
     })
   })
   describe('getFormattedApiPositions', () => {
