@@ -476,7 +476,15 @@ describe('typed message tests', () => {
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
-  test('erc20 module does not humanize a DAI-style permit with unsigned EIP-2612 keys', () => {
+  test('erc20 module shows a DAI-style permit with unsigned EIP-2612 keys as unlimited', () => {
+    const expectedVisualization = [
+      getAction('Grant approval'),
+      getLabel('for'),
+      getToken(DAI_ADDRESS, MaxUint256),
+      getLabel('to'),
+      getAddressVisualization(address2)
+    ]
+
     // `owner`, `value` and `deadline` are not in the DAI Permit type, so they are not signed
     setDaiPermitMessage({
       ...typedMessages.daiPermit[1]!,
@@ -487,7 +495,7 @@ describe('typed message tests', () => {
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = DAI_ADDRESS
-    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+    compareVisualizations(humanize(messageTemplate).fullVisualization, expectedVisualization)
   })
   test('erc721 module', () => {
     const expectedVisualization = [
@@ -711,7 +719,14 @@ describe('typed message tests', () => {
     expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
   })
 
-  test('permit2 witness transfer with a recipient that the witness type does not declare is not humanized', () => {
+  test('permit2 witness transfer does not show a recipient that the witness type does not declare', () => {
+    const expectedVisualization = [
+      getAction('Approve'),
+      getAddressVisualization(address2),
+      getLabel('to transfer'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getDeadline(968187600n)
+    ]
     // ExampleWitness declares only `orderId`, so `recipient` is not signed
     setPermit2WitnessMessage(
       {
@@ -723,7 +738,9 @@ describe('typed message tests', () => {
         witness: { recipient: address3, orderId: 1n }
       }
     )
-    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+    const { fullVisualization, warnings } = humanize(messageTemplate)
+    compareVisualizations(fullVisualization, expectedVisualization)
+    expect(warnings).toHaveLength(0)
   })
 
   test('permit2 witness transfer does not show a witness recipient that is not an address', () => {
@@ -778,7 +795,26 @@ describe('typed message tests', () => {
     compareVisualizations(humanize(messageTemplate).fullVisualization, expectedVisualization)
   })
 
-  test('permit2 single with unsigned keys is not humanized', () => {
+  const PERMIT2_SINGLE_VISUALIZATION = [
+    getAction('Approve'),
+    getAddressVisualization(address2),
+    getLabel('to use'),
+    getToken(WETH_ADDRESS, 1000000000000000000n),
+    getDeadline(968187600n)
+  ]
+  const PERMIT2_BATCH_VISUALIZATION = [
+    getAction('Approve'),
+    getAddressVisualization(address2),
+    getLabel('to use'),
+    getToken(WETH_ADDRESS, 1000000000000000000n),
+    getLabel('and'),
+    getAddressVisualization(address2),
+    getLabel('to use'),
+    getToken(WETH_ADDRESS, 500000000000000000n),
+    getDeadline(968187600n)
+  ]
+
+  test('permit2 single with unsigned keys shows only the signed values', () => {
     // `permitted`, `nonce` and `deadline` are not part of PermitSingle, so they are not signed
     setPermit2WitnessMessage(PERMIT2_PERMIT_SINGLE_TYPES, {
       ...typedMessages.permit2[0]!,
@@ -786,23 +822,57 @@ describe('typed message tests', () => {
       nonce: 1n,
       deadline: 1n
     })
-    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+    compareVisualizations(humanize(messageTemplate).fullVisualization, PERMIT2_SINGLE_VISUALIZATION)
   })
 
-  test('permit2 single with an unsigned key in a nested struct is not humanized', () => {
+  test('permit2 single with an unsigned key in a nested struct shows only the signed values', () => {
     setPermit2WitnessMessage(PERMIT2_PERMIT_SINGLE_TYPES, {
       ...typedMessages.permit2[0]!,
       details: { ...(typedMessages.permit2[0]!.details as object), recipient: address3 }
     })
-    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+    compareVisualizations(humanize(messageTemplate).fullVisualization, PERMIT2_SINGLE_VISUALIZATION)
   })
 
-  test('permit2 batch with an unsigned key in one array item is not humanized', () => {
+  test('permit2 batch with an unsigned key in one array item shows only the signed values', () => {
     const [firstDetails, secondDetails] = typedMessages.permit2[1]!.details as object[]
     setPermit2WitnessMessage(PERMIT2_PERMIT_BATCH_TYPES, {
       ...typedMessages.permit2[1]!,
       details: [firstDetails, { ...secondDetails, recipient: address3 }]
     })
+    compareVisualizations(humanize(messageTemplate).fullVisualization, PERMIT2_BATCH_VISUALIZATION)
+  })
+
+  test('permit2 single without a declared field is not humanized', () => {
+    const { sigDeadline, ...messageWithoutSigDeadline } = typedMessages.permit2[0]!
+    setPermit2WitnessMessage(PERMIT2_PERMIT_SINGLE_TYPES, messageWithoutSigDeadline)
+    expect(sigDeadline).toBeDefined()
+    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+  })
+
+  test('permit2 single without a declared field in a nested struct is not humanized', () => {
+    const { amount, ...detailsWithoutAmount } = typedMessages.permit2[0]!.details as Record<
+      string,
+      unknown
+    >
+    setPermit2WitnessMessage(PERMIT2_PERMIT_SINGLE_TYPES, {
+      ...typedMessages.permit2[0]!,
+      details: detailsWithoutAmount
+    })
+    expect(amount).toBeDefined()
+    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+  })
+
+  test('permit2 batch without a declared field in one array item is not humanized', () => {
+    const [firstDetails, secondDetails] = typedMessages.permit2[1]!.details as Record<
+      string,
+      unknown
+    >[]
+    const { nonce, ...secondDetailsWithoutNonce } = secondDetails!
+    setPermit2WitnessMessage(PERMIT2_PERMIT_BATCH_TYPES, {
+      ...typedMessages.permit2[1]!,
+      details: [firstDetails, secondDetailsWithoutNonce]
+    })
+    expect(nonce).toBeDefined()
     expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
   })
 
@@ -1359,10 +1429,41 @@ describe('isExactTypedData', () => {
     }
     const message = { id: 1, children: [{ id: 2, children: [] }] }
     const messageWithExtraKey = { id: 1, children: [{ id: 2, children: [], extra: 1 }] }
+    const messageWithMissingKey = { id: 1, children: [{ id: 2 }] }
     expect(isExactTypedData(getTypedData(expected.types, message), expected)).toBe(true)
-    expect(isExactTypedData(getTypedData(expected.types, messageWithExtraKey), expected)).toBe(
+    expect(isExactTypedData(getTypedData(expected.types, messageWithExtraKey), expected)).toBe(true)
+    expect(isExactTypedData(getTypedData(expected.types, messageWithMissingKey), expected)).toBe(
       false
     )
+  })
+
+  test('a missing key in a nested struct or in one array item does not match', () => {
+    const expected = {
+      primaryType: 'Order',
+      types: {
+        Order: [
+          { name: 'main', type: 'Item' },
+          { name: 'items', type: 'Item[]' }
+        ],
+        Item: [
+          { name: 'id', type: 'uint256' },
+          { name: 'note', type: 'string' }
+        ]
+      }
+    }
+    const item = { id: 1, note: '' }
+    expect(
+      isExactTypedData(getTypedData(expected.types, { main: item, items: [item, item] }), expected)
+    ).toBe(true)
+    expect(
+      isExactTypedData(getTypedData(expected.types, { main: { id: 1 }, items: [item] }), expected)
+    ).toBe(false)
+    expect(
+      isExactTypedData(
+        getTypedData(expected.types, { main: item, items: [item, { id: 1 }] }),
+        expected
+      )
+    ).toBe(false)
   })
 
   test('an app-defined struct must be a declared struct, not an array or an atomic type', () => {
@@ -1388,12 +1489,16 @@ describe('isExactTypedData', () => {
         getTypedData(witnessTypes('Witness'), { witness: { id: 1, extra: 1 } }),
         expected
       )
-    ).toBe(false)
+    ).toBe(true)
+    expect(isExactTypedData(getTypedData(witnessTypes('Witness'), { witness: {} }), expected)).toBe(
+      false
+    )
   })
 
-  test('a missing key, a value of the wrong shape or another primary type does not match', () => {
+  test('a missing key, a value of the wrong shape or another primary type does not match, but an extra key does', () => {
     const expected = { primaryType: 'Order', types: { Order: ITEM_FIELDS } }
     expect(isExactTypedData(getTypedData(expected.types, {}), expected)).toBe(false)
+    expect(isExactTypedData(getTypedData(expected.types, { id: 1, extra: 1 }), expected)).toBe(true)
     expect(
       isExactTypedData({ primaryType: 'Order', types: expected.types, message: [1] }, expected)
     ).toBe(false)

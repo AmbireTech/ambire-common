@@ -96,11 +96,12 @@ const hasExactTypes = (
 }
 
 /**
- * Tells if the message has exactly the declared fields: no missing and no extra
- * keys, also in nested structs and in each array item. Arrays of a fixed length
- * must have that length. Atomic values are not checked here.
+ * Tells if the message has every declared field, also in nested structs and in
+ * each array item. Arrays of a fixed length must have that length. Extra keys are
+ * allowed: they are not signed, and humanizers read only declared fields. Atomic
+ * values are not checked here.
  */
-const hasExactMessageFields = (
+const hasAllDeclaredMessageFields = (
   types: Record<string, TypedDataField[]>,
   type: string,
   value: unknown
@@ -109,26 +110,25 @@ const hasExactMessageFields = (
   if (arrayType) {
     if (!Array.isArray(value)) return false
     if (arrayType.fixedLength !== undefined && value.length !== arrayType.fixedLength) return false
-    return value.every((item) => hasExactMessageFields(types, arrayType.itemType, item))
+    return value.every((item) => hasAllDeclaredMessageFields(types, arrayType.itemType, item))
   }
   if (!isStructType(types, type)) return true
 
-  const fields = types[type]!
-  if (!isPlainObject(value) || Object.keys(value).length !== fields.length) return false
+  if (!isPlainObject(value)) return false
 
-  return fields.every(
+  return types[type]!.every(
     (field) =>
       Object.hasOwn(value, field.name) &&
-      hasExactMessageFields(types, field.type, value[field.name])
+      hasAllDeclaredMessageFields(types, field.type, value[field.name])
   )
 }
 
 /**
  * Tells if a typed message is exactly the expected EIP-712 definition: the same
- * primary type, the same signed types (recursively) and a message with exactly
- * the declared fields (recursively). Only then can a humanizer trust that what it
- * shows is what is signed: an extra key in the message is not signed, and a type
- * that differs is a different signed message.
+ * primary type, the same signed types (recursively) and a message that has every
+ * declared field (recursively). A type that differs is a different signed
+ * message, so a humanizer must not show it as this one. Extra keys in the message
+ * are allowed: they are not signed, so a humanizer must read only declared fields.
  */
 export function isExactTypedData(
   typedData: { primaryType: string; types: Record<string, TypedDataField[]>; message: unknown },
@@ -137,7 +137,7 @@ export function isExactTypedData(
   const { primaryType, types, message } = typedData
   if (primaryType !== expected.primaryType || !hasExactTypes(types, expected)) return false
 
-  return hasExactMessageFields(types, primaryType, message)
+  return hasAllDeclaredMessageFields(types, primaryType, message)
 }
 
 /** Returns the declared EIP-712 type of a field, or undefined when the field is not declared (not signed) */
