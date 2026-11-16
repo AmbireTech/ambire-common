@@ -321,6 +321,43 @@ describe('SelectedAccount Controller', () => {
     expect(selectedAccountCtrl.portfolio.mobileInviteKey).toBe(mobileInviteKey)
   })
 
+  describe('borrowed funds preference', () => {
+    const loadSelectedAccountCtrl = async (
+      initialSetStorage: Parameters<typeof makeMainController>[0]
+    ) => {
+      const { mainCtrl } = await makeMainController(initialSetStorage)
+      await mainCtrl.selectedAccount.initialLoadPromise
+
+      return { selectedAccountCtrl: mainCtrl.selectedAccount, storage: mainCtrl.storage }
+    }
+
+    it('a new install subtracts borrowed funds, in memory and in storage', async () => {
+      const { selectedAccountCtrl, storage } = await loadSelectedAccountCtrl(() => {})
+
+      expect(selectedAccountCtrl.borrowedFundsPreference).toBe('subtract')
+      expect(await storage.get('borrowedFundsPreference', null)).toBe('subtract')
+    })
+
+    it('an existing user stays undecided, so their balance does not change', async () => {
+      const { selectedAccountCtrl, storage } = await loadSelectedAccountCtrl(
+        async (storageCtrl) => {
+          await storageCtrl.set('accounts', accounts)
+        }
+      )
+
+      expect(selectedAccountCtrl.borrowedFundsPreference).toBeNull()
+      expect(await storage.get('borrowedFundsPreference', null)).toBeNull()
+    })
+
+    it('keeps the choice of a user who removed all their accounts', async () => {
+      const { selectedAccountCtrl } = await loadSelectedAccountCtrl(async (storageCtrl) => {
+        await storageCtrl.set('borrowedFundsPreference', 'include')
+      })
+
+      expect(selectedAccountCtrl.borrowedFundsPreference).toBe('include')
+    })
+  })
+
   describe('Privacy Pools account', () => {
     const PRIVACY_POOLS_SEED_ID = 'privacy-pools-seed'
 

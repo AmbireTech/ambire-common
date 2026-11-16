@@ -6,6 +6,7 @@ import {
 import { AccountOp } from '../accountOp/accountOp'
 import { PositionsByProvider } from '../defiPositions/types'
 import { CollectionResult, TokenResult } from '../portfolio'
+import { getBorrowedValueInTotal } from '../portfolio/helpers'
 import {
   InternalPortfolioChain,
   NetworkState,
@@ -27,6 +28,8 @@ export default class PortfolioViewBuilder {
 
   private totalBalance = 0
 
+  private borrowedBalance = 0
+
   private balancePerNetwork: Record<string, number> = {}
 
   private networkSimulatedAccountOp: Record<string, AccountOp> = {}
@@ -46,6 +49,12 @@ export default class PortfolioViewBuilder {
    * network, we start calculating isAllReady normally.
    */
   private isNonInternalNetworkAdded = false
+
+  private shouldSubtractBorrowedFunds: boolean
+
+  constructor(shouldSubtractBorrowedFunds: boolean) {
+    this.shouldSubtractBorrowedFunds = shouldSubtractBorrowedFunds
+  }
 
   private static isNetworkReady = (networkData: NetworkState | undefined) => {
     return networkData && (networkData.isReady || networkData?.criticalError)
@@ -197,7 +206,14 @@ export default class PortfolioViewBuilder {
       this.networkSimulatedAccountOp[chainId] = accountOp
     }
 
-    const networkBalance = networkResult?.total?.usd || 0
+    const borrowedNetworkBalance =
+      networkResult && 'defiPositions' in networkResult
+        ? getBorrowedValueInTotal(networkResult.tokens, networkResult.defiPositions)
+        : 0
+    const networkBalance =
+      (networkResult?.total?.usd || 0) -
+      (this.shouldSubtractBorrowedFunds ? borrowedNetworkBalance : 0)
+    this.borrowedBalance += borrowedNetworkBalance
     this.totalBalance += networkBalance
     this.balancePerNetwork[chainId] = networkBalance
 
@@ -225,6 +241,7 @@ export default class PortfolioViewBuilder {
       tokens: this.tokens,
       collections: this.collections,
       totalBalance: this.totalBalance,
+      borrowedBalance: this.borrowedBalance,
       balancePerNetwork: this.balancePerNetwork,
       networkSimulatedAccountOp: this.networkSimulatedAccountOp,
       isAllReady: this.isAllReady,

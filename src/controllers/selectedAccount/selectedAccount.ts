@@ -13,6 +13,7 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import {
   AccountSelection,
+  BorrowedFundsPreference,
   ISelectedAccountController,
   SelectedAccountBalanceByAccount,
   SelectedAccountPortfolio,
@@ -90,6 +91,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   balanceByAccounts: SelectedAccountBalanceByAccount = {}
 
+  /** Null until the user chooses, see `BorrowedFundsPreference` */
+  borrowedFundsPreference: BorrowedFundsPreference | null = null
+
   #portfolioLoadingTimeout: NodeJS.Timeout | null = null
 
   #isManualUpdate = true
@@ -140,19 +144,30 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   async #load() {
     await this.#accounts.initialLoadPromise
 
-    const [selectedAccountAddress, selectedAccountDismissedBannerIds, privacyPoolsAccountId] =
-      await Promise.all([
-        this.#storage.get('selectedAccount', null),
-        this.#storage.get('selectedAccountDismissedBannerIds', {}),
-        this.#storage.get('selectedPrivacyPoolsAccount', null)
-      ])
+    const [
+      selectedAccountAddress,
+      selectedAccountDismissedBannerIds,
+      privacyPoolsAccountId,
+      borrowedFundsPreference
+    ] = await Promise.all([
+      this.#storage.get('selectedAccount', null),
+      this.#storage.get('selectedAccountDismissedBannerIds', {}),
+      this.#storage.get('selectedPrivacyPoolsAccount', null),
+      this.#storage.get('borrowedFundsPreference', null)
+    ])
+    // New installs subtract borrowed funds. Existing users stay undecided until they choose,
+    // so their balance doesn't drop with no warning.
+    const isNewInstall = !borrowedFundsPreference && !this.#accounts.accounts.length
     this.dismissedBannerIds = selectedAccountDismissedBannerIds
+    this.borrowedFundsPreference = isNewInstall ? 'subtract' : borrowedFundsPreference
     this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
     // Only when no regular account is selected, in case storage ever holds both
     this.privacyPoolsAccountId = this.account ? null : privacyPoolsAccountId
     this.isReady = true
 
     this.emitUpdate()
+
+    if (isNewInstall) await this.#saveBorrowedFundsPreference('subtract')
   }
 
   initControllers({
@@ -302,7 +317,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       portfolioAccountState,
       this.portfolio.shouldShowPartialResult,
-      this.#isManualUpdate
+      this.#isManualUpdate,
+      this.borrowedFundsPreference === 'subtract'
     )
 
     newSelectedAccountPortfolio.mobileInviteKey = this.#portfolio.getMobileInviteKey(
@@ -457,6 +473,32 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   setDashboardNetworkFilter(networkFilter: bigint | string | null) {
     this.dashboardNetworkFilter = networkFilter
     this.emitUpdate()
+  }
+
+  /**
+   * Saves whether the total balance subtracts borrowed funds and recalculates the selected
+   * account's portfolio. The other accounts show no balance until they are selected again.
+   */
+  async setBorrowedFundsPreference(preference: BorrowedFundsPreference) {
+    this.borrowedFundsPreference = preference
+    // The balances of the other accounts were calculated with the previous preference
+    this.balanceByAccounts = {}
+    this.updateSelectedAccountPortfolio(true)
+    this.emitUpdate()
+
+    await this.#saveBorrowedFundsPreference(preference)
+  }
+
+  async #saveBorrowedFundsPreference(preference: BorrowedFundsPreference) {
+    try {
+      await this.#storage.set('borrowedFundsPreference', preference)
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to save the borrowed funds preference.',
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+    }
   }
 
   removeNetworkData(chainId: bigint) {

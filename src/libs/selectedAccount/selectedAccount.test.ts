@@ -23,7 +23,8 @@ describe('Selected Account lib', () => {
       const selectedAccountPortfolio = calculateSelectedAccountPortfolio(
         clonedPortfolioLatestState,
         false,
-        true
+        true,
+        false
       )
 
       expect(selectedAccountPortfolio.tokens.length).toBe(8)
@@ -33,12 +34,30 @@ describe('Selected Account lib', () => {
       expect(selectedAccountPortfolio.isAllReady).toBe(true)
       expect(selectedAccountPortfolio.networkSimulatedAccountOp['1']).toBeDefined()
     })
+    it('should subtract the borrowed funds from the total and the network balance only when asked', () => {
+      const portfolioState = structuredClone(PORTFOLIO_STATE) as AccountState
+
+      const withBorrowed = calculateSelectedAccountPortfolio(portfolioState, false, true, false)
+      const withoutBorrowed = calculateSelectedAccountPortfolio(portfolioState, false, true, true)
+
+      // $30 borrowed against the aBasWETH on Ethereum
+      expect(withBorrowed.borrowedBalance).toBe(30)
+      expect(withoutBorrowed.borrowedBalance).toBe(30)
+      expect(withoutBorrowed.totalBalance).toBe(withBorrowed.totalBalance - 30)
+      expect(withoutBorrowed.balancePerNetwork['1']).toBe(withBorrowed.balancePerNetwork['1']! - 30)
+      expect(withoutBorrowed.balancePerNetwork['8453']).toBe(withBorrowed.balancePerNetwork['8453'])
+    })
     it('should flip isReadyToVisualize to true if the portfolio has been loading for more than 5 seconds', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
 
       clonedPortfolioLatestState['1']!.isLoading = true
 
-      const result = calculateSelectedAccountPortfolio(clonedPortfolioLatestState, true, true)
+      const result = calculateSelectedAccountPortfolio(
+        clonedPortfolioLatestState,
+        true,
+        true,
+        false
+      )
 
       expect(result.isReadyToVisualize).toBe(true)
       expect(result.isAllReady).toBe(false)
@@ -52,6 +71,7 @@ describe('Selected Account lib', () => {
 
       const selectedAccountPortfolio = calculateSelectedAccountPortfolio(
         clonedPortfolioLatestState,
+        false,
         false,
         false
       )
@@ -70,6 +90,7 @@ describe('Selected Account lib', () => {
       const selectedAccountPortfolio = calculateSelectedAccountPortfolio(
         clonedPortfolioLatestState,
         false,
+        false,
         false
       )
 
@@ -80,7 +101,8 @@ describe('Selected Account lib', () => {
       const selectedAccountPortfolio2 = calculateSelectedAccountPortfolio(
         clonedPortfolioLatestState,
         false,
-        true
+        true,
+        false
       )
 
       // isAllReady should be false because it's a manual update
@@ -98,6 +120,7 @@ describe('Selected Account lib', () => {
 
       const selectedAccountPortfolio = calculateSelectedAccountPortfolio(
         clonedPortfolioLatestState,
+        false,
         false,
         false
       )
@@ -117,6 +140,7 @@ describe('Selected Account lib', () => {
 
       const selectedAccountPortfolio = calculateSelectedAccountPortfolio(
         clonedPortfolioLatestState,
+        false,
         false,
         false
       )

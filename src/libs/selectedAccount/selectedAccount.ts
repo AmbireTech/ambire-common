@@ -71,6 +71,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   defiPositions: [],
   tokenAmounts: [],
   totalBalance: 0,
+  borrowedBalance: 0,
   balancePerNetwork: {},
   isReadyToVisualize: false,
   isAllReady: false,
@@ -87,7 +88,8 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
 export function calculateSelectedAccountPortfolio(
   portfolioState: AccountState,
   shouldShowPartialResult: boolean,
-  isManualUpdate: boolean
+  isManualUpdate: boolean,
+  shouldSubtractBorrowedFunds: boolean
 ): SelectedAccountPortfolio {
   const strippedPortfolioState = stripPortfolioState(portfolioState)
 
@@ -95,7 +97,7 @@ export function calculateSelectedAccountPortfolio(
     return DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
   }
 
-  const portfolioViewBuilder = new PortfolioViewBuilder()
+  const portfolioViewBuilder = new PortfolioViewBuilder(shouldSubtractBorrowedFunds)
 
   Object.entries(portfolioState).forEach(([chainId, networkData]) => {
     portfolioViewBuilder.addNetworkData(chainId, networkData, isManualUpdate)
