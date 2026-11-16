@@ -468,13 +468,17 @@ export class SignMessageController
     )
   }
 
-  /** Opted out of the Safe API, so the signatures are not shared with the other owners */
-  get #isSafeApiDisabled() {
+  /**
+   * Opted out of the Safe API, so the signatures are not shared with the other owners. Read once
+   * the flags are loaded, as until then they are the defaults
+   */
+  async #isSafeApiDisabled() {
+    await this.#featureFlags?.initialLoadPromise
     return this.#featureFlags?.isFeatureEnabled('safeApi') === false
   }
 
   async addMsgToSafeGlobal(sig: string, message: string | EIP712TypedData) {
-    if (this.#isSafeApiDisabled) return
+    if (await this.#isSafeApiDisabled()) return
     const network = this.network
     const account = this.#account
     if (!network || !account) return
@@ -496,7 +500,7 @@ export class SignMessageController
   }
 
   async addSigToSafeGlobal(sig: string, hash: string) {
-    if (this.#isSafeApiDisabled) return
+    if (await this.#isSafeApiDisabled()) return
     const network = this.network
     if (!network) return
 

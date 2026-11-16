@@ -2315,7 +2315,16 @@ export class MainController extends EventEmitter implements IMainController {
     // the wallet may have been locked while the selected Safe was fetched
     if (!this.keystore.isUnlocked) return
 
-    await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
+    // Caught here, as every caller fires this without awaiting it
+    await this.safe
+      .updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
+      .catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the pending transactions of the other Safe accounts',
+          error
+        })
+      )
   }
 
   async refreshSafeTxns() {
