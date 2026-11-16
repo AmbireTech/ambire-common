@@ -2325,12 +2325,13 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
+    // The flags are read once loaded, as until then they are the defaults. Awaited before the
+    // checks below, as the selected account may change meanwhile
+    await this.featureFlags.initialLoadPromise
     if (!this.selectedAccount?.account?.safeCreation) return
     // do not make Safe requests if the wallet is locked
     if (!this.keystore.isUnlocked) return
-    // Opted out of the Safe API: nothing would be fetched, so don't show a fetch in progress.
-    // Read once the flags are loaded, as until then they are the defaults
-    await this.featureFlags.initialLoadPromise
+    // Opted out of the Safe API: nothing would be fetched, so don't show a fetch in progress
     if (!this.featureFlags.isFeatureEnabled('safeApi')) return
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex
