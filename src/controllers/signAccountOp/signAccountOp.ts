@@ -4300,6 +4300,23 @@ export class SignAccountOpController
     return this.#hasCustomGas ? this.#customFeeSpeeds : this.networkFeeSpeeds
   }
 
+  /**
+   * The symbol of the network's native token when it has no USD price, e.g. on a network whose
+   * token prices can't be read while the user is opted out of our price API. Every fee option
+   * other than the native token itself (e.g. the Gas Tank) is then left without a fee amount, as
+   * the fee is estimated in the native token and converted by price. Null when it is priced.
+   */
+  get unpricedNativeTokenSymbol(): string | null {
+    const native = this.#portfolio
+      .getAccountPortfolioState(this.accountOp.accountAddr)
+      [this.accountOp.chainId.toString()]?.result?.tokens.find(
+        (token) => token.address === ZeroAddress
+      )
+    if (!native || native.priceIn.some((price) => price.baseCurrency === 'usd')) return null
+
+    return native.symbol
+  }
+
   get gasSavedUSD(): number | null {
     if (!this.selectedOption?.token.flags.onGasTank) return null
 
@@ -6154,6 +6171,7 @@ export class SignAccountOpController
       account: this.account,
       errors: this.errors,
       gasSavedUSD: this.gasSavedUSD,
+      unpricedNativeTokenSymbol: this.unpricedNativeTokenSymbol,
       delegatedContract: this.delegatedContract,
       accountOp: this.accountOp,
       humanization: this.humanization,

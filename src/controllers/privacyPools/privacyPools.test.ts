@@ -2075,6 +2075,40 @@ describe('PrivacyPoolsController', () => {
         })
       })
 
+      it('shows a deposit right away into an account not read since a restart, without reading it first', async () => {
+        const storage = new StorageController(produceMemoryStore())
+        await storage.set('privacyPoolsState', {
+          [getPrivacyPoolsChainStateKey(getPrivacyPoolsChainConfig(1n)!)]: toStoredPoolState()
+        })
+        const { controller, selectedAccount } = await prepareTest({ storage })
+        selectedAccount.select('seed-a')
+
+        // The network is on this device, so only the plugin's own sync in prepareShield runs
+        const calls = await buildDeposit(controller)
+        controller.onAccountOpBroadcast({ chainId: 1n, calls })
+        expect(getSyncCount('seed-b')).toBe(0)
+
+        selectedAccount.select('seed-b')
+        expect(getBalance(controller)).toMatchObject({ totalAmount: 0n, simulationAmount: ONE_ETH })
+
+        const readBeforeLanding = controller.syncChain('1')
+        await releaseSync('seed-b')
+        await readBeforeLanding
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n,
+          simulationAmount: ONE_ETH
+        })
+
+        landDeposit()
+        const readAfterLanding = controller.syncChain('1')
+        await releaseSync('seed-b')
+        await readAfterLanding
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n + ONE_ETH,
+          simulationAmount: 0n
+        })
+      })
+
       it('does not count the deposit twice when a read shows its note before the transaction is finalized', async () => {
         const { controller, selectedAccount } = await prepareTest()
         selectedAccount.select('seed-b')
@@ -5529,7 +5563,7 @@ describe('PrivacyPoolsController', () => {
       expect(fakeFetch.mock.calls.length).toBe(requestsAfterFirst)
     })
 
-    it('asks for no prices while the user has opted out of them, and drops those it had', async () => {
+    it('keeps the prices it had when the user opts out, and asks our price API for no new ones', async () => {
       const { controller, featureFlags, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-a')
 
@@ -5537,17 +5571,25 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-a')
       await first
       await waitUntil(() => Object.keys(controller.prices).length > 0)
+      const pricesBeforeOptOut = controller.prices
 
       featureFlags.set('tokenPrices', false)
-      expect(controller.prices).toEqual({})
+      expect(controller.prices).toEqual(pricesBeforeOptOut)
 
+      // Once the cached prices are older than the price cache keeps them
+      const realNow = Date.now.bind(Date)
+      const dateSpy = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + 6 * 60 * 1000)
       fakeFetch.mockClear()
-      const second = controller.syncChain('1')
-      await releaseSync('seed-a')
-      await second
+      try {
+        const second = controller.syncChain('1')
+        await releaseSync('seed-a')
+        await second
+        await flush()
+      } finally {
+        dateSpy.mockRestore()
+      }
 
       expect(fakeFetch).not.toHaveBeenCalled()
-      expect(controller.prices).toEqual({})
     })
   })
 
