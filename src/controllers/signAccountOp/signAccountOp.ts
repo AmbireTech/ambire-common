@@ -4237,11 +4237,9 @@ export class SignAccountOpController
     signature: Hex
     shouldPropose: boolean
   }) {
-    // Opted out of the Safe API: the signature stays here, as it would if the API failed
-    if (!this.#featureFlags.isFeatureEnabled('safeApi')) {
-      this.hasSafeApiFailed = true
-      return
-    }
+    // Opted out of the Safe API: the signature only stays here. Not a failure, as it's the
+    // user's choice, so signing continues as if it was shared (e.g. sign and close closes)
+    if (!this.#featureFlags.isFeatureEnabled('safeApi')) return
 
     if (shouldPropose) {
       // propose the txn to Safe Global upon first entry
