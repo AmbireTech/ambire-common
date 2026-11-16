@@ -4237,6 +4237,12 @@ export class SignAccountOpController
     signature: Hex
     shouldPropose: boolean
   }) {
+    // Opted out of the Safe API: the signature stays here, as it would if the API failed
+    if (!this.#featureFlags.isFeatureEnabled('safeApi')) {
+      this.hasSafeApiFailed = true
+      return
+    }
+
     if (shouldPropose) {
       // propose the txn to Safe Global upon first entry
       await withTimeout(

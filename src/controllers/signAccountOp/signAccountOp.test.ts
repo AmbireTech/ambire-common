@@ -742,7 +742,8 @@ const init = async (
     providers: providersCtrl,
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore
+    keystore,
+    featureFlags: featureFlagsCtrl
   })
   const activity = new ActivityController(
     storageCtrl,

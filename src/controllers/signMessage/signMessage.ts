@@ -11,6 +11,7 @@ import {
 } from '../../interfaces/dapp'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
 import {
@@ -93,6 +94,8 @@ export class SignMessageController
 
   #platform?: Platform
 
+  #featureFlags?: IFeatureFlagsController
+
   // Bumped when init() starts and whenever reset() is called; async operations
   // capture it and re-check after each await, so obsolete requests can't update
   // controller state or be signed under a previous approval.
@@ -154,7 +157,8 @@ export class SignMessageController
     eventEmitterRegistry?: IEventEmitterRegistryController,
     dapps?: IDappsController,
     erc7730?: IErc7730Controller,
-    platform?: Platform
+    platform?: Platform,
+    featureFlags?: IFeatureFlagsController
   ) {
     super(eventEmitterRegistry)
 
@@ -167,6 +171,7 @@ export class SignMessageController
     this.#dapps = dapps
     this.#erc7730 = erc7730
     this.#platform = platform
+    this.#featureFlags = featureFlags
     this.status = SignMessageStatus.Initial
 
     // `banners` is derived from DappsController state (the dapp verification status), so its
@@ -463,7 +468,13 @@ export class SignMessageController
     )
   }
 
+  /** Opted out of the Safe API, so the signatures are not shared with the other owners */
+  get #isSafeApiDisabled() {
+    return this.#featureFlags?.isFeatureEnabled('safeApi') === false
+  }
+
   async addMsgToSafeGlobal(sig: string, message: string | EIP712TypedData) {
+    if (this.#isSafeApiDisabled) return
     const network = this.network
     const account = this.#account
     if (!network || !account) return
@@ -485,6 +496,7 @@ export class SignMessageController
   }
 
   async addSigToSafeGlobal(sig: string, hash: string) {
+    if (this.#isSafeApiDisabled) return
     const network = this.network
     if (!network) return
 

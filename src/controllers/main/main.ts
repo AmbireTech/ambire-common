@@ -376,6 +376,13 @@ export class MainController extends EventEmitter implements IMainController {
         })
       )
     })
+    // Opting back in to the Safe API syncs the Safes right away, instead of on the next
+    // time a view is opened or focused. Opting out is handled by the SafeController
+    onFeatureFlagChange(this.featureFlags, 'safeApi', (isEnabled) => {
+      if (!isEnabled) return
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#fetchAllSafesPending()
+    })
     this.providers = new ProvidersController({
       eventEmitterRegistry,
       storage: this.storage,
@@ -422,7 +429,8 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       storage: this.storage,
       accounts: this.accounts,
-      keystore: this.keystore
+      keystore: this.keystore,
+      featureFlags: this.featureFlags
     })
 
     this.survey = new SurveyController({
@@ -593,7 +601,8 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       this.dapps,
       this.erc7730,
-      platform
+      platform,
+      this.featureFlags
     )
 
     this.activity = new ActivityController(
@@ -2319,6 +2328,10 @@ export class MainController extends EventEmitter implements IMainController {
     if (!this.selectedAccount?.account?.safeCreation) return
     // do not make Safe requests if the wallet is locked
     if (!this.keystore.isUnlocked) return
+    // Opted out of the Safe API: nothing would be fetched, so don't show a fetch in progress.
+    // Read once the flags are loaded, as until then they are the defaults
+    await this.featureFlags.initialLoadPromise
+    if (!this.featureFlags.isFeatureEnabled('safeApi')) return
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex
 
