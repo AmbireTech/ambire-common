@@ -5,7 +5,42 @@ import {
   HumanizerTypedMessageFunction,
   HumanizerVisualization
 } from '../interfaces'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
+import {
+  ExpectedTypedData,
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getLabel,
+  getToken,
+  isExactTypedData
+} from '../utils'
+
+/** CoW Protocol order, as the settlement contract signs it (same as `orderTypes` in `services/cowswap/helper`) */
+const COW_SWAP_ORDER_TYPED_DATA: ExpectedTypedData = {
+  primaryType: 'Order',
+  types: {
+    Order: [
+      { name: 'sellToken', type: 'address' },
+      { name: 'buyToken', type: 'address' },
+      { name: 'receiver', type: 'address' },
+      { name: 'sellAmount', type: 'uint256' },
+      { name: 'buyAmount', type: 'uint256' },
+      { name: 'validTo', type: 'uint32' },
+      { name: 'appData', type: 'bytes32' },
+      { name: 'feeAmount', type: 'uint256' },
+      { name: 'kind', type: 'string' },
+      { name: 'partiallyFillable', type: 'bool' },
+      { name: 'sellTokenBalance', type: 'string' },
+      { name: 'buyTokenBalance', type: 'string' }
+    ]
+  }
+}
+
+/** CoW Protocol order cancellations, as the CoW Protocol API checks them */
+const COW_SWAP_ORDER_CANCELLATIONS_TYPED_DATA: ExpectedTypedData = {
+  primaryType: 'OrderCancellations',
+  types: { OrderCancellations: [{ name: 'orderUids', type: 'bytes[]' }] }
+}
 
 const COW_SWAP_SETTLEMENT_ADDRESS = '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
 
@@ -45,7 +80,8 @@ const isCowSwapMessage = (message: HumanizerTypedMessage): boolean => {
 /** Humanizes the cancellation of CoW Swap orders (primary type `OrderCancellations`) */
 export const humanizeCowSwapOrderCancellations: HumanizerTypedMessageFunction = (message) => {
   const tm = message.content
-  if (!isCowSwapMessage(message) || !tm.types.OrderCancellations) return null
+  if (!isCowSwapMessage(message) || !isExactTypedData(tm, COW_SWAP_ORDER_CANCELLATIONS_TYPED_DATA))
+    return null
 
   const { orderUids } = tm.message
   if (!Array.isArray(orderUids) || !orderUids.length) return null
@@ -64,7 +100,7 @@ export const humanizeCowSwapOrderCancellations: HumanizerTypedMessageFunction = 
 /** Humanizes a CoW Swap order (primary type `Order`) */
 export const humanizeCowSwapOrder: HumanizerTypedMessageFunction = (message) => {
   const tm = message.content
-  if (!isCowSwapMessage(message) || !tm.types.Order) return null
+  if (!isCowSwapMessage(message) || !isExactTypedData(tm, COW_SWAP_ORDER_TYPED_DATA)) return null
 
   const {
     sellToken,

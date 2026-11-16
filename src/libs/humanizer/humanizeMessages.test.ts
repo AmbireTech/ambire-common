@@ -9,7 +9,15 @@ import { humanizeMessage } from './index'
 import { HumanizerTypedMessage } from './interfaces'
 import { getTypedMessageHumanizer } from './messageModules'
 import { compareVisualizations } from './testHelpers'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
+import {
+  APP_DEFINED_STRUCT_TYPE,
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getLabel,
+  getToken,
+  isExactTypedData
+} from './utils'
 
 const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -199,17 +207,72 @@ const PERMIT2_EXAMPLE_WITNESS_FIELDS = [
   { name: 'recipient', type: 'address' },
   { name: 'orderId', type: 'uint256' }
 ]
-const getPermit2WitnessTransferFields = (permittedType: string) => [
+const getPermit2WitnessTransferFields = (permittedType: string, witnessType = 'ExampleWitness') => [
   { name: 'permitted', type: permittedType },
   { name: 'spender', type: 'address' },
   { name: 'nonce', type: 'uint256' },
   { name: 'deadline', type: 'uint256' },
-  { name: 'witness', type: 'ExampleWitness' }
+  { name: 'witness', type: witnessType }
 ]
 const PERMIT2_WITNESS_TRANSFER_TYPES = {
   PermitWitnessTransferFrom: getPermit2WitnessTransferFields('TokenPermissions'),
   TokenPermissions: PERMIT2_TOKEN_PERMISSIONS_FIELDS,
   ExampleWitness: PERMIT2_EXAMPLE_WITNESS_FIELDS
+}
+const PERMIT2_BATCH_WITNESS_TRANSFER_TYPES = {
+  PermitBatchWitnessTransferFrom: getPermit2WitnessTransferFields(
+    'TokenPermissions[]',
+    'OrderWitness'
+  ),
+  TokenPermissions: PERMIT2_TOKEN_PERMISSIONS_FIELDS,
+  OrderWitness: [{ name: 'orderId', type: 'uint256' }]
+}
+// The CoW Protocol order type as the settlement contract signs it
+const COW_SWAP_ORDER_FIELDS = [
+  { name: 'sellToken', type: 'address' },
+  { name: 'buyToken', type: 'address' },
+  { name: 'receiver', type: 'address' },
+  { name: 'sellAmount', type: 'uint256' },
+  { name: 'buyAmount', type: 'uint256' },
+  { name: 'validTo', type: 'uint32' },
+  { name: 'appData', type: 'bytes32' },
+  { name: 'feeAmount', type: 'uint256' },
+  { name: 'kind', type: 'string' },
+  { name: 'partiallyFillable', type: 'bool' },
+  { name: 'sellTokenBalance', type: 'string' },
+  { name: 'buyTokenBalance', type: 'string' }
+]
+// The Permit2 types as the Permit2 SDK builds them
+const PERMIT2_PERMIT_DETAILS_FIELDS = [
+  { name: 'token', type: 'address' },
+  { name: 'amount', type: 'uint160' },
+  { name: 'expiration', type: 'uint48' },
+  { name: 'nonce', type: 'uint48' }
+]
+const PERMIT2_PERMIT_SINGLE_TYPES = {
+  PermitSingle: [
+    { name: 'details', type: 'PermitDetails' },
+    { name: 'spender', type: 'address' },
+    { name: 'sigDeadline', type: 'uint256' }
+  ],
+  PermitDetails: PERMIT2_PERMIT_DETAILS_FIELDS
+}
+const PERMIT2_PERMIT_BATCH_TYPES = {
+  PermitBatch: [
+    { name: 'details', type: 'PermitDetails[]' },
+    { name: 'spender', type: 'address' },
+    { name: 'sigDeadline', type: 'uint256' }
+  ],
+  PermitDetails: PERMIT2_PERMIT_DETAILS_FIELDS
+}
+const PERMIT2_TRANSFER_FROM_TYPES = {
+  PermitTransferFrom: [
+    { name: 'permitted', type: 'TokenPermissions' },
+    { name: 'spender', type: 'address' },
+    { name: 'nonce', type: 'uint256' },
+    { name: 'deadline', type: 'uint256' }
+  ],
+  TokenPermissions: PERMIT2_TOKEN_PERMISSIONS_FIELDS
 }
 
 const SEAPORT_ADDRESS = '0x0000000000000068F116a894984e2DB1123eB395'
@@ -247,14 +310,35 @@ const getSeaportOrder = (offerTokenId: string) => ({
       endAmount: '1000',
       recipient: address1
     }
-  ]
+  ],
+  orderType: '0',
+  startTime: '1',
+  endTime: '968187600',
+  zoneHash: `0x${'00'.repeat(32)}`,
+  salt: '1',
+  conduitKey: `0x${'00'.repeat(32)}`,
+  counter: '0'
 })
+const SEAPORT_ITEM_FIELDS = [
+  { name: 'itemType', type: 'uint8' },
+  { name: 'token', type: 'address' },
+  { name: 'identifierOrCriteria', type: 'uint256' },
+  { name: 'startAmount', type: 'uint256' },
+  { name: 'endAmount', type: 'uint256' }
+]
+// The Seaport types as seaport-js builds them
+const SEAPORT_ORDER_TYPES = {
+  OrderComponents: SEAPORT_ORDER_COMPONENTS_FIELDS,
+  OfferItem: SEAPORT_ITEM_FIELDS,
+  ConsiderationItem: [...SEAPORT_ITEM_FIELDS, { name: 'recipient', type: 'address' }]
+}
 
+// The Snapshot vote type as snapshot.js builds it
 const SNAPSHOT_VOTE_FIELDS = [
-  { name: 'from', type: 'address' },
+  { name: 'from', type: 'string' },
   { name: 'space', type: 'string' },
   { name: 'timestamp', type: 'uint64' },
-  { name: 'proposal', type: 'bytes32' },
+  { name: 'proposal', type: 'string' },
   { name: 'choice', type: 'uint32' },
   { name: 'reason', type: 'string' },
   { name: 'app', type: 'string' },
@@ -392,15 +476,7 @@ describe('typed message tests', () => {
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
-  test('erc20 module shows a DAI-style permit with unsigned EIP-2612 keys as unlimited', () => {
-    const expectedVisualization = [
-      getAction('Grant approval'),
-      getLabel('for'),
-      getToken(DAI_ADDRESS, MaxUint256),
-      getLabel('to'),
-      getAddressVisualization(address2)
-    ]
-
+  test('erc20 module does not humanize a DAI-style permit with unsigned EIP-2612 keys', () => {
     // `owner`, `value` and `deadline` are not in the DAI Permit type, so they are not signed
     setDaiPermitMessage({
       ...typedMessages.daiPermit[1]!,
@@ -411,8 +487,7 @@ describe('typed message tests', () => {
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = DAI_ADDRESS
-    const { fullVisualization } = humanize(messageTemplate)
-    compareVisualizations(fullVisualization!, expectedVisualization)
+    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
   })
   test('erc721 module', () => {
     const expectedVisualization = [
@@ -470,7 +545,7 @@ describe('typed message tests', () => {
     ]
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
       EIP712Domain: [],
-      PermitSingle: [{ name: 'details', type: 'PermitDetails' }]
+      ...PERMIT2_PERMIT_SINGLE_TYPES
     }
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
       'PermitSingle'
@@ -497,7 +572,7 @@ describe('typed message tests', () => {
     ]
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
       EIP712Domain: [],
-      PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }]
+      ...PERMIT2_PERMIT_BATCH_TYPES
     }
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
       'PermitBatch'
@@ -520,7 +595,7 @@ describe('typed message tests', () => {
     ]
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
       EIP712Domain: [],
-      PermitTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }]
+      ...PERMIT2_TRANSFER_FROM_TYPES
     }
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
       'PermitTransferFrom'
@@ -605,7 +680,7 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
     setPermit2WitnessMessage(
-      { PermitBatchWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions[]' }] },
+      PERMIT2_BATCH_WITNESS_TRANSFER_TYPES,
       typedMessages.PermitWitnessTransferFrom[2]!
     )
     const { fullVisualization, warnings } = humanize(messageTemplate)
@@ -614,14 +689,7 @@ describe('typed message tests', () => {
     expect(warnings).toHaveLength(0)
   })
 
-  test('permit2 witness transfer does not show a recipient from an undeclared witness field', () => {
-    const expectedVisualization = [
-      getAction('Approve'),
-      getAddressVisualization(address2),
-      getLabel('to transfer'),
-      getToken(WETH_ADDRESS, 1000000000000000000n),
-      getDeadline(968187600n)
-    ]
+  test('permit2 witness transfer with an unsigned witness key is not humanized', () => {
     // The signed witness field is `order`, so the `witness` key is not signed
     setPermit2WitnessMessage(
       {
@@ -640,19 +708,10 @@ describe('typed message tests', () => {
         witness: { recipient: address3 }
       }
     )
-    const { fullVisualization, warnings } = humanize(messageTemplate)
-    compareVisualizations(fullVisualization!, expectedVisualization)
-    expect(warnings).toHaveLength(0)
+    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
   })
 
-  test('permit2 witness transfer does not show a recipient that the witness type does not declare', () => {
-    const expectedVisualization = [
-      getAction('Approve'),
-      getAddressVisualization(address2),
-      getLabel('to transfer'),
-      getToken(WETH_ADDRESS, 1000000000000000000n),
-      getDeadline(968187600n)
-    ]
+  test('permit2 witness transfer with a recipient that the witness type does not declare is not humanized', () => {
     // ExampleWitness declares only `orderId`, so `recipient` is not signed
     setPermit2WitnessMessage(
       {
@@ -664,26 +723,44 @@ describe('typed message tests', () => {
         witness: { recipient: address3, orderId: 1n }
       }
     )
+    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+  })
+
+  test('permit2 witness transfer does not show a witness recipient that is not an address', () => {
+    const expectedVisualization = [
+      getAction('Approve'),
+      getAddressVisualization(address2),
+      getLabel('to transfer'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getDeadline(968187600n)
+    ]
+    setPermit2WitnessMessage(
+      {
+        ...PERMIT2_WITNESS_TRANSFER_TYPES,
+        ExampleWitness: [
+          { name: 'recipient', type: 'string' },
+          { name: 'orderId', type: 'uint256' }
+        ]
+      },
+      typedMessages.PermitWitnessTransferFrom[0]!
+    )
     const { fullVisualization, warnings } = humanize(messageTemplate)
-    compareVisualizations(fullVisualization!, expectedVisualization)
+    compareVisualizations(fullVisualization, expectedVisualization)
     expect(warnings).toHaveLength(0)
   })
 
   test('permit2 witness transfer with an incomplete permitted struct is not humanized', () => {
-    setPermit2WitnessMessage(
-      { PermitWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }] },
-      {
-        permitted: { token: WETH_ADDRESS },
-        spender: address2,
-        nonce: 1n,
-        deadline: 968187600n,
-        witness: { recipient: address3 }
-      }
-    )
+    setPermit2WitnessMessage(PERMIT2_WITNESS_TRANSFER_TYPES, {
+      permitted: { token: WETH_ADDRESS },
+      spender: address2,
+      nonce: 1n,
+      deadline: 968187600n,
+      witness: { recipient: address3, orderId: 1n }
+    })
     expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
   })
 
-  test('permit2 single with an unused witness type and unsigned keys shows the signed details', () => {
+  test('permit2 single with a type that it does not use is humanized, because that type is not signed', () => {
     const expectedVisualization = [
       getAction('Approve'),
       getAddressVisualization(address2),
@@ -691,22 +768,55 @@ describe('typed message tests', () => {
       getToken(WETH_ADDRESS, 1000000000000000000n),
       getDeadline(968187600n)
     ]
-    // PermitWitnessTransferFrom, `permitted` and `deadline` are not part of PermitSingle,
-    // so they are not signed and must not change what is shown
     setPermit2WitnessMessage(
       {
-        PermitSingle: [{ name: 'details', type: 'PermitDetails' }],
-        PermitWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }]
+        ...PERMIT2_PERMIT_SINGLE_TYPES,
+        PermitWitnessTransferFrom: PERMIT2_WITNESS_TRANSFER_TYPES.PermitWitnessTransferFrom
       },
-      {
-        ...typedMessages.permit2[0]!,
-        permitted: { token: WETH_ADDRESS, amount: 1n },
-        nonce: 1n,
-        deadline: 1n
-      }
+      typedMessages.permit2[0]!
     )
-    const { fullVisualization } = humanize(messageTemplate)
-    compareVisualizations(fullVisualization!, expectedVisualization)
+    compareVisualizations(humanize(messageTemplate).fullVisualization, expectedVisualization)
+  })
+
+  test('permit2 single with unsigned keys is not humanized', () => {
+    // `permitted`, `nonce` and `deadline` are not part of PermitSingle, so they are not signed
+    setPermit2WitnessMessage(PERMIT2_PERMIT_SINGLE_TYPES, {
+      ...typedMessages.permit2[0]!,
+      permitted: { token: WETH_ADDRESS, amount: 1n },
+      nonce: 1n,
+      deadline: 1n
+    })
+    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+  })
+
+  test('permit2 single with an unsigned key in a nested struct is not humanized', () => {
+    setPermit2WitnessMessage(PERMIT2_PERMIT_SINGLE_TYPES, {
+      ...typedMessages.permit2[0]!,
+      details: { ...(typedMessages.permit2[0]!.details as object), recipient: address3 }
+    })
+    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+  })
+
+  test('permit2 batch with an unsigned key in one array item is not humanized', () => {
+    const [firstDetails, secondDetails] = typedMessages.permit2[1]!.details as object[]
+    setPermit2WitnessMessage(PERMIT2_PERMIT_BATCH_TYPES, {
+      ...typedMessages.permit2[1]!,
+      details: [firstDetails, { ...secondDetails, recipient: address3 }]
+    })
+    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
+  })
+
+  test('permit2 batch with a nested type that differs is not humanized', () => {
+    setPermit2WitnessMessage(
+      {
+        ...PERMIT2_PERMIT_BATCH_TYPES,
+        PermitDetails: PERMIT2_PERMIT_DETAILS_FIELDS.map((field) =>
+          field.name === 'amount' ? { name: 'amount', type: 'uint256' } : field
+        )
+      },
+      typedMessages.permit2[1]!
+    )
+    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
   })
 
   const setSeaportMessage = (
@@ -733,11 +843,7 @@ describe('typed message tests', () => {
       getLabel('for'),
       getToken(WETH_ADDRESS, 1000n)
     ]
-    setSeaportMessage(
-      'OrderComponents',
-      { OrderComponents: SEAPORT_ORDER_COMPONENTS_FIELDS },
-      getSeaportOrder('1')
-    )
+    setSeaportMessage('OrderComponents', SEAPORT_ORDER_TYPES, getSeaportOrder('1'))
     const { fullVisualization } = humanize(messageTemplate)
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
@@ -746,10 +852,7 @@ describe('typed message tests', () => {
     // A bulk order signs only `tree`, so the top-level `offer` and `consideration` are a decoy
     setSeaportMessage(
       'BulkOrder',
-      {
-        BulkOrder: [{ name: 'tree', type: 'OrderComponents[2]' }],
-        OrderComponents: SEAPORT_ORDER_COMPONENTS_FIELDS
-      },
+      { BulkOrder: [{ name: 'tree', type: 'OrderComponents[2]' }], ...SEAPORT_ORDER_TYPES },
       {
         tree: [getSeaportOrder('1'), getSeaportOrder('2')],
         ...getSeaportOrder('3')
@@ -938,6 +1041,14 @@ describe('typed message tests', () => {
     messageTemplate.fromRequestId = ENTRY_POINT_AUTHORIZATION_REQUEST_ID
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
       'AmbireOperation'
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
+      EIP712Domain: [],
+      AmbireOperation: [
+        { name: 'account', type: 'address' },
+        { name: 'hash', type: 'bytes32' }
+      ]
+    }
+    messageTemplate.content.message = { account: address1, hash: `0x${'11'.repeat(32)}` }
     const { fullVisualization: received } = humanize(messageTemplate)
     const expected = [
       getAction('Authorize entry point'),
@@ -1039,15 +1150,23 @@ describe('typed message tests', () => {
   )
 
   test.each([
-    { primaryType: 'PermitSingle', details: [{ token: WETH_ADDRESS, amount: 1n }] },
-    { primaryType: 'PermitBatch', details: { token: WETH_ADDRESS, amount: 1n } }
+    {
+      primaryType: 'PermitSingle',
+      details: [{ token: WETH_ADDRESS, amount: 1n, expiration: 1n, nonce: 1n }]
+    },
+    {
+      primaryType: 'PermitBatch',
+      details: { token: WETH_ADDRESS, amount: 1n, expiration: 1n, nonce: 1n }
+    }
   ])(
     'a $primaryType with the wrong shape of details is not humanized',
     ({ primaryType, details }) => {
       const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
       content.types = {
         EIP712Domain: [],
-        [primaryType]: [{ name: 'details', type: 'PermitDetails' }]
+        ...(primaryType === 'PermitSingle'
+          ? PERMIT2_PERMIT_SINGLE_TYPES
+          : PERMIT2_PERMIT_BATCH_TYPES)
       }
       content.primaryType = primaryType
       content.domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
@@ -1056,22 +1175,44 @@ describe('typed message tests', () => {
     }
   )
 
-  test('a Permit that declares the ERC-20 and the ERC-721 fields is shown as an NFT permit', () => {
+  test.each([
+    {
+      case: 'declares the EIP-2612 and the ERC-4494 fields',
+      fields: [...ERC2612_PERMIT_FIELDS, { name: 'tokenId', type: 'uint256' }]
+    },
+    {
+      case: 'has the EIP-2612 fields in another order',
+      fields: [
+        ERC2612_PERMIT_FIELDS[1]!,
+        ERC2612_PERMIT_FIELDS[0]!,
+        ...ERC2612_PERMIT_FIELDS.slice(2)
+      ]
+    },
+    {
+      case: 'has an EIP-2612 field with another type',
+      fields: ERC2612_PERMIT_FIELDS.map((field) =>
+        field.name === 'value' ? { name: 'value', type: 'uint128' } : field
+      )
+    },
+    {
+      case: 'has the DAI fields and one more',
+      fields: [...DAI_PERMIT_FIELDS, { name: 'value', type: 'uint256' }]
+    },
+    {
+      case: 'has fewer ERC-4494 fields',
+      fields: ERC721_PERMIT_FIELDS.slice(0, 3)
+    }
+  ])('a Permit that $case is not humanized', ({ fields }) => {
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
       EIP712Domain: [],
-      Permit: [...ERC2612_PERMIT_FIELDS, { name: 'tokenId', type: 'uint256' }]
+      Permit: fields
     }
-    ;(
-      messageTemplate.content as TypedMessageUserRequest['meta']['params']
-    ).domain.verifyingContract = NFT_ADDRESS
-    messageTemplate.content.message = { ...typedMessages.erc20[0]!, tokenId: 1n }
-    compareVisualizations(humanize(messageTemplate).fullVisualization, [
-      getAction('Permit use of'),
-      getToken(NFT_ADDRESS, 1n),
-      getLabel('to'),
-      getAddressVisualization(address2),
-      getDeadline(968187600n)
-    ])
+    messageTemplate.content.message = {
+      ...typedMessages.erc20[0]!,
+      ...typedMessages.daiPermit[0]!,
+      tokenId: 1n
+    }
+    expect(humanizeMessage(messageTemplate).fullVisualization).toBeUndefined()
   })
 
   test('a typed message humanizer that throws gives no visualization and does not break humanizeMessage', () => {
@@ -1082,16 +1223,22 @@ describe('typed message tests', () => {
       chainId: 1n,
       verifyingContract: '0x9008D19f58AAbD9eD0D60971565AA8510560ab41'
     }
-    content.types = { EIP712Domain: [], Order: [{ name: 'sellAmount', type: 'uint256' }] }
+    content.types = { EIP712Domain: [], Order: COW_SWAP_ORDER_FIELDS }
     content.primaryType = 'Order'
     // `BigInt('not a number')` throws inside the CoW Swap humanizer
     messageTemplate.content.message = {
       sellToken: WETH_ADDRESS,
       buyToken: DAI_ADDRESS,
+      receiver: address1,
       sellAmount: 'not a number',
       buyAmount: '1',
       validTo: '1',
-      kind: 'sell'
+      appData: `0x${'00'.repeat(32)}`,
+      feeAmount: '0',
+      kind: 'sell',
+      partiallyFillable: false,
+      sellTokenBalance: 'erc20',
+      buyTokenBalance: 'erc20'
     }
     const { restore } = suppressConsole()
     try {
@@ -1165,5 +1312,96 @@ describe('plain text and authorization messages', () => {
       type: 'action',
       content: 'EIP-7702 Authorization'
     })
+  })
+})
+
+describe('isExactTypedData', () => {
+  const ITEM_FIELDS = [{ name: 'id', type: 'uint256' }]
+  const getTypedData = (
+    types: Record<string, { name: string; type: string }[]>,
+    message: Record<string, unknown>
+  ) => ({ primaryType: 'Order', types, message })
+
+  test('an array of a fixed length must have that length', () => {
+    const expected = {
+      primaryType: 'Order',
+      types: { Order: [{ name: 'items', type: 'Item[2]' }], Item: ITEM_FIELDS }
+    }
+    const types = expected.types
+    expect(isExactTypedData(getTypedData(types, { items: [{ id: 1 }, { id: 2 }] }), expected)).toBe(
+      true
+    )
+    expect(isExactTypedData(getTypedData(types, { items: [{ id: 1 }] }), expected)).toBe(false)
+  })
+
+  test('the item type of an empty array is still checked, because it is signed', () => {
+    const expected = {
+      primaryType: 'Order',
+      types: { Order: [{ name: 'items', type: 'Item[]' }], Item: ITEM_FIELDS }
+    }
+    const typesWithOtherItem = {
+      Order: expected.types.Order,
+      Item: [{ name: 'id', type: 'uint128' }]
+    }
+    expect(isExactTypedData(getTypedData(expected.types, { items: [] }), expected)).toBe(true)
+    expect(isExactTypedData(getTypedData(typesWithOtherItem, { items: [] }), expected)).toBe(false)
+  })
+
+  test('recursive types are checked without looping', () => {
+    const expected = {
+      primaryType: 'Order',
+      types: {
+        Order: [
+          { name: 'id', type: 'uint256' },
+          { name: 'children', type: 'Order[]' }
+        ]
+      }
+    }
+    const message = { id: 1, children: [{ id: 2, children: [] }] }
+    const messageWithExtraKey = { id: 1, children: [{ id: 2, children: [], extra: 1 }] }
+    expect(isExactTypedData(getTypedData(expected.types, message), expected)).toBe(true)
+    expect(isExactTypedData(getTypedData(expected.types, messageWithExtraKey), expected)).toBe(
+      false
+    )
+  })
+
+  test('an app-defined struct must be a declared struct, not an array or an atomic type', () => {
+    const expected = {
+      primaryType: 'Order',
+      types: { Order: [{ name: 'witness', type: APP_DEFINED_STRUCT_TYPE }] }
+    }
+    const witnessTypes = (witnessType: string) => ({
+      Order: [{ name: 'witness', type: witnessType }],
+      Witness: ITEM_FIELDS
+    })
+    expect(
+      isExactTypedData(getTypedData(witnessTypes('Witness'), { witness: { id: 1 } }), expected)
+    ).toBe(true)
+    expect(
+      isExactTypedData(getTypedData(witnessTypes('Witness[]'), { witness: [{ id: 1 }] }), expected)
+    ).toBe(false)
+    expect(isExactTypedData(getTypedData(witnessTypes('uint256'), { witness: 1 }), expected)).toBe(
+      false
+    )
+    expect(
+      isExactTypedData(
+        getTypedData(witnessTypes('Witness'), { witness: { id: 1, extra: 1 } }),
+        expected
+      )
+    ).toBe(false)
+  })
+
+  test('a missing key, a value of the wrong shape or another primary type does not match', () => {
+    const expected = { primaryType: 'Order', types: { Order: ITEM_FIELDS } }
+    expect(isExactTypedData(getTypedData(expected.types, {}), expected)).toBe(false)
+    expect(
+      isExactTypedData({ primaryType: 'Order', types: expected.types, message: [1] }, expected)
+    ).toBe(false)
+    expect(
+      isExactTypedData(
+        { primaryType: 'Item', types: { Item: ITEM_FIELDS }, message: { id: 1 } },
+        expected
+      )
+    ).toBe(false)
   })
 })

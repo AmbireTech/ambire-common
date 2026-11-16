@@ -1,7 +1,45 @@
 import { isHexString, toUtf8String } from 'ethers'
 
 import { HumanizerPlainTextMessageModule, HumanizerTypedMessageFunction } from '../interfaces'
-import { getAction, getLabel, getToken } from '../utils'
+import {
+  ExpectedTypedData,
+  getAction,
+  getLabel,
+  getToken,
+  isExactTypedData,
+  TypedDataField
+} from '../utils'
+
+/** Seaport `OfferItem` and `ConsiderationItem` share these fields */
+const SEAPORT_ITEM_FIELDS: TypedDataField[] = [
+  { name: 'itemType', type: 'uint8' },
+  { name: 'token', type: 'address' },
+  { name: 'identifierOrCriteria', type: 'uint256' },
+  { name: 'startAmount', type: 'uint256' },
+  { name: 'endAmount', type: 'uint256' }
+]
+
+/** A single Seaport order, as seaport-js signs it (`EIP_712_ORDER_TYPE`) */
+const SEAPORT_ORDER_TYPED_DATA: ExpectedTypedData = {
+  primaryType: 'OrderComponents',
+  types: {
+    OrderComponents: [
+      { name: 'offerer', type: 'address' },
+      { name: 'zone', type: 'address' },
+      { name: 'offer', type: 'OfferItem[]' },
+      { name: 'consideration', type: 'ConsiderationItem[]' },
+      { name: 'orderType', type: 'uint8' },
+      { name: 'startTime', type: 'uint256' },
+      { name: 'endTime', type: 'uint256' },
+      { name: 'zoneHash', type: 'bytes32' },
+      { name: 'salt', type: 'uint256' },
+      { name: 'conduitKey', type: 'bytes32' },
+      { name: 'counter', type: 'uint256' }
+    ],
+    OfferItem: SEAPORT_ITEM_FIELDS,
+    ConsiderationItem: [...SEAPORT_ITEM_FIELDS, { name: 'recipient', type: 'address' }]
+  }
+}
 
 const SEAPORT_ADDRESS = [
   '0x0000000000000068F116a894984e2DB1123eB395',
@@ -69,7 +107,8 @@ export const humanizeSeaportOrder: HumanizerTypedMessageFunction = (message) => 
   if (
     message.content.domain.name !== 'Seaport' ||
     message.content.domain.version !== '1.6' ||
-    !SEAPORT_ADDRESS.includes(message.content.domain.verifyingContract || '')
+    !SEAPORT_ADDRESS.includes(message.content.domain.verifyingContract || '') ||
+    !isExactTypedData(message.content, SEAPORT_ORDER_TYPED_DATA)
   )
     return null
 

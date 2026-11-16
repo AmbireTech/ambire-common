@@ -15,21 +15,129 @@ export function isHexCall(call: IrCall): call is HexIrCall {
   return isHex(call.data)
 }
 
+/** An EIP-712 field: its name and its type */
+export type TypedDataField = { name: string; type: string }
+
 /** EIP-712 type definitions of a typed message, keyed by type name */
-type TypedDataTypes = Record<string, { name: string; type: string }[]> | undefined
+type TypedDataTypes = Record<string, TypedDataField[]> | undefined
 
 /**
- * Tells if an EIP-712 type declares all of the given fields. Only the declared
- * fields of `primaryType` (and the types it references) are signed. A key in the
- * message that is not declared is not signed, so it must not change what we show.
+ * A field type in an expected definition that the app chooses (e.g. the Permit2
+ * witness). Any struct type declared in the message `types` is accepted for it. The
+ * message must still have exactly the fields that this struct declares.
  */
-export function isTypeDeclaringFields(
-  types: TypedDataTypes,
-  typeName: string,
-  fieldNames: string[]
+export const APP_DEFINED_STRUCT_TYPE = '<app-defined struct>'
+
+/**
+ * The signed EIP-712 definition that a humanizer expects: the primary type and
+ * every struct type that it uses, with the fields in the signed order.
+ */
+export type ExpectedTypedData = {
+  primaryType: string
+  types: Record<string, TypedDataField[]>
+}
+
+/** The type of the items of an array type (`T[]` or `T[N]` gives `T`) and the fixed length, if any */
+const splitArrayType = (type: string): { itemType: string; fixedLength?: number } | null => {
+  if (!type.endsWith(']')) return null
+
+  const openBracketIndex = type.lastIndexOf('[')
+  const lengthText = type.slice(openBracketIndex + 1, -1)
+  return {
+    itemType: type.slice(0, openBracketIndex),
+    fixedLength: lengthText === '' ? undefined : Number(lengthText)
+  }
+}
+
+/** The struct or atomic type without array dimensions (`T[2][]` gives `T`) */
+const getBaseType = (type: string): string => {
+  const openBracketIndex = type.indexOf('[')
+  return openBracketIndex === -1 ? type : type.slice(0, openBracketIndex)
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const isStructType = (types: Record<string, TypedDataField[]>, type: string): boolean =>
+  Object.hasOwn(types, getBaseType(type))
+
+/**
+ * Tells if the signed types of a typed message are exactly the expected ones.
+ * Starting from the primary type, every struct type that is used (also nested
+ * and in arrays) must have the same field names and types, in the same order.
+ */
+const hasExactTypes = (
+  types: Record<string, TypedDataField[]>,
+  expected: ExpectedTypedData
+): boolean => {
+  const checkedStructNames = new Set<string>()
+
+  const isExactStruct = (structName: string): boolean => {
+    if (checkedStructNames.has(structName)) return true
+    checkedStructNames.add(structName)
+
+    const fields = types[structName]
+    const expectedFields = expected.types[structName]
+    if (!fields || !expectedFields || fields.length !== expectedFields.length) return false
+
+    return expectedFields.every((expectedField, index) => {
+      const field = fields[index]!
+      if (field.name !== expectedField.name) return false
+      // The app defines this struct, so only check that it is a declared struct
+      if (expectedField.type === APP_DEFINED_STRUCT_TYPE)
+        return !splitArrayType(field.type) && isStructType(types, field.type)
+      if (field.type !== expectedField.type) return false
+
+      return !isStructType(types, field.type) || isExactStruct(getBaseType(field.type))
+    })
+  }
+
+  return isExactStruct(expected.primaryType)
+}
+
+/**
+ * Tells if the message has exactly the declared fields: no missing and no extra
+ * keys, also in nested structs and in each array item. Arrays of a fixed length
+ * must have that length. Atomic values are not checked here.
+ */
+const hasExactMessageFields = (
+  types: Record<string, TypedDataField[]>,
+  type: string,
+  value: unknown
+): boolean => {
+  const arrayType = splitArrayType(type)
+  if (arrayType) {
+    if (!Array.isArray(value)) return false
+    if (arrayType.fixedLength !== undefined && value.length !== arrayType.fixedLength) return false
+    return value.every((item) => hasExactMessageFields(types, arrayType.itemType, item))
+  }
+  if (!isStructType(types, type)) return true
+
+  const fields = types[type]!
+  if (!isPlainObject(value) || Object.keys(value).length !== fields.length) return false
+
+  return fields.every(
+    (field) =>
+      Object.hasOwn(value, field.name) &&
+      hasExactMessageFields(types, field.type, value[field.name])
+  )
+}
+
+/**
+ * Tells if a typed message is exactly the expected EIP-712 definition: the same
+ * primary type, the same signed types (recursively) and a message with exactly
+ * the declared fields (recursively). Only then can a humanizer trust that what it
+ * shows is what is signed: an extra key in the message is not signed, and a type
+ * that differs is a different signed message.
+ */
+export function isExactTypedData(
+  typedData: { primaryType: string; types: Record<string, TypedDataField[]>; message: unknown },
+  expected: ExpectedTypedData
 ): boolean {
-  const declaredFieldNames = types?.[typeName]?.map((field) => field.name) ?? []
-  return fieldNames.every((fieldName) => declaredFieldNames.includes(fieldName))
+  const { primaryType, types, message } = typedData
+  if (primaryType !== expected.primaryType || !hasExactTypes(types, expected)) return false
+
+  return hasExactMessageFields(types, primaryType, message)
 }
 
 /** Returns the declared EIP-712 type of a field, or undefined when the field is not declared (not signed) */

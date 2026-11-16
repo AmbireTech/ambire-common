@@ -3,13 +3,13 @@ import { humanizeCowSwapOrder, humanizeCowSwapOrderCancellations } from './cowSw
 import { eip7702AuthorizationModule } from './eip7702AuthorizationModule'
 import { humanizeEnsUpload } from './ensModule'
 import { humanizeEntryPointAuthorization } from './entryPointModule'
-import { humanizeErc20Permit } from './erc20Module'
-import { ERC721_PERMIT_FIELD_NAMES, humanizeErc721Permit } from './erc721Module'
 import { fallbackShortPlaintext } from './fallbackShortPlaintext'
 import { legendsMessageModule } from './legendsModule'
 import { humanizeSeaportOrder, openseaLoginMessageModule } from './openseaModule'
+import { humanizePermit } from './permitModule'
 import {
   humanizePermit2Batch,
+  humanizePermit2BatchWitnessTransfer,
   humanizePermit2Single,
   humanizePermit2Transfer,
   humanizePermit2WitnessTransfer
@@ -17,7 +17,6 @@ import {
 import { humanizeSafeTx } from './safeModule'
 import { humanizeSnapshotVote } from './snapshotModule'
 import { zealyMessageModule } from './zealyModule'
-import { isTypeDeclaringFields } from '../utils'
 
 /**
  * Runs the plain text modules in order and returns the first result that is not null.
@@ -40,16 +39,6 @@ export const getFirstHumanization = <TMessage>(
 }
 
 /**
- * ERC-20 (EIP-2612 and DAI-style) and ERC-721 permits share the `Permit` primary
- * type. The humanizer is chosen from the fields declared in `types.Permit` (signed),
- * not by trying one and falling back to the other.
- */
-const humanizePermit: HumanizerTypedMessageFunction = (message) =>
-  isTypeDeclaringFields(message.content.types, 'Permit', ERC721_PERMIT_FIELD_NAMES)
-    ? humanizeErc721Permit(message)
-    : humanizeErc20Permit(message)
-
-/**
  * Typed message humanizers keyed by the EIP-712 primary type they expect. Only
  * the primary type and the types it references are signed, so the humanizer is
  * chosen from it, never from other entries in `types` or keys in `message`.
@@ -60,7 +49,7 @@ const typedMessageHumanizers: Readonly<Record<string, HumanizerTypedMessageFunct
   PermitBatch: humanizePermit2Batch,
   PermitTransferFrom: humanizePermit2Transfer,
   PermitWitnessTransferFrom: humanizePermit2WitnessTransfer,
-  PermitBatchWitnessTransferFrom: humanizePermit2WitnessTransfer,
+  PermitBatchWitnessTransferFrom: humanizePermit2BatchWitnessTransfer,
   Order: humanizeCowSwapOrder,
   OrderCancellations: humanizeCowSwapOrderCancellations,
   OrderComponents: humanizeSeaportOrder,

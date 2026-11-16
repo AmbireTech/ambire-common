@@ -18,7 +18,6 @@ import { getCowSwapOrderUid } from '../../services/cowswap/helper'
 import { AccountOp } from '../accountOp/accountOp'
 import { EMPTY_ERC7730_KNOWN, Erc7730CallDescriptors, resolveErc7730Descriptors } from './erc7730'
 import { humanizeAccountOp, humanizeMessage } from './index'
-import * as erc20Module from './messageModules/erc20Module'
 import {
   erc20TransferAbi,
   erc20TransferFromAbi,
@@ -448,7 +447,19 @@ describe('TypedMessages', () => {
         verifyingContract: '0x000000000022d473030f116ddee9f6b43ac78ba3',
         salt: '1'
       },
-      types: { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] },
+      types: {
+        PermitBatch: [
+          { name: 'details', type: 'PermitDetails[]' },
+          { name: 'spender', type: 'address' },
+          { name: 'sigDeadline', type: 'uint256' }
+        ],
+        PermitDetails: [
+          { name: 'token', type: 'address' },
+          { name: 'amount', type: 'uint160' },
+          { name: 'expiration', type: 'uint48' },
+          { name: 'nonce', type: 'uint48' }
+        ]
+      },
       message,
       primaryType: 'PermitBatch'
     }
@@ -3759,7 +3770,9 @@ describe('ERC-7730 descriptors', () => {
           spender: address2,
           value: '1',
           nonce: '0',
-          deadline: '1781335603'
+          // `BigInt('not a number')` throws inside the Permit humanizer. The descriptor
+          // shows a value it cannot read as a date as text, so it does not throw
+          deadline: 'not a number'
         },
         primaryType: 'Permit'
       },
@@ -3768,11 +3781,6 @@ describe('ERC-7730 descriptors', () => {
     }
     const callRelayer = jest.fn(async () => ({ success: true, data: {}, errorState: [] }))
     const descriptor = await getTestErc7730MessageDescriptor(permitMessage as any, callRelayer)
-    const humanizeErc20PermitSpy = jest
-      .spyOn(erc20Module, 'humanizeErc20Permit')
-      .mockImplementation(() => {
-        throw new Error('humanizer failed')
-      })
     const { restore } = suppressConsole()
 
     try {
@@ -3780,11 +3788,9 @@ describe('ERC-7730 descriptors', () => {
         erc7730Descriptor: descriptor || undefined
       })
 
-      expect(humanizeErc20PermitSpy).toHaveBeenCalledTimes(1)
       expect(console.error).toHaveBeenCalledTimes(1)
       expect(irMessage.fullVisualization?.[0]).toMatchObject({ type: 'erc7730' })
     } finally {
-      humanizeErc20PermitSpy.mockRestore()
       restore()
     }
   })

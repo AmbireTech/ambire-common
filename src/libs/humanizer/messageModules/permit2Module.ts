@@ -9,6 +9,8 @@ import {
   HumanizerWarning
 } from '../interfaces'
 import {
+  APP_DEFINED_STRUCT_TYPE,
+  ExpectedTypedData,
   getAction,
   getAddressVisualization,
   getDeadline,
@@ -16,7 +18,9 @@ import {
   getLabel,
   getRecipientText,
   getToken,
-  getWarning
+  getWarning,
+  isExactTypedData,
+  TypedDataField
 } from '../utils'
 
 // interfaces
@@ -46,30 +50,99 @@ import {
 //   sigDeadline: toDeadline(/* 30 minutes= */ 1000 * 60 * 60 * 30)
 // }
 
-interface PermitDetails {
-  token?: string
-  amount?: bigint
-  expiration?: bigint
-  nonce?: bigint
+/** A token and an amount, from `PermitDetails` or `TokenPermissions` */
+interface TokenAmount {
+  token: string
+  amount: bigint
 }
 
-interface TokenPermissions {
-  token?: string
-  amount?: bigint
+/** Permit2 `PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)` */
+const PERMIT_DETAILS_FIELDS: TypedDataField[] = [
+  { name: 'token', type: 'address' },
+  { name: 'amount', type: 'uint160' },
+  { name: 'expiration', type: 'uint48' },
+  { name: 'nonce', type: 'uint48' }
+]
+
+/** Permit2 `TokenPermissions(address token,uint256 amount)` */
+const TOKEN_PERMISSIONS_FIELDS: TypedDataField[] = [
+  { name: 'token', type: 'address' },
+  { name: 'amount', type: 'uint256' }
+]
+
+/** Permit2 allowance for one token, as the Permit2 SDK builds it */
+const PERMIT_SINGLE_TYPED_DATA: ExpectedTypedData = {
+  primaryType: 'PermitSingle',
+  types: {
+    PermitSingle: [
+      { name: 'details', type: 'PermitDetails' },
+      { name: 'spender', type: 'address' },
+      { name: 'sigDeadline', type: 'uint256' }
+    ],
+    PermitDetails: PERMIT_DETAILS_FIELDS
+  }
 }
 
-function isCompletePermission(
-  permission: TokenPermissions
-): permission is { token: string; amount: bigint } {
-  return permission.token !== undefined && permission.amount !== undefined
+/** Permit2 allowance for many tokens, as the Permit2 SDK builds it */
+const PERMIT_BATCH_TYPED_DATA: ExpectedTypedData = {
+  primaryType: 'PermitBatch',
+  types: {
+    PermitBatch: [
+      { name: 'details', type: 'PermitDetails[]' },
+      { name: 'spender', type: 'address' },
+      { name: 'sigDeadline', type: 'uint256' }
+    ],
+    PermitDetails: PERMIT_DETAILS_FIELDS
+  }
 }
+
+/** Permit2 signature transfer of one token, as the Permit2 SDK builds it */
+const PERMIT_TRANSFER_FROM_TYPED_DATA: ExpectedTypedData = {
+  primaryType: 'PermitTransferFrom',
+  types: {
+    PermitTransferFrom: [
+      { name: 'permitted', type: 'TokenPermissions' },
+      { name: 'spender', type: 'address' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' }
+    ],
+    TokenPermissions: TOKEN_PERMISSIONS_FIELDS
+  }
+}
+
+/** Name of the Permit2 field that holds the app-defined witness struct */
+const WITNESS_FIELD_NAME = 'witness'
+
+/** Permit2 signature transfer with a witness struct that the app defines, as the Permit2 SDK builds it */
+const getWitnessTransferTypedData = (
+  primaryType: string,
+  permittedType: string
+): ExpectedTypedData => ({
+  primaryType,
+  types: {
+    [primaryType]: [
+      { name: 'permitted', type: permittedType },
+      { name: 'spender', type: 'address' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' },
+      { name: WITNESS_FIELD_NAME, type: APP_DEFINED_STRUCT_TYPE }
+    ],
+    TokenPermissions: TOKEN_PERMISSIONS_FIELDS
+  }
+})
+
+const PERMIT_WITNESS_TRANSFER_FROM_TYPED_DATA = getWitnessTransferTypedData(
+  'PermitWitnessTransferFrom',
+  'TokenPermissions'
+)
+const PERMIT_BATCH_WITNESS_TRANSFER_FROM_TYPED_DATA = getWitnessTransferTypedData(
+  'PermitBatchWitnessTransferFrom',
+  'TokenPermissions[]'
+)
 
 // The witness struct is defined by the app that asks for the signature, so the
 // address that receives the tokens can be under any of these common names
 const WITNESS_RECIPIENT_FIELD_NAMES = ['recipient', 'receiver', 'to']
-
-/** Name of the Permit2 field that holds the app-defined witness struct */
-const WITNESS_FIELD_NAME = 'witness'
 
 function getWitnessRecipient(message: HumanizerTypedMessage): string | undefined {
   const { types, primaryType } = message.content
@@ -98,28 +171,30 @@ const PERMIT_2_CONTRACTS = [
   PANCAKE_SWAP_PERMIT_2_ADDRESS.toLowerCase()
 ]
 
-/** Tells if the message is signed for a known Permit2 contract (Uniswap or PancakeSwap) */
-const isPermit2Message = (message: HumanizerTypedMessage): boolean => {
+/**
+ * Tells if the message is signed for a known Permit2 contract (Uniswap or
+ * PancakeSwap) and is exactly the expected Permit2 definition
+ */
+const isExactPermit2Message = (
+  message: HumanizerTypedMessage,
+  expected: ExpectedTypedData
+): boolean => {
   const verifyingContract = message.content.domain?.verifyingContract
-  return !!verifyingContract && PERMIT_2_CONTRACTS.includes(verifyingContract.toLowerCase())
+  return (
+    !!verifyingContract &&
+    PERMIT_2_CONTRACTS.includes(verifyingContract.toLowerCase()) &&
+    isExactTypedData(message.content, expected)
+  )
 }
 
-/**
- * Humanizes a Permit2 signature transfer with an app-defined witness struct.
- * Primary types: `PermitWitnessTransferFrom` (one token) and
- * `PermitBatchWitnessTransferFrom` (many tokens).
- */
-export const humanizePermit2WitnessTransfer: HumanizerTypedMessageFunction = (message) => {
-  if (!isPermit2Message(message)) return null
+const humanizeWitnessTransfer = (
+  message: HumanizerTypedMessage,
+  permissions: TokenAmount[]
+): HumanizerMessageResult | null => {
+  if (!permissions.length) return null
 
-  const { permitted, spender, nonce, deadline } = message.content.message
-  if ([permitted, spender, nonce, deadline].some((field) => field === undefined)) return null
-
-  const permissions: TokenPermissions[] = Array.isArray(permitted) ? permitted : [permitted]
-  const completePermissions = permissions.filter(isCompletePermission)
-  if (!completePermissions.length || completePermissions.length !== permissions.length) return null
-
-  const tokenVisualizations = completePermissions
+  const { spender, deadline } = message.content.message
+  const tokenVisualizations = permissions
     .map(({ token, amount }) => [getToken(token, amount), getLabel('and')])
     .flat()
     .slice(0, -1)
@@ -157,20 +232,31 @@ export const humanizePermit2WitnessTransfer: HumanizerTypedMessageFunction = (me
   }
 }
 
+/** Humanizes a Permit2 signature transfer of one token with an app-defined witness (primary type `PermitWitnessTransferFrom`) */
+export const humanizePermit2WitnessTransfer: HumanizerTypedMessageFunction = (message) => {
+  if (!isExactPermit2Message(message, PERMIT_WITNESS_TRANSFER_FROM_TYPED_DATA)) return null
+
+  return humanizeWitnessTransfer(message, [message.content.message.permitted])
+}
+
+/** Humanizes a Permit2 signature transfer of many tokens with an app-defined witness (primary type `PermitBatchWitnessTransferFrom`) */
+export const humanizePermit2BatchWitnessTransfer: HumanizerTypedMessageFunction = (message) => {
+  if (!isExactPermit2Message(message, PERMIT_BATCH_WITNESS_TRANSFER_FROM_TYPED_DATA)) return null
+
+  return humanizeWitnessTransfer(message, message.content.message.permitted)
+}
+
 /** Humanizes a Permit2 signature transfer of one token (primary type `PermitTransferFrom`) */
 export const humanizePermit2Transfer: HumanizerTypedMessageFunction = (message) => {
-  if (!isPermit2Message(message)) return null
+  if (!isExactPermit2Message(message, PERMIT_TRANSFER_FROM_TYPED_DATA)) return null
 
-  const { spender, nonce, deadline, permitted } = message.content.message
-  if ([spender, nonce, deadline, permitted].some((a) => a === undefined)) return null
-  const { token, amount } = permitted
-  if (token === undefined || amount === undefined) return null
+  const { spender, deadline, permitted } = message.content.message
   return {
     fullVisualization: [
       getAction('Approve'),
       getAddressVisualization(spender),
       getLabel('to use'),
-      getToken(token, amount),
+      getToken(permitted.token, permitted.amount),
       getDeadline(deadline)
     ]
   }
@@ -178,9 +264,9 @@ export const humanizePermit2Transfer: HumanizerTypedMessageFunction = (message) 
 
 const humanizePermit2Allowance = (
   message: HumanizerTypedMessage,
-  details: PermitDetails[]
+  details: TokenAmount[]
 ): HumanizerMessageResult | null => {
-  if (!details.length || !details.every(isCompletePermission)) return null
+  if (!details.length) return null
 
   const { spender, sigDeadline } = message.content.message
   const permitVisualizations = details
@@ -204,16 +290,14 @@ const humanizePermit2Allowance = (
 
 /** Humanizes a Permit2 allowance for one token (primary type `PermitSingle`) */
 export const humanizePermit2Single: HumanizerTypedMessageFunction = (message) => {
-  const { details } = message.content.message
-  if (!isPermit2Message(message) || !details || Array.isArray(details)) return null
+  if (!isExactPermit2Message(message, PERMIT_SINGLE_TYPED_DATA)) return null
 
-  return humanizePermit2Allowance(message, [details])
+  return humanizePermit2Allowance(message, [message.content.message.details])
 }
 
 /** Humanizes a Permit2 allowance for many tokens (primary type `PermitBatch`) */
 export const humanizePermit2Batch: HumanizerTypedMessageFunction = (message) => {
-  const { details } = message.content.message
-  if (!isPermit2Message(message) || !Array.isArray(details)) return null
+  if (!isExactPermit2Message(message, PERMIT_BATCH_TYPED_DATA)) return null
 
-  return humanizePermit2Allowance(message, details)
+  return humanizePermit2Allowance(message, message.content.message.details)
 }
