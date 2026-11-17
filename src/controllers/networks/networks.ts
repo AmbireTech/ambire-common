@@ -38,6 +38,23 @@ export const STATUS_WRAPPED_METHODS = {
 } as const
 
 /**
+ * Thrown when an update targets a chainId that isn't among the networks. Saving it anyway
+ * would store a network without a chainId and features, which breaks every following update.
+ * The chainId type and the updated fields are reported, so the crash report shows the caller.
+ */
+const getUnknownNetworkError = (chainId: ChainId, networkUpdate: Partial<Network>) => {
+  const updatedFields = Object.keys(networkUpdate).join(', ')
+
+  return new EmittableError({
+    message: "We couldn't find this network, so its settings were not saved.",
+    level: 'major',
+    error: new Error(
+      `settings: update of an unknown network, chainId: ${chainId} (${typeof chainId}), fields: ${updatedFields}`
+    )
+  })
+}
+
+/**
  * The NetworksController is responsible for managing networks. It handles both predefined networks and those
  * that users can add either through a dApp request or manually via the UI. This controller provides functions
  * for adding, updating, and removing networks.
@@ -593,9 +610,9 @@ export class NetworksController extends EventEmitter implements INetworksControl
     if (!Object.keys(network).length) return
 
     const networkData = this.allNetworks.find((n) => n.chainId === chainId)
-    const changedNetwork: Network = Object.keys(network).reduce((acc, key) => {
-      if (!networkData) return acc
+    if (!networkData) throw getUnknownNetworkError(chainId, network)
 
+    const changedNetwork: Network = Object.keys(network).reduce((acc, key) => {
       // No need to save unchanged networks. Here we filter the networks that are the same as the ones in the storage.
       if (network[key as keyof Network] === networkData[key as keyof Network]) return acc
 
@@ -691,6 +708,15 @@ export class NetworksController extends EventEmitter implements INetworksControl
   }
 
   async #updateNetworks(network: Partial<Network>, chainIds: ChainId[]) {
+    // `allNetworks` falls back to the predefined networks until the stored ones are loaded
+    await this.initialLoadPromise
+
+    // Validated upfront, as the networks below are updated in parallel and an unknown
+    // chainId would leave the others saved, but without RPC providers and a UI update
+    const knownChainIds = new Set(this.allNetworks.map((n) => n.chainId))
+    const unknownChainId = chainIds.find((chainId) => !knownChainIds.has(chainId))
+    if (unknownChainId !== undefined) throw getUnknownNetworkError(unknownChainId, network)
+
     await Promise.all(chainIds.map((chainId) => this.#updateNetwork(network, chainId, true)))
     void this.#onAddOrUpdateNetworks(this.allNetworks.filter((n) => chainIds.includes(n.chainId)))
     this.emitUpdate()
