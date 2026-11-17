@@ -163,18 +163,16 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
   }
 
   /**
-   * Per deposit label, how much the withdrawals on their way take out of it, positive. Ones the
-   * notes already include are ignored.
+   * The labels of the deposits a withdrawal on its way is sent from. Ones the notes already include
+   * are left out. Until they do, the SDK would spend such a deposit as it was before that
+   * withdrawal, which the pool refuses as already spent.
    */
-  getWithdrawingAmountsByNote(seedId: string, chainId: string): Map<bigint, bigint> {
-    const amounts = new Map<bigint, bigint>()
-    this.#getUnshownChanges(seedId, chainId).forEach(({ label, amount, check }) => {
-      if (check.kind !== 'withdrawal' || label === undefined) return
-
-      amounts.set(label, (amounts.get(label) ?? 0n) - amount)
-    })
-
-    return amounts
+  getWithdrawingDeposits(seedId: string, chainId: string): Set<bigint> {
+    return new Set(
+      this.#getUnshownChanges(seedId, chainId).flatMap(({ label, check }) =>
+        check.kind === 'withdrawal' && label !== undefined ? [label] : []
+      )
+    )
   }
 
   /**

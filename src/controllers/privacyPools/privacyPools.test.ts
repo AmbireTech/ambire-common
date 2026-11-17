@@ -3414,7 +3414,7 @@ describe('PrivacyPoolsController', () => {
           })
         })
 
-        it('shows the amount as gone from the deposit it is sent from, and only from it', async () => {
+        it('holds back the deposit it is sent from until the notes show it, and only that one', async () => {
           const { controller } = await prepareReadWithdrawal([
             { label: 1n, amount: ONE_ETH, approved: true, deposit: 0 },
             { label: 2n, amount: ONE_ETH, approved: true, deposit: 1 }
@@ -3430,10 +3430,7 @@ describe('PrivacyPoolsController', () => {
               number,
               availableAmount
             }))
-          ).toEqual([
-            { number: 1, availableAmount: ONE_ETH - WITHDRAWAL_AMOUNT },
-            { number: 2, availableAmount: ONE_ETH }
-          ])
+          ).toEqual([{ number: 2, availableAmount: ONE_ETH }])
 
           notesBySeed['seed-a'] = [
             { label: 1n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true, deposit: 0 },
@@ -3443,10 +3440,11 @@ describe('PrivacyPoolsController', () => {
           await releaseSync('seed-a')
           await broadcasting
 
-          // Not taken out twice once the notes show it
-          expect(controller.sendableDeposits['1']?.[0]?.availableAmount).toBe(
-            ONE_ETH - WITHDRAWAL_AMOUNT
-          )
+          // What is left of it, once the notes show the send
+          expect(controller.sendableDeposits['1']?.[0]).toMatchObject({
+            number: 1,
+            availableAmount: ONE_ETH - WITHDRAWAL_AMOUNT
+          })
         })
 
         it('keeps showing a transfer when the notes only show another one, sent before it, that spent a different note of the token', async () => {
@@ -3464,7 +3462,8 @@ describe('PrivacyPoolsController', () => {
           await controller.prepareWithdrawal({
             chainId: '1',
             tokenAddress: ZERO_ADDRESS,
-            depositNumber: 1,
+            // From the other deposit, as the first is held back until the notes show its send
+            depositNumber: 2,
             amount: WITHDRAWAL_AMOUNT,
             recipient: WITHDRAWAL_RECIPIENT
           })
@@ -4174,6 +4173,42 @@ describe('PrivacyPoolsController', () => {
       // Neither the bundler nor anyone else is asked about the transaction
       expect(getRpcProvider).not.toHaveBeenCalled()
       expect(providers.providers['1'].send).not.toHaveBeenCalled()
+    })
+
+    it('refuses another send from the deposit until the notes show the first, as the SDK would spend it as it was', async () => {
+      const { controller, providers } = await prepareRelayedWithdrawal()
+      jest
+        .mocked(createPPv1Broadcaster)
+        .mockReturnValueOnce({ broadcast: async () => RELAYED_BROADCAST_RESULT } as any)
+
+      const broadcasting = controller.broadcastWithdrawal()
+      await waitUntil(() => controller.operation?.status === 'success')
+      // Sent, while our node has not reached the block it most likely lands in
+      await waitUntil(() => providers.providers['1'].getBlockNumber.mock.calls.length >= 2)
+      expect(controller.sendableDeposits['1']).toEqual([])
+
+      const { restore } = suppressConsole()
+      preparedWithdrawal = buildPreparedRelayedWithdrawal()
+      await controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        depositNumber: 1,
+        amount: WITHDRAWAL_AMOUNT,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+      restore()
+      expect(controller.operation?.error).toBe(
+        'Your previous transfer from this deposit is still being confirmed. Please try again once it is.'
+      )
+
+      nodeBlockNumber = WITHDRAWAL_BLOCK + 3
+      notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true }]
+      await releaseSync('seed-a')
+      await broadcasting
+
+      expect(controller.sendableDeposits['1']).toEqual([
+        expect.objectContaining({ number: 1, availableAmount: ONE_ETH - WITHDRAWAL_AMOUNT })
+      ])
     })
 
     describe('sent a while after it was proved', () => {

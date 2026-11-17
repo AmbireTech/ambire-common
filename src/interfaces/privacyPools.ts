@@ -214,7 +214,7 @@ export type PrivacyPoolsSendableDeposit = {
    * as the deposit's label would point to it on chain.
    */
   number: number
-  /** What is left in it, less what sends on their way take out of it. What can be sent now. */
+  /** What is left in it, all of which can be sent now. */
   availableAmount: bigint
 }
 

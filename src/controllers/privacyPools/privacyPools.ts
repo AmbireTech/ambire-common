@@ -292,7 +292,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       ctx,
       this.#registry,
       this.#sync,
-      this.#poolStatsReader
+      this.#poolStatsReader,
+      this.#expectedChanges
     )
     this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync, this.#builtCalls)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
@@ -561,9 +562,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           getPrivacyPoolsSendableDeposits({
             chainId,
             notes: state ? [...state.notes, ...state.spentNotes] : [],
-            withdrawingAmounts: seedId
-              ? this.#expectedChanges.getWithdrawingAmountsByNote(seedId, chainId)
-              : new Map()
+            withdrawingDeposits: seedId
+              ? this.#expectedChanges.getWithdrawingDeposits(seedId, chainId)
+              : new Set()
           })
         ]
       })

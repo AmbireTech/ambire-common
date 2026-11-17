@@ -135,6 +135,11 @@ export const privacyPoolsErrors = {
       error:
         sdkError ?? new Error('privacyPools: the chosen note is missing, not approved or too small')
     }),
+  withdrawalDepositBusy: () =>
+    expectedError(
+      'Your previous transfer from this deposit is still being confirmed. Please try again once it is.',
+      'a withdrawal from this note is not in the notes yet'
+    ),
   withdrawalFeeAboveAmount: (sdkError: Error) =>
     new EmittableError({
       message:

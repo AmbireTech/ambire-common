@@ -44,28 +44,35 @@ export const findPrivacyPoolsDepositLabel = (
 ): bigint | undefined => getTokenNotesInDepositOrder(notes, tokenAddress)[number - 1]?.label
 
 /**
- * The deposits a send can spend on a chain: approved ones, of a token that can be sent, with
- * something left once the sends on their way are taken out. In the order of the chain's assets,
- * then oldest first. Each is numbered among all of the account's deposits of its token, the spent
- * and pending ones too, so its number stays as others arrive or are sent in full.
+ * The deposits a send can spend on a chain: approved ones with something left, of a token that can
+ * be sent, and with no send on its way - see `withdrawingDeposits`. In the order of the chain's
+ * assets, then oldest first. Each is numbered among all of the account's deposits of its token, the
+ * spent and pending ones too, so its number stays as others arrive or are sent in full.
  */
 export const getPrivacyPoolsSendableDeposits = ({
   chainId,
   notes,
-  withdrawingAmounts
+  withdrawingDeposits
 }: {
   chainId: string
   /** All of the account's notes on the chain, the spent ones too. */
   notes: PrivacyPoolsNote[]
-  /** Per deposit label, what sends on their way take out of it. */
-  withdrawingAmounts: Map<bigint, bigint>
+  /**
+   * The labels of the deposits a send on its way is sent from. Left out until the notes show that
+   * send, as the SDK would spend them as they were before it.
+   */
+  withdrawingDeposits: Set<bigint>
 }): PrivacyPoolsSendableDeposit[] =>
   (getPrivacyPoolsChainConfig(BigInt(chainId))?.assets || [])
     .filter(({ isWithdrawable }) => isWithdrawable)
     .flatMap((asset) =>
       getTokenNotesInDepositOrder(notes, asset.address).flatMap((note, index) => {
-        const availableAmount = note.amount - (withdrawingAmounts.get(note.label) ?? 0n)
-        if (note.approval !== 'approved' || availableAmount <= 0n) return []
+        if (
+          note.approval !== 'approved' ||
+          note.amount <= 0n ||
+          withdrawingDeposits.has(note.label)
+        )
+          return []
 
         return [
           {
@@ -75,7 +82,7 @@ export const getPrivacyPoolsSendableDeposits = ({
             decimals: asset.decimals,
             isNative: asset.isNative,
             number: index + 1,
-            availableAmount
+            availableAmount: note.amount
           }
         ]
       })

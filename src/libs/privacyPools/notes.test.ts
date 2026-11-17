@@ -62,8 +62,8 @@ describe('findSendablePrivacyPoolsNote', () => {
 })
 
 describe('getPrivacyPoolsSendableDeposits', () => {
-  const getDeposits = (notes: PrivacyPoolsNote[], withdrawingAmounts = new Map<bigint, bigint>()) =>
-    getPrivacyPoolsSendableDeposits({ chainId: '1', notes, withdrawingAmounts })
+  const getDeposits = (notes: PrivacyPoolsNote[], withdrawingDeposits = new Set<bigint>()) =>
+    getPrivacyPoolsSendableDeposits({ chainId: '1', notes, withdrawingDeposits })
 
   test('numbers each deposit among all of its token, oldest first, and lists the approved ones left', () => {
     // Listed out of order, as numbering goes by when each was made
@@ -95,16 +95,12 @@ describe('getPrivacyPoolsSendableDeposits', () => {
     ])
   })
 
-  test('takes out what sends on their way take from each deposit, and drops one they empty', () => {
-    const partly = note({ depositIndex: 1 })
-    const emptied = note({ depositIndex: 2 })
-    const withdrawing = new Map([
-      [partly.label, 40n],
-      [emptied.label, 100n]
-    ])
+  test('leaves out a deposit a send on its way is sent from, as the SDK would spend it as it was', () => {
+    const withdrawing = note({ depositIndex: 1 })
+    const untouched = note({ depositIndex: 2 })
 
-    expect(getDeposits([partly, emptied], withdrawing)).toEqual([
-      expect.objectContaining({ number: 1, availableAmount: 60n })
+    expect(getDeposits([withdrawing, untouched], new Set([withdrawing.label]))).toEqual([
+      expect.objectContaining({ number: 2, availableAmount: 100n })
     ])
   })
 
@@ -114,7 +110,7 @@ describe('getPrivacyPoolsSendableDeposits', () => {
       getPrivacyPoolsSendableDeposits({
         chainId: '137',
         notes: [note()],
-        withdrawingAmounts: new Map()
+        withdrawingDeposits: new Set()
       })
     ).toEqual([])
   })

@@ -62,6 +62,7 @@ import {
   PrivacyPoolsContext
 } from './context'
 import { privacyPoolsErrors } from './errors'
+import { PrivacyPoolsExpectedChanges } from './expectedChanges'
 import { PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsSync, readPrivacyPoolsNotes } from './sync'
@@ -257,6 +258,8 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
   #poolStatsReader: PrivacyPoolsPoolStatsReader
 
+  #expectedChanges: PrivacyPoolsExpectedChanges
+
   /** The latest withdrawal of any phrase. */
   #operation: PrivacyPoolsOperation | null = null
 
@@ -286,12 +289,14 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     ctx: PrivacyPoolsContext,
     registry: PrivacyPoolsProtocolRegistry,
     sync: PrivacyPoolsSync,
-    poolStatsReader: PrivacyPoolsPoolStatsReader
+    poolStatsReader: PrivacyPoolsPoolStatsReader,
+    expectedChanges: PrivacyPoolsExpectedChanges
   ) {
     this.#ctx = ctx
     this.#registry = registry
     this.#sync = sync
     this.#poolStatsReader = poolStatsReader
+    this.#expectedChanges = expectedChanges
   }
 
   /** The latest withdrawal of any phrase - see `PrivacyPoolsController.operation`. */
@@ -383,6 +388,9 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
         depositNumber,
         amount
       })
+      // The SDK would spend the deposit as it was before that send, which the pool then refuses
+      if (this.#expectedChanges.getWithdrawingDeposits(seedId, chainId).has(noteLabel))
+        throw privacyPoolsErrors.withdrawalDepositBusy()
 
       // Checked by `isAddress` above
       const sdkRecipient = recipient as Hex
