@@ -98,6 +98,31 @@ describe('createKohakuNetwork', () => {
 
     expect(settled).not.toHaveBeenCalled()
   })
+
+  test('fails a POST that only asks for something, such as a relayer quote, that gets no answer', async () => {
+    jest.useFakeTimers()
+    const quoteUrl = 'https://relayer.example/quote'
+    const network = createKohakuNetwork(createSilentFetch(), READ_TIMEOUT, [quoteUrl])
+
+    const quoting = network.fetch(quoteUrl, { method: 'POST' })
+    jest.advanceTimersByTime(READ_TIMEOUT)
+
+    await expect(quoting).rejects.toThrow('request-timeout')
+  })
+
+  test('keeps waiting on a POST to the same relayer that is not one of the listed URLs', async () => {
+    jest.useFakeTimers()
+    const network = createKohakuNetwork(createSilentFetch(), READ_TIMEOUT, [
+      'https://relayer.example/quote'
+    ])
+
+    const settled = jest.fn()
+    network.fetch('https://relayer.example/request', { method: 'POST' }).then(settled, settled)
+    jest.advanceTimersByTime(READ_TIMEOUT * 10)
+    await Promise.resolve()
+
+    expect(settled).not.toHaveBeenCalled()
+  })
 })
 
 describe('createKohakuProvider', () => {

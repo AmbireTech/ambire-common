@@ -16,7 +16,8 @@ import EmittableError from '../../classes/EmittableError'
 import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsDepositAsset,
-  getPrivacyPoolsChainConfig
+  getPrivacyPoolsChainConfig,
+  PRIVACY_POOLS_READ_TIMEOUT
 } from '../../consts/privacyPools'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -5519,6 +5520,22 @@ describe('PrivacyPoolsController', () => {
       const protocol = await syncedProtocol()
 
       expect(protocol.params.merkleTreeBuilder).toBeUndefined()
+    })
+
+    it("gives up on a relayer's quote that gets no answer, so a silent relayer cannot hold a transfer", async () => {
+      const protocol = await syncedProtocol()
+      const [relayerUrl] = Object.values(getPrivacyPoolsChainConfig(1n)!.relayers!)
+      fakeFetch.mockImplementationOnce(() => new Promise<never>(() => {}))
+      jest.useFakeTimers()
+
+      try {
+        const quoting = protocol.host.network.fetch(`${relayerUrl}/quote`, { method: 'POST' })
+        jest.advanceTimersByTime(PRIVACY_POOLS_READ_TIMEOUT)
+
+        await expect(quoting).rejects.toThrow('request-timeout')
+      } finally {
+        jest.useRealTimers()
+      }
     })
   })
 

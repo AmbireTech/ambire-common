@@ -73,7 +73,7 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
   }
 
   getHost(chainId: string, seedId: string): Host {
-    return this.#createHost(getChainProvider(this.#ctx.providers, chainId), seedId)
+    return this.#createHost(chainId, getChainProvider(this.#ctx.providers, chainId), seedId)
   }
 
   /**
@@ -87,7 +87,7 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
 
     const config = getChainConfig(chainId)
     const provider = getChainProvider(this.#ctx.providers, chainId)
-    const host = this.#createHost(provider, seedId)
+    const host = this.#createHost(chainId, provider, seedId)
     const { dataService, isSagaHydrated } = await this.#getDataService(config, host.provider)
 
     const protocol = new PrivacyPoolsV1Protocol(host, {
@@ -172,9 +172,15 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
     this.#kohakuKeystores.clear()
   }
 
-  #createHost(provider: JsonRpcProvider, seedId: string): Host {
+  #createHost(chainId: string, provider: JsonRpcProvider, seedId: string): Host {
+    // The SDK asks every relayer for a quote at once and waits for all of them, so one that never
+    // answers would hold the transfer forever. Only asking, so safe to give up on
+    const relayerQuoteUrls = Object.values(getChainConfig(chainId).relayers ?? {}).map(
+      (relayerUrl) => `${relayerUrl}/quote`
+    )
+
     return {
-      network: createKohakuNetwork(this.#ctx.fetch, PRIVACY_POOLS_READ_TIMEOUT),
+      network: createKohakuNetwork(this.#ctx.fetch, PRIVACY_POOLS_READ_TIMEOUT, relayerQuoteUrls),
       // Required by `Host`, but not read: the SDK stores nothing per account, and the chain's
       // state in `chainStorage`
       storage: this.#ctx.chainStorage,
