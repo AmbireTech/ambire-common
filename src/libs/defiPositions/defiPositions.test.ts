@@ -336,9 +336,7 @@ describe('Defi positions helper and portfolio functions', () => {
       iconUrl: '',
       siteUrl: '',
       type: 'common',
-      positions: [
-        { id: `${providerName}-1`, additionalData: { positionIndex: '1' }, assets: [] }
-      ]
+      positions: [{ id: `${providerName}-1`, additionalData: { positionIndex: '1' }, assets: [] }]
     })
     const previousDebankLido = getStoredPositions('Lido', 'debank')
     const previousMixedUniV3 = getStoredPositions('Uniswap V3', 'mixed')
@@ -478,7 +476,6 @@ describe('Defi positions helper and portfolio functions', () => {
       const [firstAsset, secondAsset] = appChainProvider.positions[0]!.assets
 
       // App chains (like Hyperliquid) have no chainId and send decimal amounts as numbers
-      // @ts-expect-error test
       delete appChainProvider.chainId
       // @ts-expect-error test
       firstAsset!.amount = 5.3e-7
