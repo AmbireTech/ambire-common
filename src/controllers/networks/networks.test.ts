@@ -480,15 +480,13 @@ describe('Networks Controller - add or update network info', () => {
 
   const buildForNetworkInfo = async () => {
     const harness = createTempProviderHarness()
-    const { controller } = buildNetworksController({
-      useTempProvider: harness.useTempProvider,
-      fetch: createFetchStub()
-    })
+    const useTempProvider = jest.fn(harness.useTempProvider)
+    const { controller } = buildNetworksController({ useTempProvider, fetch: createFetchStub() })
 
     await controller.initialLoadPromise
     await settleBackgroundSync(controller)
 
-    return { controller, harness }
+    return { controller, harness, useTempProvider }
   }
 
   test('seeds info with the all-loading shape before its first await', async () => {
@@ -597,6 +595,40 @@ describe('Networks Controller - add or update network info', () => {
       false
     ])
     expect(emissions[emissions.length - 1]!.levels).not.toContain('loading')
+  })
+
+  test('an RPC change does not take the network info fetched for another network', async () => {
+    const { controller, harness } = await buildForNetworkInfo()
+    const infoRun = controller.setNetworkToAddOrUpdate({ chainId: CHAIN_ID_A, rpcUrl: RPC_URL_A })
+    harness.release(RPC_URL_A)
+    await infoRun
+    expect(controller.networkToAddOrUpdate?.info?.nativeAssetId).toBe(NATIVE_ASSET_ID_A)
+
+    // RPC_URL_B is never released, so the fresh info for this network stays pending
+    await controller.updateNetwork({ selectedRpcUrl: RPC_URL_B }, 1n)
+
+    // The info carries its own chainId, so taking it would also overwrite this network's chainId
+    const updatedNetwork = controller.allNetworks.find((n) => n.chainId === 1n)
+    expect(updatedNetwork).toBeDefined()
+    expect(updatedNetwork?.nativeAssetId).not.toBe(NATIVE_ASSET_ID_A)
+    expect(controller.allNetworks.some((n) => n.chainId === CHAIN_ID_A)).toBe(false)
+  })
+
+  test('an RPC change takes the network info fetched for the same network', async () => {
+    const { controller, harness, useTempProvider } = await buildForNetworkInfo()
+    const infoRun = controller.setNetworkToAddOrUpdate({ chainId: 1n, rpcUrl: RPC_URL_A })
+    harness.release(RPC_URL_A)
+    await infoRun
+    const tempProviderCallsBefore = useTempProvider.mock.calls.length
+
+    await controller.updateNetwork({ selectedRpcUrl: RPC_URL_A }, 1n)
+
+    // Taking the fetched info means no new fetch is started for the selected RPC
+    expect(useTempProvider).toHaveBeenCalledTimes(tempProviderCallsBefore)
+    // Any chain other than A gets the B ids from the fetch stub
+    expect(controller.allNetworks.find((n) => n.chainId === 1n)?.nativeAssetId).toBe(
+      NATIVE_ASSET_ID_B
+    )
   })
 
   describe('addNetwork before the network info resolved', () => {
@@ -995,6 +1027,20 @@ describe('Networks Controller - update a network that does not exist', () => {
     const stored: { [key: string]: Network } = await storage.get('networks', {})
     expect(stored['1']?.explorerUrl).toBe(explorerUrlBefore)
     expect(stored).not.toHaveProperty(UNKNOWN_CHAIN_ID.toString())
+  })
+
+  test('clears the network info fetched for the rejected update', async () => {
+    const { controller } = await buildLoadedController()
+
+    await controller.setNetworkToAddOrUpdate({ chainId: 1n, rpcUrl: 'https://rpc.test' })
+    expect(controller.networkToAddOrUpdate).not.toBe(null)
+    await controller.updateNetwork({ selectedRpcUrl: 'https://rpc.test' }, UNKNOWN_CHAIN_ID)
+    expect(controller.networkToAddOrUpdate).toBe(null)
+
+    await controller.setNetworkToAddOrUpdate({ chainId: 1n, rpcUrl: 'https://rpc.test' })
+    expect(controller.networkToAddOrUpdate).not.toBe(null)
+    await controller.updateNetworks({ disabled: false }, [1n, UNKNOWN_CHAIN_ID])
+    expect(controller.networkToAddOrUpdate).toBe(null)
   })
 
   test('still updates several networks when all chainIds are known', async () => {

@@ -604,13 +604,22 @@ export class NetworksController extends EventEmitter implements INetworksControl
     await this.withStatus('addNetwork', () => this.#addNetwork(network))
   }
 
+  /**
+   * Rejects an update of a network that doesn't exist. Like a finished update, it clears
+   * `networkToAddOrUpdate`, so the info fetched for this update isn't left for a later one.
+   */
+  #rejectUnknownNetwork(chainId: ChainId, networkUpdate: Partial<Network>): never {
+    this.networkToAddOrUpdate = null
+    throw getUnknownNetworkError(chainId, networkUpdate)
+  }
+
   async #updateNetwork(network: Partial<Network>, chainId: ChainId, skipUpdate?: boolean) {
     await this.initialLoadPromise
 
     if (!Object.keys(network).length) return
 
     const networkData = this.allNetworks.find((n) => n.chainId === chainId)
-    if (!networkData) throw getUnknownNetworkError(chainId, network)
+    if (!networkData) this.#rejectUnknownNetwork(chainId, network)
 
     const changedNetwork: Network = Object.keys(network).reduce((acc, key) => {
       // No need to save unchanged networks. Here we filter the networks that are the same as the ones in the storage.
@@ -640,8 +649,10 @@ export class NetworksController extends EventEmitter implements INetworksControl
         const stringChainId = chainId.toString()
         if (!this.#networks[stringChainId]) return
 
+        // The info may be left over from another network's update, so it's applied only to its own
         if (
-          networkToAddOrUpdate?.info &&
+          networkToAddOrUpdate?.chainId === chainId &&
+          networkToAddOrUpdate.info &&
           Object.values(networkToAddOrUpdate.info).every((prop) => prop !== 'LOADING')
         ) {
           const info = { ...(networkToAddOrUpdate.info as NetworkInfo) }
@@ -715,7 +726,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     // chainId would leave the others saved, but without RPC providers and a UI update
     const knownChainIds = new Set(this.allNetworks.map((n) => n.chainId))
     const unknownChainId = chainIds.find((chainId) => !knownChainIds.has(chainId))
-    if (unknownChainId !== undefined) throw getUnknownNetworkError(unknownChainId, network)
+    if (unknownChainId !== undefined) this.#rejectUnknownNetwork(unknownChainId, network)
 
     await Promise.all(chainIds.map((chainId) => this.#updateNetwork(network, chainId, true)))
     void this.#onAddOrUpdateNetworks(this.allNetworks.filter((n) => chainIds.includes(n.chainId)))
