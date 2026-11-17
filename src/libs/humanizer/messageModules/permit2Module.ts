@@ -62,6 +62,14 @@ function isCompletePermission(
   return permission.token !== undefined && permission.amount !== undefined
 }
 
+/** Permit2 primary types for a signature transfer with an app-defined witness struct */
+const WITNESS_TRANSFER_PRIMARY_TYPES = [
+  'PermitWitnessTransferFrom',
+  'PermitBatchWitnessTransferFrom'
+]
+/** Permit2 primary types for an allowance (PermitSingle, PermitBatch) or a plain signature transfer */
+const PERMIT_PRIMARY_TYPES = ['PermitSingle', 'PermitBatch', 'PermitTransferFrom']
+
 // The witness struct is defined by the app that asks for the signature, so the
 // address that receives the tokens can be under any of these common names
 const WITNESS_RECIPIENT_FIELD_NAMES = ['recipient', 'receiver', 'to']
@@ -88,9 +96,12 @@ export const permit2Module: HumanizerTypedMessageModule = (message: Message) => 
   )
     return { fullVisualization: [] }
 
-  const witnessMessageType =
-    tm.types?.PermitWitnessTransferFrom?.[0]?.type ||
-    tm.types?.PermitBatchWitnessTransferFrom?.[0]?.type
+  // Only `primaryType` and the types it references are signed. Other entries in
+  // `types` are ignored by the signature, so they must not pick the branch
+  const primaryTypeFirstFieldType = tm.types?.[tm.primaryType]?.[0]?.type
+  const witnessMessageType = WITNESS_TRANSFER_PRIMARY_TYPES.includes(tm.primaryType)
+    ? primaryTypeFirstFieldType
+    : undefined
 
   if (
     witnessMessageType &&
@@ -143,10 +154,9 @@ export const permit2Module: HumanizerTypedMessageModule = (message: Message) => 
     }
   }
 
-  const messageType =
-    tm?.types?.PermitSingle?.[0]?.type ||
-    tm?.types?.PermitBatch?.[0]?.type ||
-    tm.types?.PermitTransferFrom?.[0]?.type
+  const messageType = PERMIT_PRIMARY_TYPES.includes(tm.primaryType)
+    ? primaryTypeFirstFieldType
+    : undefined
 
   if (!messageType) return { fullVisualization: [] }
   if (messageType === 'TokenPermissions') {
