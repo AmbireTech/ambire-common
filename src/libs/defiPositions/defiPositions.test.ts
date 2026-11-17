@@ -1,6 +1,6 @@
 import { ZeroAddress } from 'ethers'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { describe, expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { STK_WALLET } from '../../consts/addresses'
