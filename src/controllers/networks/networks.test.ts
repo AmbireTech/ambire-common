@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, jest, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { suppressConsole } from '../../../test/helpers/console'
+import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { mockBundlerRequests } from '../../../test/mocks/bundler'
 import { SINGLETON } from '../../consts/deploy'
@@ -58,9 +58,10 @@ const buildNetworksController = ({
   featureFlags?: FeatureFlagsController
 } = {}) => {
   const onAddOrUpdateNetworks = jest.fn<(networks: Network[]) => Promise<void>>(async () => {})
+  const storage = new StorageController(produceMemoryStore())
   const controller = new NetworksController({
     defaultNetworksMode,
-    storage: new StorageController(produceMemoryStore()),
+    storage,
     fetch,
     relayerUrl,
     useTempProvider,
@@ -72,7 +73,7 @@ const buildNetworksController = ({
     .spyOn(controller, 'mergeRelayerNetworks')
     .mockImplementation(mergeImpl)
 
-  return { controller, mergeRelayerNetworks, onAddOrUpdateNetworks }
+  return { controller, mergeRelayerNetworks, onAddOrUpdateNetworks, storage }
 }
 
 /**
@@ -479,15 +480,13 @@ describe('Networks Controller - add or update network info', () => {
 
   const buildForNetworkInfo = async () => {
     const harness = createTempProviderHarness()
-    const { controller } = buildNetworksController({
-      useTempProvider: harness.useTempProvider,
-      fetch: createFetchStub()
-    })
+    const useTempProvider = jest.fn(harness.useTempProvider)
+    const { controller } = buildNetworksController({ useTempProvider, fetch: createFetchStub() })
 
     await controller.initialLoadPromise
     await settleBackgroundSync(controller)
 
-    return { controller, harness }
+    return { controller, harness, useTempProvider }
   }
 
   test('seeds info with the all-loading shape before its first await', async () => {
@@ -596,6 +595,40 @@ describe('Networks Controller - add or update network info', () => {
       false
     ])
     expect(emissions[emissions.length - 1]!.levels).not.toContain('loading')
+  })
+
+  test('an RPC change does not take the network info fetched for another network', async () => {
+    const { controller, harness } = await buildForNetworkInfo()
+    const infoRun = controller.setNetworkToAddOrUpdate({ chainId: CHAIN_ID_A, rpcUrl: RPC_URL_A })
+    harness.release(RPC_URL_A)
+    await infoRun
+    expect(controller.networkToAddOrUpdate?.info?.nativeAssetId).toBe(NATIVE_ASSET_ID_A)
+
+    // RPC_URL_B is never released, so the fresh info for this network stays pending
+    await controller.updateNetwork({ selectedRpcUrl: RPC_URL_B }, 1n)
+
+    // The info carries its own chainId, so taking it would also overwrite this network's chainId
+    const updatedNetwork = controller.allNetworks.find((n) => n.chainId === 1n)
+    expect(updatedNetwork).toBeDefined()
+    expect(updatedNetwork?.nativeAssetId).not.toBe(NATIVE_ASSET_ID_A)
+    expect(controller.allNetworks.some((n) => n.chainId === CHAIN_ID_A)).toBe(false)
+  })
+
+  test('an RPC change takes the network info fetched for the same network', async () => {
+    const { controller, harness, useTempProvider } = await buildForNetworkInfo()
+    const infoRun = controller.setNetworkToAddOrUpdate({ chainId: 1n, rpcUrl: RPC_URL_A })
+    harness.release(RPC_URL_A)
+    await infoRun
+    const tempProviderCallsBefore = useTempProvider.mock.calls.length
+
+    await controller.updateNetwork({ selectedRpcUrl: RPC_URL_A }, 1n)
+
+    // Taking the fetched info means no new fetch is started for the selected RPC
+    expect(useTempProvider).toHaveBeenCalledTimes(tempProviderCallsBefore)
+    // Any chain other than A gets the B ids from the fetch stub
+    expect(controller.allNetworks.find((n) => n.chainId === 1n)?.nativeAssetId).toBe(
+      NATIVE_ASSET_ID_B
+    )
   })
 
   describe('addNetwork before the network info resolved', () => {
@@ -916,5 +949,111 @@ describe('Networks Controller - token prices opt-out', () => {
     for (let i = 0; i < 25; i++) await wait(0)
 
     expect(getPriceApiUrls(fetch)).toEqual([])
+  })
+})
+
+describe('Networks Controller - update a network that does not exist', () => {
+  const UNKNOWN_CHAIN_ID = 987654321987n
+
+  // The unknown network errors are logged; restored after each test even if it fails
+  suppressConsoleBeforeEach()
+
+  const buildLoadedController = async () => {
+    const built = buildNetworksController()
+    await built.controller.initialLoadPromise
+    await settleBackgroundSync(built.controller)
+    return built
+  }
+
+  // `statuses.updateNetwork` is reset to INITIAL by `withStatus` once it returns, so the
+  // transitions have to be recorded as they are emitted.
+  const recordUpdateNetworkStatuses = (controller: NetworksController) => {
+    const statuses: string[] = []
+    const unsubscribe = controller.onUpdate(() => {
+      const current = controller.statuses.updateNetwork
+      if (statuses[statuses.length - 1] !== current) statuses.push(current)
+    })
+
+    return { statuses, unsubscribe }
+  }
+
+  test('ends in ERROR and neither keeps nor saves the unknown network', async () => {
+    const { controller, onAddOrUpdateNetworks, storage } = await buildLoadedController()
+    const chainIdsBefore = controller.allNetworks.map((n) => n.chainId)
+    const { statuses, unsubscribe } = recordUpdateNetworkStatuses(controller)
+
+    await controller.updateNetwork({ disabled: false }, UNKNOWN_CHAIN_ID)
+    unsubscribe()
+
+    expect(statuses).toContain('ERROR')
+    expect(statuses).not.toContain('SUCCESS')
+    expect(controller.allNetworks.map((n) => n.chainId)).toEqual(chainIdsBefore)
+    expect(onAddOrUpdateNetworks).not.toHaveBeenCalled()
+    // Read the raw value, as `getNetworksInStorage` already filters out broken networks
+    const stored: { [key: string]: Network } = await storage.get('networks', {})
+    expect(stored).not.toHaveProperty(UNKNOWN_CHAIN_ID.toString())
+  })
+
+  test('keeps the controller able to emit updates and to update existing networks', async () => {
+    const { controller } = await buildLoadedController()
+
+    await controller.updateNetwork({ disabled: false }, UNKNOWN_CHAIN_ID)
+
+    expect(() => controller.toJSON()).not.toThrow()
+    await controller.updateNetwork({ explorerUrl: 'https://etherscan.io/custom' }, 1n)
+    expect(controller.allNetworks.find((n) => n.chainId === 1n)?.explorerUrl).toBe(
+      'https://etherscan.io/custom'
+    )
+  })
+
+  test('updates none of the networks when one of several chainIds is unknown', async () => {
+    const { controller, onAddOrUpdateNetworks, storage } = await buildLoadedController()
+    const explorerUrlBefore = controller.allNetworks.find((n) => n.chainId === 1n)?.explorerUrl
+    const { statuses, unsubscribe } = recordUpdateNetworkStatuses(controller)
+
+    await controller.updateNetworks({ explorerUrl: 'https://etherscan.io/custom' }, [
+      1n,
+      UNKNOWN_CHAIN_ID
+    ])
+    unsubscribe()
+
+    expect(statuses).toContain('ERROR')
+    expect(statuses).not.toContain('SUCCESS')
+    expect(controller.allNetworks.find((n) => n.chainId === 1n)?.explorerUrl).toBe(
+      explorerUrlBefore
+    )
+    expect(controller.allNetworks.some((n) => n.chainId === UNKNOWN_CHAIN_ID)).toBe(false)
+    expect(onAddOrUpdateNetworks).not.toHaveBeenCalled()
+    const stored: { [key: string]: Network } = await storage.get('networks', {})
+    expect(stored['1']?.explorerUrl).toBe(explorerUrlBefore)
+    expect(stored).not.toHaveProperty(UNKNOWN_CHAIN_ID.toString())
+  })
+
+  test('clears the network info fetched for the rejected update', async () => {
+    const { controller } = await buildLoadedController()
+
+    await controller.setNetworkToAddOrUpdate({ chainId: 1n, rpcUrl: 'https://rpc.test' })
+    expect(controller.networkToAddOrUpdate).not.toBe(null)
+    await controller.updateNetwork({ selectedRpcUrl: 'https://rpc.test' }, UNKNOWN_CHAIN_ID)
+    expect(controller.networkToAddOrUpdate).toBe(null)
+
+    await controller.setNetworkToAddOrUpdate({ chainId: 1n, rpcUrl: 'https://rpc.test' })
+    expect(controller.networkToAddOrUpdate).not.toBe(null)
+    await controller.updateNetworks({ disabled: false }, [1n, UNKNOWN_CHAIN_ID])
+    expect(controller.networkToAddOrUpdate).toBe(null)
+  })
+
+  test('still updates several networks when all chainIds are known', async () => {
+    const { controller, onAddOrUpdateNetworks } = await buildLoadedController()
+
+    await controller.updateNetworks({ explorerUrl: 'https://explorer.example' }, [1n, 10n])
+
+    expect(controller.allNetworks.find((n) => n.chainId === 1n)?.explorerUrl).toBe(
+      'https://explorer.example'
+    )
+    expect(controller.allNetworks.find((n) => n.chainId === 10n)?.explorerUrl).toBe(
+      'https://explorer.example'
+    )
+    expect(onAddOrUpdateNetworks).toHaveBeenCalledTimes(1)
   })
 })
