@@ -6,12 +6,15 @@ import {
   ethFlowInterface,
   getApiNetwork,
   getCowSwapOrderStruct,
+  getNetworkCostSlippageBps,
   getOutputValueInUsd,
+  getPriceSlippageBps,
   getProtocolFeeAmount,
   getWrappedNativeTokenAddress,
   isCowSwapTokenListEntry,
   normalizeBuyTokenAddress,
   normalizeCowSwapToken,
+  parseSmartSlippageBps,
   settlementInterface
 } from '@/services/cowswap/helper'
 import {
@@ -48,9 +51,14 @@ import {
 } from '../../libs/swapAndBridge/swapAndBridge'
 import {
   COWSWAP_API_BASE_URL,
+  COWSWAP_BFF_BASE_URL,
+  COWSWAP_BUY_NATIVE_TOKEN_ADDRESS,
   COWSWAP_ETH_FLOW_ADDRESS,
   COWSWAP_ORDER_VALIDITY_SECONDS,
   COWSWAP_SETTLEMENT_ADDRESS,
+  COWSWAP_SMART_SLIPPAGE_CACHE_MS,
+  COWSWAP_SMART_SLIPPAGE_FAILURE_CACHE_MS,
+  COWSWAP_SMART_SLIPPAGE_TIMEOUT_MS,
   COWSWAP_SUPPORTED_CHAINS,
   COWSWAP_TOKEN_LIST_CACHE_MS,
   COWSWAP_TOKEN_LIST_URL,
@@ -78,6 +86,16 @@ export class CowSwapAPI implements SwapProvider {
 
   /** The token list request in progress, so that simultaneous callers share one request */
   #tokenListRequest: Promise<CowSwapTokenListEntry[]> | null = null
+
+  /**
+   * The smart slippage of recently quoted token pairs, kept in memory only. A request in
+   * progress is kept too, so that simultaneous quotes for a pair share it, and so is a failure,
+   * so that a failing endpoint doesn't slow down every quote
+   */
+  #smartSlippageCache = new Map<
+    string,
+    { expiresAt: number; slippageBps: Promise<number | null> }
+  >()
 
   isHealthy: boolean | null = null
 
@@ -113,7 +131,11 @@ export class CowSwapAPI implements SwapProvider {
     return `${COWSWAP_API_BASE_URL}/${apiNetwork}/api/${version}${path}`
   }
 
-  async #fetchWithTimeout(url: string, init?: RequestInitWithCustomHeaders) {
+  async #fetchWithTimeout(
+    url: string,
+    init?: RequestInitWithCustomHeaders,
+    timeoutMs = this.#requestTimeoutMs
+  ) {
     let timeout: NodeJS.Timeout | undefined
 
     try {
@@ -126,7 +148,7 @@ export class CowSwapAPI implements SwapProvider {
                 'Our service provider CoW Swap is temporarily unavailable or your internet connection is too slow.'
               )
             )
-          }, this.#requestTimeoutMs)
+          }, timeoutMs)
         })
       ])
     } catch (error: any) {
@@ -166,6 +188,75 @@ export class CowSwapAPI implements SwapProvider {
     }
 
     return body
+  }
+
+  /** Never throws, so that a failure to get the smart slippage never fails the quote */
+  async #fetchSmartSlippageBps(
+    url: string
+  ): Promise<{ slippageBps: number | null; hasFailed: boolean }> {
+    try {
+      const response = await this.#fetchWithTimeout(
+        url,
+        { headers: this.#headers },
+        COWSWAP_SMART_SLIPPAGE_TIMEOUT_MS
+      )
+      const body = await this.#parseResponse<unknown>(
+        response,
+        'Unable to fetch the recommended slippage.'
+      )
+      return { slippageBps: parseSmartSlippageBps(body), hasFailed: false }
+    } catch (error: unknown) {
+      // The smart slippage only improves the order, so the quote falls back to the fixed one
+      console.warn('CoW Swap: unable to fetch the smart slippage, using the fixed one', error)
+      return { slippageBps: null, hasFailed: true }
+    }
+  }
+
+  /**
+   * The slippage CoW Swap recommends for selling `sellToken` for `buyToken`, based on how
+   * volatile the pair is. Null if CoW Swap has no recommendation or it couldn't be fetched
+   */
+  async #getSmartSlippageBps({
+    chainId,
+    sellToken,
+    buyToken
+  }: {
+    chainId: number
+    sellToken: string
+    buyToken: string
+  }): Promise<number | null> {
+    // CoW Swap has market data for the wrapped native token only
+    const marketBuyToken =
+      buyToken.toLowerCase() === COWSWAP_BUY_NATIVE_TOKEN_ADDRESS.toLowerCase()
+        ? getWrappedNativeTokenAddress(chainId) || buyToken
+        : buyToken
+    const cacheKey = `${chainId}:${sellToken.toLowerCase()}-${marketBuyToken.toLowerCase()}`
+
+    // Drop the expired pairs, so that the cache doesn't grow while the wallet stays open
+    const now = Date.now()
+    this.#smartSlippageCache.forEach((entry, key) => {
+      if (entry.expiresAt <= now) this.#smartSlippageCache.delete(key)
+    })
+
+    const cached = this.#smartSlippageCache.get(cacheKey)
+    if (cached) return cached.slippageBps
+
+    const request = this.#fetchSmartSlippageBps(
+      `${COWSWAP_BFF_BASE_URL}/${chainId}/markets/${sellToken}-${marketBuyToken}/slippageTolerance`
+    )
+    // The request in progress doesn't expire. It always settles, because it times out
+    const entry = {
+      expiresAt: Infinity,
+      slippageBps: request.then(({ slippageBps }) => slippageBps)
+    }
+    this.#smartSlippageCache.set(cacheKey, entry)
+
+    const { slippageBps, hasFailed } = await request
+    entry.expiresAt =
+      Date.now() +
+      (hasFailed ? COWSWAP_SMART_SLIPPAGE_FAILURE_CACHE_MS : COWSWAP_SMART_SLIPPAGE_CACHE_MS)
+
+    return slippageBps
   }
 
   async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
@@ -307,14 +398,23 @@ export class CowSwapAPI implements SwapProvider {
     const sellToken = getAddress(isEthFlow ? wrappedNativeTokenAddress! : fromTokenAddress)
     const buyToken = normalizeBuyTokenAddress(toTokenAddress)
     const owner = getAddress(userAddress)
-    const slippageBps = Math.round(Number(getSlippage(fromAsset, fromAmount, '0.5', 0.5)) * 100)
+    const fixedSlippageBps = Math.round(
+      Number(getSlippage(fromAsset, fromAmount, '0.5', 0.5)) * 100
+    )
+    // The slippage doesn't change the quote, so CoW Swap's recommendation is fetched while
+    // quoting, and the order gets its final slippage once the network cost is known
+    const smartSlippageRequest = this.#getSmartSlippageBps({
+      chainId: fromChainId,
+      sellToken,
+      buyToken
+    })
     const feeExemptionReason = getFeeExemptionReason({
       isWrapOrUnwrap,
       isFeeExemptToken: isNoFeeToken(fromChainId, sellToken)
     })
     const shouldIncludeConvenienceFee = feePercent > 0 && !feeExemptionReason
     const feeBps = shouldIncludeConvenienceFee ? Math.round(feePercent * 100) : undefined
-    const { fullAppData, appDataHash } = buildAppData({ slippageBps, feeBps })
+    const quoteAppData = buildAppData({ slippageBps: fixedSlippageBps, feeBps })
     const quoteRequest = {
       sellToken,
       buyToken,
@@ -323,8 +423,8 @@ export class CowSwapAPI implements SwapProvider {
       sellAmountBeforeFee: fromAmount.toString(),
       kind: 'sell',
       validFor: COWSWAP_ORDER_VALIDITY_SECONDS,
-      appData: fullAppData,
-      appDataHash,
+      appData: quoteAppData.fullAppData,
+      appDataHash: quoteAppData.appDataHash,
       priceQuality: 'optimal',
       signingScheme: isEthFlow ? 'eip1271' : 'presign',
       ...(isEthFlow
@@ -370,7 +470,7 @@ export class CowSwapAPI implements SwapProvider {
       quotedOrder.kind !== 'sell' ||
       quotedOrder.partiallyFillable !== false ||
       quotedOrder.signingScheme !== (isEthFlow ? 'eip1271' : 'presign') ||
-      returnedAppDataHash?.toLowerCase() !== appDataHash.toLowerCase() ||
+      returnedAppDataHash?.toLowerCase() !== quoteAppData.appDataHash.toLowerCase() ||
       !Number.isInteger(quotedOrder.validTo) ||
       quotedOrder.validTo <= Math.floor(Date.now() / 1000) ||
       !Number.isSafeInteger(quoteResponse.id) ||
@@ -417,6 +517,17 @@ export class CowSwapAPI implements SwapProvider {
     // Other providers quote their output before gas and charge gas separately, so the
     // displayed toAmount adds the network cost back to compare all quotes the same way
     const toAmount = toAmountAfterNetworkCost + networkFeeInBuyToken
+    // Covers both the price moving and the network cost growing before the order settles,
+    // the same way CoW Swap's own SDK does
+    const slippageBps =
+      getPriceSlippageBps({
+        smartSlippageBps: await smartSlippageRequest,
+        fixedSlippageBps,
+        fromAmountInUsd: Number(getTokenUsdAmount(fromAsset, fromAmount) || 0)
+      }) + getNetworkCostSlippageBps({ networkFee, sellAmountAfterNetworkCost: quotedSellAmount })
+    // The order carries its final slippage. The quote stays valid, because the AppData of the
+    // order differs from the quoted one only in the slippage, which doesn't affect the price
+    const { fullAppData, appDataHash } = buildAppData({ slippageBps, feeBps })
     // Must be derived from the amount after the network cost, otherwise the order asks
     // for more than solvers can deliver and it would never be filled
     const minAmountOut =

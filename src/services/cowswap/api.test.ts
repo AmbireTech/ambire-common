@@ -1,12 +1,17 @@
-import { formatUnits, getAddress, Interface, ZeroAddress } from 'ethers'
+import { formatUnits, getAddress, Interface, keccak256, toUtf8Bytes, ZeroAddress } from 'ethers'
 
 import { describe, expect, it, jest } from '@jest/globals'
 
 import { SwapAndBridgeRoute } from '../../interfaces/swapAndBridge'
 import { CowSwapAPI } from './api'
 import {
+  COWSWAP_BFF_BASE_URL,
+  COWSWAP_BUY_NATIVE_TOKEN_ADDRESS,
   COWSWAP_ETH_FLOW_ADDRESS,
   COWSWAP_SETTLEMENT_ADDRESS,
+  COWSWAP_SMART_SLIPPAGE_CACHE_MS,
+  COWSWAP_SMART_SLIPPAGE_FAILURE_CACHE_MS,
+  COWSWAP_SMART_SLIPPAGE_TIMEOUT_MS,
   COWSWAP_TOKEN_LIST_CACHE_MS,
   COWSWAP_TOKEN_LIST_URL,
   COWSWAP_VAULT_RELAYER_ADDRESS
@@ -70,9 +75,32 @@ const makeQuoteParams = (overrides: Record<string, unknown> = {}) => ({
 const quotedBuyAmount = 500000000000000n
 /** The fixture's network cost (1% of the sell amount), converted to the buy token */
 const networkFeeInBuyToken = (quotedBuyAmount * 10000n) / 990000n
+/**
+ * The slippage that lets the fixture's network cost (1% of the sell amount) grow by 50%:
+ * 0.5% of the amount sold after the network cost (99%) is 50.5 bps, rounded up
+ */
+const networkCostSlippageBps = 51n
 
-const makeQuoteFetch = () =>
-  jest.fn(async (_url: any, init: any) => {
+const isSmartSlippageUrl = (url: string) => url.startsWith(COWSWAP_BFF_BASE_URL)
+
+/** The calls to the CoW Swap order book, without the smart slippage requests */
+const getOrderBookCalls = (fetch: { mock: { calls: [any, any][] } }) =>
+  fetch.mock.calls.filter(([url]) => !isSmartSlippageUrl(url))
+
+/** The calls to the CoW Swap smart slippage endpoint */
+const getSmartSlippageCalls = (fetch: { mock: { calls: [any, any][] } }) =>
+  fetch.mock.calls.filter(([url]) => isSmartSlippageUrl(url))
+
+/**
+ * By default the smart slippage endpoint has no recommendation for the pair, so quotes use
+ * the fixed slippage
+ */
+const makeQuoteFetch = (
+  smartSlippageResponse: () => Promise<any> = async () => makeResponse({ slippageBps: 0 })
+) =>
+  jest.fn(async (url: any, init: any) => {
+    if (isSmartSlippageUrl(url)) return smartSlippageResponse()
+
     const request = JSON.parse(init.body)
     if (init.method === 'PUT') return makeResponse({ fullAppData: request.fullAppData })
 
@@ -383,7 +411,7 @@ describe('CowSwapAPI', () => {
     const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     const result = await api.quote(makeQuoteParams())
-    const [url, init] = fetch.mock.calls[0]!
+    const [url, init] = getOrderBookCalls(fetch)[0]!
     const request = JSON.parse((init as any).body)
     const appData = JSON.parse(request.appData)
     const route = result.routes[0]!
@@ -426,8 +454,11 @@ describe('CowSwapAPI', () => {
     const buyAmountBeforeFees = quotedBuyAmount + networkFeeInBuyToken
     const expectedPartnerFee = (buyAmountBeforeFees * 50n) / 10000n
     const expectedAmountAfterNetworkCost = quotedBuyAmount - expectedPartnerFee
+    // the fixed 0.5% for the price, plus the room for the network cost to grow
+    const expectedSlippageBps = 50n + networkCostSlippageBps
     const expectedMinAmountOut =
-      expectedAmountAfterNetworkCost - (expectedAmountAfterNetworkCost * 50n) / 10000n
+      expectedAmountAfterNetworkCost -
+      (expectedAmountAfterNetworkCost * expectedSlippageBps) / 10000n
     expect(route.toAmount).toBe((expectedAmountAfterNetworkCost + networkFeeInBuyToken).toString())
     expect(route.networkFeeInToToken).toBe(networkFeeInBuyToken.toString())
     expect(BigInt(route.toAmount) - BigInt(route.networkFeeInToToken!)).toBe(
@@ -453,7 +484,9 @@ describe('CowSwapAPI', () => {
     // below what CoW quoted after deducting it, otherwise it can never be filled
     expect(BigInt(route.toAmount)).toBeGreaterThan(quotedBuyAmount)
     expect(orderBuyAmount).toBeLessThan(quotedBuyAmount)
-    expect(orderBuyAmount).toBe(quotedBuyAmount - (quotedBuyAmount * 50n) / 10000n)
+    expect(orderBuyAmount).toBe(
+      quotedBuyAmount - (quotedBuyAmount * (50n + networkCostSlippageBps)) / 10000n
+    )
     expect(route.outputValueAfterGasInUsd!).toBeLessThan(route.outputValueInUsd)
   })
 
@@ -469,7 +502,7 @@ describe('CowSwapAPI', () => {
       transaction.txData
     )
 
-    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(getOrderBookCalls(fetch)).toHaveLength(1)
     expect(transaction.approvalData).toEqual({
       allowanceTarget: COWSWAP_VAULT_RELAYER_ADDRESS,
       approvalTokenAddress: tokenIn,
@@ -509,7 +542,7 @@ describe('CowSwapAPI', () => {
     const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     const result = await api.quote(makeQuoteParams({ isWrapOrUnwrap: true }))
-    const [, init] = fetch.mock.calls[0]!
+    const [, init] = getOrderBookCalls(fetch)[0]!
     const request = JSON.parse((init as any).body)
 
     expect(JSON.parse(request.appData).metadata.partnerFee).toBeUndefined()
@@ -523,7 +556,7 @@ describe('CowSwapAPI', () => {
     const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     const result = await api.quote(makeQuoteParams({ feePercent: 0.25 }))
-    const [, init] = fetch.mock.calls[0]!
+    const [, init] = getOrderBookCalls(fetch)[0]!
     const request = JSON.parse((init as any).body)
     const buyAmountBeforeFees = quotedBuyAmount + networkFeeInBuyToken
     const expectedPartnerFee = (buyAmountBeforeFees * 25n) / 10000n
@@ -540,7 +573,7 @@ describe('CowSwapAPI', () => {
     const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     const result = await api.quote(makeQuoteParams({ feePercent: 0 }))
-    const [, init] = fetch.mock.calls[0]!
+    const [, init] = getOrderBookCalls(fetch)[0]!
     const request = JSON.parse((init as any).body)
 
     expect(JSON.parse(request.appData).metadata.partnerFee).toBeUndefined()
@@ -564,7 +597,7 @@ describe('CowSwapAPI', () => {
         fromTokenAddress: stEthAddress
       })
     )
-    const [, init] = fetch.mock.calls[0]!
+    const [, init] = getOrderBookCalls(fetch)[0]!
     const request = JSON.parse((init as any).body)
 
     expect(JSON.parse(request.appData).metadata.partnerFee).toBeUndefined()
@@ -577,7 +610,7 @@ describe('CowSwapAPI', () => {
     const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     const result = await api.quote(makeEthFlowQuoteParams())
-    const [, init] = fetch.mock.calls[0]!
+    const [, init] = getOrderBookCalls(fetch)[0]!
     const request = JSON.parse((init as any).body)
     const route = result.routes[0]!
 
@@ -614,7 +647,7 @@ describe('CowSwapAPI', () => {
 
     const transaction = await api.startRoute(route)
     const [ethFlowOrder] = ethFlowInterface.decodeFunctionData('createOrder', transaction.txData)
-    const [uploadUrl, uploadInit] = fetch.mock.calls[1]!
+    const [uploadUrl, uploadInit] = getOrderBookCalls(fetch)[1]!
     const rawRoute = route.rawRoute as any
 
     expect(uploadUrl).toContain(`/app_data/${rawRoute.order.appDataHash}`)
@@ -667,11 +700,13 @@ describe('CowSwapAPI', () => {
     ;(route.rawRoute as any).order.quoteId = 8
 
     await expect(api.startRoute(route)).rejects.toThrow('ETH order details changed')
-    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(getOrderBookCalls(fetch)).toHaveLength(1)
   })
 
   it('rejects quote details that do not match the requested AppData', async () => {
-    const fetch = jest.fn(async (_url: any, init: any) => {
+    const fetch = jest.fn(async (url: any, init: any) => {
+      if (isSmartSlippageUrl(url)) return makeResponse({ slippageBps: 0 })
+
       const request = JSON.parse(init.body)
       return makeResponse({
         quote: {
@@ -800,6 +835,314 @@ describe('CowSwapAPI', () => {
         rawRoute: route.rawRoute
       })
     ).rejects.toThrow('identifier did not match the approved order')
+  })
+
+  describe('slippage', () => {
+    /** A USDC sell worth `usd`, where the fixed slippage gets smaller from $400 up */
+    const makeTradeQuoteParams = (usd: bigint) =>
+      makeQuoteParams({
+        fromAsset: { ...makeQuoteParams().fromAsset, amount: usd * 1_000_000n },
+        fromAmount: usd * 1_000_000n
+      })
+
+    /** The slippage in the AppData of the order that the user signs */
+    const getOrderSlippageBps = (route: SwapAndBridgeRoute) =>
+      BigInt(JSON.parse((route.rawRoute as any).order.appData).metadata.quote.slippageBips)
+
+    const getMinAmountOut = (slippageBps: bigint) => {
+      const expectedPartnerFee = ((quotedBuyAmount + networkFeeInBuyToken) * 50n) / 10000n
+      const amountAfterNetworkCost = quotedBuyAmount - expectedPartnerFee
+      return amountAfterNetworkCost - (amountAfterNetworkCost * slippageBps) / 10000n
+    }
+
+    /** Checks that the order allows `priceSlippageBps` plus the room for the network cost */
+    const expectOrderSlippage = (route: SwapAndBridgeRoute, priceSlippageBps: bigint) => {
+      const slippageBps = priceSlippageBps + networkCostSlippageBps
+      expect(getOrderSlippageBps(route)).toBe(slippageBps)
+      expect(route.userTxs[0]!.swapSlippage).toBe(Number(slippageBps) / 100)
+      expect(route.userTxs[0]!.minAmountOut).toBe(getMinAmountOut(slippageBps).toString())
+      expect((route.rawRoute as any).order.buyAmount).toBe(getMinAmountOut(slippageBps).toString())
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+      jest.useRealTimers()
+    })
+
+    it('asks CoW Swap for the slippage of the pair, without sending the API key', async () => {
+      const fetch = makeQuoteFetch(async () => makeResponse({ slippageBps: 73 }))
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      await api.quote(makeQuoteParams())
+      const smartSlippageCalls = getSmartSlippageCalls(fetch)
+
+      expect(smartSlippageCalls).toHaveLength(1)
+      expect(smartSlippageCalls[0]![0]).toBe(
+        `https://bff.cow.fi/1/markets/${tokenIn}-${tokenOut}/slippageTolerance`
+      )
+      expect(smartSlippageCalls[0]![1].headers).not.toHaveProperty('X-API-Key')
+    })
+
+    it('requests the quote without waiting for the slippage of the pair', async () => {
+      let respondWithSlippage: (response: unknown) => void = () => {}
+      const fetch = makeQuoteFetch(
+        () =>
+          new Promise((resolve) => {
+            respondWithSlippage = resolve
+          })
+      )
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      const quote = api.quote(makeQuoteParams())
+      await Promise.resolve()
+
+      expect(getOrderBookCalls(fetch)).toHaveLength(1)
+      respondWithSlippage(makeResponse({ slippageBps: 73 }))
+      expectOrderSlippage((await quote).routes[0]!, 73n)
+    })
+
+    it('signs an order whose AppData differs from the quoted one only in the slippage', async () => {
+      const fetch = makeQuoteFetch(async () => makeResponse({ slippageBps: 73 }))
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      const route = (await api.quote(makeQuoteParams())).routes[0]!
+      const { order } = route.rawRoute as any
+      const [, quoteInit] = getOrderBookCalls(fetch)[0]!
+      const quoteRequest = JSON.parse(quoteInit.body)
+      const quotedAppData = JSON.parse(quoteRequest.appData)
+      const orderAppData = JSON.parse(order.appData)
+
+      expect(quotedAppData.metadata.quote.slippageBips).toBe(50)
+      expect(orderAppData).toEqual({
+        ...quotedAppData,
+        metadata: { ...quotedAppData.metadata, quote: { slippageBips: 73 + 51 } }
+      })
+      expect(order.appDataHash).toBe(keccak256(toUtf8Bytes(order.appData)))
+      expect(order.appDataHash).not.toBe(quoteRequest.appDataHash)
+      expect(route.routeId).toBe(
+        getCowSwapOrderUid({ chainId: 1, order: getCowSwapOrderStruct(order), owner: userAddress })
+      )
+      expect(order.quoteId).toBe(7)
+    })
+
+    it('leaves room for the network cost to grow by half', async () => {
+      const api = new CowSwapAPI({ fetch: makeQuoteFetch() as any, apiKey: cowSwapApiKey })
+
+      const route = (await api.quote(makeQuoteParams())).routes[0]!
+
+      expectOrderSlippage(route, 50n)
+    })
+
+    it('raises the slippage of a small trade on a volatile pair', async () => {
+      const api = new CowSwapAPI({
+        fetch: makeQuoteFetch(async () => makeResponse({ slippageBps: 73 })) as any,
+        apiKey: cowSwapApiKey
+      })
+
+      expectOrderSlippage((await api.quote(makeQuoteParams())).routes[0]!, 73n)
+    })
+
+    it('lowers the slippage of a stable pair', async () => {
+      const api = new CowSwapAPI({
+        fetch: makeQuoteFetch(async () => makeResponse({ slippageBps: 2 })) as any,
+        apiKey: cowSwapApiKey
+      })
+
+      expectOrderSlippage((await api.quote(makeQuoteParams())).routes[0]!, 2n)
+    })
+
+    it('never lets a small trade use more than 1% slippage for the price', async () => {
+      const api = new CowSwapAPI({
+        fetch: makeQuoteFetch(async () => makeResponse({ slippageBps: 5000 })) as any,
+        apiKey: cowSwapApiKey
+      })
+
+      expectOrderSlippage((await api.quote(makeQuoteParams())).routes[0]!, 100n)
+    })
+
+    it('never raises the slippage of a large trade above the fixed one', async () => {
+      const api = new CowSwapAPI({
+        fetch: makeQuoteFetch(async () => makeResponse({ slippageBps: 45 })) as any,
+        apiKey: cowSwapApiKey
+      })
+
+      const route = (await api.quote(makeTradeQuoteParams(100_000n))).routes[0]!
+
+      // the fixed slippage of a $100k trade is 0.1%
+      expect(getOrderSlippageBps(route)).toBe(10n + networkCostSlippageBps)
+    })
+
+    it('lowers the slippage of a large trade on a stable pair', async () => {
+      const api = new CowSwapAPI({
+        fetch: makeQuoteFetch(async () => makeResponse({ slippageBps: 2 })) as any,
+        apiKey: cowSwapApiKey
+      })
+
+      const route = (await api.quote(makeTradeQuoteParams(100_000n))).routes[0]!
+
+      expect(getOrderSlippageBps(route)).toBe(2n + networkCostSlippageBps)
+    })
+
+    it('keeps some slippage for the price on very large trades', async () => {
+      const api = new CowSwapAPI({ fetch: makeQuoteFetch() as any, apiKey: cowSwapApiKey })
+
+      const route = (await api.quote(makeTradeQuoteParams(5_000_000n))).routes[0]!
+
+      // the fixed slippage of a $5M trade is 0.002%, which rounds to 0 bps
+      expect(getOrderSlippageBps(route)).toBe(1n + networkCostSlippageBps)
+    })
+
+    it('does not raise the slippage when the value of the trade is unknown', async () => {
+      const api = new CowSwapAPI({
+        fetch: makeQuoteFetch(async () => makeResponse({ slippageBps: 73 })) as any,
+        apiKey: cowSwapApiKey
+      })
+
+      const route = (
+        await api.quote(
+          makeQuoteParams({ fromAsset: { ...makeQuoteParams().fromAsset, priceIn: [] } })
+        )
+      ).routes[0]!
+
+      expectOrderSlippage(route, 50n)
+    })
+
+    it.each([
+      ['no market data', async () => makeResponse({ slippageBps: 0 })],
+      ['a negative slippage', async () => makeResponse({ slippageBps: -10 })],
+      ['a fractional slippage', async () => makeResponse({ slippageBps: 12.5 })],
+      ['a slippage that is not a number', async () => makeResponse({ slippageBps: '73' })],
+      ['a missing slippage', async () => makeResponse({})],
+      ['a response that is not an object', async () => makeResponse(null)],
+      ['an error response', async () => makeResponse({ message: 'Bad Request' }, false, 400)],
+      ['rate limiting', async () => makeResponse({}, false, 429)],
+      [
+        'an unreadable response',
+        async () => ({
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw new Error('Unexpected token')
+          }
+        })
+      ],
+      [
+        'a network error',
+        async () => {
+          throw new Error('Network request failed')
+        }
+      ]
+    ])('falls back to the fixed slippage on %s', async (_, smartSlippageResponse) => {
+      const api = new CowSwapAPI({
+        fetch: makeQuoteFetch(smartSlippageResponse) as any,
+        apiKey: cowSwapApiKey
+      })
+
+      expectOrderSlippage((await api.quote(makeQuoteParams())).routes[0]!, 50n)
+    })
+
+    it('does not hold the quote for long when the slippage endpoint is slow', async () => {
+      jest.useFakeTimers()
+      const fetch = makeQuoteFetch(() => new Promise(() => {}))
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      const quote = api.quote(makeQuoteParams())
+      await jest.advanceTimersByTimeAsync(COWSWAP_SMART_SLIPPAGE_TIMEOUT_MS)
+
+      expectOrderSlippage((await quote).routes[0]!, 50n)
+      expect(jest.getTimerCount()).toBe(0)
+    })
+
+    it('looks up the market of the wrapped native token when buying the native token', async () => {
+      const fetch = makeQuoteFetch(async () => makeResponse({ slippageBps: 45 }))
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      const route = (
+        await api.quote(
+          makeQuoteParams({
+            toAsset: { ...makeQuoteParams().toAsset, address: ZeroAddress, symbol: 'ETH' },
+            toTokenAddress: ZeroAddress
+          })
+        )
+      ).routes[0]!
+
+      expect(getSmartSlippageCalls(fetch)[0]![0]).toBe(
+        `https://bff.cow.fi/1/markets/${tokenIn}-${tokenOut}/slippageTolerance`
+      )
+      // the order itself still buys the native token
+      expect((route.rawRoute as any).order.buyToken).toBe(COWSWAP_BUY_NATIVE_TOKEN_ADDRESS)
+    })
+
+    it('looks up the market of the wrapped native token when selling the native token', async () => {
+      const fetch = makeQuoteFetch(async () => makeResponse({ slippageBps: 45 }))
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      await api.quote(makeEthFlowQuoteParams())
+
+      expect(getSmartSlippageCalls(fetch)[0]![0]).toBe(
+        `https://bff.cow.fi/8453/markets/${baseWeth}-${baseUsdc}/slippageTolerance`
+      )
+    })
+
+    it('reuses the slippage of a pair until it expires', async () => {
+      const now = jest.spyOn(Date, 'now')
+      now.mockReturnValue(1_000_000)
+      const fetch = makeQuoteFetch(async () => makeResponse({ slippageBps: 73 }))
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      await api.quote(makeQuoteParams())
+      now.mockReturnValue(1_000_000 + COWSWAP_SMART_SLIPPAGE_CACHE_MS - 1)
+      expectOrderSlippage((await api.quote(makeQuoteParams())).routes[0]!, 73n)
+      expect(getSmartSlippageCalls(fetch)).toHaveLength(1)
+
+      now.mockReturnValue(1_000_000 + COWSWAP_SMART_SLIPPAGE_CACHE_MS)
+      await api.quote(makeQuoteParams())
+      expect(getSmartSlippageCalls(fetch)).toHaveLength(2)
+    })
+
+    it('shares one request between simultaneous quotes for a pair', async () => {
+      const fetch = makeQuoteFetch(async () => makeResponse({ slippageBps: 73 }))
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      const routes = await Promise.all([api.quote(makeQuoteParams()), api.quote(makeQuoteParams())])
+
+      expect(getSmartSlippageCalls(fetch)).toHaveLength(1)
+      routes.forEach(({ routes: [route] }) => expectOrderSlippage(route!, 73n))
+    })
+
+    it('keeps the slippage of each pair apart', async () => {
+      const fetch = makeQuoteFetch(async () => makeResponse({ slippageBps: 73 }))
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      await api.quote(makeQuoteParams())
+      await api.quote(
+        makeQuoteParams({
+          toAsset: { ...makeQuoteParams().toAsset, address: safeTokenAddress, symbol: 'SAFE' },
+          toTokenAddress: safeTokenAddress
+        })
+      )
+
+      expect(getSmartSlippageCalls(fetch)).toHaveLength(2)
+    })
+
+    it('asks again shortly after a failure, but not on every quote', async () => {
+      const now = jest.spyOn(Date, 'now')
+      now.mockReturnValue(1_000_000)
+      const smartSlippageResponse = (jest.fn() as any)
+        .mockRejectedValueOnce(new Error('Network request failed'))
+        .mockResolvedValue(makeResponse({ slippageBps: 73 }))
+      const fetch = makeQuoteFetch(smartSlippageResponse)
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      await api.quote(makeQuoteParams())
+      now.mockReturnValue(1_000_000 + COWSWAP_SMART_SLIPPAGE_FAILURE_CACHE_MS - 1)
+      expectOrderSlippage((await api.quote(makeQuoteParams())).routes[0]!, 50n)
+      expect(getSmartSlippageCalls(fetch)).toHaveLength(1)
+
+      now.mockReturnValue(1_000_000 + COWSWAP_SMART_SLIPPAGE_FAILURE_CACHE_MS)
+      expectOrderSlippage((await api.quote(makeQuoteParams())).routes[0]!, 73n)
+      expect(getSmartSlippageCalls(fetch)).toHaveLength(2)
+    })
   })
 
   it('rejects a tampered route before creating transaction calldata', async () => {
