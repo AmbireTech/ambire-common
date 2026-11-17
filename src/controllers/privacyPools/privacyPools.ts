@@ -61,6 +61,7 @@ import {
 import { readPrivacyPoolsRagequit } from '../../libs/privacyPools/ragequit'
 import { isPrivacyPoolsObsoleteStoreKey } from '../../libs/privacyPools/storeKeys'
 import { Pagination } from '../../utils/paginate'
+import wait from '../../utils/wait'
 import { waitForBlockNumber } from '../../utils/waitForBlockNumber'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { PrivacyPoolsBuiltCalls } from './builtCalls'
@@ -85,6 +86,13 @@ import {
   PrivacyPoolsWithdrawal,
   PrivacyPoolsWithdrawalParams
 } from './withdrawal'
+
+/**
+ * How long after a relayer sent a withdrawal the account is read. The relayer answers once it has
+ * sent it, before it lands, and asking for its receipt would tell our node who sent it - so the
+ * account is read once it has most likely landed: about 3 blocks on Ethereum, with time to spare.
+ */
+const RELAYED_WITHDRAWAL_SYNC_DELAY_MS = 40 * 1000
 
 /** A chain read more recently than this is not read again when the account is opened. */
 export const OPEN_SYNC_MAX_AGE_MS = 2 * 60 * 1000
@@ -1119,9 +1127,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Sends the signed withdrawal to the bundler and waits for it. The balance shows the amount as
-   * gone from the start. Once our RPC reaches the withdrawal's block, the account syncs once and
-   * the expected change is deleted. If the block is unknown, it syncs at once.
+   * Sends the signed withdrawal to the bundler, or the relayer, and waits for it. The balance shows
+   * the amount as gone from the start. Once our RPC reaches the withdrawal's block, the account
+   * syncs once and the expected change is deleted. Through 0xBow, whose block is not known, it
+   * syncs `RELAYED_WITHDRAWAL_SYNC_DELAY_MS` after the relayer sent it. If the block is otherwise
+   * unknown, it syncs at once.
    */
   async broadcastWithdrawal(): Promise<void> {
     // `operation`, so another phrase's cannot be sent
@@ -1153,6 +1163,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     // Also when it failed, as it may still land, so a reopened popup starts on a blank form
     if (seedId === this.#getSelectedSeedId() && this.#sendForm.clear()) this.emitUpdate()
 
+    if (attempt.isSent && operation.broadcaster === '0xbow')
+      await wait(RELAYED_WITHDRAWAL_SYNC_DELAY_MS)
     // Not the selected account: the user may have switched while the receipt was awaited. Picks
     // up the spent note and its change note.
     await this.#syncOnce(seedId, chainId, attempt.blockNumber ?? undefined)

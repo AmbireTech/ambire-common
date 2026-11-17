@@ -83,13 +83,6 @@ const WITHDRAWAL_RECHECK_AFTER_MS = 30 * 1000
  */
 const RELAYED_WITHDRAWAL_MIN_REMAINING_MS = 10 * 1000
 
-/**
- * How many blocks after the latest a relayed withdrawal is read at. The relayer answers once it
- * has sent it, before it lands, and asking for its receipt would tell our node who sent it - so the
- * account is read once the withdrawal has most likely landed, with a block to spare.
- */
-const RELAYED_WITHDRAWAL_BLOCKS_AHEAD = 3
-
 /** Shown in the confirmation sheet when a proved withdrawal can no longer be sent as it is. */
 const STALE_WITHDRAWAL_MESSAGE = 'This transfer has expired. Go back to prepare it again.'
 
@@ -620,8 +613,9 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
           : {}
       const broadcaster = createPPv1Broadcaster(host, { broadcasterUrl })
       const response = await broadcaster.broadcast(pendingWithdrawal.privateOp)
-      // Through Kohaku it resolves once the bundler accepts the withdrawal, and through 0xBow once
-      // it landed - so wait for it to land, as the sheet reads success as sent
+      // Through Kohaku it resolves once the bundler accepts the withdrawal - so wait for it to land,
+      // as the sheet reads success as sent. Through 0xBow once the relayer has sent it, before it
+      // lands, with no way to wait for it - see `RELAYED_WITHDRAWAL_SYNC_DELAY_MS`
       if ('wait' in response) await response.wait()
       // The userOp hash through Kohaku
       const { requestId } = response
@@ -641,7 +635,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
               operation.chainId,
               pendingWithdrawal.privateOp.withdrawal.bundlerUrl
             )
-          : await this.#getRelayedBlockNumber(operation.chainId)
+          : null
 
       return { operation, isSent: isCurrentOperation, blockNumber }
     } catch (error: any) {
@@ -688,30 +682,6 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       return null
     } finally {
       provider?.destroy()
-    }
-  }
-
-  /**
-   * A block by which a withdrawal just handed to the relayer has most likely landed, or null if
-   * unknown. Not its receipt, which would tell our node who sent it - see
-   * `RELAYED_WITHDRAWAL_BLOCKS_AHEAD`.
-   */
-  async #getRelayedBlockNumber(chainId: string): Promise<number | null> {
-    try {
-      const latestBlockNumber = await getChainProvider(
-        this.#ctx.providers,
-        chainId
-      ).getBlockNumber()
-
-      return latestBlockNumber + RELAYED_WITHDRAWAL_BLOCKS_AHEAD
-    } catch (error: any) {
-      this.#ctx.emitError({
-        level: 'silent',
-        message: 'Could not read the latest block after the Privacy Pools withdrawal.',
-        error: error instanceof Error ? error : new Error('privacyPools: block number read failed')
-      })
-
-      return null
     }
   }
 

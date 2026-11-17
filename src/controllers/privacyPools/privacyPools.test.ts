@@ -4149,62 +4149,78 @@ describe('PrivacyPoolsController', () => {
       restore()
     })
 
-    it('sends it to the relayers, and reads the account a few blocks on without asking for its receipt', async () => {
+    /** How long after the relayer sent it the account is read, as its block is not known. */
+    const RELAYED_WITHDRAWAL_SYNC_DELAY_MS = 40 * 1000
+
+    /** Fake timers for the wait before reading the account; the test helpers' own stay real. */
+    const useFakeWaitTimers = () => jest.useFakeTimers({ doNotFake: ['setImmediate', 'Date'] })
+
+    it('sends it to the relayers, and reads the account a while later without asking about it', async () => {
       const { controller, providers } = await prepareRelayedWithdrawal()
       const broadcast = jest.fn(async () => RELAYED_BROADCAST_RESULT)
       jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast } as any)
       const syncCount = getSyncCount()
+      useFakeWaitTimers()
 
-      const broadcasting = controller.broadcastWithdrawal()
-      await waitUntil(() => controller.operation?.status === 'success')
-      expect(jest.mocked(createPPv1Broadcaster).mock.calls[0]![1]).toEqual({
-        broadcasterUrl: getPrivacyPoolsChainConfig(1n)!.relayers
-      })
-      expect(broadcast).toHaveBeenCalledWith(preparedWithdrawal)
+      try {
+        const broadcasting = controller.broadcastWithdrawal()
+        await waitUntil(() => controller.operation?.status === 'success')
+        expect(jest.mocked(createPPv1Broadcaster).mock.calls[0]![1]).toEqual({
+          broadcasterUrl: getPrivacyPoolsChainConfig(1n)!.relayers
+        })
+        expect(broadcast).toHaveBeenCalledWith(preparedWithdrawal)
 
-      // Waits for our node to pass the block it most likely lands in
-      await waitUntil(() => providers.providers['1'].getBlockNumber.mock.calls.length >= 2)
-      expect(runningSyncs).toHaveLength(0)
-      nodeBlockNumber = WITHDRAWAL_BLOCK + 3
-      await releaseSync('seed-a')
-      await broadcasting
+        // Waits for it to most likely land
+        await jest.advanceTimersByTimeAsync(RELAYED_WITHDRAWAL_SYNC_DELAY_MS - 1)
+        expect(runningSyncs).toHaveLength(0)
+        await jest.advanceTimersByTimeAsync(1)
+        await releaseSync('seed-a')
+        await broadcasting
+      } finally {
+        jest.useRealTimers()
+      }
 
       expect(getSyncCount()).toBe(syncCount + 1)
-      // Neither the bundler nor anyone else is asked about the transaction
+      // Neither the bundler, nor our node, nor anyone else is asked about the transaction
       expect(getRpcProvider).not.toHaveBeenCalled()
       expect(providers.providers['1'].send).not.toHaveBeenCalled()
+      expect(providers.providers['1'].getBlockNumber).not.toHaveBeenCalled()
     })
 
     it('refuses another send from the deposit until the notes show the first, as the SDK would spend it as it was', async () => {
-      const { controller, providers } = await prepareRelayedWithdrawal()
+      const { controller } = await prepareRelayedWithdrawal()
       jest
         .mocked(createPPv1Broadcaster)
         .mockReturnValueOnce({ broadcast: async () => RELAYED_BROADCAST_RESULT } as any)
+      useFakeWaitTimers()
 
-      const broadcasting = controller.broadcastWithdrawal()
-      await waitUntil(() => controller.operation?.status === 'success')
-      // Sent, while our node has not reached the block it most likely lands in
-      await waitUntil(() => providers.providers['1'].getBlockNumber.mock.calls.length >= 2)
-      expect(controller.sendableDeposits['1']).toEqual([])
+      try {
+        const broadcasting = controller.broadcastWithdrawal()
+        // Sent, and waiting for it to most likely land
+        await waitUntil(() => controller.operation?.status === 'success')
+        expect(controller.sendableDeposits['1']).toEqual([])
 
-      const { restore } = suppressConsole()
-      preparedWithdrawal = buildPreparedRelayedWithdrawal()
-      await controller.prepareWithdrawal({
-        chainId: '1',
-        tokenAddress: ZERO_ADDRESS,
-        depositNumber: 1,
-        amount: WITHDRAWAL_AMOUNT,
-        recipient: WITHDRAWAL_RECIPIENT
-      })
-      restore()
-      expect(controller.operation?.error).toBe(
-        'Your previous transfer from this deposit is still being confirmed. Please try again once it is.'
-      )
+        const { restore } = suppressConsole()
+        preparedWithdrawal = buildPreparedRelayedWithdrawal()
+        await controller.prepareWithdrawal({
+          chainId: '1',
+          tokenAddress: ZERO_ADDRESS,
+          depositNumber: 1,
+          amount: WITHDRAWAL_AMOUNT,
+          recipient: WITHDRAWAL_RECIPIENT
+        })
+        restore()
+        expect(controller.operation?.error).toBe(
+          'Your previous transfer from this deposit is still being confirmed. Please try again once it is.'
+        )
 
-      nodeBlockNumber = WITHDRAWAL_BLOCK + 3
-      notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true }]
-      await releaseSync('seed-a')
-      await broadcasting
+        notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true }]
+        await jest.advanceTimersByTimeAsync(RELAYED_WITHDRAWAL_SYNC_DELAY_MS)
+        await releaseSync('seed-a')
+        await broadcasting
+      } finally {
+        jest.useRealTimers()
+      }
 
       expect(controller.sendableDeposits['1']).toEqual([
         expect.objectContaining({ number: 1, availableAmount: ONE_ETH - WITHDRAWAL_AMOUNT })
