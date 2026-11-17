@@ -3256,7 +3256,8 @@ describe('Portfolio Controller ', () => {
 
       // @ts-expect-error - getPortfolioFromApiDiscovery is private, spied on at runtime
       const discoverySpy: any = jest.spyOn(controller, 'getPortfolioFromApiDiscovery')
-      discoverySpy.mockResolvedValueOnce({
+      // Not `Once`, as it's called for every network and each response overwrites the counts
+      discoverySpy.mockResolvedValue({
         data: { defi: null, hints: null, otherNetworksDefiCounts: { '10': 2 } },
         discoveryTime: 1,
         errors: []

@@ -176,6 +176,8 @@ describe('Main Controller ', () => {
       const updateSpy = jest
         .spyOn(mainCtrl, 'updateSelectedAccountPortfolio')
         .mockResolvedValue(undefined)
+      // makeMainController already replaced it with a mock, which was called on the initial load
+      updateSpy.mockClear()
 
       await mainCtrl.featureFlags.setFeatureFlag('tokenAndDefiAutoDiscovery', false)
       await mainCtrl.featureFlags.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
@@ -191,6 +193,8 @@ describe('Main Controller ', () => {
       const updateSpy = jest
         .spyOn(mainCtrl, 'updateSelectedAccountPortfolio')
         .mockResolvedValue(undefined)
+      // makeMainController already replaced it with a mock, which was called on the initial load
+      updateSpy.mockClear()
 
       await mainCtrl.featureFlags.setFeatureFlag('gasTank', false)
       await mainCtrl.featureFlags.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
