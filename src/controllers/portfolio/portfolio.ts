@@ -1559,6 +1559,7 @@ export class PortfolioController
   /**
    * Fetches portfolio asset hints and defi positions from the external API (Velcro)
    * and formats the response. If both hints and defi positions can be skipped, returns null data.
+   * Also returns null if the user turned auto discovery off.
    * If the defi position update can be skipped, but hints have to be refetched it makes a request
    * to Velcro but passes a flag to signal to the server that it can returned cached defi data.
    */
@@ -1777,6 +1778,13 @@ export class PortfolioController
     this.#setNetworkLoading(account.addr, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
     if (isManualUpdate) state.criticalError = undefined
+    // If the user turned auto discovery off, the API is no longer called, so the positions found
+    // through it would be kept forever as the "previous" positions. Only the positions read from
+    // the chain are kept.
+    if (!this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery') && state.result) {
+      state.result.defiPositions.positionsByProvider =
+        state.result.defiPositions.positionsByProvider.filter((p) => p.source === 'custom')
+    }
 
     this.emitUpdate()
 
@@ -2067,6 +2075,9 @@ export class PortfolioController
    * network and have a slightly different structure (no addresses for assets).
    *
    * @example - Fetches Polymarket and Hyperliquid positions (among other)
+   *
+   * If the user turned auto discovery off, the previously fetched app positions are removed,
+   * as they come from the external API only.
    */
   protected async updateDefiAppsState(
     account: Account,
@@ -2078,7 +2089,14 @@ export class PortfolioController
       bypassServerSideCache?: boolean
     }
   ) {
-    if (!this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')) return
+    if (!this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')) {
+      const accountStateWithApps = this.#state[account.addr]
+      if (!accountStateWithApps?.defiApps) return
+
+      delete accountStateWithApps.defiApps
+      this.emitUpdate()
+      return
+    }
 
     const defiMaxDataAgeMs = portfolioProps.isManualUpdate ? 0 : portfolioProps.defiMaxDataAgeMs
     const accountState = this.#state[account.addr] ?? (this.#state[account.addr] = {})
@@ -2404,8 +2422,11 @@ export class PortfolioController
             }
 
             // Only update this if all networks where updated so we know for sure that the user
-            // has disabled the ones in otherNetworksDefiCounts
-            if (!networks && discoveryResponse?.data) {
+            // has disabled the ones in otherNetworksDefiCounts. The counts come from the external
+            // API, so they are dropped if the user turned auto discovery off.
+            if (!networks && !this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')) {
+              delete this.#defiPositionsCountOnDisabledNetworks[accountId]
+            } else if (!networks && discoveryResponse?.data) {
               this.#defiPositionsCountOnDisabledNetworks[accountId] =
                 discoveryResponse.data.otherNetworksDefiCounts || {}
             }

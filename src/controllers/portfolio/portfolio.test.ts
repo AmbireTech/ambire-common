@@ -407,6 +407,7 @@ const prepareTest = async (opts?: {
     accountsCtrl: mainCtrl.accounts,
     providersCtrl: mainCtrl.providers,
     verificationCtrl: mainCtrl.verification,
+    featureFlagsCtrl: mainCtrl.featureFlags,
     uiCtrl: mainCtrl.ui
   }
 }
@@ -2794,6 +2795,51 @@ describe('Portfolio Controller ', () => {
   describe('Defi positions', () => {
     const ethereum = networks.find((n) => n.chainId === 1n)!
 
+    // A formatted discovery response carrying a Debank Uniswap V3 entry. It's mocked rather than
+    // relying on the live API, since Debank's coverage of a given account varies over time.
+    const getDiscoveryWithDebankUniV3 = () => ({
+      data: {
+        defi: {
+          updatedAt: Date.now(),
+          isForceUpdate: false,
+          positions: [
+            {
+              providerName: 'Uniswap V3',
+              chainId: 1n,
+              source: 'debank' as const,
+              iconUrl: '',
+              siteUrl: 'https://app.uniswap.org',
+              type: 'common' as const,
+              positions: [
+                {
+                  id: 'debank-uni-v3-eth',
+                  assets: [
+                    {
+                      address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+                      symbol: 'WETH',
+                      name: 'Wrapped Ether',
+                      decimals: 18,
+                      amount: 1000000000000000000n,
+                      priceIn: { price: 3000, baseCurrency: 'usd' },
+                      value: 3000,
+                      type: AssetType.Liquidity,
+                      iconUrl: ''
+                    }
+                  ],
+                  additionalData: { positionIndex: 'debank-uni-v3-eth', name: 'Liquidity Pool' }
+                }
+              ],
+              positionInUSD: 3000
+            }
+          ]
+        },
+        hints: null,
+        otherNetworksDefiCounts: {}
+      },
+      discoveryTime: 1,
+      errors: []
+    })
+
     const getDefiAppsResponse = () => ({
       networkId: 'customAppChain',
       chainId: 'customAppChain',
@@ -3121,50 +3167,7 @@ describe('Portfolio Controller ', () => {
     it("Uniswap V3 shouldn't lose its API enhancement (e.g. rewards) when the discovery call is skipped", async () => {
       const { controller } = await prepareTest()
 
-      // A formatted discovery response carrying a Debank Uniswap V3 entry. It's mocked rather than
-      // relying on the live API, since Debank's coverage of a given account varies over time.
-      const discoveryWithDebankUniV3 = {
-        data: {
-          defi: {
-            updatedAt: Date.now(),
-            isForceUpdate: false,
-            positions: [
-              {
-                providerName: 'Uniswap V3',
-                chainId: 1n,
-                source: 'debank' as const,
-                iconUrl: '',
-                siteUrl: 'https://app.uniswap.org',
-                type: 'common' as const,
-                positions: [
-                  {
-                    id: 'debank-uni-v3-eth',
-                    assets: [
-                      {
-                        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-                        symbol: 'WETH',
-                        name: 'Wrapped Ether',
-                        decimals: 18,
-                        amount: 1000000000000000000n,
-                        priceIn: { price: 3000, baseCurrency: 'usd' },
-                        value: 3000,
-                        type: AssetType.Liquidity,
-                        iconUrl: ''
-                      }
-                    ],
-                    additionalData: { positionIndex: 'debank-uni-v3-eth', name: 'Liquidity Pool' }
-                  }
-                ],
-                positionInUSD: 3000
-              }
-            ]
-          },
-          hints: null,
-          otherNetworksDefiCounts: {}
-        },
-        discoveryTime: 1,
-        errors: []
-      }
+      const discoveryWithDebankUniV3 = getDiscoveryWithDebankUniV3()
 
       // @ts-expect-error - getPortfolioFromApiDiscovery is private, spied on at runtime
       const discoverySpy: any = jest.spyOn(controller, 'getPortfolioFromApiDiscovery')
@@ -3195,6 +3198,107 @@ describe('Portfolio Controller ', () => {
 
       // MUST BE MIXED!!!!!
       expect(uniAfterSkip?.source).toBe('mixed')
+    })
+
+    it('drops the API positions after the user turns auto discovery off and gets them back when it is turned on again', async () => {
+      const { controller, featureFlagsCtrl } = await prepareTest()
+      const discoveryWithDebankPositions = getDiscoveryWithDebankUniV3()
+      const [debankUniV3] = discoveryWithDebankPositions.data.defi.positions
+      // A provider that only the API knows about (no custom/on-chain counterpart)
+      discoveryWithDebankPositions.data.defi.positions.push({
+        ...debankUniV3!,
+        providerName: 'Lido'
+      })
+
+      // @ts-expect-error - getPortfolioFromApiDiscovery is private, spied on at runtime
+      const discoverySpy: any = jest.spyOn(controller, 'getPortfolioFromApiDiscovery')
+      discoverySpy.mockResolvedValueOnce(discoveryWithDebankPositions)
+
+      const getDefiState = () =>
+        controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result!.defiPositions
+      const getProvidersWithSource = () =>
+        getDefiState().positionsByProvider.map(
+          (p) => `${getProviderId(p.providerName)}:${p.source}`
+        )
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+
+      expect(getProvidersWithSource()).toEqual(
+        expect.arrayContaining(['lido:debank', 'uniswap v3:mixed'])
+      )
+
+      await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', false)
+      // No more mocked responses, so the real method runs and skips the API as the flag is off
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
+        defiMaxDataAgeMs: 0,
+        isManualUpdate: true
+      })
+
+      expect(getDefiState().positionsByProvider.length).toBeGreaterThan(0)
+      expect(getDefiState().positionsByProvider.every((p) => p.source === 'custom')).toBe(true)
+      expect(getProvidersWithSource()).toContain('uniswap v3:custom')
+      expect(getDefiState().error).not.toBe(DeFiPositionsError.CriticalError)
+
+      await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
+      discoverySpy.mockResolvedValueOnce(getDiscoveryWithDebankUniV3())
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
+        defiMaxDataAgeMs: 0,
+        isManualUpdate: true
+      })
+
+      expect(getProvidersWithSource()).toContain('uniswap v3:mixed')
+    })
+
+    it('drops the count of positions on disabled networks after the user turns auto discovery off', async () => {
+      const { controller, featureFlagsCtrl } = await prepareTest()
+
+      // @ts-expect-error - getPortfolioFromApiDiscovery is private, spied on at runtime
+      const discoverySpy: any = jest.spyOn(controller, 'getPortfolioFromApiDiscovery')
+      discoverySpy.mockResolvedValueOnce({
+        data: { defi: null, hints: null, otherNetworksDefiCounts: { '10': 2 } },
+        discoveryTime: 1,
+        errors: []
+      })
+      // @ts-expect-error test
+      const batchedDiscoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+      batchedDiscoverySpy.mockResolvedValue(getDefiAppsResponse())
+      jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue({
+        updateStarted: Date.now(),
+        discoveryTime: 0,
+        oracleCallTime: 0,
+        priceUpdateTime: 0,
+        tokens: [],
+        feeTokens: [],
+        toBeLearned: { erc20s: [], erc721s: {} },
+        fetchedTokenMetadata: [],
+        fetchedCollectionMetadata: [],
+        tokenErrors: [],
+        collectionErrors: [],
+        collections: [],
+        errors: [],
+        blockNumber: 0,
+        beforeNonce: 0n,
+        afterNonce: 0n
+      } as any)
+      jest
+        .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+        .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] })
+
+      // Only an update of all networks sets the counts
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr)
+
+      expect(controller.getDefiPositionsCountOnDisabledNetworks(DEFI_TEST_ACCOUNT.addr)).toEqual({
+        '10': 2
+      })
+
+      await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', false)
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, undefined, undefined, {
+        isManualUpdate: true
+      })
+
+      expect(controller.getDefiPositionsCountOnDisabledNetworks(DEFI_TEST_ACCOUNT.addr)).toEqual(
+        {}
+      )
     })
 
     describe('Defi apps', () => {
@@ -3390,6 +3494,65 @@ describe('Portfolio Controller ', () => {
         expect(discoverySpy).toHaveBeenCalledTimes(2)
         expect(state?.criticalError).toBeUndefined()
         expect(state?.isReady).toBe(true)
+        restore()
+      })
+
+      it('should remove the previous app positions when the user turns auto discovery off', async () => {
+        const { controller, featureFlagsCtrl } = await prepareTest()
+        // @ts-expect-error test
+        const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        discoverySpy.mockResolvedValue(getDefiAppsResponse())
+        const updateProps = { defiMaxDataAgeMs: 0, hasKeys: true, isManualUpdate: true }
+
+        // @ts-expect-error test
+        await controller.updateDefiAppsState(account, updateProps)
+        expect(
+          controller.getAccountPortfolioState(account.addr).defiApps?.result?.defiPositions
+            .positionsByProvider.length
+        ).toBeGreaterThan(0)
+
+        await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', false)
+        // @ts-expect-error test
+        await controller.updateDefiAppsState(account, updateProps)
+
+        expect(controller.getAccountPortfolioState(account.addr).defiApps).toBeUndefined()
+        expect('defiApps' in controller.getAccountPortfolioState(account.addr)).toBe(false)
+        expect(discoverySpy).toHaveBeenCalledTimes(1)
+
+        // Turned back on - the app positions are fetched again
+        await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
+        // @ts-expect-error test
+        await controller.updateDefiAppsState(account, updateProps)
+
+        expect(discoverySpy).toHaveBeenCalledTimes(2)
+        expect(
+          controller.getAccountPortfolioState(account.addr).defiApps?.result?.defiPositions
+            .positionsByProvider.length
+        ).toBeGreaterThan(0)
+      })
+
+      it('should keep the previous app positions when the update fails while auto discovery is on', async () => {
+        const { restore } = suppressConsole()
+        const { controller } = await prepareTest()
+        // @ts-expect-error test
+        const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        discoverySpy.mockResolvedValueOnce(getDefiAppsResponse())
+        discoverySpy.mockRejectedValueOnce(new Error('Defi apps failure'))
+        const updateProps = { defiMaxDataAgeMs: 0, hasKeys: true, isManualUpdate: true }
+
+        // @ts-expect-error test
+        await controller.updateDefiAppsState(account, updateProps)
+        const positionsBeforeFailure =
+          controller.getAccountPortfolioState(account.addr).defiApps?.result?.defiPositions
+            .positionsByProvider
+
+        // @ts-expect-error test
+        await controller.updateDefiAppsState(account, updateProps)
+        const state = controller.getAccountPortfolioState(account.addr).defiApps
+
+        expect(positionsBeforeFailure?.length).toBeGreaterThan(0)
+        expect(state?.criticalError?.message).toContain('Defi apps failure')
+        expect(state?.result?.defiPositions.positionsByProvider).toEqual(positionsBeforeFailure)
         restore()
       })
     })

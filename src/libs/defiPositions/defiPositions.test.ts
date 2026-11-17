@@ -15,6 +15,7 @@ import {
   getCustomProviderPositions,
   getDefiUpdateMode,
   getFormattedApiPositions,
+  getNewDefiState,
   getUniqueMergedPositions
 } from './defiPositions'
 import {
@@ -23,7 +24,7 @@ import {
   getStakedWalletPositions,
   getUniV3Positions
 } from './providers'
-import { AssetType, PositionsByProvider } from './types'
+import { AssetType, DeFiPositionsError, PositionsByProvider } from './types'
 import { AAVE_STATIC_CALL_TIMEOUT_MS } from './providers/aaveV3'
 
 describe('DeFi positions providers', () => {
@@ -201,6 +202,39 @@ describe('DeFi positions providers', () => {
         'Uniswap V3'
       ])
       expect(res.positionsByProvider).toEqual(storedPositions)
+    })
+    describe('with a previous mixed (on-chain + API) Uniswap V3 position', () => {
+      const storedMixedUniV3: PositionsByProvider = {
+        ...DEBANK_UNI_V3[0]!,
+        source: 'mixed'
+      }
+      const getUniV3Source = (positionsByProvider: PositionsByProvider[]) =>
+        positionsByProvider.find((p) => p.providerName === 'Uniswap V3')?.source
+
+      test('keeps the previous mixed position when the API call fails', async () => {
+        const res = await getCustomProviderPositions(
+          userAddrUni,
+          providerPolygon,
+          polygon,
+          [storedMixedUniV3],
+          undefined,
+          false
+        )
+
+        expect(getUniV3Source(res.positionsByProvider)).toBe('mixed')
+      })
+      test('merges the previous API data when the API call is skipped', async () => {
+        const res = await getCustomProviderPositions(
+          userAddrUni,
+          providerPolygon,
+          polygon,
+          [storedMixedUniV3],
+          undefined,
+          true
+        )
+
+        expect(getUniV3Source(res.positionsByProvider)).toBe('mixed')
+      })
     })
   })
 })
@@ -509,6 +543,92 @@ describe('Defi positions helper and portfolio functions', () => {
           })
         })
       })
+    })
+  })
+  describe('getNewDefiState', () => {
+    const getStoredPositions = (
+      providerName: string,
+      source: PositionsByProvider['source']
+    ): PositionsByProvider => ({
+      providerName,
+      chainId: 1n,
+      source,
+      iconUrl: '',
+      siteUrl: '',
+      type: 'common',
+      positions: [
+        { id: `${providerName}-1`, additionalData: { positionIndex: '1' }, assets: [] }
+      ]
+    })
+    const previousDebankLido = getStoredPositions('Lido', 'debank')
+    const previousMixedUniV3 = getStoredPositions('Uniswap V3', 'mixed')
+    const customAave = getStoredPositions('AAVE v3', 'custom')
+    const getPastPortfolioState = (): PortfolioNetworkResult => {
+      const ethereumState = structuredClone(
+        PORTFOLIO_STATE['1']
+      ) as NetworkState<PortfolioNetworkResult>
+
+      return {
+        ...ethereumState.result!,
+        defiPositions: {
+          ...ethereumState.result!.defiPositions,
+          positionsByProvider: [previousDebankLido, previousMixedUniV3, customAave]
+        }
+      }
+    }
+    const getProviderNames = (positionsByProvider: PositionsByProvider[]) =>
+      positionsByProvider.map((p) => p.providerName).sort()
+
+    it('keeps the previous API positions when the API call is skipped', () => {
+      const res = getNewDefiState(
+        getPastPortfolioState(),
+        null,
+        [customAave],
+        null,
+        [],
+        null,
+        undefined
+      )
+
+      expect(getProviderNames(res.positionsByProvider)).toEqual(['AAVE v3', 'Lido', 'Uniswap V3'])
+      expect(res.error).toBeNull()
+    })
+    it('keeps the previous API positions when the API call fails', () => {
+      const res = getNewDefiState(
+        getPastPortfolioState(),
+        { data: null, discoveryTime: 0, errors: [] },
+        [customAave],
+        null,
+        [],
+        null,
+        undefined
+      )
+
+      expect(getProviderNames(res.positionsByProvider)).toEqual(['AAVE v3', 'Lido', 'Uniswap V3'])
+      expect(res.error).toBe(DeFiPositionsError.CriticalError)
+    })
+    it('replaces the previous API positions with the new ones', () => {
+      const newDebankMorpho = getStoredPositions('Morpho', 'debank')
+      const res = getNewDefiState(
+        getPastPortfolioState(),
+        {
+          data: {
+            hints: null,
+            defi: { positions: [newDebankMorpho], updatedAt: Date.now(), isForceUpdate: false },
+            otherNetworksDefiCounts: {}
+          },
+          discoveryTime: 0,
+          errors: []
+        },
+        [customAave],
+        null,
+        [],
+        null,
+        undefined
+      )
+
+      expect(getProviderNames(res.positionsByProvider)).toEqual(['AAVE v3', 'Morpho'])
+      expect(res.error).toBeNull()
     })
   })
   describe('getFormattedApiPositions', () => {

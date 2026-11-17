@@ -376,6 +376,19 @@ export class MainController extends EventEmitter implements IMainController {
         })
       )
     })
+    // Turning auto discovery off must hide the tokens and DeFi positions found through the API,
+    // and turning it on must bring them back, so the portfolio is updated right away instead of
+    // on the next scheduled update. `defiMaxDataAgeMs: 0` makes sure the DeFi positions are
+    // updated too - otherwise the API call can be skipped, as the last fetched data looks fresh
+    onFeatureFlagChange(this.featureFlags, 'tokenAndDefiAutoDiscovery', () => {
+      this.updateSelectedAccountPortfolio({ defiMaxDataAgeMs: 0 }).catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the portfolio after the auto discovery setting changed',
+          error
+        })
+      )
+    })
     this.providers = new ProvidersController({
       eventEmitterRegistry,
       storage: this.storage,
