@@ -24,8 +24,8 @@ import {
   getStakedWalletPositions,
   getUniV3Positions
 } from './providers'
-import { AssetType, DeFiPositionsError, PositionsByProvider } from './types'
 import { AAVE_STATIC_CALL_TIMEOUT_MS } from './providers/aaveV3'
+import { AssetType, DeFiPositionsError, PositionsByProvider } from './types'
 
 describe('DeFi positions providers', () => {
   // If this test ever fails because the accounts remove their positions, you can:
@@ -204,10 +204,12 @@ describe('DeFi positions providers', () => {
       expect(res.positionsByProvider).toEqual(storedPositions)
     })
     describe('with a previous mixed (on-chain + API) Uniswap V3 position', () => {
-      const storedMixedUniV3: PositionsByProvider = {
+      // A function, as DEBANK_UNI_V3 is defined at the bottom of the file and isn't
+      // initialized yet while the tests are being collected
+      const getStoredMixedUniV3 = (): PositionsByProvider => ({
         ...DEBANK_UNI_V3[0]!,
         source: 'mixed'
-      }
+      })
       const getUniV3Source = (positionsByProvider: PositionsByProvider[]) =>
         positionsByProvider.find((p) => p.providerName === 'Uniswap V3')?.source
 
@@ -216,7 +218,7 @@ describe('DeFi positions providers', () => {
           userAddrUni,
           providerPolygon,
           polygon,
-          [storedMixedUniV3],
+          [getStoredMixedUniV3()],
           undefined,
           false
         )
@@ -228,7 +230,7 @@ describe('DeFi positions providers', () => {
           userAddrUni,
           providerPolygon,
           polygon,
-          [storedMixedUniV3],
+          [getStoredMixedUniV3()],
           undefined,
           true
         )
@@ -556,9 +558,7 @@ describe('Defi positions helper and portfolio functions', () => {
       iconUrl: '',
       siteUrl: '',
       type: 'common',
-      positions: [
-        { id: `${providerName}-1`, additionalData: { positionIndex: '1' }, assets: [] }
-      ]
+      positions: [{ id: `${providerName}-1`, additionalData: { positionIndex: '1' }, assets: [] }]
     })
     const previousDebankLido = getStoredPositions('Lido', 'debank')
     const previousMixedUniV3 = getStoredPositions('Uniswap V3', 'mixed')
@@ -698,7 +698,6 @@ describe('Defi positions helper and portfolio functions', () => {
       const [firstAsset, secondAsset] = appChainProvider.positions[0]!.assets
 
       // App chains (like Hyperliquid) have no chainId and send decimal amounts as numbers
-      // @ts-expect-error test
       delete appChainProvider.chainId
       // @ts-expect-error test
       firstAsset!.amount = 5.3e-7
