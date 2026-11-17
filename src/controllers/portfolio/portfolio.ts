@@ -47,16 +47,14 @@ import {
   DefiUpdateMode,
   enhancePortfolioTokensWithDefiPositions,
   getAccountNetworksWithPositions,
-  getCustomProviderPositions,
   getDefiUpdateMode,
   getFormattedApiPositions,
   getHasNonceChangedSinceLastUpdate,
-  getIsExternalApiDefiPositionsCallSuccessful,
   getNewDefiState,
   getUniqueMergedPositions,
-  mergeDefiUpdateModes,
-  priceCustomProviderPositions
+  mergeDefiUpdateModes
 } from '../../libs/defiPositions/defiPositions'
+import { getRpcDefiPositions } from '../../libs/defiPositions/rpc'
 import {
   NetworksWithPositions,
   NetworksWithPositionsByAccounts,
@@ -1844,20 +1842,14 @@ export class PortfolioController
           blockTag: 'both',
           blacklist: this.#blacklist
         }),
-        getCustomProviderPositions(
-          account.addr,
-          portfolioLib.provider,
+        getRpcDefiPositions(this.#tokenPrices, {
+          accountAddr: account.addr,
+          provider: portfolioLib.provider,
           network,
-          state.result?.defiPositions.positionsByProvider || [],
-          discoveryData?.data?.defi?.positions,
-          getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
-        ).then((customPositions) =>
-          priceCustomProviderPositions(this.#tokenPrices, {
-            network,
-            accountAddr: account.addr,
-            customPositions
-          })
-        )
+          previousPositions: state.result?.defiPositions.positionsByProvider || [],
+          apiPositions: discoveryData?.data?.defi?.positions,
+          isAutoDiscoveryEnabled: this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')
+        })
       ])
 
       const stkWalletToken =

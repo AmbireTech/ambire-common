@@ -1,13 +1,16 @@
 import { Contract, JsonRpcProvider, Provider } from 'ethers'
 
-import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVEPosition.json'
-import { Network } from '../../../interfaces/network'
-import { generateUuid } from '../../../utils/uuid'
-import { withTimeout } from '../../../utils/with-timeout'
-import { fromDescriptor } from '../../deployless/deployless'
-import { AAVE_V3 } from '../defiAddresses'
-import { getAssetValue } from '../helpers'
-import { AssetType, Position, PositionAsset, PositionsByProvider } from '../types'
+import DeFiPositionsDeploylessCode from '../../../../../contracts/compiled/DeFiAAVEPosition.json'
+import { Network } from '../../../../interfaces/network'
+import { generateUuid } from '../../../../utils/uuid'
+import { withTimeout } from '../../../../utils/with-timeout'
+import { fromDescriptor } from '../../../deployless/deployless'
+import { getAssetValue } from '../../helpers'
+import { AssetType, Position, PositionAsset, PositionsByProvider } from '../../types'
+import { RpcDefiProvider } from '../types'
+import { AAVE_V3 } from './addresses'
+
+export const AAVE_V3_PROVIDER_NAME = 'AAVE v3'
 
 const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER =
   115792089237316195423570985008687907853269984665640564039457584007913129639935n
@@ -186,7 +189,7 @@ export async function getAAVEPositions(
   if (position.additionalData.positionInUSD === 0 || !position.assets.length) return null
 
   return {
-    providerName: 'AAVE v3',
+    providerName: AAVE_V3_PROVIDER_NAME,
     chainId,
     source: 'custom',
     type: 'lending',
@@ -195,4 +198,15 @@ export async function getAAVEPositions(
     siteUrl: 'https://app.aave.com/',
     positionInUSD: position.additionalData.positionInUSD
   }
+}
+
+/**
+ * The AAVE positions read from the chain replace the ones returned by the API, as only they
+ * point to the right aToken of each asset, which keeps the aTokens in the wallet from being
+ * counted twice in the total.
+ */
+export const aaveV3DefiProvider: RpcDefiProvider = {
+  name: AAVE_V3_PROVIDER_NAME,
+  fetchPositions: ({ accountAddr, provider, network }) =>
+    getAAVEPositions(accountAddr, provider, network)
 }
