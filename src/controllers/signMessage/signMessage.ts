@@ -98,7 +98,12 @@ export class SignMessageController
   // controller state or be signed under a previous approval.
   #signingGeneration = 0
 
-  signer?: KeystoreSignerInterface
+  // Kept private, because external signers hold their device controller (and
+  // its SDK), which must not be serialized and sent to the UI
+  #signer?: KeystoreSignerInterface
+
+  /** The type of the key that signs the message, set once signing starts. */
+  signingKeyType?: Key['type']
 
   isInitialized: boolean = false
 
@@ -293,7 +298,8 @@ export class SignMessageController
     this.signed = []
     this.signatures = []
     this.signers = undefined
-    this.signer = undefined
+    this.#signer = undefined
+    this.signingKeyType = undefined
     this.status = SignMessageStatus.Initial
     this.emitUpdate()
   }
@@ -522,11 +528,12 @@ export class SignMessageController
     // but it was too confusing, so we threw it away
     // the array of signers should be changed back to a single signer
     const signerKey = this.signers[0]!
-    this.signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
-    if (this.signer.init) {
-      this.signer.init(this.#externalSignerControllers[signerKey.type])
+    this.#signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
+    if (this.#signer.init) {
+      this.#signer.init(this.#externalSignerControllers[signerKey.type])
     }
-    this.emitUpdate() // pass the signer to the UI
+    this.signingKeyType = signerKey.type
+    this.emitUpdate() // pass the signing key type to the UI
 
     try {
       if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
@@ -563,7 +570,7 @@ export class SignMessageController
             this.network,
             this.#account,
             accountState,
-            this.signer,
+            this.#signer,
             this.#invite.isOG,
             (request, sign) => this.#withHardwareWalletSigningRequest(request, sign),
             provider
@@ -612,7 +619,7 @@ export class SignMessageController
             this.messageToSign.content,
             this.#account,
             accountState,
-            this.signer,
+            this.#signer,
             this.network,
             this.#invite.isOG,
             (request, sign) => this.#withHardwareWalletSigningRequest(request, sign),
@@ -649,7 +656,7 @@ export class SignMessageController
 
         if (this.messageToSign.content.kind === 'authorization-7702') {
           // TODO: Deprecated. Sync with the latest sign7702 method changes if used
-          // signature = this.signer.sign7702(this.messageToSign.content.message)
+          // signature = this.#signer.sign7702(this.messageToSign.content.message)
           throw new ExternalSignerError(
             'Signing EIP-7702 authorization via this flow is not implemented',
             { sendCrashReport: true }
@@ -773,8 +780,8 @@ export class SignMessageController
   }
 
   #onAbortOperation() {
-    if (this.signer?.signingCleanup) {
-      void this.signer.signingCleanup()
+    if (this.#signer?.signingCleanup) {
+      void this.#signer.signingCleanup()
     }
   }
 
