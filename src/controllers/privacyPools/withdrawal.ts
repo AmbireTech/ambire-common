@@ -178,8 +178,7 @@ export type PrivacyPoolsWithdrawalParams = AssetRef & {
 /**
  * A withdrawal handed to the bundler or the relayer. `isSent` when it went through while still the
  * current operation - not after a lock or a newer one replaced it. `blockNumber` is the block it
- * landed in - through 0xBow, a block by which it most likely has - or null when it failed or the
- * block is unknown.
+ * landed in, or null when it failed or the block is unknown, as always through 0xBow.
  */
 export type PrivacyPoolsBroadcastAttempt = {
   operation: PrivacyPoolsOperation
