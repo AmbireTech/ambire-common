@@ -358,3 +358,23 @@ describe('withDecodedCalls', () => {
     expect(afterDecoding[2]).toBe(whileDecoding[2])
   })
 })
+
+describe('upper-case call data', () => {
+  test('decodes like the lower-case form and looks every selector up in lower case', () => {
+    const upperCaseExecuteData = `0x${executeData.slice(2).toUpperCase()}`
+    const getSignatures = makeGetSignatures(ALL_KNOWN_SIGNATURES)
+    const lookedUpSelectors: string[] = []
+
+    const upperCase = decodeCallDataRecursively(upperCaseExecuteData, (selector) => {
+      lookedUpSelectors.push(selector)
+      return getSignatures(selector)
+    })
+    const lowerCase = decodeCallDataRecursively(executeData, getSignatures)
+
+    expect(upperCase.decodedCall?.signature).toBe(EXECUTE_SIGNATURE)
+    expect(upperCase.decodedCall).toEqual(lowerCase.decodedCall)
+    expect(upperCase.selectors.sort()).toEqual(lowerCase.selectors.sort())
+    expect(lookedUpSelectors.length).toBeGreaterThan(0)
+    lookedUpSelectors.forEach((selector) => expect(selector).toBe(selector.toLowerCase()))
+  })
+})

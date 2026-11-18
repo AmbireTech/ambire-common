@@ -3778,7 +3778,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async #createOrUpdateCallsUserRequest(
     {
-      calls,
+      calls: rawCalls,
       meta,
       accountOp: providedAccountOp,
       dappPromises = [],
@@ -3787,6 +3787,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     executionType: RequestExecutionType = 'open-request-window',
     { accountOpNonce }: { accountOpNonce?: bigint } = {}
   ) {
+    // Every transaction request (app calls, queued Safe transactions, the wallet's own calls)
+    // comes through here. Hex is case-insensitive onchain, so the same bytes can arrive in upper
+    // or mixed case. Lower-case it once, so every check below and every consumer of the account
+    // op (humanizer, selector decoding, simulation) compares the same text. The bytes, the
+    // transaction hash and the safeTxHash do not change.
+    const calls = rawCalls.map((call) =>
+      call.data && isHex(call.data) ? { ...call, data: call.data.toLowerCase() } : call
+    )
+
     let callUserRequest: CallsUserRequest | undefined
     const isSafeAccount = !!this.#accounts.accounts.find((a) => a.addr === meta.accountAddr)
       ?.safeCreation

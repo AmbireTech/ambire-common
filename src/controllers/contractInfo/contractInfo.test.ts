@@ -478,3 +478,34 @@ describe('ContractInfoController', () => {
     )
   })
 })
+
+describe('ContractInfoController with upper-case selectors', () => {
+  test('saves and finds a selector in one entry, whatever case the call data and the API use', async () => {
+    const upperCaseTransferData = `0x${transferData.slice(2).toUpperCase()}`
+    const upperCaseTransferSelector = `0x${TRANSFER_SELECTOR.slice(2).toUpperCase()}`
+    // An API that answers with an upper-case key, whatever it is asked for
+    const fetch = jest.fn(async (url: string) => {
+      expect(url).toContain(
+        `selectors=${TRANSFER_SELECTOR.slice(0, SELECTOR_PRIVACY_PREFIX_LENGTH)}`
+      )
+      return {
+        json: async () => ({
+          success: true,
+          data: { [upperCaseTransferSelector]: [TRANSFER_SIGNATURE] }
+        })
+      }
+    })
+    const { contractInfo } = await makeController({ fetch })
+
+    await contractInfo.fetchSelectorsForCallDatas([upperCaseTransferData])
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(contractInfo.decodeCallData(upperCaseTransferData)?.signature).toBe(TRANSFER_SIGNATURE)
+    expect(contractInfo.decodeCallData(transferData)?.signature).toBe(TRANSFER_SIGNATURE)
+
+    // The lower-case form is the same selector, so it is not fetched again
+    await contractInfo.fetchSelectorsForCallDatas([transferData])
+    await contractInfo.fetchSelectors([upperCaseTransferSelector, TRANSFER_SELECTOR])
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+})
