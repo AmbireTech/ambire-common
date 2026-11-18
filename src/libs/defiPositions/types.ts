@@ -121,8 +121,14 @@ export type PositionsByProvider = {
     | 'nft_lending'
     | 'nft_fraction'
   positions: Position[]
+  /** The value of all positions, with their loans subtracted. */
   positionInUSD?: number
+  /** The value of all positions without their loans subtracted. */
+  collateralInUSD?: number
 }
+
+/** The values of a DeFi app or position, with and without its loans subtracted. */
+export type DefiValues = Pick<PositionsByProvider, 'positionInUSD' | 'collateralInUSD'>
 
 export interface Position {
   id: string
@@ -131,7 +137,9 @@ export interface Position {
     positionIndex?: string
     name?: string
     APY?: number
+    /** The value of the position, with its loans subtracted. */
     positionInUSD?: number
+    /** The value of the position without its loans subtracted. */
     collateralInUSD?: number
     debtInUSD?: number
     healthRate?: number | null

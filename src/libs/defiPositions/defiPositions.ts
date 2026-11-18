@@ -1,8 +1,6 @@
 import { parseUnits, ZeroAddress } from 'ethers'
 import { getAddress, isHex } from 'viem'
 
-import { getSanitizedAmount } from '@/libs/transfer/amount'
-
 import { AccountId } from '../../interfaces/account'
 import { RPCProviders } from '../../interfaces/provider'
 import {
@@ -16,7 +14,13 @@ import {
   FormattedPortfolioDiscoveryResponse,
   PortfolioNetworkResult
 } from '../portfolio/interfaces'
-import { getAssetValue, getProviderId, isTokenPriceWithinHalfPercent } from './helpers'
+import { getSanitizedAmount } from '../transfer/amount'
+import {
+  getAssetValue,
+  getProviderId,
+  isTokenPriceWithinHalfPercent,
+  withCollateralValues
+} from './helpers'
 import { getStakedWalletPositions } from './stkWallet'
 import {
   AssetType,
@@ -65,15 +69,19 @@ const getUniqueMergedPositions = (
   let positionsArray = Array.from(debankPositionMap.values())
 
   // Sort the assets, positions by provider and provider positions by their value in USD descending
-  positionsArray = positionsArray.map((providerPositions) => ({
-    ...providerPositions,
-    positions: providerPositions.positions
-      .map((position) => ({
-        ...position,
-        assets: position.assets.sort((a, b) => (b.value || 0) - (a.value || 0))
-      }))
-      .sort((a, b) => (b.additionalData.positionInUSD || 0) - (a.additionalData.positionInUSD || 0))
-  }))
+  positionsArray = positionsArray.map((providerPositions) =>
+    withCollateralValues({
+      ...providerPositions,
+      positions: providerPositions.positions
+        .map((position) => ({
+          ...position,
+          assets: position.assets.sort((a, b) => (b.value || 0) - (a.value || 0))
+        }))
+        .sort(
+          (a, b) => (b.additionalData.positionInUSD || 0) - (a.additionalData.positionInUSD || 0)
+        )
+    })
+  )
 
   positionsArray = positionsArray.sort((a, b) => (b.positionInUSD || 0) - (a.positionInUSD || 0))
 
