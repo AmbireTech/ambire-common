@@ -23,21 +23,23 @@ const parseRelayerCustomHeaders = (value?: string): Record<string, string> => {
 }
 
 /**
- * Wraps a fetch so that the requests to the relayer carry the custom headers. Any other
- * url, like a look-alike host, gets nothing extra. The headers are applied last, so a
- * caller can not overwrite them.
+ * Wraps a fetch so that the requests to the given Ambire services (the relayer and cena)
+ * carry the custom headers. Any other url, like a look-alike host, gets nothing extra. The
+ * headers are applied last, so a caller can not overwrite them.
  */
 const createFetchWithRelayerCustomHeaders = (
   baseFetch: typeof fetch,
   headers: Record<string, string>,
-  relayerUrl: string
+  serviceUrls: string[]
 ): typeof fetch => {
-  const relayerOrigin = new URL(relayerUrl).origin
+  const serviceOrigins = serviceUrls.map((serviceUrl) => new URL(serviceUrl).origin)
 
   return (input, init) => {
     const url = typeof input === 'string' ? input : 'url' in input ? input.url : input.href
-    const isRelayerUrl = url === relayerOrigin || url.startsWith(`${relayerOrigin}/`)
-    if (!isRelayerUrl) return baseFetch(input, init)
+    const isServiceUrl = serviceOrigins.some(
+      (origin) => url === origin || url.startsWith(`${origin}/`)
+    )
+    if (!isServiceUrl) return baseFetch(input, init)
 
     const requestHeaders = new Headers(
       init?.headers ?? (typeof input === 'object' && 'headers' in input ? input.headers : undefined)

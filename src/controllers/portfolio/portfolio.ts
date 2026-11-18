@@ -47,16 +47,14 @@ import {
   DefiUpdateMode,
   enhancePortfolioTokensWithDefiPositions,
   getAccountNetworksWithPositions,
-  getCustomProviderPositions,
   getDefiUpdateMode,
   getFormattedApiPositions,
   getHasNonceChangedSinceLastUpdate,
-  getIsExternalApiDefiPositionsCallSuccessful,
   getNewDefiState,
   getUniqueMergedPositions,
-  mergeDefiUpdateModes,
-  priceCustomProviderPositions
+  mergeDefiUpdateModes
 } from '../../libs/defiPositions/defiPositions'
+import { getRpcDefiPositions } from '../../libs/defiPositions/rpc'
 import {
   NetworksWithPositions,
   NetworksWithPositionsByAccounts,
@@ -1817,8 +1815,10 @@ export class PortfolioController
       // through it would be kept forever as the "previous" positions (and their assets used as
       // token hints). Only the positions read from the chain are passed on. The stored state isn't
       // changed here, so if this update fails, the positions and the total balance shown stay in
-      // sync. Read before the discovery call, so both use the same value of the setting.
-      const previousResult = this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')
+      // sync. Read before the discovery call, so both use the same value of the setting (and so
+      // does the read of the positions from the chain).
+      const isAutoDiscoveryEnabled = this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')
+      const previousResult = isAutoDiscoveryEnabled
         ? state.result
         : PortfolioController.#withoutApiDefiPositions(state.result)
       const discoveryData = await this.getPortfolioFromApiDiscovery({
@@ -1865,20 +1865,14 @@ export class PortfolioController
           blockTag: 'both',
           blacklist: this.#blacklist
         }),
-        getCustomProviderPositions(
-          account.addr,
-          portfolioLib.provider,
+        getRpcDefiPositions(this.#tokenPrices, {
+          accountAddr: account.addr,
+          provider: portfolioLib.provider,
           network,
-          previousResult?.defiPositions.positionsByProvider || [],
-          discoveryData?.data?.defi?.positions,
-          getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
-        ).then((customPositions) =>
-          priceCustomProviderPositions(this.#tokenPrices, {
-            network,
-            accountAddr: account.addr,
-            customPositions
-          })
-        )
+          previousPositions: previousResult?.defiPositions.positionsByProvider || [],
+          apiPositions: discoveryData?.data?.defi?.positions,
+          isAutoDiscoveryEnabled
+        })
       ])
 
       const stkWalletToken =

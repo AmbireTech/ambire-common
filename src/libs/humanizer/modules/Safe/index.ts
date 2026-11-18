@@ -28,7 +28,8 @@ import {
   getWarning,
   HexIrCall,
   isHexCall,
-  padCallData
+  padCallData,
+  toLowerCaseHex
 } from '../../utils'
 
 const addOwnerWithThresholdAbi = parseAbi([
@@ -119,7 +120,7 @@ export const getSafeHumanization = (
   safeAddr?: string,
   to?: string,
   value?: string | number | bigint,
-  data?: string,
+  rawData?: string,
   setupHookDepth = 0,
   nonce?: string | number | bigint | null
 ):
@@ -130,7 +131,11 @@ export const getSafeHumanization = (
       preferredOverErc7730?: boolean
     }
   | undefined => {
-  if (!data || !isHex(data)) return
+  if (!rawData || !isHex(rawData)) return
+  // this is also called directly with calldata from signed messages (e.g. a SafeTx), which never
+  // passes through humanizeCallWithModules, so upper-case calldata must be normalized here too,
+  // otherwise it would skip every selector check below along with its warnings
+  const data = toLowerCaseHex(rawData)
 
   const fullVisualization: HumanizerVisualization[] = []
   const warnings: HumanizerWarning[] = []

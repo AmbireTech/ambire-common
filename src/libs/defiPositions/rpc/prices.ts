@@ -1,12 +1,12 @@
-import { Network } from '../../interfaces/network'
-import { ITokenPricesController } from '../../interfaces/tokenPrices'
-import { getUsdPriceIn } from '../portfolio/helpers'
-import { getAssetValue, getProviderId } from './helpers'
-import { PositionAsset, PositionsByProvider } from './types'
+import { Network } from '../../../interfaces/network'
+import { ITokenPricesController } from '../../../interfaces/tokenPrices'
+import { getUsdPriceIn } from '../../portfolio/helpers'
+import { getAssetValue, getProviderId } from '../helpers'
+import { PositionAsset, PositionsByProvider } from '../types'
 
 // This function is separated to its own file to allow mocking in the
 // portfolio controller test. If the function is in the same file as
-// the main defiPositions logic, it's being referenced directly from the
+// the logic that reads the positions from the chain (`rpc/index.ts`), it's referenced directly from the
 // file scope and mocking doesn't work.
 
 // Aave positions are priced by the Aave oracle in the corresponding lib
