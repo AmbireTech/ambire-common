@@ -1,10 +1,11 @@
 import {
   SelectedAccountPortfolio,
+  SelectedAccountPortfolioState,
   SelectedAccountPortfolioVerification,
-  SelectedAccountPortfolioState
+  SelectedAccountPositionsByProvider
 } from '../../interfaces/selectedAccount'
 import { AccountOp } from '../accountOp/accountOp'
-import { PositionsByProvider } from '../defiPositions/types'
+import { DefiValues, PositionsByProvider } from '../defiPositions/types'
 import { CollectionResult, TokenResult } from '../portfolio'
 import {
   InternalPortfolioChain,
@@ -15,13 +16,19 @@ import {
   PortfolioRewardsResult
 } from '../portfolio/interfaces'
 
+type NetworkResult =
+  | PortfolioGasTankResult
+  | PortfolioRewardsResult
+  | PortfolioNetworkResult
+  | PortfolioDefiAppsResult
+
 /**
  * Constructs the view state of the portfolio from all network data
  */
 export default class PortfolioViewBuilder {
   private tokens: TokenResult[] = []
 
-  private defiPositions: PositionsByProvider[] = []
+  private defiPositions: SelectedAccountPositionsByProvider[] = []
 
   private collections: CollectionResult[] = []
 
@@ -46,6 +53,45 @@ export default class PortfolioViewBuilder {
    * network, we start calculating isAllReady normally.
    */
   private isNonInternalNetworkAdded = false
+
+  private shouldSubtractBorrowedFunds: boolean
+
+  constructor(shouldSubtractBorrowedFunds: boolean) {
+    this.shouldSubtractBorrowedFunds = shouldSubtractBorrowedFunds
+  }
+
+  /**
+   * What a DeFi app or position adds to the total balance. It is its value with the loans
+   * subtracted when the user chose so, and its full collateral otherwise.
+   */
+  private getDefiBalance({ positionInUSD = 0, collateralInUSD = positionInUSD }: DefiValues) {
+    return this.shouldSubtractBorrowedFunds ? positionInUSD : collateralInUSD
+  }
+
+  private withBalance(provider: PositionsByProvider): SelectedAccountPositionsByProvider {
+    return {
+      ...provider,
+      balanceInUSD: this.getDefiBalance(provider),
+      positions: provider.positions.map((position) => ({
+        ...position,
+        balanceInUSD: this.getDefiBalance(position.additionalData)
+      }))
+    }
+  }
+
+  /**
+   * The network's USD balance. The network total counts the DeFi apps with their loans
+   * subtracted, so each app's difference to its balance is added to it.
+   */
+  private static getNetworkBalance(
+    networkTotal: number,
+    positionsByProvider: SelectedAccountPositionsByProvider[]
+  ) {
+    return positionsByProvider.reduce(
+      (balance, provider) => balance + provider.balanceInUSD - (provider.positionInUSD || 0),
+      networkTotal
+    )
+  }
 
   private static isNetworkReady = (networkData: NetworkState | undefined) => {
     return networkData && (networkData.isReady || networkData?.criticalError)
@@ -169,20 +215,21 @@ export default class PortfolioViewBuilder {
 
     this.addVerificationData(chainId, networkData)
 
-    const networkResult = networkData.result as
-      | PortfolioGasTankResult
-      | PortfolioRewardsResult
-      | PortfolioNetworkResult
-      | PortfolioDefiAppsResult
+    const networkResult = networkData.result as NetworkResult
     const loadingFromScratch = PortfolioViewBuilder.isLoadingFromScratch(
       networkData,
       isManualUpdate
     )
 
+    const positionsByProvider =
+      networkResult && 'defiPositions' in networkResult
+        ? (networkResult.defiPositions?.positionsByProvider || []).map((provider) =>
+            this.withBalance(provider)
+          )
+        : []
+
     this.tokens.push(...(networkResult?.tokens || []))
-    if (networkResult && 'defiPositions' in networkResult) {
-      this.defiPositions.push(...(networkResult?.defiPositions?.positionsByProvider || []))
-    }
+    this.defiPositions.push(...positionsByProvider)
 
     if (networkResult && 'collections' in networkResult) {
       this.collections.push(...(networkResult?.collections || []))
@@ -197,7 +244,10 @@ export default class PortfolioViewBuilder {
       this.networkSimulatedAccountOp[chainId] = accountOp
     }
 
-    const networkBalance = networkResult?.total?.usd || 0
+    const networkBalance = PortfolioViewBuilder.getNetworkBalance(
+      networkResult?.total?.usd || 0,
+      positionsByProvider
+    )
     this.totalBalance += networkBalance
     this.balancePerNetwork[chainId] = networkBalance
 
@@ -237,7 +287,7 @@ export default class PortfolioViewBuilder {
       defiPositions: this.defiPositions.sort((a, b) => {
         if (b.providerName === 'Ambire' && a.providerName !== 'Ambire') return 1
         if (a.providerName === 'Ambire' && b.providerName !== 'Ambire') return -1
-        return (b.positionInUSD || 0) - (a.positionInUSD || 0)
+        return b.balanceInUSD - a.balanceInUSD
       })
     }
   }

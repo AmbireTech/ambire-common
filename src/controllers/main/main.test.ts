@@ -10,8 +10,8 @@ import {
 import { PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS } from '@/consts/privacyPools'
 import { AccountOnchainState } from '@/interfaces/account'
 import { ErrorRef } from '@/interfaces/eventEmitter'
-import { SignMessageStatus } from '@/interfaces/signMessage'
 import { Hex } from '@/interfaces/hex'
+import { SignMessageStatus } from '@/interfaces/signMessage'
 import { DappConnectRequest, Message, PlainTextMessageUserRequest } from '@/interfaces/userRequest'
 import { isSmartAccount } from '@/libs/account/account'
 import { AccountOpStatus } from '@/libs/accountOp/types'
@@ -165,6 +165,48 @@ describe('Main Controller ', () => {
     await mainCtrl.handleSignMessage()
 
     expect(signSpy).not.toHaveBeenCalled()
+  })
+
+  describe('portfolio update after the auto discovery setting changes', () => {
+    test('marks every account as outdated and updates the portfolio right away when the setting is turned off and on', async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+      await mainCtrl.featureFlags.initialLoadPromise
+      const updateSpy = jest
+        .spyOn(mainCtrl, 'updateSelectedAccountPortfolio')
+        .mockResolvedValue(undefined)
+      // makeMainController already replaced it with a mock, which was called on the initial load
+      updateSpy.mockClear()
+      const markAsOutdatedSpy = jest.spyOn(mainCtrl.portfolio, 'markAllAccountsAsOutdated')
+
+      await mainCtrl.featureFlags.setFeatureFlag('tokenAndDefiAutoDiscovery', false)
+      await mainCtrl.featureFlags.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
+
+      expect(markAsOutdatedSpy).toHaveBeenCalledTimes(2)
+      // `defiMaxDataAgeMs: 0`, as an update that was already running can save its data as fresh
+      // again after it was marked as outdated
+      expect(updateSpy.mock.calls).toEqual([[{ defiMaxDataAgeMs: 0 }], [{ defiMaxDataAgeMs: 0 }]])
+    })
+
+    test('does not update the portfolio when another setting changes', async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+      await mainCtrl.featureFlags.initialLoadPromise
+      const updateSpy = jest
+        .spyOn(mainCtrl, 'updateSelectedAccountPortfolio')
+        .mockResolvedValue(undefined)
+      // makeMainController already replaced it with a mock, which was called on the initial load
+      updateSpy.mockClear()
+      const markAsOutdatedSpy = jest.spyOn(mainCtrl.portfolio, 'markAllAccountsAsOutdated')
+
+      await mainCtrl.featureFlags.setFeatureFlag('gasTank', false)
+      await mainCtrl.featureFlags.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
+
+      expect(markAsOutdatedSpy).not.toHaveBeenCalled()
+      expect(updateSpy).not.toHaveBeenCalled()
+    })
   })
 
   describe('portfolio update after a signed message', () => {
@@ -337,11 +379,13 @@ describe('Main Controller ', () => {
         '137': { isDeployed: true, threshold: 1, nonce: 0n }
       } as any)
     const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get').mockReturnValue(true)
-    const fetchPendingSpy = jest.spyOn(controller.safe, 'fetchPending').mockImplementation(async () => {
-      // the wallet gets locked while the first chain is fetched
-      isUnlockedSpy.mockReturnValue(false)
-      return null
-    })
+    const fetchPendingSpy = jest
+      .spyOn(controller.safe, 'fetchPending')
+      .mockImplementation(async () => {
+        // the wallet gets locked while the first chain is fetched
+        isUnlockedSpy.mockReturnValue(false)
+        return null
+      })
 
     try {
       await controller.fetchSafeTxns([], true)
@@ -364,7 +408,9 @@ describe('Main Controller ', () => {
     } as any
     const getAccountStatesSpy = jest.spyOn(controller.accounts, 'getOrFetchAccountStates')
     const fetchPendingSpy = jest.spyOn(controller.safe, 'fetchPending').mockResolvedValue(null)
-    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get').mockReturnValue(false)
+    const isUnlockedSpy = jest
+      .spyOn(controller.keystore, 'isUnlocked', 'get')
+      .mockReturnValue(false)
 
     try {
       // a forced refetch, like the dashboard refresh, does not get past the lock either
