@@ -143,9 +143,39 @@ export interface HumanizerCallModule {
   (accountOp: AccountOp, call: IrCall, humanizerMeta?: HumanizerMeta): IrCall
 }
 
-export interface HumanizerTypedMessageModule {
-  (typedMessage: Message): Omit<IrMessage, keyof Message>
+/** What a message humanizer adds to a message: the visualization, warnings and display flags */
+export type HumanizerMessageResult = Omit<IrMessage, keyof Message>
+
+/** A message whose content has the given `kind` */
+type MessageOfKind<Kind extends Message['content']['kind']> = Message & {
+  content: Extract<Message['content'], { kind: Kind }>
 }
+
+/** A message whose content is EIP-712 typed data */
+export type HumanizerTypedMessage = MessageOfKind<'typedMessage'>
+/** A message whose content is plain text (hex encoded) */
+type HumanizerPlainTextMessage = MessageOfKind<'message'>
+/** A message whose content is an EIP-7702 authorization */
+export type HumanizerAuthorizationMessage = MessageOfKind<'authorization-7702'>
+
+/**
+ * Humanizes a typed message of one EIP-712 primary type. It is stateless and is
+ * stored in a record keyed by that primary type, so it never decides the type
+ * from `types` or from the keys in `message`. Returns null when it cannot humanize
+ * the message (e.g. a different verifying contract). A result that is not null
+ * must have a visualization: the UI treats any result as a humanized message.
+ */
+export type HumanizerTypedMessageFunction = (
+  message: HumanizerTypedMessage
+) => HumanizerMessageResult | null
+
+/**
+ * Humanizes a plain text message. Returns null when it cannot humanize the message.
+ * The first module that does not return null is used
+ */
+export type HumanizerPlainTextMessageModule = (
+  message: HumanizerPlainTextMessage
+) => HumanizerMessageResult | null
 
 export interface AbiFragment {
   selector: string

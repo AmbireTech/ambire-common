@@ -6,9 +6,8 @@ import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../../../interfaces/userRequest'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../../../broadcast/broadcast'
-import { humanizeAccountOp } from '../../index'
+import { humanizeAccountOp, humanizeMessage } from '../../index'
 import { HumanizerMeta, IrCall } from '../../interfaces'
-import { safeMessageModule } from '../../messageModules/safeModule'
 import { compareHumanizerVisualizations, compareVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getBreak, getLabel, getText } from '../../utils'
 import SafeModule, { getSafeHumanization, SAFE_APPROVE_HASH_ACTION } from './'
@@ -560,6 +559,10 @@ describe('upper-case calldata', () => {
       kind: 'typedMessage',
       domain: { chainId: 1, verifyingContract: safeAddr },
       types: {
+        EIP712Domain: [
+          { type: 'uint256', name: 'chainId' },
+          { type: 'address', name: 'verifyingContract' }
+        ],
         SafeTx: [
           { type: 'address', name: 'to' },
           { type: 'uint256', name: 'value' },
@@ -645,18 +648,33 @@ describe('upper-case calldata', () => {
     expect(hasConfigChangeWarning(humanizedCall?.warnings)).toBe(true)
   })
 
-  test('safeMessageModule warns about a SafeTx message with upper-case swapOwner calldata', () => {
-    const lowerCase = safeMessageModule(buildSafeTxMessage(swapOwnerData))
-    const upperCase = safeMessageModule(buildSafeTxMessage(toUpperCaseHex(swapOwnerData)))
+  test('warns about a SafeTx message with upper-case swapOwner calldata', () => {
+    const lowerCase = humanizeMessage(buildSafeTxMessage(swapOwnerData))
+    const upperCase = humanizeMessage(buildSafeTxMessage(toUpperCaseHex(swapOwnerData)))
 
     expect(hasConfigChangeWarning(lowerCase.warnings)).toBe(true)
     expect(hasConfigChangeWarning(upperCase.warnings)).toBe(true)
     compareVisualizations(upperCase.fullVisualization || [], lowerCase.fullVisualization || [])
   })
 
-  test('safeMessageModule keeps the config change warning next to a delegate call warning', () => {
+  test('describes a token transfer in a SafeTx message with upper-case calldata', () => {
+    const transferData = encodeFunctionData({
+      abi: parseAbi(['function transfer(address to, uint256 amount)']),
+      args: ['0x0000000000000000000000000000000000000004', 1000n]
+    })
+    const tokenAddr = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
+    const lowerCase = humanizeMessage(buildSafeTxMessage(transferData, 0, tokenAddr))
+    const upperCase = humanizeMessage(
+      buildSafeTxMessage(toUpperCaseHex(transferData), 0, tokenAddr)
+    )
+
+    expect(lowerCase.fullVisualization?.some((item) => item.type === 'token')).toBe(true)
+    compareVisualizations(upperCase.fullVisualization || [], lowerCase.fullVisualization || [])
+  })
+
+  test('a SafeTx message keeps the config change warning next to a delegate call warning', () => {
     const notWhitelistedContract = '0x2222222222222222222222222222222222222222'
-    const result = safeMessageModule(
+    const result = humanizeMessage(
       buildSafeTxMessage(toUpperCaseHex(swapOwnerData), 1, notWhitelistedContract)
     )
 

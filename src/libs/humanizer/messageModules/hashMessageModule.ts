@@ -1,7 +1,6 @@
 import { isHexString } from 'ethers'
 
-import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule } from '../interfaces'
+import { HumanizerPlainTextMessageModule } from '../interfaces'
 import { getAction, getText, getWarning } from '../utils'
 
 /** The size of a hash in bytes, e.g. of a Safe{WALLET} transaction */
@@ -27,12 +26,9 @@ export const HASH_MESSAGE_WARNING_CODE = 'HASH_MESSAGE_APPROVAL'
  * of it. The warning doesn't block signing, as Safe{WALLET} itself asks some owners (e.g. ones
  * signing with a hardware wallet) to approve its transactions this way.
  */
-export const hashMessageModule: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind !== 'message') return { fullVisualization: [] }
-
+export const hashMessageModule: HumanizerPlainTextMessageModule = (message) => {
   const { message: messageHex } = message.content
-  if (typeof messageHex !== 'string' || !isHexString(messageHex, HASH_BYTE_LENGTH))
-    return { fullVisualization: [] }
+  if (typeof messageHex !== 'string' || !isHexString(messageHex, HASH_BYTE_LENGTH)) return null
 
   return {
     fullVisualization: [getAction(HASH_MESSAGE_TITLE), getText(messageHex)],
