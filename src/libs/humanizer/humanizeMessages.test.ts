@@ -378,6 +378,8 @@ const PRIMARY_TYPES_WITH_HUMANIZER = [
   'OrderComponents',
   'SafeTx',
   'Vote',
+  'Alias',
+  'RevokeAlias',
   'Upload',
   'AmbireOperation'
 ]
@@ -973,8 +975,82 @@ describe('typed message tests', () => {
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
 
-  test('snapshot module does not show a vote for an alias with unsigned vote keys', () => {
-    // An alias lets another address act for the user. `choice` and `space` are not signed
+  const getSnapshotVoteFields = (fromType: string, proposalType: string, choiceType: string) =>
+    SNAPSHOT_VOTE_FIELDS.map((field) => {
+      if (field.name === 'from') return { ...field, type: fromType }
+      if (field.name === 'proposal') return { ...field, type: proposalType }
+      if (field.name === 'choice') return { ...field, type: choiceType }
+      return field
+    })
+  const snapshotVoteMessage = {
+    from: address1,
+    space: 'ambire.eth',
+    timestamp: 1n,
+    proposal: `0x${'11'.repeat(32)}`,
+    choice: 1,
+    reason: '',
+    app: 'snapshot',
+    metadata: '{}'
+  }
+
+  test.each([
+    ['string', 'string', 'uint32'],
+    ['address', 'string', 'uint32'],
+    ['address', 'bytes32', 'uint32'],
+    ['string', 'bytes32', 'uint32[]'],
+    ['address', 'string', 'string']
+  ])('snapshot module vote with from %s, proposal %s and choice %s', (...types) => {
+    setSnapshotMessage('Vote', getSnapshotVoteFields(...(types as [string, string, string])), {
+      ...snapshotVoteMessage,
+      choice: types[2] === 'uint32[]' ? [1] : snapshotVoteMessage.choice
+    })
+    compareVisualizations(humanize(messageTemplate).fullVisualization, [
+      getAction('Vote'),
+      getLabel('in'),
+      getLabel('Snapshot:', true),
+      getLabel('ambire.eth', true)
+    ])
+  })
+
+  test.each([
+    ['a from type that is not string or address', 'bytes32', 'string', 'uint32'],
+    ['a choice type that is not known', 'address', 'string', 'uint256']
+  ])('snapshot module vote with %s is not humanized', (_, fromType, proposalType, choiceType) => {
+    setSnapshotMessage(
+      'Vote',
+      getSnapshotVoteFields(fromType, proposalType, choiceType),
+      snapshotVoteMessage
+    )
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
+  })
+
+  const ALIAS_WARNING_CODE = 'SNAPSHOT_ALIAS'
+  const expectedAliasVisualization = [
+    getAction('Allow'),
+    getAddressVisualization(address2),
+    getLabel('to act for you on'),
+    getLabel('Snapshot', true)
+  ]
+  const SNAPSHOT_ALIAS_FIELDS_WITHOUT_TIMESTAMP = SNAPSHOT_ALIAS_FIELDS.slice(0, 2)
+  const hasAliasWarning = (warnings?: { code: string }[]) =>
+    !!warnings?.some((warning) => warning.code === ALIAS_WARNING_CODE)
+
+  test.each([
+    ['with a timestamp', SNAPSHOT_ALIAS_FIELDS, { from: address1, alias: address2, timestamp: 1n }],
+    [
+      'without a timestamp',
+      SNAPSHOT_ALIAS_FIELDS_WITHOUT_TIMESTAMP,
+      { from: address1, alias: address2 }
+    ]
+  ])('snapshot module alias %s', (_, fields, message) => {
+    setSnapshotMessage('Alias', fields, message)
+    const { fullVisualization, warnings } = humanize(messageTemplate)
+    compareVisualizations(fullVisualization, expectedAliasVisualization)
+    expect(hasAliasWarning(warnings)).toBe(true)
+  })
+
+  test('snapshot module alias ignores keys that are not signed', () => {
+    // `choice` and `space` are not signed, so no vote is shown
     setSnapshotMessage('Alias', SNAPSHOT_ALIAS_FIELDS, {
       from: address1,
       alias: address2,
@@ -982,6 +1058,85 @@ describe('typed message tests', () => {
       choice: 1,
       space: 'ambire.eth'
     })
+    compareVisualizations(humanize(messageTemplate).fullVisualization, expectedAliasVisualization)
+  })
+
+  test('snapshot module alias for a different signer than the account is not humanized', () => {
+    setSnapshotMessage('Alias', SNAPSHOT_ALIAS_FIELDS, {
+      from: address3,
+      alias: address2,
+      timestamp: 1n
+    })
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
+  })
+
+  test.each([
+    ['a domain name that is not snapshot', 'other', SNAPSHOT_ALIAS_FIELDS],
+    ['a missing field type', 'snapshot', SNAPSHOT_ALIAS_FIELDS.slice(0, 1)],
+    [
+      'string fields',
+      'snapshot',
+      SNAPSHOT_ALIAS_FIELDS.map((field) => ({ ...field, type: 'string' }))
+    ],
+    [
+      'an extra declared field',
+      'snapshot',
+      [...SNAPSHOT_ALIAS_FIELDS, { name: 'space', type: 'string' }]
+    ]
+  ])('snapshot module alias with %s is not humanized', (_, domainName, fields) => {
+    setSnapshotMessage('Alias', fields, {
+      from: address1,
+      alias: address2,
+      timestamp: 1n,
+      space: 'ambire.eth'
+    })
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).domain = {
+      name: domainName,
+      version: '0.1.4'
+    }
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
+  })
+
+  test.each([
+    ['with a timestamp', SNAPSHOT_ALIAS_FIELDS, { from: address1, alias: address2, timestamp: 1n }],
+    [
+      'without a timestamp',
+      SNAPSHOT_ALIAS_FIELDS_WITHOUT_TIMESTAMP,
+      { from: address1, alias: address2 }
+    ]
+  ])('snapshot module alias removal %s', (_, fields, message) => {
+    setSnapshotMessage('RevokeAlias', fields, message)
+    const { fullVisualization, warnings } = humanize(messageTemplate)
+    compareVisualizations(fullVisualization, [
+      getAction('Stop'),
+      getAddressVisualization(address2),
+      getLabel('from acting for you on'),
+      getLabel('Snapshot', true)
+    ])
+    expect(hasAliasWarning(warnings)).toBe(false)
+  })
+
+  test('snapshot module alias removal for a different signer than the account is not humanized', () => {
+    setSnapshotMessage('RevokeAlias', SNAPSHOT_ALIAS_FIELDS, {
+      from: address3,
+      alias: address2,
+      timestamp: 1n
+    })
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
+  })
+
+  test('snapshot module does not use the alias humanizer for a RevokeAlias message', () => {
+    // The primary type picks the humanizer: `Alias` types under another primary type are not an alias
+    setSnapshotMessage('RevokeAlias', SNAPSHOT_ALIAS_FIELDS, {
+      from: address1,
+      alias: address2,
+      timestamp: 1n
+    })
+    expect(hasAliasWarning(humanize(messageTemplate).warnings)).toBe(false)
+  })
+
+  test('snapshot module alias with a declared field missing from the message is not humanized', () => {
+    setSnapshotMessage('Alias', SNAPSHOT_ALIAS_FIELDS, { from: address1, timestamp: 1n })
     expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
   })
 

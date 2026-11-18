@@ -16,7 +16,11 @@ import {
   humanizePermit2WitnessTransfer
 } from './permit2Module'
 import { humanizeSafeTx } from './safeModule'
-import { humanizeSnapshotVote } from './snapshotModule'
+import {
+  humanizeSnapshotAlias,
+  humanizeSnapshotRevokeAlias,
+  humanizeSnapshotVote
+} from './snapshotModule'
 import { zealyMessageModule } from './zealyModule'
 
 /**
@@ -56,6 +60,8 @@ const typedMessageHumanizers: Readonly<Record<string, HumanizerTypedMessageFunct
   OrderComponents: humanizeSeaportOrder,
   SafeTx: humanizeSafeTx,
   Vote: humanizeSnapshotVote,
+  Alias: humanizeSnapshotAlias,
+  RevokeAlias: humanizeSnapshotRevokeAlias,
   Upload: humanizeEnsUpload,
   AmbireOperation: humanizeEntryPointAuthorization
 }
