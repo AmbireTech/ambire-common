@@ -2,6 +2,7 @@ import { expect, jest } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { fetchWithAppVersion as fetch, produceMemoryStore } from '../../../test/helpers'
+import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { InternalSigner } from '../../../test/keystore'
 import { CustomResponse, Fetch } from '../../interfaces/fetch'
@@ -28,6 +29,10 @@ const testingOptions = { autoConfirmMagicLink: true }
 
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
+
+// Most tests here expect emitted errors, and each one logs the controller's whole error history
+suppressConsoleBeforeEach()
+
 describe.skip('happy cases', () => {
   beforeEach(() => {
     email = getRandomEmail()
