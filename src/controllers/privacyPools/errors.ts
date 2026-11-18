@@ -163,7 +163,7 @@ export const privacyPoolsErrors = {
     }),
   withdrawalOfferExpired: () =>
     expectedError(
-      'The price for sending this ran out while the transfer was being prepared. Please try again.',
+      'The fee quote for this transfer expired before it could be sent. Nothing left your account - please try again.',
       'the relayer quote expired while proving'
     ),
   withdrawalNotAccepted: (sdkError: Error) =>

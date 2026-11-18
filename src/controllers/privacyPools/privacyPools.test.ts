@@ -4046,7 +4046,7 @@ describe('PrivacyPoolsController', () => {
     }
 
     const OFFER_EXPIRED_ERROR =
-      'The price for sending this ran out while the transfer was being prepared. Please try again.'
+      'The fee quote for this transfer expired before it could be sent. Nothing left your account - please try again.'
 
     it('asks the SDK for a relayed withdrawal and shows its fee as exact, without running it', async () => {
       const { controller, providers } = await prepareRelayedWithdrawal()
