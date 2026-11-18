@@ -27,6 +27,15 @@ Note: This package does not include compiled JS and TS output in the repository.
 - All code must be environment-agnostic; do not use platform-specific APIs (e.g. `window`, `document`, `React Native` APIs)
 - NO new RPC providers should be constructed. ALWAYS use `ProvidersController`.
 
+### Public repository:
+This repository is public. Anyone can read the code comments, test names, log messages, commit messages, branch names, PR titles, PR descriptions and PR comments. Follow responsible disclosure and keep it professional:
+- Security fixes: describe **what** the change does (e.g. "Validate `chainId` before signing"). Same for `BUG:` test names. Describe how the old code could be exploited (attack steps, impact) only in the private `ambire-app` repo (PR description, PR comment or issue) and link to it from here
+- No secrets, API keys, private endpoints or links to internal tools (error tracking like Sentry, staging, dashboards, private docs)
+- No data that can identify real users: blockchain addresses, emails, usernames (Discord, Telegram, X) or other details from support chats, tickets or logs. Test addresses and addresses of public contracts are fine
+- No information shared with us in confidence (e.g. by partners or under an NDA)
+- Keep the tone factual. Don't blame people, partners or other projects
+- When you work from `ambire-app`, its private context (Sentry issues, user reports, exploit details) must not end up in this repo. If reviewers need more context, put it in the private `ambire-app` repo and link to it, e.g. `AmbireTech/ambire-app#123`
+
 ### Code quality:
 - Code usually runs continuously for long periods of time (especially in browser extension environments), so memory leaks, listeners, and orphaned async processes can accumulate and cause performance, stability, or reliability issues over time.
 - Always ensure subscriptions, event listeners, timers and other side effects are properly cleaned up. Even if it's a simple `setTimeout` used to reject a promise, it should be cleared.

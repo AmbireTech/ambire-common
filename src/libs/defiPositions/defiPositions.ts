@@ -112,8 +112,6 @@ const getAllAssetsAsHints = (
  * from Debank and custom providers and the previous state.
  * It ensures that positions are unique, merged correctly and that if the
  * latest Debank call failed, the previous positions are retained.
- * While auto discovery is off, the time of the last successful update isn't refreshed, as the
- * API isn't called.
  */
 const getNewDefiState = (
   pastPortfolioState: PortfolioNetworkResult | undefined,
@@ -122,8 +120,7 @@ const getNewDefiState = (
   customPositionsError: DeFiPositionsError | null,
   customProvidersErrors: ProviderError[],
   stkWalletToken: TokenResult | null,
-  nonceId: string | undefined,
-  isAutoDiscoveryEnabled: boolean
+  nonceId: string | undefined
 ): NetworkState => {
   const isForceApiUpdate = !!discoveryResponse?.data?.defi?.isForceUpdate
   const isDebankCallSuccessful = getIsExternalApiDefiPositionsCallSuccessful(discoveryResponse)
@@ -143,17 +140,11 @@ const getNewDefiState = (
     stkWalletPosition
   )
 
-  // Refreshed only when the API is called, as it decides if the next API call can be skipped.
-  // Otherwise, right after the user turns auto discovery back on, the API call would be skipped
-  // as the data would look fresh, and the positions read from the chain while it was off (e.g.
-  // Morpho) would be replaced by no API positions
-  const shouldRefreshLastSuccessfulUpdate =
-    isAutoDiscoveryEnabled && isDebankCallSuccessful && !customPositionsError
-
   return {
     nonceId,
     error: !isDebankCallSuccessful ? DeFiPositionsError.CriticalError : customPositionsError,
-    lastSuccessfulUpdate: shouldRefreshLastSuccessfulUpdate ? Date.now() : lastSuccessfulUpdate,
+    lastSuccessfulUpdate:
+      isDebankCallSuccessful && !customPositionsError ? Date.now() : lastSuccessfulUpdate,
     lastForceApiUpdate: isForceApiUpdate ? Date.now() : lastForceApiUpdate,
     providerErrors: customProvidersErrors,
     positionsByProvider: uniqueAndMerged || previousPositionsByProvider

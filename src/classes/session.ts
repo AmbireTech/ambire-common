@@ -1,3 +1,4 @@
+import type { ConnectionSource } from '../interfaces/dapp'
 import { Messenger } from '../interfaces/messenger'
 import { getDappIdFromUrl } from '../libs/dapps/helpers'
 
@@ -6,6 +7,11 @@ export interface SessionInitProps {
   tabId?: number
   windowId?: number
   wcTopic?: string
+  /**
+   * Whether the WalletConnect session was paired by an app opened in the mobile in-app browser.
+   * Only meaningful together with `wcTopic`.
+   */
+  isWcFromInAppBrowser?: boolean
   /**
    * The browser frame the dApp runs in: 0 is the tab's top frame, anything else is an iframe.
    * Only platforms that can report it from a trusted source pass it (the extension reads it
@@ -54,6 +60,18 @@ function getOriginFromUrl(url?: string): string | undefined {
   }
 }
 
+/**
+ * The channel a session's requests come through: WalletConnect sessions carry a `wcTopic`,
+ * injected ones don't. Requests must be checked against their own channel's permission.
+ */
+export const getSessionConnectionSource = (
+  session: Pick<SessionInitProps, 'wcTopic' | 'isWcFromInAppBrowser'>
+): ConnectionSource => {
+  if (!session.wcTopic) return 'injected'
+
+  return session.isWcFromInAppBrowser ? 'wc-in-app' : 'wc'
+}
+
 // Each instance of a Session represents an active connection between a dApp and the wallet.
 // For more details on how to use it, refer to the DappsController.
 export class Session {
@@ -87,6 +105,8 @@ export class Session {
 
   wcTopic?: string
 
+  isWcFromInAppBrowser: boolean = false
+
   lastHandledRequestIds: { [providerId: string]: number }
 
   isWeb3App: boolean = false
@@ -114,7 +134,15 @@ export class Session {
     )
   }
 
-  constructor({ tabId, windowId, url, wcTopic, frameId, topFrameUrl }: SessionInitProps = {}) {
+  constructor({
+    tabId,
+    windowId,
+    url,
+    wcTopic,
+    isWcFromInAppBrowser,
+    frameId,
+    topFrameUrl
+  }: SessionInitProps = {}) {
     if (url) {
       // SECURITY: `origin` must stay exactly what the browser/WebView reports, trailing dot and
       // all - it is later compared byte-for-byte against the page's own read-only `location.origin`
@@ -131,6 +159,7 @@ export class Session {
     this.tabId = tabId || Date.now()
     this.windowId = windowId
     this.wcTopic = wcTopic
+    this.isWcFromInAppBrowser = !!wcTopic && !!isWcFromInAppBrowser
     this.updateFrameContext({ frameId, topFrameUrl })
 
     // Track requestIds per providerId, since we inject an EthereumProvider into all frames for the same session

@@ -376,11 +376,15 @@ export class MainController extends EventEmitter implements IMainController {
         })
       )
     })
-    // Turning auto discovery off must hide the tokens and DeFi positions found through the API,
-    // and turning it on must bring them back, so the portfolio is updated right away instead of
-    // on the next scheduled update. `defiMaxDataAgeMs: 0` makes sure the DeFi positions are
-    // updated too - otherwise the API call can be skipped, as the last fetched data looks fresh
+    // Turning auto discovery off must hide the DeFi positions found through the API, and turning
+    // it on must bring them back. Every account is marked as outdated, as its data would otherwise
+    // look fresh and its next update could be skipped (e.g. after switching to it), and the
+    // selected account is updated right away instead of on the next scheduled update.
+    // `defiMaxDataAgeMs: 0` is still needed for the selected account: an update that was already
+    // running when the setting changed finishes first and saves its data as fresh again, so the
+    // API call of this update could otherwise be skipped
     onFeatureFlagChange(this.featureFlags, 'tokenAndDefiAutoDiscovery', () => {
+      this.portfolio.markAllAccountsAsOutdated()
       this.updateSelectedAccountPortfolio({ defiMaxDataAgeMs: 0 }).catch((error) =>
         this.emitError({
           level: 'silent',

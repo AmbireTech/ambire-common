@@ -365,8 +365,7 @@ describe('Defi positions helper and portfolio functions', () => {
         null,
         [],
         null,
-        undefined,
-        true
+        undefined
       )
 
       expect(getProviderNames(res.positionsByProvider)).toEqual(['AAVE v3', 'Lido', 'Uniswap V3'])
@@ -380,8 +379,7 @@ describe('Defi positions helper and portfolio functions', () => {
         null,
         [],
         null,
-        undefined,
-        true
+        undefined
       )
 
       expect(getProviderNames(res.positionsByProvider)).toEqual(['AAVE v3', 'Lido', 'Uniswap V3'])
@@ -404,8 +402,7 @@ describe('Defi positions helper and portfolio functions', () => {
         null,
         [],
         null,
-        undefined,
-        true
+        undefined
       )
 
       expect(getProviderNames(res.positionsByProvider)).toEqual(['AAVE v3', 'Morpho'])
@@ -418,7 +415,11 @@ describe('Defi positions helper and portfolio functions', () => {
         return { ...pastState, defiPositions: { ...pastState.defiPositions, lastSuccessfulUpdate } }
       }
 
-      it('is refreshed after a successful API call', () => {
+      // A skipped API call (e.g. while auto discovery is off) counts as successful, so the DeFi
+      // error banner still waits for the time without a successful update to pass. The API is
+      // called again once auto discovery is back on, as all accounts are marked as outdated then
+      // (see `markAllAccountsAsOutdated`)
+      it('is refreshed after the API call succeeds or is skipped', () => {
         const res = getNewDefiState(
           getPastStateUpdatedAt(1),
           null,
@@ -426,25 +427,10 @@ describe('Defi positions helper and portfolio functions', () => {
           null,
           [],
           null,
-          undefined,
-          true
+          undefined
         )
 
         expect(res.lastSuccessfulUpdate).toBeGreaterThan(1)
-      })
-      it('is not refreshed while auto discovery is off, so the API is called once it is on', () => {
-        const res = getNewDefiState(
-          getPastStateUpdatedAt(1),
-          null,
-          [customAave],
-          null,
-          [],
-          null,
-          undefined,
-          false
-        )
-
-        expect(res.lastSuccessfulUpdate).toBe(1)
       })
       it('is not refreshed when reading the positions from the chain fails', () => {
         const res = getNewDefiState(
@@ -454,8 +440,7 @@ describe('Defi positions helper and portfolio functions', () => {
           DeFiPositionsError.CriticalError,
           [],
           null,
-          undefined,
-          true
+          undefined
         )
 
         expect(res.lastSuccessfulUpdate).toBe(1)
