@@ -21,9 +21,11 @@ import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp, areAccountOpsEqual } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import * as defiPositionsLib from '../../libs/defiPositions/defiPositions'
-import * as defiPricesLib from '../../libs/defiPositions/defiPrices'
 import { getProviderId } from '../../libs/defiPositions/helpers'
-import * as defiProviders from '../../libs/defiPositions/providers'
+import * as rpcDefiPositionsLib from '../../libs/defiPositions/rpc'
+import { aaveV3DefiProvider } from '../../libs/defiPositions/rpc/aaveV3/aaveV3'
+import * as rpcDefiPricesLib from '../../libs/defiPositions/rpc/prices'
+import { uniswapV3DefiProvider } from '../../libs/defiPositions/rpc/uniswapV3/uniswapV3'
 import { AssetType, DeFiPositionsError } from '../../libs/defiPositions/types'
 import { DeploylessMode } from '../../libs/deployless/deployless'
 import {
@@ -541,7 +543,7 @@ describe('Portfolio Controller ', () => {
       errors: []
     })
     jest
-      .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+      .spyOn(rpcDefiPositionsLib, 'getRpcDefiPositions')
       .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] } as any)
     const portfolioGetCalls: {
       isColibri: boolean
@@ -1338,7 +1340,7 @@ describe('Portfolio Controller ', () => {
       discoverySpy.mockResolvedValue(null)
       jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue(makePortfolioLibResult())
       jest
-        .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+        .spyOn(rpcDefiPositionsLib, 'getRpcDefiPositions')
         .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] } as any)
 
       return { discoverySpy }
@@ -2975,13 +2977,13 @@ describe('Portfolio Controller ', () => {
 
     it('should handle errors in update positions', async () => {
       const consoleSuppressor = suppressConsole()
-      jest.spyOn(defiProviders, 'getAAVEPositions').mockImplementation(
+      jest.spyOn(aaveV3DefiProvider, 'fetchPositions').mockImplementation(
         () =>
           new Promise((_, reject) => {
             reject(new Error('AAVE error'))
           })
       )
-      jest.spyOn(defiProviders, 'getDebankEnhancedUniV3Positions').mockImplementation(
+      jest.spyOn(uniswapV3DefiProvider, 'fetchPositions').mockImplementation(
         () =>
           new Promise((_, reject) => {
             reject(new Error('Uniswap error'))
@@ -3028,7 +3030,7 @@ describe('Portfolio Controller ', () => {
     it('should handle provider error and empty state for networksWithPositionsByAccounts', async () => {
       const consoleSuppressor = suppressConsole()
 
-      jest.spyOn(defiProviders, 'getAAVEPositions').mockImplementation(
+      jest.spyOn(aaveV3DefiProvider, 'fetchPositions').mockImplementation(
         () =>
           new Promise((_, reject) => {
             reject(new Error('AAVE error'))
@@ -3120,7 +3122,7 @@ describe('Portfolio Controller ', () => {
       const { restore } = suppressConsole()
 
       jest
-        .spyOn(defiPricesLib, 'updatePositionsByProviderAssetPrices')
+        .spyOn(rpcDefiPricesLib, 'updatePositionsByProviderAssetPrices')
         .mockImplementationOnce(async (_tokenPrices, { positionsByProvider }) => ({
           positionsByProvider,
           error: new Error('Asset price error')
@@ -3151,7 +3153,7 @@ describe('Portfolio Controller ', () => {
 
     it('custom positions are persisted after a failure', async () => {
       const { restore } = suppressConsole()
-      const spy = jest.spyOn(defiProviders, 'getAAVEPositions')
+      const spy = jest.spyOn(aaveV3DefiProvider, 'fetchPositions')
 
       const { controller } = await prepareTest()
 
@@ -3165,7 +3167,7 @@ describe('Portfolio Controller ', () => {
 
       expect(hasPosition).toBe(true)
 
-      // Mock getAAVEPositions to throw
+      // Mock the AAVE positions read from the chain to throw
       spy.mockImplementation(
         () =>
           new Promise((_, reject) => {
@@ -3330,7 +3332,7 @@ describe('Portfolio Controller ', () => {
       batchedDiscoverySpy.mockResolvedValue(getDefiAppsResponse())
       jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue(getEmptyPortfolioLibResult())
       jest
-        .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+        .spyOn(rpcDefiPositionsLib, 'getRpcDefiPositions')
         .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] })
 
       // Only an update of all networks sets the counts
@@ -3364,7 +3366,7 @@ describe('Portfolio Controller ', () => {
         .spyOn(Portfolio.prototype, 'get')
         .mockResolvedValue(getEmptyPortfolioLibResult())
       jest
-        .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+        .spyOn(rpcDefiPositionsLib, 'getRpcDefiPositions')
         .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] })
 
       const getResult = () => controller.getAccountPortfolioState(account.addr)['1']!.result!
@@ -3411,7 +3413,7 @@ describe('Portfolio Controller ', () => {
         .spyOn(Portfolio.prototype, 'get')
         .mockResolvedValue(getEmptyPortfolioLibResult())
       jest
-        .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+        .spyOn(rpcDefiPositionsLib, 'getRpcDefiPositions')
         .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] })
       const freshUpdateProps = { maxDataAgeMs: 60 * 1000, defiMaxDataAgeMs: 60 * 1000 }
 
@@ -3446,7 +3448,7 @@ describe('Portfolio Controller ', () => {
           .spyOn(Portfolio.prototype, 'get')
           .mockResolvedValue(getEmptyPortfolioLibResult())
         jest
-          .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+          .spyOn(rpcDefiPositionsLib, 'getRpcDefiPositions')
           .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] })
 
         const getNetworkDiscoveryCallsCount = () =>
