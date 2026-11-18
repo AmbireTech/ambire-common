@@ -4,7 +4,7 @@ import { ITokenPricesController } from '../../../interfaces/tokenPrices'
 import { getUsdPriceIn } from '../../portfolio/helpers'
 import { TokenDataCacheValue } from '../../portfolio/interfaces'
 import { getAssetValue, getProviderId } from '../helpers'
-import { PositionAsset, PositionsByProvider } from '../types'
+import { AssetType, PositionAsset, PositionsByProvider } from '../types'
 
 // This function is separated to its own file to allow mocking in the
 // portfolio controller test. If the function is in the same file as
@@ -43,11 +43,24 @@ const getUsdPriceInWithFallback = (
 }
 
 /**
+ * What an asset adds to the value of its position. A borrowed asset is a debt, so it's
+ * subtracted, like in the positions of the API and Aave (see `positionInUSD`). An asset
+ * without a price adds nothing.
+ */
+const getValueInPosition = (asset: PositionAsset): number => {
+  const value = asset.value || 0
+
+  return asset.type === AssetType.Borrow ? -value : value
+}
+
+/**
  * Prices the assets of the provided positions that have no price yet - such as Uniswap V3
  * positions read from the chain that Debank doesn't know about (yet) - through the token
  * prices controller, and updates their values. Prices that are already set (e.g. by Debank) are
  * never replaced, and nothing is requested when no asset is missing a price. An asset the token
  * prices controller can't price is valued through its `priceFallback`, if it has one.
+ * A position without a value of its own gets the value of its assets, with the borrowed ones
+ * subtracted.
  */
 export async function updatePositionsByProviderAssetPrices(
   tokenPrices: ITokenPricesController,
@@ -98,7 +111,7 @@ export async function updatePositionsByProviderAssetPrices(
         const pricedAsset = withFetchedPrice(asset)
 
         if (!hasPositionValue) {
-          positionInUSD += pricedAsset.value || 0
+          positionInUSD += getValueInPosition(pricedAsset)
         }
 
         return pricedAsset

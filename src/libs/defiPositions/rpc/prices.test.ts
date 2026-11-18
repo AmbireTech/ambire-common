@@ -4,6 +4,7 @@ import { suppressConsole } from '../../../../test/helpers/console'
 import { networks } from '../../../consts/networks'
 import { ITokenPricesController } from '../../../interfaces/tokenPrices'
 import { TokenDataCacheValue } from '../../portfolio/interfaces'
+import { withCollateralValues } from '../helpers'
 import { AssetType, DeFiPositionsError, PositionAsset, PositionsByProvider } from '../types'
 import { priceRpcDefiPositions } from './index'
 import { updatePositionsByProviderAssetPrices } from './prices'
@@ -101,6 +102,63 @@ describe('updatePositionsByProviderAssetPrices', () => {
     expect(positionsByProvider[0]!.positions[0]!.additionalData.positionInUSD).toBe(3002)
   })
 
+  describe('positions with a loan (e.g. a Morpho market)', () => {
+    const WBTC = '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599'
+    // 0.39 WBTC supplied, worth $24,955, and 9,233.63 USDC borrowed against it
+    const suppliedWbtc = asset(WBTC, {
+      type: AssetType.Collateral,
+      decimals: 8,
+      amount: 39_000_000n,
+      priceIn: { baseCurrency: 'usd', price: 24_955 / 0.39 },
+      value: 24_955
+    })
+    const borrowedUsdc = asset(USDC, {
+      type: AssetType.Borrow,
+      decimals: 6,
+      amount: 9_233_630_000n
+    })
+
+    test('subtracts the borrowed assets from the value of the position and the app', async () => {
+      const { tokenPrices } = createTokenPrices(1)
+
+      const { positionsByProvider } = await updatePositionsByProviderAssetPrices(tokenPrices, {
+        network: ethereum,
+        positionsByProvider: [provider('Morpho', [suppliedWbtc, borrowedUsdc])]
+      })
+
+      const morpho = positionsByProvider[0]!
+      expect(morpho.positions[0]!.assets[1]!.value).toBeCloseTo(9_233.63)
+      expect(morpho.positions[0]!.additionalData.positionInUSD).toBeCloseTo(24_955 - 9_233.63)
+      expect(morpho.positionInUSD).toBeCloseTo(24_955 - 9_233.63)
+    })
+
+    test('counts the loan once when it is added back to show the value without loans subtracted', async () => {
+      const { tokenPrices } = createTokenPrices(1)
+
+      const { positionsByProvider } = await updatePositionsByProviderAssetPrices(tokenPrices, {
+        network: ethereum,
+        positionsByProvider: [provider('Morpho', [suppliedWbtc, borrowedUsdc])]
+      })
+      const morpho = withCollateralValues(positionsByProvider[0]!)
+
+      // The supplied WBTC, not $43,422 (the WBTC plus the loan counted twice)
+      expect(morpho.positions[0]!.additionalData.collateralInUSD).toBeCloseTo(24_955)
+      expect(morpho.collateralInUSD).toBeCloseTo(24_955)
+    })
+
+    test('adds nothing for a borrowed asset without a price', async () => {
+      const { tokenPrices } = createTokenPrices(1, new Error('The prices could not be fetched'))
+
+      const { positionsByProvider } = await updatePositionsByProviderAssetPrices(tokenPrices, {
+        network: ethereum,
+        positionsByProvider: [provider('Morpho', [suppliedWbtc, borrowedUsdc])]
+      })
+
+      expect(positionsByProvider[0]!.positions[0]!.assets[1]!.value).toBeUndefined()
+      expect(positionsByProvider[0]!.positions[0]!.additionalData.positionInUSD).toBe(24_955)
+    })
+  })
+
   describe('assets with a price fallback (e.g. Morpho collateral valued by the market oracle)', () => {
     const PT_TOKEN = '0x0000000000000000000000000000000000000071'
     // 1 PT is worth 3000 USDC by the protocol's oracle
@@ -142,8 +200,9 @@ describe('updatePositionsByProviderAssetPrices', () => {
       const [pricedCollateral] = positionsByProvider[0]!.positions[0]!.assets
       expect(pricedCollateral!.priceIn).toEqual({ baseCurrency: 'usd', price: 3000 })
       expect(pricedCollateral!.value).toBe(3000)
-      // Without the fallback, the collateral would add nothing to the position's value
-      expect(positionsByProvider[0]!.positions[0]!.additionalData.positionInUSD).toBe(4000)
+      // $3000 collateral minus the $1000 borrowed. Without the fallback, the collateral would
+      // add nothing to the position's value
+      expect(positionsByProvider[0]!.positions[0]!.additionalData.positionInUSD).toBe(2000)
     })
 
     test("prefers the asset's own price", async () => {
