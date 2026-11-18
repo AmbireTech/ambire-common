@@ -423,6 +423,9 @@ export class PortfolioController
 
   async updateExchangeList() {
     if (
+      // Until the saved flags load (or when their load failed) the flags hold the defaults, not
+      // the user's choice, so the price API must not be called
+      !this.#featureFlags.isReady ||
       !this.#featureFlags.isFeatureEnabled('tokenPrices') ||
       this.#exchangeState.isLoading ||
       this.#exchangeState.retryCount >= EXCHANGE_LIST_MAX_RETRIES
