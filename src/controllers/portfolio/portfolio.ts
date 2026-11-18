@@ -45,11 +45,13 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
   DefiUpdateMode,
+  DefiUpdateModeParams,
   enhancePortfolioTokensWithDefiPositions,
   getAccountNetworksWithPositions,
   getDefiUpdateMode,
   getFormattedApiPositions,
   getHasNonceChangedSinceLastUpdate,
+  getIsRpcDefiReadDue,
   getNewDefiState,
   getUniqueMergedPositions,
   mergeDefiUpdateModes
@@ -1589,34 +1591,22 @@ export class PortfolioController
       bypassServerSideCache
     } = opts
 
-    const defiState = this.#state[account.addr]?.[chainId.toString()]?.result?.defiPositions
     const canSkipExternalApiHintsUpdate =
       !!externalApiHintsResponse &&
       !isManualUpdate &&
       Date.now() - externalApiHintsResponse.lastUpdate <
         EXTERNAL_API_HINTS_TTL[!externalApiHintsResponse.hasHints ? 'static' : 'dynamic']
 
-    const hasNonceChangedSinceLastUpdate = getHasNonceChangedSinceLastUpdate(
-      defiState,
-      this.#getNonceId(account, chainId)
-    )
-
-    // Used by getShouldBypassServerSideCache to avoid spending the server-side bypass budget
-    // before the scheduled update fires (the server has a per-account cooldown)
-    const hasScheduledUpdate = !!this.#scheduledUpdates[account.addr]?.find(
-      (update) => update.chainId === chainId && update.bypassServerSideCache
-    )
-
-    const defiUpdateMode = getDefiUpdateMode({
-      previousState: defiState,
-      bypassServerSideCache: !!bypassServerSideCache,
-      isManualUpdate: !!isManualUpdate,
+    const defiUpdateModeParams = this.#getDefiUpdateModeParams({
+      account,
+      chainId,
+      bypassServerSideCache,
+      isManualUpdate,
       hasKeys,
-      sessionIds: this.#defiSessionIds,
-      hasNonceChangedSinceLastUpdate,
-      hasScheduledUpdate,
-      maxDataAgeMs: defiMaxDataAgeMs
+      defiMaxDataAgeMs
     })
+    const { hasNonceChangedSinceLastUpdate } = defiUpdateModeParams
+    const defiUpdateMode = getDefiUpdateMode(defiUpdateModeParams)
 
     const canSkipDefiUpdate = defiUpdateMode === DefiUpdateMode.Cache
 
@@ -1835,6 +1825,17 @@ export class PortfolioController
       const isAutoDiscoveryEnabled = this.#featureFlags.isFeatureEnabled(
         'tokenAndDefiAutoDiscovery'
       )
+      const isRpcDefiReadDue = getIsRpcDefiReadDue(
+        this.#getDefiUpdateModeParams({
+          account,
+          chainId: network.chainId,
+          bypassServerSideCache,
+          isManualUpdate,
+          hasKeys: portfolioProps.hasKeys,
+          defiMaxDataAgeMs
+        }),
+        { isAutoDiscoveryEnabled, lastRpcUpdate: state.result?.defiPositions.lastRpcUpdate }
+      )
       // Fetch the portfolio and custom defi positions in parallel
       const [portfolioResult, customPositionsResult] = await Promise.all([
         portfolioLib.get(account.addr, {
@@ -1854,7 +1855,8 @@ export class PortfolioController
           heldTokenAddresses: getHeldTokenAddresses(state.result?.tokens),
           previousPositions: state.result?.defiPositions.positionsByProvider || [],
           apiPositions: discoveryData?.data?.defi?.positions,
-          isAutoDiscoveryEnabled
+          isAutoDiscoveryEnabled,
+          isReadDue: isRpcDefiReadDue
         })
       ])
 
@@ -1876,7 +1878,8 @@ export class PortfolioController
         customPositionsResult.providerErrors,
         stkWalletToken,
         this.#getNonceId(account, network.chainId),
-        isAutoDiscoveryEnabled
+        isAutoDiscoveryEnabled,
+        isRpcDefiReadDue
       )
 
       const combinedTokens = enhancePortfolioTokensWithDefiPositions(
@@ -2176,6 +2179,49 @@ export class PortfolioController
       })
 
       this.#setNetworkLoading(account.addr, 'defiApps', false, e)
+    }
+  }
+
+  /**
+   * The inputs of `getDefiUpdateMode`, shared by the API call and the reads from the chain,
+   * so both decide when the DeFi positions are refreshed by the same rules.
+   */
+  #getDefiUpdateModeParams({
+    account,
+    chainId,
+    bypassServerSideCache,
+    isManualUpdate,
+    hasKeys,
+    defiMaxDataAgeMs
+  }: {
+    account: Account
+    chainId: bigint
+    bypassServerSideCache?: boolean
+    isManualUpdate?: boolean
+    hasKeys: boolean
+    defiMaxDataAgeMs: number
+  }): DefiUpdateModeParams {
+    const defiState = this.#state[account.addr]?.[chainId.toString()]?.result?.defiPositions
+
+    // Used by getShouldBypassServerSideCache to avoid spending the server-side bypass budget
+    // before the scheduled update fires (the server has a per-account cooldown)
+    const hasScheduledUpdate = !!this.#scheduledUpdates[account.addr]?.find(
+      (update) => update.chainId === chainId && update.bypassServerSideCache
+    )
+
+    return {
+      lastUpdate: defiState?.lastSuccessfulUpdate,
+      lastForceApiUpdate: defiState?.lastForceApiUpdate,
+      bypassServerSideCache: !!bypassServerSideCache,
+      isManualUpdate: !!isManualUpdate,
+      hasKeys,
+      sessionIds: this.#defiSessionIds,
+      hasNonceChangedSinceLastUpdate: getHasNonceChangedSinceLastUpdate(
+        defiState,
+        this.#getNonceId(account, chainId)
+      ),
+      hasScheduledUpdate,
+      maxDataAgeMs: defiMaxDataAgeMs
     }
   }
 

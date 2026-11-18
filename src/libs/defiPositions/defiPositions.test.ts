@@ -8,10 +8,12 @@ import { NetworkState, PortfolioNetworkResult, TokenResult } from '../portfolio/
 import { PORTFOLIO_STATE } from '../portfolio/testData'
 import {
   DefiUpdateMode,
+  DefiUpdateModeParams,
   enhancePortfolioTokensWithDefiPositions,
   getAllAssetsAsHints,
   getDefiUpdateMode,
   getFormattedApiPositions,
+  getIsRpcDefiReadDue,
   getNewDefiState,
   getUniqueMergedPositions
 } from './defiPositions'
@@ -104,20 +106,9 @@ describe('Defi positions helper and portfolio functions', () => {
     })
   })
   describe('getDefiUpdateMode', () => {
-    const buildDefiState = (
-      overrides: Partial<PortfolioNetworkResult['defiPositions']> = {}
-    ): PortfolioNetworkResult['defiPositions'] => {
-      const portfolioState = structuredClone(
-        PORTFOLIO_STATE['1']
-      ) as NetworkState<PortfolioNetworkResult>
-
-      return Object.assign(portfolioState.result!.defiPositions, overrides)
-    }
-
-    const buildParams = (
-      overrides: Partial<Parameters<typeof getDefiUpdateMode>[0]> = {}
-    ): Parameters<typeof getDefiUpdateMode>[0] => ({
-      previousState: buildDefiState({ lastSuccessfulUpdate: Date.now() - 10000 }),
+    const buildParams = (overrides: Partial<DefiUpdateModeParams> = {}): DefiUpdateModeParams => ({
+      lastUpdate: Date.now() - 10000,
+      lastForceApiUpdate: undefined,
       bypassServerSideCache: false,
       isManualUpdate: false,
       hasKeys: false,
@@ -144,7 +135,7 @@ describe('Defi positions helper and portfolio functions', () => {
           isManualUpdate: true,
           hasKeys: true,
           sessionIds: ['session-id-1'],
-          previousState: buildDefiState({ lastForceApiUpdate: Date.now() - 31000 })
+          lastForceApiUpdate: Date.now() - 31000
         })
       )
 
@@ -157,7 +148,7 @@ describe('Defi positions helper and portfolio functions', () => {
           hasKeys: true,
           sessionIds: ['session-id-1'],
           hasScheduledUpdate: true,
-          previousState: buildDefiState({ lastForceApiUpdate: Date.now() - 31000 })
+          lastForceApiUpdate: Date.now() - 31000
         })
       )
 
@@ -177,10 +168,8 @@ describe('Defi positions helper and portfolio functions', () => {
           hasKeys: true,
           sessionIds: ['session-id-1'],
           hasScheduledUpdate: true,
-          previousState: buildDefiState({
-            lastSuccessfulUpdate: Date.now() - 10000,
-            lastForceApiUpdate: Date.now() - 31000
-          })
+          lastUpdate: Date.now() - 10000,
+          lastForceApiUpdate: Date.now() - 31000
         })
       )
 
@@ -193,10 +182,8 @@ describe('Defi positions helper and portfolio functions', () => {
           hasKeys: true,
           sessionIds: ['session-id-1'],
           hasScheduledUpdate: true,
-          previousState: buildDefiState({
-            lastSuccessfulUpdate: Date.now() - 10000,
-            lastForceApiUpdate: Date.now() - 20000
-          })
+          lastUpdate: Date.now() - 10000,
+          lastForceApiUpdate: Date.now() - 20000
         })
       )
 
@@ -204,33 +191,106 @@ describe('Defi positions helper and portfolio functions', () => {
     })
 
     it('Should return Cache when the data is fresh enough', () => {
-      const mode = getDefiUpdateMode(
-        buildParams({ previousState: buildDefiState({ lastSuccessfulUpdate: Date.now() - 10000 }) })
-      )
+      const mode = getDefiUpdateMode(buildParams({ lastUpdate: Date.now() - 10000 }))
 
       expect(mode).toBe(DefiUpdateMode.Cache)
     })
     it('Should return Default when the data is older than maxDataAgeMs', () => {
-      const mode = getDefiUpdateMode(
-        buildParams({ previousState: buildDefiState({ lastSuccessfulUpdate: Date.now() - 61000 }) })
-      )
+      const mode = getDefiUpdateMode(buildParams({ lastUpdate: Date.now() - 61000 }))
 
       expect(mode).toBe(DefiUpdateMode.Default)
     })
     it('Should return Default when there is no previous successful update', () => {
-      const mode = getDefiUpdateMode(buildParams({ previousState: undefined }))
+      const mode = getDefiUpdateMode(buildParams({ lastUpdate: undefined }))
 
       expect(mode).toBe(DefiUpdateMode.Default)
     })
     it('Should return Cache when freshness is disabled (maxDataAgeMs < 0)', () => {
       const mode = getDefiUpdateMode(
-        buildParams({
-          maxDataAgeMs: -1,
-          previousState: buildDefiState({ lastSuccessfulUpdate: Date.now() - 100000000 })
-        })
+        buildParams({ maxDataAgeMs: -1, lastUpdate: Date.now() - 100000000 })
       )
 
       expect(mode).toBe(DefiUpdateMode.Cache)
+    })
+
+    describe('getIsRpcDefiReadDue', () => {
+      const FRESH = Date.now() - 10000
+      const STALE = Date.now() - 61000
+
+      describe('with auto discovery on', () => {
+        const isAutoDiscoveryEnabled = true
+
+        it('follows the age of the API data, as the positions are read together with it', () => {
+          // Fresh API data, never read from the chain
+          expect(
+            getIsRpcDefiReadDue(buildParams({ lastUpdate: FRESH }), {
+              isAutoDiscoveryEnabled,
+              lastRpcUpdate: undefined
+            })
+          ).toBe(false)
+          // Stale API data, freshly read from the chain
+          expect(
+            getIsRpcDefiReadDue(buildParams({ lastUpdate: STALE }), {
+              isAutoDiscoveryEnabled,
+              lastRpcUpdate: FRESH
+            })
+          ).toBe(true)
+        })
+      })
+
+      describe('with auto discovery off', () => {
+        const isAutoDiscoveryEnabled = false
+
+        it('reads when the positions were never read from the chain, even if the API data is fresh', () => {
+          expect(
+            getIsRpcDefiReadDue(buildParams({ lastUpdate: FRESH }), {
+              isAutoDiscoveryEnabled,
+              lastRpcUpdate: undefined
+            })
+          ).toBe(true)
+        })
+        it('skips the read when the positions read from the chain are fresh, ignoring the API data', () => {
+          expect(
+            getIsRpcDefiReadDue(buildParams({ lastUpdate: STALE }), {
+              isAutoDiscoveryEnabled,
+              lastRpcUpdate: FRESH
+            })
+          ).toBe(false)
+        })
+        it('reads when the positions read from the chain are older than the allowed age', () => {
+          expect(
+            getIsRpcDefiReadDue(buildParams({ lastUpdate: FRESH }), {
+              isAutoDiscoveryEnabled,
+              lastRpcUpdate: STALE
+            })
+          ).toBe(true)
+        })
+      })
+
+      it.each([true, false])(
+        'skips the read on updates that do not need fresh DeFi data, e.g. in the background (auto discovery on: %s)',
+        (isAutoDiscoveryEnabled) => {
+          const params = buildParams({ maxDataAgeMs: -1, lastUpdate: 1 })
+
+          expect(getIsRpcDefiReadDue(params, { isAutoDiscoveryEnabled, lastRpcUpdate: 1 })).toBe(
+            false
+          )
+        }
+      )
+      it.each([
+        ['the nonce changed', { hasNonceChangedSinceLastUpdate: true }],
+        ['the user refreshed manually', { isManualUpdate: true }],
+        ['the update follows a transaction', { bypassServerSideCache: true }]
+      ])('reads when %s, even if the data is fresh', (_, overrides) => {
+        const params = buildParams({ ...overrides, lastUpdate: FRESH })
+
+        expect(getIsRpcDefiReadDue(params, { isAutoDiscoveryEnabled: true, lastRpcUpdate: FRESH })).toBe(
+          true
+        )
+        expect(
+          getIsRpcDefiReadDue(params, { isAutoDiscoveryEnabled: false, lastRpcUpdate: FRESH })
+        ).toBe(true)
+      })
     })
   })
   describe('getAllAssetsAsHints', () => {
@@ -366,6 +426,7 @@ describe('Defi positions helper and portfolio functions', () => {
         [],
         null,
         undefined,
+        true,
         true
       )
 
@@ -381,6 +442,7 @@ describe('Defi positions helper and portfolio functions', () => {
         [],
         null,
         undefined,
+        true,
         true
       )
 
@@ -405,6 +467,7 @@ describe('Defi positions helper and portfolio functions', () => {
         [],
         null,
         undefined,
+        true,
         true
       )
 
@@ -427,6 +490,7 @@ describe('Defi positions helper and portfolio functions', () => {
           [],
           null,
           undefined,
+          true,
           true
         )
 
@@ -441,7 +505,8 @@ describe('Defi positions helper and portfolio functions', () => {
           [],
           null,
           undefined,
-          false
+          false,
+          true
         )
 
         expect(res.lastSuccessfulUpdate).toBe(1)
@@ -455,10 +520,62 @@ describe('Defi positions helper and portfolio functions', () => {
           [],
           null,
           undefined,
+          true,
           true
         )
 
         expect(res.lastSuccessfulUpdate).toBe(1)
+      })
+    })
+    describe('the time of the last read from the chain', () => {
+      const getPastStateReadAt = (lastRpcUpdate: number): PortfolioNetworkResult => {
+        const pastState = getPastPortfolioState()
+
+        return { ...pastState, defiPositions: { ...pastState.defiPositions, lastRpcUpdate } }
+      }
+      const callGetNewDefiState = ({
+        customPositionsError = null,
+        providerErrors = [],
+        isAutoDiscoveryEnabled = true,
+        hasReadRpcPositions = true
+      }: {
+        customPositionsError?: DeFiPositionsError | null
+        providerErrors?: { providerName: string; error: string }[]
+        isAutoDiscoveryEnabled?: boolean
+        hasReadRpcPositions?: boolean
+      }) =>
+        getNewDefiState(
+          getPastStateReadAt(1),
+          null,
+          [customAave],
+          customPositionsError,
+          providerErrors,
+          null,
+          undefined,
+          isAutoDiscoveryEnabled,
+          hasReadRpcPositions
+        )
+
+      it('is refreshed after reading the positions without errors, with auto discovery on or off', () => {
+        expect(callGetNewDefiState({}).lastRpcUpdate).toBeGreaterThan(1)
+        expect(callGetNewDefiState({ isAutoDiscoveryEnabled: false }).lastRpcUpdate).toBeGreaterThan(
+          1
+        )
+      })
+      it('is not refreshed when the read was skipped', () => {
+        expect(callGetNewDefiState({ hasReadRpcPositions: false }).lastRpcUpdate).toBe(1)
+      })
+      it('is not refreshed when the read fails, so it is retried on the next update', () => {
+        const res = callGetNewDefiState({ customPositionsError: DeFiPositionsError.CriticalError })
+
+        expect(res.lastRpcUpdate).toBe(1)
+      })
+      it('is not refreshed when one of the protocols fails, so it is retried on the next update', () => {
+        const res = callGetNewDefiState({
+          providerErrors: [{ providerName: 'AAVE v3', error: 'RPC is down' }]
+        })
+
+        expect(res.lastRpcUpdate).toBe(1)
       })
     })
   })

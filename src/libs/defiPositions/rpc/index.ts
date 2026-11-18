@@ -145,6 +145,9 @@ const priceRpcDefiPositions = async (
  * The positions of a provider whose call fails are taken from the previous update (see
  * `getPreviousPositionsToKeep`), and assets left without a price are priced through the token
  * prices controller.
+ *
+ * When a read isn't due (see `getIsRpcDefiReadDue`), nothing is read and the positions of the
+ * previous update are returned as they are.
  */
 const getRpcDefiPositions = async (
   tokenPrices: ITokenPricesController,
@@ -155,18 +158,32 @@ const getRpcDefiPositions = async (
     heldTokenAddresses,
     previousPositions,
     apiPositions,
-    isAutoDiscoveryEnabled
+    isAutoDiscoveryEnabled,
+    isReadDue
   }: RpcFetchParams & {
     previousPositions: PositionsByProvider[]
     /** The positions returned by the API in this update, if it was called and succeeded */
     apiPositions: PositionsByProvider[] | undefined
     isAutoDiscoveryEnabled: boolean
+    /** Whether the positions should be read from the chain in this update */
+    isReadDue: boolean
   }
 ): Promise<RpcDefiPositionsResult> => {
   if (network.disabled)
     return {
       positionsByProvider: [],
       providerErrors: []
+    }
+
+  if (!isReadDue)
+    return {
+      // The merged ones (`mixed`) are kept too, so the data that only the chain has (e.g. whether
+      // a Uniswap V3 position is in range) isn't replaced by the API data alone
+      positionsByProvider: previousPositions.filter(
+        (p) => p.source === 'custom' || p.source === 'mixed'
+      ),
+      providerErrors: [],
+      error: null
     }
 
   const apiPositionsToMergeWith = isAutoDiscoveryEnabled

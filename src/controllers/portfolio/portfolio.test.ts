@@ -3304,6 +3304,55 @@ describe('Portfolio Controller ', () => {
       )
     })
 
+    it('with auto discovery off, reads the positions from the chain only when they are due a refresh', async () => {
+      // With auto discovery on, the reads follow the age of the API data instead
+      const { controller } = await prepareTest({
+        featureFlags: { tokenAndDefiAutoDiscovery: false }
+      })
+      jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue({
+        updateStarted: Date.now(),
+        discoveryTime: 0,
+        oracleCallTime: 0,
+        priceUpdateTime: 0,
+        tokens: [],
+        feeTokens: [],
+        toBeLearned: { erc20s: [], erc721s: {} },
+        fetchedTokenMetadata: [],
+        fetchedCollectionMetadata: [],
+        tokenErrors: [],
+        collectionErrors: [],
+        collections: [],
+        errors: [],
+        blockNumber: 0,
+        beforeNonce: 0n,
+        afterNonce: 0n
+      } as any)
+      const rpcSpy = jest
+        .spyOn(rpcDefiPositionsLib, 'getRpcDefiPositions')
+        .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] })
+      const getIsReadDue = (callIndex: number) => rpcSpy.mock.calls[callIndex]![1].isReadDue
+
+      // Never read before
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      expect(getIsReadDue(0)).toBe(true)
+      const { lastRpcUpdate } =
+        controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result!.defiPositions
+      expect(lastRpcUpdate).toBeDefined()
+
+      // An automatic update (e.g. the periodic one) doesn't need fresh DeFi data
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum])
+      expect(getIsReadDue(1)).toBe(false)
+      expect(
+        controller.getAccountPortfolioState(DEFI_TEST_ACCOUNT.addr)['1']!.result!.defiPositions
+          .lastRpcUpdate
+      ).toBe(lastRpcUpdate)
+
+      await controller.updateSelectedAccount(DEFI_TEST_ACCOUNT.addr, [ethereum], undefined, {
+        isManualUpdate: true
+      })
+      expect(getIsReadDue(2)).toBe(true)
+    })
+
     describe('Defi apps', () => {
       it('should skip update if canSkipUpdate=true', async () => {
         const { controller } = await prepareTest()

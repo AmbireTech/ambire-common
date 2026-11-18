@@ -113,7 +113,8 @@ const getAllAssetsAsHints = (
  * It ensures that positions are unique, merged correctly and that if the
  * latest Debank call failed, the previous positions are retained.
  * While auto discovery is off, the time of the last successful update isn't refreshed, as the
- * API isn't called.
+ * API isn't called. The time of the last read from the chain is refreshed only if the positions
+ * were read in this update without errors.
  */
 const getNewDefiState = (
   pastPortfolioState: PortfolioNetworkResult | undefined,
@@ -123,7 +124,8 @@ const getNewDefiState = (
   customProvidersErrors: ProviderError[],
   stkWalletToken: TokenResult | null,
   nonceId: string | undefined,
-  isAutoDiscoveryEnabled: boolean
+  isAutoDiscoveryEnabled: boolean,
+  hasReadRpcPositions: boolean
 ): NetworkState => {
   const isForceApiUpdate = !!discoveryResponse?.data?.defi?.isForceUpdate
   const isDebankCallSuccessful = getIsExternalApiDefiPositionsCallSuccessful(discoveryResponse)
@@ -132,7 +134,8 @@ const getNewDefiState = (
     discoveryResponse?.data?.defi?.positions ||
     // Fallback to the old positions if the call failed or was skipped
     previousPositionsByProvider.filter((p) => p.source !== 'custom')
-  const { lastForceApiUpdate, lastSuccessfulUpdate } = pastPortfolioState?.defiPositions || {}
+  const { lastForceApiUpdate, lastSuccessfulUpdate, lastRpcUpdate } =
+    pastPortfolioState?.defiPositions || {}
 
   const stkWalletPosition = getStakedWalletPositions(stkWalletToken)
 
@@ -149,12 +152,16 @@ const getNewDefiState = (
   // Morpho) would be replaced by no API positions
   const shouldRefreshLastSuccessfulUpdate =
     isAutoDiscoveryEnabled && isDebankCallSuccessful && !customPositionsError
+  // A read with errors (e.g. one protocol failed) isn't counted, so it is retried on the next update
+  const shouldRefreshLastRpcUpdate =
+    hasReadRpcPositions && !customPositionsError && !customProvidersErrors.length
 
   return {
     nonceId,
     error: !isDebankCallSuccessful ? DeFiPositionsError.CriticalError : customPositionsError,
     lastSuccessfulUpdate: shouldRefreshLastSuccessfulUpdate ? Date.now() : lastSuccessfulUpdate,
     lastForceApiUpdate: isForceApiUpdate ? Date.now() : lastForceApiUpdate,
+    lastRpcUpdate: shouldRefreshLastRpcUpdate ? Date.now() : lastRpcUpdate,
     providerErrors: customProvidersErrors,
     positionsByProvider: uniqueAndMerged || previousPositionsByProvider
   }
@@ -511,8 +518,15 @@ const DEFI_UPDATE_MODE_RANK: Record<DefiUpdateMode, number> = {
 // The server-side defi cache has a per-account cooldown; we only force a bypass once per window.
 const FORCE_API_UPDATE_COOLDOWN_MS = 30000
 
-const getDefiUpdateMode = (params: {
-  previousState: PortfolioNetworkResult['defiPositions'] | undefined
+/** The inputs that decide how fresh the DeFi positions should be (see `getDefiUpdateMode`) */
+export type DefiUpdateModeParams = {
+  /**
+   * When the data whose age is checked was last updated - the API data
+   * (`lastSuccessfulUpdate`) or the positions read from the chain (`lastRpcUpdate`)
+   */
+  lastUpdate: number | undefined
+  /** When the server-side cache of the API was last bypassed */
+  lastForceApiUpdate: number | undefined
   bypassServerSideCache: boolean
   isManualUpdate: boolean
   hasKeys: boolean
@@ -520,9 +534,12 @@ const getDefiUpdateMode = (params: {
   hasNonceChangedSinceLastUpdate: boolean
   hasScheduledUpdate: boolean
   maxDataAgeMs: number
-}): DefiUpdateMode => {
+}
+
+const getDefiUpdateMode = (params: DefiUpdateModeParams): DefiUpdateMode => {
   const {
-    previousState,
+    lastUpdate,
+    lastForceApiUpdate,
     bypassServerSideCache,
     isManualUpdate,
     hasKeys,
@@ -546,22 +563,40 @@ const getDefiUpdateMode = (params: {
     isManualUpdate &&
     !!sessionIds.length &&
     hasKeys &&
-    Date.now() - (previousState?.lastForceApiUpdate || 0) >= FORCE_API_UPDATE_COOLDOWN_MS
+    Date.now() - (lastForceApiUpdate || 0) >= FORCE_API_UPDATE_COOLDOWN_MS
   if (isThrottledManualForceDue) return DefiUpdateMode.Force
 
   // If there isn't a successful update yet do a default update
   // Example: extension boot
-  if (!previousState || !previousState.lastSuccessfulUpdate || isManualUpdate)
-    return DefiUpdateMode.Default
+  if (!lastUpdate || isManualUpdate) return DefiUpdateMode.Default
 
   // In this case we don't care about defi positions so the age of the data doesn't matter, we can serve stale data from cache
   // Example: background update
   if (maxDataAgeMs < 0) return DefiUpdateMode.Cache
 
   // If a specific maxDataAgeMs is set, then we rely on it instead of the default server-side cache age.
-  if (Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs) return DefiUpdateMode.Cache
+  if (Date.now() - lastUpdate < maxDataAgeMs) return DefiUpdateMode.Cache
 
   return DefiUpdateMode.Default
+}
+
+/**
+ * Whether the DeFi positions should be read from the chain (RPC) in this update. Follows the
+ * same rules as the API call (`getDefiUpdateMode`) - e.g. after a transaction, on a manual
+ * refresh or when the data is too old. With auto discovery on, they are read together with the
+ * API data, so the age is that of the API data. With it off, it's that of the last read from
+ * the chain, as the API isn't called.
+ */
+const getIsRpcDefiReadDue = (
+  params: DefiUpdateModeParams,
+  {
+    isAutoDiscoveryEnabled,
+    lastRpcUpdate
+  }: { isAutoDiscoveryEnabled: boolean; lastRpcUpdate: number | undefined }
+): boolean => {
+  const lastUpdate = isAutoDiscoveryEnabled ? params.lastUpdate : lastRpcUpdate
+
+  return getDefiUpdateMode({ ...params, lastUpdate }) !== DefiUpdateMode.Cache
 }
 
 /**
@@ -624,6 +659,7 @@ export {
   getDefiUpdateMode,
   getFormattedApiPositions,
   getHasNonceChangedSinceLastUpdate,
+  getIsRpcDefiReadDue,
   getNewDefiState,
   getUniqueMergedPositions,
   mergeDefiUpdateModes

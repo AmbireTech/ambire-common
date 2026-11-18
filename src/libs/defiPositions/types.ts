@@ -84,6 +84,12 @@ export interface NetworkState {
    * Used to determine if we should bypass the cache on next update
    */
   lastForceApiUpdate?: number
+  /**
+   * Timestamp of the last successful read of the positions from the chain (RPC), without
+   * errors. Used to decide whether they need to be read again while auto discovery is off
+   * (see `getIsRpcDefiReadDue`)
+   */
+  lastRpcUpdate?: number
   error?: string | null
   providerErrors?: ProviderError[]
   nonceId?: string

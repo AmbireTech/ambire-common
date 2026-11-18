@@ -103,6 +103,7 @@ const callGetRpcDefiPositions = (
     previousPositions: [],
     apiPositions: [],
     isAutoDiscoveryEnabled: true,
+    isReadDue: true,
     ...params
   })
 }
@@ -334,6 +335,64 @@ describe('getRpcDefiPositions', () => {
     })
   })
 
+  describe('when a read is not due', () => {
+    const previousCustomAave = getPositions('AAVE v3', 'custom')
+    const previousMixedUniV3: PositionsByProvider = { ...DEBANK_UNI_V3[0]!, source: 'mixed' }
+    const previousDebankLido = getPositions('Lido', 'debank')
+    const previousPositions = [previousCustomAave, previousMixedUniV3, previousDebankLido]
+
+    test.each([true, false])(
+      'reads nothing and returns the previous positions read from the chain (auto discovery on: %s)',
+      async (isAutoDiscoveryEnabled) => {
+        const { aaveSpy, uniswapSpy, morphoSpy } = mockFetchedPositions({})
+        const { tokenPrices, getTokenData } = createTokenPrices()
+
+        const res = await getRpcDefiPositions(tokenPrices, {
+          accountAddr: ACCOUNT,
+          provider: rpcProvider,
+          network: polygon,
+          heldTokenAddresses: [],
+          previousPositions,
+          apiPositions: undefined,
+          isAutoDiscoveryEnabled,
+          isReadDue: false
+        })
+
+        expect(aaveSpy).not.toHaveBeenCalled()
+        expect(uniswapSpy).not.toHaveBeenCalled()
+        expect(morphoSpy).not.toHaveBeenCalled()
+        expect(getTokenData).not.toHaveBeenCalled()
+        expect(res).toEqual({
+          // The API positions (Lido) are left to the API data of the update
+          positionsByProvider: [previousCustomAave, previousMixedUniV3],
+          providerErrors: [],
+          error: null
+        })
+      }
+    )
+    test('keeps the merged Uniswap V3 positions, even when the API returns the protocol', async () => {
+      mockFetchedPositions({})
+
+      const res = await callGetRpcDefiPositions({
+        previousPositions,
+        apiPositions: DEBANK_UNI_V3,
+        isReadDue: false
+      })
+
+      expect(getUniswapV3(res.positionsByProvider)).toBe(previousMixedUniV3)
+    })
+    test('returns nothing when no positions were read from the chain before', async () => {
+      mockFetchedPositions({})
+
+      const res = await callGetRpcDefiPositions({
+        previousPositions: [previousDebankLido],
+        isReadDue: false
+      })
+
+      expect(res.positionsByProvider).toEqual([])
+    })
+  })
+
   test('reads nothing on a disabled network', async () => {
     const { aaveSpy, uniswapSpy } = mockFetchedPositions({})
 
@@ -360,7 +419,8 @@ describe('getRpcDefiPositions', () => {
       heldTokenAddresses: [],
       previousPositions: [],
       apiPositions: [],
-      isAutoDiscoveryEnabled: true
+      isAutoDiscoveryEnabled: true,
+      isReadDue: true
     })
 
     expect(getTokenData).toHaveBeenCalledTimes(1)
