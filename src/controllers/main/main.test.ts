@@ -168,7 +168,7 @@ describe('Main Controller ', () => {
   })
 
   describe('portfolio update after the auto discovery setting changes', () => {
-    test('updates the portfolio and its DeFi positions right away when the setting is turned off and on', async () => {
+    test('marks every account as outdated and updates the portfolio right away when the setting is turned off and on', async () => {
       const { mainCtrl } = await makeMainController(async (storageCtrl) => {
         await storageCtrl.set('accounts', accounts)
       })
@@ -178,10 +178,14 @@ describe('Main Controller ', () => {
         .mockResolvedValue(undefined)
       // makeMainController already replaced it with a mock, which was called on the initial load
       updateSpy.mockClear()
+      const markAsOutdatedSpy = jest.spyOn(mainCtrl.portfolio, 'markAllAccountsAsOutdated')
 
       await mainCtrl.featureFlags.setFeatureFlag('tokenAndDefiAutoDiscovery', false)
       await mainCtrl.featureFlags.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
 
+      expect(markAsOutdatedSpy).toHaveBeenCalledTimes(2)
+      // `defiMaxDataAgeMs: 0`, as an update that was already running can save its data as fresh
+      // again after it was marked as outdated
       expect(updateSpy.mock.calls).toEqual([[{ defiMaxDataAgeMs: 0 }], [{ defiMaxDataAgeMs: 0 }]])
     })
 
@@ -195,10 +199,12 @@ describe('Main Controller ', () => {
         .mockResolvedValue(undefined)
       // makeMainController already replaced it with a mock, which was called on the initial load
       updateSpy.mockClear()
+      const markAsOutdatedSpy = jest.spyOn(mainCtrl.portfolio, 'markAllAccountsAsOutdated')
 
       await mainCtrl.featureFlags.setFeatureFlag('gasTank', false)
       await mainCtrl.featureFlags.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
 
+      expect(markAsOutdatedSpy).not.toHaveBeenCalled()
       expect(updateSpy).not.toHaveBeenCalled()
     })
   })

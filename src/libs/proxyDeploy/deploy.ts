@@ -31,6 +31,20 @@ export interface PrivLevels {
   hash: string
 }
 
+/**
+ * The code an Ambire account proxy has once deployed: it delegates every call to
+ * `masterContractAddr`. Accounts with the same master share it, so its hash tells them apart.
+ */
+export function getProxyRuntimeCode(masterContractAddr: string) {
+  const masterAddrBuf = Buffer.from(masterContractAddr.slice(2).replace(/^(00)+/, ''), 'hex')
+
+  // TO DO: check if masterAddrBuf.length actually makes sense
+  if (masterAddrBuf.length > 20) throw new Error('invalid address')
+  return `0x363d3d373d3d3d363d${evmPush(masterAddrBuf).toString(
+    'hex'
+  )}5af43d82803e903d91602b57fd5bf3`
+}
+
 export function getProxyDeployBytecode(
   masterContractAddr: string,
   privLevels: PrivLevels[],
@@ -47,13 +61,8 @@ export function getProxyDeployBytecode(
   const offset = storage.length + initial.length + 6 // 6 more bytes including the push added later on
   if (offset > 256) throw new Error('getProxyDeployBytecode: internal: offset>256')
   const initialCode = Buffer.concat([storage, initial, evmPush(Buffer.from([offset]))])
-  const masterAddrBuf = Buffer.from(masterContractAddr.slice(2).replace(/^(00)+/, ''), 'hex')
 
-  // TO DO: check if masterAddrBuf.length actually makes sense
-  if (masterAddrBuf.length > 20) throw new Error('invalid address')
-  return `0x${initialCode.toString('hex')}3d3981f3363d3d373d3d3d363d${evmPush(
-    masterAddrBuf
-  ).toString('hex')}5af43d82803e903d91602b57fd5bf3`
+  return `0x${initialCode.toString('hex')}3d3981f3${getProxyRuntimeCode(masterContractAddr).slice(2)}`
 }
 
 export function getStorageSlotsFromArtifact(buildInfo: any) {
