@@ -425,8 +425,7 @@ export class PortfolioController
     if (
       // Until the saved flags load (or when their load failed) the flags hold the defaults, not
       // the user's choice, so the price API must not be called
-      !this.#featureFlags.isReady ||
-      !this.#featureFlags.isFeatureEnabled('tokenPrices') ||
+      !this.#featureFlags.isUserChoiceEnabled('tokenPrices') ||
       this.#exchangeState.isLoading ||
       this.#exchangeState.retryCount >= EXCHANGE_LIST_MAX_RETRIES
     )
@@ -1343,7 +1342,7 @@ export class PortfolioController
         gasTank: { balance: [] }
       }
     }
-    if (this.#featureFlags.isFeatureEnabled('gasTank')) {
+    if (this.#featureFlags.isUserChoiceEnabled('gasTank')) {
       const accountKeysCount = getAccountKeysCount({
         accountAddr: accountId,
         keys: this.#keystore.keys,
@@ -1579,7 +1578,7 @@ export class PortfolioController
     isManualUpdate?: boolean
   }): Promise<FormattedPortfolioDiscoveryResponse | null> {
     const discoveryStart = Date.now()
-    if (!this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')) return null
+    if (!this.#featureFlags.isUserChoiceEnabled('tokenAndDefiAutoDiscovery')) return null
 
     const errors: ExtendedErrorWithLevel[] = []
     const {
@@ -2081,7 +2080,7 @@ export class PortfolioController
       bypassServerSideCache?: boolean
     }
   ) {
-    if (!this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')) return
+    if (!this.#featureFlags.isUserChoiceEnabled('tokenAndDefiAutoDiscovery')) return
 
     const defiMaxDataAgeMs = portfolioProps.isManualUpdate ? 0 : portfolioProps.defiMaxDataAgeMs
     const accountState = this.#state[account.addr] ?? (this.#state[account.addr] = {})

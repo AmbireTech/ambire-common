@@ -96,11 +96,12 @@ export class GasPriceController extends EventEmitter {
   }
 
   async fetch(emitLevelOnFailure: ErrorRef['level'] = 'silent') {
-    // the strategy depends on the erc4337 feature flag, so wait for the flags to load
+    // the strategy depends on the erc4337 feature flag, so wait for the flags to load. If their
+    // load failed, the bundlers are not used, as the user may have opted out of them
     await this.#featureFlags.initialLoadPromise
 
     const strategy = this.#baseAccount.getGasPriceFetchStrategy(
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isUserChoiceEnabled('erc4337')
     )
 
     // the bundler estimation supplies the bundler gas prices, so when the account
@@ -191,7 +192,7 @@ export class GasPriceController extends EventEmitter {
    * of the quickest one. Returns null if there are no bundlers or all of them fail
    */
   async #fetchBundlerGasPrices(): Promise<GasSpeeds | null> {
-    const availableBundlers = this.#featureFlags.isFeatureEnabled('erc4337')
+    const availableBundlers = this.#featureFlags.isUserChoiceEnabled('erc4337')
       ? getAvailableBunlders(this.#network)
       : []
     if (!availableBundlers.length) return null

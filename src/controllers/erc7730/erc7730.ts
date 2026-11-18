@@ -497,7 +497,7 @@ export class Erc7730Controller extends EventEmitter {
 
   async getDescriptorsForAccountOp(accountOp: AccountOp): Promise<Erc7730CallDescriptors> {
     await this.#featureFlags.initialLoadPromise
-    if (!this.#featureFlags.isFeatureEnabled('clearSigning')) return {}
+    if (!this.#featureFlags.isUserChoiceEnabled('clearSigning')) return {}
 
     try {
       const known = await this.#gather((state) => planErc7730Wants(accountOp, state))
@@ -518,7 +518,7 @@ export class Erc7730Controller extends EventEmitter {
 
   async getDescriptorForMessage(message: Message): Promise<Erc7730ResolvedDescriptor | null> {
     await this.#featureFlags.initialLoadPromise
-    if (!this.#featureFlags.isFeatureEnabled('clearSigning')) return null
+    if (!this.#featureFlags.isUserChoiceEnabled('clearSigning')) return null
 
     try {
       const known = await this.#gather((state) => planErc7730MessageWants(message, state))

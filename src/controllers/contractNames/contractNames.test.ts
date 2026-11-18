@@ -4,6 +4,7 @@ import fetch from 'node-fetch'
 import { expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import { makeFeatureFlagsWithFailedLoad } from '../../../test/helpers/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ContractNamesController, PERSIST_NOT_FOUND_IN_MS } from './contractNames'
@@ -174,7 +175,9 @@ describe('Contract Names', () => {
     const mockedFetch = jest.fn()
     const featureFlags = {
       initialLoadPromise: Promise.resolve(),
-      isFeatureEnabled: jest.fn(() => false)
+      isReady: true,
+      isFeatureEnabled: jest.fn(() => false),
+      isUserChoiceEnabled: jest.fn(() => false)
     } as unknown as IFeatureFlagsController
     const contractNamesController = new ContractNamesController({
       fetch: mockedFetch as Fetch,
@@ -191,6 +194,25 @@ describe('Contract Names', () => {
     expect(mockedFetch).not.toHaveBeenCalled()
   })
 
+  // The defaults (lookup on) are not the user's choice, so no contract may reach the server
+  it('does not queue or fetch contract names when the saved feature flags failed to load', async () => {
+    const address = Wallet.createRandom().address
+    const mockedFetch = jest.fn()
+    const featureFlags = await makeFeatureFlagsWithFailedLoad()
+    expect(featureFlags.isFeatureEnabled('apiForFunctionSelectors')).toBe(true)
+    const contractNamesController = new ContractNamesController({
+      fetch: mockedFetch as Fetch,
+      featureFlags
+    })
+
+    contractNamesController.getName(address, 1n)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
+    await Promise.resolve()
+
+    expect(mockedFetch).not.toHaveBeenCalled()
+    expect(contractNamesController.contractsPendingToBeFetched).toEqual([])
+  })
+
   it('cancels a queued contract name fetch if transaction argument decoding is disabled', async () => {
     const address = Wallet.createRandom().address
     const mockedFetch = jest.fn(async () => ({
@@ -203,7 +225,9 @@ describe('Contract Names', () => {
     let isEnabled = true
     const featureFlags = {
       initialLoadPromise: Promise.resolve(),
-      isFeatureEnabled: jest.fn(() => isEnabled)
+      isReady: true,
+      isFeatureEnabled: jest.fn(() => isEnabled),
+      isUserChoiceEnabled: jest.fn(() => isEnabled)
     } as unknown as IFeatureFlagsController
     const contractNamesController = new ContractNamesController({
       fetch: mockedFetch as unknown as Fetch,

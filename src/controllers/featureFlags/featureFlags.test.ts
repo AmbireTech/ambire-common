@@ -1,6 +1,9 @@
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { makeStorageWithSlowFlags } from '../../../test/helpers/featureFlags'
+import {
+  makeFeatureFlagsWithFailedLoad,
+  makeStorageWithSlowFlags
+} from '../../../test/helpers/featureFlags'
 import { defaultFeatureFlags } from '../../consts/featureFlags'
 import type { IStorageController } from '../../interfaces/storage'
 import { FeatureFlagsController } from './featureFlags'
@@ -130,5 +133,44 @@ describe('FeatureFlagsController', () => {
     // A first run has no saved flags. This is not a failure, the defaults apply
     expect(ctrl.isReady).toBe(true)
     expect(ctrl.flags).toEqual(defaultFeatureFlags)
+  })
+
+  describe('isUserChoiceEnabled', () => {
+    // Before the load the flags hold the defaults (on), which may not be the user's choice
+    test('is off until the saved flags load, then follows the saved choice', async () => {
+      const { storage, releaseRead } = makeStorageWithSlowFlags({ tokenPrices: false })
+      const ctrl = new FeatureFlagsController({}, storage)
+
+      expect(ctrl.isFeatureEnabled('tokenPrices')).toBe(true)
+      expect(ctrl.isUserChoiceEnabled('tokenPrices')).toBe(false)
+      expect(ctrl.isUserChoiceEnabled('clearSigning')).toBe(false)
+
+      releaseRead()
+      await ctrl.initialLoadPromise
+
+      expect(ctrl.isUserChoiceEnabled('tokenPrices')).toBe(false)
+      expect(ctrl.isUserChoiceEnabled('clearSigning')).toBe(true)
+    })
+
+    test('stays off when the saved flags fail to load, although the defaults are on', async () => {
+      const ctrl = await makeFeatureFlagsWithFailedLoad()
+
+      expect(ctrl.isFeatureEnabled('tokenPrices')).toBe(true)
+      expect(ctrl.isUserChoiceEnabled('tokenPrices')).toBe(false)
+      expect(ctrl.isUserChoiceEnabled('ambireAnalytics')).toBe(false)
+    })
+
+    test('follows a choice the user changes after the load', async () => {
+      const { storage, releaseRead } = makeStorageWithSlowFlags({})
+      const ctrl = new FeatureFlagsController({}, storage)
+      releaseRead()
+      await ctrl.initialLoadPromise
+
+      await ctrl.setFeatureFlag('gasTank', false)
+      expect(ctrl.isUserChoiceEnabled('gasTank')).toBe(false)
+
+      await ctrl.setFeatureFlag('gasTank', true)
+      expect(ctrl.isUserChoiceEnabled('gasTank')).toBe(true)
+    })
   })
 })

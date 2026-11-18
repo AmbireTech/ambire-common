@@ -1,4 +1,4 @@
-import { defaultFeatureFlags, FeatureFlags } from '../../consts/featureFlags'
+import { defaultFeatureFlags, FeatureFlags, UserFeatureFlag } from '../../consts/featureFlags'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IStorageController } from '../../interfaces/storage'
@@ -54,6 +54,16 @@ export class FeatureFlagsController extends EventEmitter implements IFeatureFlag
   /** Syntactic sugar for checking if a feature flag is enabled */
   isFeatureEnabled(flag: keyof FeatureFlags) {
     return this.#flags[flag]
+  }
+
+  /**
+   * Whether the user's saved choice for the flag is on. False until the saved flags load, and
+   * also when their load failed, because the flags then hold the defaults, not the user's choice.
+   * Use it before anything that sends the user's data to a server, so that a user who opted out
+   * never sends it.
+   */
+  isUserChoiceEnabled(flag: UserFeatureFlag) {
+    return this.isReady && this.#flags[flag]
   }
 
   async setFeatureFlag(flag: keyof typeof defaultFeatureFlags, value: boolean): Promise<void> {

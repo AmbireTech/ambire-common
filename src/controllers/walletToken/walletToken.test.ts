@@ -2,6 +2,7 @@ import { Interface } from 'ethers'
 
 import { expect, jest } from '@jest/globals'
 
+import { makeFeatureFlagsWithFailedLoad } from '../../../test/helpers/featureFlags'
 import { WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { IActivityController } from '../../interfaces/activity'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
@@ -137,7 +138,9 @@ const getWithdrawalsController = ({
   const controller = new WalletTokenController({
     storage: storage as unknown as IStorageController,
     featureFlags: {
-      isFeatureEnabled: jest.fn(() => isLookupEnabled)
+      isReady: true,
+      isFeatureEnabled: jest.fn(() => isLookupEnabled),
+      isUserChoiceEnabled: jest.fn(() => isLookupEnabled)
     } as unknown as IFeatureFlagsController,
     providers: { providers: { '1': provider } } as unknown as IProvidersController,
     callRelayer,
@@ -217,7 +220,8 @@ describe('WalletTokenController pending withdrawals', () => {
         resolveFlagsLoad = resolve
       }),
       // Before the stored flags load, the flag has its default value (on)
-      isFeatureEnabled: jest.fn(() => isLookupEnabled)
+      isFeatureEnabled: jest.fn(() => isLookupEnabled),
+      isUserChoiceEnabled: jest.fn(() => isLookupEnabled)
     } as unknown as IFeatureFlagsController
     const callRelayer = jest.fn<BindedRelayerCall>(async () => ({
       success: true,
@@ -240,6 +244,28 @@ describe('WalletTokenController pending withdrawals', () => {
     isLookupEnabled = false
     resolveFlagsLoad()
     await load
+
+    expect(callRelayer).not.toHaveBeenCalled()
+    expect(controller.pendingWithdrawals[ACCOUNT_ADDR]?.status).toBe('loaded')
+  })
+
+  // The defaults (lookup on) are not the user's choice, so the address must not reach the relayer
+  test('never calls the relayer when the saved feature flags failed to load', async () => {
+    const featureFlags = await makeFeatureFlagsWithFailedLoad()
+    expect(featureFlags.isFeatureEnabled('walletStakingWithdrawalsLookup')).toBe(true)
+    const callRelayer = jest.fn<BindedRelayerCall>(async () => ({
+      success: true,
+      data: { logs: [] }
+    }))
+    const controller = new WalletTokenController({
+      storage: makeStorage() as unknown as IStorageController,
+      featureFlags,
+      providers: { providers: { '1': makeProvider({}) } } as unknown as IProvidersController,
+      callRelayer,
+      activity: { getInternalAccountOps: async () => [] } as unknown as IActivityController
+    })
+
+    await controller.loadPendingWithdrawals(ACCOUNT_ADDR)
 
     expect(callRelayer).not.toHaveBeenCalled()
     expect(controller.pendingWithdrawals[ACCOUNT_ADDR]?.status).toBe('loaded')

@@ -99,7 +99,7 @@ export class ContractNamesController extends EventEmitter implements IContractNa
     const contractsToFetch = this.#contractsPendingToBeFetched
     this.#contractsPendingToBeFetched = []
 
-    if (this.#featureFlags?.isFeatureEnabled('apiForFunctionSelectors') === false) {
+    if (this.#isNameLookupOff()) {
       contractsToFetch.forEach(({ address }) => {
         const contractName = this.#contractNames[address]
         if (contractName) contractName.isLoading = false
@@ -203,8 +203,18 @@ export class ContractNamesController extends EventEmitter implements IContractNa
     return false
   }
 
+  /**
+   * Whether the names must not be requested: the user opted out, or their choice is not known
+   * yet (or its load failed). Without a flags controller the lookup is on.
+   */
+  #isNameLookupOff() {
+    return (
+      !!this.#featureFlags && !this.#featureFlags.isUserChoiceEnabled('apiForFunctionSelectors')
+    )
+  }
+
   getName(_address: string, chainId: bigint) {
-    if (this.#featureFlags?.isFeatureEnabled('apiForFunctionSelectors') === false) return
+    if (this.#isNameLookupOff()) return
 
     if (!isAddress(_address))
       return this.emitError({

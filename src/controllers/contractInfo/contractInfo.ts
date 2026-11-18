@@ -91,7 +91,7 @@ export class ContractInfoController extends EventEmitter implements IContractInf
   }
 
   #shouldFetch(selector: string): boolean {
-    if (!this.#featureFlag.isFeatureEnabled('apiForFunctionSelectors')) return false
+    if (!this.#featureFlag.isUserChoiceEnabled('apiForFunctionSelectors')) return false
 
     const savedSelector = this.#selectors[selector]
 

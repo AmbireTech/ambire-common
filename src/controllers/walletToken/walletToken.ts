@@ -215,12 +215,15 @@ export class WalletTokenController extends EventEmitter {
     try {
       await this.initialLoadPromise
       // Until the stored flags load, the flag has its default (on), so reading it earlier could
-      // send the account address to the relayer although the user opted out
+      // send the account address to the relayer although the user opted out. The same holds when
+      // their load failed, so the lookup then works as for a user who opted out
       await this.#featureFlags.initialLoadPromise
       const provider = this.#getEthereumProvider()
       // A relayer failure doesn't hide the withdrawals that are already stored
       let hasRelayerFailed = false
-      const foundLeaveLogs = this.#featureFlags.isFeatureEnabled('walletStakingWithdrawalsLookup')
+      const foundLeaveLogs = this.#featureFlags.isUserChoiceEnabled(
+        'walletStakingWithdrawalsLookup'
+      )
         ? await this.#getRelayerLeaveLogs(accountAddr).catch((error) => {
             hasRelayerFailed = true
             this.emitError({

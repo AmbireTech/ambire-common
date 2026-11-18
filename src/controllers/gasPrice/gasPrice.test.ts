@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import { makeFeatureFlagsWithFailedLoad } from '../../../test/helpers/featureFlags'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -40,17 +41,25 @@ const createController = ({
   isErc4337Enabled,
   supportsBundlerEstimation = false,
   gasPriceFetchStrategy = 'bundlerWithRpcFallback',
-  estimation = {} as EstimationController
+  estimation = {} as EstimationController,
+  featureFlagsOverride
 }: {
   isErc4337Enabled: boolean
   supportsBundlerEstimation?: boolean
   gasPriceFetchStrategy?: GasPriceFetchStrategy
   estimation?: EstimationController
+  /** A real flags controller, e.g. one whose load failed, in place of the stub */
+  featureFlagsOverride?: IFeatureFlagsController
 }) => {
-  const featureFlags = {
-    initialLoadPromise: Promise.resolve(),
-    isFeatureEnabled: jest.fn((flag) => (flag === 'erc4337' ? isErc4337Enabled : true))
-  } as unknown as IFeatureFlagsController
+  const isEnabled = (flag: string) => (flag === 'erc4337' ? isErc4337Enabled : true)
+  const featureFlags =
+    featureFlagsOverride ??
+    ({
+      initialLoadPromise: Promise.resolve(),
+      isReady: true,
+      isFeatureEnabled: jest.fn(isEnabled),
+      isUserChoiceEnabled: jest.fn(isEnabled)
+    } as unknown as IFeatureFlagsController)
   const baseAccount = {
     supportsBundlerEstimation: jest.fn(() => supportsBundlerEstimation),
     getGasPriceFetchStrategy: jest.fn(() => gasPriceFetchStrategy)
@@ -107,6 +116,24 @@ describe('GasPriceController', () => {
       -1,
       expect.any(Function)
     )
+    expect(controller.gasPrices).toEqual(gasSpeeds)
+  })
+
+  // The user may have opted out of the bundlers, and the defaults (on) are not their choice
+  test('does not call a bundler when the saved feature flags failed to load', async () => {
+    const fetchGasPrices = jest.fn(async () => gasSpeeds)
+    jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
+    const featureFlags = await makeFeatureFlagsWithFailedLoad()
+    expect(featureFlags.isFeatureEnabled('erc4337')).toBe(true)
+    const controller = createController({
+      isErc4337Enabled: true,
+      featureFlagsOverride: featureFlags
+    })
+
+    await controller.fetch()
+
+    expect(fetchGasPrices).not.toHaveBeenCalled()
+    expect(getGasPriceRecommendations).toHaveBeenCalled()
     expect(controller.gasPrices).toEqual(gasSpeeds)
   })
 

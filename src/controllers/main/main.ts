@@ -365,7 +365,9 @@ export class MainController extends EventEmitter implements IMainController {
     // The only source of token prices, shared so that every feature reads one cache
     const tokenPrices = new TokenPricesController({
       fetch: this.fetch,
-      isTokenPricesEnabled: () => this.featureFlags.isFeatureEnabled('tokenPrices'),
+      // Until the saved flags load (or when their load failed) the prices come from the RPC, so a
+      // user who opted out never reaches cena. The cache is emptied when the source changes.
+      isTokenPricesEnabled: () => this.featureFlags.isUserChoiceEnabled('tokenPrices'),
       // Read lazily, as the providers controller is created right after (and depends on this one).
       // A provider that isn't set up yet (e.g. right after startup) is waited for.
       getProvider: async (chainId) => {

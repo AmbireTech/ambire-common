@@ -773,7 +773,7 @@ export class DappsController extends EventEmitter implements IDappsController {
    */
   async updateTrendingTokens() {
     await this.#featureFlags.initialLoadPromise
-    if (!this.#featureFlags.isFeatureEnabled('swapAndBridgeTokenInfo')) return
+    if (!this.#featureFlags.isUserChoiceEnabled('swapAndBridgeTokenInfo')) return
 
     await this.initialLoadPromise
 

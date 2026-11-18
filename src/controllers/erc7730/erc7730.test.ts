@@ -1,5 +1,6 @@
 import { describe, expect, jest, test } from '@jest/globals'
 
+import { makeFeatureFlagsWithFailedLoad } from '../../../test/helpers/featureFlags'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IUiController } from '../../interfaces/ui'
 import { Message } from '../../interfaces/userRequest'
@@ -55,7 +56,9 @@ const makeUi = (sendUiMessage = jest.fn()): IUiController =>
 const makeFeatureFlags = (isClearSigningEnabled = true): IFeatureFlagsController =>
   ({
     initialLoadPromise: undefined,
-    isFeatureEnabled: jest.fn(() => isClearSigningEnabled)
+    isReady: true,
+    isFeatureEnabled: jest.fn(() => isClearSigningEnabled),
+    isUserChoiceEnabled: jest.fn(() => isClearSigningEnabled)
   }) as unknown as IFeatureFlagsController
 
 const makeController = (
@@ -69,6 +72,17 @@ describe('Erc7730Controller', () => {
   test('does not request account-op descriptors when clear signing is disabled', async () => {
     const callRelayer = makeCallRelayer()
     const controller = makeController(makeStorage(), callRelayer, makeFeatureFlags(false))
+
+    await expect(controller.getDescriptorsForAccountOp(accountOp)).resolves.toEqual({})
+    expect(callRelayer).not.toHaveBeenCalled()
+  })
+
+  // The defaults (clear signing on) are not the user's choice, so no contract may reach the relayer
+  test('does not request descriptors when the saved feature flags failed to load', async () => {
+    const callRelayer = makeCallRelayer()
+    const featureFlags = await makeFeatureFlagsWithFailedLoad()
+    expect(featureFlags.isFeatureEnabled('clearSigning')).toBe(true)
+    const controller = makeController(makeStorage(), callRelayer, featureFlags)
 
     await expect(controller.getDescriptorsForAccountOp(accountOp)).resolves.toEqual({})
     expect(callRelayer).not.toHaveBeenCalled()
@@ -105,7 +119,8 @@ describe('Erc7730Controller', () => {
     })
     const featureFlags = {
       initialLoadPromise,
-      isFeatureEnabled: jest.fn(() => isClearSigningEnabled)
+      isFeatureEnabled: jest.fn(() => isClearSigningEnabled),
+      isUserChoiceEnabled: jest.fn(() => isClearSigningEnabled)
     } as unknown as IFeatureFlagsController
     const callRelayer = makeCallRelayer()
     const controller = makeController(makeStorage(), callRelayer, featureFlags)
@@ -124,7 +139,9 @@ describe('Erc7730Controller', () => {
     let isClearSigningEnabled = true
     const featureFlags = {
       initialLoadPromise: undefined,
-      isFeatureEnabled: jest.fn(() => isClearSigningEnabled)
+      isReady: true,
+      isFeatureEnabled: jest.fn(() => isClearSigningEnabled),
+      isUserChoiceEnabled: jest.fn(() => isClearSigningEnabled)
     } as unknown as IFeatureFlagsController
     const callRelayer = makeCallRelayer()
     const controller = makeController(makeStorage(), callRelayer, featureFlags)
