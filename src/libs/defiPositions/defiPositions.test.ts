@@ -324,6 +324,52 @@ describe('Defi positions helper and portfolio functions', () => {
         })
       })
     })
+    it('Sets the value of each app and position without their loans subtracted', () => {
+      const { positionsByProvider } = (PORTFOLIO_STATE['1']!.result as PortfolioNetworkResult)
+        .defiPositions
+      // Clear the fixture values to check that they are calculated
+      const positionsWithoutCollateralValues = positionsByProvider.map((provider) => ({
+        ...provider,
+        collateralInUSD: undefined,
+        positions: provider.positions.map((position) => ({
+          ...position,
+          additionalData: { ...position.additionalData, collateralInUSD: undefined }
+        }))
+      }))
+
+      const mergedPositions = getUniqueMergedPositions(positionsWithoutCollateralValues, [], null)
+      const aave = mergedPositions.find(({ providerName }) => providerName === 'AAVE v3')!
+      const uniswap = mergedPositions.find(({ providerName }) => providerName === 'Uniswap V2')!
+
+      // $30 borrowed in GHO and EURC against $200 supplied in WETH and cbBTC
+      expect(aave.positions[0]!.additionalData.collateralInUSD).toBe(200)
+      expect(aave.collateralInUSD).toBe(200)
+      expect(uniswap.collateralInUSD).toBe(uniswap.positionInUSD)
+    })
+    it('Counts a loan without a price as zero, so the value without loans is the net value', () => {
+      const { positionsByProvider } = (PORTFOLIO_STATE['1']!.result as PortfolioNetworkResult)
+        .defiPositions
+      const positionsWithUnpricedLoans = positionsByProvider.map((provider) => ({
+        ...provider,
+        positions: provider.positions.map((position) => ({
+          ...position,
+          assets: position.assets.map((asset) =>
+            asset.type === AssetType.Borrow
+              ? { ...asset, priceIn: undefined, value: undefined }
+              : asset
+          )
+        }))
+      }))
+
+      const mergedPositions = getUniqueMergedPositions(positionsWithUnpricedLoans, [], null)
+      const aave = mergedPositions.find(({ providerName }) => providerName === 'AAVE v3')!
+
+      expect(aave.positionInUSD).toBeGreaterThan(0)
+      expect(aave.collateralInUSD).toBe(aave.positionInUSD)
+      expect(aave.positions[0]!.additionalData.collateralInUSD).toBe(
+        aave.positions[0]!.additionalData.positionInUSD
+      )
+    })
   })
   describe('getNewDefiState', () => {
     const getStoredPositions = (
