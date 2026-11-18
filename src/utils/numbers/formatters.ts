@@ -4,6 +4,28 @@ import { getSanitizedAmount } from '../../libs/transfer/amount'
 import formatDecimals from '../formatDecimals/formatDecimals'
 
 /**
+ * Writes a number as a plain decimal string that `parseUnits` accepts. `String()`
+ * uses exponent notation for numbers below 1e-6 or from 1e21 up, like `5.3e-7`.
+ * @example numberToDecimalString(5.3e-7) => '0.00000053'
+ */
+const numberToDecimalString = (value: number | bigint): string => {
+  const [mantissa = '', exponentPart] = String(value).split('e')
+  if (exponentPart === undefined) return mantissa
+
+  const sign = mantissa.startsWith('-') ? '-' : ''
+  const [wholePart = '', fractionPart = ''] = (sign ? mantissa.slice(1) : mantissa).split('.')
+  const digits = `${wholePart}${fractionPart}`
+  const pointIndex = wholePart.length + Number(exponentPart)
+
+  if (pointIndex <= 0) return `${sign}0.${'0'.repeat(-pointIndex)}${digits}`
+  if (pointIndex >= digits.length) {
+    return `${sign}${digits}${'0'.repeat(pointIndex - digits.length)}`
+  }
+
+  return `${sign}${digits.slice(0, pointIndex)}.${digits.slice(pointIndex)}`
+}
+
+/**
  * Converts floating point token price to big int
  */
 const convertTokenPriceToBigInt = (
@@ -12,24 +34,8 @@ const convertTokenPriceToBigInt = (
   tokenPriceBigInt: bigint
   tokenPriceDecimals: number
 } => {
-  const tokenPriceString = String(tokenPrice)
+  const tokenPriceString = numberToDecimalString(tokenPrice)
 
-  // Scientific notation handling
-  if (tokenPriceString.includes('e')) {
-    const [base, rawExponent] = tokenPriceString.split('e')
-    const exponent = Math.abs(Number(rawExponent))
-
-    const { tokenPriceBigInt, tokenPriceDecimals: baseDecimals } = convertTokenPriceToBigInt(
-      Number(base)
-    )
-
-    return {
-      tokenPriceBigInt,
-      tokenPriceDecimals: baseDecimals + exponent
-    }
-  }
-
-  // Regular number handling
   const tokenPriceDecimals = tokenPriceString.split('.')[1]?.length || 0
   const tokenPriceBigInt = parseUnits(tokenPriceString, tokenPriceDecimals)
 
@@ -125,6 +131,7 @@ const textToValidDecimal = (text: string) => {
 export {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue,
+  numberToDecimalString,
   safeTokenAmountAndNumberMultiplication,
   textToValidDecimal,
   truncateFiatAmountDecimals

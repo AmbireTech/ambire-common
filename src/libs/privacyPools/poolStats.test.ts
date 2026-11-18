@@ -1,4 +1,5 @@
 import {
+  getPrivacyPoolsCoverDeposits,
   getPrivacyPoolsPoolLabels,
   getPrivacyPoolsPoolStats,
   readPrivacyPoolsPoolHistory
@@ -17,15 +18,30 @@ const ETH_POOL_FIRST_LABELS = [
   20572552624186342001946977043772471280043833801939562344058440297043467610171n
 ]
 
+/** Starts with zeros, which the SDK drops when it stores an address. */
+const DEPOSITOR = '0x0000c0ffee000000000000000000000000000001'
+
 const hex = (value: bigint) => `0x${value.toString(16)}`
 
-type Event = { value: bigint; blockNumber: bigint; pool?: string }
+type Event = {
+  value: bigint
+  blockNumber: bigint
+  pool?: string
+  label?: bigint
+  depositor?: string
+}
 
 /** Events keyed by tuple, numbers as hex strings, each tagged with its pool in `poolField`. */
 const tuples = (events: Event[], poolField: 'pool' | 'poolAddress') =>
-  events.map(({ value, blockNumber, pool = POOL }, i) => [
+  events.map(({ value, blockNumber, pool = POOL, label = 0n, depositor = DEPOSITOR }, i) => [
     hex(BigInt(i + 1)),
-    { value: hex(value), blockNumber: hex(blockNumber), [poolField]: hex(BigInt(pool)) }
+    {
+      value: hex(value),
+      blockNumber: hex(blockNumber),
+      [poolField]: hex(BigInt(pool)),
+      label: hex(label),
+      depositor: hex(BigInt(depositor))
+    }
   ])
 
 /** The SDK's persisted public state, as it stores it, parsed. */
@@ -84,7 +100,10 @@ describe('readPrivacyPoolsPoolHistory', () => {
           { value: 999n, blockNumber: 6n, pool: OTHER_POOL }
         ],
         withdrawals: [{ value: 9n, blockNumber: 7n, pool: OTHER_POOL }],
-        ragequits: [{ value: 3n, blockNumber: 8n }],
+        ragequits: [
+          { value: 3n, blockNumber: 8n, label: 7n },
+          { value: 4n, blockNumber: 9n, label: 8n, pool: OTHER_POOL }
+        ],
         approvedLabels: [1n, 2n]
       }),
       POOL
@@ -93,9 +112,11 @@ describe('readPrivacyPoolsPoolHistory', () => {
     expect(history).toEqual({
       lastSyncedBlock: LAST_SYNCED_BLOCK,
       scope: SCOPE,
-      deposits: [{ value: 100n, blockNumber: 5n }],
+      // Who deposited is kept as a full address, though the SDK stores it without leading zeros
+      deposits: [{ value: 100n, blockNumber: 5n, depositor: DEPOSITOR }],
       withdrawals: [],
       ragequits: [{ value: 3n, blockNumber: 8n }],
+      ragequitLabels: new Set([7n]),
       approvedLabels: new Set([1n, 2n])
     })
   })
@@ -177,5 +198,50 @@ describe('getPrivacyPoolsPoolStats', () => {
       depositsCount24h: 0,
       withdrawalsCount24h: 0
     })
+  })
+})
+
+describe('getPrivacyPoolsCoverDeposits', () => {
+  const LABELS = [101n, 102n, 103n, 104n, 105n]
+
+  test('keeps only verified, non-empty deposits not taken back, with their labels in block order', () => {
+    const history = readPrivacyPoolsPoolHistory(
+      storeState({
+        // Stored out of block order. In block order: 1 (label 101), 2 (102), 3 (103), 4 (104), 0 (105)
+        deposits: [
+          { value: 3n, blockNumber: 30n },
+          { value: 1n, blockNumber: 10n },
+          { value: 0n, blockNumber: 50n },
+          { value: 4n, blockNumber: 40n },
+          { value: 2n, blockNumber: 20n }
+        ],
+        // 103 was verified and then taken back, 104 was never verified, 105 put nothing in
+        ragequits: [{ value: 3n, blockNumber: 60n, label: 103n }],
+        approvedLabels: [101n, 102n, 103n, 105n]
+      }),
+      POOL
+    )!
+
+    expect(getPrivacyPoolsCoverDeposits(history, LABELS)).toEqual([
+      { value: 1n, blockNumber: 10n, depositor: DEPOSITOR, label: 101n },
+      { value: 2n, blockNumber: 20n, depositor: DEPOSITOR, label: 102n }
+    ])
+  })
+
+  test('leaves out a deposit with no label yet rather than guess one', () => {
+    const history = readPrivacyPoolsPoolHistory(
+      storeState({
+        deposits: [
+          { value: 1n, blockNumber: 10n },
+          { value: 2n, blockNumber: 20n }
+        ],
+        approvedLabels: LABELS
+      }),
+      POOL
+    )!
+
+    expect(getPrivacyPoolsCoverDeposits(history, LABELS.slice(0, 1))).toEqual([
+      { value: 1n, blockNumber: 10n, depositor: DEPOSITOR, label: 101n }
+    ])
   })
 })

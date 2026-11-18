@@ -2,6 +2,7 @@ import { Hex } from '../../interfaces/hex'
 import { PrivacyPoolsNote, PrivacyPoolsRagequitDeposit } from '../../interfaces/privacyPools'
 import { Call } from '../../libs/accountOp/types'
 import { readPrivacyPoolsRagequit } from '../../libs/privacyPools/ragequit'
+import { PrivacyPoolsBuiltCalls } from './builtCalls'
 import { getChainConfig, PrivacyPoolsContext } from './context'
 import { privacyPoolsErrors } from './errors'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
@@ -22,14 +23,18 @@ export class PrivacyPoolsRagequit {
 
   #sync: PrivacyPoolsSync
 
+  #builtCalls: PrivacyPoolsBuiltCalls
+
   constructor(
     ctx: PrivacyPoolsContext,
     registry: PrivacyPoolsProtocolRegistry,
-    sync: PrivacyPoolsSync
+    sync: PrivacyPoolsSync,
+    builtCalls: PrivacyPoolsBuiltCalls
   ) {
     this.#ctx = ctx
     this.#registry = registry
     this.#sync = sync
+    this.#builtCalls = builtCalls
   }
 
   /** A token's deposits that can be taken back, newest first, each with the account it goes back to. */
@@ -118,7 +123,11 @@ export class PrivacyPoolsRagequit {
 
     // The SDK synced before proving, so the deposit may have been verified since our last sync.
     // It would then go back publicly although it could be sent privately, so it is read again,
-    // through the queue so that read never runs beside another sync of the plugin
+    // through the queue so that read never runs beside another sync of the plugin. A sync running
+    // now may have read the notes before proving ended, and would be joined, so it is waited for
+    await (this.#sync.getRunningSync(seedId, chainId) || Promise.resolve())
+    this.#assertSecretsHeld(seedId, generation)
+    // With no await from here to the queue, so it reads the notes from now on
     const epoch = this.#sync.getEpoch(chainId, seedId)
     await this.#sync.queue(chainId, seedId)
     this.#assertSecretsHeld(seedId, generation)
@@ -134,7 +143,17 @@ export class PrivacyPoolsRagequit {
     if (syncedNote?.approval === 'approved') throw privacyPoolsErrors.ragequitDepositVerified()
     if (syncedNote?.amount !== note.amount) throw privacyPoolsErrors.ragequitDepositNotFound()
 
-    return { accountAddr: note.depositorAddr, calls: [{ to: txn.to, value: 0n, data: txn.data }] }
+    const call: Call = { to: txn.to, value: 0n, data: txn.data }
+    this.#builtCalls.add({
+      chainId,
+      call,
+      seedId,
+      kind: 'ragequit',
+      tokenAddress: note.tokenAddress,
+      amount: -note.amount
+    })
+
+    return { accountAddr: note.depositorAddr, calls: [call] }
   }
 
   /** Throws once the wallet was locked or the account removed since `generation` was read. */

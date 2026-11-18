@@ -81,7 +81,12 @@ contract AmbirePaymaster is IPaymaster {
 			callData,
 			userOp.accountGasLimits,
 			userOp.preVerificationGas,
-			userOp.gasFees
+			userOp.gasFees,
+			// paymasterVerificationGasLimit (16 bytes) + paymasterPostOpGasLimit (16 bytes).
+			// Must be signed: the EntryPoint charges a 10% penalty on unused paymasterPostOpGasLimit
+			// to the paymaster even though we have no postOp, so an unsigned value lets
+			// whoever submits handleOps inflate it and pocket the penalty as beneficiary
+			bytes32(userOp.paymasterAndData[UserOpHelper.PAYMASTER_ADDR_OFFSET:UserOpHelper.PAYMASTER_DATA_OFFSET])
 		));
 		(address recovered, ) = SignatureValidator.recoverAddrAllowUnprotected(hash, signature, true);
 		bool isValidSig = recovered == relayer;

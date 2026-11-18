@@ -10,6 +10,7 @@ import wait from '../../utils/wait'
 
 import type { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import {
+  fetchNetworkPriceIds,
   getFeaturesByNetworkProperties,
   getLoadingNetworkInfo,
   getNetworkInfo,
@@ -92,6 +93,119 @@ describe('Networks lib', () => {
       expect(saSupport2?.msg).toBe(
         "Unfortunately, this network doesn't support Smart Accounts. It can be used only with EOA accounts."
       )
+    })
+
+    describe('Token prices', () => {
+      const networkInfo: NetworkInfo = {
+        chainId: 1n,
+        isSAEnabled: true,
+        hasSingleton: true,
+        isOptimistic: false,
+        rpcNoStateOverride: false,
+        erc4337: { enabled: true, hasPaymaster: true },
+        areContractsDeployed: true,
+        feeOptions: { is1559: true },
+        platformId: 'ethereum',
+        nativeAssetId: 'ethereum',
+        flagged: false
+      }
+      const getPricesFeature = (...args: Parameters<typeof getFeaturesByNetworkProperties>) =>
+        getFeaturesByNetworkProperties(...args).find((feature) => feature.id === 'prices')
+
+      test('are reported as supported when the network has price ids', () => {
+        expect(getPricesFeature(networkInfo, network)?.level).toBe('success')
+      })
+
+      test('are reported as unsupported when the network has no price ids', () => {
+        const pricesFeature = getPricesFeature(
+          { ...networkInfo, platformId: '', nativeAssetId: '' },
+          network
+        )
+
+        expect(pricesFeature?.level).toBe('danger')
+        expect(pricesFeature?.msg).toContain("don't support this network yet")
+      })
+
+      test('are reported as turned off when opted out, regardless of network support', () => {
+        const withPriceIds = getPricesFeature(networkInfo, network, false)
+        const withoutPriceIds = getPricesFeature(
+          { ...networkInfo, platformId: '', nativeAssetId: '' },
+          network,
+          false
+        )
+        const stillLoading = getPricesFeature(
+          { ...networkInfo, platformId: 'LOADING', nativeAssetId: 'LOADING' },
+          network,
+          false
+        )
+
+        ;[withPriceIds, withoutPriceIds, stillLoading].forEach((pricesFeature) => {
+          expect(pricesFeature?.level).toBe('warning')
+          expect(pricesFeature?.msg).toContain('turned off in your privacy settings')
+        })
+      })
+
+      test('the RPC error still takes priority over the opt-out', () => {
+        expect(
+          getFeaturesByNetworkProperties({ ...networkInfo, flagged: true }, network, false).map(
+            (feature) => feature.id
+          )
+        ).toEqual(['flagged'])
+      })
+    })
+  })
+
+  describe('fetchNetworkPriceIds', () => {
+    const respondWith = (body: unknown) =>
+      jest.fn(async () => ({ status: 200, json: async () => body })) as unknown as Fetch
+
+    test('returns the ids the price API knows the network by', async () => {
+      const fetch = respondWith({ platformId: 'some-platform', nativeAssetId: 'some-asset' })
+
+      expect(await fetchNetworkPriceIds(fetch, 424242n)).toEqual({
+        platformId: 'some-platform',
+        nativeAssetId: 'some-asset'
+      })
+      expect(fetch).toHaveBeenCalledWith(
+        'https://cena.ambire.com/api/v3/platform/424242',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      )
+    })
+
+    test('returns null when the price API does not support the network', async () => {
+      expect(await fetchNetworkPriceIds(respondWith({ error: 'not found' }), 424242n)).toBe(null)
+    })
+
+    test('returns null and aborts the request when the price API does not respond in time', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+      let signal: AbortSignal | undefined
+      // Accepts the request, but never responds
+      const fetch = jest.fn((_url: string, init?: { signal?: AbortSignal }) => {
+        signal = init?.signal
+        return new Promise(() => {})
+      }) as unknown as Fetch
+
+      try {
+        expect(await fetchNetworkPriceIds(fetch, 424242n, 10)).toBe(null)
+        expect(signal?.aborted).toBe(true)
+        expect(consoleErrorSpy).toHaveBeenCalled()
+      } finally {
+        consoleErrorSpy.mockRestore()
+      }
+    })
+
+    test('returns null and logs the error when the request fails', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+      const fetch = jest.fn(async () => {
+        throw new Error('offline')
+      }) as unknown as Fetch
+
+      try {
+        expect(await fetchNetworkPriceIds(fetch, 424242n)).toBe(null)
+        expect(consoleErrorSpy).toHaveBeenCalled()
+      } finally {
+        consoleErrorSpy.mockRestore()
+      }
     })
   })
   describe('getNetworksUpdatedWithRelayerNetworks works', () => {
@@ -489,6 +603,67 @@ describe('getNetworkInfo emissions', () => {
     expect(
       getFeaturesByNetworkProperties(finalInfo, undefined).map((feature) => feature.level)
     ).toEqual(['danger'])
+  })
+
+  describe('when opted out of token prices', () => {
+    const PRICE_API_PLATFORM_PATH = 'cena.ambire.com/api/v3/platform/'
+
+    const getPriceApiCalls = (fetch: Fetch) =>
+      (fetch as unknown as jest.Mock).mock.calls.filter(([url]) =>
+        String(url).includes(PRICE_API_PLATFORM_PATH)
+      )
+
+    test('does not call the price API, but still resolves the price ids', async () => {
+      const { provider } = createProviderStub()
+      const fetch = jest.fn(okFetch) as unknown as Fetch
+      const emissions: NetworkInfoLoading<NetworkInfo>[] = []
+
+      await getNetworkInfo(
+        fetch,
+        TEST_CHAIN_ID,
+        provider,
+        (info) => emissions.push(info),
+        undefined,
+        false
+      )
+
+      const finalInfo = emissions[emissions.length - 1]!
+      expect(getPriceApiCalls(fetch)).toEqual([])
+      // Resolved to empty instead of left 'LOADING', otherwise the network could never be added
+      expect(finalInfo.platformId).toBe('')
+      expect(finalInfo.nativeAssetId).toBe('')
+      expect(isNetworkInfoPending(finalInfo)).toBe(false)
+      expect(finalInfo.flagged).toBe(false)
+    })
+
+    test('keeps the price ids the network already has', async () => {
+      const { provider } = createProviderStub()
+      const fetch = jest.fn(okFetch) as unknown as Fetch
+      const emissions: NetworkInfoLoading<NetworkInfo>[] = []
+
+      await getNetworkInfo(
+        fetch,
+        TEST_CHAIN_ID,
+        provider,
+        (info) => emissions.push(info),
+        { ...network, chainId: TEST_CHAIN_ID, platformId: 'stored', nativeAssetId: 'stored-asset' },
+        false
+      )
+
+      const finalInfo = emissions[emissions.length - 1]!
+      expect(getPriceApiCalls(fetch)).toEqual([])
+      expect(finalInfo.platformId).toBe('stored')
+      expect(finalInfo.nativeAssetId).toBe('stored-asset')
+    })
+
+    test('calls the price API by default', async () => {
+      const { provider } = createProviderStub()
+      const fetch = jest.fn(okFetch) as unknown as Fetch
+
+      await getNetworkInfo(fetch, TEST_CHAIN_ID, provider, () => {}, undefined)
+
+      expect(getPriceApiCalls(fetch)).toHaveLength(1)
+    })
   })
 
   describe('timer cleanup', () => {

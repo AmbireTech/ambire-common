@@ -203,7 +203,7 @@ describe('Activity Controller ', () => {
   })
 
   describe('AccountsOps', () => {
-    test('should detect various address poisoning attacks (4/4, 5/5, 6/5, 4/8, 3/8, 0/8 and reject total < 8 or 0/0)', async () => {
+    test('should detect various address poisoning attacks (4/4, 5/5, 6/5, 4/8, 3/8, 3/4 and reject 0/8, 3/2 or 0/0)', async () => {
       const { controller } = await prepareTest()
 
       const trustedRecipient = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
@@ -214,6 +214,7 @@ describe('Activity Controller ', () => {
       const poisoningRecipient3to8 = '0xF0cEEeeeEEEEEeEEEEeeEEEEeeEeeeEe793237db'
       const poisoningRecipient0to8 = '0xaB12ffFFfFFFFfFfFFFffffFffFFFfFF793237DB'
       const poisoningRecipient3to4 = '0xF0cAAaAaAaaaAAaAAaaaaAAaaaAaAAAaAAaa37dB'
+      const poisoningRecipient3to2 = '0xf0caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaadb'
       const poisoningRecipient0to0 = '0xAB12eeeeeeeEeeeEeeeEEeeeEEEEEeeEeEeeCdef'
 
       await controller.addAccountOp({
@@ -263,6 +264,10 @@ describe('Activity Controller ', () => {
         poisoningRecipient3to4,
         ACCOUNTS[1]!.addr
       )
+      const poisoningResult3to2 = await controller.hasAccountOpsSentTo(
+        poisoningRecipient3to2,
+        ACCOUNTS[1]!.addr
+      )
       const poisoningResult0to0 = await controller.hasAccountOpsSentTo(
         poisoningRecipient0to0,
         ACCOUNTS[1]!.addr
@@ -274,7 +279,8 @@ describe('Activity Controller ', () => {
         addressPoisoningMatch: {
           matchedAddress: trustedRecipient,
           matchedPrefixCharsCount: 4,
-          matchedSuffixCharsCount: 4
+          matchedSuffixCharsCount: 4,
+          differingCharsCount: 32
         }
       })
 
@@ -284,7 +290,8 @@ describe('Activity Controller ', () => {
         addressPoisoningMatch: {
           matchedAddress: trustedRecipient,
           matchedPrefixCharsCount: 5,
-          matchedSuffixCharsCount: 5
+          matchedSuffixCharsCount: 5,
+          differingCharsCount: 27
         }
       })
 
@@ -294,7 +301,8 @@ describe('Activity Controller ', () => {
         addressPoisoningMatch: {
           matchedAddress: trustedRecipient,
           matchedPrefixCharsCount: 6,
-          matchedSuffixCharsCount: 5
+          matchedSuffixCharsCount: 5,
+          differingCharsCount: 28
         }
       })
 
@@ -304,7 +312,8 @@ describe('Activity Controller ', () => {
         addressPoisoningMatch: {
           matchedAddress: trustedRecipient,
           matchedPrefixCharsCount: 4,
-          matchedSuffixCharsCount: 8
+          matchedSuffixCharsCount: 8,
+          differingCharsCount: 25
         }
       })
 
@@ -314,21 +323,29 @@ describe('Activity Controller ', () => {
         addressPoisoningMatch: {
           matchedAddress: trustedRecipient,
           matchedPrefixCharsCount: 3,
-          matchedSuffixCharsCount: 8
+          matchedSuffixCharsCount: 8,
+          differingCharsCount: 29
         }
       })
 
       expect(poisoningResult0to8).toEqual({
         found: false,
         lastTransactionDate: null,
-        addressPoisoningMatch: {
-          matchedAddress: trustedRecipient,
-          matchedPrefixCharsCount: 0,
-          matchedSuffixCharsCount: 8
-        }
+        addressPoisoningMatch: null
       })
 
       expect(poisoningResult3to4).toEqual({
+        found: false,
+        lastTransactionDate: null,
+        addressPoisoningMatch: {
+          matchedAddress: trustedRecipient,
+          matchedPrefixCharsCount: 3,
+          matchedSuffixCharsCount: 4,
+          differingCharsCount: 33
+        }
+      })
+
+      expect(poisoningResult3to2).toEqual({
         found: false,
         lastTransactionDate: null,
         addressPoisoningMatch: null

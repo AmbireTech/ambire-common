@@ -43,7 +43,7 @@ const config: HardhatUserConfig = {
   // },
   networks: {
     base: {
-      url: 'https://mainnet.base.org',
+      url: 'https://invictus.ambire.com/base',
       accounts
     },
     monad: {

@@ -916,6 +916,102 @@ describe('SignMessageController', () => {
       expect(signMessageController.signedMessage).toBeNull()
       expect(signMessageController.emittedErrors).toEqual([])
     })
+
+    const createTypedMessage = (fromRequestId: number, contents: string): Message => ({
+      fromRequestId,
+      accountAddr: account.addr,
+      chainId: 1n,
+      signature: null,
+      content: {
+        kind: 'typedMessage',
+        domain: { chainId: 1, verifyingContract: ZeroAddress },
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          Message: [{ name: 'contents', type: 'string' }]
+        },
+        primaryType: 'Message',
+        message: { contents }
+      }
+    })
+
+    test.each([
+      { kind: 'message', signMethod: 'signMessage', replaced: r1, replacement: r2 },
+      {
+        kind: 'typedMessage',
+        signMethod: 'signTypedData',
+        replaced: createTypedMessage(1, 'test'),
+        replacement: createTypedMessage(99, 'evil')
+      }
+    ] as const)(
+      'a $kind gets its own signature when the replaced one finishes signing after it arrives',
+      async ({ signMethod, replaced, replacement }) => {
+        const replacedSignature = `0x${'11'.repeat(65)}`
+        const replacementSignature = `0x${'22'.repeat(65)}`
+        const replacedSigning = createDeferred<string>()
+        const replacedSigningStarted = createDeferred<void>()
+        const mockSigner = {
+          [signMethod]: jest
+            .fn<() => Promise<string>>()
+            .mockImplementationOnce(async () => {
+              replacedSigningStarted.resolve()
+              return replacedSigning.promise
+            })
+            .mockResolvedValueOnce(replacementSignature),
+          key: { ...signingKey, dedicatedToOneSA: true, meta: {} }
+        }
+        // @ts-expect-error mocked signer shape
+        jest.spyOn(keystoreCtrl, 'getSigner').mockResolvedValue(mockSigner)
+        // A plain EOA: the final signature is picked as `signatures[0]`
+        jest.spyOn(accountsCtrl, 'getOrFetchAccountOnChainState').mockResolvedValue({
+          ...accountOnchainState,
+          isEOA: true,
+          importedAccountKeys: [mockSigner.key]
+        } as AccountOnchainState)
+
+        await signMessageController.init({ messageToSign: replaced })
+        signMessageController.setSigners([signingKey])
+
+        // Approval for R1 starts and blocks inside the signer itself
+        const replacedSignPromise = signMessageController.sign()
+        await replacedSigningStarted.promise
+
+        await signMessageController.init({ messageToSign: replacement })
+        replacedSigning.resolve(replacedSignature)
+        await replacedSignPromise
+
+        // The stale R1 operation must not leave its signature in R2's state
+        expect(signMessageController.signatures).toEqual([])
+        expect(signMessageController.signed).toEqual([])
+        expect(signMessageController.signedMessage).toBeNull()
+
+        signMessageController.setSigners([signingKey])
+        await signMessageController.sign()
+
+        expect(signMessageController.signedMessage?.fromRequestId).toBe(99)
+        expect(signMessageController.signedMessage?.signature).toBe(replacementSignature)
+        expect(signMessageController.signatures).toEqual([replacementSignature])
+      }
+    )
+  })
+
+  test('clears the signatures of the previous message on reset', async () => {
+    const getAccountStateSpy = jest
+      .spyOn(accountsCtrl, 'getOrFetchAccountOnChainState')
+      .mockResolvedValue(accountOnchainState)
+
+    try {
+      await signMessageController.init({ messageToSign, signatures: [`0x${'11'.repeat(65)}`] })
+      expect(signMessageController.signatures).toHaveLength(1)
+
+      signMessageController.reset()
+
+      expect(signMessageController.signatures).toEqual([])
+    } finally {
+      getAccountStateSpy.mockRestore()
+    }
   })
 
   test('selects no signer for an account without imported keys', async () => {

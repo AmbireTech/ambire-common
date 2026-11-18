@@ -475,8 +475,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #getUserRequests: () => UserRequest[]
 
-  #getVisibleUserRequests: () => UserRequest[]
-
   hasProceeded: boolean = false
 
   /**
@@ -537,7 +535,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     relayerUrl,
     isCurrentSignAccountOpThrowingAnEstimationError,
     getUserRequests,
-    getVisibleUserRequests,
     swapProvider,
     onBroadcastSuccess,
     onBroadcastFailed,
@@ -566,7 +563,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isCurrentSignAccountOpThrowingAnEstimationError?: Function
     getUserRequests: () => UserRequest[]
-    getVisibleUserRequests: () => UserRequest[]
     swapProvider: SwapProviderExecutor
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
@@ -597,7 +593,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#contractInfo = contractInfo
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
-    this.#getVisibleUserRequests = getVisibleUserRequests
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
     this.#ui = ui
@@ -1413,8 +1408,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       if (shouldResetFromTokenAmount) {
         // This branch is invoked when the from token is changed, but also when the form is initialized.
         // We want to persist the fromAmountFieldMode across sessions, but reset it when the user changes
-        // the token and has entered a value.
-        if (this.fromAmount !== '') this.fromAmountFieldMode = 'token'
+        // the token and has entered a value. A token without a price can't be entered in USD at all,
+        // and the form hides the USD switch for it, so a fiat mode would leave it stuck there.
+        const hasFromTokenPrice = !!fromSelectedToken?.priceIn.find(
+          (p) => p.baseCurrency === HARD_CODED_CURRENCY
+        )?.price
+        if (this.fromAmount !== '' || (fromSelectedToken && !hasFromTokenPrice)) {
+          this.fromAmountFieldMode = 'token'
+        }
         this.#setFromAmountAndNotifyUI('')
         this.#setFromAmountInFiatAndNotifyUI('')
       }
@@ -2655,12 +2656,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         const selectedAccountAddress = this.#selectedAccount.account.addr
         this.#updateFeePercent()
         const toTokenPricePromise = withTimeout(
-          () =>
-            this.#portfolio.getTokenPrice(
-              selectedAccountAddress,
-              BigInt(this.toChainId!),
-              toSelectedToken.address
-            ),
+          () => this.#portfolio.getTokenPrice(BigInt(this.toChainId!), toSelectedToken.address),
           {
             timeoutMs: TO_TOKEN_PRICE_TIMEOUT_MS,
             message: `Fetching the receive token price for ${toSelectedToken.address} on chainId ${this.toChainId} timed out.`
@@ -3848,17 +3844,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#selectedAccount.account.addr,
       this.activeRoutes
     )
-    const callsUserRequests = this.#getVisibleUserRequests().filter(
-      ({ kind }) => kind === 'calls'
-    ) as CallsUserRequest[]
-
     // Regular swaps complete with the user's transaction. Intents finish asynchronously and
     // remain visible in the same progress UI as bridges until the provider reports completion.
-    return getIntentBanners(
-      activeRoutesForSelectedAccount,
-      callsUserRequests,
-      this.#selectedAccount.account.addr
-    )
+    return getIntentBanners(activeRoutesForSelectedAccount, this.#selectedAccount.account.addr)
   }
 
   get #shouldAutoUpdateQuote() {

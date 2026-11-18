@@ -5,22 +5,22 @@ import { HexIrCall, getAction, getDeadline, getLabel, getToken } from '../../uti
 import { HumanizerUniMatcher } from './interfaces'
 import { getUniRecipientText } from './utils'
 
-const swapExactTokensForTokensAbi = parseAbi([
+export const swapExactTokensForTokensAbi = parseAbi([
   'function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) returns (uint256[] amounts)'
 ])
-const swapTokensForExactTokensAbi = parseAbi([
+export const swapTokensForExactTokensAbi = parseAbi([
   'function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline) returns (uint256[] amounts)'
 ])
-const swapExactETHForTokensAbi = parseAbi([
+export const swapExactETHForTokensAbi = parseAbi([
   'function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline) payable returns (uint256[] amounts)'
 ])
-const swapTokensForExactETHAbi = parseAbi([
+export const swapTokensForExactETHAbi = parseAbi([
   'function swapTokensForExactETH(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline) returns (uint256[] amounts)'
 ])
-const swapExactTokensForETHAbi = parseAbi([
+export const swapExactTokensForETHAbi = parseAbi([
   'function swapExactTokensForETH(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) returns (uint256[] amounts)'
 ])
-const swapETHForExactTokensAbi = parseAbi([
+export const swapETHForExactTokensAbi = parseAbi([
   'function swapETHForExactTokens(uint256 amountOut, address[] path, address to, uint256 deadline) payable returns (uint256[] amounts)'
 ])
 const addLiquidityAbi = parseAbi([
@@ -37,100 +37,6 @@ const removeLiquidityETHAbi = parseAbi([
 ])
 
 export const uniV2Mapping: HumanizerUniMatcher = {
-  // ordered in the same order as the router
-  [toFunctionSelector(swapExactTokensForTokensAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
-    const { args } = decodeFunctionData({
-      abi: swapExactTokensForTokensAbi,
-      data: call.data
-    })
-    const [, , path, to, deadline] = args
-    const outputAsset = path[path.length - 1]
-    if (!path[0] || !outputAsset) throw new Error('UniV2: missing assets in path')
-    return [
-      getAction('Swap'),
-      getToken(path[0], 0n),
-      getLabel('for'),
-      getToken(outputAsset, 0n),
-      ...getUniRecipientText(accountOp.accountAddr, to),
-      getDeadline(deadline)
-    ]
-  },
-  [toFunctionSelector(swapTokensForExactTokensAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
-    const { args } = decodeFunctionData({
-      abi: swapTokensForExactTokensAbi,
-      data: call.data
-    })
-    const [, , path, to, deadline] = args
-    const outputAsset = path[path.length - 1]
-    if (!path[0] || !outputAsset) throw new Error('UniV2: missing assets in path')
-
-    return [
-      getAction('Swap'),
-      getToken(path[0], 0n),
-      getLabel('for'),
-      getToken(outputAsset, 0n),
-      ...getUniRecipientText(accountOp.accountAddr, to),
-      getDeadline(deadline)
-    ]
-  },
-  [toFunctionSelector(swapExactETHForTokensAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
-    const { args } = decodeFunctionData({ abi: swapExactETHForTokensAbi, data: call.data })
-    const [, path, to, deadline] = args
-    const outputAsset = path[path.length - 1]
-    if (!outputAsset) throw new Error('UniV2: missing assets in path')
-
-    return [
-      getAction('Swap'),
-      getToken(zeroAddress, 0n),
-      getLabel('for'),
-      getToken(outputAsset, 0n),
-      ...getUniRecipientText(accountOp.accountAddr, to),
-      getDeadline(deadline)
-    ]
-  },
-  [toFunctionSelector(swapTokensForExactETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
-    const { args } = decodeFunctionData({ abi: swapTokensForExactETHAbi, data: call.data })
-    const [, , path, to, deadline] = args
-    if (!path[0]) throw new Error('UniV2: missing assets in path')
-
-    return [
-      getAction('Swap'),
-      getToken(path[0], 0n),
-      getLabel('for'),
-      getToken(zeroAddress, 0n),
-      ...getUniRecipientText(accountOp.accountAddr, to),
-      getDeadline(deadline)
-    ]
-  },
-  [toFunctionSelector(swapExactTokensForETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
-    const { args } = decodeFunctionData({ abi: swapExactTokensForETHAbi, data: call.data })
-    const [, , path, to, deadline] = args
-    if (!path[0]) throw new Error('UniV2: missing assets in path')
-
-    return [
-      getAction('Swap'),
-      getToken(path[0], 0n),
-      getLabel('for'),
-      getToken(zeroAddress, 0n),
-      ...getUniRecipientText(accountOp.accountAddr, to),
-      getDeadline(deadline)
-    ]
-  },
-  [toFunctionSelector(swapETHForExactTokensAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
-    const { args } = decodeFunctionData({ abi: swapETHForExactTokensAbi, data: call.data })
-    const [, path, to, deadline] = args
-    const outputAsset = path[path.length - 1]
-    if (!outputAsset) throw new Error('UniV2: missing assets in path')
-
-    return [
-      getAction('Swap'),
-      getToken(zeroAddress, 0n),
-      getLabel('for'),
-      getToken(outputAsset, 0n),
-      ...getUniRecipientText(accountOp.accountAddr, to),
-      getDeadline(deadline)
-    ]
-  },
   // Liquidity
   [toFunctionSelector(addLiquidityAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
     const { args } = decodeFunctionData({ abi: addLiquidityAbi, data: call.data })

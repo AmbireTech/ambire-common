@@ -33,6 +33,7 @@ import { Erc7730Controller } from '@/controllers/erc7730/erc7730'
 import { EstimationStatus } from '@/controllers/estimation/types'
 import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '@/controllers/featureFlags/featureFlags'
+import { onFeatureFlagChange } from '@/controllers/featureFlags/onFeatureFlagChange'
 import { InviteController } from '@/controllers/invite/invite'
 import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
@@ -55,6 +56,7 @@ import { TransactionManagerController } from '@/controllers/transaction/transact
 import { TransferController } from '@/controllers/transfer/transfer'
 import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
+import { TokenPricesController } from '@/controllers/tokenPrices/tokenPrices'
 import { VerificationController } from '@/controllers/verification/verification'
 import { WalletTokenController } from '@/controllers/walletToken/walletToken'
 import { Account, IAccountsController } from '@/interfaces/account'
@@ -87,7 +89,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '@/interfa
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
 import { IPortfolioController } from '@/interfaces/portfolio'
-import { IPrivacyPoolsController } from '@/interfaces/privacyPools'
+import { IPrivacyPoolsController, PreparePrivacyPoolsAccount } from '@/interfaces/privacyPools'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
 import { ISafeController } from '@/interfaces/safe'
@@ -346,18 +348,44 @@ export class MainController extends EventEmitter implements IMainController {
       featureFlags: this.featureFlags
     })
 
+    // The only source of token prices, shared so that every feature reads one cache
+    const tokenPrices = new TokenPricesController({
+      fetch: this.fetch,
+      isTokenPricesEnabled: () => this.featureFlags.isFeatureEnabled('tokenPrices'),
+      // Read lazily, as the providers controller is created right after (and depends on this one).
+      // A provider that isn't set up yet (e.g. right after startup) is waited for.
+      getProvider: async (chainId) => {
+        const chainKey = chainId.toString()
+        if (!this.providers.providers[chainKey]) {
+          const network = this.networks.allNetworks.find((n) => n.chainId === chainId)
+          if (network) await this.providers.setProvider(network)
+        }
+
+        return this.providers.providers[chainKey]
+      }
+    })
+    // Switching the price source empties the price cache (see TokenPricesController), so the
+    // portfolio is updated right away to show what the setting changed, instead of keeping the
+    // other source's prices until the next scheduled update
+    onFeatureFlagChange(this.featureFlags, 'tokenPrices', () => {
+      this.updateSelectedAccountPortfolio().catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the portfolio after the token prices setting changed',
+          error
+        })
+      )
+    })
     this.providers = new ProvidersController({
       eventEmitterRegistry,
       storage: this.storage,
       getNetworks: () => this.networks.allNetworks,
-      featureFlags: this.featureFlags,
-      sendUiMessage: this.ui.message.sendUiMessage
+      sendUiMessage: this.ui.message.sendUiMessage,
+      tokenPrices
     })
     this.verification = new VerificationController({
       eventEmitterRegistry,
-      networks: this.networks,
-      fetch: this.fetch,
-      featureFlags: this.featureFlags
+      networks: this.networks
     })
     this.accounts = new AccountsController(
       this.storage,
@@ -437,6 +465,7 @@ export class MainController extends EventEmitter implements IMainController {
       },
       this.survey,
       this.#appVersion,
+      this.featureFlags,
       eventEmitterRegistry
     )
     this.selectedAccount = new SelectedAccountController({
@@ -460,7 +489,9 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
-      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
+      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds),
+      getPendingAccountOps: () => this.getPendingAccountOps(),
+      tokenPrices
     })
 
     this.portfolio = new PortfolioController(
@@ -475,6 +506,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.banner,
       this.featureFlags,
       this.ui,
+      tokenPrices,
       eventEmitterRegistry,
       this.verification,
       platform
@@ -486,7 +518,8 @@ export class MainController extends EventEmitter implements IMainController {
         relayerUrl,
         this.keystore,
         undefined,
-        eventEmitterRegistry
+        eventEmitterRegistry,
+        this.featureFlags
       )
     }
     this.accountPicker = new AccountPickerController({
@@ -505,7 +538,8 @@ export class MainController extends EventEmitter implements IMainController {
        * accounts via the AccountPickerController - for every flow, including the
        * ones without a key iterator (view-only, Safe, account JSON).
        */
-      onAddPreparedAccounts: this.#onAccountPickerSuccess.bind(this)
+      onAddPreparedAccounts: this.#onAccountPickerSuccess.bind(this),
+      onPreparePrivacyPoolsAccount: this.#preparePrivacyPoolsAccount.bind(this)
     })
     this.addressBook = new AddressBookController(
       this.storage,
@@ -655,7 +689,6 @@ export class MainController extends EventEmitter implements IMainController {
         )
       },
       getUserRequests: () => this.requests.userRequests || [],
-      getVisibleUserRequests: () => this.requests.visibleUserRequests || [],
       onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this),
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
       ui: this.ui
@@ -831,7 +864,10 @@ export class MainController extends EventEmitter implements IMainController {
               fetch: this.fetch,
               featureFlags: this.featureFlags,
               sendUiMessage: this.ui.message.sendUiMessage,
-              onAddPreparedAccounts: async () => {}
+              onAddPreparedAccounts: async () => {},
+              onPreparePrivacyPoolsAccount: async () => {
+                throw new Error('main: the legacy seed migration adds no Privacy Pools account')
+              }
             }),
           this.keystore,
           async () => {
@@ -1065,37 +1101,92 @@ export class MainController extends EventEmitter implements IMainController {
     return this.privacyPools.accounts.some((account) => account.seedId === seedId)
   }
 
-  /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
-  async addPrivacyPoolsAccount(seedId: string) {
-    await this.initialLoadPromise
+  /**
+   * Prepares the Privacy Pools account a flow set up on the picker, for the personalize step:
+   * checks its stored recovery phrase can have one, or generates a new phrase as the temp seed -
+   * flagged as not backed up, so the UI asks for a backup: the only way to recover the funds.
+   * Nothing is written until the user proceeds (`addPreparedPrivacyPoolsAccount`).
+   */
+  async #preparePrivacyPoolsAccount({
+    seedId,
+    extraEntropy,
+    signal
+  }: Parameters<PreparePrivacyPoolsAccount>[0]): ReturnType<PreparePrivacyPoolsAccount> {
+    await this.privacyPools.initialLoadPromise
+    const label = this.privacyPools.defaultAccountLabel
 
+    if (seedId) {
+      await this.privacyPools.assertCanAddAccount(seedId)
+      return { isNewSeed: false, seedId, label }
+    }
+
+    // Left meanwhile - a phrase generated now could replace the temp seed of a flow started since
+    if (signal.aborted) return null
+    await this.keystore.generateTempSeed({ extraEntropy })
+    return { isNewSeed: true, label }
+  }
+
+  /**
+   * Adds the Privacy Pools account the personalize step shows, named `label`, and selects it -
+   * storing its new recovery phrase first, if it has one, or the account's key, if its phrase
+   * doesn't save its passphrase. Replies to `requestId` once done.
+   */
+  async addPreparedPrivacyPoolsAccount(label: string, requestId?: string) {
+    let isAdded = false
     // Wrapped as a whole, so a refused account is shown to the user
     await this.withStatus(
       'selectAccount',
       async () => {
-        await this.privacyPools.addAccount(seedId)
+        await this.initialLoadPromise
+
+        const toAdd = this.accountPicker.privacyPoolsAccountToAdd
+        if (!toAdd)
+          throw new EmittableError({
+            message: 'There is no account to add. Please go back and try again.',
+            level: 'major',
+            error: new Error('main: no prepared Privacy Pools account to add')
+          })
+
+        // The temp seed is gone once the keystore locks
+        const seedId = toAdd.isNewSeed ? await this.keystore.persistTempSeed() : toAdd.seedId
+        if (!seedId)
+          throw new EmittableError({
+            message:
+              'The new recovery phrase is no longer available. Please go back and try again.',
+            level: 'major',
+            error: new Error('main: the temp seed of the Privacy Pools account to add is gone')
+          })
+        if (toAdd.isNewSeed) this.accountPicker.onPrivacyPoolsAccountSeedStored(seedId)
+
+        // Checked by the picker already, so a mismatch means the phrase changed meanwhile
+        const seedPassphrase = this.accountPicker.getPrivacyPoolsSeedPassphrase()
+        if (
+          seedPassphrase &&
+          !(await this.keystore.storePrivacyKey(seedId, 'privacyPools', seedPassphrase))
+        )
+          throw new EmittableError({
+            message:
+              'The passphrase no longer matches the recovery phrase. Please go back and try again.',
+            level: 'major',
+            error: new Error('main: the passphrase of the Privacy Pools account to add is wrong')
+          })
+
+        try {
+          await this.privacyPools.addAccount(seedId, label.trim() || toAdd.label)
+        } catch (error) {
+          // Drops the key stored above, unless an account already uses it (a double submit)
+          if (!this.#hasPrivacyPoolsAccount(seedId))
+            await this.keystore.removePrivacyKey(seedId, 'privacyPools')
+          throw error
+        }
+        await this.accountPicker.reset()
         await this.#selectPrivacyPoolsAccount(seedId)
+        isAdded = true
       },
       true
     )
-  }
 
-  /**
-   * Creates a recovery phrase with only a Privacy Pools account on it, and selects it. The phrase
-   * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
-   */
-  async addPrivacyPoolsAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
-    await this.initialLoadPromise
-
-    await this.withStatus(
-      'selectAccount',
-      async () => {
-        const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
-        await this.privacyPools.addAccount(seedId)
-        await this.#selectPrivacyPoolsAccount(seedId)
-      },
-      true
-    )
+    this.#replyToRequest(requestId, isAdded ? undefined : 'Adding the account failed')
   }
 
   async selectPrivacyPoolsAccount(seedId: string) {
@@ -1336,6 +1427,8 @@ export class MainController extends EventEmitter implements IMainController {
     // Only the dapp calls request path shares a mutable SignAccountOpController
     // that a second dapp request can append to before signing starts.
     let isDappCallsRequest = false
+    // The Safe request whose smart account owner approval is being sent, see initSafeOwnerApproval
+    let safeOwnerApprovalParent: ISignAccountOpController | null = null
 
     if (
       type === 'one-click-swap-and-bridge' &&
@@ -1349,6 +1442,14 @@ export class MainController extends EventEmitter implements IMainController {
       this.transfer.signAccountOpController.fromRequestId === fromRequestId
     ) {
       signAccountOp = this.transfer.signAccountOpController
+    } else if (
+      type === 'safe-owner-approval' &&
+      this.requests.currentUserRequest?.kind === 'calls' &&
+      this.requests.currentUserRequest.signAccountOp.safeOwnerApproval?.fromRequestId ===
+        fromRequestId
+    ) {
+      safeOwnerApprovalParent = this.requests.currentUserRequest.signAccountOp
+      signAccountOp = safeOwnerApprovalParent.safeOwnerApproval
     } else if (
       this.requests.currentUserRequest?.kind === 'calls' &&
       this.requests.currentUserRequest.signAccountOp.fromRequestId === fromRequestId
@@ -1430,7 +1531,11 @@ export class MainController extends EventEmitter implements IMainController {
       })
     }
 
-    await signAccountOp.signAndBroadcast().catch(() => {
+    // the Safe request checks its approval is still for the Safe transaction before sending it
+    const signAndBroadcast = safeOwnerApprovalParent
+      ? safeOwnerApprovalParent.signAndBroadcastSafeOwnerApproval()
+      : signAccountOp.signAndBroadcast()
+    await signAndBroadcast.catch(() => {
       // intentionally ignored - handled inside signAccountOp
     })
   }
@@ -1502,6 +1607,17 @@ export class MainController extends EventEmitter implements IMainController {
             error
           })
         })
+    }
+
+    // A signed message can let a dapp move the account's funds later (e.g. Monerium burning EURe
+    // for a bank transfer), so the balances are refreshed once that dapp's transaction has landed.
+    // Logins move no funds and would only spend the per-account cache bypass budget.
+    if (signedMessage.content.kind !== 'siwe') {
+      this.portfolio.scheduleUpdate({
+        accountId: signedMessage.accountAddr,
+        chainId: signedMessage.chainId,
+        bypassServerSideCache: true
+      })
     }
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
@@ -1833,6 +1949,12 @@ export class MainController extends EventEmitter implements IMainController {
    * Sets the account picker up for a hardware wallet under the method's status, and replies
    * to `requestId` once done, so the connect screen moves on only then - the status alone
    * is transient and can be missed.
+   *
+   * Runs alongside other actions, like the recovery phrase and private key set ups: it only
+   * talks to the device and sets the picker up. Otherwise a background action (e.g. fetching
+   * a Safe's pending transactions on every portfolio reload) makes it refuse the user's press,
+   * which looks like the connect button doing nothing. A second set up of the same wallet is
+   * still refused while the first one waits on the device.
    */
   async #setUpPickerForHardwareWallet(
     callName: keyof typeof STATUS_WRAPPED_METHODS,
@@ -1840,15 +1962,36 @@ export class MainController extends EventEmitter implements IMainController {
     requestId?: string
   ) {
     let isSetUp = false
-    await this.withStatus(callName, async () => {
-      await setUp()
-      isSetUp = true
-    })
+    await this.withStatus(
+      callName,
+      async () => {
+        await setUp()
+        isSetUp = true
+      },
+      true
+    )
 
     this.#replyToRequest(
       requestId,
       isSetUp ? undefined : 'The hardware wallet could not be connected'
     )
+  }
+
+  /**
+   * The transactions the wallet has not finished with: broadcast but not confirmed, and the
+   * request batch. For `PrivacyPoolsController`, which holds back a deposit while one is pending.
+   */
+  protected getPendingAccountOps() {
+    // An unsigned deposit already holds the next precommitment, which stays the same until a sync
+    // shows the deposit. A second deposit built meanwhile would reuse it and fail onchain.
+    const requestedAccountOps = this.requests.userRequests.flatMap((request) =>
+      request.kind === 'calls' ? [request.signAccountOp.accountOp] : []
+    )
+
+    return [
+      ...Object.values(this.activity.broadcastedButNotConfirmed).flat(),
+      ...requestedAccountOps
+    ]
   }
 
   async updateAccountsOpsStatuses() {
@@ -1961,6 +2104,10 @@ export class MainController extends EventEmitter implements IMainController {
               // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
               finalizedAccountOps.length
                 ? this.portfolio.discardSimulation(finalizedAccountOps)
+                : undefined,
+              // Updates the Privacy Pools balances. Failed ops too, to remove their amounts
+              finalizedAccountOps.length
+                ? this.privacyPools.onAccountOpsFinalized(finalizedAccountOps)
                 : undefined,
               ...otherAccountsToUpdate.map(async ([portfolioAccountAddr, chainIds]) => {
                 // A fee payer has a new nonce and a recipient a new balance, and the
@@ -2162,7 +2309,8 @@ export class MainController extends EventEmitter implements IMainController {
         maxDataAgeMs
       })
     ])
-    this.fetchSafeTxns([], true).catch((e) => e) // we catch the error inside
+    // Refetch only the chains the dashboard is filtered by, if it is filtered
+    this.fetchSafeTxns(chainIds ?? [], true).catch((e) => e) // we catch the error inside
   }
 
   /**
@@ -2181,12 +2329,16 @@ export class MainController extends EventEmitter implements IMainController {
 
   /**
    * Fetches the pending txns of the selected Safe, and then the pending counts of the other
-   * Safes, one after the other so they don't compete for the Safe API's rate limit
+   * Safes, one after the other so they don't compete for the Safe API's rate limit.
+   * Nothing is fetched while the wallet is locked, as unlocking fetches them again.
    */
   async #fetchAllSafesPending() {
+    // do not make Safe requests if the wallet is locked
+    if (!this.keystore.isUnlocked) return
+
     await this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
 
-    // do not make Safe requests for the other Safes if the wallet is locked
+    // the wallet may have been locked while the selected Safe was fetched
     if (!this.keystore.isUnlocked) return
 
     await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
@@ -2200,6 +2352,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
     if (!this.selectedAccount?.account?.safeCreation) return
+    // do not make Safe requests if the wallet is locked
+    if (!this.keystore.isUnlocked) return
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex
 
@@ -2211,20 +2365,16 @@ export class MainController extends EventEmitter implements IMainController {
     const accountState = await this.accounts.getOrFetchAccountStates(safeAddr)
     if (!accountState) return
 
-    const finalChainIds = chainIds.length
-      ? chainIds
-      : this.networks.networks
-          .filter((n) => {
-            // fetch info only about deployed safes
-            const state = accountState?.[n.chainId.toString()]
-            return state?.isDeployed
-          })
-          .map((n) => n.chainId)
+    // fetch info only about deployed safes, and only on the passed chains if there are any.
+    // A chain without an account state has no nonce to fetch the pending txns from either
+    const networksAndThresholds = this.networks.networks.flatMap(({ chainId }) => {
+      if (chainIds.length && !chainIds.includes(chainId)) return []
 
-    const networksAndThresholds = finalChainIds.map((c) => ({
-      chainId: c,
-      threshold: accountState[c.toString()]?.threshold || 0
-    }))
+      const chainAccountState = accountState[chainId.toString()]
+      if (!chainAccountState?.isDeployed) return []
+
+      return [{ chainId, threshold: chainAccountState.threshold, nonce: chainAccountState.nonce }]
+    })
 
     if (!networksAndThresholds.length) return
 
@@ -2232,6 +2382,10 @@ export class MainController extends EventEmitter implements IMainController {
       'fetchSafeTxns',
       async () => {
         for (let i = 0; i < networksAndThresholds.length; i++) {
+          // stop once the wallet gets locked, instead of pausing before each remaining chain.
+          // If it gets locked during the pause below, `fetchPending` makes no request either
+          if (!this.keystore.isUnlocked) break
+
           // wait a second to not hit 5 request per minute API limit
           if (i !== 0) await wait(600)
 
@@ -2548,6 +2702,60 @@ export class MainController extends EventEmitter implements IMainController {
     this.#replyToRequest(requestId)
   }
 
+  /**
+   * Sets the account picker up with a recovery phrase the user already saved, for the
+   * personalize step to select and prepare its next account. One whose passphrase isn't saved
+   * needs it from the user, and has it saved if they chose to. Replies to `requestId` once set up,
+   * with `isWrongPassphrase` when the passphrase isn't the phrase's one.
+   */
+  async accountPickerSetInitParamsFromSavedSeed(
+    {
+      id,
+      seedPassphrase,
+      shouldSavePassphrase
+    }: {
+      id: string
+      seedPassphrase?: string | null
+      shouldSavePassphrase?: boolean
+    },
+    requestId?: string
+  ) {
+    let isSetUp = false
+    let isWrongPassphrase = false
+    await this.withStatus(
+      'accountPickerSetInitParamsFromSavedSeed',
+      async () => {
+        const savedSeed = await this.keystore.getSavedSeed(id)
+        const passphrase = savedSeed.seedPassphrase || seedPassphrase || null
+
+        // Another passphrase would open other accounts, which this phrase's entry doesn't hold.
+        // Saving it checks it too, so it isn't checked twice
+        const isPassphraseCorrect =
+          shouldSavePassphrase && passphrase && !savedSeed.seedPassphrase
+            ? await this.keystore.saveSeedPassphrase(id, passphrase)
+            : await this.keystore.isSeedPassphraseCorrect(id, passphrase)
+        // Shown by the passphrase sheet, so not reported as an error
+        if (!isPassphraseCorrect) {
+          isWrongPassphrase = true
+          return
+        }
+
+        await this.accountPicker.setInitParams({
+          keyIterator: new KeyIterator(savedSeed.seed, passphrase),
+          hdPathTemplate: savedSeed.hdPathTemplate
+        })
+        isSetUp = true
+      },
+      true
+    )
+
+    this.#replyToRequest(
+      requestId,
+      isSetUp || isWrongPassphrase ? undefined : 'Adding accounts from the recovery phrase failed',
+      { isWrongPassphrase }
+    )
+  }
+
   async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
     if (!privateKeys.length) {
       const message = 'Please enter at least one private key.'
@@ -2600,23 +2808,6 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Sets the account picker up with a recovery phrase the user already saved, for the
-   * personalize step to select and prepare its next account. Replies to `requestId` once
-   * set up.
-   */
-  async accountPickerSetInitParamsFromSavedSeed(seedId: string, requestId?: string) {
-    const savedSeed = await this.keystore.getSavedSeed(seedId)
-    if (!savedSeed) return this.#replyToRequest(requestId, 'The recovery phrase was not found')
-
-    const keyIterator = new KeyIterator(savedSeed.seed, savedSeed.seedPassphrase)
-    await this.accountPicker.setInitParams({
-      keyIterator,
-      hdPathTemplate: savedSeed.hdPathTemplate
-    })
-    this.#replyToRequest(requestId)
-  }
-
-  /**
    * Creates a brand new recovery phrase and sets the account picker up with it, for the
    * personalize step to prepare its first account - nothing is written until the user
    * proceeds from there. The phrase is never sent to the UI - the user gets prompted to
@@ -2649,10 +2840,12 @@ export class MainController extends EventEmitter implements IMainController {
    * Replies to the UI request behind a call (if there is one), so the UI can await it
    * instead of watching a transient status.
    */
-  #replyToRequest(requestId?: string, error?: string) {
+  #replyToRequest(requestId?: string, error?: string, res?: unknown) {
     if (!requestId) return
 
-    this.ui.message.sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
+    this.ui.message.sendUiMessage(
+      error ? { requestId, ok: false, error } : { requestId, ok: true, res }
+    )
   }
 
   // includes the getters in the stringified instance

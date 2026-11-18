@@ -13,11 +13,11 @@ import { INetworksController } from '@/interfaces/network'
 import { ISwapAndBridgeController } from '@/interfaces/swapAndBridge'
 import { IUiController } from '@/interfaces/ui'
 import {
-  APP_DATA_SYNC_PAYLOAD_VERSION,
   AppDataSyncNewerVersionError,
   AppDataSyncExportOptions,
   AppDataSyncPayload,
   getAppDataSyncKeyAddrs,
+  getAppDataSyncPayloadVersion,
   parseAppDataSyncPayload,
   serializeAppDataSyncPayload
 } from '@/libs/appDataSync/appDataSync'
@@ -139,7 +139,7 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
       )
 
       return serializeAppDataSyncPayload({
-        v: APP_DATA_SYNC_PAYLOAD_VERSION,
+        v: getAppDataSyncPayloadVersion(seeds),
         secret,
         accounts,
         keys,

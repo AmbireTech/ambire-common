@@ -2,23 +2,33 @@ import { concat, isAddress, ZeroAddress } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
 import { ProviderError } from '../../classes/ProviderError'
-import { eip7702AmbireContracts } from '../../consts/7702'
+import { EIP_7702_DELEGATION_PREFIX, eip7702AmbireContracts } from '../../consts/7702'
 import { EIP_7702_METAMASK, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
+import { withTimeout } from '../../utils/with-timeout'
 import { has7702 } from '../7702/7702'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
+import { RPC_HARDCODED_ERRORS } from '../errorDecoder/handlers/rpc'
+
+/**
+ * How long to wait for the nonces and codes of the EOAs. The deployless call has a
+ * timeout of its own, but these requests don't, so an RPC that answers the call but
+ * not them would keep the whole account state waiting for the ethers request timeout
+ * (5 minutes). Matches the deployless timeout for custom RPCs.
+ */
+export const EOA_REQUESTS_TIMEOUT_MS = 20000
 
 const hasAmbireDelegation = (code?: string) => {
   if (!code) return false
 
   let hasCode = false
   for (let i = 0; i < eip7702AmbireContracts.length; i++) {
-    hasCode = code === concat(['0xef0100', eip7702AmbireContracts[i]!])
+    hasCode = code === concat([EIP_7702_DELEGATION_PREFIX, eip7702AmbireContracts[i]!])
     if (hasCode) break
   }
   return hasCode
@@ -100,10 +110,16 @@ export async function getAccountState(
     deploylessAccountState.call('getAccountsState', [args], {
       blockTag: blockTag === 'pending' ? getPendingBlockTagIfSupported(network) : blockTag
     }),
-    getEOAsNonce(eoas).catch((e) => {
+    withTimeout(() => getEOAsNonce(eoas), {
+      timeoutMs: EOA_REQUESTS_TIMEOUT_MS,
+      message: RPC_HARDCODED_ERRORS.rpcTimeout
+    }).catch((e) => {
       throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
     }),
-    getEOAsCode(eoas).catch((e) => {
+    withTimeout(() => getEOAsCode(eoas), {
+      timeoutMs: EOA_REQUESTS_TIMEOUT_MS,
+      message: RPC_HARDCODED_ERRORS.rpcTimeout
+    }).catch((e) => {
       throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
     })
   ])
@@ -116,7 +132,7 @@ export async function getAccountState(
     // - has an active authorization
     // - has an active AMBIRE delegation
     const delegatedContract =
-      eoaCodes[account.addr] && eoaCodes[account.addr]!.startsWith('0xef0100')
+      eoaCodes[account.addr] && eoaCodes[account.addr]!.startsWith(EIP_7702_DELEGATION_PREFIX)
         ? `0x${eoaCodes[account.addr]!.substring(8)}`
         : null
     const isSmarterEoa = accResult.isEOA && hasAmbireDelegation(eoaCodes[account.addr])
