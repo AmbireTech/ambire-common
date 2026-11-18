@@ -101,6 +101,77 @@ describe('updatePositionsByProviderAssetPrices', () => {
     expect(positionsByProvider[0]!.positions[0]!.additionalData.positionInUSD).toBe(3002)
   })
 
+  describe('assets with a price fallback (e.g. Morpho collateral valued by the market oracle)', () => {
+    const PT_TOKEN = '0x0000000000000000000000000000000000000071'
+    // 1 PT is worth 3000 USDC by the protocol's oracle
+    const collateral = asset(PT_TOKEN, {
+      type: AssetType.Collateral,
+      priceFallback: { address: USDC, decimals: 6, amount: 3000n * 10n ** 6n }
+    })
+    /** Prices only the given tokens, at 1 USD */
+    const createSelectiveTokenPrices = (pricedAddresses: string[]) => {
+      const getTokenData = jest.fn(async ({ tokenAddresses }: { tokenAddresses: string[] }) => ({
+        tokenData: new Map<string, TokenDataCacheValue>(
+          tokenAddresses
+            .filter((address) => pricedAddresses.includes(address))
+            .map((address) => [
+              address.toLowerCase(),
+              { priceIn: [{ baseCurrency: 'usd', price: 1 }], marketDataIn: [] }
+            ])
+        ),
+        error: null
+      }))
+
+      return { tokenPrices: { getTokenData } as unknown as ITokenPricesController, getTokenData }
+    }
+
+    test('values an asset without a price through the fallback token', async () => {
+      const { tokenPrices, getTokenData } = createSelectiveTokenPrices([USDC])
+
+      const { positionsByProvider } = await updatePositionsByProviderAssetPrices(tokenPrices, {
+        network: ethereum,
+        positionsByProvider: [
+          provider('Morpho', [
+            collateral,
+            asset(USDC, { type: AssetType.Borrow, decimals: 6, amount: 1000n * 10n ** 6n })
+          ])
+        ]
+      })
+
+      expect(getTokenData.mock.calls[0]![0].tokenAddresses).toContain(USDC)
+      const [pricedCollateral] = positionsByProvider[0]!.positions[0]!.assets
+      expect(pricedCollateral!.priceIn).toEqual({ baseCurrency: 'usd', price: 3000 })
+      expect(pricedCollateral!.value).toBe(3000)
+      // Without the fallback, the collateral would add nothing to the position's value
+      expect(positionsByProvider[0]!.positions[0]!.additionalData.positionInUSD).toBe(4000)
+    })
+
+    test("prefers the asset's own price", async () => {
+      const { tokenPrices } = createSelectiveTokenPrices([USDC, PT_TOKEN])
+
+      const { positionsByProvider } = await updatePositionsByProviderAssetPrices(tokenPrices, {
+        network: ethereum,
+        positionsByProvider: [provider('Morpho', [collateral])]
+      })
+
+      expect(positionsByProvider[0]!.positions[0]!.assets[0]!.priceIn).toEqual({
+        baseCurrency: 'usd',
+        price: 1
+      })
+    })
+
+    test('leaves the asset unpriced when the fallback token has no price either', async () => {
+      const { tokenPrices } = createSelectiveTokenPrices([])
+
+      const { positionsByProvider } = await updatePositionsByProviderAssetPrices(tokenPrices, {
+        network: ethereum,
+        positionsByProvider: [provider('Morpho', [collateral])]
+      })
+
+      expect(positionsByProvider[0]!.positions[0]!.assets[0]!.priceIn).toBeUndefined()
+    })
+  })
+
   test("keeps a position's value that is already set", async () => {
     const { tokenPrices } = createTokenPrices(2)
 

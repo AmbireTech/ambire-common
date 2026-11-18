@@ -39,6 +39,16 @@ export interface PositionAsset {
     [key: string]: any
   }
   /**
+   * The amount of the asset converted to another token by the protocol's own price (e.g. the
+   * collateral of a Morpho market, converted to the loan token by the market's oracle).
+   * Used to value the asset when it has no price of its own.
+   */
+  priceFallback?: {
+    address: string
+    decimals: number
+    amount: bigint
+  }
+  /**
    * The protocol asset is the protocol's representation of the asset.
    * For example, in Aave, the protocol asset is the aToken.
    */

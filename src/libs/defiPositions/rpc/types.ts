@@ -7,6 +7,11 @@ export type RpcFetchParams = {
   accountAddr: string
   provider: RPCProvider
   network: Network
+  /**
+   * The tokens the account holds on the network, as some positions are represented by a
+   * token (e.g. the shares of a Morpho vault)
+   */
+  heldTokenAddresses: string[]
 }
 
 /**

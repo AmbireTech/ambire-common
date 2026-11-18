@@ -54,7 +54,7 @@ import {
   getUniqueMergedPositions,
   mergeDefiUpdateModes
 } from '../../libs/defiPositions/defiPositions'
-import { getRpcDefiPositions } from '../../libs/defiPositions/rpc'
+import { getHeldTokenAddresses, getRpcDefiPositions } from '../../libs/defiPositions/rpc'
 import {
   NetworksWithPositions,
   NetworksWithPositionsByAccounts,
@@ -1831,6 +1831,10 @@ export class PortfolioController
         delete state.verification
       }
 
+      // Read once, so the positions read from the chain and the new DeFi state agree
+      const isAutoDiscoveryEnabled = this.#featureFlags.isFeatureEnabled(
+        'tokenAndDefiAutoDiscovery'
+      )
       // Fetch the portfolio and custom defi positions in parallel
       const [portfolioResult, customPositionsResult] = await Promise.all([
         portfolioLib.get(account.addr, {
@@ -1846,9 +1850,11 @@ export class PortfolioController
           accountAddr: account.addr,
           provider: portfolioLib.provider,
           network,
+          // The tokens of this update aren't fetched yet, so those of the previous one are used
+          heldTokenAddresses: getHeldTokenAddresses(state.result?.tokens),
           previousPositions: state.result?.defiPositions.positionsByProvider || [],
           apiPositions: discoveryData?.data?.defi?.positions,
-          isAutoDiscoveryEnabled: this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')
+          isAutoDiscoveryEnabled
         })
       ])
 
@@ -1869,7 +1875,8 @@ export class PortfolioController
         customPositionsResult.error || null,
         customPositionsResult.providerErrors,
         stkWalletToken,
-        this.#getNonceId(account, network.chainId)
+        this.#getNonceId(account, network.chainId),
+        isAutoDiscoveryEnabled
       )
 
       const combinedTokens = enhancePortfolioTokensWithDefiPositions(

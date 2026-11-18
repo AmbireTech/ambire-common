@@ -112,6 +112,8 @@ const getAllAssetsAsHints = (
  * from Debank and custom providers and the previous state.
  * It ensures that positions are unique, merged correctly and that if the
  * latest Debank call failed, the previous positions are retained.
+ * While auto discovery is off, the time of the last successful update isn't refreshed, as the
+ * API isn't called.
  */
 const getNewDefiState = (
   pastPortfolioState: PortfolioNetworkResult | undefined,
@@ -120,7 +122,8 @@ const getNewDefiState = (
   customPositionsError: DeFiPositionsError | null,
   customProvidersErrors: ProviderError[],
   stkWalletToken: TokenResult | null,
-  nonceId: string | undefined
+  nonceId: string | undefined,
+  isAutoDiscoveryEnabled: boolean
 ): NetworkState => {
   const isForceApiUpdate = !!discoveryResponse?.data?.defi?.isForceUpdate
   const isDebankCallSuccessful = getIsExternalApiDefiPositionsCallSuccessful(discoveryResponse)
@@ -140,11 +143,17 @@ const getNewDefiState = (
     stkWalletPosition
   )
 
+  // Refreshed only when the API is called, as it decides if the next API call can be skipped.
+  // Otherwise, right after the user turns auto discovery back on, the API call would be skipped
+  // as the data would look fresh, and the positions read from the chain while it was off (e.g.
+  // Morpho) would be replaced by no API positions
+  const shouldRefreshLastSuccessfulUpdate =
+    isAutoDiscoveryEnabled && isDebankCallSuccessful && !customPositionsError
+
   return {
     nonceId,
     error: !isDebankCallSuccessful ? DeFiPositionsError.CriticalError : customPositionsError,
-    lastSuccessfulUpdate:
-      isDebankCallSuccessful && !customPositionsError ? Date.now() : lastSuccessfulUpdate,
+    lastSuccessfulUpdate: shouldRefreshLastSuccessfulUpdate ? Date.now() : lastSuccessfulUpdate,
     lastForceApiUpdate: isForceApiUpdate ? Date.now() : lastForceApiUpdate,
     providerErrors: customProvidersErrors,
     positionsByProvider: uniqueAndMerged || previousPositionsByProvider
@@ -361,9 +370,24 @@ const enhancePortfolioTokensWithDefiPositions = (
           pos.assets.forEach((asset) => {
             const protocolAsset = asset.protocolAsset || null
 
-            const tokenCorrespondingToProtocolAsset = protocolAsset?.address
-              ? findTokenByProtocolAssetAddress(tokensByAddress, protocolAsset.address)
-              : findTokenBySimilarSymbolAndValue(portfolioTokens, asset)
+            // Positions read on-chain set the token that represents an asset, if any (as
+            // `protocolAsset` or `pool.controller`), so a token is never guessed for them: e.g.
+            // 10k USDC.e in the wallet would match a 10k USDC Morpho borrow (a similar symbol
+            // with a similar value), which would then remove the price of the USDC.e
+            const canGuessToken = posByProvider.source !== 'custom'
+            let tokenCorrespondingToProtocolAsset: TokenResult | undefined
+
+            if (protocolAsset?.address) {
+              tokenCorrespondingToProtocolAsset = findTokenByProtocolAssetAddress(
+                tokensByAddress,
+                protocolAsset.address
+              )
+            } else if (canGuessToken) {
+              tokenCorrespondingToProtocolAsset = findTokenBySimilarSymbolAndValue(
+                portfolioTokens,
+                asset
+              )
+            }
 
             if (tokenCorrespondingToProtocolAsset) {
               defiAssetsMap.set(tokenCorrespondingToProtocolAsset.address.toLowerCase(), {

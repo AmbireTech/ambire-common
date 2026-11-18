@@ -1,7 +1,9 @@
 import { ITokenPricesController } from '../../../interfaces/tokenPrices'
+import { TokenResult } from '../../portfolio'
 import { getProviderId } from '../helpers'
 import { DeFiPositionsError, PositionsByProvider, ProviderError } from '../types'
 import { aaveV3DefiProvider } from './aaveV3/aaveV3'
+import { morphoDefiProvider } from './morpho/morpho'
 import { updatePositionsByProviderAssetPrices } from './prices'
 import { RpcDefiPositionsResult, RpcDefiProvider, RpcFetchParams } from './types'
 import { uniswapV3DefiProvider } from './uniswapV3/uniswapV3'
@@ -21,7 +23,7 @@ export const ALWAYS_FETCHED_PROVIDERS: RpcDefiProvider[] = [
  * Protocols that the API returns fully, so their positions are read from the chain only when
  * auto discovery is off.
  */
-export const FETCHED_WITHOUT_API_PROVIDERS: RpcDefiProvider[] = []
+export const FETCHED_WITHOUT_API_PROVIDERS: RpcDefiProvider[] = [morphoDefiProvider]
 
 const getProvidersToFetch = (isAutoDiscoveryEnabled: boolean): RpcDefiProvider[] => {
   if (isAutoDiscoveryEnabled) return ALWAYS_FETCHED_PROVIDERS
@@ -56,20 +58,47 @@ const fetchProviderPositions = async (
 }
 
 /**
- * Returns the positions read from the chain in the previous update by the providers that failed
- * in this one. This is done so the user doesn't lose their positions when the new update fails.
- * A provider that succeeded with no positions means the user closed them, so its previous
- * positions are dropped.
+ * Returns the addresses of the tokens the account holds, except rewards and Gas Tank tokens,
+ * which are held elsewhere. Used to find positions that are represented by a token (e.g. the
+ * shares of a Morpho vault).
  */
-const getPreviousPositionsOfFailedProviders = (
-  previousPositions: PositionsByProvider[],
+const getHeldTokenAddresses = (tokens: TokenResult[] | undefined): string[] =>
+  (tokens || [])
+    .filter((token) => token.amount > 0n && !token.flags.rewardsType && !token.flags.onGasTank)
+    .map((token) => token.address)
+
+const isOneOfProviders = (providerName: string, providerNames: string[]) =>
+  providerNames.some((name) => getProviderId(name) === getProviderId(providerName))
+
+/**
+ * Returns the positions read from the chain in the previous update that are kept in this one:
+ * - Those of the providers that failed in this update. This is done so the user doesn't lose
+ * their positions when the new update fails. A provider that succeeded with no positions means
+ * the user closed them, so its previous positions are dropped.
+ * - Those of the providers in `FETCHED_WITHOUT_API_PROVIDERS`, read while auto discovery was
+ * off, while there is no API data yet to replace them (the API call failed or was skipped right
+ * after auto discovery was turned on). Otherwise the positions would disappear until the API
+ * call succeeds.
+ */
+const getPreviousPositionsToKeep = ({
+  previousPositions,
+  providerErrors,
+  isWaitingForApiPositions
+}: {
+  previousPositions: PositionsByProvider[]
   providerErrors: ProviderError[]
-): PositionsByProvider[] =>
-  previousPositions.filter(
-    (prev) =>
-      prev.source === 'custom' &&
-      providerErrors.some((e) => getProviderId(e.providerName) === getProviderId(prev.providerName))
+  isWaitingForApiPositions: boolean
+}): PositionsByProvider[] => {
+  const providerNamesToKeep = providerErrors.map(({ providerName }) => providerName)
+
+  if (isWaitingForApiPositions) {
+    providerNamesToKeep.push(...FETCHED_WITHOUT_API_PROVIDERS.map(({ name }) => name))
+  }
+
+  return previousPositions.filter(
+    (prev) => prev.source === 'custom' && isOneOfProviders(prev.providerName, providerNamesToKeep)
   )
+}
 
 /**
  * Prices the assets of the positions that are left without a price (e.g. a new Uniswap V3
@@ -113,8 +142,9 @@ const priceRpcDefiPositions = async (
  * the previous update are used instead. With auto discovery off, there is no API data, so
  * the positions read from the chain are returned as they are.
  *
- * The positions of a provider whose call fails are taken from the previous update, and assets
- * left without a price are priced through the token prices controller.
+ * The positions of a provider whose call fails are taken from the previous update (see
+ * `getPreviousPositionsToKeep`), and assets left without a price are priced through the token
+ * prices controller.
  */
 const getRpcDefiPositions = async (
   tokenPrices: ITokenPricesController,
@@ -122,6 +152,7 @@ const getRpcDefiPositions = async (
     accountAddr,
     provider,
     network,
+    heldTokenAddresses,
     previousPositions,
     apiPositions,
     isAutoDiscoveryEnabled
@@ -153,7 +184,7 @@ const getRpcDefiPositions = async (
         getProvidersToFetch(isAutoDiscoveryEnabled).map((rpcDefiProvider) =>
           fetchProviderPositions(
             rpcDefiProvider,
-            { accountAddr, provider, network },
+            { accountAddr, provider, network, heldTokenAddresses },
             apiPositionsToMergeWith
           ).catch((e: any) => {
             providerErrors.push({
@@ -169,7 +200,11 @@ const getRpcDefiPositions = async (
 
     rpcPositions = {
       positionsByProvider: [
-        ...getPreviousPositionsOfFailedProviders(previousPositions, providerErrors),
+        ...getPreviousPositionsToKeep({
+          previousPositions,
+          providerErrors,
+          isWaitingForApiPositions: isAutoDiscoveryEnabled && !apiPositions
+        }),
         ...newPositions
       ],
       providerErrors,
@@ -187,4 +222,4 @@ const getRpcDefiPositions = async (
   return priceRpcDefiPositions(tokenPrices, { network, accountAddr, rpcPositions })
 }
 
-export { getRpcDefiPositions, priceRpcDefiPositions }
+export { getHeldTokenAddresses, getRpcDefiPositions, priceRpcDefiPositions }
