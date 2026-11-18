@@ -2758,8 +2758,10 @@ describe('DappsController', () => {
       await controller.addDapp(makeConnectedDapp('aave.com'), 'wc')
       await controller.addDapp(makeConnectedDapp('aave.com'), 'wc-in-app')
 
-      await controller.dropWcSourcesWithoutSessions()
+      const disconnectedDapps = await controller.dropWcSourcesWithoutSessions()
 
+      // Still connected through the injected provider, so its auto-login must survive
+      expect(disconnectedDapps).toEqual([])
       expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['injected'])
       expect(controller.hasPermission('aave.com', 'wc')).toBe(false)
       expect(controller.hasPermission('aave.com', 'wc-in-app')).toBe(false)
@@ -2776,19 +2778,35 @@ describe('DappsController', () => {
         isWcFromInAppBrowser: true
       })
 
-      await controller.dropWcSourcesWithoutSessions()
+      const disconnectedDapps = await controller.dropWcSourcesWithoutSessions()
 
       // Only the in-app session is live, so the external connection is the stale one
       expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc-in-app'])
+      expect(disconnectedDapps).toEqual([])
+    })
+
+    test('returns a dapp whose only source was a stale WalletConnect one', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc')
+
+      const disconnectedDapps = await controller.dropWcSourcesWithoutSessions()
+
+      expect(disconnectedDapps).toEqual([{ id: 'aave.com', url: 'https://aave.com' }])
+      expect(controller.getDapp('aave.com')!.isConnected).toBe(false)
+      expect(controller.hasPermission('aave.com')).toBe(false)
     })
 
     test('removes a custom dapp whose only source was a stale WalletConnect one', async () => {
       const controller = await prepare()
       await controller.addDapp(makeConnectedDapp('custom-wc-dapp.com', true), 'wc')
 
-      await controller.dropWcSourcesWithoutSessions()
+      const disconnectedDapps = await controller.dropWcSourcesWithoutSessions()
 
       expect(controller.getDapp('custom-wc-dapp.com')).toBeUndefined()
+      // Removed, but its auto-login policies still have to be revoked
+      expect(disconnectedDapps).toEqual([
+        { id: 'custom-wc-dapp.com', url: 'https://custom-wc-dapp.com' }
+      ])
     })
 
     test('leaves the dapps untouched when every source is backed', async () => {
@@ -2801,8 +2819,9 @@ describe('DappsController', () => {
       })
       const emitUpdateSpy = jest.spyOn(controller, 'emitUpdate')
 
-      await controller.dropWcSourcesWithoutSessions()
+      const disconnectedDapps = await controller.dropWcSourcesWithoutSessions()
 
+      expect(disconnectedDapps).toEqual([])
       expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc'])
       expect(emitUpdateSpy).not.toHaveBeenCalled()
     })
