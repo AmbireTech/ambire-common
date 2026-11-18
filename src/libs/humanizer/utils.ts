@@ -15,6 +15,18 @@ export function isHexCall(call: IrCall): call is HexIrCall {
   return isHex(call.data)
 }
 
+/**
+ * Lower-cases a hex string. Hex is case-insensitive onchain, but function selectors are compared
+ * as plain strings across the humanizer (and viem's `decodeFunctionData` matches its ABI the same
+ * way), so upper or mixed-case calldata would otherwise skip every selector check, including the
+ * ones that raise security warnings.
+ */
+export const toLowerCaseHex = (value: Hex): Hex => value.toLowerCase() as Hex
+
+/** Returns the call with its calldata lower-cased (see `toLowerCaseHex`), or as is if it isn't hex */
+export const withLowerCaseCallData = (call: IrCall): IrCall =>
+  isHexCall(call) ? { ...call, data: toLowerCaseHex(call.data) } : call
+
 export function getWarning(
   content: string,
   code: HumanizerWarning['code'],

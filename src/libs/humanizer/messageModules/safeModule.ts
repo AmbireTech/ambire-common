@@ -4,7 +4,14 @@ import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
-import { getAction, getAddressVisualization, getBreak, getLabel } from '../utils'
+import {
+  dedupeWarnings,
+  getAction,
+  getAddressVisualization,
+  getBreak,
+  getLabel,
+  withLowerCaseCallData
+} from '../utils'
 
 export const safeMessageModule: HumanizerTypedMessageModule = (message: Message) => {
   if (message.content.kind === 'message' || typeof message.content.message === 'string')
@@ -13,12 +20,16 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
   const { to, value, data, operation, nonce } = message.content.message
   const { accountAddr } = message
   const { verifyingContract } = message.content.domain
-  const humanizedCall = genericErc20Humanizer({ accountAddr }, { to, value, data })
+  // the signed message keeps the calldata exactly as the app sent it, but the humanizers match
+  // selectors against lower-case hex, so upper-case calldata would otherwise skip them (and their
+  // warnings) entirely
+  const safeTxCall = withLowerCaseCallData({ to, value, data })
+  const humanizedCall = genericErc20Humanizer({ accountAddr }, safeTxCall)
   const safeStandardHumanization = getSafeHumanization(
     verifyingContract ?? undefined,
     to,
     value,
-    data,
+    safeTxCall.data,
     0,
     nonce
   )
@@ -38,18 +49,13 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
     fullVisualization.push(...humanizedCall.fullVisualization)
   }
   const delegateCallWarnings = operation !== undefined ? getDelegateCallWarning(operation, to) : []
-  if (delegateCallWarnings.length) {
-    return {
-      fullVisualization,
-      warnings: delegateCallWarnings
-    }
-  }
 
+  // a delegate call warning must not hide what the call itself changes (e.g. the account's owners)
   return {
     fullVisualization,
-    warnings:
-      safeStandardHumanization && safeStandardHumanization.warnings
-        ? safeStandardHumanization.warnings
-        : []
+    warnings: dedupeWarnings([
+      ...delegateCallWarnings,
+      ...(safeStandardHumanization?.warnings || [])
+    ])
   }
 }
