@@ -1,4 +1,5 @@
-import { AccountState } from '../portfolio/interfaces'
+import { getTotal } from '../portfolio/helpers'
+import { AccountState, PortfolioNetworkResult } from '../portfolio/interfaces'
 
 import { PORTFOLIO_STATE } from '../portfolio/testData'
 import { calculateSelectedAccountPortfolio, stripPortfolioState } from './selectedAccount'
@@ -29,24 +30,39 @@ describe('Selected Account lib', () => {
 
       expect(selectedAccountPortfolio.tokens.length).toBe(8)
       expect(selectedAccountPortfolio.collections.length).toBe(1)
-      // 10 from tokens on Ethereum, 10 from tokens on Base, 5 from gas tank and 250 from defi positions
-      expect(selectedAccountPortfolio.totalBalance).toBe(260 + 10 + 5)
+      // 10 from tokens on Ethereum, 10 from tokens on Base, 5 from gas tank and 250 from defi
+      // positions, which count the $30 Aave loan as they don't subtract loans by default
+      expect(selectedAccountPortfolio.totalBalance).toBe(230 + 30 + 10 + 5)
       expect(selectedAccountPortfolio.isAllReady).toBe(true)
       expect(selectedAccountPortfolio.networkSimulatedAccountOp['1']).toBeDefined()
     })
-    it('should subtract the borrowed funds from the total and the network balance only when asked', () => {
-      const portfolioState = structuredClone(PORTFOLIO_STATE) as AccountState
+    it.each([
+      ['with its supplied token in the wallet, like Aave v3', true],
+      ['known only from the app, like Morpho', false]
+    ])(
+      'should count a lending position %s at its net value only when asked to subtract loans',
+      (_, isSuppliedTokenPriced) => {
+        const portfolioState = structuredClone(PORTFOLIO_STATE) as AccountState
+        const ethereumResult = portfolioState['1']!.result as PortfolioNetworkResult
+        // Without a price the aBasWETH doesn't count, so the position is counted from the app
+        if (!isSuppliedTokenPriced) {
+          ethereumResult.tokens = ethereumResult.tokens.map((token) =>
+            token.symbol === 'aBasWETH' ? { ...token, priceIn: [] } : token
+          )
+        }
+        ethereumResult.total = getTotal(ethereumResult.tokens, ethereumResult.defiPositions)
+        const netEthereumBalance = ethereumResult.total.usd || 0
 
-      const withBorrowed = calculateSelectedAccountPortfolio(portfolioState, false, true, false)
-      const withoutBorrowed = calculateSelectedAccountPortfolio(portfolioState, false, true, true)
+        const withLoans = calculateSelectedAccountPortfolio(portfolioState, false, true, false)
+        const withoutLoans = calculateSelectedAccountPortfolio(portfolioState, false, true, true)
 
-      // $30 borrowed against the aBasWETH on Ethereum
-      expect(withBorrowed.borrowedBalance).toBe(30)
-      expect(withoutBorrowed.borrowedBalance).toBe(30)
-      expect(withoutBorrowed.totalBalance).toBe(withBorrowed.totalBalance - 30)
-      expect(withoutBorrowed.balancePerNetwork['1']).toBe(withBorrowed.balancePerNetwork['1']! - 30)
-      expect(withoutBorrowed.balancePerNetwork['8453']).toBe(withBorrowed.balancePerNetwork['8453'])
-    })
+        // $30 borrowed against the Aave position on Ethereum
+        expect(withoutLoans.balancePerNetwork['1']).toBeCloseTo(netEthereumBalance)
+        expect(withLoans.balancePerNetwork['1']).toBeCloseTo(netEthereumBalance + 30)
+        expect(withLoans.totalBalance).toBeCloseTo(withoutLoans.totalBalance + 30)
+        expect(withLoans.balancePerNetwork['8453']).toBe(withoutLoans.balancePerNetwork['8453'])
+      }
+    )
     it('should flip isReadyToVisualize to true if the portfolio has been loading for more than 5 seconds', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
 

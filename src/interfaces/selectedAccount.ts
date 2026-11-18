@@ -17,13 +17,6 @@ export type AccountSelection = { account: Account } | { privacyPoolsSeedId: stri
 /** The kind of the selected account, or null when none is selected (signed out). */
 export type SelectedAccountType = 'regular' | 'privacyPools' | null
 
-/**
- * Whether the total balance subtracts the funds the user borrowed against tokens in the
- * wallet (e.g. Aave's aTokens). Null means the user hasn't chosen yet, which keeps them
- * in the total like 'include' does.
- */
-export type BorrowedFundsPreference = 'subtract' | 'include'
-
 export type ISelectedAccountController = ControllerInterface<
   InstanceType<
     typeof import('../controllers/selectedAccount/selectedAccount').SelectedAccountController
@@ -71,11 +64,6 @@ export interface SelectedAccountPortfolio {
   tokens: SelectedAccountPortfolioTokenResult[]
   collections: CollectionResultInterface[]
   totalBalance: number
-  /**
-   * The USD value borrowed against tokens in the wallet, on all networks. `totalBalance` and
-   * `balancePerNetwork` subtract it only when the user chose to subtract borrowed funds.
-   */
-  borrowedBalance: number
   /**
    * Either all portfolio networks have loaded or a timeout has been reached and there are tokens.
    * (shouldShowPartialResult must be true in this case)

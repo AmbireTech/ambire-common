@@ -71,7 +71,6 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   defiPositions: [],
   tokenAmounts: [],
   totalBalance: 0,
-  borrowedBalance: 0,
   balancePerNetwork: {},
   isReadyToVisualize: false,
   isAllReady: false,

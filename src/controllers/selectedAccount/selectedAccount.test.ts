@@ -321,7 +321,7 @@ describe('SelectedAccount Controller', () => {
     expect(selectedAccountCtrl.portfolio.mobileInviteKey).toBe(mobileInviteKey)
   })
 
-  describe('borrowed funds preference', () => {
+  describe('subtracting borrowed funds', () => {
     const loadSelectedAccountCtrl = async (
       initialSetStorage: Parameters<typeof makeMainController>[0]
     ) => {
@@ -331,30 +331,29 @@ describe('SelectedAccount Controller', () => {
       return { selectedAccountCtrl: mainCtrl.selectedAccount, storage: mainCtrl.storage }
     }
 
-    it('a new install subtracts borrowed funds, in memory and in storage', async () => {
-      const { selectedAccountCtrl, storage } = await loadSelectedAccountCtrl(() => {})
-
-      expect(selectedAccountCtrl.borrowedFundsPreference).toBe('subtract')
-      expect(await storage.get('borrowedFundsPreference', null)).toBe('subtract')
-    })
-
-    it('an existing user stays undecided, so their balance does not change', async () => {
+    it('is off for an existing user who never changed it', async () => {
       const { selectedAccountCtrl, storage } = await loadSelectedAccountCtrl(
         async (storageCtrl) => {
           await storageCtrl.set('accounts', accounts)
         }
       )
 
-      expect(selectedAccountCtrl.borrowedFundsPreference).toBeNull()
-      expect(await storage.get('borrowedFundsPreference', null)).toBeNull()
+      expect(selectedAccountCtrl.shouldSubtractBorrowedFunds).toBe(false)
+      expect(await storage.get('shouldSubtractBorrowedFunds', null)).toBeNull()
     })
 
-    it('keeps the choice of a user who removed all their accounts', async () => {
-      const { selectedAccountCtrl } = await loadSelectedAccountCtrl(async (storageCtrl) => {
-        await storageCtrl.set('borrowedFundsPreference', 'include')
-      })
+    it('loads the saved choice and saves a new one', async () => {
+      const { selectedAccountCtrl, storage } = await loadSelectedAccountCtrl(
+        async (storageCtrl) => {
+          await storageCtrl.set('shouldSubtractBorrowedFunds', true)
+        }
+      )
+      expect(selectedAccountCtrl.shouldSubtractBorrowedFunds).toBe(true)
 
-      expect(selectedAccountCtrl.borrowedFundsPreference).toBe('include')
+      await selectedAccountCtrl.setShouldSubtractBorrowedFunds(false)
+
+      expect(selectedAccountCtrl.shouldSubtractBorrowedFunds).toBe(false)
+      expect(await storage.get('shouldSubtractBorrowedFunds', null)).toBe(false)
     })
   })
 

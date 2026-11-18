@@ -6,7 +6,7 @@ import {
 import { AccountOp } from '../accountOp/accountOp'
 import { PositionsByProvider } from '../defiPositions/types'
 import { CollectionResult, TokenResult } from '../portfolio'
-import { getBorrowedValueInTotal } from '../portfolio/helpers'
+import { getBorrowedValue } from '../portfolio/helpers'
 import {
   InternalPortfolioChain,
   NetworkState,
@@ -27,8 +27,6 @@ export default class PortfolioViewBuilder {
   private collections: CollectionResult[] = []
 
   private totalBalance = 0
-
-  private borrowedBalance = 0
 
   private balancePerNetwork: Record<string, number> = {}
 
@@ -54,6 +52,25 @@ export default class PortfolioViewBuilder {
 
   constructor(shouldSubtractBorrowedFunds: boolean) {
     this.shouldSubtractBorrowedFunds = shouldSubtractBorrowedFunds
+  }
+
+  /**
+   * The network's USD balance. It counts DeFi positions with loans at their net value when
+   * the user chose to subtract borrowed funds, and at their full supplied value otherwise.
+   */
+  private getNetworkBalance(
+    networkResult:
+      | PortfolioGasTankResult
+      | PortfolioRewardsResult
+      | PortfolioNetworkResult
+      | PortfolioDefiAppsResult
+      | undefined
+  ) {
+    const total = networkResult?.total?.usd || 0
+    if (this.shouldSubtractBorrowedFunds) return total
+    if (!networkResult || !('defiPositions' in networkResult)) return total
+
+    return total + getBorrowedValue(networkResult.defiPositions)
   }
 
   private static isNetworkReady = (networkData: NetworkState | undefined) => {
@@ -206,14 +223,7 @@ export default class PortfolioViewBuilder {
       this.networkSimulatedAccountOp[chainId] = accountOp
     }
 
-    const borrowedNetworkBalance =
-      networkResult && 'defiPositions' in networkResult
-        ? getBorrowedValueInTotal(networkResult.tokens, networkResult.defiPositions)
-        : 0
-    const networkBalance =
-      (networkResult?.total?.usd || 0) -
-      (this.shouldSubtractBorrowedFunds ? borrowedNetworkBalance : 0)
-    this.borrowedBalance += borrowedNetworkBalance
+    const networkBalance = this.getNetworkBalance(networkResult)
     this.totalBalance += networkBalance
     this.balancePerNetwork[chainId] = networkBalance
 
@@ -241,7 +251,6 @@ export default class PortfolioViewBuilder {
       tokens: this.tokens,
       collections: this.collections,
       totalBalance: this.totalBalance,
-      borrowedBalance: this.borrowedBalance,
       balancePerNetwork: this.balancePerNetwork,
       networkSimulatedAccountOp: this.networkSimulatedAccountOp,
       isAllReady: this.isAllReady,

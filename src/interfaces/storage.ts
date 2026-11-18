@@ -24,7 +24,6 @@ import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
 import { PrivacyPoolsAccount } from './privacyPools'
-import { BorrowedFundsPreference } from './selectedAccount'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 import type { FeeSpeed } from './signAccountOp'
@@ -90,8 +89,8 @@ export type StorageProps = {
   /** Seed id of the selected Privacy Pools account. Exclusive with `selectedAccount`. */
   selectedPrivacyPoolsAccount: string | null
   selectedAccountDismissedBannerIds: { [key: string]: string[] }
-  /** Missing until the user chooses, see `BorrowedFundsPreference` */
-  borrowedFundsPreference: BorrowedFundsPreference
+  /** Whether the total balance subtracts the money borrowed in DeFi apps. Off by default. */
+  shouldSubtractBorrowedFunds: boolean
   // Email vault
   emailVault: {
     email: { [email: string]: EmailVaultData }
