@@ -1,4 +1,4 @@
-import { Contract, ZeroAddress } from 'ethers'
+import { Contract, Wallet, ZeroAddress } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
@@ -12,6 +12,7 @@ import {
   DefiUpdateMode,
   enhancePortfolioTokensWithDefiPositions,
   getAllAssetsAsHints,
+  getCustomProviderPositions,
   getDefiUpdateMode,
   getFormattedApiPositions,
   getUniqueMergedPositions
@@ -151,6 +152,55 @@ describe('DeFi positions providers', () => {
         getFunctionSpy.mockRestore()
         jest.useRealTimers()
       }
+    })
+  })
+  describe('getCustomProviderPositions', () => {
+    const getStoredCustomPosition = (providerName: string): PositionsByProvider => ({
+      providerName,
+      chainId: 137n,
+      source: 'custom',
+      iconUrl: '',
+      siteUrl: '',
+      type: 'common',
+      positions: [{ id: '1', additionalData: { positionIndex: '1' }, assets: [] }]
+    })
+    const storedPositions = [
+      getStoredCustomPosition('Uniswap V3'),
+      getStoredCustomPosition('AAVE v3')
+    ]
+
+    test('drops stored positions the user closed since the last update', async () => {
+      const accountWithNoPositions = Wallet.createRandom().address
+
+      const res = await getCustomProviderPositions(
+        accountWithNoPositions,
+        providerPolygon,
+        polygon,
+        storedPositions,
+        [],
+        true
+      )
+
+      expect(res.providerErrors).toEqual([])
+      expect(res.positionsByProvider.map((p) => p.providerName)).toEqual([])
+    })
+    test('keeps stored positions when their provider fails to update', async () => {
+      const unreachableProvider = getRpcProvider(['http://127.0.0.1:1'], 137n)
+
+      const res = await getCustomProviderPositions(
+        userAddrUni,
+        unreachableProvider,
+        polygon,
+        storedPositions,
+        [],
+        true
+      )
+
+      expect(res.providerErrors.map((e) => e.providerName).sort()).toEqual([
+        'AAVE v3',
+        'Uniswap V3'
+      ])
+      expect(res.positionsByProvider).toEqual(storedPositions)
     })
   })
 })
