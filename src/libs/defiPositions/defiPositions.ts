@@ -110,14 +110,15 @@ const getCustomProviderPositions = async (
       ])
     ).filter(Boolean) as PositionsByProvider[]
 
-    // Get the previous custom positions that were not updated in this call
+    // Get the previous custom positions of the providers that failed in this call
     // This is done so the user doesn't lose their custom positions when the
-    // new update fails
+    // new update fails. A provider that succeeded with no positions means the
+    // user closed them, so its previous positions are dropped.
     const filteredPrevious = previousPositions.filter(
       (prev) =>
         prev.source === 'custom' &&
-        !newPositions.some(
-          (n) => getProviderId(n.providerName) === getProviderId(prev.providerName)
+        providerErrors.some(
+          (e) => getProviderId(e.providerName) === getProviderId(prev.providerName)
         )
     )
 

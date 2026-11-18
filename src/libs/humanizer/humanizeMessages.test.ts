@@ -169,6 +169,21 @@ const typedMessages = {
   ]
 }
 
+const ERC2612_PERMIT_FIELDS = [
+  { name: 'owner', type: 'address' },
+  { name: 'spender', type: 'address' },
+  { name: 'value', type: 'uint256' },
+  { name: 'nonce', type: 'uint256' },
+  { name: 'deadline', type: 'uint256' }
+]
+const DAI_PERMIT_FIELDS = [
+  { name: 'holder', type: 'address' },
+  { name: 'spender', type: 'address' },
+  { name: 'nonce', type: 'uint256' },
+  { name: 'expiry', type: 'uint256' },
+  { name: 'allowed', type: 'bool' }
+]
+
 let messageTemplate: Message
 describe('typed message tests', () => {
   beforeEach(() => {
@@ -186,7 +201,7 @@ describe('typed message tests', () => {
           verifyingContract: WETH_ADDRESS,
           salt: '1'
         },
-        types: { EIP712Domain: [], Permit: [] },
+        types: { EIP712Domain: [], Permit: ERC2612_PERMIT_FIELDS },
         message: {},
         primaryType: 'Permit'
       }
@@ -207,6 +222,14 @@ describe('typed message tests', () => {
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
+  const setDaiPermitMessage = (message: Record<string, any>) => {
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
+      EIP712Domain: [],
+      Permit: DAI_PERMIT_FIELDS
+    }
+    messageTemplate.content.message = message
+  }
+
   test('erc20 module with DAI-style permit (grant)', () => {
     const expectedVisualization = [
       getAction('Grant approval'),
@@ -217,7 +240,7 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
 
-    messageTemplate.content.message = typedMessages.daiPermit[0]!
+    setDaiPermitMessage(typedMessages.daiPermit[0]!)
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = DAI_ADDRESS
@@ -234,7 +257,7 @@ describe('typed message tests', () => {
       getAddressVisualization(address2)
     ]
 
-    messageTemplate.content.message = typedMessages.daiPermit[1]!
+    setDaiPermitMessage(typedMessages.daiPermit[1]!)
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = DAI_ADDRESS
@@ -250,12 +273,34 @@ describe('typed message tests', () => {
       getAddressVisualization(address2)
     ]
 
-    messageTemplate.content.message = typedMessages.daiPermit[2]!
+    setDaiPermitMessage(typedMessages.daiPermit[2]!)
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = DAI_ADDRESS
     const { fullVisualization } = erc20Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+  test('erc20 module shows a DAI-style permit with unsigned EIP-2612 keys as unlimited', () => {
+    const expectedVisualization = [
+      getAction('Grant approval'),
+      getLabel('for'),
+      getToken(DAI_ADDRESS, MaxUint256),
+      getLabel('to'),
+      getAddressVisualization(address2)
+    ]
+
+    // `owner`, `value` and `deadline` are not in the DAI Permit type, so they are not signed
+    setDaiPermitMessage({
+      ...typedMessages.daiPermit[1]!,
+      owner: address1,
+      value: parseEther('1'),
+      deadline: 968187600n
+    })
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = DAI_ADDRESS
+    const { fullVisualization } = erc20Module(messageTemplate)
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
   test('erc721 module', () => {
@@ -288,6 +333,8 @@ describe('typed message tests', () => {
       EIP712Domain: [],
       PermitSingle: [{ name: 'details', type: 'PermitDetails' }]
     }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
+      'PermitSingle'
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
@@ -313,6 +360,8 @@ describe('typed message tests', () => {
       EIP712Domain: [],
       PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }]
     }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
+      'PermitBatch'
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
@@ -322,7 +371,7 @@ describe('typed message tests', () => {
     compareVisualizations(fullVisualization!, expectedBatchVisualization)
   })
 
-  test('permit2 module batch permit', () => {
+  test('permit2 module permit transfer from', () => {
     const expectedBatchVisualization = [
       getAction('Approve'),
       getAddressVisualization('0x1fa57f879417e029ef57d7ce915b0aa56a507c31'),
@@ -332,8 +381,10 @@ describe('typed message tests', () => {
     ]
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
       EIP712Domain: [],
-      PermitBatch: [{ name: 'details', type: 'TokenPermissions' }]
+      PermitTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }]
     }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
+      'PermitTransferFrom'
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
@@ -351,6 +402,8 @@ describe('typed message tests', () => {
       EIP712Domain: [],
       ...types
     }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
+      Object.keys(types)[0]!
     ;(
       messageTemplate.content as TypedMessageUserRequest['meta']['params']
     ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
@@ -434,6 +487,32 @@ describe('typed message tests', () => {
       }
     )
     expect(permit2Module(messageTemplate).fullVisualization).toHaveLength(0)
+  })
+
+  test('permit2 single with an unused witness type and unsigned keys shows the signed details', () => {
+    const expectedVisualization = [
+      getAction('Approve'),
+      getAddressVisualization(address2),
+      getLabel('to use'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getDeadline(968187600n)
+    ]
+    // PermitWitnessTransferFrom, `permitted` and `deadline` are not part of PermitSingle,
+    // so they are not signed and must not change what is shown
+    setPermit2WitnessMessage(
+      {
+        PermitSingle: [{ name: 'details', type: 'PermitDetails' }],
+        PermitWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }]
+      },
+      {
+        ...typedMessages.permit2[0]!,
+        permitted: { token: WETH_ADDRESS, amount: 1n },
+        nonce: 1n,
+        deadline: 1n
+      }
+    )
+    const { fullVisualization } = permit2Module(messageTemplate)
+    compareVisualizations(fullVisualization!, expectedVisualization)
   })
 
   test('cowswap module sell order', () => {
