@@ -32,7 +32,13 @@ import { IActivityController } from '../../interfaces/activity'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { IContractInfoController } from '../../interfaces/contractInfo'
-import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/dapp'
+import {
+  Dapp,
+  DAPP_VERIFICATION_BANNER_IDS,
+  DappProviderRequest,
+  DappVerificationBanner,
+  IDappsController
+} from '../../interfaces/dapp'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
@@ -146,6 +152,14 @@ const STATUS_WRAPPED_METHODS = {
 
 /** How long a resolved transitional request stays, so the app request it was blocking can arrive */
 const TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS = 300
+
+/** Dapp requests whose screen warns about the app, without a signing controller doing it */
+const DAPP_VERIFICATION_REQUEST_KINDS: UserRequest['kind'][] = [
+  'walletAddEthereumChain',
+  'walletWatchAsset',
+  'ethGetEncryptionPublicKey',
+  'ethDecrypt'
+]
 
 const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
   'Your Safe account is still being activated on this network. Wait a moment, then try again.'
@@ -476,6 +490,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
     this.shouldSimulateAccountOps = shouldSimulateAccountOps
+
+    // `currentRequestDappVerificationBanners` is derived from DappsController state (the dapp
+    // verification status), so its updates must be propagated - otherwise a banner computed
+    // before the status resolves would stay stale in the UI.
+    // NOTE: No unsubscribe needed - both controllers are singletons living for the app lifetime.
+    this.#dapps.onUpdate((forceEmit) => {
+      if (this.#getCurrentRequestDappSessionForVerification()) this.propagateUpdate(forceEmit)
+    }, 'requests-dapps-verification')
 
     this.#ui.window.event.on('windowRemoved', async (winId: number) => {
       // When windowManager.focus is called, it may close and reopen the request window as part of its fallback logic.
@@ -1662,6 +1684,38 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * of its requests are queued, and whether it has been refused enough to be worth silencing.
    * Null when the request didn't come from an app.
    */
+  /**
+   * The dapp session of the current request, when it is one of the dapp requests whose screen
+   * shows the dapp verification banners from `currentRequestDappVerificationBanners`. Signing
+   * requests are left out, as their own controllers (SignMessage, SignAccountOp) compute them.
+   */
+  #getCurrentRequestDappSessionForVerification(): DappProviderRequest['session'] | null {
+    const request = this.currentUserRequest
+    if (!request) return null
+    if (!DAPP_VERIFICATION_REQUEST_KINDS.includes(request.kind)) return null
+
+    return request.dappPromises[0]?.session || null
+  }
+
+  /**
+   * Scam checker warnings for the app behind the current add network, add token, get encryption
+   * public key or decrypt request. Empty for any other request, or when no warning applies.
+   */
+  get currentRequestDappVerificationBanners(): DappVerificationBanner[] {
+    const session = this.#getCurrentRequestDappSessionForVerification()
+    if (!session?.origin) return []
+
+    const banner = this.#dapps.getDappVerificationBanner([session.origin], {
+      includeDappNamesInText: false,
+      sessionId: session.sessionId
+    })
+    if (!banner) return []
+    // Same as in the SignMessage flow - "not in catalog" is too noisy and not actionable on its own.
+    if (banner.id === DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG) return []
+
+    return [banner]
+  }
+
   get currentRequestRejectOptions(): {
     dappRequestsCount: number
     canSilenceDapp: boolean
@@ -4344,6 +4398,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       banners: this.banners,
       visibleUserRequests: this.visibleUserRequests,
       currentUserRequest: this.currentUserRequest,
+      currentRequestDappVerificationBanners: this.currentRequestDappVerificationBanners,
       currentRequestRejectOptions: this.currentRequestRejectOptions
     }
   }
