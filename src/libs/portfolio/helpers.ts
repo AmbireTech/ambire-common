@@ -7,7 +7,7 @@ import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Price } from '../../interfaces/assets'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { AssetType } from '../defiPositions/types'
+import { AssetType, Position } from '../defiPositions/types'
 import { CustomToken, TokenPreference } from './customToken'
 import { PORTFOLIO_LIB_ERROR_NAMES } from './errorNames'
 import {
@@ -606,25 +606,24 @@ const getPositionIdsCountedByTokens = (
       .map((token) => token.flags.defiPositionId!)
   )
 
+const getPositionBorrowedValue = (position: Position): number =>
+  position.assets.reduce(
+    (sum, asset) => (asset.type === AssetType.Borrow ? sum + (asset.value || 0) : sum),
+    0
+  )
+
 /**
- * The USD value borrowed in the positions whose supplied funds `getTotal` counts through
- * wallet tokens. `getTotal` does not subtract it, so subtract it from the total to get the
- * net balance. The other positions are counted at their net value and are not part of it.
+ * The USD value borrowed in all DeFi positions. `getTotal` subtracts it, so add it back
+ * to the total to count the positions at their full supplied value.
  */
-export const getBorrowedValueInTotal = (
-  tokens: TokenResult[],
+export const getBorrowedValue = (
   defiState: PortfolioNetworkResult['defiPositions'] | null | undefined
 ): number => {
   if (!defiState) return 0
 
-  const positionIdsCountedByTokens = getPositionIdsCountedByTokens(tokens, false)
-  if (!positionIdsCountedByTokens.size) return 0
-
   return defiState.positionsByProvider
     .flatMap(({ positions }) => positions)
-    .filter(({ id }) => positionIdsCountedByTokens.has(id))
-    .flatMap(({ assets }) => assets)
-    .reduce((sum, asset) => (asset.type === AssetType.Borrow ? sum + (asset.value || 0) : sum), 0)
+    .reduce((sum, position) => sum + getPositionBorrowedValue(position), 0)
 }
 
 export const getTotal = (
@@ -681,7 +680,13 @@ export const getTotal = (
 
         positionsFlat.forEach((p) => {
           // stkWallet is an internal position, created from the stkWallet token
-          if (positionsToExclude.has(p.id) || p.id === 'stk-wallet') return
+          if (p.id === 'stk-wallet') return
+          // The wallet tokens count the supplied funds in full, so only the loans are left
+          // to subtract to count the position at its net value, like the other positions
+          if (positionsToExclude.has(p.id)) {
+            cur.usd -= getPositionBorrowedValue(p)
+            return
+          }
 
           cur.usd += p.additionalData.positionInUSD || 0
         })

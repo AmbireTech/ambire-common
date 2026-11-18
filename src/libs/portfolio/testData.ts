@@ -423,7 +423,8 @@ const PORTFOLIO_STATE: AccountState = {
         ],
         nonceId: 'nonce-1'
       },
-      total: { usd: 260 }
+      // Net of the $30 borrowed against the aBasWETH
+      total: { usd: 230 }
     }
   },
   '8453': {
