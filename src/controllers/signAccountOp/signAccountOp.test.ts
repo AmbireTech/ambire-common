@@ -1766,6 +1766,7 @@ describe('SignAccountOp Controller ', () => {
     })
 
     test('does not replace an approval while it is being signed or sent', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await initSafeWithSmartAccountOwners()
       await controller.initSafeOwnerApproval(e2esmartAccount.addr)
       const approval = controller.safeOwnerApproval!
@@ -1790,9 +1791,11 @@ describe('SignAccountOp Controller ', () => {
         })
       )
       controller.destroy()
+      restore()
     })
 
     test('does not prepare an approval for an owner that is not a smart account', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await initSafeWithSmartAccountOwners()
       const onError = jest.fn()
       controller.onError(onError)
@@ -1805,6 +1808,7 @@ describe('SignAccountOp Controller ', () => {
         expect.objectContaining({ message: "This account can't approve this transaction." })
       )
       controller.destroy()
+      restore()
     })
 
     test('counts an approval already made onchain as the owner signature', async () => {
@@ -1867,6 +1871,7 @@ describe('SignAccountOp Controller ', () => {
     })
 
     test('reports an error instead of throwing when calling the approval fails', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await initSafeWithSmartAccountOwners()
       await controller.initSafeOwnerApproval(e2esmartAccount.addr)
       const retryError = new Error('retry failed')
@@ -1882,9 +1887,11 @@ describe('SignAccountOp Controller ', () => {
         expect.objectContaining({ level: 'major', error: retryError })
       )
       controller.destroy()
+      restore()
     })
 
     test('reports an error when the Safe state cannot be read before sending the approval', async () => {
+      const { restore } = suppressConsole()
       const { controller, accountsCtrl } = await initSafeWithSmartAccountOwners()
       await controller.initSafeOwnerApproval(e2esmartAccount.addr)
       const approval = controller.safeOwnerApproval!
@@ -1906,9 +1913,11 @@ describe('SignAccountOp Controller ', () => {
         })
       )
       controller.destroy()
+      restore()
     })
 
     test('sends the approval only while it is for the current Safe transaction', async () => {
+      const { restore } = suppressConsole()
       const { controller } = await initSafeWithSmartAccountOwners()
       await controller.initSafeOwnerApproval(e2esmartAccount.addr)
       const approval = controller.safeOwnerApproval!
@@ -1935,6 +1944,7 @@ describe('SignAccountOp Controller ', () => {
       expect(controller.safeOwnerApproval).not.toBe(approval)
       expect(controller.safeOwnerApproval!.account.addr).toBe(e2esmartAccount.addr)
       controller.destroy()
+      restore()
     })
 
     test('resumes the approval with the Safe request only while it is not signed', async () => {
