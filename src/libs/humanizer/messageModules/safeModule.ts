@@ -5,11 +5,13 @@ import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import {
   ExpectedTypedData,
+  dedupeWarnings,
   getAction,
   getAddressVisualization,
   getBreak,
   getLabel,
-  isExactTypedData
+  isExactTypedData,
+  withLowerCaseCallData
 } from '../utils'
 
 /** Safe{WALLET} transaction (v1.0.0 and later), as the Safe contracts sign it */
@@ -38,12 +40,16 @@ export const humanizeSafeTx: HumanizerTypedMessageFunction = (message) => {
   const { to, value, data, operation, nonce } = message.content.message
   const { accountAddr } = message
   const { verifyingContract } = message.content.domain
-  const humanizedCall = genericErc20Humanizer({ accountAddr }, { to, value, data })
+  // the signed message keeps the calldata exactly as the app sent it, but the humanizers match
+  // selectors against lower-case hex, so upper-case calldata would otherwise skip them (and their
+  // warnings) entirely
+  const safeTxCall = withLowerCaseCallData({ to, value, data })
+  const humanizedCall = genericErc20Humanizer({ accountAddr }, safeTxCall)
   const safeStandardHumanization = getSafeHumanization(
     verifyingContract ?? undefined,
     to,
     value,
-    data,
+    safeTxCall.data,
     0,
     nonce
   )
@@ -63,18 +69,13 @@ export const humanizeSafeTx: HumanizerTypedMessageFunction = (message) => {
     fullVisualization.push(...humanizedCall.fullVisualization)
   }
   const delegateCallWarnings = operation !== undefined ? getDelegateCallWarning(operation, to) : []
-  if (delegateCallWarnings.length) {
-    return {
-      fullVisualization,
-      warnings: delegateCallWarnings
-    }
-  }
 
+  // a delegate call warning must not hide what the call itself changes (e.g. the account's owners)
   return {
     fullVisualization,
-    warnings:
-      safeStandardHumanization && safeStandardHumanization.warnings
-        ? safeStandardHumanization.warnings
-        : []
+    warnings: dedupeWarnings([
+      ...delegateCallWarnings,
+      ...(safeStandardHumanization?.warnings || [])
+    ])
   }
 }

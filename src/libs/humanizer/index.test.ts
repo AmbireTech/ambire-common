@@ -461,6 +461,8 @@ describe('TypedMessages', () => {
         ]
       },
       message,
+      // primaryType must name a declared type - this message's only declared type is
+      // PermitBatch, so that's the primaryType a real dapp would send
       primaryType: 'PermitBatch'
     }
     const fullMessage = {

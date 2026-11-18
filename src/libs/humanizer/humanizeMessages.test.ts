@@ -1004,6 +1004,32 @@ describe('typed message tests', () => {
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
 
+  test('permit2 single with an unused witness type and unsigned keys shows the signed details', () => {
+    const expectedVisualization = [
+      getAction('Approve'),
+      getAddressVisualization(address2),
+      getLabel('to use'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getDeadline(968187600n)
+    ]
+    // PermitWitnessTransferFrom, `permitted` and `deadline` are not part of PermitSingle,
+    // so they are not signed and must not change what is shown
+    setPermit2WitnessMessage(
+      {
+        ...PERMIT2_PERMIT_SINGLE_TYPES,
+        PermitWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }]
+      },
+      {
+        ...typedMessages.permit2[0]!,
+        permitted: { token: WETH_ADDRESS, amount: 1n },
+        nonce: 1n,
+        deadline: 1n
+      }
+    )
+    const { fullVisualization } = humanize(messageTemplate)
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+
   test('cowswap module sell order', () => {
     const accountAddr = '0xd8293ad21678c6f09da139b4b62d38e514a03b78'
     const sellToken = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'

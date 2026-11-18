@@ -1,5 +1,7 @@
 import { isHexString } from 'ethers'
 
+import { retryPrivacyPoolsRequest } from './retry'
+
 import type { EthereumProvider, TxLog } from '@kohaku-eth/provider'
 
 /** Blocks per `eth_getLogs` call: the widest range the wallet's RPC accepts. */
@@ -10,17 +12,6 @@ const LOG_WINDOW_BLOCKS = 5000n
  * 32 only a third more with a 4x worse p95. 5 is past the knee and leaves the shared endpoint room.
  */
 const LOG_WINDOW_CONCURRENCY = 5
-
-/** Retries per window before the whole read gives up. */
-const MAX_ATTEMPTS = 4
-
-/** Doubles per attempt. Covers a rate limit or a dropped connection, not a refused query. */
-const BASE_BACKOFF_MS = 500
-
-const sleep = (ms: number) =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
 
 /** The shape the SDK's data service asks a log source for. Not exported by the SDK. */
 export type PrivacyPoolsLogsParams = {
@@ -54,17 +45,8 @@ export const createParallelLogSource =
       windows.push({ from, to: end < toBlock ? end : toBlock })
     }
 
-    const readWindow = async ({ from, to }: { from: bigint; to: bigint }): Promise<TxLog[]> => {
-      for (let attempt = 1; ; attempt += 1) {
-        try {
-          return await provider.getLogs({ address, fromBlock: from, toBlock: to })
-        } catch (error) {
-          if (attempt >= MAX_ATTEMPTS) throw error
-
-          await sleep(BASE_BACKOFF_MS * 2 ** (attempt - 1))
-        }
-      }
-    }
+    const readWindow = ({ from, to }: { from: bigint; to: bigint }): Promise<TxLog[]> =>
+      retryPrivacyPoolsRequest(() => provider.getLogs({ address, fromBlock: from, toBlock: to }))
 
     // Slotted by window rather than appended, to keep block order whatever order answers arrive in
     const logsByWindow: TxLog[][] = new Array(windows.length)

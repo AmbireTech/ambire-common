@@ -4,6 +4,7 @@ import { eip7702AuthorizationModule } from './eip7702AuthorizationModule'
 import { humanizeEnsUpload } from './ensModule'
 import { humanizeEntryPointAuthorization } from './entryPointModule'
 import { fallbackShortPlaintext } from './fallbackShortPlaintext'
+import { hashMessageModule } from './hashMessageModule'
 import { legendsMessageModule } from './legendsModule'
 import { humanizeSeaportOrder, openseaLoginMessageModule } from './openseaModule'
 import { humanizePermit } from './permitModule'
@@ -76,6 +77,8 @@ export const getTypedMessageHumanizer = (
  * The visualization and warnings come from the first module that matches.
  */
 export const plainTextMessageModules = [
+  // first, so no other module can describe a hash message without its warning
+  hashMessageModule,
   legendsMessageModule,
   openseaLoginMessageModule,
   zealyMessageModule,

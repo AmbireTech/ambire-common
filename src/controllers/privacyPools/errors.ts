@@ -167,6 +167,14 @@ export const privacyPoolsErrors = {
       error:
         cause instanceof Error ? cause : new Error('privacyPools: reading the pool stats failed')
     }),
+  fingerprintCheckFailed: (cause: unknown) =>
+    new EmittableError({
+      // The transfer's privacy shows as not checked instead, so not as a toast
+      message: 'Could not check which deposits were made with Ambire.',
+      level: 'silent',
+      error:
+        cause instanceof Error ? cause : new Error('privacyPools: checking the depositors failed')
+    }),
   ragequitPreparationFailed: (cause: unknown) =>
     majorError(
       'Could not prepare taking back this deposit. Please try again.',
