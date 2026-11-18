@@ -47,6 +47,17 @@ export class EOA7702 extends BaseAccount {
       return null
     }
 
+    // a smarter EOA broadcasts a single call directly, so the estimateGas
+    // result is enough to proceed. Ambire estimation errors are critical only
+    // if they're OOG as the inner calls estimate is better in that case
+    const isProviderSuccessful = !!estimation.provider && !(estimation.provider instanceof Error)
+    if (this.accountState.isSmarterEoa && op.calls.length === 1 && isProviderSuccessful) {
+      if (estimation.ambire instanceof Error) {
+        return estimation.ambire.cause === 'OOG' ? estimation.ambire : null
+      }
+      return null
+    }
+
     if (estimation.ambire instanceof Error) return estimation.ambire
     return null
   }
@@ -93,11 +104,11 @@ export class EOA7702 extends BaseAccount {
       const revokeGas = isDelegating ? this.ACTIVATOR_GAS_USED : 0n
 
       if (this.accountState.isSmarterEoa) {
-        // smarter EOAs with a failing ambire estimation cannot broadcast
-        if (!estimation.ambireEstimation) return 0n
-
         // paying in native + smartEOA makes the provider estimation more accurate
         if (estimation.providerEstimation) return estimation.providerEstimation.gasUsed + revokeGas
+
+        // smarter EOAs with a failing ambire and provider estimation cannot broadcast
+        if (!estimation.ambireEstimation) return 0n
 
         // trust the ambire estimaton as it's more precise
         // but also add the broadcast gas as it's not included in the ambire estimate

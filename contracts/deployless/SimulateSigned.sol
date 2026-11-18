@@ -28,36 +28,44 @@ contract SimulateSigned is EstimationStructs {
     }
     outcome.gasUsed = doingFirstSimulation ? gasInitial - gasleft() : gasLimits.gasLimit;
 
-    bool isCaseWithNoGasLimits = doingFirstSimulation &&
-      !gasLimits.shouldRevertUponSuccessIfFirstSimulation;
-    bool isRevertingWithoutOOG = doingFirstSimulation && !outcome.success;
-    bool isSuccessWithSetGas = !doingFirstSimulation && outcome.success;
-    if (isCaseWithNoGasLimits || isRevertingWithoutOOG || isSuccessWithSetGas) {
-      return outcome;
-    }
-
     if (
       gasLimits.shouldRevertUponSuccessIfFirstSimulation && outcome.success && doingFirstSimulation
     ) {
       revert RevertWithSuccess(outcome.gasUsed);
     }
+  }
 
-    /////////////////////////////////////////////////////////////////
-    //                  success: false with OOG                    //
-    /////////////////////////////////////////////////////////////////
-
-    // if the binary search has reached the upperBoundLimit, declare a failure
-    if (gasLimits.gasLimit == gasLimits.upperBoundLimit) return outcome;
-
-    // do a binary search, increasing by half of gas limit and upper bound limit
-    // until in 10% of range to the upperBoundLimit. When reached, set the
-    // gasLimit to the upperBoundLimit and make the last simulation
-    gasLimits.gasLimit = (gasLimits.gasLimit + gasLimits.upperBoundLimit) / 2;
-    if (gasLimits.gasLimit > (gasLimits.upperBoundLimit - gasLimits.upperBoundLimit / 10)) {
-      gasLimits.gasLimit = gasLimits.upperBoundLimit;
+  /**
+   * Execute the accountOp with a set gasLimit and always revert so the state
+   * is not modified and the accountOp can be simulated again later.
+   * Reverts with RevertWithSuccess(gasLimit) if the execution succeeds
+   * and with the execution error otherwise
+   */
+  function simulateSignedWithoutStateChange(AccountOp memory op, uint256 gasLimit) external {
+    try op.account.execute{ gas: gasLimit }(op.calls, op.signature) {
+      revert RevertWithSuccess(gasLimit);
+    } catch (bytes memory err) {
+      assembly {
+        revert(add(err, 32), mload(err))
+      }
     }
+  }
 
-    outcome = this.simulateSigned(op, gasLimits);
-    outcome.initialGasLimitFailed = true;
+  /**
+   * Check whether the accountOp succeeds with the passed gasLimit
+   * without modifying the state
+   */
+  function doesSucceedWithGasLimit(
+    AccountOp memory op,
+    uint256 gasLimit
+  ) internal returns (bool success, bytes memory err) {
+    try this.simulateSignedWithoutStateChange(op, gasLimit) {
+      // unreachable as simulateSignedWithoutStateChange always reverts
+    } catch (bytes memory revertData) {
+      if (revertData.length >= 4 && bytes4(revertData) == RevertWithSuccess.selector) {
+        return (true, '');
+      }
+      return (false, revertData);
+    }
   }
 }

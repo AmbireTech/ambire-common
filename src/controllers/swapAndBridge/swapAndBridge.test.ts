@@ -43,6 +43,7 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 import { StorageController } from '../storage/storage'
 import { SurveyController } from '../survey/survey'
+import { TokenPricesController } from '../tokenPrices/tokenPrices'
 import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 import { SocketAPIMock } from './socketApiMock'
@@ -220,7 +221,8 @@ const bannerCtrl = new BannerController(
     isBalanceReady: true
   }),
   surveyCtrl,
-  '1.0.0'
+  '1.0.0',
+  new FeatureFlagsController({}, storageCtrl)
 )
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
@@ -260,7 +262,11 @@ const portfolioCtrl = new PortfolioController(
   velcroUrl,
   bannerCtrl,
   featureFlagsCtrl,
-  uiCtrl
+  uiCtrl,
+  new TokenPricesController({
+    fetch,
+    isTokenPricesEnabled: () => featureFlagsCtrl.isFeatureEnabled('tokenPrices')
+  })
 )
 
 const safe = new SafeController({
@@ -369,7 +375,6 @@ const buildSwapAndBridgeController = (
     externalSignerControllers: {},
     relayerUrl,
     getUserRequests: () => [],
-    getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
     onBroadcastSuccess: () => Promise.resolve(),
     onBroadcastFailed: () => {},
     ui
@@ -2089,6 +2094,16 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromAmount).toEqual('1.0')
     expect(swapAndBridgeController.validateFromAmount.severity).toEqual('success')
   })
+  test('should switch to token mode when the selected token has no price', () => {
+    swapAndBridgeController.updateForm({ fromSelectedToken: PORTFOLIO_TOKENS[0] })
+    swapAndBridgeController.updateForm({ fromAmountFieldMode: 'fiat' })
+    expect(swapAndBridgeController.fromAmountFieldMode).toEqual('fiat')
+
+    swapAndBridgeController.updateForm({
+      fromSelectedToken: { ...PORTFOLIO_TOKENS[1]!, priceIn: [] }
+    })
+    expect(swapAndBridgeController.fromAmountFieldMode).toEqual('token')
+  })
   test('should clear the fiat amount when the amount is cleared to zero', () => {
     swapAndBridgeController.updateForm({ fromSelectedToken: PORTFOLIO_TOKENS[0] })
     swapAndBridgeController.updateForm({ fromAmountFieldMode: 'token' })
@@ -2148,7 +2163,6 @@ describe('SwapAndBridge Controller: to token market data', () => {
       externalSignerControllers: {},
       relayerUrl,
       getUserRequests: () => [],
-      getVisibleUserRequests: () => [],
       onBroadcastSuccess: () => Promise.resolve(),
       onBroadcastFailed: () => {},
       ui: new UiController({ uiManager })

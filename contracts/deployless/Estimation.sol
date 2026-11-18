@@ -188,7 +188,7 @@ contract Estimation is FeeTokens, Spoof {
     }
     op.signature = spoofSig;
     if (spoofSig.length > 0) {
-      try this.simulateSigned(op, GasLimits(0, 0, true)) returns (
+      try this.simulateSigned(op, GasLimits(0, true)) returns (
         SimulationOutcome memory callsRevertedOutcome
       ) {
         // if simulateSigned enters here while having a gasLimit of 0,
@@ -222,19 +222,66 @@ contract Estimation is FeeTokens, Spoof {
           // raise the calculated gas limit by 5% just-in-case
           uint256 raisedGasLimit = gasLimit + gasLimit / 20;
 
-          // the upperLimit should be 3 times the raisedGasLimit unless
-          // the upperLimit becomes bigger than the blockGasLimit
-          uint256 upperLimit = raisedGasLimit * 3;
-          if (upperLimit > blockGasLimit) {
-            upperLimit = blockGasLimit;
+          outcome = simulateSigned(op, GasLimits(raisedGasLimit, false));
+          if (!outcome.success) {
+            outcome = simulateWithIncreasedGasLimits(op, raisedGasLimit, blockGasLimit, outcome.err);
+            outcome.initialGasLimitFailed = true;
           }
-
-          outcome = simulateSigned(op, GasLimits(raisedGasLimit, upperLimit, false));
         }
       }
     } else {
       outcome.err = bytes('SPOOF_ERROR');
     }
+  }
+
+  /**
+   * Some contracts require a lot more gas to be available than what they
+   * actually use (e.g. OP Stack withdrawal finalization reserves the gas
+   * limit of the withdrawal before calling the target), so the accountOp
+   * can fail with the raised gas limit from the first simulation.
+   * Retry with 8x the raised gas limit (capped at the block gas limit) and
+   * declare a failure if it fails. Upon success, make two binary search
+   * steps between the failing and the successful gas limit and return the
+   * lowest successful one so we don't return an unnecessarily high gas limit
+   */
+  function simulateWithIncreasedGasLimits(
+    AccountOp memory op,
+    uint256 raisedGasLimit,
+    uint256 blockGasLimit,
+    bytes memory raisedGasLimitErr
+  ) internal returns (SimulationOutcome memory outcome) {
+    uint256 failedGasLimit = raisedGasLimit;
+    uint256 successfulGasLimit = raisedGasLimit * 8;
+    if (blockGasLimit != 0 && successfulGasLimit > blockGasLimit) {
+      successfulGasLimit = blockGasLimit;
+    }
+
+    // the block gas limit doesn't allow a higher gas limit so there's nothing more to try
+    if (successfulGasLimit <= failedGasLimit) {
+      outcome.gasUsed = failedGasLimit;
+      outcome.err = raisedGasLimitErr;
+      return outcome;
+    }
+
+    (bool success, bytes memory err) = doesSucceedWithGasLimit(op, successfulGasLimit);
+    if (!success) {
+      outcome.gasUsed = successfulGasLimit;
+      outcome.err = err;
+      return outcome;
+    }
+
+    for (uint256 i = 0; i != 2; i++) {
+      uint256 halvedGasLimit = (failedGasLimit + successfulGasLimit) / 2;
+      (bool isHalvedGasLimitSuccessful, ) = doesSucceedWithGasLimit(op, halvedGasLimit);
+      if (isHalvedGasLimitSuccessful) {
+        successfulGasLimit = halvedGasLimit;
+      } else {
+        failedGasLimit = halvedGasLimit;
+      }
+    }
+
+    // the simulations above didn't modify the state so we need to make the final one
+    outcome = simulateSigned(op, GasLimits(successfulGasLimit, false));
   }
 
   function calculateBaseGas(IAmbireAccount account, bytes memory spoofSig) internal returns (uint) {
@@ -252,7 +299,7 @@ contract Estimation is FeeTokens, Spoof {
     // the first time the account may not be added to the accessList which will distort the difference
     // However, if the previous simulations have been successful it will be, and if they're not, we don't care
     // about the accuracy of the baseGas
-    SimulationOutcome memory emptyOpOutcome = simulateSigned(emptyOp, GasLimits(0, 0, false));
+    SimulationOutcome memory emptyOpOutcome = simulateSigned(emptyOp, GasLimits(0, false));
     require(
       emptyOpOutcome.success,
       // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
@@ -265,7 +312,7 @@ contract Estimation is FeeTokens, Spoof {
     twoCallOp.calls = new Transaction[](2);
     twoCallOp.calls[0].to = address(this);
     twoCallOp.calls[1].to = address(this);
-    SimulationOutcome memory twoCallOpOutcome = simulateSigned(twoCallOp, GasLimits(0, 0, false));
+    SimulationOutcome memory twoCallOpOutcome = simulateSigned(twoCallOp, GasLimits(0, false));
     require(
       twoCallOpOutcome.success,
       // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()

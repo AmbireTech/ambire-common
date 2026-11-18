@@ -15,8 +15,10 @@ export const STATUS_WRAPPED_METHODS = {
   handleAccountPickerInitNfc: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL',
   selectAccount: 'INITIAL',
+  privacyPoolsRagequit: 'INITIAL',
   accountPickerSetInitParamsFromNewSeed: 'INITIAL',
   accountPickerSetInitParamsFromPrivateKeys: 'INITIAL',
+  accountPickerSetInitParamsFromSavedSeed: 'INITIAL',
   fetchSafeTxns: 'INITIAL',
   refreshSafeTxns: 'INITIAL'
 } as const

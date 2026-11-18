@@ -14,6 +14,7 @@ import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import * as portfolioConsts from '../../consts/portfolio'
 import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { StoredKey } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
@@ -45,6 +46,7 @@ import { getRpcProvider } from '../../services/provider'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { StorageController } from '../storage/storage'
+import { TokenPricesController } from '../tokenPrices/tokenPrices'
 import { COLIBRI_CATCH_UP_RETRY_INTERVAL } from '../verification/verification'
 import { EXCHANGE_LIST_URL, PortfolioController } from './portfolio'
 
@@ -490,7 +492,6 @@ describe('Portfolio Controller ', () => {
       discoveryTime: 0,
       oracleCallTime: 0,
       priceUpdateTime: 0,
-      tokenDataCache: new Map(),
       tokens: [makeToken(amount, chainId)],
       feeTokens: [],
       toBeLearned: { erc20s: [], erc721s: {} },
@@ -1314,7 +1315,6 @@ describe('Portfolio Controller ', () => {
       discoveryTime: 0,
       oracleCallTime: 0,
       priceUpdateTime: 0,
-      tokenDataCache: new Map(),
       tokens: [],
       feeTokens: [],
       toBeLearned: { erc20s: [], erc721s: {} },
@@ -3010,9 +3010,10 @@ describe('Portfolio Controller ', () => {
 
       jest
         .spyOn(defiPricesLib, 'updatePositionsByProviderAssetPrices')
-        .mockImplementationOnce(async () => {
-          throw new Error('Asset price error')
-        })
+        .mockImplementationOnce(async (_tokenPrices, { positionsByProvider }) => ({
+          positionsByProvider,
+          error: new Error('Asset price error')
+        }))
 
       const { controller } = await prepareTest()
 
@@ -3276,6 +3277,40 @@ describe('Portfolio Controller ', () => {
         expect(state?.result?.tokens).toEqual([])
         expect(firstProvider?.chainId).toBeUndefined()
         expect(firstAsset?.address).toBe(undefined)
+      })
+
+      it('should report an unreadable app position and hide it', async () => {
+        const { restore } = suppressConsole()
+        const { controller } = await prepareTest()
+        const brokenResponse = getDefiAppsResponse()
+        // @ts-expect-error test
+        brokenResponse.defi.positions[0]!.positions[0]!.assets[0]!.amount = 'not an amount'
+
+        // @ts-expect-error test
+        const discoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        discoverySpy.mockResolvedValue(brokenResponse)
+        const emittedErrors: ErrorRef[] = []
+        const unsubscribe = controller.onError((error) => emittedErrors.push(error))
+
+        // @ts-expect-error test
+        await controller.updateDefiAppsState(account, {
+          defiMaxDataAgeMs: 0,
+          hasKeys: true,
+          isManualUpdate: true
+        })
+        unsubscribe()
+
+        const positionErrors = emittedErrors.filter((e) => e.message.includes('Polymarket'))
+        expect(positionErrors).toHaveLength(1)
+        expect(positionErrors[0]!.level).toBe('silent')
+        expect(positionErrors[0]!.message).not.toContain(account.addr)
+        expect(positionErrors[0]!.error.cause).toBeInstanceOf(Error)
+        expect(
+          controller.getAccountPortfolioState(account.addr).defiApps?.result?.defiPositions
+            .positionsByProvider[0]?.positions
+        ).toHaveLength(0)
+
+        restore()
       })
 
       it('should set criticalError on discovery failure', async () => {
@@ -3571,8 +3606,8 @@ describe('Portfolio Controller ', () => {
       otherNetworksDefiCounts: {}
     })
 
-    // @ts-expect-error test
-    expect(controller.tokenDataCache['137']).toBe(undefined)
+    const setTokenDataSpy = jest.spyOn(TokenPricesController.prototype, 'setTokenData')
+    expect(setTokenDataSpy).not.toHaveBeenCalled()
 
     jest
       // @ts-expect-error test
@@ -3607,10 +3642,10 @@ describe('Portfolio Controller ', () => {
       externalApiHintsResponse: null
     })
 
-    // @ts-expect-error test
-    expect(controller.tokenDataCache['137']).toBeDefined()
-    // @ts-expect-error test
-    expect(controller.tokenDataCache['137'].size).toBeGreaterThan(0)
+    expect(setTokenDataSpy).toHaveBeenCalledWith(137n, [
+      [ZeroAddress, expect.objectContaining({ priceIn: [{ baseCurrency: 'usd', price: 1 }] })]
+    ])
+    setTokenDataSpy.mockRestore()
   })
   it('A defi error is not returned if canSkipDefiUpdate=true', async () => {
     const { restore } = suppressConsole()
@@ -3842,8 +3877,7 @@ describe('Portfolio Controller ', () => {
         'hints',
         'mobileInviteKeys',
         'defiSessionIds',
-        'defiPositionsCountOnDisabledNetworks',
-        'tokenDataCache'
+        'defiPositionsCountOnDisabledNetworks'
       ].forEach((hiddenKey) => expect(serializedKeys).not.toContain(hiddenKey))
       ;[
         'customTokens',

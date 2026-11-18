@@ -1,19 +1,20 @@
-import { getAddress, isAddress } from 'viem'
+import { Hex, getAddress, isAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, isHexCall } from '../../utils'
+import { getAction, isHexCall, mergeWarnings } from '../../utils'
+import { summarizeLegacyRouterCall } from './summarize'
+import { UniswapSummaryMatcher } from './interfaces'
 import { uniSwapProxy } from './uniSwapProxy'
 import { uniUniversalRouter } from './uniUniversalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV3Mapping } from './uniV3'
+import { UNIVERSAL_ROUTER_CHAIN_IDS } from './universalRouterChains'
 
-const fullUniswapHumanizerMapping = {
-  ...uniV2Mapping,
-  ...uniV3Mapping,
-  ...uniUniversalRouter,
-  ...uniSwapProxy
-}
+// The functions that are described from what they do with the tokens
+const uniswapSummaryMapping: UniswapSummaryMatcher = { ...uniUniversalRouter, ...uniSwapProxy }
+// The functions that add liquidity are described as text, one function at a time
+const uniswapTextMapping = { ...uniV2Mapping, ...uniV3Mapping }
 
 // fetched from https://api.github.com/repos/Uniswap/universal-router/contents/deploy-addresses
 // and https://docs.uniswap.org/contracts/v3/reference/deployments/
@@ -112,13 +113,47 @@ const uniAddresses = [
   '0x3315ef7ca28db74abadc6c44570efdf06b04b020',
   '0x3a9d48ab9751398bbfa63ad67599bb04e4bdf98b',
   '0xB0C89059d7190EDb17eFF19829cc009cEe923916',
+  // Universal Router V2.1.1, V2.1.2 and V2.2.0, from the official list of deployments:
+  // https://github.com/Uniswap/universal-router/tree/main/deploy-addresses (mainnets only)
+  '0x2d01411773c8C24805306E89A41F7855C3c4Fe65', // arbitrum V2_1_2
+  '0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1', // arc V2_1_1
+  '0xd6145b2D3F379919E8CdEda7B97e37c4b2Ca9c40', // base V2_1_2
+  '0xDc264714F68d84CF29BC605589405E78bDBE7C9f', // bsc V2_1_2, linea V2_1_2, polygon V2_1_2
+  '0xe2023F3FA515cF070e07fD9d51c1d236e07843f4', // celo V2_1_2
+  '0xeD270A1Bcdc63cf1356D695e7f40961d4819d6bF', // hyperevm V2_1_2
+  '0x9aFe3C497e19501DB228F28CdBdD29bC98F65DBa', // hyperevm V2_2_0
+  '0x23617e59A5925b2A4Bf75d73ff6711cD0b29De85', // mainnet V2_1_2
+  '0xAedd1CF4C14e833140A61E9C0d2b73a64795c823', // megaeth V2_1_2
+  '0xa6CE4F10d83dBdDAc17E68e1837ca9cE6a1b596e', // monad V2_1_2
+  '0xC09255D86DB563cBc11C2fCf4a0C512e160111B4', // optimism V2_1_2
+  '0x8876789976dEcBfCbBbe364623C63652db8C0904', // robinhood V2_1_1
+  '0x204FAca1764B154221e35c0d20aBb3c525710498', // robinhood V2_1_2
+  '0x182a927119D56008d921126764bF884221b10f59', // tempo V2_1_2
+  '0xD1b797D92d87B688193A2B976eFc8D577D204343', // unichain V2_1_2
+  '0xF025e0Fe9E331A0eF05c2ad3C4E9C64b625cda6f', // worldchain V2_1_2, zora V2_1_2
+  '0x1cd182C94fcF42277B80DBB9060F88024809E61E', // xlayer V2_1_2
   // SwapProxy: not an official Uniswap deployment, but it forwards swaps to the Universal Router
   // using the same commands/inputs encoding (https://etherscan.io/address/0x02E5be68D46DAc0B524905bfF209cf47EE6dB2a9#code)
   '0x02E5be68D46DAc0B524905bfF209cf47EE6dB2a9'
 ]
 
+/** True when the call is to one of the addresses of the routers of Uniswap */
+const isUniswapRouterAddress = (address: string): boolean =>
+  isAddress(address) && uniAddresses.includes(getAddress(address))
+
+/**
+ * True when the Universal Router is not deployed at the address on the network of the account. The
+ * list of addresses has no networks, so the networks that Uniswap lists for its Universal Routers
+ * are checked here: a router address of one network can be another contract on another network. The
+ * V2 router of Ethereum, for example, has the address of a Universal Router on World Chain.
+ */
+const isUniversalRouterOnOtherNetwork = (chainId: bigint, address: string): boolean => {
+  const deployedChainIds = UNIVERSAL_ROUTER_CHAIN_IDS[address.toLowerCase()]
+  return !!deployedChainIds && !deployedChainIds.includes(chainId)
+}
+
 export const uniswapHumanizer: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
-  if (!call.to || !isAddress(call.to) || !uniAddresses.includes(getAddress(call.to))) return call
+  if (!call.to || !isUniswapRouterAddress(call.to)) return call
 
   // A call to a known Uniswap address that isn't a recognized Uniswap-specific action (e.g. an
   // ERC-721 approval on the Position Manager NFT contract) may already carry a more specific
@@ -130,11 +165,38 @@ export const uniswapHumanizer: HumanizerCallModule = (accountOp: AccountOp, call
       : { ...call, fullVisualization: [getAction('Uniswap action')] }
 
   const sigHash = call.data.substring(0, 10)
-  if (fullUniswapHumanizerMapping[sigHash])
+
+  // the commands of the Universal Router are only understood where the router is deployed
+  const isUniversalRouterCall = !!uniswapSummaryMapping[sigHash]
+  if (isUniversalRouterCall && isUniversalRouterOnOtherNetwork(accountOp.chainId, call.to)) {
+    return call
+  }
+
+  // a call inside a multicall that is not a swap or a payment is described as text when it can be
+  const describeUnknownCall = (data: Hex) => {
+    const describe = uniswapTextMapping[data.substring(0, 10)]
+    try {
+      return describe ? describe(accountOp, { ...call, data }) : [getAction('Uniswap action')]
+    } catch {
+      // the call does not decode, so it is only known to be a Uniswap action
+      return [getAction('Uniswap action')]
+    }
+  }
+
+  const summaryFunction = uniswapSummaryMapping[sigHash]
+  const summary = summaryFunction
+    ? summaryFunction(accountOp, call)
+    : summarizeLegacyRouterCall(accountOp, call, describeUnknownCall)
+  if (summary) {
     return {
       ...call,
-      fullVisualization: fullUniswapHumanizerMapping[sigHash](accountOp, call)
+      fullVisualization: summary.visualization,
+      warnings: mergeWarnings(call.warnings, summary.warnings)
     }
+  }
+
+  const textFunction = uniswapTextMapping[sigHash]
+  if (textFunction) return { ...call, fullVisualization: textFunction(accountOp, call) }
 
   return call.fullVisualization
     ? call

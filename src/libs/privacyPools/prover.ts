@@ -41,7 +41,8 @@ const throwIfCancelled = (signal: AbortSignal | undefined) => {
 
 /**
  * Lets a cancelled operation stop at its proofs, the slow part. The SDK has no way to cancel, so
- * `getSignal` is read on every proof, for the operation proving at that moment.
+ * `getSignal` is read on every proof, for the operation proving that circuit at that moment. By
+ * circuit, so cancelling a withdrawal never fails a ragequit's proof running beside it.
  *
  * Fails a proof asked for once cancelled. A prover that stops mid-proof (the offscreen one) fails
  * at once; one that cannot (the in-process one) is waited for and its result dropped, so a
@@ -50,13 +51,13 @@ const throwIfCancelled = (signal: AbortSignal | undefined) => {
 export const withCancellableProving =
   (
     proverFactory: PrivacyPoolsProverFactory,
-    getSignal: () => AbortSignal | null
+    getSignal: (circuit: CircuitName) => AbortSignal | null
   ): PrivacyPoolsProverFactory =>
   async () => {
     const prover = await proverFactory()
 
     const prove: PrivacyPoolsProver['prove'] = async (circuit, signals) => {
-      const signal = getSignal() ?? undefined
+      const signal = getSignal(circuit) ?? undefined
       throwIfCancelled(signal)
 
       const result = await prover.prove(circuit, signals, { signal })

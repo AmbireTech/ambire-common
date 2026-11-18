@@ -3,12 +3,14 @@ import { EventEmitter as NodeEventEmitter } from 'events'
 
 import { expect, jest } from '@jest/globals'
 import { createPPv1Broadcaster } from '@kohaku-eth/privacy-pools'
+import type { PPv1HistoryEvent } from '@kohaku-eth/privacy-pools'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import EmittableError from '../../classes/EmittableError'
 import {
   getPrivacyPoolsAsset,
+  getPrivacyPoolsDepositAsset,
   getPrivacyPoolsChainConfig,
   getPrivacyPoolsStoreKey
 } from '../../consts/privacyPools'
@@ -18,12 +20,24 @@ import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IUiController, View } from '../../interfaces/ui'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { IrCall } from '../../libs/humanizer/interfaces'
+import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
+import {
+  getDepositAmountWithVettingFee,
+  getMaxDepositPoolValue
+} from '../../libs/privacyPools/entrypointAssetConfig'
+import { getPrivacyPoolsPoolLabels } from '../../libs/privacyPools/poolStats'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
+import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
+import { getRpcProvider } from '../../services/provider'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
-import { PrivacyPoolsController } from './privacyPools'
+import { TokenPricesController } from '../tokenPrices/tokenPrices'
+import { PendingAccountOp } from './context'
+import { OPEN_SYNC_MAX_AGE_MS, PrivacyPoolsController } from './privacyPools'
 
 /**
  * Stands in for the SDK plugin. Each `sync()` waits until the test releases it, so a test can see
@@ -62,9 +76,17 @@ const ERC20_INTERFACE = new Interface([
 ])
 
 const MINIMUM_DEPOSIT = 10n ** 16n
+const VETTING_FEE_BPS = 50n
 const MINIMUM_USDC_DEPOSIT = 10n ** 6n
 
 const ETHEREUM_PAYMASTER = getPrivacyPoolsChainConfig(1n)!.paymaster!
+/** The bundler a prepared withdrawal carries, which it is sent to and its block is read from. */
+const PAYMASTER_BUNDLER_URL = 'https://bundler.example/v2/1/rpc'
+const USER_OP_HASH = `0x${'ab'.repeat(32)}`
+/** What the SDK's broadcaster returns once the bundler accepted the withdrawal. */
+const BROADCAST_RESULT = { requestId: USER_OP_HASH }
+/** The block a withdrawal lands in, according to its bundler. */
+const WITHDRAWAL_BLOCK = 21_000_000
 const WITHDRAWAL_AMOUNT = 10n ** 17n
 const WITHDRAWAL_FEE = 2n * 10n ** 15n
 const WITHDRAWAL_REFUND = 12n * 10n ** 14n
@@ -77,6 +99,20 @@ const SIMULATION_LOGS_INTERFACE = new Interface([
 ])
 
 const WITHDRAWAL_SENDER = '0xA3a4D83896ec4b595668fA3d5430157cd235F720'
+
+/** A pool's ragequit the way the SDK encodes it, public signals `[commitment, nullifierHash, value, label]`. */
+const encodeRagequit = (amount: bigint, label: bigint) =>
+  POOL_RAGEQUIT_INTERFACE.encodeFunctionData('ragequit', [
+    {
+      pA: [1n, 2n],
+      pB: [
+        [3n, 4n],
+        [5n, 6n]
+      ],
+      pC: [7n, 8n],
+      pubSignals: [11n, 12n, amount, label]
+    }
+  ])
 
 const toFakeProof = (withdrawnValue: bigint) => ({
   pA: [1n, 2n],
@@ -151,6 +187,7 @@ const buildPreparedWithdrawal = ({ isBatch = false }: { isBatch?: boolean } = {}
       poolAddress: BigInt(ETHEREUM_ETH_POOL),
       paymasterAddress: ETHEREUM_PAYMASTER.paymasterAddress,
       entryPointAddress: ETHEREUM_PAYMASTER.entryPointAddress,
+      bundlerUrl: PAYMASTER_BUNDLER_URL,
       userOperation: {
         sender: WITHDRAWAL_SENDER,
         nonce: '0x0',
@@ -223,7 +260,114 @@ const getPrecommitment = (seedId: string) =>
 
 const protocols: FakeProtocol[] = []
 let runningSyncs: RunningSync[] = []
-let notesBySeed: { [seedId: string]: { label: bigint; amount: bigint; approved: boolean }[] } = {}
+let notesBySeed: {
+  [seedId: string]: {
+    label: bigint
+    amount: bigint
+    approved: boolean
+    assetAddress?: bigint
+    /** `DEPOSITOR` when not set. */
+    depositor?: string
+    /** The account's deposit number, 0 when not set. */
+    deposit?: number
+    /** What the deposit put into the pool, `amount` when not set. */
+    value?: bigint
+    /** Sends already made from it, 0 when not set. */
+    withdraw?: number
+    /** The deposit's block, 1 when not set. */
+    blockNumber?: bigint
+  }[]
+} = {}
+/** What `history()` returns per phrase, or per `${seedId}:${chainId}` - see `FakeProtocol.history`. */
+let historyBySeed: { [seedId: string]: PPv1HistoryEvent[] } = {}
+/** Thrown by `history()` when set. */
+let historyFailure: Error | null = null
+/** Holds `history()` back, once counted, until resolved - when set. */
+let historyGate: Deferred | null = null
+
+/** One of a phrase's events as the plugin's `history()` reports it. */
+const historyEvent = (overrides: Partial<PPv1HistoryEvent> = {}): PPv1HistoryEvent =>
+  ({
+    type: 'withdrawal',
+    transactionHash: 0xabcn,
+    blockNumber: 100n,
+    logIndex: 0,
+    timestamp: 1_700_000_000n,
+    poolAddress: BigInt(ETHEREUM_ETH_POOL),
+    assetAddress: 0n,
+    value: 1n,
+    ...overrides
+  }) as PPv1HistoryEvent
+
+/** Scope of a chain's first pool. Each next one in the config has the next number. */
+const FIRST_POOL_SCOPE = 42n
+
+/** A pool's event, for `toStoredPoolState`. Made in block 1000 when `blockNumber` is not set. */
+type StoredPoolEventInput = { pool: string; value: bigint; blockNumber?: bigint }
+
+/**
+ * A chain's public history as the SDK persists it, synced up to `lastSyncedBlock` (1000 when not
+ * set): every pool of the chain registered (see `FIRST_POOL_SCOPE`), with these events.
+ */
+const toStoredPoolState = ({
+  deposits = [],
+  withdrawals = [],
+  aspLeaves = [],
+  isEveryDepositApproved = false,
+  lastSyncedBlock = 1000n
+}: {
+  deposits?: StoredPoolEventInput[]
+  withdrawals?: StoredPoolEventInput[]
+  aspLeaves?: bigint[]
+  /** Adds every deposit's label to `aspLeaves`, so all of them count as cover. */
+  isEveryDepositApproved?: boolean
+  lastSyncedBlock?: bigint
+} = {}) => {
+  const hex = (value: bigint) => `0x${value.toString(16)}`
+  const poolAddresses = Object.keys(getPrivacyPoolsChainConfig(1n)!.pools)
+  const depositLabels = isEveryDepositApproved
+    ? poolAddresses.flatMap((address, index) => {
+        const depositsCount = deposits.filter(
+          ({ pool }) => pool.toLowerCase() === address.toLowerCase()
+        ).length
+
+        return getPrivacyPoolsPoolLabels(
+          FIRST_POOL_SCOPE + BigInt(index),
+          1n,
+          BigInt(depositsCount)
+        )
+      })
+    : []
+  const toTuples = (events: StoredPoolEventInput[], poolField: 'pool' | 'poolAddress') =>
+    events.map(({ pool, value, blockNumber = 1000n }, index) => [
+      hex(BigInt(index + 1)),
+      { value: hex(value), blockNumber: hex(blockNumber), [poolField]: hex(BigInt(pool)) }
+    ])
+
+  return JSON.stringify({
+    pools: {
+      poolsTuples: poolAddresses.map((address, index) => [
+        address,
+        { address, scope: hex(FIRST_POOL_SCOPE + BigInt(index)) }
+      ])
+    },
+    entrypointDeposits: { entrypointDepositsTuples: toTuples(deposits, 'poolAddress') },
+    withdrawals: { withdrawalsTuples: toTuples(withdrawals, 'pool') },
+    ragequits: { ragequitsTuples: [] },
+    asp: { leaves: [...aspLeaves, ...depositLabels].map(hex) },
+    sync: { lastSyncedBlock: hex(lastSyncedBlock) }
+  })
+}
+
+/**
+ * The chain's public history a sync persists the way the SDK does, when set. Pools with no events
+ * otherwise, as most tests need nothing of it.
+ */
+let storedPoolState: string | null = null
+/** What `ragequit` returns instead of a call for every note asked for, when set. */
+let ragequitTxns: { to: string; data: string; value: bigint }[] | null = null
+/** Holds `ragequit` until the test releases it, when set. */
+let ragequitGate: Deferred | null = null
 /** What `prepareUnshield` returns, or null for it to fail like proving did. */
 let preparedWithdrawal: ReturnType<typeof buildPreparedWithdrawal> | null = null
 /** What `prepareUnshield` throws instead, when set - the SDK's thunks throw plain objects, not `Error`s. */
@@ -237,6 +381,24 @@ let simulateWithdrawal: () => Promise<unknown> = async () => successfulSimulatio
 let rpcNoStateOverride = false
 /** The pool the entrypoint lists for any asset. */
 let entrypointPool = ETHEREUM_ETH_POOL
+const SEND_SESSION = 'send-session-1'
+const NEXT_SEND_SESSION = 'send-session-2'
+/** Thrown by the entrypoint's asset config read when set. */
+let assetConfigReadFailure: Error | null = null
+let assetConfigReadCount = 0
+
+/** The block our node is at. */
+let nodeBlockNumber = WITHDRAWAL_BLOCK
+
+/** Stands in for the connection to a withdrawal's bundler, see `readBlockNumber`. */
+const bundlerProvider = {
+  send: jest.fn<(method: string, params: unknown[]) => Promise<unknown>>(),
+  destroy: jest.fn()
+}
+/** What the bundler answers when asked for the receipt of a withdrawal. */
+const toUserOpReceipt = (blockNumber = WITHDRAWAL_BLOCK) => ({
+  receipt: { blockNumber: toBeHex(blockNumber) }
+})
 
 class FakeProtocol {
   host: any
@@ -273,7 +435,33 @@ class FakeProtocol {
 
     // What the real plugin does at the end of every sync: persist the chain's public history
     const config = getPrivacyPoolsChainConfig(chainId)
-    if (config) await this.host.storage.set(getPrivacyPoolsStoreKey(config), `synced-${Date.now()}`)
+    if (config)
+      await this.host.storage.set(
+        getPrivacyPoolsStoreKey(config),
+        storedPoolState ?? toStoredPoolState()
+      )
+  }
+
+  ragequitLabels: bigint[][] = []
+
+  // The real one syncs first and proves each note with the 'commitment' circuit
+  async ragequit(labels: bigint[]) {
+    this.ragequitLabels.push(labels)
+    const prover = await this.params.proverFactory()
+    await prover.prove('commitment', { value: 1n })
+    if (ragequitGate) await ragequitGate.promise
+    if (ragequitTxns) return { txns: ragequitTxns }
+
+    const notes = notesBySeed[this.seedId as string] || []
+    return {
+      txns: notes
+        .filter((note) => labels.includes(note.label))
+        .map((note) => ({
+          to: ETHEREUM_ETH_POOL,
+          value: 0n,
+          data: encodeRagequit(note.amount, note.label)
+        }))
+    }
   }
 
   // The real one syncs first as well, which the controller has already queued by this point
@@ -309,16 +497,42 @@ class FakeProtocol {
     throw new Error('prepareUnshield is not faked')
   }
 
-  // The real one syncs before every read, so the fake does too: a controller that also calls
-  // `sync()` itself is caught by the sync counts
-  async notes() {
-    await this.sync()
+  historyCount = 0
 
-    return (notesBySeed[this.seedId as string] || []).map((note) => ({
+  // Syncs first too unless told not to, like the real one. Without a sync of its own, a plugin
+  // knows nothing of the phrase (`seedId` is set by `sync`), so it reports no events, as the
+  // real one would with no discovered secrets
+  async history(_assets?: unknown, { sync = true }: { sync?: boolean } = {}) {
+    if (sync) await this.sync()
+    this.historyCount += 1
+    if (historyGate) await historyGate.promise
+    if (historyFailure) throw historyFailure
+
+    const chainId: bigint = await this.host.provider.getChainId()
+
+    return historyBySeed[`${this.seedId}:${chainId}`] || historyBySeed[this.seedId as string] || []
+  }
+
+  // The real one syncs before every read unless told not to, so the fake does too: a controller
+  // that also calls `sync()` itself is caught by the sync counts. Like the real one, it leaves out
+  // notes with no balance unless asked for them.
+  async notes(_assets?: unknown, includeSpent = false, { sync = true } = {}) {
+    if (sync) await this.sync()
+
+    const notes = (notesBySeed[this.seedId as string] || []).filter(
+      (note) => includeSpent || note.amount > 0n
+    )
+
+    return notes.map((note) => ({
       label: note.label,
-      assetAddress: 0n,
+      assetAddress: note.assetAddress ?? 0n,
       balance: note.amount,
-      approved: note.approved
+      approved: note.approved,
+      depositor: BigInt(note.depositor ?? DEPOSITOR),
+      deposit: note.deposit ?? 0,
+      value: note.value ?? note.amount,
+      withdraw: note.withdraw ?? 0,
+      blockNumber: note.blockNumber ?? 1n
     }))
   }
 }
@@ -329,6 +543,11 @@ jest.mock('@kohaku-eth/privacy-pools', () => ({
     .mockImplementation((host: any, params: any) => new FakeProtocol(host, params)),
   OxBowAspService: jest.fn(),
   createPPv1Broadcaster: jest.fn()
+}))
+
+jest.mock('../../services/provider', () => ({
+  ...jest.requireActual<typeof import('../../services/provider')>('../../services/provider'),
+  getRpcProvider: jest.fn()
 }))
 
 jest.mock('../../libs/privacyPools/dataService', () => ({
@@ -364,7 +583,11 @@ class FakeKeystore extends EventEmitter {
   keys = []
 
   // The fake plugin learns its phrase from the "key" it derives
-  derivePrivacyPoolsKey = jest.fn(async (seedId: string) => seedId)
+  derivePrivacyKey = jest.fn(async (seedId: string) => seedId)
+
+  removePrivacyKey = jest.fn(async () => {})
+
+  isPrivacyKeyAvailable = jest.fn<(seedId: string, providerId: string) => boolean>(() => true)
 
   fireUpdate() {
     this.emitUpdate()
@@ -390,8 +613,16 @@ class FakeUi {
 
   uiEvent = new NodeEventEmitter()
 
+  message = { sendUiMessage: jest.fn() }
+
   open(id: string, type: View['type'], route: string) {
     this.views.push({ id, type, currentRoute: route })
+  }
+
+  /** `open`, and tells the listeners a view appeared, as the popup does when the user opens it. */
+  add(id: string, type: View['type'], route: string) {
+    this.open(id, type, route)
+    this.uiEvent.emit('addView', this.views.at(-1))
   }
 
   navigate(id: string, route: string, searchParams?: View['searchParams']) {
@@ -442,13 +673,16 @@ const fakeFetch = jest.fn(async (url: string) => ({
 /** Answers the only two reads a deposit makes: the entrypoint's asset config and an allowance. */
 const fakeProviderCall = async ({ data }: { to: string; data: string }) => {
   if (data.startsWith(ENTRYPOINT_INTERFACE.getFunction('assetConfig')!.selector)) {
+    assetConfigReadCount += 1
+    if (assetConfigReadFailure) throw assetConfigReadFailure
+
     const [asset] = ENTRYPOINT_INTERFACE.decodeFunctionData('assetConfig', data)
 
     return ENTRYPOINT_INTERFACE.encodeFunctionResult('assetConfig', [
       // The Ethereum ETH pool by default, which the paymaster has an adapter for
       entrypointPool,
       String(asset).toLowerCase() === USDC ? MINIMUM_USDC_DEPOSIT : MINIMUM_DEPOSIT,
-      50n,
+      VETTING_FEE_BPS,
       100n
     ])
   }
@@ -460,6 +694,7 @@ const createFakeProvider = (chainId: bigint) => ({
   getNetwork: async () => ({ chainId }),
   call: fakeProviderCall,
   getBlock: async () => ({ baseFeePerGas: latestBaseFee }),
+  getBlockNumber: jest.fn(async () => nodeBlockNumber),
   send: jest.fn(async (method: string) => {
     if (method === 'eth_simulateV1') return simulateWithdrawal()
 
@@ -485,6 +720,10 @@ const flush = () =>
 /** What the selected account holds on Ethereum, per token - seed-a holds 10, seed-b 20. */
 const getHeldAmounts = (controller: PrivacyPoolsController) =>
   (controller.balances['1'] || []).map(({ totalAmount }) => totalAmount)
+
+/** The selected account's row of a token on Ethereum, native by default. */
+const getBalance = (controller: PrivacyPoolsController, tokenAddress = ZERO_ADDRESS) =>
+  controller.balances['1']?.find((balance) => balance.tokenAddress === tokenAddress)
 
 const WAIT_UNTIL_TIMEOUT_MS = 5000
 
@@ -545,6 +784,8 @@ const prepareTest = async ({
   const networks = new FakeNetworks()
   const providers = new FakeProviders()
   const ui = new FakeUi()
+  // What `MainController` reports as waiting for the chain: broadcast, or in the request batch
+  const pendingAccountOps: PendingAccountOp[] = []
   const onAccountsRemoved = jest.fn<(seedIds: string[]) => Promise<void>>(async () => {})
 
   if (hasOtherChain) {
@@ -568,7 +809,12 @@ const prepareTest = async ({
     fetch: fakeFetch as any,
     circuitsBaseUrl: '',
     proverFactory,
-    onAccountsRemoved
+    onAccountsRemoved,
+    getPendingAccountOps: () => pendingAccountOps,
+    tokenPrices: new TokenPricesController({
+      fetch: fakeFetch as any,
+      isTokenPricesEnabled: () => featureFlags.isFeatureEnabled('tokenPrices') === true
+    })
   })
   await controller.initialLoadPromise
 
@@ -580,7 +826,102 @@ const prepareTest = async ({
     providers,
     ui,
     storage,
-    onAccountsRemoved
+    onAccountsRemoved,
+    pendingAccountOps
+  }
+}
+
+const ONE_ETH = 10n ** 18n
+/** What a deposit putting `ONE_ETH` into the pool sends, with the fake entrypoint's 50 basis points on top. */
+const ONE_ETH_WITH_VETTING_FEE = getDepositAmountWithVettingFee(ONE_ETH, VETTING_FEE_BPS)
+
+const buildDeposit = (
+  controller: PrivacyPoolsController,
+  overrides: Partial<Parameters<PrivacyPoolsController['buildDepositCalls']>[0]> = {}
+) =>
+  controller.buildDepositCalls({
+    seedId: 'seed-b',
+    accountAddr: DEPOSITOR,
+    chainId: '1',
+    tokenAddress: ZERO_ADDRESS,
+    amount: ONE_ETH,
+    ...overrides
+  })
+
+/** Builds a deposit into a phrase's account, which syncs it first, and broadcasts it. */
+const buildAndBroadcastDeposit = async (
+  controller: PrivacyPoolsController,
+  seedId = 'seed-b'
+): Promise<Call[]> => {
+  const building = buildDeposit(controller, { seedId })
+  await releaseSync(seedId)
+  const calls = await building
+  controller.onAccountOpBroadcast({ chainId: 1n, calls })
+
+  return calls
+}
+
+type PreparedTest = Awaited<ReturnType<typeof prepareTest>>
+
+const getSyncCount = (seedId?: string) =>
+  protocols
+    .filter((protocol) => !seedId || protocol.seedId === seedId)
+    .reduce((total, protocol) => total + protocol.syncCount, 0)
+
+/** Waits until the chain's sync of the selected account is over. */
+const waitForSynced = (controller: PrivacyPoolsController) =>
+  waitUntil(() => controller.chains['1']?.syncStatus === 'ready')
+
+/** Runs one round of the background sync and releases the syncs it starts, by default seed-b's. */
+const syncRound = async (
+  controller: PrivacyPoolsController,
+  syncs: [seedId: string, chainId?: bigint][] = [['seed-b']]
+) => {
+  const round = controller.syncInBackground()
+  await Promise.all(syncs.map(([seedId, chainId]) => releaseSync(seedId, chainId)))
+  await round
+}
+
+/** The note a deposit into seed-b creates, once it lands. */
+const landDeposit = () => {
+  notesBySeed['seed-b'] = [
+    ...notesBySeed['seed-b']!,
+    // A deposit after the account's first one, so a higher index than any note it held
+    { label: 3n, amount: ONE_ETH, approved: false, deposit: 1 }
+  ]
+}
+
+/** Tells the controller a transaction got its outcome. Settles once the sync it starts, if any, ends. */
+const finalize = (
+  controller: PrivacyPoolsController,
+  calls: Call[],
+  status = AccountOpStatus.Success
+) =>
+  controller.onAccountOpsFinalized([
+    { chainId: 1n, status, calls } as unknown as SubmittedAccountOp
+  ])
+
+/** Finalizes the transaction and waits for the read it starts, of seed-b by default. */
+const finalizeAndRead = async (
+  controller: PrivacyPoolsController,
+  calls: Call[],
+  seedId = 'seed-b'
+) => {
+  const finalizing = finalize(controller, calls)
+  await releaseSync(seedId)
+  await finalizing
+}
+
+/** Replaces `Date.now`, so a test can pass minutes at once. Call `restore` when done. */
+const mockClock = (startMs = 1_000_000) => {
+  let now = startMs
+  const spy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+  return {
+    advance: (ms: number) => {
+      now += ms
+    },
+    restore: () => spy.mockRestore()
   }
 }
 
@@ -599,17 +940,31 @@ describe('PrivacyPoolsController', () => {
     simulateWithdrawal = async () => successfulSimulation()
     rpcNoStateOverride = false
     entrypointPool = ETHEREUM_ETH_POOL
+    assetConfigReadFailure = null
+    assetConfigReadCount = 0
+    nodeBlockNumber = WITHDRAWAL_BLOCK
+    jest.mocked(getRpcProvider).mockReset()
+    jest.mocked(getRpcProvider).mockReturnValue(bundlerProvider as any)
+    bundlerProvider.send.mockReset()
+    bundlerProvider.send.mockImplementation(async () => toUserOpReceipt())
+    bundlerProvider.destroy.mockReset()
     notesBySeed = {
       'seed-a': [{ label: 1n, amount: 10n, approved: true }],
       'seed-b': [{ label: 2n, amount: 20n, approved: false }]
     }
+    storedPoolState = null
+    ragequitTxns = null
+    ragequitGate = null
+    historyBySeed = {}
+    historyFailure = null
+    historyGate = null
   })
 
   describe('accounts', () => {
     it('adds an account for a stored recovery phrase and persists it', async () => {
       const { controller, storage } = await prepareTest({ accounts: [] })
 
-      await controller.addAccount('seed-a')
+      await controller.addAccount('seed-a', 'Private account 1')
 
       expect(controller.accounts.map((account) => account.seedId)).toEqual(['seed-a'])
       expect((await storage.get('privacyPoolsAccounts', [])).map((a) => a.seedId)).toEqual([
@@ -617,17 +972,112 @@ describe('PrivacyPoolsController', () => {
       ])
     })
 
+    it('stores the name the account is added with', async () => {
+      const { controller, storage } = await prepareTest({ accounts: [] })
+
+      await controller.addAccount('seed-a', 'Savings')
+
+      expect(controller.accounts[0]?.label).toBe('Savings')
+      expect((await storage.get('privacyPoolsAccounts', []))[0]?.label).toBe('Savings')
+    })
+
+    it('names a new account after the accounts there are already', async () => {
+      const { controller } = await prepareTest({ accounts: [] })
+      expect(controller.defaultAccountLabel).toBe('Private account 1')
+
+      await controller.addAccount('seed-a', controller.defaultAccountLabel)
+
+      expect(controller.defaultAccountLabel).toBe('Private account 2')
+    })
+
+    it('renames an account and persists the new name', async () => {
+      const { controller, storage, ui } = await prepareTest({ accounts: [] })
+      await controller.addAccount('seed-a', 'Private account 1')
+
+      await controller.updateAccountLabel('seed-a', '  Savings  ', 'request-1')
+
+      expect(controller.accounts[0]?.label).toBe('Savings')
+      expect((await storage.get('privacyPoolsAccounts', []))[0]?.label).toBe('Savings')
+      expect(ui.message.sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-1', ok: true })
+    })
+
+    it('keeps the name when renamed to an empty one, and tells the rename sheet', async () => {
+      const { controller, ui } = await prepareTest({ accounts: [] })
+      await controller.addAccount('seed-a', 'Private account 1')
+
+      await controller.updateAccountLabel('seed-a', '   ', 'request-1')
+
+      expect(controller.accounts[0]?.label).toBe('Private account 1')
+      expect(ui.message.sendUiMessage).toHaveBeenCalledWith({
+        requestId: 'request-1',
+        ok: false,
+        error: "Couldn't rename the account. Please try again."
+      })
+    })
+
+    it('renames no account for a recovery phrase without one', async () => {
+      const { controller, storage } = await prepareTest({ accounts: ['seed-a'] })
+      const storedBefore = await storage.get('privacyPoolsAccounts', [])
+
+      await controller.updateAccountLabel('seed-b', 'Savings')
+
+      expect(controller.accounts.map(({ seedId }) => seedId)).toEqual(['seed-a'])
+      expect(controller.accounts.some(({ label }) => label === 'Savings')).toBe(false)
+      expect(await storage.get('privacyPoolsAccounts', [])).toEqual(storedBefore)
+      expect(controller.emittedErrors.at(-1)?.message).toBe(
+        "Couldn't rename the account. Please try again."
+      )
+    })
+
+    it('moves an account to another place in the list and saves the order', async () => {
+      const { controller, storage } = await prepareTest()
+
+      await controller.reorderAccounts({ fromIndex: 1, toIndex: 0 })
+
+      expect(controller.accounts.map(({ seedId }) => seedId)).toEqual(['seed-b', 'seed-a'])
+      expect((await storage.get('privacyPoolsAccounts', [])).map(({ seedId }) => seedId)).toEqual([
+        'seed-b',
+        'seed-a'
+      ])
+    })
+
+    it('keeps the order when asked to move an account out of the list', async () => {
+      const { controller, storage } = await prepareTest()
+      const storedBefore = await storage.get('privacyPoolsAccounts', [])
+
+      await controller.reorderAccounts({ fromIndex: 0, toIndex: 2 })
+
+      expect(controller.accounts.map(({ seedId }) => seedId)).toEqual(['seed-a', 'seed-b'])
+      expect(await storage.get('privacyPoolsAccounts', [])).toEqual(storedBefore)
+      expect(controller.emittedErrors.at(-1)?.message).toBe(
+        "Couldn't reorder the accounts. Please reload the page and try again."
+      )
+    })
+
+    it('tells whether an account can be added, without adding it', async () => {
+      const { controller } = await prepareTest({ accounts: ['seed-a'] })
+
+      await expect(controller.assertCanAddAccount('seed-a')).rejects.toThrow(EmittableError)
+      await expect(controller.assertCanAddAccount('seed-unknown')).rejects.toThrow(EmittableError)
+      await expect(controller.assertCanAddAccount('seed-b')).resolves.toBeUndefined()
+      expect(controller.accounts).toHaveLength(1)
+    })
+
     it('refuses a second account for the same recovery phrase', async () => {
       const { controller } = await prepareTest({ accounts: ['seed-a'] })
 
-      await expect(controller.addAccount('seed-a')).rejects.toThrow(EmittableError)
+      await expect(controller.addAccount('seed-a', 'Private account 1')).rejects.toThrow(
+        EmittableError
+      )
       expect(controller.accounts).toHaveLength(1)
     })
 
     it('refuses an account for a recovery phrase the wallet does not have', async () => {
       const { controller } = await prepareTest({ accounts: [] })
 
-      await expect(controller.addAccount('seed-unknown')).rejects.toThrow(EmittableError)
+      await expect(controller.addAccount('seed-unknown', 'Private account 1')).rejects.toThrow(
+        EmittableError
+      )
       expect(controller.accounts).toHaveLength(0)
     })
 
@@ -638,6 +1088,15 @@ describe('PrivacyPoolsController', () => {
 
       expect(controller.accounts.map((account) => account.seedId)).toEqual(['seed-b'])
       expect(onAccountsRemoved).toHaveBeenCalledWith(['seed-a'])
+    })
+
+    it("drops a removed account's stored key, so re-adding it asks for the passphrase", async () => {
+      const { controller, keystore } = await prepareTest()
+
+      await controller.removeAccount('seed-a')
+
+      expect(keystore.removePrivacyKey).toHaveBeenCalledTimes(1)
+      expect(keystore.removePrivacyKey).toHaveBeenCalledWith('seed-a', 'privacyPools')
     })
 
     it('removes the account of a deleted recovery phrase', async () => {
@@ -667,7 +1126,9 @@ describe('PrivacyPoolsController', () => {
         ui: new FakeUi() as unknown as IUiController,
         fetch: fakeFetch as any,
         circuitsBaseUrl: '',
-        onAccountsRemoved: jest.fn(async () => {})
+        onAccountsRemoved: jest.fn(async () => {}),
+        getPendingAccountOps: () => [],
+        tokenPrices: new TokenPricesController({ fetch: fakeFetch as any })
       })
       await controller.initialLoadPromise
 
@@ -691,7 +1152,9 @@ describe('PrivacyPoolsController', () => {
         ui: new FakeUi() as unknown as IUiController,
         fetch: fakeFetch as any,
         circuitsBaseUrl: '',
-        onAccountsRemoved
+        onAccountsRemoved,
+        getPendingAccountOps: () => [],
+        tokenPrices: new TokenPricesController({ fetch: fakeFetch as any })
       })
       await controller.initialLoadPromise
       keystore.fireUpdate()
@@ -716,20 +1179,22 @@ describe('PrivacyPoolsController', () => {
           'balances',
           'chains',
           'depositAssetConfigs',
-          'emittedErrors',
           'hasPersistedSendForm',
           'hasSyncedAnyChain',
+          'history',
           'id',
           'initialLoadPromise',
           'isAvailableForSelectedAccount',
           'name',
           'operation',
+          'poolStats',
           'prices',
           'sendForm',
           'sendFormResetCounter',
           'statuses',
           'supportedChainIds',
-          'unavailableReason'
+          'unavailableReason',
+          'withdrawalPrivacy'
         ].sort()
       )
     })
@@ -764,6 +1229,28 @@ describe('PrivacyPoolsController', () => {
       selectedAccount.select('seed-a')
 
       expect(controller.unavailableReason).toBe('locked')
+    })
+
+    it("reads nothing, and stays silent, when the account's key is not available", async () => {
+      const { controller, keystore, selectedAccount } = await prepareTest()
+      keystore.isPrivacyKeyAvailable.mockImplementation((seedId) => seedId !== 'seed-a')
+
+      selectedAccount.select('seed-a')
+      expect(controller.unavailableReason).toBe('passphrase-needed')
+      expect(keystore.isPrivacyKeyAvailable).toHaveBeenCalledWith('seed-a', 'privacyPools')
+
+      const emittedErrorsCount = controller.emittedErrors.length
+      await controller.syncInBackground()
+      expect(runningSyncs).toHaveLength(0)
+      expect(controller.emittedErrors).toHaveLength(emittedErrorsCount)
+
+      // Unlocking comes first, as the key can't be read before it anyway
+      keystore.isUnlocked = false
+      expect(controller.unavailableReason).toBe('locked')
+      keystore.isUnlocked = true
+
+      selectedAccount.select('seed-b')
+      expect(controller.unavailableReason).toBeNull()
     })
 
     it('updates the UI on a selected account update only when the selection changed', async () => {
@@ -996,7 +1483,7 @@ describe('PrivacyPoolsController', () => {
       await syncA
 
       // Added back, it starts with nothing until it is synced again
-      await controller.addAccount('seed-a')
+      await controller.addAccount('seed-a', 'Private account 1')
       expect(getHeldAmounts(controller)).toEqual([])
       expect(controller.chains['1']?.lastSyncedAt).toBeNull()
     })
@@ -1179,78 +1666,438 @@ describe('PrivacyPoolsController', () => {
     })
   })
   describe('syncing on opening an account', () => {
-    it('reads only the networks not read in the last 10 minutes', async () => {
-      const { controller, selectedAccount } = await prepareTest()
-      let clock = 1_000_000
-      const now = jest.spyOn(Date, 'now').mockImplementation(() => clock)
+    it('reads only the networks not read in the last 2 minutes', async () => {
+      const { controller, selectedAccount, ui } = await prepareTest()
+      const clock = mockClock()
 
       try {
         selectedAccount.select('seed-a')
-        const firstOpening = controller.syncIfStale()
+        ui.add('view-1', 'popup', 'dashboard')
         await releaseSync('seed-a')
-        await firstOpening
+        await waitForSynced(controller)
 
-        clock += 599_000
-        await controller.syncIfStale()
+        clock.advance(OPEN_SYNC_MAX_AGE_MS - 1_000)
+        ui.add('view-2', 'tab', 'dashboard')
+        await flush()
         expect(runningSyncs).toHaveLength(0)
 
-        clock += 1_000
-        const laterOpening = controller.syncIfStale()
+        clock.advance(1_000)
+        ui.add('view-3', 'tab', 'dashboard')
         await releaseSync('seed-a')
-        await laterOpening
 
-        expect(protocols.reduce((total, protocol) => total + protocol.syncCount, 0)).toBe(2)
+        expect(getSyncCount()).toBe(2)
       } finally {
-        now.mockRestore()
+        clock.restore()
       }
     })
 
-    it('reads each account on its own schedule', async () => {
-      const { controller, selectedAccount } = await prepareTest()
-
+    it('reads on selecting an account when a view is open, each account on its own schedule', async () => {
+      const { controller, selectedAccount, ui } = await prepareTest()
       selectedAccount.select('seed-a')
-      const openingA = controller.syncIfStale()
-      await releaseSync('seed-a')
-      await openingA
+      await flush()
+      expect(runningSyncs).toHaveLength(0)
 
-      // Read a moment ago for the first phrase, never for the second
+      ui.open('view-1', 'popup', 'dashboard')
       selectedAccount.select('seed-b')
-      const openingB = controller.syncIfStale()
       await releaseSync('seed-b')
-      await openingB
+      await waitForSynced(controller)
+
+      // Read a moment ago for the second phrase, never for the first
+      selectedAccount.select('seed-a')
+      expect(controller.chains['1']?.lastSyncedAt).toBeNull()
+      await releaseSync('seed-a')
+      await waitForSynced(controller)
 
       expect(controller.chains['1']?.lastSyncedAt).not.toBeNull()
     })
 
-    it('does not read an account until its recovery phrase is backed up', async () => {
-      const { controller, keystore, selectedAccount } = await prepareTest()
-      keystore.seeds = [{ id: 'seed-a', notBackedUp: true }, { id: 'seed-b' }]
-
+    it.each([
+      {
+        until: 'its recovery phrase is backed up',
+        block: (keystore: FakeKeystore) => {
+          keystore.seeds = [{ id: 'seed-a', notBackedUp: true }, { id: 'seed-b' }]
+        },
+        unblock: (keystore: FakeKeystore) => {
+          keystore.seeds = [{ id: 'seed-a' }, { id: 'seed-b' }]
+        }
+      },
+      {
+        until: 'the wallet is unlocked',
+        block: (keystore: FakeKeystore) => {
+          keystore.isUnlocked = false
+        },
+        unblock: (keystore: FakeKeystore) => {
+          keystore.isUnlocked = true
+        }
+      }
+    ])('does not read an account until $until, then reads it, once', async ({ block, unblock }) => {
+      const { controller, keystore, selectedAccount, ui } = await prepareTest()
+      block(keystore)
+      keystore.fireUpdate()
       selectedAccount.select('seed-a')
-      await controller.syncIfStale()
+      ui.add('view-1', 'popup', 'dashboard')
+      await flush()
       expect(runningSyncs).toHaveLength(0)
       expect(controller.chains['1']?.syncStatus).toBe('idle')
 
-      keystore.seeds = [{ id: 'seed-a' }, { id: 'seed-b' }]
-      const opening = controller.syncIfStale()
+      unblock(keystore)
+      keystore.fireUpdate()
       await releaseSync('seed-a')
-      await opening
+      await waitForSynced(controller)
+      // Updates of the wallet that change nothing for the account are no reason to read it again
+      keystore.fireUpdate()
+      keystore.fireUpdate()
+      await flush()
+
       expect(controller.chains['1']?.lastSyncedAt).not.toBeNull()
+      expect(getSyncCount()).toBe(1)
     })
 
     it('reads again on a refresh however recent the last read is', async () => {
-      const { controller, selectedAccount } = await prepareTest()
-
+      const { controller, selectedAccount, ui } = await prepareTest()
       selectedAccount.select('seed-a')
-      const opening = controller.syncIfStale()
+      ui.add('view-1', 'popup', 'dashboard')
       await releaseSync('seed-a')
-      await opening
+      await waitForSynced(controller)
 
       const refresh = controller.sync()
       await releaseSync('seed-a')
       await refresh
 
-      expect(protocols.reduce((total, protocol) => total + protocol.syncCount, 0)).toBe(2)
+      expect(getSyncCount()).toBe(2)
+    })
+  })
+
+  describe('syncing after a change', () => {
+    it('reads an account that is not selected once its deposit lands', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+      const calls = await buildAndBroadcastDeposit(controller)
+
+      landDeposit()
+      await finalizeAndRead(controller, calls)
+
+      selectedAccount.select('seed-b')
+      expect(getHeldAmounts(controller)).toEqual([20n + ONE_ETH])
+    })
+
+    it('reads once after a deposit lands, and stops counting it even when its note is not there yet', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-b')
+      const calls = await buildAndBroadcastDeposit(controller)
+      const syncCount = getSyncCount()
+
+      // Our node can be a block behind the one that confirmed it
+      await finalizeAndRead(controller, calls)
+
+      expect(getSyncCount()).toBe(syncCount + 1)
+      expect(runningSyncs).toHaveLength(0)
+      expect(getBalance(controller)).toMatchObject({ totalAmount: 20n, simulationAmount: 0n })
+    })
+
+    it('holds back the next deposit until the sent one is in the notes', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-b')
+      await buildAndBroadcastDeposit(controller)
+
+      // No pending transaction is left to tell, so only the amount on its way does
+      await expect(buildDeposit(controller)).rejects.toThrow(EmittableError)
+
+      depositCountBySeed['seed-b'] = 1
+      landDeposit()
+      await syncRound(controller)
+
+      await expect(buildDeposit(controller)).resolves.toHaveLength(1)
+    })
+
+    it('ignores a transaction that is not finished, and reads once a batch is only partly complete', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-b')
+      const calls = await buildAndBroadcastDeposit(controller)
+
+      await finalize(controller, calls, AccountOpStatus.BroadcastedButNotConfirmed)
+      expect(runningSyncs).toHaveLength(0)
+      expect(getBalance(controller)).toMatchObject({ simulationAmount: ONE_ETH })
+
+      // It lands later, and is still recognised. The deposit may be what landed.
+      const finalizing = finalize(controller, calls, AccountOpStatus.PartiallyComplete)
+      await releaseSync('seed-b')
+      await finalizing
+      expect(getBalance(controller)).toMatchObject({ simulationAmount: 0n })
+    })
+
+    it('ignores a transaction it did not build, and one it already finalized', async () => {
+      const { controller } = await prepareTest()
+      const calls = await buildAndBroadcastDeposit(controller)
+
+      await finalize(controller, [{ ...calls[0]!, value: 3n * ONE_ETH }])
+      expect(runningSyncs).toHaveLength(0)
+
+      landDeposit()
+      await finalizeAndRead(controller, calls)
+      const syncCount = getSyncCount()
+
+      await finalize(controller, calls)
+      expect(getSyncCount()).toBe(syncCount)
+      expect(runningSyncs).toHaveLength(0)
+    })
+
+    it.each([
+      [
+        'the wallet is locked',
+        async ({ keystore }: PreparedTest) => {
+          keystore.isUnlocked = false
+          keystore.fireUpdate()
+        }
+      ],
+      [
+        'the account is removed',
+        ({ controller }: PreparedTest) => controller.removeAccount('seed-b')
+      ]
+    ])('does not read the account when its deposit lands after %s', async (_, leave) => {
+      const test = await prepareTest()
+      const calls = await buildAndBroadcastDeposit(test.controller)
+      await leave(test)
+      const errorCount = test.controller.emittedErrors.length
+
+      const finalizing = finalize(test.controller, calls)
+      await flush()
+      expect(runningSyncs).toHaveLength(0)
+      runningSyncs.forEach(({ gate }) => gate.resolve())
+      await finalizing
+
+      expect(test.controller.emittedErrors).toHaveLength(errorCount)
+    })
+
+    it('stops counting a deposit when the read after it failed, as it is not read again', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-b')
+      const calls = await buildAndBroadcastDeposit(controller)
+
+      const { restore } = suppressConsole()
+      const finalizing = finalize(controller, calls)
+      const running = await takeRunningSync('seed-b', 1n)
+      running.gate.reject(new Error('node unreachable'))
+      await finalizing
+      restore()
+
+      expect(getBalance(controller)).toMatchObject({ simulationAmount: 0n })
+      expect(runningSyncs).toHaveLength(0)
+    })
+
+    describe('the amounts shown while a change is on its way', () => {
+      // The vetting fee of 50 basis points does not divide this evenly, and the pool still gets it
+      const USDC_DEPOSIT = 5n * 10n ** 6n + 1n
+
+      it('shows a deposit into an account that is not selected, with a row for a token it holds no notes of, until its notes land', async () => {
+        const { controller, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-a')
+        const building = buildDeposit(controller, { tokenAddress: USDC, amount: USDC_DEPOSIT })
+        await releaseSync('seed-b')
+        const calls = await building
+        controller.onAccountOpBroadcast({ chainId: 1n, calls })
+
+        // The selected account is not the one it goes to
+        expect(getBalance(controller, USDC)).toBeUndefined()
+
+        selectedAccount.select('seed-b')
+        expect(getBalance(controller, USDC)).toMatchObject({
+          totalAmount: 0n,
+          simulationAmount: USDC_DEPOSIT,
+          approvedAmountPostSimulation: 0n
+        })
+        expect(getBalance(controller)).toMatchObject({ totalAmount: 20n, simulationAmount: 0n })
+
+        notesBySeed['seed-b'] = [
+          ...notesBySeed['seed-b']!,
+          {
+            label: 3n,
+            amount: USDC_DEPOSIT,
+            approved: false,
+            assetAddress: BigInt(USDC),
+            deposit: 1
+          }
+        ]
+        await finalizeAndRead(controller, calls)
+
+        expect(getBalance(controller, USDC)).toMatchObject({
+          totalAmount: USDC_DEPOSIT,
+          simulationAmount: 0n
+        })
+      })
+
+      it('shows a deposit right away into an account not read since a restart, without reading it first', async () => {
+        const storage = new StorageController(produceMemoryStore())
+        await storage.set('privacyPoolsState', {
+          [getPrivacyPoolsStoreKey(getPrivacyPoolsChainConfig(1n)!)]: toStoredPoolState()
+        })
+        const { controller, selectedAccount } = await prepareTest({ storage })
+        selectedAccount.select('seed-a')
+
+        // The network is on this device, so only the plugin's own sync in prepareShield runs
+        const calls = await buildDeposit(controller)
+        controller.onAccountOpBroadcast({ chainId: 1n, calls })
+        expect(getSyncCount('seed-b')).toBe(0)
+
+        selectedAccount.select('seed-b')
+        expect(getBalance(controller)).toMatchObject({ totalAmount: 0n, simulationAmount: ONE_ETH })
+
+        const readBeforeLanding = controller.syncChain('1')
+        await releaseSync('seed-b')
+        await readBeforeLanding
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n,
+          simulationAmount: ONE_ETH
+        })
+
+        landDeposit()
+        const readAfterLanding = controller.syncChain('1')
+        await releaseSync('seed-b')
+        await readAfterLanding
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n + ONE_ETH,
+          simulationAmount: 0n
+        })
+      })
+
+      it('does not count the deposit twice when a read shows its note before the transaction is finalized', async () => {
+        const { controller, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-b')
+        const calls = await buildAndBroadcastDeposit(controller)
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n,
+          simulationAmount: ONE_ETH
+        })
+
+        landDeposit()
+        const reading = controller.syncChain('1')
+        await releaseSync('seed-b')
+        await reading
+
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n + ONE_ETH,
+          simulationAmount: 0n
+        })
+
+        await finalizeAndRead(controller, calls)
+        expect(getBalance(controller)).toMatchObject({ simulationAmount: 0n })
+      })
+
+      it.each([
+        ['failed', AccountOpStatus.Failure],
+        ['was rejected', AccountOpStatus.Rejected],
+        ['is stuck', AccountOpStatus.BroadcastButStuck],
+        ['was dropped', AccountOpStatus.UnknownButPastNonce]
+      ])(
+        'stops showing a deposit whose transaction %s at once, without reading the account, and tells the UI',
+        async (_, status) => {
+          const { controller, selectedAccount } = await prepareTest()
+          selectedAccount.select('seed-b')
+          const calls = await buildAndBroadcastDeposit(controller)
+          expect(getBalance(controller)).toMatchObject({
+            simulationAmount: ONE_ETH
+          })
+          const onUpdate = jest.fn()
+          controller.onUpdate(onUpdate)
+
+          await finalize(controller, calls, status)
+
+          expect(getBalance(controller)).toMatchObject({ totalAmount: 20n, simulationAmount: 0n })
+          expect(onUpdate).toHaveBeenCalled()
+          expect(runningSyncs).toHaveLength(0)
+        }
+      )
+
+      it('keeps showing a deposit whose transaction is not finished', async () => {
+        const { controller, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-b')
+        const calls = await buildAndBroadcastDeposit(controller)
+
+        await finalize(controller, calls, AccountOpStatus.BroadcastedButNotConfirmed)
+
+        expect(getBalance(controller)).toMatchObject({
+          simulationAmount: ONE_ETH
+        })
+      })
+
+      it('keeps showing a deposit while another token of the account changes, and drops it once its own note shows', async () => {
+        const { controller, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-b')
+        await buildAndBroadcastDeposit(controller)
+
+        // Another token's note shows first, which changes the notes but not what was waited for
+        notesBySeed['seed-b'] = [
+          ...notesBySeed['seed-b']!,
+          { label: 4n, amount: 7n, approved: true, assetAddress: BigInt(USDC) }
+        ]
+        await syncRound(controller)
+
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n,
+          simulationAmount: ONE_ETH
+        })
+        expect(getBalance(controller, USDC)).toMatchObject({
+          totalAmount: 7n,
+          simulationAmount: 0n
+        })
+
+        landDeposit()
+        await syncRound(controller)
+
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n + ONE_ETH,
+          simulationAmount: 0n
+        })
+      })
+
+      it('does not show a deposit after a lock, though it was broadcast before it', async () => {
+        const { controller, keystore, selectedAccount } = await prepareTest()
+        selectedAccount.select('seed-b')
+        await buildAndBroadcastDeposit(controller)
+        expect(getBalance(controller)).toMatchObject({
+          simulationAmount: ONE_ETH
+        })
+
+        keystore.isUnlocked = false
+        keystore.fireUpdate()
+        keystore.isUnlocked = true
+        keystore.fireUpdate()
+        const reading = controller.syncChain('1')
+        await releaseSync('seed-b')
+        await reading
+
+        expect(getBalance(controller)).toMatchObject({ totalAmount: 20n, simulationAmount: 0n })
+      })
+    })
+
+    describe('the background round', () => {
+      it('reads every network of the selected account', async () => {
+        const { controller, selectedAccount } = await prepareTest({ hasOtherChain: true })
+        selectedAccount.select('seed-a')
+
+        const round = controller.syncInBackground()
+        await releaseSync('seed-a', 1n)
+        await releaseSync('seed-a', OTHER_CHAIN_ID)
+        await round
+
+        expect(controller.chains['1']?.lastSyncedAt).not.toBeNull()
+        expect(controller.chains[OTHER_CHAIN_ID.toString()]?.lastSyncedAt).not.toBeNull()
+      })
+
+      it('reads nothing while locked, or before the phrase is backed up, or with no account selected', async () => {
+        const { controller, keystore, selectedAccount } = await prepareTest()
+
+        await controller.syncInBackground()
+        selectedAccount.select('seed-a')
+        keystore.seeds = [{ id: 'seed-a', notBackedUp: true }, { id: 'seed-b' }]
+        await controller.syncInBackground()
+        keystore.seeds = [{ id: 'seed-a' }, { id: 'seed-b' }]
+        keystore.isUnlocked = false
+        await controller.syncInBackground()
+
+        expect(runningSyncs).toHaveLength(0)
+        expect(protocols).toHaveLength(0)
+      })
     })
   })
 
@@ -1356,21 +2203,6 @@ describe('PrivacyPoolsController', () => {
   })
 
   describe('deposits', () => {
-    const ONE_ETH = 10n ** 18n
-
-    const buildDeposit = (
-      controller: PrivacyPoolsController,
-      overrides: Partial<Parameters<PrivacyPoolsController['buildDepositCalls']>[0]> = {}
-    ) =>
-      controller.buildDepositCalls({
-        seedId: 'seed-b',
-        accountAddr: DEPOSITOR,
-        chainId: '1',
-        tokenAddress: ZERO_ADDRESS,
-        amount: ONE_ETH,
-        ...overrides
-      })
-
     it('builds a deposit into an account that is not the selected one, after syncing it', async () => {
       const { controller } = await prepareTest()
 
@@ -1381,7 +2213,7 @@ describe('PrivacyPoolsController', () => {
       expect(calls).toEqual([
         {
           to: ETHEREUM_ENTRYPOINT,
-          value: ONE_ETH,
+          value: ONE_ETH_WITH_VETTING_FEE,
           data: ENTRYPOINT_INTERFACE.encodeFunctionData('deposit(uint256)', [
             getPrecommitment('seed-b')
           ])
@@ -1397,7 +2229,7 @@ describe('PrivacyPoolsController', () => {
       await first
       const [secondCall] = await buildDeposit(controller, { amount: 2n * ONE_ETH })
 
-      expect(secondCall?.value).toBe(2n * ONE_ETH)
+      expect(secondCall?.value).toBe(getDepositAmountWithVettingFee(2n * ONE_ETH, VETTING_FEE_BPS))
       expect(protocols.reduce((total, protocol) => total + protocol.prepareShieldCount, 0)).toBe(1)
       expect(protocols.reduce((total, protocol) => total + protocol.syncCount, 0)).toBe(1)
     })
@@ -1405,7 +2237,9 @@ describe('PrivacyPoolsController', () => {
     it('refuses amounts Privacy Pools does not accept', async () => {
       const { controller } = await prepareTest()
 
-      await expect(buildDeposit(controller, { amount: MINIMUM_DEPOSIT - 1n })).rejects.toThrow(
+      // The minimum is of what is sent, the fee included
+      const belowMinimum = getMaxDepositPoolValue(MINIMUM_DEPOSIT, VETTING_FEE_BPS) - 1n
+      await expect(buildDeposit(controller, { amount: belowMinimum })).rejects.toThrow(
         EmittableError
       )
       await expect(buildDeposit(controller, { amount: 10_001n * ONE_ETH })).rejects.toThrow(
@@ -1414,6 +2248,38 @@ describe('PrivacyPoolsController', () => {
       await expect(
         buildDeposit(controller, { tokenAddress: '0x0000000000000000000000000000000000000abc' })
       ).rejects.toThrow(EmittableError)
+    })
+
+    it('checks the limits against what is sent, the fee added to the typed amount', async () => {
+      const { controller } = await prepareTest()
+      const { maxDeposit } = getPrivacyPoolsDepositAsset(1n, ZERO_ADDRESS)!
+
+      // Below the minimum as typed, but not once the fee is added
+      const building = buildDeposit(controller, { amount: MINIMUM_DEPOSIT - 1n })
+      await releaseSync('seed-b')
+      const [justAboveMinimum] = await building
+      expect(justAboveMinimum?.value).toBe(
+        getDepositAmountWithVettingFee(MINIMUM_DEPOSIT - 1n, VETTING_FEE_BPS)
+      )
+
+      const largestAmount = getMaxDepositPoolValue(maxDeposit, VETTING_FEE_BPS)
+      const [largest] = await buildDeposit(controller, { amount: largestAmount })
+      expect(largest?.value).toBe(getDepositAmountWithVettingFee(largestAmount, VETTING_FEE_BPS))
+      expect(largest!.value).toBeLessThanOrEqual(maxDeposit)
+
+      // The maximum as typed, which the fee takes above it
+      await expect(buildDeposit(controller, { amount: maxDeposit })).rejects.toThrow(
+        'accepts at most'
+      )
+    })
+
+    it('refuses a deposit into an account whose key is not available, before reading it', async () => {
+      const { controller, keystore } = await prepareTest()
+      keystore.isPrivacyKeyAvailable.mockReturnValue(false)
+
+      await expect(buildDeposit(controller)).rejects.toThrow('needs its passphrase again')
+      expect(keystore.isPrivacyKeyAvailable).toHaveBeenCalledWith('seed-b', 'privacyPools')
+      expect(runningSyncs).toHaveLength(0)
     })
 
     it('refuses a token that could not be sent out of the account again', async () => {
@@ -1434,6 +2300,63 @@ describe('PrivacyPoolsController', () => {
         'Sending ETH to a Privacy Pools account is not supported yet.'
       )
       expect(runningSyncs).toHaveLength(0)
+    })
+
+    it('reads what the entrypoint accepts once per Send session', async () => {
+      const { controller } = await prepareTest()
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, SEND_SESSION)
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, SEND_SESSION)
+
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+      await building
+      await buildDeposit(controller)
+
+      expect(assetConfigReadCount).toBe(1)
+    })
+
+    it('refuses a deposit into a pool 0xBow replaced before the next Send session', async () => {
+      const { controller } = await prepareTest()
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, SEND_SESSION)
+      entrypointPool = '0x000000000000000000000000000000000000bEEF'
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, NEXT_SEND_SESSION)
+
+      await expect(buildDeposit(controller)).rejects.toThrow(
+        'Sending ETH to a Privacy Pools account is not supported yet.'
+      )
+      expect(runningSyncs).toHaveLength(0)
+    })
+
+    it("keeps the last read when the next Send session's read fails", async () => {
+      const { controller } = await prepareTest()
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, SEND_SESSION)
+      assetConfigReadFailure = new Error('RPC unavailable')
+
+      await expect(
+        controller.loadDepositAssetConfig('1', ZERO_ADDRESS, NEXT_SEND_SESSION)
+      ).resolves.toEqual({ minimumDepositAmount: MINIMUM_DEPOSIT, vettingFeeBPS: VETTING_FEE_BPS })
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+
+      await expect(building).resolves.toHaveLength(1)
+      expect(assetConfigReadCount).toBe(2)
+    })
+
+    it('reads again on building a deposit when no read succeeded yet', async () => {
+      const { controller } = await prepareTest()
+      assetConfigReadFailure = new Error('RPC unavailable')
+      await expect(
+        controller.loadDepositAssetConfig('1', ZERO_ADDRESS, SEND_SESSION)
+      ).rejects.toThrow(
+        'Could not check what Privacy Pools accepts for this token. Please try again.'
+      )
+      assetConfigReadFailure = null
+
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+
+      await expect(building).resolves.toHaveLength(1)
+      expect(assetConfigReadCount).toBe(2)
     })
 
     it('refuses a deposit into an account the wallet does not have', async () => {
@@ -1459,6 +2382,7 @@ describe('PrivacyPoolsController', () => {
     it('prepends an approval only when the allowance does not cover an ERC-20', async () => {
       const { controller } = await prepareTest()
       const amount = 5n * 10n ** 6n
+      const depositAmount = getDepositAmountWithVettingFee(amount, VETTING_FEE_BPS)
 
       const building = buildDeposit(controller, { tokenAddress: USDC, amount })
       await releaseSync('seed-b')
@@ -1469,20 +2393,20 @@ describe('PrivacyPoolsController', () => {
           // The configured asset address, which is checksummed
           to: getPrivacyPoolsAsset(1n, USDC)!.address,
           value: 0n,
-          data: ERC20_INTERFACE.encodeFunctionData('approve', [ETHEREUM_ENTRYPOINT, amount])
+          data: ERC20_INTERFACE.encodeFunctionData('approve', [ETHEREUM_ENTRYPOINT, depositAmount])
         },
         {
           to: ETHEREUM_ENTRYPOINT,
           value: 0n,
           data: ENTRYPOINT_INTERFACE.encodeFunctionData('deposit(address,uint256,uint256)', [
             USDC,
-            amount,
+            depositAmount,
             getPrecommitment('seed-b')
           ])
         }
       ])
 
-      allowance = amount
+      allowance = depositAmount
       await expect(buildDeposit(controller, { tokenAddress: USDC, amount })).resolves.toHaveLength(
         1
       )
@@ -1502,65 +2426,121 @@ describe('PrivacyPoolsController', () => {
         ERC20_INTERFACE.encodeFunctionData('approve', [ETHEREUM_ENTRYPOINT, 0n])
       )
       expect(approveCall?.data).toBe(
-        ERC20_INTERFACE.encodeFunctionData('approve', [ETHEREUM_ENTRYPOINT, amount])
+        ERC20_INTERFACE.encodeFunctionData('approve', [
+          ETHEREUM_ENTRYPOINT,
+          getDepositAmountWithVettingFee(amount, VETTING_FEE_BPS)
+        ])
       )
       expect(depositCall?.to).toBe(ETHEREUM_ENTRYPOINT)
     })
 
+    /** Builds and broadcasts a deposit, which Activity then lists as waiting for the chain. */
+    const pendDeposit = async (
+      controller: PrivacyPoolsController,
+      pendingAccountOps: PendingAccountOp[]
+    ) => {
+      const calls = await buildAndBroadcastDeposit(controller)
+      pendingAccountOps.push({ chainId: 1n, calls })
+
+      return calls
+    }
+
     it('refuses another deposit until the broadcast one lands and the chain moves on', async () => {
-      const { controller, selectedAccount } = await prepareTest()
+      const { controller, pendingAccountOps } = await prepareTest()
+      const calls = await pendDeposit(controller, pendingAccountOps)
 
-      const building = buildDeposit(controller)
-      await releaseSync('seed-b')
-      const calls = await building
-      controller.onAccountOpBroadcast({ chainId: 1n, calls })
-
-      // Same precommitment, since the first one has not landed
+      // Same precommitment, since the first one has not landed, whatever the amount
       await expect(buildDeposit(controller)).rejects.toThrow(EmittableError)
+      await expect(buildDeposit(controller, { amount: 2n * ONE_ETH })).rejects.toThrow(
+        EmittableError
+      )
 
-      // It lands, and the next sync moves the precommitment on
+      // It lands, and the sync that follows moves the precommitment on
       depositCountBySeed['seed-b'] = 1
-      selectedAccount.select('seed-b')
-      const syncing = controller.syncChain('1')
-      await releaseSync('seed-b')
-      await syncing
+      landDeposit()
+      pendingAccountOps.length = 0
+      await finalizeAndRead(controller, calls)
+
       await expect(buildDeposit(controller)).resolves.toHaveLength(1)
       expect(runningSyncs).toHaveLength(0)
     })
 
-    it('does not block a deposit over a broadcast it did not prepare', async () => {
-      const { controller } = await prepareTest()
+    // It reads the precommitment from Activity's op, not from what this session built
+    it('refuses a deposit still pending from before a restart', async () => {
+      const first = await prepareTest()
+      const calls = await buildAndBroadcastDeposit(first.controller)
 
-      // Carries the precommitment the next deposit derives, but this wallet did not build it
-      controller.onAccountOpBroadcast({
-        chainId: 1n,
-        calls: [
-          {
-            to: ETHEREUM_ENTRYPOINT,
-            value: ONE_ETH,
-            data: ENTRYPOINT_INTERFACE.encodeFunctionData('deposit(uint256)', [
-              getPrecommitment('seed-b')
-            ])
-          }
-        ]
-      })
+      const { controller, pendingAccountOps } = await prepareTest({ storage: first.storage })
+      pendingAccountOps.push({ chainId: 1n, calls })
+      const refusal = expect(buildDeposit(controller)).rejects.toThrow(EmittableError)
+      // The account is read again, the network is not
+      await flush()
+      runningSyncs.forEach((sync) => sync.gate.resolve())
 
-      const building = buildDeposit(controller)
-      await releaseSync('seed-b')
-      await expect(building).resolves.toHaveLength(1)
+      await refusal
     })
 
-    it('does not block a deposit over a broadcast on another chain', async () => {
-      const { controller } = await prepareTest()
+    // The 15 minutes it was refused for before are long gone, yet a raw transaction can still be mined
+    it('keeps refusing a deposit for as long as its transaction can still be mined', async () => {
+      const { controller, pendingAccountOps } = await prepareTest()
+      await pendDeposit(controller, pendingAccountOps)
+      const clock = mockClock(Date.now() + 60 * 60 * 1000)
 
+      try {
+        await expect(buildDeposit(controller)).rejects.toThrow(EmittableError)
+      } finally {
+        clock.restore()
+      }
+    })
+
+    it.each([
+      AccountOpStatus.Failure,
+      AccountOpStatus.Rejected,
+      AccountOpStatus.UnknownButPastNonce,
+      AccountOpStatus.BroadcastButStuck
+    ])('lets the next deposit through once the transaction is %s', async (status) => {
+      const { controller, pendingAccountOps } = await prepareTest()
+      const calls = await pendDeposit(controller, pendingAccountOps)
+      await expect(buildDeposit(controller)).rejects.toThrow(EmittableError)
+
+      // Activity no longer lists it as waiting for the chain
+      pendingAccountOps.length = 0
+      await finalize(controller, calls, status)
+
+      await expect(buildDeposit(controller)).resolves.toHaveLength(1)
+      // Nothing landed, so there is nothing to look for
+      expect(runningSyncs).toHaveLength(0)
+    })
+
+    it.each([
+      [
+        'another precommitment',
+        (): PendingAccountOp => ({
+          chainId: 1n,
+          calls: [
+            {
+              to: ETHEREUM_ENTRYPOINT,
+              value: ONE_ETH,
+              // The fake derives the same precommitment for every phrase of one length, so another one
+              data: ENTRYPOINT_INTERFACE.encodeFunctionData('deposit(uint256)', [
+                getPrecommitment('seed-b') + 1n
+              ])
+            }
+          ]
+        })
+      ],
+      ['another chain', (calls: Call[]): PendingAccountOp => ({ chainId: 10n, calls })]
+    ])('does not block a deposit over a pending one with %s', async (_, toPendingOp) => {
+      const { controller, pendingAccountOps } = await prepareTest()
+      // Not broadcast, as that alone holds back the next deposit
       const building = buildDeposit(controller)
       await releaseSync('seed-b')
-      const calls = await building
-      controller.onAccountOpBroadcast({ chainId: 10n, calls })
+      pendingAccountOps.push(toPendingOp(await building))
 
       await expect(buildDeposit(controller)).resolves.toHaveLength(1)
     })
   })
+
   describe('send form', () => {
     const SEND_ROUTE = 'privacy-pools-send'
 
@@ -1859,7 +2839,7 @@ describe('PrivacyPoolsController', () => {
       jest.mocked(createPPv1Broadcaster).mockClear()
 
       await controller.removeAccount('seed-a')
-      await controller.addAccount('seed-a')
+      await controller.addAccount('seed-a', 'Private account 1')
 
       expect(controller.operation).toBeNull()
       await expect(controller.broadcastWithdrawal()).rejects.toThrow(
@@ -1889,7 +2869,9 @@ describe('PrivacyPoolsController', () => {
     it('clears the send form once the transfer is sent, like a regular transfer', async () => {
       const { controller } = await prepareSignedWithdrawal()
       controller.updateSendForm({ recipientFieldValue: WITHDRAWAL_RECIPIENT, amount: '0.1' })
-      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast: async () => {} } as any)
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+        broadcast: async () => BROADCAST_RESULT
+      } as any)
 
       const broadcasting = controller.broadcastWithdrawal()
       await waitUntil(() => controller.operation?.status === 'success')
@@ -1898,6 +2880,30 @@ describe('PrivacyPoolsController', () => {
 
       await releaseSync('seed-a')
       await broadcasting
+    })
+
+    it('reads the history along with the sync after the transfer, so the activity lists it at once', async () => {
+      const { controller } = await prepareSignedWithdrawal()
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+        broadcast: async () => BROADCAST_RESULT
+      } as any)
+      historyBySeed = { 'seed-a': [historyEvent({ value: WITHDRAWAL_AMOUNT })] }
+
+      const broadcasting = controller.broadcastWithdrawal()
+      await releaseSync('seed-a')
+      await broadcasting
+
+      // Though no screen showed it
+      expect(protocols[0]!.historyCount).toBe(1)
+      expect(protocols[0]!.syncCount).toBe(1)
+
+      // Opening the activity then neither syncs nor reads it again
+      await controller.filterHistory('dashboard')
+      expect(runningSyncs).toHaveLength(0)
+      expect(protocols[0]!.historyCount).toBe(1)
+      expect(controller.history.dashboard?.result?.items.map(({ amount }) => amount)).toEqual([
+        WITHDRAWAL_AMOUNT
+      ])
     })
 
     it('clears the send form when the transfer could not be sent', async () => {
@@ -1944,6 +2950,316 @@ describe('PrivacyPoolsController', () => {
       restore()
     })
 
+    describe('reading the account after it was sent', () => {
+      /** Reads the proved withdrawal's account, so there are notes to compare with after. */
+      const prepareReadWithdrawal = async (
+        notes: (typeof notesBySeed)[string] = [
+          { label: 1n, amount: WITHDRAWAL_AMOUNT + 10n, approved: true }
+        ]
+      ) => {
+        notesBySeed['seed-a'] = notes
+        const test = await prepareSignedWithdrawal()
+        const syncing = test.controller.syncChain('1')
+        await releaseSync('seed-a')
+        await syncing
+
+        return test
+      }
+
+      const mockBroadcastResult = () =>
+        jest
+          .mocked(createPPv1Broadcaster)
+          .mockReturnValueOnce({ broadcast: async () => BROADCAST_RESULT } as any)
+
+      /** A broadcast that settles once the test says the bundler accepted the withdrawal. */
+      const mockReceiptWait = () => {
+        const receipt = createDeferred()
+        jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+          broadcast: () => receipt.promise.then(() => BROADCAST_RESULT)
+        } as any)
+
+        return receipt
+      }
+
+      /** Holds back the bundler's answer to the next request for a withdrawal's block. */
+      const holdBlockRead = () => {
+        const answer = createDeferred()
+        bundlerProvider.send.mockImplementationOnce(async () => {
+          await answer.promise
+
+          return toUserOpReceipt()
+        })
+
+        return answer
+      }
+
+      it.each([
+        ['a regular account', null],
+        ['another Privacy Pools account', 'seed-b']
+      ])(
+        'reads the account it came from, though the user switched to %s while it was sent',
+        async (_, switchedTo) => {
+          const { controller, selectedAccount } = await prepareSignedWithdrawal()
+          const receipt = mockReceiptWait()
+
+          const broadcasting = controller.broadcastWithdrawal()
+          await waitUntil(() => controller.operation?.phase === 'broadcasting')
+          selectedAccount.select(switchedTo)
+          receipt.resolve()
+          await releaseSync('seed-a')
+
+          // With no account selected, the sync of the selected account threw
+          await expect(broadcasting).resolves.toBeUndefined()
+          expect(controller.emittedErrors).toHaveLength(0)
+          expect(protocols).toHaveLength(1)
+          expect(runningSyncs).toHaveLength(0)
+        }
+      )
+
+      it('asks for the block of the withdrawal from the bundler it was sent to, and closes that connection', async () => {
+        const { controller } = await prepareReadWithdrawal()
+        mockBroadcastResult()
+
+        const broadcasting = controller.broadcastWithdrawal()
+        await releaseSync('seed-a')
+        await broadcasting
+
+        // Not Ambire's own bundler account, which would link the withdrawal to it
+        expect(getRpcProvider).toHaveBeenCalledTimes(1)
+        expect(getRpcProvider).toHaveBeenCalledWith([PAYMASTER_BUNDLER_URL], 1n)
+        expect(bundlerProvider.send).toHaveBeenCalledWith('eth_getUserOperationReceipt', [
+          USER_OP_HASH
+        ])
+        expect(bundlerProvider.destroy).toHaveBeenCalledTimes(1)
+      })
+
+      it('waits for our node to reach the block of the withdrawal, then reads the account once', async () => {
+        nodeBlockNumber = WITHDRAWAL_BLOCK - 1
+        const { controller, providers } = await prepareReadWithdrawal()
+        const syncCount = getSyncCount()
+        mockBroadcastResult()
+
+        const broadcasting = controller.broadcastWithdrawal()
+        await waitUntil(() => providers.providers['1'].getBlockNumber.mock.calls.length >= 2)
+        expect(runningSyncs).toHaveLength(0)
+
+        nodeBlockNumber = WITHDRAWAL_BLOCK
+        notesBySeed['seed-a'] = [{ label: 7n, amount: 10n, approved: true }]
+        await releaseSync('seed-a')
+        await broadcasting
+
+        expect(getSyncCount()).toBe(syncCount + 1)
+        expect(getBalance(controller)).toMatchObject({ totalAmount: 10n, simulationAmount: 0n })
+      })
+
+      it.each([
+        ['cannot be reached', () => bundlerProvider.send.mockRejectedValueOnce(new Error('down'))],
+        ['has no receipt yet', () => bundlerProvider.send.mockResolvedValueOnce(null)]
+      ])(
+        'reads the account at once when the bundler %s, and closes the connection',
+        async (_, breakBundler) => {
+          const { restore } = suppressConsole()
+          const { controller, providers } = await prepareReadWithdrawal()
+          const syncCount = getSyncCount()
+          mockBroadcastResult()
+          breakBundler()
+
+          const broadcasting = controller.broadcastWithdrawal()
+          await releaseSync('seed-a')
+          await broadcasting
+          restore()
+
+          expect(getSyncCount()).toBe(syncCount + 1)
+          expect(providers.providers['1'].getBlockNumber).not.toHaveBeenCalled()
+          expect(controller.emittedErrors).toEqual([expect.objectContaining({ level: 'silent' })])
+          expect(bundlerProvider.destroy).toHaveBeenCalledTimes(1)
+        }
+      )
+
+      it('does not read the account when the wallet is locked by the time the transfer lands', async () => {
+        const { controller, keystore } = await prepareReadWithdrawal()
+        const receipt = mockReceiptWait()
+
+        const broadcasting = controller.broadcastWithdrawal()
+        await waitUntil(() => controller.operation?.phase === 'broadcasting')
+        keystore.isUnlocked = false
+        keystore.fireUpdate()
+        receipt.resolve()
+        await broadcasting
+
+        expect(runningSyncs).toHaveLength(0)
+      })
+
+      it('reads the account once and stops counting the transfer, even when its notes do not show it yet', async () => {
+        const { controller } = await prepareReadWithdrawal()
+        const syncCount = getSyncCount()
+        mockBroadcastResult()
+
+        const broadcasting = controller.broadcastWithdrawal()
+        await releaseSync('seed-a')
+        await broadcasting
+
+        expect(getSyncCount()).toBe(syncCount + 1)
+        expect(runningSyncs).toHaveLength(0)
+        expect(getHeldAmounts(controller)).toEqual([WITHDRAWAL_AMOUNT + 10n])
+        expect(getBalance(controller)).toMatchObject({
+          simulationAmount: 0n,
+          approvedAmountPostSimulation: WITHDRAWAL_AMOUNT + 10n
+        })
+      })
+
+      it('reads the account at once, and stops counting the transfer, when it could not be confirmed', async () => {
+        const { restore } = suppressConsole()
+        const { controller } = await prepareReadWithdrawal()
+        const syncCount = getSyncCount()
+        jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+          broadcast: async () => {
+            throw new Error('receipt wait timed out')
+          }
+        } as any)
+
+        const broadcasting = controller.broadcastWithdrawal()
+        await releaseSync('seed-a')
+        await broadcasting
+        restore()
+
+        // It may have landed all the same
+        expect(getSyncCount()).toBe(syncCount + 1)
+        expect(getBalance(controller)).toMatchObject({ simulationAmount: 0n })
+      })
+
+      it('does not hold back a deposit into the account while the transfer is on its way', async () => {
+        const { controller } = await prepareReadWithdrawal()
+        const receipt = mockReceiptWait()
+
+        const broadcasting = controller.broadcastWithdrawal()
+        await waitUntil(() => controller.operation?.phase === 'broadcasting')
+        expect(getBalance(controller)).toMatchObject({ simulationAmount: -WITHDRAWAL_AMOUNT })
+
+        // A transfer does not change the next deposit's precommitment
+        await expect(buildDeposit(controller, { seedId: 'seed-a' })).resolves.toHaveLength(1)
+
+        receipt.resolve()
+        await releaseSync('seed-a')
+        await broadcasting
+      })
+
+      describe('the amounts shown while it is on its way', () => {
+        it('shows the amount as gone from the approved balance until the notes show it', async () => {
+          const { controller } = await prepareReadWithdrawal()
+          expect(getBalance(controller)).toMatchObject({
+            approvedAmountPostSimulation: WITHDRAWAL_AMOUNT + 10n,
+            simulationAmount: 0n
+          })
+          const receipt = mockReceiptWait()
+
+          const broadcasting = controller.broadcastWithdrawal()
+          await waitUntil(() => controller.operation?.phase === 'broadcasting')
+
+          // The notes still hold all of it
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: WITHDRAWAL_AMOUNT + 10n,
+            approvedAmount: WITHDRAWAL_AMOUNT + 10n,
+            simulationAmount: -WITHDRAWAL_AMOUNT,
+            approvedAmountPostSimulation: 10n
+          })
+
+          notesBySeed['seed-a'] = [{ label: 7n, amount: 10n, approved: true }]
+          receipt.resolve()
+          await releaseSync('seed-a')
+          await broadcasting
+
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: 10n,
+            simulationAmount: 0n,
+            approvedAmountPostSimulation: 10n
+          })
+        })
+
+        it('keeps showing a transfer when the notes only show another one, sent before it, that spent a different note of the token', async () => {
+          const { controller } = await prepareReadWithdrawal([
+            { label: 1n, amount: ONE_ETH, approved: true },
+            { label: 2n, amount: ONE_ETH, approved: true }
+          ])
+          // Both are on their way: the bundler has taken them, and their blocks are not known yet
+          const firstBlock = holdBlockRead()
+          const secondBlock = holdBlockRead()
+          mockBroadcastResult()
+          const first = controller.broadcastWithdrawal()
+          await waitUntil(() => bundlerProvider.send.mock.calls.length === 1)
+
+          await controller.prepareWithdrawal({
+            chainId: '1',
+            tokenAddress: ZERO_ADDRESS,
+            amount: WITHDRAWAL_AMOUNT,
+            recipient: WITHDRAWAL_RECIPIENT
+          })
+          mockBroadcastResult()
+          const second = controller.broadcastWithdrawal()
+          await waitUntil(() => bundlerProvider.send.mock.calls.length === 2)
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: 2n * ONE_ETH,
+            simulationAmount: -2n * WITHDRAWAL_AMOUNT,
+            approvedAmountPostSimulation: 2n * ONE_ETH - 2n * WITHDRAWAL_AMOUNT
+          })
+
+          // The first lands and is read, spending from one note. The second is still on its way.
+          notesBySeed['seed-a'] = [
+            { label: 1n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true },
+            { label: 2n, amount: ONE_ETH, approved: true }
+          ]
+          firstBlock.resolve()
+          await releaseSync('seed-a')
+          await first
+
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: 2n * ONE_ETH - WITHDRAWAL_AMOUNT,
+            simulationAmount: -WITHDRAWAL_AMOUNT,
+            approvedAmountPostSimulation: 2n * ONE_ETH - 2n * WITHDRAWAL_AMOUNT
+          })
+
+          notesBySeed['seed-a'] = [
+            { label: 1n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true },
+            { label: 2n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true }
+          ]
+          secondBlock.resolve()
+          await releaseSync('seed-a')
+          await second
+
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: 2n * ONE_ETH - 2n * WITHDRAWAL_AMOUNT,
+            simulationAmount: 0n,
+            approvedAmountPostSimulation: 2n * ONE_ETH - 2n * WITHDRAWAL_AMOUNT
+          })
+        })
+
+        it('does not show the transfer after a lock, though it was sent before it', async () => {
+          const { controller, keystore } = await prepareReadWithdrawal()
+          const receipt = mockReceiptWait()
+          const broadcasting = controller.broadcastWithdrawal()
+          await waitUntil(() => controller.operation?.phase === 'broadcasting')
+
+          keystore.isUnlocked = false
+          keystore.fireUpdate()
+          keystore.isUnlocked = true
+          keystore.fireUpdate()
+          const reading = controller.syncChain('1')
+          await releaseSync('seed-a')
+          await reading
+
+          expect(getBalance(controller)).toMatchObject({
+            totalAmount: WITHDRAWAL_AMOUNT + 10n,
+            simulationAmount: 0n,
+            approvedAmountPostSimulation: WITHDRAWAL_AMOUNT + 10n
+          })
+
+          receipt.resolve()
+          await releaseSync('seed-a')
+          await broadcasting
+        })
+      })
+    })
+
     describe('sent a while after it was proved', () => {
       const RECHECK_AFTER_MS = 30 * 1000
       let now: number
@@ -1963,7 +3279,7 @@ describe('PrivacyPoolsController', () => {
           .length
 
       const mockBroadcast = () => {
-        const broadcast = jest.fn(async () => {})
+        const broadcast = jest.fn(async () => BROADCAST_RESULT)
         jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast } as any)
 
         return broadcast
@@ -2032,6 +3348,24 @@ describe('PrivacyPoolsController', () => {
         // Shown in the sheet, not as a toast
         expect(getShownErrors(controller)).toHaveLength(shownErrors)
         await expectSentBackToPrepareAgain(controller)
+      })
+
+      it('does not count a transfer that was never sent because it had gone stale', async () => {
+        const { controller } = await prepareSignedWithdrawal()
+        const syncing = controller.syncChain('1')
+        await releaseSync('seed-a')
+        await syncing
+
+        now += RECHECK_AFTER_MS
+        latestBaseFee = 2n * 10n ** 9n
+        await controller.broadcastWithdrawal()
+
+        // Nothing left the account, so none of it shows as on its way
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 10n,
+          simulationAmount: 0n,
+          approvedAmountPostSimulation: 10n
+        })
       })
 
       it('does not send an older one that would now fail, as over a root that moved on', async () => {
@@ -2471,9 +3805,9 @@ describe('PrivacyPoolsController', () => {
       proofs[0]!.gate.resolve()
       await preparing
       const sending = createDeferred()
-      jest
-        .mocked(createPPv1Broadcaster)
-        .mockReturnValueOnce({ broadcast: () => sending.promise } as any)
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+        broadcast: () => sending.promise.then(() => BROADCAST_RESULT)
+      } as any)
 
       const broadcasting = controller.broadcastWithdrawal()
       await waitUntil(() => controller.operation?.phase === 'broadcasting')
@@ -2492,6 +3826,8 @@ describe('PrivacyPoolsController', () => {
 
       selectedAccount.select('seed-b')
       expect(proofs[0]!.signal?.aborted).toBe(true)
+      // The open view reads the account that was selected, which the next proof waits for
+      await releaseSync('seed-b')
 
       // Not refused as another transfer in progress
       const next = startWithdrawal(controller)
@@ -2547,6 +3883,1047 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-a')
       await syncing
       expect(protocols[0]?.syncCountWhenProving).toBeNull()
+    })
+  })
+
+  describe('history', () => {
+    const SESSION = 'privacy-pools-dashboard'
+    const DEPOSIT = historyEvent({
+      type: 'deposit',
+      depositor: BigInt(DEPOSITOR),
+      label: 1n,
+      aspStatus: 'approved',
+      value: 10n,
+      blockNumber: 101n,
+      timestamp: 1_700_000_100n
+    } as Partial<PPv1HistoryEvent>)
+    const WITHDRAWAL = historyEvent({ value: 4n })
+
+    beforeEach(() => {
+      historyBySeed = {
+        'seed-a': [DEPOSIT, WITHDRAWAL],
+        'seed-b': [historyEvent({ value: 99n })]
+      }
+    })
+
+    const getPage = (controller: PrivacyPoolsController) => controller.history[SESSION]?.result
+
+    const getAmounts = (controller: PrivacyPoolsController) =>
+      getPage(controller)?.items.map(({ amount }) => amount)
+
+    /** Opens a screen, then lets through the sync that reads the notes, and the history with them. */
+    const openHistory = async (
+      controller: PrivacyPoolsController,
+      seedId = 'seed-a',
+      ...args: Parameters<PrivacyPoolsController['filterHistory']> extends [any, ...infer Rest]
+        ? Rest
+        : never
+    ) => {
+      const opening = controller.filterHistory(SESSION, ...args)
+      await releaseSync(seedId)
+      await opening
+    }
+
+    const prepareSelected = async (options: Parameters<typeof prepareTest>[0] = {}) => {
+      const prepared = await prepareTest(options)
+      prepared.selectedAccount.select('seed-a')
+
+      return prepared
+    }
+
+    it('is not read while no screen shows it', async () => {
+      const { controller } = await prepareSelected()
+
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+
+      expect(protocols[0]!.historyCount).toBe(0)
+      expect(controller.history).toEqual({})
+    })
+
+    it('is read by a sync once a screen shows it, after the balances are shown', async () => {
+      const { controller } = await prepareSelected()
+      historyGate = createDeferred()
+
+      const opening = controller.filterHistory(SESSION)
+      await flush()
+      // Not an empty page: whether there is any activity is not known yet
+      expect(controller.history[SESSION]).toMatchObject({ result: null, error: null })
+
+      await releaseSync('seed-a')
+      await waitUntil(() => controller.chains['1']?.syncStatus === 'ready')
+      expect(getHeldAmounts(controller)).toEqual([10n])
+      expect(getPage(controller)).toBeNull()
+
+      historyGate.resolve()
+      await opening
+      expect(getPage(controller)).toEqual({
+        items: [
+          expect.objectContaining({ type: 'deposit', amount: 10n, counterpartyAddr: DEPOSITOR }),
+          expect.objectContaining({ type: 'withdrawal', amount: 4n, counterpartyAddr: null })
+        ],
+        itemsTotal: 2,
+        currentPage: 0,
+        maxPages: 1
+      })
+      expect(protocols).toHaveLength(1)
+      expect(protocols[0]!.historyCount).toBe(1)
+      // As of the sync that read the notes, without one of its own
+      expect(protocols[0]!.syncCount).toBe(1)
+    })
+
+    it('is read from the plugin that read the notes, even once it is dropped', async () => {
+      // A plugin that read a cold chain from the CDN is dropped after its sync, and a new one
+      // would know none of the account's deposits without syncing again
+      jest
+        .mocked(createPrivacyPoolsDataService)
+        .mockResolvedValueOnce({ dataService: {}, isSagaHydrated: true } as any)
+      const { controller } = await prepareSelected()
+
+      await openHistory(controller)
+
+      expect(protocols).toHaveLength(1)
+      expect(protocols[0]!.historyCount).toBe(1)
+      expect(getAmounts(controller)).toEqual([10n, 4n])
+    })
+
+    describe('on opening a screen after a sync that did not read it', () => {
+      const syncFirst = async (controller: PrivacyPoolsController, seedId = 'seed-a') => {
+        const syncing = controller.syncChain('1')
+        await releaseSync(seedId)
+        await syncing
+      }
+
+      it('is read from that sync, without syncing again', async () => {
+        const { controller } = await prepareSelected()
+        await syncFirst(controller)
+        const syncStatuses: (string | undefined)[] = []
+        const unsubscribe = controller.onUpdate(() =>
+          syncStatuses.push(controller.chains['1']?.syncStatus)
+        )
+
+        const opening = controller.filterHistory(SESSION)
+        await flush()
+        // The balances are not shown as loading again
+        expect(controller.chains['1']?.syncStatus).toBe('ready')
+        await opening
+        unsubscribe()
+
+        expect(syncStatuses.length).toBeGreaterThan(0)
+        expect(syncStatuses).not.toContain('syncing')
+        expect(runningSyncs).toHaveLength(0)
+        expect(protocols).toHaveLength(1)
+        expect(protocols[0]!.syncCount).toBe(1)
+        expect(protocols[0]!.historyCount).toBe(1)
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it('syncs again once the plugin that read the notes is gone', async () => {
+        // A plugin that read a cold chain from the CDN is dropped after its sync, and a new one
+        // would know none of the account's deposits without syncing
+        jest
+          .mocked(createPrivacyPoolsDataService)
+          .mockResolvedValueOnce({ dataService: {}, isSagaHydrated: true } as any)
+        const { controller } = await prepareSelected()
+        await syncFirst(controller)
+
+        await openHistory(controller)
+
+        expect(protocols).toHaveLength(2)
+        expect(protocols[0]!.historyCount).toBe(0)
+        expect(protocols[1]!.historyCount).toBe(1)
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it("syncs again once another account's sync of the network has replaced its plugin", async () => {
+        const { controller, selectedAccount } = await prepareSelected()
+        await syncFirst(controller)
+        selectedAccount.select('seed-b')
+        await syncFirst(controller, 'seed-b')
+        selectedAccount.select('seed-a')
+
+        await openHistory(controller)
+
+        // seed-a's, seed-b's, then seed-a's again, built from what seed-b's sync stored
+        expect(protocols).toHaveLength(3)
+        expect(protocols[0]!.historyCount).toBe(0)
+        expect(protocols[2]!.historyCount).toBe(1)
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it('syncs again when that sync failed', async () => {
+        const { controller } = await prepareSelected()
+        await syncFirst(controller)
+        const failing = controller.syncChain('1')
+        const running = await takeRunningSync('seed-a', 1n)
+        running.gate.reject(new Error('RPC is down'))
+        await failing
+
+        await openHistory(controller)
+
+        expect(protocols[0]!.syncCount).toBe(3)
+        expect(controller.chains['1']).toMatchObject({ syncStatus: 'ready', error: null })
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it('is not kept once a newer sync has read it, even one ending in the same millisecond', async () => {
+        // Both syncs end at the same time, so only a count of the syncs tells them apart
+        const now = jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000)
+        try {
+          const { controller } = await prepareSelected()
+          await syncFirst(controller)
+          const staleRead = createDeferred()
+          jest.spyOn(protocols[0]!, 'history').mockImplementationOnce(async () => {
+            await staleRead.promise
+            return [WITHDRAWAL]
+          })
+
+          const opening = controller.filterHistory(SESSION)
+          await flush()
+          historyBySeed['seed-a'] = [historyEvent({ value: 7n, blockNumber: 200n })]
+          const refreshing = controller.sync()
+          await releaseSync('seed-a')
+          await refreshing
+          staleRead.resolve()
+          await opening
+
+          expect(getAmounts(controller)).toEqual([7n])
+        } finally {
+          now.mockRestore()
+        }
+      })
+    })
+
+    it('reports an empty page for an account with no activity', async () => {
+      historyBySeed = {}
+      const { controller } = await prepareSelected()
+
+      await openHistory(controller)
+
+      expect(getPage(controller)).toEqual({ items: [], itemsTotal: 0, currentPage: 0, maxPages: 0 })
+    })
+
+    it('moves between pages without reading it again', async () => {
+      const { controller } = await prepareSelected()
+      await openHistory(controller, 'seed-a', {}, { fromPage: 0, itemsPerPage: 1 })
+      expect(getAmounts(controller)).toEqual([10n])
+      expect(getPage(controller)?.maxPages).toBe(2)
+
+      await controller.filterHistory(SESSION, {}, { fromPage: 1, itemsPerPage: 1 })
+
+      expect(runningSyncs).toHaveLength(0)
+      expect(getAmounts(controller)).toEqual([4n])
+      expect(protocols[0]!.historyCount).toBe(1)
+    })
+
+    it('is read again by every sync while shown', async () => {
+      const { controller } = await prepareSelected()
+      await openHistory(controller)
+
+      historyBySeed['seed-a'] = [
+        historyEvent({ value: 7n, blockNumber: 200n }),
+        DEPOSIT,
+        WITHDRAWAL
+      ]
+      const refreshing = controller.sync()
+      await releaseSync('seed-a')
+      await refreshing
+
+      expect(getAmounts(controller)).toEqual([7n, 10n, 4n])
+    })
+
+    it('is no longer read once its screen closes', async () => {
+      const { controller } = await prepareSelected()
+      await openHistory(controller)
+
+      controller.resetHistoryFilters(SESSION)
+      const refreshing = controller.sync()
+      await releaseSync('seed-a')
+      await refreshing
+
+      expect(controller.history).toEqual({})
+      expect(protocols[0]!.historyCount).toBe(1)
+    })
+
+    it('keeps another screen open when one closes', async () => {
+      const { controller } = await prepareSelected()
+      await openHistory(controller)
+      await controller.filterHistory('settings')
+
+      controller.resetHistoryFilters(SESSION)
+
+      expect(Object.keys(controller.history)).toEqual(['settings'])
+      expect(controller.history.settings?.result?.items).toHaveLength(2)
+    })
+
+    it('shows the last list while it is read again on reopening', async () => {
+      const { controller } = await prepareSelected()
+      await openHistory(controller)
+      controller.resetHistoryFilters(SESSION)
+      // A sync while no screen shows it leaves the list behind the balances
+      const refreshing = controller.sync()
+      await releaseSync('seed-a')
+      await refreshing
+
+      historyBySeed['seed-a'] = [historyEvent({ value: 7n, blockNumber: 200n })]
+      historyGate = createDeferred()
+      const reopening = controller.filterHistory(SESSION)
+      await waitUntil(() => protocols[0]!.historyCount === 2)
+      expect(getAmounts(controller)).toEqual([10n, 4n])
+
+      historyGate.resolve()
+      await reopening
+      expect(getAmounts(controller)).toEqual([7n])
+      // Read as of the last sync, without another
+      expect(protocols[0]!.syncCount).toBe(2)
+    })
+
+    it('is read by a sync already running when the screen opens, rather than by another', async () => {
+      const { controller } = await prepareSelected()
+
+      const syncing = controller.syncChain('1')
+      await waitUntil(() => runningSyncs.length === 1)
+      const opening = controller.filterHistory(SESSION)
+      await releaseSync('seed-a')
+      await Promise.all([syncing, opening])
+
+      expect(runningSyncs).toHaveLength(0)
+      expect(protocols[0]!.syncCount).toBe(1)
+      expect(getAmounts(controller)).toEqual([10n, 4n])
+    })
+
+    it("shows the selected account's history only", async () => {
+      const { controller, selectedAccount } = await prepareSelected()
+      await openHistory(controller)
+
+      selectedAccount.select('seed-b')
+      // The other account's list is never shown in its place
+      expect(getPage(controller)).toBeNull()
+
+      await openHistory(controller, 'seed-b')
+      expect(getAmounts(controller)).toEqual([99n])
+
+      selectedAccount.select('seed-a')
+      expect(getAmounts(controller)).toEqual([10n, 4n])
+    })
+
+    it('marks a deposit under review only while it is still being verified', async () => {
+      notesBySeed = { 'seed-a': [{ label: 2n, amount: 5n, approved: false }] }
+      historyBySeed = {
+        'seed-a': [
+          // Still being verified
+          historyEvent({ type: 'deposit', label: 2n, aspStatus: 'pending', depositor: 1n } as any),
+          // Taken back, so it has no note left, though the plugin still reports it pending
+          historyEvent({ type: 'deposit', label: 3n, aspStatus: 'pending', depositor: 1n } as any),
+          historyEvent({ type: 'ragequit', ragequitter: 1n, value: 6n } as any)
+        ]
+      }
+      const { controller } = await prepareSelected()
+
+      await openHistory(controller)
+
+      expect(getPage(controller)?.items.map(({ status }) => status)).toEqual([
+        'pending',
+        null,
+        null
+      ])
+    })
+
+    it('waits for the recovery phrase to be backed up, like the balances', async () => {
+      const { controller, keystore } = await prepareSelected()
+      keystore.seeds = [{ id: 'seed-a', notBackedUp: true }, { id: 'seed-b' }]
+
+      await controller.filterHistory(SESSION)
+
+      expect(runningSyncs).toHaveLength(0)
+      expect(getPage(controller)).toBeNull()
+    })
+
+    it('is not read while locked', async () => {
+      const { controller, keystore } = await prepareSelected()
+      keystore.isUnlocked = false
+
+      await controller.filterHistory(SESSION)
+
+      expect(runningSyncs).toHaveLength(0)
+      expect(controller.emittedErrors).toEqual([])
+    })
+
+    it('is dropped on lock', async () => {
+      const { controller, keystore } = await prepareSelected()
+      await openHistory(controller)
+
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      keystore.isUnlocked = true
+      keystore.fireUpdate()
+
+      expect(getPage(controller)).toBeNull()
+    })
+
+    it('is not kept from a read that finishes after a lock', async () => {
+      const { controller, keystore } = await prepareSelected()
+      historyGate = createDeferred()
+
+      const opening = controller.filterHistory(SESSION)
+      await releaseSync('seed-a')
+      await waitUntil(() => protocols[0]!.historyCount === 1)
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      historyGate.resolve()
+      await opening
+      keystore.isUnlocked = true
+      keystore.fireUpdate()
+
+      expect(getPage(controller)).toBeNull()
+      expect(controller.emittedErrors).toEqual([])
+    })
+
+    it('is not kept for a removed account', async () => {
+      const { controller } = await prepareSelected()
+      historyGate = createDeferred()
+
+      const opening = controller.filterHistory(SESSION)
+      await releaseSync('seed-a')
+      await waitUntil(() => protocols[0]!.historyCount === 1)
+      await controller.removeAccount('seed-a')
+      historyGate.resolve()
+      await opening
+
+      expect(protocols[0]!.historyCount).toBe(1)
+      expect(getPage(controller)).toBeNull()
+    })
+
+    describe('when it cannot be read', () => {
+      it('still shows the balances, and an empty page with the reason', async () => {
+        historyFailure = new Error('history failed')
+        const { controller } = await prepareSelected()
+
+        await openHistory(controller)
+
+        expect(getHeldAmounts(controller)).toEqual([10n])
+        expect(controller.chains['1']).toMatchObject({ syncStatus: 'ready', error: null })
+        expect(controller.history[SESSION]).toMatchObject({
+          result: { items: [] },
+          error: 'Could not load your activity on this network. Please try again.'
+        })
+        expect(controller.emittedErrors.at(-1)).toMatchObject({
+          level: 'silent',
+          error: historyFailure
+        })
+      })
+
+      it('keeps the list read before', async () => {
+        const { controller } = await prepareSelected()
+        await openHistory(controller)
+
+        historyFailure = new Error('history failed')
+        const refreshing = controller.sync()
+        await releaseSync('seed-a')
+        await refreshing
+
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+        expect(controller.history[SESSION]?.error).not.toBeNull()
+      })
+
+      it('clears the reason once read again', async () => {
+        historyFailure = new Error('history failed')
+        const { controller } = await prepareSelected()
+        await openHistory(controller)
+
+        historyFailure = null
+        const refreshing = controller.sync()
+        await releaseSync('seed-a')
+        await refreshing
+
+        expect(controller.history[SESSION]).toMatchObject({ error: null })
+        expect(getAmounts(controller)).toEqual([10n, 4n])
+      })
+
+      it('settles the page with the reason when the balances cannot be read either', async () => {
+        const { controller } = await prepareSelected()
+
+        const opening = controller.filterHistory(SESSION)
+        const running = await takeRunningSync('seed-a', 1n)
+        running.gate.reject(new Error('RPC is down'))
+        await opening
+
+        expect(controller.history[SESSION]).toMatchObject({
+          result: { items: [] },
+          error: 'Could not load your Privacy Pools balance on this network. Please try again.'
+        })
+      })
+    })
+
+    describe('on several networks', () => {
+      const OTHER = OTHER_CHAIN_ID.toString()
+
+      beforeEach(() => {
+        historyBySeed = {
+          'seed-a:1': [
+            historyEvent({ value: 3n, timestamp: 300n }),
+            historyEvent({ value: 1n, timestamp: 100n })
+          ],
+          [`seed-a:${OTHER}`]: [historyEvent({ value: 2n, timestamp: 200n })]
+        }
+      })
+
+      it('merges them newest first, once every network is read', async () => {
+        const { controller } = await prepareSelected({ hasOtherChain: true })
+
+        const opening = controller.filterHistory(SESSION)
+        await releaseSync('seed-a')
+        await waitUntil(() => !!controller.chains['1']?.lastSyncedAt)
+        // One network alone is not the whole history yet
+        expect(getPage(controller)).toBeNull()
+
+        await releaseSync('seed-a', OTHER_CHAIN_ID)
+        await opening
+
+        expect(getAmounts(controller)).toEqual([3n, 2n, 1n])
+      })
+
+      it('reads and shows only the network it is narrowed to', async () => {
+        const { controller } = await prepareSelected({ hasOtherChain: true })
+
+        const opening = controller.filterHistory(SESSION, { chainId: OTHER })
+        await releaseSync('seed-a', OTHER_CHAIN_ID)
+        await opening
+
+        expect(runningSyncs).toHaveLength(0)
+        expect(controller.chains['1']?.lastSyncedAt).toBeNull()
+        expect(getAmounts(controller)).toEqual([2n])
+        expect(controller.history[SESSION]?.filters).toEqual({ chainId: OTHER })
+      })
+
+      it('shows an empty page for a network without Privacy Pools', async () => {
+        const { controller } = await prepareSelected({ hasOtherChain: true })
+
+        await controller.filterHistory(SESSION, { chainId: '137' })
+
+        expect(runningSyncs).toHaveLength(0)
+        expect(getPage(controller)?.items).toEqual([])
+      })
+    })
+  })
+
+  describe('taking back deposits (ragequit)', () => {
+    const USDC_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
+    const OTHER_DEPOSITOR = '0x0000000000000000000000000000000000000001'
+
+    beforeEach(() => {
+      notesBySeed = {
+        'seed-a': [
+          { label: 1n, amount: 10n, approved: true, deposit: 0 },
+          // Made after label 6, as labels say nothing of the order
+          { label: 3n, amount: 30n, approved: false, deposit: 4 },
+          // Spent in full: nothing left to take back
+          { label: 4n, amount: 0n, approved: false, deposit: 1 },
+          {
+            label: 5n,
+            amount: 5n,
+            approved: false,
+            assetAddress: BigInt(USDC),
+            depositor: OTHER_DEPOSITOR,
+            deposit: 2
+          },
+          { label: 6n, amount: 60n, approved: false, depositor: OTHER_DEPOSITOR, deposit: 3 }
+        ],
+        'seed-b': [{ label: 2n, amount: 20n, approved: false }]
+      }
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    const prove = jest.fn(async () => ({}) as any)
+
+    const prepareSynced = async () => {
+      const prepared = await prepareTest({ proverFactory: async () => ({ prove }) })
+      prepared.selectedAccount.select('seed-a')
+      const syncing = prepared.controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+
+      return { ...prepared, protocol: protocols[0]! }
+    }
+
+    const buildRagequit = (controller: PrivacyPoolsController, label: bigint) =>
+      controller.buildRagequitCalls({ chainId: '1', label })
+
+    /** Builds it and lets through the sync that reads the deposit again once it is proved. */
+    const buildRagequitAfterSync = async (controller: PrivacyPoolsController, label: bigint) => {
+      const building = buildRagequit(controller, label)
+      await releaseSync('seed-a')
+
+      return building
+    }
+
+    it("lists the token's deposits still being verified, newest first, with their account", async () => {
+      const { controller } = await prepareSynced()
+
+      await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).resolves.toEqual([
+        { label: 3n, amount: 30n, depositorAddr: DEPOSITOR },
+        { label: 6n, amount: 60n, depositorAddr: OTHER_DEPOSITOR }
+      ])
+      await expect(controller.getRagequitDeposits('1', USDC.toUpperCase())).resolves.toEqual([
+        { label: 5n, amount: 5n, depositorAddr: OTHER_DEPOSITOR }
+      ])
+    })
+
+    it('knows the account of a deposit still being verified before proving it', async () => {
+      const { controller, protocol } = await prepareSynced()
+      const syncCount = protocol.syncCount
+
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 3n })).toBe(DEPOSITOR)
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 6n })).toBe(OTHER_DEPOSITOR)
+      expect(prove).not.toHaveBeenCalled()
+      expect(protocol.syncCount).toBe(syncCount)
+    })
+
+    it('knows no account for a verified, spent, unknown or other phrase deposit', async () => {
+      const { controller } = await prepareSynced()
+
+      // Verified
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 1n })).toBeUndefined()
+      // Spent in full
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 4n })).toBeUndefined()
+      // Of seed-b
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 2n })).toBeUndefined()
+      expect(controller.getRagequitDepositorAddr({ chainId: '1', label: 99n })).toBeUndefined()
+      expect(controller.getRagequitDepositorAddr({ chainId: '10', label: 3n })).toBeUndefined()
+    })
+
+    it('keeps the depositor checksummed, as the SDK reports it as a number', async () => {
+      const { controller } = await prepareSynced()
+
+      const [newest] = await controller.getRagequitDeposits('1', ZERO_ADDRESS)
+
+      expect(newest?.depositorAddr).toBe(DEPOSITOR)
+      expect(newest?.depositorAddr).not.toBe(DEPOSITOR.toLowerCase())
+    })
+
+    it('asks the network nothing to list them, and does not sync again', async () => {
+      const { controller, protocol, providers } = await prepareSynced()
+      const syncCount = protocol.syncCount
+
+      await controller.getRagequitDeposits('1', ZERO_ADDRESS)
+
+      expect(protocol.syncCount).toBe(syncCount)
+      expect(providers.providers['1'].send).not.toHaveBeenCalled()
+    })
+
+    it('lists nothing before a sync, nor for a token with no deposits being verified', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).resolves.toEqual([])
+    })
+
+    it('answers the Rage quit sheet, and tells it why when it cannot', async () => {
+      const { controller, ui, selectedAccount } = await prepareSynced()
+
+      await controller.getRagequitDepositsAndSendResToUi('1', ZERO_ADDRESS, 'request-1')
+      selectedAccount.select(null)
+      await controller.getRagequitDepositsAndSendResToUi('1', ZERO_ADDRESS, 'request-2')
+
+      expect(ui.message.sendUiMessage).toHaveBeenNthCalledWith(1, {
+        requestId: 'request-1',
+        ok: true,
+        res: [
+          expect.objectContaining({ label: 3n, amount: 30n, depositorAddr: DEPOSITOR }),
+          expect.objectContaining({ label: 6n })
+        ]
+      })
+      expect(ui.message.sendUiMessage).toHaveBeenNthCalledWith(2, {
+        requestId: 'request-2',
+        ok: false,
+        error: 'Please select a Privacy Pools account first.'
+      })
+      expect(controller.emittedErrors.at(-1)?.message).toBe(
+        'Please select a Privacy Pools account first.'
+      )
+    })
+
+    it('builds the reclaim as a call of the account the deposit came from', async () => {
+      const { controller, protocol } = await prepareSynced()
+
+      await expect(buildRagequitAfterSync(controller, 3n)).resolves.toEqual({
+        accountAddr: DEPOSITOR,
+        calls: [{ to: ETHEREUM_ETH_POOL, value: 0n, data: encodeRagequit(30n, 3n) }]
+      })
+      await expect(buildRagequitAfterSync(controller, 6n)).resolves.toEqual({
+        accountAddr: OTHER_DEPOSITOR,
+        calls: [{ to: ETHEREUM_ETH_POOL, value: 0n, data: encodeRagequit(60n, 6n) }]
+      })
+      expect(protocol.ragequitLabels).toEqual([[3n], [6n]])
+    })
+
+    it('never takes back a verified deposit, one spent in full, or one it does not know', async () => {
+      const { controller, protocol } = await prepareSynced()
+
+      await expect(buildRagequit(controller, 1n)).rejects.toThrow(
+        'This deposit can no longer be taken back. It may have been verified or taken back already.'
+      )
+      await expect(buildRagequit(controller, 4n)).rejects.toThrow(EmittableError)
+      await expect(buildRagequit(controller, 99n)).rejects.toThrow(EmittableError)
+      // Another account's deposit, though it is being verified
+      await expect(buildRagequit(controller, 2n)).rejects.toThrow(EmittableError)
+      expect(protocol.ragequitLabels).toEqual([])
+    })
+
+    it('refuses what the SDK built when it is not the reclaim of that deposit', async () => {
+      const { controller } = await prepareSynced()
+      const message = 'Could not prepare taking back this deposit. Please try again.'
+      const builtFor = (txns: { to: string; data: string; value: bigint }[]) => {
+        ragequitTxns = txns
+        return buildRagequit(controller, 3n)
+      }
+
+      // It leaves out a deposit it could not prove for
+      await expect(builtFor([])).rejects.toThrow(message)
+      const reclaim = { to: ETHEREUM_ETH_POOL, value: 0n, data: encodeRagequit(30n, 3n) }
+      await expect(builtFor([reclaim, reclaim])).rejects.toThrow(message)
+      await expect(builtFor([{ ...reclaim, data: encodeRagequit(30n, 1n) }])).rejects.toThrow(
+        message
+      )
+      await expect(builtFor([{ ...reclaim, data: encodeRagequit(29n, 3n) }])).rejects.toThrow(
+        message
+      )
+      // Another token's pool, or one we do not know
+      await expect(builtFor([{ ...reclaim, to: USDC_POOL }])).rejects.toThrow(message)
+      await expect(builtFor([{ ...reclaim, to: WITHDRAWAL_RECIPIENT }])).rejects.toThrow(message)
+      await expect(builtFor([{ ...reclaim, value: 1n }])).rejects.toThrow(message)
+      await expect(builtFor([{ ...reclaim, data: '0x12345678' }])).rejects.toThrow(message)
+    })
+
+    it('waits for the running sync before proving, as the SDK syncs the same plugin', async () => {
+      const { controller, protocol } = await prepareSynced()
+      const syncing = controller.syncChain('1')
+      // Taken back elsewhere, which only the running sync learns
+      notesBySeed['seed-a'] = notesBySeed['seed-a']!.filter(({ label }) => label !== 6n)
+
+      const building3 = buildRagequit(controller, 3n)
+      const building6 = buildRagequit(controller, 6n)
+      await waitUntil(() => runningSyncs.length > 0)
+      await flush()
+      expect(protocol.ragequitLabels).toEqual([])
+
+      // Refused once the sync it waited for is done, so caught before that
+      const refusing6 = expect(building6).rejects.toThrow(
+        'This deposit can no longer be taken back. It may have been verified or taken back already.'
+      )
+      await releaseSync('seed-a')
+      await syncing
+      await refusing6
+      // The read once it is proved
+      await releaseSync('seed-a')
+      await expect(building3).resolves.toMatchObject({ accountAddr: DEPOSITOR })
+      expect(protocol.ragequitLabels).toEqual([[3n]])
+    })
+
+    it('reads the account once the reclaim lands, so the deposit leaves the pending balance', async () => {
+      const { controller } = await prepareSynced()
+      const { calls } = await buildRagequitAfterSync(controller, 3n)
+      controller.onAccountOpBroadcast({ chainId: 1n, calls })
+
+      notesBySeed['seed-a'] = notesBySeed['seed-a']!.map((note) =>
+        note.label === 3n ? { ...note, amount: 0n } : note
+      )
+      await finalizeAndRead(controller, calls, 'seed-a')
+
+      await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).resolves.toEqual([
+        { label: 6n, amount: 60n, depositorAddr: OTHER_DEPOSITOR }
+      ])
+    })
+
+    it('shows the reclaimed deposit as leaving the pending balance, and leaves the approved one alone, until it lands', async () => {
+      const { controller } = await prepareSynced()
+      const { calls } = await buildRagequitAfterSync(controller, 3n)
+      expect(getBalance(controller)).toMatchObject({
+        totalAmount: 100n,
+        approvedAmount: 10n,
+        pendingAmount: 90n
+      })
+
+      controller.onAccountOpBroadcast({ chainId: 1n, calls })
+
+      expect(getBalance(controller)).toMatchObject({
+        totalAmount: 100n,
+        simulationAmount: -30n,
+        approvedAmountPostSimulation: 10n
+      })
+
+      notesBySeed['seed-a'] = notesBySeed['seed-a']!.map((note) =>
+        note.label === 3n ? { ...note, amount: 0n } : note
+      )
+      await finalizeAndRead(controller, calls, 'seed-a')
+
+      expect(getBalance(controller)).toMatchObject({ totalAmount: 70n, simulationAmount: 0n })
+    })
+
+    it('stops showing a reclaim whose transaction failed', async () => {
+      const { controller } = await prepareSynced()
+      const { calls } = await buildRagequitAfterSync(controller, 3n)
+      controller.onAccountOpBroadcast({ chainId: 1n, calls })
+      expect(getBalance(controller)).toMatchObject({ simulationAmount: -30n })
+
+      await finalize(controller, calls, AccountOpStatus.Failure)
+
+      expect(getBalance(controller)).toMatchObject({ totalAmount: 100n, simulationAmount: 0n })
+    })
+
+    it('does not read the account when the reclaim failed', async () => {
+      const { controller } = await prepareSynced()
+      const { calls } = await buildRagequitAfterSync(controller, 3n)
+      controller.onAccountOpBroadcast({ chainId: 1n, calls })
+
+      await finalize(controller, calls, AccountOpStatus.Failure)
+
+      expect(runningSyncs).toHaveLength(0)
+    })
+
+    it('hands nothing over once the wallet was locked while waiting for a sync', async () => {
+      const { controller, keystore, protocol } = await prepareSynced()
+      const syncing = controller.syncChain('1')
+
+      const building = buildRagequit(controller, 3n)
+      await waitUntil(() => runningSyncs.length > 0)
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      await releaseSync('seed-a')
+      await syncing
+
+      await expect(building).rejects.toThrow('Please unlock your wallet to use Privacy Pools.')
+      expect(protocol.ragequitLabels).toEqual([])
+    })
+
+    it('refuses a deposit verified while it was proved, as it can now be sent privately', async () => {
+      const { controller, protocol } = await prepareSynced()
+      // Seen by the SDK's sync before proving, not by the controller's last one
+      notesBySeed['seed-a'] = notesBySeed['seed-a']!.map((note) =>
+        note.label === 3n ? { ...note, approved: true } : note
+      )
+
+      await expect(buildRagequitAfterSync(controller, 3n)).rejects.toThrow(
+        'This deposit was just verified, so it can now be sent privately. Use Send to move it.'
+      )
+      expect(protocol.ragequitLabels).toEqual([[3n]])
+      // The read refreshed what the account shows as well
+      await expect(controller.getRagequitDeposits('1', ZERO_ADDRESS)).resolves.toEqual([
+        expect.objectContaining({ label: 6n })
+      ])
+    })
+
+    it('reads the deposit again with a sync of its own, not one that read the notes while proving', async () => {
+      const { controller, protocol } = await prepareSynced()
+      // A screen shows the history, so a sync reads it after the notes
+      await controller.filterHistory('dashboard')
+      ragequitGate = createDeferred()
+      const building = buildRagequit(controller, 3n)
+      await waitUntil(() => protocol.ragequitLabels.length === 1)
+
+      // Started while proving, and reading the history when the proof is done
+      historyGate = createDeferred()
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await waitUntil(() => protocol.historyCount === 2)
+      ragequitGate.resolve()
+      await flush()
+      historyGate.resolve()
+      await syncing
+
+      // The read once it is proved
+      await releaseSync('seed-a')
+      await expect(building).resolves.toMatchObject({ accountAddr: DEPOSITOR })
+      expect(protocol.syncCount).toBe(3)
+    })
+
+    it('refuses a deposit taken back elsewhere once it was proved', async () => {
+      const { controller } = await prepareSynced()
+      // Proved from what the SDK's sync read, then taken back before the deposit is read again
+      ragequitTxns = [{ to: ETHEREUM_ETH_POOL, value: 0n, data: encodeRagequit(30n, 3n) }]
+      notesBySeed['seed-a'] = notesBySeed['seed-a']!.map((note) =>
+        note.label === 3n ? { ...note, amount: 0n } : note
+      )
+
+      await expect(buildRagequitAfterSync(controller, 3n)).rejects.toThrow(
+        'This deposit can no longer be taken back. It may have been verified or taken back already.'
+      )
+    })
+
+    it('refuses the deposit when it cannot be read again once proved', async () => {
+      const { controller } = await prepareSynced()
+
+      const building = buildRagequit(controller, 3n)
+      const running = await takeRunningSync('seed-a', 1n)
+      running.gate.reject(new Error('the node is down'))
+
+      await expect(building).rejects.toThrow(
+        'Could not prepare taking back this deposit. Please try again.'
+      )
+    })
+
+    it('hands nothing over once the wallet was locked while the deposit was read again', async () => {
+      const { controller, keystore } = await prepareSynced()
+
+      const building = buildRagequit(controller, 3n)
+      const running = await takeRunningSync('seed-a', 1n)
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      running.gate.resolve()
+
+      await expect(building).rejects.toThrow('Please unlock your wallet to use Privacy Pools.')
+    })
+
+    it('hands nothing over once the wallet was locked while proving', async () => {
+      const { controller, keystore } = await prepareSynced()
+      ragequitGate = createDeferred()
+
+      const building = buildRagequit(controller, 3n)
+      await waitUntil(() => protocols[0]!.ragequitLabels.length > 0)
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      ragequitGate.resolve()
+
+      await expect(building).rejects.toThrow('Please unlock your wallet to use Privacy Pools.')
+    })
+
+    it("proves with no cancel signal, which only a withdrawal's proofs get", async () => {
+      const { controller } = await prepareSynced()
+
+      await buildRagequitAfterSync(controller, 3n)
+
+      expect(prove).toHaveBeenLastCalledWith('commitment', { value: 1n }, { signal: undefined })
+    })
+  })
+
+  describe("a pool's numbers", () => {
+    const USDC_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
+    // The ETH pool's first three deposits. It is the first pool, so it has the first scope
+    const [LABEL_1, , LABEL_3] = getPrivacyPoolsPoolLabels(FIRST_POOL_SCOPE, 1n, 3n) as [
+      bigint,
+      bigint,
+      bigint
+    ]
+    /** The ETH pool's first `count` deposits of 100, 30 and 400, and one in the USDC pool. */
+    const toEthPoolState = (count: number) =>
+      toStoredPoolState({
+        deposits: [
+          ...[100n, 30n, 400n].slice(0, count).map((value) => ({ pool: ETHEREUM_ETH_POOL, value })),
+          { pool: USDC_POOL, value: 7n }
+        ],
+        withdrawals: [{ pool: ETHEREUM_ETH_POOL, value: 40n }],
+        // Verified: the first and third ETH deposits, and one of another pool
+        aspLeaves: [LABEL_1, LABEL_3, 99n]
+      })
+
+    beforeEach(() => {
+      storedPoolState = toEthPoolState(3)
+    })
+
+    const syncAs = async (
+      { controller, selectedAccount }: Awaited<ReturnType<typeof prepareTest>>,
+      seedId: string
+    ) => {
+      selectedAccount.select(seedId)
+      const syncing = controller.syncChain('1')
+      await releaseSync(seedId)
+      await syncing
+    }
+
+    const prepareSynced = async () => {
+      const prepared = await prepareTest()
+      const call = jest.fn()
+      const getBalance = jest.fn()
+      Object.assign(prepared.providers.providers['1'], { call, getBalance })
+      await syncAs(prepared, 'seed-a')
+
+      return { ...prepared, call, getBalance }
+    }
+
+    it('computes them with a sync, from the synced history alone, asking the network nothing', async () => {
+      const { controller, providers, call, getBalance } = await prepareSynced()
+
+      expect(controller.poolStats['1']).toEqual({
+        byToken: expect.objectContaining({
+          [ZERO_ADDRESS]: {
+            totalAmount: 490n,
+            approvedDepositsCount: 2,
+            depositsCount24h: 3,
+            withdrawalsCount24h: 1
+          },
+          // By the token address in lowercase
+          [USDC]: {
+            totalAmount: 7n,
+            approvedDepositsCount: 0,
+            depositsCount24h: 1,
+            withdrawalsCount24h: 0
+          }
+        }),
+        error: null
+      })
+      expect(call).not.toHaveBeenCalled()
+      expect(getBalance).not.toHaveBeenCalled()
+      expect(providers.providers['1'].send).not.toHaveBeenCalled()
+    })
+
+    it("counts the deposits made since, whichever account's sync read them", async () => {
+      storedPoolState = toEthPoolState(2)
+      const prepared = await prepareSynced()
+      expect(prepared.controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({
+        approvedDepositsCount: 1
+      })
+
+      storedPoolState = toEthPoolState(3)
+      await syncAs(prepared, 'seed-b')
+
+      expect(prepared.controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({
+        approvedDepositsCount: 2
+      })
+    })
+
+    it('keeps them with no selected account, as they are the same for all', async () => {
+      const { controller, selectedAccount } = await prepareSynced()
+      selectedAccount.select(null)
+
+      expect(controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({
+        totalAmount: 490n
+      })
+    })
+
+    it('does not read the history already on this device on load, only with the next sync', async () => {
+      const { storage } = await prepareSynced()
+
+      const prepared = await prepareTest({ storage })
+      await flush()
+      expect(prepared.controller.poolStats).toEqual({})
+
+      await syncAs(prepared, 'seed-a')
+      expect(prepared.controller.poolStats['1']?.byToken[ZERO_ADDRESS]).toMatchObject({
+        totalAmount: 490n
+      })
+    })
+
+    it('has none before the first sync, which is not an error', async () => {
+      const { controller } = await prepareTest()
+      await flush()
+
+      expect(controller.poolStats).toEqual({})
+      expect(controller.emittedErrors).toEqual([])
+    })
+
+    it('says so when the stored history is not what it reads, without a toast', async () => {
+      storedPoolState = 'not a stored state'
+      const { controller } = await prepareSynced()
+
+      expect(controller.poolStats['1']).toEqual({
+        byToken: {},
+        error: 'Could not load the numbers of this pool.'
+      })
+      expect(controller.emittedErrors.at(-1)?.level).toBe('silent')
     })
   })
 
@@ -2627,7 +5004,7 @@ describe('PrivacyPoolsController', () => {
       expect(fakeFetch.mock.calls.length).toBe(requestsAfterFirst)
     })
 
-    it('asks for no prices while the user has opted out of them, and drops those it had', async () => {
+    it('keeps the prices it had when the user opts out, and asks our price API for no new ones', async () => {
       const { controller, featureFlags, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-a')
 
@@ -2635,17 +5012,205 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-a')
       await first
       await waitUntil(() => Object.keys(controller.prices).length > 0)
+      const pricesBeforeOptOut = controller.prices
 
       featureFlags.set('tokenPrices', false)
-      expect(controller.prices).toEqual({})
+      expect(controller.prices).toEqual(pricesBeforeOptOut)
 
+      // Once the cached prices are older than the price cache keeps them
+      const realNow = Date.now.bind(Date)
+      const dateSpy = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + 6 * 60 * 1000)
       fakeFetch.mockClear()
-      const second = controller.syncChain('1')
-      await releaseSync('seed-a')
-      await second
+      try {
+        const second = controller.syncChain('1')
+        await releaseSync('seed-a')
+        await second
+        await flush()
+      } finally {
+        dateSpy.mockRestore()
+      }
 
       expect(fakeFetch).not.toHaveBeenCalled()
-      expect(controller.prices).toEqual({})
+    })
+  })
+
+  describe('privacy checks', () => {
+    const USDC_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
+    const ETH_TRANSFER = {
+      chainId: '1',
+      tokenAddress: ZERO_ADDRESS,
+      amount: 10n,
+      recipient: WITHDRAWAL_RECIPIENT
+    }
+    const USDC_TRANSFER = { ...ETH_TRANSFER, tokenAddress: USDC, amount: 7n }
+
+    const getLeakIds = (controller: PrivacyPoolsController) =>
+      controller.withdrawalPrivacy?.privacy?.leaks.map(({ id }) => id)
+
+    beforeEach(() => {
+      storedPoolState = toStoredPoolState({
+        deposits: [
+          { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 999n },
+          // seed-a's own
+          { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 1000n },
+          { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 1001n },
+          // Too small to hide seed-a's note
+          { pool: ETHEREUM_ETH_POOL, value: 9n, blockNumber: 1002n },
+          { pool: ETHEREUM_ETH_POOL, value: 50n, blockNumber: 1003n },
+          { pool: USDC_POOL, value: 7n, blockNumber: 1000n }
+        ],
+        isEveryDepositApproved: true,
+        // A day after the deposits, so none of them is fresh
+        lastSyncedBlock: 1000n + getPrivacyPoolsChainConfig(1n)!.blocksPerDay
+      })
+      notesBySeed['seed-a'] = [
+        { label: 1n, amount: 10n, approved: true, blockNumber: 1000n },
+        { label: 2n, amount: 7n, approved: true, assetAddress: BigInt(USDC), blockNumber: 1000n }
+      ]
+    })
+
+    /** seed-a, synced. */
+    const prepareSynced = async () => {
+      const prepared = await prepareTest()
+      prepared.selectedAccount.select('seed-a')
+      const syncing = prepared.controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+
+      return prepared
+    }
+
+    it('drops the answer on lock', async () => {
+      const { controller, keystore } = await prepareSynced()
+      controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+      expect(controller.withdrawalPrivacy).not.toBeNull()
+
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+
+      expect(controller.withdrawalPrivacy).toBeNull()
+    })
+
+    it("does not count the user's own deposits sent in full as others' that hide a send", async () => {
+      storedPoolState = toStoredPoolState({
+        deposits: [
+          { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 998n },
+          { pool: ETHEREUM_ETH_POOL, value: 37n, blockNumber: 999n },
+          { pool: ETHEREUM_ETH_POOL, value: 37n, blockNumber: 1000n }
+        ],
+        isEveryDepositApproved: true,
+        lastSyncedBlock: 1000n + getPrivacyPoolsChainConfig(1n)!.blocksPerDay
+      })
+      // Both 37s are seed-a's, and the first one was already sent in full
+      notesBySeed['seed-a'] = [
+        {
+          label: 3n,
+          amount: 0n,
+          value: 37n,
+          withdraw: 1,
+          approved: true,
+          blockNumber: 999n
+        },
+        { label: 4n, amount: 37n, approved: true, blockNumber: 1000n }
+      ]
+      const { controller } = await prepareSynced()
+
+      controller.checkWithdrawalPrivacy({ ...ETH_TRANSFER, amount: 37n })
+
+      expect(getLeakIds(controller)).toEqual(['unique-amount'])
+      expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+        rating: 'traceable',
+        cover: { bigEnough: 0, sameAmount: 0 }
+      })
+    })
+
+    it('rates a send unchecked when the pool could not be read', async () => {
+      const { restore } = suppressConsole()
+      storedPoolState = 'not a stored state'
+      const { controller } = await prepareSynced()
+
+      controller.checkWithdrawalPrivacy(USDC_TRANSFER)
+
+      expect(controller.poolStats['1']?.error).not.toBeNull()
+      expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+        rating: 'unchecked',
+        leaks: []
+      })
+      restore()
+    })
+
+    it('rates the deposits the proof spends, not the ones of the last sync', async () => {
+      notesBySeed['seed-a'] = [
+        { label: 1n, amount: WITHDRAWAL_AMOUNT, approved: true, blockNumber: 1000n }
+      ]
+      const { controller } = await prepareSynced()
+      // Seen only by the sync the SDK runs before proving: a larger deposit from the recipient
+      notesBySeed['seed-a'] = [
+        {
+          label: 3n,
+          amount: 2n * WITHDRAWAL_AMOUNT,
+          approved: true,
+          blockNumber: 1000n,
+          depositor: WITHDRAWAL_RECIPIENT
+        }
+      ]
+      preparedWithdrawal = buildPreparedWithdrawal()
+
+      await controller.prepareWithdrawal({ ...ETH_TRANSFER, amount: WITHDRAWAL_AMOUNT })
+
+      expect(controller.operation?.phase).toBe('ready')
+      expect(controller.operation?.privacy?.rating).toBe('weak')
+      expect(controller.operation?.privacy?.leaks.map(({ id }) => id)).toContain(
+        'send-to-depositor'
+      )
+    })
+
+    it('rates a proof that spends a different number of deposits than predicted as unchecked, and reports it', async () => {
+      const { restore } = suppressConsole()
+      notesBySeed['seed-a'] = [
+        { label: 1n, amount: WITHDRAWAL_AMOUNT, approved: true, blockNumber: 1000n }
+      ]
+      const { controller } = await prepareSynced()
+      // Spends two deposits, while the one note pays the whole amount
+      preparedWithdrawal = buildPreparedWithdrawal({ isBatch: true })
+
+      await controller.prepareWithdrawal({ ...ETH_TRANSFER, amount: WITHDRAWAL_AMOUNT })
+
+      expect(controller.operation).toMatchObject({
+        phase: 'ready',
+        // The one predicted deposit rates standard, which says nothing about linking two deposits
+        privacy: { rating: 'unchecked', notesCount: 2, leaks: [] }
+      })
+      expect(controller.emittedErrors.at(-1)).toMatchObject({
+        level: 'silent',
+        error: expect.objectContaining({
+          message: 'privacyPools: the proof spends 2 notes, 1 were predicted'
+        })
+      })
+      restore()
+    })
+
+    it('reads the pool for a deposit form when no sync has read it, without syncing', async () => {
+      const storage = new StorageController(produceMemoryStore())
+      await storage.set('privacyPoolsState', {
+        [getPrivacyPoolsStoreKey(getPrivacyPoolsChainConfig(1n)!)]: storedPoolState!
+      })
+      const { controller } = await prepareTest({ storage })
+      const deposit = { chainId: '1', tokenAddress: ZERO_ADDRESS, amount: 10n, maxAmount: 100n }
+      expect(controller.getDepositPrivacy(deposit).rating).toBe('unchecked')
+
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, 'transfer-session')
+      await waitUntil(() => !!controller.poolStats['1'])
+
+      expect(controller.getDepositPrivacy(deposit)).toMatchObject({
+        rating: 'standard',
+        sameAmount: 3
+      })
+      expect(controller.getDepositPrivacy({ ...deposit, amount: 11n })).toMatchObject({
+        rating: 'standard',
+        sameAmount: 0
+      })
+      expect(runningSyncs).toHaveLength(0)
     })
   })
 })

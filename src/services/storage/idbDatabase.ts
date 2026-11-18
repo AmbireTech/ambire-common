@@ -116,22 +116,73 @@ let openPromise: Promise<AmbireIdbDatabase> | null = null
  * awaits this call and only falls back to key-value when it REJECTS, so without a deadline a
  * blocked upgrade means the wallet never boots at all.
  *
- * Deliberately short. A healthy open is single-digit milliseconds, and the cost of waiting is
- * a wallet that looks frozen.
+ * A healthy open is single-digit milliseconds and ends the wait as soon as it lands, so only a
+ * slow open waits this long, and the cost of waiting is a wallet that looks frozen.
  *
- * The cost of giving up early is higher than it looks, though: background.ts opens ONCE and
- * passes undefined on failure, so nothing retries within the session even though a timeout
- * clears the singleton. One slow open — cold browser start, busy disk — puts the whole
- * service-worker lifetime on key-value, where history renders from the blob frozen at
- * migration time.
+ * The cost of giving up early is higher than it looks, though: background.ts passes undefined
+ * on failure, so nothing retries within the session even though a timeout clears the
+ * singleton. One slow open puts the whole service-worker lifetime on key-value, where history
+ * renders from the blob frozen at migration time. Slow opens on Windows were seen to take
+ * seconds, which is why this is not shorter.
  */
-const OPEN_TIMEOUT_MS = 1000
+export const OPEN_TIMEOUT_MS = 5000
 
-export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
+const IDB_OPEN_TIMEOUT_ERROR_NAME = 'IdbOpenTimeoutError'
+
+/**
+ * Thrown by openAmbireIdb() when the open did not settle within OPEN_TIMEOUT_MS. Kept apart
+ * from the browser's own errors because a retry cannot help it: the browser queues every open
+ * of one database, so a second open only waits behind the first.
+ */
+export class IdbOpenTimeoutError extends Error {
+  constructor() {
+    super(`[AmbireIdb] Opening the database timed out after ${OPEN_TIMEOUT_MS}ms`)
+    this.name = IDB_OPEN_TIMEOUT_ERROR_NAME
+  }
+}
+
+/**
+ * True when openAmbireIdb() gave up at its deadline. Matched by name rather than by
+ * instanceof, which is not reliable for Error subclasses once transpiled.
+ */
+export function isIdbOpenTimeoutError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+
+  return (error as { name?: unknown }).name === IDB_OPEN_TIMEOUT_ERROR_NAME
+}
+
+/** How one open of the database went, measured from the browser's own result. */
+export interface IdbOpenReport {
+  /** Time until the browser settled the open, also when the deadline gave up on it first. */
+  durationMs: number
+  /** The name of the browser's error, or undefined when the open succeeded. */
+  errorName?: string
+  /** The version the database had before this open upgraded it, or null when no upgrade ran. */
+  upgradedFromVersion: number | null
+  /** Whether a connection in another context held up the upgrade. */
+  wasBlocked: boolean
+}
+
+/**
+ * Opens the 'ambire' database once and hands every caller the same connection promise.
+ * Rejects with IdbOpenTimeoutError after OPEN_TIMEOUT_MS, or with the browser's error.
+ *
+ * `onSettled` is called once the browser settles the open, even after the deadline rejected,
+ * so a slow open still reports how long it really took. It belongs to the call that starts an
+ * open; a call that gets the cached promise does not register it.
+ */
+export function openAmbireIdb(
+  onSettled?: (report: IdbOpenReport) => void
+): Promise<AmbireIdbDatabase> {
   if (openPromise) return openPromise
+
+  const openStartedAt = Date.now()
+  let upgradedFromVersion: number | null = null
+  let wasBlocked = false
 
   const rawOpen = openDB<AmbireIdbSchema>(AMBIRE_IDB_SCHEMA.dbName, AMBIRE_IDB_SCHEMA.dbVersion, {
     upgrade(db, oldVersion, newVersion, tx) {
+      upgradedFromVersion = oldVersion
       const targetVersion = newVersion ?? AMBIRE_IDB_SCHEMA.dbVersion
       const isFreshInstall = oldVersion === 0
       if (!isFreshInstall) {
@@ -144,6 +195,7 @@ export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
     },
 
     blocked(currentVersion, blockedVersion) {
+      wasBlocked = true
       console.warn(
         `[AmbireIdb] Upgrade to v${blockedVersion} is blocked by an open connection at v${currentVersion} (another tab)`
       )
@@ -171,6 +223,20 @@ export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
     }
   })
 
+  if (onSettled) {
+    const report = (errorName?: string) =>
+      onSettled({
+        durationMs: Date.now() - openStartedAt,
+        errorName,
+        upgradedFromVersion,
+        wasBlocked
+      })
+    rawOpen.then(
+      () => report(),
+      (error) => report(error?.name ?? 'UnknownError')
+    )
+  }
+
   openPromise = rawOpen.catch((error) => {
     // Allow a subsequent openAmbireIdb() call to retry after a transient failure.
     openPromise = null
@@ -182,11 +248,7 @@ export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
   // open does not leave it pending.
   let timer: ReturnType<typeof setTimeout>
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () =>
-        reject(new Error(`[AmbireIdb] Opening the database timed out after ${OPEN_TIMEOUT_MS}ms`)),
-      OPEN_TIMEOUT_MS
-    )
+    timer = setTimeout(() => reject(new IdbOpenTimeoutError()), OPEN_TIMEOUT_MS)
   })
 
   // Assigned as ONE promise, not returned as a fresh .catch() per call — callers rely on

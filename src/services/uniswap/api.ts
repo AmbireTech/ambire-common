@@ -1,4 +1,7 @@
-import { formatUnits, getAddress, Interface, ZeroAddress } from 'ethers'
+import { formatUnits, Interface, ZeroAddress } from 'ethers'
+// viem's, because on mobile it is swapped for a native checksum (ethers' hashes in JS, ~1ms per
+// address there) and the token list normalizes hundreds of addresses at once
+import { getAddress } from 'viem'
 
 import { CITREA_CHAIN_ID } from '@/consts/networks'
 

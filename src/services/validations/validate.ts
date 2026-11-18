@@ -5,6 +5,7 @@ import { Account, AccountStates } from '@/interfaces/account'
 import { Network } from '@/interfaces/network'
 import { AddressPoisoningMatch } from '@/interfaces/transfer'
 import { getSupportedNetworks } from '@/libs/networks/networks'
+import { isNearIdenticalAddressMatch } from '@/libs/transfer/address-poisoning'
 
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
@@ -76,8 +77,24 @@ const VIEW_ONLY_RECIPIENT_MESSAGE =
 // 6-left/5-right or 6-left/6-right use 0x + 8...8 for more clarity.
 const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_DEFAULT = 6
 const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_EXTENDED = 8
-const getAddressPoisoningWarningMessage = (matchedAddress: string) =>
-  `Possible address poisoning: this new address looks similar to ${matchedAddress} that you have interacted with before. Proceed with caution.`
+const getAddressPoisoningWarningMessage = (
+  matchedAddress: string,
+  matchedOwnAccountLabel?: string
+) =>
+  matchedOwnAccountLabel
+    ? `Possible address poisoning: this new address looks similar to your account "${matchedOwnAccountLabel}" (${matchedAddress}). Proceed with caution.`
+    : `Possible address poisoning: this new address looks similar to ${matchedAddress} that you have interacted with before. Proceed with caution.`
+// Kept short because the UI shows a "Use <address>" button next to it
+const getNearIdenticalAddressWarningMessage = (
+  differingCharsCount: number,
+  matchedOwnAccountLabel?: string
+) => {
+  const differingChars = `${differingCharsCount} ${differingCharsCount === 1 ? 'character differs' : 'characters differ'}`
+
+  return matchedOwnAccountLabel
+    ? `Looks like a typo: only ${differingChars} from your account "${matchedOwnAccountLabel}".`
+    : `Looks like a typo: only ${differingChars} from an address you have sent to before.`
+}
 
 const formatAddressPoisoningMatchForMessage = ({
   matchedAddress,
@@ -205,14 +222,20 @@ const validateSendTransferAddress = (
         shouldHold: true
       }
     },
-    // poisoning detected - require hold-to-proceed as an additional safety step
+    // poisoning or a likely typo detected - require hold-to-proceed as an additional safety step
     () => {
       if (!addressPoisoningMatch) return undefined
 
       return {
-        message: getAddressPoisoningWarningMessage(
-          formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
-        ),
+        message: isNearIdenticalAddressMatch(addressPoisoningMatch)
+          ? getNearIdenticalAddressWarningMessage(
+              addressPoisoningMatch.differingCharsCount,
+              addressPoisoningMatch.matchedOwnAccountLabel
+            )
+          : getAddressPoisoningWarningMessage(
+              formatAddressPoisoningMatchForMessage(addressPoisoningMatch),
+              addressPoisoningMatch.matchedOwnAccountLabel
+            ),
         severity: 'warning',
         shouldHold: true
       }

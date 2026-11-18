@@ -180,6 +180,12 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['0x6679996d'],
     message: 'your health factor will drop below the liquidation threshold.'
+  },
+  // Privacy Pools: NullifierAlreadySpent()
+  {
+    reasons: ['0xb115d857'],
+    message:
+      'this Privacy Pools deposit was already taken back, or is taken back twice in this transaction. If it is listed twice, remove one of them and try again.'
   }
 ]
 

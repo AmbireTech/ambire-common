@@ -11,6 +11,7 @@ import { Account } from './account'
 import { ControllerInterface } from './controller'
 import { Hex } from './hex'
 import { Network } from './network'
+import { PrivacyProviderId } from './privateAccount'
 import { EIP7702Signature } from './signatures'
 // TODO: Handle better to prevent dep cycle
 import { TypedMessageUserRequest } from './userRequest'
@@ -208,11 +209,15 @@ export type QrProtocolType = 'ur' | 'airgap'
 
 export type NfcWalletType = 'keycard' // We can add more supported NFC (tap-to-sign) cards here in the future
 
-export type ExternalKey = {
+type ExternalKeyBase = {
   addr: Account['addr']
-  type: 'trezor' | 'onekey' | 'ledger' | 'lattice' | 'qr' | 'nfc' | 'pq1'
   label: string
   dedicatedToOneSA: boolean
+}
+
+/** A key on a hardware wallet that derives it on a BIP-32 path (`hdPathTemplate` + `index`). */
+export type HdExternalKey = ExternalKeyBase & {
+  type: 'trezor' | 'onekey' | 'ledger' | 'lattice' | 'qr' | 'nfc'
   meta: {
     deviceId: string
     deviceModel: string
@@ -228,6 +233,25 @@ export type ExternalKey = {
   }
 }
 
+/**
+ * A key on a PQ1 (post-quantum) hardware wallet. PQ1 has no BIP-32 derivation, so the key has
+ * no HD path: the device holds 256 numbered accounts, and `index` is the account's number.
+ * Its `meta` deliberately has no catch-all `[key: string]: any`, so code that reads
+ * `meta.hdPathTemplate` off any external key fails to compile until it handles PQ1 keys.
+ */
+export type Pq1ExternalKey = ExternalKeyBase & {
+  type: 'pq1'
+  meta: {
+    deviceId: string
+    deviceModel: string
+    /** The account's number on the device (0-255), which the device signs with */
+    index: number
+    createdAt: number | null
+  }
+}
+
+export type ExternalKey = HdExternalKey | Pq1ExternalKey
+
 export type StoredKey =
   | (InternalKey & { privKey: KeystoreEncryptedPayload })
   | (ExternalKey & { privKey: null })
@@ -236,7 +260,15 @@ export type KeystoreSeed = {
   id: string
   label: string
   seed: string
+  /** Set only when the user chose to save the passphrase on this device */
   seedPassphrase?: string | null
+  /**
+   * The BIP32 master fingerprint of the phrase with its passphrase, set for phrases added with
+   * a passphrase since it became optional to save. Tells the passphrase apart without storing it.
+   */
+  passphraseFingerprint?: string
+  /** What follows "Passphrase" in the name of a phrase added with a passphrase, e.g. "1" */
+  passphraseLabel?: string
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   notBackedUp?: boolean
 }
@@ -247,11 +279,32 @@ export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> &
    */
   seed: KeystoreEncryptedPayload
   seedPassphrase?: KeystoreEncryptedPayload | null
+  /**
+   * Per privacy provider, the key its accounts derive from (a `PrivacyKeyMaterial`), the only
+   * source of their keys. Stored on adding the provider's account when the passphrase isn't saved,
+   * as it can't be derived again without it, and on first use otherwise. Dropped when the account
+   * is removed, and never synced. AES-GCM only, as the legacy AES-CTR payloads aren't authenticated.
+   */
+  privacyKeys?: Partial<Record<PrivacyProviderId, AESGCMEncrypted>>
+}
+
+/**
+ * What a `privacyKeys` entry decrypts to: the HD node at the provider's root path, so all its
+ * keys derive from it and none outside it. A provider with another key scheme adds a kind.
+ */
+export type PrivacyKeyMaterial = {
+  kind: 'bip32Node'
+  /** Where `xprv` was derived, checked against the provider's root path on reading it */
+  path: string
+  /** The node's extended private key: its key and chain code, so the paths below it derive */
+  xprv: string
 }
 
 export type KeystoreTempSeed = {
   seed: string
   seedPassphrase?: string | null
+  /** Saves `seedPassphrase` on this device. Off unless the user turns it on */
+  shouldSavePassphrase?: boolean
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   notBackedUp?: boolean
 }
@@ -274,13 +327,8 @@ export type ReadyToAddKeys = {
     dedicatedToOneSA: InternalKey['dedicatedToOneSA']
     meta: InternalKey['meta']
   }[]
-  external: {
-    addr: ExternalKey['addr']
-    label: string
-    type: ExternalKey['type']
-    dedicatedToOneSA: Key['dedicatedToOneSA']
-    meta: ExternalKey['meta']
-  }[]
+  // The whole union, rather than each field's, so a key's `meta` always matches its `type`
+  external: ExternalKey[]
 }
 
 export type KeyPreferences = {

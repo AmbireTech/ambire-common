@@ -1,7 +1,8 @@
-import { describe, expect, jest, test } from '@jest/globals'
+import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
+import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
-import { createKohakuKeystore } from './host'
+import { createKohakuKeystore, createKohakuNetwork, createKohakuProvider } from './host'
 
 const SIGNING_KEY_PATH = "m/28784'/1'/0'"
 const KEY: Hex = `0x${'11'.repeat(32)}`
@@ -57,5 +58,85 @@ describe('createKohakuKeystore', () => {
     // A new instance, as after a lock, derives again
     expect(await createKohakuKeystore(deriveKey).deriveAt(SIGNING_KEY_PATH)).toBe(KEY)
     expect(deriveKey).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('createKohakuNetwork', () => {
+  const READ_TIMEOUT = 1_000
+  const ASP_URL = 'https://api.0xbow.io/1/public/mt-leaves'
+
+  /** A server that accepts the connection and never answers. */
+  const createSilentFetch = () => jest.fn(() => new Promise<never>(() => {})) as unknown as Fetch
+
+  afterEach(() => jest.useRealTimers())
+
+  test('fails a GET that gets no answer', async () => {
+    jest.useFakeTimers()
+    const network = createKohakuNetwork(createSilentFetch(), READ_TIMEOUT)
+
+    const reading = network.fetch(ASP_URL, { method: 'GET' })
+    jest.advanceTimersByTime(READ_TIMEOUT)
+
+    await expect(reading).rejects.toThrow('request-timeout')
+  })
+
+  test('keeps waiting on a POST, which may be a broadcast still on its way', async () => {
+    jest.useFakeTimers()
+    const network = createKohakuNetwork(createSilentFetch(), READ_TIMEOUT)
+
+    const settled = jest.fn()
+    network.fetch('https://relayer.example/request', { method: 'POST' }).then(settled, settled)
+    jest.advanceTimersByTime(READ_TIMEOUT * 10)
+    await Promise.resolve()
+
+    expect(settled).not.toHaveBeenCalled()
+  })
+})
+
+describe('createKohakuProvider', () => {
+  const TX_HASH = `0x${'ab'.repeat(32)}`
+  const LOG = {
+    blockNumber: 22_153_713,
+    topics: [`0x${'01'.repeat(32)}`],
+    data: '0x',
+    address: '0xF241d57C6DebAe225c0F2e6eA1529373C9A9C9fB',
+    index: 7,
+    transactionHash: TX_HASH
+  }
+
+  test("keeps each log's position and transaction hash, which the history links to", async () => {
+    const provider = { getLogs: jest.fn(async () => [LOG]) }
+    const kohakuProvider = createKohakuProvider(provider as any)
+
+    expect(await kohakuProvider.getLogs({ address: LOG.address as Hex, fromBlock: 1n })).toEqual([
+      {
+        blockNumber: 22_153_713n,
+        topics: LOG.topics,
+        data: '0x',
+        address: LOG.address,
+        logIndex: 7,
+        transactionHash: TX_HASH
+      }
+    ])
+  })
+
+  test("keeps the transaction hash of a receipt's logs", async () => {
+    const provider = {
+      getTransactionReceipt: jest.fn(async () => ({
+        blockNumber: LOG.blockNumber,
+        status: 1,
+        gasUsed: 21_000n,
+        logs: [LOG]
+      }))
+    }
+    const receipt = await createKohakuProvider(provider as any).getTransactionReceipt(TX_HASH)
+
+    expect(receipt?.logs[0]).toMatchObject({ logIndex: 7, transactionHash: TX_HASH })
+  })
+
+  test('reports no receipt for a transaction not yet mined', async () => {
+    const provider = { getTransactionReceipt: jest.fn(async () => null) }
+
+    expect(await createKohakuProvider(provider as any).getTransactionReceipt(TX_HASH)).toBeNull()
   })
 })

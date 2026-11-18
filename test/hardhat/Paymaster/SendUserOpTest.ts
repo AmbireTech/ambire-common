@@ -141,4 +141,31 @@ describe('Send User Operation Tests', () => {
       .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
       .withArgs(0, 'AA32 paymaster expired or not due')
   })
+  it('should revert if paymasterPostOpGasLimit is changed after the paymaster signed', async () => {
+    const [relayer] = await ethers.getSigners()
+    const latestBlock = await provider.getBlock('latest')
+    const timestamp = latestBlock?.timestamp || 0
+    const userOp = await buildUserOp(paymaster, await entryPoint.getAddress(), {
+      sender: ambireAccountAddress,
+      userOpNonce: await entryPoint.getNonce(...[ambireAccountAddress, 0]),
+      validUntil: timestamp + 60
+    })
+    // paymasterAndData = paymaster (20 bytes) + verificationGasLimit (16) + postOpGasLimit (16) + data
+    const postOpStart = 2 + (20 + 16) * 2
+    const postOpEnd = postOpStart + 16 * 2
+    userOp.paymasterAndData = `${userOp.paymasterAndData.slice(0, postOpStart)}${ethers
+      .toBeHex(10000000, 16)
+      .slice(2)}${userOp.paymasterAndData.slice(postOpEnd)}` as Hex
+    const typedData = wrapTypedData(
+      chainId,
+      ambireAccountAddress,
+      await entryPoint.getUserOpHash(userOp)
+    )
+    userOp.signature = wrapEthSign(
+      await relayer.signTypedData(typedData.domain, typedData.types, typedData.value)
+    ) as Hex
+    await expect(entryPoint.handleOps([userOp], relayer))
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
+      .withArgs(0, 'AA34 signature error')
+  })
 })

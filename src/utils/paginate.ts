@@ -11,3 +11,35 @@ export function paginate<T>(input: T[], limit: number): T[][] {
   }
   return pages
 }
+
+/** Which page of a list to show, and how long a page is. */
+export interface Pagination {
+  /** Zero based. */
+  fromPage: number
+  itemsPerPage: number
+}
+
+/** One page of a list, with what the UI needs to move between pages. */
+export interface PaginationResult<T> {
+  items: T[]
+  itemsTotal: number
+  /** Zero based. */
+  currentPage: number
+  maxPages: number
+}
+
+/**
+ * The page of `items` that `fromPage` points at. `itemsTotal` is overridable: a caller holding one
+ * page cannot derive it, and navigation gates on it.
+ */
+export const getPage = <T>(
+  items: T[],
+  fromPage: number,
+  itemsPerPage: number,
+  itemsTotal = items.length
+): PaginationResult<T> => ({
+  items: items.slice(fromPage * itemsPerPage, fromPage * itemsPerPage + itemsPerPage),
+  itemsTotal,
+  currentPage: fromPage,
+  maxPages: Math.ceil(itemsTotal / itemsPerPage)
+})

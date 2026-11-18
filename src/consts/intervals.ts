@@ -29,6 +29,22 @@ export const FETCH_SAFE_TXNS = 3 * 60 * 1000 // 3 minutes
 // How old the pending counts of the Safes that are not selected may get before an app open or
 // focus refreshes them
 export const FETCH_OTHER_SAFES_PENDING = 15 * 60 * 1000 // 15 minutes
+/**
+ * How often the signed Safe txns and messages waiting for more owners are checked while the
+ * wallet is open. The two checks are a second apart so their requests don't go out together.
+ */
+export const SAFE_TXNS_RESOLVE_ACTIVE_INTERVAL = 10 * 1000 // 10 seconds
+export const SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL = 11 * 1000 // 11 seconds
+/**
+ * How often the same checks run while no wallet window is open. They don't stop, as a dapp
+ * may still be waiting for the other owners' signatures of a Safe message or txn.
+ */
+export const SAFE_RESOLVE_INACTIVE_INTERVAL = 60 * 1000 // 1 minute
+/** How many checks in a row may find nothing new before the checks start to slow down */
+export const SAFE_RESOLVE_UNCHANGED_CHECKS_BEFORE_BACKOFF = 3
+/** The slowest the Safe checks get while nothing changes, with and without a wallet window */
+export const SAFE_RESOLVE_MAX_ACTIVE_INTERVAL = 30 * 1000 // 30 seconds
+export const SAFE_RESOLVE_MAX_INACTIVE_INTERVAL = 5 * 60 * 1000 // 5 minutes
 // How often the runner checks whether any scheduled portfolio update is due
 export const SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL = 20 * 1000 // 20 seconds
 // How long a scheduled portfolio update waits before the runner executes it, giving the
