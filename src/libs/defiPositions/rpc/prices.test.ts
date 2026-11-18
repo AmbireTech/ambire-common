@@ -219,6 +219,55 @@ describe('updatePositionsByProviderAssetPrices', () => {
       })
     })
 
+    /** Prices the given tokens at 0, like the prices service does for some it can't price, and the rest at 1 USD */
+    const createTokenPricesWithZeroPrices = (zeroPricedAddresses: string[]) => {
+      const getTokenData = jest.fn(async ({ tokenAddresses }: { tokenAddresses: string[] }) => ({
+        tokenData: new Map<string, TokenDataCacheValue>(
+          tokenAddresses.map((address) => [
+            address.toLowerCase(),
+            {
+              priceIn: [
+                { baseCurrency: 'usd', price: zeroPricedAddresses.includes(address) ? 0 : 1 }
+              ],
+              marketDataIn: []
+            }
+          ])
+        ),
+        error: null
+      }))
+
+      return { tokenPrices: { getTokenData } as unknown as ITokenPricesController }
+    }
+
+    test('values an asset priced at 0 through the fallback token, so the position is not worth minus its loan', async () => {
+      const { tokenPrices } = createTokenPricesWithZeroPrices([PT_TOKEN])
+
+      const { positionsByProvider } = await updatePositionsByProviderAssetPrices(tokenPrices, {
+        network: ethereum,
+        positionsByProvider: [
+          provider('Morpho', [
+            collateral,
+            asset(USDC, { type: AssetType.Borrow, decimals: 6, amount: 1000n * 10n ** 6n })
+          ])
+        ]
+      })
+
+      const [pricedCollateral] = positionsByProvider[0]!.positions[0]!.assets
+      expect(pricedCollateral!.priceIn).toEqual({ baseCurrency: 'usd', price: 3000 })
+      expect(positionsByProvider[0]!.positions[0]!.additionalData.positionInUSD).toBe(2000)
+    })
+
+    test('leaves the asset unpriced when its own and the fallback price are 0', async () => {
+      const { tokenPrices } = createTokenPricesWithZeroPrices([PT_TOKEN, USDC])
+
+      const { positionsByProvider } = await updatePositionsByProviderAssetPrices(tokenPrices, {
+        network: ethereum,
+        positionsByProvider: [provider('Morpho', [collateral])]
+      })
+
+      expect(positionsByProvider[0]!.positions[0]!.assets[0]!.priceIn).toBeUndefined()
+    })
+
     test('leaves the asset unpriced when the fallback token has no price either', async () => {
       const { tokenPrices } = createSelectiveTokenPrices([])
 

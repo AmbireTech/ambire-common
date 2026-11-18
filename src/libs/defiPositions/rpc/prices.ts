@@ -18,17 +18,30 @@ const getIsMissingPrice = (asset: PositionAsset): asset is PositionAsset & { add
   !!asset.address && !asset.priceIn
 
 /**
- * The USD price of an asset, from its own price or, when it has none, from the price of the
- * token its `priceFallback` converts it to.
+ * The USD price of a token, if it's above zero. The prices service returns 0 for some tokens it
+ * can't price (e.g. Pendle PTs), which isn't their real price.
+ */
+const getPositiveUsdPriceIn = (
+  tokenData: Map<string, TokenDataCacheValue>,
+  address: string
+): Price | undefined => {
+  const priceIn = getUsdPriceIn(tokenData, address)
+
+  return priceIn && priceIn.price > 0 ? priceIn : undefined
+}
+
+/**
+ * The USD price of an asset, from its own price or, when it has none (or it's 0), from the price
+ * of the token its `priceFallback` converts it to.
  */
 const getUsdPriceInWithFallback = (
   tokenData: Map<string, TokenDataCacheValue>,
   asset: PositionAsset & { address: string }
 ): Price | undefined => {
-  const priceIn = getUsdPriceIn(tokenData, asset.address)
+  const priceIn = getPositiveUsdPriceIn(tokenData, asset.address)
   if (priceIn || !asset.priceFallback || asset.amount === 0n) return priceIn
 
-  const fallbackPriceIn = getUsdPriceIn(tokenData, asset.priceFallback.address)
+  const fallbackPriceIn = getPositiveUsdPriceIn(tokenData, asset.priceFallback.address)
   if (!fallbackPriceIn) return undefined
 
   const value = getAssetValue(asset.priceFallback.amount, asset.priceFallback.decimals, [
