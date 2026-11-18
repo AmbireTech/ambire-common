@@ -61,6 +61,12 @@ describe('Selected Account lib', () => {
         expect(withLoans.balancePerNetwork['1']).toBeCloseTo(netEthereumBalance + 30)
         expect(withLoans.totalBalance).toBeCloseTo(withoutLoans.totalBalance + 30)
         expect(withLoans.balancePerNetwork['8453']).toBe(withoutLoans.balancePerNetwork['8453'])
+        // The DeFi tab shows the value the total counts
+        const getAave = ({ defiPositions }: typeof withLoans) =>
+          defiPositions.find(({ providerName }) => providerName === 'AAVE v3')!
+        expect(getAave(withoutLoans).balanceInUSD).toBe(170)
+        expect(getAave(withLoans).balanceInUSD).toBe(200)
+        expect(getAave(withLoans).positions[0]!.balanceInUSD).toBe(200)
       }
     )
     it('should flip isReadyToVisualize to true if the portfolio has been loading for more than 5 seconds', () => {

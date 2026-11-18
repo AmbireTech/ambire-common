@@ -7,7 +7,8 @@ import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Price } from '../../interfaces/assets'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { AssetType, Position } from '../defiPositions/types'
+import { getBorrowedValueInUSD } from '../defiPositions/helpers'
+import { AssetType } from '../defiPositions/types'
 import { CustomToken, TokenPreference } from './customToken'
 import { PORTFOLIO_LIB_ERROR_NAMES } from './errorNames'
 import {
@@ -606,26 +607,6 @@ const getPositionIdsCountedByTokens = (
       .map((token) => token.flags.defiPositionId!)
   )
 
-const getPositionBorrowedValue = (position: Position): number =>
-  position.assets.reduce(
-    (sum, asset) => (asset.type === AssetType.Borrow ? sum + (asset.value || 0) : sum),
-    0
-  )
-
-/**
- * The USD value borrowed in all DeFi positions. `getTotal` subtracts it, so add it back
- * to the total to count the positions at their full supplied value.
- */
-export const getBorrowedValue = (
-  defiState: PortfolioNetworkResult['defiPositions'] | null | undefined
-): number => {
-  if (!defiState) return 0
-
-  return defiState.positionsByProvider
-    .flatMap(({ positions }) => positions)
-    .reduce((sum, position) => sum + getPositionBorrowedValue(position), 0)
-}
-
 export const getTotal = (
   t: TokenResult[],
   defiState: PortfolioNetworkResult['defiPositions'] | null,
@@ -684,7 +665,7 @@ export const getTotal = (
           // The wallet tokens count the supplied funds in full, so only the loans are left
           // to subtract to count the position at its net value, like the other positions
           if (positionsToExclude.has(p.id)) {
-            cur.usd -= getPositionBorrowedValue(p)
+            cur.usd -= getBorrowedValueInUSD(p.additionalData)
             return
           }
 

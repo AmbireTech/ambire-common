@@ -418,7 +418,8 @@ const PORTFOLIO_STATE: AccountState = {
             ],
             iconUrl: '',
             siteUrl: 'https://app.aave.com/',
-            positionInUSD: 18985.66497510702
+            positionInUSD: 170,
+            collateralInUSD: 200
           }
         ],
         nonceId: 'nonce-1'

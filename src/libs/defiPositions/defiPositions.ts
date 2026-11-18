@@ -19,7 +19,12 @@ import {
   PortfolioNetworkResult
 } from '../portfolio/interfaces'
 import { updatePositionsByProviderAssetPrices } from './defiPrices'
-import { getAssetValue, getProviderId, isTokenPriceWithinHalfPercent } from './helpers'
+import {
+  getAssetValue,
+  getProviderId,
+  isTokenPriceWithinHalfPercent,
+  withCollateralValues
+} from './helpers'
 import {
   getAAVEPositions,
   getDebankEnhancedUniV3Positions,
@@ -195,15 +200,19 @@ const getUniqueMergedPositions = (
   let positionsArray = Array.from(debankPositionMap.values())
 
   // Sort the assets, positions by provider and provider positions by their value in USD descending
-  positionsArray = positionsArray.map((providerPositions) => ({
-    ...providerPositions,
-    positions: providerPositions.positions
-      .map((position) => ({
-        ...position,
-        assets: position.assets.sort((a, b) => (b.value || 0) - (a.value || 0))
-      }))
-      .sort((a, b) => (b.additionalData.positionInUSD || 0) - (a.additionalData.positionInUSD || 0))
-  }))
+  positionsArray = positionsArray.map((providerPositions) =>
+    withCollateralValues({
+      ...providerPositions,
+      positions: providerPositions.positions
+        .map((position) => ({
+          ...position,
+          assets: position.assets.sort((a, b) => (b.value || 0) - (a.value || 0))
+        }))
+        .sort(
+          (a, b) => (b.additionalData.positionInUSD || 0) - (a.additionalData.positionInUSD || 0)
+        )
+    })
+  )
 
   positionsArray = positionsArray.sort((a, b) => (b.positionInUSD || 0) - (a.positionInUSD || 0))
 
