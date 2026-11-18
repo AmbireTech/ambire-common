@@ -32,22 +32,24 @@ const getPositiveUsdPriceIn = (
 
 /**
  * The USD price of an asset, from its own price or, when it has none (or it's 0), from the price
- * of the token its `priceFallback` converts it to.
+ * of the token its `priceFallback` converts it to. When that can't be priced either, the asset
+ * keeps its own price, if any (e.g. 0 for a spam token).
  */
 const getUsdPriceInWithFallback = (
   tokenData: Map<string, TokenDataCacheValue>,
   asset: PositionAsset & { address: string }
 ): Price | undefined => {
-  const priceIn = getPositiveUsdPriceIn(tokenData, asset.address)
-  if (priceIn || !asset.priceFallback || asset.amount === 0n) return priceIn
+  const priceIn = getUsdPriceIn(tokenData, asset.address)
+  const hasPositivePrice = !!priceIn && priceIn.price > 0
+  if (hasPositivePrice || !asset.priceFallback || asset.amount === 0n) return priceIn
 
   const fallbackPriceIn = getPositiveUsdPriceIn(tokenData, asset.priceFallback.address)
-  if (!fallbackPriceIn) return undefined
+  if (!fallbackPriceIn) return priceIn
 
   const value = getAssetValue(asset.priceFallback.amount, asset.priceFallback.decimals, [
     fallbackPriceIn
   ])
-  if (value === undefined) return undefined
+  if (value === undefined) return priceIn
 
   return {
     baseCurrency: 'usd',

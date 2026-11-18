@@ -257,7 +257,7 @@ describe('updatePositionsByProviderAssetPrices', () => {
       expect(positionsByProvider[0]!.positions[0]!.additionalData.positionInUSD).toBe(2000)
     })
 
-    test('leaves the asset unpriced when its own and the fallback price are 0', async () => {
+    test('keeps the price of 0 when the fallback token is priced at 0 too', async () => {
       const { tokenPrices } = createTokenPricesWithZeroPrices([PT_TOKEN, USDC])
 
       const { positionsByProvider } = await updatePositionsByProviderAssetPrices(tokenPrices, {
@@ -265,7 +265,22 @@ describe('updatePositionsByProviderAssetPrices', () => {
         positionsByProvider: [provider('Morpho', [collateral])]
       })
 
-      expect(positionsByProvider[0]!.positions[0]!.assets[0]!.priceIn).toBeUndefined()
+      const [pricedCollateral] = positionsByProvider[0]!.positions[0]!.assets
+      expect(pricedCollateral!.priceIn).toEqual({ baseCurrency: 'usd', price: 0 })
+      expect(pricedCollateral!.value).toBe(0)
+    })
+
+    test('keeps the price of 0 of an asset without a fallback (e.g. a spam token in a Uniswap position)', async () => {
+      const { tokenPrices } = createTokenPricesWithZeroPrices([PT_TOKEN])
+
+      const { positionsByProvider } = await updatePositionsByProviderAssetPrices(tokenPrices, {
+        network: ethereum,
+        positionsByProvider: [provider('Uniswap V3', [asset(PT_TOKEN)])]
+      })
+
+      const [spamToken] = positionsByProvider[0]!.positions[0]!.assets
+      expect(spamToken!.priceIn).toEqual({ baseCurrency: 'usd', price: 0 })
+      expect(spamToken!.value).toBe(0)
     })
 
     test('leaves the asset unpriced when the fallback token has no price either', async () => {
