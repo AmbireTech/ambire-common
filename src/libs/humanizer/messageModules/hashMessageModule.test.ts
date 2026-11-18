@@ -3,8 +3,12 @@ import { hexlify, toUtf8Bytes } from 'ethers'
 import { Message } from '../../../interfaces/userRequest'
 import { humanizeMessage } from '../index'
 import { compareVisualizations } from '../testHelpers'
-import { getAction, getLabel, getText } from '../utils'
-import { HASH_MESSAGE_WARNING_CODE, hashMessageModule } from './hashMessageModule'
+import { getAction, getText } from '../utils'
+import {
+  HASH_MESSAGE_TITLE,
+  HASH_MESSAGE_WARNING_CODE,
+  hashMessageModule
+} from './hashMessageModule'
 
 // a real Safe{WALLET} transaction hash - signing it with `personal_sign` approves that transaction
 const SAFE_TX_HASH = '0xfe52d33ef333f05203d9eb0a0c4529dfb742aa1466dd3eb85cc6539dbc94c690'
@@ -21,12 +25,11 @@ const hasHashWarning = (warnings?: { code: string }[]) =>
   !!warnings?.some((warning) => warning.code === HASH_MESSAGE_WARNING_CODE)
 
 describe('hashMessageModule', () => {
-  test('describes a 32-byte message as a hidden approval and warns about it', () => {
+  test('describes a 32-byte message as unverifiable and warns about it', () => {
     const result = hashMessageModule(buildPlainMessage(SAFE_TX_HASH))
 
     compareVisualizations(result.fullVisualization || [], [
-      getAction('Approve a hidden action'),
-      getLabel('with code'),
+      getAction(HASH_MESSAGE_TITLE),
       getText(SAFE_TX_HASH)
     ])
     expect(hasHashWarning(result.warnings)).toBe(true)
@@ -78,10 +81,10 @@ describe('hashMessageModule', () => {
 })
 
 describe('humanizeMessage with a 32-byte message', () => {
-  test('shows the hidden approval and its warning', () => {
+  test('shows that the message cannot be verified and its warning', () => {
     const irMessage = humanizeMessage(buildPlainMessage(SAFE_TX_HASH))
 
-    expect(irMessage.fullVisualization?.[0]?.content).toBe('Approve a hidden action')
+    expect(irMessage.fullVisualization?.[0]?.content).toBe(HASH_MESSAGE_TITLE)
     expect(hasHashWarning(irMessage.warnings)).toBe(true)
   })
 
@@ -89,7 +92,7 @@ describe('humanizeMessage with a 32-byte message', () => {
     const textHex = hexlify(toUtf8Bytes('Sign in to Example at 12:00 UTC!'))
     const irMessage = humanizeMessage(buildPlainMessage(textHex))
 
-    expect(irMessage.fullVisualization?.[0]?.content).toBe('Approve a hidden action')
+    expect(irMessage.fullVisualization?.[0]?.content).toBe(HASH_MESSAGE_TITLE)
     expect(hasHashWarning(irMessage.warnings)).toBe(true)
   })
 
