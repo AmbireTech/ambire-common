@@ -163,6 +163,15 @@ export const privacyPoolsErrors = {
       level: 'expected',
       error: sdkError
     }),
+  // Major: a payload that does not match the request means a faulty or malicious relayer, or an
+  // SDK bug. Trying again likely reaches the same relayer, so it points to Kohaku, which does not
+  // go through one
+  withdrawalRelayerMismatch: (cause: Error) =>
+    majorError(
+      "The 0xBow relayers sent back a transfer that doesn't match what you asked for, so nothing was sent. Please choose Kohaku in the send settings, or try again later.",
+      cause,
+      'the relayed withdrawal does not match the request'
+    ),
   withdrawalOfferExpired: () =>
     expectedError(
       'The fee quote for this transfer expired before it could be sent. Nothing left your account - please try again.',

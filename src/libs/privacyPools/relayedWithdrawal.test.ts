@@ -2,7 +2,12 @@ import { AbiCoder, getAddress } from 'ethers'
 
 import { expect } from '@jest/globals'
 
-import { PrivacyPoolsRelayedWithdrawalPayload, readRelayedWithdrawal } from './relayedWithdrawal'
+import {
+  PrivacyPoolsRelayedWithdrawalError,
+  PrivacyPoolsRelayedWithdrawalPayload,
+  PrivacyPoolsRelayedWithdrawalRefusal,
+  readRelayedWithdrawal
+} from './relayedWithdrawal'
 
 const RECIPIENT = getAddress('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 const ATTACKER = getAddress('0x0000000000000000000000000000000000000bad')
@@ -216,5 +221,68 @@ describe('libs/privacyPools/relayedWithdrawal', () => {
 
   it('refuses a proof over a different amount', () => {
     expect(() => read(buildWithdrawal({ withdrawnValue: AMOUNT + 1n }))).toThrow(/different amount/)
+  })
+
+  /** The error `readWithdrawal` threw, or undefined when it did not throw. */
+  const readRefusal = (readWithdrawal: () => unknown) => {
+    try {
+      readWithdrawal()
+    } catch (error) {
+      return error
+    }
+
+    return undefined
+  }
+
+  it.each<[PrivacyPoolsRelayedWithdrawalRefusal, () => unknown]>([
+    ['unknown-relayer', () => read(buildWithdrawal({ relayerId: 'Evil Relay' }))],
+    ['different-pool', () => read(buildWithdrawal({ scope: POOL_SCOPE + 1n }))],
+    ['unexpected-contract', () => read(buildWithdrawal({ processooor: ATTACKER }))],
+    [
+      'differs-from-commitment',
+      () => read(buildWithdrawal({ committedData: encodeRelayData({ recipient: ATTACKER }) }))
+    ],
+    [
+      'different-recipient',
+      () => read(buildWithdrawal({ relayData: encodeRelayData({ recipient: ATTACKER }) }))
+    ],
+    [
+      'fee-above-quote',
+      () => read(buildWithdrawal({ relayData: encodeRelayData({ relayFeeBPS: FEE_BPS + 1n }) }))
+    ],
+    [
+      'fee-above-pool-limit',
+      () =>
+        read(
+          buildWithdrawal({
+            relayData: encodeRelayData({ relayFeeBPS: MAX_RELAY_FEE_BPS + 1n }),
+            quotedFeeBPS: MAX_RELAY_FEE_BPS + 1n
+          })
+        )
+    ],
+    ['different-amount', () => read(buildWithdrawal({ withdrawnValue: AMOUNT + 1n }))],
+    [
+      'fee-takes-whole-amount',
+      () =>
+        readRelayedWithdrawal({
+          withdrawal: buildWithdrawal({
+            relayData: encodeRelayData({ relayFeeBPS: 10_000n }),
+            quotedFeeBPS: 10_000n
+          }),
+          relayers: RELAYERS,
+          entrypointAddress: ENTRYPOINT,
+          poolScope: POOL_SCOPE,
+          maxRelayFeeBPS: 10_000n,
+          recipient: RECIPIENT,
+          tokenAddress: NATIVE,
+          amount: AMOUNT
+        })
+    ],
+    ['invalid-service-fee', () => read(buildWithdrawal({ baseFeeBPS: '-1' }))]
+  ])('tells why it refused, so the caller can pick what to tell the user: %s', (reason, readIt) => {
+    const refusal = readRefusal(readIt)
+
+    expect(refusal).toBeInstanceOf(PrivacyPoolsRelayedWithdrawalError)
+    expect(refusal).toHaveProperty('reason', reason)
   })
 })

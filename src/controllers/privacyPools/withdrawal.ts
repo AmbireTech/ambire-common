@@ -48,6 +48,7 @@ import {
 } from '../../libs/privacyPools/paymasterWithdrawal'
 import {
   PrivacyPoolsRelayedWithdrawal,
+  PrivacyPoolsRelayedWithdrawalError,
   readRelayedWithdrawal
 } from '../../libs/privacyPools/relayedWithdrawal'
 import { toPrivacyPoolsSdkError } from '../../libs/privacyPools/sdkError'
@@ -99,6 +100,20 @@ const FEE_ABOVE_AMOUNT_SDK_MESSAGE = 'Withdrawal amount too small to cover the s
 const isEveryRelayerFeeTooHigh = ({ failures }: PPv1RelayerQuoteError) =>
   failures.length > 0 && failures.every(({ reason }) => reason === 'fee-too-high')
 
+/**
+ * What the user reads when `readRelayedWithdrawal` refuses the relayer's payload: an amount too
+ * small for the fee, or a fee above the pool's limit, as they are told elsewhere. Anything else does
+ * not match the request.
+ */
+const toReadableRelayedWithdrawalError = (error: PrivacyPoolsRelayedWithdrawalError) => {
+  if (error.reason === 'fee-takes-whole-amount')
+    return privacyPoolsErrors.withdrawalFeeAboveAmount(error)
+  if (error.reason === 'fee-above-pool-limit')
+    return privacyPoolsErrors.withdrawalRelayerFeeTooHigh(error)
+
+  return privacyPoolsErrors.withdrawalRelayerMismatch(error)
+}
+
 /** Makes the SDK errors the user can act on readable; passes anything else through as an `Error`. */
 const toReadableWithdrawalError = (error: unknown) => {
   // The SDK's sync before proving found the chosen deposit can no longer pay
@@ -109,6 +124,8 @@ const toReadableWithdrawalError = (error: unknown) => {
     return privacyPoolsErrors.withdrawalRelayerFeeTooHigh(error)
   if (error instanceof PPv1RelayerQuoteError)
     return privacyPoolsErrors.withdrawalRelayersUnavailable(error)
+  if (error instanceof PrivacyPoolsRelayedWithdrawalError)
+    return toReadableRelayedWithdrawalError(error)
 
   const sdkError = toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
   if (sdkError.message.includes(FEE_ABOVE_AMOUNT_SDK_MESSAGE))

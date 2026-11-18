@@ -159,18 +159,19 @@ const toFakeProof = (withdrawnValue: bigint) => ({
  */
 const buildPreparedRelayedWithdrawal = ({
   expiresIn = 50_000,
-  recipient = WITHDRAWAL_RECIPIENT
-}: { expiresIn?: number; recipient?: string } = {}) => {
+  recipient = WITHDRAWAL_RECIPIENT,
+  relayFeeBPS = RELAY_FEE_BPS
+}: { expiresIn?: number; recipient?: string; relayFeeBPS?: bigint } = {}) => {
   const withdrawalData = AbiCoder.defaultAbiCoder().encode(
     ['tuple(address recipient, address feeRecipient, uint256 relayFeeBPS)'],
-    [{ recipient, feeRecipient: RELAYER_FEE_RECIPIENT, relayFeeBPS: RELAY_FEE_BPS }]
+    [{ recipient, feeRecipient: RELAYER_FEE_RECIPIENT, relayFeeBPS }]
   )
 
   return {
     mode: 'relayer',
     rawData: {
       context: 1n,
-      relayData: { recipient, feeRecipient: RELAYER_FEE_RECIPIENT, relayFeeBps: RELAY_FEE_BPS },
+      relayData: { recipient, feeRecipient: RELAYER_FEE_RECIPIENT, relayFeeBps: relayFeeBPS },
       proof: {
         proof: {
           pi_a: ['1', '2', '1'],
@@ -191,7 +192,7 @@ const buildPreparedRelayedWithdrawal = ({
     quoteData: {
       quote: {
         baseFeeBPS: '10',
-        feeBPS: RELAY_FEE_BPS.toString(),
+        feeBPS: relayFeeBPS.toString(),
         gasPrice: '1',
         feeCommitment: {
           expiration: Date.now() + expiresIn,
@@ -4096,7 +4097,7 @@ describe('PrivacyPoolsController', () => {
       expect(controller.operation).toMatchObject({ status: 'pending', phase: 'ready' })
     })
 
-    it('refuses a relayed withdrawal that pays out to someone else', async () => {
+    it('refuses a relayed withdrawal that pays out to someone else, pointing to Kohaku', async () => {
       const { restore } = suppressConsole()
       const { controller } = await prepareRelayedWithdrawal(
         buildPreparedRelayedWithdrawal({ recipient: RELAYER_FEE_RECIPIENT })
@@ -4104,8 +4105,11 @@ describe('PrivacyPoolsController', () => {
 
       expect(controller.operation).toMatchObject({
         status: 'failed',
-        error: 'The transfer could not be prepared. Please try again.'
+        error:
+          "The 0xBow relayers sent back a transfer that doesn't match what you asked for, so nothing was sent. Please choose Kohaku in the send settings, or try again later."
       })
+      // A faulty or malicious relayer, or an SDK bug, so it is reported
+      expect(controller.emittedErrors.at(-1)?.level).toBe('major')
       restore()
     })
 
@@ -4154,6 +4158,20 @@ describe('PrivacyPoolsController', () => {
       const { controller } = await prepareRelayedWithdrawal()
 
       expect(controller.operation).toMatchObject({ status: 'failed', error })
+      restore()
+    })
+
+    it('explains a relayer fee above what the pool allows, as when no relayer offers less', async () => {
+      const { restore } = suppressConsole()
+      // The mocked pool allows 100 bps
+      const { controller } = await prepareRelayedWithdrawal(
+        buildPreparedRelayedWithdrawal({ relayFeeBPS: 101n })
+      )
+
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error: RELAYER_FEE_TOO_HIGH_ERROR
+      })
       restore()
     })
 

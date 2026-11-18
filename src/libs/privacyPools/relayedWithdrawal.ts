@@ -80,13 +80,42 @@ export type PrivacyPoolsRelayedWithdrawal = {
 }
 
 /**
+ * Why a relayed withdrawal was refused - see `readRelayedWithdrawal`. Lets the caller tell an
+ * amount too small for the fee, or a fee above the pool's limit, from a payload that does not match
+ * the request.
+ */
+export type PrivacyPoolsRelayedWithdrawalRefusal =
+  | 'unknown-relayer'
+  | 'different-pool'
+  | 'unexpected-contract'
+  | 'differs-from-commitment'
+  | 'different-recipient'
+  | 'fee-above-quote'
+  | 'fee-above-pool-limit'
+  | 'different-amount'
+  | 'fee-takes-whole-amount'
+  | 'invalid-service-fee'
+
+/** A relayed withdrawal `readRelayedWithdrawal` refused, with why. */
+export class PrivacyPoolsRelayedWithdrawalError extends Error {
+  reason: PrivacyPoolsRelayedWithdrawalRefusal
+
+  constructor(reason: PrivacyPoolsRelayedWithdrawalRefusal, message: string) {
+    super(`privacyPools: ${message}`)
+    this.name = 'PrivacyPoolsRelayedWithdrawalError'
+    this.reason = reason
+  }
+}
+
+/**
  * Decodes a prepared relayed withdrawal and checks it against the request, returning what it does
  * - to show it from the payload rather than from the request.
  *
  * Security boundary: the SDK takes the relayer's quote, proves and assembles the withdrawal in one
  * call, so this is the one place to verify, from the bytes the relayer and the entrypoint act on,
  * the relayer, the pool, the recipient, the amount and the fee. Any mismatch is refused before the
- * user is asked to send it. The proof binds these bytes, so the relayer cannot change them after.
+ * user is asked to send it, as a `PrivacyPoolsRelayedWithdrawalError`. The proof binds these bytes,
+ * so the relayer cannot change them after.
  */
 export const readRelayedWithdrawal = ({
   withdrawal,
@@ -116,38 +145,70 @@ export const readRelayedWithdrawal = ({
   const { feeCommitment } = quoteData.quote
 
   if (!Object.keys(relayers).includes(quoteData.relayerId))
-    throw new Error('privacyPools: the withdrawal is quoted by an unknown relayer')
+    throw new PrivacyPoolsRelayedWithdrawalError(
+      'unknown-relayer',
+      'the withdrawal is quoted by an unknown relayer'
+    )
   // Otherwise another token's pool would pass, its amount compared as if it were this token's
   if (BigInt(rawData.scope) !== poolScope)
-    throw new Error('privacyPools: the withdrawal is from the pool of a different token')
+    throw new PrivacyPoolsRelayedWithdrawalError(
+      'different-pool',
+      'the withdrawal is from the pool of a different token'
+    )
   // The entrypoint pays out only a withdrawal it processes itself
   if (!isSameAddress(withdrawalPayload.processooor, entrypointAddress))
-    throw new Error('privacyPools: the withdrawal is processed by an unexpected contract')
+    throw new PrivacyPoolsRelayedWithdrawalError(
+      'unexpected-contract',
+      'the withdrawal is processed by an unexpected contract'
+    )
   // The relayer checks the withdrawal against its signed commitment, and refuses any other
   if (withdrawalPayload.data.toLowerCase() !== feeCommitment.withdrawalData.toLowerCase())
-    throw new Error('privacyPools: the withdrawal differs from what the relayer committed to')
+    throw new PrivacyPoolsRelayedWithdrawalError(
+      'differs-from-commitment',
+      'the withdrawal differs from what the relayer committed to'
+    )
 
   const [relayData] = AbiCoder.defaultAbiCoder().decode([RELAY_DATA_TYPE], withdrawalPayload.data)
   const relayFeeBPS = BigInt(relayData.relayFeeBPS)
 
   if (!isSameAddress(relayData.recipient, recipient))
-    throw new Error('privacyPools: the withdrawal pays out to a different address than requested')
+    throw new PrivacyPoolsRelayedWithdrawalError(
+      'different-recipient',
+      'the withdrawal pays out to a different address than requested'
+    )
   if (relayFeeBPS > BigInt(quoteData.quote.feeBPS))
-    throw new Error('privacyPools: the relayer committed to a higher fee than it quoted')
+    throw new PrivacyPoolsRelayedWithdrawalError(
+      'fee-above-quote',
+      'the relayer committed to a higher fee than it quoted'
+    )
   // The entrypoint would revert it, after the relayer has spent gas on it
   if (relayFeeBPS > maxRelayFeeBPS)
-    throw new Error('privacyPools: the relayer fee is above what the pool allows')
+    throw new PrivacyPoolsRelayedWithdrawalError(
+      'fee-above-pool-limit',
+      'the relayer fee is above what the pool allows'
+    )
 
   const withdrawnAmount = BigInt(rawData.proof.publicSignals[WITHDRAWN_VALUE_SIGNAL_INDEX] ?? -1)
   if (withdrawnAmount !== amount)
-    throw new Error('privacyPools: the withdrawal proves a different amount than requested')
+    throw new PrivacyPoolsRelayedWithdrawalError(
+      'different-amount',
+      'the withdrawal proves a different amount than requested'
+    )
 
   // Rounded down, as the entrypoint does
   const fee = (amount * relayFeeBPS) / BASIS_POINTS_DENOMINATOR
-  if (fee >= amount) throw new Error('privacyPools: the withdrawal fee would take the whole amount')
+  if (fee >= amount)
+    throw new PrivacyPoolsRelayedWithdrawalError(
+      'fee-takes-whole-amount',
+      'the withdrawal fee would take the whole amount'
+    )
 
   const baseFeeBPS = parseBasisPoints(quoteData.quote.baseFeeBPS)
-  if (baseFeeBPS === null) throw new Error('privacyPools: the relayer quoted no valid service fee')
+  if (baseFeeBPS === null)
+    throw new PrivacyPoolsRelayedWithdrawalError(
+      'invalid-service-fee',
+      'the relayer quoted no valid service fee'
+    )
   // Only shown, so a relayer that committed to less than its own fee cannot make the rest negative
   const serviceFeeBPS = baseFeeBPS < relayFeeBPS ? baseFeeBPS : relayFeeBPS
 
