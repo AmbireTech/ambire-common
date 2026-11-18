@@ -53,6 +53,7 @@ import {
 import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { DecodedCall } from '../../interfaces/decodeCall'
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, ExternalSignerControllers } from '../../interfaces/keystore'
@@ -875,7 +876,15 @@ const init = async (
   // have already started their immediate run.
   if (options?.pauseOnInit) controller.pause()
 
-  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl, portfolio, contractInfo }
+  return {
+    controller,
+    storageCtrl,
+    signAccountOpPreference,
+    accountsCtrl,
+    portfolio,
+    contractInfo,
+    keystore
+  }
 }
 
 const initDappVerificationBannerTest = async (
@@ -2383,6 +2392,108 @@ describe('SignAccountOp Controller ', () => {
 
     expect(controller.accountOp.signature).toEqual('0x') // broadcasting and signRawTransaction is handled in main controller
     expect(controller.status).toEqual({ type: 'done' })
+  })
+
+  describe('a key removed while the transaction waits', () => {
+    const initEoaPayingNative = async () => {
+      const feePaymentOptions = [
+        {
+          paidBy: eoaAccount.addr,
+          availableAmount: parseEther('1'),
+          gasUsed: 0n,
+          addedNative: 5000n,
+          token: nativeFeeToken
+        }
+      ]
+      const result = await init(
+        eoaAccount,
+        createEOAAccountOp(eoaAccount),
+        eoaSigner,
+        {
+          providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+          ambireEstimation: {
+            deploymentGas: 0n,
+            gasUsed: 10000n,
+            feePaymentOptions,
+            ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+            flags: {}
+          },
+          flags: {},
+          updatedAt: Date.now()
+        },
+        {
+          slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+          medium: {
+            maxFeePerGas: toBeHex(400n) as Hex,
+            maxPriorityFeePerGas: toBeHex(200n) as Hex
+          },
+          fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+          ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+        }
+      )
+      result.controller.update({
+        signingKeyAddr: eoaSigner.keyPublicAddress,
+        signingKeyType: 'internal',
+        feeToken: nativeFeeToken,
+        paidBy: eoaAccount.addr,
+        speed: FeeSpeed.Fast
+      })
+      return result
+    }
+
+    test('forgets the removed signing and fee payer key, so none is left to sign with', async () => {
+      const { controller, keystore } = await initEoaPayingNative()
+      expect(controller.accountOp.signingKeyAddr).toBe(eoaSigner.keyPublicAddress)
+      expect(controller.accountOp.gasFeePayment?.paidByKeyType).toBe('internal')
+
+      await keystore.deleteKey(eoaSigner.keyPublicAddress, 'internal')
+
+      expect(controller.accountOp.signingKeyAddr).toBeNull()
+      expect(controller.accountOp.signingKeyType).toBeNull()
+      expect(controller.accountOp.gasFeePayment?.paidByKeyType).toBeNull()
+      expect(controller.errors.some(({ code }) => code === 'NO_KEYS_AVAILABLE')).toBe(true)
+    })
+
+    test('keeps a key that was not removed', async () => {
+      const { controller, keystore } = await initEoaPayingNative()
+      const otherKey = Wallet.createRandom()
+      await keystore.addKeys([
+        {
+          addr: otherKey.address,
+          type: 'internal',
+          label: 'Key 2',
+          privateKey: otherKey.privateKey,
+          dedicatedToOneSA: false,
+          meta: { createdAt: Date.now() }
+        }
+      ])
+
+      await keystore.deleteKey(otherKey.address, 'internal')
+
+      expect(controller.accountOp.signingKeyAddr).toBe(eoaSigner.keyPublicAddress)
+      expect(controller.accountOp.gasFeePayment?.paidByKeyType).toBe('internal')
+    })
+
+    test('changes nothing while signing, and refuses to sign with the removed key after', async () => {
+      const { restore } = suppressConsole()
+      const { controller, keystore } = await initEoaPayingNative()
+      const errors: ErrorRef[] = []
+      const unsubscribe = controller.onError((error) => errors.push(error))
+
+      controller.updateStatus(SigningStatus.InProgress)
+      await keystore.deleteKey(eoaSigner.keyPublicAddress, 'internal')
+      expect(controller.accountOp.signingKeyAddr).toBe(eoaSigner.keyPublicAddress)
+
+      controller.updateStatus(SigningStatus.ReadyToSign)
+      await controller.sign()
+
+      unsubscribe()
+      restore()
+      expect(controller.accountOp.signature).toBeFalsy()
+      expect(errors.map(({ message }) => message)).toContain(
+        'The key that has to sign this transaction was removed from the wallet. Import it again to sign.'
+      )
+    })
   })
 
   test('Signing [EOA]: should emit an error if the availableAmount is 0', async () => {

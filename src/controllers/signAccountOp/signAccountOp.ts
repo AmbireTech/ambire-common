@@ -616,6 +616,8 @@ export class SignAccountOpController
 
   #onActivityUpdateUnsubscribe?: () => void
 
+  #onKeystoreUpdateUnsubscribe?: () => void
+
   #isReplacedPendingAccountOpProcessed = false
 
   constructor({
@@ -1289,6 +1291,35 @@ export class SignAccountOpController
     return this.#replacement ? this.#replacement.applyMinFees(gasPrices) : gasPrices
   }
 
+  #isKeyStored(addr: Key['addr'], type: Key['type']) {
+    return this.#keystore.keys.some((key) => key.addr === addr && key.type === type)
+  }
+
+  /**
+   * Forgets the signing and the fee payer key once they are removed, so `update` picks the
+   * default ones again and the user sees them before signing. Never while signing, as the user
+   * agreed to what is on the screen. A speed up keeps its signer, as it can't sign with another
+   */
+  #forgetRemovedKeys() {
+    if (this.status?.type && noStateUpdateStatuses.indexOf(this.status.type) !== -1) return
+
+    const { signingKeyAddr, signingKeyType, gasFeePayment } = this.accountOp
+    const isSigningKeyRemoved =
+      !!signingKeyAddr &&
+      !!signingKeyType &&
+      this.canChangeSigningKey &&
+      !this.#isKeyStored(signingKeyAddr, signingKeyType)
+    // Set only when an imported key pays the fee
+    const isFeePayerKeyRemoved =
+      !!gasFeePayment?.paidByKeyType &&
+      !this.#isKeyStored(gasFeePayment.paidBy, gasFeePayment.paidByKeyType)
+    if (!isSigningKeyRemoved && !isFeePayerKeyRemoved) return
+
+    if (isSigningKeyRemoved) this.#updateAccountOp({ signingKeyAddr: null, signingKeyType: null })
+    if (gasFeePayment && isFeePayerKeyRemoved) gasFeePayment.paidByKeyType = null
+    this.update({})
+  }
+
   async #getDefaultSigner() {
     // call this method during signing only
 
@@ -1431,6 +1462,11 @@ export class SignAccountOpController
       this.propagateUpdate(forceEmit)
     }, `sign-account-op-earlier-pending-${generateUuid()}`)
     this.#updateEarlierPendingAccountOp()
+
+    // A key can be removed (e.g. in Settings, in another window) while this op waits
+    this.#onKeystoreUpdateUnsubscribe = this.#keystore.onUpdate(() => {
+      this.#forgetRemovedKeys()
+    }, `sign-account-op-removed-keys-${generateUuid()}`)
 
     this.#simulateAndEstimateOrSimulateInterval.start({
       runImmediately: true,
@@ -3066,6 +3102,8 @@ export class SignAccountOpController
     this.#replacement?.destroy()
     this.#onActivityUpdateUnsubscribe?.()
     this.#onActivityUpdateUnsubscribe = undefined
+    this.#onKeystoreUpdateUnsubscribe?.()
+    this.#onKeystoreUpdateUnsubscribe = undefined
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
@@ -4651,6 +4689,19 @@ export class SignAccountOpController
 
     if (!isSafeDeploy && !this.#isSafeFullySigned && (!signingKeyAddr || !signingKeyType)) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#emitSigningErrorAndResetToReadyToSign({ message })
+    }
+
+    // E.g. a speed up, which can only be signed by the key of the transaction it replaces
+    if (
+      !isSafeDeploy &&
+      !this.#isSafeFullySigned &&
+      !!signingKeyAddr &&
+      !!signingKeyType &&
+      !this.#isKeyStored(signingKeyAddr, signingKeyType)
+    ) {
+      const message =
+        'The key that has to sign this transaction was removed from the wallet. Import it again to sign.'
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
