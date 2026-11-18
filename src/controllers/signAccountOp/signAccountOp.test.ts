@@ -742,7 +742,8 @@ const init = async (
     providers: providersCtrl,
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore
+    keystore,
+    featureFlags: featureFlagsCtrl
   })
   const activity = new ActivityController(
     storageCtrl,
@@ -7631,7 +7632,8 @@ describe('an earlier pending transaction', () => {
       nonce = 3n,
       paidBy = safeAccount.addr,
       hasOwnerKey = true,
-      signature
+      signature,
+      featureFlags
     }: {
       threshold: number
       signed: string[]
@@ -7639,6 +7641,7 @@ describe('an earlier pending transaction', () => {
       paidBy?: string
       hasOwnerKey?: boolean
       signature?: string
+      featureFlags?: Partial<FeatureFlags>
     }) => {
       const feePaymentOptions = [nativeFeeOption(paidBy)]
       const accountOp = createAccountOp(safeAccount, chainId)
@@ -7668,7 +7671,9 @@ describe('an earlier pending transaction', () => {
         false,
         {
           // The paying EOA is an account of the wallet too
-          initialSetStorage: (storageCtrl) => storageCtrl.set('accounts', [safeAccount, eoaAccount])
+          initialSetStorage: (storageCtrl) =>
+            storageCtrl.set('accounts', [safeAccount, eoaAccount]),
+          featureFlags
         }
       )
       // On Ethereum the state is read at the pending block, so it can count the pending op
@@ -7845,6 +7850,29 @@ describe('an earlier pending transaction', () => {
 
         expectBothSignatures(controller)
       })
+    })
+
+    test('signing while opted out of the Safe API keeps the signature here without a failure', async () => {
+      const { controller } = await initSafe({
+        threshold: 2,
+        signed: [],
+        featureFlags: { safeApi: false }
+      })
+      controller.update({
+        signingKeyAddr: eoaSigner.keyPublicAddress,
+        signingKeyType: 'internal'
+      })
+      const proposeSpy = jest.spyOn(safeLib, 'propose').mockResolvedValue(undefined)
+      const confirmSpy = jest.spyOn(safeLib, 'confirm').mockResolvedValue(undefined as never)
+
+      await controller.sign()
+
+      expect(controller.accountOp.signed).toEqual([eoaSigner.keyPublicAddress])
+      expect(proposeSpy).not.toHaveBeenCalled()
+      expect(confirmSpy).not.toHaveBeenCalled()
+      // the user's choice, not a failure, so signing ends as if it was shared
+      expect(controller.hasSafeApiFailed).toBe(false)
+      expect(controller.status?.type).toBe(SigningStatus.Queued)
     })
 
     test('signing keeps the Safe nonce set by the request, even if the Safe moved on', async () => {

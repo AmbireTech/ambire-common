@@ -274,7 +274,8 @@ const safe = new SafeController({
   providers: providersCtrl,
   storage: storageCtrl,
   accounts: accountsCtrl,
-  keystore
+  keystore,
+  featureFlags: featureFlagsCtrl
 })
 
 const activityCtrl = new ActivityController(

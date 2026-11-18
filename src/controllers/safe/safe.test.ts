@@ -44,6 +44,13 @@ const SAFE_D = '0x0000000000000000000000000000000000000001'
 const SAFE_E = '0x0000000000000000000000000000000000000002'
 const SAFE_F = '0x0000000000000000000000000000000000000003'
 
+// Opted in to the Safe API, unless a test opts out
+let isSafeApiEnabled = true
+const featureFlags = {
+  isFeatureEnabled: () => isSafeApiEnabled,
+  onUpdate: () => () => {}
+} as any
+
 const createApi = ({ safes = [] }: { safes?: string[] }) => ({
   getSafesByOwner: jest.fn(async () => ({ safes }))
 })
@@ -61,7 +68,8 @@ const createController = (chainIds: bigint[], providers = {}) =>
     } as any,
     providers: { providers } as any,
     storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any,
-    keystore: { getAccountKeys: () => [] } as any
+    keystore: { getAccountKeys: () => [] } as any,
+    featureFlags
   })
 
 const getOwnerSearch = (controller: SafeController, owner = OWNER) =>
@@ -551,7 +559,8 @@ describe('SafeController pending counts', () => {
           importedKeyAddrs
             .filter((addr) => associatedKeys.includes(addr))
             .map((addr) => ({ addr, type: 'internal' }))
-      } as any
+      } as any,
+      featureFlags
     })
 
     return { controller, accounts, importedKeyAddrs, keystoreState }
@@ -811,6 +820,77 @@ describe('SafeController pending counts', () => {
     expect(jest.mocked(fetchAllPending).mock.calls).toEqual([
       [[{ chainId: 1n, threshold: 1, nonce: 3n }], SAFE_B]
     ])
+  })
+
+  describe('while opted out of the Safe API', () => {
+    afterEach(() => {
+      isSafeApiEnabled = true
+    })
+
+    it('does not make any Safe API request', async () => {
+      const { controller } = createPendingCountsController({
+        accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1, nonce: 0n } } }
+      })
+      await controller.initialLoadPromise
+      jest.clearAllMocks()
+      isSafeApiEnabled = false
+
+      await controller.updateOtherSafesPendingCounts(SAFE_A)
+      await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1, nonce: 0n }])
+      await controller.fetchExecuted(SAFE_A as Hex, [{ chainId: 1n, minNonce: 0 }])
+      await controller.getMessagesByHash([{ chainId: 1n, threshold: 1, messageHash: '0x01' }])
+      await controller.findSafesByOwner(OWNER)
+      await controller.findSafe(SAFE_A)
+
+      expect(fetchAllPending).not.toHaveBeenCalled()
+      expect(fetchExecutedTransactions).not.toHaveBeenCalled()
+      expect(getMessage).not.toHaveBeenCalled()
+      expect(getApiKit).not.toHaveBeenCalled()
+      expect(getSafeAccountByOwner).not.toHaveBeenCalled()
+    })
+
+    it('waits for the opt-out to load from storage before asking the Safe API', async () => {
+      const { controller } = createPendingCountsController({
+        accountStates: { [SAFE_A]: { '1': { isDeployed: true, threshold: 1, nonce: 0n } } }
+      })
+      await controller.initialLoadPromise
+      // Until the flags are loaded, they are the defaults, where the Safe API is on
+      let finishLoadingFlags = () => {}
+      featureFlags.initialLoadPromise = new Promise<void>((resolve) => {
+        finishLoadingFlags = () => {
+          isSafeApiEnabled = false
+          featureFlags.initialLoadPromise = undefined
+          resolve()
+        }
+      })
+
+      const fetchPromise = controller.fetchPending(SAFE_A as Hex, [
+        { chainId: 1n, threshold: 1, nonce: 0n }
+      ])
+      finishLoadingFlags()
+
+      expect(await fetchPromise).toBeNull()
+      expect(fetchAllPending).not.toHaveBeenCalled()
+    })
+
+    it('ignores the pending txns of a request that was on its way when the user opted out', async () => {
+      const { controller } = createPendingCountsController({
+        accountStates: { [SAFE_A]: { '1': { isDeployed: true, threshold: 2, nonce: 0n } } }
+      })
+      await controller.initialLoadPromise
+      jest.mocked(fetchAllPending).mockImplementationOnce(async () => {
+        isSafeApiEnabled = false
+        return pendingResponse(1n, 2, []) as any
+      })
+
+      const result = await controller.fetchPending(SAFE_A as Hex, [
+        { chainId: 1n, threshold: 2, nonce: 0n }
+      ])
+
+      expect(fetchAllPending).toHaveBeenCalledTimes(1)
+      expect(result).toBeNull()
+      expect(controller.pendingCountBySafe[SAFE_A]).toBeUndefined()
+    })
   })
 
   describe('while the wallet is locked', () => {

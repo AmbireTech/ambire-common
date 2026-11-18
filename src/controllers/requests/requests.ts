@@ -3523,6 +3523,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     account: Account,
     sourceNetworks: Network[]
   ): Promise<SafeAccountCreation | null> {
+    // The creation data comes from the Safe API, which the user opted out of. The request is
+    // turned away, asking the user to activate the Safe on this network in the Safe app instead.
+    // Read once the flags are loaded, as until then they are the defaults (e.g. a dapp request
+    // right after the background restarted)
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#featureFlags.isFeatureEnabled('safeApi')) return null
+
     for (const network of sourceNetworks) {
       const provider = this.#providers.providers[network.chainId.toString()]
       if (!provider) return null

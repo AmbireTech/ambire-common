@@ -34,6 +34,7 @@ import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
 import * as safeLib from '../../libs/safe/safe'
 import { SwapAndBridgeFormStatus } from '../../libs/swapAndBridge/constants'
 import { generateUuid } from '../../utils/uuid'
+import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
@@ -3474,6 +3475,124 @@ describe('RequestsController ', () => {
     await controller.rejectUserRequests(
       'Test cleanup',
       controller.userRequests.map(({ id }) => id)
+    )
+  })
+
+  test('does not ask the Safe API for missing deployment data while opted out of it', async () => {
+    const { accountsCtrl, controller, mainCtrl } = await prepareTest(true, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
+    account.safeCreation = {
+      factoryAddr: '0x',
+      singleton: '0x',
+      saltNonce: '0x',
+      setupData: '0x'
+    }
+
+    Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
+      state.isDeployed = false
+    })
+    accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
+    await mainCtrl.featureFlags.setFeatureFlag('safeApi', false)
+    const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
+    const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+    const reject = jest.fn()
+
+    await controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'eth_sendTransaction',
+          params: [{ from: accountAddr, to: ZeroAddress, value: '0x0', data: '0x' }],
+          session: MOCK_SESSION
+        },
+        dappPromise: {
+          id: 'safe-api-opted-out-deploy-test',
+          resolve: jest.fn(),
+          reject,
+          session: MOCK_SESSION
+        }
+      }
+    })
+
+    expect(findDeployDataSpy).not.toHaveBeenCalled()
+    expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+    expect(controller.userRequests).toEqual([])
+    expect(reject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
+      })
+    )
+  })
+
+  test('waits for the opt-out to load before asking the Safe API for missing deployment data', async () => {
+    const { accountsCtrl, controller, mainCtrl } = await prepareTest(true, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
+    account.safeCreation = {
+      factoryAddr: '0x',
+      singleton: '0x',
+      saltNonce: '0x',
+      setupData: '0x'
+    }
+
+    Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
+      state.isDeployed = false
+    })
+    accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
+    // e.g. a dapp request right after the background restarted: until the flags are loaded
+    // from storage they are the defaults, where the Safe API is on
+    let hasLoadedFlags = false
+    const isFeatureEnabled = mainCtrl.featureFlags.isFeatureEnabled.bind(mainCtrl.featureFlags)
+    jest
+      .spyOn(mainCtrl.featureFlags, 'isFeatureEnabled')
+      .mockImplementation((flag) =>
+        // on until loaded, then the user's stored opt-out
+        flag === 'safeApi' ? !hasLoadedFlags : isFeatureEnabled(flag)
+      )
+    let finishLoadingFlags = () => {}
+    mainCtrl.featureFlags.initialLoadPromise = new Promise<void>((resolve) => {
+      finishLoadingFlags = () => {
+        hasLoadedFlags = true
+        mainCtrl.featureFlags.initialLoadPromise = undefined
+        resolve()
+      }
+    })
+    const findDeployDataSpy = jest
+      .spyOn(safeLib, 'findDeployData')
+      .mockResolvedValue(new Error('Not Found'))
+    const reject = jest.fn()
+
+    const buildPromise = controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'eth_sendTransaction',
+          params: [{ from: accountAddr, to: ZeroAddress, value: '0x0', data: '0x' }],
+          session: MOCK_SESSION
+        },
+        dappPromise: {
+          id: 'safe-api-flags-loading-deploy-test',
+          resolve: jest.fn(),
+          reject,
+          session: MOCK_SESSION
+        }
+      }
+    })
+    // Gives the request time to reach the Safe API, which it must not do before the flags load
+    await wait(100)
+    expect(findDeployDataSpy).not.toHaveBeenCalled()
+    finishLoadingFlags()
+    await buildPromise
+
+    expect(findDeployDataSpy).not.toHaveBeenCalled()
+    expect(controller.userRequests).toEqual([])
+    expect(reject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
+      })
     )
   })
 

@@ -11,6 +11,7 @@ import {
 } from '../../consts/safe'
 import { IAccountsController, SafeAccountCreation } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -32,6 +33,7 @@ import {
 import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { onFeatureFlagChange } from '../featureFlags/onFeatureFlagChange'
 
 import type { SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
@@ -64,6 +66,8 @@ export class SafeController extends EventEmitter implements ISafeController {
   #keystore: IKeystoreController
 
   #providers: IProvidersController
+
+  #featureFlags: IFeatureFlagsController
 
   /**
    * The last time a request to fetch pending Safe txns was made, per Safe
@@ -107,7 +111,8 @@ export class SafeController extends EventEmitter implements ISafeController {
     providers,
     storage,
     accounts,
-    keystore
+    keystore,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     networks: INetworksController
@@ -115,6 +120,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     storage: IStorageController
     accounts: IAccountsController
     keystore: IKeystoreController
+    featureFlags: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
     this.#networks = networks
@@ -122,9 +128,30 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.#storage = storage
     this.#accounts = accounts
     this.#keystore = keystore
+    this.#featureFlags = featureFlags
+    // Opted out of the Safe API: the counts would never refresh again, so drop them
+    onFeatureFlagChange(featureFlags, 'safeApi', (isEnabled) => {
+      if (isEnabled) return
+      this.pendingCountBySafe = {}
+      this.#pendingFetchedAt = {}
+      this.emitUpdate()
+    })
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
+  }
+
+  /**
+   * Await `#featureFlags.initialLoadPromise` before reading it, as until the flags are loaded
+   * from storage it's the default (on), even for a user who opted out
+   */
+  get #isSafeApiEnabled() {
+    return this.#featureFlags.isFeatureEnabled('safeApi')
+  }
+
+  /** Background Safe API requests are made only while unlocked and not opted out */
+  get #canSyncWithSafeApi() {
+    return this.#keystore.isUnlocked && this.#isSafeApiEnabled
   }
 
   async #load() {
@@ -142,6 +169,9 @@ export class SafeController extends EventEmitter implements ISafeController {
   async #findSafe(safeAddr: string) {
     this.importError = undefined
     this.safeInfo = undefined
+    await this.#featureFlags.initialLoadPromise
+    // The UI asks the user to turn the Safe API back on before searching
+    if (!this.#isSafeApiEnabled) return
 
     // search enabled networks that are Safe supported
     const safeNetworks = this.#networks.networks.filter(
@@ -247,6 +277,9 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.emitUpdate()
   }
   async findSafesByOwner(ownerAddress: string) {
+    await this.#featureFlags.initialLoadPromise
+    // The UI asks the user to turn the Safe API back on before searching
+    if (!this.#isSafeApiEnabled) return
     const owner = getAddress(ownerAddress) as Hex
     await this.#networks.initialLoadPromise
 
@@ -428,12 +461,15 @@ export class SafeController extends EventEmitter implements ISafeController {
     safeAddr: Hex,
     networks: SafePendingFetchNetwork[]
   ): Promise<SafeResults | null> {
-    // do not make Safe requests if the extension is locked
-    if (!this.#keystore.isUnlocked) return null
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#canSyncWithSafeApi) return null
 
     this.#pendingFetchedAt[safeAddr] = Date.now()
     const pending = await fetchAllPending(networks, safeAddr)
     if (!pending) return null
+    // Opted out while the request was on its way: its answer would bring back the counts
+    // (and the requests the MainController builds from it) that opting out has just cleared
+    if (!this.#isSafeApiEnabled) return null
 
     const visiblePending = this.#filterOutHidden(pending, safeAddr)
     this.#setPendingCounts(safeAddr, visiblePending)
@@ -517,8 +553,8 @@ export class SafeController extends EventEmitter implements ISafeController {
   }
 
   async #updateOtherSafesPendingCounts(selectedAccountAddr?: string) {
-    // do not make Safe requests if the extension is locked
-    if (!this.#keystore.isUnlocked) return
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#canSyncWithSafeApi) return
 
     this.#clearCountsOfSafesWithoutOwner(selectedAccountAddr)
 
@@ -545,8 +581,8 @@ export class SafeController extends EventEmitter implements ISafeController {
         if (!isFirstRequest) await wait(SAFE_PENDING_REQUEST_PAUSE)
         isFirstRequest = false
 
-        // the wallet may get locked while the Safes are updated one after the other
-        if (!this.#keystore.isUnlocked) return
+        // the wallet may get locked (or opted out) while the Safes are updated one by one
+        if (!this.#canSyncWithSafeApi) return
 
         const { threshold, nonce } = chainAccountState
         await this.fetchPending(safe.addr as Hex, [{ chainId, threshold, nonce }]).catch(
@@ -573,8 +609,8 @@ export class SafeController extends EventEmitter implements ISafeController {
       confirmations?: SafeMultisigConfirmationResponse[]
     }[]
   > {
-    // do not make Safe requests if the extension is locked
-    if (!this.#keystore.isUnlocked) return []
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#canSyncWithSafeApi) return []
 
     return fetchExecutedTransactions(safeAddr, chains)
   }
@@ -592,10 +628,11 @@ export class SafeController extends EventEmitter implements ISafeController {
   async getMessagesByHash(
     data: { chainId: bigint; threshold: number; messageHash: Hex }[]
   ): Promise<ExtendedSafeMessage[]> {
+    await this.#featureFlags.initialLoadPromise
     const messages = []
     for (let i = 0; i < data.length; i++) {
-      // do not make Safe requests if the extension is locked, even if it got locked midway
-      if (!this.#keystore.isUnlocked) break
+      // do not make Safe requests if locked or opted out, even if it happened midway
+      if (!this.#canSyncWithSafeApi) break
 
       const entry = data[i]!
       const msg = await getMessage(entry).catch((e) => e)
