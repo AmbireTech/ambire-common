@@ -15,24 +15,34 @@ import {
   zeroPadValue
 } from 'ethers'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
+import SafeApiKit from '@safe-global/api-kit'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import { SAFE_API_TIMEOUT_MS, SAFE_SENTINEL_OWNER, SAFE_V1_4_1 } from '../../consts/safe'
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
 import {
   canHotOwnersMeetSafeThreshold,
+  decodeSetupData,
+  fetchExecutedTransactions,
   findDeployData,
   getAlreadySignedOwners,
+  getLatestMessages,
+  getMessage,
+  getNewSafeAccount,
+  getNewSafeCreation,
+  getPendingTransactions,
   getSafeAccountByOwner,
   getSafeApprovedHashSignature,
   getSafeApproveHashCall,
-  getSigs,
-  isSafeHashApproved,
-  sortSigs,
   getSafeDeploymentCall,
+  getSafeProxyAddress,
+  getSigs,
   hasCompleteSafeCreationData,
   isSafeContract,
+  isSafeHashApproved,
   normalizeSafeGlobalMessage,
+  sortSigs,
   toCallsUserRequest
 } from './safe'
 
@@ -120,9 +130,7 @@ describe('isSafeContract', () => {
     const provider = createProvider(async () => new AbiCoder().encode(['uint256'], [2]))
 
     await expect(isSafeContract(SAFE_ADDRESS, provider)).resolves.toBe(true)
-    expect(provider.call).toHaveBeenCalledWith(
-      expect.objectContaining({ data: getThresholdData })
-    )
+    expect(provider.call).toHaveBeenCalledWith(expect.objectContaining({ data: getThresholdData }))
   })
 
   test('returns false when the contract has no getThreshold() and returns no data', async () => {
@@ -616,6 +624,76 @@ describe('Safe deployment data', () => {
     ).resolves.toBeNull()
     restore()
   })
+
+  describe('the fallback handler of a new Safe', () => {
+    // Checksummed from lowercase, as getNewSafeAccount rejects an address with a wrong checksum
+    const ownerA = getAddress(OWNER.toLowerCase()) as Hex
+    const ownerB = getAddress(OTHER_OWNER.toLowerCase()) as Hex
+    const newSafeAccount = getNewSafeAccount([ownerA, ownerB], 2, [])
+    const encodedV141ProxyCreationCode = new AbiCoder().encode(
+      ['bytes'],
+      [SAFE_V1_4_1.proxyCreationCode]
+    )
+    const getProvider = (missingContract?: string) =>
+      ({
+        call: jest.fn(async () => encodedV141ProxyCreationCode),
+        getCode: jest.fn(async (address: string) =>
+          address.toLowerCase() === missingContract?.toLowerCase() ? '0x' : '0x6000'
+        )
+      }) as unknown as RPCProvider
+
+    test('builds the factory call when the singleton and the fallback handler are deployed', async () => {
+      const provider = getProvider()
+
+      await expect(getSafeDeploymentCall(newSafeAccount, provider)).resolves.toMatchObject({
+        to: SAFE_V1_4_1.proxyFactory
+      })
+      expect(provider.getCode).toHaveBeenCalledWith(SAFE_V1_4_1.compatibilityFallbackHandler)
+    })
+
+    test('returns null when the fallback handler is not deployed on the network', async () => {
+      const provider = getProvider(SAFE_V1_4_1.compatibilityFallbackHandler)
+
+      await expect(getSafeDeploymentCall(newSafeAccount, provider)).resolves.toBeNull()
+    })
+
+    test('returns null when the singleton is not deployed, even with the fallback handler', async () => {
+      const provider = getProvider(SAFE_V1_4_1.singletonL2)
+
+      await expect(getSafeDeploymentCall(newSafeAccount, provider)).resolves.toBeNull()
+    })
+
+    test('does not check a fallback handler for a Safe set up without one', async () => {
+      const setupWithoutFallbackHandler = new Interface([
+        'function setup(address[] _owners,uint256 _threshold,address to,bytes data,address fallbackHandler,address paymentToken,uint256 payment,address paymentReceiver)'
+      ]).encodeFunctionData('setup', [
+        [ownerA],
+        1,
+        ZeroAddress,
+        '0x',
+        ZeroAddress,
+        ZeroAddress,
+        0,
+        ZeroAddress
+      ]) as Hex
+      const safeCreation = {
+        ...newSafeAccount.safeCreation!,
+        setupData: setupWithoutFallbackHandler
+      }
+      const safeWithoutFallbackHandler = {
+        ...newSafeAccount,
+        addr: getSafeProxyAddress(safeCreation, SAFE_V1_4_1.proxyCreationCode),
+        safeCreation
+      }
+      const provider = getProvider()
+
+      await expect(
+        getSafeDeploymentCall(safeWithoutFallbackHandler, provider)
+      ).resolves.not.toBeNull()
+      expect(provider.getCode).toHaveBeenCalledTimes(1)
+      expect(provider.getCode).toHaveBeenCalledWith(SAFE_V1_4_1.singletonL2)
+    })
+  })
 })
 
 describe('toCallsUserRequest', () => {
@@ -820,6 +898,63 @@ describe('canHotOwnersMeetSafeThreshold', () => {
   })
 })
 
+describe('new Safe accounts', () => {
+  const ownerA = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78' as Hex
+  const ownerB = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5' as Hex
+
+  // Verified against createProxyWithNonce of the v1.4.1 SafeProxyFactory on Base and Ethereum
+  test.each([
+    [[ownerA], 1, '0xb89598D5fe26dD671f51F3292096FcDA38B63625'],
+    [[ownerA, ownerB], 2, '0x913F170e793293e71749ee6CA674DF0469Ee3735']
+  ])('derives the counterfactual address of %j with threshold %i', (owners, threshold, addr) => {
+    expect(getNewSafeAccount(owners as Hex[], threshold, []).addr).toBe(addr)
+  })
+
+  test('builds a Safe v1.4.1 account with a zero salt nonce', () => {
+    const account = getNewSafeAccount([ownerA, ownerB], 1, [])
+
+    expect(account.safeCreation).toEqual({
+      factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
+      singleton: '0x29fcB43b46531BcA003ddC8FCB67FFE91900C762',
+      setupData: expect.any(String),
+      saltNonce: zeroPadValue('0x00', 32)
+    })
+    expect(decodeSetupData(account.safeCreation!.setupData)).toEqual([ownerA, ownerB])
+    expect(account.associatedKeys).toEqual([ownerA, ownerB])
+    expect(account.initialPrivileges).toEqual([
+      [ownerA, '0x01'],
+      [ownerB, '0x01']
+    ])
+    expect(account.creation).toBeNull()
+    expect(account.preferences).toEqual({ label: 'Account 1', pfp: account.addr })
+  })
+
+  test('labels the new Safe after the accounts already in the wallet', () => {
+    const prevAccount = getNewSafeAccount([ownerA], 1, [])
+
+    expect(getNewSafeAccount([ownerB], 1, [prevAccount]).preferences.label).toBe('Account 2')
+  })
+
+  test('derives a different address for a different threshold or owners order', () => {
+    const addr = getNewSafeAccount([ownerA, ownerB], 1, []).addr
+
+    expect(getNewSafeAccount([ownerA, ownerB], 2, []).addr).not.toBe(addr)
+    expect(getNewSafeAccount([ownerB, ownerA], 1, []).addr).not.toBe(addr)
+  })
+
+  test('rejects invalid setups', () => {
+    expect(() => getNewSafeCreation([], 1)).toThrow('at least one owner')
+    expect(() => getNewSafeCreation([ownerA, ownerA.toLowerCase() as Hex], 1)).toThrow('only once')
+    expect(() => getNewSafeCreation([ownerA, ZeroAddress as Hex], 1)).toThrow('cannot be an owner')
+    expect(() => getNewSafeCreation([SAFE_SENTINEL_OWNER as Hex, ownerA], 1)).toThrow(
+      'cannot be an owner'
+    )
+    expect(() => getNewSafeCreation([ownerA], 0)).toThrow('required confirmations')
+    expect(() => getNewSafeCreation([ownerA], 2)).toThrow('required confirmations')
+    expect(() => getNewSafeCreation([ownerA, ownerB], 1.5)).toThrow('required confirmations')
+  })
+})
+
 describe('Safe owner approvals (approveHash)', () => {
   const SAFE_TX_HASH = keccak256(toUtf8Bytes('safe transaction'))
   const ownerKey = new Wallet(keccak256(toUtf8Bytes('owner key')))
@@ -890,5 +1025,160 @@ describe('Safe owner approvals (approveHash)', () => {
     await expect(
       isSafeHashApproved(SAFE_ADDRESS, SMART_ACCOUNT_OWNER, SAFE_TX_HASH, notApproved.provider)
     ).resolves.toBe(false)
+  })
+})
+
+describe('getPendingTransactions', () => {
+  const originalApiKey = process.env.SAFE_API_KEY
+  const emptyListResponse = { count: 0, next: null, previous: null, results: [] }
+
+  beforeEach(() => {
+    // getApiKit refuses to build a client without one; no request leaves the test
+    process.env.SAFE_API_KEY = 'test-api-key'
+  })
+
+  afterEach(() => {
+    process.env.SAFE_API_KEY = originalApiKey
+    jest.restoreAllMocks()
+  })
+
+  test('asks only for the not executed txns from the passed nonce, without fetching the Safe info', async () => {
+    const getMultisigTransactions = jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockResolvedValue(emptyListResponse)
+    const getSafeInfo = jest.spyOn(SafeApiKit.prototype, 'getSafeInfo')
+
+    const response = await getPendingTransactions(1n, SAFE_ADDRESS, 12n)
+
+    expect(getMultisigTransactions).toHaveBeenCalledTimes(1)
+    expect(getMultisigTransactions).toHaveBeenCalledWith(SAFE_ADDRESS, {
+      executed: false,
+      nonce__gte: '12',
+      ordering: 'nonce'
+    })
+    expect(getSafeInfo).not.toHaveBeenCalled()
+    expect(response).toEqual({ ...emptyListResponse, chainId: 1n, type: 'txn' })
+  })
+
+  test('does not fetch the Safe info for a Safe that has not executed a txn yet (nonce 0)', async () => {
+    const getMultisigTransactions = jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockResolvedValue(emptyListResponse)
+    const getSafeInfo = jest.spyOn(SafeApiKit.prototype, 'getSafeInfo')
+
+    await getPendingTransactions(1n, SAFE_ADDRESS, 0n)
+
+    expect(getMultisigTransactions).toHaveBeenCalledWith(
+      SAFE_ADDRESS,
+      expect.objectContaining({ executed: false, nonce__gte: '0' })
+    )
+    expect(getSafeInfo).not.toHaveBeenCalled()
+  })
+
+  test('passes the Safe API error on to the caller', async () => {
+    jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockRejectedValue(new Error('Too many requests'))
+
+    await expect(getPendingTransactions(1n, SAFE_ADDRESS, 3n)).rejects.toThrow('Too many requests')
+  })
+})
+
+describe('Safe API requests made by the background Safe checks', () => {
+  const originalApiKey = process.env.SAFE_API_KEY
+  const emptyListResponse = { count: 0, next: null, previous: null, results: [] }
+  const never = <T>() => new Promise<T>(() => {})
+  let restoreConsole: (() => void) | undefined
+
+  beforeEach(() => {
+    // getApiKit refuses to build a client without one; no request leaves the test
+    process.env.SAFE_API_KEY = 'test-api-key'
+    jest.useFakeTimers()
+  })
+
+  afterEach(() => {
+    restoreConsole?.()
+    restoreConsole = undefined
+    jest.useRealTimers()
+    process.env.SAFE_API_KEY = originalApiKey
+    jest.restoreAllMocks()
+  })
+
+  test('the pending txns request stops waiting for a Safe API that never answers', async () => {
+    jest.spyOn(SafeApiKit.prototype, 'getMultisigTransactions').mockImplementation(() => never())
+
+    const request = getPendingTransactions(1n, SAFE_ADDRESS, 3n)
+    const assertion = expect(request).rejects.toThrow(
+      `Safe API: get pending transactions timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    )
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+    await assertion
+  })
+
+  test('the pending txns request is not cut short just before the timeout', async () => {
+    let answer: ((response: typeof emptyListResponse) => void) | undefined
+    jest.spyOn(SafeApiKit.prototype, 'getMultisigTransactions').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve
+        })
+    )
+
+    const request = getPendingTransactions(1n, SAFE_ADDRESS, 3n)
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS - 1)
+    answer?.(emptyListResponse)
+
+    await expect(request).resolves.toEqual({ ...emptyListResponse, chainId: 1n, type: 'txn' })
+    // the timeout timer is cleared once the Safe API answers
+    expect(jest.getTimerCount()).toBe(0)
+  })
+
+  test('the messages request stops waiting for a Safe API that never answers', async () => {
+    jest.spyOn(SafeApiKit.prototype, 'getMessages').mockImplementation(() => never())
+
+    const request = getLatestMessages(1n, SAFE_ADDRESS)
+    const assertion = expect(request).rejects.toThrow(
+      `Safe API: get messages timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    )
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+    await assertion
+  })
+
+  test('a message that never arrives is treated as not found', async () => {
+    restoreConsole = suppressConsole().restore
+    jest.spyOn(SafeApiKit.prototype, 'getMessage').mockImplementation(() => never())
+
+    const request = getMessage({ chainId: 1n, threshold: 1, messageHash: '0x01' })
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+    await expect(request).resolves.toBeNull()
+  })
+
+  test('the executed txns of the chains that answer are returned when another chain never answers', async () => {
+    restoreConsole = suppressConsole().restore
+    const executedTxn = buildSafeTransaction({
+      nonce: '4',
+      transactionHash: `0x${'2'.repeat(64)}`
+    })
+    jest
+      .spyOn(SafeApiKit.prototype, 'getMultisigTransactions')
+      .mockImplementationOnce(() => never())
+      .mockResolvedValueOnce({ ...emptyListResponse, count: 1, results: [executedTxn] })
+
+    const request = fetchExecutedTransactions(SAFE_ADDRESS, [
+      { chainId: 1n, minNonce: 4 },
+      { chainId: 10n, minNonce: 4 }
+    ])
+    await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+    await expect(request).resolves.toEqual([
+      {
+        safeTxnHash: executedTxn.safeTxHash,
+        transactionHash: executedTxn.transactionHash,
+        nonce: '4'
+      }
+    ])
   })
 })

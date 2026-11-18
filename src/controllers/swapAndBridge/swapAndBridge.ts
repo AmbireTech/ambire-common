@@ -2656,12 +2656,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         const selectedAccountAddress = this.#selectedAccount.account.addr
         this.#updateFeePercent()
         const toTokenPricePromise = withTimeout(
-          () =>
-            this.#portfolio.getTokenPrice(
-              selectedAccountAddress,
-              BigInt(this.toChainId!),
-              toSelectedToken.address
-            ),
+          () => this.#portfolio.getTokenPrice(BigInt(this.toChainId!), toSelectedToken.address),
           {
             timeoutMs: TO_TOKEN_PRICE_TIMEOUT_MS,
             message: `Fetching the receive token price for ${toSelectedToken.address} on chainId ${this.toChainId} timed out.`

@@ -291,6 +291,7 @@ export class SignMessageController
     this.#account = undefined
     this.network = undefined
     this.signed = []
+    this.signatures = []
     this.signers = undefined
     this.signer = undefined
     this.status = SignMessageStatus.Initial
@@ -567,6 +568,9 @@ export class SignMessageController
             (request, sign) => this.#withHardwareWalletSigningRequest(request, sign),
             provider
           )
+          // Check before the push, as `signatures` and `signed` are shared with the message that
+          // replaced this one, which would then resolve with this (wrong) signature
+          if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
           this.signatures.push(signed.signature)
           this.signed.push(signerKey.addr)
 
@@ -615,6 +619,9 @@ export class SignMessageController
             false,
             provider
           )
+          // Check before the push, as `signatures` and `signed` are shared with the message that
+          // replaced this one, which would then resolve with this (wrong) signature
+          if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
           this.signatures.push(signed.signature)
           this.signed.push(signerKey.addr)
 

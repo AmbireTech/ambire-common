@@ -10,6 +10,7 @@ import { suppressConsole } from '../../../test/helpers/console'
 import EmittableError from '../../classes/EmittableError'
 import {
   getPrivacyPoolsAsset,
+  getPrivacyPoolsDepositAsset,
   getPrivacyPoolsChainConfig,
   getPrivacyPoolsStoreKey
 } from '../../consts/privacyPools'
@@ -23,6 +24,10 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
+import {
+  getDepositAmountWithVettingFee,
+  getMaxDepositPoolValue
+} from '../../libs/privacyPools/entrypointAssetConfig'
 import { getPrivacyPoolsPoolLabels } from '../../libs/privacyPools/poolStats'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
@@ -30,6 +35,7 @@ import { getRpcProvider } from '../../services/provider'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
+import { TokenPricesController } from '../tokenPrices/tokenPrices'
 import { PendingAccountOp } from './context'
 import { OPEN_SYNC_MAX_AGE_MS, PrivacyPoolsController } from './privacyPools'
 
@@ -264,6 +270,12 @@ let notesBySeed: {
     depositor?: string
     /** The account's deposit number, 0 when not set. */
     deposit?: number
+    /** What the deposit put into the pool, `amount` when not set. */
+    value?: bigint
+    /** Sends already made from it, 0 when not set. */
+    withdraw?: number
+    /** The deposit's block, 1 when not set. */
+    blockNumber?: bigint
   }[]
 } = {}
 /** What `history()` returns per phrase, or per `${seedId}:${chainId}` - see `FakeProtocol.history`. */
@@ -290,32 +302,51 @@ const historyEvent = (overrides: Partial<PPv1HistoryEvent> = {}): PPv1HistoryEve
 /** Scope of a chain's first pool. Each next one in the config has the next number. */
 const FIRST_POOL_SCOPE = 42n
 
-/** A pool's event, for `toStoredPoolState`. */
-type StoredPoolEventInput = { pool: string; value: bigint }
+/** A pool's event, for `toStoredPoolState`. Made in block 1000 when `blockNumber` is not set. */
+type StoredPoolEventInput = { pool: string; value: bigint; blockNumber?: bigint }
 
 /**
- * A chain's public history as the SDK persists it, synced up to block 1000: every pool of the
- * chain registered (see `FIRST_POOL_SCOPE`), with these events, all made in that block.
+ * A chain's public history as the SDK persists it, synced up to `lastSyncedBlock` (1000 when not
+ * set): every pool of the chain registered (see `FIRST_POOL_SCOPE`), with these events.
  */
 const toStoredPoolState = ({
   deposits = [],
   withdrawals = [],
-  aspLeaves = []
+  aspLeaves = [],
+  isEveryDepositApproved = false,
+  lastSyncedBlock = 1000n
 }: {
   deposits?: StoredPoolEventInput[]
   withdrawals?: StoredPoolEventInput[]
   aspLeaves?: bigint[]
+  /** Adds every deposit's label to `aspLeaves`, so all of them count as cover. */
+  isEveryDepositApproved?: boolean
+  lastSyncedBlock?: bigint
 } = {}) => {
   const hex = (value: bigint) => `0x${value.toString(16)}`
+  const poolAddresses = Object.keys(getPrivacyPoolsChainConfig(1n)!.pools)
+  const depositLabels = isEveryDepositApproved
+    ? poolAddresses.flatMap((address, index) => {
+        const depositsCount = deposits.filter(
+          ({ pool }) => pool.toLowerCase() === address.toLowerCase()
+        ).length
+
+        return getPrivacyPoolsPoolLabels(
+          FIRST_POOL_SCOPE + BigInt(index),
+          1n,
+          BigInt(depositsCount)
+        )
+      })
+    : []
   const toTuples = (events: StoredPoolEventInput[], poolField: 'pool' | 'poolAddress') =>
-    events.map(({ pool, value }, index) => [
+    events.map(({ pool, value, blockNumber = 1000n }, index) => [
       hex(BigInt(index + 1)),
-      { value: hex(value), blockNumber: hex(1000n), [poolField]: hex(BigInt(pool)) }
+      { value: hex(value), blockNumber: hex(blockNumber), [poolField]: hex(BigInt(pool)) }
     ])
 
   return JSON.stringify({
     pools: {
-      poolsTuples: Object.keys(getPrivacyPoolsChainConfig(1n)!.pools).map((address, index) => [
+      poolsTuples: poolAddresses.map((address, index) => [
         address,
         { address, scope: hex(FIRST_POOL_SCOPE + BigInt(index)) }
       ])
@@ -323,8 +354,8 @@ const toStoredPoolState = ({
     entrypointDeposits: { entrypointDepositsTuples: toTuples(deposits, 'poolAddress') },
     withdrawals: { withdrawalsTuples: toTuples(withdrawals, 'pool') },
     ragequits: { ragequitsTuples: [] },
-    asp: { leaves: aspLeaves.map(hex) },
-    sync: { lastSyncedBlock: hex(1000n) }
+    asp: { leaves: [...aspLeaves, ...depositLabels].map(hex) },
+    sync: { lastSyncedBlock: hex(lastSyncedBlock) }
   })
 }
 
@@ -482,18 +513,26 @@ class FakeProtocol {
     return historyBySeed[`${this.seedId}:${chainId}`] || historyBySeed[this.seedId as string] || []
   }
 
-  // The real one syncs before every read, so the fake does too: a controller that also calls
-  // `sync()` itself is caught by the sync counts
-  async notes() {
-    await this.sync()
+  // The real one syncs before every read unless told not to, so the fake does too: a controller
+  // that also calls `sync()` itself is caught by the sync counts. Like the real one, it leaves out
+  // notes with no balance unless asked for them.
+  async notes(_assets?: unknown, includeSpent = false, { sync = true } = {}) {
+    if (sync) await this.sync()
 
-    return (notesBySeed[this.seedId as string] || []).map((note) => ({
+    const notes = (notesBySeed[this.seedId as string] || []).filter(
+      (note) => includeSpent || note.amount > 0n
+    )
+
+    return notes.map((note) => ({
       label: note.label,
       assetAddress: note.assetAddress ?? 0n,
       balance: note.amount,
       approved: note.approved,
       depositor: BigInt(note.depositor ?? DEPOSITOR),
-      deposit: note.deposit ?? 0
+      deposit: note.deposit ?? 0,
+      value: note.value ?? note.amount,
+      withdraw: note.withdraw ?? 0,
+      blockNumber: note.blockNumber ?? 1n
     }))
   }
 }
@@ -771,7 +810,11 @@ const prepareTest = async ({
     circuitsBaseUrl: '',
     proverFactory,
     onAccountsRemoved,
-    getPendingAccountOps: () => pendingAccountOps
+    getPendingAccountOps: () => pendingAccountOps,
+    tokenPrices: new TokenPricesController({
+      fetch: fakeFetch as any,
+      isTokenPricesEnabled: () => featureFlags.isFeatureEnabled('tokenPrices') === true
+    })
   })
   await controller.initialLoadPromise
 
@@ -789,8 +832,8 @@ const prepareTest = async ({
 }
 
 const ONE_ETH = 10n ** 18n
-/** What a deposit of `ONE_ETH` becomes in the pool, after the 50 basis points the fake entrypoint keeps. */
-const ONE_ETH_AFTER_VETTING_FEE = ONE_ETH - (ONE_ETH * VETTING_FEE_BPS) / 10_000n
+/** What a deposit putting `ONE_ETH` into the pool sends, with the fake entrypoint's 50 basis points on top. */
+const ONE_ETH_WITH_VETTING_FEE = getDepositAmountWithVettingFee(ONE_ETH, VETTING_FEE_BPS)
 
 const buildDeposit = (
   controller: PrivacyPoolsController,
@@ -844,7 +887,7 @@ const landDeposit = () => {
   notesBySeed['seed-b'] = [
     ...notesBySeed['seed-b']!,
     // A deposit after the account's first one, so a higher index than any note it held
-    { label: 3n, amount: ONE_ETH_AFTER_VETTING_FEE, approved: false, deposit: 1 }
+    { label: 3n, amount: ONE_ETH, approved: false, deposit: 1 }
   ]
 }
 
@@ -1084,7 +1127,8 @@ describe('PrivacyPoolsController', () => {
         fetch: fakeFetch as any,
         circuitsBaseUrl: '',
         onAccountsRemoved: jest.fn(async () => {}),
-        getPendingAccountOps: () => []
+        getPendingAccountOps: () => [],
+        tokenPrices: new TokenPricesController({ fetch: fakeFetch as any })
       })
       await controller.initialLoadPromise
 
@@ -1109,7 +1153,8 @@ describe('PrivacyPoolsController', () => {
         fetch: fakeFetch as any,
         circuitsBaseUrl: '',
         onAccountsRemoved,
-        getPendingAccountOps: () => []
+        getPendingAccountOps: () => [],
+        tokenPrices: new TokenPricesController({ fetch: fakeFetch as any })
       })
       await controller.initialLoadPromise
       keystore.fireUpdate()
@@ -1148,7 +1193,8 @@ describe('PrivacyPoolsController', () => {
           'sendFormResetCounter',
           'statuses',
           'supportedChainIds',
-          'unavailableReason'
+          'unavailableReason',
+          'withdrawalPrivacy'
         ].sort()
       )
     })
@@ -1732,7 +1778,7 @@ describe('PrivacyPoolsController', () => {
       await finalizeAndRead(controller, calls)
 
       selectedAccount.select('seed-b')
-      expect(getHeldAmounts(controller)).toEqual([20n + ONE_ETH_AFTER_VETTING_FEE])
+      expect(getHeldAmounts(controller)).toEqual([20n + ONE_ETH])
     })
 
     it('reads once after a deposit lands, and stops counting it even when its note is not there yet', async () => {
@@ -1771,7 +1817,7 @@ describe('PrivacyPoolsController', () => {
 
       await finalize(controller, calls, AccountOpStatus.BroadcastedButNotConfirmed)
       expect(runningSyncs).toHaveLength(0)
-      expect(getBalance(controller)).toMatchObject({ simulationAmount: ONE_ETH_AFTER_VETTING_FEE })
+      expect(getBalance(controller)).toMatchObject({ simulationAmount: ONE_ETH })
 
       // It lands later, and is still recognised. The deposit may be what landed.
       const finalizing = finalize(controller, calls, AccountOpStatus.PartiallyComplete)
@@ -1840,9 +1886,8 @@ describe('PrivacyPoolsController', () => {
     })
 
     describe('the amounts shown while a change is on its way', () => {
-      // The vetting fee of 50 basis points on this is 25000.005, which the entrypoint rounds down
+      // The vetting fee of 50 basis points does not divide this evenly, and the pool still gets it
       const USDC_DEPOSIT = 5n * 10n ** 6n + 1n
-      const USDC_DEPOSIT_AFTER_VETTING_FEE = 4_975_001n
 
       it('shows a deposit into an account that is not selected, with a row for a token it holds no notes of, until its notes land', async () => {
         const { controller, selectedAccount } = await prepareTest()
@@ -1858,7 +1903,7 @@ describe('PrivacyPoolsController', () => {
         selectedAccount.select('seed-b')
         expect(getBalance(controller, USDC)).toMatchObject({
           totalAmount: 0n,
-          simulationAmount: USDC_DEPOSIT_AFTER_VETTING_FEE,
+          simulationAmount: USDC_DEPOSIT,
           approvedAmountPostSimulation: 0n
         })
         expect(getBalance(controller)).toMatchObject({ totalAmount: 20n, simulationAmount: 0n })
@@ -1867,7 +1912,7 @@ describe('PrivacyPoolsController', () => {
           ...notesBySeed['seed-b']!,
           {
             label: 3n,
-            amount: USDC_DEPOSIT_AFTER_VETTING_FEE,
+            amount: USDC_DEPOSIT,
             approved: false,
             assetAddress: BigInt(USDC),
             deposit: 1
@@ -1876,7 +1921,41 @@ describe('PrivacyPoolsController', () => {
         await finalizeAndRead(controller, calls)
 
         expect(getBalance(controller, USDC)).toMatchObject({
-          totalAmount: USDC_DEPOSIT_AFTER_VETTING_FEE,
+          totalAmount: USDC_DEPOSIT,
+          simulationAmount: 0n
+        })
+      })
+
+      it('shows a deposit right away into an account not read since a restart, without reading it first', async () => {
+        const storage = new StorageController(produceMemoryStore())
+        await storage.set('privacyPoolsState', {
+          [getPrivacyPoolsStoreKey(getPrivacyPoolsChainConfig(1n)!)]: toStoredPoolState()
+        })
+        const { controller, selectedAccount } = await prepareTest({ storage })
+        selectedAccount.select('seed-a')
+
+        // The network is on this device, so only the plugin's own sync in prepareShield runs
+        const calls = await buildDeposit(controller)
+        controller.onAccountOpBroadcast({ chainId: 1n, calls })
+        expect(getSyncCount('seed-b')).toBe(0)
+
+        selectedAccount.select('seed-b')
+        expect(getBalance(controller)).toMatchObject({ totalAmount: 0n, simulationAmount: ONE_ETH })
+
+        const readBeforeLanding = controller.syncChain('1')
+        await releaseSync('seed-b')
+        await readBeforeLanding
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n,
+          simulationAmount: ONE_ETH
+        })
+
+        landDeposit()
+        const readAfterLanding = controller.syncChain('1')
+        await releaseSync('seed-b')
+        await readAfterLanding
+        expect(getBalance(controller)).toMatchObject({
+          totalAmount: 20n + ONE_ETH,
           simulationAmount: 0n
         })
       })
@@ -1887,7 +1966,7 @@ describe('PrivacyPoolsController', () => {
         const calls = await buildAndBroadcastDeposit(controller)
         expect(getBalance(controller)).toMatchObject({
           totalAmount: 20n,
-          simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+          simulationAmount: ONE_ETH
         })
 
         landDeposit()
@@ -1896,7 +1975,7 @@ describe('PrivacyPoolsController', () => {
         await reading
 
         expect(getBalance(controller)).toMatchObject({
-          totalAmount: 20n + ONE_ETH_AFTER_VETTING_FEE,
+          totalAmount: 20n + ONE_ETH,
           simulationAmount: 0n
         })
 
@@ -1916,7 +1995,7 @@ describe('PrivacyPoolsController', () => {
           selectedAccount.select('seed-b')
           const calls = await buildAndBroadcastDeposit(controller)
           expect(getBalance(controller)).toMatchObject({
-            simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+            simulationAmount: ONE_ETH
           })
           const onUpdate = jest.fn()
           controller.onUpdate(onUpdate)
@@ -1937,7 +2016,7 @@ describe('PrivacyPoolsController', () => {
         await finalize(controller, calls, AccountOpStatus.BroadcastedButNotConfirmed)
 
         expect(getBalance(controller)).toMatchObject({
-          simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+          simulationAmount: ONE_ETH
         })
       })
 
@@ -1955,7 +2034,7 @@ describe('PrivacyPoolsController', () => {
 
         expect(getBalance(controller)).toMatchObject({
           totalAmount: 20n,
-          simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+          simulationAmount: ONE_ETH
         })
         expect(getBalance(controller, USDC)).toMatchObject({
           totalAmount: 7n,
@@ -1966,7 +2045,7 @@ describe('PrivacyPoolsController', () => {
         await syncRound(controller)
 
         expect(getBalance(controller)).toMatchObject({
-          totalAmount: 20n + ONE_ETH_AFTER_VETTING_FEE,
+          totalAmount: 20n + ONE_ETH,
           simulationAmount: 0n
         })
       })
@@ -1976,7 +2055,7 @@ describe('PrivacyPoolsController', () => {
         selectedAccount.select('seed-b')
         await buildAndBroadcastDeposit(controller)
         expect(getBalance(controller)).toMatchObject({
-          simulationAmount: ONE_ETH_AFTER_VETTING_FEE
+          simulationAmount: ONE_ETH
         })
 
         keystore.isUnlocked = false
@@ -2134,7 +2213,7 @@ describe('PrivacyPoolsController', () => {
       expect(calls).toEqual([
         {
           to: ETHEREUM_ENTRYPOINT,
-          value: ONE_ETH,
+          value: ONE_ETH_WITH_VETTING_FEE,
           data: ENTRYPOINT_INTERFACE.encodeFunctionData('deposit(uint256)', [
             getPrecommitment('seed-b')
           ])
@@ -2150,7 +2229,7 @@ describe('PrivacyPoolsController', () => {
       await first
       const [secondCall] = await buildDeposit(controller, { amount: 2n * ONE_ETH })
 
-      expect(secondCall?.value).toBe(2n * ONE_ETH)
+      expect(secondCall?.value).toBe(getDepositAmountWithVettingFee(2n * ONE_ETH, VETTING_FEE_BPS))
       expect(protocols.reduce((total, protocol) => total + protocol.prepareShieldCount, 0)).toBe(1)
       expect(protocols.reduce((total, protocol) => total + protocol.syncCount, 0)).toBe(1)
     })
@@ -2158,7 +2237,9 @@ describe('PrivacyPoolsController', () => {
     it('refuses amounts Privacy Pools does not accept', async () => {
       const { controller } = await prepareTest()
 
-      await expect(buildDeposit(controller, { amount: MINIMUM_DEPOSIT - 1n })).rejects.toThrow(
+      // The minimum is of what is sent, the fee included
+      const belowMinimum = getMaxDepositPoolValue(MINIMUM_DEPOSIT, VETTING_FEE_BPS) - 1n
+      await expect(buildDeposit(controller, { amount: belowMinimum })).rejects.toThrow(
         EmittableError
       )
       await expect(buildDeposit(controller, { amount: 10_001n * ONE_ETH })).rejects.toThrow(
@@ -2167,6 +2248,29 @@ describe('PrivacyPoolsController', () => {
       await expect(
         buildDeposit(controller, { tokenAddress: '0x0000000000000000000000000000000000000abc' })
       ).rejects.toThrow(EmittableError)
+    })
+
+    it('checks the limits against what is sent, the fee added to the typed amount', async () => {
+      const { controller } = await prepareTest()
+      const { maxDeposit } = getPrivacyPoolsDepositAsset(1n, ZERO_ADDRESS)!
+
+      // Below the minimum as typed, but not once the fee is added
+      const building = buildDeposit(controller, { amount: MINIMUM_DEPOSIT - 1n })
+      await releaseSync('seed-b')
+      const [justAboveMinimum] = await building
+      expect(justAboveMinimum?.value).toBe(
+        getDepositAmountWithVettingFee(MINIMUM_DEPOSIT - 1n, VETTING_FEE_BPS)
+      )
+
+      const largestAmount = getMaxDepositPoolValue(maxDeposit, VETTING_FEE_BPS)
+      const [largest] = await buildDeposit(controller, { amount: largestAmount })
+      expect(largest?.value).toBe(getDepositAmountWithVettingFee(largestAmount, VETTING_FEE_BPS))
+      expect(largest!.value).toBeLessThanOrEqual(maxDeposit)
+
+      // The maximum as typed, which the fee takes above it
+      await expect(buildDeposit(controller, { amount: maxDeposit })).rejects.toThrow(
+        'accepts at most'
+      )
     })
 
     it('refuses a deposit into an account whose key is not available, before reading it', async () => {
@@ -2278,6 +2382,7 @@ describe('PrivacyPoolsController', () => {
     it('prepends an approval only when the allowance does not cover an ERC-20', async () => {
       const { controller } = await prepareTest()
       const amount = 5n * 10n ** 6n
+      const depositAmount = getDepositAmountWithVettingFee(amount, VETTING_FEE_BPS)
 
       const building = buildDeposit(controller, { tokenAddress: USDC, amount })
       await releaseSync('seed-b')
@@ -2288,20 +2393,20 @@ describe('PrivacyPoolsController', () => {
           // The configured asset address, which is checksummed
           to: getPrivacyPoolsAsset(1n, USDC)!.address,
           value: 0n,
-          data: ERC20_INTERFACE.encodeFunctionData('approve', [ETHEREUM_ENTRYPOINT, amount])
+          data: ERC20_INTERFACE.encodeFunctionData('approve', [ETHEREUM_ENTRYPOINT, depositAmount])
         },
         {
           to: ETHEREUM_ENTRYPOINT,
           value: 0n,
           data: ENTRYPOINT_INTERFACE.encodeFunctionData('deposit(address,uint256,uint256)', [
             USDC,
-            amount,
+            depositAmount,
             getPrecommitment('seed-b')
           ])
         }
       ])
 
-      allowance = amount
+      allowance = depositAmount
       await expect(buildDeposit(controller, { tokenAddress: USDC, amount })).resolves.toHaveLength(
         1
       )
@@ -2321,7 +2426,10 @@ describe('PrivacyPoolsController', () => {
         ERC20_INTERFACE.encodeFunctionData('approve', [ETHEREUM_ENTRYPOINT, 0n])
       )
       expect(approveCall?.data).toBe(
-        ERC20_INTERFACE.encodeFunctionData('approve', [ETHEREUM_ENTRYPOINT, amount])
+        ERC20_INTERFACE.encodeFunctionData('approve', [
+          ETHEREUM_ENTRYPOINT,
+          getDepositAmountWithVettingFee(amount, VETTING_FEE_BPS)
+        ])
       )
       expect(depositCall?.to).toBe(ETHEREUM_ENTRYPOINT)
     })
@@ -4896,7 +5004,7 @@ describe('PrivacyPoolsController', () => {
       expect(fakeFetch.mock.calls.length).toBe(requestsAfterFirst)
     })
 
-    it('asks for no prices while the user has opted out of them, and drops those it had', async () => {
+    it('keeps the prices it had when the user opts out, and asks our price API for no new ones', async () => {
       const { controller, featureFlags, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-a')
 
@@ -4904,17 +5012,205 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-a')
       await first
       await waitUntil(() => Object.keys(controller.prices).length > 0)
+      const pricesBeforeOptOut = controller.prices
 
       featureFlags.set('tokenPrices', false)
-      expect(controller.prices).toEqual({})
+      expect(controller.prices).toEqual(pricesBeforeOptOut)
 
+      // Once the cached prices are older than the price cache keeps them
+      const realNow = Date.now.bind(Date)
+      const dateSpy = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + 6 * 60 * 1000)
       fakeFetch.mockClear()
-      const second = controller.syncChain('1')
-      await releaseSync('seed-a')
-      await second
+      try {
+        const second = controller.syncChain('1')
+        await releaseSync('seed-a')
+        await second
+        await flush()
+      } finally {
+        dateSpy.mockRestore()
+      }
 
       expect(fakeFetch).not.toHaveBeenCalled()
-      expect(controller.prices).toEqual({})
+    })
+  })
+
+  describe('privacy checks', () => {
+    const USDC_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
+    const ETH_TRANSFER = {
+      chainId: '1',
+      tokenAddress: ZERO_ADDRESS,
+      amount: 10n,
+      recipient: WITHDRAWAL_RECIPIENT
+    }
+    const USDC_TRANSFER = { ...ETH_TRANSFER, tokenAddress: USDC, amount: 7n }
+
+    const getLeakIds = (controller: PrivacyPoolsController) =>
+      controller.withdrawalPrivacy?.privacy?.leaks.map(({ id }) => id)
+
+    beforeEach(() => {
+      storedPoolState = toStoredPoolState({
+        deposits: [
+          { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 999n },
+          // seed-a's own
+          { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 1000n },
+          { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 1001n },
+          // Too small to hide seed-a's note
+          { pool: ETHEREUM_ETH_POOL, value: 9n, blockNumber: 1002n },
+          { pool: ETHEREUM_ETH_POOL, value: 50n, blockNumber: 1003n },
+          { pool: USDC_POOL, value: 7n, blockNumber: 1000n }
+        ],
+        isEveryDepositApproved: true,
+        // A day after the deposits, so none of them is fresh
+        lastSyncedBlock: 1000n + getPrivacyPoolsChainConfig(1n)!.blocksPerDay
+      })
+      notesBySeed['seed-a'] = [
+        { label: 1n, amount: 10n, approved: true, blockNumber: 1000n },
+        { label: 2n, amount: 7n, approved: true, assetAddress: BigInt(USDC), blockNumber: 1000n }
+      ]
+    })
+
+    /** seed-a, synced. */
+    const prepareSynced = async () => {
+      const prepared = await prepareTest()
+      prepared.selectedAccount.select('seed-a')
+      const syncing = prepared.controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+
+      return prepared
+    }
+
+    it('drops the answer on lock', async () => {
+      const { controller, keystore } = await prepareSynced()
+      controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+      expect(controller.withdrawalPrivacy).not.toBeNull()
+
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+
+      expect(controller.withdrawalPrivacy).toBeNull()
+    })
+
+    it("does not count the user's own deposits sent in full as others' that hide a send", async () => {
+      storedPoolState = toStoredPoolState({
+        deposits: [
+          { pool: ETHEREUM_ETH_POOL, value: 10n, blockNumber: 998n },
+          { pool: ETHEREUM_ETH_POOL, value: 37n, blockNumber: 999n },
+          { pool: ETHEREUM_ETH_POOL, value: 37n, blockNumber: 1000n }
+        ],
+        isEveryDepositApproved: true,
+        lastSyncedBlock: 1000n + getPrivacyPoolsChainConfig(1n)!.blocksPerDay
+      })
+      // Both 37s are seed-a's, and the first one was already sent in full
+      notesBySeed['seed-a'] = [
+        {
+          label: 3n,
+          amount: 0n,
+          value: 37n,
+          withdraw: 1,
+          approved: true,
+          blockNumber: 999n
+        },
+        { label: 4n, amount: 37n, approved: true, blockNumber: 1000n }
+      ]
+      const { controller } = await prepareSynced()
+
+      controller.checkWithdrawalPrivacy({ ...ETH_TRANSFER, amount: 37n })
+
+      expect(getLeakIds(controller)).toEqual(['unique-amount'])
+      expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+        rating: 'traceable',
+        cover: { bigEnough: 0, sameAmount: 0 }
+      })
+    })
+
+    it('rates a send unchecked when the pool could not be read', async () => {
+      const { restore } = suppressConsole()
+      storedPoolState = 'not a stored state'
+      const { controller } = await prepareSynced()
+
+      controller.checkWithdrawalPrivacy(USDC_TRANSFER)
+
+      expect(controller.poolStats['1']?.error).not.toBeNull()
+      expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+        rating: 'unchecked',
+        leaks: []
+      })
+      restore()
+    })
+
+    it('rates the deposits the proof spends, not the ones of the last sync', async () => {
+      notesBySeed['seed-a'] = [
+        { label: 1n, amount: WITHDRAWAL_AMOUNT, approved: true, blockNumber: 1000n }
+      ]
+      const { controller } = await prepareSynced()
+      // Seen only by the sync the SDK runs before proving: a larger deposit from the recipient
+      notesBySeed['seed-a'] = [
+        {
+          label: 3n,
+          amount: 2n * WITHDRAWAL_AMOUNT,
+          approved: true,
+          blockNumber: 1000n,
+          depositor: WITHDRAWAL_RECIPIENT
+        }
+      ]
+      preparedWithdrawal = buildPreparedWithdrawal()
+
+      await controller.prepareWithdrawal({ ...ETH_TRANSFER, amount: WITHDRAWAL_AMOUNT })
+
+      expect(controller.operation?.phase).toBe('ready')
+      expect(controller.operation?.privacy?.rating).toBe('weak')
+      expect(controller.operation?.privacy?.leaks.map(({ id }) => id)).toContain(
+        'send-to-depositor'
+      )
+    })
+
+    it('rates a proof that spends a different number of deposits than predicted as unchecked, and reports it', async () => {
+      const { restore } = suppressConsole()
+      notesBySeed['seed-a'] = [
+        { label: 1n, amount: WITHDRAWAL_AMOUNT, approved: true, blockNumber: 1000n }
+      ]
+      const { controller } = await prepareSynced()
+      // Spends two deposits, while the one note pays the whole amount
+      preparedWithdrawal = buildPreparedWithdrawal({ isBatch: true })
+
+      await controller.prepareWithdrawal({ ...ETH_TRANSFER, amount: WITHDRAWAL_AMOUNT })
+
+      expect(controller.operation).toMatchObject({
+        phase: 'ready',
+        // The one predicted deposit rates standard, which says nothing about linking two deposits
+        privacy: { rating: 'unchecked', notesCount: 2, leaks: [] }
+      })
+      expect(controller.emittedErrors.at(-1)).toMatchObject({
+        level: 'silent',
+        error: expect.objectContaining({
+          message: 'privacyPools: the proof spends 2 notes, 1 were predicted'
+        })
+      })
+      restore()
+    })
+
+    it('reads the pool for a deposit form when no sync has read it, without syncing', async () => {
+      const storage = new StorageController(produceMemoryStore())
+      await storage.set('privacyPoolsState', {
+        [getPrivacyPoolsStoreKey(getPrivacyPoolsChainConfig(1n)!)]: storedPoolState!
+      })
+      const { controller } = await prepareTest({ storage })
+      const deposit = { chainId: '1', tokenAddress: ZERO_ADDRESS, amount: 10n, maxAmount: 100n }
+      expect(controller.getDepositPrivacy(deposit).rating).toBe('unchecked')
+
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, 'transfer-session')
+      await waitUntil(() => !!controller.poolStats['1'])
+
+      expect(controller.getDepositPrivacy(deposit)).toMatchObject({
+        rating: 'standard',
+        sameAmount: 3
+      })
+      expect(controller.getDepositPrivacy({ ...deposit, amount: 11n })).toMatchObject({
+        rating: 'standard',
+        sameAmount: 0
+      })
+      expect(runningSyncs).toHaveLength(0)
     })
   })
 })

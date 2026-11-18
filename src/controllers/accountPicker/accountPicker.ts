@@ -1187,7 +1187,16 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   ) {
     await this.reset()
 
-    this.readyToAddAccounts = accounts
+    this.readyToAddAccounts = accounts.map((account) => {
+      const alreadyImportedAcc = this.#accounts.accounts.find((a) => a.addr === account.addr)
+
+      // Persist the already imported account preferences on purpose, like
+      // `prepareSelectedAccounts` does. Adding the account again keeps them, so the
+      // personalize step would otherwise show a default name the account never gets.
+      return alreadyImportedAcc
+        ? { ...account, preferences: alreadyImportedAcc.preferences }
+        : account
+    })
     this.readyToRemoveAccounts = accountsToRemove
     this.#preparedAccountsToRemove = accountsToRemove
     this.#readyToAddKeys = keys
@@ -1235,6 +1244,17 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       ...account,
       preferences: preferencesByAddr.get(account.addr) || account.preferences
     }))
+    // Adding keeps the preferences of an account already in the wallet, so the ones the
+    // user changed on the personalize step are saved separately
+    const renamedImportedAccounts = accounts.filter(({ addr, preferences }) => {
+      const importedAcc = this.#accounts.accounts.find((a) => a.addr === addr)
+
+      return (
+        !!importedAcc &&
+        (importedAcc.preferences.label !== preferences.label ||
+          importedAcc.preferences.pfp !== preferences.pfp)
+      )
+    })
 
     await this.#onAddPreparedAccounts({
       accounts,
@@ -1242,6 +1262,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       accountsToRemove: this.#preparedAccountsToRemove,
       hdPathTemplate: this.#preparedHdPathTemplate
     })
+
+    if (renamedImportedAccounts.length) {
+      await this.#accounts.updateAccountPreferences(
+        renamedImportedAccounts.map(({ addr, preferences }) => ({ addr, preferences }))
+      )
+    }
 
     this.addAccountsStatus = 'SUCCESS'
     await this.forceEmitUpdate()

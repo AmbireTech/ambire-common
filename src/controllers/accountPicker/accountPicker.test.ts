@@ -492,6 +492,60 @@ describe('AccountPicker', () => {
       expect(controller.readyToRemoveAccounts).toEqual([accountToRemove])
     })
 
+    test('should keep the name of an account already in the wallet', async () => {
+      const { mainCtrl } = await makeMainController()
+      const controller = mainCtrl.accountPicker
+      const importedPreferences = { label: 'Savings', pfp: basicAccount.addr }
+      await mainCtrl.accounts.addAccounts([{ ...basicAccount, preferences: importedPreferences }])
+      const newAccount = { ...basicAccount, addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' }
+
+      await controller.prepareAccounts({
+        accounts: [
+          { ...basicAccount, preferences: { label: 'Account 2', pfp: basicAccount.addr } },
+          newAccount
+        ]
+      })
+
+      expect(controller.readyToAddAccounts.map(({ preferences }) => preferences)).toEqual([
+        importedPreferences,
+        newAccount.preferences
+      ])
+    })
+
+    test('should save the name given to an account already in the wallet on proceeding', async () => {
+      const { mainCtrl } = await makeMainController()
+      const controller = mainCtrl.accountPicker
+      await mainCtrl.accounts.addAccounts([
+        { ...basicAccount, preferences: { label: 'Savings', pfp: basicAccount.addr } }
+      ])
+      await controller.prepareAccounts({ accounts: [basicAccount] })
+      const renamedPreferences = { label: 'Spending', pfp: basicAccount.addr }
+
+      await controller.addPreparedAccounts([
+        { addr: basicAccount.addr, preferences: renamedPreferences }
+      ])
+
+      expect(
+        mainCtrl.accounts.accounts.find((a) => a.addr === basicAccount.addr)?.preferences
+      ).toEqual(renamedPreferences)
+    })
+
+    test('should keep the name of an account already in the wallet when it is not renamed', async () => {
+      const { mainCtrl } = await makeMainController()
+      const controller = mainCtrl.accountPicker
+      const importedPreferences = { label: 'Savings', pfp: basicAccount.addr }
+      await mainCtrl.accounts.addAccounts([{ ...basicAccount, preferences: importedPreferences }])
+      await controller.prepareAccounts({ accounts: [basicAccount] })
+      const updatePreferencesSpy = jest.spyOn(mainCtrl.accounts, 'updateAccountPreferences')
+
+      await controller.addPreparedAccounts()
+
+      expect(updatePreferencesSpy).not.toHaveBeenCalled()
+      expect(
+        mainCtrl.accounts.accounts.find((a) => a.addr === basicAccount.addr)?.preferences
+      ).toEqual(importedPreferences)
+    })
+
     test('should not list the removals of an earlier flow', async () => {
       const { controller } = await prepareTest()
       const accountToRemove = {

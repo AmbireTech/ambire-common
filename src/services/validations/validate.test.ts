@@ -217,6 +217,33 @@ describe('validateSendTransferAddress - address poisoning', () => {
     expect(result.shouldHold).toBe(true)
   })
 
+  it('names the own account that the address looks similar to', () => {
+    const result = validate({
+      addressPoisoningMatch: { ...addressPoisoningMatch, matchedOwnAccountLabel: 'Savings' },
+      isRecipientAddressFirstTimeSend: true
+    })
+
+    expect(result.message.startsWith(POISONING_MESSAGE_START)).toBe(true)
+    expect(result.message).toContain('looks similar to your account "Savings"')
+    expect(result.shouldHold).toBe(true)
+  })
+
+  it('suggests a typo of an own account when only a few characters differ', () => {
+    const result = validate({
+      addressPoisoningMatch: {
+        ...addressPoisoningMatch,
+        differingCharsCount: 2,
+        matchedOwnAccountLabel: 'Savings'
+      },
+      isRecipientAddressFirstTimeSend: true
+    })
+
+    expect(result.message).toBe(
+      'Looks like a typo: only 2 characters differ from your account "Savings".'
+    )
+    expect(result.shouldHold).toBe(true)
+  })
+
   it('does not require a hold when there is no poisoning match', () => {
     const result = validate({ addressPoisoningMatch: null })
 

@@ -13,6 +13,33 @@ import { toPrivacyPoolsHistoryEntries } from '../../libs/privacyPools/history'
 import { PhraseScopedModule, PrivacyPoolsContext } from './context'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 
+/**
+ * The account's notes as the plugin holds them, the fully sent ones too, with an `amount` of 0.
+ * `shouldSync` false reads what the plugin's last sync left, e.g. right after a proof that synced
+ * it. Throws if the plugin has no notes, so an SDK that drops them fails clearly.
+ */
+export const readPrivacyPoolsNotes = async (
+  protocol: PrivacyPoolsV1Protocol,
+  shouldSync: boolean
+): Promise<PrivacyPoolsNote[]> => {
+  // Optional on the plugin interface
+  if (!protocol.notes) throw new Error('privacyPools: plugin does not expose notes')
+
+  const notes = await protocol.notes([], true, { sync: shouldSync })
+
+  return notes.map((note) => ({
+    label: note.label,
+    tokenAddress: fromPrivacyPoolsAssetAddress(note.assetAddress),
+    amount: note.balance,
+    approval: note.approved ? 'approved' : 'pending',
+    depositorAddr: getAddress(toBeHex(note.depositor, 20)) as Hex,
+    depositIndex: note.deposit,
+    depositValue: note.value,
+    withdrawCount: note.withdraw,
+    blockNumber: note.blockNumber
+  }))
+}
+
 /** An account's chain before its first sync. */
 const IDLE_ACCOUNT_CHAIN_STATE: PrivacyPoolsAccountChainState = {
   syncStatus: 'idle',
@@ -21,6 +48,7 @@ const IDLE_ACCOUNT_CHAIN_STATE: PrivacyPoolsAccountChainState = {
   lastSyncedAt: null,
   lastSyncDuration: null,
   notes: [],
+  spentNotes: [],
   history: null,
   isHistoryCurrent: false,
   historyError: null
@@ -295,12 +323,10 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
 
       const protocol = await this.#registry.getProtocol(chainId, seedId)
 
-      // Optional on the plugin interface; checked so an SDK that drops it fails clearly
-      if (!protocol.notes) throw new Error('privacyPools: plugin does not expose notes')
-
       // The plugin syncs before every read, costing seconds even with no new blocks, so a
       // `sync()` first would pay twice
-      const notes = await protocol.notes()
+      const allNotes = await readPrivacyPoolsNotes(protocol, true)
+      const syncedNotes = allNotes.filter(({ amount }) => amount > 0n)
       this.#syncedProtocols.add(protocol)
       // The plugin has persisted the shared state by now
       initialRead?.resolve()
@@ -312,14 +338,6 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
       if (isChainCold)
         this.#writeInitialChainSync(chainId, { isDone: true, durationMs: syncDuration })
 
-      const syncedNotes: PrivacyPoolsNote[] = notes.map((note) => ({
-        label: note.label,
-        tokenAddress: fromPrivacyPoolsAssetAddress(note.assetAddress),
-        amount: note.balance,
-        approval: note.approved ? 'approved' : 'pending',
-        depositorAddr: getAddress(toBeHex(note.depositor, 20)) as Hex,
-        depositIndex: note.deposit
-      }))
       // Nothing derived from the phrase is written back after a lock or account removal
       const isWritten = this.#writeAccountState(seedId, chainId, generation, {
         syncStatus: 'ready',
@@ -328,6 +346,7 @@ export class PrivacyPoolsSync implements PhraseScopedModule {
         lastSyncedAt: Date.now(),
         lastSyncDuration: syncDuration,
         notes: syncedNotes,
+        spentNotes: allNotes.filter(({ amount }) => amount === 0n),
         // Kept, as a stale list beats a blank one, until the history is read again
         isHistoryCurrent: false
       })

@@ -70,6 +70,9 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
 
   #changes = new Map<number, ExpectedChange>()
 
+  /** Per `${chainId}:${seedId}`, the highest deposit index in the notes the next deposit is built from. */
+  #nextDepositIndexes = new Map<string, { seedId: string; maxDepositIndex: number }>()
+
   #nextId = 1
 
   constructor(sync: PrivacyPoolsSync) {
@@ -78,7 +81,8 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
 
   /**
    * Adds a change to the balance and returns its id. `label` is the deposit a ragequit takes back.
-   * Returns null when the account has not synced on this network yet, or a ragequit has no label.
+   * Returns null for a deposit not built here, a ragequit with no label, or a withdrawal from an
+   * account that has not synced on this network yet.
    */
   add({
     seedId,
@@ -92,12 +96,11 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
     label?: bigint
   }): number | null {
     const state = this.#sync.getAccountChainStates(seedId)[chainId]
-    if (!state?.lastSyncedAt) return null
 
     const check = this.#readCheck({
       seedId,
       chainId,
-      notes: state.notes,
+      notes: state?.lastSyncedAt ? state.notes : null,
       kind,
       tokenAddress,
       label
@@ -115,6 +118,20 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
     })
 
     return id
+  }
+
+  /**
+   * Remembers the notes a deposit is built from, as its check once it is sent. The notes must be
+   * read before the deposit is sent, or they may already show it.
+   */
+  setNextDepositNotes(seedId: string, chainId: string, notes: PrivacyPoolsNote[]) {
+    this.#nextDepositIndexes.set(`${chainId}:${seedId}`, {
+      seedId,
+      maxDepositIndex: notes.reduce(
+        (maxIndex, note) => Math.max(maxIndex, note.depositIndex),
+        NO_DEPOSIT_INDEX
+      )
+    })
   }
 
   /** Forgets a change. Returns whether it was still there. */
@@ -151,17 +168,21 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
   }
 
   hasPhraseDerivedState(): boolean {
-    return !!this.#changes.size
+    return !!this.#changes.size || !!this.#nextDepositIndexes.size
   }
 
   forgetSeed(seedId: string) {
     this.#changes.forEach((change, id) => {
       if (change.seedId === seedId) this.#changes.delete(id)
     })
+    this.#nextDepositIndexes.forEach((entry, key) => {
+      if (entry.seedId === seedId) this.#nextDepositIndexes.delete(key)
+    })
   }
 
   clear() {
     this.#changes.clear()
+    this.#nextDepositIndexes.clear()
   }
 
   #readCheck({
@@ -172,21 +193,19 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
     tokenAddress,
     label
   }: Pick<ExpectedChange, 'seedId' | 'chainId' | 'tokenAddress'> & {
-    notes: PrivacyPoolsNote[]
+    notes: PrivacyPoolsNote[] | null
     kind: ExpectedChangeKind
     label?: bigint
   }): ExpectedChangeCheck | null {
     if (kind === 'deposit') {
-      return {
-        kind,
-        maxDepositIndex: notes.reduce(
-          (maxIndex, note) => Math.max(maxIndex, note.depositIndex),
-          NO_DEPOSIT_INDEX
-        )
-      }
+      const nextDeposit = this.#nextDepositIndexes.get(`${chainId}:${seedId}`)
+
+      return nextDeposit ? { kind, maxDepositIndex: nextDeposit.maxDepositIndex } : null
     }
 
     if (kind === 'ragequit') return label === undefined ? null : { kind, label }
+
+    if (!notes) return null
 
     // Withdrawals sent before this one and not shown yet still hold their amount in the notes
     const earlierWithdrawn = this.#getUnshownChanges(seedId, chainId)

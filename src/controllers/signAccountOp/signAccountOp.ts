@@ -81,7 +81,7 @@ import {
 } from '../../interfaces/signAccountOp'
 import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import { UserRequest } from '../../interfaces/userRequest'
-import { getContractImplementation } from '../../libs/7702/7702'
+import { getContractImplementation, getUserOpDelegator } from '../../libs/7702/7702'
 import {
   canBecomeSmarter,
   isAmbireV1LinkedAccount,
@@ -1939,12 +1939,14 @@ export class SignAccountOpController
       return
     }
 
-    // The owners can differ per chain, so the chain's state wins over the ones from the import
+    // The owners can differ per chain, so the chain's state wins over the ones from the import.
+    // A Safe that isn't deployed yet has no owners on chain, so the ones from the import are used
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-    const owners = (accountState?.associatedKeys || this.account.associatedKeys).map((addr) =>
-      addr.toLowerCase()
-    )
+    const ownersSource = accountState?.isDeployed
+      ? accountState.associatedKeys
+      : this.account.associatedKeys
+    const owners = ownersSource.map((addr) => addr.toLowerCase())
     // Ordered from the one that paid last
     const feePayers = this.#activity
       .getFeePayers(this.account.addr, this.#network.chainId)
@@ -4298,6 +4300,23 @@ export class SignAccountOpController
     return this.#hasCustomGas ? this.#customFeeSpeeds : this.networkFeeSpeeds
   }
 
+  /**
+   * The symbol of the network's native token when it has no USD price, e.g. on a network whose
+   * token prices can't be read while the user is opted out of our price API. Every fee option
+   * other than the native token itself (e.g. the Gas Tank) is then left without a fee amount, as
+   * the fee is estimated in the native token and converted by price. Null when it is priced.
+   */
+  get unpricedNativeTokenSymbol(): string | null {
+    const native = this.#portfolio
+      .getAccountPortfolioState(this.accountOp.accountAddr)
+      [this.accountOp.chainId.toString()]?.result?.tokens.find(
+        (token) => token.address === ZeroAddress
+      )
+    if (!native || native.priceIn.some((price) => price.baseCurrency === 'usd')) return null
+
+    return native.symbol
+  }
+
   get gasSavedUSD(): number | null {
     if (!this.selectedOption?.token.flags.onGasTank) return null
 
@@ -5019,9 +5038,12 @@ export class SignAccountOpController
           // the Ambire4337AccountOp typed data in unprotected mode, while the
           // GridPlus one expects the standard AmbireOperation wrapping that smart
           // accounts use. Getting this wrong fails the userOp with AA24.
-          const delegator =
-            accountState.delegatedContract ??
-            getContractImplementation(this.#network.chainId, this.accountKeyStoreKeys)
+          const delegator = getUserOpDelegator({
+            eip7702Auth: userOperation.eip7702Auth,
+            delegatedContract: accountState.delegatedContract,
+            chainId: this.#network.chainId,
+            accountKeys: this.accountKeyStoreKeys
+          })
           const signsAsAmbire7702Eoa =
             accountState.isEOA && delegator.toLowerCase() === EIP_7702_AMBIRE_ACCOUNT.toLowerCase()
           if (!signsAsAmbire7702Eoa) {
@@ -6149,6 +6171,7 @@ export class SignAccountOpController
       account: this.account,
       errors: this.errors,
       gasSavedUSD: this.gasSavedUSD,
+      unpricedNativeTokenSymbol: this.unpricedNativeTokenSymbol,
       delegatedContract: this.delegatedContract,
       accountOp: this.accountOp,
       humanization: this.humanization,

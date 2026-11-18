@@ -77,11 +77,24 @@ const VIEW_ONLY_RECIPIENT_MESSAGE =
 // 6-left/5-right or 6-left/6-right use 0x + 8...8 for more clarity.
 const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_DEFAULT = 6
 const ADDRESS_POISONING_MESSAGE_VISIBLE_CHARS_EXTENDED = 8
-const getAddressPoisoningWarningMessage = (matchedAddress: string) =>
-  `Possible address poisoning: this new address looks similar to ${matchedAddress} that you have interacted with before. Proceed with caution.`
+const getAddressPoisoningWarningMessage = (
+  matchedAddress: string,
+  matchedOwnAccountLabel?: string
+) =>
+  matchedOwnAccountLabel
+    ? `Possible address poisoning: this new address looks similar to your account "${matchedOwnAccountLabel}" (${matchedAddress}). Proceed with caution.`
+    : `Possible address poisoning: this new address looks similar to ${matchedAddress} that you have interacted with before. Proceed with caution.`
 // Kept short because the UI shows a "Use <address>" button next to it
-const getNearIdenticalAddressWarningMessage = (differingCharsCount: number) =>
-  `Looks like a typo: only ${differingCharsCount} ${differingCharsCount === 1 ? 'character differs' : 'characters differ'} from an address you have sent to before.`
+const getNearIdenticalAddressWarningMessage = (
+  differingCharsCount: number,
+  matchedOwnAccountLabel?: string
+) => {
+  const differingChars = `${differingCharsCount} ${differingCharsCount === 1 ? 'character differs' : 'characters differ'}`
+
+  return matchedOwnAccountLabel
+    ? `Looks like a typo: only ${differingChars} from your account "${matchedOwnAccountLabel}".`
+    : `Looks like a typo: only ${differingChars} from an address you have sent to before.`
+}
 
 const formatAddressPoisoningMatchForMessage = ({
   matchedAddress,
@@ -215,9 +228,13 @@ const validateSendTransferAddress = (
 
       return {
         message: isNearIdenticalAddressMatch(addressPoisoningMatch)
-          ? getNearIdenticalAddressWarningMessage(addressPoisoningMatch.differingCharsCount)
+          ? getNearIdenticalAddressWarningMessage(
+              addressPoisoningMatch.differingCharsCount,
+              addressPoisoningMatch.matchedOwnAccountLabel
+            )
           : getAddressPoisoningWarningMessage(
-              formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
+              formatAddressPoisoningMatchForMessage(addressPoisoningMatch),
+              addressPoisoningMatch.matchedOwnAccountLabel
             ),
         severity: 'warning',
         shouldHold: true

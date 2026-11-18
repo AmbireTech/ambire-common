@@ -8,7 +8,13 @@ import { beforeEach, describe, expect, test } from '@jest/globals'
 import { suppressConsole } from '../../../test/helpers/console'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
-import { openAmbireIdb, resetAmbireIdbForTesting } from './idbDatabase'
+import {
+  IdbOpenReport,
+  isIdbOpenTimeoutError,
+  OPEN_TIMEOUT_MS,
+  openAmbireIdb,
+  resetAmbireIdbForTesting
+} from './idbDatabase'
 import { AMBIRE_IDB_SCHEMA, IdbAccountOpRow } from './idbSchema'
 
 beforeEach(() => {
@@ -65,10 +71,26 @@ describe('openAmbireIdb', () => {
     AMBIRE_IDB_SCHEMA.dbVersion = shippedVersion + 1
     resetAmbireIdbForTesting()
     try {
-      await expect(openAmbireIdb()).rejects.toThrow(/timed out/)
+      let onSettled: (report: IdbOpenReport) => void = () => {}
+      const settledReport = new Promise<IdbOpenReport>((resolve) => {
+        onSettled = resolve
+      })
+      const openError = await openAmbireIdb(onSettled).catch((error) => error)
+      expect(isIdbOpenTimeoutError(openError)).toBe(true)
 
       // The blocker goes away, so the abandoned open can finish and take its connection.
       otherContext.close()
+
+      // The report is what tells a slow open from a hung one, so it must still arrive after
+      // the deadline, with the real duration and the cause.
+      const report = await settledReport
+      expect(report).toEqual({
+        durationMs: expect.any(Number),
+        errorName: undefined,
+        upgradedFromVersion: shippedVersion,
+        wasBlocked: true
+      })
+      expect(report.durationMs).toBeGreaterThanOrEqual(OPEN_TIMEOUT_MS)
       await new Promise((resolve) => {
         setTimeout(resolve, 300)
       })
