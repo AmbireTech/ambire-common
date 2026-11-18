@@ -226,19 +226,24 @@ export const getPrivacyPoolsCoverDeposits = (
 export type PrivacyPoolsPoolCover = {
   deposits: PrivacyPoolsCoverDeposit[]
   /**
-   * A deposit after this block is recent, one of the last `PRIVACY_POOLS_COVER_WINDOW_DAYS`. Only
-   * those are shown to the user, as old deposits say little about who uses the pool now.
+   * The block about `PRIVACY_POOLS_COVER_WINDOW_DAYS` before the last sync. Only deposits made
+   * after it count in the cover the user sees, as old deposits say little about who uses the pool
+   * now.
    */
-  recentAfterBlock: bigint
-  /** A deposit after this block was made in the last day, so sending it out soon stands out. */
-  freshAfterBlock: bigint
+  coverWindowStartBlock: bigint
+  /**
+   * The block about a day before the last sync. A send from a deposit made after it is easy to
+   * link by timing - see the `fresh-deposit` rule.
+   */
+  dayAgoBlock: bigint
 }
 
-/** The deposits of the cover made after its `recentAfterBlock`. */
-export const getRecentPrivacyPoolsDeposits = ({
+/** The deposits of the cover made after its `coverWindowStartBlock`. */
+export const getPrivacyPoolsCoverWindowDeposits = ({
   deposits,
-  recentAfterBlock
-}: PrivacyPoolsPoolCover) => deposits.filter(({ blockNumber }) => blockNumber > recentAfterBlock)
+  coverWindowStartBlock
+}: PrivacyPoolsPoolCover) =>
+  deposits.filter(({ blockNumber }) => blockNumber > coverWindowStartBlock)
 
 /** How many of `deposits` put exactly `value` into the pool. */
 export const countPrivacyPoolsDepositsOf = (deposits: StoredPoolEvent[], value: bigint) =>

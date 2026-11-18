@@ -6,7 +6,7 @@ import {
 import {
   countPrivacyPoolsDepositsOf,
   countPrivacyPoolsDepositsOfAtLeast,
-  getRecentPrivacyPoolsDeposits,
+  getPrivacyPoolsCoverWindowDeposits,
   PrivacyPoolsPoolCover
 } from '../poolStats'
 import { PrivacyPoolsNoteSpend } from './types'
@@ -90,19 +90,19 @@ export const getSendPoolCover = (
   return { ...poolCover, deposits }
 }
 
-/** How many recent deposits of `poolCover` hide a send that spends `spends`. */
+/** How many deposits in the cover window of `poolCover` hide a send that spends `spends`. */
 export const getSendCover = (
   poolCover: PrivacyPoolsPoolCover,
   spends: PrivacyPoolsNoteSpend[]
 ): PrivacyPoolsSendCover => {
-  const recentDeposits = getRecentPrivacyPoolsDeposits(poolCover)
+  const coverWindowDeposits = getPrivacyPoolsCoverWindowDeposits(poolCover)
 
   return {
     bigEnough: Math.min(
-      ...spends.map(({ amount }) => countPrivacyPoolsDepositsOfAtLeast(recentDeposits, amount))
+      ...spends.map(({ amount }) => countPrivacyPoolsDepositsOfAtLeast(coverWindowDeposits, amount))
     ),
     sameAmount: Math.min(
-      ...spends.map(({ amount }) => countPrivacyPoolsDepositsOf(recentDeposits, amount))
+      ...spends.map(({ amount }) => countPrivacyPoolsDepositsOf(coverWindowDeposits, amount))
     )
   }
 }

@@ -1,4 +1,4 @@
-import { countPrivacyPoolsDepositsOf, getRecentPrivacyPoolsDeposits } from '../poolStats'
+import { countPrivacyPoolsDepositsOf, getPrivacyPoolsCoverWindowDeposits } from '../poolStats'
 import { findNearest, getPrivacyPoolsNotesToSpend, setAmountAction } from './helpers'
 import { DepositFacts, LeakRule, PrivacyPoolsNoteSpend, WithdrawalFacts } from './types'
 
@@ -72,7 +72,7 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
     type: 'error',
     title: 'Only you deposited this amount, making this send traceable',
     text: 'Anyone can match a send to a deposit of the same unique amount, which links the recipient to the address you deposited from. Send a common amount so it blends in.',
-    // Counts all deposits, not only recent ones, as an older deposit of the same amount by
+    // Counts all deposits, not only the cover window's, as an older deposit of the same amount by
     // someone else still hides this one
     applies: ({ spends, poolCover }) =>
       spends.some(
@@ -134,7 +134,7 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
     title: 'This deposit is less than a day old, making it easier to link to you',
     text: 'Anyone can see when you deposited and when you send, and a send soon after a deposit is an easy match. Wait a day or more, so more people deposit in between.',
     applies: ({ spends, poolCover }) =>
-      spends.some(({ note }) => note.blockNumber > poolCover.freshAfterBlock)
+      spends.some(({ note }) => note.blockNumber > poolCover.dayAgoBlock)
   }
 ]
 
@@ -148,17 +148,17 @@ export const DEPOSIT_LEAKS: LeakRule<DepositFacts>[] = [
     type: 'info',
     title: 'No one else has deposited this amount, so it stands out',
     text: 'You can still send it privately, just never all of it in one send, as that points straight back to this deposit. A common amount makes it harder to make mistakes later.',
-    // Counts all deposits, not only recent ones, the same as `unique-amount` does for the send
+    // Counts all deposits, not only the cover window's, the same as `unique-amount` does for the send
     applies: ({ amount, poolCover }) =>
       countPrivacyPoolsDepositsOf(poolCover.deposits, amount) === 0,
     getActions: ({ amount, maxAmount, poolCover, commonAmounts }) => {
-      const recentDeposits = getRecentPrivacyPoolsDeposits(poolCover)
+      const coverWindowDeposits = getPrivacyPoolsCoverWindowDeposits(poolCover)
       const commonAmount = findNearest(
         amount,
         commonAmounts,
         (candidate) => candidate,
         (candidate) =>
-          candidate <= maxAmount && countPrivacyPoolsDepositsOf(recentDeposits, candidate) > 0
+          candidate <= maxAmount && countPrivacyPoolsDepositsOf(coverWindowDeposits, candidate) > 0
       )
       if (commonAmount === undefined) return []
 

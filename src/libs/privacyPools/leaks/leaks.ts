@@ -8,7 +8,7 @@ import {
 } from '../../../interfaces/privacyPools'
 import {
   countPrivacyPoolsDepositsOfAtLeast,
-  getRecentPrivacyPoolsDeposits,
+  getPrivacyPoolsCoverWindowDeposits,
   PrivacyPoolsPoolCover
 } from '../poolStats'
 import { getPrivacyPoolsNotesToSpend, getSendCover, getSendPoolCover } from './helpers'
@@ -150,7 +150,7 @@ export const getPrivacyPoolsDepositPrivacy = ({
 
   // Sending all of it at once later is its least private send, so count for that send
   const bigEnough = countPrivacyPoolsDepositsOfAtLeast(
-    getRecentPrivacyPoolsDeposits(poolCover),
+    getPrivacyPoolsCoverWindowDeposits(poolCover),
     amount
   )
   // No amount yet, so there is nothing to warn about

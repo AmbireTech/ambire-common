@@ -25,15 +25,15 @@ const poolDeposit = (
   ...overrides
 })
 
-/** A pool of `deposits`, all recent, of which those after block 90 are fresh. */
+/** A pool of `deposits`, all in the cover window, of which those after block 90 are fresh. */
 const poolCoverOf = (
   deposits: PrivacyPoolsCoverDeposit[],
-  recentAfterBlock = 0n
-): PrivacyPoolsPoolCover => ({ deposits, recentAfterBlock, freshAfterBlock: 90n })
+  coverWindowStartBlock = 0n
+): PrivacyPoolsPoolCover => ({ deposits, coverWindowStartBlock, dayAgoBlock: 90n })
 
 /**
  * The pool: three of 10, two of 50 and of 100, one each of 37 and 500, oldest first, at blocks 10
- * to 90. All are recent, and none is fresh.
+ * to 90. All are in the cover window, and none is fresh.
  */
 const POOL_DEPOSITS = [10n, 10n, 10n, 37n, 50n, 50n, 100n, 100n, 500n].map((value, i) =>
   poolDeposit(value, BigInt(i + 1) * 10n)
@@ -195,8 +195,8 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
       expect(privacy.leaks.map(({ id }) => id)).toEqual(['unique-amount'])
     })
 
-    test('counts an old deposit of the user, so one recent deposit of the amount still hides it', () => {
-      // The user's 37 at block 40 is older than the recent ones, the other 37 at block 90 is not
+    test('counts an old deposit of the user, so one deposit of the amount in the cover window still hides it', () => {
+      // The user's 37 at block 40 is before the cover window, the other 37 at block 90 is not
       const poolCover = poolCoverOf(
         [
           poolDeposit(37n, 40n, { label: uniqueNote.label }),
@@ -263,14 +263,14 @@ describe('getPrivacyPoolsWithdrawalPrivacy', () => {
   })
 
   describe('fresh deposit', () => {
-    test('is weak when the spent deposit was made after the fresh block', () => {
+    test('is weak when the spent deposit was made after the day-ago block', () => {
       const privacy = getWithdrawalPrivacy({ amount: 100n, notes: [note({ blockNumber: 91n })] })
 
       expect(privacy.rating).toBe('weak')
       expect(summarizeLeaks(privacy)).toEqual([{ id: 'fresh-deposit', amounts: [] }])
     })
 
-    test('is not a leak for a deposit of the fresh block itself', () => {
+    test('is not a leak for a deposit of the day-ago block itself', () => {
       expect(
         getWithdrawalPrivacy({ amount: 100n, notes: [note({ blockNumber: 90n })] }).leaks
       ).toEqual([])
@@ -453,7 +453,7 @@ describe('getPrivacyPoolsDepositPrivacy', () => {
       commonAmounts: COMMON_AMOUNTS
     })
 
-    // Only the recent 50, as the 42 is too old to count
+    // Only the 50 in the cover window, as the 42 is too old to count
     expect(privacy.bigEnough).toBe(1)
     expect(privacy.leaks).toEqual([])
   })
@@ -502,7 +502,7 @@ describe('counting only the deposits from Ambire accounts', () => {
   const plainNote = note({ amount: 50n, depositValue: 50n, blockNumber: 20n })
   /**
    * The user's 37 from `AMBIRE_USER` and 50 from `DEPOSITOR`, a 37 and a 10 from a stranger, and a
-   * 50 and a 100 from another Ambire account. All recent, none fresh.
+   * 50 and a 100 from another Ambire account. All in the cover window, none fresh.
    */
   const POOL_DEPOSITS_BY_ACCOUNTS = [
     poolDeposit(37n, 10n, { depositor: AMBIRE_USER, label: ambireNote.label }),

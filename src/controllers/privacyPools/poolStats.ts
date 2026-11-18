@@ -102,9 +102,9 @@ export class PrivacyPoolsPoolStatsReader {
       const tokenKey = tokenAddress.toLowerCase()
       pools.poolCovers[tokenKey] = {
         deposits: getPrivacyPoolsCoverDeposits(history, poolLabels),
-        recentAfterBlock:
+        coverWindowStartBlock:
           history.lastSyncedBlock - PRIVACY_POOLS_COVER_WINDOW_DAYS * config.blocksPerDay,
-        freshAfterBlock: history.lastSyncedBlock - config.blocksPerDay
+        dayAgoBlock: history.lastSyncedBlock - config.blocksPerDay
       }
       pools.statsByToken[tokenKey] = getPrivacyPoolsPoolStats({
         history,
