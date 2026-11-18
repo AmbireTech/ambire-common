@@ -608,7 +608,18 @@ jest.mock('@kohaku-eth/privacy-pools', () => ({
   getPPv1ChainStateKey: jest.requireActual<typeof import('../../../test/mocks/privacyPoolsSdk')>(
     '../../../test/mocks/privacyPoolsSdk'
   ).getPPv1ChainStateKey,
-  PPv1NoteUnavailableError: class PPv1NoteUnavailableError extends Error {},
+  // Its message names the note's label and balance, as the SDK's does
+  PPv1NoteUnavailableError: class PPv1NoteUnavailableError extends Error {
+    label: bigint
+
+    reason: string
+
+    constructor(label: bigint, reason: string) {
+      super(`Note ${label} cannot be spent (${reason}): balance 5, requires 7`)
+      this.label = label
+      this.reason = reason
+    }
+  },
   PPv1RelayerQuoteError: class PPv1RelayerQuoteError extends Error {
     failures: readonly object[]
 
@@ -3963,10 +3974,13 @@ describe('PrivacyPoolsController', () => {
 
       it("explains the SDK's refusal of a deposit its own sync shows can no longer pay", async () => {
         const { restore } = suppressConsole()
-        prepareUnshieldFailure = new (PPv1NoteUnavailableError as any)(1n, 'insufficient-balance')
+        prepareUnshieldFailure = new (PPv1NoteUnavailableError as any)(
+          4242n,
+          'insufficient-balance'
+        )
 
         const { controller } = await prepareFromDeposit(
-          [{ label: 1n, amount: ONE_ETH, approved: true }],
+          [{ label: 4242n, amount: ONE_ETH, approved: true }],
           1
         )
 
@@ -3974,6 +3988,13 @@ describe('PrivacyPoolsController', () => {
           status: 'failed',
           error: DEPOSIT_UNAVAILABLE_ERROR
         })
+        // The label and balance would link the withdrawal to its deposit in a log or crash report
+        const emitted = controller.emittedErrors.at(-1)?.error
+        expect(emitted).not.toHaveProperty('error', prepareUnshieldFailure)
+        expect(emitted).toHaveProperty(
+          'error.message',
+          'privacyPools: the SDK cannot spend the chosen note (insufficient-balance)'
+        )
         restore()
       })
     })

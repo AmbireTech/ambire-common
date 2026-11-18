@@ -103,7 +103,7 @@ const isEveryRelayerFeeTooHigh = ({ failures }: PPv1RelayerQuoteError) =>
 const toReadableWithdrawalError = (error: unknown) => {
   // The SDK's sync before proving found the chosen deposit can no longer pay
   if (error instanceof PPv1NoteUnavailableError)
-    return privacyPoolsErrors.withdrawalDepositUnavailable(error)
+    return privacyPoolsErrors.withdrawalDepositUnavailable(error.reason)
   // No relayer gave a usable quote: each failed, or quoted a fee above what the pool allows
   if (error instanceof PPv1RelayerQuoteError && isEveryRelayerFeeTooHigh(error))
     return privacyPoolsErrors.withdrawalRelayerFeeTooHigh(error)

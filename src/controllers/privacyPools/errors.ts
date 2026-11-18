@@ -1,3 +1,4 @@
+import type { PPv1NoteUnavailableReason } from '@kohaku-eth/privacy-pools'
 import { formatUnits } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
@@ -127,14 +128,15 @@ export const privacyPoolsErrors = {
       'Another transfer from a Privacy Pools account is still in progress. Please wait for it to finish.',
       'a withdrawal is already in flight'
     ),
-  withdrawalDepositUnavailable: (sdkError?: Error) =>
-    new EmittableError({
-      message:
-        'This deposit does not have enough left for this amount. Please send less, or pick another deposit.',
-      level: 'expected',
-      error:
-        sdkError ?? new Error('privacyPools: the chosen note is missing, not approved or too small')
-    }),
+  // Only the SDK's reason, never its error: that names the note's label and balance, which link
+  // the withdrawal to its deposit if they reach a log or a crash report
+  withdrawalDepositUnavailable: (sdkReason?: PPv1NoteUnavailableReason) =>
+    expectedError(
+      'This deposit does not have enough left for this amount. Please send less, or pick another deposit.',
+      sdkReason
+        ? `the SDK cannot spend the chosen note (${sdkReason})`
+        : 'the chosen note is missing, not approved or too small'
+    ),
   withdrawalDepositBusy: () =>
     expectedError(
       'Your previous transfer from this deposit is still being confirmed. Please try again once it is.',
