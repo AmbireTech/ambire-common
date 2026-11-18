@@ -482,6 +482,30 @@ describe('Defi positions helper and portfolio functions', () => {
       expect(aave.collateralInUSD).toBe(200)
       expect(uniswap.collateralInUSD).toBe(uniswap.positionInUSD)
     })
+    it('Counts a loan without a price as zero, so the value without loans is the net value', () => {
+      const { positionsByProvider } = (PORTFOLIO_STATE['1']!.result as PortfolioNetworkResult)
+        .defiPositions
+      const positionsWithUnpricedLoans = positionsByProvider.map((provider) => ({
+        ...provider,
+        positions: provider.positions.map((position) => ({
+          ...position,
+          assets: position.assets.map((asset) =>
+            asset.type === AssetType.Borrow
+              ? { ...asset, priceIn: undefined, value: undefined }
+              : asset
+          )
+        }))
+      }))
+
+      const mergedPositions = getUniqueMergedPositions(positionsWithUnpricedLoans, [], null)
+      const aave = mergedPositions.find(({ providerName }) => providerName === 'AAVE v3')!
+
+      expect(aave.positionInUSD).toBeGreaterThan(0)
+      expect(aave.collateralInUSD).toBe(aave.positionInUSD)
+      expect(aave.positions[0]!.additionalData.collateralInUSD).toBe(
+        aave.positions[0]!.additionalData.positionInUSD
+      )
+    })
   })
   describe('getFormattedApiPositions', () => {
     it('Invalid positions are filtered out', () => {

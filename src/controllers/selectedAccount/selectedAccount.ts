@@ -473,13 +473,37 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   }
 
   /**
+   * Recalculates the balances of all listed accounts from their loaded portfolios, after a change
+   * of a setting that the balance depends on. An account whose portfolio is not loaded loses its
+   * balance until it loads, since its old balance used the previous setting.
+   */
+  #recalculateBalanceByAccounts() {
+    const portfolio = this.#portfolio
+    if (!portfolio) return
+
+    Object.keys(this.balanceByAccounts).forEach((accountAddr) => {
+      const accountPortfolio = calculateSelectedAccountPortfolio(
+        portfolio.getAccountPortfolioState(accountAddr),
+        false,
+        false,
+        this.shouldSubtractBorrowedFunds
+      )
+
+      if (accountPortfolio.isAllReady) {
+        this.balanceByAccounts[accountAddr] = accountPortfolio.totalBalance
+      } else {
+        delete this.balanceByAccounts[accountAddr]
+      }
+    })
+  }
+
+  /**
    * Saves whether the total balance subtracts borrowed funds and recalculates the selected
-   * account's portfolio. The other accounts show no balance until they are selected again.
+   * account's portfolio and the balances of all accounts.
    */
   async setShouldSubtractBorrowedFunds(shouldSubtractBorrowedFunds: boolean) {
     this.shouldSubtractBorrowedFunds = shouldSubtractBorrowedFunds
-    // The balances of the other accounts were calculated with the previous setting
-    this.balanceByAccounts = {}
+    this.#recalculateBalanceByAccounts()
     this.updateSelectedAccountPortfolio(true)
     this.emitUpdate()
 
