@@ -15,6 +15,7 @@ import {
   getAddressVisualization,
   getDeadline,
   getLabel,
+  getDeclaredDomain,
   getToken,
   isExactTypedData
 } from './utils'
@@ -25,6 +26,14 @@ const address3 = '0xcccccccccccccccccccccccccccccccccccccccc'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 const NFT_ADDRESS = '0x026224A2940bFE258D0dbE947919B62fE321F042'
 const DAI_ADDRESS = '0x6b175474e89094c44da98b954eedeac495271d0f'
+/** Declares every standard domain field, so the humanizers can read all of them */
+const EIP712_DOMAIN_FIELDS = [
+  { name: 'name', type: 'string' },
+  { name: 'version', type: 'string' },
+  { name: 'chainId', type: 'uint256' },
+  { name: 'verifyingContract', type: 'address' },
+  { name: 'salt', type: 'bytes32' }
+]
 const typedMessages = {
   erc20: [
     {
@@ -396,7 +405,7 @@ describe('typed message tests', () => {
           verifyingContract: WETH_ADDRESS,
           salt: '1'
         },
-        types: { EIP712Domain: [], Permit: ERC2612_PERMIT_FIELDS },
+        types: { EIP712Domain: EIP712_DOMAIN_FIELDS, Permit: ERC2612_PERMIT_FIELDS },
         message: {},
         primaryType: 'Permit'
       }
@@ -419,7 +428,7 @@ describe('typed message tests', () => {
   })
   const setDaiPermitMessage = (message: Record<string, any>) => {
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
-      EIP712Domain: [],
+      EIP712Domain: EIP712_DOMAIN_FIELDS,
       Permit: DAI_PERMIT_FIELDS
     }
     messageTemplate.content.message = message
@@ -507,7 +516,7 @@ describe('typed message tests', () => {
     ]
 
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
-      EIP712Domain: [],
+      EIP712Domain: EIP712_DOMAIN_FIELDS,
       Permit: ERC721_PERMIT_FIELDS
     }
     messageTemplate.content.message = typedMessages.erc721[0]!
@@ -522,7 +531,7 @@ describe('typed message tests', () => {
     // `amount` instead of `value` is not recognized by the erc20 module. `tokenId`
     // and `deadline` are not in the signed Permit type, so they must not be shown
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
-      EIP712Domain: [],
+      EIP712Domain: EIP712_DOMAIN_FIELDS,
       Permit: [
         { name: 'owner', type: 'address' },
         { name: 'spender', type: 'address' },
@@ -552,7 +561,7 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
-      EIP712Domain: [],
+      EIP712Domain: EIP712_DOMAIN_FIELDS,
       ...PERMIT2_PERMIT_SINGLE_TYPES
     }
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
@@ -579,7 +588,7 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
-      EIP712Domain: [],
+      EIP712Domain: EIP712_DOMAIN_FIELDS,
       ...PERMIT2_PERMIT_BATCH_TYPES
     }
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
@@ -602,7 +611,7 @@ describe('typed message tests', () => {
       getDeadline(1770952162n)
     ]
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
-      EIP712Domain: [],
+      EIP712Domain: EIP712_DOMAIN_FIELDS,
       ...PERMIT2_TRANSFER_FROM_TYPES
     }
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
@@ -621,7 +630,7 @@ describe('typed message tests', () => {
     message: Record<string, any>
   ) => {
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
-      EIP712Domain: [],
+      EIP712Domain: EIP712_DOMAIN_FIELDS,
       ...types
     }
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
@@ -901,7 +910,7 @@ describe('typed message tests', () => {
       chainId: 1n,
       verifyingContract: SEAPORT_ADDRESS
     }
-    content.types = { EIP712Domain: [], ...types }
+    content.types = { EIP712Domain: EIP712_DOMAIN_FIELDS, ...types }
     content.primaryType = primaryType
     messageTemplate.content.message = message
   }
@@ -938,7 +947,7 @@ describe('typed message tests', () => {
   ) => {
     const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
     content.domain = { name: 'snapshot', version: '0.1.4' }
-    content.types = { EIP712Domain: [], [primaryType]: fields }
+    content.types = { EIP712Domain: EIP712_DOMAIN_FIELDS, [primaryType]: fields }
     content.primaryType = primaryType
     messageTemplate.content.message = message
   }
@@ -982,7 +991,7 @@ describe('typed message tests', () => {
   ) => {
     const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
     content.domain = { name: 'Ethereum Name Service', version: '1' }
-    content.types = { EIP712Domain: [], Upload: fields }
+    content.types = { EIP712Domain: EIP712_DOMAIN_FIELDS, Upload: fields }
     content.primaryType = 'Upload'
     messageTemplate.content.message = message
   }
@@ -1028,6 +1037,69 @@ describe('typed message tests', () => {
     )
     const { fullVisualization } = humanize(messageTemplate)
     compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+
+  const withoutDomainField = (fieldName: string) =>
+    EIP712_DOMAIN_FIELDS.filter(({ name }) => name !== fieldName)
+
+  test.each([
+    ['not declared', withoutDomainField('verifyingContract')],
+    [
+      'declared with a non-standard type',
+      [...withoutDomainField('verifyingContract'), { name: 'verifyingContract', type: 'string' }]
+    ],
+    ['in a typed message without EIP712Domain', undefined]
+  ])('a Permit whose verifyingContract is %s is not humanized', (_, domainFields) => {
+    // The signature does not include such a verifyingContract, so it must not be shown as the token
+    const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    content.types = { Permit: ERC2612_PERMIT_FIELDS }
+    if (domainFields) content.types.EIP712Domain = domainFields
+    messageTemplate.content.message = typedMessages.erc20[0]!
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
+  })
+
+  test('a Permit2 PermitSingle whose verifyingContract is not declared is not humanized', () => {
+    const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    content.types = {
+      EIP712Domain: withoutDomainField('verifyingContract'),
+      ...PERMIT2_PERMIT_SINGLE_TYPES
+    }
+    content.primaryType = 'PermitSingle'
+    content.domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+    messageTemplate.content.message = {
+      details: { token: WETH_ADDRESS, amount: 1n, expiration: 1n, nonce: 1n },
+      spender: address2,
+      sigDeadline: 968187600n
+    }
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
+  })
+
+  test('a Snapshot vote whose domain name is not declared is not humanized', () => {
+    setSnapshotMessage('Vote', SNAPSHOT_VOTE_FIELDS, {
+      from: address1,
+      space: 'ambire.eth',
+      timestamp: 1n,
+      proposal: `0x${'11'.repeat(32)}`,
+      choice: 1,
+      reason: '',
+      app: 'snapshot',
+      metadata: '{}'
+    })
+    const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    content.types.EIP712Domain = withoutDomainField('name')
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
+  })
+
+  test('an ENS upload whose domain name is not declared is not humanized', () => {
+    setEnsUploadMessage(ENS_UPLOAD_FIELDS, {
+      upload: 'avatar',
+      expiry: '968187600000',
+      name: 'ambire.eth',
+      hash: '0x1234'
+    })
+    const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    content.types.EIP712Domain = withoutDomainField('name')
+    expect(humanize(messageTemplate).fullVisualization).toHaveLength(0)
   })
 
   test('cowswap module sell order', () => {
@@ -1138,7 +1210,7 @@ describe('typed message tests', () => {
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
       'AmbireOperation'
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
-      EIP712Domain: [],
+      EIP712Domain: EIP712_DOMAIN_FIELDS,
       AmbireOperation: [
         { name: 'account', type: 'address' },
         { name: 'hash', type: 'bytes32' }
@@ -1157,7 +1229,7 @@ describe('typed message tests', () => {
   test('a typed message is humanized only by the humanizer of its primary type', () => {
     // Only `Mail` is signed. The unused `PermitSingle` type and the permit keys are not
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
-      EIP712Domain: [],
+      EIP712Domain: EIP712_DOMAIN_FIELDS,
       Mail: [{ name: 'contents', type: 'string' }],
       PermitSingle: [{ name: 'details', type: 'PermitDetails' }]
     }
@@ -1199,7 +1271,7 @@ describe('typed message tests', () => {
       // An empty array is truthy. The sign screen would treat it as humanized and
       // let the user sign without reading the raw message
       const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
-      content.types = { EIP712Domain: [], [primaryType]: fields }
+      content.types = { EIP712Domain: EIP712_DOMAIN_FIELDS, [primaryType]: fields }
       content.primaryType = primaryType
       content.domain.verifyingContract = verifyingContract
       messageTemplate.content.message = { salt: 1n, choice: 1, space: 'x', details: {} }
@@ -1236,7 +1308,7 @@ describe('typed message tests', () => {
         content: {
           kind: 'typedMessage',
           domain: { name: 'random contract', version: '1', chainId: 1n },
-          types: { EIP712Domain: [], [primaryType]: [] },
+          types: { EIP712Domain: EIP712_DOMAIN_FIELDS, [primaryType]: [] },
           primaryType,
           message: {}
         }
@@ -1259,7 +1331,7 @@ describe('typed message tests', () => {
     ({ primaryType, details }) => {
       const content = messageTemplate.content as TypedMessageUserRequest['meta']['params']
       content.types = {
-        EIP712Domain: [],
+        EIP712Domain: EIP712_DOMAIN_FIELDS,
         ...(primaryType === 'PermitSingle'
           ? PERMIT2_PERMIT_SINGLE_TYPES
           : PERMIT2_PERMIT_BATCH_TYPES)
@@ -1300,7 +1372,7 @@ describe('typed message tests', () => {
     }
   ])('a Permit that $case is not humanized', ({ fields }) => {
     ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
-      EIP712Domain: [],
+      EIP712Domain: EIP712_DOMAIN_FIELDS,
       Permit: fields
     }
     messageTemplate.content.message = {
@@ -1319,7 +1391,7 @@ describe('typed message tests', () => {
       chainId: 1n,
       verifyingContract: '0x9008D19f58AAbD9eD0D60971565AA8510560ab41'
     }
-    content.types = { EIP712Domain: [], Order: COW_SWAP_ORDER_FIELDS }
+    content.types = { EIP712Domain: EIP712_DOMAIN_FIELDS, Order: COW_SWAP_ORDER_FIELDS }
     content.primaryType = 'Order'
     // `BigInt('not a number')` throws inside the CoW Swap humanizer
     messageTemplate.content.message = {
@@ -1534,5 +1606,60 @@ describe('isExactTypedData', () => {
         expected
       )
     ).toBe(false)
+  })
+})
+
+describe('getDeclaredDomain', () => {
+  const domain = {
+    name: 'USD Coin',
+    version: '2',
+    chainId: 1n,
+    verifyingContract: WETH_ADDRESS,
+    salt: `0x${'00'.repeat(32)}`
+  }
+
+  test('returns every domain field that EIP712Domain declares with its standard type', () => {
+    expect(getDeclaredDomain({ types: { EIP712Domain: EIP712_DOMAIN_FIELDS }, domain })).toEqual(
+      domain
+    )
+  })
+
+  test('drops the domain fields that EIP712Domain does not declare', () => {
+    const types = {
+      EIP712Domain: [
+        { name: 'name', type: 'string' },
+        { name: 'chainId', type: 'uint256' }
+      ]
+    }
+    expect(getDeclaredDomain({ types, domain })).toEqual({ name: 'USD Coin', chainId: 1n })
+  })
+
+  test('drops a field that is declared with a non-standard type', () => {
+    const types = {
+      EIP712Domain: [
+        { name: 'name', type: 'bytes32' },
+        { name: 'verifyingContract', type: 'string' },
+        { name: 'chainId', type: 'uint256' }
+      ]
+    }
+    expect(getDeclaredDomain({ types, domain })).toEqual({ chainId: 1n })
+  })
+
+  test('drops a non-standard domain field, even when it is declared', () => {
+    const types = { EIP712Domain: [{ name: 'website', type: 'string' }] }
+    expect(getDeclaredDomain({ types, domain: { website: 'example.com' } as any })).toEqual({})
+  })
+
+  test('does not add a declared field that the domain does not have', () => {
+    expect(
+      getDeclaredDomain({ types: { EIP712Domain: EIP712_DOMAIN_FIELDS }, domain: { name: 'A' } })
+    ).toEqual({ name: 'A' })
+  })
+
+  test('returns an empty domain without EIP712Domain', () => {
+    expect(getDeclaredDomain({ types: {}, domain })).toEqual({})
+    // An inherited `EIP712Domain` is not declared
+    const types = Object.create({ EIP712Domain: EIP712_DOMAIN_FIELDS })
+    expect(getDeclaredDomain({ types, domain })).toEqual({})
   })
 })

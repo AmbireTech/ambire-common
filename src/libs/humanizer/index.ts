@@ -15,7 +15,7 @@ import {
   getTypedMessageHumanizer,
   plainTextMessageModules
 } from './messageModules'
-import { dedupeWarnings } from './utils'
+import { dedupeWarnings, getDeclaredDomain } from './utils'
 
 /**
  * Humanizes a message with the message modules. A typed message uses only the
@@ -30,7 +30,11 @@ const humanizeMessageWithModules = (message: Message): HumanizerMessageResult | 
   try {
     if (content.kind === 'typedMessage') {
       const humanizeTypedMessage = getTypedMessageHumanizer(content.primaryType)
-      return humanizeTypedMessage ? humanizeTypedMessage({ ...message, content }) : null
+      if (!humanizeTypedMessage) return null
+      // Domain fields that `EIP712Domain` does not declare are not signed, so no typed
+      // humanizer gets them (e.g. an undeclared `verifyingContract` must not be shown as the token)
+      const contentWithDeclaredDomain = { ...content, domain: getDeclaredDomain(content) }
+      return humanizeTypedMessage({ ...message, content: contentWithDeclaredDomain })
     }
     if (content.kind === 'message')
       return getFirstHumanization(plainTextMessageModules, { ...message, content })

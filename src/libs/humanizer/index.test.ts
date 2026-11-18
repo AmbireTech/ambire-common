@@ -448,6 +448,13 @@ describe('TypedMessages', () => {
         salt: '1'
       },
       types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' },
+          { name: 'salt', type: 'bytes32' }
+        ],
         PermitBatch: [
           { name: 'details', type: 'PermitDetails[]' },
           { name: 'spender', type: 'address' },
@@ -3753,6 +3760,12 @@ describe('ERC-7730 descriptors', () => {
       content: {
         kind: 'typedMessage',
         types: {
+          EIP712Domain: [
+            { name: 'name', type: 'string' },
+            { name: 'version', type: 'string' },
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
           Permit: [
             { name: 'owner', type: 'address' },
             { name: 'spender', type: 'address' },

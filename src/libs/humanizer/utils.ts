@@ -1,3 +1,4 @@
+import type { TypedDataDomain } from 'ethers'
 import { getAddress, Hex, isAddress, isHex, zeroAddress } from 'viem'
 
 import {
@@ -138,6 +139,45 @@ export function isExactTypedData(
   if (primaryType !== expected.primaryType || !hasExactTypes(types, expected)) return false
 
   return hasAllDeclaredMessageFields(types, primaryType, message)
+}
+
+/** The standard EIP-712 domain fields, with the type each one must be declared with */
+const EIP712_DOMAIN_FIELD_TYPES: Record<keyof TypedDataDomain, string> = {
+  name: 'string',
+  version: 'string',
+  chainId: 'uint256',
+  verifyingContract: 'address',
+  salt: 'bytes32'
+}
+
+const isStandardDomainField = (
+  field: TypedDataField
+): field is TypedDataField & {
+  name: keyof TypedDataDomain
+} =>
+  Object.entries(EIP712_DOMAIN_FIELD_TYPES).some(
+    ([name, type]) => name === field.name && type === field.type
+  )
+
+/**
+ * Returns only the domain fields that `types.EIP712Domain` declares with their standard
+ * type. The signature includes only these, so humanizers must not read other domain
+ * fields. Without `EIP712Domain`, no field is declared (the wallet does not sign such
+ * a typed message).
+ */
+export function getDeclaredDomain(typedData: {
+  types: Record<string, TypedDataField[]>
+  domain: TypedDataDomain
+}): TypedDataDomain {
+  const { types, domain } = typedData
+  const declaredFields = Object.hasOwn(types, 'EIP712Domain') ? types.EIP712Domain : undefined
+  if (!Array.isArray(declaredFields) || !isPlainObject(domain)) return {}
+
+  const declaredDomain: TypedDataDomain = {}
+  declaredFields.filter(isStandardDomainField).forEach(({ name }) => {
+    if (Object.hasOwn(domain, name)) Object.assign(declaredDomain, { [name]: domain[name] })
+  })
+  return declaredDomain
 }
 
 /** Returns the declared EIP-712 type of a field, or undefined when the field is not declared (not signed) */
