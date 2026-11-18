@@ -1053,6 +1053,26 @@ describe('CowSwapAPI', () => {
       expect(jest.getTimerCount()).toBe(0)
     })
 
+    it('does not hold the quote or the pair for long when the slippage response body stalls', async () => {
+      jest.useFakeTimers()
+      const smartSlippageResponse = (jest.fn() as any)
+        .mockResolvedValueOnce({ ok: true, status: 200, json: () => new Promise(() => {}) })
+        .mockResolvedValue(makeResponse({ slippageBps: 73 }))
+      const fetch = makeQuoteFetch(smartSlippageResponse)
+      const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+      const quote = api.quote(makeQuoteParams())
+      await jest.advanceTimersByTimeAsync(COWSWAP_SMART_SLIPPAGE_TIMEOUT_MS)
+
+      expectOrderSlippage((await quote).routes[0]!, 50n)
+      expect(jest.getTimerCount()).toBe(0)
+
+      // The stalled request counts as a failure, so the pair is asked again shortly after
+      jest.advanceTimersByTime(COWSWAP_SMART_SLIPPAGE_FAILURE_CACHE_MS)
+      expectOrderSlippage((await api.quote(makeQuoteParams())).routes[0]!, 73n)
+      expect(getSmartSlippageCalls(fetch)).toHaveLength(2)
+    })
+
     it('looks up the market of the wrapped native token when buying the native token', async () => {
       const fetch = makeQuoteFetch(async () => makeResponse({ slippageBps: 45 }))
       const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })

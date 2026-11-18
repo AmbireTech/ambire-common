@@ -131,17 +131,14 @@ export class CowSwapAPI implements SwapProvider {
     return `${COWSWAP_API_BASE_URL}/${apiNetwork}/api/${version}${path}`
   }
 
-  async #fetchWithTimeout(
-    url: string,
-    init?: RequestInitWithCustomHeaders,
-    timeoutMs = this.#requestTimeoutMs
-  ) {
+  /** Rejects with a "temporarily unavailable" error if `promise` doesn't settle in `timeoutMs` */
+  async #withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
     let timeout: NodeJS.Timeout | undefined
 
     try {
       return await Promise.race([
-        this.#fetch(url, init),
-        new Promise<CustomResponse>((_, reject) => {
+        promise,
+        new Promise<never>((_, reject) => {
           timeout = setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
@@ -151,6 +148,19 @@ export class CowSwapAPI implements SwapProvider {
           }, timeoutMs)
         })
       ])
+    } finally {
+      if (timeout) clearTimeout(timeout)
+    }
+  }
+
+  /** Times out the response headers only; reading the body is up to the caller */
+  async #fetchWithTimeout(
+    url: string,
+    init?: RequestInitWithCustomHeaders,
+    timeoutMs = this.#requestTimeoutMs
+  ) {
+    try {
+      return await this.#withTimeout(this.#fetch(url, init), timeoutMs)
     } catch (error: any) {
       if (error instanceof SwapAndBridgeProviderApiError) throw error
 
@@ -158,8 +168,6 @@ export class CowSwapAPI implements SwapProvider {
       throw new SwapAndBridgeProviderApiError(
         `Our service provider CoW Swap could not be reached. Error details: <${message}>`
       )
-    } finally {
-      if (timeout) clearTimeout(timeout)
     }
   }
 
@@ -195,14 +203,12 @@ export class CowSwapAPI implements SwapProvider {
     url: string
   ): Promise<{ slippageBps: number | null; hasFailed: boolean }> {
     try {
-      const response = await this.#fetchWithTimeout(
-        url,
-        { headers: this.#headers },
+      // The timeout covers reading the body too, so that a stalled body can't hold the request
+      const body = await this.#withTimeout(
+        this.#fetch(url, { headers: this.#headers }).then((response) =>
+          this.#parseResponse<unknown>(response, 'Unable to fetch the recommended slippage.')
+        ),
         COWSWAP_SMART_SLIPPAGE_TIMEOUT_MS
-      )
-      const body = await this.#parseResponse<unknown>(
-        response,
-        'Unable to fetch the recommended slippage.'
       )
       return { slippageBps: parseSmartSlippageBps(body), hasFailed: false }
     } catch (error: unknown) {
@@ -244,7 +250,8 @@ export class CowSwapAPI implements SwapProvider {
     const request = this.#fetchSmartSlippageBps(
       `${COWSWAP_BFF_BASE_URL}/${chainId}/markets/${sellToken}-${marketBuyToken}/slippageTolerance`
     )
-    // The request in progress doesn't expire. It always settles, because it times out
+    // The request in progress doesn't expire. It always settles, because both the request
+    // and reading its body time out
     const entry = {
       expiresAt: Infinity,
       slippageBps: request.then(({ slippageBps }) => slippageBps)
