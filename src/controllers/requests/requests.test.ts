@@ -933,6 +933,48 @@ describe('RequestsController ', () => {
     })
   })
 
+  describe('upper-case call data', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const to = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const lowerCaseData = `0xa9059cbb${'00'.repeat(12)}${'ab'.repeat(20)}${'00'.repeat(29)}abcdef`
+    const upperCaseData = `0x${lowerCaseData.slice(2).toUpperCase()}`
+
+    const buildCallsRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      data: string
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [{ to, value: 0n, data }],
+            meta: { accountAddr, chainId: 1n }
+          }
+        }
+      })
+
+    const getCallDatas = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.userRequests
+        .filter((r) => r.kind === 'calls')
+        .flatMap((r) => r.signAccountOp.accountOp.calls.map((call) => call.data))
+
+    test('a new request keeps the call data in lower case', async () => {
+      const { controller } = await prepareTest()
+      await buildCallsRequest(controller, upperCaseData)
+
+      expect(getCallDatas(controller)).toEqual([lowerCaseData])
+    })
+
+    test('calls added to an open request keep their call data in lower case', async () => {
+      const { controller } = await prepareTest()
+      await buildCallsRequest(controller, lowerCaseData)
+      await buildCallsRequest(controller, upperCaseData)
+
+      expect(getCallDatas(controller)).toEqual([lowerCaseData, lowerCaseData])
+    })
+  })
+
   describe('closing the side panel', () => {
     /** Requests show up in the panel, which has no window of its own. */
     const prepareSidePanelTest = async () => {

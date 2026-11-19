@@ -718,6 +718,46 @@ describe('toCallsUserRequest', () => {
 
     expect(decodedCalls).toEqual(calls)
   })
+
+  test('lower-cases the calldata of a queued transaction', () => {
+    const data = new Interface(['function transfer(address,uint256)']).encodeFunctionData(
+      'transfer',
+      [ZeroAddress, 0xabcdefn]
+    )
+
+    const { calls } = toCallsUserRequest(SAFE_ADDRESS, {
+      '1': {
+        txns: [buildSafeTransaction({ data: `0x${data.slice(2).toUpperCase()}` })],
+        messages: []
+      }
+    })[0]!.params.userRequestParams
+
+    expect(calls).toEqual([{ to: ZeroAddress, value: 0n, data }])
+  })
+
+  test('lower-cases the calldata of the calls in an upper-case multiSend batch', () => {
+    const innerData = new Interface(['function transfer(address,uint256)']).encodeFunctionData(
+      'transfer',
+      [ZeroAddress, 0xabcdefn]
+    )
+    const encodedCalls = solidityPacked(
+      ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+      [0, ZeroAddress, 0n, BigInt(getBytes(innerData).length), innerData]
+    )
+    const data = new Interface(['function multiSend(bytes transactions)']).encodeFunctionData(
+      'multiSend',
+      [encodedCalls]
+    )
+
+    const { calls } = toCallsUserRequest(SAFE_ADDRESS, {
+      '1': {
+        txns: [buildSafeTransaction({ data: `0x${data.slice(2).toUpperCase()}` })],
+        messages: []
+      }
+    })[0]!.params.userRequestParams
+
+    expect(calls).toEqual([{ to: ZeroAddress, value: 0n, data: innerData }])
+  })
 })
 
 describe('getSafeAccountByOwner', () => {
@@ -993,7 +1033,10 @@ describe('Safe owner approvals (approveHash)', () => {
     expect(call.to).toBe(getAddress(SAFE_ADDRESS))
     expect(call.value).toBe(0n)
     expect(
-      new Interface(['function approveHash(bytes32)']).decodeFunctionData('approveHash', call.data)[0]
+      new Interface(['function approveHash(bytes32)']).decodeFunctionData(
+        'approveHash',
+        call.data
+      )[0]
     ).toBe(SAFE_TX_HASH)
   })
 
