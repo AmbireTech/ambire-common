@@ -384,6 +384,52 @@ describe('Defi positions helper and portfolio functions', () => {
         })
       })
     })
+    it('Sets the value of each app and position without their loans subtracted', () => {
+      const { positionsByProvider } = (PORTFOLIO_STATE['1']!.result as PortfolioNetworkResult)
+        .defiPositions
+      // Clear the fixture values to check that they are calculated
+      const positionsWithoutCollateralValues = positionsByProvider.map((provider) => ({
+        ...provider,
+        collateralInUSD: undefined,
+        positions: provider.positions.map((position) => ({
+          ...position,
+          additionalData: { ...position.additionalData, collateralInUSD: undefined }
+        }))
+      }))
+
+      const mergedPositions = getUniqueMergedPositions(positionsWithoutCollateralValues, [], null)
+      const aave = mergedPositions.find(({ providerName }) => providerName === 'AAVE v3')!
+      const uniswap = mergedPositions.find(({ providerName }) => providerName === 'Uniswap V2')!
+
+      // $30 borrowed in GHO and EURC against $200 supplied in WETH and cbBTC
+      expect(aave.positions[0]!.additionalData.collateralInUSD).toBe(200)
+      expect(aave.collateralInUSD).toBe(200)
+      expect(uniswap.collateralInUSD).toBe(uniswap.positionInUSD)
+    })
+    it('Counts a loan without a price as zero, so the value without loans is the net value', () => {
+      const { positionsByProvider } = (PORTFOLIO_STATE['1']!.result as PortfolioNetworkResult)
+        .defiPositions
+      const positionsWithUnpricedLoans = positionsByProvider.map((provider) => ({
+        ...provider,
+        positions: provider.positions.map((position) => ({
+          ...position,
+          assets: position.assets.map((asset) =>
+            asset.type === AssetType.Borrow
+              ? { ...asset, priceIn: undefined, value: undefined }
+              : asset
+          )
+        }))
+      }))
+
+      const mergedPositions = getUniqueMergedPositions(positionsWithUnpricedLoans, [], null)
+      const aave = mergedPositions.find(({ providerName }) => providerName === 'AAVE v3')!
+
+      expect(aave.positionInUSD).toBeGreaterThan(0)
+      expect(aave.collateralInUSD).toBe(aave.positionInUSD)
+      expect(aave.positions[0]!.additionalData.collateralInUSD).toBe(
+        aave.positions[0]!.additionalData.positionInUSD
+      )
+    })
   })
   describe('getNewDefiState', () => {
     const getStoredPositions = (
@@ -426,7 +472,6 @@ describe('Defi positions helper and portfolio functions', () => {
         [],
         null,
         undefined,
-        true,
         true
       )
 
@@ -442,7 +487,6 @@ describe('Defi positions helper and portfolio functions', () => {
         [],
         null,
         undefined,
-        true,
         true
       )
 
@@ -467,7 +511,6 @@ describe('Defi positions helper and portfolio functions', () => {
         [],
         null,
         undefined,
-        true,
         true
       )
 
@@ -481,7 +524,11 @@ describe('Defi positions helper and portfolio functions', () => {
         return { ...pastState, defiPositions: { ...pastState.defiPositions, lastSuccessfulUpdate } }
       }
 
-      it('is refreshed after a successful API call', () => {
+      // A skipped API call (e.g. while auto discovery is off) counts as successful, so the DeFi
+      // error banner still waits for the time without a successful update to pass. The API is
+      // called again once auto discovery is back on, as all accounts are marked as outdated then
+      // (see `markAllAccountsAsOutdated`)
+      it('is refreshed after the API call succeeds or is skipped', () => {
         const res = getNewDefiState(
           getPastStateUpdatedAt(1),
           null,
@@ -490,26 +537,10 @@ describe('Defi positions helper and portfolio functions', () => {
           [],
           null,
           undefined,
-          true,
           true
         )
 
         expect(res.lastSuccessfulUpdate).toBeGreaterThan(1)
-      })
-      it('is not refreshed while auto discovery is off, so the API is called once it is on', () => {
-        const res = getNewDefiState(
-          getPastStateUpdatedAt(1),
-          null,
-          [customAave],
-          null,
-          [],
-          null,
-          undefined,
-          false,
-          true
-        )
-
-        expect(res.lastSuccessfulUpdate).toBe(1)
       })
       it('is not refreshed when reading the positions from the chain fails', () => {
         const res = getNewDefiState(
@@ -520,7 +551,6 @@ describe('Defi positions helper and portfolio functions', () => {
           [],
           null,
           undefined,
-          true,
           true
         )
 
@@ -536,12 +566,10 @@ describe('Defi positions helper and portfolio functions', () => {
       const callGetNewDefiState = ({
         customPositionsError = null,
         providerErrors = [],
-        isAutoDiscoveryEnabled = true,
         hasReadRpcPositions = true
       }: {
         customPositionsError?: DeFiPositionsError | null
         providerErrors?: { providerName: string; error: string }[]
-        isAutoDiscoveryEnabled?: boolean
         hasReadRpcPositions?: boolean
       }) =>
         getNewDefiState(
@@ -552,15 +580,11 @@ describe('Defi positions helper and portfolio functions', () => {
           providerErrors,
           null,
           undefined,
-          isAutoDiscoveryEnabled,
           hasReadRpcPositions
         )
 
-      it('is refreshed after reading the positions without errors, with auto discovery on or off', () => {
+      it('is refreshed after reading the positions without errors', () => {
         expect(callGetNewDefiState({}).lastRpcUpdate).toBeGreaterThan(1)
-        expect(callGetNewDefiState({ isAutoDiscoveryEnabled: false }).lastRpcUpdate).toBeGreaterThan(
-          1
-        )
       })
       it('is not refreshed when the read was skipped', () => {
         expect(callGetNewDefiState({ hasReadRpcPositions: false }).lastRpcUpdate).toBe(1)

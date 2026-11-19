@@ -1,8 +1,6 @@
 import { parseUnits, ZeroAddress } from 'ethers'
 import { getAddress, isHex } from 'viem'
 
-import { getSanitizedAmount } from '@/libs/transfer/amount'
-
 import { AccountId } from '../../interfaces/account'
 import { RPCProviders } from '../../interfaces/provider'
 import {
@@ -16,7 +14,13 @@ import {
   FormattedPortfolioDiscoveryResponse,
   PortfolioNetworkResult
 } from '../portfolio/interfaces'
-import { getAssetValue, getProviderId, isTokenPriceWithinHalfPercent } from './helpers'
+import { getSanitizedAmount } from '../transfer/amount'
+import {
+  getAssetValue,
+  getProviderId,
+  isTokenPriceWithinHalfPercent,
+  withCollateralValues
+} from './helpers'
 import { getStakedWalletPositions } from './stkWallet'
 import {
   AssetType,
@@ -65,15 +69,19 @@ const getUniqueMergedPositions = (
   let positionsArray = Array.from(debankPositionMap.values())
 
   // Sort the assets, positions by provider and provider positions by their value in USD descending
-  positionsArray = positionsArray.map((providerPositions) => ({
-    ...providerPositions,
-    positions: providerPositions.positions
-      .map((position) => ({
-        ...position,
-        assets: position.assets.sort((a, b) => (b.value || 0) - (a.value || 0))
-      }))
-      .sort((a, b) => (b.additionalData.positionInUSD || 0) - (a.additionalData.positionInUSD || 0))
-  }))
+  positionsArray = positionsArray.map((providerPositions) =>
+    withCollateralValues({
+      ...providerPositions,
+      positions: providerPositions.positions
+        .map((position) => ({
+          ...position,
+          assets: position.assets.sort((a, b) => (b.value || 0) - (a.value || 0))
+        }))
+        .sort(
+          (a, b) => (b.additionalData.positionInUSD || 0) - (a.additionalData.positionInUSD || 0)
+        )
+    })
+  )
 
   positionsArray = positionsArray.sort((a, b) => (b.positionInUSD || 0) - (a.positionInUSD || 0))
 
@@ -112,9 +120,8 @@ const getAllAssetsAsHints = (
  * from Debank and custom providers and the previous state.
  * It ensures that positions are unique, merged correctly and that if the
  * latest Debank call failed, the previous positions are retained.
- * While auto discovery is off, the time of the last successful update isn't refreshed, as the
- * API isn't called. The time of the last read from the chain is refreshed only if the positions
- * were read in this update without errors.
+ * The time of the last read from the chain is refreshed only if the positions were read in
+ * this update without errors.
  */
 const getNewDefiState = (
   pastPortfolioState: PortfolioNetworkResult | undefined,
@@ -124,7 +131,6 @@ const getNewDefiState = (
   customProvidersErrors: ProviderError[],
   stkWalletToken: TokenResult | null,
   nonceId: string | undefined,
-  isAutoDiscoveryEnabled: boolean,
   hasReadRpcPositions: boolean
 ): NetworkState => {
   const isForceApiUpdate = !!discoveryResponse?.data?.defi?.isForceUpdate
@@ -146,12 +152,6 @@ const getNewDefiState = (
     stkWalletPosition
   )
 
-  // Refreshed only when the API is called, as it decides if the next API call can be skipped.
-  // Otherwise, right after the user turns auto discovery back on, the API call would be skipped
-  // as the data would look fresh, and the positions read from the chain while it was off (e.g.
-  // Morpho) would be replaced by no API positions
-  const shouldRefreshLastSuccessfulUpdate =
-    isAutoDiscoveryEnabled && isDebankCallSuccessful && !customPositionsError
   // A read with errors (e.g. one protocol failed) isn't counted, so it is retried on the next update
   const shouldRefreshLastRpcUpdate =
     hasReadRpcPositions && !customPositionsError && !customProvidersErrors.length
@@ -159,7 +159,8 @@ const getNewDefiState = (
   return {
     nonceId,
     error: !isDebankCallSuccessful ? DeFiPositionsError.CriticalError : customPositionsError,
-    lastSuccessfulUpdate: shouldRefreshLastSuccessfulUpdate ? Date.now() : lastSuccessfulUpdate,
+    lastSuccessfulUpdate:
+      isDebankCallSuccessful && !customPositionsError ? Date.now() : lastSuccessfulUpdate,
     lastForceApiUpdate: isForceApiUpdate ? Date.now() : lastForceApiUpdate,
     lastRpcUpdate: shouldRefreshLastRpcUpdate ? Date.now() : lastRpcUpdate,
     providerErrors: customProvidersErrors,

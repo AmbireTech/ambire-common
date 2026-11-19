@@ -20,7 +20,8 @@ import { MAX_UINT256 } from '../../consts/deploy'
 import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import {
   HIGH_PRICE_IMPACT_PERCENT_THRESHOLD,
-  SLIPPAGE_MIN_QUOTE_DIFF_USD
+  SLIPPAGE_MIN_QUOTE_DIFF_USD,
+  SMALL_SWAP_MAX_USD
 } from '../../consts/safeguards/extremeSwapLoss'
 import { SwapAmountWarning } from '../../consts/safeguards/swapAmountWarnings'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
@@ -624,7 +625,7 @@ const getSlippage = (
   // so each time the from amount makes a jump of 20000$, we lower
   // the slippage by half
   const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
-  return Number(fromAmountInUsd) < 400
+  return Number(fromAmountInUsd) < SMALL_SWAP_MAX_USD
     ? upperBoundary
     : (delimeter / Math.ceil(Number(fromAmountInUsd) / 20000)).toPrecision(2)
 }
@@ -674,7 +675,7 @@ export const calculateAmountWarnings = (
     )
     const minInUsdNumber = Number(minInUsd)
     const allowedSlippage =
-      Number(inputValueInUsd) < 400
+      Number(inputValueInUsd) < SMALL_SWAP_MAX_USD
         ? 1.05
         : Number((0.005 / Math.ceil(Number(inputValueInUsd) / 20000)).toPrecision(2)) * 100 + 0.01
     // Percentage of the loss relative to the amount the user is putting in (not the quote),

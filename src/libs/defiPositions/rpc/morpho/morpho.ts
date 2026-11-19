@@ -26,12 +26,13 @@ const MORPHO_SITE_URL = 'https://app.morpho.org'
 
 /**
  * The markets and vaults Morpho lists in its app, by chain id. Regenerated from Morpho's API
- * with `npm run defiPositions:update:morphoListed` before each release, as Morpho lists new
- * markets every day. Markets and vaults it lists after that are not checked.
+ * with `npm run defiPositions:update:morphoListed`, which a weekly workflow runs and opens a PR
+ * with the changes, as Morpho lists new markets every day. Markets and vaults it lists after
+ * the last update are not checked.
  */
 type MorphoListed = {
   updatedAt: string
-  /** Sorted by their supply. Markets that Morpho doesn't list (anyone can create one) are not checked */
+  /** Sorted by their id. Markets that Morpho doesn't list (anyone can create one) are not checked */
   markets: { [chainId: string]: { id: string; name: string }[] }
   vaults: { [chainId: string]: { address: string; name: string }[] }
 }

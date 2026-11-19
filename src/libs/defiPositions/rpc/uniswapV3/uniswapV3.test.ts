@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
 import { networks } from '../../../../consts/networks'
 import { getRpcProvider } from '../../../../services/provider'
@@ -15,6 +15,12 @@ const polygon = networks.find((n) => n.chainId === 137n)
 if (!polygon) throw new Error('unable to find polygon network in consts')
 
 const providerPolygon = getRpcProvider(['https://invictus.ambire.com/polygon'], 137n)
+
+/** Whether a deployless call sent the contract's code as a state override (a 3rd `eth_call` param) */
+const hasUsedStateOverride = (sendSpy: { mock: { calls: unknown[][] } }) =>
+  sendSpy.mock.calls.some(
+    ([method, params]) => method === 'eth_call' && Array.isArray(params) && params.length === 3
+  )
 
 const apiUniV3 = DEBANK_UNI_V3[0]!
 const firstApiPosition = apiUniV3.positions[0]!
@@ -65,6 +71,24 @@ describe('Uniswap V3 positions read from the chain', () => {
     const uniV3Positions = await getUniV3Positions(userAddrUni, providerPolygon, polygon)
 
     expect(uniV3Positions?.positions.length).toBeGreaterThan(1)
+  })
+  test.each([
+    ['uses state override when the RPC supports it', false, true],
+    ['sends the contract with the call when the RPC has no state override', true, false]
+  ])('%s', async (_, rpcNoStateOverride, expectedStateOverride) => {
+    const sendSpy = jest.spyOn(providerPolygon, 'send')
+
+    try {
+      const uniV3Positions = await getUniV3Positions(userAddrUni, providerPolygon, {
+        ...polygon,
+        rpcNoStateOverride
+      })
+
+      expect(uniV3Positions?.positions.length).toBeGreaterThan(0)
+      expect(hasUsedStateOverride(sendSpy)).toBe(expectedStateOverride)
+    } finally {
+      sendSpy.mockRestore()
+    }
   })
   test('returns null on a network Uniswap V3 is not supported on', async () => {
     const scroll = networks.find((n) => n.chainId === 534352n)

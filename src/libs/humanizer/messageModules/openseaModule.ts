@@ -1,8 +1,45 @@
 import { isHexString, toUtf8String } from 'ethers'
 
-import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule } from '../interfaces'
-import { getAction, getLabel, getToken } from '../utils'
+import { HumanizerPlainTextMessageModule, HumanizerTypedMessageFunction } from '../interfaces'
+import {
+  ExpectedTypedData,
+  getAction,
+  getLabel,
+  getToken,
+  isExactTypedData,
+  TypedDataField
+} from '../utils'
+
+/** Seaport `OfferItem` and `ConsiderationItem` share these fields */
+const SEAPORT_ITEM_FIELDS: TypedDataField[] = [
+  { name: 'itemType', type: 'uint8' },
+  { name: 'token', type: 'address' },
+  { name: 'identifierOrCriteria', type: 'uint256' },
+  { name: 'startAmount', type: 'uint256' },
+  { name: 'endAmount', type: 'uint256' }
+]
+
+/** A single Seaport order, as seaport-js signs it (`EIP_712_ORDER_TYPE`) */
+const SEAPORT_ORDER_TYPED_DATA: ExpectedTypedData = {
+  primaryType: 'OrderComponents',
+  types: {
+    OrderComponents: [
+      { name: 'offerer', type: 'address' },
+      { name: 'zone', type: 'address' },
+      { name: 'offer', type: 'OfferItem[]' },
+      { name: 'consideration', type: 'ConsiderationItem[]' },
+      { name: 'orderType', type: 'uint8' },
+      { name: 'startTime', type: 'uint256' },
+      { name: 'endTime', type: 'uint256' },
+      { name: 'zoneHash', type: 'bytes32' },
+      { name: 'salt', type: 'uint256' },
+      { name: 'conduitKey', type: 'bytes32' },
+      { name: 'counter', type: 'uint256' }
+    ],
+    OfferItem: SEAPORT_ITEM_FIELDS,
+    ConsiderationItem: [...SEAPORT_ITEM_FIELDS, { name: 'recipient', type: 'address' }]
+  }
+}
 
 const SEAPORT_ADDRESS = [
   '0x0000000000000068F116a894984e2DB1123eB395',
@@ -18,15 +55,16 @@ const SEAPORT_ADDRESS = [
   '0x0000f00000627D293Ab4Dfb40082001724dB006F'
 ]
 
-export const openseaMessageModule: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind === 'message' && typeof message.content.message === 'string') {
+/** Humanizes the OpenSea and OpenSea Pro log in and terms of service messages */
+export const openseaLoginMessageModule: HumanizerPlainTextMessageModule = (message) => {
+  if (typeof message.content.message === 'string') {
     let messageAsText: string = message.content.message
     if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
       try {
         messageAsText = toUtf8String(message.content.message)
       } catch (e) {
         console.log("open sea module: couldn't do toUtf8String on message")
-        return { fullVisualization: [] }
+        return null
       }
     }
     const OPENSEA_LOGIN_MESSAGE_PREFIX = 'Welcome to OpenSea!'
@@ -58,37 +96,44 @@ export const openseaMessageModule: HumanizerTypedMessageModule = (message: Messa
       }
     }
   }
-  if (message.content.kind === 'typedMessage') {
-    if (
-      message.content.domain.name === 'Seaport' &&
-      message.content.domain.version === '1.6' &&
-      SEAPORT_ADDRESS.includes(message.content.domain.verifyingContract || '')
-    ) {
-      const considerations = message.content.message.consideration
-      const offer = message.content.message.offer
+  return null
+}
 
-      const extractItems = ({ itemType, token, identifierOrCriteria, startAmount }: any) => {
-        if (itemType === '0') return { address: token, amountOrId: BigInt(startAmount) }
-        if (itemType === '1') return { address: token, amountOrId: BigInt(startAmount) }
-        if (itemType === '2') return { address: token, amountOrId: BigInt(identifierOrCriteria) }
-        if (itemType === '3') return { address: token, amountOrId: BigInt(identifierOrCriteria) }
-        return null
-      }
-      const itemsToList = offer.map(extractItems).filter((x: any) => x)
-      const itemsToGet = considerations
-        .filter(({ recipient }: any) => recipient === message.accountAddr)
-        .map(extractItems)
-        .filter((x: any) => x)
+/**
+ * Humanizes a single Seaport order (primary type `OrderComponents`). Other Seaport
+ * primary types (e.g. `BulkOrder`) sign different fields, so they are not shown here.
+ */
+export const humanizeSeaportOrder: HumanizerTypedMessageFunction = (message) => {
+  if (
+    message.content.domain.name !== 'Seaport' ||
+    message.content.domain.version !== '1.6' ||
+    !SEAPORT_ADDRESS.includes(message.content.domain.verifyingContract || '') ||
+    !isExactTypedData(message.content, SEAPORT_ORDER_TYPED_DATA)
+  )
+    return null
 
-      return {
-        fullVisualization: [
-          getAction('Make offer to swap'),
-          ...itemsToList.map(({ address, amountOrId }: any) => getToken(address, amountOrId)),
-          getLabel('for'),
-          ...itemsToGet.map(({ address, amountOrId }: any) => getToken(address, amountOrId))
-        ]
-      }
-    }
+  const considerations = message.content.message.consideration
+  const offer = message.content.message.offer
+
+  const extractItems = ({ itemType, token, identifierOrCriteria, startAmount }: any) => {
+    if (itemType === '0') return { address: token, amountOrId: BigInt(startAmount) }
+    if (itemType === '1') return { address: token, amountOrId: BigInt(startAmount) }
+    if (itemType === '2') return { address: token, amountOrId: BigInt(identifierOrCriteria) }
+    if (itemType === '3') return { address: token, amountOrId: BigInt(identifierOrCriteria) }
+    return null
   }
-  return { fullVisualization: [] }
+  const itemsToList = offer.map(extractItems).filter((x: any) => x)
+  const itemsToGet = considerations
+    .filter(({ recipient }: any) => recipient === message.accountAddr)
+    .map(extractItems)
+    .filter((x: any) => x)
+
+  return {
+    fullVisualization: [
+      getAction('Make offer to swap'),
+      ...itemsToList.map(({ address, amountOrId }: any) => getToken(address, amountOrId)),
+      getLabel('for'),
+      ...itemsToGet.map(({ address, amountOrId }: any) => getToken(address, amountOrId))
+    ]
+  }
 }

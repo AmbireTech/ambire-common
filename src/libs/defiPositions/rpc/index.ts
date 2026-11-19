@@ -61,10 +61,22 @@ const fetchProviderPositions = async (
  * Returns the addresses of the tokens the account holds, except rewards and Gas Tank tokens,
  * which are held elsewhere. Used to find positions that are represented by a token (e.g. the
  * shares of a Morpho vault).
+ *
+ * Tokens marked as spam or hidden by the user are left out too. Anyone can create a vault and
+ * send its shares to any account, so a vault nobody lists would otherwise add a balance the
+ * user can't get rid of. The vaults Morpho lists are always checked, so hiding their shares
+ * doesn't hide their positions.
  */
 const getHeldTokenAddresses = (tokens: TokenResult[] | undefined): string[] =>
   (tokens || [])
-    .filter((token) => token.amount > 0n && !token.flags.rewardsType && !token.flags.onGasTank)
+    .filter(
+      (token) =>
+        token.amount > 0n &&
+        !token.flags.rewardsType &&
+        !token.flags.onGasTank &&
+        !token.flags.suspectedType &&
+        !token.flags.isHidden
+    )
     .map((token) => token.address)
 
 const isOneOfProviders = (providerName: string, providerNames: string[]) =>

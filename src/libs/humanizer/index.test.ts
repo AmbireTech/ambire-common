@@ -447,7 +447,26 @@ describe('TypedMessages', () => {
         verifyingContract: '0x000000000022d473030f116ddee9f6b43ac78ba3',
         salt: '1'
       },
-      types: { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] },
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' },
+          { name: 'salt', type: 'bytes32' }
+        ],
+        PermitBatch: [
+          { name: 'details', type: 'PermitDetails[]' },
+          { name: 'spender', type: 'address' },
+          { name: 'sigDeadline', type: 'uint256' }
+        ],
+        PermitDetails: [
+          { name: 'token', type: 'address' },
+          { name: 'amount', type: 'uint160' },
+          { name: 'expiration', type: 'uint48' },
+          { name: 'nonce', type: 'uint48' }
+        ]
+      },
       message,
       // primaryType must name a declared type - this message's only declared type is
       // PermitBatch, so that's the primaryType a real dapp would send
@@ -3733,6 +3752,64 @@ describe('ERC-7730 descriptors', () => {
     })
   })
 
+  test('shows the ERC-7730 descriptor when the typed message humanizer throws', async () => {
+    const moneriumEure = '0x39b8b6385416f4ca36a20319f70d28621895279d'
+    const permitMessage = {
+      fromRequestId: 1,
+      accountAddr: '0xd8293ad21678c6f09da139b4b62d38e514a03b78',
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'name', type: 'string' },
+            { name: 'version', type: 'string' },
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          Permit: [
+            { name: 'owner', type: 'address' },
+            { name: 'spender', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' }
+          ]
+        },
+        domain: {
+          name: 'Monerium EURe',
+          version: '1',
+          chainId: '0x1',
+          verifyingContract: moneriumEure
+        },
+        message: {
+          owner: '0xd8293ad21678c6f09da139b4b62d38e514a03b78',
+          spender: address2,
+          value: '1',
+          nonce: '0',
+          // `BigInt('not a number')` throws inside the Permit humanizer. The descriptor
+          // shows a value it cannot read as a date as text, so it does not throw
+          deadline: 'not a number'
+        },
+        primaryType: 'Permit'
+      },
+      signature: null,
+      chainId: 1n
+    }
+    const callRelayer = jest.fn(async () => ({ success: true, data: {}, errorState: [] }))
+    const descriptor = await getTestErc7730MessageDescriptor(permitMessage as any, callRelayer)
+    const { restore } = suppressConsole()
+
+    try {
+      const irMessage = humanizeMessage(permitMessage as any, {
+        erc7730Descriptor: descriptor || undefined
+      })
+
+      expect(console.error).toHaveBeenCalledTimes(1)
+      expect(irMessage.fullVisualization?.[0]).toMatchObject({ type: 'erc7730' })
+    } finally {
+      restore()
+    }
+  })
+
   test('prioritizes descriptor EIP-712 humanization over local modules', async () => {
     const permitMessage = {
       fromRequestId: 1,
@@ -4859,8 +4936,8 @@ describe('ERC-7730 descriptors', () => {
   // now decodes `multiSend` batches itself (via `decodeMultiSend`, src/libs/safe/helpers.ts) and
   // recurses per leg, checking each leg's own `operation`, since the ERC-7730 pipeline's `Call`
   // type has no `operation` field and can't carry it (erc7730/utils.ts#getSafeTxCallsFromMessage,
-  // erc7730/registry.ts); (2) `humanizeMessage` now merges the warnings humanizerTMModules found
-  // (which is where that recursive check runs, via safeMessageModule) into the ERC-7730 result
+  // erc7730/registry.ts); (2) `humanizeMessage` now merges the warnings the message modules found
+  // (which is where that recursive check runs, via humanizeSafeTx) into the ERC-7730 result
   // instead of discarding them when an ERC-7730 descriptor resolves the message. This is the
   // exact "Attack B" pattern from the leaked safe-poc.html: a benign leg 0 plus a hidden
   // delegatecall leg 1 into attacker-controlled code that runs in the Safe's own storage context.

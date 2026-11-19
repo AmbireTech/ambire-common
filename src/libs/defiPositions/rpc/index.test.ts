@@ -7,9 +7,11 @@ import { TokenDataCacheValue } from '../../portfolio/interfaces'
 import { DEBANK_UNI_V3 } from '../testData'
 import { AssetType, PositionsByProvider } from '../types'
 import { aaveV3DefiProvider } from './aaveV3/aaveV3'
+import { TokenResult } from '../../portfolio/interfaces'
 import {
   ALWAYS_FETCHED_PROVIDERS,
   FETCHED_WITHOUT_API_PROVIDERS,
+  getHeldTokenAddresses,
   getRpcDefiPositions
 } from './index'
 import { morphoDefiProvider } from './morpho/morpho'
@@ -428,5 +430,57 @@ describe('getRpcDefiPositions', () => {
       baseCurrency: 'usd',
       price: 1
     })
+  })
+})
+
+describe('getHeldTokenAddresses', () => {
+  const token = (
+    address: string,
+    overrides: { amount?: bigint; flags?: Partial<TokenResult['flags']> } = {}
+  ): TokenResult => ({
+    symbol: 'TKN',
+    name: 'Token',
+    decimals: 18,
+    address,
+    chainId: 1n,
+    amount: overrides.amount ?? 10n ** 18n,
+    priceIn: [],
+    marketDataIn: [],
+    flags: {
+      onGasTank: false,
+      rewardsType: null,
+      canTopUpGasTank: false,
+      isFeeToken: false,
+      ...overrides.flags
+    }
+  })
+
+  test('returns the tokens the account holds', () => {
+    expect(getHeldTokenAddresses([token('0x01'), token('0x02')])).toEqual(['0x01', '0x02'])
+  })
+
+  test('returns nothing without tokens', () => {
+    expect(getHeldTokenAddresses(undefined)).toEqual([])
+  })
+
+  test('leaves out tokens with no balance and those held elsewhere', () => {
+    expect(
+      getHeldTokenAddresses([
+        token('0x01', { amount: 0n }),
+        token('0x02', { flags: { rewardsType: 'wallet-rewards' } }),
+        token('0x03', { flags: { onGasTank: true } }),
+        token('0x04')
+      ])
+    ).toEqual(['0x04'])
+  })
+
+  test('leaves out spam and hidden tokens, so the shares of a vault airdropped to the account add no balance', () => {
+    expect(
+      getHeldTokenAddresses([
+        token('0x01', { flags: { suspectedType: 'suspected' } }),
+        token('0x02', { flags: { isHidden: true } }),
+        token('0x03')
+      ])
+    ).toEqual(['0x03'])
   })
 })
