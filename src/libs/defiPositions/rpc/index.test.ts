@@ -22,6 +22,7 @@ import {
   getReusableRpcDefiRead,
   getRpcDefiPositions
 } from './index'
+import { aaveV4DefiProvider } from './aaveV4/aaveV4'
 import { morphoDefiProvider } from './morpho/morpho'
 import { uniswapV3DefiProvider } from './uniswapV3/uniswapV3'
 
@@ -81,6 +82,7 @@ const mockFetchedPositions = (positions: {
   aave?: PositionsByProvider | null | Error
   uniswap?: PositionsByProvider | null | Error
   morpho?: PositionsByProvider | null | Error
+  aaveV4?: PositionsByProvider | null | Error
 }) => {
   const toImplementation = (result: PositionsByProvider | null | Error | undefined) => async () => {
     if (result instanceof Error) throw result
@@ -96,7 +98,10 @@ const mockFetchedPositions = (positions: {
       .mockImplementation(toImplementation(positions.uniswap)),
     morphoSpy: jest
       .spyOn(morphoDefiProvider, 'fetchPositions')
-      .mockImplementation(toImplementation(positions.morpho))
+      .mockImplementation(toImplementation(positions.morpho)),
+    aaveV4Spy: jest
+      .spyOn(aaveV4DefiProvider, 'fetchPositions')
+      .mockImplementation(toImplementation(positions.aaveV4))
   }
 }
 
@@ -134,7 +139,7 @@ describe('getRpcDefiPositions', () => {
   })
 
   test('the protocols the API returns fully are read from the chain only without the API', () => {
-    expect(FETCHED_WITHOUT_API_PROVIDERS.map(({ name }) => name)).toEqual(['Morpho'])
+    expect(FETCHED_WITHOUT_API_PROVIDERS.map(({ name }) => name)).toEqual(['Morpho', 'AAVE v4'])
   })
 
   test('passes the tokens the account holds to the protocols', async () => {
@@ -148,7 +153,7 @@ describe('getRpcDefiPositions', () => {
 
   describe('with auto discovery on', () => {
     test('reads only the protocols that are always read from the chain', async () => {
-      const { aaveSpy, uniswapSpy, morphoSpy } = mockFetchedPositions({
+      const { aaveSpy, uniswapSpy, morphoSpy, aaveV4Spy } = mockFetchedPositions({
         morpho: getPositions('Morpho', 'custom')
       })
 
@@ -157,6 +162,7 @@ describe('getRpcDefiPositions', () => {
       expect(aaveSpy).toHaveBeenCalledTimes(1)
       expect(uniswapSpy).toHaveBeenCalledTimes(1)
       expect(morphoSpy).not.toHaveBeenCalled()
+      expect(aaveV4Spy).not.toHaveBeenCalled()
       expect(res.positionsByProvider).toEqual([])
     })
     test('merges the positions with those of the API', async () => {
@@ -213,14 +219,19 @@ describe('getRpcDefiPositions', () => {
   describe('with auto discovery off', () => {
     test('reads all the protocols from the chain', async () => {
       const morpho = getPositions('Morpho', 'custom')
-      const { aaveSpy, uniswapSpy, morphoSpy } = mockFetchedPositions({ morpho })
+      const rpcAaveV4 = getPositions('AAVE v4', 'custom')
+      const { aaveSpy, uniswapSpy, morphoSpy, aaveV4Spy } = mockFetchedPositions({
+        morpho,
+        aaveV4: rpcAaveV4
+      })
 
       const res = await callGetRpcDefiPositions({ isAutoDiscoveryEnabled: false })
 
       expect(aaveSpy).toHaveBeenCalledTimes(1)
       expect(uniswapSpy).toHaveBeenCalledTimes(1)
       expect(morphoSpy).toHaveBeenCalledTimes(1)
-      expect(res.positionsByProvider).toEqual([morpho])
+      expect(aaveV4Spy).toHaveBeenCalledTimes(1)
+      expect(res.positionsByProvider).toEqual([morpho, rpcAaveV4])
     })
     test('never merges with API positions, new or previous', async () => {
       const apiUniV3 = DEBANK_UNI_V3[0]!
@@ -308,16 +319,22 @@ describe('getRpcDefiPositions', () => {
     test('takes the positions from the read instead of the chain', async () => {
       const rpcAave = getPositions('AAVE v3', 'custom')
       const rpcMorpho = getPositions('Morpho', 'custom')
-      const { aaveSpy, uniswapSpy, morphoSpy } = mockFetchedPositions({})
+      const { aaveSpy, uniswapSpy, morphoSpy, aaveV4Spy } = mockFetchedPositions({})
 
       const res = await callGetRpcDefiPositions({
         isAutoDiscoveryEnabled: false,
-        reusableRead: getRead({ 'AAVE v3': rpcAave, 'Uniswap V3': null, Morpho: rpcMorpho })
+        reusableRead: getRead({
+          'AAVE v3': rpcAave,
+          'Uniswap V3': null,
+          Morpho: rpcMorpho,
+          'AAVE v4': null
+        })
       })
 
       expect(aaveSpy).not.toHaveBeenCalled()
       expect(uniswapSpy).not.toHaveBeenCalled()
       expect(morphoSpy).not.toHaveBeenCalled()
+      expect(aaveV4Spy).not.toHaveBeenCalled()
       expect(res.positionsByProvider).toEqual([rpcAave, rpcMorpho])
     })
     test('merges the read with the new API positions, so what only the chain has is kept', async () => {
@@ -342,7 +359,9 @@ describe('getRpcDefiPositions', () => {
     })
     test('reads the protocols the read does not have (made while auto discovery was on)', async () => {
       const rpcMorpho = getPositions('Morpho', 'custom')
-      const { aaveSpy, uniswapSpy, morphoSpy } = mockFetchedPositions({ morpho: rpcMorpho })
+      const { aaveSpy, uniswapSpy, morphoSpy, aaveV4Spy } = mockFetchedPositions({
+        morpho: rpcMorpho
+      })
 
       const res = await callGetRpcDefiPositions({
         isAutoDiscoveryEnabled: false,
@@ -352,6 +371,7 @@ describe('getRpcDefiPositions', () => {
       expect(aaveSpy).not.toHaveBeenCalled()
       expect(uniswapSpy).not.toHaveBeenCalled()
       expect(morphoSpy).toHaveBeenCalledTimes(1)
+      expect(aaveV4Spy).toHaveBeenCalledTimes(1)
       expect(res.positionsByProvider).toEqual([rpcMorpho])
     })
     test('keeps the time of the read, so it is not reused for longer than allowed', async () => {

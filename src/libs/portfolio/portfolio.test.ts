@@ -212,10 +212,22 @@ describe('Portfolio', () => {
     expect(collection.amount - collection.amountPostSimulation).toBe(1n)
   })
 
+  // Checks the requests instead of the time the prices took, which depends on the load of the
+  // machine running the tests
   test('price cache works', async () => {
-    await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-    const resultTwo = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-    expect(resultTwo.priceUpdateTime).toBeLessThanOrEqual(3)
+    const priceFetch = jest.fn(fetch)
+    const portfolioWithOwnCache = new Portfolio(
+      provider,
+      ethereum,
+      new TokenPricesController({ fetch: priceFetch as any })
+    )
+
+    await portfolioWithOwnCache.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+    const priceRequestsCount = priceFetch.mock.calls.length
+    const resultTwo = await portfolioWithOwnCache.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+
+    expect(priceRequestsCount).toBeGreaterThan(0)
+    expect(priceFetch).toHaveBeenCalledTimes(priceRequestsCount)
     expect(resultTwo.tokens.every((x) => x.priceIn.length)).toBe(true)
   })
 

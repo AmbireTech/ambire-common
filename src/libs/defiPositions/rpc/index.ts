@@ -9,6 +9,7 @@ import {
   RpcDefiRead
 } from '../types'
 import { aaveV3DefiProvider } from './aaveV3/aaveV3'
+import { aaveV4DefiProvider } from './aaveV4/aaveV4'
 import { morphoDefiProvider } from './morpho/morpho'
 import { updatePositionsByProviderAssetPrices } from './prices'
 import { RpcDefiPositionsResult, RpcDefiProvider, RpcFetchParams } from './types'
@@ -29,7 +30,10 @@ export const ALWAYS_FETCHED_PROVIDERS: RpcDefiProvider[] = [
  * Protocols that the API returns fully, so their positions are read from the chain only when
  * auto discovery is off.
  */
-export const FETCHED_WITHOUT_API_PROVIDERS: RpcDefiProvider[] = [morphoDefiProvider]
+export const FETCHED_WITHOUT_API_PROVIDERS: RpcDefiProvider[] = [
+  morphoDefiProvider,
+  aaveV4DefiProvider
+]
 
 const getProvidersToFetch = (isAutoDiscoveryEnabled: boolean): RpcDefiProvider[] => {
   if (isAutoDiscoveryEnabled) return ALWAYS_FETCHED_PROVIDERS
