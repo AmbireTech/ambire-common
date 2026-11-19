@@ -1747,11 +1747,11 @@ export class MainController extends EventEmitter implements IMainController {
 
   /**
    * Sets up the picker for the devices that run Trezor's firmware: a Trezor, and the
-   * Ambire Ice, whose keys are of their own type, served by their own controller.
+   * Ambire Ice, whose keys are of their own type (`ambire`), served by their own controller.
    */
   async #handleAccountPickerInitTrezor(
     TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */,
-    keyType: 'trezor' | 'ambireIce' = 'trezor'
+    keyType: 'trezor' | 'ambire' = 'trezor'
   ) {
     const deviceName = HARDWARE_WALLET_DEVICE_NAMES[keyType]
 
@@ -1795,7 +1795,7 @@ export class MainController extends EventEmitter implements IMainController {
   ) {
     await this.#setUpPickerForHardwareWallet(
       'handleAccountPickerInitAmbireIce',
-      () => this.#handleAccountPickerInitTrezor(TrezorKeyIterator, 'ambireIce'),
+      () => this.#handleAccountPickerInitTrezor(TrezorKeyIterator, 'ambire'),
       requestId
     )
   }

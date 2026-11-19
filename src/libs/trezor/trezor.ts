@@ -9,9 +9,14 @@ export const getMessageFromTrezorErrorCode = (
   context?: {
     isLedgerLiveSmartAccountForbiddenPath?: boolean
     isHyperEvmForbiddenPath?: boolean
+    /** The device the user signs with, e.g. "Ambire Ice", which runs Trezor's firmware */
+    deviceName?: string
   }
 ): string => {
-  if (!errorCode && !errorMsg) return 'Could not connect to your Trezor device. Please try again.'
+  const deviceName = context?.deviceName || 'Trezor'
+
+  if (!errorCode && !errorMsg)
+    return `Could not connect to your ${deviceName} device. Please try again.`
 
   if (context?.isHyperEvmForbiddenPath && errorMsg?.toLowerCase()?.includes('forbidden key path')) {
     return 'Please set "Safety checks" to "Prompt" in Trezor Suite (Settings - Device) to use your Trezor on HyperEVM chain. This is flagged as non-standard and blocked otherwise.'
@@ -29,16 +34,16 @@ export const getMessageFromTrezorErrorCode = (
 
   if (errorCode === 'Method_Cancel') return 'Permission not granted.'
 
-  if (errorCode === 'Failure_ActionCancelled') return 'Rejected by your Trezor device.'
+  if (errorCode === 'Failure_ActionCancelled') return `Rejected by your ${deviceName} device.`
 
   if (
     errorMsg?.toLowerCase()?.includes('device disconnected during action') ||
     errorCode === 'Device_Disconnected'
   )
-    return 'Trezor device got disconnected.'
+    return `${deviceName} device got disconnected.`
 
   if (errorCode === 'Device_CallInProgress')
-    return 'Trezor device busy. Please make sure there are no pending requests on the device.'
+    return `${deviceName} device busy. Please make sure there are no pending requests on the device.`
 
   return `${errorMsg} (${errorCode ?? 'no error code incoming'})`
 }
@@ -48,9 +53,9 @@ export const getMessageFromTrezorErrorCode = (
  * messages. Some of them are not self-explanatory and can be difficult for the
  * end users to understand.
  */
-export const normalizeTrezorMessage = (error?: string): string => {
+export const normalizeTrezorMessage = (error?: string, deviceName = 'Trezor'): string => {
   if (!error || error?.includes('handshake failed')) {
-    return 'Could not connect to your Trezor device. Please try again.'
+    return `Could not connect to your ${deviceName} device. Please try again.`
   }
 
   return error
