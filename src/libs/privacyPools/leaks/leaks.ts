@@ -1,4 +1,5 @@
 import {
+  PrivacyPoolsBroadcaster,
   PrivacyPoolsDepositPrivacy,
   PrivacyPoolsLeak,
   PrivacyPoolsNote,
@@ -80,6 +81,7 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   commonAmounts,
   poolCover,
   fingerprints,
+  broadcaster,
   ...params
 }: {
   amount: bigint
@@ -94,6 +96,8 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   poolCover: PrivacyPoolsPoolCover | null
   /** See `getSendPoolCover`. */
   fingerprints: ReadonlyMap<string, boolean> | null
+  /** Who sends it, which sets the deposits it hides among - see `getSendPoolCover`. */
+  broadcaster: PrivacyPoolsBroadcaster
   /** The pool's common amounts, smallest first - see `PRIVACY_POOLS_DEPOSIT_CHIPS`. */
   commonAmounts: bigint[]
 }): PrivacyPoolsWithdrawalPrivacy | null => {
@@ -103,7 +107,7 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   const spend = getPrivacyPoolsNoteSpend(notes, tokenAddress, noteLabel, amount)
   if (!isRecipientOnly && !spend) return null
 
-  const sendPoolCover = getSendPoolCover(spend, notes, poolCover, fingerprints)
+  const sendPoolCover = getSendPoolCover(spend, notes, poolCover, fingerprints, broadcaster)
   if (!sendPoolCover) return UNCHECKED_WITHDRAWAL_PRIVACY
 
   const facts: WithdrawalFacts = {

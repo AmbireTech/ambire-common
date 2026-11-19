@@ -1,4 +1,5 @@
 import {
+  PrivacyPoolsBroadcaster,
   PrivacyPoolsLeakAction,
   PrivacyPoolsNote,
   PrivacyPoolsSendCover
@@ -28,12 +29,28 @@ export const getPrivacyPoolsNoteSpend = (
 }
 
 /**
+ * Whether a send can be told to come from a Kohaku client, so it hides only among deposits that have
+ * its fingerprint. Only a send through Kohaku can: one through 0xBow looks like any relayed send.
+ * Through Kohaku, it can when the spent deposit has the fingerprint, or its depositor is not checked
+ * yet, which keeps the count from being larger than the real one.
+ */
+const isFingerprintedSend = (
+  spend: PrivacyPoolsNoteSpend | null,
+  broadcaster: PrivacyPoolsBroadcaster,
+  fingerprints: ReadonlyMap<string, boolean> | null
+) =>
+  broadcaster === 'kohaku' &&
+  !!spend &&
+  fingerprints?.get(spend.note.depositorAddr.toLowerCase()) !== false
+
+/**
  * The deposits of other people that a send from `spend`'s deposit can hide among. The user's own
  * deposits are left out, as they all lead back to the user.
  *
- * When the spent deposit has a Kohaku client fingerprint, the send hides only among other deposits
- * that have one. Until a depositor is checked, the user's deposit counts as having the fingerprint
- * and someone else's does not, so the result is never larger than the real one.
+ * A send through 0xBow hides among all of them. A send through Kohaku from a deposit that has a
+ * Kohaku client fingerprint hides only among other deposits that have one. Until a depositor is
+ * checked, the user's deposit counts as having the fingerprint and someone else's does not, so the
+ * result is never larger than the real one.
  *
  * Null before the pool's deposits are read. Also null when the send must hide among fingerprinted
  * deposits and no depositor of the chain is checked yet.
@@ -49,10 +66,11 @@ export const getSendPoolCover = (
    * Whether each depositor has a Kohaku client fingerprint, by its address in lowercase. Null
    * before any depositor of the chain is checked.
    */
-  fingerprints: ReadonlyMap<string, boolean> | null
+  fingerprints: ReadonlyMap<string, boolean> | null,
+  /** Who sends it - see `PrivacyPoolsController.broadcaster`. */
+  broadcaster: PrivacyPoolsBroadcaster
 ): PrivacyPoolsPoolCover | null => {
-  const isFingerprintedCover =
-    !!spend && fingerprints?.get(spend.note.depositorAddr.toLowerCase()) !== false
+  const isFingerprintedCover = isFingerprintedSend(spend, broadcaster, fingerprints)
   if (!poolCover || (isFingerprintedCover && !fingerprints)) return null
 
   const ownLabels = new Set(notes.map(({ label }) => label))

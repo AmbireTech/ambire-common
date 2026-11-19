@@ -5866,9 +5866,9 @@ describe('PrivacyPoolsController', () => {
       ]
     })
 
-    /** seed-a, synced. */
-    const prepareSynced = async () => {
-      const prepared = await prepareTest()
+    /** seed-a, synced. Through Kohaku, unless `storedBroadcaster` says otherwise. */
+    const prepareSynced = async (options: Parameters<typeof prepareTest>[0] = {}) => {
+      const prepared = await prepareTest(options)
       prepared.selectedAccount.select('seed-a')
       const syncing = prepared.controller.syncChain('1')
       await releaseSync('seed-a')
@@ -6161,6 +6161,85 @@ describe('PrivacyPoolsController', () => {
 
         expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
           cover: { sameAmount: 1 }
+        })
+      })
+
+      it('counts the proved transfer against the deposits of the broadcaster it is sent through', async () => {
+        storedPoolState = toStoredPoolState({
+          deposits: deposits.map((deposit) => ({ ...deposit, value: WITHDRAWAL_AMOUNT })),
+          isEveryDepositApproved: true,
+          lastSyncedBlock: LAST_SYNCED_BLOCK
+        })
+        notesBySeed['seed-a'] = [
+          {
+            label: ETH_LABELS[1]!,
+            amount: 2n * WITHDRAWAL_AMOUNT,
+            approved: true,
+            blockNumber: 1000n
+          }
+        ]
+        preparedWithdrawal = buildPreparedWithdrawal()
+        const { controller } = await prepareSynced()
+        await flush()
+
+        await controller.prepareWithdrawal({ ...ETH_TRANSFER, amount: WITHDRAWAL_AMOUNT })
+
+        expect(controller.operation).toMatchObject({ broadcaster: 'kohaku', phase: 'ready' })
+        // Through Kohaku, only the other Ambire account's deposit hides it. Through 0xBow, all 3
+        // deposits of others would
+        expect(controller.operation?.privacy?.cover).toEqual({ bigEnough: 1, sameAmount: 1 })
+      })
+
+      describe('through 0xBow, which looks like any relayed send', () => {
+        it('counts the deposits from all addresses', async () => {
+          const { controller } = await prepareSynced({ storedBroadcaster: '0xbow' })
+          await flush()
+
+          controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+
+          // All but seed-a's own 10
+          expect(controller.withdrawalPrivacy).toMatchObject({
+            broadcaster: '0xbow',
+            privacy: { rating: 'standard', cover: { sameAmount: 3 } }
+          })
+        })
+
+        it("checks the form's transfer again when the user chooses who sends it", async () => {
+          const { controller } = await prepareSynced({ storedBroadcaster: '0xbow' })
+          await flush()
+          controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+
+          await controller.setBroadcaster('kohaku')
+          expect(controller.withdrawalPrivacy).toMatchObject({
+            broadcaster: 'kohaku',
+            privacy: { cover: { sameAmount: 1 } }
+          })
+
+          await controller.setBroadcaster('0xbow')
+          expect(controller.withdrawalPrivacy).toMatchObject({
+            broadcaster: '0xbow',
+            privacy: { cover: { sameAmount: 3 } }
+          })
+        })
+
+        it('is checked and reports no failure when the depositors could not be checked, until the user chooses Kohaku', async () => {
+          const { restore } = suppressConsole()
+          jest.mocked(checkKohakuFingerprints).mockRejectedValueOnce(new Error('rpc down'))
+          const { controller } = await prepareSynced({ storedBroadcaster: '0xbow' })
+          await flush()
+          controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+
+          expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+            rating: 'standard',
+            cover: { sameAmount: 3 }
+          })
+          expect(controller.hasPrivacyDataFailed['1']).toBe(false)
+
+          await controller.setBroadcaster('kohaku')
+
+          expect(controller.withdrawalPrivacy?.privacy?.rating).toBe('unchecked')
+          expect(controller.hasPrivacyDataFailed['1']).toBe(true)
+          restore()
         })
       })
     })

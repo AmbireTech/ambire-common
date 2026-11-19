@@ -1,5 +1,5 @@
 import { Hex } from '../../../interfaces/hex'
-import { PrivacyPoolsNote } from '../../../interfaces/privacyPools'
+import { PrivacyPoolsBroadcaster, PrivacyPoolsNote } from '../../../interfaces/privacyPools'
 import { ZERO_ADDRESS } from '../../../services/socket/constants'
 import { PrivacyPoolsCoverDeposit, PrivacyPoolsPoolCover } from '../poolStats'
 import { getPrivacyPoolsNoteSpend } from './helpers'
@@ -43,13 +43,17 @@ const POOL_COVER = poolCoverOf(POOL_DEPOSITS)
 const OWN_37_LABEL = POOL_DEPOSITS[3]!.label
 const OWN_100_LABEL = POOL_DEPOSITS[6]!.label
 
-/** No depositor is an Ambire account, so every send hides among all deposits. */
+/**
+ * No depositor is an Ambire account, so every send hides among all deposits, even one through
+ * Kohaku.
+ */
 const countingAllDeposits = (poolCover: PrivacyPoolsPoolCover | null) => ({
   poolCover,
   fingerprints: new Map([
     [DEPOSITOR, false],
     [STRANGER, false]
-  ])
+  ]),
+  broadcaster: 'kohaku' as const
 })
 
 /**
@@ -558,11 +562,12 @@ describe('counting only the deposits from Ambire accounts', () => {
     poolDeposit(10n, 60n)
   ]
 
-  /** A send from `spentNote`, by default the first of `notes`. */
+  /** A send from `spentNote`, by default the first of `notes`, through Kohaku unless told otherwise. */
   const getPrivacy = ({
     amount,
     notes,
     spentNote = notes[0]!,
+    broadcaster = 'kohaku',
     fingerprints = FINGERPRINTS,
     deposits = POOL_DEPOSITS_BY_ACCOUNTS,
     commonAmounts = COMMON_AMOUNTS
@@ -570,6 +575,7 @@ describe('counting only the deposits from Ambire accounts', () => {
     amount: bigint
     notes: PrivacyPoolsNote[]
     spentNote?: PrivacyPoolsNote
+    broadcaster?: PrivacyPoolsBroadcaster
     fingerprints?: ReadonlyMap<string, boolean> | null
     deposits?: PrivacyPoolsCoverDeposit[]
     commonAmounts?: bigint[]
@@ -582,6 +588,7 @@ describe('counting only the deposits from Ambire accounts', () => {
       recipient: STRANGER,
       poolCover: poolCoverOf(deposits),
       fingerprints,
+      broadcaster,
       commonAmounts
     })
 
@@ -678,5 +685,66 @@ describe('counting only the deposits from Ambire accounts', () => {
       deposits: [...POOL_DEPOSITS_BY_ACCOUNTS, poolDeposit(10n, 70n, { depositor: AMBIRE_OTHER })]
     })
     expect(withAmbireTen?.leaks[0]?.actions.map(({ meta }) => meta.amount)).toEqual([10n])
+  })
+
+  describe('through 0xBow, which looks like any relayed send', () => {
+    test('counts all deposits of others, even for a deposit from an Ambire account', () => {
+      const privacy = getPrivacy({
+        amount: 37n,
+        notes: [plainNote, ambireNote],
+        spentNote: ambireNote,
+        broadcaster: '0xbow'
+      })
+
+      // Of at least 37: the stranger's 37, the other 50 and the 100, not the user's own 37 or 50.
+      // The stranger's 37 hides it, so it is not traceable as it is through Kohaku
+      expect(privacy).toEqual({
+        rating: 'standard',
+        leaks: [],
+        cover: { bigEnough: 3, sameAmount: 1 }
+      })
+    })
+
+    test('counts the deposits of others not checked yet', () => {
+      const privacy = getPrivacy({
+        amount: 37n,
+        notes: [ambireNote, plainNote],
+        broadcaster: '0xbow',
+        deposits: [
+          ...POOL_DEPOSITS_BY_ACCOUNTS,
+          poolDeposit(37n, 70n, { depositor: '0x00000000000000000000000000000000000000c2' })
+        ]
+      })
+
+      expect(privacy?.cover).toEqual({ bigEnough: 4, sameAmount: 2 })
+    })
+
+    test('is checked before any depositor is, as it does not need to know them', () => {
+      expect(
+        getPrivacy({
+          amount: 37n,
+          notes: [ambireNote, plainNote],
+          broadcaster: '0xbow',
+          fingerprints: null
+        })
+      ).toMatchObject({ rating: 'standard', cover: { bigEnough: 3, sameAmount: 1 } })
+    })
+
+    test("suggests a common amount by all deposits of others, the plain addresses' too", () => {
+      const privacy = getPrivacy({
+        amount: 37n,
+        notes: [ambireNote],
+        broadcaster: '0xbow',
+        commonAmounts: [10n],
+        // Without the stranger's 37, so the send is traceable and a common amount is suggested
+        deposits: POOL_DEPOSITS_BY_ACCOUNTS.filter(
+          ({ value, depositor }) => value !== 37n || depositor !== STRANGER
+        )
+      })
+
+      expect(privacy?.leaks.map(({ id }) => id)).toEqual(['unique-amount'])
+      // The stranger's 10 came from a plain address, and still hides it
+      expect(privacy?.leaks[0]?.actions.map(({ meta }) => meta.amount)).toEqual([10n])
+    })
   })
 })

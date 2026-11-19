@@ -507,6 +507,8 @@ export type PrivacyPoolsWithdrawalPrivacyParams = {
   amount: bigint
   /** Null before the user enters one, so only the amount is checked. */
   recipient: string | null
+  /** Who sends it, which sets the deposits it hides among. */
+  broadcaster: PrivacyPoolsBroadcaster
 }
 
 /**
@@ -521,5 +523,6 @@ export type PrivacyPoolsWithdrawalPrivacyCheck = {
   amount: bigint
   /** Null before the user enters one. */
   recipient: string | null
+  broadcaster: PrivacyPoolsBroadcaster
   privacy: PrivacyPoolsWithdrawalPrivacy | null
 }

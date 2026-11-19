@@ -468,7 +468,8 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       throwIfWithdrawalCancelled(signal)
 
       const privacy = this.#getWithdrawalPrivacy(
-        { seedId, chainId, tokenAddress, depositNumber, noteLabel, amount, recipient },
+        // The broadcaster it was proved for, as it is the one that sends it
+        { seedId, chainId, tokenAddress, depositNumber, noteLabel, amount, recipient, broadcaster },
         provedNotes
       )
       throwIfWithdrawalCancelled(signal)
@@ -527,15 +528,26 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     this.#privacyCheck = { seedId, check: { ...checkedParams, privacy } }
   }
 
-  /** Checks the Send form's last transfer again, as when the deposits it is counted against change. */
-  recheckWithdrawalPrivacy() {
+  /**
+   * Checks the Send form's last transfer again, as when the deposits it is counted against change,
+   * or the user chooses another `broadcaster`.
+   */
+  recheckWithdrawalPrivacy(broadcaster: PrivacyPoolsBroadcaster) {
     if (!this.#privacyCheck) return
 
     const {
       seedId,
       check: { chainId, tokenAddress, depositNumber, amount, recipient }
     } = this.#privacyCheck
-    this.checkWithdrawalPrivacy({ seedId, chainId, tokenAddress, depositNumber, amount, recipient })
+    this.checkWithdrawalPrivacy({
+      seedId,
+      chainId,
+      tokenAddress,
+      depositNumber,
+      amount,
+      recipient,
+      broadcaster
+    })
   }
 
   /**
@@ -550,7 +562,8 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       tokenAddress,
       noteLabel,
       amount,
-      recipient
+      recipient,
+      broadcaster
     }: PrivacyPoolsWithdrawalPrivacyParams & { noteLabel: bigint },
     notes: PrivacyPoolsNote[] | undefined = this.#getNotes(seedId, chainId)
   ): PrivacyPoolsWithdrawalPrivacy | null {
@@ -564,6 +577,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       recipient,
       poolCover: this.#poolStatsReader.getPoolCover(chainId, tokenAddress),
       fingerprints: this.#poolStatsReader.getFingerprints(chainId),
+      broadcaster,
       commonAmounts:
         PRIVACY_POOLS_DEPOSIT_CHIPS[getPrivacyPoolsTokenId(chainId, tokenAddress)] ?? []
     })

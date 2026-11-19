@@ -429,7 +429,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
 
     this.#hasFailedFingerprintCheck = { ...this.#hasFailedFingerprintCheck, [chainId]: hasFailed }
-    this.#withdrawal.recheckWithdrawalPrivacy()
+    this.#withdrawal.recheckWithdrawalPrivacy(this.broadcaster)
     this.emitUpdate()
   }
 
@@ -527,7 +527,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Per chain, whether the last read of the pools' deposits or the last check of which depositors
-   * have a Kohaku client fingerprint failed. `readPrivacyData` tries both again.
+   * have a Kohaku client fingerprint failed. `readPrivacyData` tries both again. The check counts
+   * only through Kohaku, as a send through 0xBow does not need it - see `getSendPoolCover`.
    */
   get hasPrivacyDataFailed(): { [chainId: string]: boolean } {
     const chainIds = new Set([
@@ -541,7 +542,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   #hasPrivacyDataFailed(chainId: string): boolean {
-    return !!this.poolStats[chainId]?.error || !!this.#hasFailedFingerprintCheck[chainId]
+    const hasFingerprintCheckFailed =
+      this.broadcaster === 'kohaku' && !!this.#hasFailedFingerprintCheck[chainId]
+
+    return !!this.poolStats[chainId]?.error || hasFingerprintCheckFailed
   }
 
   /**
@@ -1089,14 +1093,16 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Checks what the Send form's transfer gives away, from the selected account's notes and this
-   * device's copy of the pool. The result arrives in `withdrawalPrivacy`, in place of the previous
-   * check's.
+   * device's copy of the pool, as sent through `broadcaster`. The result arrives in
+   * `withdrawalPrivacy`, in place of the previous check's.
    */
-  checkWithdrawalPrivacy(params: Omit<PrivacyPoolsWithdrawalPrivacyParams, 'seedId'>) {
+  checkWithdrawalPrivacy(
+    params: Omit<PrivacyPoolsWithdrawalPrivacyParams, 'seedId' | 'broadcaster'>
+  ) {
     try {
       const seedId = this.#assertAvailableAndGetSeedId()
 
-      this.#withdrawal.checkWithdrawalPrivacy({ ...params, seedId })
+      this.#withdrawal.checkWithdrawalPrivacy({ ...params, seedId, broadcaster: this.broadcaster })
       this.emitUpdate()
     } catch (error: any) {
       this.emitError(
@@ -1191,13 +1197,15 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Chooses who proves and sends transfers out of Privacy Pools accounts. Drops a transfer proved,
-   * or being proved, for the other one, which could only be sent through it.
+   * or being proved, for the other one, which could only be sent through it. Checks the Send
+   * form's transfer again, as the deposits it hides among depend on who sends it.
    */
   async setBroadcaster(broadcaster: PrivacyPoolsBroadcaster): Promise<void> {
     if (broadcaster === this.broadcaster) return
 
     this.broadcaster = broadcaster
     this.#withdrawal.dropUnsent()
+    this.#withdrawal.recheckWithdrawalPrivacy(broadcaster)
     this.emitUpdate()
 
     try {
