@@ -15,6 +15,12 @@ if (!ethereum) throw new Error('unable to find ethereum network in consts')
 
 const providerEthereum = getRpcProvider(['https://invictus.ambire.com/ethereum'], 1n)
 
+/** Whether a deployless call sent the contract's code as a state override (a 3rd `eth_call` param) */
+const hasUsedStateOverride = (sendSpy: { mock: { calls: unknown[][] } }) =>
+  sendSpy.mock.calls.some(
+    ([method, params]) => method === 'eth_call' && Array.isArray(params) && params.length === 3
+  )
+
 describe('AAVE v3 positions read from the chain', () => {
   test('Get AAVE positions on Ethereum', async () => {
     const aavePositions = await getAAVEPositions(userAddrAave, providerEthereum, ethereum)
@@ -36,6 +42,29 @@ describe('AAVE v3 positions read from the chain', () => {
     expect(pos.additionalData.healthRate).toBeGreaterThan(0)
     expect(pos.additionalData.collateralInUSD).toBeGreaterThan(0)
   })
+  // The contract deploys its helper contracts in its constructor, which doesn't run with a state
+  // override, so the positions would fail to load
+  test.each([
+    ['an RPC that supports state override', false],
+    ['an RPC without state override', true]
+  ])(
+    'sends the contract with the call, never as a state override, on %s',
+    async (_, rpcNoStateOverride) => {
+      const sendSpy = jest.spyOn(providerEthereum, 'send')
+
+      try {
+        const aavePositions = await getAAVEPositions(userAddrAave, providerEthereum, {
+          ...ethereum,
+          rpcNoStateOverride
+        })
+
+        expect(aavePositions).not.toBeNull()
+        expect(hasUsedStateOverride(sendSpy)).toBe(false)
+      } finally {
+        sendSpy.mockRestore()
+      }
+    }
+  )
   test('AAVE getReservesCount times out instead of hanging forever', async () => {
     jest.useFakeTimers()
     const getFunctionSpy = jest.spyOn(Contract.prototype, 'getFunction').mockReturnValue({

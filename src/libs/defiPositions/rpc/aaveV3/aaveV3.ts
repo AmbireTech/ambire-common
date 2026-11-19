@@ -32,11 +32,10 @@ export async function getAAVEPositions(
     provider
   )
 
-  const deploylessDeFiPositionsGetter = fromDescriptor(
-    provider,
-    DeFiPositionsDeploylessCode,
-    network.rpcNoStateOverride // Why?
-  )
+  // Always sent with the call to deploy it (never as a state override, even if the RPC supports
+  // it), as the contract deploys its helper contracts in its constructor, which doesn't run when
+  // its code is set at an address with a state override
+  const deploylessDeFiPositionsGetter = fromDescriptor(provider, DeFiPositionsDeploylessCode, false)
 
   // Raw ethers staticCall has no timeout; without this, a hung RPC can pin DeFi/portfolio updates.
   const reservesLength = await withTimeout(
