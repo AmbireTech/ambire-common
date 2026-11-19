@@ -23,17 +23,40 @@ import { fetchWithTimeout } from '../../utils/fetch'
 export const createKohakuStorage = ({
   storage,
   storageKey,
+  isObsoleteKey = () => false,
   onError
 }: {
   storage: IStorageController
   /** Which `StorageProps` entry holds this plugin's blob. */
   storageKey: 'privacyPoolsState'
+  /** Picks the keys the plugin no longer reads, removed from the blob when it is first read. */
+  isObsoleteKey?: (key: string) => boolean
   onError: (error: unknown, message?: string) => void
 }): Storage => {
   let cache: Record<string, string> | null = null
   let hydratePromise: Promise<Record<string, string>> | null = null
   // Serializes writes: two chains can finish syncing at once, and `storage.set` must not overlap
   let writeQueue: Promise<void> = Promise.resolve()
+
+  const persist = (blob: Record<string, string>) => {
+    writeQueue = writeQueue
+      .then(() => storage.set(storageKey, blob))
+      .catch((error) => onError(error, 'Privacy Pools could not save its progress on this device.'))
+
+    return writeQueue
+  }
+
+  /**
+   * Not awaited by the read, and `persist` reports a failure itself: a failed removal only leaves
+   * the keys for the next start.
+   */
+  const dropObsoleteKeys = (blob: Record<string, string>) => {
+    const storedObsoleteKeys = Object.keys(blob).filter(isObsoleteKey)
+    if (!storedObsoleteKeys.length) return
+
+    storedObsoleteKeys.forEach((key) => delete blob[key])
+    void persist(blob)
+  }
 
   const hydrate = (): Promise<Record<string, string>> => {
     if (cache) return Promise.resolve(cache)
@@ -43,7 +66,10 @@ export const createKohakuStorage = ({
         .get(storageKey, {})
         .then((blob) => {
           // A concurrent hydrate may have set it already - keep that object, as writes mutate it
-          cache = cache || blob
+          if (!cache) {
+            cache = blob
+            dropObsoleteKeys(cache)
+          }
           return cache
         })
         .catch((error) => {
@@ -71,13 +97,7 @@ export const createKohakuStorage = ({
 
       blob[key] = value
 
-      writeQueue = writeQueue
-        .then(() => storage.set(storageKey, blob))
-        .catch((error) =>
-          onError(error, 'Privacy Pools could not save its progress on this device.')
-        )
-
-      await writeQueue
+      await persist(blob)
     }
   }
 }
@@ -113,14 +133,20 @@ export const createKohakuKeystore = (deriveKey: (path: string) => Promise<Hex>):
 
 /**
  * Gives plugins the app's own fetch, so platform wiring and interception stay in one place. A GET
- * to a URL fails after `readTimeout` ms. Other requests have no timeout, as they may broadcast and
- * must not be given up on while they could still land.
+ * to a URL, or a POST to one of `readPostUrls`, fails after `readTimeout` ms. Other requests have
+ * no timeout, as they may broadcast and must not be given up on while they could still land.
  */
-export const createKohakuNetwork = (fetch: Fetch, readTimeout: number): Network => ({
+export const createKohakuNetwork = (
+  fetch: Fetch,
+  readTimeout: number,
+  /** URLs a POST to only asks for something, such as a relayer's quote, so it can be given up on. */
+  readPostUrls: string[] = []
+): Network => ({
   fetch: (input, init) => {
+    const isUrl = typeof input === 'string' || input instanceof URL
+    const method = init?.method?.toUpperCase() ?? 'GET'
     const isRead =
-      (typeof input === 'string' || input instanceof URL) &&
-      (!init?.method || init.method.toUpperCase() === 'GET')
+      isUrl && (method === 'GET' || (method === 'POST' && readPostUrls.includes(input.toString())))
     if (!isRead) return fetch(input as any, init as any) as unknown as Promise<Response>
 
     return fetchWithTimeout(fetch, input.toString(), init ?? {}, readTimeout)

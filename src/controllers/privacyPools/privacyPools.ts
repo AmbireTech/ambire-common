@@ -1,3 +1,5 @@
+import type { MerkleTreeBuilder } from '@kohaku-eth/privacy-pools'
+
 import EmittableError from '../../classes/EmittableError'
 import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '../../consts/activity'
 import {
@@ -6,6 +8,9 @@ import {
   getPrivacyPoolsTokenId,
   isPrivacyPoolsNativeAsset,
   PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY,
+  PRIVACY_POOLS_BROADCASTER_STORAGE_KEY,
+  PRIVACY_POOLS_BROADCASTERS,
+  PRIVACY_POOLS_DEFAULT_BROADCASTER,
   PRIVACY_POOLS_DEPOSIT_CHIPS,
   PRIVACY_POOLS_SUPPORTED_CHAIN_IDS
 } from '../../consts/privacyPools'
@@ -18,6 +23,7 @@ import {
   IPrivacyPoolsController,
   PrivacyPoolsAccount,
   PrivacyPoolsAccountChainState,
+  PrivacyPoolsBroadcaster,
   PrivacyPoolsChainPoolStats,
   PrivacyPoolsChainState,
   PrivacyPoolsDepositAssetConfig,
@@ -26,6 +32,7 @@ import {
   PrivacyPoolsHistorySession,
   PrivacyPoolsOperation,
   PrivacyPoolsRagequitDeposit,
+  PrivacyPoolsSendableDeposit,
   PrivacyPoolsSendForm,
   PrivacyPoolsTokenBalance,
   PrivacyPoolsUnavailableReason,
@@ -45,6 +52,10 @@ import {
   getUncheckedDepositors
 } from '../../libs/privacyPools/kohakuFingerprints'
 import { getPrivacyPoolsDepositPrivacy } from '../../libs/privacyPools/leaks/leaks'
+import {
+  findPrivacyPoolsDepositLabel,
+  getPrivacyPoolsSendableDeposits
+} from '../../libs/privacyPools/notes'
 import { fetchPrivacyPoolsPrices, getPrivacyPoolsPriceKey } from '../../libs/privacyPools/prices'
 import {
   createProverFactory,
@@ -52,7 +63,9 @@ import {
   withCancellableProving
 } from '../../libs/privacyPools/prover'
 import { readPrivacyPoolsRagequit } from '../../libs/privacyPools/ragequit'
+import { isPrivacyPoolsObsoleteStoreKey } from '../../libs/privacyPools/storeKeys'
 import { Pagination } from '../../utils/paginate'
+import wait from '../../utils/wait'
 import { waitForBlockNumber } from '../../utils/waitForBlockNumber'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { PrivacyPoolsBuiltCalls } from './builtCalls'
@@ -77,6 +90,13 @@ import {
   PrivacyPoolsWithdrawal,
   PrivacyPoolsWithdrawalParams
 } from './withdrawal'
+
+/**
+ * How long after a relayer sent a withdrawal the account is read. The relayer answers once it has
+ * sent it, before it lands, and asking for its receipt would tell our node who sent it - so the
+ * account is read once it has most likely landed: about 3 blocks on Ethereum, with time to spare.
+ */
+const RELAYED_WITHDRAWAL_SYNC_DELAY_MS = 40 * 1000
 
 /** A chain read more recently than this is not read again when the account is opened. */
 export const OPEN_SYNC_MAX_AGE_MS = 2 * 60 * 1000
@@ -170,6 +190,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /** At most one per stored recovery phrase, and removed with it. */
   accounts: PrivacyPoolsAccount[] = []
 
+  /** Who proves and sends transfers out of Privacy Pools accounts, as the user chose. */
+  broadcaster: PrivacyPoolsBroadcaster = PRIVACY_POOLS_DEFAULT_BROADCASTER
+
   initialLoadPromise?: Promise<void>
 
   constructor({
@@ -183,6 +206,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     fetch,
     circuitsBaseUrl,
     proverFactory,
+    merkleTreeBuilder,
     onAccountsRemoved,
     getPendingAccountOps,
     eventEmitterRegistry,
@@ -203,6 +227,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
      * proofs run here from `circuitsBaseUrl`.
      */
     proverFactory?: PrivacyPoolsProverFactory
+    /**
+     * Builds the pools' Merkle trees outside this context (the extension's offscreen document).
+     * Absent, the SDK builds them here. Passed to every plugin as it is, as the SDK caches its
+     * trees per builder.
+     */
+    merkleTreeBuilder?: MerkleTreeBuilder
     onAccountsRemoved: (seedIds: string[]) => Promise<void>
     /** The transactions broadcast but not confirmed, and the current request batch. */
     getPendingAccountOps: () => PendingAccountOp[]
@@ -227,9 +257,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       networks,
       providers,
       fetch,
-      kohakuStorage: createKohakuStorage({
+      chainStorage: createKohakuStorage({
         storage,
         storageKey: 'privacyPoolsState',
+        // States of older SDKs and dropped chains, a few MB each that each sync would otherwise rewrite
+        isObsoleteKey: isPrivacyPoolsObsoleteStoreKey,
         onError: (error, message) =>
           this.emitError({
             message:
@@ -253,7 +285,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       (circuit) => (circuit === 'withdraw' ? this.#withdrawal.provingSignal : null)
     )
 
-    this.#registry = new PrivacyPoolsProtocolRegistry(ctx, cancellableProverFactory)
+    this.#registry = new PrivacyPoolsProtocolRegistry(
+      ctx,
+      cancellableProverFactory,
+      merkleTreeBuilder
+    )
     this.#sync = new PrivacyPoolsSync(
       ctx,
       this.#registry,
@@ -275,7 +311,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       ctx,
       this.#registry,
       this.#sync,
-      this.#poolStatsReader
+      this.#poolStatsReader,
+      this.#expectedChanges
     )
     this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync, this.#builtCalls)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
@@ -309,6 +346,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     await this.#selectedAccount.initialLoadPromise
 
     this.accounts = await this.#storage.get(PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY, [])
+    const storedBroadcaster = await this.#storage.get(
+      PRIVACY_POOLS_BROADCASTER_STORAGE_KEY,
+      PRIVACY_POOLS_DEFAULT_BROADCASTER
+    )
+    // One no longer offered falls back to the default
+    if (PRIVACY_POOLS_BROADCASTERS.includes(storedBroadcaster)) this.broadcaster = storedBroadcaster
     // Phrases deleted while this controller was not running
     await this.#forgetAccountsOfDeletedSeeds()
 
@@ -386,7 +429,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
 
     this.#hasFailedFingerprintCheck = { ...this.#hasFailedFingerprintCheck, [chainId]: hasFailed }
-    this.#withdrawal.recheckWithdrawalPrivacy()
+    this.#withdrawal.recheckWithdrawalPrivacy(this.broadcaster)
     this.emitUpdate()
   }
 
@@ -484,7 +527,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Per chain, whether the last read of the pools' deposits or the last check of which depositors
-   * have a Kohaku client fingerprint failed. `readPrivacyData` tries both again.
+   * have a Kohaku client fingerprint failed. `readPrivacyData` tries both again. The check counts
+   * only through Kohaku, as a send through 0xBow does not need it - see `getSendPoolCover`.
    */
   get hasPrivacyDataFailed(): { [chainId: string]: boolean } {
     const chainIds = new Set([
@@ -498,7 +542,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   #hasPrivacyDataFailed(chainId: string): boolean {
-    return !!this.poolStats[chainId]?.error || !!this.#hasFailedFingerprintCheck[chainId]
+    const hasFingerprintCheckFailed =
+      this.broadcaster === 'kohaku' && !!this.#hasFailedFingerprintCheck[chainId]
+
+    return !!this.poolStats[chainId]?.error || hasFingerprintCheckFailed
   }
 
   /**
@@ -579,6 +626,32 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         )
 
         return [chainId, [...byToken.values()]]
+      })
+    )
+  }
+
+  /**
+   * Per chain, the selected account's deposits a send can spend, one per row of its Send form - see
+   * `getPrivacyPoolsSendableDeposits`.
+   */
+  get sendableDeposits(): { [chainId: string]: PrivacyPoolsSendableDeposit[] } {
+    const seedId = this.#getSelectedSeedId()
+    const accountChains = this.#getSelectedAccountStates()
+
+    return Object.fromEntries(
+      Object.keys(this.chains).map((chainId) => {
+        const state = accountChains[chainId]
+
+        return [
+          chainId,
+          getPrivacyPoolsSendableDeposits({
+            chainId,
+            notes: state ? [...state.notes, ...state.spentNotes] : [],
+            withdrawingDeposits: seedId
+              ? this.#expectedChanges.getWithdrawingDeposits(seedId, chainId)
+              : new Set()
+          })
+        ]
       })
     )
   }
@@ -1020,14 +1093,16 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Checks what the Send form's transfer gives away, from the selected account's notes and this
-   * device's copy of the pool. The result arrives in `withdrawalPrivacy`, in place of the previous
-   * check's.
+   * device's copy of the pool, as sent through `broadcaster`. The result arrives in
+   * `withdrawalPrivacy`, in place of the previous check's.
    */
-  checkWithdrawalPrivacy(params: Omit<PrivacyPoolsWithdrawalPrivacyParams, 'seedId'>) {
+  checkWithdrawalPrivacy(
+    params: Omit<PrivacyPoolsWithdrawalPrivacyParams, 'seedId' | 'broadcaster'>
+  ) {
     try {
       const seedId = this.#assertAvailableAndGetSeedId()
 
-      this.#withdrawal.checkWithdrawalPrivacy({ ...params, seedId })
+      this.#withdrawal.checkWithdrawalPrivacy({ ...params, seedId, broadcaster: this.broadcaster })
       this.emitUpdate()
     } catch (error: any) {
       this.emitError(
@@ -1083,16 +1158,65 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /**
    * Proves a withdrawal without sending it, so the user sees the fee before anything is sent.
    *
-   * A single-use sender derived from the phrase submits an ERC-4337 userOp whose gas a paymaster
-   * pays, taking a fee from the withdrawn amount - so no user-owned address pays gas.
+   * Sent through `broadcaster`, which pays the gas and takes a fee from the withdrawn amount - so
+   * no user-owned address pays gas. Through 0xBow a relayer submits it; through Kohaku a single-use
+   * sender derived from the phrase submits an ERC-4337 userOp whose gas a paymaster pays.
    *
    * Not in `withStatus`: proving is long. Progress is in `operation`. Leaving the form cancels it -
    * see `PrivacyPoolsWithdrawal.dropUnsent`.
    */
-  async prepareWithdrawal(params: PrivacyPoolsWithdrawalParams): Promise<void> {
+  async prepareWithdrawal(
+    params: Omit<PrivacyPoolsWithdrawalParams, 'broadcaster'>
+  ): Promise<void> {
     const seedId = this.#assertAvailableAndGetSeedId()
 
-    await this.#withdrawal.prepare({ ...params, seedId })
+    await this.#withdrawal.prepare({ ...params, broadcaster: this.broadcaster, seedId })
+  }
+
+  /**
+   * The label of the account's deposit the UI names by its number, or undefined when the account
+   * has no such deposit, or has not synced the chain yet. For the withdrawal on its way from it.
+   */
+  #findDepositLabel(
+    seedId: string,
+    {
+      chainId,
+      tokenAddress,
+      depositNumber
+    }: { chainId: string; tokenAddress: string; depositNumber: number }
+  ): bigint | undefined {
+    const state = this.#sync.getAccountChainStates(seedId)[chainId]
+    if (!state) return undefined
+
+    return findPrivacyPoolsDepositLabel(
+      [...state.notes, ...state.spentNotes],
+      tokenAddress,
+      depositNumber
+    )
+  }
+
+  /**
+   * Chooses who proves and sends transfers out of Privacy Pools accounts. Drops a transfer proved,
+   * or being proved, for the other one, which could only be sent through it. Checks the Send
+   * form's transfer again, as the deposits it hides among depend on who sends it.
+   */
+  async setBroadcaster(broadcaster: PrivacyPoolsBroadcaster): Promise<void> {
+    if (broadcaster === this.broadcaster) return
+
+    this.broadcaster = broadcaster
+    this.#withdrawal.dropUnsent()
+    this.#withdrawal.recheckWithdrawalPrivacy(broadcaster)
+    this.emitUpdate()
+
+    try {
+      await this.#storage.set(PRIVACY_POOLS_BROADCASTER_STORAGE_KEY, broadcaster)
+    } catch (error: any) {
+      this.emitError({
+        message: 'Could not save your choice of who sends your private transfers on this device.',
+        level: 'major',
+        error: error instanceof Error ? error : new Error('privacyPools: broadcaster write failed')
+      })
+    }
   }
 
   /**
@@ -1106,9 +1230,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Sends the signed withdrawal to the bundler and waits for it. The balance shows the amount as
-   * gone from the start. Once our RPC reaches the withdrawal's block, the account syncs once and
-   * the expected change is deleted. If the block is unknown, it syncs at once.
+   * Sends the signed withdrawal to the bundler, or the relayer, and waits for it. The balance shows
+   * the amount as gone from the start. Once our RPC reaches the withdrawal's block, the account
+   * syncs once and the expected change is deleted. Through 0xBow, whose block is not known, it
+   * syncs `RELAYED_WITHDRAWAL_SYNC_DELAY_MS` after the relayer sent it. If the block is otherwise
+   * unknown, it syncs at once.
    */
   async broadcastWithdrawal(): Promise<void> {
     // `operation`, so another phrase's cannot be sent
@@ -1123,7 +1249,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       chainId,
       kind: 'withdrawal',
       tokenAddress: operation.tokenAddress,
-      amount: -operation.amount
+      amount: -operation.amount,
+      label: this.#findDepositLabel(seedId, operation)
     })
     this.emitUpdate()
 
@@ -1139,6 +1266,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     // Also when it failed, as it may still land, so a reopened popup starts on a blank form
     if (seedId === this.#getSelectedSeedId() && this.#sendForm.clear()) this.emitUpdate()
 
+    if (attempt.isSent && operation.broadcaster === '0xbow')
+      await wait(RELAYED_WITHDRAWAL_SYNC_DELAY_MS)
     // Not the selected account: the user may have switched while the receipt was awaited. Picks
     // up the spent note and its change note.
     await this.#syncOnce(seedId, chainId, attempt.blockNumber ?? undefined)
@@ -1381,6 +1510,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       isAvailableForSelectedAccount: this.isAvailableForSelectedAccount,
       chains: this.chains,
       balances: this.balances,
+      sendableDeposits: this.sendableDeposits,
       hasSyncedAnyChain: this.hasSyncedAnyChain,
       operation: this.operation,
       hasPrivacyDataFailed: this.hasPrivacyDataFailed,

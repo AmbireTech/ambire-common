@@ -6,17 +6,16 @@ import {
 } from '../../../interfaces/privacyPools'
 import { PrivacyPoolsPoolCover } from '../poolStats'
 
-/** The part of a send paid from one note. */
+/** What a send spends from its one deposit. */
 export type PrivacyPoolsNoteSpend = { note: PrivacyPoolsNote; amount: bigint }
 
-/** A common amount the notes can pay, with how many deposits would hide a send of it. */
+/** A common amount the deposit can pay, with how many deposits would hide a send of it. */
 export type CommonAmountCover = { amount: bigint; cover: PrivacyPoolsSendCover }
 
 export type WithdrawalFacts = {
   amount: bigint
-  notes: PrivacyPoolsNote[]
-  tokenAddress: string
-  spends: PrivacyPoolsNoteSpend[]
+  /** Null before an amount is entered, so only the recipient is checked. */
+  spend: PrivacyPoolsNoteSpend | null
   cover: PrivacyPoolsSendCover
   commonAmountCovers: CommonAmountCover[]
   recipient: string | null

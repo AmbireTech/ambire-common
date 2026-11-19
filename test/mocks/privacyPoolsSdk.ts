@@ -37,3 +37,7 @@ export const SignatureSecretManager = notAvailable('SignatureSecretManager')
 export const createSagaLogSource = notAvailable('createSagaLogSource')
 
 export const Prover = notAvailable('Prover')
+
+/** The SDK's own builder, mirrored, as the wallet reads the chain state before a plugin exists. */
+export const getPPv1ChainStateKey = (chainId: bigint, entrypointAddress: bigint) =>
+  `privacy-pool-state-v2-${chainId}-${entrypointAddress}`
