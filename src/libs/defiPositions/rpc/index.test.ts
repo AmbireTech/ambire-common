@@ -534,7 +534,8 @@ describe('getReusableRpcDefiRead', () => {
     positionsByProviderName: { Morpho: getPositions('Morpho', 'custom') },
     readAt
   })
-  const getPreviousState = (rpcRead: RpcDefiRead | undefined = getRead()): NetworkState => ({
+  // Without a read, as the last one failed
+  const getPreviousState = (rpcRead?: RpcDefiRead): NetworkState => ({
     positionsByProvider: [getPositions('Morpho', 'custom')],
     rpcRead,
     error: null,
@@ -545,7 +546,7 @@ describe('getReusableRpcDefiRead', () => {
     params: Partial<Parameters<typeof getReusableRpcDefiRead>[0]> = {}
   ) =>
     getReusableRpcDefiRead({
-      previousState: getPreviousState(),
+      previousState: getPreviousState(getRead()),
       isManualUpdate: false,
       bypassServerSideCache: false,
       hasNonceChangedSinceLastUpdate: false,
@@ -585,7 +586,7 @@ describe('getReusableRpcDefiRead', () => {
     expect(callGetReusableRpcDefiRead({ previousState: undefined })).toBeNull()
   })
   test('retries a read that failed', () => {
-    expect(callGetReusableRpcDefiRead({ previousState: getPreviousState(undefined) })).toBeNull()
+    expect(callGetReusableRpcDefiRead({ previousState: getPreviousState() })).toBeNull()
   })
 })
 
