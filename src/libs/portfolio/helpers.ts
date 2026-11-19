@@ -7,6 +7,7 @@ import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Price } from '../../interfaces/assets'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { getBorrowedValueInUSD } from '../defiPositions/helpers'
 import { AssetType } from '../defiPositions/types'
 import { CustomToken, TokenPreference } from './customToken'
 import { PORTFOLIO_LIB_ERROR_NAMES } from './errorNames'
@@ -584,6 +585,28 @@ export const sortTokensByBalanceInUSD = <T extends TokenResult>(tokens: T[]): T[
     .sort((a, b) => b.balanceInUSD - a.balanceInUSD)
     .map(({ token }) => token)
 
+/**
+ * Ids of the DeFi positions whose supplied funds the total already counts through the
+ * position's tokens in the wallet (e.g. Aave's aTokens). A hidden token is not counted,
+ * so its position is counted at its own value instead and is not in the result.
+ */
+const getPositionIdsCountedByTokens = (
+  tokens: TokenResult[],
+  includeHiddenTokens: boolean
+): Set<string> =>
+  new Set(
+    tokens
+      .filter(
+        (token) =>
+          token.flags.defiPositionId &&
+          token.flags.defiTokenType === AssetType.Collateral &&
+          (includeHiddenTokens || !token.flags.isHidden) &&
+          // If the token doesn't have a price we must add the value from the position to the total
+          token.priceIn.length > 0
+      )
+      .map((token) => token.flags.defiPositionId!)
+  )
+
 export const getTotal = (
   t: TokenResult[],
   defiState: PortfolioNetworkResult['defiPositions'] | null,
@@ -630,15 +653,7 @@ export const getTotal = (
   if (defiState) {
     // The portfolio handles at least one collateral token,
     // thus we must exclude them from the defi total to avoid double counting
-    const positionsToExclude: string[] = t
-      .filter(
-        (token) =>
-          token.flags.defiPositionId &&
-          token.flags.defiTokenType === AssetType.Collateral &&
-          // If the token doesn't have a price we must add the value from the position to the total
-          token.priceIn.length > 0
-      )
-      .map((token) => token.flags.defiPositionId!)
+    const positionsToExclude = getPositionIdsCountedByTokens(t, includeHiddenTokens)
 
     defiTotal = defiState.positionsByProvider.reduce(
       (cur, position) => {
@@ -646,7 +661,13 @@ export const getTotal = (
 
         positionsFlat.forEach((p) => {
           // stkWallet is an internal position, created from the stkWallet token
-          if (positionsToExclude.includes(p.id) || p.id === 'stk-wallet') return
+          if (p.id === 'stk-wallet') return
+          // The wallet tokens count the supplied funds in full, so only the loans are left
+          // to subtract to count the position at its net value, like the other positions
+          if (positionsToExclude.has(p.id)) {
+            cur.usd -= getBorrowedValueInUSD(p.additionalData)
+            return
+          }
 
           cur.usd += p.additionalData.positionInUSD || 0
         })

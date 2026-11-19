@@ -3,13 +3,20 @@ import { formatUnits, getAddress, Interface, ZeroAddress } from 'ethers'
 import { expect, jest } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
+import { LedgerSigner } from '../../../test/keystore'
 import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { StoredKey } from '../../interfaces/keystore'
+import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { CollectionResult, TokenResult } from '../../libs/portfolio'
+import { getTokenAmount } from '../../libs/portfolio/helpers'
+import {
+  getDepositAmountWithVettingFee,
+  getMaxDepositPoolValue
+} from '../../libs/privacyPools/entrypointAssetConfig'
 import * as ensDomainsModule from '../../services/ensDomains/ensDomains'
 import {
   safeTokenAmountAndNumberMultiplication,
@@ -167,6 +174,26 @@ describe('Transfer Controller', () => {
 
     expect(transferController.amountFieldMode).toBe('fiat')
     expect(transferController.amount).toBe(transferController.maxAmount)
+  })
+  test('should show an amount set from outside the amount field in the field', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const ethOnEthereum = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    await transferController.update({ selectedToken: ethOnEthereum, amountFieldMode: 'token' })
+    await transferController.update({ amount: '5' })
+    const counterAfterTyping = transferController.programmaticUpdateCounter
+
+    // The UI reads the controller into the field only when this counter changes. The mode is
+    // already token, so a mode change can't make the field show the new amount either.
+    await transferController.update({
+      amountFieldMode: 'token',
+      amount: '0.1',
+      isAmountUpdateFromOutsideField: true
+    })
+
+    expect(transferController.programmaticUpdateCounter).not.toBe(counterAfterTyping)
+    expect(transferController.amountFieldMode).toBe('token')
+    expect(transferController.amount).toBe('0.1')
   })
   test('should keep the fiat amount at a displayable precision when switching to fiat mode', async () => {
     const { transferController, tokens } = await prepareTest()
@@ -568,15 +595,19 @@ describe('Transfer Controller - address poisoning against own accounts', () => {
     isOwnAccountViewOnly?: boolean
     sentToRecipients?: { [toAddress: string]: number }
   } = {}) => {
-    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
-      await storageCtrl.set('accounts', [account, ownAccount])
-      await storageCtrl.set('selectedAccount', account.addr)
-      await storageCtrl.set('keystoreKeys', isOwnAccountViewOnly ? [] : [ownAccountKey])
-      await storageCtrl.set('sentToHistory', {
-        domains: {},
-        recipients: { [account.addr]: sentToRecipients }
-      })
-    })
+    const { mainCtrl } = await makeMainController(
+      async (storageCtrl) => {
+        await storageCtrl.set('accounts', [account, ownAccount])
+        await storageCtrl.set('selectedAccount', account.addr)
+        await storageCtrl.set('keystoreKeys', isOwnAccountViewOnly ? [] : [ownAccountKey])
+        await storageCtrl.set('sentToHistory', {
+          domains: {},
+          recipients: { [account.addr]: sentToRecipients }
+        })
+      },
+      // Without a Ledger signer the Ledger key is unsupported, which makes the own account view-only
+      { overrides: { keystoreSigners: { internal: KeystoreSigner, ledger: LedgerSigner } } }
+    )
     await mainCtrl.selectedAccount.select({ account })
     mainCtrl.transfer.resetForm()
 
@@ -794,6 +825,64 @@ describe('Transfer Controller - Privacy Pools recipient', () => {
 
     expect(transferController.privacyPoolsRecipient).toBeNull()
     expect(transferController.hasPersistedState).toBe(false)
+  })
+
+  test('fills Max with what the balance puts into the pool, the fee paid on top of it', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+    const balance = getTokenAmount(transferController.selectedToken!)
+
+    await transferController.update({ shouldSetMaxAmount: true })
+
+    const poolValue = getMaxDepositPoolValue(balance, ETH_DEPOSIT_LIMITS.vettingFeeBPS)
+    expect(transferController.amount).toBe(formatUnits(poolValue, 18))
+    expect(
+      getDepositAmountWithVettingFee(poolValue, ETH_DEPOSIT_LIMITS.vettingFeeBPS)
+    ).toBeLessThanOrEqual(balance)
+    expect(transferController.validationFormMsgs.amount.severity).toBe('success')
+  })
+
+  test('refuses the whole balance, as the fee comes on top of the amount', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+    const balance = getTokenAmount(transferController.selectedToken!)
+
+    await transferController.update({ amount: formatUnits(balance, 18) })
+
+    expect(transferController.validationFormMsgs.amount).toEqual({
+      severity: 'error',
+      message: "You don't have enough ETH to also pay the Privacy Pools fee."
+    })
+    expect(transferController.isFormValid).toBe(false)
+  })
+
+  test('gives no max for the chips and Max until the fee is read', async () => {
+    const { mainCtrl, transferController } = await prepareOpenTransfer()
+    // The fee read never ends
+    jest
+      .spyOn(mainCtrl.privacyPools, 'loadDepositAssetConfig')
+      .mockImplementation(() => new Promise(() => {}))
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    expect(transferController.privacyPoolsMaxAmount).toBeNull()
+    expect(transferController.privacyPoolsFeeAmount).toBeNull()
+  })
+
+  test('gives the chips the same max as Max, which the balance pays with the fee', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+    const maxAmount = transferController.privacyPoolsMaxAmount!
+
+    await transferController.update({ shouldSetMaxAmount: true })
+
+    expect(transferController.amount).toBe(formatUnits(maxAmount, 18))
+    expect(transferController.privacyPoolsFeeAmount).toBe(
+      getDepositAmountWithVettingFee(maxAmount, ETH_DEPOSIT_LIMITS.vettingFeeBPS) - maxAmount
+    )
+    expect(maxAmount + transferController.privacyPoolsFeeAmount!).toBeLessThanOrEqual(
+      getTokenAmount(transferController.selectedToken!)
+    )
+    expect(transferController.validationFormMsgs.amount.severity).toBe('success')
   })
 })
 

@@ -34,6 +34,7 @@ import { Erc7730Controller } from '@/controllers/erc7730/erc7730'
 import { EstimationStatus } from '@/controllers/estimation/types'
 import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '@/controllers/featureFlags/featureFlags'
+import { onFeatureFlagChange } from '@/controllers/featureFlags/onFeatureFlagChange'
 import { InviteController } from '@/controllers/invite/invite'
 import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
@@ -351,7 +352,47 @@ export class MainController extends EventEmitter implements IMainController {
     // The only source of token prices, shared so that every feature reads one cache
     const tokenPrices = new TokenPricesController({
       fetch: this.fetch,
-      isTokenPricesEnabled: () => this.featureFlags.isFeatureEnabled('tokenPrices')
+      isTokenPricesEnabled: () => this.featureFlags.isFeatureEnabled('tokenPrices'),
+      // Read lazily, as the providers controller is created right after (and depends on this one).
+      // A provider that isn't set up yet (e.g. right after startup) is waited for.
+      getProvider: async (chainId) => {
+        const chainKey = chainId.toString()
+        if (!this.providers.providers[chainKey]) {
+          const network = this.networks.allNetworks.find((n) => n.chainId === chainId)
+          if (network) await this.providers.setProvider(network)
+        }
+
+        return this.providers.providers[chainKey]
+      }
+    })
+    // Switching the price source empties the price cache (see TokenPricesController), so the
+    // portfolio is updated right away to show what the setting changed, instead of keeping the
+    // other source's prices until the next scheduled update
+    onFeatureFlagChange(this.featureFlags, 'tokenPrices', () => {
+      this.updateSelectedAccountPortfolio().catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the portfolio after the token prices setting changed',
+          error
+        })
+      )
+    })
+    // Turning auto discovery off must hide the DeFi positions found through the API, and turning
+    // it on must bring them back. Every account is marked as outdated, as its data would otherwise
+    // look fresh and its next update could be skipped (e.g. after switching to it), and the
+    // selected account is updated right away instead of on the next scheduled update.
+    // `defiMaxDataAgeMs: 0` is still needed for the selected account: an update that was already
+    // running when the setting changed finishes first and saves its data as fresh again, so the
+    // API call of this update could otherwise be skipped
+    onFeatureFlagChange(this.featureFlags, 'tokenAndDefiAutoDiscovery', () => {
+      this.portfolio.markAllAccountsAsOutdated()
+      this.updateSelectedAccountPortfolio({ defiMaxDataAgeMs: 0 }).catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the portfolio after the auto discovery setting changed',
+          error
+        })
+      )
     })
     this.providers = new ProvidersController({
       eventEmitterRegistry,
@@ -2157,9 +2198,9 @@ export class MainController extends EventEmitter implements IMainController {
     await this.networks.updateNetwork({ areContractsDeployed: true }, network.chainId)
   }
 
-  // remove all keys that have this addr
+  // remove all keys that have this addr, including the ones this device can't sign with
   #removeAccountKeyData(address: Account['addr']) {
-    this.keystore.keys
+    ;[...this.keystore.keys, ...this.keystore.unsupportedKeys]
       .filter((key) => key.addr === address)
       .forEach((key) => {
         this.keystore.removeKey(key.addr, key.type).catch((e) => {
@@ -2204,6 +2245,41 @@ export class MainController extends EventEmitter implements IMainController {
 
   async removeAccount(address: Account['addr']) {
     await this.withStatus('removeAccount', async () => this.#removeAccount(address))
+  }
+
+  /**
+   * Removes a key on the user's request, from every account it signs for, and reloads those
+   * accounts' state so signing and view-only checks stop counting it right away.
+   * Resolves with, and replies to the UI request with, whether the key was removed (a failure is
+   * emitted by the keystore).
+   */
+  async deleteKey(addr: Key['addr'], type: Key['type'], requestId?: string): Promise<boolean> {
+    const accountsWithKey = this.accounts.accounts.filter((account) =>
+      Object.values(this.accounts.accountStates[account.addr] || {}).some((state) =>
+        state.importedAccountKeys.some((key) => key.addr === addr && key.type === type)
+      )
+    )
+
+    const isStored = () =>
+      [...this.keystore.keys, ...this.keystore.unsupportedKeys].some(
+        (key) => key.addr === addr && key.type === type
+      )
+    const wasStored = isStored()
+
+    await this.keystore.deleteKey(addr, type)
+
+    const isRemoved = wasStored && !isStored()
+    if (requestId) this.ui.message.sendUiMessage({ requestId, ok: true, res: isRemoved })
+    if (!isRemoved) return false
+
+    await Promise.all(
+      // Forced, as a fetch that started before the removal would still count the key
+      accountsWithKey.map((account) =>
+        this.accounts.updateAccountState(account.addr, 'latest', [], true)
+      )
+    )
+
+    return true
   }
 
   async #updateAccounts({ accountsToAdd, accountAddressesToRemove }: AccountsUpdate) {

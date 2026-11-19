@@ -44,8 +44,16 @@ export const readEntrypointAssetConfig = async ({
 }
 
 /**
- * What a deposit of `amount` adds to the pool, after the entrypoint keeps its vetting fee. Rounds
- * the fee down, as the entrypoint does, so it matches the note the deposit becomes.
+ * What to deposit so that `poolValue` goes into the pool after the vetting fee. Rounds down the
+ * same way as the 0xBow website's `calculateInitialDeposit`, so the same typed amount becomes the
+ * same note in both apps.
  */
-export const getDepositAmountAfterVettingFee = (amount: bigint, vettingFeeBPS: bigint): bigint =>
-  amount - (amount * vettingFeeBPS) / BASIS_POINTS_DENOMINATOR
+export const getDepositAmountWithVettingFee = (poolValue: bigint, vettingFeeBPS: bigint): bigint =>
+  (poolValue * BASIS_POINTS_DENOMINATOR) / (BASIS_POINTS_DENOMINATOR - vettingFeeBPS)
+
+/**
+ * The most a deposit paid from `balance` can put into the pool. Rounds as the 0xBow website's Max
+ * does, so `getDepositAmountWithVettingFee` of it never asks for more than `balance`.
+ */
+export const getMaxDepositPoolValue = (balance: bigint, vettingFeeBPS: bigint): bigint =>
+  (balance * (BASIS_POINTS_DENOMINATOR - vettingFeeBPS)) / BASIS_POINTS_DENOMINATOR

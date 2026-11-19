@@ -816,14 +816,17 @@ export function toCallsUserRequest(
         if (!decodedCalls.every((call): call is SuccessfullyDecoded => call.success)) {
           throw new Error('failed to decode one or more multiSend calls')
         }
+        // Another signer or app proposed this transaction, so its calldata can be in any case.
+        // Hex is case-insensitive onchain, so lower-casing it changes neither the bytes nor the
+        // safeTxHash, and the humanizer and the decoder see the form they match against
         calls = decodedCalls.map((call) => ({
           to: call.to,
           value: call.value,
-          data: call.data
+          data: call.data.toLowerCase()
         }))
       } catch {
         // this just means it's not a batch
-        calls = [{ to: txn.to, value: BigInt(txn.value), data: txn.data || '0x' }]
+        calls = [{ to: txn.to, value: BigInt(txn.value), data: (txn.data || '0x').toLowerCase() }]
       }
 
       const signature = txn.confirmations

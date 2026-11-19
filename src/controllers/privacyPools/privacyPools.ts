@@ -3,8 +3,10 @@ import { CONFIRMED_BLOCK_WAIT_TIMEOUT_MS } from '../../consts/activity'
 import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig,
+  getPrivacyPoolsTokenId,
   isPrivacyPoolsNativeAsset,
   PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY,
+  PRIVACY_POOLS_DEPOSIT_CHIPS,
   PRIVACY_POOLS_SUPPORTED_CHAIN_IDS
 } from '../../consts/privacyPools'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
@@ -19,13 +21,16 @@ import {
   PrivacyPoolsChainPoolStats,
   PrivacyPoolsChainState,
   PrivacyPoolsDepositAssetConfig,
+  PrivacyPoolsDepositPrivacy,
   PrivacyPoolsHistoryFilters,
   PrivacyPoolsHistorySession,
   PrivacyPoolsOperation,
   PrivacyPoolsRagequitDeposit,
   PrivacyPoolsSendForm,
   PrivacyPoolsTokenBalance,
-  PrivacyPoolsUnavailableReason
+  PrivacyPoolsUnavailableReason,
+  PrivacyPoolsWithdrawalPrivacyCheck,
+  PrivacyPoolsWithdrawalPrivacyParams
 } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -35,6 +40,11 @@ import { IUiController, View } from '../../interfaces/ui'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { createKohakuStorage } from '../../libs/kohaku/host'
+import {
+  checkKohakuFingerprints,
+  getUncheckedDepositors
+} from '../../libs/privacyPools/kohakuFingerprints'
+import { getPrivacyPoolsDepositPrivacy } from '../../libs/privacyPools/leaks/leaks'
 import { fetchPrivacyPoolsPrices, getPrivacyPoolsPriceKey } from '../../libs/privacyPools/prices'
 import {
   createProverFactory,
@@ -57,7 +67,7 @@ import { PrivacyPoolsDepositParams, PrivacyPoolsDeposits } from './deposits'
 import { privacyPoolsErrors } from './errors'
 import { PrivacyPoolsExpectedChanges } from './expectedChanges'
 import { PrivacyPoolsHistory } from './history'
-import { PrivacyPoolsPoolStatsReader } from './poolStats'
+import { PrivacyPoolsPoolCoversByToken, PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsRagequit } from './ragequit'
 import { PrivacyPoolsSendFormState } from './sendForm'
@@ -67,8 +77,6 @@ import {
   PrivacyPoolsWithdrawal,
   PrivacyPoolsWithdrawalParams
 } from './withdrawal'
-
-const PRICES_MAX_AGE_MS = 5 * 60 * 1000
 
 /** A chain read more recently than this is not read again when the account is opened. */
 export const OPEN_SYNC_MAX_AGE_MS = 2 * 60 * 1000
@@ -143,17 +151,21 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    */
   prices: { [priceKey: string]: number } = {}
 
-  #pricesFetchedAt = 0
-
-  #pricesRequest: Promise<void> | null = null
-
   /**
    * Per chain, its pools' numbers for a token's details, so they are there when it opens. The same
    * for every account, so they outlive a lock. Computed from this device's copy of the history
    * after each sync of it, before the balances it reads show - see `PrivacyPoolsPoolStatsReader`.
-   * Not on load: a stored history is read only when the user opens a Privacy Pools account.
+   * Not on load: a stored history is read only when the user opens a Privacy Pools account, or a
+   * deposit into one.
    */
   poolStats: { [chainId: string]: PrivacyPoolsChainPoolStats } = {}
+
+  /**
+   * Per chain, whether its last check of which depositors have a Kohaku client fingerprint failed.
+   * Before any check of the chain succeeds, a send that needs one stays `unchecked` until
+   * `readPrivacyData` checks again.
+   */
+  #hasFailedFingerprintCheck: { [chainId: string]: boolean } = {}
 
   /** At most one per stored recovery phrase, and removed with it. */
   accounts: PrivacyPoolsAccount[] = []
@@ -258,9 +270,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       this.#builtCalls,
       this.#expectedChanges
     )
-    this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
-    this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync, this.#builtCalls)
     this.#poolStatsReader = new PrivacyPoolsPoolStatsReader(ctx)
+    this.#withdrawal = new PrivacyPoolsWithdrawal(
+      ctx,
+      this.#registry,
+      this.#sync,
+      this.#poolStatsReader
+    )
+    this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync, this.#builtCalls)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
     this.#history = new PrivacyPoolsHistory(ctx, this.#sync, {
       getSupportedChainIds: () => this.supportedChainIds,
@@ -309,11 +326,18 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     const isLatest = () => this.#poolStatsRefreshIds[chainId] === refreshId
 
     try {
-      const byToken = await this.#poolStatsReader.read(chainId)
+      const pools = await this.#poolStatsReader.read(chainId)
       // Before the chain's first sync there is nothing to show yet, not an error
-      if (!byToken || !isLatest()) return
+      if (!pools || !isLatest()) return
 
-      this.poolStats = { ...this.poolStats, [chainId]: { byToken, error: null } }
+      this.poolStats = {
+        ...this.poolStats,
+        [chainId]: { byToken: pools.statsByToken, error: null }
+      }
+      this.#poolStatsReader.setPoolCovers(chainId, pools.poolCovers)
+      // Not awaited, so the pool's numbers never wait for it
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#checkFingerprints(chainId, pools.poolCovers)
     } catch (error: any) {
       const emittableError = privacyPoolsErrors.poolStatsReadFailed(error)
       this.emitError(emittableError)
@@ -324,6 +348,46 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         [chainId]: { byToken: {}, error: emittableError.message }
       }
     }
+  }
+
+  /**
+   * Checks which new depositors of a chain have a Kohaku client fingerprint, then checks the Send
+   * form's transfer again. Asks about the depositors of all the chain's pools in one go, so the RPC never learns
+   * which pool the user looks at. The result of a slow check is still kept, as it only adds
+   * answers for new depositors. Never rejects.
+   */
+  async #checkFingerprints(
+    chainId: string,
+    poolCovers: PrivacyPoolsPoolCoversByToken
+  ): Promise<void> {
+    let hasFailed = false
+    try {
+      const uncheckedDepositors = getUncheckedDepositors(
+        Object.values(poolCovers).flatMap(({ deposits }) => deposits),
+        this.#poolStatsReader.getFingerprints(chainId)
+      )
+      let checked = new Map<string, boolean>()
+      if (uncheckedDepositors.length) {
+        const network = this.#networks.networks.find((n) => n.chainId.toString() === chainId)
+        if (!network) throw new Error(`privacyPools: no network for chain ${chainId}`)
+
+        checked = await checkKohakuFingerprints({
+          provider: getChainProvider(this.#providers, chainId),
+          supportsStateOverride: !network.rpcNoStateOverride,
+          addresses: uncheckedDepositors
+        })
+      }
+      // Added even when empty, so a chain with no depositors to check counts as checked
+      this.#poolStatsReader.addFingerprints(chainId, checked)
+    } catch (error: unknown) {
+      // The depositors not checked add no cover until a later check, see `getSendPoolCover`
+      hasFailed = true
+      this.emitError(privacyPoolsErrors.fingerprintCheckFailed(error))
+    }
+
+    this.#hasFailedFingerprintCheck = { ...this.#hasFailedFingerprintCheck, [chainId]: hasFailed }
+    this.#withdrawal.recheckWithdrawalPrivacy()
+    this.emitUpdate()
   }
 
   /**
@@ -360,6 +424,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         // The form it was proved from is gone; one being sent finishes, hidden
         this.#withdrawal.dropUnsent()
         this.#sendForm.clear()
+        this.#withdrawal.dropPrivacyCheck()
         if (selectedAccountId) this.#syncOnOpen()
         this.propagateUpdate(forceEmit)
       }, 'privacyPools'),
@@ -376,11 +441,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         'privacyPools'
       ),
 
-      this.#featureFlags.onUpdate((forceEmit) => {
-        if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) this.#dropPrices()
-
-        this.#propagateIfHasAccounts(forceEmit)
-      }, 'privacyPools')
+      this.#featureFlags.onUpdate(
+        (forceEmit) => this.#propagateIfHasAccounts(forceEmit),
+        'privacyPools'
+      )
     )
   }
 
@@ -416,6 +480,25 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /** Per chain: the selected account's sync of it, with what this device knows of its shared state. */
   get chains(): { [chainId: string]: PrivacyPoolsChainState } {
     return this.#sync.getChainStates(this.#getSelectedSeedId(), this.supportedChainIds)
+  }
+
+  /**
+   * Per chain, whether the last read of the pools' deposits or the last check of which depositors
+   * have a Kohaku client fingerprint failed. `readPrivacyData` tries both again.
+   */
+  get hasPrivacyDataFailed(): { [chainId: string]: boolean } {
+    const chainIds = new Set([
+      ...Object.keys(this.poolStats),
+      ...Object.keys(this.#hasFailedFingerprintCheck)
+    ])
+
+    return Object.fromEntries(
+      [...chainIds].map((chainId) => [chainId, this.#hasPrivacyDataFailed(chainId)])
+    )
+  }
+
+  #hasPrivacyDataFailed(chainId: string): boolean {
+    return !!this.poolStats[chainId]?.error || !!this.#hasFailedFingerprintCheck[chainId]
   }
 
   /**
@@ -513,6 +596,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return this.#deposits.assetConfigs
   }
 
+  /**
+   * The privacy of the transfer the Send form last asked about - see `checkWithdrawalPrivacy`.
+   * Dropped with the form.
+   */
+  get withdrawalPrivacy(): PrivacyPoolsWithdrawalPrivacyCheck | null {
+    return this.#withdrawal.getWithdrawalPrivacyCheck(this.#getSelectedSeedId())
+  }
+
   /** The selected account's Send form. Dropped on switching accounts, like the regular one. */
   get sendForm(): PrivacyPoolsSendForm {
     return this.#sendForm.form
@@ -578,43 +669,28 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return this.#sync.queue(chainId, seedId)
   }
 
-  /** Refetches stale prices, one request at a time, unless token prices are opted out of. */
+  /**
+   * Reads the prices from the price controller, which answers from its cache when they are
+   * fresh, joins a request already in flight, and answers with none while the user has opted
+   * out of token prices.
+   */
   async #refreshPrices() {
-    if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) return
-    if (this.#pricesRequest || Date.now() - this.#pricesFetchedAt < PRICES_MAX_AGE_MS) return
-
-    this.#pricesRequest = (async () => {
-      try {
-        const prices = await fetchPrivacyPoolsPrices({
-          tokenPrices: this.#tokenPrices,
-          networks: this.#networks.networks.filter(({ chainId }) =>
-            this.supportedChainIds.includes(chainId.toString())
-          )
-        })
-        // Opted out while the request was in flight
-        if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) return
-
-        this.prices = prices
-        this.#pricesFetchedAt = Date.now()
-        this.emitUpdate()
-      } catch (error: any) {
-        // Previous prices, if any, stay
-        this.emitError({
-          level: 'silent',
-          message: 'Could not load the prices of what is in Privacy Pools.',
-          error: error instanceof Error ? error : new Error('privacyPools: prices request failed')
-        })
-      } finally {
-        this.#pricesRequest = null
-      }
-    })()
-
-    await this.#pricesRequest
-  }
-
-  #dropPrices() {
-    this.prices = {}
-    this.#pricesFetchedAt = 0
+    try {
+      this.prices = await fetchPrivacyPoolsPrices({
+        tokenPrices: this.#tokenPrices,
+        networks: this.#networks.networks.filter(({ chainId }) =>
+          this.supportedChainIds.includes(chainId.toString())
+        )
+      })
+      this.emitUpdate()
+    } catch (error: any) {
+      // Previous prices, if any, stay
+      this.emitError({
+        level: 'silent',
+        message: 'Could not load the prices of what is in Privacy Pools.',
+        error: error instanceof Error ? error : new Error('privacyPools: prices request failed')
+      })
+    }
   }
 
   /**
@@ -801,7 +877,59 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     tokenAddress: string,
     sessionId: string | null
   ): Promise<PrivacyPoolsDepositAssetConfig> {
+    this.readPrivacyData(chainId)
+
     return this.#deposits.loadAssetConfig(chainId, tokenAddress, sessionId)
+  }
+
+  /**
+   * Reads the pool's deposits the privacy checks need, which a sync may not have read yet. Does
+   * nothing when they are read already, and reads again after a failure, so it also retries.
+   */
+  readPrivacyData(chainId: string) {
+    const isRead =
+      this.#poolStatsReader.hasPoolCovers(chainId) && !this.#hasPrivacyDataFailed(chainId)
+    if (isRead) return
+
+    // Shown as being checked again right away, not only once the check ends
+    this.#hasFailedFingerprintCheck = {
+      ...this.#hasFailedFingerprintCheck,
+      [chainId]: false
+    }
+    this.emitUpdate()
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#refreshPoolStats(chainId).then(() => this.emitUpdate())
+  }
+
+  /**
+   * The privacy of a deposit that puts `amount` into a pool, of at most `maxAmount`, both after the
+   * vetting fee. For `TransferController`. Rated `unchecked` before the deposits it hides among are
+   * read - see `readPrivacyData`.
+   */
+  getDepositPrivacy({
+    chainId,
+    tokenAddress,
+    amount,
+    maxAmount
+  }: {
+    chainId: string
+    tokenAddress: string
+    amount: bigint
+    maxAmount: bigint
+  }): PrivacyPoolsDepositPrivacy {
+    const privacy = getPrivacyPoolsDepositPrivacy({
+      amount,
+      maxAmount,
+      poolCover: this.#poolStatsReader.getPoolCover(chainId, tokenAddress),
+      commonAmounts:
+        PRIVACY_POOLS_DEPOSIT_CHIPS[getPrivacyPoolsTokenId(chainId, tokenAddress)] ?? []
+    })
+
+    // A chain with no history on this device stays so until the deposit's own sync reads it
+    const isLoading =
+      !this.#poolStatsReader.hasPoolCovers(chainId) && !this.poolStats[chainId]?.error
+
+    return { ...privacy, isLoading }
   }
 
   /**
@@ -890,6 +1018,30 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (hasDeleted) this.emitUpdate()
   }
 
+  /**
+   * Checks what the Send form's transfer gives away, from the selected account's notes and this
+   * device's copy of the pool. The result arrives in `withdrawalPrivacy`, in place of the previous
+   * check's.
+   */
+  checkWithdrawalPrivacy(params: Omit<PrivacyPoolsWithdrawalPrivacyParams, 'seedId'>) {
+    try {
+      const seedId = this.#assertAvailableAndGetSeedId()
+
+      this.#withdrawal.checkWithdrawalPrivacy({ ...params, seedId })
+      this.emitUpdate()
+    } catch (error: any) {
+      this.emitError(
+        error instanceof EmittableError
+          ? error
+          : {
+              level: 'silent',
+              message: 'Could not check the privacy of this transfer.',
+              error: error instanceof Error ? error : new Error('privacyPools: leak check failed')
+            }
+      )
+    }
+  }
+
   updateSendForm(update: Partial<PrivacyPoolsSendForm>) {
     this.#sendForm.update(update)
     this.emitUpdate()
@@ -903,8 +1055,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #leaveSendForm() {
     const hasDroppedWithdrawal = this.#withdrawal.dropUnsent()
     const hasClearedForm = this.#sendForm.clear()
+    const hasDroppedPrivacyCheck = this.#withdrawal.dropPrivacyCheck()
 
-    if (hasDroppedWithdrawal || hasClearedForm) this.emitUpdate()
+    if (hasDroppedWithdrawal || hasClearedForm || hasDroppedPrivacyCheck) this.emitUpdate()
   }
 
   #onAddView = () => {
@@ -1230,8 +1383,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       balances: this.balances,
       hasSyncedAnyChain: this.hasSyncedAnyChain,
       operation: this.operation,
+      hasPrivacyDataFailed: this.hasPrivacyDataFailed,
       depositAssetConfigs: this.depositAssetConfigs,
       history: this.history,
+      withdrawalPrivacy: this.withdrawalPrivacy,
       sendForm: this.sendForm,
       sendFormResetCounter: this.sendFormResetCounter,
       hasPersistedSendForm: this.hasPersistedSendForm

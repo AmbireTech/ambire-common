@@ -33,7 +33,11 @@ export interface PredefinedDapp {
   icon: string | null
 }
 
-export type ConnectionSource = 'injected' | 'wc'
+/**
+ * The channel an app is connected through, each with its own permission entry. `'wc-in-app'` is
+ * WalletConnect paired by an app in the mobile in-app browser, `'wc'` one paired elsewhere.
+ */
+export type ConnectionSource = 'injected' | 'wc' | 'wc-in-app'
 
 export interface ExtraDappInfo {
   /**
@@ -53,7 +57,8 @@ export interface ExtraDappInfo {
   isConnected: boolean
   /**
    * Active connection channels for this dapp. On web/extension this is always either
-   * `[]` or `['injected']`. On mobile it may contain `'injected'`, `'wc'`, or both.
+   * `[]` or `['injected']`. On mobile it may contain any combination of `'injected'`, `'wc'`
+   * and `'wc-in-app'`.
    */
   connectedSources: ConnectionSource[]
   isFeatured: boolean

@@ -2,11 +2,11 @@ import { Interface } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import { getPrivacyPoolsDepositAsset, toPrivacyPoolsAssetAddress } from '../../consts/privacyPools'
-import { PrivacyPoolsDepositAssetConfig } from '../../interfaces/privacyPools'
+import { PrivacyPoolsDepositAssetConfig, PrivacyPoolsNote } from '../../interfaces/privacyPools'
 import { Call } from '../../libs/accountOp/types'
 import { encodePrivacyPoolsDeposit, readPrivacyPoolsDeposit } from '../../libs/privacyPools/deposit'
 import {
-  getDepositAmountAfterVettingFee,
+  getDepositAmountWithVettingFee,
   PrivacyPoolsEntrypointAssetConfig,
   readEntrypointAssetConfig
 } from '../../libs/privacyPools/entrypointAssetConfig'
@@ -22,7 +22,7 @@ import {
 import { privacyPoolsErrors } from './errors'
 import { PrivacyPoolsExpectedChanges } from './expectedChanges'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
-import { PrivacyPoolsSync } from './sync'
+import { PrivacyPoolsSync, readPrivacyPoolsNotes } from './sync'
 
 const ERC20_INTERFACE = new Interface([
   'function approve(address spender, uint256 amount)',
@@ -50,16 +50,23 @@ export type PrivacyPoolsDepositParams = AssetRef & {
   /** The wallet account sending them. */
   accountAddr: string
   chainId: string
+  /** What goes into the pool. The vetting fee is added on top, as on the 0xBow website. */
   amount: bigint
 }
 
+/** The next deposit's precommitment, and the account's notes it was derived from. */
+type NextDeposit = {
+  precommitment: bigint
+  notes: PrivacyPoolsNote[]
+}
+
 /**
- * The next deposit's precommitment of an account on a chain, and the sync epoch it was derived
- * after (null while that sync runs). See `#getNextDepositPrecommitment`.
+ * The next deposit of an account on a chain, and the sync epoch it was derived after (null while
+ * that sync runs). See `#getNextDeposit`.
  */
-type NextDepositPrecommitment = {
+type CachedNextDeposit = {
   seedId: string
-  derivation: Promise<bigint>
+  derivation: Promise<NextDeposit>
   epoch: number | null
 }
 
@@ -87,8 +94,8 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     { assetConfig: PrivacyPoolsEntrypointAssetConfig; sessionId: string | null }
   >()
 
-  /** Per `${chainId}:${seedId}`. See `#getNextDepositPrecommitment`. */
-  #nextDepositPrecommitments = new Map<string, NextDepositPrecommitment>()
+  /** Per `${chainId}:${seedId}`. See `#getNextDeposit`. */
+  #nextDeposits = new Map<string, CachedNextDeposit>()
 
   constructor(
     ctx: PrivacyPoolsContext,
@@ -120,14 +127,16 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     const asset = getPrivacyPoolsDepositAsset(BigInt(chainId), tokenAddress)
     if (!asset) throw privacyPoolsErrors.depositUnsupportedToken(tokenAddress, chainId)
 
-    if (amount > asset.maxDeposit)
-      throw privacyPoolsErrors.depositAboveMaximum(asset.maxDeposit, asset)
-
     // The last read, made when the Send session started; a pool replaced since is seen next session
     const { minimumDepositAmount, poolAddress, vettingFeeBPS } =
       this.#lastAssetConfigs.get(getAssetConfigKey(chainId, tokenAddress))?.assetConfig ??
       (await this.#readAssetConfig(chainId, tokenAddress, null))
-    if (amount < minimumDepositAmount)
+    const depositAmount = getDepositAmountWithVettingFee(amount, vettingFeeBPS)
+
+    if (depositAmount > asset.maxDeposit)
+      throw privacyPoolsErrors.depositAboveMaximum(asset.maxDeposit, asset)
+
+    if (depositAmount < minimumDepositAmount)
       throw privacyPoolsErrors.depositBelowMinimum(minimumDepositAmount, asset)
 
     // A pool the paymaster has no adapter for, e.g. one 0xBow replaced, could not be sent out of
@@ -135,7 +144,7 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     if (!config.paymaster?.poolAdapters[poolAddress.toLowerCase()])
       throw privacyPoolsErrors.depositUnsupportedPool(asset.symbol, poolAddress)
 
-    const precommitment = await this.#getNextDepositPrecommitment(chainId, seedId)
+    const { precommitment, notes } = await this.#getNextDeposit(chainId, seedId)
 
     if (this.#isDepositPending(seedId, chainId, precommitment))
       throw privacyPoolsErrors.depositAwaitingChain()
@@ -145,22 +154,26 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
       ...encodePrivacyPoolsDeposit({
         isNative: asset.isNative,
         assetAddress: asset.address,
-        amount,
+        amount: depositAmount,
         precommitment
       })
     }
+    this.#expectedChanges.setNextDepositNotes(seedId, chainId, notes)
     this.#builtCalls.add({
       chainId,
       call: depositCall,
       seedId,
       kind: 'deposit',
       tokenAddress: asset.address,
-      amount: getDepositAmountAfterVettingFee(amount, vettingFeeBPS)
+      amount
     })
 
     if (asset.isNative) return [depositCall]
 
-    return [...(await this.#approvalCallIfNeeded(chainId, asset, amount, accountAddr)), depositCall]
+    return [
+      ...(await this.#approvalCallIfNeeded(chainId, asset, depositAmount, accountAddr)),
+      depositCall
+    ]
   }
 
   /**
@@ -220,35 +233,35 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
   }
 
   hasPhraseDerivedState(): boolean {
-    return !!this.#nextDepositPrecommitments.size
+    return !!this.#nextDeposits.size
   }
 
   forgetSeed(seedId: string) {
-    this.#nextDepositPrecommitments.forEach((entry, key) => {
-      if (entry.seedId === seedId) this.#nextDepositPrecommitments.delete(key)
+    this.#nextDeposits.forEach((entry, key) => {
+      if (entry.seedId === seedId) this.#nextDeposits.delete(key)
     })
   }
 
   /** Drops the precommitments derived ahead. */
   clear() {
-    this.#nextDepositPrecommitments.clear()
+    this.#nextDeposits.clear()
   }
 
   /**
-   * The next deposit's precommitment. It depends on the phrase's deposit count, not the amount, so
-   * it is derived once per sync (deriving needs a sync first). Taken from an SDK-built deposit only
-   * if that goes to the configured entrypoint.
+   * The next deposit's precommitment, and the notes it was derived from. It depends on the phrase's
+   * deposit count, not the amount, so it is derived once per sync (deriving needs a sync first).
+   * Taken from an SDK-built deposit only if that goes to the configured entrypoint.
    */
-  #getNextDepositPrecommitment(chainId: string, seedId: string): Promise<bigint> {
+  #getNextDeposit(chainId: string, seedId: string): Promise<NextDeposit> {
     const key = `${chainId}:${seedId}`
-    const cached = this.#nextDepositPrecommitments.get(key)
+    const cached = this.#nextDeposits.get(key)
     const isCachedCurrent =
       !!cached && (cached.epoch === null || cached.epoch === this.#sync.getEpoch(chainId, seedId))
     if (cached && isCachedCurrent) return cached.derivation
 
-    const entry: NextDepositPrecommitment = {
+    const entry: CachedNextDeposit = {
       seedId,
-      derivation: Promise.resolve(0n),
+      derivation: Promise.resolve({ precommitment: 0n, notes: [] }),
       epoch: null
     }
     const derivation = (async () => {
@@ -273,15 +286,18 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
       if (precommitment === null)
         throw new Error('privacyPools: the prepared deposit is not an entrypoint deposit')
 
-      return precommitment
+      // What prepareShield's own sync read, so no second sync. Read before the deposit is sent, so
+      // they cannot show it yet.
+      const notes = await readPrivacyPoolsNotes(protocol, false)
+
+      return { precommitment, notes }
     })()
 
     entry.derivation = derivation
-    this.#nextDepositPrecommitments.set(key, entry)
+    this.#nextDeposits.set(key, entry)
     // Not cached on failure, so the next attempt retries
     derivation.catch(() => {
-      if (this.#nextDepositPrecommitments.get(key) === entry)
-        this.#nextDepositPrecommitments.delete(key)
+      if (this.#nextDeposits.get(key) === entry) this.#nextDeposits.delete(key)
     })
 
     return derivation.catch((error) => {

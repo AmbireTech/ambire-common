@@ -1,6 +1,7 @@
 import { solidityPackedKeccak256 } from 'ethers'
 
 import { PrivacyPoolsPoolStats } from '../../interfaces/privacyPools'
+import compareBigInts from '../../utils/numbers/compareBigInts'
 
 /** The field the pools reduce labels into, BN254's scalar field. */
 const SNARK_SCALAR_FIELD =
@@ -9,15 +10,20 @@ const SNARK_SCALAR_FIELD =
 /** An event of a pool as the SDK persists it: what it moved and when. */
 type StoredPoolEvent = { value: bigint; blockNumber: bigint }
 
+/** A deposit as the entrypoint reported it, with the address it came from in lowercase. */
+type StoredPoolDeposit = StoredPoolEvent & { depositor: string }
+
 /** One pool's part of the SDK's persisted public state of its chain. */
 export type PrivacyPoolsPoolHistory = {
   lastSyncedBlock: bigint
   /** What each deposit's label is derived from - see `getPrivacyPoolsPoolLabels`. */
   scope: bigint
   /** Every deposit, as the entrypoint reported it, each one's value after the vetting fee. */
-  deposits: StoredPoolEvent[]
+  deposits: StoredPoolDeposit[]
   withdrawals: StoredPoolEvent[]
   ragequits: StoredPoolEvent[]
+  /** Labels of the deposits taken back. */
+  ragequitLabels: Set<bigint>
   /** Labels of the verified deposits, of all the entrypoint's pools. */
   approvedLabels: Set<bigint>
 }
@@ -41,6 +47,31 @@ const readEntries = (tuples: unknown, sliceName: string): any[] => {
   })
 }
 
+/** A slice's entries of one pool, each tagged with its pool in `poolField`. */
+const readPoolEntries = (
+  tuples: unknown,
+  sliceName: string,
+  poolField: 'pool' | 'poolAddress',
+  poolAddress: bigint
+): any[] =>
+  readEntries(tuples, sliceName).filter(
+    (entry) => readBigInt(entry[poolField], `${sliceName} pool`) === poolAddress
+  )
+
+const readPoolEvent = (entry: any, sliceName: string): StoredPoolEvent => ({
+  value: readBigInt(entry.value, `${sliceName} value`),
+  blockNumber: readBigInt(entry.blockNumber, `${sliceName} block`)
+})
+
+/** The SDK persists an address as the hex of its number, which drops its leading zeros. */
+const readAddress = (value: unknown, field: string): string =>
+  `0x${readBigInt(value, field).toString(16).padStart(40, '0')}`
+
+const readPoolDeposit = (entry: any): StoredPoolDeposit => ({
+  ...readPoolEvent(entry, 'entrypoint deposits'),
+  depositor: readAddress(entry.depositor, 'entrypoint deposit depositor')
+})
+
 /** A slice's events of one pool, each tagged with its pool in `poolField`. */
 const readPoolEvents = (
   tuples: unknown,
@@ -48,16 +79,9 @@ const readPoolEvents = (
   poolField: 'pool' | 'poolAddress',
   poolAddress: bigint
 ): StoredPoolEvent[] =>
-  readEntries(tuples, sliceName).flatMap((event) => {
-    if (readBigInt(event[poolField], `${sliceName} pool`) !== poolAddress) return []
-
-    return [
-      {
-        value: readBigInt(event.value, `${sliceName} value`),
-        blockNumber: readBigInt(event.blockNumber, `${sliceName} block`)
-      }
-    ]
-  })
+  readPoolEntries(tuples, sliceName, poolField, poolAddress).map((entry) =>
+    readPoolEvent(entry, sliceName)
+  )
 
 const sumValues = (events: StoredPoolEvent[]) =>
   events.reduce((total, { value }) => total + value, 0n)
@@ -94,17 +118,27 @@ export const readPrivacyPoolsPoolHistory = (
   const aspLeaves: unknown = state.asp?.leaves
   if (!Array.isArray(aspLeaves)) throw new Error('privacyPools: the stored state has no ASP tree')
 
+  const ragequitEntries = readPoolEntries(
+    state.ragequits?.ragequitsTuples,
+    'ragequits',
+    'pool',
+    pool
+  )
+
   return {
     lastSyncedBlock,
     scope: readBigInt(registeredPool.scope, 'pool scope'),
-    deposits: readPoolEvents(
+    deposits: readPoolEntries(
       state.entrypointDeposits?.entrypointDepositsTuples,
       'entrypoint deposits',
       'poolAddress',
       pool
-    ),
+    ).map(readPoolDeposit),
     withdrawals: readPoolEvents(state.withdrawals?.withdrawalsTuples, 'withdrawals', 'pool', pool),
-    ragequits: readPoolEvents(state.ragequits?.ragequitsTuples, 'ragequits', 'pool', pool),
+    ragequits: ragequitEntries.map((entry) => readPoolEvent(entry, 'ragequits')),
+    ragequitLabels: new Set(
+      ragequitEntries.map(({ label }) => readBigInt(label, 'ragequit label'))
+    ),
     // One tree for all the entrypoint's pools, but labels are unique across them
     approvedLabels: new Set(aspLeaves.map((leaf) => readBigInt(leaf, 'ASP leaf')))
   }
@@ -156,3 +190,65 @@ export const getPrivacyPoolsPoolStats = ({
     withdrawalsCount24h: withdrawals.filter(isInLastDay).length
   }
 }
+
+/** A deposit that can hide a send, with its label - see `getPrivacyPoolsCoverDeposits`. */
+export type PrivacyPoolsCoverDeposit = StoredPoolDeposit & { label: bigint }
+
+/**
+ * The deposits that can hide a send: verified ones that were not taken back, and not empty. Anyone
+ * can deposit an amount and take it back for only the fee, and an unverified deposit can never be
+ * sent from, so neither hides anybody.
+ */
+export const getPrivacyPoolsCoverDeposits = (
+  { deposits, ragequitLabels, approvedLabels }: PrivacyPoolsPoolHistory,
+  /** The labels of all the pool's deposits - see `getPrivacyPoolsPoolLabels`. */
+  poolLabels: bigint[]
+): PrivacyPoolsCoverDeposit[] =>
+  // Each deposit's label comes from its nonce, which follows the deposits' order on chain. The
+  // stored deposits are keyed by commitment, so they are put back in block order first.
+  [...deposits]
+    .sort((a, b) => compareBigInts(a.blockNumber, b.blockNumber))
+    .flatMap((deposit, i) => {
+      const label = poolLabels[i]
+      const isCover =
+        label !== undefined &&
+        deposit.value > 0n &&
+        approvedLabels.has(label) &&
+        !ragequitLabels.has(label)
+
+      return isCover ? [{ ...deposit, label }] : []
+    })
+
+/**
+ * A pool's deposits that a send can hide among, as read after a sync. The privacy checks filter
+ * and count this list every time. That stays fast, as the largest pool has only a few thousand.
+ */
+export type PrivacyPoolsPoolCover = {
+  deposits: PrivacyPoolsCoverDeposit[]
+  /**
+   * The block about `PRIVACY_POOLS_COVER_WINDOW_DAYS` before the last sync. Only deposits made
+   * after it count in the cover the user sees, as old deposits say little about who uses the pool
+   * now.
+   */
+  coverWindowStartBlock: bigint
+  /**
+   * The block about a day before the last sync. A send from a deposit made after it is easy to
+   * link by timing - see the `fresh-deposit` rule.
+   */
+  dayAgoBlock: bigint
+}
+
+/** The deposits of the cover made after its `coverWindowStartBlock`. */
+export const getPrivacyPoolsCoverWindowDeposits = ({
+  deposits,
+  coverWindowStartBlock
+}: PrivacyPoolsPoolCover) =>
+  deposits.filter(({ blockNumber }) => blockNumber > coverWindowStartBlock)
+
+/** How many of `deposits` put exactly `value` into the pool. */
+export const countPrivacyPoolsDepositsOf = (deposits: StoredPoolEvent[], value: bigint) =>
+  deposits.filter((deposit) => deposit.value === value).length
+
+/** How many of `deposits` put at least `value` into the pool, so any of them could pay a send of it. */
+export const countPrivacyPoolsDepositsOfAtLeast = (deposits: StoredPoolEvent[], value: bigint) =>
+  deposits.filter((deposit) => deposit.value >= value).length

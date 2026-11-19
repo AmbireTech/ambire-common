@@ -67,6 +67,9 @@ import type { EIP712TypedData } from '@safe-global/types-kit'
 
 import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp'
 import type { IrMessage } from '../../libs/humanizer/interfaces'
+/** The internal key if any, as it signs without a device, otherwise the first one */
+const getDefaultSigner = (keys: Key[]) => keys.find((k) => k.type === 'internal') || keys[0]
+
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
 } as const
@@ -177,6 +180,42 @@ export class SignMessageController
     this.#dapps?.onUpdate((forceEmit) => {
       if (this.dapp?.url) this.propagateUpdate(forceEmit)
     }, 'sign-message-dapps-verification')
+
+    // A key can be removed (e.g. in Settings, in another window) while a message waits.
+    // NOTE: No unsubscribe needed, for the same reason as above
+    this.#keystore.onUpdate(() => this.#forgetRemovedSigners(), 'sign-message-removed-keys')
+  }
+
+  #isKeyStored({ addr, type }: { addr: Key['addr']; type: Key['type'] }) {
+    return this.#keystore.keys.some((key) => key.addr === addr && key.type === type)
+  }
+
+  /**
+   * Forgets the picked signers whose key was removed, so the user never signs with a key that is
+   * gone. Without any left, the default one is picked again, like in `init`. Never while signing
+   */
+  #forgetRemovedSigners() {
+    if (!this.signers?.length || this.statuses.sign === 'LOADING') return
+    if (this.signers.every((signer) => this.#isKeyStored(signer))) return
+
+    const signers = this.signers.filter((signer) => this.#isKeyStored(signer))
+    if (signers.length) {
+      this.signers = signers
+    } else {
+      this.signers = this.#getDefaultSigners()
+    }
+    this.emitUpdate()
+  }
+
+  /** A Safe's signer is picked by the user, any other account signs with its imported key */
+  #getDefaultSigners() {
+    if (!this.#account || !this.network || this.#account.safeCreation) return undefined
+
+    const importedKeys =
+      this.#accounts.accountStates[this.#account.addr]?.[this.network.chainId.toString()]
+        ?.importedAccountKeys || []
+    const defaultSigner = getDefaultSigner(importedKeys.filter((key) => this.#isKeyStored(key)))
+    return defaultSigner ? [defaultSigner] : undefined
   }
 
   async init({
@@ -254,9 +293,7 @@ export class SignMessageController
       } else {
         // if the account is not safe & view only, set a default signer
         // the default signer should be the internal key if any
-        const defaultSigner =
-          accountState.importedAccountKeys?.find((k) => k.type === 'internal') ||
-          accountState.importedAccountKeys?.[0]
+        const defaultSigner = getDefaultSigner(accountState.importedAccountKeys || [])
         this.signers = defaultSigner ? [defaultSigner] : undefined
       }
 
@@ -522,7 +559,15 @@ export class SignMessageController
     // but it was too confusing, so we threw it away
     // the array of signers should be changed back to a single signer
     const signerKey = this.signers[0]!
-    this.signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
+    try {
+      this.signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
+    } catch (error: any) {
+      // The UI picks from the account state, which still lists a removed key until it reloads
+      if (this.#isKeyStored(signerKey)) throw error
+      const message =
+        'The key picked to sign this message was removed from the wallet. Pick another key, or import it again to sign.'
+      return Promise.reject(new EmittableError({ level: 'major', message, error }))
+    }
     if (this.signer.init) {
       this.signer.init(this.#externalSignerControllers[signerKey.type])
     }
