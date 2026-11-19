@@ -3558,6 +3558,45 @@ describe('Portfolio Controller ', () => {
         expect(getUniswapV3()?.positions[0]!.additionalData.inRange).toBe(true)
       })
 
+      it('reads them with the tokens of the first update, which has no previous one to take them from', async () => {
+        const UNI_V2_USDC_WETH = '0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc'
+        const { controller } = await prepareTest({
+          featureFlags: { tokenAndDefiAutoDiscovery: false }
+        })
+        jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue({
+          ...getEmptyPortfolioLibResult(),
+          tokens: [
+            {
+              address: UNI_V2_USDC_WETH,
+              symbol: 'UNI-V2',
+              name: 'Uniswap V2',
+              decimals: 18,
+              amount: 1n,
+              chainId: 1n,
+              priceIn: [],
+              marketDataIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: false,
+                isFeeToken: false
+              }
+            }
+          ]
+        })
+        const rpcSpy = jest
+          .spyOn(rpcDefiPositionsLib, 'getRpcDefiPositions')
+          .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] })
+
+        // E.g. right after the extension starts, as the portfolio isn't stored
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(rpcSpy).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ heldTokenAddresses: [UNI_V2_USDC_WETH] })
+        )
+      })
+
       it('retries a failed read on the next update', async () => {
         const { restore } = suppressConsole()
         const { controller } = await prepareTest({
@@ -3648,7 +3687,11 @@ describe('Portfolio Controller ', () => {
               {
                 ...apiUniswap!.positions[0]!,
                 assets: [
-                  { ...apiUniswap!.positions[0]!.assets[0]!, symbol: 'UNI-V2', address: UNI_V2_USDC_WETH }
+                  {
+                    ...apiUniswap!.positions[0]!.assets[0]!,
+                    symbol: 'UNI-V2',
+                    address: UNI_V2_USDC_WETH
+                  }
                 ]
               }
             ]
@@ -3684,7 +3727,12 @@ describe('Portfolio Controller ', () => {
               chainId: 1n,
               priceIn: [],
               marketDataIn: [],
-              flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: false, isFeeToken: false }
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: false,
+                isFeeToken: false
+              }
             }
           ]
         })
@@ -4034,9 +4082,8 @@ describe('Portfolio Controller ', () => {
 
         // @ts-expect-error test
         await controller.updateDefiAppsState(account, updateProps)
-        const positionsBeforeFailure =
-          controller.getAccountPortfolioState(account.addr).defiApps?.result?.defiPositions
-            .positionsByProvider
+        const positionsBeforeFailure = controller.getAccountPortfolioState(account.addr).defiApps
+          ?.result?.defiPositions.positionsByProvider
 
         // @ts-expect-error test
         await controller.updateDefiAppsState(account, updateProps)
