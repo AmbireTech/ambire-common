@@ -1907,8 +1907,7 @@ export class PortfolioController
         )
       }
 
-      // Fetch the portfolio and custom defi positions in parallel
-      const [portfolioResult, customPositionsResult] = await Promise.all([
+      const getPortfolio = () =>
         portfolioLib.get(account.addr, {
           knownTokenMetadata: this.hints.getKnownTokenMetadata(network.chainId),
           knownCollectionMetadata: this.hints.getKnownCollectionMetadata(network.chainId),
@@ -1917,20 +1916,41 @@ export class PortfolioController
           ...portfolioProps,
           blockTag: 'both',
           blacklist: this.#blacklist
-        }),
+        })
+      // Some positions are found from the tokens and NFTs the account holds (e.g. Morpho vaults
+      // and Uniswap pairs), which are taken from `heldAssets`
+      const readRpcDefiPositions = (
+        heldAssets: Pick<PortfolioNetworkResult, 'tokens' | 'collections'> | undefined
+      ) =>
         getRpcDefiPositions(this.#tokenPrices, {
           accountAddr: account.addr,
           provider: portfolioLib.provider,
           network,
-          // The tokens of this update aren't fetched yet, so those of the previous one are used
-          heldTokenAddresses: getHeldTokenAddresses(previousResult?.tokens),
-          heldCollectibles: getHeldCollectibles(previousResult?.collections),
+          heldTokenAddresses: getHeldTokenAddresses(heldAssets?.tokens),
+          heldCollectibles: getHeldCollectibles(heldAssets?.collections),
           previousPositions: previousDefiState?.positionsByProvider || [],
           apiPositions: discoveryData?.data?.defi?.positions,
           isAutoDiscoveryEnabled,
           reusableRead: reusableRpcDefiRead
         })
-      ])
+
+      // Without a previous update to take the tokens from (e.g. right after the extension starts,
+      // as the portfolio isn't stored), the positions are read after the portfolio. Otherwise the
+      // positions found from the tokens would be missing, and the read without them would be
+      // reused by the next updates. Only with auto discovery off, as the protocols read with it on
+      // don't need the tokens
+      const getPortfolioThenRpcDefiPositions = async () => {
+        const portfolio = await getPortfolio()
+
+        return [portfolio, await readRpcDefiPositions(portfolio)] as const
+      }
+      const canReadInParallel = !!previousResult || isAutoDiscoveryEnabled
+
+      // Fetch the portfolio and custom defi positions in parallel when possible. The tokens of
+      // this update aren't fetched yet, so those of the previous one are used
+      const [portfolioResult, customPositionsResult] = canReadInParallel
+        ? await Promise.all([getPortfolio(), readRpcDefiPositions(previousResult)])
+        : await getPortfolioThenRpcDefiPositions()
 
       const stkWalletToken =
         portfolioResult.tokens.find(
