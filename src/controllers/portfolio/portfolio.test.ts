@@ -3634,6 +3634,65 @@ describe('Portfolio Controller ', () => {
           1n
         )
       })
+
+      it('learns the liquidity tokens of the Uniswap V2 positions the API returns, unless they are in the portfolio', async () => {
+        const UNI_V2_USDC_WETH = '0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc'
+        const { controller } = await prepareTest()
+        const discoveryWithUniswapV2 = getDiscoveryWithDebankUniV3()
+        const [apiUniswap] = discoveryWithUniswapV2.data.defi.positions
+        discoveryWithUniswapV2.data.defi.positions = [
+          {
+            ...apiUniswap!,
+            providerName: 'Uniswap V2',
+            positions: [
+              {
+                ...apiUniswap!.positions[0]!,
+                assets: [
+                  { ...apiUniswap!.positions[0]!.assets[0]!, symbol: 'UNI-V2', address: UNI_V2_USDC_WETH }
+                ]
+              }
+            ]
+          }
+        ]
+        // @ts-expect-error - getPortfolioFromApiDiscovery is private, spied on at runtime
+        const discoverySpy: any = jest.spyOn(controller, 'getPortfolioFromApiDiscovery')
+        discoverySpy.mockResolvedValue(discoveryWithUniswapV2)
+        // @ts-expect-error test
+        const batchedDiscoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        batchedDiscoverySpy.mockResolvedValue(getDefiAppsResponse())
+        const portfolioGetSpy = jest
+          .spyOn(Portfolio.prototype, 'get')
+          .mockResolvedValue(getEmptyPortfolioLibResult())
+        mockProviderReads()
+        // @ts-expect-error - hints is protected, spied on at runtime
+        const learnSpy = jest.spyOn(controller.hints, 'addTokensToBeLearned')
+
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(learnSpy).toHaveBeenLastCalledWith([UNI_V2_USDC_WETH], 1n)
+
+        // Once the portfolio has the token, it's not added again
+        portfolioGetSpy.mockResolvedValue({
+          ...getEmptyPortfolioLibResult(),
+          tokens: [
+            {
+              address: '0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc',
+              symbol: 'UNI-V2',
+              name: 'Uniswap V2',
+              decimals: 18,
+              amount: 1n,
+              chainId: 1n,
+              priceIn: [],
+              marketDataIn: [],
+              flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: false, isFeeToken: false }
+            }
+          ]
+        })
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(learnSpy).toHaveBeenLastCalledWith([], 1n)
+      })
     })
 
     describe('with the real API discovery logic (only the request is mocked)', () => {

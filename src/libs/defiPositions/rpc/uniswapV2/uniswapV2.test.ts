@@ -7,9 +7,10 @@ import { networks } from '../../../../consts/networks'
 import { Network } from '../../../../interfaces/network'
 import { getRpcProvider } from '../../../../services/provider'
 import { Deployless } from '../../../deployless/deployless'
-import { AssetType } from '../../types'
+import { AssetType, PositionsByProvider } from '../../types'
 import { UNISWAP_V2_FACTORIES } from './addresses'
 import {
+  getUniswapV2PairsFromApiPositions,
   getUniswapV2Position,
   getUniswapV2Positions,
   UNISWAP_V2_PROVIDER_NAME,
@@ -137,6 +138,72 @@ describe('Uniswap V2 positions', () => {
         await getUniswapV2Positions(account, provider, networkWithoutUniswapV2, [UNI_V2_USDC_WETH])
       ).toBeNull()
       expect(callSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('getUniswapV2PairsFromApiPositions', () => {
+    const apiPositions = (
+      overrides: Partial<PositionsByProvider> = {},
+      assets: { symbol: string; address?: string }[] = [
+        { symbol: 'UNI-V2', address: UNI_V2_USDC_WETH }
+      ]
+    ): PositionsByProvider => ({
+      providerName: 'Uniswap V2',
+      chainId: 1n,
+      source: 'debank',
+      iconUrl: '',
+      siteUrl: '',
+      type: 'common',
+      positions: [
+        {
+          id: '1',
+          additionalData: { name: 'Liquidity Pool' },
+          assets: assets.map(({ symbol, address }) => ({
+            symbol,
+            address,
+            name: symbol,
+            decimals: 18,
+            amount: 1n,
+            iconUrl: '',
+            type: AssetType.Liquidity
+          }))
+        }
+      ],
+      ...overrides
+    })
+
+    test('returns the liquidity tokens of the positions, lowercased and once each', () => {
+      expect(
+        getUniswapV2PairsFromApiPositions([apiPositions(), apiPositions()], 1n)
+      ).toEqual([UNI_V2_USDC_WETH.toLowerCase()])
+    })
+    test('returns only the assets with the symbol of the pairs, so no other token is learned', () => {
+      expect(
+        getUniswapV2PairsFromApiPositions(
+          [
+            apiPositions({}, [
+              { symbol: 'USDC', address: USDC },
+              { symbol: 'WETH', address: WETH },
+              { symbol: 'UNI-V2' },
+              { symbol: 'UNI-V2', address: 'not-an-address' }
+            ])
+          ],
+          1n
+        )
+      ).toEqual([])
+    })
+    test('leaves out the positions of other protocols and networks', () => {
+      expect(
+        getUniswapV2PairsFromApiPositions(
+          [apiPositions({ providerName: 'SushiSwap' }), apiPositions({ chainId: 8453n })],
+          1n
+        )
+      ).toEqual([])
+    })
+    test('returns nothing on networks without Uniswap V2', () => {
+      expect(
+        getUniswapV2PairsFromApiPositions([apiPositions({ chainId: 1337n })], 1337n)
+      ).toEqual([])
     })
   })
 
