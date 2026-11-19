@@ -12,6 +12,11 @@ export type RpcFetchParams = {
    * token (e.g. the shares of a Morpho vault)
    */
   heldTokenAddresses: string[]
+  /**
+   * The ids of the NFTs the account holds on the network, by lowercased collection address, as
+   * some positions are represented by an NFT (e.g. the positions of Uniswap v4)
+   */
+  heldCollectibles: { [collectionAddress: string]: bigint[] }
 }
 
 /**

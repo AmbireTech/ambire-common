@@ -1,5 +1,6 @@
 import { ITokenPricesController } from '../../../interfaces/tokenPrices'
 import { TokenResult } from '../../portfolio'
+import { CollectionResult } from '../../portfolio/interfaces'
 import { getProviderId } from '../helpers'
 import {
   DeFiPositionsError,
@@ -14,6 +15,7 @@ import { morphoDefiProvider } from './morpho/morpho'
 import { updatePositionsByProviderAssetPrices } from './prices'
 import { RpcDefiPositionsResult, RpcDefiProvider, RpcFetchParams } from './types'
 import { uniswapV3DefiProvider } from './uniswapV3/uniswapV3'
+import { uniswapV4DefiProvider } from './uniswapV4/uniswapV4'
 
 /**
  * Protocols that the API (Velcro/Debank) returns too, but whose positions are read from the
@@ -32,7 +34,8 @@ export const ALWAYS_FETCHED_PROVIDERS: RpcDefiProvider[] = [
  */
 export const FETCHED_WITHOUT_API_PROVIDERS: RpcDefiProvider[] = [
   morphoDefiProvider,
-  aaveV4DefiProvider
+  aaveV4DefiProvider,
+  uniswapV4DefiProvider
 ]
 
 const getProvidersToFetch = (isAutoDiscoveryEnabled: boolean): RpcDefiProvider[] => {
@@ -104,6 +107,20 @@ const getHeldTokenAddresses = (tokens: TokenResult[] | undefined): string[] =>
         !token.flags.isHidden
     )
     .map((token) => token.address)
+
+/**
+ * Returns the ids of the NFTs the account holds, by lowercased collection address. Used to find
+ * positions that are represented by an NFT and can't be listed by their owner on-chain (e.g.
+ * Uniswap v4). Only the NFTs the portfolio knows of are returned, and not the ones the user hid.
+ */
+const getHeldCollectibles = (
+  collections: CollectionResult[] | undefined
+): RpcFetchParams['heldCollectibles'] =>
+  Object.fromEntries(
+    (collections || [])
+      .filter(({ collectibles }) => collectibles.length)
+      .map(({ address, collectibles }) => [address.toLowerCase(), collectibles])
+  )
 
 const isOneOfProviders = (providerName: string, providerNames: string[]) =>
   providerNames.some((name) => getProviderId(name) === getProviderId(providerName))
@@ -195,6 +212,7 @@ const getRpcDefiPositions = async (
     provider,
     network,
     heldTokenAddresses,
+    heldCollectibles,
     previousPositions,
     apiPositions,
     isAutoDiscoveryEnabled,
@@ -231,7 +249,7 @@ const getRpcDefiPositions = async (
           try {
             const readPositions = await readProviderPositions(
               rpcDefiProvider,
-              { accountAddr, provider, network, heldTokenAddresses },
+              { accountAddr, provider, network, heldTokenAddresses, heldCollectibles },
               reusableRead
             )
             readPositionsByProviderName[rpcDefiProvider.name] = readPositions
@@ -318,4 +336,10 @@ const getReusableRpcDefiRead = ({
   return isFreshEnough ? previousRead : null
 }
 
-export { getHeldTokenAddresses, getReusableRpcDefiRead, getRpcDefiPositions, priceRpcDefiPositions }
+export {
+  getHeldCollectibles,
+  getHeldTokenAddresses,
+  getReusableRpcDefiRead,
+  getRpcDefiPositions,
+  priceRpcDefiPositions
+}

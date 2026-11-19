@@ -55,10 +55,12 @@ import {
   mergeDefiUpdateModes
 } from '../../libs/defiPositions/defiPositions'
 import {
+  getHeldCollectibles,
   getHeldTokenAddresses,
   getReusableRpcDefiRead,
   getRpcDefiPositions
 } from '../../libs/defiPositions/rpc'
+import { getUniswapV4NftsFromApiPositions } from '../../libs/defiPositions/rpc/uniswapV4/uniswapV4'
 import {
   NetworksWithPositions,
   NetworksWithPositionsByAccounts,
@@ -1821,7 +1823,9 @@ export class PortfolioController
       // changed here, so if this update fails, the positions and the total balance shown stay in
       // sync. Read before the discovery call, so both use the same value of the setting (and so
       // does the read of the positions from the chain).
-      const isAutoDiscoveryEnabled = this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')
+      const isAutoDiscoveryEnabled = this.#featureFlags.isFeatureEnabled(
+        'tokenAndDefiAutoDiscovery'
+      )
       const previousResult = isAutoDiscoveryEnabled
         ? state.result
         : PortfolioController.#withoutApiDefiPositions(state.result)
@@ -1835,6 +1839,18 @@ export class PortfolioController
         defiMaxDataAgeMs,
         hasKeys: portfolioProps.hasKeys
       })
+      const apiDefiPositions = discoveryData?.data?.defi?.positions
+      // The API leaves the NFTs of the Uniswap v4 positions out of its NFT hints, so they are
+      // learned from its positions. This update's hints include them, and they are learned once
+      // the portfolio finds them in the account, so the positions can still be read from the chain
+      // after auto discovery is turned off
+      if (apiDefiPositions) {
+        this.hints.addErc721sToBeLearned(
+          getUniswapV4NftsFromApiPositions(apiDefiPositions, network.chainId),
+          account.addr,
+          network.chainId
+        )
+      }
       await yieldToMain()
       const allHints = this.hints.getAllHints(
         account.addr,
@@ -1895,6 +1911,7 @@ export class PortfolioController
           network,
           // The tokens of this update aren't fetched yet, so those of the previous one are used
           heldTokenAddresses: getHeldTokenAddresses(previousResult?.tokens),
+          heldCollectibles: getHeldCollectibles(previousResult?.collections),
           previousPositions: previousDefiState?.positionsByProvider || [],
           apiPositions: discoveryData?.data?.defi?.positions,
           isAutoDiscoveryEnabled,

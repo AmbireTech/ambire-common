@@ -28,6 +28,7 @@ import { aaveV4DefiProvider } from '../../libs/defiPositions/rpc/aaveV4/aaveV4'
 import { morphoDefiProvider } from '../../libs/defiPositions/rpc/morpho/morpho'
 import * as rpcDefiPricesLib from '../../libs/defiPositions/rpc/prices'
 import { uniswapV3DefiProvider } from '../../libs/defiPositions/rpc/uniswapV3/uniswapV3'
+import { uniswapV4DefiProvider } from '../../libs/defiPositions/rpc/uniswapV4/uniswapV4'
 import { AssetType, DeFiPositionsError, PositionsByProvider } from '../../libs/defiPositions/types'
 import { DeploylessMode } from '../../libs/deployless/deployless'
 import {
@@ -3449,13 +3450,14 @@ describe('Portfolio Controller ', () => {
         type: 'common',
         positions: []
       }
-      // Mocks what each protocol reads from the chain. Morpho and Aave v4 are read only with auto
-      // discovery off
+      // Mocks what each protocol reads from the chain. Morpho, Aave v4 and Uniswap v4 are read only
+      // with auto discovery off
       const mockProviderReads = (uniswap: PositionsByProvider | null = null) => ({
         aaveSpy: jest.spyOn(aaveV3DefiProvider, 'fetchPositions').mockResolvedValue(null),
         uniswapSpy: jest.spyOn(uniswapV3DefiProvider, 'fetchPositions').mockResolvedValue(uniswap),
         morphoSpy: jest.spyOn(morphoDefiProvider, 'fetchPositions').mockResolvedValue(rpcMorpho),
-        aaveV4Spy: jest.spyOn(aaveV4DefiProvider, 'fetchPositions').mockResolvedValue(null)
+        aaveV4Spy: jest.spyOn(aaveV4DefiProvider, 'fetchPositions').mockResolvedValue(null),
+        uniswapV4Spy: jest.spyOn(uniswapV4DefiProvider, 'fetchPositions').mockResolvedValue(null)
       })
       const getDefiState = (controller: PortfolioController) =>
         controller.getAccountPortfolioState(account.addr)['1']!.result!.defiPositions
@@ -3593,6 +3595,42 @@ describe('Portfolio Controller ', () => {
         await controller.updateSelectedAccount(account.addr, [ethereum])
 
         expect(aaveSpy).toHaveBeenCalledTimes(2)
+      })
+
+      it('learns the NFTs of the Uniswap v4 positions the API returns, as its NFT hints leave them out', async () => {
+        const { controller } = await prepareTest()
+        const discoveryWithUniswapV4 = getDiscoveryWithDebankUniV3()
+        const [apiUniswap] = discoveryWithUniswapV4.data.defi.positions
+        discoveryWithUniswapV4.data.defi.positions = [
+          {
+            ...apiUniswap!,
+            providerName: 'Uniswap V4',
+            positions: [
+              {
+                ...apiUniswap!.positions[0]!,
+                additionalData: { positionIndex: '504481', name: 'Liquidity Pool' }
+              }
+            ]
+          }
+        ]
+        // @ts-expect-error - getPortfolioFromApiDiscovery is private, spied on at runtime
+        const discoverySpy: any = jest.spyOn(controller, 'getPortfolioFromApiDiscovery')
+        discoverySpy.mockResolvedValue(discoveryWithUniswapV4)
+        // @ts-expect-error test
+        const batchedDiscoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        batchedDiscoverySpy.mockResolvedValue(getDefiAppsResponse())
+        jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue(getEmptyPortfolioLibResult())
+        mockProviderReads()
+        // @ts-expect-error - hints is protected, spied on at runtime
+        const learnSpy = jest.spyOn(controller.hints, 'addErc721sToBeLearned')
+
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(learnSpy).toHaveBeenCalledWith(
+          [['0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e', [504481n]]],
+          account.addr,
+          1n
+        )
       })
     })
 
