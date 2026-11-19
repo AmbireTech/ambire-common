@@ -27,6 +27,11 @@ export interface SessionInitProps {
 }
 export interface SessionProp {
   icon?: string
+  /**
+   * The icon the site declares, before it was checked whether the wallet can load it. Used by the
+   * security checks only - never shown, as loading it could reach a host other than the site.
+   */
+  declaredIcon?: string
   name?: string
   isWeb3App?: boolean
 }
@@ -99,7 +104,16 @@ export class Session {
 
   name: string = ''
 
+  /** The icon the wallet can show for the site - empty when loading it would reach another host */
   icon: string = ''
+
+  // Private, so it stays out of the state sent to the UI and can't end up shown by mistake
+  #declaredIcon: string = ''
+
+  /** See `SessionProp.declaredIcon` */
+  get declaredIcon() {
+    return this.#declaredIcon
+  }
 
   messenger?: Messenger
 
@@ -198,8 +212,9 @@ export class Session {
     this.isAmbireNext = isAmbireNext
   }
 
-  setProp({ icon, name }: SessionProp) {
+  setProp({ icon, declaredIcon, name }: SessionProp) {
     if (icon) this.icon = icon
+    if (declaredIcon) this.#declaredIcon = declaredIcon
     if (name) this.name = name
   }
 
