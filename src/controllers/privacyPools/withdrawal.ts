@@ -3,6 +3,7 @@ import { isAddress } from 'ethers'
 import {
   createPPv1Broadcaster,
   PaymasterBroadcastError,
+  PPv1Broadcaster,
   PPv1NoteUnavailableError,
   PPv1RelayerQuoteError,
   PPv1UnshieldOptions,
@@ -233,6 +234,29 @@ type ProvedWithdrawal =
       privateOp: PreparedRelayedWithdrawal
       withdrawal: PrivacyPoolsRelayedWithdrawal
     }
+
+/**
+ * Sends a proved withdrawal through the broadcaster it was proved for. Returns the userOp hash
+ * through Kohaku, null through 0xBow.
+ *
+ * Through Kohaku the SDK resolves once the bundler accepts the withdrawal - so it waits for it to
+ * land, as the sheet reads success as sent. Through 0xBow once the relayer has sent it, before it
+ * lands, with no way to wait for it - see `RELAYED_WITHDRAWAL_SYNC_DELAY_MS`
+ */
+const sendWithdrawal = async (
+  broadcaster: PPv1Broadcaster,
+  withdrawal: ProvedWithdrawal
+): Promise<string | null> => {
+  if (withdrawal.broadcaster === '0xbow') {
+    await broadcaster.broadcast(withdrawal.privateOp)
+    return null
+  }
+
+  const response = await broadcaster.broadcast(withdrawal.privateOp)
+  await response.wait()
+
+  return response.requestId
+}
 
 /**
  * A proved-but-unsent withdrawal, and when it was last known to go through: when proved, or when
@@ -628,13 +652,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
           ? (getChainConfig(operation.chainId).relayers ?? {})
           : {}
       const broadcaster = createPPv1Broadcaster(host, { broadcasterUrl })
-      const response = await broadcaster.broadcast(pendingWithdrawal.privateOp)
-      // Through Kohaku it resolves once the bundler accepts the withdrawal - so wait for it to land,
-      // as the sheet reads success as sent. Through 0xBow once the relayer has sent it, before it
-      // lands, with no way to wait for it - see `RELAYED_WITHDRAWAL_SYNC_DELAY_MS`
-      if ('wait' in response) await response.wait()
-      // The userOp hash through Kohaku
-      const { requestId } = response
+      const userOpHash = await sendWithdrawal(broadcaster, pendingWithdrawal)
 
       const isCurrentOperation = this.#updateOperation({
         ...operation,
@@ -645,9 +663,9 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
       // After the UI is told, as the sheet need not wait for it
       const blockNumber =
-        pendingWithdrawal.broadcaster === 'kohaku'
+        pendingWithdrawal.broadcaster === 'kohaku' && userOpHash
           ? await this.#readBlockNumber(
-              requestId,
+              userOpHash,
               operation.chainId,
               pendingWithdrawal.privateOp.withdrawal.bundlerUrl
             )
