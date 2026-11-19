@@ -319,6 +319,18 @@ describe('updatePositionsByProviderAssetPrices', () => {
     expect(positionsByProvider[0]!.positions[0]!.assets[0]!.priceIn).toBeUndefined()
   })
 
+  test('prices the assets of Aave v2 positions, as the Aave v2 oracle prices in ETH on some networks', async () => {
+    const { tokenPrices, getTokenData } = createTokenPrices()
+
+    const { positionsByProvider } = await updatePositionsByProviderAssetPrices(tokenPrices, {
+      network: ethereum,
+      positionsByProvider: [provider('AAVE v2', [asset(USDC)])]
+    })
+
+    expect(getTokenData.mock.calls[0]![0].tokenAddresses).toEqual([USDC])
+    expect(positionsByProvider[0]!.positions[0]!.assets[0]!.priceIn).toBeDefined()
+  })
+
   test('returns the error and leaves the assets unpriced when the prices cannot be fetched', async () => {
     const { tokenPrices } = createTokenPrices(2, new Error('cena is down'))
 

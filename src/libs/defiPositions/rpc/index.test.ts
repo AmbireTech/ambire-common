@@ -13,6 +13,7 @@ import {
   PositionsByProvider,
   RpcDefiRead
 } from '../types'
+import { aaveV2DefiProvider } from './aaveV2/aaveV2'
 import { aaveV3DefiProvider } from './aaveV3/aaveV3'
 import { CollectionResult, TokenResult } from '../../portfolio/interfaces'
 import {
@@ -88,6 +89,7 @@ const mockFetchedPositions = (positions: {
   aaveV4?: PositionsByProvider | null | Error
   uniswapV4?: PositionsByProvider | null | Error
   uniswapV2?: PositionsByProvider | null | Error
+  aaveV2?: PositionsByProvider | null | Error
 }) => {
   const toImplementation = (result: PositionsByProvider | null | Error | undefined) => async () => {
     if (result instanceof Error) throw result
@@ -112,7 +114,10 @@ const mockFetchedPositions = (positions: {
       .mockImplementation(toImplementation(positions.uniswapV4)),
     uniswapV2Spy: jest
       .spyOn(uniswapV2DefiProvider, 'fetchPositions')
-      .mockImplementation(toImplementation(positions.uniswapV2))
+      .mockImplementation(toImplementation(positions.uniswapV2)),
+    aaveV2Spy: jest
+      .spyOn(aaveV2DefiProvider, 'fetchPositions')
+      .mockImplementation(toImplementation(positions.aaveV2))
   }
 }
 
@@ -155,7 +160,8 @@ describe('getRpcDefiPositions', () => {
       'Morpho',
       'AAVE v4',
       'Uniswap V4',
-      'Uniswap V2'
+      'Uniswap V2',
+      'AAVE v2'
     ])
   })
 
@@ -357,7 +363,8 @@ describe('getRpcDefiPositions', () => {
           Morpho: rpcMorpho,
           'AAVE v4': null,
           'Uniswap V4': null,
-          'Uniswap V2': null
+          'Uniswap V2': null,
+          'AAVE v2': null
         })
       })
 
