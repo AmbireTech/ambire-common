@@ -55,6 +55,7 @@ import {
   mergeDefiUpdateModes
 } from '../../libs/defiPositions/defiPositions'
 import {
+  getHeldCollectibles,
   getHeldTokenAddresses,
   getReusableRpcDefiRead,
   getRpcDefiPositions
@@ -1895,6 +1896,7 @@ export class PortfolioController
           network,
           // The tokens of this update aren't fetched yet, so those of the previous one are used
           heldTokenAddresses: getHeldTokenAddresses(previousResult?.tokens),
+          heldCollectibles: getHeldCollectibles(previousResult?.collections),
           previousPositions: previousDefiState?.positionsByProvider || [],
           apiPositions: discoveryData?.data?.defi?.positions,
           isAutoDiscoveryEnabled,
