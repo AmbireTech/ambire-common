@@ -62,7 +62,10 @@ export type SelectedAccountPortfolioVerification = {
 
 /** A DeFi position of the selected account. */
 export type SelectedAccountPosition = Position & {
-  /** What the position adds to the total balance. */
+  /**
+   * What the position supplied, without its loans subtracted, as it lists them. Only the app's
+   * balance subtracts them, when the user chose so.
+   */
   balanceInUSD: number
 }
 
