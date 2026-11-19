@@ -4226,6 +4226,69 @@ describe('PrivacyPoolsController', () => {
       expect(providers.providers['1'].getBlockNumber).not.toHaveBeenCalled()
     })
 
+    /** How long the relayer has to answer before the transfer reads as not confirmed. */
+    const RELAYED_WITHDRAWAL_TIMEOUT_MS = 2 * 60 * 1000
+
+    it('stops showing it as sending when the relayer never answers, as it may still have sent it', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareRelayedWithdrawal()
+      jest
+        .mocked(createPPv1Broadcaster)
+        .mockReturnValueOnce({ broadcast: () => new Promise(() => {}) } as any)
+      const errorCount = controller.emittedErrors.length
+      const syncCount = getSyncCount()
+      useFakeWaitTimers()
+
+      try {
+        const broadcasting = controller.broadcastWithdrawal()
+        await jest.advanceTimersByTimeAsync(RELAYED_WITHDRAWAL_TIMEOUT_MS - 1)
+        expect(controller.operation).toMatchObject({ status: 'pending', phase: 'broadcasting' })
+
+        await jest.advanceTimersByTimeAsync(1)
+        await waitUntil(() => controller.operation?.status === 'failed')
+        expect(controller.operation?.error).toBe(
+          'We could not confirm the transfer yet. Check your balance before you send it again.'
+        )
+        expect(controller.emittedErrors.slice(errorCount)).toEqual([
+          expect.objectContaining({ level: 'silent' })
+        ])
+
+        // Not known to be sent, so the account is read at once
+        await releaseSync('seed-a')
+        await broadcasting
+      } finally {
+        jest.useRealTimers()
+        restore()
+      }
+
+      expect(getSyncCount()).toBe(syncCount + 1)
+    })
+
+    it('waits for a relayer that answers just before giving up on it', async () => {
+      const { controller } = await prepareRelayedWithdrawal()
+      const answered = createDeferred()
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+        broadcast: async () => {
+          await answered.promise
+          return RELAYED_BROADCAST_RESULT
+        }
+      } as any)
+      useFakeWaitTimers()
+
+      try {
+        const broadcasting = controller.broadcastWithdrawal()
+        await jest.advanceTimersByTimeAsync(RELAYED_WITHDRAWAL_TIMEOUT_MS - 1)
+        answered.resolve()
+        await waitUntil(() => controller.operation?.status === 'success')
+
+        await jest.advanceTimersByTimeAsync(RELAYED_WITHDRAWAL_SYNC_DELAY_MS)
+        await releaseSync('seed-a')
+        await broadcasting
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
     it('refuses another send from the deposit until the notes show the first, as the SDK would spend it as it was', async () => {
       const { controller } = await prepareRelayedWithdrawal()
       jest

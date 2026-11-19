@@ -85,6 +85,13 @@ const WITHDRAWAL_RECHECK_AFTER_MS = 30 * 1000
  */
 const RELAYED_WITHDRAWAL_MIN_REMAINING_MS = 10 * 1000
 
+/**
+ * How long a relayer has to answer a withdrawal handed to it, after which the sheet stops showing it
+ * as sending. Long, as it may still have sent it - so it then reads as not confirmed yet. Like the
+ * SDK's wait for a Kohaku withdrawal to land.
+ */
+const RELAYED_WITHDRAWAL_TIMEOUT_MS = 2 * 60 * 1000
+
 /** Shown in the confirmation sheet when a proved withdrawal can no longer be sent as it is. */
 const STALE_WITHDRAWAL_MESSAGE = 'This transfer has expired. Go back to prepare it again.'
 
@@ -241,14 +248,19 @@ type ProvedWithdrawal =
  *
  * Through Kohaku the SDK resolves once the bundler accepts the withdrawal - so it waits for it to
  * land, as the sheet reads success as sent. Through 0xBow once the relayer has sent it, before it
- * lands, with no way to wait for it - see `RELAYED_WITHDRAWAL_SYNC_DELAY_MS`
+ * lands, with no way to wait for it - see `RELAYED_WITHDRAWAL_SYNC_DELAY_MS`. A relayer that never
+ * answers fails it after `RELAYED_WITHDRAWAL_TIMEOUT_MS`; the request itself runs on, as the SDK
+ * takes no signal.
  */
 const sendWithdrawal = async (
   broadcaster: PPv1Broadcaster,
   withdrawal: ProvedWithdrawal
 ): Promise<string | null> => {
   if (withdrawal.broadcaster === '0xbow') {
-    await broadcaster.broadcast(withdrawal.privateOp)
+    await withTimeout(() => broadcaster.broadcast(withdrawal.privateOp), {
+      timeoutMs: RELAYED_WITHDRAWAL_TIMEOUT_MS,
+      message: 'privacyPools: the relayer did not answer the withdrawal'
+    })
     return null
   }
 
