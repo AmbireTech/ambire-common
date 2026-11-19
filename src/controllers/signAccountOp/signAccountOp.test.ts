@@ -3021,6 +3021,78 @@ describe('Negative cases', () => {
 describe('throwBroadcastAccountOp', () => {
   suppressConsoleBeforeEach()
 
+  describe('after the user cancels the signing', () => {
+    const initEoaController = () =>
+      init(
+        eoaAccount,
+        createEOAAccountOp(eoaAccount),
+        eoaSigner,
+        {
+          providerEstimation: { gasUsed: 10000n, feePaymentOptions: [] },
+          ambireEstimation: {
+            deploymentGas: 0n,
+            gasUsed: 10000n,
+            feePaymentOptions: [],
+            ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+            flags: {}
+          },
+          flags: {},
+          updatedAt: Date.now()
+        },
+        {
+          slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+          medium: {
+            maxFeePerGas: toBeHex(400n) as Hex,
+            maxPriorityFeePerGas: toBeHex(200n) as Hex
+          },
+          fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+          ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+        }
+      )
+
+    it("logs the device's rejection silently, without failing quietly", async () => {
+      const { controller } = await initEoaController()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      controller.cancelSignReq()
+
+      await expect(
+        controller.throwBroadcastAccountOp({ error: new Error('Operation cancelled by user') })
+      ).rejects.toThrow()
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'silent' }))
+      expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
+    })
+
+    it('shows the errors of the next signing again', async () => {
+      const { controller } = await initEoaController()
+      controller.cancelSignReq()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      // A new signing clears the cancellation. Without a fee option it fails right away
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      controller.sign()
+      await expect(
+        controller.throwBroadcastAccountOp({ error: new Error('Device disconnected') })
+      ).rejects.toThrow()
+
+      expect(onError).toHaveBeenLastCalledWith(expect.objectContaining({ level: 'major' }))
+    })
+
+    it('shows a device error when the signing was not cancelled', async () => {
+      const { controller } = await initEoaController()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await expect(
+        controller.throwBroadcastAccountOp({ error: new Error('Device disconnected') })
+      ).rejects.toThrow()
+
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'major' }))
+    })
+  })
+
   it('Should prefer message to error', async () => {
     const { controller } = await init(
       eoaAccount,
