@@ -14,11 +14,19 @@ export const getMessageFromTrezorErrorCode = (
   }
 ): string => {
   const deviceName = context?.deviceName || 'Trezor'
+  // Only Trezor Suite can turn the safety checks off. It doesn't support other devices that
+  // run Trezor's firmware (e.g. the Ambire Ice), and they have no such setting on the device.
+  // TODO: Add a way to manage the Ambire Ice's device settings (incl. the safety checks)
+  // other than Trezor Suite, and point the user to it in the messages below.
+  const isTrezor = deviceName === 'Trezor'
 
   if (!errorCode && !errorMsg)
     return `Could not connect to your ${deviceName} device. Please try again.`
 
   if (context?.isHyperEvmForbiddenPath && errorMsg?.toLowerCase()?.includes('forbidden key path')) {
+    if (!isTrezor)
+      return `Your ${deviceName} can't be used on HyperEVM chain yet. The device blocks it as non-standard.`
+
     return 'Please set "Safety checks" to "Prompt" in Trezor Suite (Settings - Device) to use your Trezor on HyperEVM chain. This is flagged as non-standard and blocked otherwise.'
   }
 
@@ -26,6 +34,9 @@ export const getMessageFromTrezorErrorCode = (
     context?.isLedgerLiveSmartAccountForbiddenPath &&
     errorMsg?.toLowerCase()?.includes('forbidden key path')
   ) {
+    if (!isTrezor)
+      return `Your ${deviceName} (with Ledger Live HD paths) can't be used as a key for your Ambire smart account yet. The device blocks it as non-standard.`
+
     return 'Please set "Safety checks" to "Prompt" in Trezor Suite (Settings - Device) to use your Trezor (with Ledger Live HD paths) as a key for your Ambire smart account. This is flagged as non-standard and blocked otherwise.'
   }
 
