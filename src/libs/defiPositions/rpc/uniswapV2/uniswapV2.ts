@@ -5,6 +5,7 @@ import DeFiUniswapV2PositionsCode from '../../../../../contracts/compiled/DeFiUn
 import { Network } from '../../../../interfaces/network'
 import { paginate } from '../../../../utils/paginate'
 import { fromDescriptor } from '../../../deployless/deployless'
+import { getProviderId } from '../../helpers'
 import { AssetType, Position, PositionAsset, PositionsByProvider } from '../../types'
 import { RpcDefiProvider } from '../types'
 import { UNISWAP_V2_FACTORIES } from './addresses'
@@ -143,6 +144,38 @@ async function getUniswapV2Positions(
   }
 }
 
+/** The symbol of the liquidity token of every Uniswap V2 pair */
+const UNISWAP_V2_PAIR_SYMBOL = 'UNI-V2'
+
+/**
+ * Returns the liquidity tokens of the Uniswap V2 positions the API returned for a network, so the
+ * wallet learns them. The API leaves them out of its token hints, so without this, the positions
+ * couldn't be read from the chain after auto discovery is turned off. The API lists the liquidity
+ * token as the asset of a position. Only the assets with the symbol of the pairs are returned, so
+ * no other tokens are learned, and the read from the chain checks that they are pairs anyway.
+ */
+const getUniswapV2PairsFromApiPositions = (
+  apiPositions: PositionsByProvider[],
+  chainId: bigint
+): string[] => {
+  if (!UNISWAP_V2_FACTORIES[chainId.toString()]) return []
+
+  const pairAddresses = apiPositions
+    .filter(
+      (positions) =>
+        positions.chainId === chainId &&
+        getProviderId(positions.providerName) === getProviderId(UNISWAP_V2_PROVIDER_NAME)
+    )
+    .flatMap(({ positions }) => positions.flatMap(({ assets }) => assets))
+    .filter(
+      ({ symbol, address }) =>
+        symbol === UNISWAP_V2_PAIR_SYMBOL && !!address && isAddress(address, { strict: false })
+    )
+    .map(({ address }) => address!.toLowerCase())
+
+  return [...new Set(pairAddresses)]
+}
+
 /**
  * Debank returns the Uniswap V2 positions, so they are read from the chain only when auto
  * discovery is off
@@ -153,4 +186,9 @@ const uniswapV2DefiProvider: RpcDefiProvider = {
     getUniswapV2Positions(accountAddr, provider, network, heldTokenAddresses)
 }
 
-export { getUniswapV2Position, getUniswapV2Positions, uniswapV2DefiProvider }
+export {
+  getUniswapV2PairsFromApiPositions,
+  getUniswapV2Position,
+  getUniswapV2Positions,
+  uniswapV2DefiProvider
+}

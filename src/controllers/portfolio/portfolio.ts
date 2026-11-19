@@ -60,6 +60,7 @@ import {
   getReusableRpcDefiRead,
   getRpcDefiPositions
 } from '../../libs/defiPositions/rpc'
+import { getUniswapV2PairsFromApiPositions } from '../../libs/defiPositions/rpc/uniswapV2/uniswapV2'
 import { getUniswapV4NftsFromApiPositions } from '../../libs/defiPositions/rpc/uniswapV4/uniswapV4'
 import {
   NetworksWithPositions,
@@ -1848,6 +1849,18 @@ export class PortfolioController
         this.hints.addErc721sToBeLearned(
           getUniswapV4NftsFromApiPositions(apiDefiPositions, network.chainId),
           account.addr,
+          network.chainId
+        )
+        // The same goes for the liquidity tokens of the Uniswap V2 positions. Only those not in the
+        // portfolio yet are added, as the tokens to be learned are shown to every account of the
+        // network until they are learned, even without a balance
+        const portfolioTokenAddresses = new Set(
+          (previousResult?.tokens || []).map(({ address }) => address.toLowerCase())
+        )
+        this.hints.addTokensToBeLearned(
+          getUniswapV2PairsFromApiPositions(apiDefiPositions, network.chainId).filter(
+            (pairAddress) => !portfolioTokenAddresses.has(pairAddress)
+          ),
           network.chainId
         )
       }
