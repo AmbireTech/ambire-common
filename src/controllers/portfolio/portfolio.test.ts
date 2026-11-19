@@ -27,6 +27,7 @@ import { aaveV3DefiProvider } from '../../libs/defiPositions/rpc/aaveV3/aaveV3'
 import { aaveV4DefiProvider } from '../../libs/defiPositions/rpc/aaveV4/aaveV4'
 import { morphoDefiProvider } from '../../libs/defiPositions/rpc/morpho/morpho'
 import * as rpcDefiPricesLib from '../../libs/defiPositions/rpc/prices'
+import { uniswapV2DefiProvider } from '../../libs/defiPositions/rpc/uniswapV2/uniswapV2'
 import { uniswapV3DefiProvider } from '../../libs/defiPositions/rpc/uniswapV3/uniswapV3'
 import { uniswapV4DefiProvider } from '../../libs/defiPositions/rpc/uniswapV4/uniswapV4'
 import { AssetType, DeFiPositionsError, PositionsByProvider } from '../../libs/defiPositions/types'
@@ -3450,14 +3451,15 @@ describe('Portfolio Controller ', () => {
         type: 'common',
         positions: []
       }
-      // Mocks what each protocol reads from the chain. Morpho, Aave v4 and Uniswap v4 are read only
-      // with auto discovery off
+      // Mocks what each protocol reads from the chain. Morpho, Aave v4 and Uniswap v4 and V2 are read
+      // only with auto discovery off
       const mockProviderReads = (uniswap: PositionsByProvider | null = null) => ({
         aaveSpy: jest.spyOn(aaveV3DefiProvider, 'fetchPositions').mockResolvedValue(null),
         uniswapSpy: jest.spyOn(uniswapV3DefiProvider, 'fetchPositions').mockResolvedValue(uniswap),
         morphoSpy: jest.spyOn(morphoDefiProvider, 'fetchPositions').mockResolvedValue(rpcMorpho),
         aaveV4Spy: jest.spyOn(aaveV4DefiProvider, 'fetchPositions').mockResolvedValue(null),
-        uniswapV4Spy: jest.spyOn(uniswapV4DefiProvider, 'fetchPositions').mockResolvedValue(null)
+        uniswapV4Spy: jest.spyOn(uniswapV4DefiProvider, 'fetchPositions').mockResolvedValue(null),
+        uniswapV2Spy: jest.spyOn(uniswapV2DefiProvider, 'fetchPositions').mockResolvedValue(null)
       })
       const getDefiState = (controller: PortfolioController) =>
         controller.getAccountPortfolioState(account.addr)['1']!.result!.defiPositions

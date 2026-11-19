@@ -25,6 +25,7 @@ import {
 } from './index'
 import { aaveV4DefiProvider } from './aaveV4/aaveV4'
 import { morphoDefiProvider } from './morpho/morpho'
+import { uniswapV2DefiProvider } from './uniswapV2/uniswapV2'
 import { uniswapV3DefiProvider } from './uniswapV3/uniswapV3'
 import { uniswapV4DefiProvider } from './uniswapV4/uniswapV4'
 
@@ -86,6 +87,7 @@ const mockFetchedPositions = (positions: {
   morpho?: PositionsByProvider | null | Error
   aaveV4?: PositionsByProvider | null | Error
   uniswapV4?: PositionsByProvider | null | Error
+  uniswapV2?: PositionsByProvider | null | Error
 }) => {
   const toImplementation = (result: PositionsByProvider | null | Error | undefined) => async () => {
     if (result instanceof Error) throw result
@@ -107,7 +109,10 @@ const mockFetchedPositions = (positions: {
       .mockImplementation(toImplementation(positions.aaveV4)),
     uniswapV4Spy: jest
       .spyOn(uniswapV4DefiProvider, 'fetchPositions')
-      .mockImplementation(toImplementation(positions.uniswapV4))
+      .mockImplementation(toImplementation(positions.uniswapV4)),
+    uniswapV2Spy: jest
+      .spyOn(uniswapV2DefiProvider, 'fetchPositions')
+      .mockImplementation(toImplementation(positions.uniswapV2))
   }
 }
 
@@ -149,17 +154,19 @@ describe('getRpcDefiPositions', () => {
     expect(FETCHED_WITHOUT_API_PROVIDERS.map(({ name }) => name)).toEqual([
       'Morpho',
       'AAVE v4',
-      'Uniswap V4'
+      'Uniswap V4',
+      'Uniswap V2'
     ])
   })
 
   test('passes the tokens the account holds to the protocols', async () => {
-    const { morphoSpy } = mockFetchedPositions({})
+    const { morphoSpy, uniswapV2Spy } = mockFetchedPositions({})
     const heldTokenAddresses = ['0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270']
 
     await callGetRpcDefiPositions({ isAutoDiscoveryEnabled: false, heldTokenAddresses })
 
     expect(morphoSpy).toHaveBeenCalledWith(expect.objectContaining({ heldTokenAddresses }))
+    expect(uniswapV2Spy).toHaveBeenCalledWith(expect.objectContaining({ heldTokenAddresses }))
   })
 
   test('passes the NFTs the account holds to the protocols', async () => {
@@ -349,7 +356,8 @@ describe('getRpcDefiPositions', () => {
           'Uniswap V3': null,
           Morpho: rpcMorpho,
           'AAVE v4': null,
-          'Uniswap V4': null
+          'Uniswap V4': null,
+          'Uniswap V2': null
         })
       })
 
