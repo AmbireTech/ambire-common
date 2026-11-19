@@ -68,15 +68,27 @@ export default class PortfolioViewBuilder {
     return this.shouldSubtractBorrowedFunds ? positionInUSD : collateralInUSD
   }
 
+  /**
+   * The app's balance follows the setting, like the total. Its positions always show what they
+   * supplied, as they list the loans that are subtracted from the app's balance
+   */
   private withBalance(provider: PositionsByProvider): SelectedAccountPositionsByProvider {
     return {
       ...provider,
       balanceInUSD: this.getDefiBalance(provider),
       positions: provider.positions.map((position) => ({
         ...position,
-        balanceInUSD: this.getDefiBalance(position.additionalData)
+        balanceInUSD: PortfolioViewBuilder.getCollateralBalance(position.additionalData)
       }))
     }
+  }
+
+  /** The full collateral of a DeFi position, without its loans subtracted */
+  private static getCollateralBalance({
+    positionInUSD = 0,
+    collateralInUSD = positionInUSD
+  }: DefiValues) {
+    return collateralInUSD
   }
 
   /**
