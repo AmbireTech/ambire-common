@@ -3596,6 +3596,42 @@ describe('Portfolio Controller ', () => {
 
         expect(aaveSpy).toHaveBeenCalledTimes(2)
       })
+
+      it('learns the NFTs of the Uniswap v4 positions the API returns, as its NFT hints leave them out', async () => {
+        const { controller } = await prepareTest()
+        const discoveryWithUniswapV4 = getDiscoveryWithDebankUniV3()
+        const [apiUniswap] = discoveryWithUniswapV4.data.defi.positions
+        discoveryWithUniswapV4.data.defi.positions = [
+          {
+            ...apiUniswap!,
+            providerName: 'Uniswap V4',
+            positions: [
+              {
+                ...apiUniswap!.positions[0]!,
+                additionalData: { positionIndex: '504481', name: 'Liquidity Pool' }
+              }
+            ]
+          }
+        ]
+        // @ts-expect-error - getPortfolioFromApiDiscovery is private, spied on at runtime
+        const discoverySpy: any = jest.spyOn(controller, 'getPortfolioFromApiDiscovery')
+        discoverySpy.mockResolvedValue(discoveryWithUniswapV4)
+        // @ts-expect-error test
+        const batchedDiscoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        batchedDiscoverySpy.mockResolvedValue(getDefiAppsResponse())
+        jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue(getEmptyPortfolioLibResult())
+        mockProviderReads()
+        // @ts-expect-error - hints is protected, spied on at runtime
+        const learnSpy = jest.spyOn(controller.hints, 'addErc721sToBeLearned')
+
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(learnSpy).toHaveBeenCalledWith(
+          [['0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e', [504481n]]],
+          account.addr,
+          1n
+        )
+      })
     })
 
     describe('with the real API discovery logic (only the request is mocked)', () => {

@@ -4,6 +4,7 @@ import DeFiUniswapV4PositionsCode from '../../../../../contracts/compiled/DeFiUn
 import { Network } from '../../../../interfaces/network'
 import { paginate } from '../../../../utils/paginate'
 import { fromDescriptor } from '../../../deployless/deployless'
+import { getProviderId } from '../../helpers'
 import { AssetType, Position, PositionAsset, PositionsByProvider } from '../../types'
 import { RpcDefiProvider } from '../types'
 import { uniV3DataToPortfolioPosition } from '../uniswapV3/math'
@@ -156,6 +157,47 @@ async function getUniswapV4Positions(
   }
 }
 
+/** The id of a position NFT, from the `positionIndex` of a position returned by the API */
+const parseTokenId = (positionIndex: unknown): bigint | null => {
+  if (typeof positionIndex !== 'string' || !positionIndex) return null
+
+  try {
+    const tokenId = BigInt(positionIndex)
+
+    return tokenId >= 0n ? tokenId : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Returns the NFTs of the Uniswap v4 positions the API returned for a network, in the format of
+ * `addErc721sToBeLearned`. The API leaves these NFTs out of its NFT hints, so the wallet learns
+ * them from the positions instead. Otherwise the positions couldn't be read from the chain
+ * after auto discovery is turned off, as the NFTs can't be listed by their owner.
+ */
+const getUniswapV4NftsFromApiPositions = (
+  apiPositions: PositionsByProvider[],
+  chainId: bigint
+): [string, bigint[]][] => {
+  const uniswapV4 = UNISWAP_V4[chainId.toString()]
+  if (!uniswapV4) return []
+
+  const tokenIds = apiPositions
+    .filter(
+      (positions) =>
+        positions.chainId === chainId &&
+        getProviderId(positions.providerName) === getProviderId(UNISWAP_V4_PROVIDER_NAME)
+    )
+    .flatMap(({ positions }) =>
+      positions.map(({ additionalData }) => parseTokenId(additionalData.positionIndex))
+    )
+    .filter((tokenId): tokenId is bigint => tokenId !== null)
+  if (!tokenIds.length) return []
+
+  return [[uniswapV4.positionManagerAddr, [...new Set(tokenIds)]]]
+}
+
 /**
  * Debank returns the Uniswap v4 positions, so they are read from the chain only when auto
  * discovery is off
@@ -166,4 +208,9 @@ const uniswapV4DefiProvider: RpcDefiProvider = {
     getUniswapV4Positions(accountAddr, provider, network, heldCollectibles)
 }
 
-export { getUniswapV4Position, getUniswapV4Positions, uniswapV4DefiProvider }
+export {
+  getUniswapV4NftsFromApiPositions,
+  getUniswapV4Position,
+  getUniswapV4Positions,
+  uniswapV4DefiProvider
+}

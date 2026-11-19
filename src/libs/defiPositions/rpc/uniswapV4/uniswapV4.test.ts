@@ -7,9 +7,10 @@ import { networks } from '../../../../consts/networks'
 import { Network } from '../../../../interfaces/network'
 import { getRpcProvider } from '../../../../services/provider'
 import { Deployless } from '../../../deployless/deployless'
-import { AssetType } from '../../types'
+import { AssetType, PositionsByProvider } from '../../types'
 import { UNISWAP_V4 } from './addresses'
 import {
+  getUniswapV4NftsFromApiPositions,
   getUniswapV4Position,
   getUniswapV4Positions,
   UNISWAP_V4_PROVIDER_NAME,
@@ -164,6 +165,54 @@ describe('Uniswap v4 positions', () => {
           [ETHEREUM_POSITION_MANAGER.toLowerCase()]: [42n]
         })
       ).toBeNull()
+    })
+  })
+
+  describe('getUniswapV4NftsFromApiPositions', () => {
+    const apiPositions = (
+      overrides: Partial<PositionsByProvider> = {},
+      positionIndexes: unknown[] = ['504481', '7']
+    ): PositionsByProvider => ({
+      providerName: 'Uniswap V4',
+      chainId: 1n,
+      source: 'debank',
+      iconUrl: '',
+      siteUrl: '',
+      type: 'common',
+      positions: positionIndexes.map((positionIndex, index) => ({
+        id: String(index),
+        assets: [],
+        // Typed as a string, but anything can come from the API
+        additionalData: { positionIndex: positionIndex as string }
+      })),
+      ...overrides
+    })
+
+    test('returns the ids of the positions, with the NFT of the network', () => {
+      expect(getUniswapV4NftsFromApiPositions([apiPositions()], 1n)).toEqual([
+        [ETHEREUM_POSITION_MANAGER, [504481n, 7n]]
+      ])
+    })
+    test('leaves out the positions of other protocols and networks', () => {
+      expect(
+        getUniswapV4NftsFromApiPositions(
+          [apiPositions({ providerName: 'Uniswap V3' }), apiPositions({ chainId: 42161n })],
+          1n
+        )
+      ).toEqual([])
+    })
+    test('ignores ids that are missing, malformed or repeated', () => {
+      expect(
+        getUniswapV4NftsFromApiPositions(
+          [apiPositions({}, ['7', '', 'not-a-number', undefined, '-1', '7', 1.5])],
+          1n
+        )
+      ).toEqual([[ETHEREUM_POSITION_MANAGER, [7n]]])
+    })
+    test('returns nothing on networks without Uniswap v4', () => {
+      expect(getUniswapV4NftsFromApiPositions([apiPositions({ chainId: 1337n })], 1337n)).toEqual(
+        []
+      )
     })
   })
 
