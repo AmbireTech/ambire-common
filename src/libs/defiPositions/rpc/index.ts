@@ -14,6 +14,7 @@ import { aaveV4DefiProvider } from './aaveV4/aaveV4'
 import { morphoDefiProvider } from './morpho/morpho'
 import { updatePositionsByProviderAssetPrices } from './prices'
 import { RpcDefiPositionsResult, RpcDefiProvider, RpcFetchParams } from './types'
+import { uniswapV2DefiProvider } from './uniswapV2/uniswapV2'
 import { uniswapV3DefiProvider } from './uniswapV3/uniswapV3'
 import { uniswapV4DefiProvider } from './uniswapV4/uniswapV4'
 
@@ -35,7 +36,8 @@ export const ALWAYS_FETCHED_PROVIDERS: RpcDefiProvider[] = [
 export const FETCHED_WITHOUT_API_PROVIDERS: RpcDefiProvider[] = [
   morphoDefiProvider,
   aaveV4DefiProvider,
-  uniswapV4DefiProvider
+  uniswapV4DefiProvider,
+  uniswapV2DefiProvider
 ]
 
 const getProvidersToFetch = (isAutoDiscoveryEnabled: boolean): RpcDefiProvider[] => {
