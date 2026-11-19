@@ -332,7 +332,15 @@ export const RPC_TOKEN_PRICE_CONFIGS: { [chainId: string]: RpcTokenPriceConfig }
         curve('0xbC0797015fcFc47d9C1856639CaE50D0e69FbEE8'), // Curve stableswap-ng
         curve(CURVE_TWOCRYPTO_NG_FACTORY) // Curve twocrypto-ng
       ]
-    }
+    },
+    // EURe: its current address and its old one are the same token, sharing the balances and the
+    // total supply, but 1inch's aggregator finds its pools only under the old address
+    tokensPricedAs: [
+      {
+        token: '0x420CA0f9B9b604cE0fd9C18EF134C705e5Fa3430',
+        pricedAs: '0xcB444e90D8198415266c6a2724b7900fb12FC56E'
+      }
+    ]
   },
   // Sonic, S / USD
   '146': {
