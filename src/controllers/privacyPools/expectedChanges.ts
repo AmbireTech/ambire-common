@@ -44,6 +44,8 @@ export type ExpectedChange = {
   tokenAddress: string
   /** Positive for what arrives (a deposit), negative for what leaves (a withdrawal or ragequit). */
   amount: bigint
+  /** The deposit a withdrawal is sent from, or a ragequit takes back. */
+  label?: bigint
   check: ExpectedChangeCheck
 }
 
@@ -80,9 +82,9 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
   }
 
   /**
-   * Adds a change to the balance and returns its id. `label` is the deposit a ragequit takes back.
-   * Returns null for a deposit not built here, a ragequit with no label, or a withdrawal from an
-   * account that has not synced on this network yet.
+   * Adds a change to the balance and returns its id. `label` is the deposit a withdrawal is sent
+   * from, or a ragequit takes back. Returns null for a deposit not built here, a ragequit with no
+   * label, or a withdrawal from an account that has not synced on this network yet.
    */
   add({
     seedId,
@@ -114,6 +116,7 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
       chainId,
       tokenAddress: tokenAddress.toLowerCase(),
       amount,
+      label,
       check
     })
 
@@ -157,6 +160,19 @@ export class PrivacyPoolsExpectedChanges implements PhraseScopedModule {
     })
 
     return amounts
+  }
+
+  /**
+   * The labels of the deposits a withdrawal on its way is sent from. Ones the notes already include
+   * are left out. Until they do, the SDK would spend such a deposit as it was before that
+   * withdrawal, which the pool refuses as already spent.
+   */
+  getWithdrawingDeposits(seedId: string, chainId: string): Set<bigint> {
+    return new Set(
+      this.#getUnshownChanges(seedId, chainId).flatMap(({ label, check }) =>
+        check.kind === 'withdrawal' && label !== undefined ? [label] : []
+      )
+    )
   }
 
   /**

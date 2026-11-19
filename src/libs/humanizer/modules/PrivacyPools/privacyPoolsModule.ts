@@ -3,10 +3,12 @@ import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig
 } from '../../../../consts/privacyPools'
+import { PrivacyPoolsBroadcaster } from '../../../../interfaces/privacyPools'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { readPrivacyPoolsDeposit } from '../../../privacyPools/deposit'
 import { PrivacyPoolsPaymasterWithdrawal } from '../../../privacyPools/paymasterWithdrawal'
 import { readPrivacyPoolsRagequit } from '../../../privacyPools/ragequit'
+import { PrivacyPoolsRelayedWithdrawal } from '../../../privacyPools/relayedWithdrawal'
 import {
   HumanizerCallModule,
   HumanizerErc7730Row,
@@ -63,38 +65,81 @@ export const privacyPoolsModule: HumanizerCallModule = (accountOp: AccountOp, ca
 }
 
 /**
+ * How sure the card's amounts are: `exact` through 0xBow, whose relayer refunds nothing of its fee;
+ * through Kohaku, `expected` when the withdrawal could be simulated, else only a `bound`.
+ */
+type WithdrawalFeeCertainty = 'exact' | 'expected' | 'bound'
+
+const getWithdrawalFeeCertainty = (
+  broadcaster: PrivacyPoolsBroadcaster,
+  expectedFeeAmount: bigint | null
+): WithdrawalFeeCertainty => {
+  if (broadcaster === '0xbow') return 'exact'
+
+  return expectedFeeAmount === null ? 'bound' : 'expected'
+}
+
+const RECIPIENT_RECEIVES_PREFIXES: { [certainty in WithdrawalFeeCertainty]?: string } = {
+  expected: '≈',
+  bound: 'at least'
+}
+
+const FEE_PREFIXES: { [certainty in WithdrawalFeeCertainty]?: string } = { bound: 'up to' }
+
+/**
+ * The relayer's own fee, shown apart from the network fee so the two ways of sending can be
+ * compared. Only 0xBow's relayers take one; Kohaku's paymaster takes only the network fee.
+ */
+const getServiceFee = (
+  withdrawal: PrivacyPoolsPaymasterWithdrawal | PrivacyPoolsRelayedWithdrawal
+): bigint | null => ('serviceFee' in withdrawal ? withdrawal.serviceFee : null)
+
+/**
  * Shows a withdrawal from a Privacy Pools account as a clear-signing card, with the rows and labels
- * of a swap's. Not a call module: the withdrawal is not a call of the user's account but an
- * ERC-4337 userOp of a single-use sender, so it is described from what `readPaymasterWithdrawal`
- * read out of it, as no ERC-7730 descriptor could.
+ * of a swap's. Not a call module: the withdrawal is not a call of the user's account but a relayed
+ * one, or an ERC-4337 userOp of a single-use sender, so it is described from what
+ * `readRelayedWithdrawal` or `readPaymasterWithdrawal` read out of it, as no ERC-7730 descriptor
+ * could.
  *
- * The amount is what leaves the account; the fee comes out of it. The fee locked into the proof is
- * only a cap: the unused part is refunded to the recipient. So when the withdrawal could be
- * simulated, what the recipient gets and the fee are the expected ones; otherwise they are the
- * least the recipient gets and the most the fee can be, and say so.
+ * The amount is what leaves the account; the fee comes out of it. Through 0xBow the fee is exact,
+ * and split into the relayer's service fee and what it charges for the network fee.
+ * Through Kohaku the fee locked into the proof is only a cap: the unused part is refunded to the
+ * recipient. So when the withdrawal could be simulated, what the recipient gets and the fee are the
+ * expected ones; otherwise they are the least the recipient gets and the most the fee can be, and
+ * say so.
  *
  * The token is one of the pools' configured assets, so its symbol and decimals go with it and the
  * card shows right away. The fee also carries the token's price, to show what it costs in USD.
  */
 export const humanizePrivacyPoolsWithdrawal = ({
   chainId,
-  withdrawal: { recipient, tokenAddress, amount, fee },
+  broadcaster,
+  withdrawal,
   expectedFeeAmount,
   usdPrice
 }: {
   chainId: string
-  withdrawal: PrivacyPoolsPaymasterWithdrawal
+  broadcaster: PrivacyPoolsBroadcaster
+  withdrawal: PrivacyPoolsPaymasterWithdrawal | PrivacyPoolsRelayedWithdrawal
   /** The fee the simulation expects, or null when it could not be run. */
   expectedFeeAmount: bigint | null
   /** USD price of the withdrawn token, or null when unknown. */
   usdPrice: number | null
 }): IrCall => {
-  const isSimulated = expectedFeeAmount !== null
+  const certainty = getWithdrawalFeeCertainty(broadcaster, expectedFeeAmount)
+  const recipientReceivesPrefix = RECIPIENT_RECEIVES_PREFIXES[certainty]
+  const feePrefix = FEE_PREFIXES[certainty]
+  const { recipient, tokenAddress, amount, fee } = withdrawal
   const shownFee = expectedFeeAmount ?? fee
+  const serviceFee = getServiceFee(withdrawal)
   const asset = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)
   const getAssetToken = (value: bigint): HumanizerVisualization => ({
     ...getToken(tokenAddress, value),
     ...(asset && { tokenInfo: { symbol: asset.symbol, decimals: asset.decimals } })
+  })
+  const getFeeToken = (value: bigint): HumanizerVisualization => ({
+    ...getAssetToken(value),
+    ...(usdPrice !== null && { usdPrice })
   })
   const rows: HumanizerErc7730Row[] = [
     { type: 'single-value', label: 'Amount to Send', value: getAssetToken(amount) },
@@ -102,7 +147,7 @@ export const humanizePrivacyPoolsWithdrawal = ({
       type: 'single-value',
       label: 'Recipient Receives',
       value: getAssetToken(amount - shownFee),
-      valuePrefix: isSimulated ? '≈' : 'at least'
+      ...(recipientReceivesPrefix && { valuePrefix: recipientReceivesPrefix })
     },
     {
       type: 'single-value',
@@ -112,17 +157,28 @@ export const humanizePrivacyPoolsWithdrawal = ({
       value: { ...getAddressVisualization(recipient), isLocalLabelOnly: true },
       hasSeparatorBefore: true
     },
+    ...(serviceFee !== null
+      ? [
+          {
+            type: 'single-value' as const,
+            label: 'Service fee',
+            value: getFeeToken(serviceFee),
+            hasSeparatorBefore: true
+          }
+        ]
+      : []),
     {
       type: 'single-value',
       label: 'Network fee',
-      value: { ...getAssetToken(shownFee), ...(usdPrice !== null && { usdPrice }) },
-      ...(isSimulated ? {} : { valuePrefix: 'up to' }),
-      hasSeparatorBefore: true
+      value: getFeeToken(shownFee - (serviceFee ?? 0n)),
+      ...(feePrefix && { valuePrefix: feePrefix }),
+      // Below the service fee, as one group of fees
+      hasSeparatorBefore: serviceFee === null
     }
   ]
 
   return {
-    // No raw call: nothing in the userOp is a call the user's account makes
+    // No raw call: nothing in the withdrawal is a call the user's account makes
     value: 0n,
     data: '0x',
     fullVisualization: [getErc7730Visualization('Send', rows)]

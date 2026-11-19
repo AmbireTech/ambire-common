@@ -44,6 +44,11 @@ export type PrivacyPoolsChainConfig = {
   /** The ERC-4337 paymaster for withdrawals. Without it, withdrawals are unavailable. */
   paymaster?: PrivacyPoolsPaymasterConfig
   /**
+   * 0xBow's relayers for withdrawals, by name, each URL with the `/relayer` path the service
+   * mounts its routes on. The SDK takes the cheapest quote, the first one on a tie.
+   */
+  relayers?: { [name: string]: string }
+  /**
    * Pool address (lowercase) to the wallet's address of the asset it holds. Only calls to these are
    * shown as Privacy Pools calls, and only their deposits can be taken back from the wallet.
    */
@@ -195,8 +200,28 @@ export type PrivacyPoolsTokenBalance = {
 }
 
 /**
+ * A deposit of a Privacy Pools account that a send can spend, as its Send form lists it: one each,
+ * as a send spends exactly one deposit.
+ */
+export type PrivacyPoolsSendableDeposit = {
+  tokenAddress: string
+  symbol: string
+  decimals: number
+  isNative: boolean
+  /**
+   * Its place among the account's deposits of the token on the chain, from 1, oldest first. Kept
+   * as later deposits arrive and earlier ones are sent in full. What the UI names a deposit by,
+   * as the deposit's label would point to it on chain.
+   */
+  number: number
+  /** What is left in it, all of which can be sent now. */
+  availableAmount: bigint
+}
+
+/**
  * One chain as the UI reads it: the account's sync of the chain, merged with what this device knows
- * of the chain's shared state. Notes reach the UI only as per-token `balances`.
+ * of the chain's shared state. Notes reach the UI only as per-token `balances`, and as the deposits
+ * a send can spend.
  */
 export type PrivacyPoolsChainState = {
   chainId: string
@@ -300,15 +325,25 @@ export type PrivacyPoolsHistorySession = {
  */
 export type PrivacyPoolsQuote = {
   /**
-   * The cap, in the token's units: the fee locked into the proof. The paymaster refunds what gas
-   * does not use to the recipient in the same transaction.
+   * The fee locked into the proof, in the token's units. Through Kohaku it is a cap: the paymaster
+   * refunds what gas does not use to the recipient in the same transaction. Through 0xBow it is
+   * exact.
    */
   feeAmount: bigint
   /** The least the recipient receives. */
   amountAfterFee: bigint
-  /** `feeAmount` minus the refund. Null when the simulation failed. */
+  /**
+   * `feeAmount` minus the refund, or `feeAmount` itself through 0xBow. Null when the simulation
+   * failed.
+   */
   expectedFeeAmount: bigint | null
 }
+
+/**
+ * Who sends a transfer out of a Privacy Pools account and pays its gas, for a fee taken out of it:
+ * 0xBow's relayers, which most transfers out of the pools use, or Kohaku's ERC-4337 paymaster.
+ */
+export type PrivacyPoolsBroadcaster = '0xbow' | 'kohaku'
 
 /**
  * A withdrawal's progress. The SDK reports none while it works, so these are the observable
@@ -336,6 +371,10 @@ export type PrivacyPoolsOperation = {
   isNative: boolean
   amount: bigint
   recipient: string
+  /** The deposit it is sent from, by its number - see `PrivacyPoolsSendableDeposit.number`. */
+  depositNumber: number
+  /** Who proves and sends it, as chosen when it was started. */
+  broadcaster: PrivacyPoolsBroadcaster
   status: PrivacyPoolsOperationStatus
   phase: PrivacyPoolsOperationPhase
   startedAt: number
@@ -359,7 +398,10 @@ export type PrivacyPoolsOperation = {
 export type PrivacyPoolsSendForm = {
   /** The recipient field as typed. A domain name in it is resolved again when the screen opens. */
   recipientFieldValue: string
-  /** The picked token's id (`${chainId}:${tokenAddress}`), or '' for the screen's default. */
+  /**
+   * The picked token's id (`${chainId}:${tokenAddress}`), or the id of one of its deposits (see
+   * `getPrivacyPoolsDepositId`), or '' for the screen's default.
+   */
   tokenId: string
   amount: string
   amountInFiat: string
@@ -427,14 +469,11 @@ export type PrivacyPoolsLeak = {
  */
 export type PrivacyPoolsRating = 'standard' | 'weak' | 'traceable' | 'unchecked'
 
-/**
- * How many recent deposits (see `PRIVACY_POOLS_COVER_WINDOW_DAYS`) hide a send. Each is the
- * smallest over the deposits it spends, as the least hidden one is what can link it.
- */
+/** How many recent deposits (see `PRIVACY_POOLS_COVER_WINDOW_DAYS`) hide a send. */
 export type PrivacyPoolsSendCover = {
-  /** Deposits large enough to pay the part spent from each deposit. */
+  /** Deposits large enough to pay the amount sent. */
   bigEnough: number
-  /** Deposits of exactly the part spent from each deposit. */
+  /** Deposits of exactly the amount sent. */
   sameAmount: number
 }
 
@@ -443,8 +482,6 @@ export type PrivacyPoolsWithdrawalPrivacy = {
   rating: PrivacyPoolsRating
   leaks: PrivacyPoolsLeak[]
   cover: PrivacyPoolsSendCover
-  /** How many deposits the send spends. */
-  notesCount: number
 }
 
 /** The privacy of a deposit into a pool. */
@@ -465,21 +502,27 @@ export type PrivacyPoolsWithdrawalPrivacyParams = {
   seedId: string
   chainId: string
   tokenAddress: string
+  /** The deposit the send spends, by its number - see `PrivacyPoolsSendableDeposit.number`. */
+  depositNumber: number
   amount: bigint
   /** Null before the user enters one, so only the amount is checked. */
   recipient: string | null
+  /** Who sends it, which sets the deposits it hides among. */
+  broadcaster: PrivacyPoolsBroadcaster
 }
 
 /**
  * The privacy of a send the Send form asked about, with what it was asked for, so the screen can
- * tell whether it still matches the form. `privacy` is null when the notes cannot pay `amount`,
+ * tell whether it still matches the form. `privacy` is null when the deposit cannot pay `amount`,
  * or before the chain's first sync.
  */
 export type PrivacyPoolsWithdrawalPrivacyCheck = {
   chainId: string
   tokenAddress: string
+  depositNumber: number
   amount: bigint
   /** Null before the user enters one. */
   recipient: string | null
+  broadcaster: PrivacyPoolsBroadcaster
   privacy: PrivacyPoolsWithdrawalPrivacy | null
 }

@@ -1,8 +1,14 @@
-import { AbiCoder, Interface, toBeHex, ZeroHash } from 'ethers'
+import { AbiCoder, Interface, makeError, toBeHex, ZeroHash } from 'ethers'
 import { EventEmitter as NodeEventEmitter } from 'events'
 
 import { expect, jest } from '@jest/globals'
-import { createPPv1Broadcaster } from '@kohaku-eth/privacy-pools'
+import {
+  createPPv1Broadcaster,
+  PaymasterBroadcastError,
+  PPv1NoteUnavailableError,
+  PPv1RelayerQuoteError
+} from '@kohaku-eth/privacy-pools'
+import type { MerkleTreeBuilder, PPv1HistoryEvent } from '@kohaku-eth/privacy-pools'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
@@ -11,11 +17,12 @@ import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig,
   getPrivacyPoolsDepositAsset,
-  getPrivacyPoolsStoreKey
+  PRIVACY_POOLS_READ_TIMEOUT
 } from '../../consts/privacyPools'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { PrivacyPoolsBroadcaster } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IUiController, View } from '../../interfaces/ui'
@@ -31,6 +38,7 @@ import {
 import { getPrivacyPoolsPoolLabels } from '../../libs/privacyPools/poolStats'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
+import { getPrivacyPoolsChainStateKey } from '../../libs/privacyPools/storeKeys'
 import { getRpcProvider } from '../../services/provider'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -99,7 +107,12 @@ const ETHEREUM_PAYMASTER = getPrivacyPoolsChainConfig(1n)!.paymaster!
 const PAYMASTER_BUNDLER_URL = 'https://bundler.example/v2/1/rpc'
 const USER_OP_HASH = `0x${'ab'.repeat(32)}`
 /** What the SDK's broadcaster returns once the bundler accepted the withdrawal. */
-const BROADCAST_RESULT = { requestId: USER_OP_HASH }
+const BROADCAST_RESULT = {
+  success: true,
+  timestamp: 1,
+  requestId: USER_OP_HASH,
+  wait: async () => ({ txHash: `0x${'cd'.repeat(32)}` })
+}
 /** The block a withdrawal lands in, according to its bundler. */
 const WITHDRAWAL_BLOCK = 21_000_000
 const WITHDRAWAL_AMOUNT = 10n ** 17n
@@ -114,6 +127,23 @@ const SIMULATION_LOGS_INTERFACE = new Interface([
 ])
 
 const WITHDRAWAL_SENDER = '0xA3a4D83896ec4b595668fA3d5430157cd235F720'
+
+/** The ETH pool's scope, which a relayed withdrawal names its pool by. */
+const ETH_POOL_SCOPE = 4321n
+/** 0.18%, as Fast Relay quotes a send of 0.1 ETH. */
+const RELAY_FEE_BPS = 18n
+const RELAYED_WITHDRAWAL_FEE = (WITHDRAWAL_AMOUNT * RELAY_FEE_BPS) / 10_000n
+const RELAYER_FEE_RECIPIENT = '0xEC15c20015e72748F03065ed80c41cb882E3fB66'
+const RELAYED_BROADCAST_RESULT = {
+  success: true,
+  timestamp: 1,
+  requestId: 'relayer-request',
+  txHash: `0x${'ab'.repeat(32)}`
+}
+const POOL_SCOPE_INTERFACE = new Interface(['function SCOPE() view returns (uint256)'])
+const RELAY_INTERFACE = new Interface([
+  'function relay((address processooor, bytes data) withdrawal, (uint256[2] pA, uint256[2][2] pB, uint256[2] pC, uint256[8] pubSignals) proof, uint256 scope)'
+])
 
 /** A pool's ragequit the way the SDK encodes it, public signals `[commitment, nullifierHash, value, label]`. */
 const encodeRagequit = (amount: bigint, label: bigint) =>
@@ -140,44 +170,71 @@ const toFakeProof = (withdrawnValue: bigint) => ({
 })
 
 /**
- * What a batch of two deposits runs once the larger one is paid to the sender: the sender withdraws
- * the other one itself, then forwards everything minus the fee.
+ * A relayed withdrawal the way the SDK hands it over, proved against Fast Relay's quote, which runs
+ * out `expiresIn` from now.
  */
-const encodeBatchCalls = (sponsoredValue: bigint) =>
-  new Interface([
-    'function executeBatch((address target, uint256 value, bytes data)[] calls)'
-  ]).encodeFunctionData('executeBatch', [
-    [
-      {
-        target: ETHEREUM_ETH_POOL,
-        value: 0n,
-        data: new Interface([
-          'function withdraw((address processooor, bytes data) withdrawal, (uint256[2] pA, uint256[2][2] pB, uint256[2] pC, uint256[8] pubSignals) proof)'
-        ]).encodeFunctionData('withdraw', [
-          { processooor: WITHDRAWAL_SENDER, data: '0x' },
-          toFakeProof(WITHDRAWAL_AMOUNT - sponsoredValue)
-        ])
+const buildPreparedRelayedWithdrawal = ({
+  expiresIn = 50_000,
+  recipient = WITHDRAWAL_RECIPIENT,
+  relayFeeBPS = RELAY_FEE_BPS
+}: { expiresIn?: number; recipient?: string; relayFeeBPS?: bigint } = {}) => {
+  const withdrawalData = AbiCoder.defaultAbiCoder().encode(
+    ['tuple(address recipient, address feeRecipient, uint256 relayFeeBPS)'],
+    [{ recipient, feeRecipient: RELAYER_FEE_RECIPIENT, relayFeeBPS }]
+  )
+
+  return {
+    mode: 'relayer',
+    rawData: {
+      context: 1n,
+      relayData: { recipient, feeRecipient: RELAYER_FEE_RECIPIENT, relayFeeBps: relayFeeBPS },
+      proof: {
+        proof: {
+          pi_a: ['1', '2', '1'],
+          pi_b: [
+            ['3', '4'],
+            ['5', '6'],
+            ['1', '0']
+          ],
+          pi_c: ['7', '8', '1']
+        },
+        publicSignals: ['11', '12', WITHDRAWAL_AMOUNT.toString(), '14', '15', '16', '17', '18']
       },
-      { target: WITHDRAWAL_RECIPIENT, value: WITHDRAWAL_AMOUNT - WITHDRAWAL_FEE, data: '0x' }
-    ]
-  ])
+      withdrawalPayload: { processooor: ETHEREUM_ENTRYPOINT, data: withdrawalData },
+      chainId: 1n,
+      scope: ETH_POOL_SCOPE
+    },
+    txData: { to: ETHEREUM_ENTRYPOINT, data: '0x', value: 0n },
+    quoteData: {
+      quote: {
+        baseFeeBPS: '10',
+        feeBPS: relayFeeBPS.toString(),
+        gasPrice: '1',
+        feeCommitment: {
+          expiration: Date.now() + expiresIn,
+          withdrawalData,
+          signedRelayerCommitment: '0x'
+        },
+        detail: {}
+      },
+      relayerId: 'Fast Relay'
+    }
+  }
+}
 
 /**
  * A proved withdrawal the way the SDK hands it over, with the fee, recipient and amount encoded
  * where `readPaymasterWithdrawal` checks them. The proof itself is never verified off chain.
- *
- * As a batch, it spends two deposits: the sponsored one is paid to the sender, which forwards it.
- * The unused gas is refunded to the recipient either way.
+ * It spends one deposit, paid to the recipient, who also gets the unused gas back.
  */
-const buildPreparedWithdrawal = ({ isBatch = false }: { isBatch?: boolean } = {}) => {
+const buildPreparedWithdrawal = () => {
   const coder = AbiCoder.defaultAbiCoder()
   const adapter = ETHEREUM_PAYMASTER.poolAdapters[ETHEREUM_ETH_POOL]!
-  const sponsoredValue = isBatch ? (WITHDRAWAL_AMOUNT * 3n) / 5n : WITHDRAWAL_AMOUNT
   const feeData = coder.encode(
     ['tuple(address recipient, address feeRecipient, uint256 fee, address refundRecipient)'],
     [
       {
-        recipient: isBatch ? WITHDRAWAL_SENDER : WITHDRAWAL_RECIPIENT,
+        recipient: WITHDRAWAL_RECIPIENT,
         feeRecipient: ETHEREUM_PAYMASTER.paymasterAddress,
         fee: WITHDRAWAL_FEE,
         refundRecipient: WITHDRAWAL_RECIPIENT
@@ -191,7 +248,7 @@ const buildPreparedWithdrawal = ({ isBatch = false }: { isBatch?: boolean } = {}
     [
       {
         withdrawal: { processooor: adapter, data: feeData },
-        proof: toFakeProof(sponsoredValue)
+        proof: toFakeProof(WITHDRAWAL_AMOUNT)
       }
     ]
   )
@@ -206,8 +263,8 @@ const buildPreparedWithdrawal = ({ isBatch = false }: { isBatch?: boolean } = {}
       userOperation: {
         sender: WITHDRAWAL_SENDER,
         nonce: '0x0',
-        callData: isBatch ? encodeBatchCalls(sponsoredValue) : '0x',
-        callGasLimit: isBatch ? toBeHex(580_000n) : '0x0',
+        callData: '0x',
+        callGasLimit: '0x0',
         verificationGasLimit: toBeHex(50_000n),
         preVerificationGas: toBeHex(100_000n),
         maxFeePerGas: toBeHex(10n ** 9n),
@@ -398,7 +455,12 @@ let ragequitTxns: { to: string; data: string; value: bigint }[] | null = null
 /** Holds `ragequit` until the test releases it, when set. */
 let ragequitGate: Deferred | null = null
 /** What `prepareUnshield` returns, or null for it to fail like proving did. */
-let preparedWithdrawal: ReturnType<typeof buildPreparedWithdrawal> | null = null
+let preparedWithdrawal:
+  | ReturnType<typeof buildPreparedWithdrawal>
+  | ReturnType<typeof buildPreparedRelayedWithdrawal>
+  | null = null
+/** What a run of a relayed withdrawal throws, when set: the node's revert, or its failure. */
+let relayFailure: unknown = null
 /** What `prepareUnshield` throws instead, when set - the SDK's thunks throw plain objects, not `Error`s. */
 let prepareUnshieldFailure: unknown = null
 /** Whether `prepareUnshield` proves through the controller's prover first, as the SDK does. */
@@ -466,7 +528,7 @@ class FakeProtocol {
     const config = getPrivacyPoolsChainConfig(chainId)
     if (config)
       await this.host.storage.set(
-        getPrivacyPoolsStoreKey(config),
+        getPrivacyPoolsChainStateKey(config),
         storedPoolState ?? toStoredPoolState()
       )
   }
@@ -516,6 +578,8 @@ class FakeProtocol {
   async prepareUnshield(_assets: unknown, _to: unknown, options: unknown) {
     this.syncCountWhenProving = this.syncCount
     this.unshieldOptions = options
+    // The real one syncs first, so it knows the phrase's notes after proving
+    this.seedId = await this.host.keystore.deriveAt("m/28784'/1'/0'/0")
     if (isProvingOnUnshield) {
       const prover = await this.params.proverFactory()
       await prover.prove('withdraw', { existingSecret: 1n })
@@ -571,7 +635,38 @@ jest.mock('@kohaku-eth/privacy-pools', () => ({
     .fn()
     .mockImplementation((host: any, params: any) => new FakeProtocol(host, params)),
   OxBowAspService: jest.fn(),
-  createPPv1Broadcaster: jest.fn()
+  createPPv1Broadcaster: jest.fn(),
+  getPPv1ChainStateKey: jest.requireActual<typeof import('../../../test/mocks/privacyPoolsSdk')>(
+    '../../../test/mocks/privacyPoolsSdk'
+  ).getPPv1ChainStateKey,
+  // Its message names the note's label and balance, as the SDK's does
+  PPv1NoteUnavailableError: class PPv1NoteUnavailableError extends Error {
+    label: bigint
+
+    reason: string
+
+    constructor(label: bigint, reason: string) {
+      super(`Note ${label} cannot be spent (${reason}): balance 5, requires 7`)
+      this.label = label
+      this.reason = reason
+    }
+  },
+  PPv1RelayerQuoteError: class PPv1RelayerQuoteError extends Error {
+    failures: readonly object[]
+
+    constructor(failures: readonly object[]) {
+      super('All relayers failed to provide a quote')
+      this.failures = failures
+    }
+  },
+  PaymasterBroadcastError: class PaymasterBroadcastError extends Error {
+    failure: string
+
+    constructor(failure: string, message: string) {
+      super(message)
+      this.failure = failure
+    }
+  }
 }))
 
 jest.mock('../../services/provider', () => ({
@@ -709,6 +804,13 @@ const fakeFetch = jest.fn(async (url: string) => ({
 
 /** Answers the only two reads a deposit makes: the entrypoint's asset config and an allowance. */
 const fakeProviderCall = async ({ data }: { to: string; data: string }) => {
+  if (data.startsWith(POOL_SCOPE_INTERFACE.getFunction('SCOPE')!.selector))
+    return POOL_SCOPE_INTERFACE.encodeFunctionResult('SCOPE', [ETH_POOL_SCOPE])
+  if (data.startsWith(RELAY_INTERFACE.getFunction('relay')!.selector)) {
+    if (relayFailure) throw relayFailure
+
+    return '0x'
+  }
   if (data.startsWith(ENTRYPOINT_INTERFACE.getFunction('assetConfig')!.selector)) {
     assetConfigReadCount += 1
     if (assetConfigReadFailure) throw assetConfigReadFailure
@@ -802,18 +904,26 @@ const prepareTest = async ({
   // Passed to start again from what an earlier controller left in storage, as after a restart
   storage = new StorageController(produceMemoryStore()),
   proverFactory,
+  merkleTreeBuilder,
   // Adds `OTHER_CHAIN_ID` to the user's networks, with a provider
-  hasOtherChain = false
+  hasOtherChain = false,
+  // The paymaster, which most of these tests prove through. Null leaves the choice unset
+  storedBroadcaster = 'kohaku'
 }: {
   accounts?: string[]
   storage?: StorageController
   proverFactory?: PrivacyPoolsProverFactory
+  merkleTreeBuilder?: MerkleTreeBuilder
   hasOtherChain?: boolean
+  storedBroadcaster?: string | null
 } = {}) => {
   await storage.set(
     'privacyPoolsAccounts',
     accounts.map((seedId) => ({ seedId, createdAt: 1 }))
   )
+  // Typed loosely, to also store a choice no longer offered
+  if (storedBroadcaster !== null)
+    await storage.set('privacyPoolsBroadcaster', storedBroadcaster as PrivacyPoolsBroadcaster)
 
   const keystore = new FakeKeystore()
   const featureFlags = new FakeFeatureFlags()
@@ -846,6 +956,7 @@ const prepareTest = async ({
     fetch: fakeFetch as any,
     circuitsBaseUrl: '',
     proverFactory,
+    merkleTreeBuilder,
     onAccountsRemoved,
     getPendingAccountOps: () => pendingAccountOps,
     tokenPrices: new TokenPricesController({
@@ -962,6 +1073,23 @@ const mockClock = (startMs = 1_000_000) => {
   }
 }
 
+/**
+ * Selects `seedId` and syncs it on Ethereum, as the Send form only offers the deposits of an
+ * account that synced.
+ */
+const selectSyncedAccount = async (
+  {
+    controller,
+    selectedAccount
+  }: Pick<Awaited<ReturnType<typeof prepareTest>>, 'controller' | 'selectedAccount'>,
+  seedId = 'seed-a'
+) => {
+  selectedAccount.select(seedId)
+  const syncing = controller.syncChain('1')
+  await releaseSync(seedId)
+  await syncing
+}
+
 describe('PrivacyPoolsController', () => {
   beforeEach(() => {
     protocols.length = 0
@@ -971,6 +1099,7 @@ describe('PrivacyPoolsController', () => {
     fakeFetch.mockClear()
     preparedDepositTarget = ETHEREUM_ENTRYPOINT
     preparedWithdrawal = null
+    relayFailure = null
     prepareUnshieldFailure = null
     isProvingOnUnshield = false
     latestBaseFee = 10n ** 8n
@@ -1216,6 +1345,7 @@ describe('PrivacyPoolsController', () => {
         [
           'accounts',
           'balances',
+          'broadcaster',
           'chains',
           'depositAssetConfigs',
           'hasPersistedSendForm',
@@ -1229,6 +1359,7 @@ describe('PrivacyPoolsController', () => {
           'operation',
           'poolStats',
           'prices',
+          'sendableDeposits',
           'sendForm',
           'sendFormResetCounter',
           'statuses',
@@ -1423,7 +1554,7 @@ describe('PrivacyPoolsController', () => {
       expect(controller.chains['1']?.syncStatus).toBe('ready')
     })
 
-    it('rebuilds a plugin once another phrase has persisted newer history', async () => {
+    it("keeps a plugin through another phrase's sync of the network, as they share its state", async () => {
       const { controller, selectedAccount } = await prepareTest()
 
       selectedAccount.select('seed-a')
@@ -1441,7 +1572,34 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-a')
       await secondA
 
-      expect(protocols.filter((protocol) => protocol.seedId === 'seed-a')).toHaveLength(2)
+      expect(protocols.filter((protocol) => protocol.seedId === 'seed-a')).toHaveLength(1)
+    })
+
+    // Sharing follows the object: plugins given different ones would each keep a copy in memory
+    it('gives every plugin the same chain storage, on every network and after a lock', async () => {
+      const { controller, keystore, selectedAccount } = await prepareTest({ hasOtherChain: true })
+
+      selectedAccount.select('seed-a')
+      const syncA = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncA
+      selectedAccount.select('seed-b')
+      const syncB = controller.syncChain(OTHER_CHAIN_ID.toString())
+      await releaseSync('seed-b', OTHER_CHAIN_ID)
+      await syncB
+
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      keystore.isUnlocked = true
+      keystore.fireUpdate()
+      const syncAfterLock = controller.syncChain(OTHER_CHAIN_ID.toString())
+      await releaseSync('seed-b', OTHER_CHAIN_ID)
+      await syncAfterLock
+
+      expect(protocols).toHaveLength(3)
+      const [{ params: first }] = protocols
+      expect(first.chainStorage).toBeDefined()
+      protocols.forEach(({ params }) => expect(params.chainStorage).toBe(first.chainStorage))
     })
 
     it('counts only approved notes as what a transfer can send', async () => {
@@ -1471,9 +1629,12 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-a')
       await syncing
 
-      const { chains, balances } = controller.toJSON()
+      const { chains, balances, sendableDeposits } = controller.toJSON()
       expect(chains['1']).not.toHaveProperty('notes')
       expect(balances['1']).toHaveLength(1)
+      // Named by number: a label would point to the deposit on chain
+      expect(sendableDeposits['1']).toEqual([expect.objectContaining({ number: 1 })])
+      expect(sendableDeposits['1']?.[0]).not.toHaveProperty('label')
     })
 
     it('keeps notes across account switches without syncing again', async () => {
@@ -1682,8 +1843,9 @@ describe('PrivacyPoolsController', () => {
 
     it('proves a transfer without waiting for a sync of another network', async () => {
       const { restore } = suppressConsole()
+      notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH, approved: true }]
       const { controller, selectedAccount } = await prepareTest({ hasOtherChain: true })
-      selectedAccount.select('seed-a')
+      await selectSyncedAccount({ controller, selectedAccount })
 
       const syncingOther = controller.syncChain(OTHER)
       await waitUntil(() => runningSyncs.length === 1)
@@ -1691,13 +1853,14 @@ describe('PrivacyPoolsController', () => {
       await controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        depositNumber: 1,
         amount: 10n ** 17n,
         recipient: WITHDRAWAL_RECIPIENT
       })
 
-      // Reached proving with the other network's sync still running
+      // Reached proving with the other network's sync still running, after only the sync before it
       const provingProtocol = protocols.find((protocol) => protocol.syncCountWhenProving !== null)
-      expect(provingProtocol?.syncCountWhenProving).toBe(0)
+      expect(provingProtocol?.syncCountWhenProving).toBe(1)
       expect(describeRunningSyncs()).toEqual(['seed-a on 10'])
 
       await releaseSync('seed-a', OTHER_CHAIN_ID)
@@ -1969,7 +2132,7 @@ describe('PrivacyPoolsController', () => {
       it('shows a deposit right away into an account not read since a restart, without reading it first', async () => {
         const storage = new StorageController(produceMemoryStore())
         await storage.set('privacyPoolsState', {
-          [getPrivacyPoolsStoreKey(getPrivacyPoolsChainConfig(1n)!)]: toStoredPoolState()
+          [getPrivacyPoolsChainStateKey(getPrivacyPoolsChainConfig(1n)!)]: toStoredPoolState()
         })
         const { controller, selectedAccount } = await prepareTest({ storage })
         selectedAccount.select('seed-a')
@@ -2617,6 +2780,20 @@ describe('PrivacyPoolsController', () => {
       expect(controller.hasPersistedSendForm).toBe(false)
     })
 
+    it('keeps a deposit the form picked when the screen is opened for its token', async () => {
+      const { controller, selectedAccount, ui } = await prepareTest()
+      selectedAccount.select('seed-a')
+      ui.open('view-1', 'popup', 'dashboard')
+      controller.updateSendForm({ tokenId: '1:0xabcd:2' })
+
+      ui.navigate('view-1', SEND_ROUTE, { chainId: '1', address: '0xAbCd' })
+      expect(controller.sendForm.tokenId).toBe('1:0xabcd:2')
+
+      // Not a deposit of it: a token whose address starts the same
+      ui.navigate('view-1', SEND_ROUTE, { chainId: '1', address: '0xAb' })
+      expect(controller.sendForm.tokenId).toBe('1:0xab')
+    })
+
     it('keeps the token pick of the form when the screen is opened without one', async () => {
       const { controller, selectedAccount, ui } = await prepareTest()
       selectedAccount.select('seed-a')
@@ -2711,6 +2888,11 @@ describe('PrivacyPoolsController', () => {
   })
 
   describe('sending from a Privacy Pools account', () => {
+    beforeEach(() => {
+      // A deposit that pays a send of WITHDRAWAL_AMOUNT
+      notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH, approved: true }]
+    })
+
     it('refuses to prove a transfer to something that is not an address', async () => {
       const { controller, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-a')
@@ -2719,6 +2901,7 @@ describe('PrivacyPoolsController', () => {
         controller.prepareWithdrawal({
           chainId: '1',
           tokenAddress: ZERO_ADDRESS,
+          depositNumber: 1,
           amount: 10n ** 17n,
           recipient: 'vitalik'
         })
@@ -2727,6 +2910,7 @@ describe('PrivacyPoolsController', () => {
         controller.prepareWithdrawal({
           chainId: '1',
           tokenAddress: ZERO_ADDRESS,
+          depositNumber: 1,
           amount: 10n ** 17n,
           recipient: ZERO_ADDRESS
         })
@@ -2745,6 +2929,7 @@ describe('PrivacyPoolsController', () => {
         controller.prepareWithdrawal({
           chainId: '1',
           tokenAddress: ZERO_ADDRESS,
+          depositNumber: 1,
           amount: 10n ** 17n,
           recipient: WITHDRAWAL_RECIPIENT
         })
@@ -2754,20 +2939,27 @@ describe('PrivacyPoolsController', () => {
       expect(protocols).toHaveLength(0)
     })
 
-    it('leaves the sync before proving to the SDK when none is queued', async () => {
+    it('syncs an account that has not synced since the start before proving, to find the deposit', async () => {
       const { restore } = suppressConsole()
       const { controller, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-a')
 
-      await controller.prepareWithdrawal({
+      const preparing = controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        depositNumber: 1,
         amount: 10n ** 17n,
         recipient: WITHDRAWAL_RECIPIENT
       })
+      // Shown as syncing, like any other sync of the account
+      await waitUntil(() => runningSyncs.length === 1)
+      expect(controller.chains['1']?.syncStatus).toBe('syncing')
+      await releaseSync('seed-a')
+      await preparing
 
       const [protocol] = protocols
-      expect(protocol?.syncCountWhenProving).toBe(0)
+      expect(protocol?.syncCountWhenProving).toBe(1)
+      expect((protocol?.unshieldOptions as { label?: bigint })?.label).toBe(1n)
       expect(runningSyncs).toHaveLength(0)
       // Proving itself failed, which leaves the transfer failed with a sentence for the user
       expect(controller.operation).toMatchObject({
@@ -2788,6 +2980,7 @@ describe('PrivacyPoolsController', () => {
       const preparing = controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        depositNumber: 1,
         amount: 10n ** 17n,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -2805,14 +2998,15 @@ describe('PrivacyPoolsController', () => {
       restore()
     })
 
-    const prepareSignedWithdrawal = async ({ isBatch = false }: { isBatch?: boolean } = {}) => {
-      preparedWithdrawal = buildPreparedWithdrawal({ isBatch })
+    const prepareSignedWithdrawal = async () => {
+      preparedWithdrawal = buildPreparedWithdrawal()
       const test = await prepareTest()
-      test.selectedAccount.select('seed-a')
+      await selectSyncedAccount(test)
 
       await test.controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        depositNumber: 1,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -2829,11 +3023,12 @@ describe('PrivacyPoolsController', () => {
 
     const prepareFailingWithdrawal = async () => {
       const test = await prepareTest()
-      test.selectedAccount.select('seed-a')
+      await selectSyncedAccount(test)
 
       await test.controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        depositNumber: 1,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -2933,9 +3128,9 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-a')
       await broadcasting
 
-      // Though no screen showed it
+      // Though no screen showed it. Synced before the transfer too, as the form needs the deposits
       expect(protocols[0]!.historyCount).toBe(1)
-      expect(protocols[0]!.syncCount).toBe(1)
+      expect(protocols[0]!.syncCount).toBe(2)
 
       // Opening the activity then neither syncs nor reads it again
       await controller.filterHistory('dashboard')
@@ -2984,6 +3179,62 @@ describe('PrivacyPoolsController', () => {
       expect(controller.emittedErrors.slice(errorCount)).toEqual([
         expect.objectContaining({ level: 'silent' })
       ])
+
+      await releaseSync('seed-a')
+      await broadcasting
+      restore()
+    })
+
+    it('reports success only once the bundler says the transfer landed', async () => {
+      const { controller } = await prepareSignedWithdrawal()
+      const landed = createDeferred()
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+        broadcast: async () => ({ ...BROADCAST_RESULT, wait: () => landed.promise })
+      } as any)
+
+      const broadcasting = controller.broadcastWithdrawal()
+      // Accepted by the bundler, not landed yet
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
+      expect(controller.operation?.status).toBe('pending')
+
+      landed.resolve()
+      await waitUntil(() => controller.operation?.status === 'success')
+
+      await releaseSync('seed-a')
+      await broadcasting
+    })
+
+    it.each([
+      [
+        'not-accepted',
+        'The transfer was not sent, so nothing left your account. Please try again.'
+      ],
+      [
+        'reverted',
+        'The transfer did not go through. Please check your balance before you send it again.'
+      ],
+      [
+        'unconfirmed',
+        'We could not confirm the transfer yet. Check your balance before you send it again.'
+      ]
+    ])('tells the user what a %s transfer means for their funds', async (failure, message) => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareSignedWithdrawal()
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+        broadcast: async () => ({
+          ...BROADCAST_RESULT,
+          wait: async () => {
+            throw new (PaymasterBroadcastError as any)(failure, 'bundler: userOp failed')
+          }
+        })
+      } as any)
+
+      const broadcasting = controller.broadcastWithdrawal()
+      await waitUntil(() => controller.operation?.status === 'failed')
+
+      expect(controller.operation?.error).toBe(message)
 
       await releaseSync('seed-a')
       await broadcasting
@@ -3216,6 +3467,39 @@ describe('PrivacyPoolsController', () => {
           })
         })
 
+        it('holds back the deposit it is sent from until the notes show it, and only that one', async () => {
+          const { controller } = await prepareReadWithdrawal([
+            { label: 1n, amount: ONE_ETH, approved: true, deposit: 0 },
+            { label: 2n, amount: ONE_ETH, approved: true, deposit: 1 }
+          ])
+          const block = holdBlockRead()
+          mockBroadcastResult()
+
+          const broadcasting = controller.broadcastWithdrawal()
+          await waitUntil(() => bundlerProvider.send.mock.calls.length === 1)
+
+          expect(
+            controller.sendableDeposits['1']?.map(({ number, availableAmount }) => ({
+              number,
+              availableAmount
+            }))
+          ).toEqual([{ number: 2, availableAmount: ONE_ETH }])
+
+          notesBySeed['seed-a'] = [
+            { label: 1n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true, deposit: 0 },
+            { label: 2n, amount: ONE_ETH, approved: true, deposit: 1 }
+          ]
+          block.resolve()
+          await releaseSync('seed-a')
+          await broadcasting
+
+          // What is left of it, once the notes show the send
+          expect(controller.sendableDeposits['1']?.[0]).toMatchObject({
+            number: 1,
+            availableAmount: ONE_ETH - WITHDRAWAL_AMOUNT
+          })
+        })
+
         it('keeps showing a transfer when the notes only show another one, sent before it, that spent a different note of the token', async () => {
           const { controller } = await prepareReadWithdrawal([
             { label: 1n, amount: ONE_ETH, approved: true },
@@ -3231,6 +3515,8 @@ describe('PrivacyPoolsController', () => {
           await controller.prepareWithdrawal({
             chainId: '1',
             tokenAddress: ZERO_ADDRESS,
+            // From the other deposit, as the first is held back until the notes show its send
+            depositNumber: 2,
             amount: WITHDRAWAL_AMOUNT,
             recipient: WITHDRAWAL_RECIPIENT
           })
@@ -3402,9 +3688,9 @@ describe('PrivacyPoolsController', () => {
 
         // Nothing left the account, so none of it shows as on its way
         expect(getBalance(controller)).toMatchObject({
-          totalAmount: 10n,
+          totalAmount: ONE_ETH,
           simulationAmount: 0n,
-          approvedAmountPostSimulation: 10n
+          approvedAmountPostSimulation: ONE_ETH
         })
       })
 
@@ -3577,12 +3863,13 @@ describe('PrivacyPoolsController', () => {
 
     it('describes a transfer only once it is proved', async () => {
       const test = await prepareTest()
-      test.selectedAccount.select('seed-a')
+      await selectSyncedAccount(test)
       preparedWithdrawal = buildPreparedWithdrawal()
 
       const preparing = test.controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        depositNumber: 1,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -3652,101 +3939,506 @@ describe('PrivacyPoolsController', () => {
       expect(providers.providers['1'].send).not.toHaveBeenCalled()
     })
 
-    it('asks the SDK for a batch, whose selection skips pending deposits', async () => {
+    it('asks the SDK for one deposit, with the unused gas refunded to the recipient', async () => {
       await prepareSignedWithdrawal()
 
       const [protocol] = protocols
       expect(protocol?.unshieldOptions).toEqual({
         mode: 'paymaster',
-        batch: true,
-        refundRecipient: WITHDRAWAL_RECIPIENT
+        refundRecipient: WITHDRAWAL_RECIPIENT,
+        label: 1n
       })
     })
 
-    describe('combining deposits', () => {
-      it('describes it by the forward to the recipient, not by the single-use sender', async () => {
-        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+    describe('the deposit it is sent from', () => {
+      /** seed-a with `notes`, synced, proving a send of `WITHDRAWAL_AMOUNT` from `depositNumber`. */
+      const prepareFromDeposit = async (
+        notes: (typeof notesBySeed)[string],
+        depositNumber: number
+      ) => {
+        notesBySeed['seed-a'] = notes
+        preparedWithdrawal = buildPreparedWithdrawal()
+        const test = await prepareTest()
+        test.selectedAccount.select('seed-a')
+        const syncing = test.controller.syncChain('1')
+        await releaseSync('seed-a')
+        await syncing
 
-        // Its refund goes to the recipient too, so they get the amount net of the expected fee
-        expect(describeHumanization(controller.operation?.humanization)).toEqual(
-          humanizedSend(WITHDRAWAL_FEE - WITHDRAWAL_REFUND)
+        await test.controller.prepareWithdrawal({
+          chainId: '1',
+          tokenAddress: ZERO_ADDRESS,
+          depositNumber,
+          amount: WITHDRAWAL_AMOUNT,
+          recipient: WITHDRAWAL_RECIPIENT
+        })
+
+        return test
+      }
+
+      const DEPOSIT_UNAVAILABLE_ERROR =
+        'This deposit does not have enough left for this amount. Please send less, or pick another deposit.'
+
+      it('proves a send from the chosen deposit, telling the SDK which', async () => {
+        // Also a larger one than the SDK would pick for the amount by itself
+        const { controller } = await prepareFromDeposit(
+          [
+            { label: 1n, amount: ONE_ETH, approved: true },
+            { label: 2n, amount: WITHDRAWAL_AMOUNT, approved: true }
+          ],
+          1
         )
+
+        expect(controller.operation).toMatchObject({ status: 'pending', phase: 'ready' })
+        expect((protocols[0]?.unshieldOptions as { label?: bigint })?.label).toBe(1n)
       })
 
-      it('shows the fee net of the refund, which goes to the recipient', async () => {
-        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
-
-        expect(controller.operation).toMatchObject({
-          status: 'pending',
-          phase: 'ready',
-          quote: {
-            feeAmount: WITHDRAWAL_FEE,
-            amountAfterFee: WITHDRAWAL_AMOUNT - WITHDRAWAL_FEE,
-            expectedFeeAmount: WITHDRAWAL_FEE - WITHDRAWAL_REFUND
-          }
-        })
-      })
-
-      it('does not count a refund to the single-use sender', async () => {
-        simulateWithdrawal = async () => successfulSimulation(WITHDRAWAL_SENDER)
-
-        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
-
-        expect(controller.operation?.quote?.expectedFeeAmount).toBe(WITHDRAWAL_FEE)
-      })
-
-      const batchNotConfirmedError =
-        'This transfer combines several of your deposits, and we could not confirm it would go through, so it was not sent. Please try again in a moment, or send a smaller amount.'
-
-      it('refuses one the node cannot run', async () => {
+      it('refuses a pending deposit, one too small, and one the account does not have', async () => {
         const { restore } = suppressConsole()
-        simulateWithdrawal = async () => {
-          throw new Error('the method eth_simulateV1 does not exist/is not available')
-        }
+        const pending = await prepareFromDeposit(
+          [{ label: 1n, amount: ONE_ETH, approved: false }],
+          1
+        )
+        expect(pending.controller.operation?.error).toBe(DEPOSIT_UNAVAILABLE_ERROR)
 
-        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+        const tooSmall = await prepareFromDeposit(
+          [{ label: 1n, amount: WITHDRAWAL_AMOUNT - 1n, approved: true }],
+          1
+        )
+        expect(tooSmall.controller.operation?.error).toBe(DEPOSIT_UNAVAILABLE_ERROR)
 
-        expect(controller.operation).toMatchObject({
-          status: 'failed',
-          error: batchNotConfirmedError
-        })
+        const unknown = await prepareFromDeposit(
+          [{ label: 1n, amount: ONE_ETH, approved: true }],
+          9
+        )
+        expect(unknown.controller.operation?.error).toBe(DEPOSIT_UNAVAILABLE_ERROR)
         restore()
       })
 
-      it('refuses one the simulation says would revert', async () => {
+      it("explains the SDK's refusal of a deposit its own sync shows can no longer pay", async () => {
         const { restore } = suppressConsole()
-        simulateWithdrawal = async () => [{ calls: [{ status: '0x0', logs: [] }] }]
+        prepareUnshieldFailure = new (PPv1NoteUnavailableError as any)(
+          4242n,
+          'insufficient-balance'
+        )
 
-        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+        const { controller } = await prepareFromDeposit(
+          [{ label: 4242n, amount: ONE_ETH, approved: true }],
+          1
+        )
 
         expect(controller.operation).toMatchObject({
           status: 'failed',
-          error: batchNotConfirmedError
+          error: DEPOSIT_UNAVAILABLE_ERROR
         })
-        restore()
-      })
-
-      it('refuses one on a node without state overrides', async () => {
-        const { restore } = suppressConsole()
-        rpcNoStateOverride = true
-
-        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
-
-        expect(controller.operation).toMatchObject({
-          status: 'failed',
-          error: batchNotConfirmedError
-        })
+        // The label and balance would link the withdrawal to its deposit in a log or crash report
+        const emitted = controller.emittedErrors.at(-1)?.error
+        expect(emitted).not.toHaveProperty('error', prepareUnshieldFailure)
+        expect(emitted).toHaveProperty(
+          'error.message',
+          'privacyPools: the SDK cannot spend the chosen note (insufficient-balance)'
+        )
         restore()
       })
     })
   })
+  describe('choosing who sends', () => {
+    it('sends through 0xBow unless the user chose otherwise, also over a choice no longer offered', async () => {
+      const unset = await prepareTest({ storedBroadcaster: null })
+      expect(unset.controller.broadcaster).toBe('0xbow')
+
+      const unknown = await prepareTest({ storedBroadcaster: 'railgun' })
+      expect(unknown.controller.broadcaster).toBe('0xbow')
+    })
+
+    it('keeps the choice after a restart', async () => {
+      const storage = new StorageController(produceMemoryStore())
+      const { controller } = await prepareTest({ storage, storedBroadcaster: null })
+
+      await controller.setBroadcaster('kohaku')
+      expect(controller.broadcaster).toBe('kohaku')
+
+      const restarted = await prepareTest({ storage, storedBroadcaster: null })
+      expect(restarted.controller.broadcaster).toBe('kohaku')
+    })
+
+    it('drops a transfer proved for the other one, which only it could send', async () => {
+      notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH, approved: true }]
+      preparedWithdrawal = buildPreparedWithdrawal()
+      const { controller, selectedAccount } = await prepareTest()
+      await selectSyncedAccount({ controller, selectedAccount })
+      await controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        depositNumber: 1,
+        amount: WITHDRAWAL_AMOUNT,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+      expect(controller.operation?.phase).toBe('ready')
+
+      await controller.setBroadcaster('0xbow')
+
+      expect(controller.operation).toBeNull()
+      await expect(controller.broadcastWithdrawal()).rejects.toThrow(EmittableError)
+    })
+  })
+
+  describe('sending through the 0xBow relayers', () => {
+    beforeEach(() => {
+      notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH, approved: true }]
+      jest.mocked(createPPv1Broadcaster).mockClear()
+    })
+
+    const prepareRelayedWithdrawal = async (
+      withdrawal: ReturnType<typeof buildPreparedRelayedWithdrawal> | null = null,
+      beforePreparing: (test: Awaited<ReturnType<typeof prepareTest>>) => void = () => {}
+    ) => {
+      preparedWithdrawal = withdrawal ?? buildPreparedRelayedWithdrawal()
+      const test = await prepareTest({ storedBroadcaster: '0xbow' })
+      await selectSyncedAccount(test)
+      beforePreparing(test)
+
+      await test.controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        depositNumber: 1,
+        amount: WITHDRAWAL_AMOUNT,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+
+      return test
+    }
+
+    const OFFER_EXPIRED_ERROR =
+      'The fee quote for this transfer expired before it could be sent. Nothing left your account - please try again.'
+
+    it('asks the SDK for a relayed withdrawal and shows its fee as exact, without running it', async () => {
+      const { controller, providers } = await prepareRelayedWithdrawal()
+
+      expect(protocols[0]?.unshieldOptions).toEqual({ mode: 'relayer', label: 1n })
+      expect(protocols[0]?.params.relayersList).toEqual(getPrivacyPoolsChainConfig(1n)!.relayers)
+      expect(controller.operation).toMatchObject({
+        broadcaster: '0xbow',
+        status: 'pending',
+        phase: 'ready',
+        quote: {
+          feeAmount: RELAYED_WITHDRAWAL_FEE,
+          amountAfterFee: WITHDRAWAL_AMOUNT - RELAYED_WITHDRAWAL_FEE,
+          expectedFeeAmount: RELAYED_WITHDRAWAL_FEE
+        }
+      })
+      // The fee is exact, so there is nothing to run for it
+      expect(providers.providers['1'].send).not.toHaveBeenCalled()
+    })
+
+    it('does not need ERC-4337 smart account features, which only Kohaku goes through', async () => {
+      const { controller } = await prepareRelayedWithdrawal(null, ({ featureFlags }) =>
+        featureFlags.set('erc4337', false)
+      )
+
+      expect(controller.operation).toMatchObject({ status: 'pending', phase: 'ready' })
+    })
+
+    it('refuses a relayed withdrawal that pays out to someone else, pointing to Kohaku', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareRelayedWithdrawal(
+        buildPreparedRelayedWithdrawal({ recipient: RELAYER_FEE_RECIPIENT })
+      )
+
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error:
+          "The 0xBow relayers sent back a transfer that doesn't match what you asked for, so nothing was sent. Please choose Kohaku in the send settings, or try again later."
+      })
+      // A faulty or malicious relayer, or an SDK bug, so it is reported
+      expect(controller.emittedErrors.at(-1)?.level).toBe('major')
+      restore()
+    })
+
+    it('refuses an offer that runs out before the user could confirm it', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareRelayedWithdrawal(
+        buildPreparedRelayedWithdrawal({ expiresIn: 5_000 })
+      )
+
+      expect(controller.operation).toMatchObject({ status: 'failed', error: OFFER_EXPIRED_ERROR })
+      restore()
+    })
+
+    const RELAYERS_UNAVAILABLE_ERROR =
+      'The 0xBow relayers could not take this transfer right now. Please try again in a moment, or choose Kohaku in the send settings.'
+    const RELAYER_FEE_TOO_HIGH_ERROR =
+      'The 0xBow relayers are asking a higher fee than this pool allows right now. Please try again later, or choose Kohaku in the send settings.'
+    const QUOTE_FAILED = {
+      relayerId: 'fastrelay',
+      relayerUrl: 'https://fastrelay.xyz/relayer',
+      message: 'Quote request failed (HTTP 503)',
+      reason: 'quote-failed'
+    }
+    const FEE_TOO_HIGH = {
+      relayerId: 'cloaked',
+      relayerUrl: 'https://api.clkd.xyz/relayer',
+      message: 'withdrawalData fee 120 bps exceeds the pool maxRelayFeeBPS 100',
+      reason: 'fee-too-high',
+      requiredFeeBPS: 120n,
+      maxRelayFeeBPS: 100n
+    }
+
+    it.each([
+      ['no relayer could be reached', [QUOTE_FAILED], RELAYERS_UNAVAILABLE_ERROR],
+      ['no relayer is configured', [], RELAYERS_UNAVAILABLE_ERROR],
+      [
+        'one relayer asked too much and another could not be reached',
+        [FEE_TOO_HIGH, QUOTE_FAILED],
+        RELAYERS_UNAVAILABLE_ERROR
+      ],
+      ['every relayer asked more than the pool allows', [FEE_TOO_HIGH], RELAYER_FEE_TOO_HIGH_ERROR]
+    ])('explains when %s', async (_case, failures, error) => {
+      const { restore } = suppressConsole()
+      prepareUnshieldFailure = new (PPv1RelayerQuoteError as any)(failures)
+
+      const { controller } = await prepareRelayedWithdrawal()
+
+      expect(controller.operation).toMatchObject({ status: 'failed', error })
+      restore()
+    })
+
+    it('explains a relayer fee above what the pool allows, as when no relayer offers less', async () => {
+      const { restore } = suppressConsole()
+      // The mocked pool allows 100 bps
+      const { controller } = await prepareRelayedWithdrawal(
+        buildPreparedRelayedWithdrawal({ relayFeeBPS: 101n })
+      )
+
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error: RELAYER_FEE_TOO_HIGH_ERROR
+      })
+      restore()
+    })
+
+    it('does not read a plain error that only mentions the relayers as a quote failure', async () => {
+      const { restore } = suppressConsole()
+      prepareUnshieldFailure = new Error('All relayers failed to provide a quote')
+
+      const { controller } = await prepareRelayedWithdrawal()
+
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error: 'The transfer could not be prepared. Please try again.'
+      })
+      restore()
+    })
+
+    /** How long after the relayer sent it the account is read, as its block is not known. */
+    const RELAYED_WITHDRAWAL_SYNC_DELAY_MS = 40 * 1000
+
+    /** Fake timers for the wait before reading the account; the test helpers' own stay real. */
+    const useFakeWaitTimers = () => jest.useFakeTimers({ doNotFake: ['setImmediate', 'Date'] })
+
+    it('sends it to the relayers, and reads the account a while later without asking about it', async () => {
+      const { controller, providers } = await prepareRelayedWithdrawal()
+      const broadcast = jest.fn(async () => RELAYED_BROADCAST_RESULT)
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast } as any)
+      const syncCount = getSyncCount()
+      useFakeWaitTimers()
+
+      try {
+        const broadcasting = controller.broadcastWithdrawal()
+        await waitUntil(() => controller.operation?.status === 'success')
+        expect(jest.mocked(createPPv1Broadcaster).mock.calls[0]![1]).toEqual({
+          broadcasterUrl: getPrivacyPoolsChainConfig(1n)!.relayers
+        })
+        expect(broadcast).toHaveBeenCalledWith(preparedWithdrawal)
+
+        // Waits for it to most likely land
+        await jest.advanceTimersByTimeAsync(RELAYED_WITHDRAWAL_SYNC_DELAY_MS - 1)
+        expect(runningSyncs).toHaveLength(0)
+        await jest.advanceTimersByTimeAsync(1)
+        await releaseSync('seed-a')
+        await broadcasting
+      } finally {
+        jest.useRealTimers()
+      }
+
+      expect(getSyncCount()).toBe(syncCount + 1)
+      // Neither the bundler, nor our node, nor anyone else is asked about the transaction
+      expect(getRpcProvider).not.toHaveBeenCalled()
+      expect(providers.providers['1'].send).not.toHaveBeenCalled()
+      expect(providers.providers['1'].getBlockNumber).not.toHaveBeenCalled()
+    })
+
+    /** How long the relayer has to answer before the transfer reads as not confirmed. */
+    const RELAYED_WITHDRAWAL_TIMEOUT_MS = 2 * 60 * 1000
+
+    it('stops showing it as sending when the relayer never answers, as it may still have sent it', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareRelayedWithdrawal()
+      jest
+        .mocked(createPPv1Broadcaster)
+        .mockReturnValueOnce({ broadcast: () => new Promise(() => {}) } as any)
+      const errorCount = controller.emittedErrors.length
+      const syncCount = getSyncCount()
+      useFakeWaitTimers()
+
+      try {
+        const broadcasting = controller.broadcastWithdrawal()
+        await jest.advanceTimersByTimeAsync(RELAYED_WITHDRAWAL_TIMEOUT_MS - 1)
+        expect(controller.operation).toMatchObject({ status: 'pending', phase: 'broadcasting' })
+
+        await jest.advanceTimersByTimeAsync(1)
+        await waitUntil(() => controller.operation?.status === 'failed')
+        expect(controller.operation?.error).toBe(
+          'We could not confirm the transfer yet. Check your balance before you send it again.'
+        )
+        expect(controller.emittedErrors.slice(errorCount)).toEqual([
+          expect.objectContaining({ level: 'silent' })
+        ])
+
+        // Not known to be sent, so the account is read at once
+        await releaseSync('seed-a')
+        await broadcasting
+      } finally {
+        jest.useRealTimers()
+        restore()
+      }
+
+      expect(getSyncCount()).toBe(syncCount + 1)
+    })
+
+    it('waits for a relayer that answers just before giving up on it', async () => {
+      const { controller } = await prepareRelayedWithdrawal()
+      const answered = createDeferred()
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+        broadcast: async () => {
+          await answered.promise
+          return RELAYED_BROADCAST_RESULT
+        }
+      } as any)
+      useFakeWaitTimers()
+
+      try {
+        const broadcasting = controller.broadcastWithdrawal()
+        await jest.advanceTimersByTimeAsync(RELAYED_WITHDRAWAL_TIMEOUT_MS - 1)
+        answered.resolve()
+        await waitUntil(() => controller.operation?.status === 'success')
+
+        await jest.advanceTimersByTimeAsync(RELAYED_WITHDRAWAL_SYNC_DELAY_MS)
+        await releaseSync('seed-a')
+        await broadcasting
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    it('refuses another send from the deposit until the notes show the first, as the SDK would spend it as it was', async () => {
+      const { controller } = await prepareRelayedWithdrawal()
+      jest
+        .mocked(createPPv1Broadcaster)
+        .mockReturnValueOnce({ broadcast: async () => RELAYED_BROADCAST_RESULT } as any)
+      useFakeWaitTimers()
+
+      try {
+        const broadcasting = controller.broadcastWithdrawal()
+        // Sent, and waiting for it to most likely land
+        await waitUntil(() => controller.operation?.status === 'success')
+        expect(controller.sendableDeposits['1']).toEqual([])
+
+        const { restore } = suppressConsole()
+        preparedWithdrawal = buildPreparedRelayedWithdrawal()
+        await controller.prepareWithdrawal({
+          chainId: '1',
+          tokenAddress: ZERO_ADDRESS,
+          depositNumber: 1,
+          amount: WITHDRAWAL_AMOUNT,
+          recipient: WITHDRAWAL_RECIPIENT
+        })
+        restore()
+        expect(controller.operation?.error).toBe(
+          'Your previous transfer from this deposit is still being confirmed. Please try again once it is.'
+        )
+
+        notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH - WITHDRAWAL_AMOUNT, approved: true }]
+        await jest.advanceTimersByTimeAsync(RELAYED_WITHDRAWAL_SYNC_DELAY_MS)
+        await releaseSync('seed-a')
+        await broadcasting
+      } finally {
+        jest.useRealTimers()
+      }
+
+      expect(controller.sendableDeposits['1']).toEqual([
+        expect.objectContaining({ number: 1, availableAmount: ONE_ETH - WITHDRAWAL_AMOUNT })
+      ])
+    })
+
+    describe('sent a while after it was proved', () => {
+      let now: number
+
+      beforeEach(() => {
+        now = Date.now()
+        jest.spyOn(Date, 'now').mockImplementation(() => now)
+      })
+
+      afterEach(() => {
+        jest.mocked(Date.now).mockRestore()
+      })
+
+      const STALE_ERROR = 'This transfer has expired. Go back to prepare it again.'
+
+      it('goes stale once the offer runs out, and is never sent', async () => {
+        const { controller } = await prepareRelayedWithdrawal()
+
+        // Before the recheck interval, but too close to the offer's end for the relayer
+        now += 41_000
+        await controller.broadcastWithdrawal()
+
+        expect(controller.operation).toMatchObject({ status: 'failed', error: STALE_ERROR })
+        expect(createPPv1Broadcaster).not.toHaveBeenCalled()
+      })
+
+      it('runs an older one again, and goes stale when it would now fail on chain', async () => {
+        const { controller } = await prepareRelayedWithdrawal()
+        relayFailure = makeError('execution reverted', 'CALL_EXCEPTION', {
+          action: 'call',
+          data: '0x',
+          reason: null,
+          transaction: { to: ETHEREUM_ENTRYPOINT, data: '0x' },
+          invocation: null,
+          revert: null
+        })
+
+        now += 31_000
+        await controller.recheckWithdrawal()
+
+        expect(controller.operation).toMatchObject({ status: 'failed', error: STALE_ERROR })
+      })
+
+      it('keeps an older one the node cannot run, for the relayer to check', async () => {
+        const { restore } = suppressConsole()
+        const { controller } = await prepareRelayedWithdrawal()
+        relayFailure = new Error('fetch failed')
+
+        now += 31_000
+        await controller.recheckWithdrawal()
+
+        expect(controller.operation).toMatchObject({ status: 'pending', phase: 'ready' })
+        restore()
+      })
+    })
+  })
+
   describe('cancelling a transfer', () => {
+    beforeEach(() => {
+      // A deposit that pays a send of WITHDRAWAL_AMOUNT
+      notesBySeed['seed-a'] = [{ label: 1n, amount: ONE_ETH, approved: true }]
+    })
+
     const SEND_ROUTE = 'privacy-pools-send'
 
     const startWithdrawal = (controller: PrivacyPoolsController) =>
       controller.prepareWithdrawal({
         chainId: '1',
         tokenAddress: ZERO_ADDRESS,
+        depositNumber: 1,
         amount: WITHDRAWAL_AMOUNT,
         recipient: WITHDRAWAL_RECIPIENT
       })
@@ -3783,7 +4475,7 @@ describe('PrivacyPoolsController', () => {
       preparedWithdrawal = buildPreparedWithdrawal()
       const { proverFactory, proofs } = createGatedProver()
       const test = await prepareTest({ proverFactory })
-      test.selectedAccount.select('seed-a')
+      await selectSyncedAccount(test)
       test.ui.open('view-1', viewType, 'dashboard')
       test.ui.navigate('view-1', SEND_ROUTE)
       test.controller.updateSendForm({ recipientFieldValue: WITHDRAWAL_RECIPIENT, amount: '0.1' })
@@ -3862,6 +4554,7 @@ describe('PrivacyPoolsController', () => {
     })
 
     it('cancels it on switching accounts, and proves the next one only once it has stopped', async () => {
+      notesBySeed['seed-b'] = [{ label: 1n, amount: ONE_ETH, approved: true }]
       const { controller, selectedAccount, proofs, preparing } = await startProving()
 
       selectedAccount.select('seed-b')
@@ -4076,19 +4769,20 @@ describe('PrivacyPoolsController', () => {
         expect(getAmounts(controller)).toEqual([10n, 4n])
       })
 
-      it("syncs again once another account's sync of the network has replaced its plugin", async () => {
+      it("is read without syncing again after another account's sync of the network", async () => {
         const { controller, selectedAccount } = await prepareSelected()
         await syncFirst(controller)
         selectedAccount.select('seed-b')
         await syncFirst(controller, 'seed-b')
         selectedAccount.select('seed-a')
 
-        await openHistory(controller)
+        await controller.filterHistory(SESSION)
 
-        // seed-a's, seed-b's, then seed-a's again, built from what seed-b's sync stored
-        expect(protocols).toHaveLength(3)
-        expect(protocols[0]!.historyCount).toBe(0)
-        expect(protocols[2]!.historyCount).toBe(1)
+        // seed-a's plugin is kept, as seed-b's sync updated the state they share
+        expect(protocols).toHaveLength(2)
+        expect(runningSyncs).toHaveLength(0)
+        expect(protocols[0]!.syncCount).toBe(1)
+        expect(protocols[0]!.historyCount).toBe(1)
         expect(getAmounts(controller)).toEqual([10n, 4n])
       })
 
@@ -4992,8 +5686,14 @@ describe('PrivacyPoolsController', () => {
   })
 
   describe('proving', () => {
-    const syncedProtocol = async (proverFactory?: PrivacyPoolsProverFactory) => {
-      const { controller, selectedAccount } = await prepareTest({ proverFactory })
+    const syncedProtocol = async (
+      proverFactory?: PrivacyPoolsProverFactory,
+      merkleTreeBuilder?: MerkleTreeBuilder
+    ) => {
+      const { controller, selectedAccount } = await prepareTest({
+        proverFactory,
+        merkleTreeBuilder
+      })
       selectedAccount.select('seed-a')
       const syncing = controller.syncChain('1')
       await releaseSync('seed-a')
@@ -5024,6 +5724,36 @@ describe('PrivacyPoolsController', () => {
       await expect(protocol.params.proverFactory()).rejects.toThrow(
         'privacyPools: proving is not available on this platform (no circuit artifacts)'
       )
+    })
+
+    it('hands the SDK the platform tree builder as it is, as the SDK caches its trees per builder', async () => {
+      const merkleTreeBuilder: MerkleTreeBuilder = jest.fn(async () => ({}) as any)
+
+      const protocol = await syncedProtocol(undefined, merkleTreeBuilder)
+
+      expect(protocol.params.merkleTreeBuilder).toBe(merkleTreeBuilder)
+    })
+
+    it('leaves the SDK its own tree builder without one', async () => {
+      const protocol = await syncedProtocol()
+
+      expect(protocol.params.merkleTreeBuilder).toBeUndefined()
+    })
+
+    it("gives up on a relayer's quote that gets no answer, so a silent relayer cannot hold a transfer", async () => {
+      const protocol = await syncedProtocol()
+      const [relayerUrl] = Object.values(getPrivacyPoolsChainConfig(1n)!.relayers!)
+      fakeFetch.mockImplementationOnce(() => new Promise<never>(() => {}))
+      jest.useFakeTimers()
+
+      try {
+        const quoting = protocol.host.network.fetch(`${relayerUrl}/quote`, { method: 'POST' })
+        jest.advanceTimersByTime(PRIVACY_POOLS_READ_TIMEOUT)
+
+        await expect(quoting).rejects.toThrow('request-timeout')
+      } finally {
+        jest.useRealTimers()
+      }
     })
   })
 
@@ -5103,6 +5833,7 @@ describe('PrivacyPoolsController', () => {
     const ETH_TRANSFER = {
       chainId: '1',
       tokenAddress: ZERO_ADDRESS,
+      depositNumber: 1,
       amount: 10n,
       recipient: WITHDRAWAL_RECIPIENT
     }
@@ -5135,9 +5866,9 @@ describe('PrivacyPoolsController', () => {
       ]
     })
 
-    /** seed-a, synced. */
-    const prepareSynced = async () => {
-      const prepared = await prepareTest()
+    /** seed-a, synced. Through Kohaku, unless `storedBroadcaster` says otherwise. */
+    const prepareSynced = async (options: Parameters<typeof prepareTest>[0] = {}) => {
+      const prepared = await prepareTest(options)
       prepared.selectedAccount.select('seed-a')
       const syncing = prepared.controller.syncChain('1')
       await releaseSync('seed-a')
@@ -5175,13 +5906,14 @@ describe('PrivacyPoolsController', () => {
           value: 37n,
           withdraw: 1,
           approved: true,
-          blockNumber: 999n
+          blockNumber: 999n,
+          deposit: 0
         },
-        { label: ETH_LABELS[2]!, amount: 37n, approved: true, blockNumber: 1000n }
+        { label: ETH_LABELS[2]!, amount: 37n, approved: true, blockNumber: 1000n, deposit: 1 }
       ]
       const { controller } = await prepareSynced()
 
-      controller.checkWithdrawalPrivacy({ ...ETH_TRANSFER, amount: 37n })
+      controller.checkWithdrawalPrivacy({ ...ETH_TRANSFER, depositNumber: 2, amount: 37n })
 
       expect(getLeakIds(controller)).toEqual(['unique-amount'])
       expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
@@ -5206,15 +5938,15 @@ describe('PrivacyPoolsController', () => {
       restore()
     })
 
-    it('rates the deposits the proof spends, not the ones of the last sync', async () => {
+    it('rates the deposit as the SDK has it after proving, not as the last sync did', async () => {
       notesBySeed['seed-a'] = [
-        { label: 1n, amount: WITHDRAWAL_AMOUNT, approved: true, blockNumber: 1000n }
+        { label: 1n, amount: 2n * WITHDRAWAL_AMOUNT, approved: true, blockNumber: 1000n }
       ]
       const { controller } = await prepareSynced()
-      // Seen only by the sync the SDK runs before proving: a larger deposit from the recipient
+      // Seen only by the sync the SDK runs before proving: the deposit was made by the recipient
       notesBySeed['seed-a'] = [
         {
-          label: 3n,
+          label: 1n,
           amount: 2n * WITHDRAWAL_AMOUNT,
           approved: true,
           blockNumber: 1000n,
@@ -5232,35 +5964,10 @@ describe('PrivacyPoolsController', () => {
       )
     })
 
-    it('rates a proof that spends a different number of deposits than predicted as unchecked, and reports it', async () => {
-      const { restore } = suppressConsole()
-      notesBySeed['seed-a'] = [
-        { label: 1n, amount: WITHDRAWAL_AMOUNT, approved: true, blockNumber: 1000n }
-      ]
-      const { controller } = await prepareSynced()
-      // Spends two deposits, while the one note pays the whole amount
-      preparedWithdrawal = buildPreparedWithdrawal({ isBatch: true })
-
-      await controller.prepareWithdrawal({ ...ETH_TRANSFER, amount: WITHDRAWAL_AMOUNT })
-
-      expect(controller.operation).toMatchObject({
-        phase: 'ready',
-        // The one predicted deposit rates standard, which says nothing about linking two deposits
-        privacy: { rating: 'unchecked', notesCount: 2, leaks: [] }
-      })
-      expect(controller.emittedErrors.at(-1)).toMatchObject({
-        level: 'silent',
-        error: expect.objectContaining({
-          message: 'privacyPools: the proof spends 2 notes, 1 were predicted'
-        })
-      })
-      restore()
-    })
-
     it('reads the pool for a deposit form when no sync has read it, without syncing', async () => {
       const storage = new StorageController(produceMemoryStore())
       await storage.set('privacyPoolsState', {
-        [getPrivacyPoolsStoreKey(getPrivacyPoolsChainConfig(1n)!)]: storedPoolState!
+        [getPrivacyPoolsChainStateKey(getPrivacyPoolsChainConfig(1n)!)]: storedPoolState!
       })
       const { controller } = await prepareTest({ storage })
       const deposit = {
@@ -5287,6 +5994,24 @@ describe('PrivacyPoolsController', () => {
         bigEnough: 1
       })
       expect(runningSyncs).toHaveLength(0)
+    })
+
+    it('removes what older SDKs stored, on any chain, when it first reads the stored state', async () => {
+      const storage = new StorageController(produceMemoryStore())
+      const currentKey = getPrivacyPoolsChainStateKey(getPrivacyPoolsChainConfig(1n)!)
+      await storage.set('privacyPoolsState', {
+        [currentKey]: storedPoolState!,
+        'privacy-pool-state-1-123': 'state of an older SDK',
+        'privacy-pool-history-1-123': 'history times of an older SDK',
+        'privacy-pool-state-11155111-456': 'state of a chain no longer supported'
+      })
+      const { controller } = await prepareTest({ storage })
+
+      await controller.loadDepositAssetConfig('1', ZERO_ADDRESS, 'transfer-session')
+      await waitUntil(() => !!controller.poolStats['1'])
+      await flush()
+
+      expect(await storage.get('privacyPoolsState', {})).toEqual({ [currentKey]: storedPoolState })
     })
 
     describe('when the send can be told to come from Ambire', () => {
@@ -5436,6 +6161,85 @@ describe('PrivacyPoolsController', () => {
 
         expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
           cover: { sameAmount: 1 }
+        })
+      })
+
+      it('counts the proved transfer against the deposits of the broadcaster it is sent through', async () => {
+        storedPoolState = toStoredPoolState({
+          deposits: deposits.map((deposit) => ({ ...deposit, value: WITHDRAWAL_AMOUNT })),
+          isEveryDepositApproved: true,
+          lastSyncedBlock: LAST_SYNCED_BLOCK
+        })
+        notesBySeed['seed-a'] = [
+          {
+            label: ETH_LABELS[1]!,
+            amount: 2n * WITHDRAWAL_AMOUNT,
+            approved: true,
+            blockNumber: 1000n
+          }
+        ]
+        preparedWithdrawal = buildPreparedWithdrawal()
+        const { controller } = await prepareSynced()
+        await flush()
+
+        await controller.prepareWithdrawal({ ...ETH_TRANSFER, amount: WITHDRAWAL_AMOUNT })
+
+        expect(controller.operation).toMatchObject({ broadcaster: 'kohaku', phase: 'ready' })
+        // Through Kohaku, only the other Ambire account's deposit hides it. Through 0xBow, all 3
+        // deposits of others would
+        expect(controller.operation?.privacy?.cover).toEqual({ bigEnough: 1, sameAmount: 1 })
+      })
+
+      describe('through 0xBow, which looks like any relayed send', () => {
+        it('counts the deposits from all addresses', async () => {
+          const { controller } = await prepareSynced({ storedBroadcaster: '0xbow' })
+          await flush()
+
+          controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+
+          // All but seed-a's own 10
+          expect(controller.withdrawalPrivacy).toMatchObject({
+            broadcaster: '0xbow',
+            privacy: { rating: 'standard', cover: { sameAmount: 3 } }
+          })
+        })
+
+        it("checks the form's transfer again when the user chooses who sends it", async () => {
+          const { controller } = await prepareSynced({ storedBroadcaster: '0xbow' })
+          await flush()
+          controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+
+          await controller.setBroadcaster('kohaku')
+          expect(controller.withdrawalPrivacy).toMatchObject({
+            broadcaster: 'kohaku',
+            privacy: { cover: { sameAmount: 1 } }
+          })
+
+          await controller.setBroadcaster('0xbow')
+          expect(controller.withdrawalPrivacy).toMatchObject({
+            broadcaster: '0xbow',
+            privacy: { cover: { sameAmount: 3 } }
+          })
+        })
+
+        it('is checked and reports no failure when the depositors could not be checked, until the user chooses Kohaku', async () => {
+          const { restore } = suppressConsole()
+          jest.mocked(checkKohakuFingerprints).mockRejectedValueOnce(new Error('rpc down'))
+          const { controller } = await prepareSynced({ storedBroadcaster: '0xbow' })
+          await flush()
+          controller.checkWithdrawalPrivacy(ETH_TRANSFER)
+
+          expect(controller.withdrawalPrivacy?.privacy).toMatchObject({
+            rating: 'standard',
+            cover: { sameAmount: 3 }
+          })
+          expect(controller.hasPrivacyDataFailed['1']).toBe(false)
+
+          await controller.setBroadcaster('kohaku')
+
+          expect(controller.withdrawalPrivacy?.privacy?.rating).toBe('unchecked')
+          expect(controller.hasPrivacyDataFailed['1']).toBe(true)
+          restore()
         })
       })
     })
