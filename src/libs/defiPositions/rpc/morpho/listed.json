@@ -1,0 +1,3100 @@
+{
+  "updatedAt": "2026-11-19",
+  "source": "https://api.morpho.org/graphql (markets, vaults and vaultV2s with listed: true)",
+  "markets": {
+    "1": [
+      {
+        "id": "0x002278ea242ec722813b4fe3c8eeaa07dbc331c731cc0b4248a1bf0771f933ea",
+        "name": "PST / USDC"
+      },
+      {
+        "id": "0x008bed852cd124791f0c8f4ca81893d6ad06e0eed39143ea4cfb874a88f70bec",
+        "name": "NGI+ / USDC"
+      },
+      {
+        "id": "0x016c61eba37bd0bca915bebc742af53677ad5d1174ba1b88cb2cab5c03217c22",
+        "name": "wstETH / RLUSD"
+      },
+      {
+        "id": "0x031c7333014af51e4fd18031d14e4eaada58348cde3f6dc6ea8cca16f7387fb2",
+        "name": "mAPOLLO / USDC"
+      },
+      {
+        "id": "0x0367161b7cb23dfd03747dd3815d1c445b0437b648a6d50346249c6e7b92ff1b",
+        "name": "PT-sUSDS-26NOV2026 / USDT"
+      },
+      {
+        "id": "0x09597e3ede0ff531ac42b8c64e2a261984dc10954ae032f5e1fc07419db52f80",
+        "name": "sUSDS / RLUSD"
+      },
+      {
+        "id": "0x09cf702bb8b6fe8c6effb6021744e365f598b89bc28f3ea7cd6c55115af825df",
+        "name": "sUSDS / AUSD"
+      },
+      {
+        "id": "0x09dc9e7eb5d8fc54b2bc41d1135fd4e99057a580f680321faeb90c7a21e631c1",
+        "name": "WBTC / USDC"
+      },
+      {
+        "id": "0x0a15460ad263c2186fe0b5df20a8cf71d55f3cfa06de15edcf6138f6b8edd8bf",
+        "name": "rETH / USDC"
+      },
+      {
+        "id": "0x0b352b7550acdb1f39fea4b8f9ef8ac2d7953613b92599610b8fbec8a98a51d1",
+        "name": "wstETH / EURCV"
+      },
+      {
+        "id": "0x0c93c623fd2a78a2ffa36b019f74c400c3f3d81fcb22851c88e0c96e510f9689",
+        "name": "PT-siUSD-7JAN2027 / USDC"
+      },
+      {
+        "id": "0x0cb56971212f588d1ea229118f35126b50f9aec4fa1c19bf7860bdcc0e02210e",
+        "name": "cbBTC / EURC"
+      },
+      {
+        "id": "0x0fa9c07baf97b3a82abc6c33eaa28b9e642963f48ab2ab9719e8727dea5265e4",
+        "name": "TSLAon / USDT"
+      },
+      {
+        "id": "0x0ff9c1f2b9cb037ecb14029cbacd3a94470458cf5c6884f09c46ae354765d789",
+        "name": "srNUSD / USDC"
+      },
+      {
+        "id": "0x1247f1c237eceae0602eab1470a5061a6dd8f734ba88c7cdc5d6109fb0026b28",
+        "name": "sUSDe / DAI"
+      },
+      {
+        "id": "0x124ddf1fa02a94085d1fcc35c46c7e180ddb8a0d3ec1181cf67a75341501c9e6",
+        "name": "wstETH / PYUSD"
+      },
+      {
+        "id": "0x12cacbbd1c88513cce13d54927f5f1301335779353817bc5e791e71d200f2199",
+        "name": "WETH / USDS"
+      },
+      {
+        "id": "0x12dbf4937132ff2c6445212519295ce9afbee3c765ba626af5b197fe6c3941a0",
+        "name": "cbBTC / WETH"
+      },
+      {
+        "id": "0x138eec0e4a1937eb92ebc70043ed539661dd7ed5a89fb92a720b341650288a40",
+        "name": "WBTC / WETH"
+      },
+      {
+        "id": "0x13bf541e28081feeaea6f7894e2a9e7e3fae09f3bef554aeecba013020ef88ef",
+        "name": "sUSDai / AUSD"
+      },
+      {
+        "id": "0x143b1f6f4bb25d373c6c438865c4d4d875838181d20b3a4a03e7026780e505f5",
+        "name": "LBTC / WBTC"
+      },
+      {
+        "id": "0x1590cb22d797e226df92ebc6e0153427e207299916e7e4e53461389ad68272fb",
+        "name": "wsrUSD / USDC"
+      },
+      {
+        "id": "0x15bb2a6af0c909eed19fb1f2ceeead34ecbdcba626de752c6b09389ee14eec32",
+        "name": "kBTC / RLUSD"
+      },
+      {
+        "id": "0x167f1d100200e7b7348a82f81e556f4f6c0271d79532073e57630ad9781a9ec8",
+        "name": "aguaUSDCgc / USDC"
+      },
+      {
+        "id": "0x1749e02006bc6bd6a86af52d231511f6911d5e42318e028e51a28dfabc68dd47",
+        "name": "PT-sUSDE-13AUG2026 / RLUSD"
+      },
+      {
+        "id": "0x17f7ae1b52670010976b3fe41324cbb2b1eb7dd8f492e51764b2828371b86b84",
+        "name": "fxSAVE / USDC"
+      },
+      {
+        "id": "0x19cc9b90c4ecde78f4644f4d5ebc938fbadf30f6e4cae95485192f038b23e1f3",
+        "name": "weETH / USDT"
+      },
+      {
+        "id": "0x1a9ccaca2dba9469cd9cba3d077466761b05f465c412d2bf2c71614c4963dd84",
+        "name": "USCC / USDC"
+      },
+      {
+        "id": "0x1ca7ff6b26581fe3155f391f3960d32a033b5f7d537b1f1932b2021a6cf4f706",
+        "name": "sDAI / USDT"
+      },
+      {
+        "id": "0x1ce6a6d584be62be486ac12bbd905e641bf13058900977cbbc0c705e298ff8a5",
+        "name": "cbBTC / USDG"
+      },
+      {
+        "id": "0x1d09bf979a167075f5608686642fd3cdb458de742a234175892fa03f23693f6b",
+        "name": "v-wmtUSDC / USDC"
+      },
+      {
+        "id": "0x1e6ff1bfeb04dd5680c58d24b48cfce57474bd97bcbfaa0d2cd8015bc40c4b52",
+        "name": "PT-USDG-28MAY2026 / USDT"
+      },
+      {
+        "id": "0x1e77006fb059ad46ed23ac84ce044370d1566c5b152e98a95e51565a75b4046f",
+        "name": "Ultra_ETH / WETH"
+      },
+      {
+        "id": "0x1e9d614631a7df0ec07fb05b2c8cb2491575fd1a63a33bf187a6afb295a4fc64",
+        "name": "PT-reUSD-10DEC2026 / USDC"
+      },
+      {
+        "id": "0x1f10c0899fdab5d90b11fd830d52c0c468ba8a7cde67deaa37bebbf512ac47ca",
+        "name": "stakedao-frxsUSDS / frxUSD"
+      },
+      {
+        "id": "0x2015b0fa3d69301a0f258aa1c8b7da4769992e1bc01a0e63064154420e438a7b",
+        "name": "aFXArbUSDTRY / USDC"
+      },
+      {
+        "id": "0x20e35137c177aa10018609f47c6aac573d161b4e5645b6c5fd83bc3763173e64",
+        "name": "yoUSD / USDC"
+      },
+      {
+        "id": "0x2155de91b2bad8b8173657cfd6caea9015c8b78feec16acd97982b9ecc4cb153",
+        "name": "USPC / USDC"
+      },
+      {
+        "id": "0x22fe4c688161863c73571a2b8db65cc11a4a6bceee4f0dea4aa83e4b784f1bd9",
+        "name": "PT-sUSDS-26NOV2026 / USDC"
+      },
+      {
+        "id": "0x237dd7d99a2a8b7583d7f746f1a1b95ea62f727ed7601902e6fe1c1bcf1cf8ba",
+        "name": "oTFYe / EURCV"
+      },
+      {
+        "id": "0x2412afc9614939a5d994397fe0b94a4f6fb8bc02bfc139e1a5956a865e2efe26",
+        "name": "PT-USDG-24SEP2026 / USDC"
+      },
+      {
+        "id": "0x245859412ff82dabcea25ddab15fe5ee5650e20b1af05f65ea1bd8db96416522",
+        "name": "stMXN / USDC"
+      },
+      {
+        "id": "0x24852d8d7464402ddcd717415e009d42bf7427d6a8893487f83c75ee0f4a0ea6",
+        "name": "dCOMP / USDC"
+      },
+      {
+        "id": "0x251b7cbc2c33ba4eabe3b7163ad0fdd3cfb97de80d8377f0f48b8d31aee7606f",
+        "name": "rETH / WETH"
+      },
+      {
+        "id": "0x25cc86b7d19547ada6cdef99039c5772d2a8c440308d736b5780900a84aef25c",
+        "name": "WBTC / RLUSD"
+      },
+      {
+        "id": "0x26b178d49895f80ca3c39b2745efc4cd9adcddfcc73dae93e531e86977ec4d96",
+        "name": "sUSDS / USDT"
+      },
+      {
+        "id": "0x278ca5513e54e0718a93515d453442f8ecc9a3640dfaf3a88db69f4c8a4880d9",
+        "name": "liUSD-1w / USDC"
+      },
+      {
+        "id": "0x27b9a0a5bfee98a31eb51e3850250d103a9f8e41673c782defc66aa943af0e65",
+        "name": "PT-srUSDe-2APR2026 / USDC"
+      },
+      {
+        "id": "0x29ae8cad946d861464d5e829877245a863a18157c0cde2c3524434dafa34e476",
+        "name": "sUSDD / USDT"
+      },
+      {
+        "id": "0x2a0b893471c785a1f0fda00df7fca578b703eef7ae7186d2429c2824b5212467",
+        "name": "wFalconX / USDC"
+      },
+      {
+        "id": "0x2b9a4565ad690184ba336e340792856634927b8d9f729461719e0c259fc27400",
+        "name": "WETH / EURC"
+      },
+      {
+        "id": "0x2bbdd81580c750491207e798bdcd31596a6254c5e5d1541ad901ab08c75671e4",
+        "name": "AUTO / USDC"
+      },
+      {
+        "id": "0x2cbfb38723a8d9a2ad1607015591a78cfe3a5949561b39bde42c242b22874ec0",
+        "name": "cbBTC / WETH"
+      },
+      {
+        "id": "0x2f4ea313fb7df23a82c19d95e8b90acc8179bd053e0d9ef745cdf28d6a49499c",
+        "name": "cbBTC / USDS"
+      },
+      {
+        "id": "0x30d99308a5f2f4673b2cc5ad1718c731e6c790e20e26d23611f6e8d3422bda41",
+        "name": "WETH / RLUSD"
+      },
+      {
+        "id": "0x31a277fde40c1bd37dd00cb2167fe1d5831b450efecc63323679228a101e9979",
+        "name": "SPX / USDC"
+      },
+      {
+        "id": "0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b",
+        "name": "sUSDS / USDT"
+      },
+      {
+        "id": "0x328aadb887d060f3d03727f6baaee56ed88570a97dc2ab49b2064a9410ccfd06",
+        "name": "stakedao-FrxMsUSD / frxUSD"
+      },
+      {
+        "id": "0x32a5ec91d214a3888c1f4544b840d0863a093fb237051b1090c861fd2b8923f6",
+        "name": "armUSDCp / WBTC"
+      },
+      {
+        "id": "0x32e253d33f1594a67fc6ef51bf7a39cc4bf2d14904998dee769706fcde489ed9",
+        "name": "wsrUSD / USDC"
+      },
+      {
+        "id": "0x34377fc4f617c51818e92c79df31ff270c6a91bc94ad32e367fdf59b9f4ac5dd",
+        "name": "weETH / USDC"
+      },
+      {
+        "id": "0x35c92b233f962d894b5558063c926aa44fab0a5178a176211543a63039edd328",
+        "name": "stakedao-crvfrxUSD / frxUSD"
+      },
+      {
+        "id": "0x36da61bf253b8a7e07888cb96dbcde65001508159928801aeca932a5b5548119",
+        "name": "eurSAFO / EURCV"
+      },
+      {
+        "id": "0x3702495737953ce1c053b4c402912501eaae458f19a5c97ef0e8eb83d625334e",
+        "name": "mGLOeuro / EURCV"
+      },
+      {
+        "id": "0x3758a9e2abbd67b5621f23ec482608f2f98b3c792874661ce49df7843aadcfd2",
+        "name": "WETH / USDT"
+      },
+      {
+        "id": "0x37a584c981f6f59f7532ae5565732ee54647773d425978eb94d4cd29c21ff53b",
+        "name": "PT-USD3-17DEC2026 / USDT"
+      },
+      {
+        "id": "0x37e7484d642d90f14451f1910ba4b7b8e4c3ccdd0ec28f8b2bdb35479e472ba7",
+        "name": "weETH / WETH"
+      },
+      {
+        "id": "0x3878c6695cb95356a248e0adbcdbc89880005ebba1e73a3c1ed85b406bba5eb8",
+        "name": "UNI / USDC"
+      },
+      {
+        "id": "0x38db4aa4aaced737f63444a47ffa150b0cd62d4d92d2eb1809da8e9b62b50738",
+        "name": "cbBTC / tGBP"
+      },
+      {
+        "id": "0x38fa7d75c15a0f11cc46e2d1987a05c26a836d0da6b4430657ec5ece38a25a45",
+        "name": "SYRUP / USDC"
+      },
+      {
+        "id": "0x39c6d1b38c8a262cc6f9ca1236c640702aa9e4fb4595cb186fd0a5b5a5a20dc4",
+        "name": "mF-ONE / AUSD"
+      },
+      {
+        "id": "0x39d11026eae1c6ec02aa4c0910778664089cdd97c3fd23f68f7cd05e2e95af48",
+        "name": "sUSDe / DAI"
+      },
+      {
+        "id": "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49",
+        "name": "WBTC / USDC"
+      },
+      {
+        "id": "0x3ab41e2c5c20129a4d156c937ce4e23c3e5d310e460df8619da0f4acb68bb4b7",
+        "name": "cbBTC / EURC"
+      },
+      {
+        "id": "0x3b2e7f3b7e5c7392110542b754ba8523c358f25a2b88c586f2f1cd97d54196cc",
+        "name": "stakedao-PYcrvUSD / USDC"
+      },
+      {
+        "id": "0x3b47d7baa81e340c5b12fbde5acae5e5d9087be57afd648bb4a07034d9b4f0de",
+        "name": "Ultra_USD / USDC"
+      },
+      {
+        "id": "0x3c2ce083d3ac6329ae69fd68bf23d4fada5587271860d987788dfd4f0ac3b5f0",
+        "name": "stGLD / USDC"
+      },
+      {
+        "id": "0x3c4a46caa1a56d375228b3bac4c744ff858e387c78e59c54ccfb32e251d00320",
+        "name": "sUSDat / USDC"
+      },
+      {
+        "id": "0x3c5a244b778095e1e1b2e44b7c2ecc9bf4fda9cd85cc22740e09205a7a4bf510",
+        "name": "WBTC / USDT"
+      },
+      {
+        "id": "0x3c80fd8318295fff3b1540eb915abff4fce991e8c55af3a8e263e47118185fde",
+        "name": "StockMarketTRBasisTrade / USDC"
+      },
+      {
+        "id": "0x3f4d007982a480dd99052c05d811cf6838ce61b2a2be8dc52fca107f783d1f15",
+        "name": "ETH+ / eUSD"
+      },
+      {
+        "id": "0x3f5ae84a3b35a3533114b30e6e8c61a3d6469828f237a55e13e4c6a187391574",
+        "name": "USDC / EURCV"
+      },
+      {
+        "id": "0x4113921db628b3057d75792bb909c042e10587724e72ceda838b10184824681e",
+        "name": "PRIME / msUSD"
+      },
+      {
+        "id": "0x4173c7e5db2370a6bba2692e65685899cc6308d539a5991b5db526fbd16efa86",
+        "name": "wstETH / wARS"
+      },
+      {
+        "id": "0x41b12bac98fdc74ffeb513771b0bd341a14733f57072f7236cf3730af06d7fa2",
+        "name": "ROY-ST-apyUSD / USDC"
+      },
+      {
+        "id": "0x41c41d0c9aadbf4751f5ee215ed5a16954a4b34e1b70fca5393d4b08858fa3fa",
+        "name": "PRIME / PYUSD"
+      },
+      {
+        "id": "0x42c2b592fc759fad461fb5c80d5ea214a496f70d8594398d69af68c2f3798de6",
+        "name": "PT-srUSDat-27AUG2026 / USDC"
+      },
+      {
+        "id": "0x42f33c1873126e8eb6f935cfd1e4e9e79b383e037b1c493bc1a396394a097739",
+        "name": "PST / USDT"
+      },
+      {
+        "id": "0x43e925e52d7873fa8acac90dd5f246087d55b3a34c344b71884a6352491ff459",
+        "name": "fxSAVE / USDC"
+      },
+      {
+        "id": "0x4565ac05d38b19374ccbb04c17cca60ca9353cd41824f0803d0fc7704f60eaed",
+        "name": "reUSD / USDC"
+      },
+      {
+        "id": "0x45671fb8d5dea1c4fbca0b8548ad742f6643300eeb8dbd34ad64a658b2b05bca",
+        "name": "cbBTC / USDT"
+      },
+      {
+        "id": "0x461da96754b33fec844fc5e5718bf24298a2c832d8216c5ffd17a5230548f01f",
+        "name": "WBTC / eUSD"
+      },
+      {
+        "id": "0x467650db29b29797c6f9cc203edef49499871774589a8e56ca93c936a55655d8",
+        "name": "PAXG / tGBP"
+      },
+      {
+        "id": "0x489a15bd078659aebeed66d5eda8993cebdb79d439cde64f32b5b40935add500",
+        "name": "WBTC / EUROP"
+      },
+      {
+        "id": "0x4abde0597e71acc6d4dacd3d3edb2929e7289a40754a20eaeccaa66ff717be99",
+        "name": "mM1-USD / USDC"
+      },
+      {
+        "id": "0x4fa31e3f8ba345227d44e1cf48559eea53a90dd5311dc006984c060f2f311d96",
+        "name": "FXRP / RLUSD"
+      },
+      {
+        "id": "0x4fbdeb7979204a25b8dec7e4ed65998d358d32debee19ae738202becc52ec4b8",
+        "name": "stakedao-frxUsDOLA / frxUSD"
+      },
+      {
+        "id": "0x4fe72543c5c95cd6b5f3cb516cd235ba882e2e705fe3424db6f99dfe5811d0d3",
+        "name": "cbBTC / USDT"
+      },
+      {
+        "id": "0x5131d0b823d726a4080951ee49f0cbd57d0fd53776c7d8aeceb76dd9a22a1695",
+        "name": "PRIME / AUSD"
+      },
+      {
+        "id": "0x51c6fa2e3ab990af15e95a8c91e93482d7a87068c60133e1c7e8000f91ec7618",
+        "name": "mHyperBTC / USDC"
+      },
+      {
+        "id": "0x526d6d2e334afcb8ffc183eba1bdb1ed58e5a71fa9bd1a75a95eb71c6808081f",
+        "name": "SPYon / USDC"
+      },
+      {
+        "id": "0x52dadd1d227fea7bb0203094ecd6b654304522286c4af81331fd7d28eca2ddf0",
+        "name": "oTFYe / EURCV"
+      },
+      {
+        "id": "0x54efdee08e272e929034a8f26f7ca34b1ebe364b275391169b28c6d7db24dbc8",
+        "name": "USDC"
+      },
+      {
+        "id": "0x5613b170ded221c588b6e9637b910f49e5508680ceede207f44aa72e5c46cb05",
+        "name": "PT-sUSDE-26NOV2026 / USDC"
+      },
+      {
+        "id": "0x57f4e42c0707d3ae0ae39c9343dcba78ff79fa663da040eca45717a9b0b0557f",
+        "name": "DAI"
+      },
+      {
+        "id": "0x582fdc4176da0ab5c65e086603ab9ecd9188e889e16efef6e35854cf14e15065",
+        "name": "sUSDat / AUSD"
+      },
+      {
+        "id": "0x58e212060645d18eab6d9b2af3d56fbc906a92ff5667385f616f662c70372284",
+        "name": "WETH"
+      },
+      {
+        "id": "0x5a2a33f40130ff2211d18847521c695e7899a3132ca059ab7122f3e9a5e7cc26",
+        "name": "wstETH / EURC"
+      },
+      {
+        "id": "0x5c6aaf2dfecf6b2d60ef4ee8192b83c53ade0b35cb8e7f763a83a30db10502d1",
+        "name": "USDT"
+      },
+      {
+        "id": "0x5cebfae10f5e88d33df2421923f3d9f32359429fda2f78edacc9b4fdb09b0553",
+        "name": "PT-USDG-28MAY2026 / USDC"
+      },
+      {
+        "id": "0x5d41b8d23ccf6d9e9f7e2b1b357d92bba6ef0367d6ef8ceda965f73e52108461",
+        "name": "USP / USDC"
+      },
+      {
+        "id": "0x5de846e07c99a4a11060462006d033ff7bbccef63c414d6d3c6a6876fa6af18f",
+        "name": "cbBTC / AUSD"
+      },
+      {
+        "id": "0x5eaaebc81e9e27972ab458811d1b60828e8ab51ef6620f9b3918fd7e68eecec1",
+        "name": "PT-stcUSD-23JUL2026 / USDT"
+      },
+      {
+        "id": "0x5f8a138ba332398a9116910f4d5e5dcd9b207024c5290ce5bc87bc2dbd8e4a86",
+        "name": "ETH+ / WETH"
+      },
+      {
+        "id": "0x6029eea874791e01e2f3ce361f2e08839cd18b1e26eea6243fa3e43fe8f6fa23",
+        "name": "wstETH / eUSD"
+      },
+      {
+        "id": "0x60bcabb1f18a4d9f83bb8f74121e70a0bbb7567a93e93ba846b18902460ff48c",
+        "name": "yoUSD Edge / USDC"
+      },
+      {
+        "id": "0x61765602144e91e5ac9f9e98b8584eae308f9951596fd7f5e0f59f21cd2bf664",
+        "name": "weETH / USDC"
+      },
+      {
+        "id": "0x62aad0b7cfadc9d66eafe559ecd2a084f74062f396c193973b124db9fee481c4",
+        "name": "WBTC / WETH"
+      },
+      {
+        "id": "0x631e64ae8498821a5605bd3c14e253ffbf207f87411e2aeffc91a32a126cc13d",
+        "name": "WETH / PYUSD"
+      },
+      {
+        "id": "0x64d2f82e674b764d618b630297813cd34bdc42a0fa66f92efa2ac8b1efe4bbd5",
+        "name": "siUSD / msUSD"
+      },
+      {
+        "id": "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64",
+        "name": "cbBTC / USDC"
+      },
+      {
+        "id": "0x679e4c15864eb0343d24b00be9543fb9c3167e8fb0f4f0fb664b73017c70c86b",
+        "name": "AUTO / USDC"
+      },
+      {
+        "id": "0x68d35b050f930a801087aa0aca91da1bc32f84783277813b619e3e1d0bf00a2f",
+        "name": "stakedao-crvUSDUSDT-f / USDC"
+      },
+      {
+        "id": "0x693ba455f49e69daba49904640dab1277538c5f4e524da79b2ec2070d12f694e",
+        "name": "WETH / AUSD"
+      },
+      {
+        "id": "0x698fe98247a40c5771537b5786b2f3f9d78eb487b4ce4d75533cd0e94d88a115",
+        "name": "weETH / WETH"
+      },
+      {
+        "id": "0x69ab0544d77efb9b4fa8acc4f9cbfc18ddb1334acd9f46e5b10b893039b239b1",
+        "name": "sUSDai / AUSD"
+      },
+      {
+        "id": "0x69ef7fd17b42cd7df6d885aee1b11380837afbc1664b25587041cf193b31617b",
+        "name": "PT-USDat-27AUG2026 / USDC"
+      },
+      {
+        "id": "0x6a57d77b9a173c5ed10d432e7009dd1ee9a97fac62a7bc970b4bd715e2fff5c8",
+        "name": "wstETH / USDT"
+      },
+      {
+        "id": "0x6a7e36eb088bd501d73f7ab4c5b8671358559341a78ce521c9e499dc0bc642b9",
+        "name": "LBTC / PYUSD"
+      },
+      {
+        "id": "0x6acd18854e43f93f5a90446004c35c72a68af1ad99f08cb247782ce6457914ca",
+        "name": "PT-reUSD-10DEC2026 / USDT"
+      },
+      {
+        "id": "0x6d1dae6238f6f296abb77d9e17a8429132458146bc89d1d2b20516b87a40dee7",
+        "name": "EIGEN / USDC"
+      },
+      {
+        "id": "0x6d2fba32b8649d92432d036c16aa80779034b7469b63abc259b17678857f31c2",
+        "name": "wstETH / USDC"
+      },
+      {
+        "id": "0x6d95bf5fad1b0427205ee2b595f80b52e22394173de0832efa79fde88abb8525",
+        "name": "MORPHO / USDC"
+      },
+      {
+        "id": "0x6df56abb95e9f3f96049448e1c98d208deb1add8a3d0c7a23e5e5466dba4edbd",
+        "name": "iUSD / USDC"
+      },
+      {
+        "id": "0x702b7ec7628de2622e51e1bb34a7e6ad9e95f3a25a2ed361e4ce621f23f5e642",
+        "name": "PT-cUSD-23JUL2026 / USDC"
+      },
+      {
+        "id": "0x70dfbd2705d10d5dfb4d89e07e2bb860b5a624ce2f97e209ab9f5308bf6c67a1",
+        "name": "API3 / USDC"
+      },
+      {
+        "id": "0x710f02caee4555b8ff75b7d48e5b52adc48898dc0c670b977fb1ea83bf4e7d8a",
+        "name": "stUSDS / USDT"
+      },
+      {
+        "id": "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44",
+        "name": "syrupUSDC / USDC"
+      },
+      {
+        "id": "0x7384bd82fb2f2a562555d4aab25583b4e40deed124b7c95dc16be34547434193",
+        "name": "WETH / EURC"
+      },
+      {
+        "id": "0x74078d0416c5876d8c5a7a7425fc322377b4c7f80dc4d66e492dd7012b1d60b7",
+        "name": "wmGLO / USDC"
+      },
+      {
+        "id": "0x7421c2741e064e8c53fcb5de9faf7f0025dce75bc1caf26774dd878291c81dac",
+        "name": "wstETH / EURC"
+      },
+      {
+        "id": "0x750817c38e23857c6a970f545857f58d354b7ac53118c3986063a84cfe0e9a63",
+        "name": "weETH / EUROP"
+      },
+      {
+        "id": "0x755f954513d31d5f24aaf3d0cdc5e913a28383f8ea8ff85be9ffffa7371fb64d",
+        "name": "PRIME / USDC"
+      },
+      {
+        "id": "0x760b14c9003f08ac4bf0cfb02596ee4d6f0548a4fde5826bfd56befb9ed62ae9",
+        "name": "PT-USDe-31JUL2025 / DAI"
+      },
+      {
+        "id": "0x7730ef5352412a37d441ab960f5c8f33ea8d1c9f01c34fc2340f65fa1c59ce69",
+        "name": "WBTC / wARS"
+      },
+      {
+        "id": "0x77ab943f0cee8ddc5221a035b23229cf504e5a1459b7c11f73e17234245c1e9c",
+        "name": "wstETH / AUSD"
+      },
+      {
+        "id": "0x77e624dd9dd980810c2b804249e88f3598d9c7ec91f16aa5fbf6e3fdf6087f82",
+        "name": "stUSDS / USDS"
+      },
+      {
+        "id": "0x77f2949b8d763ebc6fb103cd6b5f5226497cb564104b0c110194b53c1ba77c7f",
+        "name": "WETH / AUSD"
+      },
+      {
+        "id": "0x781dd4c0bd8930c7bf093baaffc4e8aaad2fcdd289bd9396c4976a97dc74d48f",
+        "name": "srRoyUSDC / AUSD"
+      },
+      {
+        "id": "0x7a25fb17b8bd83a934ad87d9d1725188fc129992ca816f3145b4ab7f673c98c3",
+        "name": "wstETH / EURCV"
+      },
+      {
+        "id": "0x7bb3c45550c02e7e00ddbf2f847717dc4485df4bbae3b992178a74f0d45c4e87",
+        "name": "USDC / wARS"
+      },
+      {
+        "id": "0x7c64f8e743029ccc41ed415e348b2904bdacffc1eb71ec3e206c12a3cef1ca05",
+        "name": "cbBTC / AUSD"
+      },
+      {
+        "id": "0x7c7f1531679799c7e8869876c83fba4b001ab224b5e844b906818260a4fcd5b0",
+        "name": "EURCV"
+      },
+      {
+        "id": "0x7d64578dc35b59ccf4aaa39a247b365f9b462de2614a07f0678d6b50836a1b7d",
+        "name": "SPYon / USDC"
+      },
+      {
+        "id": "0x7dea3baf843210ce0a4a9e6374cea47dcd55384fb36d2d701e69b221867b39e5",
+        "name": "ONDO / USDC"
+      },
+      {
+        "id": "0x7e585a933ffe8443c371b4f8cfeb4430f5f6a14c2f32a898c26662c67a1cb8b8",
+        "name": "wstETH / USDC"
+      },
+      {
+        "id": "0x7e66ce6d3e2a27db0dab1d9c16dd313a4658eb6317a75d3bf8de8fe8a5880f96",
+        "name": "stakedao-crvUSDUSDC-f / USDC"
+      },
+      {
+        "id": "0x7ed51f2e62397fbbdb60facc308c5dc92f687b167f3c7333aaf6f85c1c12387b",
+        "name": "AA_FalconXUSDC / AUSD"
+      },
+      {
+        "id": "0x7f1224a8598b97a8455d298bd58b0f720f1b4f19a815198b8cdecc9feedada93",
+        "name": "kBTC / USDC"
+      },
+      {
+        "id": "0x7fb1a1db36cc77c1488cd79915ce05ee56c8d256515c20caae926ba74edc4687",
+        "name": "PT-sUSDat-14JAN2027 / USDC"
+      },
+      {
+        "id": "0x80c97dd236bafc6c5e41e84797efea2853511455f189525a8df70826a38cb282",
+        "name": "WBTC / EURCV"
+      },
+      {
+        "id": "0x82053fe2fc3a3d6cb856458948e9c3589e76f20f3a2079606739b517587267ce",
+        "name": "cbBTC / EURCV"
+      },
+      {
+        "id": "0x85252bb8485c99bba46fe149c7dd2aad83672640f53c630890673cf1848ba16e",
+        "name": "weETH / USDC"
+      },
+      {
+        "id": "0x85c7f4374f3a403b36d54cc284983b2b02bbd8581ee0f3c36494447b87d9fcab",
+        "name": "sUSDe / USDC"
+      },
+      {
+        "id": "0x85d59152eeeab7ca024804895b358868d8dd1e134171be400d7792d5604a212c",
+        "name": "weETH / PYUSD"
+      },
+      {
+        "id": "0x86f37ab4c094c768b48eab7bce8d478daf52a5c1f5be4e3abd0bdd501f02c09e",
+        "name": "PT-fxSAVE-29APR2027 / USDC"
+      },
+      {
+        "id": "0x88a18b2f4d94e7ad27a381b15531c06abf05a7c99dd5d3c3679875fed6f7e742",
+        "name": "sUSDe / USDtb"
+      },
+      {
+        "id": "0x88abdf8693e663144c3544b9442e9b04520016d6ebc57aa76424c00ab1683c9d",
+        "name": "wstETH / RLUSD"
+      },
+      {
+        "id": "0x8924445a76b678c536df977ed9222fb0b23ee5311497dd0223fe6270bb20b4e6",
+        "name": "sUSN / USDC"
+      },
+      {
+        "id": "0x8b45b8c46b2a8d69fa6a6c1d18154089875a5e7d68977ad7b14099b6660e51c2",
+        "name": "EURC"
+      },
+      {
+        "id": "0x8bfd8f4f146c660f201a34b7a05d5eade3dc95b7b329210703855b60ad871a24",
+        "name": "tETH / WETH"
+      },
+      {
+        "id": "0x8cfa4c43a89c2b2e834ff44f19666d333657a8b637ff043978eabd412c38dd3d",
+        "name": "sUSDS / wARS"
+      },
+      {
+        "id": "0x8e6271e428ee5b41c98a3765919e359f16b0c6261c85d84f9b9b8b5242ab9c9e",
+        "name": "USDT / wARS"
+      },
+      {
+        "id": "0x8e6aeb10c401de3279ac79b4b2ea15fc94b7d9cfc098d6c2a1ff7b2b26d9d02c",
+        "name": "USDe / DAI"
+      },
+      {
+        "id": "0x8ef93964d88388b6421543bcadc5a3e95bfd1412166ea184303bc6b71d44e684",
+        "name": "XAUt / tGBP"
+      },
+      {
+        "id": "0x9018b49a802671b5c2ce0caecb7225a42b85510717b49001f0ab9bd9a6ff11b8",
+        "name": "wstETH / wBRL"
+      },
+      {
+        "id": "0x904142eba80012455c361f3c442b9c89c0dd0fb86c7d8f062c4425bfa2314eb9",
+        "name": "reUSDe / USDC"
+      },
+      {
+        "id": "0x90ef0c5a0dc7c4de4ad4585002d44e9d411d212d2f6258e94948beecf8b4c0d5",
+        "name": "sUSDe / PYUSD"
+      },
+      {
+        "id": "0x9105a5447f3eecdf768f04da12d580a878106e2e6b234312db2ee0f304539e35",
+        "name": "reUSD / USDT"
+      },
+      {
+        "id": "0x9337a95dcb09d10abb33fdb955dd27b46e345f5510d54d9403f570f8f37b5983",
+        "name": "WBTC / PYUSD"
+      },
+      {
+        "id": "0x9366c7cdc804b1b87826fe6b55c969ed439b6508aabef6fd0ec743752d968277",
+        "name": "WBTC / USDG"
+      },
+      {
+        "id": "0x9396095980b6a44e2b57d237af84611c488b1d716ef01b4168005a9eb187f2c3",
+        "name": "v-wmtUSDT / USDT"
+      },
+      {
+        "id": "0x94b823e6bd8ea533b4e33fbc307faea0b307301bc48763acc4d4aa4def7636cd",
+        "name": "WETH / USDC"
+      },
+      {
+        "id": "0x9551f52490815c3dd64dcd349050ce6f42ef64d70f5805c14920b4fd6d3b2544",
+        "name": "LBTC / EURCV"
+      },
+      {
+        "id": "0x95c28d447950ca6c8bbfd25fc05b80b1fd7a1cdd17a3610b4b3f1ffc8dc2e2ed",
+        "name": "mHYPER / USDC"
+      },
+      {
+        "id": "0x9666c9b61cc58e3187c6e344697ed31fe558dc01809740417beee07dc77d96b3",
+        "name": "WETH / wARS"
+      },
+      {
+        "id": "0x96905763efe6da2cee9553fa567ef4daa8c4d057ce8d2973c26d424d5a59eb8a",
+        "name": "wUSCC / USDC"
+      },
+      {
+        "id": "0x973e9dd45799efe8775417bcc420a3ab84a583587b2108985746e2fe201d0c83",
+        "name": "YFI / USDC"
+      },
+      {
+        "id": "0x975c6e8b71073a82216ae464bc44f67d71988450d2542d635d88bc78fca344b1",
+        "name": "strUSD / USDC"
+      },
+      {
+        "id": "0x987b2c1979c6cfd6b7833d9b30c09b96ec6de1666579582d8f17730e20dd19b0",
+        "name": "mGLOeuro / EURCV"
+      },
+      {
+        "id": "0x9972be1fc530a3f5a34db25ee8ab4962cc4099cb65b2db22897c92cc9d22f59f",
+        "name": "sDOLA / USDC"
+      },
+      {
+        "id": "0x9a2e756dc954e22fd45fbc165b3e981743944b23178075f1f88470142bf7d7e4",
+        "name": "WBTC / AUSD"
+      },
+      {
+        "id": "0x9a8dab6de1059e6dc66c34b358764b70effb289e514e237f3161ffb09eaaf24f",
+        "name": "PT-sUSDS-26NOV2026 / USDS"
+      },
+      {
+        "id": "0x9b966d26e14749cdf3be6fcf44ef404f1428b3c2f8c9e9a5172437e440597715",
+        "name": "COMP / USDC"
+      },
+      {
+        "id": "0x9bc98c2f20ac58287ef2c860eea53a2fdc27c17a7817ff1206c0b7840cc7cd79",
+        "name": "PT-reUSD-25JUN2026 / USDC"
+      },
+      {
+        "id": "0x9c28c8fa039a8df548a7f27adf062d751b0f2e9b9131931810535543adb23291",
+        "name": "apyUSD / USDC"
+      },
+      {
+        "id": "0x9c714afc680250b6f9ecf759bf1c66ae36830a883194017453c9cb9c123d901f",
+        "name": "sUSDat / USDT"
+      },
+      {
+        "id": "0x9d1d0c9b76eefefc881db90f4f646dcc088121451616634544ce8129c4e574b1",
+        "name": "WBTC / tGBP"
+      },
+      {
+        "id": "0x9de73bf59b4b09f9b974081c30a2570174f212ea62de8da777c7770a4832ae72",
+        "name": "mHYPER / USDC"
+      },
+      {
+        "id": "0x9e30a7622d6b2d68d4d4a8ef3781094c173dea388cc7298eafeb89bd905b6602",
+        "name": "cbBTC / RLUSD"
+      },
+      {
+        "id": "0x9e32ab8636950d7c00bc4666d8f3a0d005feeab26fbf7097528b75bb30a7a9b8",
+        "name": "USDC / ARSs"
+      },
+      {
+        "id": "0x9e553e8a22eb2b2040042965d0dc424f7c5e64744b093d2df9162dce1833eeda",
+        "name": "nvPRIME / USDC"
+      },
+      {
+        "id": "0xa0315439cae75faafe6a5be9f877dc9f26340ecf3f5712299751af5b4dd53719",
+        "name": "USDC / wBRL"
+      },
+      {
+        "id": "0xa0534c78620867b7c8706e3b6df9e69a2bc67c783281b7a77e034ed75cee012e",
+        "name": "ezETH / WETH"
+      },
+      {
+        "id": "0xa0c6499787a7d046f91f2687558c021e2baae5a378885280a448183a926ef5f7",
+        "name": "upUSDC / USDC"
+      },
+      {
+        "id": "0xa128dddc761075df9a9a60689f3a41a989b245aad506352c509c0c3a76a9ec6b",
+        "name": "WBTC / RLUSD"
+      },
+      {
+        "id": "0xa1f52bbd8060469414c848a6570f418bd0b1271a2f291456ff3a834ff692da9f",
+        "name": "wstETH / WBTC"
+      },
+      {
+        "id": "0xa36e440fbc54d7ed744ae4895b2729642a8be5d488cdd477c59b54afbb90b5bf",
+        "name": "WBTC"
+      },
+      {
+        "id": "0xa3a3f7162dde3264c5675f0a82e82ab4743928d08473c29d523f5286e64dfdaa",
+        "name": "USDtb"
+      },
+      {
+        "id": "0xa44c2f20a875c1b62b31ca0f68ff46f816145e3f9a6fcb3eec931ce26f6079bc",
+        "name": "AA_FalconXUSDC / AUSD"
+      },
+      {
+        "id": "0xa458018cf1a6e77ebbcc40ba5776ac7990e523b7cc5d0c1e740a4bbc13190d8f",
+        "name": "PT-USDS-14AUG2025 / DAI"
+      },
+      {
+        "id": "0xa4774e3e693fff2ebd1dcbbd69b1b0a5b9bb0ccc753bfda5dd07bdac97c4818a",
+        "name": "syrupUSDT / USDT"
+      },
+      {
+        "id": "0xa4942ce9152aaeb5cab0403d8b3ba08142b61460b4776e6fd4a83d234d309d0c",
+        "name": "WETH / tGBP"
+      },
+      {
+        "id": "0xa5f6b409e74e34a0aa8b75642db4c954c533cf537ee48e04d4bae1888869bd3f",
+        "name": "CarryTradeUSDTRYLeverage / USDC"
+      },
+      {
+        "id": "0xa67cfcdf2a2637c78fd6e1879e27448be7abe90c6ef1be4a1ca4337db886c8e3",
+        "name": "stakedao-crvfrxUSD / USDC"
+      },
+      {
+        "id": "0xa6a4c1f15490a1ff39d9de3a366b408dd5647a436d8b179726d3e0562aff1292",
+        "name": "weETH / USDT"
+      },
+      {
+        "id": "0xa6bb1fa76ed380d7245bc56eb4fd35013342358130dd68f2b3b05c8123ea2444",
+        "name": "LBTC / WETH"
+      },
+      {
+        "id": "0xa7a12ca111ee142547e5346a473e6c7c79571276846c5cf40b63f131ccf9a72b",
+        "name": "weETH / tGBP"
+      },
+      {
+        "id": "0xa7f7c0cdcb2a34bdc68613e9f68ed8e9db972855a314cf9f1eb65421565104e8",
+        "name": "PT-reUSDe-10DEC2026 / USDC"
+      },
+      {
+        "id": "0xa81671bb2b0b56c04a318b7e1a3699b02508f8494e2113357a50eccb6bef4b34",
+        "name": "PT-apxUSD-11FEB2027 / apxUSD"
+      },
+      {
+        "id": "0xa84573d73bcd78cd295b3a35b4419877584a4cc3208161128addf15d9a90e5fb",
+        "name": "WBTC / AUSD"
+      },
+      {
+        "id": "0xa88715ad5edd5b3f6ef136b4c3b4b0ff1136ea75204a1cdb6f7acc3c51cf568f",
+        "name": "sUSDai / USDC"
+      },
+      {
+        "id": "0xa921ef34e2fc7a27ccc50ae7e4b154e16c9799d3387076c421423ef52ac4df99",
+        "name": "WBTC / USDT"
+      },
+      {
+        "id": "0xa94d7d784ecd1194f23f82f6b1c1acbf1d5982bab63362d094710638d2b770dc",
+        "name": "PT-siUSD-20AUG2026 / USDC"
+      },
+      {
+        "id": "0xa9f70093360419b4544f17a4553ac5847d896be23f020295bd95c24af4df700e",
+        "name": "wsrUSD / USDT"
+      },
+      {
+        "id": "0xaa7231d6bee28b578efe38b52e801d5d3067023853342fc06ded437d2a80ef98",
+        "name": "EUTBL / EURCV"
+      },
+      {
+        "id": "0xaa805b43e61bba8a44e225057b4f1749e2fdd8c3c77abb4ef868c8c19d668281",
+        "name": "CASH+ / USDC"
+      },
+      {
+        "id": "0xab04bdfbeef6de62e3020d44710d6461eccfb901b9659f866844805fca115f2f",
+        "name": "cbBTC / WBTC"
+      },
+      {
+        "id": "0xab3196447663a41382ba4b4d55eab3fa702ee2cf071db224fd72492953040056",
+        "name": "syrupUSDC / AUSD"
+      },
+      {
+        "id": "0xac4c417d1b829805891a5577c04e518576df78690cc6abf3d4280deea33bb25a",
+        "name": "weETH / AUSD"
+      },
+      {
+        "id": "0xacc49fbf58feb1ac971acce68f8adc177c43682d6a7087bbd4991a05cb7a2c67",
+        "name": "srRoyUSDC / USDC"
+      },
+      {
+        "id": "0xad656d430bb3d8c1469bf45c8ad4ebae1b04be04757c69fa424eec78d7b3f4dc",
+        "name": "WOUSD / USDC"
+      },
+      {
+        "id": "0xad73d5e139a939a0c7dc7b821e5a103a3a9cf45c4352b373b1dabc421c7f3d59",
+        "name": "sUSDD / USDC"
+      },
+      {
+        "id": "0xae992849c5f544a32dfdfcc74c0695b73b8732f449727827af6ce3768e968382",
+        "name": "PT-fxSAVE-29OCT2026 / USDC"
+      },
+      {
+        "id": "0xaf2e077047775d7cac1f270bba9cb4c6286114b5000d4d647a1b577c7e28d41b",
+        "name": "USDe / PYUSD"
+      },
+      {
+        "id": "0xaf53761f4931911877474ab8c7ff856987207ee7ec15e8513ff9cf86939229a0",
+        "name": "FLUID / USDC"
+      },
+      {
+        "id": "0xb0a9ac81a8c6a5274aa1a8337aed35a2cb2cd4feb5c6d3b39d41f234fbf2955b",
+        "name": "PT-USDe-25SEP2025 / USDT"
+      },
+      {
+        "id": "0xb1eac1c0f3ad13fb45b01beac8458c055c903b1bff8cb882346635996a774f77",
+        "name": "sDAI / DAI"
+      },
+      {
+        "id": "0xb23a77bb62863186a99c7e87d1a4f542cb8865eec6536206f0960bb9c00512f5",
+        "name": "jrUSDe / USDC"
+      },
+      {
+        "id": "0xb25c41cd266fa6cb9c581d526ac9d8c0137c92cd06847f7e1ee511764ee3d42f",
+        "name": "PT-apxUSD-11FEB2027 / USDC"
+      },
+      {
+        "id": "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc",
+        "name": "wstETH / USDC"
+      },
+      {
+        "id": "0xb374528d44b6ab6e0cecc87e0481f45d892f38baec90c1d318851969ec14ea5f",
+        "name": "wstETH / USDS"
+      },
+      {
+        "id": "0xb3898f6defc35e1a041c2afebe844b02d7b35f6e2c553ffc8a2d6dbe59cff5b3",
+        "name": "QQQon / USDC"
+      },
+      {
+        "id": "0xb468f20a0d0543a2a397dbfbf1d26920a5a8e84fd08442a3cd1fed0cf3780285",
+        "name": "armUSDTp / WBTC"
+      },
+      {
+        "id": "0xb4977179610abfecfc8b76255a002c16b33f46d077beb86e5911e1fe9ee6e512",
+        "name": "PST / PYUSD"
+      },
+      {
+        "id": "0xb55c0ebe12c4af149ce74ba4d83ca847c3be6787921b36b51a4d98bd105163e2",
+        "name": "wJAAA / USDC"
+      },
+      {
+        "id": "0xb5984309423c6816e422bec5fb98afa3854581f010f430e238bb1800373a15f9",
+        "name": "USDi / USDC"
+      },
+      {
+        "id": "0xb5f8d5554d85b782d7080314bba3544983755a75eb5c432f5eae1c47c6af4da4",
+        "name": "cbBTC / EURCV"
+      },
+      {
+        "id": "0xb62aac664f81d19f21a158aa0373967ef60fd1ac8de4a9091bd225c007973ca6",
+        "name": "PT-sNUSD-4JUN2026 / USDC"
+      },
+      {
+        "id": "0xb7843fe78e7e7fd3106a1b939645367967d1f986c2e45edb8932ad1896450877",
+        "name": "XAUt / USDT"
+      },
+      {
+        "id": "0xb7a75cabc2e8eadd0bc661340a9e359d9828bed6d5cbbcd64188bca8c01e399e",
+        "name": "WBTC / EURCV"
+      },
+      {
+        "id": "0xb81eaed0df42ff6646c8daf4fe38afab93b13b6a89c9750d08e705223a45e2ef",
+        "name": "PT-sUSDE-31JUL2025 / DAI"
+      },
+      {
+        "id": "0xb8fc70e82bc5bb53e773626fcc6a23f7eefa036918d7ef216ecfb1950a94a85e",
+        "name": "wstETH / WETH"
+      },
+      {
+        "id": "0xb8fef900b383db2dbbf4458c7f46acf5b140f26d603a6d1829963f241b82510e",
+        "name": "OETH / USDC"
+      },
+      {
+        "id": "0xba3ba077d9c838696b76e29a394ae9f0d1517a372e30fd9a0fc19c516fb4c5a7",
+        "name": "cbBTC / USDC"
+      },
+      {
+        "id": "0xba5bb3ccec8df00a56ac1f4d97ae0fd1461f262b6d4f29631bdec717fa6017fd",
+        "name": "USDe / USDtb"
+      },
+      {
+        "id": "0xbbf7ce1b40d32d3e3048f5cf27eeaa6de8cb27b80194690aab191a63381d8c99",
+        "name": "siUSD / USDC"
+      },
+      {
+        "id": "0xbc99de6a88904cd0e69042ad6f266e63182801f030c636507c3caf590ffd84fe",
+        "name": "cbBTC / USDC"
+      },
+      {
+        "id": "0xbca8083f8cb7d57ae2b9c1b0efb5aa81be2eda978420d78b11ef1d7700dbed83",
+        "name": "WBTC / wBRL"
+      },
+      {
+        "id": "0xbcdb9e4b0488c72c3596d00671a0877c6b9cc39e3ab8fb0df0f4240acfa01d8a",
+        "name": "PT-apyUSD-11FEB2027 / apxUSD"
+      },
+      {
+        "id": "0xbcf05d1b8ce1e870ff430b0d6239ba23da6a996d85261e8c9576c8d136673fad",
+        "name": "PGNGI+ / USDC"
+      },
+      {
+        "id": "0xbd0f74a1a29311741e6f10d2c947c429a22b1d13b5ae7c6871a71a5900e761b9",
+        "name": "wstETH / tGBP"
+      },
+      {
+        "id": "0xbd2a3db5fd995fdb01721bd9e402b44cedd7d332e200fb09c1cd1efb3b70efa5",
+        "name": "nFALCON / USDC"
+      },
+      {
+        "id": "0xbd2deecb78d6ea40e22644153ec293e33774ad451a76eb2a8a4052731abf4676",
+        "name": "XAUa / USDC"
+      },
+      {
+        "id": "0xbe50eed784490d6c32f398902b55eb5e1bd5af89e1f554993ad5fea899be090b",
+        "name": "WBTC / PYUSD"
+      },
+      {
+        "id": "0xbf02d6c6852fa0b8247d5514d0c91e6c1fbde9a168ac3fd2033028b5ee5ce6d0",
+        "name": "LBTC / USDC"
+      },
+      {
+        "id": "0xbf0432567b44ef5ce013ffcd7dd756c522252503f7986a406e780715b32c74fc",
+        "name": "wSPYx / AUSD"
+      },
+      {
+        "id": "0xc0ae375fd761ff19b3f04de5534c0f1ec110f80e1c2ede27c42c1c43c3040394",
+        "name": "syrupUSDC / RLUSD"
+      },
+      {
+        "id": "0xc0ed4e0113f9d0c72a0d6e8d43a1662b8f24c90ead3773bc4315ccc199b73018",
+        "name": "ENA / USDC"
+      },
+      {
+        "id": "0xc2c53d2b868e163da71de14a5113cc2743fc9b5ad7488334720ed2846566a8f6",
+        "name": "weETH / USDT"
+      },
+      {
+        "id": "0xc3b37a18d5b15f8e5b78bcdc014ffb3f22933bde4e5f6a36dedf36db87e68585",
+        "name": "WETH / RLUSD"
+      },
+      {
+        "id": "0xc498f4bfdda99e60ea8eb04c1e145654a70bc59da76ef9c6ed54a1314d78e5b5",
+        "name": "steakEURCV / USDC"
+      },
+      {
+        "id": "0xc4df202d87a359d4c91d7d499b6b7522602df7f7f1d92998a6050f4f8826b551",
+        "name": "trUSD / USDC"
+      },
+      {
+        "id": "0xc4f56ec8f0e89af93a7146eadb9f4330c522aa19c5d2053b0685db1f68e87550",
+        "name": "sUSDai / frxUSD"
+      },
+      {
+        "id": "0xc54d7acf14de29e0e5527cabd7a576506870346a78a11a6762e2cca66322ec41",
+        "name": "wstETH / WETH"
+      },
+      {
+        "id": "0xc581c5f70bd1afa283eed57d1418c6432cbff1d862f94eaf58fdd4e46afbb67f",
+        "name": "USDe / DAI"
+      },
+      {
+        "id": "0xc597a4e5e2f4ee7cc544de1f03c562a0538cbe52c4a018054f07e4df08edd326",
+        "name": "cbBTC / wARS"
+      },
+      {
+        "id": "0xc60780d85041ac1fac6967386219cf00f5ef6a0a28c53b8632d4f2ce2961fdaf",
+        "name": "steakUSDC / EURC"
+      },
+      {
+        "id": "0xc7e49dd404825da16988955201ed22ecf8a7b25f0337db8a698d70d7a9f343ea",
+        "name": "PT-USDat-14JAN2027 / USDC"
+      },
+      {
+        "id": "0xc9098061d437a9dd53b0070cb33df6fca1a0a5ead288588c88699b0420c1c078",
+        "name": "sUSDe / msUSD"
+      },
+      {
+        "id": "0xc9629945524f3fde56c7e8854a6c3d48e76b9d97236abbe73c750fcc7aeb8501",
+        "name": "syrupUSDC / PYUSD"
+      },
+      {
+        "id": "0xcac5902b997725b46ff9cc1eecc7607d566f591d88904daf6b4491f060495308",
+        "name": "stBRL / USDC"
+      },
+      {
+        "id": "0xcb0f31c185ad82b6d2bdbe87f73b6889cfbbf5b1890e94d8e411005611674daa",
+        "name": "strUSD / USDC"
+      },
+      {
+        "id": "0xcb330367d8241ad8b4831a1250a9a473ccc59ae51bbded0ddbed57317e4e7492",
+        "name": "cbBTC / EUROP"
+      },
+      {
+        "id": "0xcbc07d381ec87f070af7d94be1569458af6a95066933bb3f8f821a415ef88055",
+        "name": "PT-apyUSD-11FEB2027 / USDC"
+      },
+      {
+        "id": "0xcde1b09204b4a790e47ef833d4235762121a0e44c4dbb91cd9a2093e88ac6e82",
+        "name": "steakEURCV / EURCV"
+      },
+      {
+        "id": "0xce68c7aa336675e42bbc8eaa8b5ecc7ebd816bf8625b5316330c6ac2dabc4cf2",
+        "name": "SolvBTC / WBTC"
+      },
+      {
+        "id": "0xd0e50cdac92fe2172043f5e0c36532c6369d24947e40968f34a5e8819ca9ec5d",
+        "name": "wstETH / WETH"
+      },
+      {
+        "id": "0xd106a1c0f40edfcd4787617cb53167bee63ea6da6cd2b21e92644b7dfa9fb7c3",
+        "name": "stakedao-frx-trUSD / frxUSD"
+      },
+      {
+        "id": "0xd21bbc238918855461d943753ac4c90d103888e5661fd78f3378294c45f7d8df",
+        "name": "PT-trUSD-26NOV2026 / USDC"
+      },
+      {
+        "id": "0xd3c7b3668b91b90f7571817009503826025159111743b95f542730b42c94d3ea",
+        "name": "QQQon / USDC"
+      },
+      {
+        "id": "0xd4143355064409f31e6ce4f2ca2355df6a9359f620d4db3e8d7131d3b98c3034",
+        "name": "STRCon / USDC"
+      },
+      {
+        "id": "0xd5243ef6e9757a4e546ef7bb160a3ec62a1951aef21448c8413d324c4a438c27",
+        "name": "XAUE / USDT"
+      },
+      {
+        "id": "0xd570c19c0dc0fbe4ab7faf4a37c4150e1c141c8aada8ca3e1b4b6c1b712af93d",
+        "name": "stUSDS / USDC"
+      },
+      {
+        "id": "0xd601632eb1345413cde7418f228513bae6ca7fdc52a00384ea9239c2a9f9a935",
+        "name": "LsETH / WETH"
+      },
+      {
+        "id": "0xd6b32ebd17bdcfcb91b5a1bf4940439167067d7bca225a3bea781df1882b265d",
+        "name": "steakUSDC / tGBP"
+      },
+      {
+        "id": "0xd78df901ce154470bc58e33d03cfe3af6b66e04d8e761c84f13f1de2c92ccaf1",
+        "name": "sUSDS / tGBP"
+      },
+      {
+        "id": "0xd87be7c34f317d0686f328633a2e7dd7578fbed60912eb17276699af5ff94487",
+        "name": "stakedao-sfrxUSD2 / frxUSD"
+      },
+      {
+        "id": "0xd8849a4724965af31cba10bf8fe7a28008235716ed8000c375e64e53addf339a",
+        "name": "EURCV / USDC"
+      },
+      {
+        "id": "0xd8a8e6667f58aa9229e8979bd619742b1660ee856c200a93e407dbccb7222323",
+        "name": "cbBTC / PYUSD"
+      },
+      {
+        "id": "0xd8dd3e1d051eee97d1353a113982afac90612c775f393edea45ef7f20caec489",
+        "name": "PT-USDat-14JAN2027 / USDT"
+      },
+      {
+        "id": "0xd98939d075eebc85569dbbe3a5ef7fd46e1d3efa83452173b172eb93ae557cac",
+        "name": "reUSD / AUSD"
+      },
+      {
+        "id": "0xd98cd88ae5b336086b39fb1d62ba6171282e946105b010143f0e89f8fe7cff36",
+        "name": "savETH / WETH"
+      },
+      {
+        "id": "0xd9d2fc090bdbab1804ea960dd6669b62357787e5816f575f14ca4e6d999614bf",
+        "name": "USDe / RLUSD"
+      },
+      {
+        "id": "0xdb1966b0052cc35716936b66a42982563f5c1db86a181f0b0dc6feb36dffbc28",
+        "name": "syrupUSDC / USDT"
+      },
+      {
+        "id": "0xdbf4bc065d4e76f4505a523f2bba5e5ccdca94c16d67c3a6ff1dadbcbb26d4aa",
+        "name": "stcUSD / USDT"
+      },
+      {
+        "id": "0xdc5333039bcf15f1237133f74d5806675d83d9cf19cfd4cfdd9be674842651bf",
+        "name": "sUSDe / USDT"
+      },
+      {
+        "id": "0xdc72032470dda00c7cd556f3184c10babbbea7639045e2ea74580ae3f06098e8",
+        "name": "wstETH / EUROP"
+      },
+      {
+        "id": "0xdd89d3433842afc8565a5d19a6a930414b02345cb1d6ca510ca3981d92a7e8a0",
+        "name": "oTFY / USDC"
+      },
+      {
+        "id": "0xdf034d0351a4c0af947e1a37ecd5ccbce60d72eac90de6fcad48c74e2869d14c",
+        "name": "PT-iUSD-25JUN2026 / USDC"
+      },
+      {
+        "id": "0xdf6ca97d41975a6996e9db491cb38152b65d7c00807dfe15d95d8d76e5d122e0",
+        "name": "PT-sUSDD-27AUG2026 / USDT"
+      },
+      {
+        "id": "0xdf9ba95a4db27532ded6d5ca5c6085c95bf1cdc748aeae3d933fbca1b579c9a8",
+        "name": "PT-srUSDat-14JAN2027 / USDC"
+      },
+      {
+        "id": "0xe07d416323a1afbfe0bf2fe27ffb549ff565cf5c86d21b79fc60664038e597c9",
+        "name": "savUSD / USDC"
+      },
+      {
+        "id": "0xe23380494e365453f72f736f2d941959ae945773eb67a06cf4f538c7c4201264",
+        "name": "apyUSD / apxUSD"
+      },
+      {
+        "id": "0xe2ef7a07bb2d2b16f5c6a47aa41afe13f44951376cc53ff2c51f31ddf84f6974",
+        "name": "msUSD"
+      },
+      {
+        "id": "0xe3df58f9d3011b7481ff36b939fa5f8da642f34ea5792d25d3958dbf1efa26d7",
+        "name": "USD3 / USDC"
+      },
+      {
+        "id": "0xe3f480afde95a4ea9ee11882067d48d4bfbafdd6b79b501804c597477a169980",
+        "name": "Ultra_BTC / cbBTC"
+      },
+      {
+        "id": "0xe475337d11be1db07f7c5a156e511f05d1844308e66e17d2ba5da0839d3b34d9",
+        "name": "sUSDe / DAI"
+      },
+      {
+        "id": "0xe4cfbee9af4ad713b41bf79f009ca02b17c001a0c0e7bd2e6a89b1111b3d3f08",
+        "name": "tBTC / USDC"
+      },
+      {
+        "id": "0xe51f9aaad25d0e755429cf77076b3c2d37cb1228ed81f8a5482f2102c220eef5",
+        "name": "kBTC / PYUSD"
+      },
+      {
+        "id": "0xe5d0934660512b15411ebcbb6d03ab8eb5ffd761c4e95c4e7d26632003b4fbf6",
+        "name": "edgeUSDx / USDC"
+      },
+      {
+        "id": "0xe6151adff6709c6cea3276cfc940f54da76bc04199b0ec583d6a1a9d6410f5b0",
+        "name": "sUSDai / USDT"
+      },
+      {
+        "id": "0xe7e9694b754c4d4f7e21faf7223f6fa71abaeb10296a4c43a54a7977149687d2",
+        "name": "wstETH / USDT"
+      },
+      {
+        "id": "0xe83d72fa5b00dcd46d9e0e860d95aa540d5ec106da5833108a9f826f21f36f52",
+        "name": "AA_FalconXUSDC / USDC"
+      },
+      {
+        "id": "0xe90a6419afa96192cb088f63b779ddcb629a89f9126600d767d9442868087541",
+        "name": "PST / AUSD"
+      },
+      {
+        "id": "0xea4bfb18df0ee6bffb7b3f0270899a8adb92ab6b684709634c8276128813cfd4",
+        "name": "weETH / RLUSD"
+      },
+      {
+        "id": "0xea6abacc02dadfdb1bc2f4f1571da3fcb9c2b3028230d80fc71447a177cf4e99",
+        "name": "PT-reUSD-10DEC2026 / AUSD"
+      },
+      {
+        "id": "0xeb17955ea422baeddbfb0b8d8c9086c5be7a9cfdefb292119a102e981a30062e",
+        "name": "stcUSD / USDC"
+      },
+      {
+        "id": "0xeb94eb6befbca98a0a1268e96f9690db0fd2a8b43d41a54fbd2e0304cd1aaa56",
+        "name": "stakedao-frxSVUSD / frxUSD"
+      },
+      {
+        "id": "0xec97655fab06b53bfad9d8c2358768aed5a1c97b204d3e51e2a7cb0cb786a264",
+        "name": "hgETH / WETH"
+      },
+      {
+        "id": "0xecabc12c73a97c766d0c6aeb4c15c635630d78158b2ac8370455a09efcc50837",
+        "name": "PT-USD3-17DEC2026 / USDC"
+      },
+      {
+        "id": "0xecb215bb547611a625ea2a0c583372d81eb905912c8d03a2eb313a10dc3584de",
+        "name": "wstETH / USDG"
+      },
+      {
+        "id": "0xee697d5fd14636527c282a321481bba380c4fa5d3b9d520141285c89ebab6784",
+        "name": "USDC / tGBP"
+      },
+      {
+        "id": "0xeea9a2431eba248f1cc4d8d3d2a34b31cbf4884ecc602f9270372f892a2ba185",
+        "name": "PAXG / PYUSD"
+      },
+      {
+        "id": "0xeecbfa4b6caa83c5000ce68a77808c80504e2ff56e81095c7742a615ecd9c774",
+        "name": "mWIN / PYUSD"
+      },
+      {
+        "id": "0xef2c308b5abecf5c8750a1aa82b47c558005feb7a03f4f8e1ad682d71ac8d0ba",
+        "name": "mF-ONE / USDC"
+      },
+      {
+        "id": "0xefcd445941835ff675c7fb5a7ef7ef9a0fae020950dec5cd46ffbaea13dde382",
+        "name": "cbBTC / EURC"
+      },
+      {
+        "id": "0xeffa583f87a425f68b8ba0c62408b2afe5c30dac436c680fbd2ee3836f037e1d",
+        "name": "TSLAon / USDC"
+      },
+      {
+        "id": "0xf02d2e8f427a2b91785b3d09690ef9d3811bf674ba97b00bafc7665004a6dd97",
+        "name": "PT-sUSDD-27AUG2026 / USDC"
+      },
+      {
+        "id": "0xf062a110320da27e0e7e7d9e1bdf458dd51e2d2089e55f63ff9fd54f415ce35d",
+        "name": "PT-strUSD-26NOV2026 / USDC"
+      },
+      {
+        "id": "0xf135feb27b5f2bd2d54f344fd38dbb5161ff7f0ef4494901fb23f2fe8e58145a",
+        "name": "steakUSDC / EURCV"
+      },
+      {
+        "id": "0xf1716d76092335b01e0081a396ee560f6845d4e2e808c48458c4be3444eb6ba9",
+        "name": "PRIME / USDT"
+      },
+      {
+        "id": "0xf3cf5009b8fc39f4a4be4e5203a4412513d11e8435ede04539bbd45ebec7523b",
+        "name": "PRIME / AUSD"
+      },
+      {
+        "id": "0xf484a05a20473481f156ef9fdbda33aad37c41ec014c0ad407dac7f7410fd605",
+        "name": "stakedao-frxsUSDe / frxUSD"
+      },
+      {
+        "id": "0xf4e9fb49e95a34320aea8b5e0ef515391a72368c39bdcf8ad8910645fd6eab97",
+        "name": "syzUSD / USDC"
+      },
+      {
+        "id": "0xf5b23a40974bcc0092cefc5c1d8031f74721ea092e73a5e6c86b2d63e509d449",
+        "name": "GOLDX / USDC"
+      },
+      {
+        "id": "0xf5c5df23559b0fb56560a7578ea17d81e245153ba64b8132df026c9358864d27",
+        "name": "wstETH / PYUSD"
+      },
+      {
+        "id": "0xf6422731a8f84d9ab7e8b6da15ab9ecc243e12a78200dfb7fd1cdf2391e38068",
+        "name": "USD3 / eUSD"
+      },
+      {
+        "id": "0xf653cb42a02c56113e954fa9370327f6665186069a68370af370c2da246e9eb1",
+        "name": "stakedao-USD3frxUSD / frxUSD"
+      },
+      {
+        "id": "0xf7cff44cf5333952f0c04a16d3db6f9fabba22c4e947654e3f79c6d6cda763fe",
+        "name": "WBTC / EURC"
+      },
+      {
+        "id": "0xf8680eb9c4fcd2be3d155cf7b1b0a2b56c6ad8c67beeceb5bb0bdb581a6cbbf2",
+        "name": "sUSDe / AUSD"
+      },
+      {
+        "id": "0xf8c5aa31ea6b2a068a9eddb46dd110cae57bf0f12be9583a3f9a818effecba89",
+        "name": "PT-USD3-17DEC2026 / USDC"
+      },
+      {
+        "id": "0xf94a9977bf998b162d4f9b741b3241d3bfa07e6c9c7028e4b76f7e8fefda0e8d",
+        "name": "XAUE / XAUt"
+      },
+      {
+        "id": "0xfa7453a6a9112c96e71e2042fbdc84d537fc8f4ac0ca11e8b0c31b17eacd56bc",
+        "name": "PT-sUSDD-26NOV2026 / USDC"
+      },
+      {
+        "id": "0xfacc1f062a8a30ff72b6cc73bc6096d9157fa0aa477a5b2e5837aa51b56f07cc",
+        "name": "wstETH"
+      },
+      {
+        "id": "0xfb7d54e0ce71efc8fffd3f4e1db0afa9265882da5cc76604b62adfac64501e80",
+        "name": "LsETH / USDC"
+      },
+      {
+        "id": "0xfcd3b104b9a592d4377edd68f48ecf60082d787b64ca97a3385f3cc4cb9bd20f",
+        "name": "wstETH / AUSD"
+      },
+      {
+        "id": "0xfd2d1fa27920a406bdf9f84300f7b4b086dec491a16adb5fdcdb06544ec523a5",
+        "name": "eUSD"
+      },
+      {
+        "id": "0xfd3d67eec5b7fd0849cad18a4f89d0737c6ed2f04f6ab632adab924bbaf4409c",
+        "name": "v-wmtWBTC / WBTC"
+      },
+      {
+        "id": "0xfdf78c1ecec460f0d54bbf1b2475227e36eb25ee7692562f5d433df2bf80259d",
+        "name": "ssftUSD / USDC"
+      },
+      {
+        "id": "0xff527fe9c6516f9d82a3d51422ccb031d123266e6e26d4c22c942a948c180a75",
+        "name": "WBTC / EURC"
+      },
+      {
+        "id": "0xff836cc9796e2889ebf73b26c2de2de74b35f985bb83e9d79380deb4229e365b",
+        "name": "etrUSD / USDC"
+      },
+      {
+        "id": "0xffd010618ed3cb39bb2c5de0e3e58d3d2ec9f52187a180f29723c31756a939bc",
+        "name": "cbBTC / RLUSD"
+      }
+    ],
+    "10": [
+      {
+        "id": "0x0587144de75bafd2078cbb8316ce282b5886ee83af77ebfd139a9212114fcc59",
+        "name": "Re7ETH / WETH"
+      },
+      {
+        "id": "0x173b66359f0741b1c7f1963075cd271c739b6dc73b658e108a54ce6febeb279b",
+        "name": "WETH / USDC"
+      },
+      {
+        "id": "0x3913577a653eb8c69b3410096b5b4a91628e1cf56adbe63cd7a05dc42ce236cc",
+        "name": "wstETH / USD₮0"
+      },
+      {
+        "id": "0x3940cb5f3398769b019fcff39d30ed1bdd5913a349d2c18a9f38d9206c3d79b8",
+        "name": "mRe7ETH / WETH"
+      },
+      {
+        "id": "0x80aa1cba2c5907533b5f4e454786c9628ffe8e4ed1a9edcf139325c0fcf09d01",
+        "name": "sUSDC / USDC"
+      },
+      {
+        "id": "0x8e77af0efaf4a3d59f37126c77f6f0ee7b56bcb1363c0986b8f6087b93ba833e",
+        "name": "WBTC / USDC"
+      },
+      {
+        "id": "0xba3c3f6e38c5767a2c288fe5d8bb2bd493a8de3b573e7f0d3c17eddd6b6ac861",
+        "name": "wstETH / WETH"
+      },
+      {
+        "id": "0xc7ae57c1998c67a4c21804df606db1309b68a518ba5acc8b1dc3ffcb1b26b071",
+        "name": "wstETH / USDC"
+      },
+      {
+        "id": "0xe04ea8f79633b44a281b4d88ff79ce3a5e24cf7dc9e9963af6f92ae8adcc28ce",
+        "name": "WBTC / USD₮0"
+      },
+      {
+        "id": "0xff239fbfcc8fc3b579ee12496554a51f0187e2fa04e44d6439dca4ed79c167c8",
+        "name": "USDC"
+      }
+    ],
+    "137": [
+      {
+        "id": "0x01550b8779f4ca978fc16591537f3852c02c3491f597db93d9bb299dcbf5ddbe",
+        "name": "WETH / USDT0"
+      },
+      {
+        "id": "0x1cfe584af3db05c7f39d60e458a87a8b2f6b5d8c6125631984ec489f1d13553b",
+        "name": "WBTC / USDC"
+      },
+      {
+        "id": "0x2476bb905e3d94acd7b402b3d70d411eeb6ace82afd3007da69a0d5904dfc998",
+        "name": "WBTC / USDT0"
+      },
+      {
+        "id": "0x267f344f5af0d85e95f253a2f250985a9fb9fca34a3342299e20c83b6906fc80",
+        "name": "WPOL / USDT0"
+      },
+      {
+        "id": "0x372f25501f88e5e8b9373b8076985870b7c1cbd0903f26a1fef34790dbdb3607",
+        "name": "USDT0"
+      },
+      {
+        "id": "0x40aa905825a89eda33acce144f9125f6568411154e8166b5c65df31c40e0b999",
+        "name": "WETH"
+      },
+      {
+        "id": "0x5d92c2b6a72a0f8057ab7d1311409848fe68509bcb25dd78416a9634dea72aca",
+        "name": "tGBP / frxUSD"
+      },
+      {
+        "id": "0x62171410d81e20c3fc5cd668158bf5153ab030abf84a12ea645c33dfea4225c1",
+        "name": "TESOURO / BRZ"
+      },
+      {
+        "id": "0x74ccc05c762403b51ee1116f7242956346aac4c44ab30d0c15f864c297de1f65",
+        "name": "sPOL / frxUSD"
+      },
+      {
+        "id": "0x7d8b049efdd83d282f455c679a0fbafad01da4f055cfc8ac8e4016dd5af7eddb",
+        "name": "sfrxUSD / BRZ"
+      },
+      {
+        "id": "0xa8c2e5b31d1f3fb6c000bd49355d091f71e7c866fcb74a1cb2562ef67157bc2a",
+        "name": "compWETH / USDT0"
+      },
+      {
+        "id": "0xb8ae474af3b91c8143303723618b31683b52e9c86566aa54c06f0bc27906bcae",
+        "name": "wstETH / WETH"
+      },
+      {
+        "id": "0xbd14369b90006ddd78241663dfd0c9c1b3b174451d700f21951b895fb8b7714d",
+        "name": "BRZ / frxUSD"
+      },
+      {
+        "id": "0xcfaf2bd0acb782afd54c20f52f7b7ea092e8745292787f78fadfdcdae68dab9b",
+        "name": "sfrxUSD / frxUSD"
+      },
+      {
+        "id": "0xfacd2aaa4ba788e9161c4572a44ce7bbe0944768fac271859d9034f2422e606c",
+        "name": "USDC"
+      }
+    ],
+    "8453": [
+      {
+        "id": "0x0103cbcd14c690f68a91ec7c84607153311e9954c94ac6eac06c9462db3fabb6",
+        "name": "rETH / EURC"
+      },
+      {
+        "id": "0x05a8eb4a91e08c155c2e46120988bc4faf9a07e1fb77af78ea9be2359f856887",
+        "name": "PT-siUSD-7JAN2027-(ETH) / USDC"
+      },
+      {
+        "id": "0x09276541cfecb6920a80679a1deced4dde3ae64bf5fc2c9c1f9c21e0c152e1a5",
+        "name": "JitoSOL / USDC"
+      },
+      {
+        "id": "0x093279173e34dd4589a83f10a1cae316f6227efe8ac51342fec9e29d78b68d4e",
+        "name": "GRO / USDC"
+      },
+      {
+        "id": "0x0b2df036bb06b49d893a8f5578cb5a31619f46d7a79cbf11783838204cfdf9e3",
+        "name": "YFI / USDC"
+      },
+      {
+        "id": "0x0ca10126f6c94cbd9cf0a48cc9516ae5e3dec5aa68303e6d988ee37c5149bf0d",
+        "name": "cbETH / USDC"
+      },
+      {
+        "id": "0x0cc78b1f4993015116e90626a18a1ba0e1ca73d0b75781b231d02fa5536e62a5",
+        "name": "GOOGLc / USDC"
+      },
+      {
+        "id": "0x10951a9bbb1016b926005c8234da7b2469f6886efaf0576d8cf0688ab5d6826b",
+        "name": "wstETH / XSGD"
+      },
+      {
+        "id": "0x13ab21573e785de4a0ed5e1fe6b15a49a60946909b9b2626237c13ae0a95ef18",
+        "name": "cbBTC / MXNB"
+      },
+      {
+        "id": "0x13c42741a359ac4a8aa8287d2be109dcf28344484f91185f9a79bd5a805a55ae",
+        "name": "wstETH / USDC"
+      },
+      {
+        "id": "0x144bf18d6bf4c59602548a825034f73bf1d20177fc5f975fc69d5a5eba929b45",
+        "name": "wsuperOETHb / WETH"
+      },
+      {
+        "id": "0x18316ce427a45d18852267bc90a34548bcc257efc9c8aa48186cb71a095d2f81",
+        "name": "reUSD / USDC"
+      },
+      {
+        "id": "0x1a3e69d0109bb1be42b80e11034bb6ee98fc466721f26845dc83b2aa8d979137",
+        "name": "yoUSD / USDC"
+      },
+      {
+        "id": "0x1c21c59df9db44bf6f645d854ee710a8ca17b479451447e9f56758aee10a2fad",
+        "name": "cbETH / USDC"
+      },
+      {
+        "id": "0x22f61f5cb76190408905b03f82ac00af69900e90f7b6883613fa1b48debd0d44",
+        "name": "AERO / USDC"
+      },
+      {
+        "id": "0x2319fa118eb9f7353609796b6f70018a5384d42169503515da52bfa0b194c6ac",
+        "name": "sUSDe / USDC"
+      },
+      {
+        "id": "0x23c2ad09b57469016831bc5ff9b13a7ddfc559698b42876d3625298e6dd7ef9d",
+        "name": "VIRTUAL / WETH"
+      },
+      {
+        "id": "0x29ae7ac08be3a58e11151fed74701fb8e6ffd8e76b1870cf17ad70f332752d0b",
+        "name": "mGLO / USDC"
+      },
+      {
+        "id": "0x2e2548390b8894d2ffaaababebc2b5f2501920e03a4c611b63b46e19bfc6b75d",
+        "name": "uniBTC / USDC"
+      },
+      {
+        "id": "0x2e26ecfe44dd56f2e6b0257e421e69474e838397b7194e2c934195c6d975af62",
+        "name": "sUSN / USDC"
+      },
+      {
+        "id": "0x2ea32f6f734f87db12a3b72cfe2b7381837f115411eb57171f672e2d03ed7cf7",
+        "name": "JitoSOL / SOL"
+      },
+      {
+        "id": "0x30767836635facec1282e6ef4a5981406ed4e72727b3a63a3a72c74e8279a8d7",
+        "name": "LBTC / cbBTC"
+      },
+      {
+        "id": "0x38c846197ac32a752a60c25d4536ebb0c3920c532e9a859c38c91efb7b8c2abb",
+        "name": "USDC"
+      },
+      {
+        "id": "0x3a4048c64ba1b375330d376b1ce40e4047d03b47ab4d48af484edec9fec801ba",
+        "name": "wstETH / WETH"
+      },
+      {
+        "id": "0x3b3769cfca57be2eaed03fcc5299c25691b77781a1e124e7a8d520eb9a7eabb5",
+        "name": "USDC / WETH"
+      },
+      {
+        "id": "0x3b450af515095f290141e7eefd11a57e30d44609b6c4f4192a1187e2125367af",
+        "name": "cbXRP / WETH"
+      },
+      {
+        "id": "0x3b82e29f0890186d7a66059699e522930c4cbe78ffbccb468c577daa5bc4bc10",
+        "name": "cbZEC / USDC"
+      },
+      {
+        "id": "0x41640803a24fb0ac8a3c6a5602f78ff8291a6c6ecd87f23c8bc08e46f52033f5",
+        "name": "steakUSDC / XSGD"
+      },
+      {
+        "id": "0x4217fed63c853537fb818f4ba4416bc708c3d7534913532feb34c3511ce2aba6",
+        "name": "savUSD / USDC"
+      },
+      {
+        "id": "0x4440abd9eff38ebf76b8f64c074682acef8c89e77555075478a7582883206604",
+        "name": "deSPXA / USDC"
+      },
+      {
+        "id": "0x44b343b5087c0bd34207cb5c199f12030777bf6b8c0a128438246f1212f37ca5",
+        "name": "METAc / USDC"
+      },
+      {
+        "id": "0x45f3b5688e7ba25071f78d1ce51d1b893faa3c86897b12204cdff3af6b3611f8",
+        "name": "mBASIS / USDC"
+      },
+      {
+        "id": "0x48dca3ed245fb30931013a676d3451f7602b11150f92743ad93159628cbbe392",
+        "name": "PAXG / USDC"
+      },
+      {
+        "id": "0x4944a1169bc07b441473b830308ffe5bb535c10a9f824e33988b60738120c48e",
+        "name": "LBTC / cbBTC"
+      },
+      {
+        "id": "0x4e0b2fd87ce0e662f3c39f520684074cc5c1e6122c65df247123e6066ad3e805",
+        "name": "WETH / XSGD"
+      },
+      {
+        "id": "0x4f06ffe87a1bd5356a4278f15b6ee9b0e279956aa4925f1baad4c2aa803b7ab4",
+        "name": "cbLTC / WETH"
+      },
+      {
+        "id": "0x4f9329a87a70e722cdab07b3647ef705671b25079d4f3bae559be5cfe12a7318",
+        "name": "MSFTc / USDC"
+      },
+      {
+        "id": "0x52a2a376586d0775e3e80621facc464f6e96d81c8cb70fd461527dde195a079f",
+        "name": "LBTC / USDC"
+      },
+      {
+        "id": "0x52f04b08a17a9d5ab3d9eaa183917b8124662eb9aea279e17bd62a59413648a5",
+        "name": "syrupUSDC / USDC"
+      },
+      {
+        "id": "0x54cf9be57fdfa6457a660991907434ff9d295c465a603a50126ff647d50b7354",
+        "name": "USDe / USDC"
+      },
+      {
+        "id": "0x576db1fa04a04b81eaeb36d14c16730bcfe34c8089abe1a204032e160b459157",
+        "name": "cbETH / VCHF"
+      },
+      {
+        "id": "0x5a99a8103b9d467c1b8e829e5bb3e41bca6eca4c443abc09911a19b71c598a13",
+        "name": "EURC"
+      },
+      {
+        "id": "0x5cb18261fc85a1ecdaaac4144ae5b8135e05061b71a607a9e0f641856f346da9",
+        "name": "VCHF"
+      },
+      {
+        "id": "0x5dffffc7d75dc5abfa8dbe6fad9cbdadf6680cbe1428bafe661497520c84a94c",
+        "name": "cbBTC / WETH"
+      },
+      {
+        "id": "0x5f42e9a47335fc15507f0ab6ac362e9d0fcd2f6fd881852198824c5b01045cb7",
+        "name": "wsrUSD / USDC"
+      },
+      {
+        "id": "0x5fda67e2274d50fb63955db09382daf24270ae32f2924d31039fec3c50cbfbe4",
+        "name": "wsuperOETHb / msETH"
+      },
+      {
+        "id": "0x6600aae6c56d242fa6ba68bd527aff1a146e77813074413186828fd3f1cdca91",
+        "name": "cbETH / WETH"
+      },
+      {
+        "id": "0x67a66cbacb2fe48ec4326932d4528215ad11656a86135f2795f5b90e501eb538",
+        "name": "superOETHb / USDC"
+      },
+      {
+        "id": "0x67ebd84b2fb39e3bc5a13d97e4c07abe1ea617e40654826e9abce252e95f049e",
+        "name": "cbBTC / EURC"
+      },
+      {
+        "id": "0x6a331b22b56c9c0ee32a1a7d6f852d2c682ea8b27a1b0f99a9c484a37a951eb7",
+        "name": "weETH / USDC"
+      },
+      {
+        "id": "0x6aa81f51dfc955df598e18006deae56ce907ac02b0b5358705f1a28fcea23cc0",
+        "name": "wstETH / WETH"
+      },
+      {
+        "id": "0x6ade8e4797a3e8fdf1faa832e8e524a3fbf4518465b96e08db0368ab95dfddb0",
+        "name": "WETH / VCHF"
+      },
+      {
+        "id": "0x6b61d4738919b56fff396c9bb29c61af495aa24efc1aca80f2563c34a6556312",
+        "name": "USDC / MXNB"
+      },
+      {
+        "id": "0x71511d934dddf124c73b7d7328e2ed4a7d13deeecf9ef061dad924a56b72a87f",
+        "name": "MORPHO / WETH"
+      },
+      {
+        "id": "0x73527ddd796e6d4f48387adaae36f6f3d49d606d7f2a15eb0c931416a58875d8",
+        "name": "cbDOGE / USDC"
+      },
+      {
+        "id": "0x76629002c9fdb20fb2092053a4f22c5c65e04a81887218b9546f2a2d82b4c0a8",
+        "name": "cbHYPE / USDC"
+      },
+      {
+        "id": "0x78d11c03944e0dc298398f0545dc8195ad201a18b0388cb8058b1bcb89440971",
+        "name": "weETH / WETH"
+      },
+      {
+        "id": "0x7d3f751bf7006ac705a32784935410ccd661f1c92a96b67df51107fc4ca56755",
+        "name": "VVV / USDC"
+      },
+      {
+        "id": "0x7dc02ff6c536b1d49d7fba770438d79f5bd1f1c78884629b7d1aaee19675782b",
+        "name": "SOL / USDC"
+      },
+      {
+        "id": "0x7f04c6c639d5dbb308842b33de63707cedc4303687611bb382bbf72381da0633",
+        "name": "cbADA / WETH"
+      },
+      {
+        "id": "0x7fc498ddcb7707d6f85f6dc81f61edb6dc8d7f1b47a83b55808904790564929a",
+        "name": "cbETH / EURC"
+      },
+      {
+        "id": "0x84662b4f95b85d6b082b68d32cf71bb565b3f22f216a65509cc2ede7dccdfe8c",
+        "name": "cbETH / WETH"
+      },
+      {
+        "id": "0x8793cf302b8ffd655ab97bd1c695dbd967807e8367a65cb2f4edaf1380ba1bda",
+        "name": "WETH / USDC"
+      },
+      {
+        "id": "0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836",
+        "name": "cbBTC / USDC"
+      },
+      {
+        "id": "0x9125d0fa03c3137166df68bcc72283477830de2a4a5536512374c573ad4583c3",
+        "name": "cbLTC / USDC"
+      },
+      {
+        "id": "0x94f344f8db8c950faa45206c269dd0c2787a86ae3a7b988423e1e6e8173ae269",
+        "name": "yoETH / WETH"
+      },
+      {
+        "id": "0x9f52c2f3980901e7bf59502ea6de3315ab6ed8425bb6fb7c0da852f39d3aa04f",
+        "name": "cbXRP / USDC"
+      },
+      {
+        "id": "0xa066f3893b780833699043f824e5bb88b8df039886f524f62b9a1ac83cb7f1f0",
+        "name": "wstETH / USDC"
+      },
+      {
+        "id": "0xa3913d896b7e9c0e0a84f1be27d376cf2065616101cb7c44674af8a154e684cc",
+        "name": "GOOGLc / USDC"
+      },
+      {
+        "id": "0xa84351c9d5be1d05f6b2d93df58ff8764ba54b70daa6c41529278ac4d1bc3c5b",
+        "name": "VVV / WETH"
+      },
+      {
+        "id": "0xa9b5142fa687a24c275faf731f13b52faa9873252bb4e1cb6077aa1f412edb0b",
+        "name": "WETH / EURC"
+      },
+      {
+        "id": "0xade6749e981ae94420956cc22c299054e05ac3564cc196bf62f4c0924c03bfdf",
+        "name": "wstETH / WETH"
+      },
+      {
+        "id": "0xae1a30486234bf7e7ac166c7c03d9bc5f2cd8a39be2c48e73c665ac7148c3c28",
+        "name": "AAPLc / USDC"
+      },
+      {
+        "id": "0xaf2657ed859dcac494afc20ba83e26fa153414da971a1f082ebfcb45d73955f1",
+        "name": "PT-USDai-18JUN2026-(ARB) / USDC"
+      },
+      {
+        "id": "0xb4a08db3b6a3acd884c853a4dabbc71659c9af1065afd2a9a8f201f29a4ad31c",
+        "name": "cbETH / XSGD"
+      },
+      {
+        "id": "0xb4b42dd66cef25614b94510a910d54b2c148e7621d22b4271566724beda63d13",
+        "name": "NVDAc / USDC"
+      },
+      {
+        "id": "0xc1261980c0d69018b1ae4435df2e54dc9b72bc0ac56128ae9d58a4fc182effc9",
+        "name": "cbHYPE / USDC"
+      },
+      {
+        "id": "0xc819df1685193012fc1d189e4ae22f6658442805f121303aebb04c81bd6d55d5",
+        "name": "TSLAc / USDC"
+      },
+      {
+        "id": "0xcca091ada0a486dd74743ab5f1b1b972adefaad357e2634fd7362a0d798dcd42",
+        "name": "AMZNc / USDC"
+      },
+      {
+        "id": "0xcd609ceadf0cb94a5bef201a2bb4374b8a302e0bf66c3bf79d7999c656bebcaf",
+        "name": "cbHYPE / WETH"
+      },
+      {
+        "id": "0xce88294a6dccb690cf329de7b13c42c4c2098491bf50056e762ff8798ee21c4f",
+        "name": "cbZEC / WETH"
+      },
+      {
+        "id": "0xce983b9ee6344e16ebbcc66812f23caafc63ae83fcc14fa29b66c7e69e9cecf6",
+        "name": "SPCXc / USDC"
+      },
+      {
+        "id": "0xcf3682357b9327af158e537ab6b02e793581b49f5454600b155f3973f201cfe5",
+        "name": "cbDOGE / WETH"
+      },
+      {
+        "id": "0xcf5643451910c09d638088ab4e3ac84a932113fd15571eee615e2d93955116c1",
+        "name": "cbBTC / VCHF"
+      },
+      {
+        "id": "0xd4a903dc6d949519060c7707f9604fdc9772c046e05c2e3a8fce0bd7196e4109",
+        "name": "cbXRP / USDC"
+      },
+      {
+        "id": "0xd4c235d7c717d4ccf2cadb0f2ebc9239695530ef04ca9739fa74f5749cc19fa0",
+        "name": "bitusdcp / MXNB"
+      },
+      {
+        "id": "0xd5d7156a4dabe0e49ea638f4daa2fecfe90204c99099d417744134c8488d3b27",
+        "name": "cbBTC / XSGD"
+      },
+      {
+        "id": "0xd7520ad198b497b6eb75bc690268f4597630dbc12e305e9d4105843bab36e41d",
+        "name": "cbADA / USDC"
+      },
+      {
+        "id": "0xdb0bc9f10a174f29a345c5f30a719933f71ccea7a2a75a632a281929bba1b535",
+        "name": "rETH / USDC"
+      },
+      {
+        "id": "0xdba352d93a64b17c71104cbddc6aef85cd432322a1446b5b65163cbbc615cd0c",
+        "name": "cbETH / USDC"
+      },
+      {
+        "id": "0xdc69cf2caae7b7d1783fb5a9576dc875888afad17ab3d1a3fc102f741441c165",
+        "name": "rETH / WETH"
+      },
+      {
+        "id": "0xe04a6c17bd59c9fcbc2bcf0035be0e78974f2741b15dc079635e2f0137d38f2c",
+        "name": "cbBTC"
+      },
+      {
+        "id": "0xe0cda5bceeae3b1848cabfadba74ef8bf446e80874068eecbf0687d39b0021d9",
+        "name": "mGLO / USDC"
+      },
+      {
+        "id": "0xe2d052f9e8dd9452fbc3b9d313f2f3faf500c602cba2a01574b2c21e430d2dbe",
+        "name": "msETH"
+      },
+      {
+        "id": "0xe458a501c1103ca3b256f2bcb45d223263fb34b6349d82675494ce3a94ce1327",
+        "name": "cbZEC / USDC"
+      },
+      {
+        "id": "0xe920c120b2e1c79e9f97c5219ab092f96e06ed0b58882737fe863b029395f36f",
+        "name": "WETH"
+      },
+      {
+        "id": "0xf2a59ad1aec67664c564cb33c33538ab41372363204ce2bdcf00900b7d28c6ab",
+        "name": "cbADA / USDC"
+      },
+      {
+        "id": "0xf7e40290f8ca1d5848b3c129502599aa0f0602eb5f5235218797a34242719561",
+        "name": "wstETH / EURC"
+      },
+      {
+        "id": "0xfd0895ba253889c243bf59bc4b96fd1e06d68631241383947b04d1c293a0cfea",
+        "name": "weETH / WETH"
+      },
+      {
+        "id": "0xfdfecf85a4dd90a7637ae2aaf28b35061166f0e62bfc714c565eed9f7e959783",
+        "name": "cbXRP / USDC"
+      },
+      {
+        "id": "0xffd35206a772174c04f599e4034a2f132fc3f7a462ca732affcea92136716573",
+        "name": "wstETH / msETH"
+      }
+    ],
+    "42161": [
+      {
+        "id": "0x1b08d070d672eb4945e9e01f9f0cae4087e5812efd5964d732cad5c4449d729b",
+        "name": "syrupUSDC / USDG"
+      },
+      {
+        "id": "0x1d094624063756fc61aaf061c7da056aebe3b3ad0ae0395b22e00db6c074de7c",
+        "name": "XAUt0 / USDT0"
+      },
+      {
+        "id": "0x209fa1520640f664f59f7c1f955d52e8b81ead826edf439b48254d21d24b97a9",
+        "name": "wstETH / USDT0"
+      },
+      {
+        "id": "0x33e0c8ab132390822b07e5dc95033cf250c963153320b7ffca73220664da2ea0",
+        "name": "wstETH / USDC"
+      },
+      {
+        "id": "0x46b81173785365f1dca52fc4c49eda0f0a020ce74fcc57ad29ce8c4fd19e1efe",
+        "name": "sUSDe / USDG"
+      },
+      {
+        "id": "0x55dec351039134d020a0414e46feb095f0a41cfa3a970068d15832e5e7e30c71",
+        "name": "sUSDS / USDG"
+      },
+      {
+        "id": "0x571cb3ac535d61d92026c071ef1df4794d0bbbe1755f916ff640746f81b52af4",
+        "name": "syrupUSDC / USDT0"
+      },
+      {
+        "id": "0x75dcde4e5a91c27c73bed8ae708ba127706b5449fd49b44cdf4c04e70c7199b8",
+        "name": "wstETH / EURe"
+      },
+      {
+        "id": "0x77fe2f7c2dd6f4da6bc5f445b06052ff8df55cb70cfce9afc16ec3c69a5fd3a3",
+        "name": "sUSDS / USDC"
+      },
+      {
+        "id": "0x8e58f0dea27f877db258ecbbe16e57c9bb3541448ac0d578ef08c5b93ea9b84b",
+        "name": "sUSDe / USDT0"
+      },
+      {
+        "id": "0x941f407149a7365a76829bdc1e47c88b528efdc06d34e8a4cb363462e51167d8",
+        "name": "bitgetUSDC / USDT0"
+      },
+      {
+        "id": "0x9539d43a0d33d04727f8d253e47e8e97034c4a15fc4d5c1fcc516a1d8d140e84",
+        "name": "WBTC / EURe"
+      },
+      {
+        "id": "0x958b40fcd0df023c156ec4a7eb8ffd47985b19d8bb02a36fb0af1bfc837fd605",
+        "name": "PT-USDai-18JUN2026 / USDC"
+      },
+      {
+        "id": "0x9f6006daaf289790c7aa043926d8d3d44fcf43e3a36db7e19cef6af56a1955e7",
+        "name": "WETH / USDG"
+      },
+      {
+        "id": "0xa75d3c071a1b383f94e3f34f4feb2738ab046c27795299e26ca6052f1c372c01",
+        "name": "USDC / EURe"
+      },
+      {
+        "id": "0xac6a118134cc4208a22534b041a83f4ac5ca42e2ab9ea732ee53c44b7deebc62",
+        "name": "WETH / USDT0"
+      },
+      {
+        "id": "0xb7e93f268db8dc60980afe9884f33b1d12069d7eb856192671f79db410efe1e9",
+        "name": "wstETH / USDG"
+      },
+      {
+        "id": "0xca83d02be579485cc10945c9597a6141e772f1cf0e0aa28d09a327b6cbd8642c",
+        "name": "WETH / USDC"
+      },
+      {
+        "id": "0xd09404e9512e1341321c8ae3bd663fab7087582142ac61486635a6c072c2af12",
+        "name": "weETH / USDC"
+      },
+      {
+        "id": "0xde895fd4a9d1ca693485fcfc2ee47d8c3b47f810bbce3c965c60d97b855d4ed2",
+        "name": "sUSDS / USDT0"
+      },
+      {
+        "id": "0xe0432ceb599fbe41defbd62fe8e914824af9d891a0a92c39de7063176c8e480b",
+        "name": "weETH / USDT0"
+      },
+      {
+        "id": "0xe0efd408da3b410004daccdc9c8b42c05dfd9d33afa679329029f62ac2cb534a",
+        "name": "GLV [USDG-USDG] / USDG"
+      },
+      {
+        "id": "0xe6392ff19d10454b099d692b58c361ef93e31af34ed1ef78232e07c78fe99169",
+        "name": "WBTC / USDC"
+      },
+      {
+        "id": "0xe6be8ab6e38852172dc56fe7964b6e9ced1b1641bc5685ba1ef12c3aaaa9d361",
+        "name": "USDC"
+      },
+      {
+        "id": "0xec428420f6981fe8dca020c3436bb27c90dde2fd01257841bb65387a8f829b19",
+        "name": "WETH / EURe"
+      },
+      {
+        "id": "0xed06d9e82d7c35ca80d3983194e15462a96202bd875800af18183321f4611868",
+        "name": "WBTC / USDT0"
+      },
+      {
+        "id": "0xed3f9a960d927791a354cc4549b1b44af9dd06c11566ea9d0bff66b8e4969610",
+        "name": "XAUt0 / USDC"
+      },
+      {
+        "id": "0xedf363df93b17b93cccd51751deef10abfb1758f3dd6c9ffb84564a1997230fa",
+        "name": "WBTC / USDG"
+      },
+      {
+        "id": "0xf86f3edd6f16cd8211f4d206866dc4ecd41be6211063ac11f8508e1b7112ef40",
+        "name": "syrupUSDC / USDC"
+      },
+      {
+        "id": "0xfc2a80cb390c45e7e79ad24792123fbf5a96d4653db44e29646fa7af159dda7c",
+        "name": "syrupUSDG / USDG"
+      }
+    ]
+  },
+  "vaults": {
+    "1": [
+      {
+        "address": "0x038d362028f89bcea7F598afb8d6Ff44b0a16708",
+        "name": "Frax Ecosystem Accelerator"
+      },
+      {
+        "address": "0x04422053aDDbc9bB2759b248B574e3FCA76Bc145",
+        "name": "Keyrock USDC"
+      },
+      {
+        "address": "0x069662D2588fcaC24B5c209456Db965D151556f0",
+        "name": "Apyx USDC"
+      },
+      {
+        "address": "0x07ecd7E0C348d526902258e3B1c4f2898057E611",
+        "name": "Frax USDai Ecosystem"
+      },
+      {
+        "address": "0x093272C07700d3cA5301C3Bf9B3A392624179E2F",
+        "name": "Hyperithm USDC Apex"
+      },
+      {
+        "address": "0x133614490896bc02C774bc3399E4Db1B6D05a2CA",
+        "name": "Presto USDC Prime"
+      },
+      {
+        "address": "0x181E5738D593CE29CcDC91bC562D45da3c480796",
+        "name": "Re7 Confidential Ondo USDC"
+      },
+      {
+        "address": "0x1878805799273d10aE96a58201A6f5254CF9824F",
+        "name": "Galaxy WETH Quality"
+      },
+      {
+        "address": "0x18E862E34938Db06C9244966A93939E7892F5119",
+        "name": "Gauntlet USDC RWA"
+      },
+      {
+        "address": "0x195B3a57dd0480534c84A5607a52a92304fA81f2",
+        "name": "RockawayX USPC ecosystem vault"
+      },
+      {
+        "address": "0x1a1985F50352b58090eb36425AfdFacbaC7806F4",
+        "name": "KPK USDC Prime Core"
+      },
+      {
+        "address": "0x2371e134e3455e0593363cBF89d3b6cf53740618",
+        "name": "Gauntlet WETH Prime"
+      },
+      {
+        "address": "0x23f5E9c35820f4baB695Ac1F19c203cC3f8e1e11",
+        "name": "sky.money USDT Savings"
+      },
+      {
+        "address": "0x244f46262D9aD408B746E74aBdD010E9002fb7eE",
+        "name": "UltraYield USDC Core"
+      },
+      {
+        "address": "0x2bD3A43863c07B6A01581FADa0E1614ca5DF0E3d",
+        "name": "sky.money USDT Risk Capital"
+      },
+      {
+        "address": "0x2C25f6C25770fFEC5959D34B94Bf898865e5D6b1",
+        "name": "Flagship USDT"
+      },
+      {
+        "address": "0x2C4BC0EC9fdD2b1F38eD5120184d62288d3e9DCe",
+        "name": "Dialectic AUSD RWA"
+      },
+      {
+        "address": "0x2cA22cb25558fa2018ecb1CE4eD8AF92Ee7ea423",
+        "name": "RockawayX f(x) Protocol Ecosystem USDC"
+      },
+      {
+        "address": "0x2ed10624315b74a78f11FAbedAa1A228c198aEfB",
+        "name": "Gauntlet EURC Core"
+      },
+      {
+        "address": "0x2fA7a3b008CfbcE1729AB42ac838E07f7be8a2E3",
+        "name": "Re Enhanced Vault"
+      },
+      {
+        "address": "0x31A5684983EeE865d943A696AAC155363bA024f9",
+        "name": "Vault Bridge WETH"
+      },
+      {
+        "address": "0x32401B9fb79065Bc15949DE0BD43927492f02F0C",
+        "name": "Flowdesk AUSD RWA Strategy"
+      },
+      {
+        "address": "0x34eCe536d2ae03192B06c0A67030D1Faf4c0Ba43",
+        "name": "EURCV Prime"
+      },
+      {
+        "address": "0x355A1c6A3f1946d4DbD7cE932492925AB9F261a7",
+        "name": "YO Ecosystem Vault"
+      },
+      {
+        "address": "0x36cfe1568461E499391ef0A555300F1ae2da2439",
+        "name": "Api3 dCOMP USDC"
+      },
+      {
+        "address": "0x3985e858545d784009c9420bd6ABeCA55Fd04117",
+        "name": "Unified Labs Prime USDC"
+      },
+      {
+        "address": "0x3a618E9D4159dff94E90bd6239161dE4dd7C0082",
+        "name": "Apyx apxUSD"
+      },
+      {
+        "address": "0x3BD9AdAE6643dDcddD02746b8B60075E56DF9478",
+        "name": "RockawayX Tori Ecosystem"
+      },
+      {
+        "address": "0x3d5EcCb62974178236A768A7ef14D3ce468Fbe91",
+        "name": "Wintermute Confidential WBTC"
+      },
+      {
+        "address": "0x41BA71cf6b366C7489AA31D2013e9A26F4c3E2d7",
+        "name": "Keyrock RLUSD"
+      },
+      {
+        "address": "0x43fCd85E8D9D003D515f886891B7C742AC9f92da",
+        "name": "Gauntlet WETH Prime"
+      },
+      {
+        "address": "0x443df5eEE3196e9b2Dd77CaBd3eA76C3dee8f9b2",
+        "name": "Gauntlet WBTC Core"
+      },
+      {
+        "address": "0x4881Ef0BF6d2365D3dd6499ccd7532bcdBCE0658",
+        "name": "Gauntlet LRT Core"
+      },
+      {
+        "address": "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6",
+        "name": "KPK USDC Prime"
+      },
+      {
+        "address": "0x4Ff4186188f8406917293A9e01A1ca16d3cf9E59",
+        "name": "SwissBorg Morpho USDC"
+      },
+      {
+        "address": "0x500331c9fF24D9d11aee6B07734Aa72343EA74a5",
+        "name": "Gauntlet DAI Core"
+      },
+      {
+        "address": "0x500aE64100D7DbDb640531085C2F5d40cDC8930D",
+        "name": "Wintermute USDT Select"
+      },
+      {
+        "address": "0x54210d3f1A066413891AF9E17210E787d5C6e3f4",
+        "name": "Kabu USDC"
+      },
+      {
+        "address": "0x55C1B6e461a6334B567bAF0FEb5D728715446f05",
+        "name": "Pendle Ecosystem USDC"
+      },
+      {
+        "address": "0x56A76b428244a50513ec81e225a293d128fd581D",
+        "name": "Spark Blue Chip USDC Vault"
+      },
+      {
+        "address": "0x56bfa6f53669B836D1E0Dfa5e99706b12c373ecf",
+        "name": "sky.money USDC Risk Capital"
+      },
+      {
+        "address": "0x5B453493D2328E7F747eb2e66446eFe707728be7",
+        "name": "Uniswap USDC"
+      },
+      {
+        "address": "0x5dbf760b4fd0cDdDe0366b33aEb338b2A6d77725",
+        "name": "KPK ETH Yield"
+      },
+      {
+        "address": "0x5dc53a23AdC9f2Bed98de6F59F7F309a7c71FF2B",
+        "name": "Wintermute USDC Prime"
+      },
+      {
+        "address": "0x5E5b30c5fD07da26d1e515dfEDb1D37C93417652",
+        "name": "SingularV USDC"
+      },
+      {
+        "address": "0x5f342382D5F77F0f99E8f26161E689df6c7Cded3",
+        "name": "Gauntlet WETH Balanced"
+      },
+      {
+        "address": "0x5f829B1B473cBA86838E1B7BB7E144DbDE228e21",
+        "name": "RockawayX USDC Prime"
+      },
+      {
+        "address": "0x62fE596d59fB077c2Df736dF212E0AFfb522dC78",
+        "name": "Clearstar USDC Reactor"
+      },
+      {
+        "address": "0x64C18DCC4Ccb3b8D27877a4aeBB4C3126CB39cB9",
+        "name": "RockawayX wETH"
+      },
+      {
+        "address": "0x65a6334c0e2b5f7640c2A6b9ce615e162b1E909B",
+        "name": "SharpByte USDT Prime"
+      },
+      {
+        "address": "0x6859B34a9379122d25A9FA46f0882d434fee36c3",
+        "name": "Metronome msUSD Vault"
+      },
+      {
+        "address": "0x68A65f315BCd3C3456d1368Ff88bC661856548E1",
+        "name": "Presto USDC Forte"
+      },
+      {
+        "address": "0x68Aea7b82Df6CcdF76235D46445Ed83f85F845A3",
+        "name": "Yearn USDC"
+      },
+      {
+        "address": "0x69A238Ae7ebeb3c53ff3B544E48B96a2142fc284",
+        "name": "Clearstar USDC Core"
+      },
+      {
+        "address": "0x6dC58a0FdfC8D694e571DC59B9A52EEEa780E6bf",
+        "name": "Sentora RLUSD Main"
+      },
+      {
+        "address": "0x701907283a57FF77E255C3f1aAD790466B8CE4ef",
+        "name": "Index Coop hyETH"
+      },
+      {
+        "address": "0x71ffB6a81786eC285D429d531Cf655107B9D878d",
+        "name": "Galaxy USDT Quality"
+      },
+      {
+        "address": "0x739d8a60ED4b14E4cB6DCAEAF79d2ec0Ca092237",
+        "name": "SingularV ETH"
+      },
+      {
+        "address": "0x75741A12B36D181f44F389E0c6B1E0210311e3Ff",
+        "name": "Steakhouse EURCV"
+      },
+      {
+        "address": "0x777791C4d6DC2CE140D00D2828a7C93503c67777",
+        "name": "Hyperithm USDC Apex"
+      },
+      {
+        "address": "0x7873F890A3Eec30909Bdb2cF65C4FA70DB905aac",
+        "name": "KPK wBRL Yield"
+      },
+      {
+        "address": "0x78Fc2c2eD1A4cDb5402365934aE5648aDAd094d0",
+        "name": "Re7 WETH"
+      },
+      {
+        "address": "0x79FD640000F8563A866322483524a4b48f1Ed702",
+        "name": "Gauntlet USDT Frontier"
+      },
+      {
+        "address": "0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1",
+        "name": "KPK USDC Yield RWA"
+      },
+      {
+        "address": "0x7cBcfc4F64be199eDE6db1D916ddcdb69f666B57",
+        "name": "Sentora mWIN Main"
+      },
+      {
+        "address": "0x7ceB0f01Cb7187a2EBED5661eCC4d5701d8F2350",
+        "name": "August USDC V2"
+      },
+      {
+        "address": "0x7d4741ba166B21cf3168A9A0ea71388531C52FF7",
+        "name": "Tenbin USDC"
+      },
+      {
+        "address": "0x7F876BF31089A8D13ccF8F1158Ef7bFecA2dDF94",
+        "name": "Saturn Confidential Tokenized Equity Vault"
+      },
+      {
+        "address": "0x802148D518A6De2aF866f9A61ffB5e5C39156dB2",
+        "name": "Osero x Gauntlet USDC Prime"
+      },
+      {
+        "address": "0x812B2C6Ab3f4471c0E43D4BB61098a9211017427",
+        "name": "Vault Bridge WBTC"
+      },
+      {
+        "address": "0x833AdaeF212c5cD3f78906B44bBfb18258F238F0",
+        "name": "Smokehouse WSTETH"
+      },
+      {
+        "address": "0x8381a156958711E230f325428B5eb4b6555C75D9",
+        "name": "Sentora Huma PST Main"
+      },
+      {
+        "address": "0x842A84Df61DbE701c5dAE345F3f8E64aF727E48C",
+        "name": "Gauntlet EURC Core"
+      },
+      {
+        "address": "0x85F3d81a39dF458E45d5EA20f9EB937fAafd282f",
+        "name": "UltraYield USDT Core"
+      },
+      {
+        "address": "0x870F0BF29A25A40E7CC087cD5C53e70C11F2C8A8",
+        "name": "KPK USDT Prime"
+      },
+      {
+        "address": "0x888883f0eDDF69Ca4BfD00Af93714Ff97F188888",
+        "name": "Hyperithm USDT Core"
+      },
+      {
+        "address": "0x8aC91877b93330f52b2979a31a4879506021475c",
+        "name": "Huma USDC Main"
+      },
+      {
+        "address": "0x8c106EEDAd96553e64287A5A6839c3Cc78afA3D0",
+        "name": "Gauntlet USDC Prime"
+      },
+      {
+        "address": "0x8CB3649114051cA5119141a34C200D65dc0Faa73",
+        "name": "Gauntlet USDT Prime"
+      },
+      {
+        "address": "0x8eB67A509616cd6A7c1B3c8C21D48FF57df3d458",
+        "name": "Gauntlet USDC Core"
+      },
+      {
+        "address": "0x8EDCC305E633d29BFB383872e79401c506cE9E6f",
+        "name": "Stake DAO USDC High Yield"
+      },
+      {
+        "address": "0x91393F69A308844a1B4830dE1a57FB489c9D88cE",
+        "name": "Unified Labs Regulated USDC"
+      },
+      {
+        "address": "0x91600E31fBeDc72433d4a57F16639cfe661Be7d8",
+        "name": "Galaxy USDC Quality"
+      },
+      {
+        "address": "0x93e0F9d502eEfce8D34924ab3478C7EA0CBC5a2E",
+        "name": "RockawayX NUVA Ecosystem"
+      },
+      {
+        "address": "0x9480034D908989B006D78bDBBd7bD509c92E8bbC",
+        "name": "MEV CAPITAL USDC"
+      },
+      {
+        "address": "0x974c8FBf4fd795F66B85B73ebC988A51F1A040a9",
+        "name": "Hakutora USDC"
+      },
+      {
+        "address": "0x98B102d24b5D03F8d840843B0C7Dd98d439ac443",
+        "name": "Touchstone XAUT"
+      },
+      {
+        "address": "0x98D2b241DA14c5dd848812708Eb8A1F3c5512f9d",
+        "name": "Uniswap ETH"
+      },
+      {
+        "address": "0x9a1D6bd5b8642C41F25e0958129B85f8E1176F3e",
+        "name": "Gauntlet USDC Frontier"
+      },
+      {
+        "address": "0x9a8bC3B04b7f3D87cfC09ba407dCED575f2d61D8",
+        "name": "MEV Capital wETH"
+      },
+      {
+        "address": "0x9C57E02bC31e7e463f439353D97bd8f42F5a7F9c",
+        "name": "RockawayX EUROP"
+      },
+      {
+        "address": "0x9f3BEbF1159323f78E5c97Cc30f10907B71fCf8C",
+        "name": "Feather USDC"
+      },
+      {
+        "address": "0xA0804346780b4c2e3bE118ac957D1DB82F9d7484",
+        "name": "Smokehouse USDT"
+      },
+      {
+        "address": "0xA2EAaD0D586cF9FD73bb2c09cF6A7E3e187D68cd",
+        "name": "Wintermute USDC Select"
+      },
+      {
+        "address": "0xa71D08A159258553a5Ac190d60Fa919425Ff02EA",
+        "name": "Hakutora USDT"
+      },
+      {
+        "address": "0xA8875aaeBc4f830524e35d57F9772FfAcbdD6C45",
+        "name": "Gauntlet USDC RWA"
+      },
+      {
+        "address": "0xAb5955EB671d150527f8E61A42B703832F86616C",
+        "name": "M1 USDC"
+      },
+      {
+        "address": "0xAbe418cc8c06D265E4EB009C02eA4B265eCA7240",
+        "name": "Saturn USDC"
+      },
+      {
+        "address": "0xb0c424116172B55CbB6dD3136F5989F7959e5B91",
+        "name": "Spark Blue Chip USDT Vault"
+      },
+      {
+        "address": "0xB344e331A3cDa61D329fb3Cca2Be5942da87c418",
+        "name": "Bitwise Premium RWA AUSD"
+      },
+      {
+        "address": "0xb48C056C5608bA2Ee4cD94AF2bF4b1F25295Bd7e",
+        "name": "Flowdesk Confidential High Yield USDT"
+      },
+      {
+        "address": "0xb576765fB15505433aF24FEe2c0325895C559FB2",
+        "name": "Paypal USD Main"
+      },
+      {
+        "address": "0xb5ce3CA2C774b72955C25875022FdD91f7a7B938",
+        "name": "KPK wARS Yield"
+      },
+      {
+        "address": "0xb8274eFADB953FE9ae052D481a3FC5B6A3ceD703",
+        "name": "Uniswap USDT"
+      },
+      {
+        "address": "0xB885F6d448dA7E2C642Ec31190B629E40E87B069",
+        "name": "Yearn OG USDC"
+      },
+      {
+        "address": "0xBb50A5341368751024ddf33385BA8cf61fE65FF9",
+        "name": "KPK ETH Prime"
+      },
+      {
+        "address": "0xbeef003C68896c7D2c3c60d363e8d71a49Ab2bf9",
+        "name": "Steakhouse Prime USDT"
+      },
+      {
+        "address": "0xbeef003E31546C7210687f1A7b40d096BE83ec58",
+        "name": "Steakhouse Prime EURC"
+      },
+      {
+        "address": "0xbeef0046fcab1dE47E41fB75BB3dC4Dfc94108E3",
+        "name": "Steakhouse Prime ETH"
+      },
+      {
+        "address": "0xbEEF00A59B577423653A1526c7009bdE103F542B",
+        "name": "Steakhouse Confidential Prime USDC"
+      },
+      {
+        "address": "0xbeef00B5d83C1188F07A5184230a805639c39f04",
+        "name": "Steakhouse Prime Instant"
+      },
+      {
+        "address": "0xBEEF01735c132Ada46AA9aA4c54623cAA92A64CB",
+        "name": "Steakhouse USDC"
+      },
+      {
+        "address": "0xbEef047a543E45807105E51A8BBEFCc5950fcfBa",
+        "name": "Steakhouse USDT"
+      },
+      {
+        "address": "0xbeef04cCAfe3FB25dEc704afe592e846B8C7fd06",
+        "name": "Steakhouse ARSs"
+      },
+      {
+        "address": "0xbeef05061FE51eA482BD1b68041353490b3a5934",
+        "name": "Grove x Steakhouse USDG"
+      },
+      {
+        "address": "0xBEEf050ecd6a16c4e7bfFbB52Ebba7846C4b8cD4",
+        "name": "Steakhouse ETH"
+      },
+      {
+        "address": "0xbeef06DB5Aad37A31a99Ae8aE3120618845c5A23",
+        "name": "Grove x Steakhouse USDG"
+      },
+      {
+        "address": "0xbeef088055857739C12CD3765F20b7679Def0f51",
+        "name": "Steakhouse Prime USDC"
+      },
+      {
+        "address": "0xbeef0C075Da5D01112AE5cF34d257074fB5DDB2f",
+        "name": "Steakhouse Prime EURCV"
+      },
+      {
+        "address": "0xBEeF1f5Bd88285E5B239B6AAcb991d38ccA23Ac9",
+        "name": "Waterline infiniFi USDC"
+      },
+      {
+        "address": "0xbeEF346d7099865208Ff331e4f648f4154DDAa05",
+        "name": "Waterline Reservoir USDC"
+      },
+      {
+        "address": "0xBEEf3f3A04e28895f3D5163d910474901981183D",
+        "name": "3F x Steakhouse USDC"
+      },
+      {
+        "address": "0xbeEf96B330ef1Fe7Ebe41eCe0Bd4a41A94Bc03DC",
+        "name": "Cronos USDC"
+      },
+      {
+        "address": "0xBEefb9f61CC44895d8AEc381373555a64191A9c4",
+        "name": "Vault Bridge USDC"
+      },
+      {
+        "address": "0xBeEFC1CDAfc5b4a649b54D07AFc6bF0f75C6F4E2",
+        "name": "Steakhouse Ethena USDtb"
+      },
+      {
+        "address": "0xBEeFF047C03714965a54b671A37C18beF6b96210",
+        "name": "Waterline Reservoir USDC"
+      },
+      {
+        "address": "0xbeeff07d991C04CD640DE9F15C08ba59c4FEDEb7",
+        "name": "Steakhouse High Yield USDT"
+      },
+      {
+        "address": "0xBeefF08dF54897e7544aB01d0e86f013DA354111",
+        "name": "Grove x Steakhouse USDC"
+      },
+      {
+        "address": "0xBEEfF0d672ab7F5018dFB614c93981045D4aA98a",
+        "name": "Grove x Steakhouse AUSD"
+      },
+      {
+        "address": "0xbeeff2C5bF38f90e3482a8b19F12E5a6D2FCa757",
+        "name": "Steakhouse High Yield USDC"
+      },
+      {
+        "address": "0xBeEff4fD39F8e48b6a6e475445D650cb11e9599F",
+        "name": "Grove x Steakhouse RLUSD"
+      },
+      {
+        "address": "0xbeEFF75262b2eC16a3C62a807F02EE7627654931",
+        "name": "Waterline InfiniFi USDC"
+      },
+      {
+        "address": "0xbEeFf89ABb7815cCD5182BD1FF82C4a4F8FCb13D",
+        "name": "Steakhouse High Yield Instant"
+      },
+      {
+        "address": "0xbeeffABcd0dB09589Dd21854aa760C52aB4bf04F",
+        "name": "Steakhouse tGBP"
+      },
+      {
+        "address": "0xBEeFFF209270748ddd194831b3fa287a5386f5bC",
+        "name": "Smokehouse USDC"
+      },
+      {
+        "address": "0xbeeFfF68CC520D68f82641EFF84330C631E2490E",
+        "name": "Smokehouse DAI"
+      },
+      {
+        "address": "0xBf29043164660C60A2a72Cd15FFe2304e87B6838",
+        "name": "Wintermute USDT Prime"
+      },
+      {
+        "address": "0xc080f56504e0278828A403269DB945F6c6D6E014",
+        "name": "Gauntlet eUSD Core"
+      },
+      {
+        "address": "0xc207d3f66537D7F66456808379A0E560cF20Da36",
+        "name": "RockawayX Confidential RWA USDC"
+      },
+      {
+        "address": "0xC21b08C16458202593D4D9B26b9984Ee67b38BbD",
+        "name": "Sentora PRIME Main"
+      },
+      {
+        "address": "0xC30C60DE46dEc551B96326cBD05592C9245773ef",
+        "name": "9Summits Piku Ecosystem USDC"
+      },
+      {
+        "address": "0xc54b4E08C1Dcc199fdd35c6b5Ab589ffD3428a8d",
+        "name": "Vault Bridge USDT"
+      },
+      {
+        "address": "0xc92A37Fd0250F4eecF092960a2F70A1334217528",
+        "name": "Purinta USDC"
+      },
+      {
+        "address": "0xcbaD74fFe6498c7eD166EEEA331dBBaAA3D44Fe7",
+        "name": "UltraYield cbBTC Core"
+      },
+      {
+        "address": "0xCE13e39534082FCF8f13F6D84e6D95414D14271e",
+        "name": "Stake DAO frxUSD High Yield"
+      },
+      {
+        "address": "0xcf609F8327E68b42AF54F9D529b9f65d68038435",
+        "name": "Pendle Ecosystem High Yield USDC"
+      },
+      {
+        "address": "0xD1E9242e075Db4bdd3f3c721D7d5fd4180A94A7e",
+        "name": "Re Ecosystem Vault"
+      },
+      {
+        "address": "0xD42fD04D99912bB4900d8126cA1ad4fA09AEA5ce",
+        "name": "UltraYield WETH Core"
+      },
+      {
+        "address": "0xD5cCe260E7a755DDf0Fb9cdF06443d593AaeaA13",
+        "name": "KPK USDC Yield"
+      },
+      {
+        "address": "0xd63070114470f685b75B74D60EEc7c1113d33a3D",
+        "name": " Usual Boosted USDC"
+      },
+      {
+        "address": "0xd65d6E8dbC3Cd3D12418199E6f4014dB3aaa0097",
+        "name": "Figure USDC Main"
+      },
+      {
+        "address": "0xD6d4b804014EF27836dBe9f8f6Bf6c71251548Ec",
+        "name": "Belem RWA EURCV"
+      },
+      {
+        "address": "0xd95fE7adF5075fad9D6Bf853E0f9Fe53369E8D96",
+        "name": "Galaxy USDC Enhanced"
+      },
+      {
+        "address": "0xdd0f28e19C1780eb6396170735D45153D261490d",
+        "name": "Gauntlet USDC Prime"
+      },
+      {
+        "address": "0xE0181090c22579B6A217f1522cbf8c9f1F0C1965",
+        "name": "RockawayX USDC Yield"
+      },
+      {
+        "address": "0xe05faDf242331808f504661BEA65972594869826",
+        "name": "3Jane Ecosystem Vault"
+      },
+      {
+        "address": "0xE15fcC81118895b67b6647BBd393182dF44E11E0",
+        "name": "sky.money USDS Flagship"
+      },
+      {
+        "address": "0xe2221Aa07ec3266DA87763E2b1e28d07A8a4e53b",
+        "name": "Api3 Core USDC"
+      },
+      {
+        "address": "0xE571B648569619566CF6ce1060C97B621CB635D3",
+        "name": "Gauntlet USDT Frontier"
+      },
+      {
+        "address": "0xe7765Dd0aA5D6346d8A2690FD48f0Fcd7da0Ec77",
+        "name": "Touchstone USDT"
+      },
+      {
+        "address": "0xE89371eAaAC6D46d4C3ED23453241987916224FC",
+        "name": "Yearn OG WETH"
+      },
+      {
+        "address": "0xe99A27169c2aA26a8f2757949d09Fa3f9A8f0B3B",
+        "name": "RockawayX Midas USDC Prime"
+      },
+      {
+        "address": "0xE9BE5f0e92E941A025d3dd32038250577756a73f",
+        "name": "Keyrock Prime USDT"
+      },
+      {
+        "address": "0xf3557AD5E984211ac8A0874A670344f2C3376471",
+        "name": "Gauntlet USDT Prime"
+      },
+      {
+        "address": "0xF39AC02DEc8faE8292d5f42202e4Cd885356256B",
+        "name": "SingularV ETH"
+      },
+      {
+        "address": "0xF3Cc5c9A25508D8d959618fd48F6AbC18cA4Db49",
+        "name": "Clearstar Boring USDC"
+      },
+      {
+        "address": "0xf42bca228D9bd3e2F8EE65Fec3d21De1063882d4",
+        "name": "sky.money USDS Risk Capital"
+      },
+      {
+        "address": "0xF9bdDd4A9b3A45f980e11fDDE96e16364dDBEc49",
+        "name": "Yearn OG USDC"
+      },
+      {
+        "address": "0xfA5367bF43b9FC2a9764Ed946b29F6e6150F6439",
+        "name": "Flowmark fGenesis"
+      },
+      {
+        "address": "0xFC8C624B6080a0a780583799f2A862DE936F6E22",
+        "name": "Sentora x Spark RLUSD"
+      }
+    ],
+    "10": [
+      {
+        "address": "0x3d63934715b6D4c4DFbBC1a00Fe2A2145079DD76",
+        "name": "Re7 WETH"
+      },
+      {
+        "address": "0x6a91D96ea3d85b9433Ce4D1609f29eA056A7703e",
+        "name": "Dialectic USDT0"
+      },
+      {
+        "address": "0xC30ce6A5758786e0F640cC5f881Dd96e9a1C5C59",
+        "name": "Gauntlet USDC Prime"
+      }
+    ],
+    "137": [
+      {
+        "address": "0x781FB7F6d845E3bE129289833b04d43Aa8558c42",
+        "name": "Compound USDC"
+      },
+      {
+        "address": "0x902Af532d51D4983DBf9B8E29d1f01E430B24435",
+        "name": "Feather BRZ"
+      },
+      {
+        "address": "0x922c843349e3Bd9e4C3572171DfCa5e08836151F",
+        "name": "Feather frxUSD"
+      },
+      {
+        "address": "0xB7c9988D3922F25a336a469F3bB26CA61FE79e24",
+        "name": "Steakhouse High Yield USDT0"
+      },
+      {
+        "address": "0xF5C81d25ee174d83f1FD202cA94AE6070d073cCF",
+        "name": "Compound WETH"
+      },
+      {
+        "address": "0xfD06859A671C21497a2EB8C5E3fEA48De924D6c8",
+        "name": "Compound USDT"
+      }
+    ],
+    "8453": [
+      {
+        "address": "0x050cE30b927Da55177A4914EC73480238BAD56f0",
+        "name": "Gauntlet USDC Prime"
+      },
+      {
+        "address": "0x0548A36028FFdc7D5aaA7A182f0d1FE0264F5A5C",
+        "name": "К3 cbMaxxxing USDC"
+      },
+      {
+        "address": "0x08cc279532f159BdB450eBc0bAf6562f585Ded58",
+        "name": "Juno MXNB Prime"
+      },
+      {
+        "address": "0x09832347586E238841F49149C84d121Bc2191C53",
+        "name": "Clearstar ETH Reactor"
+      },
+      {
+        "address": "0x116e1A65717A534B73EcB7d4F6543c65DBCd0E46",
+        "name": "Clearstar Base RWA"
+      },
+      {
+        "address": "0x1401d1271C47648AC70cBcdfA3776D4A87CE006B",
+        "name": "Pangolins USDC"
+      },
+      {
+        "address": "0x1D3b1Cd0a0f242d598834b3F2d126dC6bd774657",
+        "name": "Clearstar USDC Reactor"
+      },
+      {
+        "address": "0x1deEfABEe758AAbdC29a542B24ca3b75aFD56765",
+        "name": "Gauntlet USDC Frontier"
+      },
+      {
+        "address": "0x1e9e47583f15D45a10Df48c0b1846E0492c795D7",
+        "name": "Galaxy USDC Quality"
+      },
+      {
+        "address": "0x236919F11ff9eA9550A4287696C2FC9e18E6e890",
+        "name": "Gauntlet USDC Frontier"
+      },
+      {
+        "address": "0x392B3CCf36C8adB8094F45573346B457414cD752",
+        "name": "KPK USDC Yield"
+      },
+      {
+        "address": "0x39E18c066187c83e860801Befe45aE8ecd021575",
+        "name": "Bitso USDC Prime"
+      },
+      {
+        "address": "0x43Cd00De63485618A5CEEBE0de364cD6cBeB26E7",
+        "name": "Metronome msETH Vault"
+      },
+      {
+        "address": "0x4D72Fed1b6cE42F8Dea811F7b6685EbE4Ec04E01",
+        "name": "Kabu WETH"
+      },
+      {
+        "address": "0x543257eF2161176D7C8cD90BA65C2d4CaEF5a796",
+        "name": "Moonwell Frontier cbBTC"
+      },
+      {
+        "address": "0x5435BC53f2C61298167cdB11Cdf0Db2BFa259ca0",
+        "name": "UltraYield USDC"
+      },
+      {
+        "address": "0x5A32099837D89E3a794a44fb131CBbAD41f87a8C",
+        "name": "Extrafi XLend WETH"
+      },
+      {
+        "address": "0x5e03f8965e2957291B3c6990C6Cb9023c36d3d30",
+        "name": "Bitwise Liquid Prime USDC"
+      },
+      {
+        "address": "0x618495ccC4e751178C4914b1E939C0fe0FB07b9b",
+        "name": "Re7 USDC"
+      },
+      {
+        "address": "0x6770216aC60F634483Ec073cBABC4011c94307Cb",
+        "name": "Gauntlet cbBTC Core"
+      },
+      {
+        "address": "0x6b13c060F13Af1fdB319F52315BbbF3fb1D88844",
+        "name": "Gauntlet WETH Core"
+      },
+      {
+        "address": "0x6e6fcac197ee06d0164c0fBA218c7BcB878f9B5C",
+        "name": "Apostro VNX Swiss Franc VCHF"
+      },
+      {
+        "address": "0x7aE6f26d0Fd2b510F4ff5A9B167f2d275a7c9dE7",
+        "name": "Clearstar Tokenized Stocks USDC"
+      },
+      {
+        "address": "0x7BfA7C4f149E7415b73bdeDfe609237e29CBF34A",
+        "name": "Spark USDC Vault"
+      },
+      {
+        "address": "0x8B12106a70FE2F8bB255F691f1CF9a9ccfB278AF",
+        "name": "Noon Ecosystem Vault"
+      },
+      {
+        "address": "0x8c1e205C408b90A0dDDbD53594049a379557c651",
+        "name": "Osero x Gauntlet USDC Prime"
+      },
+      {
+        "address": "0x8effa741061aaA2d8A5012a9B09A2d31d8B628d7",
+        "name": "ARCHITECT Global Value"
+      },
+      {
+        "address": "0x91C056B6d4311a743614FBc03ac32d4E6A2d3a3c",
+        "name": "Clearstar cbAssets Vault"
+      },
+      {
+        "address": "0x94Af495DE1F56Aa5576dEB17986bDCeE5Dd9778D",
+        "name": "Gauntlet EURC Balanced"
+      },
+      {
+        "address": "0xa0E430870c4604CcfC7B38Ca7845B1FF653D0ff1",
+        "name": "Moonwell Flagship ETH"
+      },
+      {
+        "address": "0xAE4181CFB5aaA08bbE77d269c6B595672b9F9Edc",
+        "name": "RockawayX Midas USDC Prime"
+      },
+      {
+        "address": "0xb038cF3e233b78225F6D350AC8319bEC8457db4A",
+        "name": "Birch Hill Groma Ecosystem USDC"
+      },
+      {
+        "address": "0xb88A0269C0b7E665F15DE46F634e02cE81E361c9",
+        "name": "SoSoValue x Unified Labs USDC"
+      },
+      {
+        "address": "0xb992132F74871677Ff4Aa83F92638C8CD33223Ec",
+        "name": "Clearstar Solana Vault"
+      },
+      {
+        "address": "0xBCA4E2E24A7cFa776E4282CC8Eb06f04738b71da",
+        "name": "Clearstar Core ETH"
+      },
+      {
+        "address": "0xbeef009F28cCf367444a9F79096862920e025DC1",
+        "name": "Steakhouse Prime EURC"
+      },
+      {
+        "address": "0xbeef00A299ae1784Fb7740d2d469F60a1E015fe9",
+        "name": "Steakhouse Prime XSGD"
+      },
+      {
+        "address": "0xbeef00f0A818894a2Cf111644A5098421611100E",
+        "name": "Steakhouse Prime ETH"
+      },
+      {
+        "address": "0xBeEF00fc6e87dE086A0e29169A2f6e25cF5C11a9",
+        "name": "Farcaster x Steakhouse Prime"
+      },
+      {
+        "address": "0xbeeF010f9cb27031ad51e3333f9aF9C6B1228183",
+        "name": "Steakhouse USDC"
+      },
+      {
+        "address": "0xbEEf050a7485865A7a8d8Ca0CC5f7536b7a3443e",
+        "name": "Steakhouse ETH"
+      },
+      {
+        "address": "0xbeef0786756810478b88982DE00F3CD7fdB8e7c7",
+        "name": "Grove x Steakhouse USDC"
+      },
+      {
+        "address": "0xBeEF086b8807Dc5E5A1740C5E3a7C4c366eA6ab5",
+        "name": "Steakhouse EURC"
+      },
+      {
+        "address": "0xbeef0e0834849aCC03f0089F01f4F1Eeb06873C9",
+        "name": "Steakhouse Prime USDC"
+      },
+      {
+        "address": "0xBEEFA7B88064FeEF0cEe02AAeBBd95D30df3878F",
+        "name": "Steakhouse High Yield USDC v1.1"
+      },
+      {
+        "address": "0xBEEFE94c8aD530842bfE7d8B397938fFc1cb83b2",
+        "name": "Steakhouse Prime USDC"
+      },
+      {
+        "address": "0xBeEfF0be997Cca5B1c13A7433c2004637975739e",
+        "name": "Ethena x Steakhouse USDC"
+      },
+      {
+        "address": "0xbeeff2490FEffa212faC2f6553682C219E6a8845",
+        "name": "Steakhouse High Yield USDC Edition"
+      },
+      {
+        "address": "0xbeeff7aE5E00Aae3Db302e4B0d8C883810a58100",
+        "name": "Steakhouse High Yield USDC"
+      },
+      {
+        "address": "0xc0c5689e6f4D256E861F65465b691aeEcC0dEb12",
+        "name": "Gauntlet USDC Core"
+      },
+      {
+        "address": "0xc1256Ae5FF1cf2719D4937adb3bbCCab2E00A2Ca",
+        "name": "Moonwell Flagship USDC"
+      },
+      {
+        "address": "0xdbA76Bc542bb07538e046B40F2e8a215B409F7A8",
+        "name": "Moonwell Frontier cbBTC"
+      },
+      {
+        "address": "0xE74c499fA461AF1844fCa84204490877787cED56",
+        "name": "Yield Clearstar USDC"
+      },
+      {
+        "address": "0xe7D0DBE3493830e2Ab62619211A2BfF0Fc60dB42",
+        "name": "Yearn OG USDC V2"
+      },
+      {
+        "address": "0xeE8F4eC5672F09119b96Ab6fB59C27E1b7e44b61",
+        "name": "Gauntlet USDC Prime"
+      },
+      {
+        "address": "0xef417a2512C5a41f69AE4e021648b69a7CdE5D03",
+        "name": "Yearn OG USDC"
+      },
+      {
+        "address": "0xf24608E0CCb972b0b0f4A6446a0BBf58c701a026",
+        "name": "Moonwell Flagship EURC"
+      },
+      {
+        "address": "0xFeFeC33668E22677c4762d0853d56245a800ff08",
+        "name": "Gauntlet WETH Balanced"
+      }
+    ],
+    "42161": [
+      {
+        "address": "0x2F721BaC99D5c900b5E9F4BF020dfaFf22270151",
+        "name": "Clearstar Core USDG"
+      },
+      {
+        "address": "0x390c1bb01F3F627144a40617e287d4cE3D5aBCfa",
+        "name": "Gauntlet USDG Premium"
+      },
+      {
+        "address": "0x4B6F1C9E5d470b97181786b26da0d0945A7cf027",
+        "name": "Hyperithm USDC Apex"
+      },
+      {
+        "address": "0x55a2B207b0074E13AdCb858950a81B7a04775E0F",
+        "name": "Gauntlet USDC Balanced"
+      },
+      {
+        "address": "0x5c0C306Aaa9F877de636f4d5822cA9F2E81563BA",
+        "name": "Steakhouse High Yield USDC"
+      },
+      {
+        "address": "0x610D151aE40662AE148cdBaaE1Ea5904b6AFAE78",
+        "name": "Gauntlet USDC Prime"
+      },
+      {
+        "address": "0x7bfdE3A7bd346Da92521D384563F89BB45dE1f60",
+        "name": "KPK EURe Yield"
+      },
+      {
+        "address": "0x7c574174DA4b2be3f705c6244B4BfA0815a8B3Ed",
+        "name": "Gauntlet USDC Prime"
+      },
+      {
+        "address": "0x7e97fa6893871A2751B5fE961978DCCb2c201E65",
+        "name": "Gauntlet USDC Core"
+      },
+      {
+        "address": "0xbeeff1D5dE8F79ff37a151681100B039661da518",
+        "name": "Bitget x Steakhouse USDC"
+      },
+      {
+        "address": "0xbeeFf72B77e7584a450E887125F25E8D8819016a",
+        "name": "Steakhouse USDG Pro"
+      },
+      {
+        "address": "0xbeeff77CE5C059445714E6A3490E273fE7F2492F",
+        "name": "Bitget x Steakhouse USDT"
+      }
+    ]
+  }
+}

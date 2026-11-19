@@ -6,10 +6,14 @@ import {
   PrivacyPoolsSendCover,
   PrivacyPoolsWithdrawalPrivacy
 } from '../../../interfaces/privacyPools'
-import { countPrivacyPoolsDepositsOf, PrivacyPoolsDepositIndex } from '../poolStats'
-import { getOwnDepositValues, getPrivacyPoolsNoteSpend, getSendCover } from './helpers'
+import {
+  countPrivacyPoolsDepositsOfAtLeast,
+  getPrivacyPoolsCoverWindowDeposits,
+  PrivacyPoolsPoolCover
+} from '../poolStats'
+import { getPrivacyPoolsNoteSpend, getSendCover, getSendPoolCover } from './helpers'
 import { DEPOSIT_LEAKS, WITHDRAWAL_LEAKS } from './rules'
-import { LeakRule, WithdrawalFacts } from './types'
+import { CommonAmountCover, LeakRule, WithdrawalFacts } from './types'
 
 const NO_COVER: PrivacyPoolsSendCover = { bigEnough: 0, sameAmount: 0 }
 
@@ -38,7 +42,7 @@ const findLeaks = <Facts>(rules: LeakRule<Facts>[], facts: Facts): PrivacyPoolsL
 /**
  * The worst leak sets the rating, and info leaks do not count. With no leaks it is `standard`, and
  * the cover shown to the user tells how well the send hides. Never `unchecked`, which only a
- * missing deposit index gives.
+ * missing pool cover gives.
  */
 const getRating = (leaks: PrivacyPoolsLeak[]): PrivacyPoolsRating => {
   if (leaks.some(({ type }) => type === 'error')) return 'traceable'
@@ -48,14 +52,34 @@ const getRating = (leaks: PrivacyPoolsLeak[]): PrivacyPoolsRating => {
 }
 
 /**
+ * How many deposits would hide a send of each common amount the deposit with `noteLabel` can pay.
+ * All of them spend that deposit, so all are counted against the deposits it hides among.
+ */
+const getCommonAmountCovers = (
+  notes: PrivacyPoolsNote[],
+  tokenAddress: string,
+  noteLabel: bigint,
+  commonAmounts: bigint[],
+  sendPoolCover: PrivacyPoolsPoolCover
+): CommonAmountCover[] =>
+  commonAmounts.flatMap((commonAmount) => {
+    const commonAmountSpend = getPrivacyPoolsNoteSpend(notes, tokenAddress, noteLabel, commonAmount)
+    if (!commonAmountSpend) return []
+
+    return [{ amount: commonAmount, cover: getSendCover(sendPoolCover, commonAmountSpend) }]
+  })
+
+/**
  * The privacy of a send of `amount` of a token from the deposit with `noteLabel`. Rated
- * `unchecked`, with no leaks and no cover, until the pool's deposits are read. An `amount` of 0
- * means none is entered yet, so only the recipient is checked and there is no cover. Null when the
- * deposit cannot pay `amount`, or it is negative.
+ * `unchecked`, with no leaks and no cover, until the deposits it hides among are read - see
+ * `getSendPoolCover`. An `amount` of 0 means none is entered yet, so only the recipient is checked
+ * and there is no cover. Null when the deposit cannot pay `amount`, or it is negative.
  */
 export const getPrivacyPoolsWithdrawalPrivacy = ({
   amount,
   commonAmounts,
+  poolCover,
+  fingerprints,
   ...params
 }: {
   amount: bigint
@@ -67,46 +91,31 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
   /** Null before the user enters one, so only the amount is checked. */
   recipient: string | null
   /** Null before the pool's deposits are read. */
-  depositIndex: PrivacyPoolsDepositIndex | null
+  poolCover: PrivacyPoolsPoolCover | null
+  /** See `getSendPoolCover`. */
+  fingerprints: ReadonlyMap<string, boolean> | null
   /** The pool's common amounts, smallest first - see `PRIVACY_POOLS_DEPOSIT_CHIPS`. */
   commonAmounts: bigint[]
 }): PrivacyPoolsWithdrawalPrivacy | null => {
-  const { notes, tokenAddress, noteLabel, recipient, depositIndex } = params
+  const { notes, tokenAddress, noteLabel, recipient } = params
   // No amount is entered yet, so only the recipient can be checked
   const isRecipientOnly = amount === 0n
   const spend = getPrivacyPoolsNoteSpend(notes, tokenAddress, noteLabel, amount)
   if (!isRecipientOnly && !spend) return null
 
-  if (!depositIndex) return UNCHECKED_WITHDRAWAL_PRIVACY
+  const sendPoolCover = getSendPoolCover(spend, notes, poolCover, fingerprints)
+  if (!sendPoolCover) return UNCHECKED_WITHDRAWAL_PRIVACY
 
-  const ownDepositValues = getOwnDepositValues(notes, tokenAddress, depositIndex)
-  // Common amounts are only suggested in place of an entered amount
-  const commonAmountCovers = spend
-    ? commonAmounts.flatMap((commonAmount) => {
-        const commonAmountSpend = getPrivacyPoolsNoteSpend(
-          notes,
-          tokenAddress,
-          noteLabel,
-          commonAmount
-        )
-        if (!commonAmountSpend) return []
-
-        return [
-          {
-            amount: commonAmount,
-            cover: getSendCover(depositIndex, ownDepositValues, commonAmountSpend)
-          }
-        ]
-      })
-    : []
   const facts: WithdrawalFacts = {
     amount,
     spend,
     recipient,
-    depositIndex,
-    ownDepositValues,
-    cover: spend ? getSendCover(depositIndex, ownDepositValues, spend) : NO_COVER,
-    commonAmountCovers
+    poolCover: sendPoolCover,
+    cover: spend ? getSendCover(sendPoolCover, spend) : NO_COVER,
+    // Common amounts are only suggested in place of an entered amount
+    commonAmountCovers: spend
+      ? getCommonAmountCovers(notes, tokenAddress, noteLabel, commonAmounts, sendPoolCover)
+      : []
   }
   const leaks = findLeaks(WITHDRAWAL_LEAKS, facts)
 
@@ -114,29 +123,34 @@ export const getPrivacyPoolsWithdrawalPrivacy = ({
 }
 
 /**
- * The privacy of a deposit that puts `amount` into a pool, after the vetting fee. Rated
- * `unchecked`, with no leaks, without the pool's deposits.
+ * The privacy of a deposit that puts `amount` into a pool, after the vetting fee. Counted against
+ * all of the pool's deposits, as how the user sends it later is not chosen yet. Rated `unchecked`,
+ * with no leaks, without the pool's deposits.
  */
 export const getPrivacyPoolsDepositPrivacy = ({
   amount,
   maxAmount,
-  depositIndex,
+  poolCover,
   commonAmounts
 }: {
   amount: bigint
   /** The most the balance can put into the pool, after the vetting fee. */
   maxAmount: bigint
   /** Null before the pool's deposits are read. */
-  depositIndex: PrivacyPoolsDepositIndex | null
+  poolCover: PrivacyPoolsPoolCover | null
   /** The pool's common amounts, smallest first - see `PRIVACY_POOLS_DEPOSIT_CHIPS`. */
   commonAmounts: bigint[]
-}): PrivacyPoolsDepositPrivacy => {
-  if (!depositIndex) return { rating: 'unchecked', leaks: [], sameAmount: 0 }
+}): Omit<PrivacyPoolsDepositPrivacy, 'isLoading'> => {
+  if (!poolCover) return { rating: 'unchecked', leaks: [], bigEnough: 0 }
 
-  const sameAmount = countPrivacyPoolsDepositsOf(depositIndex.recent, amount)
+  // Sending all of it at once later is its least private send, so count for that send
+  const bigEnough = countPrivacyPoolsDepositsOfAtLeast(
+    getPrivacyPoolsCoverWindowDeposits(poolCover),
+    amount
+  )
   // No amount yet, so there is nothing to warn about
   const leaks =
-    amount > 0n ? findLeaks(DEPOSIT_LEAKS, { amount, maxAmount, depositIndex, commonAmounts }) : []
+    amount > 0n ? findLeaks(DEPOSIT_LEAKS, { amount, maxAmount, poolCover, commonAmounts }) : []
 
-  return { rating: getRating(leaks), leaks, sameAmount }
+  return { rating: getRating(leaks), leaks, bigEnough }
 }

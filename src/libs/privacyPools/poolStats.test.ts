@@ -1,8 +1,5 @@
 import {
-  buildPrivacyPoolsDepositIndex,
-  countPrivacyPoolsDepositsOf,
   getPrivacyPoolsCoverDeposits,
-  countPrivacyPoolsDepositsOfAtLeast,
   getPrivacyPoolsPoolLabels,
   getPrivacyPoolsPoolStats,
   readPrivacyPoolsPoolHistory
@@ -21,19 +18,29 @@ const ETH_POOL_FIRST_LABELS = [
   20572552624186342001946977043772471280043833801939562344058440297043467610171n
 ]
 
+/** Starts with zeros, which the SDK drops when it stores an address. */
+const DEPOSITOR = '0x0000c0ffee000000000000000000000000000001'
+
 const hex = (value: bigint) => `0x${value.toString(16)}`
 
-type Event = { value: bigint; blockNumber: bigint; pool?: string; label?: bigint }
+type Event = {
+  value: bigint
+  blockNumber: bigint
+  pool?: string
+  label?: bigint
+  depositor?: string
+}
 
 /** Events keyed by tuple, numbers as hex strings, each tagged with its pool in `poolField`. */
 const tuples = (events: Event[], poolField: 'pool' | 'poolAddress') =>
-  events.map(({ value, blockNumber, pool = POOL, label = 0n }, i) => [
+  events.map(({ value, blockNumber, pool = POOL, label = 0n, depositor = DEPOSITOR }, i) => [
     hex(BigInt(i + 1)),
     {
       value: hex(value),
       blockNumber: hex(blockNumber),
       [poolField]: hex(BigInt(pool)),
-      label: hex(label)
+      label: hex(label),
+      depositor: hex(BigInt(depositor))
     }
   ])
 
@@ -105,7 +112,8 @@ describe('readPrivacyPoolsPoolHistory', () => {
     expect(history).toEqual({
       lastSyncedBlock: LAST_SYNCED_BLOCK,
       scope: SCOPE,
-      deposits: [{ value: 100n, blockNumber: 5n }],
+      // Who deposited is kept as a full address, though the SDK stores it without leading zeros
+      deposits: [{ value: 100n, blockNumber: 5n, depositor: DEPOSITOR }],
       withdrawals: [],
       ragequits: [{ value: 3n, blockNumber: 8n }],
       ragequitLabels: new Set([7n]),
@@ -194,28 +202,29 @@ describe('getPrivacyPoolsPoolStats', () => {
 })
 
 describe('getPrivacyPoolsCoverDeposits', () => {
-  const LABELS = [101n, 102n, 103n, 104n]
+  const LABELS = [101n, 102n, 103n, 104n, 105n]
 
-  test('keeps only verified deposits not taken back, matching labels in block order', () => {
+  test('keeps only verified, non-empty deposits not taken back, with their labels in block order', () => {
     const history = readPrivacyPoolsPoolHistory(
       storeState({
-        // Stored out of block order. In block order: 1 (label 101), 2 (102), 3 (103), 4 (104)
+        // Stored out of block order. In block order: 1 (label 101), 2 (102), 3 (103), 4 (104), 0 (105)
         deposits: [
           { value: 3n, blockNumber: 30n },
           { value: 1n, blockNumber: 10n },
+          { value: 0n, blockNumber: 50n },
           { value: 4n, blockNumber: 40n },
           { value: 2n, blockNumber: 20n }
         ],
-        // 103 was verified and then taken back, 104 was never verified
-        ragequits: [{ value: 3n, blockNumber: 50n, label: 103n }],
-        approvedLabels: [101n, 102n, 103n]
+        // 103 was verified and then taken back, 104 was never verified, 105 put nothing in
+        ragequits: [{ value: 3n, blockNumber: 60n, label: 103n }],
+        approvedLabels: [101n, 102n, 103n, 105n]
       }),
       POOL
     )!
 
     expect(getPrivacyPoolsCoverDeposits(history, LABELS)).toEqual([
-      { value: 1n, blockNumber: 10n },
-      { value: 2n, blockNumber: 20n }
+      { value: 1n, blockNumber: 10n, depositor: DEPOSITOR, label: 101n },
+      { value: 2n, blockNumber: 20n, depositor: DEPOSITOR, label: 102n }
     ])
   })
 
@@ -232,40 +241,7 @@ describe('getPrivacyPoolsCoverDeposits', () => {
     )!
 
     expect(getPrivacyPoolsCoverDeposits(history, LABELS.slice(0, 1))).toEqual([
-      { value: 1n, blockNumber: 10n }
+      { value: 1n, blockNumber: 10n, depositor: DEPOSITOR, label: 101n }
     ])
-  })
-})
-
-describe('buildPrivacyPoolsDepositIndex', () => {
-  // Out of block order, as the stored tuples are keyed by commitment
-  const index = buildPrivacyPoolsDepositIndex(
-    [
-      { value: 5n, blockNumber: 30n },
-      { value: 1n, blockNumber: 10n },
-      { value: 0n, blockNumber: 40n },
-      { value: 5n, blockNumber: 20n },
-      { value: 9n, blockNumber: 20n },
-      { value: 1n, blockNumber: 50n }
-    ],
-    20n,
-    40n
-  )
-
-  test('counts deposits of an amount and of at least an amount, leaving out empty deposits', () => {
-    expect(countPrivacyPoolsDepositsOf(index, 5n)).toBe(2)
-    expect(countPrivacyPoolsDepositsOf(index, 0n)).toBe(0)
-    expect(countPrivacyPoolsDepositsOfAtLeast(index, 5n)).toBe(3)
-    expect(countPrivacyPoolsDepositsOfAtLeast(index, 6n)).toBe(1)
-    expect(countPrivacyPoolsDepositsOfAtLeast(index, 0n)).toBe(5)
-    expect(countPrivacyPoolsDepositsOfAtLeast(index, 10n)).toBe(0)
-  })
-
-  test('counts as recent only the deposits after the block, not those of it or empty ones', () => {
-    // The 5 and 9 of block 20 are not recent, the empty one at 40 is skipped
-    expect(countPrivacyPoolsDepositsOf(index.recent, 5n)).toBe(1)
-    expect(countPrivacyPoolsDepositsOf(index.recent, 1n)).toBe(1)
-    expect(countPrivacyPoolsDepositsOfAtLeast(index.recent, 0n)).toBe(2)
-    expect(countPrivacyPoolsDepositsOfAtLeast(index.recent, 6n)).toBe(0)
   })
 })

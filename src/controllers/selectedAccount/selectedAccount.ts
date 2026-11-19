@@ -90,6 +90,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   balanceByAccounts: SelectedAccountBalanceByAccount = {}
 
+  /**
+   * Whether the total balance subtracts the money borrowed in DeFi apps. When off, it counts
+   * the full value the user supplied to them.
+   */
+  shouldSubtractBorrowedFunds: boolean = false
+
   #portfolioLoadingTimeout: NodeJS.Timeout | null = null
 
   #isManualUpdate = true
@@ -140,13 +146,19 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   async #load() {
     await this.#accounts.initialLoadPromise
 
-    const [selectedAccountAddress, selectedAccountDismissedBannerIds, privacyPoolsAccountId] =
-      await Promise.all([
-        this.#storage.get('selectedAccount', null),
-        this.#storage.get('selectedAccountDismissedBannerIds', {}),
-        this.#storage.get('selectedPrivacyPoolsAccount', null)
-      ])
+    const [
+      selectedAccountAddress,
+      selectedAccountDismissedBannerIds,
+      privacyPoolsAccountId,
+      shouldSubtractBorrowedFunds
+    ] = await Promise.all([
+      this.#storage.get('selectedAccount', null),
+      this.#storage.get('selectedAccountDismissedBannerIds', {}),
+      this.#storage.get('selectedPrivacyPoolsAccount', null),
+      this.#storage.get('shouldSubtractBorrowedFunds', false)
+    ])
     this.dismissedBannerIds = selectedAccountDismissedBannerIds
+    this.shouldSubtractBorrowedFunds = shouldSubtractBorrowedFunds
     this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
     // Only when no regular account is selected, in case storage ever holds both
     this.privacyPoolsAccountId = this.account ? null : privacyPoolsAccountId
@@ -302,7 +314,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       portfolioAccountState,
       this.portfolio.shouldShowPartialResult,
-      this.#isManualUpdate
+      this.#isManualUpdate,
+      this.shouldSubtractBorrowedFunds
     )
 
     newSelectedAccountPortfolio.mobileInviteKey = this.#portfolio.getMobileInviteKey(
@@ -457,6 +470,52 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   setDashboardNetworkFilter(networkFilter: bigint | string | null) {
     this.dashboardNetworkFilter = networkFilter
     this.emitUpdate()
+  }
+
+  /**
+   * Recalculates the balances of all listed accounts from their loaded portfolios, after a change
+   * of a setting that the balance depends on. An account whose portfolio is not loaded loses its
+   * balance until it loads, since its old balance used the previous setting.
+   */
+  #recalculateBalanceByAccounts() {
+    const portfolio = this.#portfolio
+    if (!portfolio) return
+
+    Object.keys(this.balanceByAccounts).forEach((accountAddr) => {
+      const accountPortfolio = calculateSelectedAccountPortfolio(
+        portfolio.getAccountPortfolioState(accountAddr),
+        false,
+        false,
+        this.shouldSubtractBorrowedFunds
+      )
+
+      if (accountPortfolio.isAllReady) {
+        this.balanceByAccounts[accountAddr] = accountPortfolio.totalBalance
+      } else {
+        delete this.balanceByAccounts[accountAddr]
+      }
+    })
+  }
+
+  /**
+   * Saves whether the total balance subtracts borrowed funds and recalculates the selected
+   * account's portfolio and the balances of all accounts.
+   */
+  async setShouldSubtractBorrowedFunds(shouldSubtractBorrowedFunds: boolean) {
+    this.shouldSubtractBorrowedFunds = shouldSubtractBorrowedFunds
+    this.#recalculateBalanceByAccounts()
+    this.updateSelectedAccountPortfolio(true)
+    this.emitUpdate()
+
+    try {
+      await this.#storage.set('shouldSubtractBorrowedFunds', shouldSubtractBorrowedFunds)
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to save the borrowed funds setting.',
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+    }
   }
 
   removeNetworkData(chainId: bigint) {

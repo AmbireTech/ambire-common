@@ -39,6 +39,16 @@ export interface PositionAsset {
     [key: string]: any
   }
   /**
+   * The amount of the asset converted to another token by the protocol's own price (e.g. the
+   * collateral of a Morpho market, converted to the loan token by the market's oracle).
+   * Used to value the asset when it has no price of its own.
+   */
+  priceFallback?: {
+    address: string
+    decimals: number
+    amount: bigint
+  }
+  /**
    * The protocol asset is the protocol's representation of the asset.
    * For example, in Aave, the protocol asset is the aToken.
    */
@@ -59,6 +69,16 @@ export interface ProviderError {
   error: string
 }
 
+/**
+ * The positions each protocol returned when read from the chain, before they were merged with
+ * the API positions and priced, so a later update can merge them with newer API positions
+ */
+export type RpcDefiRead = {
+  /** The positions of each protocol read, by its name. Null if the account had none */
+  positionsByProviderName: { [providerName: string]: PositionsByProvider | null }
+  readAt: number
+}
+
 export interface NetworkState {
   positionsByProvider: PositionsByProvider[]
   /**
@@ -69,6 +89,14 @@ export interface NetworkState {
    * errors on the UI
    */
   lastSuccessfulUpdate?: number
+  /**
+   * The last read of the positions from the chain without errors. Missing if the last read
+   * failed.
+   *
+   * Reused instead of reading the positions on every portfolio update (see
+   * `getReusableRpcDefiRead`)
+   */
+  rpcRead?: RpcDefiRead
   /**
    * Timestamp of the last force external api call
    * Used to determine if we should bypass the cache on next update
@@ -121,8 +149,14 @@ export type PositionsByProvider = {
     | 'nft_lending'
     | 'nft_fraction'
   positions: Position[]
+  /** The value of all positions, with their loans subtracted. */
   positionInUSD?: number
+  /** The value of all positions without their loans subtracted. */
+  collateralInUSD?: number
 }
+
+/** The values of a DeFi app or position, with and without its loans subtracted. */
+export type DefiValues = Pick<PositionsByProvider, 'positionInUSD' | 'collateralInUSD'>
 
 export interface Position {
   id: string
@@ -131,7 +165,9 @@ export interface Position {
     positionIndex?: string
     name?: string
     APY?: number
+    /** The value of the position, with its loans subtracted. */
     positionInUSD?: number
+    /** The value of the position without its loans subtracted. */
     collateralInUSD?: number
     debtInUSD?: number
     healthRate?: number | null

@@ -1,3 +1,4 @@
+import type { TypedDataDomain } from 'ethers'
 import { getAddress, Hex, isAddress, isHex, zeroAddress } from 'viem'
 
 import {
@@ -14,6 +15,190 @@ export type HexIrCall = IrCall & { data: Hex }
 export function isHexCall(call: IrCall): call is HexIrCall {
   return isHex(call.data)
 }
+
+/** An EIP-712 field: its name and its type */
+export type TypedDataField = { name: string; type: string }
+
+/** EIP-712 type definitions of a typed message, keyed by type name */
+type TypedDataTypes = Record<string, TypedDataField[]> | undefined
+
+/**
+ * A field type in an expected definition that the app chooses (e.g. the Permit2
+ * witness). Any struct type declared in the message `types` is accepted for it. The
+ * message must still have exactly the fields that this struct declares.
+ */
+export const APP_DEFINED_STRUCT_TYPE = '<app-defined struct>'
+
+/**
+ * The signed EIP-712 definition that a humanizer expects: the primary type and
+ * every struct type that it uses, with the fields in the signed order.
+ */
+export type ExpectedTypedData = {
+  primaryType: string
+  types: Record<string, TypedDataField[]>
+}
+
+/** The type of the items of an array type (`T[]` or `T[N]` gives `T`) and the fixed length, if any */
+const splitArrayType = (type: string): { itemType: string; fixedLength?: number } | null => {
+  if (!type.endsWith(']')) return null
+
+  const openBracketIndex = type.lastIndexOf('[')
+  const lengthText = type.slice(openBracketIndex + 1, -1)
+  return {
+    itemType: type.slice(0, openBracketIndex),
+    fixedLength: lengthText === '' ? undefined : Number(lengthText)
+  }
+}
+
+/** The struct or atomic type without array dimensions (`T[2][]` gives `T`) */
+const getBaseType = (type: string): string => {
+  const openBracketIndex = type.indexOf('[')
+  return openBracketIndex === -1 ? type : type.slice(0, openBracketIndex)
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const isStructType = (types: Record<string, TypedDataField[]>, type: string): boolean =>
+  Object.hasOwn(types, getBaseType(type))
+
+/**
+ * Tells if the signed types of a typed message are exactly the expected ones.
+ * Starting from the primary type, every struct type that is used (also nested
+ * and in arrays) must have the same field names and types, in the same order.
+ */
+const hasExactTypes = (
+  types: Record<string, TypedDataField[]>,
+  expected: ExpectedTypedData
+): boolean => {
+  const checkedStructNames = new Set<string>()
+
+  const isExactStruct = (structName: string): boolean => {
+    if (checkedStructNames.has(structName)) return true
+    checkedStructNames.add(structName)
+
+    const fields = types[structName]
+    const expectedFields = expected.types[structName]
+    if (!fields || !expectedFields || fields.length !== expectedFields.length) return false
+
+    return expectedFields.every((expectedField, index) => {
+      const field = fields[index]!
+      if (field.name !== expectedField.name) return false
+      // The app defines this struct, so only check that it is a declared struct
+      if (expectedField.type === APP_DEFINED_STRUCT_TYPE)
+        return !splitArrayType(field.type) && isStructType(types, field.type)
+      if (field.type !== expectedField.type) return false
+
+      return !isStructType(types, field.type) || isExactStruct(getBaseType(field.type))
+    })
+  }
+
+  return isExactStruct(expected.primaryType)
+}
+
+/**
+ * Tells if the message has every declared field, also in nested structs and in
+ * each array item. Arrays of a fixed length must have that length. Extra keys are
+ * allowed: they are not signed, and humanizers read only declared fields. Atomic
+ * values are not checked here.
+ */
+const hasAllDeclaredMessageFields = (
+  types: Record<string, TypedDataField[]>,
+  type: string,
+  value: unknown
+): boolean => {
+  const arrayType = splitArrayType(type)
+  if (arrayType) {
+    if (!Array.isArray(value)) return false
+    if (arrayType.fixedLength !== undefined && value.length !== arrayType.fixedLength) return false
+    return value.every((item) => hasAllDeclaredMessageFields(types, arrayType.itemType, item))
+  }
+  if (!isStructType(types, type)) return true
+
+  if (!isPlainObject(value)) return false
+
+  return types[type]!.every(
+    (field) =>
+      Object.hasOwn(value, field.name) &&
+      hasAllDeclaredMessageFields(types, field.type, value[field.name])
+  )
+}
+
+/**
+ * Tells if a typed message is exactly the expected EIP-712 definition: the same
+ * primary type, the same signed types (recursively) and a message that has every
+ * declared field (recursively). A type that differs is a different signed
+ * message, so a humanizer must not show it as this one. Extra keys in the message
+ * are allowed: they are not signed, so a humanizer must read only declared fields.
+ */
+export function isExactTypedData(
+  typedData: { primaryType: string; types: Record<string, TypedDataField[]>; message: unknown },
+  expected: ExpectedTypedData
+): boolean {
+  const { primaryType, types, message } = typedData
+  if (primaryType !== expected.primaryType || !hasExactTypes(types, expected)) return false
+
+  return hasAllDeclaredMessageFields(types, primaryType, message)
+}
+
+/** The standard EIP-712 domain fields, with the type each one must be declared with */
+const EIP712_DOMAIN_FIELD_TYPES: Record<keyof TypedDataDomain, string> = {
+  name: 'string',
+  version: 'string',
+  chainId: 'uint256',
+  verifyingContract: 'address',
+  salt: 'bytes32'
+}
+
+const isStandardDomainField = (
+  field: TypedDataField
+): field is TypedDataField & {
+  name: keyof TypedDataDomain
+} =>
+  Object.entries(EIP712_DOMAIN_FIELD_TYPES).some(
+    ([name, type]) => name === field.name && type === field.type
+  )
+
+/**
+ * Returns only the domain fields that `types.EIP712Domain` declares with their standard
+ * type. The signature includes only these, so humanizers must not read other domain
+ * fields. Without `EIP712Domain`, no field is declared (the wallet does not sign such
+ * a typed message).
+ */
+export function getDeclaredDomain(typedData: {
+  types: Record<string, TypedDataField[]>
+  domain: TypedDataDomain
+}): TypedDataDomain {
+  const { types, domain } = typedData
+  const declaredFields = Object.hasOwn(types, 'EIP712Domain') ? types.EIP712Domain : undefined
+  if (!Array.isArray(declaredFields) || !isPlainObject(domain)) return {}
+
+  const declaredDomain: TypedDataDomain = {}
+  declaredFields.filter(isStandardDomainField).forEach(({ name }) => {
+    if (Object.hasOwn(domain, name)) Object.assign(declaredDomain, { [name]: domain[name] })
+  })
+  return declaredDomain
+}
+
+/** Returns the declared EIP-712 type of a field, or undefined when the field is not declared (not signed) */
+export function getDeclaredFieldType(
+  types: TypedDataTypes,
+  typeName: string,
+  fieldName: string
+): string | undefined {
+  return types?.[typeName]?.find((field) => field.name === fieldName)?.type
+}
+/**
+ * Lower-cases a hex string. Hex is case-insensitive onchain, but function selectors are compared
+ * as plain strings across the humanizer (and viem's `decodeFunctionData` matches its ABI the same
+ * way), so upper or mixed-case calldata would otherwise skip every selector check, including the
+ * ones that raise security warnings.
+ */
+export const toLowerCaseHex = (value: Hex): Hex => value.toLowerCase() as Hex
+
+/** Returns the call with its calldata lower-cased (see `toLowerCaseHex`), or as is if it isn't hex */
+export const withLowerCaseCallData = (call: IrCall): IrCall =>
+  isHexCall(call) ? { ...call, data: toLowerCaseHex(call.data) } : call
 
 export function getWarning(
   content: string,

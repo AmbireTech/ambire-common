@@ -89,6 +89,8 @@ export type StorageProps = {
   /** Seed id of the selected Privacy Pools account. Exclusive with `selectedAccount`. */
   selectedPrivacyPoolsAccount: string | null
   selectedAccountDismissedBannerIds: { [key: string]: string[] }
+  /** Whether the total balance subtracts the money borrowed in DeFi apps. Off by default. */
+  shouldSubtractBorrowedFunds: boolean
   // Email vault
   emailVault: {
     email: { [email: string]: EmailVaultData }

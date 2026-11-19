@@ -14,6 +14,7 @@ import { getAddress } from 'viem'
 
 import SwapAndBridgeProviderApiError from '@/classes/SwapAndBridgeProviderApiError'
 import { FEE_COLLECTOR } from '@/consts/addresses'
+import { SMALL_SWAP_MAX_USD } from '@/consts/safeguards/extremeSwapLoss'
 import {
   CowSwapOrderCreation,
   CowSwapOrderStruct,
@@ -24,7 +25,10 @@ import {
   COWSWAP_APP_DATA_VERSION,
   COWSWAP_BUY_NATIVE_TOKEN_ADDRESS,
   COWSWAP_ETH_FLOW_ADDRESS,
+  COWSWAP_MIN_SLIPPAGE_BPS,
+  COWSWAP_NETWORK_COST_INCREASE_PERCENT,
   COWSWAP_SETTLEMENT_ADDRESS,
+  COWSWAP_SMALL_TRADE_MAX_SLIPPAGE_BPS,
   COWSWAP_SUPPORTED_CHAINS
 } from '@/services/cowswap/constants'
 import { CowSwapTokenListEntry } from '@/services/cowswap/types'
@@ -101,6 +105,76 @@ export const normalizeBuyTokenAddress = (address: string) =>
   address.toLowerCase() === ZeroAddress.toLowerCase()
     ? COWSWAP_BUY_NATIVE_TOKEN_ADDRESS
     : getAddress(address)
+
+/**
+ * Reads the slippage from a CoW Swap smart slippage response
+ * (`GET {chainId}/markets/{sellToken}-{buyToken}/slippageTolerance`). Returns null when the
+ * response has none, including a zero slippage, which CoW Swap returns for pairs it has no
+ * market data for
+ */
+export const parseSmartSlippageBps = (body: unknown): number | null => {
+  if (!body || typeof body !== 'object' || !('slippageBps' in body)) return null
+
+  const { slippageBps } = body
+  if (typeof slippageBps !== 'number' || !Number.isSafeInteger(slippageBps)) return null
+  if (slippageBps <= 0) return null
+
+  return slippageBps
+}
+
+/**
+ * The slippage of a CoW Swap order that covers price movement. CoW Swap's smart slippage
+ * follows the volatility of the pair, so orders fill more often when the market moves, and it
+ * is lower than the fixed slippage for stable pairs. It is capped so that the order never
+ * allows a bigger loss than the swap screen considers normal:
+ * - below `SMALL_SWAP_MAX_USD` it can go up to `COWSWAP_SMALL_TRADE_MAX_SLIPPAGE_BPS`
+ * - for larger swaps, or when the swap value is unknown, it can only lower the fixed
+ *   slippage, which keeps the possible loss around $100 at most
+ * It is never below `COWSWAP_MIN_SLIPPAGE_BPS`, which takes over from the fixed slippage for
+ * swaps above ~$2M
+ */
+export const getPriceSlippageBps = ({
+  smartSlippageBps,
+  fixedSlippageBps,
+  fromAmountInUsd
+}: {
+  smartSlippageBps: number | null
+  fixedSlippageBps: number
+  fromAmountInUsd: number
+}) => {
+  const minFixedSlippageBps = Math.max(fixedSlippageBps, COWSWAP_MIN_SLIPPAGE_BPS)
+  if (!smartSlippageBps) return minFixedSlippageBps
+
+  const isKnownSmallTrade =
+    Number.isFinite(fromAmountInUsd) && fromAmountInUsd > 0 && fromAmountInUsd < SMALL_SWAP_MAX_USD
+  const maxSlippageBps = isKnownSmallTrade
+    ? Math.max(minFixedSlippageBps, COWSWAP_SMALL_TRADE_MAX_SLIPPAGE_BPS)
+    : minFixedSlippageBps
+
+  return Math.min(smartSlippageBps, maxSlippageBps)
+}
+
+/**
+ * The slippage, in bps of what is sold after the network cost, that lets the network cost
+ * grow by `COWSWAP_NETWORK_COST_INCREASE_PERCENT` before the order settles. Rounded up, so
+ * that the room is never smaller than intended
+ */
+export const getNetworkCostSlippageBps = ({
+  networkFee,
+  sellAmountAfterNetworkCost
+}: {
+  networkFee: bigint
+  sellAmountAfterNetworkCost: bigint
+}) => {
+  if (networkFee <= 0n || sellAmountAfterNetworkCost <= 0n) return 0
+
+  // percent * 100 = bps, so dividing this by the amount sold gives the increase in bps
+  const allowedIncreaseTimesBps = networkFee * COWSWAP_NETWORK_COST_INCREASE_PERCENT * 100n
+
+  return Number(
+    (allowedIncreaseTimesBps + sellAmountAfterNetworkCost - 1n) / sellAmountAfterNetworkCost
+  )
+}
 
 export const getProtocolFeeAmount = (buyAmount: bigint, protocolFeeBps: number) => {
   if (protocolFeeBps <= 0) return 0n

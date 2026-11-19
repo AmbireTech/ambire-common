@@ -1,13 +1,14 @@
 import { JsonRpcProvider, Provider } from 'ethers'
 
-import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiUniswapV3Positions.json'
-import { Network } from '../../../interfaces/network'
-import { RPCProvider } from '../../../interfaces/provider'
-import { fromDescriptor } from '../../deployless/deployless'
-import { UNISWAP_V3 } from '../defiAddresses'
-import { getProviderId } from '../helpers'
-import { AssetType, Position, PositionsByProvider } from '../types'
-import { uniV3DataToPortfolioPosition } from './helpers/univ3Math'
+import DeFiPositionsDeploylessCode from '../../../../../contracts/compiled/DeFiUniswapV3Positions.json'
+import { Network } from '../../../../interfaces/network'
+import { fromDescriptor } from '../../../deployless/deployless'
+import { AssetType, Position, PositionsByProvider } from '../../types'
+import { RpcDefiProvider } from '../types'
+import { UNISWAP_V3 } from './addresses'
+import { uniV3DataToPortfolioPosition } from './math'
+
+export const UNISWAP_V3_PROVIDER_NAME = 'Uniswap V3'
 
 export async function getUniV3Positions(
   userAddr: string,
@@ -23,7 +24,7 @@ export async function getUniV3Positions(
   const deploylessDeFiPositionsGetter = fromDescriptor(
     provider,
     DeFiPositionsDeploylessCode,
-    network.rpcNoStateOverride // Why?
+    !network.rpcNoStateOverride
   )
   const result = await deploylessDeFiPositionsGetter.call('getUniV3Position', [
     userAddr,
@@ -73,7 +74,7 @@ export async function getUniV3Positions(
   if (positions.length === 0) return null
 
   return {
-    providerName: 'Uniswap V3',
+    providerName: UNISWAP_V3_PROVIDER_NAME,
     chainId,
     source: 'custom',
     iconUrl: '',
@@ -83,46 +84,28 @@ export async function getUniV3Positions(
   }
 }
 
-export async function getDebankEnhancedUniV3Positions(
-  addr: string,
-  provider: RPCProvider,
-  network: Network,
-  previousPositions: PositionsByProvider[],
-  debankNetworkPositionsByProvider: PositionsByProvider[],
-  isDebankCallSuccessful: boolean
-): Promise<PositionsByProvider | null> {
-  const previousMixedUniV3 = previousPositions.find(
-    (p) => getProviderId(p.providerName) === getProviderId('Uniswap V3') && p.source === 'mixed'
-  )
-
-  // If the call to debank wasn't successful, and we have a previous mixed UniV3 position, return it
-  // This is done to avoid losing the mixed data in case of Debank being down
-  // At the same time, we want to fetch the custom position if there is no previous mixed data
-  if (!isDebankCallSuccessful && previousMixedUniV3) {
-    return previousMixedUniV3
-  }
-
-  const uniPosition = await getUniV3Positions(addr, provider, network)
-
-  if (!uniPosition) return null
-
-  const uniPositionFromDebank = debankNetworkPositionsByProvider?.find(
-    (p) => getProviderId(p.providerName) === getProviderId(uniPosition.providerName)
-  )
-
-  // If we can't find a matching UniV3 position from Debank, return the custom one
-  if (!uniPositionFromDebank) return uniPosition
-
-  // Merge the positions from Debank with the custom ones
+/**
+ * Merges the Uniswap V3 positions read from the chain into the ones returned by the API
+ * (Debank), matching them by position index. The API data is kept (icons, prices, values),
+ * enhanced with what only the chain has - whether the position is in range and its liquidity.
+ * Positions found in only one of the two are kept as they are.
+ */
+export const mergeUniV3WithApiPositions = ({
+  rpcPositions,
+  apiPositions
+}: {
+  rpcPositions: PositionsByProvider
+  apiPositions: PositionsByProvider
+}): PositionsByProvider => {
   const positionsMap = new Map<string, Position>()
 
-  uniPosition.positions.forEach((customPos) => {
+  rpcPositions.positions.forEach((customPos) => {
     if (!customPos.additionalData.positionIndex) return
 
     positionsMap.set(customPos.additionalData.positionIndex, customPos)
   })
 
-  uniPositionFromDebank.positions.forEach((debankPos) => {
+  apiPositions.positions.forEach((debankPos) => {
     if (!debankPos.additionalData.positionIndex) return
 
     const existingPos = positionsMap.get(debankPos.additionalData.positionIndex)
@@ -142,11 +125,17 @@ export async function getDebankEnhancedUniV3Positions(
       positionsMap.set(debankPos.additionalData.positionIndex, debankPos)
     }
   })
-  const mergedPositions = Array.from(positionsMap.values())
 
   return {
-    ...uniPositionFromDebank,
+    ...apiPositions,
     source: 'mixed' as const,
-    positions: mergedPositions
+    positions: Array.from(positionsMap.values())
   }
 }
+
+export const uniswapV3DefiProvider = {
+  name: UNISWAP_V3_PROVIDER_NAME,
+  fetchPositions: ({ accountAddr, provider, network }) =>
+    getUniV3Positions(accountAddr, provider, network),
+  mergeWithApiPositions: mergeUniV3WithApiPositions
+} satisfies RpcDefiProvider

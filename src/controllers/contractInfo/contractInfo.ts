@@ -21,6 +21,12 @@ export const SELECTOR_RETRY_FETCH_TIMEOUT_MS = 10 * 1000
 /** How long a call is shown as loading while its selectors are fetched, before giving up on it. */
 export const SELECTOR_LOADING_DEADLINE_MS = 5 * 1000
 
+/**
+ * The key a selector is saved, queued and looked up under. Hex is case-insensitive, so
+ * `0xA9059CBB` and `0xa9059cbb` are the same selector and must share one entry
+ */
+const toSelectorKey = (selector: string) => selector.toLowerCase()
+
 // The ContractInfoController is responsible for getting function selectors for contracts
 export class ContractInfoController extends EventEmitter implements IContractInfoController {
   #fetch: Fetch
@@ -93,13 +99,13 @@ export class ContractInfoController extends EventEmitter implements IContractInf
   #shouldFetch(selector: string): boolean {
     if (!this.#featureFlag.isFeatureEnabled('apiForFunctionSelectors')) return false
 
-    const savedSelector = this.#selectors[selector]
+    const savedSelector = this.#selectors[toSelectorKey(selector)]
 
     return !savedSelector || this.#isOld(savedSelector.status, savedSelector.updatedAt)
   }
 
   #getSignatures(selector: string): { signature: string }[] {
-    const savedSelector = this.#selectors[selector]
+    const savedSelector = this.#selectors[toSelectorKey(selector)]
     if (!savedSelector || !('data' in savedSelector) || !savedSelector.data) return []
 
     return savedSelector.data
@@ -133,9 +139,20 @@ export class ContractInfoController extends EventEmitter implements IContractInf
         )
       )
         throw new Error('Wrong format for contract selectors')
-      const deduplicatedSelectors = [...new Set([...selectorsToFetch, ...Object.keys(result.data)])]
+      // The API can answer with keys in any case, so they are saved in the same case as they are
+      // looked up. Two keys that differ only in case are the same selector
+      const signaturesBySelector = new Map<string, string[]>()
+      Object.entries(result.data).forEach(([selector, signatures]) => {
+        const key = toSelectorKey(selector)
+        signaturesBySelector.set(key, [
+          ...new Set([...(signaturesBySelector.get(key) || []), ...signatures])
+        ])
+      })
+      const deduplicatedSelectors = [
+        ...new Set([...selectorsToFetch.map(toSelectorKey), ...signaturesBySelector.keys()])
+      ]
       deduplicatedSelectors.forEach((selector) => {
-        const signatures = result.data[selector]
+        const signatures = signaturesBySelector.get(selector)
         const mappedFoundSignatures = (signatures || []).map((s) => ({ signature: s }))
 
         if (mappedFoundSignatures.length)
@@ -230,7 +247,7 @@ export class ContractInfoController extends EventEmitter implements IContractInf
     await this.initialLoadPromise
 
     const batchPromises = new Set<Promise<void>>()
-    selectors.forEach((selector) => {
+    new Set(selectors.map(toSelectorKey)).forEach((selector) => {
       const pendingBatchPromise = this.#selectorBatchPromises.get(selector)
       if (pendingBatchPromise) {
         batchPromises.add(pendingBatchPromise)

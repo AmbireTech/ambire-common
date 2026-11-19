@@ -3,13 +3,14 @@ import {
   PrivacyPoolsNote,
   PrivacyPoolsSendCover
 } from '../../../interfaces/privacyPools'
-import { findSendablePrivacyPoolsNote, isPrivacyPoolsNoteOfToken } from '../notes'
+import { findSendablePrivacyPoolsNote } from '../notes'
 import {
   countPrivacyPoolsDepositsOf,
   countPrivacyPoolsDepositsOfAtLeast,
-  PrivacyPoolsDepositIndex
+  getPrivacyPoolsCoverWindowDeposits,
+  PrivacyPoolsPoolCover
 } from '../poolStats'
-import { OwnDepositValues, PrivacyPoolsNoteSpend } from './types'
+import { PrivacyPoolsNoteSpend } from './types'
 
 /**
  * What a send of `amount` spends: part or all of the approved deposit with `noteLabel`, as one send
@@ -26,50 +27,55 @@ export const getPrivacyPoolsNoteSpend = (
   return note ? { note, amount } : null
 }
 
-/** The approved deposits of the account's notes of the token, as the deposit index counts them. */
-export const getOwnDepositValues = (
+/**
+ * The deposits of other people that a send from `spend`'s deposit can hide among. The user's own
+ * deposits are left out, as they all lead back to the user.
+ *
+ * When the spent deposit has a Kohaku client fingerprint, the send hides only among other deposits
+ * that have one. Until a depositor is checked, the user's deposit counts as having the fingerprint
+ * and someone else's does not, so the result is never larger than the real one.
+ *
+ * Null before the pool's deposits are read. Also null when the send must hide among fingerprinted
+ * deposits and no depositor of the chain is checked yet.
+ */
+export const getSendPoolCover = (
+  /** Null before an amount is entered, so no deposit is spent yet. */
+  spend: PrivacyPoolsNoteSpend | null,
+  /** All the account's notes, as each is one of its own deposits. */
   notes: PrivacyPoolsNote[],
-  tokenAddress: string,
-  { recentAfterBlock }: PrivacyPoolsDepositIndex
-): OwnDepositValues => {
-  const ownDeposits = notes.filter(
-    (note) => isPrivacyPoolsNoteOfToken(note, tokenAddress) && note.approval === 'approved'
+  /** Null before the pool's deposits are read. */
+  poolCover: PrivacyPoolsPoolCover | null,
+  /**
+   * Whether each depositor has a Kohaku client fingerprint, by its address in lowercase. Null
+   * before any depositor of the chain is checked.
+   */
+  fingerprints: ReadonlyMap<string, boolean> | null
+): PrivacyPoolsPoolCover | null => {
+  const isFingerprintedCover =
+    !!spend && fingerprints?.get(spend.note.depositorAddr.toLowerCase()) !== false
+  if (!poolCover || (isFingerprintedCover && !fingerprints)) return null
+
+  const ownLabels = new Set(notes.map(({ label }) => label))
+  const deposits = poolCover.deposits.filter(
+    ({ label, depositor }) =>
+      !ownLabels.has(label) && (!isFingerprintedCover || fingerprints?.get(depositor) === true)
   )
 
-  return {
-    all: ownDeposits.map(({ depositValue }) => depositValue),
-    recent: ownDeposits
-      .filter(({ blockNumber }) => blockNumber > recentAfterBlock)
-      .map(({ depositValue }) => depositValue)
-  }
+  return { ...poolCover, deposits }
 }
 
-/** How many of `counted` deposits are not one of the user's `ownValues`. */
-export const countOthers = (
-  counted: number,
-  ownValues: bigint[],
-  isCounted: (value: bigint) => boolean
-) =>
-  // Never below 0, as the notes can be newer than the deposit index
-  Math.max(counted - ownValues.filter(isCounted).length, 0)
-
-/** How many recent deposits of others hide a send that spends `spend`. */
+/** How many deposits in the cover window of `poolCover` hide a send that spends `spend`. */
 export const getSendCover = (
-  { recent }: PrivacyPoolsDepositIndex,
-  ownDepositValues: OwnDepositValues,
+  poolCover: PrivacyPoolsPoolCover,
   { amount }: PrivacyPoolsNoteSpend
-): PrivacyPoolsSendCover => ({
-  bigEnough: countOthers(
-    countPrivacyPoolsDepositsOfAtLeast(recent, amount),
-    ownDepositValues.recent,
-    (value) => value >= amount
-  ),
-  sameAmount: countOthers(
-    countPrivacyPoolsDepositsOf(recent, amount),
-    ownDepositValues.recent,
-    (value) => value === amount
-  )
-})
+): PrivacyPoolsSendCover => {
+  const coverWindowDeposits = getPrivacyPoolsCoverWindowDeposits(poolCover)
+
+  return {
+    bigEnough: countPrivacyPoolsDepositsOfAtLeast(coverWindowDeposits, amount),
+    sameAmount: countPrivacyPoolsDepositsOf(coverWindowDeposits, amount)
+  }
+}
 
 /**
  * The closest of `candidates` (smallest first) below `amount` that `isValid` accepts, else the
