@@ -1,17 +1,25 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../../test/helpers/console'
 import { networks } from '../../../consts/networks'
 import { ITokenPricesController } from '../../../interfaces/tokenPrices'
 import { RPCProvider } from '../../../interfaces/provider'
 import { TokenDataCacheValue } from '../../portfolio/interfaces'
 import { DEBANK_UNI_V3 } from '../testData'
-import { AssetType, PositionsByProvider } from '../types'
+import {
+  AssetType,
+  DeFiPositionsError,
+  NetworkState,
+  PositionsByProvider,
+  RpcDefiRead
+} from '../types'
 import { aaveV3DefiProvider } from './aaveV3/aaveV3'
 import { TokenResult } from '../../portfolio/interfaces'
 import {
   ALWAYS_FETCHED_PROVIDERS,
   FETCHED_WITHOUT_API_PROVIDERS,
   getHeldTokenAddresses,
+  getReusableRpcDefiRead,
   getRpcDefiPositions
 } from './index'
 import { morphoDefiProvider } from './morpho/morpho'
@@ -105,6 +113,7 @@ const callGetRpcDefiPositions = (
     previousPositions: [],
     apiPositions: [],
     isAutoDiscoveryEnabled: true,
+    reusableRead: null,
     ...params
   })
 }
@@ -231,6 +240,151 @@ describe('getRpcDefiPositions', () => {
 
       expect(mergeSpy).not.toHaveBeenCalled()
       expect(getUniswapV3(res.positionsByProvider)).toEqual(rpcUniV3)
+    })
+  })
+
+  describe('the read', () => {
+    test('has what each protocol read, before it was merged with the API positions', async () => {
+      const apiUniV3 = DEBANK_UNI_V3[0]!
+      const rpcUniV3 = getPositions(
+        'Uniswap V3',
+        'custom',
+        apiUniV3.positions[0]!.additionalData.positionIndex
+      )
+      mockFetchedPositions({ uniswap: rpcUniV3 })
+      const readStartedAt = Date.now()
+
+      const res = await callGetRpcDefiPositions({ apiPositions: [apiUniV3] })
+
+      expect(getUniswapV3(res.positionsByProvider)?.source).toBe('mixed')
+      expect(res.rpcRead?.positionsByProviderName).toEqual({
+        'AAVE v3': null,
+        'Uniswap V3': rpcUniV3
+      })
+      expect(res.rpcRead?.readAt).toBeGreaterThanOrEqual(readStartedAt)
+    })
+    test('is left out when a protocol fails, so the next update reads them all again', async () => {
+      mockFetchedPositions({ morpho: new Error('Morpho error') })
+
+      const res = await callGetRpcDefiPositions({ isAutoDiscoveryEnabled: false })
+
+      expect(res.rpcRead).toBeUndefined()
+    })
+    test('is kept when an asset cannot be priced, as the price is requested on every update', async () => {
+      const { restore } = suppressConsole()
+      const rpcUniV3 = getPositions('Uniswap V3', 'custom')
+      delete rpcUniV3.positions[0]!.assets[0]!.priceIn
+      mockFetchedPositions({ uniswap: rpcUniV3 })
+      const failingTokenPrices = {
+        getTokenData: jest.fn(async () => ({
+          tokenData: new Map<string, TokenDataCacheValue>(),
+          error: new Error('Prices error')
+        }))
+      } as unknown as ITokenPricesController
+
+      const res = await getRpcDefiPositions(failingTokenPrices, {
+        accountAddr: ACCOUNT,
+        provider: rpcProvider,
+        network: polygon,
+        heldTokenAddresses: [],
+        previousPositions: [],
+        apiPositions: undefined,
+        isAutoDiscoveryEnabled: false,
+        reusableRead: null
+      })
+      restore()
+
+      expect(res.error).toBe(DeFiPositionsError.AssetPriceError)
+      expect(res.rpcRead).toBeDefined()
+    })
+  })
+
+  describe('with a previous read to reuse', () => {
+    const getRead = (positionsByProviderName: RpcDefiRead['positionsByProviderName']) => ({
+      positionsByProviderName,
+      readAt: 1
+    })
+
+    test('takes the positions from the read instead of the chain', async () => {
+      const rpcAave = getPositions('AAVE v3', 'custom')
+      const rpcMorpho = getPositions('Morpho', 'custom')
+      const { aaveSpy, uniswapSpy, morphoSpy } = mockFetchedPositions({})
+
+      const res = await callGetRpcDefiPositions({
+        isAutoDiscoveryEnabled: false,
+        reusableRead: getRead({ 'AAVE v3': rpcAave, 'Uniswap V3': null, Morpho: rpcMorpho })
+      })
+
+      expect(aaveSpy).not.toHaveBeenCalled()
+      expect(uniswapSpy).not.toHaveBeenCalled()
+      expect(morphoSpy).not.toHaveBeenCalled()
+      expect(res.positionsByProvider).toEqual([rpcAave, rpcMorpho])
+    })
+    test('merges the read with the new API positions, so what only the chain has is kept', async () => {
+      const apiUniV3 = DEBANK_UNI_V3[0]!
+      const rpcUniV3 = getPositions(
+        'Uniswap V3',
+        'custom',
+        apiUniV3.positions[0]!.additionalData.positionIndex
+      )
+      rpcUniV3.positions[0]!.additionalData.inRange = true
+      const { uniswapSpy } = mockFetchedPositions({})
+
+      const res = await callGetRpcDefiPositions({
+        apiPositions: [apiUniV3],
+        reusableRead: getRead({ 'AAVE v3': null, 'Uniswap V3': rpcUniV3 })
+      })
+      const uniswapV3 = getUniswapV3(res.positionsByProvider)
+
+      expect(uniswapSpy).not.toHaveBeenCalled()
+      expect(uniswapV3?.source).toBe('mixed')
+      expect(uniswapV3?.positions[0]!.additionalData.inRange).toBe(true)
+    })
+    test('reads the protocols the read does not have (made while auto discovery was on)', async () => {
+      const rpcMorpho = getPositions('Morpho', 'custom')
+      const { aaveSpy, uniswapSpy, morphoSpy } = mockFetchedPositions({ morpho: rpcMorpho })
+
+      const res = await callGetRpcDefiPositions({
+        isAutoDiscoveryEnabled: false,
+        reusableRead: getRead({ 'AAVE v3': null, 'Uniswap V3': null })
+      })
+
+      expect(aaveSpy).not.toHaveBeenCalled()
+      expect(uniswapSpy).not.toHaveBeenCalled()
+      expect(morphoSpy).toHaveBeenCalledTimes(1)
+      expect(res.positionsByProvider).toEqual([rpcMorpho])
+    })
+    test('keeps the time of the read, so it is not reused for longer than allowed', async () => {
+      mockFetchedPositions({})
+
+      const res = await callGetRpcDefiPositions({
+        reusableRead: getRead({ 'AAVE v3': null, 'Uniswap V3': null })
+      })
+
+      expect(res.rpcRead?.readAt).toBe(1)
+    })
+    test('prices the assets of the read that have no price', async () => {
+      const rpcUniV3 = getPositions('Uniswap V3', 'custom')
+      delete rpcUniV3.positions[0]!.assets[0]!.priceIn
+      mockFetchedPositions({})
+      const { tokenPrices, getTokenData } = createTokenPrices()
+
+      const res = await getRpcDefiPositions(tokenPrices, {
+        accountAddr: ACCOUNT,
+        provider: rpcProvider,
+        network: polygon,
+        heldTokenAddresses: [],
+        previousPositions: [],
+        apiPositions: [],
+        isAutoDiscoveryEnabled: true,
+        reusableRead: getRead({ 'AAVE v3': null, 'Uniswap V3': rpcUniV3 })
+      })
+
+      expect(getTokenData).toHaveBeenCalledTimes(1)
+      expect(getUniswapV3(res.positionsByProvider)?.positions[0]!.assets[0]!.priceIn).toEqual({
+        baseCurrency: 'usd',
+        price: 1
+      })
     })
   })
 
@@ -362,7 +516,8 @@ describe('getRpcDefiPositions', () => {
       heldTokenAddresses: [],
       previousPositions: [],
       apiPositions: [],
-      isAutoDiscoveryEnabled: true
+      isAutoDiscoveryEnabled: true,
+      reusableRead: null
     })
 
     expect(getTokenData).toHaveBeenCalledTimes(1)
@@ -370,6 +525,68 @@ describe('getRpcDefiPositions', () => {
       baseCurrency: 'usd',
       price: 1
     })
+  })
+})
+
+describe('getReusableRpcDefiRead', () => {
+  const ONE_MINUTE = 60 * 1000
+  const getRead = (readAt = Date.now() - ONE_MINUTE): RpcDefiRead => ({
+    positionsByProviderName: { Morpho: getPositions('Morpho', 'custom') },
+    readAt
+  })
+  // Without a read, as the last one failed
+  const getPreviousState = (rpcRead?: RpcDefiRead): NetworkState => ({
+    positionsByProvider: [getPositions('Morpho', 'custom')],
+    rpcRead,
+    error: null,
+    providerErrors: []
+  })
+  // An update that doesn't need fresh DeFi positions, like the periodic one
+  const callGetReusableRpcDefiRead = (
+    params: Partial<Parameters<typeof getReusableRpcDefiRead>[0]> = {}
+  ) =>
+    getReusableRpcDefiRead({
+      previousState: getPreviousState(getRead()),
+      isManualUpdate: false,
+      bypassServerSideCache: false,
+      hasNonceChangedSinceLastUpdate: false,
+      maxDataAgeMs: -1,
+      ...params
+    })
+
+  test('reuses the previous read on an update that does not need fresh positions', () => {
+    const rpcRead = getRead(1)
+
+    expect(callGetReusableRpcDefiRead({ previousState: getPreviousState(rpcRead) })).toBe(rpcRead)
+  })
+  test('reuses the previous read while it is younger than maxDataAgeMs', () => {
+    expect(callGetReusableRpcDefiRead({ maxDataAgeMs: 2 * ONE_MINUTE })).not.toBeNull()
+  })
+  test('reads the positions again once the read is older than maxDataAgeMs', () => {
+    expect(callGetReusableRpcDefiRead({ maxDataAgeMs: ONE_MINUTE / 2 })).toBeNull()
+  })
+  test('reads the positions again when fresh ones are requested (maxDataAgeMs of 0)', () => {
+    expect(
+      callGetReusableRpcDefiRead({
+        previousState: getPreviousState(getRead(Date.now())),
+        maxDataAgeMs: 0
+      })
+    ).toBeNull()
+  })
+  test('reads the positions again when the user refreshes', () => {
+    expect(callGetReusableRpcDefiRead({ isManualUpdate: true })).toBeNull()
+  })
+  test('reads the positions again after a transaction or a signed message (scheduled update)', () => {
+    expect(callGetReusableRpcDefiRead({ bypassServerSideCache: true })).toBeNull()
+  })
+  test('reads the positions again when the account sent a transaction', () => {
+    expect(callGetReusableRpcDefiRead({ hasNonceChangedSinceLastUpdate: true })).toBeNull()
+  })
+  test('reads the positions on the first update', () => {
+    expect(callGetReusableRpcDefiRead({ previousState: undefined })).toBeNull()
+  })
+  test('retries a read that failed', () => {
+    expect(callGetReusableRpcDefiRead({ previousState: getPreviousState() })).toBeNull()
   })
 })
 

@@ -54,7 +54,11 @@ import {
   getUniqueMergedPositions,
   mergeDefiUpdateModes
 } from '../../libs/defiPositions/defiPositions'
-import { getHeldTokenAddresses, getRpcDefiPositions } from '../../libs/defiPositions/rpc'
+import {
+  getHeldTokenAddresses,
+  getReusableRpcDefiRead,
+  getRpcDefiPositions
+} from '../../libs/defiPositions/rpc'
 import {
   NetworksWithPositions,
   NetworksWithPositionsByAccounts,
@@ -1854,6 +1858,26 @@ export class PortfolioController
         delete state.verification
       }
 
+      const previousDefiState = previousResult?.defiPositions
+      const reusableRpcDefiRead = getReusableRpcDefiRead({
+        previousState: previousDefiState,
+        isManualUpdate: !!isManualUpdate,
+        bypassServerSideCache: !!bypassServerSideCache,
+        hasNonceChangedSinceLastUpdate: getHasNonceChangedSinceLastUpdate(
+          previousDefiState,
+          this.#getNonceId(account, network.chainId)
+        ),
+        maxDataAgeMs: defiMaxDataAgeMs
+      })
+
+      if (reusableRpcDefiRead) {
+        this.debugLog(
+          'defi',
+          `${network.chainId.toString()}: Reusing the DeFi positions read from the chain for ${account.addr}`,
+          () => ({ readAt: reusableRpcDefiRead.readAt, defiMaxDataAgeMs })
+        )
+      }
+
       // Fetch the portfolio and custom defi positions in parallel
       const [portfolioResult, customPositionsResult] = await Promise.all([
         portfolioLib.get(account.addr, {
@@ -1871,9 +1895,10 @@ export class PortfolioController
           network,
           // The tokens of this update aren't fetched yet, so those of the previous one are used
           heldTokenAddresses: getHeldTokenAddresses(previousResult?.tokens),
-          previousPositions: previousResult?.defiPositions.positionsByProvider || [],
+          previousPositions: previousDefiState?.positionsByProvider || [],
           apiPositions: discoveryData?.data?.defi?.positions,
-          isAutoDiscoveryEnabled
+          isAutoDiscoveryEnabled,
+          reusableRead: reusableRpcDefiRead
         })
       ])
 
@@ -1890,9 +1915,7 @@ export class PortfolioController
       const newDefiState = getNewDefiState(
         previousResult,
         discoveryData,
-        customPositionsResult.positionsByProvider,
-        customPositionsResult.error || null,
-        customPositionsResult.providerErrors,
+        customPositionsResult,
         stkWalletToken,
         this.#getNonceId(account, network.chainId)
       )
@@ -2229,7 +2252,10 @@ export class PortfolioController
         if (!result) return
 
         if ('updateStarted' in result) result.updateStarted = 0
-        if ('defiPositions' in result) delete result.defiPositions.lastSuccessfulUpdate
+        if (!('defiPositions' in result)) return
+
+        delete result.defiPositions.lastSuccessfulUpdate
+        delete result.defiPositions.rpcRead
       })
     })
   }

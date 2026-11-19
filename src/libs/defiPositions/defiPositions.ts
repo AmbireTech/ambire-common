@@ -21,6 +21,7 @@ import {
   isTokenPriceWithinHalfPercent,
   withCollateralValues
 } from './helpers'
+import { RpcDefiPositionsResult } from './rpc/types'
 import { getStakedWalletPositions } from './stkWallet'
 import {
   AssetType,
@@ -30,8 +31,7 @@ import {
   NetworksWithPositionsByAccounts,
   Position,
   PositionAsset,
-  PositionsByProvider,
-  ProviderError
+  PositionsByProvider
 } from './types'
 
 export const getIsExternalApiDefiPositionsCallSuccessful = (
@@ -124,12 +124,17 @@ const getAllAssetsAsHints = (
 const getNewDefiState = (
   pastPortfolioState: PortfolioNetworkResult | undefined,
   discoveryResponse: FormattedPortfolioDiscoveryResponse | null,
-  customPositionsByProvider: PositionsByProvider[],
-  customPositionsError: DeFiPositionsError | null,
-  customProvidersErrors: ProviderError[],
+  /** The positions read from the chain in this update, or reused from the previous one */
+  rpcPositions: RpcDefiPositionsResult,
   stkWalletToken: TokenResult | null,
   nonceId: string | undefined
 ): NetworkState => {
+  const {
+    positionsByProvider: customPositionsByProvider,
+    providerErrors: customProvidersErrors,
+    rpcRead
+  } = rpcPositions
+  const customPositionsError = rpcPositions.error || null
   const isForceApiUpdate = !!discoveryResponse?.data?.defi?.isForceUpdate
   const isDebankCallSuccessful = getIsExternalApiDefiPositionsCallSuccessful(discoveryResponse)
   const previousPositionsByProvider = pastPortfolioState?.defiPositions?.positionsByProvider || []
@@ -153,6 +158,7 @@ const getNewDefiState = (
     error: !isDebankCallSuccessful ? DeFiPositionsError.CriticalError : customPositionsError,
     lastSuccessfulUpdate:
       isDebankCallSuccessful && !customPositionsError ? Date.now() : lastSuccessfulUpdate,
+    rpcRead,
     lastForceApiUpdate: isForceApiUpdate ? Date.now() : lastForceApiUpdate,
     providerErrors: customProvidersErrors,
     positionsByProvider: uniqueAndMerged || previousPositionsByProvider

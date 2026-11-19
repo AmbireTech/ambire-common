@@ -69,6 +69,16 @@ export interface ProviderError {
   error: string
 }
 
+/**
+ * The positions each protocol returned when read from the chain, before they were merged with
+ * the API positions and priced, so a later update can merge them with newer API positions
+ */
+export type RpcDefiRead = {
+  /** The positions of each protocol read, by its name. Null if the account had none */
+  positionsByProviderName: { [providerName: string]: PositionsByProvider | null }
+  readAt: number
+}
+
 export interface NetworkState {
   positionsByProvider: PositionsByProvider[]
   /**
@@ -79,6 +89,14 @@ export interface NetworkState {
    * errors on the UI
    */
   lastSuccessfulUpdate?: number
+  /**
+   * The last read of the positions from the chain without errors. Missing if the last read
+   * failed.
+   *
+   * Reused instead of reading the positions on every portfolio update (see
+   * `getReusableRpcDefiRead`)
+   */
+  rpcRead?: RpcDefiRead
   /**
    * Timestamp of the last force external api call
    * Used to determine if we should bypass the cache on next update
