@@ -369,9 +369,24 @@ const enhancePortfolioTokensWithDefiPositions = (
           pos.assets.forEach((asset) => {
             const protocolAsset = asset.protocolAsset || null
 
-            const tokenCorrespondingToProtocolAsset = protocolAsset?.address
-              ? findTokenByProtocolAssetAddress(tokensByAddress, protocolAsset.address)
-              : findTokenBySimilarSymbolAndValue(portfolioTokens, asset)
+            // Positions read on-chain set the token that represents an asset, if any (as
+            // `protocolAsset` or `pool.controller`), so a token is never guessed for them: e.g.
+            // 10k USDC.e in the wallet would match a 10k USDC Morpho borrow (a similar symbol
+            // with a similar value), which would then remove the price of the USDC.e
+            const canGuessToken = posByProvider.source !== 'custom'
+            let tokenCorrespondingToProtocolAsset: TokenResult | undefined
+
+            if (protocolAsset?.address) {
+              tokenCorrespondingToProtocolAsset = findTokenByProtocolAssetAddress(
+                tokensByAddress,
+                protocolAsset.address
+              )
+            } else if (canGuessToken) {
+              tokenCorrespondingToProtocolAsset = findTokenBySimilarSymbolAndValue(
+                portfolioTokens,
+                asset
+              )
+            }
 
             if (tokenCorrespondingToProtocolAsset) {
               defiAssetsMap.set(tokenCorrespondingToProtocolAsset.address.toLowerCase(), {

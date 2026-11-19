@@ -54,7 +54,7 @@ import {
   getUniqueMergedPositions,
   mergeDefiUpdateModes
 } from '../../libs/defiPositions/defiPositions'
-import { getRpcDefiPositions } from '../../libs/defiPositions/rpc'
+import { getHeldTokenAddresses, getRpcDefiPositions } from '../../libs/defiPositions/rpc'
 import {
   NetworksWithPositions,
   NetworksWithPositionsByAccounts,
@@ -1869,6 +1869,8 @@ export class PortfolioController
           accountAddr: account.addr,
           provider: portfolioLib.provider,
           network,
+          // The tokens of this update aren't fetched yet, so those of the previous one are used
+          heldTokenAddresses: getHeldTokenAddresses(previousResult?.tokens),
           previousPositions: previousResult?.defiPositions.positionsByProvider || [],
           apiPositions: discoveryData?.data?.defi?.positions,
           isAutoDiscoveryEnabled

@@ -7,12 +7,14 @@ import { TokenDataCacheValue } from '../../portfolio/interfaces'
 import { DEBANK_UNI_V3 } from '../testData'
 import { AssetType, PositionsByProvider } from '../types'
 import { aaveV3DefiProvider } from './aaveV3/aaveV3'
+import { TokenResult } from '../../portfolio/interfaces'
 import {
   ALWAYS_FETCHED_PROVIDERS,
   FETCHED_WITHOUT_API_PROVIDERS,
+  getHeldTokenAddresses,
   getRpcDefiPositions
 } from './index'
-import { RpcDefiProvider } from './types'
+import { morphoDefiProvider } from './morpho/morpho'
 import { uniswapV3DefiProvider } from './uniswapV3/uniswapV3'
 
 const polygon = networks.find((n) => n.chainId === 137n)!
@@ -66,9 +68,11 @@ const createTokenPrices = () => {
   return { tokenPrices: { getTokenData } as unknown as ITokenPricesController, getTokenData }
 }
 
+/** Mocks the positions read from the chain by every protocol. A protocol not passed has none */
 const mockFetchedPositions = (positions: {
   aave?: PositionsByProvider | null | Error
   uniswap?: PositionsByProvider | null | Error
+  morpho?: PositionsByProvider | null | Error
 }) => {
   const toImplementation = (result: PositionsByProvider | null | Error | undefined) => async () => {
     if (result instanceof Error) throw result
@@ -81,17 +85,11 @@ const mockFetchedPositions = (positions: {
       .mockImplementation(toImplementation(positions.aave)),
     uniswapSpy: jest
       .spyOn(uniswapV3DefiProvider, 'fetchPositions')
-      .mockImplementation(toImplementation(positions.uniswap))
+      .mockImplementation(toImplementation(positions.uniswap)),
+    morphoSpy: jest
+      .spyOn(morphoDefiProvider, 'fetchPositions')
+      .mockImplementation(toImplementation(positions.morpho))
   }
-}
-
-/** Adds a protocol that is read from the chain only with auto discovery off, for the test */
-const addFetchedWithoutApiProvider = (positions: PositionsByProvider | null) => {
-  const fetchPositions = jest.fn(async () => positions)
-  const rpcOnlyProvider: RpcDefiProvider = { name: 'Morpho', fetchPositions }
-  FETCHED_WITHOUT_API_PROVIDERS.push(rpcOnlyProvider)
-
-  return { fetchPositions }
 }
 
 const callGetRpcDefiPositions = (
@@ -103,6 +101,7 @@ const callGetRpcDefiPositions = (
     accountAddr: ACCOUNT,
     provider: rpcProvider,
     network: polygon,
+    heldTokenAddresses: [],
     previousPositions: [],
     apiPositions: [],
     isAutoDiscoveryEnabled: true,
@@ -116,7 +115,6 @@ const getUniswapV3 = (positionsByProvider: PositionsByProvider[]) =>
 describe('getRpcDefiPositions', () => {
   afterEach(() => {
     jest.restoreAllMocks()
-    FETCHED_WITHOUT_API_PROVIDERS.splice(0)
   })
 
   test('the protocols the API returns are always read from the chain', () => {
@@ -126,16 +124,30 @@ describe('getRpcDefiPositions', () => {
     ])
   })
 
+  test('the protocols the API returns fully are read from the chain only without the API', () => {
+    expect(FETCHED_WITHOUT_API_PROVIDERS.map(({ name }) => name)).toEqual(['Morpho'])
+  })
+
+  test('passes the tokens the account holds to the protocols', async () => {
+    const { morphoSpy } = mockFetchedPositions({})
+    const heldTokenAddresses = ['0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270']
+
+    await callGetRpcDefiPositions({ isAutoDiscoveryEnabled: false, heldTokenAddresses })
+
+    expect(morphoSpy).toHaveBeenCalledWith(expect.objectContaining({ heldTokenAddresses }))
+  })
+
   describe('with auto discovery on', () => {
     test('reads only the protocols that are always read from the chain', async () => {
-      const { aaveSpy, uniswapSpy } = mockFetchedPositions({})
-      const { fetchPositions } = addFetchedWithoutApiProvider(getPositions('Morpho', 'custom'))
+      const { aaveSpy, uniswapSpy, morphoSpy } = mockFetchedPositions({
+        morpho: getPositions('Morpho', 'custom')
+      })
 
       const res = await callGetRpcDefiPositions()
 
       expect(aaveSpy).toHaveBeenCalledTimes(1)
       expect(uniswapSpy).toHaveBeenCalledTimes(1)
-      expect(fetchPositions).not.toHaveBeenCalled()
+      expect(morphoSpy).not.toHaveBeenCalled()
       expect(res.positionsByProvider).toEqual([])
     })
     test('merges the positions with those of the API', async () => {
@@ -191,15 +203,14 @@ describe('getRpcDefiPositions', () => {
 
   describe('with auto discovery off', () => {
     test('reads all the protocols from the chain', async () => {
-      const { aaveSpy, uniswapSpy } = mockFetchedPositions({})
       const morpho = getPositions('Morpho', 'custom')
-      const { fetchPositions } = addFetchedWithoutApiProvider(morpho)
+      const { aaveSpy, uniswapSpy, morphoSpy } = mockFetchedPositions({ morpho })
 
       const res = await callGetRpcDefiPositions({ isAutoDiscoveryEnabled: false })
 
       expect(aaveSpy).toHaveBeenCalledTimes(1)
       expect(uniswapSpy).toHaveBeenCalledTimes(1)
-      expect(fetchPositions).toHaveBeenCalledTimes(1)
+      expect(morphoSpy).toHaveBeenCalledTimes(1)
       expect(res.positionsByProvider).toEqual([morpho])
     })
     test('never merges with API positions, new or previous', async () => {
@@ -258,6 +269,62 @@ describe('getRpcDefiPositions', () => {
 
       expect(res.positionsByProvider).toEqual([storedPositions[1], newUniV3])
     })
+    describe('of protocols read from the chain only without the API (Morpho)', () => {
+      const previousRpcMorpho = getPositions('Morpho', 'custom')
+
+      test('are kept while the API call fails or is skipped right after auto discovery is turned on', async () => {
+        const { morphoSpy } = mockFetchedPositions({})
+
+        const res = await callGetRpcDefiPositions({
+          previousPositions: [previousRpcMorpho],
+          apiPositions: undefined
+        })
+
+        expect(morphoSpy).not.toHaveBeenCalled()
+        expect(res.positionsByProvider).toEqual([previousRpcMorpho])
+      })
+      test('are dropped once the API returns positions, as it returns those of Morpho too', async () => {
+        mockFetchedPositions({})
+
+        const res = await callGetRpcDefiPositions({
+          previousPositions: [previousRpcMorpho],
+          apiPositions: []
+        })
+
+        expect(res.positionsByProvider).toEqual([])
+      })
+      test('are kept when reading them fails with auto discovery off', async () => {
+        mockFetchedPositions({ morpho: new Error('Morpho error') })
+
+        const res = await callGetRpcDefiPositions({
+          isAutoDiscoveryEnabled: false,
+          previousPositions: [previousRpcMorpho]
+        })
+
+        expect(res.providerErrors).toEqual([{ providerName: 'Morpho', error: 'Morpho error' }])
+        expect(res.positionsByProvider).toEqual([previousRpcMorpho])
+      })
+      test('are dropped when the account closed them, with auto discovery off', async () => {
+        mockFetchedPositions({ morpho: null })
+
+        const res = await callGetRpcDefiPositions({
+          isAutoDiscoveryEnabled: false,
+          previousPositions: [previousRpcMorpho]
+        })
+
+        expect(res.positionsByProvider).toEqual([])
+      })
+      test('the API positions of Morpho are never kept as positions read from the chain', async () => {
+        mockFetchedPositions({})
+
+        const res = await callGetRpcDefiPositions({
+          previousPositions: [getPositions('Morpho', 'debank')],
+          apiPositions: undefined
+        })
+
+        expect(res.positionsByProvider).toEqual([])
+      })
+    })
     test('never keeps stored API positions of a failed provider as positions read from the chain', async () => {
       mockFetchedPositions({ uniswap: new Error('Uniswap error') })
 
@@ -292,6 +359,7 @@ describe('getRpcDefiPositions', () => {
       accountAddr: ACCOUNT,
       provider: rpcProvider,
       network: polygon,
+      heldTokenAddresses: [],
       previousPositions: [],
       apiPositions: [],
       isAutoDiscoveryEnabled: true
@@ -302,5 +370,57 @@ describe('getRpcDefiPositions', () => {
       baseCurrency: 'usd',
       price: 1
     })
+  })
+})
+
+describe('getHeldTokenAddresses', () => {
+  const token = (
+    address: string,
+    overrides: { amount?: bigint; flags?: Partial<TokenResult['flags']> } = {}
+  ): TokenResult => ({
+    symbol: 'TKN',
+    name: 'Token',
+    decimals: 18,
+    address,
+    chainId: 1n,
+    amount: overrides.amount ?? 10n ** 18n,
+    priceIn: [],
+    marketDataIn: [],
+    flags: {
+      onGasTank: false,
+      rewardsType: null,
+      canTopUpGasTank: false,
+      isFeeToken: false,
+      ...overrides.flags
+    }
+  })
+
+  test('returns the tokens the account holds', () => {
+    expect(getHeldTokenAddresses([token('0x01'), token('0x02')])).toEqual(['0x01', '0x02'])
+  })
+
+  test('returns nothing without tokens', () => {
+    expect(getHeldTokenAddresses(undefined)).toEqual([])
+  })
+
+  test('leaves out tokens with no balance and those held elsewhere', () => {
+    expect(
+      getHeldTokenAddresses([
+        token('0x01', { amount: 0n }),
+        token('0x02', { flags: { rewardsType: 'wallet-rewards' } }),
+        token('0x03', { flags: { onGasTank: true } }),
+        token('0x04')
+      ])
+    ).toEqual(['0x04'])
+  })
+
+  test('leaves out spam and hidden tokens, so the shares of a vault airdropped to the account add no balance', () => {
+    expect(
+      getHeldTokenAddresses([
+        token('0x01', { flags: { suspectedType: 'suspected' } }),
+        token('0x02', { flags: { isHidden: true } }),
+        token('0x03')
+      ])
+    ).toEqual(['0x03'])
   })
 })

@@ -454,6 +454,103 @@ describe('Defi positions helper and portfolio functions', () => {
       expect(getProviderNames(res.positionsByProvider)).toEqual(['AAVE v3', 'Morpho'])
       expect(res.error).toBeNull()
     })
+    describe('the time of the last successful update', () => {
+      const getPastStateUpdatedAt = (lastSuccessfulUpdate: number): PortfolioNetworkResult => {
+        const pastState = getPastPortfolioState()
+
+        return { ...pastState, defiPositions: { ...pastState.defiPositions, lastSuccessfulUpdate } }
+      }
+
+      // A skipped API call (e.g. while auto discovery is off) counts as successful, so the DeFi
+      // error banner still waits for the time without a successful update to pass. The API is
+      // called again once auto discovery is back on, as all accounts are marked as outdated then
+      // (see `markAllAccountsAsOutdated`)
+      it('is refreshed after the API call succeeds or is skipped', () => {
+        const res = getNewDefiState(
+          getPastStateUpdatedAt(1),
+          null,
+          [customAave],
+          null,
+          [],
+          null,
+          undefined
+        )
+
+        expect(res.lastSuccessfulUpdate).toBeGreaterThan(1)
+      })
+      it('is not refreshed when reading the positions from the chain fails', () => {
+        const res = getNewDefiState(
+          getPastStateUpdatedAt(1),
+          null,
+          [customAave],
+          DeFiPositionsError.CriticalError,
+          [],
+          null,
+          undefined
+        )
+
+        expect(res.lastSuccessfulUpdate).toBe(1)
+      })
+    })
+  })
+  describe('enhancePortfolioTokensWithDefiPositions - tokens guessed by symbol and value', () => {
+    // A bridged USDC in the wallet, worth the same as the USDC borrowed in the position below
+    const walletUsdcE: TokenResult = {
+      address: '0x7F5c764cBc14f9669B88837ca1490cCa17c31607',
+      symbol: 'USDC.e',
+      name: 'Bridged USDC',
+      decimals: 6,
+      amount: 10_000n * 10n ** 6n,
+      priceIn: [{ baseCurrency: 'usd', price: 1 }],
+      chainId: 10n,
+      marketDataIn: [],
+      flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: false, isFeeToken: false }
+    }
+    const borrowProvider = (source: PositionsByProvider['source']): PositionsByProvider => ({
+      providerName: 'Morpho',
+      chainId: 10n,
+      iconUrl: '',
+      siteUrl: '',
+      source,
+      type: 'lending',
+      positions: [
+        {
+          id: 'usdc-borrow',
+          additionalData: { positionInUSD: -10_000 },
+          assets: [
+            {
+              address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+              symbol: 'USDC',
+              name: 'USD Coin',
+              decimals: 6,
+              amount: 10_000n * 10n ** 6n,
+              priceIn: { baseCurrency: 'usd', price: 1 },
+              value: 10_000,
+              iconUrl: '',
+              type: AssetType.Borrow
+            }
+          ]
+        }
+      ]
+    })
+
+    it('guesses the wallet token of a Debank position', () => {
+      const [token] = enhancePortfolioTokensWithDefiPositions([walletUsdcE], {
+        positionsByProvider: [borrowProvider('debank')]
+      })
+
+      expect(token!.flags.defiPositionId).toBe('usdc-borrow')
+    })
+
+    it('never guesses the wallet token of a position read on-chain', () => {
+      // Linking the USDC.e to the USDC borrow would remove the price of the USDC.e
+      const [token] = enhancePortfolioTokensWithDefiPositions([walletUsdcE], {
+        positionsByProvider: [borrowProvider('custom')]
+      })
+
+      expect(token!.flags.defiPositionId).toBeUndefined()
+      expect(token!.priceIn).toEqual(walletUsdcE.priceIn)
+    })
   })
   describe('getFormattedApiPositions', () => {
     it('Invalid positions are filtered out', () => {
