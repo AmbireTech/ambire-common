@@ -4,22 +4,32 @@ name: Update the Morpho markets and vaults list
 # auto discovery is off (see `src/libs/defiPositions/rpc/morpho/morpho.ts`). This regenerates
 # the list every week and opens a PR when it changed, or updates the PR that is already open.
 # The script keeps the file as it is when nothing was added, removed or renamed, and fails
-# instead of saving a list from which too many markets disappeared (likely partial data from
-# Morpho's API).
+# instead of saving a partial list or one from which too many markets disappeared (likely
+# partial data from Morpho's API). Run it by hand with "Allow many removals" to save a list
+# from which Morpho really removed many markets.
+#
+# Two jobs, so that the dependencies installed to generate the list never run in a job that can
+# write to the repository: `generate` only reads, `pull-request` installs nothing.
 #
 # A PR opened with the workflow's token doesn't start other workflows, so the unit tests of the
 # list run here before the PR is opened. Requires "Allow GitHub Actions to create and approve
 # pull requests" in the repository's Actions settings.
+#
+# The commit is made through GitHub's API rather than `git commit`, so that GitHub signs it:
+# the base branch only accepts signed commits.
 
 on:
   schedule:
     # Every Monday at 06:00 UTC
     - cron: '0 6 * * 1'
   workflow_dispatch:
+    inputs:
+      allow_many_removals:
+        description: 'Allow many removals (Morpho really removed many markets or vaults)'
+        type: boolean
+        default: false
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}
@@ -28,16 +38,24 @@ env:
   BASE_BRANCH: v2
   PR_BRANCH: automation/update-morpho-listed
   LISTED_PATH: src/libs/defiPositions/rpc/morpho/listed.json
+  ARTIFACT_NAME: morpho-listed
 
 jobs:
-  update:
-    name: Update the list
+  generate:
+    name: Generate the list
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      base_sha: ${{ steps.changes.outputs.base_sha }}
+      changed: ${{ steps.changes.outputs.changed }}
     steps:
       - name: Checkout code 🛎️
         uses: actions/checkout@v6
         with:
           ref: ${{ env.BASE_BRANCH }}
+          persist-credentials: false
 
       - name: Install Node.js ⚙️
         uses: actions/setup-node@v6
@@ -49,12 +67,16 @@ jobs:
 
       - name: Update the list 🔄
         env:
-          MORPHO_LISTED_SUMMARY_PATH: ${{ runner.temp }}/morpho-listed-summary.md
-        run: npm run defiPositions:update:morphoListed
+          MORPHO_LISTED_SUMMARY_PATH: ${{ runner.temp }}/morpho-listed/summary.md
+          MORPHO_LISTED_ALLOW_MANY_REMOVALS: ${{ inputs.allow_many_removals && 'true' || '' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/morpho-listed"
+          npm run defiPositions:update:morphoListed
 
       - name: Check for changes 🔍
         id: changes
         run: |
+          echo "base_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if git diff --quiet -- "$LISTED_PATH"; then
             echo "The list hasn't changed"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -64,27 +86,95 @@ jobs:
 
       - name: Test the list 🧑‍🔬
         if: steps.changes.outputs.changed == 'true'
-        run: npx jest --forceExit src/libs/defiPositions/rpc/morpho/morpho.test.ts -t "listed markets and vaults"
+        run: |
+          results_path="$RUNNER_TEMP/morpho-listed-tests.json"
+          npx jest --forceExit src/libs/defiPositions/rpc/morpho/morpho.test.ts \
+            -t "listed markets and vaults" --json --outputFile="$results_path"
+          # Jest passes when the filter matches no test, e.g. after the tests are renamed
+          jq -e '.numPassedTests > 0 and .numFailedTests == 0' "$results_path" > /dev/null || {
+            echo "No test of the list ran. Update the filter of this step to the tests' new name" >&2
+            exit 1
+          }
+
+      - name: Prepare the upload 🗂️
+        if: steps.changes.outputs.changed == 'true'
+        run: cp "$LISTED_PATH" "$RUNNER_TEMP/morpho-listed/listed.json"
+
+      - name: Upload the list 📦
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          # A single directory, so that the files are at the root of the artifact
+          path: ${{ runner.temp }}/morpho-listed
+          if-no-files-found: error
+          retention-days: 7
+
+  pull-request:
+    name: Open, update or close the PR
+    needs: generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Close the outdated PR 🧹
+        # The list on the base branch is already up to date (e.g. it was updated by hand), so an
+        # open PR from an earlier run would only revert newer changes
+        if: needs.generate.outputs.changed == 'false'
+        run: |
+          open_pr_number=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$PR_BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[].number' | head -n 1)
+          if [ -n "$open_pr_number" ]; then
+            gh pr close "$open_pr_number" --repo "$GITHUB_REPOSITORY" --delete-branch \
+              --comment "The list on $BASE_BRANCH is already up to date."
+          fi
+
+      - name: Download the list 📦
+        if: needs.generate.outputs.changed == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/morpho-listed
 
       - name: Open or update the PR 📬
-        if: steps.changes.outputs.changed == 'true'
+        if: needs.generate.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
-          SUMMARY_PATH: ${{ runner.temp }}/morpho-listed-summary.md
+          BASE_SHA: ${{ needs.generate.outputs.base_sha }}
         run: |
-          git switch -C "$PR_BRANCH"
-          git add "$LISTED_PATH"
-          git -c user.name='github-actions[bot]' \
-            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-            commit -m "update: the Morpho markets and vaults list"
-          # The branch is recreated from the base branch on every run, so it only ever holds this commit
-          git push --force origin "$PR_BRANCH"
+          listed_file="$RUNNER_TEMP/morpho-listed/listed.json"
+          summary_file="$RUNNER_TEMP/morpho-listed/summary.md"
 
-          open_pr_number=$(gh pr list --head "$PR_BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[].number' | head -n 1)
-          if [ -n "$open_pr_number" ]; then
-            gh pr edit "$open_pr_number" --body-file "$SUMMARY_PATH"
+          # The branch is recreated from the commit the list was generated from on every run,
+          # so it only ever holds the commit below
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$PR_BRANCH" --silent 2> /dev/null; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$PR_BRANCH" \
+              -f sha="$BASE_SHA" -F force=true --silent
           else
-            gh pr create --base "$BASE_BRANCH" --head "$PR_BRANCH" \
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/heads/$PR_BRANCH" -f sha="$BASE_SHA" --silent
+          fi
+
+          # Committed through the API, so that GitHub signs the commit. The file is passed as a
+          # JSON file, as its base64 is longer than the limit of a single command-line argument
+          current_file_sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/$LISTED_PATH?ref=$BASE_SHA" --jq '.sha')
+          content_path="$RUNNER_TEMP/morpho-listed.base64"
+          request_path="$RUNNER_TEMP/morpho-listed-commit.json"
+          base64 -w 0 "$listed_file" > "$content_path"
+          jq -n --rawfile content "$content_path" \
+            --arg sha "$current_file_sha" \
+            --arg branch "$PR_BRANCH" \
+            '{message: "update: the Morpho markets and vaults list", content: $content, sha: $sha, branch: $branch}' \
+            > "$request_path"
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/$LISTED_PATH" --input "$request_path" --silent
+
+          open_pr_number=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$PR_BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[].number' | head -n 1)
+          if [ -n "$open_pr_number" ]; then
+            gh pr edit "$open_pr_number" --repo "$GITHUB_REPOSITORY" --body-file "$summary_file"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" --base "$BASE_BRANCH" --head "$PR_BRANCH" \
               --title "Update: the Morpho markets and vaults list" \
-              --body-file "$SUMMARY_PATH"
+              --body-file "$summary_file"
           fi

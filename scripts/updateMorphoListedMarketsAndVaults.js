@@ -13,9 +13,13 @@ const { isAddress, isHexString } = require('ethers')
 // `updatedAt` is kept when nothing was added, removed or renamed.
 //
 // Set `MORPHO_LISTED_SUMMARY_PATH` to also write a summary of the changes in Markdown there.
+// Set `MORPHO_LISTED_ALLOW_MANY_REMOVALS=true` to save a list from which Morpho really removed
+// many markets or vaults (see `assertNotTooManyRemoved`).
 
 const MORPHO_API_URL = 'https://api.morpho.org/graphql'
 const PAGE_SIZE = 500
+/** So that a request that never answers fails the update instead of hanging it */
+const REQUEST_TIMEOUT_MS = 60 * 1000
 
 /**
  * The share of a network's markets or vaults that can disappear from the list in one update.
@@ -74,9 +78,11 @@ const fetchPage = async (field, skip) => {
     body: JSON.stringify({
       query: QUERIES[field],
       variables: { skip, first: PAGE_SIZE, chainIds: CHAIN_IDS }
-    })
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
   })
-  if (!response.ok) throw new Error(`Failed to fetch ${field}. Status: ${response.statusText}`)
+  if (!response.ok)
+    throw new Error(`Failed to fetch ${field}. Status: ${response.status} ${response.statusText}`)
 
   const body = await response.json()
   if (body.errors?.length) throw new Error(`Failed to fetch ${field}: ${body.errors[0].message}`)
@@ -84,7 +90,11 @@ const fetchPage = async (field, skip) => {
   return body.data[field]
 }
 
-/** Fetches every page of a listing, as the API returns at most PAGE_SIZE items at once */
+/**
+ * Fetches every page of a listing, as the API returns at most PAGE_SIZE items at once. Throws
+ * if the API stops returning items before the count it reports, as saving a partial list would
+ * stop checking the markets left out
+ */
 const fetchAll = async (field) => {
   const items = []
   let countTotal = Infinity
@@ -93,7 +103,11 @@ const fetchAll = async (field) => {
     // eslint-disable-next-line no-await-in-loop
     const page = await fetchPage(field, items.length)
     countTotal = page.pageInfo.countTotal
-    if (!page.items.length) break
+    if (!page.items.length && items.length < countTotal) {
+      throw new Error(
+        `Morpho's API returned ${items.length} of the ${countTotal} ${field}. Try again later`
+      )
+    }
 
     items.push(...page.items)
   }
@@ -178,9 +192,12 @@ const getChanges = (previousByChainId = {}, nextByChainId, key) =>
 
 /**
  * Throws if too much of a network's list disappeared (or all of it), which likely means
- * partial API data
+ * partial API data. Skipped with `MORPHO_LISTED_ALLOW_MANY_REMOVALS=true`, for when Morpho
+ * really removed them
  */
 const assertNotTooManyRemoved = (changes, label) => {
+  if (process.env.MORPHO_LISTED_ALLOW_MANY_REMOVALS === 'true') return
+
   changes.forEach(({ chainId, previousCount, nextCount, removed }) => {
     const isListGone = previousCount > 0 && nextCount === 0
     const isTooMuchRemoved =
@@ -189,7 +206,7 @@ const assertNotTooManyRemoved = (changes, label) => {
     if (!isListGone && !isTooMuchRemoved) return
 
     throw new Error(
-      `${removed.length} of the ${previousCount} ${label} on chain ${chainId} are no longer listed. Check Morpho's API before updating the list`
+      `${removed.length} of the ${previousCount} ${label} on chain ${chainId} are no longer listed. Check Morpho's API, and if it really removed them, run again with MORPHO_LISTED_ALLOW_MANY_REMOVALS=true ("Allow many removals" in the workflow)`
     )
   })
 }
