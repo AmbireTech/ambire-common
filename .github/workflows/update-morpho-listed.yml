@@ -1,0 +1,90 @@
+name: Update the Morpho markets and vaults list
+
+# Morpho lists new markets every day, and only the listed ones are checked for positions while
+# auto discovery is off (see `src/libs/defiPositions/rpc/morpho/morpho.ts`). This regenerates
+# the list every week and opens a PR when it changed, or updates the PR that is already open.
+# The script keeps the file as it is when nothing was added, removed or renamed, and fails
+# instead of saving a list from which too many markets disappeared (likely partial data from
+# Morpho's API).
+#
+# A PR opened with the workflow's token doesn't start other workflows, so the unit tests of the
+# list run here before the PR is opened. Requires "Allow GitHub Actions to create and approve
+# pull requests" in the repository's Actions settings.
+
+on:
+  schedule:
+    # Every Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}
+
+env:
+  BASE_BRANCH: v2
+  PR_BRANCH: automation/update-morpho-listed
+  LISTED_PATH: src/libs/defiPositions/rpc/morpho/listed.json
+
+jobs:
+  update:
+    name: Update the list
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code 🛎️
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BASE_BRANCH }}
+
+      - name: Install Node.js ⚙️
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Install NPM packages ♾️🕳️
+        run: npm ci
+
+      - name: Update the list 🔄
+        env:
+          MORPHO_LISTED_SUMMARY_PATH: ${{ runner.temp }}/morpho-listed-summary.md
+        run: npm run defiPositions:update:morphoListed
+
+      - name: Check for changes 🔍
+        id: changes
+        run: |
+          if git diff --quiet -- "$LISTED_PATH"; then
+            echo "The list hasn't changed"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test the list 🧑‍🔬
+        if: steps.changes.outputs.changed == 'true'
+        run: npx jest --forceExit src/libs/defiPositions/rpc/morpho/morpho.test.ts -t "listed markets and vaults"
+
+      - name: Open or update the PR 📬
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUMMARY_PATH: ${{ runner.temp }}/morpho-listed-summary.md
+        run: |
+          git switch -C "$PR_BRANCH"
+          git add "$LISTED_PATH"
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "update: the Morpho markets and vaults list"
+          # The branch is recreated from the base branch on every run, so it only ever holds this commit
+          git push --force origin "$PR_BRANCH"
+
+          open_pr_number=$(gh pr list --head "$PR_BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[].number' | head -n 1)
+          if [ -n "$open_pr_number" ]; then
+            gh pr edit "$open_pr_number" --body-file "$SUMMARY_PATH"
+          else
+            gh pr create --base "$BASE_BRANCH" --head "$PR_BRANCH" \
+              --title "Update: the Morpho markets and vaults list" \
+              --body-file "$SUMMARY_PATH"
+          fi
