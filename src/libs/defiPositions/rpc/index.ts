@@ -9,6 +9,7 @@ import {
   ProviderError,
   RpcDefiRead
 } from '../types'
+import { aaveV2DefiProvider } from './aaveV2/aaveV2'
 import { aaveV3DefiProvider } from './aaveV3/aaveV3'
 import { aaveV4DefiProvider } from './aaveV4/aaveV4'
 import { morphoDefiProvider } from './morpho/morpho'
@@ -37,7 +38,8 @@ export const FETCHED_WITHOUT_API_PROVIDERS: RpcDefiProvider[] = [
   morphoDefiProvider,
   aaveV4DefiProvider,
   uniswapV4DefiProvider,
-  uniswapV2DefiProvider
+  uniswapV2DefiProvider,
+  aaveV2DefiProvider
 ]
 
 const getProvidersToFetch = (isAutoDiscoveryEnabled: boolean): RpcDefiProvider[] => {
