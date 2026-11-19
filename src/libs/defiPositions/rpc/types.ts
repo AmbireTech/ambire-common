@@ -1,6 +1,6 @@
 import { Network } from '../../../interfaces/network'
 import { RPCProvider } from '../../../interfaces/provider'
-import { DeFiPositionsError, PositionsByProvider, ProviderError } from '../types'
+import { DeFiPositionsError, PositionsByProvider, ProviderError, RpcDefiRead } from '../types'
 
 /** What every protocol needs to read the positions of an account from the chain */
 export type RpcFetchParams = {
@@ -42,4 +42,9 @@ export type RpcDefiPositionsResult = {
   positionsByProvider: PositionsByProvider[]
   providerErrors: ProviderError[]
   error?: DeFiPositionsError | null
+  /**
+   * The read the positions come from - a new one or one reused from a previous update. Missing
+   * if a protocol failed to read, so the next update reads them all again
+   */
+  rpcRead?: RpcDefiRead
 }

@@ -24,9 +24,10 @@ import * as defiPositionsLib from '../../libs/defiPositions/defiPositions'
 import { getProviderId } from '../../libs/defiPositions/helpers'
 import * as rpcDefiPositionsLib from '../../libs/defiPositions/rpc'
 import { aaveV3DefiProvider } from '../../libs/defiPositions/rpc/aaveV3/aaveV3'
+import { morphoDefiProvider } from '../../libs/defiPositions/rpc/morpho/morpho'
 import * as rpcDefiPricesLib from '../../libs/defiPositions/rpc/prices'
 import { uniswapV3DefiProvider } from '../../libs/defiPositions/rpc/uniswapV3/uniswapV3'
-import { AssetType, DeFiPositionsError } from '../../libs/defiPositions/types'
+import { AssetType, DeFiPositionsError, PositionsByProvider } from '../../libs/defiPositions/types'
 import { DeploylessMode } from '../../libs/deployless/deployless'
 import {
   erc721CollectionToLearnedAssetKeys,
@@ -3435,6 +3436,161 @@ describe('Portfolio Controller ', () => {
 
       expect(portfolioGetSpy).toHaveBeenCalledTimes(2)
       expect(batchedDiscoverySpy).toHaveBeenCalledTimes(2)
+    })
+
+    describe('reading the positions from the chain', () => {
+      const rpcMorpho: PositionsByProvider = {
+        providerName: 'Morpho',
+        chainId: 1n,
+        source: 'custom',
+        iconUrl: '',
+        siteUrl: 'https://app.morpho.org',
+        type: 'common',
+        positions: []
+      }
+      // Mocks what each protocol reads from the chain. Morpho is read only with auto discovery off
+      const mockProviderReads = (uniswap: PositionsByProvider | null = null) => ({
+        aaveSpy: jest.spyOn(aaveV3DefiProvider, 'fetchPositions').mockResolvedValue(null),
+        uniswapSpy: jest.spyOn(uniswapV3DefiProvider, 'fetchPositions').mockResolvedValue(uniswap),
+        morphoSpy: jest.spyOn(morphoDefiProvider, 'fetchPositions').mockResolvedValue(rpcMorpho)
+      })
+      const getDefiState = (controller: PortfolioController) =>
+        controller.getAccountPortfolioState(account.addr)['1']!.result!.defiPositions
+      const getProviderNames = (controller: PortfolioController) =>
+        getDefiState(controller).positionsByProvider.map((p) => p.providerName)
+
+      it('reads them again only when fresh positions are needed while auto discovery is off', async () => {
+        const { controller } = await prepareTest({
+          featureFlags: { tokenAndDefiAutoDiscovery: false }
+        })
+        jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue(getEmptyPortfolioLibResult())
+        const { aaveSpy, morphoSpy } = mockProviderReads()
+
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(aaveSpy).toHaveBeenCalledTimes(1)
+        expect(morphoSpy).toHaveBeenCalledTimes(1)
+
+        // The periodic updates (and those that simulate a transaction) don't need fresh positions
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(aaveSpy).toHaveBeenCalledTimes(1)
+        expect(morphoSpy).toHaveBeenCalledTimes(1)
+        expect(getProviderNames(controller)).toEqual(['Morpho'])
+
+        // Selecting the account needs positions younger than defiMaxDataAgeMs
+        await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+          defiMaxDataAgeMs: 60 * 1000
+        })
+
+        expect(aaveSpy).toHaveBeenCalledTimes(1)
+
+        await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+          isManualUpdate: true
+        })
+
+        expect(aaveSpy).toHaveBeenCalledTimes(2)
+
+        // The update scheduled after a transaction or a signed message
+        await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+          bypassServerSideCache: true
+        })
+
+        expect(aaveSpy).toHaveBeenCalledTimes(3)
+        expect(morphoSpy).toHaveBeenCalledTimes(3)
+        expect(getProviderNames(controller)).toEqual(['Morpho'])
+      })
+
+      it('reuses them while auto discovery is on and merges them with the new API positions', async () => {
+        const { controller } = await prepareTest()
+        // @ts-expect-error - getPortfolioFromApiDiscovery is private, spied on at runtime
+        const discoverySpy: any = jest.spyOn(controller, 'getPortfolioFromApiDiscovery')
+        // New API positions on every update
+        discoverySpy.mockImplementation(async () => getDiscoveryWithDebankUniV3())
+        // @ts-expect-error test
+        const batchedDiscoverySpy: any = jest.spyOn(controller, 'batchedPortfolioDiscovery')
+        batchedDiscoverySpy.mockResolvedValue(getDefiAppsResponse())
+        jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue(getEmptyPortfolioLibResult())
+        const { aaveSpy, uniswapSpy, morphoSpy } = mockProviderReads({
+          providerName: 'Uniswap V3',
+          chainId: 1n,
+          source: 'custom',
+          iconUrl: '',
+          siteUrl: 'https://app.uniswap.org/swap',
+          type: 'common',
+          positions: [
+            {
+              id: 'debank-uni-v3-eth',
+              assets: [],
+              additionalData: {
+                positionIndex: 'debank-uni-v3-eth',
+                name: 'Liquidity Pool',
+                inRange: true,
+                liquidity: 1n
+              }
+            }
+          ]
+        })
+        const getUniswapV3 = () =>
+          getDefiState(controller).positionsByProvider.find(
+            (p) => getProviderId(p.providerName) === 'uniswap v3'
+          )
+
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(uniswapSpy).toHaveBeenCalledTimes(1)
+        expect(getUniswapV3()?.source).toBe('mixed')
+
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(aaveSpy).toHaveBeenCalledTimes(1)
+        expect(uniswapSpy).toHaveBeenCalledTimes(1)
+        expect(morphoSpy).not.toHaveBeenCalled()
+        // What only the chain has (whether the position is in range) isn't lost
+        expect(getUniswapV3()?.source).toBe('mixed')
+        expect(getUniswapV3()?.positions[0]!.additionalData.inRange).toBe(true)
+      })
+
+      it('retries a failed read on the next update', async () => {
+        const { restore } = suppressConsole()
+        const { controller } = await prepareTest({
+          featureFlags: { tokenAndDefiAutoDiscovery: false }
+        })
+        jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue(getEmptyPortfolioLibResult())
+        const { aaveSpy, morphoSpy } = mockProviderReads()
+        morphoSpy.mockRejectedValueOnce(new Error('Morpho error'))
+
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(getDefiState(controller).rpcRead).toBeUndefined()
+
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(aaveSpy).toHaveBeenCalledTimes(2)
+        expect(getProviderNames(controller)).toEqual(['Morpho'])
+
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(aaveSpy).toHaveBeenCalledTimes(2)
+        restore()
+      })
+
+      it('reads them again after the data of every account is marked as outdated', async () => {
+        const { controller } = await prepareTest({
+          featureFlags: { tokenAndDefiAutoDiscovery: false }
+        })
+        jest.spyOn(Portfolio.prototype, 'get').mockResolvedValue(getEmptyPortfolioLibResult())
+        const { aaveSpy } = mockProviderReads()
+
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+        controller.markAllAccountsAsOutdated()
+
+        expect(getDefiState(controller).rpcRead).toBeUndefined()
+
+        await controller.updateSelectedAccount(account.addr, [ethereum])
+
+        expect(aaveSpy).toHaveBeenCalledTimes(2)
+      })
     })
 
     describe('with the real API discovery logic (only the request is mocked)', () => {
