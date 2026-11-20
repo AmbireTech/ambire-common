@@ -269,6 +269,14 @@ export class LimitOrdersController extends EventEmitter {
   /** Orders whose pre-sign or ETH-flow transaction was broadcast this session */
   #placingOrderUids = new Set<string>()
 
+  #portfolioUpdate: (chainIds: bigint[]) => void
+
+  /**
+   * How much each order of the account had received at the last refresh, to notice when one
+   * fills (or fills a part) and refresh the balances it changed
+   */
+  #executedBuyAmounts = new Map<string, bigint>()
+
   /** The My orders refresh in progress, which simultaneous refreshes share */
   #ordersUpdate: Promise<void> | null = null
 
@@ -372,7 +380,8 @@ export class LimitOrdersController extends EventEmitter {
     onBroadcastSuccess,
     onBroadcastFailed,
     ui,
-    requestSignatureInWindow
+    requestSignatureInWindow,
+    portfolioUpdate
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     callRelayer: BindedRelayerCall
@@ -404,6 +413,8 @@ export class LimitOrdersController extends EventEmitter {
       calls: Call[]
       meta: CallsUserRequest['meta']
     }) => Promise<void>
+    /** Refreshes the selected account's portfolio on these networks */
+    portfolioUpdate: (chainIds: bigint[]) => void
   }) {
     super(eventEmitterRegistry)
 
@@ -428,6 +439,7 @@ export class LimitOrdersController extends EventEmitter {
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
     this.#requestSignatureInWindow = requestSignatureInWindow
+    this.#portfolioUpdate = portfolioUpdate
 
     this.#updateMarketQuoteInterval = new RecurringTimeout(
       async () => this.#continuouslyUpdateMarketQuote(),
@@ -1452,6 +1464,7 @@ export class LimitOrdersController extends EventEmitter {
       await this.#signInWindow({ account, network, calls })
       // Shown as placing until the Safe's owners sign it and it's sent
       this.#placingOrderUids.add(orderUid)
+      this.#executedBuyAmounts.set(orderUid, 0n)
       this.#resetFormFields()
       this.emitUpdate()
       return
@@ -1467,6 +1480,8 @@ export class LimitOrdersController extends EventEmitter {
       mainCallId: orderUid,
       onBroadcasted: () => {
         this.#placingOrderUids.add(orderUid)
+        // So a fill is noticed even if the order is first listed after it filled
+        this.#executedBuyAmounts.set(orderUid, 0n)
         this.lastPlacedOrderUid = orderUid
       }
     })
@@ -1932,9 +1947,20 @@ export class LimitOrdersController extends EventEmitter {
     if (this.#selectedAccount.account?.addr !== account.addr) return
 
     let failedCount = 0
+    const chainIdsWithFills = new Set<number>()
     results.forEach((result) => {
       if (result.status === 'fulfilled') {
-        this.#accountOrders.set(result.value.chainId, result.value.orders)
+        const { chainId, orders } = result.value
+        orders.forEach((order) => {
+          const executedBuyAmount = BigInt(order.executedBuyAmount)
+          const previous = this.#executedBuyAmounts.get(order.uid)
+          // Unknown before (first refresh): nothing to compare with, so no fill is assumed
+          if (previous !== undefined && executedBuyAmount > previous) {
+            chainIdsWithFills.add(chainId)
+          }
+          this.#executedBuyAmounts.set(order.uid, executedBuyAmount)
+        })
+        this.#accountOrders.set(chainId, orders)
         return
       }
 
@@ -1947,6 +1973,11 @@ export class LimitOrdersController extends EventEmitter {
         ? 'Unable to load your orders right now. We will try again shortly.'
         : null
 
+    // A fill moved tokens in and out of the account, so its balances on that network are stale
+    if (chainIdsWithFills.size) {
+      this.#portfolioUpdate([...chainIdsWithFills].map((chainId) => BigInt(chainId)))
+    }
+
     await this.#resolveOrderTokens()
     if (this.#selectedAccount.account?.addr !== account.addr) return
 
@@ -1957,6 +1988,7 @@ export class LimitOrdersController extends EventEmitter {
 
   #clearOrders() {
     this.#accountOrders.clear()
+    this.#executedBuyAmounts.clear()
     this.#placingOrderUids.clear()
     this.#cancellingOrderUids.clear()
     this.orders = []

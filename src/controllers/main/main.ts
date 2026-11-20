@@ -747,7 +747,19 @@ export class MainController extends EventEmitter implements IMainController {
         this.requests.build({
           type: 'calls',
           params: { userRequestParams, executionType: 'open-request-window' }
-        })
+        }),
+      portfolioUpdate: (chainIds) => {
+        const networks = this.networks.networks.filter((n) => chainIds.includes(n.chainId))
+        if (!networks.length) return
+
+        this.updateSelectedAccountPortfolio({ networks }).catch((error) =>
+          this.emitError({
+            level: 'silent',
+            message: 'Failed to refresh the portfolio after a limit order filled',
+            error
+          })
+        )
+      }
     })
     this.appDataSync = new AppDataSyncController({
       eventEmitterRegistry,
