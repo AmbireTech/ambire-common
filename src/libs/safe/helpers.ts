@@ -2,12 +2,16 @@ import { concat, getBytes, hexlify, Interface, solidityPacked, toBeHex, ZeroAddr
 
 import { getSigForCalculations } from '@/libs/estimate/estimateHelpers'
 
-import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
+import { allowedMulticallContracts, execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest } from '../../interfaces/userRequest'
+import isSameAddr from '../../utils/isSameAddr'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { Call } from '../accountOp/types'
+
+import type { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 export const multiCallAbi = [
   { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },
@@ -22,6 +26,31 @@ export const multiCallAbi = [
 
 export const SAFE_CALL_OPERATION = 0
 export const SAFE_DELEGATE_CALL_OPERATION = 1
+
+const multiSendInterface = new Interface(multiCallAbi)
+
+/** A call made by a Safe transaction, either on its own or as part of a multiSend batch */
+type SafeTxCall = Pick<Call, 'to' | 'value' | 'data'>
+
+/** What a Safe transaction does, without its gas and nonce: its target, value, data and operation */
+type SafeTxAction = Pick<SafeMultisigTransactionResponse, 'to' | 'value' | 'data' | 'operation'>
+
+/**
+ * The `multiSend` calldata that batches the calls. Each one is made as a plain call, never as a
+ * delegate call
+ */
+function encodeMultiSendData(calls: { to: string; value: bigint; data: string }[]): Hex {
+  return multiSendInterface.encodeFunctionData('multiSend', [
+    concat(
+      calls.map(({ to, value, data }) =>
+        solidityPacked(
+          ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+          [SAFE_CALL_OPERATION, to, value, BigInt(getBytes(data).length), data]
+        )
+      )
+    )
+  ]) as Hex
+}
 
 export function encodeCalls(op: AccountOp): {
   to: Hex
@@ -41,44 +70,134 @@ export function encodeCalls(op: AccountOp): {
     }
   }
 
-  const multiSendData = new Interface(multiCallAbi).encodeFunctionData('multiSend', [
-    concat(
-      calls.map((call) => {
-        return solidityPacked(
-          ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
-          [SAFE_CALL_OPERATION, call[0], BigInt(call[1]), BigInt(getBytes(call[2]).length), call[2]]
-        )
-      })
-    )
-  ])
+  const multiSendData = encodeMultiSendData(
+    calls.map(([to, value, data]) => ({ to: to!, value: BigInt(value), data }))
+  )
 
   return {
     to: multiSendAddr as Hex,
     value: 0n,
-    data: multiSendData as Hex,
+    data: multiSendData,
     operation: SAFE_DELEGATE_CALL_OPERATION
   }
+}
+
+const isSameData = (one?: string | null, two?: string | null) =>
+  (one || '0x').toLowerCase() === (two || '0x').toLowerCase()
+
+const isMultiSendContract = (addr: string) =>
+  allowedMulticallContracts.some((multiSend) => isSameAddr(multiSend, addr))
+
+/**
+ * Whether the calls do exactly what the Safe transaction does, so what is shown (and simulated)
+ * for them is what the owners sign. Encoding them must give back the target, value, data and
+ * operation of the Safe transaction: either a single call made by the Safe, or a batch of plain
+ * calls run through a known multiSend contract with a delegate call
+ */
+export function doCallsMatchSafeTx(calls: SafeTxCall[], safeTx: SafeTxAction): boolean {
+  try {
+    const operation = Number(safeTx.operation)
+
+    if (operation === SAFE_CALL_OPERATION) {
+      const [call] = calls
+      return (
+        calls.length === 1 &&
+        !!call?.to &&
+        isSameAddr(call.to, safeTx.to) &&
+        call.value === BigInt(safeTx.value) &&
+        isSameData(call.data, safeTx.data)
+      )
+    }
+
+    if (operation !== SAFE_DELEGATE_CALL_OPERATION) return false
+    if (!calls.length || !isMultiSendContract(safeTx.to)) return false
+    // A delegate call doesn't send value, so a batch made by Ambire or the Safe app never has one
+    if (BigInt(safeTx.value) !== 0n) return false
+
+    const batchCalls = calls.flatMap(({ to, value, data }) => (to ? [{ to, value, data }] : []))
+    if (batchCalls.length !== calls.length) return false
+
+    return isSameData(encodeMultiSendData(batchCalls), safeTx.data)
+  } catch {
+    // Malformed values (e.g. a value that isn't a number) can't match anything
+    return false
+  }
+}
+
+/** The calls of a multiSend batch, or null if the data isn't a batch that could be fully read */
+function decodeMultiSendCalls(data?: string | null): SafeTxCall[] | null {
+  if (!data) return null
+
+  try {
+    const [transactions] = multiSendInterface.decodeFunctionData('multiSend', data)
+    const decoded = decodeMultiSend(transactions)
+    if (!decoded.every((call): call is SuccessfullyDecoded => call.success)) return null
+
+    return decoded.map(({ to, value, data: callData }) => ({ to, value, data: callData }))
+  } catch {
+    // Not a multiSend call
+    return null
+  }
+}
+
+/**
+ * The calls to show and simulate for a Safe transaction from the Safe Transaction Service.
+ * A batch is split into its calls only if they encode back to exactly the same transaction
+ * (see doCallsMatchSafeTx). Otherwise the transaction is shown as it will be sent, as one call
+ * with its target, value and data. A call can't carry the operation, so a delegate call shown
+ * this way gets a warning on the sign screen (see getSafeTxNotShownAsCallsWarning)
+ */
+export function getSafeTxCalls(safeTx: SafeTxAction): SafeTxCall[] {
+  const batchCalls = decodeMultiSendCalls(safeTx.data)
+  if (batchCalls && doCallsMatchSafeTx(batchCalls, safeTx)) return batchCalls
+
+  return [{ to: safeTx.to, value: BigInt(safeTx.value), data: safeTx.data || '0x' }]
+}
+
+/** The Safe transaction its owners sign, from a Safe Transaction Service response */
+export function toSafeTx(safeTx: SafeMultisigTransactionResponse): SafeTx {
+  return {
+    to: safeTx.to as Hex,
+    value: toBeHex(safeTx.value) as Hex,
+    data: safeTx.data ? (safeTx.data as Hex) : '0x',
+    operation: safeTx.operation,
+    safeTxGas: toBeHex(safeTx.safeTxGas) as Hex,
+    baseGas: toBeHex(safeTx.baseGas) as Hex,
+    gasPrice: toBeHex(safeTx.gasPrice) as Hex,
+    gasToken: safeTx.gasToken as Hex,
+    refundReceiver: safeTx.refundReceiver ? (safeTx.refundReceiver as Hex) : '0x',
+    nonce: toBeHex(safeTx.nonce) as Hex
+  }
+}
+
+/** An empty address (`0x`) is hashed as the zero address */
+const isSameSafeTxAddr = (one: string, two: string) =>
+  isSameAddr(one === '0x' ? ZeroAddress : one, two === '0x' ? ZeroAddress : two)
+
+/** Whether two Safe transactions are the same, i.e. their owners sign the same thing */
+export function isSameSafeTx(one: SafeTx, two: SafeTx): boolean {
+  return (
+    isSameSafeTxAddr(one.to, two.to) &&
+    BigInt(one.value) === BigInt(two.value) &&
+    isSameData(one.data, two.data) &&
+    Number(one.operation) === Number(two.operation) &&
+    BigInt(one.safeTxGas) === BigInt(two.safeTxGas) &&
+    BigInt(one.baseGas) === BigInt(two.baseGas) &&
+    BigInt(one.gasPrice) === BigInt(two.gasPrice) &&
+    isSameSafeTxAddr(one.gasToken, two.gasToken) &&
+    isSameSafeTxAddr(one.refundReceiver, two.refundReceiver) &&
+    BigInt(one.nonce) === BigInt(two.nonce)
+  )
 }
 
 /**
  * Construct a Safe txn for signing
  */
 export function getSafeTxn(op: AccountOp, state: AccountOnchainState): SafeTx {
-  // todo: we're blindly trusting the returned txn from Safe Global, is this OK?
-  if (op.safeTx) {
-    return {
-      to: op.safeTx.to as Hex,
-      value: toBeHex(op.safeTx.value) as Hex,
-      data: op.safeTx.data ? (op.safeTx.data as Hex) : '0x',
-      operation: op.safeTx.operation,
-      safeTxGas: toBeHex(op.safeTx.safeTxGas) as Hex,
-      baseGas: toBeHex(op.safeTx.baseGas) as Hex,
-      gasPrice: toBeHex(op.safeTx.gasPrice) as Hex,
-      gasToken: op.safeTx.gasToken as Hex,
-      refundReceiver: op.safeTx.refundReceiver ? (op.safeTx.refundReceiver as Hex) : '0x',
-      nonce: toBeHex(op.safeTx.nonce) as Hex
-    }
-  }
+  // A Safe txn from the Safe Transaction Service is signed as it was fetched. It's taken only
+  // if it matches its Safe transaction hash (see SafeController.fetchPending), and it never
+  // changes while its request is open (see RequestsController)
+  if (op.safeTx) return toSafeTx(op.safeTx)
 
   const { to, value, data, operation } = encodeCalls(op)
 

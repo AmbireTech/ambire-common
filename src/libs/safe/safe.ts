@@ -6,6 +6,7 @@ import {
   getAddress,
   getBytes,
   getCreate2Address,
+  hashMessage,
   hexlify,
   id,
   Interface,
@@ -30,18 +31,19 @@ import { Key } from '../../interfaces/keystore'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeAccountByOwner, SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
+import isSameAddr from '../../utils/isSameAddr'
 import { paginate } from '../../utils/paginate'
 import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
 import { getDefaultAccountPreferences } from '../account/account'
 import { Call } from '../accountOp/types'
-import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
 import {
-  decodeMultiSend,
-  multiCallAbi,
-  parseSafeMessageOrigin,
-  SuccessfullyDecoded
-} from './helpers'
+  adaptTypedMessageForMetaMaskSigUtil,
+  getEIP712Hash,
+  getSafeMessageTypedData,
+  getSafeTxTypedData
+} from '../signMessage/signMessage'
+import { getSafeTxCalls, parseSafeMessageOrigin, toSafeTx } from './helpers'
 
 import type {
   AddMessageOptions,
@@ -806,25 +808,9 @@ export function toCallsUserRequest(
   Object.keys(response).forEach((chainId: string) => {
     const txns = response[chainId]!.txns
     txns.forEach((txn) => {
-      let calls: CallsUserRequest['signAccountOp']['accountOp']['calls'] = []
-      try {
-        // try to decode the data to check if it's a batch
-        // if it is, use it; otherwise, construct a single call reqx
-        const multisendInterface = new Interface(multiCallAbi)
-        const multiSendCall = multisendInterface.decodeFunctionData('multiSend', txn.data!)
-        const decodedCalls = decodeMultiSend(multiSendCall[0])
-        if (!decodedCalls.every((call): call is SuccessfullyDecoded => call.success)) {
-          throw new Error('failed to decode one or more multiSend calls')
-        }
-        calls = decodedCalls.map((call) => ({
-          to: call.to,
-          value: call.value,
-          data: call.data
-        }))
-      } catch {
-        // this just means it's not a batch
-        calls = [{ to: txn.to, value: BigInt(txn.value), data: txn.data || '0x' }]
-      }
+      // A batch is shown as its calls only if they are exactly what gets signed,
+      // otherwise the txn is shown as it will be sent
+      const calls: CallsUserRequest['signAccountOp']['accountOp']['calls'] = getSafeTxCalls(txn)
 
       const signature = txn.confirmations
         ? sortSigs(
@@ -905,10 +891,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
         params: {
           chainId: BigInt(chainId),
           signed: message.confirmations.map((confirm) => confirm.owner),
-          message:
-            typeof message.message === 'string'
-              ? (hexlify(toUtf8Bytes(message.message)) as Hex)
-              : message.message,
+          message: toSafeMessageToSign(message.message),
           messageHash: message.messageHash as Hex,
           signature: sortSigs(
             message.confirmations.map((c) => c.signature) as Hex[],
@@ -977,17 +960,170 @@ export async function isSafeHashApproved(
   return approved !== 0n
 }
 
+/** An owner's signature of a Safe transaction or message, from the Safe Transaction Service */
+type SafeConfirmation = { owner: string; signature: string }
+
+/** The `v` of a contract (EIP-1271) owner signature */
+const SAFE_CONTRACT_SIGNATURE_V = 0
+
+/** The `v` values of an ECDSA signature of the EIP-712 Safe transaction hash */
+const SAFE_EIP712_SIGNATURE_V_VALUES = [27, 28]
+
+/**
+ * The Safe adds 4 to the `v` of an `eth_sign` signature (one of the Safe transaction hash
+ * as a message), to tell it apart from an EIP-712 one
+ */
+const SAFE_ETH_SIGN_V_OFFSET = 4
+
+const SAFE_SIGNATURE_LENGTH = 65
+
+/** The owner a contract or approved hash signature is for, which it carries in `r` */
+const getOwnerInSignature = (sig: string) => getAddress(dataSlice(sig, 12, 32))
+
+/** The signer of an ECDSA signature of the Safe transaction hash, made with EIP-712 or `eth_sign` */
+function recoverEcdsaSigner(sig: string, safeTxHash: string, v: number): string | null {
+  if (SAFE_EIP712_SIGNATURE_V_VALUES.includes(v)) return recoverAddress(safeTxHash, sig)
+
+  const ethSignV = v - SAFE_ETH_SIGN_V_OFFSET
+  if (!SAFE_EIP712_SIGNATURE_V_VALUES.includes(ethSignV)) return null
+
+  return recoverAddress(
+    hashMessage(getBytes(safeTxHash)),
+    concat([dataSlice(sig, 0, 64), toBeHex(ethSignV, 1)])
+  )
+}
+
+/**
+ * Whether the owner a confirmation from the Safe Transaction Service is attributed to really
+ * confirmed the Safe transaction. The app reads who signed from the confirmations (see
+ * recoverOwner), so each one is checked against its signature first:
+ * - an approved hash signature counts only if the owner approved the hash onchain
+ * - an ECDSA signature counts only if it's signed by the owner
+ * - a contract signature counts if it's for the owner, the Safe checks it onchain (EIP-1271)
+ * A signature that isn't a single Safe signature is left out, as signatures are read 65 bytes
+ * at a time (see getSigs)
+ */
+async function isSafeConfirmationVerified(
+  safeAddr: string,
+  safeTxHash: string,
+  { owner, signature }: SafeConfirmation,
+  provider?: RPCProvider
+): Promise<boolean> {
+  const bytes = getBytes(signature)
+  if (bytes.length !== SAFE_SIGNATURE_LENGTH) return false
+
+  const v = bytes[SAFE_SIGNATURE_LENGTH - 1]!
+
+  if (v === SAFE_APPROVED_HASH_SIGNATURE_V) {
+    if (!provider || !isSameAddr(getOwnerInSignature(signature), owner)) return false
+
+    return isSafeHashApproved(safeAddr, owner, safeTxHash, provider)
+  }
+
+  if (v === SAFE_CONTRACT_SIGNATURE_V) return isSameAddr(getOwnerInSignature(signature), owner)
+
+  const signer = recoverEcdsaSigner(signature, safeTxHash, v)
+  return !!signer && isSameAddr(signer, owner)
+}
+
+/**
+ * The confirmations of a Safe transaction or message from the Safe Transaction Service whose
+ * owners really confirmed it (see isSafeConfirmationVerified). A confirmation that can't be
+ * checked, e.g. because the RPC fails, is left out, and gets checked again with the next fetch
+ *
+ * @param safeTxHash the Safe transaction hash, or the Safe message hash of a message
+ */
+export async function getVerifiedSafeConfirmations<T extends SafeConfirmation>(
+  safeAddr: string,
+  safeTxHash: string,
+  confirmations: T[],
+  provider?: RPCProvider
+): Promise<T[]> {
+  const verifications = await Promise.all(
+    confirmations.map((confirmation) =>
+      isSafeConfirmationVerified(safeAddr, safeTxHash, confirmation, provider).catch(
+        (error: unknown) => {
+          console.error('Safe: failed to verify an owner confirmation, leaving it out', error)
+          return false
+        }
+      )
+    )
+  )
+
+  return confirmations.filter((_, i) => verifications[i])
+}
+
+/**
+ * Whether the Safe transaction hash (`safeTxHash`) from the Safe Transaction Service is the hash
+ * of the Safe transaction it came with, calculated the way the owners sign it. The owners'
+ * signatures are checked against this hash, so it must belong to the details that get signed
+ *
+ * @param safeVersion the version of the Safe on the chain, as it changes the hash
+ */
+export function isSafeTxHashValid(
+  txn: SafeMultisigTransactionResponse,
+  safeAddr: Hex,
+  chainId: bigint,
+  safeVersion: string | null | undefined
+): boolean {
+  try {
+    const typedData = getSafeTxTypedData(chainId, safeAddr, safeVersion, toSafeTx(txn))
+
+    return getSafeTxnHash(typedData).toLowerCase() === txn.safeTxHash.toLowerCase()
+  } catch (error) {
+    // The details of the transaction are malformed (e.g. a value that isn't a number)
+    console.error('Safe: failed to calculate the hash of a Safe transaction', error)
+    return false
+  }
+}
+
+/**
+ * A Safe message from the Safe Transaction Service as its owners sign it: a plain text message
+ * as its UTF-8 bytes (hex), or the EIP-712 typed data as it is
+ */
+export function toSafeMessageToSign(message: SafeMessage['message']): Hex | EIP712TypedData {
+  return typeof message === 'string' ? (hexlify(toUtf8Bytes(message)) as Hex) : message
+}
+
+/**
+ * Whether the Safe message hash (`messageHash`) from the Safe Transaction Service is the hash
+ * of the message it came with, calculated the way the owners sign it (see
+ * getSafeMessageTypedData). The owners' signatures are checked against this hash, so it must
+ * belong to the message that is shown and signed
+ */
+export function isSafeMessageHashValid(
+  { message, messageHash }: Pick<SafeMessage, 'message' | 'messageHash'>,
+  safeAddr: Hex,
+  chainId: bigint
+): boolean {
+  try {
+    const typedData = getSafeMessageTypedData(
+      toSafeMessageToSign(message) as Hex | TypedMessageUserRequest['meta']['params'],
+      chainId,
+      safeAddr
+    )
+
+    return getEIP712Hash(typedData).toLowerCase() === messageHash.toLowerCase()
+  } catch (error) {
+    // The message is malformed (e.g. typed data without types)
+    console.error('Safe: failed to calculate the hash of a Safe message', error)
+    return false
+  }
+}
+
 function recoverOwner(
   sig: string,
   hash: string,
   confirmations?: { owner: string; signature: string }[]
 ) {
-  // approved hash signatures carry the owner in `r`
-  if (isSafeApprovedHashSignature(sig)) return getAddress(dataSlice(sig, 12, 32))
+  // approved hash signatures carry the owner in `r`. Ones from the Safe Transaction Service
+  // are taken only if the owner approved the hash onchain (see getVerifiedSafeConfirmations)
+  if (isSafeApprovedHashSignature(sig)) return getOwnerInSignature(sig)
 
   // a transaction from Safe Global may have signatures that are not
   // ecdsa; therefore, we cannot extract the owner from them by using
-  // a plain recoverAddress. We rely on the Safe Global information
+  // a plain recoverAddress. We rely on the Safe Global information,
+  // which is checked against the signatures when fetched (see getVerifiedSafeConfirmations)
   const safeOwner = getOwnerFromSafeTx(sig, confirmations)
   if (safeOwner) return safeOwner
 
@@ -1058,6 +1194,18 @@ export function sortSigs(
 }
 
 /**
+ * A Safe transaction from the Safe Transaction Service: executed, with its onchain
+ * `transactionHash`, or still waiting for the owners, with their `confirmations`
+ */
+export type SafeFetchedTransaction = {
+  chainId: bigint
+  safeTxnHash: Hex
+  nonce: string
+  transactionHash?: Hex
+  confirmations?: SafeMultisigConfirmationResponse[]
+}
+
+/**
  * Fetch the Safe transactions of an account on each of the passed chains.
  * `minNonce` is the smallest nonce we are still waiting on for that chain -
  * transactions below it can no longer execute, so the API does not have to
@@ -1066,20 +1214,8 @@ export function sortSigs(
 export async function fetchExecutedTransactions(
   safeAddr: Hex,
   chains: { chainId: bigint; minNonce: number }[]
-): Promise<
-  {
-    safeTxnHash: Hex
-    nonce: string
-    transactionHash?: Hex
-    confirmations?: SafeMultisigConfirmationResponse[]
-  }[]
-> {
-  const results: {
-    safeTxnHash: Hex
-    nonce: string
-    transactionHash?: Hex
-    confirmations?: SafeMultisigConfirmationResponse[]
-  }[] = []
+): Promise<SafeFetchedTransaction[]> {
+  const results: SafeFetchedTransaction[] = []
   const pages = paginate(chains, 3)
 
   for (let i = 0; i < pages.length; i++) {
@@ -1106,21 +1242,23 @@ export async function fetchExecutedTransactions(
           console.log(`failed to call getMultisigTransactions on ${chainId}`, error)
           return null
         })
-        return res
+        return res && { chainId, txns: res.results }
       })
     )
     responses
-      .filter((response): response is SafeMultisigTransactionListResponse => response !== null)
-      .forEach(({ results: txns }) => {
+      .filter((response) => response !== null)
+      .forEach(({ chainId, txns }) => {
         txns.forEach((tx) => {
           if (tx.transactionHash) {
             results.push({
+              chainId,
               safeTxnHash: tx.safeTxHash as Hex,
               transactionHash: tx.transactionHash as Hex,
               nonce: tx.nonce
             })
           } else {
             results.push({
+              chainId,
               safeTxnHash: tx.safeTxHash as Hex,
               nonce: tx.nonce,
               confirmations: tx.confirmations

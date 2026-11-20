@@ -202,6 +202,7 @@ import {
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
   getSafeGasRefundWarning,
+  getSafeTxNotShownAsCallsWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
@@ -343,6 +344,13 @@ export class SignAccountOpController
    * in requests/actions.
    */
   #accountOp: AccountOp
+
+  /**
+   * Set when the calls of a Safe transaction from the Safe Transaction Service aren't exactly
+   * what gets signed. Kept up to date with the account op, so the banners getter doesn't have
+   * to encode the calls again on every update
+   */
+  #safeTxNotShownAsCallsWarning: Warning | null = null
 
   #customSafeNonce: bigint | null = null
 
@@ -709,6 +717,7 @@ export class SignAccountOpController
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
+    this.#safeTxNotShownAsCallsWarning = getSafeTxNotShownAsCallsWarning(this.#accountOp)
     this.#replacement = replacement
     this.#updateSafeEip712Data()
 
@@ -888,6 +897,8 @@ export class SignAccountOpController
       ...accountOp,
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
+    if (hasUpdatedCalls || 'safeTx' in accountOp)
+      this.#safeTxNotShownAsCallsWarning = getSafeTxNotShownAsCallsWarning(this.#accountOp)
     this.#updateSafeEip712Data()
 
     if (hasUpdatedCalls) void this.#updateFirstTimeRecipients()
@@ -6036,6 +6047,15 @@ export class SignAccountOpController
         type: 'warning',
         title: safeDelegateCallWarning.title,
         text: safeDelegateCallWarning.text || safeDelegateCallWarning.title
+      })
+    }
+
+    if (this.#safeTxNotShownAsCallsWarning) {
+      banners.push({
+        id: this.#safeTxNotShownAsCallsWarning.id,
+        type: 'warning',
+        title: this.#safeTxNotShownAsCallsWarning.title,
+        text: this.#safeTxNotShownAsCallsWarning.text || this.#safeTxNotShownAsCallsWarning.title
       })
     }
 

@@ -1,4 +1,4 @@
-import { getAddress } from 'ethers'
+import { getAddress, Interface, keccak256, toUtf8Bytes, Wallet } from 'ethers'
 
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals'
 
@@ -17,7 +17,10 @@ import {
   getApiKit,
   getMessage,
   getSafeAccountByOwner,
-  isSafeContract
+  getSafeApprovedHashSignature,
+  isSafeContract,
+  isSafeMessageHashValid,
+  isSafeTxHashValid
 } from '../../libs/safe/safe'
 import { SafeController } from './safe'
 
@@ -29,7 +32,10 @@ jest.mock('../../libs/safe/safe', () => ({
   getApiKit: jest.fn(),
   getMessage: jest.fn(),
   getSafeAccountByOwner: jest.fn(),
-  isSafeContract: jest.fn()
+  isSafeContract: jest.fn(),
+  // the txns and messages in these tests are not real ones, the hash checks have their own tests
+  isSafeTxHashValid: jest.fn(() => true),
+  isSafeMessageHashValid: jest.fn(() => true)
 }))
 
 // The pause between requests to the Safe API is not what is tested
@@ -513,12 +519,14 @@ describe('SafeController pending counts', () => {
   const createPendingCountsController = ({
     accountStates,
     importedKeyAddrs = [OWNER],
-    refreshedAccountStates = {}
+    refreshedAccountStates = {},
+    providers = {}
   }: {
     accountStates: PendingCountsAccountStates
     importedKeyAddrs?: string[]
     // what a refresh of the account states returns, per Safe
     refreshedAccountStates?: PendingCountsAccountStates
+    providers?: Record<string, unknown>
   }) => {
     const keystoreState = { isUnlocked: true }
     const accounts = {
@@ -541,7 +549,7 @@ describe('SafeController pending counts', () => {
         initialLoadPromise: Promise.resolve(),
         networks: [{ chainId: 1n }, { chainId: 10n }, { chainId: 8453n }]
       } as any,
-      providers: { providers: {} } as any,
+      providers: { providers } as any,
       storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any,
       keystore: {
         get isUnlocked() {
@@ -557,6 +565,10 @@ describe('SafeController pending counts', () => {
     return { controller, accounts, importedKeyAddrs, keystoreState }
   }
 
+  // The owners who sign the messages below, a different one for each confirmation
+  const messageSigners = [1, 2, 3].map(
+    (i) => new Wallet(keccak256(toUtf8Bytes(`message signer ${i}`)))
+  )
   const pendingResponse = (
     chainId: bigint,
     txnsCount: number,
@@ -564,11 +576,18 @@ describe('SafeController pending counts', () => {
   ) => ({
     [chainId.toString()]: {
       txns: Array.from({ length: txnsCount }, (_, i) => ({ safeTxHash: `0x${i}` })),
-      messages: confirmationsPerMessage.map((confirmations, i) => ({
-        messageHash: `0x${i}`,
-        created: new Date().toISOString(),
-        confirmations: Array.from({ length: confirmations }, () => ({}))
-      }))
+      messages: confirmationsPerMessage.map((confirmations, i) => {
+        const messageHash = keccak256(toUtf8Bytes(`message ${i}`))
+
+        return {
+          messageHash,
+          created: new Date().toISOString(),
+          confirmations: messageSigners.slice(0, confirmations).map((signer) => ({
+            owner: signer.address,
+            signature: signer.signingKey.sign(messageHash).serialized
+          }))
+        }
+      })
     }
   })
 
@@ -813,6 +832,196 @@ describe('SafeController pending counts', () => {
     ])
   })
 
+  describe('what the Safe API returns', () => {
+    // The Safe transaction or message hash the owners sign
+    const SIGNED_HASH = keccak256(toUtf8Bytes('safe transaction')) as Hex
+    const owner = new Wallet(keccak256(toUtf8Bytes('owner key')))
+    const ownerConfirmation = {
+      owner: owner.address,
+      signature: owner.signingKey.sign(SIGNED_HASH).serialized,
+      signatureType: 'EOA',
+      submissionDate: '2026-08-14T00:00:00Z'
+    }
+    // An approval the owner never made onchain, see the provider below
+    const madeUpApproval = {
+      owner: OWNER,
+      signature: getSafeApprovedHashSignature(OWNER),
+      signatureType: 'APPROVED_HASH',
+      submissionDate: '2026-08-14T00:00:00Z'
+    }
+    const approvedHashesInterface = new Interface([
+      'function approvedHashes(address, bytes32) view returns (uint256)'
+    ])
+    const provider = {
+      call: jest.fn(async () =>
+        approvedHashesInterface.encodeFunctionResult('approvedHashes', [0n])
+      )
+    }
+    const accountStates = { [SAFE_A]: { '1': { isDeployed: true, threshold: 2, nonce: 0n } } }
+
+    const pendingMessage = (messageHash: string, confirmations: unknown[]) => ({
+      messageHash,
+      message: 'Sign in to the app',
+      created: new Date().toISOString(),
+      confirmations,
+      // what the Safe API says, worked out again from the verified confirmations
+      isConfirmed: true,
+      preparedSignature: '0x1234'
+    })
+
+    afterEach(() => {
+      jest.mocked(isSafeTxHashValid).mockImplementation(() => true)
+      jest.mocked(isSafeMessageHashValid).mockImplementation(() => true)
+      // later tests check that these are not called
+      jest.mocked(fetchExecutedTransactions).mockClear()
+      jest.mocked(getMessage).mockClear()
+    })
+
+    it('leaves out the pending txns that do not match their hash', async () => {
+      const { controller } = createPendingCountsController({ accountStates })
+      await controller.initialLoadPromise
+      jest.mocked(fetchAllPending).mockResolvedValueOnce(pendingResponse(1n, 2, []) as any)
+      jest.mocked(isSafeTxHashValid).mockImplementation(({ safeTxHash }) => safeTxHash === '0x0')
+      const errors: unknown[] = []
+      controller.onError((error) => errors.push(error))
+
+      const result = await controller.fetchPending(SAFE_A as Hex, [
+        { chainId: 1n, threshold: 2, nonce: 0n }
+      ])
+
+      expect(result?.['1']?.txns.map(({ safeTxHash }) => safeTxHash)).toEqual(['0x0'])
+      expect(controller.pendingCountBySafe[SAFE_A]).toEqual({ '1': 1 })
+      expect(errors).toHaveLength(1)
+    })
+
+    it('keeps only the owner confirmations of pending txns that could be verified', async () => {
+      const { controller } = createPendingCountsController({
+        accountStates,
+        providers: { '1': provider }
+      })
+      await controller.initialLoadPromise
+      jest.mocked(fetchAllPending).mockResolvedValueOnce({
+        '1': {
+          txns: [{ safeTxHash: SIGNED_HASH, confirmations: [ownerConfirmation, madeUpApproval] }],
+          messages: []
+        }
+      } as any)
+
+      const result = await controller.fetchPending(SAFE_A as Hex, [
+        { chainId: 1n, threshold: 2, nonce: 0n }
+      ])
+
+      expect(result?.['1']?.txns[0]?.confirmations).toEqual([ownerConfirmation])
+    })
+
+    it('keeps only the owner confirmations of fetched txns that could be verified', async () => {
+      const { controller } = createPendingCountsController({
+        accountStates,
+        providers: { '1': provider }
+      })
+      await controller.initialLoadPromise
+      jest.mocked(fetchExecutedTransactions).mockResolvedValueOnce([
+        {
+          chainId: 1n,
+          safeTxnHash: SIGNED_HASH,
+          nonce: '0',
+          confirmations: [ownerConfirmation, madeUpApproval] as any
+        }
+      ])
+
+      const result = await controller.fetchExecuted(SAFE_A as Hex, [{ chainId: 1n, minNonce: 0 }])
+
+      expect(result[0]?.confirmations).toEqual([ownerConfirmation])
+    })
+
+    it('leaves out the pending messages that do not match their hash', async () => {
+      const { controller } = createPendingCountsController({ accountStates })
+      await controller.initialLoadPromise
+      jest.mocked(fetchAllPending).mockResolvedValueOnce({
+        '1': {
+          txns: [],
+          messages: [pendingMessage('0x01', []), pendingMessage('0x02', [])]
+        }
+      } as any)
+      jest
+        .mocked(isSafeMessageHashValid)
+        .mockImplementation(({ messageHash }) => messageHash === '0x01')
+
+      const result = await controller.fetchPending(SAFE_A as Hex, [
+        { chainId: 1n, threshold: 2, nonce: 0n }
+      ])
+
+      expect(result?.['1']?.messages.map(({ messageHash }) => messageHash)).toEqual(['0x01'])
+    })
+
+    it('works out whether a pending message is signed from the verified confirmations only', async () => {
+      const { controller } = createPendingCountsController({
+        accountStates,
+        providers: { '1': provider }
+      })
+      await controller.initialLoadPromise
+      jest.mocked(fetchAllPending).mockResolvedValueOnce({
+        '1': {
+          txns: [],
+          messages: [pendingMessage(SIGNED_HASH, [ownerConfirmation, madeUpApproval])]
+        }
+      } as any)
+
+      const result = await controller.fetchPending(SAFE_A as Hex, [
+        { chainId: 1n, threshold: 2, nonce: 0n }
+      ])
+
+      expect(result?.['1']?.messages[0]).toMatchObject({
+        confirmations: [ownerConfirmation],
+        isConfirmed: false,
+        preparedSignature: ownerConfirmation.signature
+      })
+    })
+
+    it('returns a fetched message only if it is the one asked for, with its verified confirmations', async () => {
+      const { controller } = createPendingCountsController({
+        accountStates,
+        providers: { '1': provider }
+      })
+      await controller.initialLoadPromise
+      jest
+        .mocked(getMessage)
+        .mockResolvedValueOnce(pendingMessage(SIGNED_HASH, [ownerConfirmation]) as any)
+        .mockResolvedValueOnce(pendingMessage(`0x${'0'.repeat(64)}`, [ownerConfirmation]) as any)
+      const entry = { chainId: 1n, threshold: 1, messageHash: SIGNED_HASH }
+
+      const [verified] = await controller.getMessagesByHash(SAFE_A as Hex, [entry])
+      const notAskedFor = await controller.getMessagesByHash(SAFE_A as Hex, [entry])
+
+      expect(verified).toMatchObject({
+        confirmations: [ownerConfirmation],
+        isConfirmed: true,
+        preparedSignature: ownerConfirmation.signature
+      })
+      expect(notAskedFor).toEqual([])
+    })
+
+    it('does not count a made-up approval towards the signatures of a fetched message', async () => {
+      const { controller } = createPendingCountsController({
+        accountStates,
+        providers: { '1': provider }
+      })
+      await controller.initialLoadPromise
+      jest
+        .mocked(getMessage)
+        .mockResolvedValueOnce(
+          pendingMessage(SIGNED_HASH, [ownerConfirmation, madeUpApproval]) as any
+        )
+
+      const [message] = await controller.getMessagesByHash(SAFE_A as Hex, [
+        { chainId: 1n, threshold: 2, messageHash: SIGNED_HASH }
+      ])
+
+      expect(message?.isConfirmed).toBe(false)
+      expect(message?.confirmations).toEqual([ownerConfirmation])
+    })
+  })
+
   describe('while the wallet is locked', () => {
     it('does not update the other Safes', async () => {
       const { controller, accounts, keystoreState } = createPendingCountsController({
@@ -871,7 +1080,9 @@ describe('SafeController pending counts', () => {
         controller.fetchExecuted(SAFE_A as Hex, [{ chainId: 1n, minNonce: 0 }])
       ).resolves.toEqual([])
       await expect(
-        controller.getMessagesByHash([{ chainId: 1n, threshold: 1, messageHash: '0x01' }])
+        controller.getMessagesByHash(SAFE_A as Hex, [
+          { chainId: 1n, threshold: 1, messageHash: '0x01' }
+        ])
       ).resolves.toEqual([])
       expect(fetchExecutedTransactions).not.toHaveBeenCalled()
       expect(getMessage).not.toHaveBeenCalled()

@@ -9,7 +9,8 @@ const WARNINGS: Record<
   | 'unknownToken'
   | 'feeTokenPriceUnavailable'
   | 'v1Acc'
-  | 'safeDelegateCall',
+  | 'safeDelegateCall'
+  | 'safeTxNotShownAsCalls',
   Warning
 > = {
   significantBalanceDecrease: {
@@ -36,6 +37,11 @@ const WARNINGS: Record<
     id: 'safeDelegateCall',
     title: 'Delegate call to an unverified contract',
     text: 'This Safe transaction delegates permissions to a contract not whitelisted by Safe. Proceed with caution.'
+  },
+  safeTxNotShownAsCalls: {
+    id: 'safeTxNotShownAsCalls',
+    title: "We couldn't break this transaction down",
+    text: "It's shown exactly as it will be sent, and its estimated effects may not be accurate. Only proceed if you trust whoever created it."
   }
 }
 
