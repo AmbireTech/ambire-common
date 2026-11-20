@@ -90,7 +90,7 @@ export const getDelegateCallWarning = (
   if (shouldDisplaySafeDelegateCallWarning(operation, to))
     warnings.push(
       getWarning(
-        'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+        "This lets a contract that isn't part of Safe act with full control of your Safe. Only continue if you trust it.",
         'SAFE{WALLET}_DELEGATE_CALL',
         undefined,
         to && isAddress(to) ? getAddress(to) : undefined
@@ -108,10 +108,10 @@ export const getDelegateCallWarning = (
  */
 export const getSafeTxNotBrokenDownWarning = (): HumanizerWarning => ({
   ...getWarning(
-    "This transaction was built in an unusual way, so what it does may not match what's shown. This is a common sign of a scam. Only sign it if you built it yourself.",
+    "It can give another contract full control of your Safe, and we can't check what that contract will do. Some apps do this on purpose, but scammers do it too. Only sign it if you started it yourself in an app you trust.",
     'SAFE{WALLET}_TX_NOT_BROKEN_DOWN'
   ),
-  title: "We couldn't break this transaction down",
+  title: "We can't show what this transaction does",
   promptBefore: ['sign']
 })
 

@@ -3233,7 +3233,7 @@ describe('ERC-7730 descriptors', () => {
 
     expect(irCalls[0]?.warnings).toEqual([
       getWarning(
-        'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+        "This lets a contract that isn't part of Safe act with full control of your Safe. Only continue if you trust it.",
         'SAFE{WALLET}_DELEGATE_CALL',
         undefined,
         recipeExecutor
@@ -3455,7 +3455,7 @@ describe('ERC-7730 descriptors', () => {
     expect(irCalls[0]?.warnings).toEqual(
       expect.arrayContaining([
         getWarning(
-          'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+          "This lets a contract that isn't part of Safe act with full control of your Safe. Only continue if you trust it.",
           'SAFE{WALLET}_DELEGATE_CALL',
           undefined,
           delegateCallTarget
@@ -4306,7 +4306,7 @@ describe('ERC-7730 descriptors', () => {
     ])
     expect(irMessage.warnings).toEqual([
       getWarning(
-        'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+        "This lets a contract that isn't part of Safe act with full control of your Safe. Only continue if you trust it.",
         'SAFE{WALLET}_DELEGATE_CALL',
         undefined,
         recipeExecutor
@@ -4958,11 +4958,11 @@ describe('ERC-7730 descriptors', () => {
     })
 
     // A hidden delegatecall leg into a non-whitelisted contract must surface the same
-    // "not whitelisted by Safe" warning that a top-level delegatecall would get.
+    // "isn't part of Safe" warning that a top-level delegatecall would get.
     expect(irMessage.warnings).toEqual(
       expect.arrayContaining([
         getWarning(
-          'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+          "This lets a contract that isn't part of Safe act with full control of your Safe. Only continue if you trust it.",
           'SAFE{WALLET}_DELEGATE_CALL',
           undefined,
           getAddress(delegateCallTarget)
@@ -5880,7 +5880,7 @@ describe('SafeTx messages and the calls they are shown as', () => {
 
     warnings.forEach((warning) => {
       expect(warning?.promptBefore).toEqual(['sign'])
-      expect(warning?.title).toBe("We couldn't break this transaction down")
+      expect(warning?.title).toBe("We can't show what this transaction does")
     })
   })
 
