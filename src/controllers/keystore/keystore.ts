@@ -13,6 +13,8 @@ import {
   hexlify,
   keccak256,
   Mnemonic,
+  toUtf8Bytes,
+  toUtf8String,
   Wallet
 } from 'ethers'
 
@@ -64,7 +66,8 @@ import {
   ReadyToAddKeys,
   SigningAuthResult,
   StoredKey,
-  StoredKeystoreSeed
+  StoredKeystoreSeed,
+  StoredLatticeSession
 } from '../../interfaces/keystore'
 import { Platform } from '../../interfaces/platform'
 import { PrivacyProviderId } from '../../interfaces/privateAccount'
@@ -128,6 +131,19 @@ const getSyncedSeedFields = ({
 /** Tells apart the keystore's privacy key requests of each phrase and provider */
 const getPrivacyRequestKey = (seedId: KeystoreSeed['id'], providerId: PrivacyProviderId) =>
   `${seedId}:${providerId}`
+
+/** The `version` of a saved Lattice1 session (see `StoredLatticeSession`) this app writes and reads */
+const LATTICE_SESSION_VERSION = 1
+
+/**
+ * The encrypted part of a saved Lattice1 session, or null when this app can't read the entry
+ * (another version, or not a session at all). Throws when it looks encrypted but is malformed.
+ */
+const getLatticeSessionPayload = (stored: StoredLatticeSession): AESGCMEncrypted | null => {
+  if (stored?.version !== LATTICE_SESSION_VERSION) return null
+
+  return tryParseGcmPayload(stored.encrypted)
+}
 
 const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
   'Keystore unexpected error. If the problem persists, please contact support.'
@@ -197,6 +213,16 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   #storage: IStorageController
 
   #keystoreSeeds: StoredKeystoreSeed[] = []
+
+  /** The saved GridPlus Lattice1 session, still encrypted. Read through `getLatticeSession` */
+  #latticeSession: StoredLatticeSession | null = null
+
+  /**
+   * Saving and removing the Lattice1 session, chained so they apply in the order they were
+   * called: the SDK saves on every change without waiting, and a slower save finishing last
+   * would otherwise bring back an older session
+   */
+  #latticeSessionChanges: Promise<void> = Promise.resolve()
 
   /**
    * Whether the stored recovery phrases have been read. False if reading failed, when `seeds` may
@@ -279,10 +305,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   async #load() {
     try {
-      const [keystoreSeeds, keyStoreUid, keystoreKeys] = await Promise.all([
+      const [keystoreSeeds, keyStoreUid, keystoreKeys, latticeSession] = await Promise.all([
         this.#storage.get('keystoreSeeds', []),
         this.#storage.get('keyStoreUid', null),
-        this.#storage.get('keystoreKeys', [])
+        this.#storage.get('keystoreKeys', []),
+        this.#storage.get('keystoreLatticeSession', null)
       ])
       this.keyStoreUid = keyStoreUid
       this.#keystoreSeeds = keystoreSeeds.map((s) => {
@@ -294,6 +321,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       })
       this.areSeedsLoaded = true
       this.#keystoreKeys = keystoreKeys
+      this.#latticeSession = latticeSession
     } catch (e: any) {
       this.emitError({
         message:
@@ -1897,6 +1925,95 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     // @ts-expect-error TODO: Figure out the correct type definition
     return new SignerInitializer(key)
+  }
+
+  /**
+   * Encrypts and saves the session of a paired GridPlus Lattice1 (the gridplus-sdk client
+   * data), replacing the one saved before. It holds the key the Lattice was paired with, so it
+   * stays encrypted and on this device - it is not part of the app data sync. Throws when
+   * locked, for the Lattice controller to handle.
+   */
+  async saveLatticeSession(session: string) {
+    await this.initialLoadPromise
+    if (!session) throw new Error('keystore: no Lattice session to save')
+
+    return this.#queueLatticeSessionChange(async () => {
+      if (!this.isUnlocked || !this.#mainKey) throw new Error('keystore: not unlocked')
+
+      const encrypted = await encryptWithKey(this.#mainKey, toUtf8Bytes(session))
+      await this.#setLatticeSession({ version: LATTICE_SESSION_VERSION, encrypted })
+    })
+  }
+
+  /**
+   * The saved GridPlus Lattice1 session, decrypted, or null when there is none. A saved session
+   * this app can't read (damaged, or saved by another version) is removed and reported, and
+   * null is returned, so the user connects the Lattice again. Throws when locked.
+   */
+  async getLatticeSession(): Promise<string | null> {
+    await this.initialLoadPromise
+    // So a session that is being replaced or removed is never returned
+    await this.#latticeSessionChanges
+    if (!this.isUnlocked || !this.#mainKey) throw new Error('keystore: not unlocked')
+
+    const storedSession = this.#latticeSession
+    if (!storedSession) return null
+
+    let failedStep = 'read the format of'
+    try {
+      const payload = getLatticeSessionPayload(storedSession)
+      if (!payload) throw new Error('keystore: unsupported Lattice session format')
+
+      failedStep = 'decrypt'
+      const decrypted = await decryptWithKey(this.#mainKey, payload)
+      failedStep = 'decode'
+      return toUtf8String(decrypted)
+    } catch {
+      // The original error isn't reported, as the decoding ones can include the decrypted bytes
+      this.emitError({
+        level: 'silent',
+        message: 'The saved Lattice1 connection could not be read, so it was removed.',
+        error: new Error(`keystore: could not ${failedStep} the saved Lattice session`)
+      })
+      await this.#queueLatticeSessionChange(async () => {
+        // A session saved meanwhile is a new one, not the one that couldn't be read
+        if (this.#latticeSession !== storedSession) return
+
+        await this.#setLatticeSession(null)
+      })
+      return null
+    }
+  }
+
+  /**
+   * Removes the saved GridPlus Lattice1 session, e.g. when the user connects another Lattice or
+   * the pairing was removed on the device. Works when locked, as nothing gets decrypted.
+   */
+  async removeLatticeSession() {
+    await this.initialLoadPromise
+
+    return this.#queueLatticeSessionChange(() => this.#setLatticeSession(null))
+  }
+
+  /** Runs a change of the saved Lattice1 session after the ones called before it */
+  #queueLatticeSessionChange(change: () => Promise<void>): Promise<void> {
+    const result = this.#latticeSessionChanges.then(change)
+    // The caller gets a failed change's error through `result`, while the queue moves on
+    this.#latticeSessionChanges = result.catch(() => undefined)
+
+    return result
+  }
+
+  async #setLatticeSession(session: StoredLatticeSession | null) {
+    // In memory first, so a read made meanwhile already sees it
+    this.#latticeSession = session
+
+    if (!session) {
+      await this.#storage.remove('keystoreLatticeSession')
+      return
+    }
+
+    await this.#storage.set('keystoreLatticeSession', session)
   }
 
   async getSavedSeed(id: string): Promise<KeystoreSeed> {

@@ -172,6 +172,17 @@ export type AESGCMEncrypted = {
 
 export type KeystoreEncryptedPayload = string | AESGCMEncrypted
 
+/**
+ * The saved session of a paired GridPlus Lattice1 (the gridplus-sdk client data), encrypted
+ * with the main key. It holds the key the Lattice was paired with, so it stays on this device:
+ * it is stored apart from the keys and seeds and never synced. `version` changes when the
+ * stored shape does, so an entry this app can't read is recognized and removed.
+ */
+export type StoredLatticeSession = {
+  version: number
+  encrypted: AESGCMEncrypted
+}
+
 export type MainKeyEncryptedWithSecret = {
   id: string
   scryptParams: ScryptParams
