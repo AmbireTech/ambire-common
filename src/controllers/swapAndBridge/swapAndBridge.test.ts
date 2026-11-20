@@ -2121,6 +2121,23 @@ describe('SwapAndBridge Controller', () => {
 
       expect(swapAndBridgeController.activeRoutes[0]!.userTxHash).toBe(broadcastedTxnId)
     })
+
+    test('keeps the transaction hash and progress of a finished route', () => {
+      const activeRoute = setActiveRouteWithBroadcastedTxnId()
+      swapAndBridgeController.updateActiveRoute(activeRoute.activeRouteId, {
+        routeStatus: 'completed'
+      })
+      const completedUserTxIndex = activeRoute.route.userTxs.length
+
+      swapAndBridgeController.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(
+        getReplacedUserOp('success', activeRoute.activeRouteId)
+      )
+
+      expect(swapAndBridgeController.activeRoutes[0]!.userTxHash).toBe(broadcastedTxnId)
+      expect(swapAndBridgeController.activeRoutes[0]!.route!.currentUserTxIndex).toBe(
+        completedUserTxIndex
+      )
+    })
   })
   describe('active route whose transaction was sped up or canceled', () => {
     const replacedTxnId = 'replaced-transaction'
@@ -2128,9 +2145,12 @@ describe('SwapAndBridge Controller', () => {
     const replacedIdentifiedBy = { type: 'Transaction' as const, identifier: replacedTxnId }
     let originalActiveRoutes: typeof swapAndBridgeController.activeRoutes
 
-    /** A transaction that didn't go through, because another one took its nonce */
-    const getReplacedOp = () => ({
-      ...getSubmittedAccountOp(replacedTxnId, undefined, 'unknown-but-past-nonce', 1n),
+    /**
+     * The route's transaction, once replaced: its nonce was taken by another one
+     * (`unknown-but-past-nonce`), or it left the mempool and was declared stuck
+     */
+    const getReplacedOp = (status: string) => ({
+      ...getSubmittedAccountOp(replacedTxnId, undefined, status, 1n),
       id: 'replaced-account-op'
     })
 
@@ -2166,8 +2186,11 @@ describe('SwapAndBridge Controller', () => {
       swapAndBridgeController.activeRoutes = [activeRoute]
     }
 
-    const mockAccountOps = (replacementOp: ReturnType<typeof getReplacementOp>) => {
-      const replacedOp = getReplacedOp()
+    const mockAccountOps = (
+      replacementOp: ReturnType<typeof getReplacementOp>,
+      replacedOpStatus = 'unknown-but-past-nonce'
+    ) => {
+      const replacedOp = getReplacedOp(replacedOpStatus)
       jest
         .spyOn(activityCtrl, 'getAccountOpsForAccount')
         .mockReturnValue([replacedOp, replacementOp])
@@ -2186,30 +2209,49 @@ describe('SwapAndBridge Controller', () => {
       swapAndBridgeController.activeRoutes = originalActiveRoutes
     })
 
-    test('follows the speed up that went through instead of its transaction', async () => {
+    test.each(['unknown-but-past-nonce', 'broadcast-but-stuck'])(
+      'follows the speed up that was mined instead of its transaction (%s)',
+      async (replacedOpStatus) => {
+        setReplacedActiveRoute()
+        const replacementOp = getReplacementOp({ isCancel: false })
+        const { replacedOp, findReplacementSpy } = mockAccountOps(replacementOp, replacedOpStatus)
+        const getRouteStatusSpy = jest
+          .spyOn(socketAPIMock, 'getRouteStatus')
+          .mockResolvedValue({ status: 'completed', txnId: 'cowswap-settlement-transaction' })
+        jest.spyOn(swapAndBridgeController, 'recordIntentActivity').mockResolvedValue()
+
+        await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+        expect(findReplacementSpy).toHaveBeenCalledWith(
+          replacedIdentifiedBy,
+          replacedOp.accountAddr,
+          replacedOp.chainId
+        )
+        expect(getRouteStatusSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ txHash: replacementTxnId })
+        )
+        expect(swapAndBridgeController.activeRoutes[0]).toMatchObject({
+          routeStatus: 'completed',
+          userTxHash: replacementTxnId,
+          identifiedBy: replacementOp.identifiedBy
+        })
+      }
+    )
+
+    test('does not look for a replacement once its own transaction is mined', async () => {
       setReplacedActiveRoute()
-      const replacementOp = getReplacementOp({ isCancel: false })
-      const { replacedOp, findReplacementSpy } = mockAccountOps(replacementOp)
+      const { findReplacementSpy } = mockAccountOps(getReplacementOp({ isCancel: true }), 'success')
       const getRouteStatusSpy = jest
         .spyOn(socketAPIMock, 'getRouteStatus')
-        .mockResolvedValue({ status: 'completed', txnId: 'cowswap-settlement-transaction' })
-      jest.spyOn(swapAndBridgeController, 'recordIntentActivity').mockResolvedValue()
+        .mockResolvedValue({ status: null })
 
       await swapAndBridgeController.continuouslyUpdateActiveRoutes()
 
-      expect(findReplacementSpy).toHaveBeenCalledWith(
-        replacedIdentifiedBy,
-        replacedOp.accountAddr,
-        replacedOp.chainId
-      )
+      expect(findReplacementSpy).not.toHaveBeenCalled()
       expect(getRouteStatusSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ txHash: replacementTxnId })
+        expect.objectContaining({ txHash: replacedTxnId })
       )
-      expect(swapAndBridgeController.activeRoutes[0]).toMatchObject({
-        routeStatus: 'completed',
-        userTxHash: replacementTxnId,
-        identifiedBy: replacementOp.identifiedBy
-      })
+      expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toBe('in-progress')
     })
 
     test.each(['success', 'failure'])(
@@ -2229,11 +2271,16 @@ describe('SwapAndBridge Controller', () => {
       }
     )
 
-    test.each(['rejected', 'unknown-but-past-nonce'])(
-      'keeps its transaction when the speed up (%s) did not go through',
-      async (status) => {
+    test.each([
+      { isCancel: false, status: 'rejected' },
+      { isCancel: false, status: 'unknown-but-past-nonce' },
+      { isCancel: false, status: 'broadcasted-but-not-confirmed' },
+      { isCancel: true, status: 'broadcasted-but-not-confirmed' }
+    ])(
+      'keeps its transaction while the replacement is not mined (cancel: $isCancel, $status)',
+      async (replacement) => {
         setReplacedActiveRoute()
-        mockAccountOps(getReplacementOp({ isCancel: false, status }))
+        mockAccountOps(getReplacementOp(replacement))
         const getRouteStatusSpy = jest.spyOn(socketAPIMock, 'getRouteStatus')
 
         await swapAndBridgeController.continuouslyUpdateActiveRoutes()

@@ -138,6 +138,17 @@ type SwapAndBridgeErrorType = {
 const isSwapAndBridge = (route: string | undefined) => route === 'swap-and-bridge'
 const COW_SWAP_PROVIDER_ID = 'cowswap'
 
+/** The statuses of an active route that has finished, whether it went through or not */
+const FINISHED_ROUTE_STATUSES: SwapAndBridgeActiveRoute['routeStatus'][] = [
+  'completed',
+  'refunded',
+  'failed'
+]
+
+/** Whether the transaction of the account op was mined, whether it succeeded or reverted */
+const getIsAccountOpMined = (accountOp: Pick<SubmittedAccountOp, 'status'>) =>
+  accountOp.status === AccountOpStatus.Success || accountOp.status === AccountOpStatus.Failure
+
 const STATUS_WRAPPED_METHODS = {
   addToTokenByAddress: 'INITIAL'
 } as const
@@ -2934,10 +2945,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       if (isCancelAccountOp(activeRouteSubmittedAccountOp)) {
         // Once the cancel is mined, even if it reverted, it has taken the nonce of the route's
         // transaction. The calls of the route never ran, so there is nothing to wait for
-        if (
-          activeRouteSubmittedAccountOp.status === AccountOpStatus.Success ||
-          activeRouteSubmittedAccountOp.status === AccountOpStatus.Failure
-        ) {
+        if (getIsAccountOpMined(activeRouteSubmittedAccountOp)) {
           this.updateActiveRoute(activeRoute.activeRouteId, {
             routeStatus: 'failed',
             error: 'The transaction was canceled'
@@ -3450,8 +3458,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   /**
    * The account op that sent the transaction of an active route. When a speed up or a cancel
-   * replaced that transaction, it's the account op that replaced it, as only one of them can
-   * go through.
+   * replaced that transaction and was mined, it's the account op that replaced it, as only one
+   * of them can go through.
    */
   #findActiveRouteAccountOp(activeRoute: SwapAndBridgeActiveRoute) {
     // All of the account's ops are searched, not only the latest ones, because the user
@@ -3459,19 +3467,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const accountOp = this.#activity
       .getAccountOpsForAccount({ accountAddr: activeRoute.sender, sortAccOps: false })
       .find((op) => getIsActiveRouteAccountOp(activeRoute, op))
-    if (accountOp?.status !== AccountOpStatus.UnknownButPastNonce) return accountOp
+    if (!accountOp || getIsAccountOpMined(accountOp)) return accountOp
 
+    // Looked up for any status, not only for a replaced one, because a transaction that left
+    // the mempool when it was sped up may be declared stuck and never checked again
     const replacement = this.#activity.findReplacement(
       accountOp.identifiedBy,
       accountOp.accountAddr,
       accountOp.chainId
     )
-    // A replacement that was never sent (rejected) or was replaced itself is not what took
-    // the nonce, which leaves the route's own account op
-    const isReplacementNotMined =
-      replacement?.status === AccountOpStatus.Rejected ||
-      replacement?.status === AccountOpStatus.UnknownButPastNonce
-    if (!replacement || isReplacementNotMined) return accountOp
+    // Until a replacement is mined, the route's own transaction may still go through
+    if (!replacement || !getIsAccountOpMined(replacement)) return accountOp
 
     return replacement
   }
@@ -3485,6 +3491,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     activeRoute: SwapAndBridgeActiveRoute,
     submittedAccountOp: SubmittedAccountOp
   ) {
+    // A finished route keeps its hash, as updating it would also move its progress back
+    if (FINISHED_ROUTE_STATUSES.includes(activeRoute.routeStatus)) return
+
     const { txnId } = submittedAccountOp
     if (!activeRoute.userTxHash || !txnId || txnId === activeRoute.userTxHash) return
     if (!getIsActiveRouteAccountOp(activeRoute, submittedAccountOp)) return

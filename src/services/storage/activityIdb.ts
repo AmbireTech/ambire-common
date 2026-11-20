@@ -16,10 +16,11 @@ export const STARTUP_RECENT_OPS_LIMIT = 20
 /**
  * Finalized ops loaded per (account, chainId) at startup for every OTHER account. Not zero,
  * because several readers ask about accounts the user is not viewing and none of them can wait
- * on a read: swapAndBridge looks up the account op of a route among its sender's ops,
- * wallet_getCallsStatus serves whichever account the dapp is pinned to, and status polling
- * compares EOA nonces against confirmed ops for every account with something pending. Ten
- * matches the widest of those windows.
+ * on a read: swapAndBridge looks up the account op of each of its routes, wallet_getCallsStatus
+ * serves whichever account the dapp is pinned to, and status polling compares EOA nonces against
+ * confirmed ops for every account with something pending. Ten matches the widest of those
+ * windows. swapAndBridge has no window: its routes aren't restored after a restart, so their
+ * account ops were added since startup and are in memory regardless of this limit.
  */
 const STARTUP_RECENT_OPS_LIMIT_OTHER = 10
 /**
