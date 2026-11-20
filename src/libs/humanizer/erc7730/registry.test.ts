@@ -4,6 +4,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../../test/helpers/console'
 import {
+  getTestErc7730DescriptorForCall,
   getTestErc7730Errors,
   getTestErc7730MessageDescriptor,
   SAFE_PROXY_V1_4_1_RUNTIME_CODE
@@ -386,6 +387,36 @@ describe('ERC-7730 registry', () => {
     expect(malformedDescriptor).toBe(null)
     expect(getTestErc7730Errors(registry)).toHaveLength(1)
     restore()
+  })
+})
+
+describe('ERC-7730 test helpers', () => {
+  test('a lookup without a provider does not take the provider away from a later one', async () => {
+    const safeProxy = '0x2222222222222222222222222222222222222222'
+    const safeSingleton = '0x41675c099f32341bf84bfc5382af534df5c7461a'
+    const safePath = 'registry/safe/calldata-Safe-1.4.1.json'
+    const registry: Erc7730Registry = {
+      calldataIndex: { [`eip155:1:${safeSingleton}`]: safePath },
+      eip712Index: {},
+      descriptors: {
+        [safePath]: { display: { formats: { 'test()': { intent: 'Safe test', fields: [] } } } }
+      }
+    }
+    const provider = {
+      getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
+      getStorage: jest.fn(async () => `0x000000000000000000000000${safeSingleton.slice(2)}`)
+    }
+    const call = { to: safeProxy, value: 0n, data: '0x12345678' }
+
+    // Asking for the errors creates no controller, and the lookup without a provider gets one of
+    // its own - so neither leaves a provider-less controller for the lookup with a provider
+    expect(getTestErc7730Errors(registry, provider)).toEqual([])
+    await expect(getTestErc7730DescriptorForCall(call, 1n, registry)).resolves.toBeNull()
+
+    const descriptor = await getTestErc7730DescriptorForCall(call, 1n, registry, provider)
+
+    expect(descriptor?.path).toBe(safePath)
+    expect(provider.getCode).toHaveBeenCalledTimes(1)
   })
 })
 

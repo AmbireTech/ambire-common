@@ -15,7 +15,12 @@ import { Erc7730Controller } from './erc7730'
 export const SAFE_PROXY_V1_4_1_RUNTIME_CODE =
   '0x608060405273ffffffffffffffffffffffffffffffffffffffff600054167fa619486e0000000000000000000000000000000000000000000000000000000060003514156050578060005260206000f35b3660008037600080366000845af43d6000803e60008114156070573d6000fd5b3d6000f3fea264697066735822122003d1488ee65e08fa41e58e888a9865554c535f2c77126a82cb4c0f917f31441364736f6c63430007060033'
 
-const controllersByRegistry = new WeakMap<Erc7730Registry, Erc7730Controller>()
+/**
+ * The test controllers by registry, then by the provider they read Safe proxies with. Keyed by
+ * both, so a call made without a provider never hands its provider-less controller to a later call
+ * that passes one - which would silently skip every Safe proxy lookup of that call.
+ */
+const controllersByRegistry = new WeakMap<Erc7730Registry, Map<unknown, Erc7730Controller>>()
 
 /** A no-op sink, since these tests only assert on the returned descriptors. */
 const makeUiStub = (): IUiController =>
@@ -32,13 +37,19 @@ const makeProvidersStub = (provider?: any): IProvidersController | undefined =>
 /**
  * Runs the real plan/look-up loop against a test's registry.
  *
- * Memoized per `registry`, so repeated calls within one test share a controller - and therefore
- * its Safe singleton cache and the errors it reported - while separate tests, which each build
- * their own registry, stay isolated. Tests of the library itself should pass a plain `known`
- * object instead; this is for tests that go through the controller.
+ * Memoized per `registry` and `provider`, so repeated calls within one test share a controller -
+ * and therefore its Safe singleton cache and the errors it reported - while separate tests, which
+ * each build their own registry, stay isolated. Tests of the library itself should pass a plain
+ * `known` object instead; this is for tests that go through the controller.
  */
 const getTestController = (registry: Erc7730Registry, provider?: any): Erc7730Controller => {
-  const existing = controllersByRegistry.get(registry)
+  let controllersByProvider = controllersByRegistry.get(registry)
+  if (!controllersByProvider) {
+    controllersByProvider = new Map()
+    controllersByRegistry.set(registry, controllersByProvider)
+  }
+
+  const existing = controllersByProvider.get(provider)
   if (existing) return existing
 
   const controller = new Erc7730Controller({
@@ -46,18 +57,20 @@ const getTestController = (registry: Erc7730Registry, provider?: any): Erc7730Co
     ui: makeUiStub(),
     registry
   })
-  controllersByRegistry.set(registry, controller)
+  controllersByProvider.set(provider, controller)
 
   return controller
 }
 
 /**
- * The errors the test controller reported for this registry. Descriptor lookups never throw - a
- * failure degrades to the built-in humanization - so this is how a test asserts that a missing or
- * invalid descriptor was actually reported rather than silently swallowed.
+ * The errors the test controller reported for this registry - pass the `provider` the lookups
+ * were made with, as each provider gets a controller of its own. Descriptor lookups never throw -
+ * a failure degrades to the built-in humanization - so this is how a test asserts that a missing
+ * or invalid descriptor was actually reported rather than silently swallowed. It creates no
+ * controller, so asking before any lookup returns no errors and changes nothing for later lookups.
  */
-export const getTestErc7730Errors = (registry: Erc7730Registry) =>
-  getTestController(registry).emittedErrors
+export const getTestErc7730Errors = (registry: Erc7730Registry, provider?: any) =>
+  controllersByRegistry.get(registry)?.get(provider)?.emittedErrors ?? []
 
 export const getTestErc7730Descriptors = (
   accountOp: AccountOp,
