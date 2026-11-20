@@ -788,7 +788,10 @@ export class SignAccountOpController
 
       // Users often just browse quotes on the swap screen, so a failed background
       // refresh shouldn't interrupt them with an error
-      const gasPriceErrorLevel = this.#type === 'one-click-swap-and-bridge' ? 'silent' : 'major'
+      const gasPriceErrorLevel =
+        this.#type === 'one-click-swap-and-bridge' || this.#type === 'one-click-limit-order'
+          ? 'silent'
+          : 'major'
       await this.gasPrice.fetch(gasPriceErrorLevel)
     }, GAS_PRICE_UPDATE_INTERVAL)
 
@@ -6076,10 +6079,13 @@ export class SignAccountOpController
     const dappVerificationBanner = this.#getDappVerificationBanner()
     if (dappVerificationBanner) banners.push(dappVerificationBanner)
 
-    // In the one-click transfer and swap & bridge flows the user entered the amount in the wallet
-    // themselves, so the warning tells them nothing new. Bridging is also where it's least accurate
+    // In the one-click transfer, swap & bridge and limit order flows the user entered the amount
+    // in the wallet themselves, so the warning tells them nothing new. Bridging is also where it's
+    // least accurate
     const isOneClickFlow =
-      this.#type === 'one-click-transfer' || this.#type === 'one-click-swap-and-bridge'
+      this.#type === 'one-click-transfer' ||
+      this.#type === 'one-click-swap-and-bridge' ||
+      this.#type === 'one-click-limit-order'
     const significantBalanceDecreaseWarning = isOneClickFlow
       ? null
       : getSignificantBalanceDecreaseWarning(

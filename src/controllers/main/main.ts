@@ -51,6 +51,7 @@ import { SignAccountOpPreferenceController } from '@/controllers/signAccountOp/s
 import { SignMessageController } from '@/controllers/signMessage/signMessage'
 import { StorageController } from '@/controllers/storage/storage'
 import { SurveyController } from '@/controllers/survey/survey'
+import { LimitOrdersController } from '@/controllers/limitOrders/limitOrders'
 import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '@/controllers/transaction/transactionManager'
 import { TransferController } from '@/controllers/transfer/transfer'
@@ -98,6 +99,7 @@ import { ISignAccountOpController } from '@/interfaces/signAccountOp'
 import { ISignMessageController, SignMessageStatus } from '@/interfaces/signMessage'
 import { IStorageController, Storage } from '@/interfaces/storage'
 import { ISurveyController } from '@/interfaces/survey'
+import { ILimitOrdersController } from '@/interfaces/limitOrders'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces/swapAndBridge'
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
@@ -197,6 +199,8 @@ export class MainController extends EventEmitter implements IMainController {
   signMessage: ISignMessageController
 
   swapAndBridge: ISwapAndBridgeController
+
+  limitOrders: ILimitOrdersController
 
   transactionManager?: ITransactionManagerController
 
@@ -714,6 +718,36 @@ export class MainController extends EventEmitter implements IMainController {
       onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this),
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
       ui: this.ui
+    })
+    this.limitOrders = new LimitOrdersController({
+      eventEmitterRegistry,
+      callRelayer: this.callRelayer,
+      accounts: this.accounts,
+      keystore: this.keystore,
+      portfolio: this.portfolio,
+      externalSignerControllers: this.#externalSignerControllers,
+      providers: this.providers,
+      selectedAccount: this.selectedAccount,
+      networks: this.networks,
+      activity: this.activity,
+      signAccountOpPreference: this.signAccountOpPreference,
+      featureFlags: this.featureFlags,
+      platform,
+      phishing: this.phishing,
+      dapps: this.dapps,
+      erc7730: this.erc7730,
+      contractInfo: this.contractInfo,
+      relayerUrl,
+      // The same instance as the swaps', so both share its token list cache
+      cowSwapApi: CowSwapProvider,
+      onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this),
+      onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
+      ui: this.ui,
+      requestSignatureInWindow: (userRequestParams) =>
+        this.requests.build({
+          type: 'calls',
+          params: { userRequestParams, executionType: 'open-request-window' }
+        })
     })
     this.appDataSync = new AppDataSyncController({
       eventEmitterRegistry,
@@ -1465,6 +1499,12 @@ export class MainController extends EventEmitter implements IMainController {
     ) {
       signAccountOp = this.transfer.signAccountOpController
     } else if (
+      type === 'one-click-limit-order' &&
+      this.limitOrders.signAccountOpController &&
+      this.limitOrders.signAccountOpController.fromRequestId === fromRequestId
+    ) {
+      signAccountOp = this.limitOrders.signAccountOpController
+    } else if (
       type === 'safe-owner-approval' &&
       this.requests.currentUserRequest?.kind === 'calls' &&
       this.requests.currentUserRequest.signAccountOp.safeOwnerApproval?.fromRequestId ===
@@ -1539,6 +1579,16 @@ export class MainController extends EventEmitter implements IMainController {
         signAccountOp.accountOp
       ) &&
       this.transfer.signAccountOpController.isSignAndBroadcastInProgress
+    ) {
+      isSignAndBroadcastInProgressOnThisAccountAndChain = true
+    } else if (
+      type !== 'one-click-limit-order' &&
+      this.limitOrders.signAccountOpController &&
+      isSameChainAndSender(
+        this.limitOrders.signAccountOpController.accountOp,
+        signAccountOp.accountOp
+      ) &&
+      this.limitOrders.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true
     }

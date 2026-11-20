@@ -119,3 +119,17 @@ export const COWSWAP_ORDER_VALIDITY_SECONDS = 30 * 60
 export const COWSWAP_APP_DATA_VERSION = '1.4.0'
 
 export const COWSWAP_APP_CODE = 'Ambire'
+
+/**
+ * How long a limit order can stay open, in seconds, keyed by the option the user picks.
+ * CoW Swap accepts limit orders valid for up to a year
+ */
+export const COWSWAP_LIMIT_ORDER_EXPIRY_SECONDS = {
+  '1d': 60 * 60 * 24,
+  '7d': 60 * 60 * 24 * 7,
+  '30d': 60 * 60 * 24 * 30,
+  '6m': 60 * 60 * 24 * 182
+} as const
+
+/** How many orders of an account CoW Swap returns per request, the most it allows */
+export const COWSWAP_ACCOUNT_ORDERS_PAGE_SIZE = 1000

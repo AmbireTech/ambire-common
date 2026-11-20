@@ -20,6 +20,7 @@ export type SignAccountOpType =
   | 'default'
   | 'one-click-swap-and-bridge'
   | 'one-click-transfer'
+  | 'one-click-limit-order'
   | 'safe-owner-approval'
 
 function getFeeSpeedIdentifier(option: FeePaymentOption, accountAddr: string) {

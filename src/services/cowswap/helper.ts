@@ -31,13 +31,15 @@ import {
   COWSWAP_SMALL_TRADE_MAX_SLIPPAGE_BPS,
   COWSWAP_SUPPORTED_CHAINS
 } from '@/services/cowswap/constants'
-import { CowSwapTokenListEntry } from '@/services/cowswap/types'
+import { CowSwapAccountOrder, CowSwapTokenListEntry } from '@/services/cowswap/types'
 
 export const settlementInterface = new Interface([
-  'function setPreSignature(bytes orderUid, bool signed)'
+  'function setPreSignature(bytes orderUid, bool signed)',
+  'function invalidateOrder(bytes orderUid)'
 ])
 export const ethFlowInterface = new Interface([
-  'function createOrder((address buyToken,address receiver,uint256 sellAmount,uint256 buyAmount,bytes32 appData,uint256 feeAmount,uint32 validTo,bool partiallyFillable,int64 quoteId) order) payable returns (bytes32 orderHash)'
+  'function createOrder((address buyToken,address receiver,uint256 sellAmount,uint256 buyAmount,bytes32 appData,uint256 feeAmount,uint32 validTo,bool partiallyFillable,int64 quoteId) order) payable returns (bytes32 orderHash)',
+  'function invalidateOrder((address buyToken,address receiver,uint256 sellAmount,uint256 buyAmount,bytes32 appData,uint256 feeAmount,uint32 validTo,bool partiallyFillable,int64 quoteId) order)'
 ])
 const MAX_VALID_TO = 2 ** 32 - 1
 
@@ -214,6 +216,178 @@ export const buildAppData = ({ slippageBps, feeBps }: { slippageBps: number; fee
   return {
     fullAppData,
     appDataHash: keccak256(toUtf8Bytes(fullAppData))
+  }
+}
+
+/**
+ * The app data of an Ambire limit order. Unlike a swap, it has no slippage: the price the user
+ * set is the only limit. The Ambire fee is the same partner fee swaps carry
+ */
+export const buildLimitOrderAppData = ({ feeBps }: { feeBps?: number }) => {
+  const appData = {
+    appCode: COWSWAP_APP_CODE,
+    metadata: {
+      orderClass: { orderClass: 'limit' },
+      ...(feeBps
+        ? {
+            partnerFee: {
+              recipient: FEE_COLLECTOR,
+              volumeBps: feeBps
+            }
+          }
+        : {})
+    },
+    version: COWSWAP_APP_DATA_VERSION
+  }
+  const fullAppData = JSON.stringify(appData)
+
+  return {
+    fullAppData,
+    appDataHash: keccak256(toUtf8Bytes(fullAppData))
+  }
+}
+
+/**
+ * The symbols listed first in the limit order receive list, the most traded first. CoW Swap's
+ * token list has no popularity order of its own (it's sorted by address), unlike the lists of
+ * the other swap providers
+ */
+const POPULAR_TOKEN_SYMBOLS = [
+  'USDC',
+  'USDT',
+  'DAI',
+  'WBTC',
+  'CBBTC',
+  'WSTETH',
+  'STETH',
+  'USDE',
+  'LINK',
+  'UNI',
+  'AAVE',
+  'GHO',
+  'ARB',
+  'OP'
+]
+
+/** The rank of tokens that aren't among the popular ones, after all that are */
+const NOT_POPULAR_RANK = POPULAR_TOKEN_SYMBOLS.length + 1
+
+/**
+ * Orders a CoW Swap token list for people to browse: the native token and its wrapped version,
+ * then the popular tokens, then the rest by symbol
+ */
+export const sortCowSwapTokensByPopularity = <T extends { address: string; symbol: string }>(
+  tokens: T[],
+  chainId: number
+): T[] => {
+  const wrappedNativeTokenAddress = getWrappedNativeTokenAddress(chainId)?.toLowerCase()
+  const getRank = (token: T) => {
+    const address = token.address.toLowerCase()
+    if (address === ZeroAddress) return -2
+    if (address === wrappedNativeTokenAddress) return -1
+
+    const popularIndex = POPULAR_TOKEN_SYMBOLS.indexOf(token.symbol.toUpperCase())
+
+    return popularIndex === -1 ? NOT_POPULAR_RANK : popularIndex
+  }
+
+  return tokens
+    .map((token) => ({ token, rank: getRank(token), symbol: token.symbol.toLowerCase() }))
+    .sort((a, b) => a.rank - b.rank || a.symbol.localeCompare(b.symbol))
+    .map(({ token }) => token)
+}
+
+/** Whether the app data JSON of an order marks it as a limit order placed from Ambire */
+export const isAmbireLimitOrderAppData = (fullAppData: string | null | undefined): boolean => {
+  if (!fullAppData) return false
+
+  let appData: unknown
+  try {
+    appData = JSON.parse(fullAppData)
+  } catch {
+    return false
+  }
+  if (!appData || typeof appData !== 'object') return false
+
+  const { appCode, metadata } = appData as { appCode?: unknown; metadata?: unknown }
+  if (appCode !== COWSWAP_APP_CODE || !metadata || typeof metadata !== 'object') return false
+
+  const { orderClass } = metadata as { orderClass?: unknown }
+  if (!orderClass || typeof orderClass !== 'object') return false
+
+  return (orderClass as { orderClass?: unknown }).orderClass === 'limit'
+}
+
+/** The Ambire fee an order's app data JSON carries, in basis points. 0 if none or unreadable */
+export const getPartnerFeeBpsFromAppData = (fullAppData: string | null | undefined): number => {
+  if (!fullAppData) return 0
+
+  let appData: unknown
+  try {
+    appData = JSON.parse(fullAppData)
+  } catch {
+    return 0
+  }
+  if (!appData || typeof appData !== 'object') return 0
+
+  const { metadata } = appData as { metadata?: unknown }
+  if (!metadata || typeof metadata !== 'object') return 0
+
+  const { partnerFee } = metadata as { partnerFee?: unknown }
+  if (!partnerFee || typeof partnerFee !== 'object') return 0
+
+  const { volumeBps } = partnerFee as { volumeBps?: unknown }
+
+  return typeof volumeBps === 'number' && Number.isFinite(volumeBps) && volumeBps > 0
+    ? volumeBps
+    : 0
+}
+
+const isNumericString = (value: unknown): value is string =>
+  typeof value === 'string' && value !== '' && !Number.isNaN(Number(value))
+
+/** Whether `value` has every field of a CoW Swap account order that we read */
+export const isCowSwapAccountOrder = (value: unknown): value is CowSwapAccountOrder => {
+  if (!value || typeof value !== 'object') return false
+  const order = value as Record<string, unknown>
+
+  return (
+    typeof order.uid === 'string' &&
+    typeof order.status === 'string' &&
+    typeof order.sellToken === 'string' &&
+    isAddress(order.sellToken) &&
+    typeof order.buyToken === 'string' &&
+    isAddress(order.buyToken) &&
+    isNumericString(order.sellAmount) &&
+    isNumericString(order.buyAmount) &&
+    isNumericString(order.executedSellAmount) &&
+    isNumericString(order.executedBuyAmount) &&
+    isNumericString(order.feeAmount) &&
+    Number.isInteger(order.validTo) &&
+    typeof order.appData === 'string' &&
+    typeof order.partiallyFillable === 'boolean' &&
+    typeof order.creationDate === 'string'
+  )
+}
+
+/**
+ * The ETH-flow order data the ETH-flow contract hashes, rebuilt from an order CoW Swap returned.
+ * Cancelling an ETH-flow order needs it, as the contract finds the order by this data. The quote
+ * ID isn't part of the hash, so any value works for it
+ */
+export const getEthFlowOrderData = (order: CowSwapAccountOrder) => {
+  if (!order.ethflowData) return null
+
+  return {
+    buyToken: order.buyToken,
+    receiver: order.receiver || ZeroAddress,
+    sellAmount: order.sellAmount,
+    buyAmount: order.buyAmount,
+    appData: order.appData,
+    feeAmount: order.feeAmount,
+    validTo: order.ethflowData.userValidTo,
+    partiallyFillable: order.partiallyFillable,
+    quoteId: 0
   }
 }
 

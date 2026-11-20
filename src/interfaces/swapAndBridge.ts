@@ -202,7 +202,8 @@ export interface CowSwapOrderParameters {
   appDataHash?: string
   feeAmount: string
   kind: 'sell'
-  partiallyFillable: false
+  /** Always false for swaps. Limit orders may let solvers fill them in parts */
+  partiallyFillable: boolean
   sellTokenBalance?: 'erc20'
   buyTokenBalance?: 'erc20'
 }
