@@ -4,274 +4,15 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../../test/helpers/console'
 import {
-  getTestErc7730DescriptorForCall,
-  getTestErc7730Descriptors,
   getTestErc7730Errors,
   getTestErc7730MessageDescriptor,
   SAFE_PROXY_V1_4_1_RUNTIME_CODE
 } from '../../../controllers/erc7730/testDescriptors'
 import { AccountOp } from '../../accountOp/accountOp'
-import { resolveErc7730Call } from './registry'
-import { EMPTY_ERC7730_KNOWN } from './types'
+import { resolveErc7730Call, resolveIncludePath } from './registry'
+import { EMPTY_ERC7730_KNOWN, Erc7730Registry } from './types'
 
-describe('ERC-7730 registry cache', () => {
-  test('does not call the relayer again when a calldata descriptor is cached', async () => {
-    const contractAddress = '0x1111111111111111111111111111111111111111'
-    const registryPath = 'registry/test/calldata-cache.json'
-    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:1:${contractAddress}`]: registryPath
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-
-        return {
-          success: true,
-          display: {
-            formats: {
-              'test()': {
-                intent: 'Cached calldata descriptor',
-                fields: []
-              }
-            }
-          }
-        }
-      }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
-    })
-
-    const firstDescriptor = await getTestErc7730DescriptorForCall(
-      {
-        to: contractAddress,
-        value: 0n,
-        data: '0x12345678'
-      },
-      1n as AccountOp['chainId'],
-      callRelayer
-    )
-
-    expect(firstDescriptor?.path).toBe(registryPath)
-    expect(callRelayer).toHaveBeenCalledTimes(2)
-
-    callRelayer.mockClear()
-
-    const cachedDescriptor = await getTestErc7730DescriptorForCall(
-      {
-        to: contractAddress,
-        value: 0n,
-        data: '0x12345678'
-      },
-      1n as AccountOp['chainId'],
-      callRelayer
-    )
-
-    expect(cachedDescriptor?.path).toBe(registryPath)
-    expect(callRelayer).not.toHaveBeenCalled()
-  })
-
-  test('does not call the relayer again when an EIP-712 descriptor is cached', async () => {
-    const verifyingContract = '0x2222222222222222222222222222222222222222'
-    const registryPath = 'registry/test/eip712-cache.json'
-    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/eip-712') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:1:${verifyingContract}`]: {
-              Permit: [{ path: registryPath }]
-            }
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-
-        return {
-          success: true,
-          display: {
-            formats: {
-              'Permit(address owner,address spender,uint256 value)': {
-                intent: 'Cached EIP-712 descriptor',
-                fields: []
-              }
-            }
-          }
-        }
-      }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
-    })
-    const message = {
-      fromRequestId: 1,
-      accountAddr: '0x3333333333333333333333333333333333333333',
-      content: {
-        kind: 'typedMessage',
-        domain: {
-          name: 'Cached Permit',
-          chainId: 1,
-          verifyingContract
-        },
-        types: {
-          Permit: [
-            { name: 'owner', type: 'address' },
-            { name: 'spender', type: 'address' },
-            { name: 'value', type: 'uint256' }
-          ]
-        },
-        primaryType: 'Permit',
-        message: {
-          owner: '0x3333333333333333333333333333333333333333',
-          spender: '0x4444444444444444444444444444444444444444',
-          value: 1n
-        }
-      },
-      signature: null,
-      chainId: 1n
-    }
-
-    const firstDescriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
-
-    expect(firstDescriptor?.path).toBe(registryPath)
-    expect(callRelayer).toHaveBeenCalledTimes(2)
-
-    callRelayer.mockClear()
-
-    const cachedDescriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
-
-    expect(cachedDescriptor?.path).toBe(registryPath)
-    expect(callRelayer).not.toHaveBeenCalled()
-  })
-
-  test('reuses a cached descriptor resource for the same relayer path', async () => {
-    const contractAddress = '0x5555555555555555555555555555555555555555'
-    const registryPath = 'registry/test/shared-descriptor-cache.json'
-    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:1:${contractAddress}`]: registryPath
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/eip-712') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:1:${contractAddress}`]: {
-              Permit: [{ path: registryPath }]
-            }
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-
-        return {
-          success: true,
-          display: {
-            formats: {
-              'Permit(address owner,address spender,uint256 value)': {
-                intent: 'Shared cached descriptor',
-                fields: []
-              }
-            }
-          }
-        }
-      }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
-    })
-    const message = {
-      fromRequestId: 1,
-      accountAddr: '0x3333333333333333333333333333333333333333',
-      content: {
-        kind: 'typedMessage',
-        domain: {
-          name: 'Cached Permit',
-          chainId: 1,
-          verifyingContract: contractAddress
-        },
-        types: {
-          Permit: [
-            { name: 'owner', type: 'address' },
-            { name: 'spender', type: 'address' },
-            { name: 'value', type: 'uint256' }
-          ]
-        },
-        primaryType: 'Permit',
-        message: {
-          owner: '0x3333333333333333333333333333333333333333',
-          spender: '0x4444444444444444444444444444444444444444',
-          value: 1n
-        }
-      },
-      signature: null,
-      chainId: 1n
-    }
-
-    const firstDescriptor = await getTestErc7730DescriptorForCall(
-      {
-        to: contractAddress,
-        value: 0n,
-        data: '0x12345678'
-      },
-      1n as AccountOp['chainId'],
-      callRelayer
-    )
-
-    expect(firstDescriptor?.path).toBe(registryPath)
-    expect(callRelayer).toHaveBeenCalledTimes(2)
-    expect(callRelayer).toHaveBeenCalledWith(
-      '/v2/erc7730/fetch-descriptor',
-      'POST',
-      {
-        descriptorPath: `/${registryPath}`
-      },
-      undefined,
-      4000
-    )
-
-    callRelayer.mockClear()
-
-    const cachedDescriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
-
-    expect(cachedDescriptor?.path).toBe(registryPath)
-    expect(callRelayer).toHaveBeenCalledTimes(1)
-    expect(callRelayer).toHaveBeenCalledWith(
-      '/v2/erc7730/eip-712',
-      'GET',
-      undefined,
-      undefined,
-      4000
-    )
-  })
-
+describe('ERC-7730 registry', () => {
   test('does not crash while resolving a call without calldata', () => {
     const { descriptor } = resolveErc7730Call(
       {
@@ -286,88 +27,26 @@ describe('ERC-7730 registry cache', () => {
     expect(descriptor).toBe(null)
   })
 
-  test('does not keep a hanging relayer index promise cached', async () => {
-    const { restore } = suppressConsole()
-    const callRelayer = jest.fn(() => new Promise(() => {}))
-
-    jest.useFakeTimers()
-
-    try {
-      const firstDescriptor = getTestErc7730DescriptorForCall(
-        {
-          to: '0x1111111111111111111111111111111111111111',
-          value: 0n,
-          data: '0x12345678'
-        },
-        1n as AccountOp['chainId'],
-        callRelayer
-      )
-
-      await jest.advanceTimersByTimeAsync(4000)
-      await expect(firstDescriptor).resolves.toBe(null)
-      expect(callRelayer).toHaveBeenCalledTimes(1)
-
-      const secondDescriptor = getTestErc7730DescriptorForCall(
-        {
-          to: '0x1111111111111111111111111111111111111111',
-          value: 0n,
-          data: '0x12345678'
-        },
-        1n as AccountOp['chainId'],
-        callRelayer
-      )
-
-      await jest.advanceTimersByTimeAsync(4000)
-      await expect(secondDescriptor).resolves.toBe(null)
-      expect(callRelayer).toHaveBeenCalledTimes(2)
-    } finally {
-      jest.useRealTimers()
-    }
-    restore()
-  })
-
   test('resolves a SafeTx descriptor by reading the Safe proxy singleton', async () => {
     const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
     const safeSingleton = '0x41675c099f32341bf84bfc5382af534df5c7461a'
     const registryPath = 'registry/safe/dynamic-safe-version.json'
-    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/eip-712') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:8453:${safeSingleton}`]: {
-              SafeTx: [
-                {
-                  path: registryPath,
-                  encodeTypeHashes: [
-                    '0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8'
-                  ]
-                }
+    const registry: Erc7730Registry = {
+      calldataIndex: {},
+      eip712Index: {
+        [`eip155:8453:${safeSingleton}`]: {
+          SafeTx: [
+            {
+              path: registryPath,
+              encodeTypeHashes: [
+                '0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8'
               ]
             }
-          },
-          errorState: []
+          ]
         }
-      }
-
-      if (path === '/v2/erc7730/account-op') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {},
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-
-        return {
-          success: true,
+      },
+      descriptors: {
+        [registryPath]: {
           display: {
             formats: {
               'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
@@ -379,9 +58,7 @@ describe('ERC-7730 registry cache', () => {
           }
         }
       }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
-    })
+    }
     const provider = {
       getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async (address: string, slot: bigint) => {
@@ -438,14 +115,13 @@ describe('ERC-7730 registry cache', () => {
 
     const descriptor = await getTestErc7730MessageDescriptor(
       safeTxMessage as any,
-      callRelayer,
+      registry,
       provider as any
     )
 
     expect(descriptor?.path).toBe(registryPath)
     expect(descriptor?.innerCallDescriptors?.[0]?.path).toBe('built-in/erc20-transfer')
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
-    expect(callRelayer).toHaveBeenCalledTimes(3)
   })
 
   test('resolves per-transaction descriptors for a SafeTx multisend', async () => {
@@ -474,44 +150,22 @@ describe('ERC-7730 registry cache', () => {
     const multiSendData = new ethers.Interface([
       'function multiSend(bytes transactions)'
     ]).encodeFunctionData('multiSend', [transactionsData])
-    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/eip-712') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:8453:${safeSingleton}`]: {
-              SafeTx: [
-                {
-                  path: registryPath,
-                  encodeTypeHashes: [
-                    '0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8'
-                  ]
-                }
+    const registry: Erc7730Registry = {
+      calldataIndex: {},
+      eip712Index: {
+        [`eip155:8453:${safeSingleton}`]: {
+          SafeTx: [
+            {
+              path: registryPath,
+              encodeTypeHashes: [
+                '0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8'
               ]
             }
-          },
-          errorState: []
+          ]
         }
-      }
-
-      if (path === '/v2/erc7730/account-op') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {},
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-
-        return {
-          success: true,
+      },
+      descriptors: {
+        [registryPath]: {
           display: {
             formats: {
               'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
@@ -523,9 +177,7 @@ describe('ERC-7730 registry cache', () => {
           }
         }
       }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
-    })
+    }
     const provider = {
       getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async (address: string, slot: bigint) => {
@@ -582,7 +234,7 @@ describe('ERC-7730 registry cache', () => {
 
     const descriptor = await getTestErc7730MessageDescriptor(
       safeTxMessage as any,
-      callRelayer,
+      registry,
       provider as any
     )
 
@@ -595,17 +247,11 @@ describe('ERC-7730 registry cache', () => {
   test('does not keep a hanging Safe singleton promise cached', async () => {
     const { restore } = suppressConsole()
     const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
-    const callRelayer = jest.fn(async (path: string) => {
-      if (path === '/v2/erc7730/eip-712') {
-        return {
-          success: true,
-          data: {},
-          errorState: []
-        }
-      }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
-    })
+    const registry: Erc7730Registry = {
+      calldataIndex: {},
+      eip712Index: {},
+      descriptors: {}
+    }
     const provider = {
       getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(() => new Promise(() => {}))
@@ -660,7 +306,7 @@ describe('ERC-7730 registry cache', () => {
     try {
       const firstDescriptor = getTestErc7730MessageDescriptor(
         safeTxMessage as any,
-        callRelayer,
+        registry,
         provider as any
       )
 
@@ -670,7 +316,7 @@ describe('ERC-7730 registry cache', () => {
 
       const secondDescriptor = getTestErc7730MessageDescriptor(
         safeTxMessage as any,
-        callRelayer,
+        registry,
         provider as any
       )
 
@@ -683,137 +329,37 @@ describe('ERC-7730 registry cache', () => {
     restore()
   })
 
-  test('rejects malformed index responses', async () => {
-    const { restore } = suppressConsole()
-    const callRelayer = jest.fn(async (path: string) => {
-      if (path === '/v2/erc7730/account-op') {
-        return {
-          success: true,
-          data: {
-            'not-a-registry-key': 'registry/test/calldata-cache.json'
-          },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/eip-712') {
-        return {
-          success: true,
-          data: {
-            'eip155:1:0x2222222222222222222222222222222222222222': {
-              Permit: [{ path: 'registry/test/eip712-cache.json', encodeTypeHashes: ['0x1234'] }]
-            }
-          },
-          errorState: []
-        }
-      }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
-    })
-    const message = {
-      fromRequestId: 1,
-      accountAddr: '0x3333333333333333333333333333333333333333',
-      content: {
-        kind: 'typedMessage',
-        domain: {
-          name: 'Cached Permit',
-          chainId: 1,
-          verifyingContract: '0x2222222222222222222222222222222222222222'
-        },
-        types: {
-          Permit: [
-            { name: 'owner', type: 'address' },
-            { name: 'spender', type: 'address' },
-            { name: 'value', type: 'uint256' }
-          ]
-        },
-        primaryType: 'Permit',
-        message: {
-          owner: '0x3333333333333333333333333333333333333333',
-          spender: '0x4444444444444444444444444444444444444444',
-          value: 1n
-        }
-      },
-      signature: null,
-      chainId: 1n
-    }
-
-    const calldataDescriptor = await getTestErc7730DescriptorForCall(
-      {
-        to: '0x1111111111111111111111111111111111111111',
-        value: 0n,
-        data: '0x12345678'
-      },
-      1n as AccountOp['chainId'],
-      callRelayer
-    )
-    const eip712Descriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
-
-    expect(calldataDescriptor).toBe(null)
-    expect(eip712Descriptor).toBe(null)
-    expect(getTestErc7730Errors(callRelayer as any)).toHaveLength(2)
-    restore()
-  })
-
-  test('does not cache malformed descriptor responses', async () => {
+  test('reports and ignores a malformed descriptor', async () => {
     const { restore } = suppressConsole()
     const verifyingContract = '0x6666666666666666666666666666666666666666'
-    const registryPath = 'registry/test/malformed-descriptor-cache.json'
-    let descriptorRequests = 0
-    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/eip-712') {
-        return {
-          success: true,
-          data: {
-            [`eip155:1:${verifyingContract}`]: {
-              Permit: [{ path: registryPath }]
-            }
-          },
-          errorState: []
+    const registryPath = 'registry/test/malformed-descriptor.json'
+    const registry: Erc7730Registry = {
+      calldataIndex: {},
+      eip712Index: {
+        [`eip155:1:${verifyingContract}`]: {
+          Permit: [{ path: registryPath }]
         }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-        descriptorRequests += 1
-
-        if (descriptorRequests === 1) {
-          return {
-            success: true,
-            display: {
-              formats: {
-                'Permit(address owner,address spender,uint256 value)': {
-                  intent: 'Malformed descriptor',
-                  fields: 'not-an-array'
-                }
-              }
-            }
-          }
-        }
-
-        return {
-          success: true,
+      },
+      descriptors: {
+        [registryPath]: {
           display: {
             formats: {
               'Permit(address owner,address spender,uint256 value)': {
-                intent: 'Valid descriptor',
-                fields: []
+                intent: 'Malformed descriptor',
+                fields: 'not-an-array'
               }
             }
           }
         }
       }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
-    })
+    }
     const message = {
       fromRequestId: 1,
       accountAddr: '0x3333333333333333333333333333333333333333',
       content: {
         kind: 'typedMessage',
         domain: {
-          name: 'Cached Permit',
+          name: 'Test Permit',
           chainId: 1,
           verifyingContract
         },
@@ -835,54 +381,48 @@ describe('ERC-7730 registry cache', () => {
       chainId: 1n
     }
 
-    const malformedDescriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
-    const validDescriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
+    const malformedDescriptor = await getTestErc7730MessageDescriptor(message as any, registry)
 
     expect(malformedDescriptor).toBe(null)
-    expect(validDescriptor?.path).toBe(registryPath)
-    expect(descriptorRequests).toBe(2)
-    expect(getTestErc7730Errors(callRelayer as any)).toHaveLength(1)
+    expect(getTestErc7730Errors(registry)).toHaveLength(1)
     restore()
   })
+})
 
-  test('fetches the calldata index once for an accountOp with many calls', async () => {
-    // Regression guard: the lookups must stay synchronous up to the point they register their
-    // in-flight promise. An await slipped in before that (e.g. reading persisted storage) lets every
-    // concurrent call miss the dedup and fire its own request - N calls, N identical index fetches.
-    const contractAddress = '0x2222222222222222222222222222222222222222'
-    const registryPath = 'registry/test/dedup.json'
-    let indexRequests = 0
-    let descriptorRequests = 0
+describe('resolveIncludePath', () => {
+  const PARENT_PATH = 'registry/morpho/calldata-vault.json'
 
-    const callRelayer = jest.fn(async (path: string) => {
-      if (path === '/v2/erc7730/account-op') {
-        indexRequests += 1
-        return {
-          success: true,
-          data: { [`eip155:1:${contractAddress}`]: registryPath },
-          errorState: []
-        }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        descriptorRequests += 1
-        return {
-          success: true,
-          display: { formats: { 'test()': { intent: 'Deduped', fields: [] } } }
-        }
-      }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
-    })
-
-    const call = { to: contractAddress, value: 0n, data: '0x12345678' }
-    const descriptors = await getTestErc7730Descriptors(
-      { chainId: 1n, calls: [call, call, call, call] } as AccountOp,
-      callRelayer
+  test('resolves an include next to the descriptor that includes it', () => {
+    expect(resolveIncludePath('common-VaultV1.json', PARENT_PATH)).toBe(
+      '/registry/morpho/common-VaultV1.json'
     )
+    expect(resolveIncludePath('./common-VaultV1.json', `/${PARENT_PATH}`)).toBe(
+      '/registry/morpho/common-VaultV1.json'
+    )
+  })
 
-    expect(Object.keys(descriptors)).toHaveLength(4)
-    expect(indexRequests).toBe(1)
-    expect(descriptorRequests).toBe(1)
+  test('goes up a folder for each `..`', () => {
+    expect(resolveIncludePath('../../ercs/eip712-erc2612-permit.json', PARENT_PATH)).toBe(
+      '/ercs/eip712-erc2612-permit.json'
+    )
+  })
+
+  test('resolves an include with a leading slash from the root of the registry', () => {
+    expect(resolveIncludePath('/ercs/calldata-erc20-tokens.json', PARENT_PATH)).toBe(
+      '/ercs/calldata-erc20-tokens.json'
+    )
+  })
+
+  test('keeps the plain file name, unlike a URL', () => {
+    expect(resolveIncludePath('common a.json', PARENT_PATH)).toBe('/registry/morpho/common a.json')
+    expect(resolveIncludePath('common#1.json', PARENT_PATH)).toBe('/registry/morpho/common#1.json')
+    expect(resolveIncludePath('common?v=1.json', PARENT_PATH)).toBe(
+      '/registry/morpho/common?v=1.json'
+    )
+    expect(resolveIncludePath('commön.json', PARENT_PATH)).toBe('/registry/morpho/commön.json')
+  })
+
+  test('never goes above the root of the registry', () => {
+    expect(resolveIncludePath('../../../../../outside.json', PARENT_PATH)).toBe('/outside.json')
   })
 })

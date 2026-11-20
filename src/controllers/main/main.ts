@@ -591,9 +591,6 @@ export class MainController extends EventEmitter implements IMainController {
     })
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.erc7730 = new Erc7730Controller({
-      storage: this.storage,
-      callRelayer: this.callRelayer,
-      featureFlags: this.featureFlags,
       providers: this.providers,
       ui: this.ui,
       eventEmitterRegistry
