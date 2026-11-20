@@ -10,6 +10,7 @@ import { CallsUserRequest } from '../../interfaces/userRequest'
 import isSameAddr from '../../utils/isSameAddr'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
+import { getAbiBytesCalldataWithPadding } from '../humanizer/erc7730/calldata'
 
 import type { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
@@ -36,20 +37,49 @@ type SafeTxCall = Pick<Call, 'to' | 'value' | 'data'>
 type SafeTxAction = Pick<SafeMultisigTransactionResponse, 'to' | 'value' | 'data' | 'operation'>
 
 /**
+ * The `transactions` of a `multiSend` batch of the calls. Each one is made as a plain call, never
+ * as a delegate call
+ */
+function encodeMultiSendTransactions(calls: { to: string; value: bigint; data: string }[]): Hex {
+  return concat(
+    calls.map(({ to, value, data }) =>
+      solidityPacked(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [SAFE_CALL_OPERATION, to, value, BigInt(getBytes(data).length), data]
+      )
+    )
+  ) as Hex
+}
+
+/**
  * The `multiSend` calldata that batches the calls. Each one is made as a plain call, never as a
  * delegate call
  */
 function encodeMultiSendData(calls: { to: string; value: bigint; data: string }[]): Hex {
   return multiSendInterface.encodeFunctionData('multiSend', [
-    concat(
-      calls.map(({ to, value, data }) =>
-        solidityPacked(
-          ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
-          [SAFE_CALL_OPERATION, to, value, BigInt(getBytes(data).length), data]
-        )
-      )
-    )
+    encodeMultiSendTransactions(calls)
   ]) as Hex
+}
+
+/**
+ * The `transactions` a multiSend contract runs for this calldata, or null if it isn't a
+ * `multiSend` call. They are read the way the contract reads them, so a batch whose data isn't
+ * padded to a full 32-byte word at its end (as some apps send it) is still read
+ */
+function getMultiSendTransactions(data?: string | null): string | null {
+  if (!data) return null
+
+  try {
+    const [transactions] = multiSendInterface.decodeFunctionData(
+      'multiSend',
+      getAbiBytesCalldataWithPadding(data)
+    )
+
+    return typeof transactions === 'string' ? transactions : null
+  } catch {
+    // Not a multiSend call
+    return null
+  }
 }
 
 export function encodeCalls(op: AccountOp): {
@@ -90,9 +120,9 @@ const isMultiSendContract = (addr: string) =>
 
 /**
  * Whether the calls do exactly what the Safe transaction does, so what is shown (and simulated)
- * for them is what the owners sign. Encoding them must give back the target, value, data and
- * operation of the Safe transaction: either a single call made by the Safe, or a batch of plain
- * calls run through a known multiSend contract with a delegate call
+ * for them is what the owners sign: either a single call made by the Safe with the same target,
+ * value and data, or a batch of plain calls run through a known multiSend contract with a
+ * delegate call and no value, where the calls encode to exactly the batch the contract runs
  */
 export function doCallsMatchSafeTx(calls: SafeTxCall[], safeTx: SafeTxAction): boolean {
   try {
@@ -117,7 +147,8 @@ export function doCallsMatchSafeTx(calls: SafeTxCall[], safeTx: SafeTxAction): b
     const batchCalls = calls.flatMap(({ to, value, data }) => (to ? [{ to, value, data }] : []))
     if (batchCalls.length !== calls.length) return false
 
-    return isSameData(encodeMultiSendData(batchCalls), safeTx.data)
+    const transactions = getMultiSendTransactions(safeTx.data)
+    return !!transactions && isSameData(encodeMultiSendTransactions(batchCalls), transactions)
   } catch {
     // Malformed values (e.g. a value that isn't a number) can't match anything
     return false
@@ -126,32 +157,50 @@ export function doCallsMatchSafeTx(calls: SafeTxCall[], safeTx: SafeTxAction): b
 
 /** The calls of a multiSend batch, or null if the data isn't a batch that could be fully read */
 function decodeMultiSendCalls(data?: string | null): SafeTxCall[] | null {
-  if (!data) return null
+  const transactions = getMultiSendTransactions(data)
+  if (!transactions) return null
 
   try {
-    const [transactions] = multiSendInterface.decodeFunctionData('multiSend', data)
     const decoded = decodeMultiSend(transactions)
     if (!decoded.every((call): call is SuccessfullyDecoded => call.success)) return null
 
     return decoded.map(({ to, value, data: callData }) => ({ to, value, data: callData }))
   } catch {
-    // Not a multiSend call
+    // The batch can't be read
     return null
   }
+}
+
+/** The Safe transaction as one call with its target, value and data, without its operation */
+const toSingleSafeTxCall = (safeTx: SafeTxAction): SafeTxCall => ({
+  to: safeTx.to,
+  value: BigInt(safeTx.value),
+  data: safeTx.data || '0x'
+})
+
+/**
+ * The calls that do exactly what a Safe transaction does (see doCallsMatchSafeTx): the
+ * transaction itself if it's a plain call, or the calls of a batch it runs through a known
+ * multiSend contract. Null if it can't be broken down into such calls, e.g. a delegate call to
+ * an unknown contract, a batch with a value, or a batch with a delegate call in it
+ */
+export function getExactSafeTxCalls(safeTx: SafeTxAction): SafeTxCall[] | null {
+  const batchCalls = decodeMultiSendCalls(safeTx.data)
+  if (batchCalls && doCallsMatchSafeTx(batchCalls, safeTx)) return batchCalls
+
+  const singleCall = toSingleSafeTxCall(safeTx)
+  return doCallsMatchSafeTx([singleCall], safeTx) ? [singleCall] : null
 }
 
 /**
  * The calls to show and simulate for a Safe transaction from the Safe Transaction Service.
  * A batch is split into its calls only if they encode back to exactly the same transaction
- * (see doCallsMatchSafeTx). Otherwise the transaction is shown as it will be sent, as one call
+ * (see getExactSafeTxCalls). Otherwise the transaction is shown as it will be sent, as one call
  * with its target, value and data. A call can't carry the operation, so a delegate call shown
  * this way gets a warning on the sign screen (see getSafeTxNotShownAsCallsWarning)
  */
 export function getSafeTxCalls(safeTx: SafeTxAction): SafeTxCall[] {
-  const batchCalls = decodeMultiSendCalls(safeTx.data)
-  if (batchCalls && doCallsMatchSafeTx(batchCalls, safeTx)) return batchCalls
-
-  return [{ to: safeTx.to, value: BigInt(safeTx.value), data: safeTx.data || '0x' }]
+  return getExactSafeTxCalls(safeTx) ?? [toSingleSafeTxCall(safeTx)]
 }
 
 /** The Safe transaction its owners sign, from a Safe Transaction Service response */

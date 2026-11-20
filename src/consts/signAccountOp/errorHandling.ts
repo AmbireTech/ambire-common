@@ -41,7 +41,8 @@ const WARNINGS: Record<
   safeTxNotShownAsCalls: {
     id: 'safeTxNotShownAsCalls',
     title: "We couldn't break this transaction down",
-    text: "It's shown exactly as it will be sent, and its estimated effects may not be accurate. Only proceed if you trust whoever created it."
+    text: "This transaction was built in an unusual way, so what it does may not match what's shown. This is a common sign of a scam. Only sign it if you built it yourself.",
+    promptBefore: ['sign']
   }
 }
 

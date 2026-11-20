@@ -119,6 +119,16 @@ describe('getSafeTxNotShownAsCallsWarning', () => {
     expect(getSafeTxNotShownAsCallsWarning(accOpWithSafeTx)?.id).toBe('safeTxNotShownAsCalls')
   })
 
+  test('has to be confirmed before signing', () => {
+    const accOpWithSafeTx: AccountOp = {
+      ...accountOp,
+      calls: [{ to: TARGET, value: 0n, data: '0x1234' }],
+      safeTx: buildSafeTxFixture({ to: TARGET, value: '0', data: '0x1234', operation: 1 })
+    }
+
+    expect(getSafeTxNotShownAsCallsWarning(accOpWithSafeTx)?.promptBefore).toEqual(['sign'])
+  })
+
   test('warns when the calls do not send what the Safe tx sends', () => {
     const accOpWithSafeTx: AccountOp = {
       ...accountOp,

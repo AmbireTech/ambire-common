@@ -100,6 +100,21 @@ export const getDelegateCallWarning = (
   return warnings
 }
 
+/**
+ * A warning for a signed Safe transaction that can't be broken down into calls that do exactly
+ * what it does (see getSafeTxCallsFromMessage), so what it does may differ from what's shown.
+ * It has to be confirmed before signing, the same as on the sign transaction screen
+ * (see WARNINGS.safeTxNotShownAsCalls)
+ */
+export const getSafeTxNotBrokenDownWarning = (): HumanizerWarning => ({
+  ...getWarning(
+    "This transaction was built in an unusual way, so what it does may not match what's shown. This is a common sign of a scam. Only sign it if you built it yourself.",
+    'SAFE{WALLET}_TX_NOT_BROKEN_DOWN'
+  ),
+  title: "We couldn't break this transaction down",
+  promptBefore: ['sign']
+})
+
 const setupSelector = toFunctionSelector(setupAbi[0])
 const addOwnerWithThresholdSelector = toFunctionSelector(addOwnerWithThresholdAbi[0])
 const changeThresholdSelector = toFunctionSelector(changeThresholdAbi[0])
@@ -122,7 +137,12 @@ export const getSafeHumanization = (
   value?: string | number | bigint,
   rawData?: string,
   setupHookDepth = 0,
-  nonce?: string | number | bigint | null
+  nonce?: string | number | bigint | null,
+  /**
+   * Whether the call is the whole transaction and not one of several calls in it. Only a whole
+   * transaction can be a cancel: an empty call to the Safe among other calls cancels nothing
+   */
+  isWholeTransaction = true
 ):
   | {
       visuals?: HumanizerVisualization[]
@@ -142,7 +162,10 @@ export const getSafeHumanization = (
 
   const selector = data.substring(0, 10)
 
+  // the calls of a batch or a setup hook (setupHookDepth > 0) are never the whole transaction
   if (
+    isWholeTransaction &&
+    setupHookDepth === 0 &&
     to !== undefined &&
     value !== undefined &&
     isSafeRejectionCall([{ to, value: BigInt(value), data }], safeAddr ?? '')
@@ -573,7 +596,8 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
     call.value,
     call.data,
     0,
-    displayedNonce
+    displayedNonce,
+    accOp.calls.length <= 1
   )
   if (safeSpecificHumanization) {
     newCall = {

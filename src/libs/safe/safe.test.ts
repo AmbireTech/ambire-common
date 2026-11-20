@@ -9,8 +9,8 @@ import {
   Interface,
   keccak256,
   makeError,
-  solidityPacked,
   Signature,
+  solidityPacked,
   toUtf8Bytes,
   TypedDataEncoder,
   Wallet,
@@ -70,7 +70,11 @@ import {
   toCallsUserRequest
 } from './safe'
 
-import type { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
+import type {
+  SafeCreationInfoResponse,
+  SafeInfoResponse,
+  SafeMultisigTransactionListResponse
+} from '@safe-global/api-kit'
 import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 import type { Hex } from '../../interfaces/hex'
 import type { RPCProvider } from '../../interfaces/provider'
@@ -139,8 +143,10 @@ const getSafeCreationInfo = (): SafeCreationInfoResponse => ({
 })
 
 const createApi = (owners: string[] = [OWNER]) => ({
-  getSafeCreationInfo: jest.fn(async () => getSafeCreationInfo()),
-  getSafeInfo: jest.fn(async () => getSafeInfo(owners))
+  getSafeCreationInfo: jest.fn<SafeApiKit['getSafeCreationInfo']>(async () =>
+    getSafeCreationInfo()
+  ),
+  getSafeInfo: jest.fn<SafeApiKit['getSafeInfo']>(async () => getSafeInfo(owners))
 })
 
 describe('isSafeContract', () => {
@@ -226,7 +232,9 @@ describe('Safe deployment data', () => {
   }
 
   test('returns complete Safe API creation data without fetching the deployment transaction', async () => {
-    const getSafeCreationInfo = jest.fn(async () => deploySafeCreationInfo)
+    const getSafeCreationInfo = jest.fn<SafeApiKit['getSafeCreationInfo']>(
+      async () => deploySafeCreationInfo
+    )
     const provider = {
       getTransaction: jest.fn(),
       call: jest.fn()
@@ -762,6 +770,14 @@ describe('toCallsUserRequest', () => {
     })
 
     expect(calls).toEqual(batchCalls)
+  })
+
+  test('decodes a batch whose data is not padded to a full word at its end', () => {
+    // some apps leave out the zeros that pad the batch to a full 32-byte word, and the multiSend
+    // contract still runs it
+    const data = encodeMultiSend(batchCalls).slice(0, -8)
+
+    expect(getCalls({ to: multiSendAddr, operation: 1, data })).toEqual(batchCalls)
   })
 
   test('shows a plain call with multiSend data as it will be sent, with its value', () => {
@@ -1350,7 +1366,7 @@ describe('Safe owner approvals (approveHash)', () => {
       'function approvedHashes(address, bytes32) view returns (uint256)'
     ])
     const getProvider = (approved: bigint) => {
-      const call = jest.fn(async () =>
+      const call = jest.fn<RPCProvider['call']>(async () =>
         approvedHashesInterface.encodeFunctionResult('approvedHashes', [approved])
       )
       return { provider: { call } as unknown as RPCProvider, call }
@@ -1378,7 +1394,7 @@ describe('Safe owner approvals (approveHash)', () => {
 
 describe('getPendingTransactions', () => {
   const originalApiKey = process.env.SAFE_API_KEY
-  const emptyListResponse = { count: 0, next: null, previous: null, results: [] }
+  const emptyListResponse: SafeMultisigTransactionListResponse = { count: 0, results: [] }
 
   beforeEach(() => {
     // getApiKit refuses to build a client without one; no request leaves the test
@@ -1434,7 +1450,7 @@ describe('getPendingTransactions', () => {
 
 describe('Safe API requests made by the background Safe checks', () => {
   const originalApiKey = process.env.SAFE_API_KEY
-  const emptyListResponse = { count: 0, next: null, previous: null, results: [] }
+  const emptyListResponse: SafeMultisigTransactionListResponse = { count: 0, results: [] }
   const never = <T>() => new Promise<T>(() => {})
   let restoreConsole: (() => void) | undefined
 

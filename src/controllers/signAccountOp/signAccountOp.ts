@@ -2504,6 +2504,9 @@ export class SignAccountOpController
     }
 
     if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
+    // Shown as a banner (see `banners`), but it's also in the warnings so the user has to confirm
+    // it before signing (see its `promptBefore`)
+    if (this.#safeTxNotShownAsCallsWarning) warnings.push(this.#safeTxNotShownAsCallsWarning)
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
