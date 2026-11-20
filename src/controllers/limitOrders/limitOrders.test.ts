@@ -1,11 +1,19 @@
-import { ZeroAddress } from 'ethers'
+import { Interface, ZeroAddress } from 'ethers'
 
 import { describe, expect, it, jest } from '@jest/globals'
 
-import { COWSWAP_BUY_NATIVE_TOKEN_ADDRESS } from '../../services/cowswap/constants'
+import {
+  COWSWAP_BUY_NATIVE_TOKEN_ADDRESS,
+  COWSWAP_SETTLEMENT_ADDRESS,
+  COWSWAP_VAULT_RELAYER_ADDRESS
+} from '../../services/cowswap/constants'
 import { buildLimitOrderAppData } from '../../services/cowswap/helper'
 import { CowSwapAccountOrder } from '../../services/cowswap/types'
 import { LimitOrdersController } from './limitOrders'
+
+// Placing reads the account kind only to pick a gas sponsor, which these tests don't need
+jest.mock('../../libs/account/getBaseAccount', () => ({ getBaseAccount: () => ({}) }))
+jest.mock('../../libs/erc7677/erc7677', () => ({ getAmbirePaymasterService: () => undefined }))
 
 const accountAddr = '0x0000000000000000000000000000000000000001'
 const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
@@ -187,5 +195,97 @@ describe('LimitOrdersController My orders', () => {
     await refresh
 
     expect(controller.orders).toEqual([])
+  })
+})
+
+describe('LimitOrdersController placing an order that sells the native token', () => {
+  it('sells the wrapped token and wraps the native token first, in the same batch', async () => {
+    const sellAmount = 5n * 10n ** 17n
+    const ethToken = {
+      address: ZeroAddress,
+      chainId: 1n,
+      decimals: 18,
+      symbol: 'ETH',
+      name: 'Ether',
+      amount: 10n ** 18n,
+      priceIn: [],
+      flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true }
+    }
+    const usdcToken = { address: usdc, chainId: 1, decimals: 6, symbol: 'USDC', name: 'USD Coin' }
+    const requestSignatureInWindow = jest.fn(async (_params: any) => {})
+    const cowSwapApi = {
+      getLimitOrderMarketQuote: jest.fn(async (_params: any) => ({
+        buyAmount: 870000000n,
+        buyAmountBeforeFees: 875000000n,
+        networkFee: 0n,
+        protocolFeeBps: 0,
+        quoteId: 1
+      })),
+      getToTokenList: jest.fn(async () => []),
+      getAccountLimitOrders: jest.fn(async () => []),
+      submitLimitOrder: jest.fn(async (_params: any) => {})
+    }
+    const controller = new LimitOrdersController({
+      selectedAccount: {
+        // A Safe signs in the signing window, which receives the whole batch
+        account: { addr: accountAddr, safeCreation: {} },
+        portfolio: { tokens: [ethToken] },
+        balanceAffectingErrors: [],
+        onUpdate: jest.fn()
+      },
+      accounts: {
+        accountStates: {},
+        getOrFetchAccountOnChainState: jest.fn(async () => ({ nonce: 0n }))
+      },
+      networks: { networks: [{ chainId: 1n, name: 'Ethereum', nativeAssetSymbol: 'ETH' }] },
+      // No allowance yet, so the batch includes the token permission
+      providers: { providers: { '1': { call: jest.fn(async () => `0x${'0'.repeat(64)}`) } } },
+      featureFlags: { isFeatureEnabled: () => false },
+      portfolio: { getAccountPortfolioState: () => ({}) },
+      ui: { uiEvent: { on: jest.fn() } },
+      cowSwapApi,
+      relayerUrl: '',
+      requestSignatureInWindow,
+      portfolioUpdate: jest.fn(),
+      onBroadcastSuccess: jest.fn(async () => {}),
+      onBroadcastFailed: jest.fn()
+    } as unknown as ConstructorParameters<typeof LimitOrdersController>[0])
+
+    await controller.initForm('test')
+    await controller.updateForm({
+      fromSelectedToken: ethToken as any,
+      toSelectedToken: usdcToken,
+      fromAmount: '0.5'
+    })
+    // Today's price is requested after a short pause for typing
+    await new Promise((resolve) => {
+      setTimeout(resolve, 600)
+    })
+
+    expect(cowSwapApi.getLimitOrderMarketQuote).toHaveBeenCalled()
+    expect(cowSwapApi.getLimitOrderMarketQuote.mock.calls[0]![0].sellToken).toBe(weth)
+    expect(controller.formStatus).toBe('READY')
+
+    await controller.placeOrder()
+
+    const { order } = cowSwapApi.submitLimitOrder.mock.calls[0]![0]
+    expect(order.sellToken).toBe(weth)
+    expect(order.sellAmount).toBe(sellAmount.toString())
+    expect(order.signingScheme).toBe('presign')
+    expect(order.partiallyFillable).toBe(true)
+
+    const { calls } = requestSignatureInWindow.mock.calls[0]![0]
+    const erc20Interface = new Interface(['function approve(address,uint256)'])
+    expect(calls.map((call: any) => call.to)).toEqual([weth, weth, COWSWAP_SETTLEMENT_ADDRESS])
+    // Wrapping first, with the amount sold
+    expect(calls[0].value).toBe(sellAmount)
+    expect(calls[0].data).toBe(new Interface(['function deposit() payable']).encodeFunctionData('deposit'))
+    // Then the permission for the wrapped token, then the pre-sign
+    expect(calls[1].data).toBe(
+      erc20Interface.encodeFunctionData('approve', [COWSWAP_VAULT_RELAYER_ADDRESS, sellAmount])
+    )
+    expect(calls[2].value).toBe(0n)
+
+    controller.resetForm()
   })
 })

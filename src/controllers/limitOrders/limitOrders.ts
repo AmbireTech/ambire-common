@@ -1,4 +1,4 @@
-import { formatUnits, isAddress, parseUnits, ZeroAddress } from 'ethers'
+import { formatUnits, Interface, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -33,22 +33,25 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { SignAccountOpError } from '../../interfaces/signAccountOp'
-import { IUiController, View } from '../../interfaces/ui'
-import { CallsUserRequest } from '../../interfaces/userRequest'
 import {
   CowSwapOrderCreation,
   CowSwapOrderStruct,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
+import { IUiController, View } from '../../interfaces/ui'
+import { CallsUserRequest } from '../../interfaces/userRequest'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
+import { getAccountNetworks } from '../../libs/networks/networks'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenMetaViaRPC } from '../../libs/portfolio/getTokenMetaViaRPC'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
+import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import {
   FeeExemptionReason,
   getFeeExemptionReason,
@@ -90,9 +93,6 @@ import {
   sortCowSwapTokensByPopularity
 } from '../../services/cowswap/helper'
 import { CowSwapAccountOrder } from '../../services/cowswap/types'
-import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
-import { getAccountNetworks } from '../../libs/networks/networks'
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import {
@@ -136,6 +136,9 @@ const MARKET_QUOTE_DEBOUNCE_MS = 400
 const TRADE_ROUTES = ['swap-and-bridge', 'limit-order', 'limit-orders']
 
 const isTradeRoute = (route: string | undefined) => !!route && TRADE_ROUTES.includes(route)
+
+/** Wraps the native token into its wrapped version, e.g. ETH into WETH */
+const wrappedNativeTokenInterface = new Interface(['function deposit() payable'])
 
 /** See #getAbsoluteTargetBuyAmount */
 const PRICE_EXTRA_DECIMALS = 18
@@ -553,8 +556,7 @@ export class LimitOrdersController extends EventEmitter {
     ).map((n) => n.chainId)
     const defaultFromToken = this.fromTokenList.find(
       (t) =>
-        t.address !== this.toSelectedToken?.address &&
-        accountNetworkChainIds.includes(t.chainId)
+        t.address !== this.toSelectedToken?.address && accountNetworkChainIds.includes(t.chainId)
     )
     if (!defaultFromToken) return
 
@@ -670,8 +672,7 @@ export class LimitOrdersController extends EventEmitter {
       return
     }
 
-    const mainnetTokens =
-      this.#portfolio.getAccountPortfolioState(accountAddr)['1']?.result?.tokens
+    const mainnetTokens = this.#portfolio.getAccountPortfolioState(accountAddr)['1']?.result?.tokens
     const stkWalletToken = mainnetTokens?.find(
       ({ address, chainId }) => chainId === 1n && address.toLowerCase() === STK_WALLET.toLowerCase()
     )
@@ -1082,13 +1083,14 @@ export class LimitOrdersController extends EventEmitter {
     try {
       const { buyAmount, buyAmountBeforeFees, networkFee, protocolFeeBps, quoteId } =
         await this.#cowSwapApi.getLimitOrderMarketQuote({
-        chainId,
-        sellToken: fromToken.address,
-        buyToken: toToken.address,
-        sellAmount,
-        owner: account.addr,
-        feeBps: this.#feeBps
-      })
+          chainId,
+          // The native token is sold as its wrapped version, see #placeOrder
+          sellToken: this.#getOrderSellTokenAddress(fromToken.address, chainId),
+          buyToken: toToken.address,
+          sellAmount,
+          owner: account.addr,
+          feeBps: this.#feeBps
+        })
       if (requestId !== this.#marketQuoteRequestId) return
 
       this.marketQuote = {
@@ -1345,19 +1347,14 @@ export class LimitOrdersController extends EventEmitter {
     if (!account || !fromToken || !toToken || !sellAmount || !buyAmount || !chainId) return
 
     const { network, provider } = this.#getNetworkAndProvider(chainId)
-    const isEthFlow = fromToken.address.toLowerCase() === ZeroAddress.toLowerCase()
-    const wrappedNativeTokenAddress = getWrappedNativeTokenAddress(chainId)
-    if (isEthFlow && !wrappedNativeTokenAddress) {
-      throw new EmittableError({
-        level: 'major',
-        message: `Limit orders can't sell ${fromToken.symbol} on this network.`,
-        error: new SwapAndBridgeError('No wrapped native token for an ETH-flow order.')
-      })
-    }
+    // The native token is wrapped in the same transaction and the order sells the wrapped
+    // version, like any token. CoW Swap's ETH-flow contract isn't used for new orders
+    const isNativeSold = fromToken.address.toLowerCase() === ZeroAddress.toLowerCase()
+    const sellTokenAddress = this.#getOrderSellTokenAddress(fromToken.address, chainId)
 
     const { fullAppData, appDataHash } = buildLimitOrderAppData({ feeBps: this.#feeBps })
     const order: CowSwapOrderCreation = {
-      sellToken: isEthFlow ? wrappedNativeTokenAddress! : fromToken.address,
+      sellToken: sellTokenAddress,
       buyToken: normalizeBuyTokenAddress(toToken.address),
       receiver: account.addr,
       sellAmount: sellAmount.toString(),
@@ -1367,89 +1364,67 @@ export class LimitOrdersController extends EventEmitter {
       appDataHash,
       feeAmount: '0',
       kind: 'sell',
-      // The ETH-flow contract fills its orders at once
-      partiallyFillable: !isEthFlow,
+      partiallyFillable: true,
       sellTokenBalance: 'erc20',
       buyTokenBalance: 'erc20',
-      signingScheme: isEthFlow ? 'eip1271' : 'presign',
+      signingScheme: 'presign',
       signature: '0x',
       from: account.addr,
       quoteId: marketQuote?.quoteId ?? null
     }
-    const orderUid = computeOrderUid({ chainId, order, owner: account.addr, isEthFlow })
+    const orderUid = computeOrderUid({ chainId, order, owner: account.addr, isEthFlow: false })
     // The form or the account may change while the order is being prepared
     const isStale = () =>
       this.#selectedAccount.account?.addr !== account.addr || this.fromSelectedToken !== fromToken
 
     // Open orders that sell the same token keep needing its allowance until they fill, so the
     // allowance must cover them and this one together. Fetched fresh, as My orders may not have
-    // been opened. Not needed for the native token, which the ETH-flow contract holds
-    let openOrdersSellAmount = 0n
-    if (!isEthFlow) {
-      try {
-        openOrdersSellAmount = await this.#getOpenOrdersSellAmount({
-          chainId,
-          owner: account.addr,
-          sellToken: order.sellToken
-        })
-      } catch (error: any) {
-        const { message } = getHumanReadableSwapAndBridgeError(error)
-        throw new EmittableError({
-          level: 'major',
-          message: `Unable to check your other orders. ${message}`,
-          error
-        })
-      }
+    // been opened
+    let openOrdersSellAmount: bigint
+    try {
+      openOrdersSellAmount = await this.#getOpenOrdersSellAmount({
+        chainId,
+        owner: account.addr,
+        sellToken: order.sellToken
+      })
+    } catch (error: any) {
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+      throw new EmittableError({
+        level: 'major',
+        message: `Unable to check your other orders. ${message}`,
+        error
+      })
     }
     if (isStale()) return
 
     try {
-      await this.#cowSwapApi.submitLimitOrder({ chainId, order, orderUid, isEthFlow })
+      await this.#cowSwapApi.submitLimitOrder({ chainId, order, orderUid, isEthFlow: false })
     } catch (error: any) {
       const { message } = getHumanReadableSwapAndBridgeError(error)
       throw new EmittableError({ level: 'major', message, error })
     }
     if (isStale()) return
 
-    const userTx: SwapAndBridgeSendTxRequest = isEthFlow
-      ? {
-          activeRouteId: orderUid,
-          approvalData: null,
-          chainId,
-          txTarget: COWSWAP_ETH_FLOW_ADDRESS,
-          userTxIndex: 0,
-          value: order.sellAmount,
-          txData: ethFlowInterface.encodeFunctionData('createOrder', [
-            {
-              buyToken: order.buyToken,
-              receiver: order.receiver,
-              sellAmount: order.sellAmount,
-              buyAmount: order.buyAmount,
-              appData: order.appDataHash,
-              feeAmount: order.feeAmount,
-              validTo: order.validTo,
-              partiallyFillable: order.partiallyFillable,
-              quoteId: order.quoteId ?? 0
-            }
-          ])
-        }
-      : {
-          activeRouteId: orderUid,
-          approvalData: {
-            allowanceTarget: COWSWAP_VAULT_RELAYER_ADDRESS,
-            approvalTokenAddress: order.sellToken,
-            minimumApprovalAmount: (sellAmount + openOrdersSellAmount).toString(),
-            owner: account.addr
-          },
-          chainId,
-          txTarget: COWSWAP_SETTLEMENT_ADDRESS,
-          userTxIndex: 0,
-          value: '0',
-          txData: settlementInterface.encodeFunctionData('setPreSignature', [orderUid, true]),
-          cowSwapOrder: getCowSwapOrderStruct(order)
-        }
+    const userTx: SwapAndBridgeSendTxRequest = {
+      activeRouteId: orderUid,
+      approvalData: {
+        allowanceTarget: COWSWAP_VAULT_RELAYER_ADDRESS,
+        approvalTokenAddress: order.sellToken,
+        minimumApprovalAmount: (sellAmount + openOrdersSellAmount).toString(),
+        owner: account.addr
+      },
+      chainId,
+      txTarget: COWSWAP_SETTLEMENT_ADDRESS,
+      userTxIndex: 0,
+      value: '0',
+      txData: settlementInterface.encodeFunctionData('setPreSignature', [orderUid, true]),
+      cowSwapOrder: getCowSwapOrderStruct(order)
+    }
 
-    const accountState = await this.#accounts.getOrFetchAccountOnChainState(account.addr, BigInt(chainId))
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      account.addr,
+      BigInt(chainId)
+    )
     if (!accountState) {
       throw new EmittableError({
         level: 'major',
@@ -1457,8 +1432,20 @@ export class LimitOrdersController extends EventEmitter {
         error: new SwapAndBridgeError('Missing account state for a limit order.')
       })
     }
-    const calls = await getSwapAndBridgeCalls(userTx, account, provider, accountState)
+    const orderCalls = await getSwapAndBridgeCalls(userTx, account, provider, accountState)
     if (isStale()) return
+    // Wrapping comes first, so the token permission and the order find the wrapped token
+    const calls: Call[] = isNativeSold
+      ? [
+          {
+            id: `${orderUid}-wrap`,
+            to: sellTokenAddress,
+            value: sellAmount,
+            data: wrappedNativeTokenInterface.encodeFunctionData('deposit')
+          },
+          ...orderCalls
+        ]
+      : orderCalls
 
     if (account.safeCreation) {
       await this.#signInWindow({ account, network, calls })
@@ -1515,6 +1502,25 @@ export class LimitOrdersController extends EventEmitter {
 
       return remaining > 0n ? total + remaining : total
     }, 0n)
+  }
+
+  /**
+   * The token the order sells: the wrapped native token in place of the native one, as orders
+   * sell tokens, not the native token. Throws on a network without a wrapped native token
+   */
+  #getOrderSellTokenAddress(fromTokenAddress: string, chainId: number): string {
+    if (fromTokenAddress.toLowerCase() !== ZeroAddress.toLowerCase()) return fromTokenAddress
+
+    const wrappedNativeTokenAddress = getWrappedNativeTokenAddress(chainId)
+    if (!wrappedNativeTokenAddress) {
+      throw new EmittableError({
+        level: 'major',
+        message: 'Limit orders can’t sell the native token on this network.',
+        error: new SwapAndBridgeError('No wrapped native token for a limit order.')
+      })
+    }
+
+    return wrappedNativeTokenAddress
   }
 
   /** Hands the calls to the signing window, where Safe accounts sign */
