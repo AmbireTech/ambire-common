@@ -1432,7 +1432,11 @@ export class LimitOrdersController extends EventEmitter {
         error: new SwapAndBridgeError('Missing account state for a limit order.')
       })
     }
-    const orderCalls = await getSwapAndBridgeCalls(userTx, account, provider, accountState)
+    // The builder marks its calls with `activeRouteId`, which tells the activity a swap apart.
+    // A limit order isn't one
+    const orderCalls = (await getSwapAndBridgeCalls(userTx, account, provider, accountState)).map(
+      (call) => ({ ...call, activeRouteId: undefined })
+    )
     if (isStale()) return
     // Wrapping comes first, so the token permission and the order find the wrapped token
     const calls: Call[] = isNativeSold
