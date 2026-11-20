@@ -419,6 +419,17 @@ export class SafeController extends EventEmitter implements ISafeController {
   }
 
   /**
+   * The Safe's owners on the chain, from its account state, where they're read onchain. Undefined
+   * when the state isn't loaded, so that confirmations are then checked only against their
+   * signatures, the same as before the owners were checked
+   */
+  #getOwners(safeAddr: string, chainId: bigint | string): string[] | undefined {
+    const owners = this.#accounts.accountStates[safeAddr]?.[chainId.toString()]?.associatedKeys
+
+    return owners?.length ? owners : undefined
+  }
+
+  /**
    * The Safe message from the Safe Transaction Service if it matches its Safe message hash, with
    * only the owner confirmations that could be verified (see getVerifiedSafeConfirmations).
    * Whether it's confirmed and its prepared signature are worked out again from them, as the
@@ -433,11 +444,14 @@ export class SafeController extends EventEmitter implements ISafeController {
   ): Promise<ExtendedSafeMessage | null> {
     if (!isSafeMessageHashValid(message, safeAddr, chainId)) return null
 
+    // A contract owner (e.g. another Safe) signs a message with a contract signature, which the
+    // signature the app gets can carry (see sortSigs)
     const confirmations = await getVerifiedSafeConfirmations(
       safeAddr,
       message.messageHash,
       message.confirmations,
-      this.#providers.providers[chainId.toString()]
+      this.#providers.providers[chainId.toString()],
+      { owners: this.#getOwners(safeAddr, chainId), acceptContractSignatures: true }
     )
 
     return {
@@ -498,7 +512,8 @@ export class SafeController extends EventEmitter implements ISafeController {
                   safeAddr,
                   txn.safeTxHash,
                   txn.confirmations,
-                  provider
+                  provider,
+                  { owners: this.#getOwners(safeAddr, chainId) }
                 )
               }
             : txn
@@ -683,7 +698,8 @@ export class SafeController extends EventEmitter implements ISafeController {
                 safeAddr,
                 txn.safeTxnHash,
                 txn.confirmations,
-                this.#providers.providers[txn.chainId.toString()]
+                this.#providers.providers[txn.chainId.toString()],
+                { owners: this.#getOwners(safeAddr, txn.chainId) }
               )
             }
           : txn

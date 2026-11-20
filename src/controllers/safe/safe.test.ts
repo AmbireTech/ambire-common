@@ -513,7 +513,10 @@ describe('SafeController pending counts', () => {
 
   type PendingCountsAccountStates = Record<
     string,
-    Record<string, { isDeployed: boolean; threshold: number; nonce: bigint }>
+    Record<
+      string,
+      { isDeployed: boolean; threshold: number; nonce: bigint; associatedKeys?: string[] }
+    >
   >
 
   const createPendingCountsController = ({
@@ -912,6 +915,41 @@ describe('SafeController pending counts', () => {
       ])
 
       expect(result?.['1']?.txns[0]?.confirmations).toEqual([ownerConfirmation])
+    })
+
+    it("leaves out the confirmations of addresses that aren't owners of the Safe", async () => {
+      const notAnOwner = new Wallet(keccak256(toUtf8Bytes('not an owner key')))
+      const notAnOwnerConfirmation = {
+        ...ownerConfirmation,
+        owner: notAnOwner.address,
+        signature: notAnOwner.signingKey.sign(SIGNED_HASH).serialized
+      }
+      const confirmations = [ownerConfirmation, notAnOwnerConfirmation]
+      // the owners come from the account state, where they're read onchain
+      const { controller } = createPendingCountsController({
+        accountStates: {
+          [SAFE_A]: {
+            '1': { isDeployed: true, threshold: 2, nonce: 0n, associatedKeys: [owner.address] }
+          }
+        },
+        providers: { '1': provider }
+      })
+      await controller.initialLoadPromise
+      jest.mocked(fetchAllPending).mockResolvedValueOnce({
+        '1': {
+          txns: [{ safeTxHash: SIGNED_HASH, confirmations }],
+          messages: [pendingMessage(SIGNED_HASH, confirmations)]
+        }
+      } as any)
+
+      const result = await controller.fetchPending(SAFE_A as Hex, [
+        { chainId: 1n, threshold: 2, nonce: 0n }
+      ])
+
+      expect(result?.['1']?.txns[0]?.confirmations).toEqual([ownerConfirmation])
+      expect(result?.['1']?.messages[0]?.confirmations).toEqual([ownerConfirmation])
+      // so the message doesn't count as signed by enough owners
+      expect(result?.['1']?.messages[0]?.isConfirmed).toBe(false)
     })
 
     it('keeps only the owner confirmations of fetched txns that could be verified', async () => {

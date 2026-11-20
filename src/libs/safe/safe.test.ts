@@ -1,6 +1,7 @@
 import {
   AbiCoder,
   concat,
+  dataSlice,
   getAddress,
   getBytes,
   getCreate2Address,
@@ -11,6 +12,8 @@ import {
   makeError,
   Signature,
   solidityPacked,
+  toBeHex,
+  toBigInt,
   toUtf8Bytes,
   TypedDataEncoder,
   Wallet,
@@ -66,6 +69,7 @@ import {
   isSafeMessageHashValid,
   isSafeTxHashValid,
   normalizeSafeGlobalMessage,
+  sortByAddress,
   sortSigs,
   toCallsUserRequest
 } from './safe'
@@ -1078,6 +1082,220 @@ describe('getVerifiedSafeConfirmations', () => {
         getProvider(1n)
       )
     ).resolves.toEqual([])
+  })
+
+  test('leaves out a confirmation of an address that is not one of the Safe owners', async () => {
+    const confirmations = [confirmation(owner.address, ecdsaSignature)]
+
+    await expect(
+      getVerifiedSafeConfirmations(SAFE_ADDRESS, SAFE_TX_HASH, confirmations, getProvider(0n), {
+        owners: [otherOwner.address]
+      })
+    ).resolves.toEqual([])
+    await expect(
+      getVerifiedSafeConfirmations(SAFE_ADDRESS, SAFE_TX_HASH, confirmations, getProvider(0n), {
+        owners: [owner.address.toLowerCase(), otherOwner.address]
+      })
+    ).resolves.toEqual(confirmations)
+  })
+
+  describe('contract signatures', () => {
+    // A contract owner (e.g. another Safe) has its own signature checked by the owner contract.
+    // The Safe Transaction Service returns it as {owner as r}{offset 65 as s}{v = 0}{length}{bytes}
+    const contractOwner = '0x3333333333333333333333333333333333333333'
+    const contractSignature = (ownerAddr: string, data = '0xdeadbeefcafe') =>
+      concat([
+        zeroPadValue(ownerAddr, 32),
+        toBeHex(65, 32),
+        '0x00',
+        toBeHex(getBytes(data).length, 32),
+        data
+      ])
+    const getContractProvider = (code: string) =>
+      ({ getCode: jest.fn(async () => code), call: jest.fn() }) as unknown as RPCProvider
+    const contractConfirmation = confirmation(contractOwner, contractSignature(contractOwner))
+
+    test('keeps one of a contract owner where contract signatures count', async () => {
+      await expect(
+        getVerifiedSafeConfirmations(
+          SAFE_ADDRESS,
+          SAFE_TX_HASH,
+          [contractConfirmation],
+          getContractProvider('0x6080'),
+          { acceptContractSignatures: true }
+        )
+      ).resolves.toEqual([contractConfirmation])
+    })
+
+    test('leaves it out where contract signatures do not count (Safe transactions)', async () => {
+      await expect(
+        getVerifiedSafeConfirmations(
+          SAFE_ADDRESS,
+          SAFE_TX_HASH,
+          [contractConfirmation],
+          getContractProvider('0x6080')
+        )
+      ).resolves.toEqual([])
+    })
+
+    test('leaves out one of an address without code, or one for another owner', async () => {
+      const checks = { acceptContractSignatures: true }
+
+      await expect(
+        getVerifiedSafeConfirmations(
+          SAFE_ADDRESS,
+          SAFE_TX_HASH,
+          [contractConfirmation],
+          getContractProvider('0x'),
+          checks
+        )
+      ).resolves.toEqual([])
+      await expect(
+        getVerifiedSafeConfirmations(
+          SAFE_ADDRESS,
+          SAFE_TX_HASH,
+          [confirmation(contractOwner, contractSignature(otherOwner.address))],
+          getContractProvider('0x6080'),
+          checks
+        )
+      ).resolves.toEqual([])
+    })
+
+    test('leaves out one whose signature does not fit in it', async () => {
+      // it says its signature has 6 bytes, but only 2 follow
+      const cutSignature = dataSlice(contractSignature(contractOwner), 0, 65 + 32 + 2)
+
+      await expect(
+        getVerifiedSafeConfirmations(
+          SAFE_ADDRESS,
+          SAFE_TX_HASH,
+          [confirmation(contractOwner, cutSignature)],
+          getContractProvider('0x6080'),
+          { acceptContractSignatures: true }
+        )
+      ).resolves.toEqual([])
+    })
+
+    test('leaves out one of an address that is not one of the Safe owners', async () => {
+      await expect(
+        getVerifiedSafeConfirmations(
+          SAFE_ADDRESS,
+          SAFE_TX_HASH,
+          [contractConfirmation],
+          getContractProvider('0x6080'),
+          { acceptContractSignatures: true, owners: [owner.address] }
+        )
+      ).resolves.toEqual([])
+    })
+  })
+
+  describe('an RPC that does not answer', () => {
+    const neverAnswers = () => new Promise<never>(() => {})
+
+    beforeEach(() => {
+      jest.useFakeTimers()
+      restoreConsole = suppressConsole().restore
+    })
+
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    test('leaves out an approved hash signature once the onchain check times out', async () => {
+      const provider = { call: jest.fn(neverAnswers) } as unknown as RPCProvider
+      const approval = confirmation(owner.address, getSafeApprovedHashSignature(owner.address))
+
+      const result = getVerifiedSafeConfirmations(SAFE_ADDRESS, SAFE_TX_HASH, [approval], provider)
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+      await expect(result).resolves.toEqual([])
+    })
+
+    test('leaves out a contract signature once reading the owner code times out', async () => {
+      const contractOwner = '0x3333333333333333333333333333333333333333'
+      const contractConfirmation = confirmation(
+        contractOwner,
+        concat([zeroPadValue(contractOwner, 32), toBeHex(65, 32), '0x00', toBeHex(2, 32), '0xaabb'])
+      )
+      const provider = { getCode: jest.fn(neverAnswers) } as unknown as RPCProvider
+
+      const result = getVerifiedSafeConfirmations(
+        SAFE_ADDRESS,
+        SAFE_TX_HASH,
+        [contractConfirmation],
+        provider,
+        { acceptContractSignatures: true }
+      )
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+      await expect(result).resolves.toEqual([])
+    })
+  })
+})
+
+describe('sortSigs', () => {
+  const HASH = keccak256(toUtf8Bytes('safe message'))
+  const ecdsaOwner = new Wallet(keccak256(toUtf8Bytes('ecdsa owner key')))
+  const ecdsaSignature = ecdsaOwner.signingKey.sign(HASH).serialized as Hex
+  const contractSignature = (ownerAddr: string, data: string) =>
+    concat([
+      zeroPadValue(ownerAddr, 32),
+      toBeHex(65, 32),
+      '0x00',
+      toBeHex(getBytes(data).length, 32),
+      data
+    ]) as Hex
+  // Reads the signature at `index` of a joined signature, the way the Safe does
+  const readSafeSignature = (joined: string, index: number) => {
+    const staticPart = dataSlice(joined, index * 65, index * 65 + 65)
+    const owner = getAddress(dataSlice(staticPart, 12, 32))
+    if (getBytes(staticPart)[64] !== 0) return { owner, staticPart }
+
+    const offset = Number(toBigInt(dataSlice(staticPart, 32, 64)))
+    const length = Number(toBigInt(dataSlice(joined, offset, offset + 32)))
+    return { owner, offset, data: dataSlice(joined, offset + 32, offset + 32 + length) }
+  }
+
+  test('puts signatures of 65 bytes one after the other, sorted by owner', () => {
+    const otherOwner = new Wallet(keccak256(toUtf8Bytes('other ecdsa owner key')))
+    const otherSignature = otherOwner.signingKey.sign(HASH).serialized as Hex
+    const sorted = sortByAddress([
+      { addr: ecdsaOwner.address, sig: ecdsaSignature },
+      { addr: otherOwner.address, sig: otherSignature }
+    ])
+
+    expect(sortSigs([ecdsaSignature, otherSignature], HASH)).toBe(
+      concat(sorted.map(({ sig }) => sig))
+    )
+  })
+
+  test('adds the signatures of contract owners after the 65 bytes of each one, at their offset', () => {
+    const lowContractOwner = '0x1111111111111111111111111111111111111111'
+    const highContractOwner = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+    const joined = sortSigs(
+      [
+        contractSignature(highContractOwner, '0x112233'),
+        ecdsaSignature,
+        contractSignature(lowContractOwner, '0xaabb')
+      ],
+      HASH
+    )
+    const signatures = [0, 1, 2].map((index) => readSafeSignature(joined, index))
+    const findSignature = (addr: string) =>
+      signatures.find(({ owner }) => owner === getAddress(addr))
+
+    // sorted by owner, as the Safe requires
+    expect(signatures.map(({ owner }) => owner)).toEqual(
+      sortByAddress(signatures.map(({ owner }) => ({ addr: owner }))).map(({ addr }) => addr)
+    )
+    expect(findSignature(ecdsaOwner.address)?.staticPart).toBe(ecdsaSignature)
+    expect(findSignature(lowContractOwner)?.data).toBe('0xaabb')
+    expect(findSignature(highContractOwner)?.data).toBe('0x112233')
+    // the contract signatures come after the 65 bytes of all three, as the Safe requires
+    const offsets = signatures.flatMap(({ offset }) => (offset === undefined ? [] : [offset]))
+    expect(offsets).toHaveLength(2)
+    expect(Math.min(...offsets)).toBeGreaterThanOrEqual(3 * 65)
+    expect(getBytes(joined)).toHaveLength(3 * 65 + 32 + 2 + 32 + 3)
   })
 })
 

@@ -14,6 +14,7 @@ import {
   keccak256,
   recoverAddress,
   toBeHex,
+  toBigInt,
   toUtf8Bytes,
   TransactionResponse,
   ZeroAddress,
@@ -980,6 +981,90 @@ const SAFE_SIGNATURE_LENGTH = 65
 /** The owner a contract or approved hash signature is for, which it carries in `r` */
 const getOwnerInSignature = (sig: string) => getAddress(dataSlice(sig, 12, 32))
 
+/**
+ * The parts of a contract (EIP-1271) owner signature from the Safe Transaction Service: the owner
+ * it's for, in `r`, and the signature the owner contract checks, which the offset in `s` points
+ * to, after the first 65 bytes (its length, then its bytes). Null if it isn't a contract
+ * signature with that part, or the part doesn't fit in it
+ */
+function parseSafeContractSignature(sig: string): { owner: string; contractSignature: Hex } | null {
+  const bytes = getBytes(sig)
+  if (bytes.length <= SAFE_SIGNATURE_LENGTH) return null
+  if (bytes[SAFE_SIGNATURE_LENGTH - 1] !== SAFE_CONTRACT_SIGNATURE_V) return null
+
+  const offset = toBigInt(bytes.slice(32, 64))
+  if (offset < BigInt(SAFE_SIGNATURE_LENGTH) || offset + 32n > BigInt(bytes.length)) return null
+
+  const start = Number(offset) + 32
+  const end = BigInt(start) + toBigInt(bytes.slice(start - 32, start))
+  if (end > BigInt(bytes.length)) return null
+
+  return {
+    owner: getOwnerInSignature(sig),
+    contractSignature: hexlify(bytes.slice(start, Number(end))) as Hex
+  }
+}
+
+/**
+ * Joins the owners' signatures, already sorted by owner, into the one signature the Safe checks.
+ * Each signature takes 65 bytes in order. A contract signature with more than its 65 bytes (see
+ * parseSafeContractSignature) has the rest added after all of them, and its offset in `s` set to
+ * where that rest starts. Without such a contract signature, or with anything that is neither
+ * one nor a 65-byte signature, the signatures are put one after the other as they are, as before
+ * contract signatures were joined
+ */
+function joinSafeSignatures(sortedSigs: string[]): Hex {
+  const contractSigs = sortedSigs.map(parseSafeContractSignature)
+  const hasContractSig = contractSigs.some((contractSig) => !!contractSig)
+  const canBeJoined = sortedSigs.every(
+    (sig, i) => !!contractSigs[i] || getBytes(sig).length === SAFE_SIGNATURE_LENGTH
+  )
+  if (!hasContractSig || !canBeJoined) return concat(sortedSigs) as Hex
+
+  const staticPartsLength = sortedSigs.length * SAFE_SIGNATURE_LENGTH
+  const staticParts: string[] = []
+  const dynamicParts: string[] = []
+  let dynamicPartsLength = 0
+
+  sortedSigs.forEach((sig, i) => {
+    const contractSig = contractSigs[i]
+    if (!contractSig) {
+      staticParts.push(sig)
+      return
+    }
+
+    staticParts.push(
+      concat([
+        zeroPadValue(contractSig.owner, 32),
+        toBeHex(staticPartsLength + dynamicPartsLength, 32),
+        toBeHex(SAFE_CONTRACT_SIGNATURE_V, 1)
+      ])
+    )
+    const dynamicPart = concat([
+      toBeHex(getBytes(contractSig.contractSignature).length, 32),
+      contractSig.contractSignature
+    ])
+    dynamicParts.push(dynamicPart)
+    dynamicPartsLength += getBytes(dynamicPart).length
+  })
+
+  return concat([...staticParts, ...dynamicParts]) as Hex
+}
+
+/** The checks a confirmation from the Safe Transaction Service has to pass, besides its signature */
+export type SafeConfirmationChecks = {
+  /**
+   * The Safe's owners (read onchain). A confirmation of anyone else doesn't count. When they
+   * aren't known, the confirmations are checked only against their signatures
+   */
+  owners?: string[]
+  /**
+   * Whether a contract (EIP-1271) signature with more than its 65 bytes counts. Only messages
+   * accept them: Safe transactions read signatures 65 bytes at a time (see getSigs)
+   */
+  acceptContractSignatures?: boolean
+}
+
 /** The signer of an ECDSA signature of the Safe transaction hash, made with EIP-712 or `eth_sign` */
 function recoverEcdsaSigner(sig: string, safeTxHash: string, v: number): string | null {
   if (SAFE_EIP712_SIGNATURE_V_VALUES.includes(v)) return recoverAddress(safeTxHash, sig)
@@ -997,27 +1082,49 @@ function recoverEcdsaSigner(sig: string, safeTxHash: string, v: number): string 
  * Whether the owner a confirmation from the Safe Transaction Service is attributed to really
  * confirmed the Safe transaction. The app reads who signed from the confirmations (see
  * recoverOwner), so each one is checked against its signature first:
+ * - it counts only if it's of one of the Safe's owners, when they're known
  * - an approved hash signature counts only if the owner approved the hash onchain
  * - an ECDSA signature counts only if it's signed by the owner
- * - a contract signature counts if it's for the owner, the Safe checks it onchain (EIP-1271)
- * A signature that isn't a single Safe signature is left out, as signatures are read 65 bytes
- * at a time (see getSigs)
+ * - a contract signature counts if it's for the owner, the Safe checks it onchain (EIP-1271).
+ *   One with more than its 65 bytes counts only where they're accepted, if the owner is a contract
+ * Any other signature that isn't a single Safe signature is left out, as Safe transactions read
+ * signatures 65 bytes at a time (see getSigs)
  */
 async function isSafeConfirmationVerified(
   safeAddr: string,
   safeTxHash: string,
   { owner, signature }: SafeConfirmation,
-  provider?: RPCProvider
+  provider: RPCProvider | undefined,
+  { owners, acceptContractSignatures }: SafeConfirmationChecks
 ): Promise<boolean> {
+  if (owners && !owners.some((safeOwner) => isSameAddr(safeOwner, owner))) return false
+
   const bytes = getBytes(signature)
-  if (bytes.length !== SAFE_SIGNATURE_LENGTH) return false
+  if (bytes.length !== SAFE_SIGNATURE_LENGTH) {
+    if (!acceptContractSignatures || !provider) return false
+
+    const contractSignature = parseSafeContractSignature(signature)
+    if (!contractSignature || !isSameAddr(contractSignature.owner, owner)) return false
+
+    // The Safe checks a contract signature with the owner contract, which an address without
+    // code can't be. A stuck RPC must not hold up the fetch of the Safe's txns and messages
+    const code = await withTimeout(() => provider.getCode(owner), {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe: reading the code of a contract owner timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    })
+    return code !== '0x'
+  }
 
   const v = bytes[SAFE_SIGNATURE_LENGTH - 1]!
 
   if (v === SAFE_APPROVED_HASH_SIGNATURE_V) {
     if (!provider || !isSameAddr(getOwnerInSignature(signature), owner)) return false
 
-    return isSafeHashApproved(safeAddr, owner, safeTxHash, provider)
+    // A stuck RPC must not hold up the fetch of the Safe's txns and messages
+    return withTimeout(() => isSafeHashApproved(safeAddr, owner, safeTxHash, provider), {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe: checking an approved hash timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    })
   }
 
   if (v === SAFE_CONTRACT_SIGNATURE_V) return isSameAddr(getOwnerInSignature(signature), owner)
@@ -1029,19 +1136,22 @@ async function isSafeConfirmationVerified(
 /**
  * The confirmations of a Safe transaction or message from the Safe Transaction Service whose
  * owners really confirmed it (see isSafeConfirmationVerified). A confirmation that can't be
- * checked, e.g. because the RPC fails, is left out, and gets checked again with the next fetch
+ * checked, e.g. because the RPC fails or doesn't answer in time (see SAFE_API_TIMEOUT_MS), is
+ * left out, and gets checked again with the next fetch
  *
  * @param safeTxHash the Safe transaction hash, or the Safe message hash of a message
+ * @param checks the Safe's owners, and whether contract signatures count (see SafeConfirmationChecks)
  */
 export async function getVerifiedSafeConfirmations<T extends SafeConfirmation>(
   safeAddr: string,
   safeTxHash: string,
   confirmations: T[],
-  provider?: RPCProvider
+  provider?: RPCProvider,
+  checks: SafeConfirmationChecks = {}
 ): Promise<T[]> {
   const verifications = await Promise.all(
     confirmations.map((confirmation) =>
-      isSafeConfirmationVerified(safeAddr, safeTxHash, confirmation, provider).catch(
+      isSafeConfirmationVerified(safeAddr, safeTxHash, confirmation, provider, checks).catch(
         (error: unknown) => {
           console.error('Safe: failed to verify an owner confirmation, leaving it out', error)
           return false
@@ -1120,6 +1230,11 @@ function recoverOwner(
   // are taken only if the owner approved the hash onchain (see getVerifiedSafeConfirmations)
   if (isSafeApprovedHashSignature(sig)) return getOwnerInSignature(sig)
 
+  // contract (EIP-1271) signatures carry the owner in `r` too, the same way the Safe reads them.
+  // The Safe checks them with the owner contract onchain
+  if (getBytes(sig)[SAFE_SIGNATURE_LENGTH - 1] === SAFE_CONTRACT_SIGNATURE_V)
+    return getOwnerInSignature(sig)
+
   // a transaction from Safe Global may have signatures that are not
   // ecdsa; therefore, we cannot extract the owner from them by using
   // a plain recoverAddress. We rely on the Safe Global information,
@@ -1190,7 +1305,7 @@ export function sortSigs(
   }
 
   const sorted = sortByAddress(signed)
-  return concat(sorted.map((s) => s.sig)) as Hex
+  return joinSafeSignatures(sorted.map((s) => s.sig))
 }
 
 /**
