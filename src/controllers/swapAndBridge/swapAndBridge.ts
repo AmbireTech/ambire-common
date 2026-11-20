@@ -68,6 +68,7 @@ import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { isCancelAccountOp } from '../../libs/accountOp/cancel'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getIntentBanners } from '../../libs/banners/banners'
@@ -87,6 +88,7 @@ import {
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
   getFeeTokenForSponsorship,
+  getIsActiveRouteAccountOp,
   getIsIntentRoute,
   getIsTokenEligibleForSwapAndBridge,
   getRouteOutputValuesForSorting,
@@ -2926,17 +2928,33 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
       if (!activeRoute.userTxHash || activeRoute.routeStatus === 'completed') return
 
-      const latestSubmittedAccountOps = this.#activity.getAccountOpsForAccount({
-        accountAddr: activeRoute.sender,
-        from: 0,
-        numberOfItems: 10
-      })
-
-      const activeRouteSubmittedAccountOp = latestSubmittedAccountOps.find(
-        (op) => op.txnId === activeRoute.userTxHash
-      )
+      const activeRouteSubmittedAccountOp = this.#findActiveRouteAccountOp(activeRoute)
 
       if (!activeRouteSubmittedAccountOp) return
+      if (isCancelAccountOp(activeRouteSubmittedAccountOp)) {
+        // Once the cancel is mined, even if it reverted, it has taken the nonce of the route's
+        // transaction. The calls of the route never ran, so there is nothing to wait for
+        if (
+          activeRouteSubmittedAccountOp.status === AccountOpStatus.Success ||
+          activeRouteSubmittedAccountOp.status === AccountOpStatus.Failure
+        ) {
+          this.updateActiveRoute(activeRoute.activeRouteId, {
+            routeStatus: 'failed',
+            error: 'The transaction was canceled'
+          })
+        }
+        return
+      }
+
+      // The account op knows the latest hash, in case it changed after broadcasting
+      const userTxHash = activeRouteSubmittedAccountOp.txnId || activeRoute.userTxHash
+      if (!getIsActiveRouteAccountOp(activeRoute, activeRouteSubmittedAccountOp)) {
+        // A speed up went through instead of the route's transaction, so the route follows it
+        this.updateActiveRoute(activeRoute.activeRouteId, {
+          userTxHash,
+          identifiedBy: activeRouteSubmittedAccountOp.identifiedBy
+        })
+      }
       if (
         activeRoute.route?.providerId === 'cowswap' &&
         activeRouteSubmittedAccountOp.status !== AccountOpStatus.Success
@@ -2951,7 +2969,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           fromChainId: activeRoute.route.fromChainId,
           toChainId: activeRoute.route.toChainId,
           bridge: activeRoute.route.usedBridgeNames?.[0],
-          txHash: activeRoute.userTxHash!,
+          txHash: userTxHash,
           providerId: activeRoute.route.providerId,
           requestId: (activeRoute.route.rawRoute as any)?.requestId,
           routeId: activeRoute.route.routeId,
@@ -3338,6 +3356,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         userTxHash: submittedAccountOp.txnId,
         identifiedBy: submittedAccountOp.identifiedBy
       })
+    } else {
+      this.#updateActiveRouteUserTxHashIfChanged(activeRoute, submittedAccountOp)
     }
 
     if (
@@ -3422,7 +3442,54 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         userTxHash: submittedAccountOp?.txnId,
         identifiedBy: submittedAccountOp.identifiedBy
       })
+      return
     }
+
+    this.#updateActiveRouteUserTxHashIfChanged(activeRoute, submittedAccountOp)
+  }
+
+  /**
+   * The account op that sent the transaction of an active route. When a speed up or a cancel
+   * replaced that transaction, it's the account op that replaced it, as only one of them can
+   * go through.
+   */
+  #findActiveRouteAccountOp(activeRoute: SwapAndBridgeActiveRoute) {
+    // All of the account's ops are searched, not only the latest ones, because the user
+    // may send other transactions while the route is in progress
+    const accountOp = this.#activity
+      .getAccountOpsForAccount({ accountAddr: activeRoute.sender, sortAccOps: false })
+      .find((op) => getIsActiveRouteAccountOp(activeRoute, op))
+    if (accountOp?.status !== AccountOpStatus.UnknownButPastNonce) return accountOp
+
+    const replacement = this.#activity.findReplacement(
+      accountOp.identifiedBy,
+      accountOp.accountAddr,
+      accountOp.chainId
+    )
+    // A replacement that was never sent (rejected) or was replaced itself is not what took
+    // the nonce, which leaves the route's own account op
+    const isReplacementNotMined =
+      replacement?.status === AccountOpStatus.Rejected ||
+      replacement?.status === AccountOpStatus.UnknownButPastNonce
+    if (!replacement || isReplacementNotMined) return accountOp
+
+    return replacement
+  }
+
+  /**
+   * Updates the transaction hash of an active route when the hash of its account op changed
+   * after broadcasting, e.g. when the bundler or the relayer replaced the transaction.
+   * Otherwise the route keeps the hash of a transaction that was never mined.
+   */
+  #updateActiveRouteUserTxHashIfChanged(
+    activeRoute: SwapAndBridgeActiveRoute,
+    submittedAccountOp: SubmittedAccountOp
+  ) {
+    const { txnId } = submittedAccountOp
+    if (!activeRoute.userTxHash || !txnId || txnId === activeRoute.userTxHash) return
+    if (!getIsActiveRouteAccountOp(activeRoute, submittedAccountOp)) return
+
+    this.updateActiveRoute(activeRoute.activeRouteId, { userTxHash: txnId })
   }
 
   #handleActiveRoutesCompleted(callId: Call['id'], opStatus: SubmittedAccountOp['status']) {

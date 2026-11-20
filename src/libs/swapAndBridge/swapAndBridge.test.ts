@@ -17,6 +17,7 @@ import {
   calculateAmountWarnings,
   enrichRouteWithOutputTokenPrice,
   getFeeTokenForSponsorship,
+  getIsActiveRouteAccountOp,
   getIsBridgeRoute,
   getIsIntentRoute,
   getSentPartOfSwap,
@@ -906,5 +907,43 @@ describe('getSwapAndBridgeCalls', () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]).not.toHaveProperty('cowSwapOrder')
+  })
+})
+
+describe('getIsActiveRouteAccountOp', () => {
+  const identifiedBy = { type: 'UserOperation' as const, identifier: 'route-user-op-hash' }
+
+  test('matches the account op by its identifier, even when its transaction hash changed', () => {
+    const activeRoute = { identifiedBy, userTxHash: 'first-bundle-transaction' }
+
+    expect(
+      getIsActiveRouteAccountOp(activeRoute, {
+        identifiedBy,
+        txnId: 'replacement-bundle-transaction'
+      })
+    ).toBe(true)
+    expect(
+      getIsActiveRouteAccountOp(activeRoute, {
+        identifiedBy: { type: 'UserOperation', identifier: 'other-user-op-hash' },
+        txnId: 'first-bundle-transaction'
+      })
+    ).toBe(false)
+  })
+
+  test('matches by the transaction hash when the route has no account op identifier', () => {
+    const accountOp = {
+      identifiedBy: { type: 'Transaction' as const, identifier: 'transaction' },
+      txnId: 'transaction'
+    }
+
+    expect(
+      getIsActiveRouteAccountOp({ identifiedBy: null, userTxHash: 'transaction' }, accountOp)
+    ).toBe(true)
+    expect(
+      getIsActiveRouteAccountOp({ identifiedBy: null, userTxHash: 'other-transaction' }, accountOp)
+    ).toBe(false)
+    expect(getIsActiveRouteAccountOp({ identifiedBy: null, userTxHash: null }, accountOp)).toBe(
+      false
+    )
   })
 })

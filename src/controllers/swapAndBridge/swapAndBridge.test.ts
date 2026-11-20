@@ -1856,6 +1856,7 @@ describe('SwapAndBridge Controller', () => {
       {
         routeStatus: 'in-progress',
         userTxHash: 'test',
+        identifiedBy: { type: 'Transaction', identifier: 'test' },
         userTxIndex: 1
       }
     )
@@ -1878,7 +1879,8 @@ describe('SwapAndBridge Controller', () => {
     activeRoute.route!.providerId = 'cowswap'
     swapAndBridgeController.updateActiveRoute(activeRoute.activeRouteId, {
       routeStatus: 'in-progress',
-      userTxHash
+      userTxHash,
+      identifiedBy: { type: 'Transaction', identifier: userTxHash }
     })
     await activityCtrl.addAccountOp(getSubmittedAccountOp(userTxHash))
 
@@ -1934,11 +1936,13 @@ describe('SwapAndBridge Controller', () => {
 
     const setActiveRouteForStatusCheck = (providerId: string) => {
       const baseActiveRoute = originalActiveRoutes[0]!
+      const userTxHash = `${providerId}-source-transaction`
       const activeRoute = {
         ...baseActiveRoute,
         activeRouteId: `${providerId}-activity-route`,
         routeStatus: 'in-progress' as const,
-        userTxHash: `${providerId}-source-transaction`,
+        userTxHash,
+        identifiedBy: { type: 'Transaction' as const, identifier: userTxHash },
         route: {
           ...baseActiveRoute.route!,
           routeId: `${providerId}-activity-route`,
@@ -2029,6 +2033,219 @@ describe('SwapAndBridge Controller', () => {
       expect(recordIntentActivitySpy).not.toHaveBeenCalled()
       expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toBe('failed')
     })
+  })
+  describe('active route whose transaction was replaced after broadcasting', () => {
+    const userOpIdentifiedBy = {
+      type: 'UserOperation' as const,
+      identifier: 'replaced-transaction-user-op-hash'
+    }
+    const broadcastedTxnId = 'first-bundle-transaction'
+    const minedTxnId = 'replacement-bundle-transaction'
+    let originalActiveRoutes: typeof swapAndBridgeController.activeRoutes
+
+    /** The route's user operation, after the bundler replaced the transaction that included it */
+    const getReplacedUserOp = (status: string, activeRouteId?: string) => ({
+      ...getSubmittedAccountOp(minedTxnId, activeRouteId, status, 1n),
+      identifiedBy: userOpIdentifiedBy
+    })
+
+    const setActiveRouteWithBroadcastedTxnId = () => {
+      const baseActiveRoute = originalActiveRoutes[0]!
+      const activeRoute = {
+        ...baseActiveRoute,
+        activeRouteId: 'replaced-transaction-route',
+        routeStatus: 'in-progress' as const,
+        userTxHash: broadcastedTxnId,
+        identifiedBy: userOpIdentifiedBy,
+        route: {
+          ...baseActiveRoute.route!,
+          routeId: 'replaced-transaction-route',
+          providerId: 'cowswap',
+          fromChainId: 1,
+          toChainId: 1
+        }
+      }
+
+      swapAndBridgeController.activeRoutes = [activeRoute]
+
+      return activeRoute
+    }
+
+    beforeEach(() => {
+      originalActiveRoutes = swapAndBridgeController.activeRoutes
+    })
+
+    afterEach(() => {
+      swapAndBridgeController.activeRoutes = originalActiveRoutes
+    })
+
+    test('checks the route status with the hash of the mined transaction', async () => {
+      setActiveRouteWithBroadcastedTxnId()
+      jest
+        .spyOn(activityCtrl, 'getAccountOpsForAccount')
+        .mockReturnValue([getReplacedUserOp('success')])
+      const getRouteStatusSpy = jest
+        .spyOn(socketAPIMock, 'getRouteStatus')
+        .mockResolvedValue({ status: 'completed', txnId: 'cowswap-settlement-transaction' })
+      jest.spyOn(swapAndBridgeController, 'recordIntentActivity').mockResolvedValue()
+
+      await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+      expect(getRouteStatusSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ txHash: minedTxnId })
+      )
+      expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toBe('completed')
+    })
+
+    test('takes the new transaction hash of its account op', () => {
+      const activeRoute = setActiveRouteWithBroadcastedTxnId()
+
+      swapAndBridgeController.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(
+        getReplacedUserOp('broadcasted-but-not-confirmed', activeRoute.activeRouteId)
+      )
+
+      expect(swapAndBridgeController.activeRoutes[0]!.userTxHash).toBe(minedTxnId)
+    })
+
+    test('keeps its transaction hash when another account op refers to it', () => {
+      const activeRoute = setActiveRouteWithBroadcastedTxnId()
+
+      swapAndBridgeController.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(
+        getSubmittedAccountOp(
+          'other-account-op-transaction',
+          activeRoute.activeRouteId,
+          'broadcasted-but-not-confirmed',
+          1n
+        )
+      )
+
+      expect(swapAndBridgeController.activeRoutes[0]!.userTxHash).toBe(broadcastedTxnId)
+    })
+  })
+  describe('active route whose transaction was sped up or canceled', () => {
+    const replacedTxnId = 'replaced-transaction'
+    const replacementTxnId = 'replacement-transaction'
+    const replacedIdentifiedBy = { type: 'Transaction' as const, identifier: replacedTxnId }
+    let originalActiveRoutes: typeof swapAndBridgeController.activeRoutes
+
+    /** A transaction that didn't go through, because another one took its nonce */
+    const getReplacedOp = () => ({
+      ...getSubmittedAccountOp(replacedTxnId, undefined, 'unknown-but-past-nonce', 1n),
+      id: 'replaced-account-op'
+    })
+
+    const getReplacementOp = ({
+      isCancel,
+      status = 'success'
+    }: {
+      isCancel: boolean
+      status?: string
+    }) => ({
+      ...getSubmittedAccountOp(replacementTxnId, undefined, status, 1n),
+      id: 'replacement-account-op',
+      meta: { speedUp: { enabled: true, replacedIdentifiedBy, ...(isCancel && { isCancel }) } }
+    })
+
+    const setReplacedActiveRoute = () => {
+      const baseActiveRoute = originalActiveRoutes[0]!
+      const activeRoute = {
+        ...baseActiveRoute,
+        activeRouteId: 'sped-up-route',
+        routeStatus: 'in-progress' as const,
+        userTxHash: replacedTxnId,
+        identifiedBy: replacedIdentifiedBy,
+        route: {
+          ...baseActiveRoute.route!,
+          routeId: 'sped-up-route',
+          providerId: 'cowswap',
+          fromChainId: 1,
+          toChainId: 1
+        }
+      }
+
+      swapAndBridgeController.activeRoutes = [activeRoute]
+    }
+
+    const mockAccountOps = (replacementOp: ReturnType<typeof getReplacementOp>) => {
+      const replacedOp = getReplacedOp()
+      jest
+        .spyOn(activityCtrl, 'getAccountOpsForAccount')
+        .mockReturnValue([replacedOp, replacementOp])
+      const findReplacementSpy = jest
+        .spyOn(activityCtrl, 'findReplacement')
+        .mockReturnValue(replacementOp)
+
+      return { replacedOp, findReplacementSpy }
+    }
+
+    beforeEach(() => {
+      originalActiveRoutes = swapAndBridgeController.activeRoutes
+    })
+
+    afterEach(() => {
+      swapAndBridgeController.activeRoutes = originalActiveRoutes
+    })
+
+    test('follows the speed up that went through instead of its transaction', async () => {
+      setReplacedActiveRoute()
+      const replacementOp = getReplacementOp({ isCancel: false })
+      const { replacedOp, findReplacementSpy } = mockAccountOps(replacementOp)
+      const getRouteStatusSpy = jest
+        .spyOn(socketAPIMock, 'getRouteStatus')
+        .mockResolvedValue({ status: 'completed', txnId: 'cowswap-settlement-transaction' })
+      jest.spyOn(swapAndBridgeController, 'recordIntentActivity').mockResolvedValue()
+
+      await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+      expect(findReplacementSpy).toHaveBeenCalledWith(
+        replacedIdentifiedBy,
+        replacedOp.accountAddr,
+        replacedOp.chainId
+      )
+      expect(getRouteStatusSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ txHash: replacementTxnId })
+      )
+      expect(swapAndBridgeController.activeRoutes[0]).toMatchObject({
+        routeStatus: 'completed',
+        userTxHash: replacementTxnId,
+        identifiedBy: replacementOp.identifiedBy
+      })
+    })
+
+    test.each(['success', 'failure'])(
+      'fails when a mined cancel (%s) took the place of its transaction',
+      async (status) => {
+        setReplacedActiveRoute()
+        mockAccountOps(getReplacementOp({ isCancel: true, status }))
+        const getRouteStatusSpy = jest.spyOn(socketAPIMock, 'getRouteStatus')
+
+        await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+        expect(getRouteStatusSpy).not.toHaveBeenCalled()
+        expect(swapAndBridgeController.activeRoutes[0]).toMatchObject({
+          routeStatus: 'failed',
+          error: 'The transaction was canceled'
+        })
+      }
+    )
+
+    test.each(['rejected', 'unknown-but-past-nonce'])(
+      'keeps its transaction when the speed up (%s) did not go through',
+      async (status) => {
+        setReplacedActiveRoute()
+        mockAccountOps(getReplacementOp({ isCancel: false, status }))
+        const getRouteStatusSpy = jest.spyOn(socketAPIMock, 'getRouteStatus')
+
+        await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+        expect(getRouteStatusSpy).not.toHaveBeenCalled()
+        expect(swapAndBridgeController.activeRoutes[0]).toMatchObject({
+          routeStatus: 'in-progress',
+          userTxHash: replacedTxnId,
+          identifiedBy: replacedIdentifiedBy
+        })
+      }
+    )
   })
   test('should remove an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
