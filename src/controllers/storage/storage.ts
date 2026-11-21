@@ -103,6 +103,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#removeFetchingDisabledSelectors() // As of v6.23.0
       await this.#indexSentToHistoryFromAccountsOps() // As of the accountsOps → IDB release
       await this.#sortPhishingLists() // As of the sorted phishing lists release
+      await this.#removeTokenRecordsWithoutChainId() // As of the Manage Tokens crash fix
     } catch (error) {
       // Reported, because a failed migration skips all the ones after it on every start — and
       // the failure is invisible in the meantime, which for #indexSentToHistoryFromAccountsOps
@@ -197,6 +198,39 @@ export class StorageController extends EventEmitter implements IStorageControlle
         domains: toSortedUnique(phishing.domains),
         addresses: toSortedUnique(phishing.addresses.map((address) => address.toLowerCase()))
       })
+    }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
+  /**
+   * Removes the token preferences and custom tokens that have no `chainId`. #migrateNetworkIdToChainId
+   * converts only the records whose `networkId` matches a stored network, so a record whose network
+   * was gone by the time it ran keeps its `networkId` and never gets a `chainId`. The portfolio
+   * skips such records and the Manage Tokens screen leaves them out, so the user can neither see
+   * nor remove them - they would stay in storage forever.
+   *
+   * Safe to re-run: records with a `chainId` are left untouched, and nothing is stored when there
+   * is nothing to remove.
+   */
+  async #removeTokenRecordsWithoutChainId() {
+    const MIGRATION_KEY = 'removeTokenRecordsWithoutChainId'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const [customTokens, tokenPreferences] = await Promise.all([
+      this.#storage.get('customTokens', []),
+      this.#storage.get('tokenPreferences', [])
+    ])
+    const hasChainId = ({ chainId }: { chainId?: bigint | null }) =>
+      chainId !== undefined && chainId !== null
+    const customTokensWithChainId = customTokens.filter(hasChainId)
+    const tokenPreferencesWithChainId = tokenPreferences.filter(hasChainId)
+
+    if (customTokensWithChainId.length !== customTokens.length) {
+      await this.#storage.set('customTokens', customTokensWithChainId)
+    }
+    if (tokenPreferencesWithChainId.length !== tokenPreferences.length) {
+      await this.#storage.set('tokenPreferences', tokenPreferencesWithChainId)
     }
 
     await this.#markMigrationPassed(MIGRATION_KEY)

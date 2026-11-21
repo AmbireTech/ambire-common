@@ -1,5 +1,12 @@
 import { Account, AccountId } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
+import { Key, StoredKey } from '../../interfaces/keystore'
+
+/**
+ * The id of the saved recovery phrase a key was derived from, if any. Only internal keys can come
+ * from one: a hardware wallet key's `meta` has no `fromSeedId`, and a PQ1 key's can't have one.
+ */
+export const getKeySeedId = (key: Key | StoredKey): string | undefined =>
+  key.type === 'internal' ? key.meta.fromSeedId : undefined
 
 export const DEFAULT_KEY_LABEL_PATTERN = /^Key (\d+)$/
 export const getDefaultKeyLabel = (prevKeys: Key[], i: number) => {

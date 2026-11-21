@@ -273,4 +273,14 @@ export class KeyIterator implements KeyIteratorInterface {
       Mnemonic.fromPhrase(seedPhraseToCompareWith).phrase
     )
   }
+
+  isSeedMatchingFingerprint(
+    seedPhraseToCompareWith: string,
+    passphraseFingerprint: string
+  ): boolean {
+    const baseWallet = this.#getBaseWallet()
+    if (!baseWallet || baseWallet.fingerprint !== passphraseFingerprint) return false
+
+    return baseWallet.mnemonic?.phrase === Mnemonic.fromPhrase(seedPhraseToCompareWith).phrase
+  }
 }

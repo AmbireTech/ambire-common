@@ -28,7 +28,8 @@ import {
   getWarning,
   HexIrCall,
   isHexCall,
-  padCallData
+  padCallData,
+  toLowerCaseHex
 } from '../../utils'
 
 const addOwnerWithThresholdAbi = parseAbi([
@@ -55,6 +56,7 @@ const execTransactionAbi = parseAbi([
   'function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) payable returns (bool)'
 ])
 const multiSendAbi = parseAbi(['function multiSend(bytes transactions)'])
+const approveHashAbi = parseAbi(['function approveHash(bytes32 hashToApprove)'])
 const createProxyWithNonceAbi = parseAbi([
   'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
 ])
@@ -65,6 +67,12 @@ const createProxyWithNonceL2Abi = parseAbi([
 // shared recursion-depth guard for both nested `setup` hooks and nested `multiSend` batches,
 // so a maliciously self-referential payload can't recurse getSafeHumanization indefinitely
 const MAX_SAFE_SETUP_HOOK_DEPTH = 4
+
+/**
+ * The action of an owner approving a Safe transaction onchain (`approveHash`), e.g. a smart
+ * account owner, which can't sign it. Matched by the activity to label the transaction
+ */
+export const SAFE_APPROVE_HASH_ACTION = 'Approve Safe transaction'
 
 export const shouldDisplaySafeDelegateCallWarning = (
   operation: bigint | number,
@@ -103,6 +111,7 @@ const setGuardSelector = toFunctionSelector(setGuardAbi[0])
 const setFallbackHandlerSelector = toFunctionSelector(setFallbackHandlerAbi[0])
 const setDomainVerifierSelector = toFunctionSelector(setDomainVerifierAbi[0])
 const multiSendSelector = toFunctionSelector(multiSendAbi[0])
+const approveHashSelector = toFunctionSelector(approveHashAbi[0])
 const execTransactionSelector = toFunctionSelector(execTransactionAbi[0])
 const createProxyWithNonceSelector = toFunctionSelector(createProxyWithNonceAbi[0])
 const createProxyWithNonceL2Selector = toFunctionSelector(createProxyWithNonceL2Abi[0])
@@ -111,11 +120,22 @@ export const getSafeHumanization = (
   safeAddr?: string,
   to?: string,
   value?: string | number | bigint,
-  data?: string,
+  rawData?: string,
   setupHookDepth = 0,
   nonce?: string | number | bigint | null
-): { visuals?: HumanizerVisualization[]; warnings?: HumanizerWarning[] } | undefined => {
-  if (!data || !isHex(data)) return
+):
+  | {
+      visuals?: HumanizerVisualization[]
+      warnings?: HumanizerWarning[]
+      /** Whether this humanization is shown over the call's clear signing (ERC-7730) one */
+      preferredOverErc7730?: boolean
+    }
+  | undefined => {
+  if (!rawData || !isHex(rawData)) return
+  // this is also called directly with calldata from signed messages (e.g. a SafeTx), which never
+  // passes through humanizeCallWithModules, so upper-case calldata must be normalized here too,
+  // otherwise it would skip every selector check below along with its warnings
+  const data = toLowerCaseHex(rawData)
 
   const fullVisualization: HumanizerVisualization[] = []
   const warnings: HumanizerWarning[] = []
@@ -403,6 +423,27 @@ export const getSafeHumanization = (
     }
   }
 
+  if (selector === approveHashSelector) {
+    fullVisualization.push(getAction(SAFE_APPROVE_HASH_ACTION))
+    if (to && isAddress(to)) fullVisualization.push(getLabel('of'), getAddressVisualization(to))
+
+    // a malformed approval still gets the action label, only the hash is skipped
+    try {
+      const { args } = decodeFunctionData({ abi: approveHashAbi, data: padCallData(data, 1) })
+      const [safeTxHash] = args
+      fullVisualization.push(getBreak(), getLabel('Safe transaction hash'), getText(safeTxHash))
+    } catch (error) {
+      console.warn('Safe humanizer: failed to decode an approveHash call', error)
+    }
+
+    return {
+      visuals: fullVisualization,
+      // The Safe's own clear signing (ERC-7730) descriptor isn't listed on every network for every
+      // Safe version, so this one always wins to keep the approval looking the same everywhere
+      preferredOverErc7730: true
+    }
+  }
+
   if (selector === multiSendSelector) {
     fullVisualization.push(getAction('Batch of transactions'))
 
@@ -538,7 +579,8 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
     newCall = {
       ...call,
       fullVisualization: safeSpecificHumanization.visuals,
-      warnings: safeSpecificHumanization.warnings
+      warnings: safeSpecificHumanization.warnings,
+      ...(safeSpecificHumanization.preferredOverErc7730 && { preferredOverErc7730: true })
     }
   } else if (isHexCall(call)) {
     const match = matcher[call.data.slice(0, 10)]

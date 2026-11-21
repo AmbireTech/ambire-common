@@ -18,6 +18,7 @@ export const STATUS_WRAPPED_METHODS = {
   privacyPoolsRagequit: 'INITIAL',
   accountPickerSetInitParamsFromNewSeed: 'INITIAL',
   accountPickerSetInitParamsFromPrivateKeys: 'INITIAL',
+  accountPickerSetInitParamsFromSavedSeed: 'INITIAL',
   fetchSafeTxns: 'INITIAL',
   refreshSafeTxns: 'INITIAL'
 } as const

@@ -52,7 +52,6 @@ const PORTFOLIO_STATE: AccountState = {
         hasHints: true,
         lastUpdate: 1753192918712
       },
-      tokenDataCache: new Map(),
       collectionErrors: [],
       toBeLearned: {
         erc20s: [],
@@ -466,7 +465,6 @@ const PORTFOLIO_STATE: AccountState = {
           priceIn: [{ baseCurrency: 'usd', price: 10 }]
         }
       ],
-      tokenDataCache: new Map(),
       feeTokens: [],
       blockNumber: 22975182,
       tokenErrors: [],
