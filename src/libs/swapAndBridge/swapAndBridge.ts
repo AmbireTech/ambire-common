@@ -7,7 +7,6 @@ import {
   parseUnits,
   ZeroAddress
 } from 'ethers'
-import { ethAddress, zeroAddress } from 'viem'
 
 import {
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
@@ -297,7 +296,8 @@ export const getIsTokenEligibleForSwapAndBridge = (
     token.amountPostSimulation === 0n && token.amount > 0n
       ? token.amount
       : (token.amountPostSimulation ?? token.amount)
-  const hasPositiveBalance = Number(amount) > 0
+  // Tokens on their way count too, so the user can prepare a swap with them
+  const hasPositiveBalance = Number(amount + (token.pendingDeliveryAmount ?? 0n)) > 0
 
   return flagsRequirement && hasPositiveBalance
 }
@@ -769,9 +769,6 @@ const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
   return txn.fromAsset.chainId !== txn.toAsset.chainId
 }
 
-const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
-  addr === ethAddress ? zeroAddress : addr
-
 /**
  * Get the swap sponsorship details.
  * We need the native price so we can later understand if the cost
@@ -968,7 +965,6 @@ const getSentPartOfSwap = (sentAccountOp: SubmittedAccountOp): SubmittedAccountO
 
 export {
   addCustomTokensIfNeeded,
-  convertNullAddressToZeroAddressIfNeeded,
   enrichRouteWithOutputTokenPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,

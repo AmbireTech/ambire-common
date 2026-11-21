@@ -36,8 +36,14 @@ import {
   calculateSelectedAccountPortfolio,
   DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
 } from '../../libs/selectedAccount/selectedAccount'
+import {
+  addPendingDeliveryAmounts,
+  getPendingDeliveries,
+  getPendingDeliveriesSignature
+} from '../../libs/swapAndBridge/pendingDeliveries'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+import type { ISwapAndBridgeController } from '../../interfaces/swapAndBridge'
 // Portfolio recalculations fire back-to-back as per-network results stream in.
 // Throttle their UI emit so the state isn't serialized on every partial tick.
 const PORTFOLIO_UPDATE_THROTTLE_MS = 100
@@ -62,6 +68,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   #banner: IBannerController | null = null
 
   #domains: IDomainsController | null = null
+
+  /** Its active routes tell what the account's in-progress swaps and bridges will still move */
+  #swapAndBridge: ISwapAndBridgeController | null = null
+
+  /** The pending deliveries the portfolio tokens were last built with (see `getPendingDeliveriesSignature`) */
+  #pendingDeliveriesSignature = ''
 
   #ui: IUiController | null = null
 
@@ -159,17 +171,21 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     portfolio,
     networks,
     providers,
-    domains
+    domains,
+    swapAndBridge
   }: {
     portfolio: IPortfolioController
     networks: INetworksController
     providers: IProvidersController
     domains: IDomainsController
+    /** Optional, as environments without swaps and bridges (e.g. the websites) have none */
+    swapAndBridge?: ISwapAndBridgeController
   }) {
     this.#portfolio = portfolio
     this.#networks = networks
     this.#providers = providers
     this.#domains = domains
+    this.#swapAndBridge = swapAndBridge || null
 
     this.updateSelectedAccountPortfolio(true)
     this.#updatePortfolioErrors(true)
@@ -179,6 +195,20 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         this.updateSelectedAccountPortfolio()
       })
     }, 'selectedAccount')
+
+    // The swap and bridge controller updates often (e.g. on every quote), so the portfolio
+    // is rebuilt only when what is on its way actually changed
+    this.#swapAndBridge?.onUpdate(() => {
+      if (
+        getPendingDeliveriesSignature(this.#getPendingDeliveries()) ===
+        this.#pendingDeliveriesSignature
+      )
+        return
+
+      this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
+        this.updateSelectedAccountPortfolio()
+      })
+    })
 
     this.#domains.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateDomainData', () => {
@@ -294,16 +324,31 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
   }
 
+  /** What the selected account's in-progress swaps and bridges will still move */
+  #getPendingDeliveries() {
+    if (!this.#swapAndBridge || !this.account) return {}
+
+    return getPendingDeliveries(this.#swapAndBridge.activeRoutes, this.account.addr)
+  }
+
   updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.account) return
 
     const portfolioAccountState = this.#portfolio.getAccountPortfolioState(this.account.addr)
 
-    const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
+    const calculatedPortfolio = calculateSelectedAccountPortfolio(
       portfolioAccountState,
       this.portfolio.shouldShowPartialResult,
       this.#isManualUpdate
     )
+    const pendingDeliveries = this.#getPendingDeliveries()
+    this.#pendingDeliveriesSignature = getPendingDeliveriesSignature(pendingDeliveries)
+    // Copied instead of changed in place, as the calculation may return a shared default object.
+    // The totals stay without the tokens on their way, as they aren't in the account yet
+    const newSelectedAccountPortfolio = {
+      ...calculatedPortfolio,
+      tokens: addPendingDeliveryAmounts(calculatedPortfolio.tokens, pendingDeliveries)
+    }
 
     newSelectedAccountPortfolio.mobileInviteKey = this.#portfolio.getMobileInviteKey(
       this.account.addr
