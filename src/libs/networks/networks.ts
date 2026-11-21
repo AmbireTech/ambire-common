@@ -530,10 +530,24 @@ export function getValidNetworks(networksInStorage: { [key: string]: Network }):
 }
 
 /**
+ * Whether the user has picked an RPC for this network that differs from the one Ambire suggested.
+ * Networks with no Ambire suggestion (custom networks) always count as user-picked.
+ */
+export const hasUserSelectedRpcUrl = (network: Network): boolean => {
+  const ambireSuggestedRpcUrl =
+    network.suggestedRpcUrl ??
+    predefinedNetworks.find((n) => n.chainId === network.chainId)?.selectedRpcUrl
+
+  return network.selectedRpcUrl !== ambireSuggestedRpcUrl
+}
+
+/**
  * Updates the currently stored networks with the networks coming from the relayer.
  * To determine which networks to update, it compares the predefinedConfigVersion of the stored network
  * with the relayer network. If no network is found in the storage, it adds the relayer network as a new one.
  * Even if the predefinedConfigVersion is the same or lower, some properties of the stored network should be updated.
+ * The relayer never replaces an RPC the user picked (see `hasUserSelectedRpcUrl`), as a compromised or buggy relayer
+ * would otherwise control what the wallet reads from the chain (balances, simulations, ENS, token decimals).
  */
 export const getNetworksUpdatedWithRelayerNetworks = (
   currentNetworks: { [key: string]: Network },
@@ -568,26 +582,38 @@ export const getNetworksUpdatedWithRelayerNetworks = (
       relayerNetwork.predefinedConfigVersion > 0 &&
       relayerNetwork.predefinedConfigVersion > currentNetwork.predefinedConfigVersion
 
+    const isUserSelectedRpc = hasUserSelectedRpcUrl(currentNetwork)
+
     if (shouldOverrideStoredNetwork) {
       updatedNetworkChainIds.push(relayerNetwork.chainId)
       networks[chainId.toString()] = {
         ...currentNetwork,
         ...relayerNetwork,
-        rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])]
+        rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
+        // The relayer switches the RPC (including on disabledByDefault networks, where it can
+        // determine better which RPC is the best) only if the user hasn't picked their own
+        selectedRpcUrl: isUserSelectedRpc
+          ? currentNetwork.selectedRpcUrl
+          : relayerNetwork.selectedRpcUrl
       }
-      // update the selectedRpcUrl on disabledByDefault networks as we can
-      // determine better which RPC is the best for our custom networks
-      if (relayerNetwork.disabledByDefault)
-        networks[chainId.toString()]!.selectedRpcUrl = relayerNetwork.selectedRpcUrl
     } else {
+      // Until a predefinedConfigVersion bump switches the RPC, keep the suggested RPC equal to the
+      // one in use, otherwise the network would look as if the user picked a custom RPC
+      const shouldKeepSuggestedRpc =
+        !isUserSelectedRpc && relayerNetwork.suggestedRpcUrl !== currentNetwork.selectedRpcUrl
+
       // No need to add this network to the updated list
       // as the selectedRpcUrl is not changed and the network is
       // already in the extension
       networks[chainId.toString()] = {
         ...currentNetwork,
         rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
-        suggestedRpcUrl: relayerNetwork.suggestedRpcUrl,
-        suggestedRpcBatchCount: relayerNetwork.suggestedRpcBatchCount,
+        suggestedRpcUrl: shouldKeepSuggestedRpc
+          ? currentNetwork.selectedRpcUrl
+          : relayerNetwork.suggestedRpcUrl,
+        suggestedRpcBatchCount: shouldKeepSuggestedRpc
+          ? currentNetwork.suggestedRpcBatchCount
+          : relayerNetwork.suggestedRpcBatchCount,
         refreshInterval: relayerNetwork.refreshInterval,
         iconUrls: relayerNetwork.iconUrls,
         predefined: relayerNetwork.predefined
