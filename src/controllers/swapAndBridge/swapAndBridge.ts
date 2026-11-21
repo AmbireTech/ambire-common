@@ -81,7 +81,6 @@ import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import {
   addCustomTokensIfNeeded,
-  convertNullAddressToZeroAddressIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
   enrichRouteWithOutputTokenPrice,
   getActiveRoutesForAccount,
@@ -110,6 +109,8 @@ import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { NULL_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount, Validation } from '../../services/validations/validate'
 import batcher from '../../utils/batcher'
+import convertNullAddressToZeroAddressIfNeeded from '../../utils/convertNullAddressToZeroAddressIfNeeded'
+import isSameAddr from '../../utils/isSameAddr'
 import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue,
@@ -508,6 +509,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #updateActiveRoutesInterval: RecurringTimeout
 
+  /**
+   * When the statuses of the in-progress swaps and bridges were last checked, to tell whether
+   * the portfolio has fresher balances since. See `#checkActiveRoutesAfterPortfolioRefresh`.
+   */
+  #lastActiveRoutesStatusCheckAt = 0
+
   get updateActiveRoutesInterval() {
     return this.#updateActiveRoutesInterval
   }
@@ -817,6 +824,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // this.activeRoutes = this.activeRoutes.filter((r) => !filterOutStatuses.includes(r.routeStatus))
 
     this.#selectedAccount.onUpdate(() => {
+      this.#checkActiveRoutesAfterPortfolioRefresh()
       this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', async () => {
         if (this.#selectedAccount.portfolio.isReadyToVisualize && this.sessionIds.length) {
           this.isTokenListLoading = false
@@ -963,6 +971,43 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   get activeRoutesInProgress() {
     return this.activeRoutes.filter((r) => r.routeStatus === 'in-progress' && r.userTxHash)
+  }
+
+  /**
+   * Checks the status of the in-progress swaps and bridges right away, instead of waiting for
+   * the next poll, when the portfolio has fetched the balances of a network one of them delivers
+   * to since the last check. The delivery may be in those balances already, and the sooner the
+   * status is updated, the shorter the dashboard counts the tokens both in the balance and as on
+   * their way. It's fine to check when nothing has arrived yet: that's one more status request
+   * per refresh of the network, while a swap or bridge is in progress.
+   */
+  #checkActiveRoutesAfterPortfolioRefresh() {
+    const accountAddr = this.#selectedAccount.account?.addr
+    const { activeRoutesInProgress } = this
+    if (!accountAddr || !activeRoutesInProgress.length) return
+
+    const portfolioState = this.#portfolio.getAccountPortfolioState(accountAddr)
+    const hasFreshBalances = activeRoutesInProgress.some((activeRoute) => {
+      const { route } = activeRoute
+      if (!route || !getIsIntentRoute(route) || !isSameAddr(activeRoute.sender, accountAddr))
+        return false
+
+      // A CoW Swap order is on a single network, so this also covers the tokens it sells
+      const lastUpdate = portfolioState[route.toChainId.toString()]?.lastSuccessfulUpdate
+      return !!lastUpdate && lastUpdate > this.#lastActiveRoutesStatusCheckAt
+    })
+    if (!hasFreshBalances) return
+
+    // Set right away, as the selected account updates in bursts (e.g. network by network) and
+    // the check starts only on the next tick, so the updates in the meantime don't restart it again
+    this.#lastActiveRoutesStatusCheckAt = Date.now()
+
+    // Keeps the current timeout, so the poll keeps backing off. Restarting it from the shortest
+    // one would undo that on every refresh, and poll a long bridge every few seconds
+    this.#updateActiveRoutesInterval.restart({
+      timeout: this.#updateActiveRoutesInterval.currentTimeout,
+      runImmediately: true
+    })
   }
 
   get activeRoutes() {
@@ -2933,6 +2978,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   async checkForActiveRoutesStatusUpdate() {
     await this.#initialLoadPromise
+    this.#lastActiveRoutesStatusCheckAt = Date.now()
     const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {
       let status: SwapAndBridgeRouteStatus = null
       let routeStatusResult: SwapAndBridgeRouteStatusResult = { status: null }

@@ -18,6 +18,7 @@ import {
   enrichRouteWithOutputTokenPrice,
   getFeeTokenForSponsorship,
   getIsActiveRouteAccountOp,
+  getIsTokenEligibleForSwapAndBridge,
   getIsBridgeRoute,
   getIsIntentRoute,
   getSentPartOfSwap,
@@ -945,5 +946,35 @@ describe('getIsActiveRouteAccountOp', () => {
     expect(getIsActiveRouteAccountOp({ identifiedBy: null, userTxHash: null }, accountOp)).toBe(
       false
     )
+  })
+})
+
+describe('getIsTokenEligibleForSwapAndBridge', () => {
+  const token: TokenResult = {
+    symbol: 'USDC',
+    name: 'USD Coin',
+    decimals: 6,
+    address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    chainId: 8453n,
+    amount: 0n,
+    priceIn: [{ baseCurrency: 'usd', price: 1 }],
+    marketDataIn: [],
+    flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: false, isFeeToken: false }
+  }
+
+  test('a token without a balance is not eligible', () => {
+    expect(getIsTokenEligibleForSwapAndBridge(token)).toBe(false)
+  })
+
+  test('a token the account will receive from a swap or bridge is eligible', () => {
+    expect(getIsTokenEligibleForSwapAndBridge({ ...token, pendingDeliveryAmount: 100n })).toBe(
+      true
+    )
+  })
+
+  test('a token a CoW Swap order will take all of is not eligible', () => {
+    expect(
+      getIsTokenEligibleForSwapAndBridge({ ...token, amount: 100n, pendingDeliveryAmount: -100n })
+    ).toBe(false)
   })
 })

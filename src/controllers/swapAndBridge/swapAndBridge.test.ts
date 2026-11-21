@@ -1931,6 +1931,125 @@ describe('SwapAndBridge Controller', () => {
 
     swapAndBridgeController.activeRoutes = originalActiveRoutes
   })
+  describe('checking active routes after a portfolio refresh', () => {
+    const DESTINATION_CHAIN_ID = 10
+    let originalActiveRoutes: typeof swapAndBridgeController.activeRoutes
+    // Later than any check of the earlier tests, as it's read after waiting a moment
+    let refreshedAt: number
+
+    /** Makes the portfolio report when it last fetched the destination network's balances */
+    const setDestinationRefreshedAt = (lastSuccessfulUpdate: number | undefined) => {
+      const getAccountPortfolioState = portfolioCtrl.getAccountPortfolioState.bind(portfolioCtrl)
+      jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockImplementation((accountAddr) => {
+        const accountState = getAccountPortfolioState(accountAddr)
+        const destinationState = accountState[DESTINATION_CHAIN_ID.toString()]
+
+        if (lastSuccessfulUpdate === undefined) {
+          const { [DESTINATION_CHAIN_ID.toString()]: _, ...otherNetworksState } = accountState
+          return otherNetworksState
+        }
+
+        return {
+          ...accountState,
+          [DESTINATION_CHAIN_ID.toString()]: { ...destinationState!, lastSuccessfulUpdate }
+        }
+      })
+    }
+
+    const getRestartSpy = () => {
+      const restartSpy = jest.spyOn(swapAndBridgeController.updateActiveRoutesInterval, 'restart')
+      restartSpy.mockClear()
+
+      return restartSpy
+    }
+
+    const setActiveRoute = (overrides: { sender?: string; fromChainId?: number } = {}) => {
+      const baseActiveRoute = originalActiveRoutes[0]!
+      swapAndBridgeController.activeRoutes = [
+        {
+          ...baseActiveRoute,
+          activeRouteId: 'bridge-on-its-way',
+          routeStatus: 'in-progress',
+          userTxHash: 'bridge-on-its-way-source-transaction',
+          sender: overrides.sender ?? selectedAccountCtrl.account!.addr,
+          route: {
+            ...baseActiveRoute.route!,
+            providerId: 'lifi',
+            fromChainId: overrides.fromChainId ?? 1,
+            toChainId: DESTINATION_CHAIN_ID,
+            isIntent: false
+          }
+        }
+      ]
+    }
+
+    beforeEach(async () => {
+      originalActiveRoutes = swapAndBridgeController.activeRoutes
+      await wait(5)
+      refreshedAt = Date.now()
+    })
+
+    afterEach(() => {
+      swapAndBridgeController.activeRoutes = originalActiveRoutes
+    })
+
+    test('checks the routes right away when the destination network was refreshed since the last check', async () => {
+      setActiveRoute()
+      setDestinationRefreshedAt(refreshedAt)
+      const restartSpy = getRestartSpy()
+
+      await selectedAccountCtrl.forceEmitUpdate()
+
+      expect(restartSpy).toHaveBeenCalledTimes(1)
+      // Keeps the current timeout, so the poll's back-off isn't undone
+      expect(restartSpy).toHaveBeenCalledWith({
+        timeout: swapAndBridgeController.updateActiveRoutesInterval.currentTimeout,
+        runImmediately: true
+      })
+    })
+
+    test('checks the routes once per refresh, however many updates follow it', async () => {
+      setActiveRoute()
+      setDestinationRefreshedAt(refreshedAt)
+      const restartSpy = getRestartSpy()
+
+      await selectedAccountCtrl.forceEmitUpdate()
+      await selectedAccountCtrl.forceEmitUpdate()
+      await selectedAccountCtrl.forceEmitUpdate()
+
+      expect(restartSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not check the routes when the destination network has not been refreshed', async () => {
+      setActiveRoute()
+      setDestinationRefreshedAt(undefined)
+      const restartSpy = getRestartSpy()
+
+      await selectedAccountCtrl.forceEmitUpdate()
+
+      expect(restartSpy).not.toHaveBeenCalled()
+    })
+
+    test('does not check the routes of another account', async () => {
+      setActiveRoute({ sender: '0x0000000000000000000000000000000000000abc' })
+      setDestinationRefreshedAt(refreshedAt)
+      const restartSpy = getRestartSpy()
+
+      await selectedAccountCtrl.forceEmitUpdate()
+
+      expect(restartSpy).not.toHaveBeenCalled()
+    })
+
+    test('does not check regular swaps, as they finish with the transaction', async () => {
+      setActiveRoute({ fromChainId: DESTINATION_CHAIN_ID })
+      setDestinationRefreshedAt(refreshedAt)
+      const restartSpy = getRestartSpy()
+
+      await selectedAccountCtrl.forceEmitUpdate()
+
+      expect(restartSpy).not.toHaveBeenCalled()
+    })
+  })
   describe('intent activity recording', () => {
     let originalActiveRoutes: typeof swapAndBridgeController.activeRoutes
 
