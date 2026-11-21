@@ -255,6 +255,10 @@ describe('getPendingDeliveries', () => {
     ).toEqual({ [getPendingDeliveryKey(8453, USDC_BASE)]: 990000n })
   })
 
+  test('routes whose transaction is not known to be sent yet are ignored', () => {
+    expect(getPendingAmounts([{ ...makeActiveRoute(), userTxHash: null }], ACCOUNT)).toEqual({})
+  })
+
   test('old routes without route data are ignored', () => {
     expect(getPendingAmounts([makeActiveRoute({ withoutRoute: true })], ACCOUNT)).toEqual({})
   })

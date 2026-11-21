@@ -59,7 +59,8 @@ const getIsSentAmountPending = (activeRoute: SwapAndBridgeActiveRoute, route: Sw
  * - the sent tokens are pending only for CoW Swap ERC-20 sells (see `getIsSentAmountPending`).
  *   Otherwise, they leave the account with the transaction, which the portfolio already reflects
  *
- * Regular swaps aren't included, because they finish with the user's transaction.
+ * Regular swaps aren't included, because they finish with the user's transaction. Neither are
+ * routes without a transaction hash, the same way the status checks of the routes skip them.
  */
 export const getPendingDeliveries = (
   activeRoutes: SwapAndBridgeActiveRoute[],
@@ -81,7 +82,8 @@ export const getPendingDeliveries = (
 
   activeRoutes.forEach((activeRoute) => {
     const { route } = activeRoute
-    if (!route || activeRoute.routeStatus !== 'in-progress') return
+    // Without a transaction hash, the route's transaction isn't known to be sent yet
+    if (!route || activeRoute.routeStatus !== 'in-progress' || !activeRoute.userTxHash) return
     if (activeRoute.sender.toLowerCase() !== lowercasedAccountAddr) return
     if (!getIsIntentRoute(route)) return
 

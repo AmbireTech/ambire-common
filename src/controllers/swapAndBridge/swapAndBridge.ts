@@ -985,6 +985,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const accountAddr = this.#selectedAccount.account?.addr
     const { activeRoutesInProgress } = this
     if (!accountAddr || !activeRoutesInProgress.length) return
+    // A check that is already running would make the restarted one wait for it instead of checking
+    // again, although it may have started before the refresh. Once it's done, the next update of
+    // the selected account triggers a check, as the refresh is still newer than its start
+    if (this.#continuouslyUpdateActiveRoutesPromise) return
 
     const portfolioState = this.#portfolio.getAccountPortfolioState(accountAddr)
     const hasFreshBalances = activeRoutesInProgress.some((activeRoute) => {

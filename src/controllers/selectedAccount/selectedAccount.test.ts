@@ -336,11 +336,11 @@ describe('SelectedAccount Controller', () => {
     expect(deliveredToken).toBeDefined()
     const totalBalanceBefore = selectedAccountCtrl.portfolio.totalBalance
 
-    // A bridge to the token. Without a transaction hash, it isn't polled for its status
+    // A bridge to the token. Its transaction isn't in the activity, so its status check stops early
     const bridgeToToken = {
       activeRouteId: 'bridge-to-token',
       routeStatus: 'in-progress',
-      userTxHash: null,
+      userTxHash: 'bridge-to-token-source-transaction',
       identifiedBy: null,
       sender: accountAddr,
       fromAssetAddress: '0x0000000000000000000000000000000000000000',
@@ -353,7 +353,9 @@ describe('SelectedAccount Controller', () => {
         toChainId: Number(deliveredToken.chainId),
         fromAmount: '1',
         toAmount: '1000',
-        steps: []
+        steps: [],
+        // Read for the service time when the route's status poll starts
+        userTxs: []
       }
     } as unknown as SwapAndBridgeActiveRoute
     swapAndBridgeCtrl.activeRoutes = [bridgeToToken]

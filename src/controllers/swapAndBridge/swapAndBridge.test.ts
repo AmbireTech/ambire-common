@@ -2020,6 +2020,30 @@ describe('SwapAndBridge Controller', () => {
       expect(restartSpy).toHaveBeenCalledTimes(1)
     })
 
+    test('waits for a running check to finish before checking again', async () => {
+      setActiveRoute()
+      setDestinationRefreshedAt(refreshedAt)
+      let finishRunningCheck = () => {}
+      jest.spyOn(swapAndBridgeController, 'checkForActiveRoutesStatusUpdate').mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finishRunningCheck = resolve
+          })
+      )
+      const runningCheck = swapAndBridgeController.continuouslyUpdateActiveRoutes()
+      const restartSpy = getRestartSpy()
+
+      await selectedAccountCtrl.forceEmitUpdate()
+      expect(restartSpy).not.toHaveBeenCalled()
+
+      finishRunningCheck()
+      await runningCheck
+      // The mocked check doesn't record when it ran, so the refresh still counts as newer
+      await selectedAccountCtrl.forceEmitUpdate()
+
+      expect(restartSpy).toHaveBeenCalledTimes(1)
+    })
+
     test('does not check the routes when the destination network has not been refreshed', async () => {
       setActiveRoute()
       setDestinationRefreshedAt(undefined)
