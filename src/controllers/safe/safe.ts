@@ -25,16 +25,20 @@ import {
   getApiKit,
   getMessage,
   getSafeAccountByOwner,
+  getVerifiedSafeConfirmations,
   isSafeContract,
+  isSafeMessageHashValid,
+  isSafeTxHashValid,
+  SafeFetchedTransaction,
   SafePendingFetchNetwork,
-  SafeResults
+  SafeResults,
+  sortSigs
 } from '../../libs/safe/safe'
 import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 import type { SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
-import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 const SAFE_OWNER_SEARCH_TTL = 5 * 60 * 1000
 const SAFE_OWNER_SEARCH_DEBOUNCE = 3 * 1000
@@ -414,6 +418,114 @@ export class SafeController extends EventEmitter implements ISafeController {
     )
   }
 
+  /**
+   * The Safe's owners on the chain, from its account state, where they're read onchain. Undefined
+   * when the state isn't loaded, so that confirmations are then checked only against their
+   * signatures, the same as before the owners were checked
+   */
+  #getOwners(safeAddr: string, chainId: bigint | string): string[] | undefined {
+    const owners = this.#accounts.accountStates[safeAddr]?.[chainId.toString()]?.associatedKeys
+
+    return owners?.length ? owners : undefined
+  }
+
+  /**
+   * The Safe message from the Safe Transaction Service if it matches its Safe message hash, with
+   * only the owner confirmations that could be verified (see getVerifiedSafeConfirmations).
+   * Whether it's confirmed and its prepared signature are worked out again from them, as the
+   * prepared signature is what the app that asked for the message gets. Null if the hash doesn't
+   * match the message
+   */
+  async #verifyMessage(
+    safeAddr: Hex,
+    chainId: bigint,
+    threshold: number,
+    message: SafeMessage
+  ): Promise<ExtendedSafeMessage | null> {
+    if (!isSafeMessageHashValid(message, safeAddr, chainId)) return null
+
+    // A contract owner (e.g. another Safe) signs a message with a contract signature, which the
+    // signature the app gets can carry (see sortSigs)
+    const confirmations = await getVerifiedSafeConfirmations(
+      safeAddr,
+      message.messageHash,
+      message.confirmations,
+      this.#providers.providers[chainId.toString()],
+      { owners: this.#getOwners(safeAddr, chainId), acceptContractSignatures: true }
+    )
+
+    return {
+      ...message,
+      confirmations,
+      isConfirmed: threshold > 0 && confirmations.length >= threshold,
+      preparedSignature: sortSigs(
+        confirmations.map(({ signature }) => signature as Hex),
+        message.messageHash,
+        confirmations
+      )
+    }
+  }
+
+  /**
+   * Keeps the pending Safe txns and messages from the Safe Transaction Service that match their
+   * hash, each with only the owner confirmations that could be verified. The owners sign and
+   * execute these from the app, so what the service returns isn't trusted
+   */
+  async #verifyPending(
+    safeAddr: Hex,
+    pending: SafeResults,
+    networks: SafePendingFetchNetwork[]
+  ): Promise<SafeResults> {
+    const verifiedPending: SafeResults = {}
+
+    for (const [chainId, { txns, messages }] of Object.entries(pending)) {
+      const safeVersion = this.#accounts.accountStates[safeAddr]?.[chainId]?.safeVersion
+      const validTxns = txns.filter((txn) =>
+        isSafeTxHashValid(txn, safeAddr, BigInt(chainId), safeVersion)
+      )
+      const threshold = networks.find((n) => n.chainId.toString() === chainId)?.threshold ?? 0
+      const verifiedMessages = (
+        await Promise.all(
+          messages.map((message) =>
+            this.#verifyMessage(safeAddr, BigInt(chainId), threshold, message)
+          )
+        )
+      ).filter((message) => message !== null)
+
+      if (validTxns.length !== txns.length || verifiedMessages.length !== messages.length) {
+        this.emitError({
+          level: 'silent',
+          message: 'Ignored pending Safe transactions or messages that do not match their hash',
+          error: new Error(
+            `safe: ${txns.length - validTxns.length} pending txn(s) and ${messages.length - verifiedMessages.length} message(s) of ${safeAddr} on chain ${chainId} do not match their hash`
+          )
+        })
+      }
+
+      const provider = this.#providers.providers[chainId]
+      const verifiedTxns = await Promise.all(
+        validTxns.map(async (txn) =>
+          txn.confirmations
+            ? {
+                ...txn,
+                confirmations: await getVerifiedSafeConfirmations(
+                  safeAddr,
+                  txn.safeTxHash,
+                  txn.confirmations,
+                  provider,
+                  { owners: this.#getOwners(safeAddr, chainId) }
+                )
+              }
+            : txn
+        )
+      )
+
+      verifiedPending[chainId] = { txns: verifiedTxns, messages: verifiedMessages }
+    }
+
+    return verifiedPending
+  }
+
   shouldSkipFetchPending(safeAddr: string, maxAge = FETCH_SAFE_TXNS): boolean {
     const fetchedAt = this.#pendingFetchedAt[safeAddr]
 
@@ -435,7 +547,8 @@ export class SafeController extends EventEmitter implements ISafeController {
     const pending = await fetchAllPending(networks, safeAddr)
     if (!pending) return null
 
-    const visiblePending = this.#filterOutHidden(pending, safeAddr)
+    const verifiedPending = await this.#verifyPending(safeAddr, pending, networks)
+    const visiblePending = this.#filterOutHidden(verifiedPending, safeAddr)
     this.#setPendingCounts(safeAddr, visiblePending)
     return visiblePending
   }
@@ -562,21 +675,36 @@ export class SafeController extends EventEmitter implements ISafeController {
     }
   }
 
+  /**
+   * Fetches the Safe txns from the nonces of the passed chains on. The ones still waiting for
+   * the owners keep only the owner confirmations that could be verified (see
+   * getVerifiedSafeConfirmations), as they are added to the signatures of open requests
+   */
   async fetchExecuted(
     safeAddr: Hex,
     chains: { chainId: bigint; minNonce: number }[]
-  ): Promise<
-    {
-      safeTxnHash: Hex
-      nonce: string
-      transactionHash?: Hex
-      confirmations?: SafeMultisigConfirmationResponse[]
-    }[]
-  > {
+  ): Promise<SafeFetchedTransaction[]> {
     // do not make Safe requests if the extension is locked
     if (!this.#keystore.isUnlocked) return []
 
-    return fetchExecutedTransactions(safeAddr, chains)
+    const txns = await fetchExecutedTransactions(safeAddr, chains)
+
+    return Promise.all(
+      txns.map(async (txn) =>
+        txn.confirmations
+          ? {
+              ...txn,
+              confirmations: await getVerifiedSafeConfirmations(
+                safeAddr,
+                txn.safeTxnHash,
+                txn.confirmations,
+                this.#providers.providers[txn.chainId.toString()],
+                { owners: this.#getOwners(safeAddr, txn.chainId) }
+              )
+            }
+          : txn
+      )
+    )
   }
 
   async rejectTxnId(safeTxnIds: string[]) {
@@ -589,7 +717,13 @@ export class SafeController extends EventEmitter implements ISafeController {
     return this.#storage.set('rejectedSafeTxns', this.#rejectedSafeTxns)
   }
 
+  /**
+   * Fetches the Safe messages of the Safe with the passed hashes. A message is returned only if
+   * it's the one asked for and matches its hash, with only the owner confirmations that could be
+   * verified (see #verifyMessage)
+   */
   async getMessagesByHash(
+    safeAddr: Hex,
     data: { chainId: bigint; threshold: number; messageHash: Hex }[]
   ): Promise<ExtendedSafeMessage[]> {
     const messages = []
@@ -600,7 +734,23 @@ export class SafeController extends EventEmitter implements ISafeController {
       const entry = data[i]!
       const msg = await getMessage(entry).catch((e) => e)
       if (!msg || msg instanceof Error) continue
-      messages.push(msg)
+
+      const verifiedMsg =
+        msg.messageHash.toLowerCase() === entry.messageHash.toLowerCase()
+          ? await this.#verifyMessage(safeAddr, entry.chainId, entry.threshold, msg)
+          : null
+      if (!verifiedMsg) {
+        this.emitError({
+          level: 'silent',
+          message: 'Ignored a Safe message that does not match its hash',
+          error: new Error(
+            `safe: the Safe API returned a message of ${safeAddr} on chain ${entry.chainId} that does not match the hash ${entry.messageHash}`
+          )
+        })
+        continue
+      }
+
+      messages.push(verifiedMsg)
     }
     return messages
   }

@@ -704,6 +704,23 @@ export const getSafeV1TypedData = (
   }
 }
 
+/**
+ * The EIP-712 typed data the owners of a Safe sign for a Safe transaction. The domain of
+ * Safes before v1.3 has no chain id. `safeVersion` is the version of the Safe on that chain
+ */
+export const getSafeTxTypedData = (
+  chainId: bigint,
+  safeAddr: Hex,
+  safeVersion: string | null | undefined,
+  safeTx: SafeTx
+): TypedMessageUserRequest['meta']['params'] => {
+  const version = safeVersion ?? ''
+  if (version.startsWith('1.1.') || version.startsWith('1.2'))
+    return getSafeV1TypedData(safeAddr, safeTx)
+
+  return getSafeTypedData(chainId, safeAddr, safeTx)
+}
+
 export const getSafeTypedDataForIsValidSignature = (
   chainId: bigint,
   safeAddr: Hex,
