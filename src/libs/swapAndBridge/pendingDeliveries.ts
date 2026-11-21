@@ -30,15 +30,27 @@ export const getPendingDeliveryKey = (chainId: bigint | number, address: string)
   `${chainId.toString()}:${normalizeTokenAddress(address)}`
 
 /**
+ * Reads an amount of a route, which the provider's quote has as a string of digits in the
+ * token's smallest unit. Returns null for anything else, so a malformed route is skipped
+ * instead of making every rebuild of the portfolio throw.
+ */
+const parseRouteAmount = (amount: string | undefined): bigint | null => {
+  if (typeof amount !== 'string' || !amount.length) return null
+
+  const isDigitsOnly = [...amount].every((char) => char >= '0' && char <= '9')
+  return isDigitsOnly ? BigInt(amount) : null
+}
+
+/**
  * The amounts are the ones the route's card shows (`RouteStepsPreview`), so the dashboard
  * and the swap or bridge banner always show the same numbers: the amount sent by the first
  * step and the amount received by the last one, falling back to the route's totals.
  */
 const getSentAmount = (route: SwapAndBridgeRoute) =>
-  BigInt(route.steps?.[0]?.fromAmount ?? route.fromAmount)
+  parseRouteAmount(route.steps?.[0]?.fromAmount ?? route.fromAmount)
 
 const getReceivedAmount = (route: SwapAndBridgeRoute) =>
-  BigInt(route.steps?.[route.steps.length - 1]?.toAmount ?? route.toAmount)
+  parseRouteAmount(route.steps?.[route.steps.length - 1]?.toAmount ?? route.toAmount)
 
 /**
  * Whether the sent tokens leave the account only when the route is finalized, instead of with
@@ -87,17 +99,23 @@ export const getPendingDeliveries = (
     if (activeRoute.sender.toLowerCase() !== lowercasedAccountAddr) return
     if (!getIsIntentRoute(route)) return
 
+    const receivedAmount = getReceivedAmount(route)
+    const isSentAmountPending = getIsSentAmountPending(activeRoute, route)
+    const sentAmount = isSentAmountPending ? getSentAmount(route) : null
+    // Skipped as a whole, so the route's received tokens don't show without the sent ones
+    if (receivedAmount === null || (isSentAmountPending && sentAmount === null)) return
+
     addToPendingDeliveries(
       getPendingDeliveryKey(route.toChainId, activeRoute.toAssetAddress),
-      getReceivedAmount(route),
+      receivedAmount,
       activeRoute.activeRouteId
     )
 
-    if (!getIsSentAmountPending(activeRoute, route)) return
+    if (sentAmount === null) return
 
     addToPendingDeliveries(
       getPendingDeliveryKey(route.fromChainId, activeRoute.fromAssetAddress),
-      -getSentAmount(route),
+      -sentAmount,
       activeRoute.activeRouteId
     )
   })

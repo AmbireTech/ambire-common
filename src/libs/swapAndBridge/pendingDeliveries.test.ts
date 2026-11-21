@@ -259,6 +259,36 @@ describe('getPendingDeliveries', () => {
     expect(getPendingAmounts([{ ...makeActiveRoute(), userTxHash: null }], ACCOUNT)).toEqual({})
   })
 
+  test.each([undefined, '', '1.5', '-100', '1e18', 'abc'])(
+    'a route with the received amount %p is ignored instead of throwing',
+    (toAmount) => {
+      const activeRoute = makeActiveRoute({ route: { toAmount: toAmount as string } })
+
+      expect(getPendingAmounts([activeRoute], ACCOUNT)).toEqual({})
+    }
+  )
+
+  test('a CoW Swap order with a malformed sent amount is ignored as a whole', () => {
+    const activeRoute = makeActiveRoute({
+      fromAssetAddress: USDC_ETHEREUM,
+      toAssetAddress: WETH_ETHEREUM,
+      route: { providerId: 'cowswap', fromChainId: 1, toChainId: 1, fromAmount: 'abc' }
+    })
+
+    expect(getPendingAmounts([activeRoute], ACCOUNT)).toEqual({})
+  })
+
+  test('a malformed route does not stop the other routes from counting', () => {
+    const malformedRoute = {
+      ...makeActiveRoute({ route: { toAmount: 'abc' } }),
+      activeRouteId: 'malformed'
+    }
+
+    expect(getPendingAmounts([malformedRoute, makeActiveRoute()], ACCOUNT)).toEqual({
+      [getPendingDeliveryKey(8453, USDC_BASE)]: 990000n
+    })
+  })
+
   test('old routes without route data are ignored', () => {
     expect(getPendingAmounts([makeActiveRoute({ withoutRoute: true })], ACCOUNT)).toEqual({})
   })
