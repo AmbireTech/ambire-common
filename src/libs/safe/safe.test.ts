@@ -10,6 +10,7 @@ import {
   Interface,
   keccak256,
   makeError,
+  recoverAddress,
   Signature,
   solidityPacked,
   toBeHex,
@@ -1248,9 +1249,11 @@ describe('sortSigs', () => {
   // Reads the signature at `index` of a joined signature, the way the Safe does
   const readSafeSignature = (joined: string, index: number) => {
     const staticPart = dataSlice(joined, index * 65, index * 65 + 65)
-    const owner = getAddress(dataSlice(staticPart, 12, 32))
-    if (getBytes(staticPart)[64] !== 0) return { owner, staticPart }
+    // an ECDSA signature's owner is its signer, a contract signature carries its owner in `r`
+    if (getBytes(staticPart)[64] !== 0)
+      return { owner: recoverAddress(HASH, staticPart), staticPart }
 
+    const owner = getAddress(dataSlice(staticPart, 12, 32))
     const offset = Number(toBigInt(dataSlice(staticPart, 32, 64)))
     const length = Number(toBigInt(dataSlice(joined, offset, offset + 32)))
     return { owner, offset, data: dataSlice(joined, offset + 32, offset + 32 + length) }
