@@ -647,8 +647,9 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromChainId).toEqual(10)
     expect(swapAndBridgeController.toChainId).toEqual(10)
   })
-  test('should only require portfolio token prices when token prices are enabled', async () => {
+  test('should require portfolio token prices only when a missing price means no market, like the dashboard', async () => {
     const controller = buildSwapAndBridgeController()
+    // On OP Mainnet, where the RPC can price every token
     const tokensWithoutPrices = PORTFOLIO_TOKENS.map((token) => ({ ...token, priceIn: [] }))
 
     try {
@@ -656,13 +657,22 @@ describe('SwapAndBridge Controller', () => {
       await controller.updatePortfolioTokenList(tokensWithoutPrices)
       expect(controller.portfolioTokenList).toEqual([])
 
+      // The RPC prices the tokens, but with auto discovery on a missing price says nothing
       await featureFlagsCtrl.setFeatureFlag('tokenPrices', false)
       await controller.updatePortfolioTokenList(tokensWithoutPrices)
 
       expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
       expect(controller.fromSelectedToken).not.toBeNull()
+
+      // Without auto discovery any received token is learned, and one the RPC can't price has
+      // no market, so it's left out, as the dashboard collapses it into the "Other" tokens
+      await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', false)
+      await controller.updatePortfolioTokenList(tokensWithoutPrices)
+
+      expect(controller.portfolioTokenList).toEqual([])
     } finally {
       await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
+      await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
     }
   })
   test('should expose the wrap exemption before a quote is available', () => {
