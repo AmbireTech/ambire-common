@@ -111,6 +111,7 @@ import {
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
+import { getSafeTxn, isSameSafeTx, toSafeTx } from '../../libs/safe/helpers'
 import {
   findDeployData,
   getSafeDeploymentCall,
@@ -135,7 +136,7 @@ import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 import { TxnReplacement } from '../signAccountOp/txnReplacement'
 
-import type { EIP712TypedData } from '@safe-global/types-kit'
+import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import type { Call } from '../../libs/accountOp/types'
 import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/signAccountOp'
@@ -3035,6 +3036,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
       }
       await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
+      return
     }
 
     const typedData = message as EIP712TypedData
@@ -3776,6 +3778,39 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     return true
   }
 
+  /**
+   * Whether the Safe txn from the Safe API is the one the open request signs, so it only
+   * brings the signatures of more owners. What the user reviews and what gets signed must
+   * stay the same, so a different one is reported, and the caller must ignore it. The same
+   * Safe txn hash can't belong to another txn (see SafeController.fetchPending)
+   */
+  #isSameSafeTxAsOpen(request: CallsUserRequest, safeTx?: SafeMultisigTransactionResponse) {
+    if (!safeTx) return true
+
+    const { accountOp } = request.signAccountOp
+    const accountState =
+      this.#accounts.accountStates[accountOp.accountAddr]?.[accountOp.chainId.toString()]
+
+    let isSame = false
+    try {
+      isSame = !!accountState && isSameSafeTx(toSafeTx(safeTx), getSafeTxn(accountOp, accountState))
+    } catch {
+      // Malformed details (e.g. a value that isn't a number) can't be the open txn
+    }
+
+    if (!isSame) {
+      this.emitError({
+        level: 'silent',
+        message: 'Ignored an update that changes an open Safe transaction',
+        error: new Error(
+          `requestsController: the Safe API returned other details for the open Safe txn ${safeTx.safeTxHash} on chain ${accountOp.chainId}`
+        )
+      })
+    }
+
+    return isSame
+  }
+
   async #createOrUpdateCallsUserRequest(
     {
       calls,
@@ -3805,6 +3840,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const openSafeCancelRequest =
       meta.safeTxnProps && this.#findOpenSafeCancelRequest(meta.safeTxnProps.txnId)
     if (meta.safeTxnProps && openSafeCancelRequest) {
+      // The Safe txn of the cancel the user reviews is never replaced
+      if (!this.#isSameSafeTxAsOpen(openSafeCancelRequest, meta.safeTx)) return
+
       // The rest is the same Safe transaction (same hash). The cancel takes the signatures of
       // owners who haven't signed it yet, compared by owner rather than by signature length
       openSafeCancelRequest.signAccountOp.update({
@@ -3894,6 +3932,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // we're allowing updates only on the signature field for
         // already signed accountOps
         if (meta.safeTxnProps) {
+          // The Safe txn of an open request is never replaced, only its signatures are added
+          if (!this.#isSameSafeTxAsOpen(existingUserRequest, meta.safeTx)) return
+
           const safeGlobalSig = meta.safeTxnProps.signature
           const accOpSig = existingUserRequest.signAccountOp.accountOp.signature
           if ((accOpSig?.length || 0) < safeGlobalSig.length) {

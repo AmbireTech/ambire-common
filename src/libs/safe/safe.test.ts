@@ -1,15 +1,22 @@
 import {
   AbiCoder,
   concat,
+  dataSlice,
   getAddress,
   getBytes,
   getCreate2Address,
+  hashMessage,
   id,
   Interface,
   keccak256,
   makeError,
+  recoverAddress,
+  Signature,
   solidityPacked,
+  toBeHex,
+  toBigInt,
   toUtf8Bytes,
+  TypedDataEncoder,
   Wallet,
   ZeroAddress,
   zeroPadValue
@@ -19,8 +26,25 @@ import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globa
 import SafeApiKit from '@safe-global/api-kit'
 
 import { suppressConsole } from '../../../test/helpers/console'
-import { SAFE_API_TIMEOUT_MS, SAFE_SENTINEL_OWNER, SAFE_V1_4_1 } from '../../consts/safe'
-import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
+import {
+  multiSendAddr,
+  SAFE_API_TIMEOUT_MS,
+  SAFE_SENTINEL_OWNER,
+  SAFE_V1_4_1
+} from '../../consts/safe'
+import {
+  getEIP712Hash,
+  getSafeTypedData,
+  getSafeTypedDataForIsValidSignature,
+  getSafeV1TypedData
+} from '../signMessage/signMessage'
+import {
+  buildSafeMessageOrigin,
+  doCallsMatchSafeTx,
+  getSafeTxCalls,
+  parseSafeMessageOrigin,
+  toSafeTx
+} from './helpers'
 import {
   canHotOwnersMeetSafeThreshold,
   decodeSetupData,
@@ -37,16 +61,25 @@ import {
   getSafeApproveHashCall,
   getSafeDeploymentCall,
   getSafeProxyAddress,
+  getSafeTxnHash,
   getSigs,
+  getVerifiedSafeConfirmations,
   hasCompleteSafeCreationData,
   isSafeContract,
   isSafeHashApproved,
+  isSafeMessageHashValid,
+  isSafeTxHashValid,
   normalizeSafeGlobalMessage,
+  sortByAddress,
   sortSigs,
   toCallsUserRequest
 } from './safe'
 
-import type { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
+import type {
+  SafeCreationInfoResponse,
+  SafeInfoResponse,
+  SafeMultisigTransactionListResponse
+} from '@safe-global/api-kit'
 import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 import type { Hex } from '../../interfaces/hex'
 import type { RPCProvider } from '../../interfaces/provider'
@@ -115,8 +148,10 @@ const getSafeCreationInfo = (): SafeCreationInfoResponse => ({
 })
 
 const createApi = (owners: string[] = [OWNER]) => ({
-  getSafeCreationInfo: jest.fn(async () => getSafeCreationInfo()),
-  getSafeInfo: jest.fn(async () => getSafeInfo(owners))
+  getSafeCreationInfo: jest.fn<SafeApiKit['getSafeCreationInfo']>(async () =>
+    getSafeCreationInfo()
+  ),
+  getSafeInfo: jest.fn<SafeApiKit['getSafeInfo']>(async () => getSafeInfo(owners))
 })
 
 describe('isSafeContract', () => {
@@ -202,7 +237,9 @@ describe('Safe deployment data', () => {
   }
 
   test('returns complete Safe API creation data without fetching the deployment transaction', async () => {
-    const getSafeCreationInfo = jest.fn(async () => deploySafeCreationInfo)
+    const getSafeCreationInfo = jest.fn<SafeApiKit['getSafeCreationInfo']>(
+      async () => deploySafeCreationInfo
+    )
     const provider = {
       getTransaction: jest.fn(),
       call: jest.fn()
@@ -697,26 +734,571 @@ describe('Safe deployment data', () => {
 })
 
 describe('toCallsUserRequest', () => {
-  test('decodes a batch call from multiSend data', () => {
-    const calls = [{ to: ZeroAddress, value: 0n, data: '0x' }]
-    const encodedCalls = concat(
-      calls.map((call) =>
-        solidityPacked(
-          ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
-          [0, call.to, call.value, BigInt(getBytes(call.data).length), call.data]
-        )
+  const RECIPIENT = '0x1111111111111111111111111111111111111111'
+  const OTHER_RECIPIENT = '0x2222222222222222222222222222222222222222'
+  const UNKNOWN_CONTRACT = '0x9999999999999999999999999999999999999999'
+  const batchCalls = [
+    { to: RECIPIENT, value: 1n, data: '0x' },
+    { to: OTHER_RECIPIENT, value: 0n, data: '0x12345678' }
+  ]
+  const encodeMultiSend = (
+    calls: { to: string; value: bigint; data: string; operation?: number }[],
+    suffix = '0x'
+  ) =>
+    new Interface(['function multiSend(bytes transactions)']).encodeFunctionData('multiSend', [
+      concat([
+        ...calls.map((call) =>
+          solidityPacked(
+            ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+            [
+              call.operation ?? 0,
+              call.to,
+              call.value,
+              BigInt(getBytes(call.data).length),
+              call.data
+            ]
+          )
+        ),
+        suffix
+      ])
+    ])
+  const getCalls = (overrides: Partial<SafeMultisigTransactionResponse>) =>
+    toCallsUserRequest(SAFE_ADDRESS, {
+      '1': { txns: [buildSafeTransaction(overrides)], messages: [] }
+    })[0]!.params.userRequestParams.calls
+
+  test('decodes a batch delegated to a known multiSend contract', () => {
+    const calls = getCalls({
+      to: multiSendAddr,
+      operation: 1,
+      data: encodeMultiSend(batchCalls)
+    })
+
+    expect(calls).toEqual(batchCalls)
+  })
+
+  test('decodes a batch whose data is not padded to a full word at its end', () => {
+    // some apps leave out the zeros that pad the batch to a full 32-byte word, and the multiSend
+    // contract still runs it
+    const data = encodeMultiSend(batchCalls).slice(0, -8)
+
+    expect(getCalls({ to: multiSendAddr, operation: 1, data })).toEqual(batchCalls)
+  })
+
+  test('shows a plain call with multiSend data as it will be sent, with its value', () => {
+    // A plain call runs the target itself, not the calls in its data
+    const data = encodeMultiSend(batchCalls)
+    const calls = getCalls({ to: UNKNOWN_CONTRACT, operation: 0, value: '5', data })
+
+    expect(calls).toEqual([{ to: UNKNOWN_CONTRACT, value: 5n, data }])
+  })
+
+  test('shows a batch delegated to an unknown contract as it will be sent', () => {
+    const data = encodeMultiSend(batchCalls)
+
+    expect(getCalls({ to: UNKNOWN_CONTRACT, operation: 1, data })).toEqual([
+      { to: UNKNOWN_CONTRACT, value: 0n, data }
+    ])
+  })
+
+  test('shows a batch with a value as it will be sent', () => {
+    const data = encodeMultiSend(batchCalls)
+
+    expect(getCalls({ to: multiSendAddr, operation: 1, value: '1', data })).toEqual([
+      { to: multiSendAddr, value: 1n, data }
+    ])
+  })
+
+  test('shows a batch with a delegate call in it as it will be sent', () => {
+    const data = encodeMultiSend([batchCalls[0]!, { ...batchCalls[1]!, operation: 1 }])
+
+    expect(getCalls({ to: multiSendAddr, operation: 1, data })).toEqual([
+      { to: multiSendAddr, value: 0n, data }
+    ])
+  })
+
+  test('shows a batch with bytes left after its calls as it will be sent', () => {
+    const data = encodeMultiSend(batchCalls, '0x00')
+
+    expect(getCalls({ to: multiSendAddr, operation: 1, data })).toEqual([
+      { to: multiSendAddr, value: 0n, data }
+    ])
+  })
+})
+
+describe('doCallsMatchSafeTx', () => {
+  const RECIPIENT = '0x1111111111111111111111111111111111111111'
+  const safeTx = buildSafeTransaction({ to: RECIPIENT, value: '7', data: '0xabcdef', operation: 0 })
+
+  test('matches a single call with the same target, value and data', () => {
+    expect(doCallsMatchSafeTx([{ to: RECIPIENT, value: 7n, data: '0xABCDEF' }], safeTx)).toBe(true)
+  })
+
+  test('does not match a call with another value or target', () => {
+    expect(doCallsMatchSafeTx([{ to: RECIPIENT, value: 0n, data: '0xabcdef' }], safeTx)).toBe(false)
+    expect(doCallsMatchSafeTx([{ to: OWNER, value: 7n, data: '0xabcdef' }], safeTx)).toBe(false)
+  })
+
+  test('never matches a delegate call that is not a known multiSend batch', () => {
+    const delegateCall = { ...safeTx, operation: 1 }
+
+    expect(doCallsMatchSafeTx([{ to: RECIPIENT, value: 7n, data: '0xabcdef' }], delegateCall)).toBe(
+      false
+    )
+    expect(getSafeTxCalls(delegateCall)).toEqual([{ to: RECIPIENT, value: 7n, data: '0xabcdef' }])
+  })
+})
+
+describe('isSafeTxHashValid', () => {
+  const RECIPIENT = '0x1111111111111111111111111111111111111111'
+  const getHash = (txn: SafeMultisigTransactionResponse, safeVersion = '1.4.1') =>
+    getSafeTxnHash(
+      safeVersion.startsWith('1.2')
+        ? getSafeV1TypedData(SAFE_ADDRESS, toSafeTx(txn))
+        : getSafeTypedData(1n, SAFE_ADDRESS, toSafeTx(txn))
+    )
+  const reviewed = buildSafeTransaction({
+    to: RECIPIENT,
+    value: '1',
+    data: '0x',
+    refundReceiver: ZeroAddress
+  })
+  let restoreConsole: (() => void) | undefined
+
+  afterEach(() => {
+    restoreConsole?.()
+    restoreConsole = undefined
+  })
+
+  test('accepts a Safe txn that matches its hash', () => {
+    const txn = { ...reviewed, safeTxHash: getHash(reviewed) }
+
+    expect(isSafeTxHashValid(txn, SAFE_ADDRESS, 1n, '1.4.1')).toBe(true)
+  })
+
+  test('accepts a Safe txn of a Safe before v1.3, whose hash has no chain id', () => {
+    const txn = { ...reviewed, safeTxHash: getHash(reviewed, '1.2.0') }
+
+    expect(isSafeTxHashValid(txn, SAFE_ADDRESS, 1n, '1.2.0')).toBe(true)
+    expect(isSafeTxHashValid(txn, SAFE_ADDRESS, 1n, '1.4.1')).toBe(false)
+  })
+
+  test('rejects a Safe txn whose details are not the ones its hash is for', () => {
+    const safeTxHash = getHash(reviewed)
+
+    expect(
+      isSafeTxHashValid({ ...reviewed, safeTxHash, value: '2' }, SAFE_ADDRESS, 1n, '1.4.1')
+    ).toBe(false)
+    expect(
+      isSafeTxHashValid({ ...reviewed, safeTxHash, operation: 1 }, SAFE_ADDRESS, 1n, '1.4.1')
+    ).toBe(false)
+  })
+
+  test('rejects a Safe txn hashed for another Safe or chain', () => {
+    const txn = { ...reviewed, safeTxHash: getHash(reviewed) }
+
+    expect(isSafeTxHashValid(txn, OWNER, 1n, '1.4.1')).toBe(false)
+    expect(isSafeTxHashValid(txn, SAFE_ADDRESS, 10n, '1.4.1')).toBe(false)
+  })
+
+  test('rejects a Safe txn with malformed details', () => {
+    restoreConsole = suppressConsole().restore
+    const txn = { ...reviewed, safeTxHash: getHash(reviewed), value: 'not a number' }
+
+    expect(isSafeTxHashValid(txn, SAFE_ADDRESS, 1n, '1.4.1')).toBe(false)
+  })
+})
+
+describe('isSafeMessageHashValid', () => {
+  const textMessage = 'Sign in to the app'
+  const domain = { name: 'App', version: '1', chainId: '1', verifyingContract: OWNER }
+  const mailTypes = { Mail: [{ name: 'contents', type: 'string' }] }
+  const typedMessage = {
+    domain,
+    types: {
+      EIP712Domain: [
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' }
+      ],
+      ...mailTypes
+    },
+    primaryType: 'Mail',
+    message: { contents: 'Hello' }
+  } as unknown as EIP712TypedData
+  // The Safe message hash of a message hash, as the Safe calculates it for its owners to sign
+  const getSafeMessageHash = (messageHash: string, safeAddr: Hex = SAFE_ADDRESS, chainId = 1n) =>
+    getEIP712Hash(getSafeTypedDataForIsValidSignature(chainId, safeAddr, messageHash))
+  const textMessageHash = getSafeMessageHash(hashMessage(textMessage))
+  let restoreConsole: (() => void) | undefined
+
+  afterEach(() => {
+    restoreConsole?.()
+    restoreConsole = undefined
+  })
+
+  test('accepts a plain text message that matches its hash', () => {
+    expect(
+      isSafeMessageHashValid(
+        { message: textMessage, messageHash: textMessageHash },
+        SAFE_ADDRESS,
+        1n
       )
-    )
-    const data = new Interface(['function multiSend(bytes transactions)']).encodeFunctionData(
-      'multiSend',
-      [encodedCalls]
+    ).toBe(true)
+  })
+
+  test('accepts typed data that matches its hash', () => {
+    const messageHash = getSafeMessageHash(
+      TypedDataEncoder.hash(domain, mailTypes, { contents: 'Hello' })
     )
 
-    const { calls: decodedCalls } = toCallsUserRequest(SAFE_ADDRESS, {
-      '1': { txns: [buildSafeTransaction({ data })], messages: [] }
-    })[0]!.params.userRequestParams
+    expect(isSafeMessageHashValid({ message: typedMessage, messageHash }, SAFE_ADDRESS, 1n)).toBe(
+      true
+    )
+  })
 
-    expect(decodedCalls).toEqual(calls)
+  test('rejects a message that is not the one its hash is for', () => {
+    expect(
+      isSafeMessageHashValid(
+        { message: 'Send all my tokens', messageHash: textMessageHash },
+        SAFE_ADDRESS,
+        1n
+      )
+    ).toBe(false)
+  })
+
+  test('rejects a message hashed for another Safe or chain', () => {
+    const message = { message: textMessage, messageHash: textMessageHash }
+
+    expect(isSafeMessageHashValid(message, OWNER, 1n)).toBe(false)
+    expect(isSafeMessageHashValid(message, SAFE_ADDRESS, 10n)).toBe(false)
+  })
+
+  test('rejects a malformed message', () => {
+    restoreConsole = suppressConsole().restore
+    const message = { domain } as unknown as EIP712TypedData
+
+    expect(
+      isSafeMessageHashValid({ message, messageHash: textMessageHash }, SAFE_ADDRESS, 1n)
+    ).toBe(false)
+  })
+})
+
+describe('getVerifiedSafeConfirmations', () => {
+  const SAFE_TX_HASH = keccak256(toUtf8Bytes('safe transaction'))
+  const owner = new Wallet(keccak256(toUtf8Bytes('owner key')))
+  const otherOwner = new Wallet(keccak256(toUtf8Bytes('other owner key')))
+  const approvedHashesInterface = new Interface([
+    'function approvedHashes(address, bytes32) view returns (uint256)'
+  ])
+  const getProvider = (approved: bigint) =>
+    ({
+      call: jest.fn(async () =>
+        approvedHashesInterface.encodeFunctionResult('approvedHashes', [approved])
+      )
+    }) as unknown as RPCProvider
+  const confirmation = (ownerAddr: string, signature: string) => ({
+    owner: ownerAddr,
+    signature,
+    signatureType: 'EOA' as const,
+    submissionDate: '2026-08-14T00:00:00Z'
+  })
+  const ecdsaSignature = owner.signingKey.sign(SAFE_TX_HASH).serialized
+  let restoreConsole: (() => void) | undefined
+
+  afterEach(() => {
+    restoreConsole?.()
+    restoreConsole = undefined
+  })
+
+  test('keeps the ECDSA signatures of the owners they are attributed to', async () => {
+    const ethSign = Signature.from(owner.signingKey.sign(hashMessage(getBytes(SAFE_TX_HASH))))
+    const ethSignSignature = concat([ethSign.r, ethSign.s, `0x${(ethSign.v + 4).toString(16)}`])
+    const confirmations = [
+      confirmation(owner.address, ecdsaSignature),
+      confirmation(owner.address, ethSignSignature)
+    ]
+
+    await expect(
+      getVerifiedSafeConfirmations(SAFE_ADDRESS, SAFE_TX_HASH, confirmations, getProvider(0n))
+    ).resolves.toEqual(confirmations)
+  })
+
+  test('leaves out an ECDSA signature attributed to another owner', async () => {
+    await expect(
+      getVerifiedSafeConfirmations(
+        SAFE_ADDRESS,
+        SAFE_TX_HASH,
+        [confirmation(otherOwner.address, ecdsaSignature)],
+        getProvider(0n)
+      )
+    ).resolves.toEqual([])
+  })
+
+  test('keeps an approved hash signature only if the owner approved the hash onchain', async () => {
+    const approval = confirmation(owner.address, getSafeApprovedHashSignature(owner.address))
+
+    await expect(
+      getVerifiedSafeConfirmations(SAFE_ADDRESS, SAFE_TX_HASH, [approval], getProvider(1n))
+    ).resolves.toEqual([approval])
+    await expect(
+      getVerifiedSafeConfirmations(SAFE_ADDRESS, SAFE_TX_HASH, [approval], getProvider(0n))
+    ).resolves.toEqual([])
+    await expect(
+      getVerifiedSafeConfirmations(SAFE_ADDRESS, SAFE_TX_HASH, [approval])
+    ).resolves.toEqual([])
+  })
+
+  test('leaves out an approved hash signature of another owner', async () => {
+    const approval = confirmation(owner.address, getSafeApprovedHashSignature(otherOwner.address))
+
+    await expect(
+      getVerifiedSafeConfirmations(SAFE_ADDRESS, SAFE_TX_HASH, [approval], getProvider(1n))
+    ).resolves.toEqual([])
+  })
+
+  test('leaves out an approved hash signature that could not be checked onchain', async () => {
+    restoreConsole = suppressConsole().restore
+    const provider = {
+      call: jest.fn(async () => {
+        throw new Error('RPC down')
+      })
+    } as unknown as RPCProvider
+    const approval = confirmation(owner.address, getSafeApprovedHashSignature(owner.address))
+
+    await expect(
+      getVerifiedSafeConfirmations(SAFE_ADDRESS, SAFE_TX_HASH, [approval], provider)
+    ).resolves.toEqual([])
+  })
+
+  test('leaves out a signature that is not a single Safe signature', async () => {
+    const approval = getSafeApprovedHashSignature(owner.address)
+
+    await expect(
+      getVerifiedSafeConfirmations(
+        SAFE_ADDRESS,
+        SAFE_TX_HASH,
+        [confirmation(owner.address, concat([ecdsaSignature, approval]))],
+        getProvider(1n)
+      )
+    ).resolves.toEqual([])
+  })
+
+  test('leaves out a confirmation of an address that is not one of the Safe owners', async () => {
+    const confirmations = [confirmation(owner.address, ecdsaSignature)]
+
+    await expect(
+      getVerifiedSafeConfirmations(SAFE_ADDRESS, SAFE_TX_HASH, confirmations, getProvider(0n), {
+        owners: [otherOwner.address]
+      })
+    ).resolves.toEqual([])
+    await expect(
+      getVerifiedSafeConfirmations(SAFE_ADDRESS, SAFE_TX_HASH, confirmations, getProvider(0n), {
+        owners: [owner.address.toLowerCase(), otherOwner.address]
+      })
+    ).resolves.toEqual(confirmations)
+  })
+
+  describe('contract signatures', () => {
+    // A contract owner (e.g. another Safe) has its own signature checked by the owner contract.
+    // The Safe Transaction Service returns it as {owner as r}{offset 65 as s}{v = 0}{length}{bytes}
+    const contractOwner = '0x3333333333333333333333333333333333333333'
+    const contractSignature = (ownerAddr: string, data = '0xdeadbeefcafe') =>
+      concat([
+        zeroPadValue(ownerAddr, 32),
+        toBeHex(65, 32),
+        '0x00',
+        toBeHex(getBytes(data).length, 32),
+        data
+      ])
+    const getContractProvider = (code: string) =>
+      ({ getCode: jest.fn(async () => code), call: jest.fn() }) as unknown as RPCProvider
+    const contractConfirmation = confirmation(contractOwner, contractSignature(contractOwner))
+
+    test('keeps one of a contract owner where contract signatures count', async () => {
+      await expect(
+        getVerifiedSafeConfirmations(
+          SAFE_ADDRESS,
+          SAFE_TX_HASH,
+          [contractConfirmation],
+          getContractProvider('0x6080'),
+          { acceptContractSignatures: true }
+        )
+      ).resolves.toEqual([contractConfirmation])
+    })
+
+    test('leaves it out where contract signatures do not count (Safe transactions)', async () => {
+      await expect(
+        getVerifiedSafeConfirmations(
+          SAFE_ADDRESS,
+          SAFE_TX_HASH,
+          [contractConfirmation],
+          getContractProvider('0x6080')
+        )
+      ).resolves.toEqual([])
+    })
+
+    test('leaves out one of an address without code, or one for another owner', async () => {
+      const checks = { acceptContractSignatures: true }
+
+      await expect(
+        getVerifiedSafeConfirmations(
+          SAFE_ADDRESS,
+          SAFE_TX_HASH,
+          [contractConfirmation],
+          getContractProvider('0x'),
+          checks
+        )
+      ).resolves.toEqual([])
+      await expect(
+        getVerifiedSafeConfirmations(
+          SAFE_ADDRESS,
+          SAFE_TX_HASH,
+          [confirmation(contractOwner, contractSignature(otherOwner.address))],
+          getContractProvider('0x6080'),
+          checks
+        )
+      ).resolves.toEqual([])
+    })
+
+    test('leaves out one whose signature does not fit in it', async () => {
+      // it says its signature has 6 bytes, but only 2 follow
+      const cutSignature = dataSlice(contractSignature(contractOwner), 0, 65 + 32 + 2)
+
+      await expect(
+        getVerifiedSafeConfirmations(
+          SAFE_ADDRESS,
+          SAFE_TX_HASH,
+          [confirmation(contractOwner, cutSignature)],
+          getContractProvider('0x6080'),
+          { acceptContractSignatures: true }
+        )
+      ).resolves.toEqual([])
+    })
+
+    test('leaves out one of an address that is not one of the Safe owners', async () => {
+      await expect(
+        getVerifiedSafeConfirmations(
+          SAFE_ADDRESS,
+          SAFE_TX_HASH,
+          [contractConfirmation],
+          getContractProvider('0x6080'),
+          { acceptContractSignatures: true, owners: [owner.address] }
+        )
+      ).resolves.toEqual([])
+    })
+  })
+
+  describe('an RPC that does not answer', () => {
+    const neverAnswers = () => new Promise<never>(() => {})
+
+    beforeEach(() => {
+      jest.useFakeTimers()
+      restoreConsole = suppressConsole().restore
+    })
+
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    test('leaves out an approved hash signature once the onchain check times out', async () => {
+      const provider = { call: jest.fn(neverAnswers) } as unknown as RPCProvider
+      const approval = confirmation(owner.address, getSafeApprovedHashSignature(owner.address))
+
+      const result = getVerifiedSafeConfirmations(SAFE_ADDRESS, SAFE_TX_HASH, [approval], provider)
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+      await expect(result).resolves.toEqual([])
+    })
+
+    test('leaves out a contract signature once reading the owner code times out', async () => {
+      const contractOwner = '0x3333333333333333333333333333333333333333'
+      const contractConfirmation = confirmation(
+        contractOwner,
+        concat([zeroPadValue(contractOwner, 32), toBeHex(65, 32), '0x00', toBeHex(2, 32), '0xaabb'])
+      )
+      const provider = { getCode: jest.fn(neverAnswers) } as unknown as RPCProvider
+
+      const result = getVerifiedSafeConfirmations(
+        SAFE_ADDRESS,
+        SAFE_TX_HASH,
+        [contractConfirmation],
+        provider,
+        { acceptContractSignatures: true }
+      )
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+      await expect(result).resolves.toEqual([])
+    })
+  })
+})
+
+describe('sortSigs', () => {
+  const HASH = keccak256(toUtf8Bytes('safe message'))
+  const ecdsaOwner = new Wallet(keccak256(toUtf8Bytes('ecdsa owner key')))
+  const ecdsaSignature = ecdsaOwner.signingKey.sign(HASH).serialized as Hex
+  const contractSignature = (ownerAddr: string, data: string) =>
+    concat([
+      zeroPadValue(ownerAddr, 32),
+      toBeHex(65, 32),
+      '0x00',
+      toBeHex(getBytes(data).length, 32),
+      data
+    ]) as Hex
+  // Reads the signature at `index` of a joined signature, the way the Safe does
+  const readSafeSignature = (joined: string, index: number) => {
+    const staticPart = dataSlice(joined, index * 65, index * 65 + 65)
+    // an ECDSA signature's owner is its signer, a contract signature carries its owner in `r`
+    if (getBytes(staticPart)[64] !== 0)
+      return { owner: recoverAddress(HASH, staticPart), staticPart }
+
+    const owner = getAddress(dataSlice(staticPart, 12, 32))
+    const offset = Number(toBigInt(dataSlice(staticPart, 32, 64)))
+    const length = Number(toBigInt(dataSlice(joined, offset, offset + 32)))
+    return { owner, offset, data: dataSlice(joined, offset + 32, offset + 32 + length) }
+  }
+
+  test('puts signatures of 65 bytes one after the other, sorted by owner', () => {
+    const otherOwner = new Wallet(keccak256(toUtf8Bytes('other ecdsa owner key')))
+    const otherSignature = otherOwner.signingKey.sign(HASH).serialized as Hex
+    const sorted = sortByAddress([
+      { addr: ecdsaOwner.address, sig: ecdsaSignature },
+      { addr: otherOwner.address, sig: otherSignature }
+    ])
+
+    expect(sortSigs([ecdsaSignature, otherSignature], HASH)).toBe(
+      concat(sorted.map(({ sig }) => sig))
+    )
+  })
+
+  test('adds the signatures of contract owners after the 65 bytes of each one, at their offset', () => {
+    const lowContractOwner = '0x1111111111111111111111111111111111111111'
+    const highContractOwner = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+    const joined = sortSigs(
+      [
+        contractSignature(highContractOwner, '0x112233'),
+        ecdsaSignature,
+        contractSignature(lowContractOwner, '0xaabb')
+      ],
+      HASH
+    )
+    const signatures = [0, 1, 2].map((index) => readSafeSignature(joined, index))
+    const findSignature = (addr: string) =>
+      signatures.find(({ owner }) => owner === getAddress(addr))
+
+    // sorted by owner, as the Safe requires
+    expect(signatures.map(({ owner }) => owner)).toEqual(
+      sortByAddress(signatures.map(({ owner }) => ({ addr: owner }))).map(({ addr }) => addr)
+    )
+    expect(findSignature(ecdsaOwner.address)?.staticPart).toBe(ecdsaSignature)
+    expect(findSignature(lowContractOwner)?.data).toBe('0xaabb')
+    expect(findSignature(highContractOwner)?.data).toBe('0x112233')
+    // the contract signatures come after the 65 bytes of all three, as the Safe requires
+    const offsets = signatures.flatMap(({ offset }) => (offset === undefined ? [] : [offset]))
+    expect(offsets).toHaveLength(2)
+    expect(Math.min(...offsets)).toBeGreaterThanOrEqual(3 * 65)
+    expect(getBytes(joined)).toHaveLength(3 * 65 + 32 + 2 + 32 + 3)
   })
 })
 
@@ -993,7 +1575,10 @@ describe('Safe owner approvals (approveHash)', () => {
     expect(call.to).toBe(getAddress(SAFE_ADDRESS))
     expect(call.value).toBe(0n)
     expect(
-      new Interface(['function approveHash(bytes32)']).decodeFunctionData('approveHash', call.data)[0]
+      new Interface(['function approveHash(bytes32)']).decodeFunctionData(
+        'approveHash',
+        call.data
+      )[0]
     ).toBe(SAFE_TX_HASH)
   })
 
@@ -1002,7 +1587,7 @@ describe('Safe owner approvals (approveHash)', () => {
       'function approvedHashes(address, bytes32) view returns (uint256)'
     ])
     const getProvider = (approved: bigint) => {
-      const call = jest.fn(async () =>
+      const call = jest.fn<RPCProvider['call']>(async () =>
         approvedHashesInterface.encodeFunctionResult('approvedHashes', [approved])
       )
       return { provider: { call } as unknown as RPCProvider, call }
@@ -1030,7 +1615,7 @@ describe('Safe owner approvals (approveHash)', () => {
 
 describe('getPendingTransactions', () => {
   const originalApiKey = process.env.SAFE_API_KEY
-  const emptyListResponse = { count: 0, next: null, previous: null, results: [] }
+  const emptyListResponse: SafeMultisigTransactionListResponse = { count: 0, results: [] }
 
   beforeEach(() => {
     // getApiKit refuses to build a client without one; no request leaves the test
@@ -1086,7 +1671,7 @@ describe('getPendingTransactions', () => {
 
 describe('Safe API requests made by the background Safe checks', () => {
   const originalApiKey = process.env.SAFE_API_KEY
-  const emptyListResponse = { count: 0, next: null, previous: null, results: [] }
+  const emptyListResponse: SafeMultisigTransactionListResponse = { count: 0, results: [] }
   const never = <T>() => new Promise<T>(() => {})
   let restoreConsole: (() => void) | undefined
 
@@ -1175,6 +1760,7 @@ describe('Safe API requests made by the background Safe checks', () => {
 
     await expect(request).resolves.toEqual([
       {
+        chainId: 10n,
         safeTxnHash: executedTxn.safeTxHash,
         transactionHash: executedTxn.transactionHash,
         nonce: '4'
