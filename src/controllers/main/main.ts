@@ -748,6 +748,7 @@ export class MainController extends EventEmitter implements IMainController {
           type: 'calls',
           params: { userRequestParams, executionType: 'open-request-window' }
         }),
+      storage: this.storage,
       portfolioUpdate: (chainIds) => {
         const networks = this.networks.networks.filter((n) => chainIds.includes(n.chainId))
         if (!networks.length) return
@@ -1468,6 +1469,8 @@ export class MainController extends EventEmitter implements IMainController {
     await this.activity.addAccountOp(submittedAccountOp)
     // Every deposit into a Privacy Pools account, however signed, is broadcast through here
     this.privacyPools.onAccountOpBroadcast(submittedAccountOp)
+    // So are the limit orders placed or cancelled from the signing window (Safe accounts)
+    this.limitOrders.onAccountOpBroadcast(submittedAccountOp)
     await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple

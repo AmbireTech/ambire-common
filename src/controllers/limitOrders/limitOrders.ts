@@ -33,6 +33,7 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { SignAccountOpError } from '../../interfaces/signAccountOp'
+import { IStorageController } from '../../interfaces/storage'
 import {
   CowSwapOrderCreation,
   CowSwapOrderStruct,
@@ -122,6 +123,9 @@ const MARKET_QUOTE_UPDATE_INTERVAL = 30 * 1000
  * refresh doesn't empty the form meanwhile
  */
 const MARKET_QUOTE_MAX_AGE = 3 * MARKET_QUOTE_UPDATE_INTERVAL
+
+/** How old the orders can be when the dashboard opens before they're fetched again */
+const DASHBOARD_ORDERS_MAX_AGE = 60 * 1000
 
 /** How often My orders is refreshed while it's open */
 const ORDERS_UPDATE_INTERVAL = 30 * 1000
@@ -274,6 +278,16 @@ export class LimitOrdersController extends EventEmitter {
 
   #portfolioUpdate: (chainIds: bigint[]) => void
 
+  #storage: IStorageController
+
+  #initialLoadPromise: Promise<void> | undefined
+
+  /** See `limitOrdersAccounts` in the storage */
+  #accountsWithOrders = new Set<string>()
+
+  /** The last write of `#accountsWithOrders`, as writes to the storage must not run in parallel */
+  #accountsWithOrdersWrite: Promise<unknown> = Promise.resolve()
+
   /**
    * How much each order of the account had received at the last refresh, to notice when one
    * fills (or fills a part) and refresh the balances it changed
@@ -288,6 +302,13 @@ export class LimitOrdersController extends EventEmitter {
 
   /** Orders whose cancel transaction was broadcast this session */
   #cancellingOrderUids = new Set<string>()
+
+  /**
+   * The calls that place or cancel an order, handed to the signing window (Safe accounts), by
+   * `#getSentCallKey`. The user can still reject them there, so the order is shown as placing or
+   * cancelling only once its call is broadcast (see `onAccountOpBroadcast`)
+   */
+  #callsSentToWindow = new Map<string, { orderUid: string; purpose: LimitOrderSignPurpose }>()
 
   #tokenInfoCache = new Map<string, LimitOrderToken>()
 
@@ -384,7 +405,8 @@ export class LimitOrdersController extends EventEmitter {
     onBroadcastFailed,
     ui,
     requestSignatureInWindow,
-    portfolioUpdate
+    portfolioUpdate,
+    storage
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     callRelayer: BindedRelayerCall
@@ -418,6 +440,7 @@ export class LimitOrdersController extends EventEmitter {
     }) => Promise<void>
     /** Refreshes the selected account's portfolio on these networks */
     portfolioUpdate: (chainIds: bigint[]) => void
+    storage: IStorageController
   }) {
     super(eventEmitterRegistry)
 
@@ -443,6 +466,10 @@ export class LimitOrdersController extends EventEmitter {
     this.#onBroadcastFailed = onBroadcastFailed
     this.#requestSignatureInWindow = requestSignatureInWindow
     this.#portfolioUpdate = portfolioUpdate
+    this.#storage = storage
+    this.#initialLoadPromise = this.#load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
 
     this.#updateMarketQuoteInterval = new RecurringTimeout(
       async () => this.#continuouslyUpdateMarketQuote(),
@@ -465,6 +492,52 @@ export class LimitOrdersController extends EventEmitter {
       this.#onViewLeftTradeRoutes(view.id)
     })
     ui.uiEvent.on('removeView', (view: View) => this.#onViewLeftTradeRoutes(view.id))
+  }
+
+  async #load() {
+    try {
+      const accounts = await this.#storage.get('limitOrdersAccounts', [])
+      accounts.forEach((addr) => this.#accountsWithOrders.add(addr.toLowerCase()))
+    } catch (error: any) {
+      this.emitError({ level: 'silent', message: 'Failed to load the limit order accounts', error })
+    }
+  }
+
+  /** Remembers that the account has limit orders, so the dashboard shows them */
+  #rememberAccountWithOrders(accountAddr: string) {
+    const addr = accountAddr.toLowerCase()
+    if (this.#accountsWithOrders.has(addr)) return
+
+    this.#accountsWithOrders.add(addr)
+    const accounts = [...this.#accountsWithOrders]
+    this.#accountsWithOrdersWrite = this.#accountsWithOrdersWrite
+      .then(() => this.#storage.set('limitOrdersAccounts', accounts))
+      .catch((error) => {
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to save the limit order accounts',
+          error
+        })
+      })
+  }
+
+  /**
+   * Fetches the selected account's orders for the dashboard, if it placed limit orders from this
+   * device and they weren't fetched in the last minute. Other accounts aren't sent to CoW Swap
+   */
+  async refreshOrdersIfNeeded() {
+    await this.#initialLoadPromise
+
+    const accountAddr = this.#selectedAccount.account?.addr
+    if (!accountAddr || !this.#accountsWithOrders.has(accountAddr.toLowerCase())) return
+
+    const isFresh =
+      this.ordersAccountAddr === accountAddr &&
+      this.ordersUpdatedAt !== null &&
+      Date.now() - this.ordersUpdatedAt < DASHBOARD_ORDERS_MAX_AGE
+    if (isFresh) return
+
+    await this.updateOrders()
   }
 
   #onSelectedAccountUpdate() {
@@ -1452,10 +1525,15 @@ export class LimitOrdersController extends EventEmitter {
       : orderCalls
 
     if (account.safeCreation) {
+      const placeCall = calls.find((call) => call.id === orderUid)
+      if (placeCall) {
+        this.#callsSentToWindow.set(LimitOrdersController.#getSentCallKey(chainId, placeCall), {
+          orderUid,
+          purpose: 'place'
+        })
+      }
       await this.#signInWindow({ account, network, calls })
-      // Shown as placing until the Safe's owners sign it and it's sent
-      this.#placingOrderUids.add(orderUid)
-      this.#executedBuyAmounts.set(orderUid, 0n)
+      // Shown as placing once the Safe's owners sign it and it's sent, see `onAccountOpBroadcast`
       this.#resetFormFields()
       this.emitUpdate()
       return
@@ -1470,6 +1548,7 @@ export class LimitOrdersController extends EventEmitter {
       // The call that places the order, as opposed to the token permission before it
       mainCallId: orderUid,
       onBroadcasted: () => {
+        this.#rememberAccountWithOrders(account.addr)
         this.#placingOrderUids.add(orderUid)
         // So a fill is noticed even if the order is first listed after it filled
         this.#executedBuyAmounts.set(orderUid, 0n)
@@ -1824,10 +1903,12 @@ export class LimitOrdersController extends EventEmitter {
     if (!account) return
 
     if (account.safeCreation) {
+      this.#callsSentToWindow.set(LimitOrdersController.#getSentCallKey(listedOrder.chainId, call), {
+        orderUid: order.uid,
+        purpose: 'cancel'
+      })
       await this.#signInWindow({ account, network, calls: [call] })
-      this.#cancellingOrderUids.add(order.uid)
-      this.#rebuildOrders()
-      this.emitUpdate()
+      // Shown as cancelling once the Safe's owners sign it and it's sent, see `onAccountOpBroadcast`
       return
     }
 
@@ -1971,6 +2052,8 @@ export class LimitOrdersController extends EventEmitter {
           this.#executedBuyAmounts.set(order.uid, executedBuyAmount)
         })
         this.#accountOrders.set(chainId, orders)
+        // e.g. orders placed from another device, found when the user opened My orders here
+        if (orders.length) this.#rememberAccountWithOrders(account.addr)
         return
       }
 
@@ -2001,10 +2084,62 @@ export class LimitOrdersController extends EventEmitter {
     this.#executedBuyAmounts.clear()
     this.#placingOrderUids.clear()
     this.#cancellingOrderUids.clear()
+    this.#callsSentToWindow.clear()
     this.orders = []
     this.ordersAccountAddr = this.#selectedAccount.account?.addr ?? null
     this.ordersError = null
     this.ordersUpdatedAt = null
+  }
+
+  /**
+   * Marks the orders placed or cancelled by a broadcast transaction of the signing window. Called
+   * for every broadcast transaction, so it ignores the ones that aren't about limit orders
+   */
+  onAccountOpBroadcast({
+    accountAddr,
+    chainId,
+    calls
+  }: {
+    accountAddr: string
+    chainId: bigint
+    calls: Call[]
+  }) {
+    let hasMarkedOrders = false
+
+    calls.forEach((call) => {
+      const key = LimitOrdersController.#getSentCallKey(chainId, call)
+      const sentCall = this.#callsSentToWindow.get(key)
+      if (!sentCall) return
+
+      this.#callsSentToWindow.delete(key)
+      hasMarkedOrders = true
+      if (sentCall.purpose === 'cancel') {
+        this.#cancellingOrderUids.add(sentCall.orderUid)
+        return
+      }
+
+      this.#rememberAccountWithOrders(accountAddr)
+      this.#placingOrderUids.add(sentCall.orderUid)
+      // So a fill is noticed even if the order is first listed after it filled
+      this.#executedBuyAmounts.set(sentCall.orderUid, 0n)
+    })
+    if (!hasMarkedOrders) return
+
+    this.#rebuildOrders()
+    this.emitUpdate()
+    // A newly placed order isn't among the listed ones yet
+    if (this.#selectedAccount.account?.addr === accountAddr) {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.updateOrders()
+    }
+  }
+
+  /**
+   * Identifies a call by what it does, as the signing window may give it a new id. A call that
+   * deploys a contract has no `to`, and is never one of ours
+   */
+  static #getSentCallKey(chainId: bigint | number, call: Pick<Call, 'to' | 'data'>) {
+    return `${chainId.toString()}:${(call.to ?? '').toLowerCase()}:${call.data.toLowerCase()}`
   }
 
   static #getTokenKey(chainId: number, address: string) {

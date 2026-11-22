@@ -149,6 +149,9 @@ export type StorageProps = {
   }
   swapAndBridgeActiveRoutes: SwapAndBridgeActiveRoute[]
   disabledSwapProviderIds: string[]
+  // The accounts (lowercase addresses) that placed a limit order from this device. Only their
+  // orders are fetched from CoW Swap for the dashboard, so other accounts aren't sent to it
+  limitOrdersAccounts: string[]
   // Persisted reverse ENS/Namoshi lookup cache, kept indefinitely so accounts
   // don't need to be re-resolved after a service worker restart.
   domainsCache: Domains

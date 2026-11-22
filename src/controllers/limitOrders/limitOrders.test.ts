@@ -49,8 +49,22 @@ const makeOrder = (overrides: Partial<CowSwapAccountOrder> = {}): CowSwapAccount
  * The controller with only what My orders reads. `getAccountOrders` answers each refresh, so a
  * test can change the orders between refreshes
  */
+/** An in-memory storage, starting with `initial` */
+const makeStorage = (initial: Record<string, unknown> = {}) => {
+  const data: Record<string, unknown> = { ...initial }
+  return {
+    data,
+    get: jest.fn(async (key: string, defaultValue?: unknown) => data[key] ?? defaultValue),
+    set: jest.fn(async (key: string, value: unknown) => {
+      data[key] = value
+      return null
+    })
+  }
+}
+
 const makeController = (
-  getAccountOrders: () => CowSwapAccountOrder[] | Promise<CowSwapAccountOrder[]>
+  getAccountOrders: () => CowSwapAccountOrder[] | Promise<CowSwapAccountOrder[]>,
+  storage = makeStorage()
 ) => {
   const portfolioUpdate = jest.fn()
   const selectedAccount = {
@@ -76,12 +90,13 @@ const makeController = (
     ui: { uiEvent: { on: jest.fn() } },
     cowSwapApi,
     portfolioUpdate,
+    storage,
     requestSignatureInWindow: jest.fn(async () => {}),
     onBroadcastSuccess: jest.fn(async () => {}),
     onBroadcastFailed: jest.fn()
   } as unknown as ConstructorParameters<typeof LimitOrdersController>[0])
 
-  return { controller, portfolioUpdate, selectedAccount }
+  return { controller, portfolioUpdate, selectedAccount, cowSwapApi, storage }
 }
 
 describe('LimitOrdersController My orders', () => {
@@ -245,6 +260,7 @@ describe('LimitOrdersController placing an order that sells the native token', (
       ui: { uiEvent: { on: jest.fn() } },
       cowSwapApi,
       relayerUrl: '',
+      storage: makeStorage(),
       requestSignatureInWindow,
       portfolioUpdate: jest.fn(),
       onBroadcastSuccess: jest.fn(async () => {}),
@@ -287,5 +303,221 @@ describe('LimitOrdersController placing an order that sells the native token', (
     expect(calls[2].value).toBe(0n)
 
     controller.resetForm()
+  })
+})
+
+describe('LimitOrdersController orders for the dashboard', () => {
+  it('does not send an account to CoW Swap if it never placed a limit order here', async () => {
+    const { controller, cowSwapApi } = makeController(() => [makeOrder()])
+
+    await controller.refreshOrdersIfNeeded()
+
+    expect(cowSwapApi.getAccountLimitOrders).not.toHaveBeenCalled()
+    expect(controller.orders).toEqual([])
+  })
+
+  it('fetches the orders of an account that placed limit orders here', async () => {
+    const storage = makeStorage({ limitOrdersAccounts: [accountAddr.toLowerCase()] })
+    const { controller, cowSwapApi } = makeController(() => [makeOrder()], storage)
+
+    await controller.refreshOrdersIfNeeded()
+
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalled()
+    expect(controller.orders).toHaveLength(1)
+  })
+
+  it('does not fetch again within a minute', async () => {
+    const storage = makeStorage({ limitOrdersAccounts: [accountAddr.toLowerCase()] })
+    const { controller, cowSwapApi } = makeController(() => [makeOrder()], storage)
+
+    await controller.refreshOrdersIfNeeded()
+    const callsAfterFirstRefresh = cowSwapApi.getAccountLimitOrders.mock.calls.length
+    await controller.refreshOrdersIfNeeded()
+
+    expect(cowSwapApi.getAccountLimitOrders.mock.calls.length).toBe(callsAfterFirstRefresh)
+  })
+
+  it('remembers an account whose orders My orders found, e.g. placed on another device', async () => {
+    const storage = makeStorage()
+    const { controller } = makeController(() => [makeOrder()], storage)
+
+    await controller.updateOrders()
+    // The write runs after the refresh, in order with other writes
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(storage.data.limitOrdersAccounts).toEqual([accountAddr.toLowerCase()])
+  })
+})
+
+/**
+ * A Safe account's controller, which signs in the signing window. `getAccountOrders` answers each
+ * refresh of My orders
+ */
+const makeSafeController = (
+  getAccountOrders: () => CowSwapAccountOrder[] = () => []
+) => {
+  const ethToken = {
+    address: ZeroAddress,
+    chainId: 1n,
+    decimals: 18,
+    symbol: 'ETH',
+    name: 'Ether',
+    amount: 10n ** 18n,
+    priceIn: [],
+    flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true }
+  }
+  const requestSignatureInWindow = jest.fn(async (_params: any) => {})
+  const cowSwapApi = {
+    getLimitOrderMarketQuote: jest.fn(async (_params: any) => ({
+      buyAmount: 870000000n,
+      buyAmountBeforeFees: 875000000n,
+      networkFee: 0n,
+      protocolFeeBps: 0,
+      quoteId: 1
+    })),
+    getToTokenList: jest.fn(async () => []),
+    getAccountLimitOrders: jest.fn(async ({ chainId }: { chainId: number }) =>
+      chainId === 1 ? getAccountOrders() : []
+    ),
+    getToken: jest.fn(async ({ address, chainId }: { address: string; chainId: number }) => {
+      const token = listedTokens[address.toLowerCase()]
+      return token ? { ...token, address, chainId, name: token.symbol } : null
+    }),
+    isTokenSupported: jest.fn(async () => false),
+    submitLimitOrder: jest.fn(async (_params: any) => {})
+  }
+  const controller = new LimitOrdersController({
+    selectedAccount: {
+      account: { addr: accountAddr, safeCreation: {} },
+      portfolio: { tokens: [ethToken] },
+      balanceAffectingErrors: [],
+      onUpdate: jest.fn()
+    },
+    accounts: {
+      accountStates: {},
+      getOrFetchAccountOnChainState: jest.fn(async () => ({ nonce: 0n }))
+    },
+    networks: { networks: [{ chainId: 1n, name: 'Ethereum', nativeAssetSymbol: 'ETH' }] },
+    // No allowance yet, so the batch includes the token permission
+    providers: { providers: { '1': { call: jest.fn(async () => `0x${'0'.repeat(64)}`) } } },
+    featureFlags: { isFeatureEnabled: () => false },
+    portfolio: { getAccountPortfolioState: () => ({}) },
+    ui: { uiEvent: { on: jest.fn() } },
+    cowSwapApi,
+    relayerUrl: '',
+    storage: makeStorage(),
+    requestSignatureInWindow,
+    portfolioUpdate: jest.fn(),
+    onBroadcastSuccess: jest.fn(async () => {}),
+    onBroadcastFailed: jest.fn()
+  } as unknown as ConstructorParameters<typeof LimitOrdersController>[0])
+
+  /** Places an order selling 0.5 ETH for USDC and returns its uid and the calls sent to sign */
+  const placeOrder = async () => {
+    await controller.initForm('test')
+    await controller.updateForm({
+      fromSelectedToken: ethToken as any,
+      toSelectedToken: { address: usdc, chainId: 1, decimals: 6, symbol: 'USDC', name: 'USD Coin' },
+      fromAmount: '0.5'
+    })
+    // Today's price is requested after a short pause for typing
+    await new Promise((resolve) => {
+      setTimeout(resolve, 600)
+    })
+    await controller.placeOrder()
+
+    const { orderUid } = cowSwapApi.submitLimitOrder.mock.calls[0]![0]
+    const { calls } = requestSignatureInWindow.mock.calls[0]![0]
+    controller.resetForm()
+
+    return { orderUid: orderUid as string, calls }
+  }
+
+  return { controller, cowSwapApi, requestSignatureInWindow, placeOrder }
+}
+
+/** The calls as the signing window broadcasts them, with ids of its own */
+const withNewIds = (calls: any[]) => calls.map((call, i) => ({ ...call, id: `window-${i}` }))
+
+describe('LimitOrdersController orders signed in the signing window', () => {
+  it('does not show an order as placing while its transaction is waiting in the signing window', async () => {
+    let orders: CowSwapAccountOrder[] = []
+    const { controller, placeOrder } = makeSafeController(() => orders)
+
+    const { orderUid } = await placeOrder()
+    // CoW Swap lists the order as soon as it's submitted, before it's signed
+    orders = [makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })]
+    await controller.updateOrders()
+
+    expect(controller.orders).toEqual([])
+  })
+
+  it('never shows an order whose transaction the user rejected in the signing window', async () => {
+    let orders: CowSwapAccountOrder[] = []
+    const { controller, placeOrder } = makeSafeController(() => orders)
+
+    const { orderUid } = await placeOrder()
+    orders = [makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })]
+    // Rejecting broadcasts nothing, while other transactions of the account still go out
+    controller.onAccountOpBroadcast({
+      accountAddr,
+      chainId: 1n,
+      calls: [{ id: 'other', to: weth, value: 0n, data: '0x' }]
+    })
+    await controller.updateOrders()
+
+    expect(controller.orders).toEqual([])
+  })
+
+  it('shows the order as placing once its transaction is broadcast', async () => {
+    let orders: CowSwapAccountOrder[] = []
+    const { controller, cowSwapApi, placeOrder } = makeSafeController(() => orders)
+
+    const { orderUid, calls } = await placeOrder()
+    orders = [makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })]
+    const fetchesBeforeBroadcast = cowSwapApi.getAccountLimitOrders.mock.calls.length
+    controller.onAccountOpBroadcast({ accountAddr, chainId: 1n, calls: withNewIds(calls) })
+    // The broadcast refreshes My orders, as the new order isn't listed yet
+    await controller.updateOrders()
+
+    expect(cowSwapApi.getAccountLimitOrders.mock.calls.length).toBeGreaterThan(fetchesBeforeBroadcast)
+    expect(controller.orders.map((order) => [order.uid, order.status])).toEqual([[orderUid, 'placing']])
+  })
+
+  it('does not mark an order broadcast on another network', async () => {
+    let orders: CowSwapAccountOrder[] = []
+    const { controller, placeOrder } = makeSafeController(() => orders)
+
+    const { orderUid, calls } = await placeOrder()
+    orders = [makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })]
+    controller.onAccountOpBroadcast({ accountAddr, chainId: 10n, calls: withNewIds(calls) })
+    await controller.updateOrders()
+
+    expect(controller.orders).toEqual([])
+  })
+
+  it('shows an order as cancelling only once its cancel transaction is broadcast', async () => {
+    const orderUid = `0x${'21'.repeat(56)}`
+    const { controller, requestSignatureInWindow } = makeSafeController(() => [
+      makeOrder({ uid: orderUid })
+    ])
+    await controller.updateOrders()
+
+    await controller.cancelOrder(orderUid)
+    await controller.updateOrders()
+    // Still waiting for the Safe's owners, who may reject it
+    expect(controller.orders[0]?.status).toBe('open')
+
+    const { calls } = requestSignatureInWindow.mock.calls[0]![0]
+    expect(calls[0].data).toBe(
+      new Interface(['function invalidateOrder(bytes)']).encodeFunctionData('invalidateOrder', [
+        orderUid
+      ])
+    )
+    controller.onAccountOpBroadcast({ accountAddr, chainId: 1n, calls: withNewIds(calls) })
+
+    expect(controller.orders[0]?.status).toBe('cancelling')
   })
 })
