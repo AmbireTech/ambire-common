@@ -548,10 +548,21 @@ export const validateERC721Token = async (
 
 // fetch the amountPostSimulation for the token if set
 // otherwise, the token.amount
+/**
+ * The amount of the token the user can work with: the amount after the simulation of their
+ * pending transaction (if any), plus what their in-progress swaps and bridges will still move
+ * (`pendingDeliveryAmount`). Pass `beforeSimulation` for the amount without either of them.
+ */
 export const getTokenAmount = (token: TokenResult, beforeSimulation?: boolean): bigint => {
   if (beforeSimulation) return token.amount
 
-  return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
+  const amount =
+    typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
+  if (!token.pendingDeliveryAmount) return amount
+
+  // Can't go below zero, e.g. if the tokens a CoW Swap order sells were moved before it was filled
+  const amountWithDelivery = amount + token.pendingDeliveryAmount
+  return amountWithDelivery > 0n ? amountWithDelivery : 0n
 }
 
 export const getTokenUsdPrice = (token: TokenResult) =>

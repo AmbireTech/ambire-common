@@ -29,6 +29,9 @@ import { PendingAmounts } from './interfaces'
  * 3. If we detect a delta between the pending and latest token amounts, it indicates that there is something awaiting confirmation.
  *    In this case, we also return the `pendingToBeConfirmed` amount.
  *    For example, if someone sends you tokens outside of the extension, the extension will show the `pendingToBeConfirmed` amount.
+ * 4. If an in-progress swap or bridge will still move the token after its transaction was mined (e.g. a bridge delivering
+ *    the tokens on the other network or a CoW Swap order waiting to be filled), we return the `pendingDelivery` amount.
+ *    It's independent of the states above, so it's added on top of the pending balance they result in.
  *
  * Rare scenarios:
  * 1. It is possible to have both `pendingToBeSigned` and `pendingToBeConfirmed` badges in the following scenario:
@@ -45,7 +48,8 @@ export const calculatePendingAmounts = (
   pendingAmount: bigint,
   amountPostSimulation?: bigint,
   simulationDelta?: bigint, // pending delta (this is the amount of the simulation itself)
-  simulatedAccountOp?: AccountOp
+  simulatedAccountOp?: AccountOp,
+  pendingDelivery?: bigint // the amount of in-progress swaps and bridges (see `getPendingDeliveries`)
 ): PendingAmounts | null => {
   let latestPendingDelta = pendingAmount - latestAmount
 
@@ -67,7 +71,7 @@ export const calculatePendingAmounts = (
   }
 
   // There is no Pending state changes
-  if (latestPendingDelta === 0n && !simulationDelta) return null
+  if (latestPendingDelta === 0n && !simulationDelta && !pendingDelivery) return null
 
   let pendingBalance
 
@@ -76,8 +80,16 @@ export const calculatePendingAmounts = (
   if (latestPendingDelta && !amountPostSimulation) {
     pendingBalance = pendingAmount
   } else {
-    // Otherwise, if we have a simulation, the pending balance is equal to the simulation amount
-    pendingBalance = amountPostSimulation!
+    // Otherwise, if we have a simulation, the pending balance is equal to the simulation amount.
+    // Without a simulation, there is only a pending delivery, which is added to the pending block amount
+    pendingBalance = amountPostSimulation ?? pendingAmount
+  }
+
+  if (pendingDelivery) {
+    // Main scenario #4. The balance can't go below zero, e.g. if the user moved the tokens
+    // a CoW Swap order sells before it was filled (the order would then fail)
+    const pendingBalanceWithDelivery = pendingBalance + pendingDelivery
+    pendingBalance = pendingBalanceWithDelivery > 0n ? pendingBalanceWithDelivery : 0n
   }
 
   // Okay, we already know that we have a pending state,
@@ -86,6 +98,8 @@ export const calculatePendingAmounts = (
     isPending: true,
     pendingBalance
   }
+
+  if (pendingDelivery) result.pendingDelivery = pendingDelivery
 
   if (simulationDelta) {
     // When we broadcast the AccountOp, we set the status of the simulated AccountOp to `BroadcastedButNotConfirmed`

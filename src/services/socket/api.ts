@@ -20,11 +20,8 @@ import {
   SwapProvider
 } from '../../interfaces/swapAndBridge'
 import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
-import {
-  addCustomTokensIfNeeded,
-  convertNullAddressToZeroAddressIfNeeded,
-  isNoFeeToken
-} from '../../libs/swapAndBridge/swapAndBridge'
+import { addCustomTokensIfNeeded, isNoFeeToken } from '../../libs/swapAndBridge/swapAndBridge'
+import convertNullAddressToZeroAddressIfNeeded from '../../utils/convertNullAddressToZeroAddressIfNeeded'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,

@@ -90,7 +90,7 @@ export const getDelegateCallWarning = (
   if (shouldDisplaySafeDelegateCallWarning(operation, to))
     warnings.push(
       getWarning(
-        'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+        "This lets a contract that isn't part of Safe act with full control of your Safe. Only continue if you trust it.",
         'SAFE{WALLET}_DELEGATE_CALL',
         undefined,
         to && isAddress(to) ? getAddress(to) : undefined
@@ -99,6 +99,21 @@ export const getDelegateCallWarning = (
 
   return warnings
 }
+
+/**
+ * A warning for a signed Safe transaction that can't be broken down into calls that do exactly
+ * what it does (see getSafeTxCallsFromMessage), so what it does may differ from what's shown.
+ * It has to be confirmed before signing, the same as on the sign transaction screen
+ * (see WARNINGS.safeTxNotShownAsCalls)
+ */
+export const getSafeTxNotBrokenDownWarning = (): HumanizerWarning => ({
+  ...getWarning(
+    "It can give another contract full control of your Safe, and we can't check what that contract will do. Some apps do this on purpose, but scammers do it too. Only sign it if you started it yourself in an app you trust.",
+    'SAFE{WALLET}_TX_NOT_BROKEN_DOWN'
+  ),
+  title: "We can't show what this transaction does",
+  promptBefore: ['sign']
+})
 
 const setupSelector = toFunctionSelector(setupAbi[0])
 const addOwnerWithThresholdSelector = toFunctionSelector(addOwnerWithThresholdAbi[0])
@@ -122,7 +137,12 @@ export const getSafeHumanization = (
   value?: string | number | bigint,
   rawData?: string,
   setupHookDepth = 0,
-  nonce?: string | number | bigint | null
+  nonce?: string | number | bigint | null,
+  /**
+   * Whether the call is the whole transaction and not one of several calls in it. Only a whole
+   * transaction can be a cancel: an empty call to the Safe among other calls cancels nothing
+   */
+  isWholeTransaction = true
 ):
   | {
       visuals?: HumanizerVisualization[]
@@ -142,7 +162,10 @@ export const getSafeHumanization = (
 
   const selector = data.substring(0, 10)
 
+  // the calls of a batch or a setup hook (setupHookDepth > 0) are never the whole transaction
   if (
+    isWholeTransaction &&
+    setupHookDepth === 0 &&
     to !== undefined &&
     value !== undefined &&
     isSafeRejectionCall([{ to, value: BigInt(value), data }], safeAddr ?? '')
@@ -573,7 +596,8 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
     call.value,
     call.data,
     0,
-    displayedNonce
+    displayedNonce,
+    accOp.calls.length <= 1
   )
   if (safeSpecificHumanization) {
     newCall = {

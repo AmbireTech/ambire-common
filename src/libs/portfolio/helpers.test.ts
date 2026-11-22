@@ -11,6 +11,7 @@ import {
   getErc721Validity,
   getHintsError,
   getSpecialHints,
+  getTokenAmount,
   getTotal,
   getVisibleCollectibles,
   learnedErc721sToHints,
@@ -952,5 +953,55 @@ describe('planAssetMetadata', () => {
     const plan = planAssetMetadata([USDT], known, now)
 
     expect(plan.known.has(ADX)).toBe(false)
+  })
+})
+
+describe('getTokenAmount', () => {
+  const token = {
+    symbol: 'USDC',
+    name: 'USD Coin',
+    decimals: 6,
+    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    chainId: 1n,
+    amount: 1000n,
+    priceIn: [],
+    marketDataIn: [],
+    flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: false, isFeeToken: false }
+  }
+
+  test('returns the amount when there is nothing pending', () => {
+    expect(getTokenAmount(token)).toBe(1000n)
+  })
+
+  test('returns the amount after the simulation', () => {
+    expect(getTokenAmount({ ...token, amountPostSimulation: 400n })).toBe(400n)
+  })
+
+  test('adds what in-progress swaps and bridges will deliver', () => {
+    expect(getTokenAmount({ ...token, pendingDeliveryAmount: 500n })).toBe(1500n)
+  })
+
+  test('adds the delivery to the amount after the simulation', () => {
+    expect(
+      getTokenAmount({ ...token, amountPostSimulation: 400n, pendingDeliveryAmount: 500n })
+    ).toBe(900n)
+  })
+
+  test('subtracts what a CoW Swap order will still take', () => {
+    expect(getTokenAmount({ ...token, pendingDeliveryAmount: -300n })).toBe(700n)
+  })
+
+  test('never goes below zero', () => {
+    expect(getTokenAmount({ ...token, pendingDeliveryAmount: -3000n })).toBe(0n)
+  })
+
+  test('counts a token the account does not hold yet', () => {
+    expect(getTokenAmount({ ...token, amount: 0n, pendingDeliveryAmount: 500n })).toBe(500n)
+  })
+
+  test('ignores both the simulation and the delivery before the simulation', () => {
+    expect(
+      getTokenAmount({ ...token, amountPostSimulation: 400n, pendingDeliveryAmount: 500n }, true)
+    ).toBe(1000n)
   })
 })

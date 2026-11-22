@@ -8,6 +8,7 @@ import {
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
   getSafeGasRefundWarning,
+  getSafeTxNotShownAsCallsWarning,
   isNonceTooLow,
   isReplacementRefused,
   isTxnAlreadyKnown,
@@ -92,6 +93,54 @@ describe('getSafeDelegateCallWarning', () => {
 
   test('does not warn when accountOp.safeTx is not set', () => {
     expect(getSafeDelegateCallWarning(accountOp)).toBeNull()
+  })
+})
+
+describe('getSafeTxNotShownAsCallsWarning', () => {
+  const TARGET = '0x9999999999999999999999999999999999999999'
+
+  test('does not warn when the calls are exactly the Safe tx', () => {
+    const accOpWithSafeTx: AccountOp = {
+      ...accountOp,
+      calls: [{ to: TARGET, value: 1n, data: '0x1234' }],
+      safeTx: buildSafeTxFixture({ to: TARGET, value: '1', data: '0x1234', operation: 0 })
+    }
+
+    expect(getSafeTxNotShownAsCallsWarning(accOpWithSafeTx)).toBeNull()
+  })
+
+  test('warns when the Safe tx is a delegate call that is shown as a plain call', () => {
+    const accOpWithSafeTx: AccountOp = {
+      ...accountOp,
+      calls: [{ to: TARGET, value: 0n, data: '0x1234' }],
+      safeTx: buildSafeTxFixture({ to: TARGET, value: '0', data: '0x1234', operation: 1 })
+    }
+
+    expect(getSafeTxNotShownAsCallsWarning(accOpWithSafeTx)?.id).toBe('safeTxNotShownAsCalls')
+  })
+
+  test('has to be confirmed before signing', () => {
+    const accOpWithSafeTx: AccountOp = {
+      ...accountOp,
+      calls: [{ to: TARGET, value: 0n, data: '0x1234' }],
+      safeTx: buildSafeTxFixture({ to: TARGET, value: '0', data: '0x1234', operation: 1 })
+    }
+
+    expect(getSafeTxNotShownAsCallsWarning(accOpWithSafeTx)?.promptBefore).toEqual(['sign'])
+  })
+
+  test('warns when the calls do not send what the Safe tx sends', () => {
+    const accOpWithSafeTx: AccountOp = {
+      ...accountOp,
+      calls: [{ to: TARGET, value: 0n, data: '0x1234' }],
+      safeTx: buildSafeTxFixture({ to: TARGET, value: '1', data: '0x1234', operation: 0 })
+    }
+
+    expect(getSafeTxNotShownAsCallsWarning(accOpWithSafeTx)?.id).toBe('safeTxNotShownAsCalls')
+  })
+
+  test('does not warn when accountOp.safeTx is not set', () => {
+    expect(getSafeTxNotShownAsCallsWarning(accountOp)).toBeNull()
   })
 })
 

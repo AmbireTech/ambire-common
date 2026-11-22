@@ -7,7 +7,7 @@ import { IActivityController } from '../../interfaces/activity'
 import { Hex } from '../../interfaces/hex'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeTx } from '../../interfaces/safe'
-import { getSafeTypedData, getSafeV1TypedData } from '../../libs/signMessage/signMessage'
+import { getSafeTxTypedData } from '../../libs/signMessage/signMessage'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { getSigForCalculations } from '../estimate/estimateHelpers'
@@ -244,11 +244,12 @@ export class Safe extends BaseAccount {
    * We encapsulate the logic here
    */
   getTxnTypedData(safeTx: SafeTx) {
-    const safeVersion = this.accountState.safeVersion ?? ''
-    if (safeVersion.startsWith('1.1.') || safeVersion.startsWith('1.2'))
-      return getSafeV1TypedData(this.account.addr as Hex, safeTx)
-
-    return getSafeTypedData(this.network.chainId, this.account.addr as Hex, safeTx)
+    return getSafeTxTypedData(
+      this.network.chainId,
+      this.account.addr as Hex,
+      this.accountState.safeVersion,
+      safeTx
+    )
   }
 
   canSetCustomGasPrices(): boolean {
