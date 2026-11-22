@@ -1,11 +1,16 @@
 import { isAddress } from 'ethers'
 
+import { getSafeTxCallsFromMessage } from '../erc7730/utils'
 import { HumanizerTypedMessageFunction, HumanizerVisualization } from '../interfaces'
-import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
+import {
+  getDelegateCallWarning,
+  getSafeHumanization,
+  getSafeTxNotBrokenDownWarning
+} from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import {
-  ExpectedTypedData,
   dedupeWarnings,
+  ExpectedTypedData,
   getAction,
   getAddressVisualization,
   getBreak,
@@ -69,12 +74,19 @@ export const humanizeSafeTx: HumanizerTypedMessageFunction = (message) => {
     fullVisualization.push(...humanizedCall.fullVisualization)
   }
   const delegateCallWarnings = operation !== undefined ? getDelegateCallWarning(operation, to) : []
+  // Also for a delegate call to a contract Safe doesn't list, next to its own warning: this is the
+  // warning that has to be confirmed before signing, the same as on the sign transaction screen
+  // (which shows both too)
+  const notBrokenDownWarnings = !getSafeTxCallsFromMessage(message)
+    ? [getSafeTxNotBrokenDownWarning()]
+    : []
 
   // a delegate call warning must not hide what the call itself changes (e.g. the account's owners)
   return {
     fullVisualization,
     warnings: dedupeWarnings([
       ...delegateCallWarnings,
+      ...notBrokenDownWarnings,
       ...(safeStandardHumanization?.warnings || [])
     ])
   }

@@ -992,7 +992,8 @@ export class MainController extends EventEmitter implements IMainController {
       portfolio: this.portfolio,
       networks: this.networks,
       providers: this.providers,
-      domains: this.domains
+      domains: this.domains,
+      swapAndBridge: this.swapAndBridge
     })
 
     await this.selectedAccount.initialLoadPromise

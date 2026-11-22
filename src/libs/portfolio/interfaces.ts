@@ -1,5 +1,3 @@
-import { IRecurringTimeout } from '@/classes/recurringTimeout/recurringTimeout'
-
 import { AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Price, TokenMarketDataByCurrency } from '../../interfaces/assets'
 import { BaseAccount } from '../account/BaseAccount'
@@ -51,6 +49,13 @@ export type TokenResult = {
   pendingAmount?: bigint
   simulationAmount?: bigint
   amountPostSimulation?: bigint
+  /**
+   * The amount that the selected account's in-progress swaps and bridges will still move in
+   * (positive) or out (negative) of the token, set only on the selected account's portfolio
+   * tokens. It's part of what the user can spend (see `getTokenAmount`), so they can prepare
+   * transactions with tokens that are on their way. See `getPendingDeliveries`.
+   */
+  pendingDeliveryAmount?: bigint
   priceIn: Price[]
   marketDataIn: TokenMarketDataByCurrency[]
   meta?: {
@@ -777,6 +782,11 @@ export type PendingAmounts = {
   pendingBalance: bigint
   pendingToBeSigned?: bigint
   pendingToBeConfirmed?: bigint
+  /**
+   * The amount that in-progress swaps and bridges will still move in (positive) or out
+   * (negative) of the account after its transaction was mined. See `getPendingDeliveries`.
+   */
+  pendingDelivery?: bigint
 }
 
 export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
@@ -785,6 +795,7 @@ export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
   pendingBalanceUSDFormatted?: string
   pendingToBeSignedFormatted?: string
   pendingToBeConfirmedFormatted?: string
+  pendingDeliveryFormatted?: string
 }
 
 export type KnownTokenInfo = {
