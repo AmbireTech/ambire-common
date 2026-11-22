@@ -11,6 +11,7 @@ import {
   SAFE_PROXY_V1_4_1_RUNTIME_CODE
 } from '../../../controllers/erc7730/testDescriptors'
 import { AccountOp } from '../../accountOp/accountOp'
+import { BindedRelayerCall } from '../../relayerCall/relayerCall'
 import { resolveErc7730Call } from './registry'
 import { EMPTY_ERC7730_KNOWN } from './types'
 
@@ -161,7 +162,7 @@ describe('ERC-7730 registry cache', () => {
   test('reuses a cached descriptor resource for the same relayer path', async () => {
     const contractAddress = '0x5555555555555555555555555555555555555555'
     const registryPath = 'registry/test/shared-descriptor-cache.json'
-    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
+    const callRelayer = jest.fn<BindedRelayerCall>(async (path, method, body) => {
       if (path === '/v2/erc7730/account-op') {
         expect(method).toBe('GET')
 
@@ -563,7 +564,7 @@ describe('ERC-7730 registry cache', () => {
           chainId: 8453
         },
         message: {
-          to: '0x8d80ff0a632a8a7ba2e219e2c4b79f8f3cd2d81b',
+          to: '0x9641d764fc13c8b624c04430c7356c1c7c8102e2',
           value: '0',
           data: multiSendData,
           operation: 1,

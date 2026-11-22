@@ -1767,6 +1767,61 @@ describe('RequestsController ', () => {
     })
   })
 
+  test('keeps an open Safe transaction when the Safe API returns other details for it', async () => {
+    const { controller } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const reviewedRecipient = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const otherRecipient = '0x1111111111111111111111111111111111111111'
+    const firstSigner = new Wallet(`0x${'1'.repeat(64)}`)
+    const secondSigner = new Wallet(`0x${'2'.repeat(64)}`)
+    const confirmation = (signer: Wallet): SafeMultisigConfirmationResponse => ({
+      owner: signer.address,
+      signature: signer.signingKey.sign(SAFE_TX_HASH).serialized,
+      signatureType: 'EOA',
+      submissionDate: '2026-08-18T00:00:00Z'
+    })
+    const buildSafeRequest = (to: string, confirmations: SafeMultisigConfirmationResponse[]) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [{ to, value: 1n, data: '0x' }],
+            meta: {
+              accountAddr,
+              chainId: 1n,
+              safeTxnProps: {
+                txnId: SAFE_TX_HASH,
+                signature: `0x${confirmations.map(({ signature }) => signature.slice(2)).join('')}`,
+                nonce: 0n
+              },
+              safeTx: {
+                ...getSafeTx(0)!,
+                to,
+                value: '1',
+                safeTxHash: SAFE_TX_HASH,
+                confirmations
+              }
+            }
+          }
+        }
+      })
+
+    await buildSafeRequest(reviewedRecipient, [confirmation(firstSigner)])
+    // Same Safe txn hash, other recipient, and one more signature to take
+    await buildSafeRequest(otherRecipient, [confirmation(firstSigner), confirmation(secondSigner)])
+
+    expect(controller.userRequests).toHaveLength(1)
+    const request = controller.userRequests[0]
+    if (request?.kind !== 'calls') throw new Error('Expected a calls request')
+    const { accountOp } = request.signAccountOp
+    expect(accountOp.safeTx?.to).toBe(reviewedRecipient)
+    expect(accountOp.calls.map(({ to }) => to)).toEqual([reviewedRecipient])
+    expect(accountOp.signed).toEqual([firstSigner.address])
+
+    request.signAccountOp.destroy()
+  })
+
   test('emits completed humanization for a Safe transaction already in the queue', async () => {
     const { controller } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
