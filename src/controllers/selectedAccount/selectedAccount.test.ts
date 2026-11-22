@@ -8,6 +8,7 @@ import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { defiPositionsOnDisabledNetworksBannerId } from '../../libs/banners/banners'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import * as keystoreLib from '../../libs/keystore/keystore'
@@ -99,6 +100,7 @@ const prepareTest = async () => {
     networksCtrl: mainCtrl.networks,
     autoLoginCtrl: mainCtrl.autoLogin,
     accountsCtrl: mainCtrl.accounts,
+    swapAndBridgeCtrl: mainCtrl.swapAndBridge,
     storage: mainCtrl.storage
   }
 }
@@ -319,6 +321,66 @@ describe('SelectedAccount Controller', () => {
 
     expect(getMobileInviteKeySpy).toHaveBeenCalledWith(accountAddr)
     expect(selectedAccountCtrl.portfolio.mobileInviteKey).toBe(mobileInviteKey)
+  })
+
+  it('the tokens get what in-progress swaps and bridges will deliver, without changing the totals', async () => {
+    const { selectedAccountCtrl, portfolioCtrl, swapAndBridgeCtrl } = await prepareTest()
+    const accountAddr = accounts[0]!.addr
+
+    await portfolioCtrl.updateSelectedAccount(accountAddr, [ethereum])
+    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+    const deliveredToken = selectedAccountCtrl.portfolio.tokens.find(
+      (token) => !token.flags.onGasTank && !token.flags.rewardsType
+    )!
+    expect(deliveredToken).toBeDefined()
+    const totalBalanceBefore = selectedAccountCtrl.portfolio.totalBalance
+
+    // A bridge to the token. Its transaction isn't in the activity, so its status check stops early
+    const bridgeToToken = {
+      activeRouteId: 'bridge-to-token',
+      routeStatus: 'in-progress',
+      userTxHash: 'bridge-to-token-source-transaction',
+      identifiedBy: null,
+      sender: accountAddr,
+      fromAssetAddress: '0x0000000000000000000000000000000000000000',
+      toAssetAddress: deliveredToken.address,
+      steps: [],
+      route: {
+        providerId: 'lifi',
+        // Another network than the token's, so it's a bridge
+        fromChainId: deliveredToken.chainId === 10n ? 1 : 10,
+        toChainId: Number(deliveredToken.chainId),
+        fromAmount: '1',
+        toAmount: '1000',
+        steps: [],
+        // Read for the service time when the route's status poll starts
+        userTxs: []
+      }
+    } as unknown as SwapAndBridgeActiveRoute
+    swapAndBridgeCtrl.activeRoutes = [bridgeToToken]
+    await swapAndBridgeCtrl.forceEmitUpdate()
+    // The portfolio is rebuilt on the next tick
+    await wait(1)
+
+    const tokenWithDelivery = selectedAccountCtrl.portfolio.tokens.find(
+      (token) =>
+        token.address === deliveredToken.address &&
+        token.chainId === deliveredToken.chainId &&
+        !token.flags.onGasTank &&
+        !token.flags.rewardsType
+    )
+    expect(tokenWithDelivery?.pendingDeliveryAmount).toBe(1000n)
+    expect(selectedAccountCtrl.portfolio.totalBalance).toBe(totalBalanceBefore)
+
+    swapAndBridgeCtrl.activeRoutes = []
+    await swapAndBridgeCtrl.forceEmitUpdate()
+    await wait(1)
+
+    const tokenAfterDelivery = selectedAccountCtrl.portfolio.tokens.find(
+      (token) => token.address === deliveredToken.address && token.chainId === deliveredToken.chainId
+    )
+    expect(tokenAfterDelivery?.pendingDeliveryAmount).toBeUndefined()
   })
 
   describe('Privacy Pools account', () => {
