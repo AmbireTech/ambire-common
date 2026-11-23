@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-19",
+  "updatedAt": "2026-11-23",
   "source": "https://api.morpho.org/graphql (markets, vaults and vaultV2s with listed: true)",
   "markets": {
     "1": [
@@ -86,6 +86,10 @@
       {
         "id": "0x143b1f6f4bb25d373c6c438865c4d4d875838181d20b3a4a03e7026780e505f5",
         "name": "LBTC / WBTC"
+      },
+      {
+        "id": "0x14a3542032467830835944d1b7c8c989f1560bace13c67d896ee06cc544bc403",
+        "name": "cbBTC / wARS"
       },
       {
         "id": "0x1590cb22d797e226df92ebc6e0153427e207299916e7e4e53461389ad68272fb",
@@ -216,12 +220,20 @@
         "name": "cbBTC / WETH"
       },
       {
+        "id": "0x2f48b1139f096d8c352eca5b0ec832977af3a565ebfd9b45dc7f1ac1532c28d7",
+        "name": "WBTC / wARS"
+      },
+      {
         "id": "0x2f4ea313fb7df23a82c19d95e8b90acc8179bd053e0d9ef745cdf28d6a49499c",
         "name": "cbBTC / USDS"
       },
       {
         "id": "0x30d99308a5f2f4673b2cc5ad1718c731e6c790e20e26d23611f6e8d3422bda41",
         "name": "WETH / RLUSD"
+      },
+      {
+        "id": "0x317917c5684baebf016a4ce8b34834312db1eb218b61697a367094d9df91200a",
+        "name": "USDC / wARS"
       },
       {
         "id": "0x31a277fde40c1bd37dd00cb2167fe1d5831b450efecc63323679228a101e9979",
@@ -600,6 +612,10 @@
         "name": "srRoyUSDC / AUSD"
       },
       {
+        "id": "0x7927e12bce3393ad1e8d4fedd27b2c16a518f3bbf19a04d3b363e6c72a9f0796",
+        "name": "sUSDS / wARS"
+      },
+      {
         "id": "0x7a25fb17b8bd83a934ad87d9d1725188fc129992ca816f3145b4ab7f673c98c3",
         "name": "wstETH / EURCV"
       },
@@ -650,6 +666,10 @@
       {
         "id": "0x82053fe2fc3a3d6cb856458948e9c3589e76f20f3a2079606739b517587267ce",
         "name": "cbBTC / EURCV"
+      },
+      {
+        "id": "0x837ce7bf66ee4d88ff9731c33e5dc48c31a66d263f106a5389d0b9923c4b8fc2",
+        "name": "USDT / wARS"
       },
       {
         "id": "0x85252bb8485c99bba46fe149c7dd2aad83672640f53c630890673cf1848ba16e",
@@ -774,6 +794,10 @@
       {
         "id": "0x9a8dab6de1059e6dc66c34b358764b70effb289e514e237f3161ffb09eaaf24f",
         "name": "PT-sUSDS-26NOV2026 / USDS"
+      },
+      {
+        "id": "0x9b633062d057927fed4e8631409b82573128969d7c611a5d16c9323eed1b4d31",
+        "name": "WETH / wARS"
       },
       {
         "id": "0x9b966d26e14749cdf3be6fcf44ef404f1428b3c2f8c9e9a5172437e440597715",
@@ -932,10 +956,6 @@
         "name": "WOUSD / USDC"
       },
       {
-        "id": "0xad73d5e139a939a0c7dc7b821e5a103a3a9cf45c4352b373b1dabc421c7f3d59",
-        "name": "sUSDD / USDC"
-      },
-      {
         "id": "0xae992849c5f544a32dfdfcc74c0695b73b8732f449727827af6ce3768e968382",
         "name": "PT-fxSAVE-29OCT2026 / USDC"
       },
@@ -998,6 +1018,10 @@
       {
         "id": "0xb62aac664f81d19f21a158aa0373967ef60fd1ac8de4a9091bd225c007973ca6",
         "name": "PT-sNUSD-4JUN2026 / USDC"
+      },
+      {
+        "id": "0xb71e16105cf820ad25ace44882e9dd163f17134e965021eb1436f9dcdad87072",
+        "name": "wstETH / wARS"
       },
       {
         "id": "0xb7843fe78e7e7fd3106a1b939645367967d1f986c2e45edb8932ad1896450877",
@@ -1566,10 +1590,6 @@
         "name": "rETH / EURC"
       },
       {
-        "id": "0x05a8eb4a91e08c155c2e46120988bc4faf9a07e1fb77af78ea9be2359f856887",
-        "name": "PT-siUSD-7JAN2027-(ETH) / USDC"
-      },
-      {
         "id": "0x09276541cfecb6920a80679a1deced4dde3ae64bf5fc2c9c1f9c21e0c152e1a5",
         "name": "JitoSOL / USDC"
       },
@@ -1768,6 +1788,10 @@
       {
         "id": "0x6ade8e4797a3e8fdf1faa832e8e524a3fbf4518465b96e08db0368ab95dfddb0",
         "name": "WETH / VCHF"
+      },
+      {
+        "id": "0x6b18063dad27c7493f47350f7c066f430e004feb78d00e9b1d46d6b5098fee92",
+        "name": "VVV / USDC"
       },
       {
         "id": "0x6b61d4738919b56fff396c9bb29c61af495aa24efc1aca80f2563c34a6556312",
@@ -3016,6 +3040,10 @@
       {
         "address": "0xc1256Ae5FF1cf2719D4937adb3bbCCab2E00A2Ca",
         "name": "Moonwell Flagship USDC"
+      },
+      {
+        "address": "0xcC4e96a59599A121014CB3351eaAc44020ACeD29",
+        "name": "Re7 Venice ecosystem USDC"
       },
       {
         "address": "0xdbA76Bc542bb07538e046B40F2e8a215B409F7A8",
