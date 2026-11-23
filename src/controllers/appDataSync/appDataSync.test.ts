@@ -449,6 +449,29 @@ describe('AppDataSyncController', () => {
   describe('Negative cases', () => {
     suppressConsoleBeforeEach()
 
+    test('adds the accounts and reports the contacts alone when saving the contacts fails', async () => {
+      const exportingDevice = await makeExportingDevice()
+      await exportingDevice.addressBook.addContact('Bob', NEW_CONTACT_ADDR)
+      const payload = await exportPayload(exportingDevice, [accounts[0]!.addr], {
+        includeSeeds: true,
+        includeNetworks: false,
+        includeContacts: true
+      })
+
+      const importingDevice = await makeImportingDevice({ withPassword: true })
+      jest
+        .spyOn(importingDevice.addressBook, 'mergeContacts')
+        .mockRejectedValueOnce(new Error('storage failure'))
+      await syncAndAdd(importingDevice, payload)
+
+      expect(importingDevice.accountPicker.emittedErrors).toHaveLength(0)
+      expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([accounts[0]!.addr])
+      expect(importingDevice.keystore.keys.map((k) => k.addr)).toEqual([accounts[0]!.addr])
+      expect(importingDevice.appDataSync.emittedErrors.at(-1)?.message).toBe(
+        'Your accounts were added, but the contacts from your other device could not be saved. Please sync again to add them.'
+      )
+    })
+
     test('adds no accounts when the password of the other device is wrong', async () => {
       const exportingDevice = await makeExportingDevice()
       const payload = await exportPayload(exportingDevice, [accounts[0]!.addr])

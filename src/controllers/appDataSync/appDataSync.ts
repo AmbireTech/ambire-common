@@ -211,13 +211,29 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
       const mergeContacts = async () => {
         if (contacts) await this.#addressBook.mergeContacts(contacts)
       }
+      // Runs once the accounts are added, so a failure here must not read as if adding them failed
+      const mergeContactsAfterAccounts = async () => {
+        try {
+          await mergeContacts()
+        } catch (error) {
+          this.emitError({
+            level: 'major',
+            message:
+              'Your accounts were added, but the contacts from your other device could not be saved. Please sync again to add them.',
+            error:
+              error instanceof Error
+                ? error
+                : new Error('appDataSync: failed to merge the contacts')
+          })
+        }
+      }
       if (accounts.length) {
         // What comes from the other product overrides what is here, the names included
         await this.#accountPicker.prepareAccounts({
           accounts,
           keys,
           seeds,
-          onAdded: mergeContacts,
+          onAdded: mergeContactsAfterAccounts,
           shouldOverridePreferences: true
         })
       } else {
