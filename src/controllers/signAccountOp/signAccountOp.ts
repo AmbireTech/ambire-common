@@ -3585,7 +3585,9 @@ export class SignAccountOpController
       for (let i = 0; i < speeds.length; i++) {
         // we have two prices:
         // receivedPrices, from old lib/bundler
-        // and increasedPrices, which we use for the fee only
+        // and increasedPrices, which we use for the fee only on bundler
+        // broadcasts. On broadcasts by an EOA, increasedPrices are also
+        // signed in the txn, so the fee amount uses them as well
         const speed = speeds[i] as FeeSpeed
         const receivedPrices = gasPrices[speed]
         const increasedPrices = increasedGasPrices[speed]
@@ -3617,7 +3619,10 @@ export class SignAccountOpController
           simulatedGasLimit = getGasLimitWithOverheadForSelfEOA(gasUsed, this.accountOp.calls)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
-          amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
+          // the txn is signed with gasPrice as maxFeePerGas and the network requires
+          // the sender to hold gasLimit * maxFeePerGas upfront, so the fee amount
+          // (which is checked against the balance) must use the same price
+          amountGasPrice = gasPrice
 
           this.accountOp.calls.forEach((call) => {
             if (call.to && getAddress(call.to) === SINGLETON) {
@@ -3630,7 +3635,8 @@ export class SignAccountOpController
           simulatedGasLimit = getGasLimitWithOverhead(gasUsed)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
-          amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
+          // the paying EOA must hold gasLimit * maxFeePerGas upfront
+          amountGasPrice = gasPrice
         } else {
           // Relayer
           simulatedGasLimit = gasUsed + option.gasUsed

@@ -6112,6 +6112,32 @@ describe('RPC gas prices with a bundler fallback', () => {
     controller.update({ feeToken: nativeFeeTokenPolygon, paidBy: eoaAccount.addr })
     expect(controller.selectedOptionGasPrices).toEqual(bundlerGasPrices)
   })
+
+  test('an EOA paying for the fee is charged the gas price it signs, so the balance check matches what the network requires', async () => {
+    const { controller } = await initSmartAccount(137n, nativeFeeTokenPolygon, smartAccount)
+
+    const speedTypes = [FeeSpeed.Slow, FeeSpeed.Medium, FeeSpeed.Fast, FeeSpeed.Ape]
+    speedTypes.forEach((speedType) => {
+      const speed = getSpeed(controller, eoaAccount.addr, speedType, nativeFeeTokenPolygon)
+      // the network requires the sender to hold gasLimit * maxFeePerGas upfront
+      expect(speed.amount).toBe(speed.simulatedGasLimit * speed.gasPrice)
+    })
+
+    // the bundler prices are increased for the faster speeds and the increased ones are signed,
+    // so the fee amount must not use the lower, original bundler price
+    const fast = getSpeed(controller, eoaAccount.addr, FeeSpeed.Fast, nativeFeeTokenPolygon)
+    expect(fast.gasPrice).toBeGreaterThan(BigInt(bundlerGasPrices.fast.maxFeePerGas))
+    expect(fast.amount).toBeGreaterThan(
+      fast.simulatedGasLimit * BigInt(bundlerGasPrices.fast.maxFeePerGas)
+    )
+  })
+
+  test('the account paying through the bundler still signs the original bundler gas price', async () => {
+    const { controller } = await initSmartAccount(137n, nativeFeeTokenPolygon, smartAccount)
+
+    const fast = getSpeed(controller, smartAccount.addr, FeeSpeed.Fast, nativeFeeTokenPolygon)
+    expect(fast.gasPrice).toBe(BigInt(bundlerGasPrices.fast.maxFeePerGas))
+  })
 })
 
 describe('Safe fee payer after the payers get funded', () => {
