@@ -1030,6 +1030,15 @@ export class MainController extends EventEmitter implements IMainController {
 
   lock() {
     this.keystore.lock()
+    // A prepared flow holds its keys (and a sync's recovery phrases) unencrypted until added,
+    // so it ends with the lock. After unlocking, the personalize step has nothing to add.
+    this.accountPicker.reset().catch((error) => {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to reset the account picker on lock',
+        error
+      })
+    })
     void this.ui.syncViewRoutes()
     this.emailVault?.cleanMagicAndSessionKeys()
     this.selectedAccount.setDashboardNetworkFilter(null)

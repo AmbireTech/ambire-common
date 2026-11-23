@@ -896,6 +896,54 @@ describe('Main Controller ', () => {
       expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(true)
     })
 
+    test('drops the prepared accounts, keys and recovery phrases on lock', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      const wallet = Wallet.createRandom()
+      const syncedSeedId = 'synced-seed-id'
+      const syncedAccount = {
+        addr: wallet.address,
+        associatedKeys: [wallet.address],
+        initialPrivileges: [],
+        creation: null,
+        preferences: { label: 'Synced', pfp: wallet.address }
+      }
+      await picker.prepareAccounts({
+        accounts: [syncedAccount],
+        keys: {
+          internal: [
+            {
+              addr: wallet.address,
+              type: 'internal',
+              label: 'Synced key',
+              privateKey: wallet.privateKey,
+              dedicatedToOneSA: false,
+              meta: { createdAt: Date.now(), fromSeedId: syncedSeedId }
+            }
+          ],
+          external: []
+        },
+        seeds: [{ id: syncedSeedId, seed: wallet.mnemonic!.phrase }]
+      })
+      expect(picker.readyToAddAccounts).toEqual([syncedAccount])
+
+      const isReset = new Promise<void>((resolve) => {
+        const unsubscribe = picker.onUpdate(() => {
+          if (picker.readyToAddAccounts.length) return
+          unsubscribe()
+          resolve()
+        })
+      })
+      mainCtrl.lock()
+      await isReset
+
+      expect(picker.isInitialized).toBe(false)
+      // Proceeding after unlocking adds nothing from before the lock
+      await mainCtrl.keystore.unlockWithSecret('password', '12345678')
+      await picker.addPreparedAccounts()
+      expect(snapshot()).toEqual(before)
+    })
+
     test('never sends the private keys of the prepared accounts to the UI', async () => {
       const { picker } = await prepareNewSeedFlow()
       await picker.init()
