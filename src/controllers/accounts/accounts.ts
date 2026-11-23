@@ -605,6 +605,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     const updatedAccounts = [...this.accounts]
     const [movedAccount] = updatedAccounts.splice(fromIndex, 1)
+    if (!movedAccount) return
     updatedAccounts.splice(toIndex, 0, movedAccount)
 
     this.accounts = getUniqueAccountsArray(updatedAccounts)
@@ -623,7 +624,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   // the account state to be fetched only for it to haven't been.
   // This ensures production doesn't blow up and it 99.9% of cases it
   // should not call the promise
-  async getOrFetchAccountStates(addr: string): Promise<{ [chainId: string]: AccountOnchainState }> {
+  async getOrFetchAccountStates(
+    addr: string
+  ): Promise<{ [chainId: string]: AccountOnchainState } | undefined> {
     if (!this.accountStates[addr]) await this.updateAccountState(addr, 'latest')
     return this.accountStates[addr]
   }
@@ -737,7 +740,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
           ? account.initialPrivileges
           : // default initialPrivileges, Ambire v2 accounts always have these
             // privileges, because key management for them got never implemented.
-            [[account.associatedKeys[0], dedicatedToOneSAPriv]],
+            account.associatedKeys
+              .slice(0, 1)
+              .map((key): [string, string] => [key, dedicatedToOneSAPriv]),
         creation: {
           factoryAddr: account.creation!.factoryAddr,
           salt: account.creation!.salt,
