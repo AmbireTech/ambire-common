@@ -19,6 +19,8 @@ import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { ISafeController, SafeAccountByOwner } from '../../interfaces/safe'
 import { IStorageController } from '../../interfaces/storage'
 import {
+  addMessage,
+  addMessageSignature,
   ExtendedSafeMessage,
   fetchAllPending,
   fetchExecutedTransactions,
@@ -41,6 +43,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { onFeatureFlagChange } from '../featureFlags/onFeatureFlagChange'
 
 import type { SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
+import type { EIP712TypedData } from '@safe-global/types-kit'
 
 const SAFE_OWNER_SEARCH_TTL = 5 * 60 * 1000
 const SAFE_OWNER_SEARCH_DEBOUNCE = 3 * 1000
@@ -72,6 +75,8 @@ export class SafeController extends EventEmitter implements ISafeController {
   #providers: IProvidersController
 
   #featureFlags: IFeatureFlagsController
+
+  #onSafeApiSettingChangeUnsubscribe?: () => void
 
   /**
    * The last time a request to fetch pending Safe txns was made, per Safe
@@ -134,12 +139,16 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.#keystore = keystore
     this.#featureFlags = featureFlags
     // Opted out of the Safe API: the counts would never refresh again, so drop them
-    onFeatureFlagChange(featureFlags, 'safeApi', (isEnabled) => {
-      if (isEnabled) return
-      this.pendingCountBySafe = {}
-      this.#pendingFetchedAt = {}
-      this.emitUpdate()
-    })
+    this.#onSafeApiSettingChangeUnsubscribe = onFeatureFlagChange(
+      featureFlags,
+      'safeApi',
+      (isEnabled) => {
+        if (isEnabled) return
+        this.pendingCountBySafe = {}
+        this.#pendingFetchedAt = {}
+        this.emitUpdate()
+      }
+    )
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -191,6 +200,8 @@ export class SafeController extends EventEmitter implements ISafeController {
           .catch(() => ({ chainId: n.chainId, code: '0x' }))
       )
     )
+    // Opted out while the networks were checked: the rest of the search asks the Safe API
+    if (!this.#isSafeApiEnabled) return
     const deployedOn = codes.find((c) => c.code && c.code !== '0x')
     if (!deployedOn) {
       this.importError = {
@@ -321,6 +332,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.emitUpdate()
 
     for (let i = 0; i < safeNetworks.length; i += SAFE_API_BATCH_SIZE) {
+      if (this.#stopOwnerSearchIfOptedOut(owner)) return
       const networkBatch = safeNetworks.slice(i, i + SAFE_API_BATCH_SIZE)
       const batchResults = await Promise.allSettled(
         networkBatch.map(async (network) => {
@@ -364,6 +376,7 @@ export class SafeController extends EventEmitter implements ISafeController {
         ([address]) => !accountsByAddress.has(address)
       )
       for (let safeIndex = 0; safeIndex < newSafeEntries.length; safeIndex += SAFE_API_BATCH_SIZE) {
+        if (this.#stopOwnerSearchIfOptedOut(owner)) return
         const safeBatch = newSafeEntries.slice(safeIndex, safeIndex + SAFE_API_BATCH_SIZE)
         const safeAccounts = await Promise.all(
           safeBatch.map(([, safeData]) =>
@@ -418,6 +431,19 @@ export class SafeController extends EventEmitter implements ISafeController {
       status: 'DONE'
     }
     this.emitUpdate()
+  }
+
+  /**
+   * Stops an owner search the user opted out of the Safe API during, as each of its next steps
+   * asks it. Its results so far are dropped, so turning sync back on searches again in full.
+   * Returns whether the search was stopped
+   */
+  #stopOwnerSearchIfOptedOut(owner: Hex): boolean {
+    if (this.#isSafeApiEnabled) return false
+
+    delete this.safeOwnerSearches[owner]
+    this.emitUpdate()
+    return true
   }
 
   getMessageId(msg: SafeMessage): string {
@@ -584,6 +610,8 @@ export class SafeController extends EventEmitter implements ISafeController {
     if (!this.#isSafeApiEnabled) return null
 
     const verifiedPending = await this.#verifyPending(safeAddr, pending, networks)
+    // Checked again, as verifying them waits for the network too
+    if (!this.#isSafeApiEnabled) return null
     const visiblePending = this.#filterOutHidden(verifiedPending, safeAddr)
     this.#setPendingCounts(safeAddr, visiblePending)
     return visiblePending
@@ -791,6 +819,68 @@ export class SafeController extends EventEmitter implements ISafeController {
       messages.push(verifiedMsg)
     }
     return messages
+  }
+
+  /**
+   * Adds a Safe message with its first owner signature to the Safe API, so the other owners can
+   * sign it too. Nothing is sent while the user opted out of the Safe API. A failure is only
+   * logged, as the signature is kept in the wallet either way
+   */
+  async addMsgToSafeGlobal({
+    chainId,
+    safeAddr,
+    message,
+    signature,
+    origin
+  }: {
+    chainId: bigint
+    safeAddr: Hex
+    message: string | EIP712TypedData
+    signature: string
+    /** The requesting dapp, so the other owners see where the request came from */
+    origin?: string
+  }) {
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#isSafeApiEnabled) return
+
+    await withTimeout(() => addMessage(chainId, safeAddr, message, signature, origin), {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    }).catch((e) => {
+      console.log('failed to send message to Safe Global: ', e)
+    })
+  }
+
+  /**
+   * Adds another owner signature to a Safe message the Safe API already has. Nothing is sent
+   * while the user opted out of the Safe API. A failure is only logged, as the signature is kept
+   * in the wallet either way
+   */
+  async addSigToSafeGlobal({
+    chainId,
+    messageHash,
+    signature
+  }: {
+    chainId: bigint
+    messageHash: string
+    signature: string
+  }) {
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#isSafeApiEnabled) return
+
+    await withTimeout(() => addMessageSignature(chainId, messageHash, signature), {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe API: add message signature timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    }).catch((e) => {
+      console.log('failed to send message to Safe Global: ', e)
+    })
+  }
+
+  destroy() {
+    super.destroy()
+    // Once only: a second call would remove another listener of the feature flags
+    this.#onSafeApiSettingChangeUnsubscribe?.()
+    this.#onSafeApiSettingChangeUnsubscribe = undefined
   }
 
   toJSON() {
