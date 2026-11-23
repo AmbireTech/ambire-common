@@ -156,9 +156,7 @@ describe('Aave v4 positions', () => {
       expect(position.additionalData.positionInUSD).toBe(0)
     })
     test('returns null for shares worth nothing (dust left after a withdrawal)', () => {
-      expect(
-        getAaveV4SpokePosition(spokeResult({ reserves: [reserve()] }), MAIN_SPOKE)
-      ).toBeNull()
+      expect(getAaveV4SpokePosition(spokeResult({ reserves: [reserve()] }), MAIN_SPOKE)).toBeNull()
     })
   })
 
@@ -229,9 +227,7 @@ describe('Aave v4 positions', () => {
     ])('returns null for an account without positions on %s', async (_, rpcNoStateOverride) => {
       const network: Network = { ...ethereum, rpcNoStateOverride }
 
-      expect(
-        await getAaveV4Positions(Wallet.createRandom().address, provider, network)
-      ).toBeNull()
+      expect(await getAaveV4Positions(Wallet.createRandom().address, provider, network)).toBeNull()
     })
   })
 })

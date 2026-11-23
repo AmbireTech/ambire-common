@@ -129,7 +129,10 @@ describe('ProvidersController', () => {
       mockPortfolioLookup()
       const { providersController, sendUiMessage } = await getProvidersController(jest.fn() as any)
 
-      await providersController.resolveAssetInfoAndSendResToUi({ address: WETH, network }, requestId)
+      await providersController.resolveAssetInfoAndSendResToUi(
+        { address: WETH, network },
+        requestId
+      )
       await new Promise((resolve) => {
         setTimeout(resolve, 600)
       })
@@ -170,7 +173,10 @@ describe('ProvidersController', () => {
       const { providersController } = await getProvidersController(jest.fn() as any)
       const setProviderSpy = jest.spyOn(providersController, 'setProvider')
 
-      await providersController.resolveAssetInfoAndSendResToUi({ address: WETH, network }, requestId)
+      await providersController.resolveAssetInfoAndSendResToUi(
+        { address: WETH, network },
+        requestId
+      )
       await new Promise((resolve) => {
         setTimeout(resolve, 600)
       })

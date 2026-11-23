@@ -3642,12 +3642,10 @@ describe('RequestsController ', () => {
     // from storage they are the defaults, where the Safe API is on
     let hasLoadedFlags = false
     const isFeatureEnabled = mainCtrl.featureFlags.isFeatureEnabled.bind(mainCtrl.featureFlags)
-    jest
-      .spyOn(mainCtrl.featureFlags, 'isFeatureEnabled')
-      .mockImplementation((flag) =>
-        // on until loaded, then the user's stored opt-out
-        flag === 'safeApi' ? !hasLoadedFlags : isFeatureEnabled(flag)
-      )
+    jest.spyOn(mainCtrl.featureFlags, 'isFeatureEnabled').mockImplementation((flag) =>
+      // on until loaded, then the user's stored opt-out
+      flag === 'safeApi' ? !hasLoadedFlags : isFeatureEnabled(flag)
+    )
     let finishLoadingFlags = () => {}
     mainCtrl.featureFlags.initialLoadPromise = new Promise<void>((resolve) => {
       finishLoadingFlags = () => {

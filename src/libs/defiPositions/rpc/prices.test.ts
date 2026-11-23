@@ -91,9 +91,7 @@ describe('updatePositionsByProviderAssetPrices', () => {
     })
 
     expect(error).toBeNull()
-    expect(getTokenData).toHaveBeenCalledWith(
-      expect.objectContaining({ tokenAddresses: [USDC] })
-    )
+    expect(getTokenData).toHaveBeenCalledWith(expect.objectContaining({ tokenAddresses: [USDC] }))
     const [weth, usdc] = positionsByProvider[0]!.positions[0]!.assets
     expect(weth!.priceIn).toEqual(debankPrice)
     expect(usdc!.priceIn).toEqual({ baseCurrency: 'usd', price: 2 })
@@ -311,7 +309,10 @@ describe('updatePositionsByProviderAssetPrices', () => {
 
     const { positionsByProvider } = await updatePositionsByProviderAssetPrices(tokenPrices, {
       network: ethereum,
-      positionsByProvider: [provider('AAVE v3', [asset(AAVE_TOKEN)]), provider('Uniswap V3', [asset(USDC)])]
+      positionsByProvider: [
+        provider('AAVE v3', [asset(AAVE_TOKEN)]),
+        provider('Uniswap V3', [asset(USDC)])
+      ]
     })
 
     expect(getTokenData).toHaveBeenCalledTimes(1)

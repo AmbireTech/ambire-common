@@ -328,17 +328,21 @@ describe('Morpho positions', () => {
     })
 
     test('has only unique, well-formed market ids', () => {
-      Object.keys(MORPHO).map(getListedMarketIds).forEach((marketIds) => {
-        expect(new Set(marketIds.map((id) => id.toLowerCase())).size).toBe(marketIds.length)
-        marketIds.forEach((id) => expect(isHex(id) && id.length === 66).toBe(true))
-      })
+      Object.keys(MORPHO)
+        .map(getListedMarketIds)
+        .forEach((marketIds) => {
+          expect(new Set(marketIds.map((id) => id.toLowerCase())).size).toBe(marketIds.length)
+          marketIds.forEach((id) => expect(isHex(id) && id.length === 66).toBe(true))
+        })
     })
 
     test('has only unique, well-formed vault addresses', () => {
-      Object.keys(MORPHO).map(getListedVaultAddrs).forEach((vaults) => {
-        expect(new Set(vaults.map((addr) => addr.toLowerCase())).size).toBe(vaults.length)
-        vaults.forEach((addr) => expect(isAddress(addr, { strict: false })).toBe(true))
-      })
+      Object.keys(MORPHO)
+        .map(getListedVaultAddrs)
+        .forEach((vaults) => {
+          expect(new Set(vaults.map((addr) => addr.toLowerCase())).size).toBe(vaults.length)
+          vaults.forEach((addr) => expect(isAddress(addr, { strict: false })).toBe(true))
+        })
     })
   })
 
