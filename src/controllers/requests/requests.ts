@@ -975,6 +975,30 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     return broadcastOps.some(isSameSafeTxn)
   }
 
+  /**
+   * Whether a Safe nonce is already used: the account state says so, or a transaction this
+   * device sent got onchain with that nonce (or a later one) before the account state was
+   * refreshed. The Safe API keeps listing a confirmed transaction as pending for a moment, so
+   * without the second check it would be queued again until the account state catches up
+   */
+  #isSafeNonceUsed(
+    accountAddr: string,
+    chainId: bigint,
+    safeNonce: bigint,
+    accountStateNonce: bigint
+  ): boolean {
+    if (safeNonce < accountStateNonce) return true
+
+    return this.#activity.getAccountOpsForAccount({ accountAddr, sortAccOps: false }).some((op) => {
+      // A Safe deploy only calls the factory, so it doesn't use the Safe nonce
+      if (op.chainId !== chainId || op.status !== AccountOpStatus.Success || op.meta?.isSafeDeploy)
+        return false
+
+      const opNonce = getAccountOpNonce(op)
+      return opNonce !== null && opNonce >= safeNonce
+    })
+  }
+
   #getSafeDeployRequest(accountAddr: string, chainId: bigint): CallsUserRequest | undefined {
     return this.userRequests.find(
       (r): r is CallsUserRequest =>
@@ -4096,7 +4120,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       // do not build requests for expired Safe txns
-      if (meta.safeTxnProps && meta.safeTxnProps.nonce < accountState.nonce) return
+      if (
+        meta.safeTxnProps &&
+        this.#isSafeNonceUsed(
+          meta.accountAddr,
+          meta.chainId,
+          meta.safeTxnProps.nonce,
+          accountState.nonce
+        )
+      )
+        return
 
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
