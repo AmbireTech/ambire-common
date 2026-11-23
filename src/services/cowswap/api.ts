@@ -906,8 +906,10 @@ export class CowSwapAPI implements SwapProvider {
    * Today's market for selling `sellAmount` of `sellToken` for `buyToken`, the reference of a
    * limit order. `sellToken` is the zero address for the native token, which is sold through
    * the ETH-flow contract. Returns:
-   * - `buyAmountBeforeFees` - what the sell amount is worth at the market price, before any fee.
-   *   The price the user sets is compared to this one, as it's the price the order fills at
+   * - `marketBuyAmount` - what the sell amount gets at the market price after CoW Swap's network
+   *   cost and protocol fee, before the Ambire fee. Today's price for a limit order: the price the
+   *   user sets is compared to this one, as it's what the order really gets at that price. For a
+   *   small amount the network cost is a large share of it, so it's left in rather than added back
    * - `buyAmount` - what the user gets after the network cost and the fees
    * - `networkFee` (in the sell token) and `protocolFeeBps` - the costs CoW Swap takes, for
    *   working out what a limit order gets at another price
@@ -928,7 +930,7 @@ export class CowSwapAPI implements SwapProvider {
     feeBps?: number
   }): Promise<{
     buyAmount: bigint
-    buyAmountBeforeFees: bigint
+    marketBuyAmount: bigint
     networkFee: bigint
     protocolFeeBps: number
     quoteId: number | null
@@ -1034,7 +1036,7 @@ export class CowSwapAPI implements SwapProvider {
 
     return {
       buyAmount,
-      buyAmountBeforeFees,
+      marketBuyAmount: quotedBuyAmount,
       networkFee,
       protocolFeeBps,
       quoteId

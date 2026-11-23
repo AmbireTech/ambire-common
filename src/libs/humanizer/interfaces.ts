@@ -129,6 +129,11 @@ export interface IrMessage extends Message {
 }
 export interface HumanizerWarning {
   content: string
+  /**
+   * How the call shows it: as a warning (the default), or as a neutral note that explains the
+   * call rather than warning about it
+   */
+  level?: 'warning' | 'info'
   blocking?: boolean
   code: string
   address?: string

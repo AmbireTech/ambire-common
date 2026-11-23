@@ -11,15 +11,21 @@ import {
 import { CowSwapOrderStruct } from '../../../../interfaces/swapAndBridge'
 import { getCowSwapOrderUid } from '../../../../services/cowswap/helper'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../../interfaces'
+import { Call } from '../../../accountOp/types'
 import {
-  HexIrCall,
+  HumanizerCallModule,
+  HumanizerVisualization,
+  HumanizerWarning,
+  IrCall
+} from '../../interfaces'
+import {
   getAction,
   getAddressVisualization,
   getDeadline,
   getLabel,
   getRecipientText,
   getToken,
+  HexIrCall,
   isHexCall
 } from '../../utils'
 
@@ -137,7 +143,7 @@ const NATIVE_TOKEN_PLACEHOLDER_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
  */
 const getVerifiedOrderStruct = (
   accountOp: AccountOp,
-  call: HexIrCall,
+  call: Pick<Call, 'cowSwapOrder'>,
   orderUid: string
 ): CowSwapOrderStruct | null => {
   const order = call.cowSwapOrder
@@ -337,6 +343,58 @@ const humanizeOrderUidCallWithVerifiedOrder = (
   }
 }
 
+const COW_SWAP_VAULT_RELAYER_ADDRESS = '0xc92e8bdf79f0507f65a392b0ab4667716bfe0110'
+const erc20ApproveAbi = parseAbi(['function approve(address spender, uint256 amount)'])
+const erc20ApproveSelector = toFunctionSelector(erc20ApproveAbi[0])
+
+/** See `getSharedPermissionNote` */
+export const COWSWAP_SHARED_PERMISSION_NOTE_CODE = 'COWSWAP_SHARED_PERMISSION'
+
+/**
+ * What the verified CoW Swap orders that the transaction pre-signs sell of `tokenAddress`, fees
+ * included. Only orders that hash to the ID their pre-sign call signs count
+ */
+const getPreSignedSellAmount = (accountOp: AccountOp, tokenAddress: string): bigint =>
+  accountOp.calls.reduce((total, call) => {
+    const data = call.data.toLowerCase()
+    if (!call.cowSwapOrder || call.to?.toLowerCase() !== COW_SWAP_SETTLEMENT_ADDRESS) return total
+    if (!isHex(data) || data.slice(0, 10) !== setPreSignatureSelector) return total
+
+    const { args } = decodeFunctionData({ abi: setPreSignatureAbi, data })
+    const [orderUid, signed] = args
+    if (!signed) return total
+
+    const order = getVerifiedOrderStruct(accountOp, call, orderUid)
+    if (!order || order.sellToken.toLowerCase() !== tokenAddress) return total
+
+    return total + BigInt(order.sellAmount) + BigInt(order.feeAmount)
+  }, 0n)
+
+/**
+ * A note for a CoW Swap token permission bigger than what the orders of the same transaction
+ * sell. The wallet asks for more when the user has other open orders selling the token, as all
+ * the CoW Swap orders of a token share one permission and a smaller one would stop them from
+ * filling. People expect a permission to match the trade, so this explains the difference.
+ * Built only from the transaction itself
+ */
+const getSharedPermissionNote = (accountOp: AccountOp, call: IrCall): HumanizerWarning | null => {
+  if (!call.to || !isHexCall(call) || call.data.slice(0, 10) !== erc20ApproveSelector) return null
+
+  const { args } = decodeFunctionData({ abi: erc20ApproveAbi, data: call.data })
+  const [spender, amount] = args
+  if (spender.toLowerCase() !== COW_SWAP_VAULT_RELAYER_ADDRESS) return null
+
+  const preSignedSellAmount = getPreSignedSellAmount(accountOp, call.to.toLowerCase())
+  if (!preSignedSellAmount || amount <= preSignedSellAmount) return null
+
+  return {
+    level: 'info',
+    code: COWSWAP_SHARED_PERMISSION_NOTE_CODE,
+    content:
+      'The approval amount is more than this order sells, because it also covers your other open orders selling this token. They share one permission, so asking for less would stop them from filling.'
+  }
+}
+
 const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const matcher: Record<string, (call: HexIrCall) => HumanizerVisualization[]> = {
     [swapSelector]: (call) => {
@@ -389,6 +447,12 @@ const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) 
 
       return getConditionalOrderVisualization(accountOp, params)
     }
+  }
+
+  // The token permission is described by the token module, so the note is only added to it
+  const sharedPermissionNote = getSharedPermissionNote(accountOp, call)
+  if (sharedPermissionNote) {
+    return { ...call, warnings: [...(call.warnings || []), sharedPermissionNote] }
   }
 
   if (call.fullVisualization || !isHexCall(call)) return call

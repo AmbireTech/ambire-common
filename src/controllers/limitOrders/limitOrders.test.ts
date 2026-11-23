@@ -8,6 +8,7 @@ import {
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from '../../services/cowswap/constants'
 import { buildLimitOrderAppData } from '../../services/cowswap/helper'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import { CowSwapAccountOrder } from '../../services/cowswap/types'
 import { LimitOrdersController } from './limitOrders'
 
@@ -231,7 +232,7 @@ describe('LimitOrdersController placing an order that sells the native token', (
     const cowSwapApi = {
       getLimitOrderMarketQuote: jest.fn(async (_params: any) => ({
         buyAmount: 870000000n,
-        buyAmountBeforeFees: 875000000n,
+        marketBuyAmount: 875000000n,
         networkFee: 0n,
         protocolFeeBps: 0,
         quoteId: 1
@@ -281,6 +282,10 @@ describe('LimitOrdersController placing an order that sells the native token', (
     expect(cowSwapApi.getLimitOrderMarketQuote).toHaveBeenCalled()
     expect(cowSwapApi.getLimitOrderMarketQuote.mock.calls[0]![0].sellToken).toBe(weth)
     expect(controller.formStatus).toBe('READY')
+    // 1% better than today's price, which is after CoW Swap's network cost (`marketBuyAmount`),
+    // in the "1 ETH gets you ... USDC" view as that price is the readable one
+    expect(controller.triggerBuyAmount).toBe('883750000')
+    const targetBuyAmount = controller.targetBuyAmount
 
     await controller.placeOrder()
 
@@ -289,6 +294,13 @@ describe('LimitOrdersController placing an order that sells the native token', (
     expect(order.sellAmount).toBe(sellAmount.toString())
     expect(order.signingScheme).toBe('presign')
     expect(order.partiallyFillable).toBe(true)
+    // Only the Ambire fee is taken off the price the user set, as it already counts the network
+    // cost. Without a fee the order asks for the whole amount at that price
+    const feeBps = controller.feeExemptionReason
+      ? 0n
+      : BigInt(Math.round(controller.feePercent * 100))
+    expect(targetBuyAmount).toBe(((883750000n * (10000n - feeBps)) / 10000n).toString())
+    expect(order.buyAmount).toBe(targetBuyAmount)
 
     const { calls } = requestSignatureInWindow.mock.calls[0]![0]
     const erc20Interface = new Interface(['function approve(address,uint256)'])
@@ -369,10 +381,12 @@ const makeSafeController = (
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true }
   }
   const requestSignatureInWindow = jest.fn(async (_params: any) => {})
+  // No allowance or balance yet
+  const providerCall = jest.fn(async (_params: any) => `0x${'0'.repeat(64)}`)
   const cowSwapApi = {
     getLimitOrderMarketQuote: jest.fn(async (_params: any) => ({
       buyAmount: 870000000n,
-      buyAmountBeforeFees: 875000000n,
+      marketBuyAmount: 875000000n,
       networkFee: 0n,
       protocolFeeBps: 0,
       quoteId: 1
@@ -401,7 +415,7 @@ const makeSafeController = (
     },
     networks: { networks: [{ chainId: 1n, name: 'Ethereum', nativeAssetSymbol: 'ETH' }] },
     // No allowance yet, so the batch includes the token permission
-    providers: { providers: { '1': { call: jest.fn(async () => `0x${'0'.repeat(64)}`) } } },
+    providers: { providers: { '1': { call: providerCall } } },
     featureFlags: { isFeatureEnabled: () => false },
     portfolio: { getAccountPortfolioState: () => ({}) },
     ui: { uiEvent: { on: jest.fn() } },
@@ -435,7 +449,7 @@ const makeSafeController = (
     return { orderUid: orderUid as string, calls }
   }
 
-  return { controller, cowSwapApi, requestSignatureInWindow, placeOrder }
+  return { controller, cowSwapApi, requestSignatureInWindow, providerCall, placeOrder }
 }
 
 /** The calls as the signing window broadcasts them, with ids of its own */
@@ -519,5 +533,364 @@ describe('LimitOrdersController orders signed in the signing window', () => {
     controller.onAccountOpBroadcast({ accountAddr, chainId: 1n, calls: withNewIds(calls) })
 
     expect(controller.orders[0]?.status).toBe('cancelling')
+  })
+})
+
+describe('LimitOrdersController form in a popup that closes', () => {
+  /** The controller with its view events, so a test can open and close views */
+  const makeControllerWithViews = () => {
+    const viewHandlers: Record<string, (view: any) => void> = {}
+    const ui = {
+      uiEvent: {
+        on: jest.fn((event: string, handler: (view: any) => void) => {
+          viewHandlers[event] = handler
+        })
+      }
+    }
+    const controller = new LimitOrdersController({
+      selectedAccount: {
+        account: { addr: accountAddr },
+        portfolio: { tokens: [] },
+        balanceAffectingErrors: [],
+        onUpdate: jest.fn()
+      },
+      networks: { networks: [{ chainId: 1n, name: 'Ethereum', nativeAssetSymbol: 'ETH' }] },
+      providers: { providers: {} },
+      ui,
+      cowSwapApi: { getAccountLimitOrders: jest.fn(async () => []) },
+      storage: makeStorage(),
+      requestSignatureInWindow: jest.fn(async () => {}),
+      portfolioUpdate: jest.fn(),
+      onBroadcastSuccess: jest.fn(async () => {}),
+      onBroadcastFailed: jest.fn()
+    } as unknown as ConstructorParameters<typeof LimitOrdersController>[0])
+
+    const openView = (view: { id: string; type: string; currentRoute: string }) =>
+      viewHandlers.updateView!(view)
+    const closeView = (view: { id: string; type: string }) => viewHandlers.removeView!(view)
+
+    return { controller, openView, closeView }
+  }
+
+  it('keeps a filled form when the popup closes, and opens the popup on it again', async () => {
+    const { controller, openView, closeView } = makeControllerWithViews()
+    openView({ id: 'popup-1', type: 'popup', currentRoute: 'limit-order' })
+    await controller.updateForm({ fromAmount: '5' })
+
+    // e.g. the user clicked outside the popup to check a price elsewhere
+    closeView({ id: 'popup-1', type: 'popup' })
+
+    expect(controller.hasPersistedPopupForm).toBe(true)
+    expect(controller.fromAmount).toBe('5')
+  })
+
+  it('clears the form when a tab with it closes', async () => {
+    const { controller, openView, closeView } = makeControllerWithViews()
+    openView({ id: 'tab-1', type: 'tab', currentRoute: 'limit-order' })
+    await controller.updateForm({ fromAmount: '5' })
+
+    closeView({ id: 'tab-1', type: 'tab' })
+
+    expect(controller.hasPersistedPopupForm).toBe(false)
+    expect(controller.fromAmount).toBe('')
+  })
+
+  it('does not reopen the popup on an empty form', async () => {
+    const { controller, openView, closeView } = makeControllerWithViews()
+    openView({ id: 'popup-1', type: 'popup', currentRoute: 'limit-order' })
+
+    closeView({ id: 'popup-1', type: 'popup' })
+
+    expect(controller.hasPersistedPopupForm).toBe(false)
+  })
+
+  it('clears the form when the user leaves the trade screens in the popup', async () => {
+    const { controller, openView } = makeControllerWithViews()
+    openView({ id: 'popup-1', type: 'popup', currentRoute: 'limit-order' })
+    await controller.updateForm({ fromAmount: '5' })
+
+    openView({ id: 'popup-1', type: 'popup', currentRoute: 'dashboard' })
+
+    expect(controller.hasPersistedPopupForm).toBe(false)
+    expect(controller.fromAmount).toBe('')
+  })
+
+  it('forgets the kept form once it is cleared, e.g. on an account switch', async () => {
+    const { controller, openView, closeView } = makeControllerWithViews()
+    openView({ id: 'popup-1', type: 'popup', currentRoute: 'limit-order' })
+    await controller.updateForm({ fromAmount: '5' })
+    closeView({ id: 'popup-1', type: 'popup' })
+
+    controller.resetForm()
+
+    expect(controller.hasPersistedPopupForm).toBe(false)
+  })
+})
+
+describe('LimitOrdersController orders that cannot fill', () => {
+  const erc20 = new Interface([
+    'function allowance(address owner, address spender) view returns (uint256)',
+    'function approve(address spender, uint256 amount) returns (bool)'
+  ])
+  const allowanceSelector = erc20.getFunction('allowance')!.selector
+  const toWord = (value: bigint) => `0x${value.toString(16).padStart(64, '0')}`
+
+  /** The controller with a network whose token reads return `allowance` and `balance` */
+  const makeControllerWithToken = (
+    orders: CowSwapAccountOrder[],
+    { allowance, balance }: { allowance: bigint; balance: bigint },
+    { shouldFailReads = false } = {}
+  ) => {
+    const call = jest.fn(async ({ data }: { data: string }) => {
+      if (shouldFailReads) throw new Error('The network did not answer')
+      return toWord(data.startsWith(allowanceSelector) ? allowance : balance)
+    })
+    const controller = new LimitOrdersController({
+      selectedAccount: {
+        account: { addr: accountAddr },
+        portfolio: { tokens: [] },
+        onUpdate: jest.fn()
+      },
+      networks: { networks: [{ chainId: 1n, name: 'Ethereum', nativeAssetSymbol: 'ETH' }] },
+      providers: { providers: { '1': { call } } },
+      ui: { uiEvent: { on: jest.fn() } },
+      cowSwapApi: {
+        getAccountLimitOrders: jest.fn(async ({ chainId }: { chainId: number }) =>
+          chainId === 1 ? orders : []
+        ),
+        getToken: jest.fn(async ({ address, chainId }: { address: string; chainId: number }) => {
+          const token = listedTokens[address.toLowerCase()]
+          return token ? { ...token, address, chainId, name: token.symbol } : null
+        }),
+        isTokenSupported: jest.fn(async () => false)
+      },
+      storage: makeStorage(),
+      requestSignatureInWindow: jest.fn(async () => {}),
+      portfolioUpdate: jest.fn(),
+      onBroadcastSuccess: jest.fn(async () => {}),
+      onBroadcastFailed: jest.fn()
+    } as unknown as ConstructorParameters<typeof LimitOrdersController>[0])
+
+    return { controller, call }
+  }
+
+  it('shows an order as unable to fill when the permission to use the token was removed', async () => {
+    const { controller } = makeControllerWithToken([makeOrder()], {
+      allowance: 0n,
+      balance: 10n ** 12n
+    })
+
+    await controller.updateOrders()
+
+    expect(controller.orders[0]?.status).toBe('open')
+    expect(controller.orders[0]?.fillIssue).toBe('permission')
+  })
+
+  it('shows an order as unable to fill when the account holds less than it still sells', async () => {
+    const { controller } = makeControllerWithToken([makeOrder()], {
+      allowance: 10n ** 12n,
+      balance: 999999n
+    })
+
+    await controller.updateOrders()
+
+    expect(controller.orders[0]?.fillIssue).toBe('balance')
+  })
+
+  it('counts only what a partly filled order still sells', async () => {
+    const { controller } = makeControllerWithToken(
+      [makeOrder({ executedSellAmount: '600000', executedBuyAmount: '1' })],
+      { allowance: 400000n, balance: 400000n }
+    )
+
+    await controller.updateOrders()
+
+    expect(controller.orders[0]?.status).toBe('partiallyFilled')
+    expect(controller.orders[0]?.fillIssue).toBeNull()
+  })
+
+  it('does not warn about an order when the network cannot be read', async () => {
+    const { controller } = makeControllerWithToken(
+      [makeOrder()],
+      { allowance: 0n, balance: 0n },
+      { shouldFailReads: true }
+    )
+
+    await controller.updateOrders()
+
+    expect(controller.orders[0]?.fillIssue).toBeNull()
+  })
+
+  it('does not check ETH-flow or finished orders, which need no permission', async () => {
+    const { controller, call } = makeControllerWithToken(
+      [
+        makeOrder({
+          uid: `0x${'31'.repeat(56)}`,
+          sellToken: weth,
+          buyToken: usdc,
+          ethflowData: { userValidTo: 1900000000 }
+        }),
+        makeOrder({ uid: `0x${'32'.repeat(56)}`, status: 'fulfilled' })
+      ],
+      { allowance: 0n, balance: 0n }
+    )
+
+    await controller.updateOrders()
+
+    expect(call).not.toHaveBeenCalled()
+    expect(controller.orders.every((order) => order.fillIssue === null)).toBe(true)
+  })
+
+  it('gives the permission back for all the open orders selling the token', async () => {
+    const orders = [
+      makeOrder({ uid: `0x${'41'.repeat(56)}` }),
+      makeOrder({ uid: `0x${'42'.repeat(56)}`, sellAmount: '500000' })
+    ]
+    const { controller, requestSignatureInWindow } = makeSafeController(() => orders)
+    // Every read of the Safe's controller answers zero: no permission and no balance
+    await controller.updateOrders()
+    expect(controller.orders[0]?.fillIssue).toBe('permission')
+
+    await controller.allowAgain(`0x${'41'.repeat(56)}`)
+
+    const { calls } = requestSignatureInWindow.mock.calls[0]![0]
+    // Without a permission to reset first, only the new one, for both orders
+    expect(calls).toHaveLength(1)
+    expect(calls[0].to).toBe(usdc)
+    expect(calls[0].data).toBe(
+      erc20.encodeFunctionData('approve', [COWSWAP_VAULT_RELAYER_ADDRESS, 1500000n])
+    )
+  })
+
+  it('refuses to give a permission back for an order that does not need it', async () => {
+    const { controller } = makeControllerWithToken([makeOrder()], {
+      allowance: 10n ** 12n,
+      balance: 10n ** 12n
+    })
+    const errors: unknown[] = []
+    controller.onError((error) => errors.push(error))
+    await controller.updateOrders()
+
+    await controller.allowAgain(makeOrder().uid)
+
+    expect(errors).toHaveLength(1)
+  })
+  describe('while the permission is given back', () => {
+    const allowedUid = `0x${'51'.repeat(56)}`
+
+    /** Signs "allow again" in the signing window and broadcasts it, and returns its calls */
+    const allowAgainAndBroadcast = async () => {
+      const safe = makeSafeController(() => [makeOrder({ uid: allowedUid })])
+      await safe.controller.updateOrders()
+      await safe.controller.allowAgain(allowedUid)
+      const { calls } = safe.requestSignatureInWindow.mock.calls[0]![0]
+      const broadcastCalls = withNewIds(calls)
+      safe.controller.onAccountOpBroadcast({ accountAddr, chainId: 1n, calls: broadcastCalls })
+      // The refresh the broadcast starts, which still reads no permission
+      await safe.controller.updateOrders()
+
+      return { ...safe, broadcastCalls }
+    }
+
+    it('does not show the order as allowed again before its transaction is sent', async () => {
+      const { controller } = makeSafeController(() => [makeOrder({ uid: allowedUid })])
+      await controller.updateOrders()
+
+      // e.g. the user rejects it in the signing window
+      await controller.allowAgain(allowedUid)
+
+      expect(controller.orders[0]?.fillIssue).toBe('permission')
+      expect(controller.orders[0]?.isAllowingAgain).toBe(false)
+    })
+
+    it('shows the order as being allowed again once its transaction is sent', async () => {
+      const { controller } = await allowAgainAndBroadcast()
+
+      expect(controller.orders[0]?.fillIssue).toBe('permission')
+      expect(controller.orders[0]?.isAllowingAgain).toBe(true)
+    })
+
+    it('refreshes the order as soon as the transaction is confirmed', async () => {
+      const { controller, providerCall, broadcastCalls } = await allowAgainAndBroadcast()
+      providerCall.mockImplementation(async () => `0x${(10n ** 12n).toString(16).padStart(64, '0')}`)
+
+      controller.onAccountOpsFinalized([
+        { chainId: 1n, status: AccountOpStatus.Success, calls: broadcastCalls } as any
+      ])
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
+      await controller.updateOrders()
+
+      expect(controller.orders[0]?.fillIssue).toBeNull()
+      expect(controller.orders[0]?.isAllowingAgain).toBe(false)
+    })
+
+    it('shows the order as unable to fill again when the transaction fails', async () => {
+      const { controller, broadcastCalls } = await allowAgainAndBroadcast()
+
+      controller.onAccountOpsFinalized([
+        { chainId: 1n, status: AccountOpStatus.Failure, calls: broadcastCalls } as any
+      ])
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
+      await controller.updateOrders()
+
+      expect(controller.orders[0]?.fillIssue).toBe('permission')
+      expect(controller.orders[0]?.isAllowingAgain).toBe(false)
+    })
+
+    it('keeps waiting while the transaction is not confirmed', async () => {
+      const { controller, cowSwapApi, broadcastCalls } = await allowAgainAndBroadcast()
+      const fetchCount = cowSwapApi.getAccountLimitOrders.mock.calls.length
+
+      controller.onAccountOpsFinalized([
+        { chainId: 1n, status: AccountOpStatus.BroadcastedButNotConfirmed, calls: broadcastCalls } as any
+      ])
+
+      expect(cowSwapApi.getAccountLimitOrders.mock.calls.length).toBe(fetchCount)
+      expect(controller.orders[0]?.isAllowingAgain).toBe(true)
+    })
+
+    it('stops showing the order as being allowed again if the confirmation never comes', async () => {
+      const { controller } = await allowAgainAndBroadcast()
+      const now = Date.now()
+      const dateNow = jest.spyOn(Date, 'now').mockReturnValue(now + 11 * 60 * 1000)
+
+      try {
+        await controller.updateOrders()
+      } finally {
+        dateNow.mockRestore()
+      }
+
+      // So the user can try again
+      expect(controller.orders[0]?.fillIssue).toBe('permission')
+      expect(controller.orders[0]?.isAllowingAgain).toBe(false)
+    })
+
+    it('ignores confirmed transactions that are not about its permission', async () => {
+      const { controller, cowSwapApi } = await allowAgainAndBroadcast()
+      const fetchCount = cowSwapApi.getAccountLimitOrders.mock.calls.length
+
+      controller.onAccountOpsFinalized([
+        {
+          chainId: 1n,
+          status: AccountOpStatus.Success,
+          calls: [
+            {
+              id: 'other',
+              to: usdc,
+              value: 0n,
+              // The same permission, given to someone else
+              data: erc20.encodeFunctionData('approve', [accountAddr, 10n ** 12n])
+            }
+          ]
+        } as any
+      ])
+
+      expect(cowSwapApi.getAccountLimitOrders.mock.calls.length).toBe(fetchCount)
+      expect(controller.orders[0]?.isAllowingAgain).toBe(true)
+    })
   })
 })

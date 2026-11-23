@@ -2197,6 +2197,11 @@ export class MainController extends EventEmitter implements IMainController {
               finalizedAccountOps.length
                 ? this.privacyPools.onAccountOpsFinalized(finalizedAccountOps)
                 : undefined,
+              // Refreshes the limit orders whose permission was given back, without waiting
+              // for their next scheduled refresh
+              finalizedAccountOps.length
+                ? this.limitOrders.onAccountOpsFinalized(finalizedAccountOps)
+                : undefined,
               ...otherAccountsToUpdate.map(async ([portfolioAccountAddr, chainIds]) => {
                 // A fee payer has a new nonce and a recipient a new balance, and the
                 // account state goes first for the same reason as above

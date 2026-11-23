@@ -480,6 +480,91 @@ describe('CowSwap', () => {
         consoleErrorSpy.mockRestore()
       }
     })
+
+    describe('a token permission bigger than the order', () => {
+      const vaultRelayer = '0xC92E8bdf79f0507f65a392b0ab4667716BFE0110'
+      const approveAbi = parseAbi(['function approve(address spender, uint256 amount)'])
+      const getApproveCall = (spender: string, amount: bigint, token = sellToken) => ({
+        to: token,
+        value: 0n,
+        data: encodeFunctionData({
+          abi: approveAbi,
+          functionName: 'approve',
+          args: [spender as Hex, amount]
+        })
+      })
+      const preSignCall = getPreSignCall(
+        getExpectedOrderUid(presignedOrder),
+        true,
+        presignedOrder
+      )
+      const humanizeApproval = (approveCall: ReturnType<typeof getApproveCall>, calls: any[]) =>
+        CowSwapModule(
+          { ...accountOp, calls: [approveCall, ...calls] },
+          approveCall,
+          humanizerInfo as HumanizerMeta
+        )
+
+      test('explains a CoW Swap permission that also covers other open orders', () => {
+        const approveCall = getApproveCall(vaultRelayer, sellAmount * 2n)
+        const irCall = humanizeApproval(approveCall, [preSignCall])
+
+        expect(irCall.warnings).toEqual([
+          expect.objectContaining({ level: 'info', code: 'COWSWAP_SHARED_PERMISSION' })
+        ])
+        // A note, so it must never stop the user from signing
+        expect(irCall.warnings?.[0]?.blocking).toBeFalsy()
+      })
+
+      test('adds nothing when the permission matches the order', () => {
+        const approveCall = getApproveCall(vaultRelayer, sellAmount)
+
+        expect(humanizeApproval(approveCall, [preSignCall]).warnings).toBeUndefined()
+      })
+
+      test('adds nothing for a permission to another spender', () => {
+        const approveCall = getApproveCall(accountAddr, sellAmount * 2n)
+
+        expect(humanizeApproval(approveCall, [preSignCall]).warnings).toBeUndefined()
+      })
+
+      test('adds nothing for a permission of a token the order does not sell', () => {
+        const approveCall = getApproveCall(vaultRelayer, sellAmount * 2n, buyToken)
+
+        expect(humanizeApproval(approveCall, [preSignCall]).warnings).toBeUndefined()
+      })
+
+      test('adds nothing without a pre-signed order in the transaction', () => {
+        const approveCall = getApproveCall(vaultRelayer, sellAmount * 2n)
+
+        expect(humanizeApproval(approveCall, []).warnings).toBeUndefined()
+      })
+
+      test('ignores an attached order that does not match the pre-signed order ID', () => {
+        // The permission matches the signed order. A forged order selling less would make it
+        // look bigger than the order, so the note must not trust it
+        const approveCall = getApproveCall(vaultRelayer, sellAmount)
+        const alteredOrder = { ...presignedOrder, sellAmount: '1' }
+        const forgedPreSignCall = getPreSignCall(
+          getExpectedOrderUid(presignedOrder),
+          true,
+          alteredOrder
+        )
+
+        expect(humanizeApproval(approveCall, [forgedPreSignCall]).warnings).toBeUndefined()
+      })
+
+      test('ignores an order that the transaction un-pre-signs', () => {
+        const approveCall = getApproveCall(vaultRelayer, sellAmount * 2n)
+        const cancelCall = getPreSignCall(
+          getExpectedOrderUid(presignedOrder),
+          false,
+          presignedOrder
+        )
+
+        expect(humanizeApproval(approveCall, [cancelCall]).warnings).toBeUndefined()
+      })
+    })
   })
 
   describe('ComposableCoW conditional orders', () => {

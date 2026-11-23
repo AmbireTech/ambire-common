@@ -39,14 +39,11 @@ export type LimitOrderMarketQuote = {
    */
   buyAmount: string
   /**
-   * What `sellAmount` is worth at today's market price, before any fee, in the smallest unit of
-   * the receive token. The price the user sets is compared to this one
+   * What selling `sellAmount` gets today after CoW Swap's network cost and protocol fee, before
+   * the Ambire fee, in the smallest unit of the receive token. Today's price, which the price the
+   * user sets is compared to
    */
-  buyAmountBeforeFees: string
-  /** CoW Swap's network cost of filling the order, in the smallest unit of the sell token */
-  networkFee: string
-  /** CoW Swap's own fee, as a share of the amount before fees */
-  protocolFeeBps: number
+  marketBuyAmount: string
   quoteId: number | null
   fetchedAt: number
 }
@@ -108,7 +105,25 @@ export type LimitOrder = {
   partiallyFillable: boolean
   /** The Ambire fee the order carries, in basis points */
   feeBps: number
+  /** Why the order can't fill while it waits, see `LimitOrderFillIssue`. Null if it can */
+  fillIssue: LimitOrderFillIssue | null
+  /**
+   * Whether the transaction that gives back the permission the order needs was sent and isn't
+   * confirmed yet. Only for an order whose `fillIssue` is `permission`
+   */
+  isAllowingAgain: boolean
 }
 
-/** What the transaction being signed does */
-export type LimitOrderSignPurpose = 'place' | 'cancel'
+/**
+ * Why a waiting order can't fill, although CoW Swap still lists it as open:
+ * - `permission` - CoW Swap's permission to use the token is less than the order still sells,
+ *   e.g. the user removed it on another site
+ * - `balance` - the account holds less of the token than the order still sells
+ */
+export type LimitOrderFillIssue = 'permission' | 'balance'
+
+/**
+ * What the transaction being signed does. `allow` gives CoW Swap back the permission the open
+ * orders of a token need
+ */
+export type LimitOrderSignPurpose = 'place' | 'cancel' | 'allow'

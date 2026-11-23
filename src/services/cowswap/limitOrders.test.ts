@@ -218,7 +218,7 @@ describe('CowSwapAPI limit orders', () => {
       const fetch = makeQuoteFetch()
       const api = new CowSwapAPI({ fetch: fetch as any, apiKey })
 
-      const { buyAmount, buyAmountBeforeFees, networkFee, protocolFeeBps, quoteId } =
+      const { buyAmount, marketBuyAmount, networkFee, protocolFeeBps, quoteId } =
         await api.getLimitOrderMarketQuote({
         chainId: 1,
         sellToken: usdc,
@@ -236,8 +236,10 @@ describe('CowSwapAPI limit orders', () => {
       const networkFeeInBuyToken = (quotedBuyAmount * 10000n) / 990000n
       const partnerFee = ((quotedBuyAmount + networkFeeInBuyToken) * 50n) / 10000n
       expect(buyAmount).toBe(quotedBuyAmount - partnerFee)
-      // The market price before fees, which the price the user sets is compared to
-      expect(buyAmountBeforeFees).toBe(quotedBuyAmount + networkFeeInBuyToken)
+      // Today's price for a limit order: after CoW Swap's network cost, before the Ambire fee.
+      // The network cost isn't added back, as for a small amount CoW Swap's estimate of it
+      // doesn't match what the quoted amount already accounts for
+      expect(marketBuyAmount).toBe(quotedBuyAmount)
       // 1% of the sell amount, in the sell token
       expect(networkFee).toBe(10000n)
       expect(protocolFeeBps).toBe(0)

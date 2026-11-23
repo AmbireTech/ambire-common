@@ -17,6 +17,7 @@ import { ExternalSignerControllers, IKeystoreController } from '../../interfaces
 import {
   LimitOrder,
   LimitOrderExpiry,
+  LimitOrderFillIssue,
   LimitOrderFormStatus,
   LimitOrderMarketQuote,
   LimitOrderPrice,
@@ -44,7 +45,8 @@ import { IUiController, View } from '../../interfaces/ui'
 import { CallsUserRequest } from '../../interfaces/userRequest'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { Call } from '../../libs/accountOp/types'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { getAccountNetworks } from '../../libs/networks/networks'
@@ -76,7 +78,6 @@ import {
   COWSWAP_BUY_NATIVE_TOKEN_ADDRESS,
   COWSWAP_ETH_FLOW_ADDRESS,
   COWSWAP_LIMIT_ORDER_EXPIRY_SECONDS,
-  COWSWAP_NETWORK_COST_INCREASE_PERCENT,
   COWSWAP_SETTLEMENT_ADDRESS,
   COWSWAP_SUPPORTED_CHAINS,
   COWSWAP_VAULT_RELAYER_ADDRESS
@@ -112,7 +113,8 @@ type SignAccountOpControllerMethods = {
 export const STATUS_WRAPPED_METHODS = {
   addToTokenByAddress: 'INITIAL',
   placeOrder: 'INITIAL',
-  cancelOrder: 'INITIAL'
+  cancelOrder: 'INITIAL',
+  allowAgain: 'INITIAL'
 } as const
 
 /** How often today's price is refreshed while the form is open */
@@ -141,8 +143,21 @@ const TRADE_ROUTES = ['swap-and-bridge', 'limit-order', 'limit-orders']
 
 const isTradeRoute = (route: string | undefined) => !!route && TRADE_ROUTES.includes(route)
 
+/**
+ * How long the orders of a token show as being allowed again at most. A fallback in case the
+ * confirmation of the transaction is never reported, so the user can try again
+ */
+const ALLOWING_AGAIN_MAX_AGE = 10 * 60 * 1000
+
 /** Wraps the native token into its wrapped version, e.g. ETH into WETH */
 const wrappedNativeTokenInterface = new Interface(['function deposit() payable'])
+
+/** Reads and sets CoW Swap's permission to use a token, and reads the account's balance */
+const erc20Interface = new Interface([
+  'function allowance(address owner, address spender) view returns (uint256)',
+  'function balanceOf(address owner) view returns (uint256)',
+  'function approve(address spender, uint256 amount) returns (bool)'
+])
 
 /** See #getAbsoluteTargetBuyAmount */
 const PRICE_EXTRA_DECIMALS = 18
@@ -303,12 +318,23 @@ export class LimitOrdersController extends EventEmitter {
   /** Orders whose cancel transaction was broadcast this session */
   #cancellingOrderUids = new Set<string>()
 
+  /** Why each waiting order of `ordersAccountAddr` can't fill, see `#updateFillIssues` */
+  #fillIssues = new Map<string, LimitOrderFillIssue>()
+
   /**
    * The calls that place or cancel an order, handed to the signing window (Safe accounts), by
    * `#getSentCallKey`. The user can still reject them there, so the order is shown as placing or
    * cancelling only once its call is broadcast (see `onAccountOpBroadcast`)
    */
   #callsSentToWindow = new Map<string, { orderUid: string; purpose: LimitOrderSignPurpose }>()
+
+  /**
+   * The broadcast "allow again" calls that aren't confirmed yet, by `#getSentCallKey`, with the
+   * token (`#getTokenKey`) they give the permission for and when they were sent. Its orders show
+   * as being allowed again instead of unable to fill until the transaction is confirmed or fails,
+   * see `onAccountOpsFinalized`, or for `ALLOWING_AGAIN_MAX_AGE` at most
+   */
+  #allowingCalls = new Map<string, { tokenKey: string; sentAt: number }>()
 
   #tokenInfoCache = new Map<string, LimitOrderToken>()
 
@@ -318,6 +344,13 @@ export class LimitOrdersController extends EventEmitter {
 
   /** The screens that show the form. The form resets when the last one closes */
   sessionIds: string[] = []
+
+  /**
+   * Whether the form was left filled in the popup when it closed. The popup closes as soon as the
+   * user clicks outside it, e.g. to check a price elsewhere, so it opens on the Limit screen
+   * again, with the form, until the form is shown again or cleared
+   */
+  hasPersistedPopupForm: boolean = false
 
   /** The screens that show My orders. My orders refreshes while one is open */
   ordersSessionIds: string[] = []
@@ -491,7 +524,9 @@ export class LimitOrdersController extends EventEmitter {
       }
       this.#onViewLeftTradeRoutes(view.id)
     })
-    ui.uiEvent.on('removeView', (view: View) => this.#onViewLeftTradeRoutes(view.id))
+    ui.uiEvent.on('removeView', (view: View) =>
+      this.#onViewLeftTradeRoutes(view.id, { isClosedPopup: view.type === 'popup' })
+    )
   }
 
   async #load() {
@@ -802,9 +837,11 @@ export class LimitOrdersController extends EventEmitter {
   }
 
   /**
-   * What the whole amount is worth at the price the user set, before any fee, in the smallest
-   * unit of the receive token. The price the user sets is the market price the order should fill
-   * at, so it's compared to today's market price before fees. Null until it can be calculated
+   * What the whole amount gets at the price the user set, after CoW Swap's network cost and
+   * protocol fee and before the Ambire fee, in the smallest unit of the receive token. Today's
+   * price (`marketBuyAmount`) is measured the same way, so the price the user sets is what the
+   * order really gets, even for a small amount whose network cost is a large share of it. Null
+   * until it can be calculated
    */
   get #triggerBuyAmount(): bigint | null {
     const view = this.priceView ?? 'cost'
@@ -816,7 +853,7 @@ export class LimitOrdersController extends EventEmitter {
     const quote = this.#currentMarketQuote
     if (!quote) return null
 
-    const marketBuyAmount = BigInt(quote.buyAmountBeforeFees)
+    const marketBuyAmount = BigInt(quote.marketBuyAmount)
     if (view === 'cost') {
       // A price lower by `bps` gets proportionally more
       const bps = BigInt(Math.min(Math.max(Math.round(this.price.bps), 0), MAX_COST_VIEW_BPS))
@@ -833,33 +870,21 @@ export class LimitOrdersController extends EventEmitter {
 
   /**
    * The least the order receives, in the smallest unit of the receive token: what the price the
-   * user set gets after CoW Swap's network cost and protocol fee and the Ambire fee. This is the
-   * amount the order asks for, so it fills once the market reaches the user's price. The network
-   * cost is today's estimate with room to grow, so the order fills at the user's price or just
-   * before it, not after it, if the network gets busier. Null until it can be calculated, or if
-   * the costs take it all
+   * user set gets after the Ambire fee. That price already counts CoW Swap's network cost and
+   * protocol fee, so the order fills once the market, after those costs, reaches it. If the
+   * network gets busier, the order fills a little later rather than at a worse price. Null until
+   * it can be calculated
    */
   get #targetBuyAmount(): bigint | null {
     const triggerBuyAmount = this.#triggerBuyAmount
-    const quote = this.#currentMarketQuote
-    if (triggerBuyAmount === null || !quote) return null
+    if (triggerBuyAmount === null) return null
 
-    const sellAmount = BigInt(quote.sellAmount)
-    // The same room for the network cost to grow as swaps and CoW Swap's own SDK leave
-    const networkFee =
-      (BigInt(quote.networkFee) * (100n + COWSWAP_NETWORK_COST_INCREASE_PERCENT)) / 100n
-    // The Ambire fee as it is now, as the order carries the current one. Hundredths of a bps
-    // keep CoW Swap's fractional protocol fee
-    const feeHundredthsOfBps = BigInt(
-      Math.round(((this.#feeBps ?? 0) + quote.protocolFeeBps) * 100)
-    )
-    // The network cost is paid in the sell token, so it takes the same share of what any price
-    // gets. Both fees are a share of the amount before fees
-    const keptPerMillion =
-      ((sellAmount - networkFee) * 1_000_000n) / sellAmount - feeHundredthsOfBps
-    if (networkFee >= sellAmount || keptPerMillion <= 0n) return null
+    // The Ambire fee as it is now, as the order carries the current one
+    const feeBps = BigInt(Math.min(Math.max(this.#feeBps ?? 0, 0), 9999))
+    const targetBuyAmount = (triggerBuyAmount * (10000n - feeBps)) / 10000n
+    if (targetBuyAmount <= 0n) return null
 
-    return (triggerBuyAmount * keptPerMillion) / 1_000_000n
+    return targetBuyAmount
   }
 
   get targetBuyAmount(): string | null {
@@ -878,7 +903,7 @@ export class LimitOrdersController extends EventEmitter {
 
     // An order can't ask for a worse price than today's. It would fill right away at today's
     // price at best, so the user is better off with a swap
-    if (triggerBuyAmount < BigInt(quote.buyAmountBeforeFees)) return 'worse-than-today'
+    if (triggerBuyAmount < BigInt(quote.marketBuyAmount)) return 'worse-than-today'
     // The network cost and the fees would take everything the order gets
     if (this.#targetBuyAmount === null) return 'too-small'
 
@@ -929,6 +954,8 @@ export class LimitOrdersController extends EventEmitter {
   ) {
     const isSessionAlreadyOpen = this.sessionIds.includes(sessionId)
     if (!isSessionAlreadyOpen) this.sessionIds.push(sessionId)
+    // The form kept from a closed popup is on screen again
+    this.hasPersistedPopupForm = false
     this.#lastSelectedAccountAddr = this.#selectedAccount.account?.addr ?? null
     this.#updateFeePercent()
     this.#updateFromTokenList()
@@ -972,16 +999,32 @@ export class LimitOrdersController extends EventEmitter {
     this.emitUpdate()
   }
 
-  /** Clears the form once no view shows a trade screen anymore */
-  #onViewLeftTradeRoutes(viewId: string) {
+  /**
+   * Clears the form once no view shows a trade screen anymore. A filled form in a popup that
+   * closed is kept instead, see `hasPersistedPopupForm`
+   */
+  #onViewLeftTradeRoutes(viewId: string, { isClosedPopup = false } = {}) {
     const wasOnTradeRoute = this.#viewIdsOnTradeRoutes.delete(viewId)
     if (!wasOnTradeRoute || this.#viewIdsOnTradeRoutes.size) return
     // A transaction being signed keeps the form it was built from
     if (this.isSignAndBroadcastInProgress) return
 
     this.sessionIds = []
+    if (isClosedPopup && this.#isFormFilled) {
+      // The transaction prepared from it wasn't signed, and today's price will be fetched again
+      this.#destroySignAccountOp()
+      this.hasPersistedPopupForm = true
+      this.emitUpdate()
+      return
+    }
+
     this.resetForm()
     this.emitUpdate()
+  }
+
+  /** Whether the user entered something in the form, rather than only the token picked for them */
+  get #isFormFilled() {
+    return !!this.fromAmount || !!this.toSelectedToken
   }
 
   async updateForm(props: {
@@ -1154,7 +1197,7 @@ export class LimitOrdersController extends EventEmitter {
     this.emitUpdate()
 
     try {
-      const { buyAmount, buyAmountBeforeFees, networkFee, protocolFeeBps, quoteId } =
+      const { buyAmount, marketBuyAmount, quoteId } =
         await this.#cowSwapApi.getLimitOrderMarketQuote({
           chainId,
           // The native token is sold as its wrapped version, see #placeOrder
@@ -1172,9 +1215,7 @@ export class LimitOrdersController extends EventEmitter {
         buyTokenAddress: toToken.address,
         sellAmount: sellAmount.toString(),
         buyAmount: buyAmount.toString(),
-        buyAmountBeforeFees: buyAmountBeforeFees.toString(),
-        networkFee: networkFee.toString(),
-        protocolFeeBps,
+        marketBuyAmount: marketBuyAmount.toString(),
         quoteId,
         fetchedAt: Date.now()
       }
@@ -1205,7 +1246,7 @@ export class LimitOrdersController extends EventEmitter {
     if (!quote || !fromToken || !toToken) return 'cost'
 
     const sellAmount = Number(formatUnits(quote.sellAmount, fromToken.decimals))
-    const buyAmount = Number(formatUnits(quote.buyAmountBeforeFees, toToken.decimals))
+    const buyAmount = Number(formatUnits(quote.marketBuyAmount, toToken.decimals))
     if (!buyAmount) return 'cost'
 
     return sellAmount / buyAmount >= 1 ? 'cost' : 'get'
@@ -2074,8 +2115,172 @@ export class LimitOrdersController extends EventEmitter {
     await this.#resolveOrderTokens()
     if (this.#selectedAccount.account?.addr !== account.addr) return
 
+    const fillIssues = await this.#getFillIssues(account.addr)
+    if (this.#selectedAccount.account?.addr !== account.addr) return
+    this.#fillIssues = fillIssues
+
     this.#rebuildOrders()
     this.ordersUpdatedAt = Date.now()
+    this.emitUpdate()
+  }
+
+  /**
+   * Why each waiting order of the account can't fill. CoW Swap keeps listing an order as open
+   * when the permission it relies on was removed or lowered (e.g. on another site), or when the
+   * account no longer holds the token, so both are read for each token the orders sell. A token
+   * whose reads fail is left out, so its orders aren't wrongly shown as unable to fill
+   */
+  async #getFillIssues(accountAddr: string): Promise<Map<string, LimitOrderFillIssue>> {
+    const fillIssues = new Map<string, LimitOrderFillIssue>()
+    const checks: Promise<void>[] = []
+
+    this.#accountOrders.forEach((orders, chainId) => {
+      const remainingByToken = new Map<string, { uid: string; remaining: bigint }[]>()
+      orders.forEach((order) => {
+        // The ETH-flow contract holds what an ETH-flow order sells, so it needs no permission
+        if (order.status !== 'open' || order.ethflowData) return
+        const remaining = BigInt(order.sellAmount) - BigInt(order.executedSellAmount)
+        if (remaining <= 0n) return
+
+        const tokenAddress = order.sellToken.toLowerCase()
+        remainingByToken.set(tokenAddress, [
+          ...(remainingByToken.get(tokenAddress) || []),
+          { uid: order.uid, remaining }
+        ])
+      })
+
+      const provider = this.#providers.providers[chainId.toString()]
+      if (!provider || !remainingByToken.size) return
+
+      remainingByToken.forEach((tokenOrders, tokenAddress) => {
+        checks.push(
+          (async () => {
+            const { allowance, balance } = await LimitOrdersController.#readPermissionAndBalance(
+              provider,
+              tokenAddress,
+              accountAddr
+            )
+            // Each order is checked on its own, as each can fill with what's left for it
+            tokenOrders.forEach(({ uid, remaining }) => {
+              if (allowance < remaining) fillIssues.set(uid, 'permission')
+              else if (balance < remaining) fillIssues.set(uid, 'balance')
+            })
+          })()
+        )
+      })
+    })
+
+    const results = await Promise.allSettled(checks)
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') return
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to check whether the limit orders can fill',
+        error: result.reason
+      })
+    })
+
+    return fillIssues
+  }
+
+  /** CoW Swap's permission to use the token, and how much of it the account holds */
+  static async #readPermissionAndBalance(
+    provider: RPCProvider,
+    tokenAddress: string,
+    accountAddr: string
+  ): Promise<{ allowance: bigint; balance: bigint }> {
+    const [allowanceResult, balanceResult] = await Promise.all([
+      provider.call({
+        to: tokenAddress,
+        data: erc20Interface.encodeFunctionData('allowance', [
+          accountAddr,
+          COWSWAP_VAULT_RELAYER_ADDRESS
+        ])
+      }),
+      provider.call({
+        to: tokenAddress,
+        data: erc20Interface.encodeFunctionData('balanceOf', [accountAddr])
+      })
+    ])
+
+    return {
+      allowance: BigInt(erc20Interface.decodeFunctionResult('allowance', allowanceResult)[0]),
+      balance: BigInt(erc20Interface.decodeFunctionResult('balanceOf', balanceResult)[0])
+    }
+  }
+
+  /**
+   * Gives CoW Swap back the permission to use the token an order sells, enough for all the open
+   * orders selling it, so the orders the permission held back can fill again
+   */
+  async allowAgain(orderUid: string) {
+    await this.withStatus('allowAgain', async () => this.#allowAgain(orderUid))
+  }
+
+  async #allowAgain(orderUid: string) {
+    const listedOrder = this.orders.find((o) => o.uid.toLowerCase() === orderUid.toLowerCase())
+    if (!listedOrder || listedOrder.fillIssue !== 'permission') {
+      throw new EmittableError({
+        level: 'major',
+        message: 'This order no longer needs the permission. Refresh My orders and try again.',
+        error: new SwapAndBridgeError('The order to allow again does not need a permission.')
+      })
+    }
+
+    const account = this.#selectedAccount.account
+    if (!account) return
+
+    const { chainId, sellToken } = listedOrder
+    const { network, provider } = this.#getNetworkAndProvider(chainId)
+    const [neededAmount, { allowance }] = await Promise.all([
+      this.#getOpenOrdersSellAmount({ chainId, owner: account.addr, sellToken: sellToken.address }),
+      LimitOrdersController.#readPermissionAndBalance(provider, sellToken.address, account.addr)
+    ])
+    if (this.#selectedAccount.account?.addr !== account.addr) return
+    if (neededAmount <= allowance) {
+      // Already given back, e.g. in another window, so the next refresh shows the orders as fine
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.updateOrders()
+      return
+    }
+
+    const approvalCallId = `${orderUid}-allow-again`
+    const approve = (amount: bigint, id: string): Call => ({
+      id,
+      to: sellToken.address,
+      value: 0n,
+      data: erc20Interface.encodeFunctionData('approve', [COWSWAP_VAULT_RELAYER_ADDRESS, amount])
+    })
+    // Some tokens (e.g. USDT on Ethereum) refuse to change a permission that isn't zero
+    const approvalCall = approve(neededAmount, approvalCallId)
+    const calls: Call[] = [
+      ...(allowance > 0n ? [approve(0n, `${orderUid}-allow-again-reset`)] : []),
+      approvalCall
+    ]
+
+    if (account.safeCreation) {
+      this.#callsSentToWindow.set(LimitOrdersController.#getSentCallKey(chainId, approvalCall), {
+        orderUid,
+        purpose: 'allow'
+      })
+      await this.#signInWindow({ account, network, calls })
+      // Shown as being allowed again once the Safe's owners sign it and it's sent, see
+      // `onAccountOpBroadcast`
+      return
+    }
+
+    const isInitialized = await this.#initSignAccountOp({
+      purpose: 'allow',
+      account,
+      calls,
+      network,
+      provider,
+      mainCallId: approvalCallId,
+      onBroadcasted: () => this.#markAllowing(chainId, approvalCall, sellToken.address)
+    })
+    if (!isInitialized) return
+
+    this.hasProceeded = true
     this.emitUpdate()
   }
 
@@ -2085,6 +2290,8 @@ export class LimitOrdersController extends EventEmitter {
     this.#placingOrderUids.clear()
     this.#cancellingOrderUids.clear()
     this.#callsSentToWindow.clear()
+    this.#allowingCalls.clear()
+    this.#fillIssues.clear()
     this.orders = []
     this.ordersAccountAddr = this.#selectedAccount.account?.addr ?? null
     this.ordersError = null
@@ -2092,8 +2299,9 @@ export class LimitOrdersController extends EventEmitter {
   }
 
   /**
-   * Marks the orders placed or cancelled by a broadcast transaction of the signing window. Called
-   * for every broadcast transaction, so it ignores the ones that aren't about limit orders
+   * Marks the orders placed or cancelled by a broadcast transaction of the signing window, and the
+   * orders whose permission it gives back. Called for every broadcast transaction, so it ignores
+   * the ones that aren't about limit orders
    */
   onAccountOpBroadcast({
     accountAddr,
@@ -2117,6 +2325,16 @@ export class LimitOrdersController extends EventEmitter {
         this.#cancellingOrderUids.add(sentCall.orderUid)
         return
       }
+      // The call gives the permission for the token it's sent to
+      if (sentCall.purpose === 'allow') {
+        if (call.to) {
+          this.#allowingCalls.set(key, {
+            tokenKey: LimitOrdersController.#getTokenKey(Number(chainId), call.to),
+            sentAt: Date.now()
+          })
+        }
+        return
+      }
 
       this.#rememberAccountWithOrders(accountAddr)
       this.#placingOrderUids.add(sentCall.orderUid)
@@ -2132,6 +2350,51 @@ export class LimitOrdersController extends EventEmitter {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.updateOrders()
     }
+  }
+
+  /**
+   * Refreshes the orders once a transaction that gives back their permission is confirmed or
+   * fails, instead of waiting for the next scheduled refresh. Called with every finalized
+   * transaction, after the RPC reached its block, so it ignores the ones that aren't ours
+   */
+  onAccountOpsFinalized(ops: SubmittedAccountOp[]) {
+    const finalizedKeys: string[] = []
+    ops.forEach(({ chainId, status, calls }) => {
+      if (
+        !status ||
+        status === AccountOpStatus.Pending ||
+        status === AccountOpStatus.BroadcastedButNotConfirmed
+      )
+        return
+
+      calls.forEach((call) => {
+        const key = LimitOrdersController.#getSentCallKey(chainId, call)
+        if (this.#allowingCalls.has(key)) finalizedKeys.push(key)
+      })
+    })
+    if (!finalizedKeys.length) return
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#refreshAfterAllowing(finalizedKeys)
+  }
+
+  async #refreshAfterAllowing(finalizedKeys: string[]) {
+    // A refresh in progress may have read the permission before the confirmation, so the orders
+    // stay shown as being allowed again until a refresh that starts after it
+    await this.#ordersUpdate
+    finalizedKeys.forEach((key) => this.#allowingCalls.delete(key))
+    // Whether it worked or failed, the refresh reads the permission again
+    await this.updateOrders()
+  }
+
+  /** Shows the orders of the token the call gives the permission for as being allowed again */
+  #markAllowing(chainId: number, approvalCall: Call, tokenAddress: string) {
+    this.#allowingCalls.set(LimitOrdersController.#getSentCallKey(chainId, approvalCall), {
+      tokenKey: LimitOrdersController.#getTokenKey(chainId, tokenAddress),
+      sentAt: Date.now()
+    })
+    this.#rebuildOrders()
+    this.emitUpdate()
   }
 
   /**
@@ -2239,6 +2502,11 @@ export class LimitOrdersController extends EventEmitter {
 
   #rebuildOrders() {
     const orders: LimitOrder[] = []
+    const allowingTokenKeys = new Set<string>()
+    this.#allowingCalls.forEach(({ tokenKey, sentAt }, key) => {
+      if (Date.now() - sentAt > ALLOWING_AGAIN_MAX_AGE) this.#allowingCalls.delete(key)
+      else allowingTokenKeys.add(tokenKey)
+    })
 
     this.#accountOrders.forEach((accountOrders, chainId) => {
       accountOrders.forEach((order) => {
@@ -2257,6 +2525,12 @@ export class LimitOrdersController extends EventEmitter {
         // Without its decimals, the order's amounts can't be shown correctly
         if (!sellToken || !buyToken) return
 
+        // Only an order that waits for its price can be held back by the permission or balance
+        const fillIssue =
+          status === 'open' || status === 'partiallyFilled'
+            ? (this.#fillIssues.get(order.uid) ?? null)
+            : null
+
         orders.push({
           uid: order.uid,
           chainId,
@@ -2271,7 +2545,11 @@ export class LimitOrdersController extends EventEmitter {
           createdAt: new Date(order.creationDate).getTime(),
           isEthFlow,
           partiallyFillable: order.partiallyFillable,
-          feeBps: getPartnerFeeBpsFromAppData(order.fullAppData)
+          feeBps: getPartnerFeeBpsFromAppData(order.fullAppData),
+          fillIssue,
+          isAllowingAgain:
+            fillIssue === 'permission' &&
+            allowingTokenKeys.has(LimitOrdersController.#getTokenKey(chainId, order.sellToken))
         })
       })
     })
@@ -2297,6 +2575,7 @@ export class LimitOrdersController extends EventEmitter {
   /** Clears the form and drops the transaction being prepared */
   resetForm() {
     this.#resetFormFields()
+    this.hasPersistedPopupForm = false
     this.fromSelectedToken = null
     this.toSelectedToken = null
     this.expiry = '7d'
