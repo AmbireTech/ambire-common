@@ -34,6 +34,7 @@ import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
 import * as safeLib from '../../libs/safe/safe'
 import { SwapAndBridgeFormStatus } from '../../libs/swapAndBridge/constants'
 import { generateUuid } from '../../utils/uuid'
+import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
@@ -1765,6 +1766,61 @@ describe('RequestsController ', () => {
     controller.userRequests.forEach((request) => {
       if (request.kind === 'calls') request.signAccountOp.destroy()
     })
+  })
+
+  test('keeps an open Safe transaction when the Safe API returns other details for it', async () => {
+    const { controller } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const reviewedRecipient = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const otherRecipient = '0x1111111111111111111111111111111111111111'
+    const firstSigner = new Wallet(`0x${'1'.repeat(64)}`)
+    const secondSigner = new Wallet(`0x${'2'.repeat(64)}`)
+    const confirmation = (signer: Wallet): SafeMultisigConfirmationResponse => ({
+      owner: signer.address,
+      signature: signer.signingKey.sign(SAFE_TX_HASH).serialized,
+      signatureType: 'EOA',
+      submissionDate: '2026-08-18T00:00:00Z'
+    })
+    const buildSafeRequest = (to: string, confirmations: SafeMultisigConfirmationResponse[]) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [{ to, value: 1n, data: '0x' }],
+            meta: {
+              accountAddr,
+              chainId: 1n,
+              safeTxnProps: {
+                txnId: SAFE_TX_HASH,
+                signature: `0x${confirmations.map(({ signature }) => signature.slice(2)).join('')}`,
+                nonce: 0n
+              },
+              safeTx: {
+                ...getSafeTx(0)!,
+                to,
+                value: '1',
+                safeTxHash: SAFE_TX_HASH,
+                confirmations
+              }
+            }
+          }
+        }
+      })
+
+    await buildSafeRequest(reviewedRecipient, [confirmation(firstSigner)])
+    // Same Safe txn hash, other recipient, and one more signature to take
+    await buildSafeRequest(otherRecipient, [confirmation(firstSigner), confirmation(secondSigner)])
+
+    expect(controller.userRequests).toHaveLength(1)
+    const request = controller.userRequests[0]
+    if (request?.kind !== 'calls') throw new Error('Expected a calls request')
+    const { accountOp } = request.signAccountOp
+    expect(accountOp.safeTx?.to).toBe(reviewedRecipient)
+    expect(accountOp.calls.map(({ to }) => to)).toEqual([reviewedRecipient])
+    expect(accountOp.signed).toEqual([firstSigner.address])
+
+    request.signAccountOp.destroy()
   })
 
   test('emits completed humanization for a Safe transaction already in the queue', async () => {
@@ -3516,6 +3572,124 @@ describe('RequestsController ', () => {
     await controller.rejectUserRequests(
       'Test cleanup',
       controller.userRequests.map(({ id }) => id)
+    )
+  })
+
+  test('does not ask the Safe API for missing deployment data while opted out of it', async () => {
+    const { accountsCtrl, controller, mainCtrl } = await prepareTest(true, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
+    account.safeCreation = {
+      factoryAddr: '0x',
+      singleton: '0x',
+      saltNonce: '0x',
+      setupData: '0x'
+    }
+
+    Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
+      state.isDeployed = false
+    })
+    accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
+    await mainCtrl.featureFlags.setFeatureFlag('safeApi', false)
+    const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
+    const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+    const reject = jest.fn()
+
+    await controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'eth_sendTransaction',
+          params: [{ from: accountAddr, to: ZeroAddress, value: '0x0', data: '0x' }],
+          session: MOCK_SESSION
+        },
+        dappPromise: {
+          id: 'safe-api-opted-out-deploy-test',
+          resolve: jest.fn(),
+          reject,
+          session: MOCK_SESSION
+        }
+      }
+    })
+
+    expect(findDeployDataSpy).not.toHaveBeenCalled()
+    expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+    expect(controller.userRequests).toEqual([])
+    expect(reject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
+      })
+    )
+  })
+
+  test('waits for the opt-out to load before asking the Safe API for missing deployment data', async () => {
+    const { accountsCtrl, controller, mainCtrl } = await prepareTest(true, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
+    account.safeCreation = {
+      factoryAddr: '0x',
+      singleton: '0x',
+      saltNonce: '0x',
+      setupData: '0x'
+    }
+
+    Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
+      state.isDeployed = false
+    })
+    accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
+    // e.g. a dapp request right after the background restarted: until the flags are loaded
+    // from storage they are the defaults, where the Safe API is on
+    let hasLoadedFlags = false
+    const isFeatureEnabled = mainCtrl.featureFlags.isFeatureEnabled.bind(mainCtrl.featureFlags)
+    jest
+      .spyOn(mainCtrl.featureFlags, 'isFeatureEnabled')
+      .mockImplementation((flag) =>
+        // on until loaded, then the user's stored opt-out
+        flag === 'safeApi' ? !hasLoadedFlags : isFeatureEnabled(flag)
+      )
+    let finishLoadingFlags = () => {}
+    mainCtrl.featureFlags.initialLoadPromise = new Promise<void>((resolve) => {
+      finishLoadingFlags = () => {
+        hasLoadedFlags = true
+        mainCtrl.featureFlags.initialLoadPromise = undefined
+        resolve()
+      }
+    })
+    const findDeployDataSpy = jest
+      .spyOn(safeLib, 'findDeployData')
+      .mockResolvedValue(new Error('Not Found'))
+    const reject = jest.fn()
+
+    const buildPromise = controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'eth_sendTransaction',
+          params: [{ from: accountAddr, to: ZeroAddress, value: '0x0', data: '0x' }],
+          session: MOCK_SESSION
+        },
+        dappPromise: {
+          id: 'safe-api-flags-loading-deploy-test',
+          resolve: jest.fn(),
+          reject,
+          session: MOCK_SESSION
+        }
+      }
+    })
+    // Gives the request time to reach the Safe API, which it must not do before the flags load
+    await wait(100)
+    expect(findDeployDataSpy).not.toHaveBeenCalled()
+    finishLoadingFlags()
+    await buildPromise
+
+    expect(findDeployDataSpy).not.toHaveBeenCalled()
+    expect(controller.userRequests).toEqual([])
+    expect(reject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
+      })
     )
   })
 

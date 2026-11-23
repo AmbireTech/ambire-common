@@ -202,6 +202,7 @@ import {
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
   getSafeGasRefundWarning,
+  getSafeTxNotShownAsCallsWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
@@ -343,6 +344,13 @@ export class SignAccountOpController
    * in requests/actions.
    */
   #accountOp: AccountOp
+
+  /**
+   * Set when the calls of a Safe transaction from the Safe Transaction Service aren't exactly
+   * what gets signed. Kept up to date with the account op, so the banners getter doesn't have
+   * to encode the calls again on every update
+   */
+  #safeTxNotShownAsCallsWarning: Warning | null = null
 
   #customSafeNonce: bigint | null = null
 
@@ -605,6 +613,13 @@ export class SignAccountOpController
   #replacement?: TxnReplacement
 
   /**
+   * Set when the user cancels the signing, which rejects the request waiting on the device
+   * (e.g. "Operation cancelled by user"). That rejection is only logged, not shown as an error.
+   * Cleared when signing starts again
+   */
+  #isSigningCancelledByUser = false
+
+  /**
    * An earlier sent op that is not confirmed yet and holds a nonce this op needs, and the
    * account op to replace it with, when this op can (see `replacePendingAccountOp`). Null when
    * nothing holds this op back, and during a speed up or a cancel, as they take no new nonce.
@@ -711,6 +726,7 @@ export class SignAccountOpController
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
+    this.#safeTxNotShownAsCallsWarning = getSafeTxNotShownAsCallsWarning(this.#accountOp)
     this.#replacement = replacement
     this.#updateSafeEip712Data()
 
@@ -890,6 +906,8 @@ export class SignAccountOpController
       ...accountOp,
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
+    if (hasUpdatedCalls || 'safeTx' in accountOp)
+      this.#safeTxNotShownAsCallsWarning = getSafeTxNotShownAsCallsWarning(this.#accountOp)
     this.#updateSafeEip712Data()
 
     if (hasUpdatedCalls) void this.#updateFirstTimeRecipients()
@@ -2529,6 +2547,9 @@ export class SignAccountOpController
     }
 
     if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
+    // Shown as a banner (see `banners`), but it's also in the warnings so the user has to confirm
+    // it before signing (see its `promptBefore`)
+    if (this.#safeTxNotShownAsCallsWarning) warnings.push(this.#safeTxNotShownAsCallsWarning)
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
@@ -4275,6 +4296,12 @@ export class SignAccountOpController
     signature: Hex
     shouldPropose: boolean
   }) {
+    // Opted out of the Safe API: the signature only stays here. Not a failure, as it's the
+    // user's choice, so signing continues as if it was shared (e.g. sign and close closes).
+    // Read once the flags are loaded, as until then they are the defaults
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#featureFlags.isFeatureEnabled('safeApi')) return
+
     if (shouldPropose) {
       // propose the txn to Safe Global upon first entry
       await withTimeout(
@@ -4405,7 +4432,12 @@ export class SignAccountOpController
     sendCrashReport?: boolean
     accountState?: AccountOnchainState
   }) {
-    this.emitError({ level: 'major', message, error: new Error(message), sendCrashReport })
+    this.emitError({
+      level: this.#isSigningCancelledByUser ? 'silent' : 'major',
+      message,
+      error: new Error(message),
+      sendCrashReport
+    })
     this.status = { type: SigningStatus.ReadyToSign }
 
     this.emitUpdate()
@@ -4672,6 +4704,8 @@ export class SignAccountOpController
   }
 
   async sign() {
+    this.#isSigningCancelledByUser = false
+
     if (!this.readyToSign) {
       const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
@@ -5927,9 +5961,13 @@ export class SignAccountOpController
 
     this.emitError({
       // Keep the report for Sentry/logging, but don't show a toast when we're
-      // handling this softly via the "Gas fee updated" confirmation modal
-      // or when the speed up is no longer needed.
-      level: softFeeUpdateConfirmation || isSpeedUpNotNeeded ? 'silent' : 'major',
+      // handling this softly via the "Gas fee updated" confirmation modal,
+      // when the speed up is no longer needed, or when the user cancelled the signing
+      // (the device's rejection that follows isn't an error to them).
+      level:
+        softFeeUpdateConfirmation || isSpeedUpNotNeeded || this.#isSigningCancelledByUser
+          ? 'silent'
+          : 'major',
       message,
       error: _err || new Error(message),
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
@@ -5985,6 +6023,8 @@ export class SignAccountOpController
   }
 
   cancelSignReq() {
+    // Before the reset, as it rejects the request waiting on the device right away
+    this.#isSigningCancelledByUser = true
     this.#resetToReadyToSign()
     this.emitUpdate()
     this.#checkReplacementStillNeeded()
@@ -6104,6 +6144,15 @@ export class SignAccountOpController
         type: 'warning',
         title: safeDelegateCallWarning.title,
         text: safeDelegateCallWarning.text || safeDelegateCallWarning.title
+      })
+    }
+
+    if (this.#safeTxNotShownAsCallsWarning) {
+      banners.push({
+        id: this.#safeTxNotShownAsCallsWarning.id,
+        type: 'warning',
+        title: this.#safeTxNotShownAsCallsWarning.title,
+        text: this.#safeTxNotShownAsCallsWarning.text || this.#safeTxNotShownAsCallsWarning.title
       })
     }
 

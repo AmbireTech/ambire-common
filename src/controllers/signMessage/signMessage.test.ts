@@ -19,7 +19,6 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { InternalSigner } from '../../../test/keystore'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
@@ -27,6 +26,7 @@ import { IInviteController } from '../../interfaces/invite'
 import { IKeystoreController, Key } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
+import { ISafeController } from '../../interfaces/safe'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import { Erc7730Registry } from '../../libs/humanizer/erc7730/types'
@@ -257,42 +257,98 @@ describe('SignMessageController', () => {
     expect(controller.messageToSign).toBeNull()
   })
 
-  test('should resolve when adding a message to Safe Global times out', async () => {
-    const accountsController = {
-      initialLoadPromise: Promise.resolve(),
-      accounts: [account],
-      getOrFetchAccountOnChainState: jest.fn(() => Promise.resolve(accountOnchainState))
-    } as unknown as IAccountsController
-    const controller = new SignMessageController(
-      keystoreCtrl,
-      providersCtrl,
-      networksCtrl,
-      accountsController,
-      {},
-      inviteCtrl
-    )
-    await controller.init({ messageToSign })
-    jest.useFakeTimers()
-    const addMessageSpy = jest
-      .spyOn(safeLib, 'addMessage')
-      .mockImplementation(() => new Promise(() => undefined))
-    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
-
-    try {
-      const addMessagePromise = controller.addMsgToSafeGlobal('0xsignature', 'message')
-
-      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
-
-      await expect(addMessagePromise).resolves.toBeUndefined()
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        'failed to send message to Safe Global: ',
-        new Error(`Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`)
-      )
-    } finally {
-      addMessageSpy.mockRestore()
-      consoleLogSpy.mockRestore()
-      jest.useRealTimers()
+  describe('the signatures of a Safe message that needs more owners', () => {
+    const safeSignature = `0x${'11'.repeat(65)}`
+    const safeAccount: Account = {
+      ...account,
+      safeCreation: {
+        factoryAddr: account.addr as Hex,
+        singleton: account.addr as Hex,
+        saltNonce: '0x00',
+        setupData: '0x'
+      }
     }
+
+    /** Signs the message with one owner of a Safe that needs two */
+    const signWithOneOfTwoOwners = async (safe?: ISafeController) => {
+      const safeAccountsCtrl = {
+        initialLoadPromise: Promise.resolve(),
+        accounts: [safeAccount],
+        getOrFetchAccountOnChainState: jest.fn(() =>
+          Promise.resolve({ ...accountOnchainState, threshold: 2 })
+        )
+      } as unknown as IAccountsController
+      const controller = new SignMessageController(
+        keystoreCtrl,
+        providersCtrl,
+        networksCtrl,
+        safeAccountsCtrl,
+        {},
+        inviteCtrl,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        safe
+      )
+      const mockSigner = {
+        // @ts-expect-error for mocking purposes only
+        signTypedData: jest.fn().mockResolvedValue(safeSignature),
+        key: { addr: account.addr, type: 'internal', dedicatedToOneSA: true, meta: {} }
+      }
+      // @ts-expect-error spy on the getSigner method and mock its implementation
+      const getSignerSpy = jest.spyOn(keystoreCtrl, 'getSigner').mockResolvedValue(mockSigner)
+
+      try {
+        await controller.init({
+          messageToSign: { ...messageToSign, accountAddr: safeAccount.addr }
+        })
+        controller.setSigners([{ addr: account.addr, type: 'internal' }])
+        await controller.sign()
+      } finally {
+        getSignerSpy.mockRestore()
+      }
+
+      return controller
+    }
+
+    test('are shared with the other owners through the SafeController', async () => {
+      const safe = {
+        addMsgToSafeGlobal: jest.fn<ISafeController['addMsgToSafeGlobal']>(async () => {}),
+        addSigToSafeGlobal: jest.fn<ISafeController['addSigToSafeGlobal']>(async () => {})
+      }
+
+      await signWithOneOfTwoOwners(safe as unknown as ISafeController)
+
+      expect(safe.addMsgToSafeGlobal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chainId: messageToSign.chainId,
+          safeAddr: safeAccount.addr,
+          message: 'test',
+          signature: safeSignature
+        })
+      )
+      expect(safe.addSigToSafeGlobal).not.toHaveBeenCalled()
+    })
+
+    test('are not sent anywhere without a SafeController, as for the auto login', async () => {
+      // stubbed, so a regression fails here instead of reaching the Safe API
+      const addMessageSpy = jest.spyOn(safeLib, 'addMessage').mockResolvedValue(undefined)
+      const addMessageSignatureSpy = jest
+        .spyOn(safeLib, 'addMessageSignature')
+        .mockResolvedValue(undefined as never)
+
+      try {
+        const controller = await signWithOneOfTwoOwners()
+
+        expect(controller.signatures).toEqual([safeSignature])
+        expect(addMessageSpy).not.toHaveBeenCalled()
+        expect(addMessageSignatureSpy).not.toHaveBeenCalled()
+      } finally {
+        addMessageSpy.mockRestore()
+        addMessageSignatureSpy.mockRestore()
+      }
+    })
   })
 
   test('should expose Safe EIP-712 data when initializing a Safe message', async () => {

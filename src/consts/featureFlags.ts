@@ -65,6 +65,12 @@ export interface FeatureFlags {
    * Disabling it also disables `emailVault`.
    */
   ambireAnalytics: boolean
+  /**
+   * Allow the user to opt out of Safe's Transaction Service API. When disabled, nothing is sent
+   * to it: Safe accounts can't be imported, their pending transactions and messages aren't
+   * synced, and owner signatures aren't shared with the other owners.
+   */
+  safeApi: boolean
 }
 
 export const defaultFeatureFlags: FeatureFlags = {
@@ -89,7 +95,8 @@ export const defaultFeatureFlags: FeatureFlags = {
   namoshiDomains: true,
   gnsDomains: true,
   emailVault: true,
-  ambireAnalytics: true
+  ambireAnalytics: true,
+  safeApi: true
 }
 
 /**
@@ -118,7 +125,8 @@ export const featureFlagScopes = {
   namoshiDomains: 'internal',
   gnsDomains: 'internal',
   emailVault: 'user',
-  ambireAnalytics: 'user'
+  ambireAnalytics: 'user',
+  safeApi: 'user'
 } as const satisfies Record<keyof FeatureFlags, 'user' | 'internal'>
 
 /** A feature flag the user controls, see `featureFlagScopes` */

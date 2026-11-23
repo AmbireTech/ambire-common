@@ -645,6 +645,7 @@ export class ContinuousUpdatesController extends EventEmitter {
         (r) =>
           r.kind === 'calls' &&
           !!r.signAccountOp.account.safeCreation &&
+          r.signAccountOp.accountOp.chainId === oneConfirmed.chainId &&
           oneConfirmed.safeTxnHash === r.signAccountOp.accountOp.txnId
       )
       if (!userR) continue
@@ -683,7 +684,8 @@ export class ContinuousUpdatesController extends EventEmitter {
         continue
       }
 
-      // we come here only if transactionHash is undefined
+      // we come here only if transactionHash is undefined. The confirmations are only the ones
+      // whose owners were verified (see SafeController.fetchExecuted)
       const signatures = (oneConfirmed.confirmations?.map((c) => c.signature) || []) as Hex[]
       const safeGlobalSigs = callsUserR.signAccountOp.accountOp.txnId
         ? sortSigs(
@@ -747,7 +749,10 @@ export class ContinuousUpdatesController extends EventEmitter {
       })
     if (!pendingSafeMessages.length) return
 
-    const fetchedMsgs = await this.#main.safe.getMessagesByHash(pendingSafeMessages)
+    const fetchedMsgs = await this.#main.safe.getMessagesByHash(
+      this.#main.selectedAccount.account.addr as Hex,
+      pendingSafeMessages
+    )
     // A request that is added or signed, or a message that gets more signatures, changes the
     // fingerprint, which resets the slowdown
     const fingerprint = toSafeResolveFingerprint([
@@ -770,6 +775,7 @@ export class ContinuousUpdatesController extends EventEmitter {
           r.meta.hash === msg.messageHash
       )
       if (!userR) continue
+      // Built from the owner signatures that were verified, see SafeController.getMessagesByHash
       await this.#main.requests.resolveUserRequest({ hash: msg.preparedSignature }, userR.id)
     }
 

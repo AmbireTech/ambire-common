@@ -216,7 +216,7 @@ describe('ERC-7730 registry', () => {
           chainId: 8453
         },
         message: {
-          to: '0x8d80ff0a632a8a7ba2e219e2c4b79f8f3cd2d81b',
+          to: '0x9641d764fc13c8b624c04430c7356c1c7c8102e2',
           value: '0',
           data: multiSendData,
           operation: 1,
