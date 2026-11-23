@@ -1623,7 +1623,7 @@ export class LimitOrdersController extends EventEmitter {
       network,
       provider,
       // The call that places the order, as opposed to the token permission before it
-      mainCallId: orderUid,
+      mainCallIds: [orderUid],
       onBroadcasted: () => {
         const placeCall = calls.find((call) => call.id === orderUid)
         if (placeCall) {
@@ -1757,7 +1757,7 @@ export class LimitOrdersController extends EventEmitter {
     calls,
     network,
     provider,
-    mainCallId,
+    mainCallIds,
     onBroadcasted
   }: {
     purpose: LimitOrderSignPurpose
@@ -1765,9 +1765,13 @@ export class LimitOrdersController extends EventEmitter {
     calls: Call[]
     network: Network
     provider: RPCProvider
-    /** The call that does what the transaction is for. Without it, nothing was done */
-    mainCallId: string
-    onBroadcasted: () => void
+    /**
+     * The calls that do what the transaction is for, e.g. the order, or each order cancelled.
+     * Without any of them, nothing was done
+     */
+    mainCallIds: string[]
+    /** Called with the ids of the main calls that went out */
+    onBroadcasted: (sentMainCallIds: Set<string>) => void
   }): Promise<boolean> {
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
       account.addr,
@@ -1835,13 +1839,16 @@ export class LimitOrdersController extends EventEmitter {
       accountOp,
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
-        // A basic account sends the token permission and the order as separate transactions.
-        // If only the permission went out, the order isn't placed (or cancelled) yet
-        const wasMainCallSent = props.submittedAccountOp.calls.some(
-          (call) => call.id === mainCallId
+        // A basic account sends each call as a separate transaction, e.g. the token permission
+        // and the order. If only the permission went out, the order isn't placed (or cancelled)
+        // yet, and if the user stopped partway through cancelling, only some orders are
+        const sentMainCallIds = new Set(
+          props.submittedAccountOp.calls
+            .map((call) => call.id)
+            .filter((id): id is string => !!id && mainCallIds.includes(id))
         )
-        if (wasMainCallSent) {
-          onBroadcasted()
+        if (sentMainCallIds.size) {
+          onBroadcasted(sentMainCallIds)
         } else {
           this.#hasPartiallyBroadcast = true
           this.emitError({
@@ -1952,10 +1959,19 @@ export class LimitOrdersController extends EventEmitter {
   /* ----------------------------- Cancelling ----------------------------- */
 
   async cancelOrder(orderUid: string) {
-    await this.withStatus('cancelOrder', async () => this.#cancelOrder(orderUid))
+    await this.withStatus('cancelOrder', async () => this.#cancelOrders([orderUid]))
   }
 
-  async #cancelOrder(orderUid: string) {
+  /**
+   * Cancels several orders with one confirmation. They must be on the same network, as one
+   * transaction can't reach two networks
+   */
+  async cancelOrders(orderUids: string[]) {
+    await this.withStatus('cancelOrder', async () => this.#cancelOrders(orderUids))
+  }
+
+  /** The order and how My orders lists it, or an error the user can act on */
+  #getOrderToCancel(orderUid: string) {
     const order = [...this.#accountOrders.values()]
       .flat()
       .find((o) => o.uid.toLowerCase() === orderUid.toLowerCase())
@@ -1975,8 +1991,6 @@ export class LimitOrdersController extends EventEmitter {
         error: new SwapAndBridgeError(`Cannot cancel an order with status ${listedOrder.status}.`)
       })
     }
-
-    const { network, provider } = this.#getNetworkAndProvider(listedOrder.chainId)
     const call = this.#getCancelCall(order)
     if (!call) {
       throw new EmittableError({
@@ -1986,18 +2000,44 @@ export class LimitOrdersController extends EventEmitter {
       })
     }
 
+    return { order, listedOrder, call }
+  }
+
+  async #cancelOrders(orderUids: string[]) {
+    const uniqueOrderUids = [...new Set(orderUids.map((uid) => uid.toLowerCase()))]
+    const toCancel = uniqueOrderUids.map((uid) => this.#getOrderToCancel(uid))
+    const [firstToCancel] = toCancel
+    if (!firstToCancel) {
+      throw new EmittableError({
+        level: 'major',
+        message: 'Select at least one order to cancel.',
+        error: new SwapAndBridgeError('No orders to cancel.')
+      })
+    }
+    const { chainId } = firstToCancel.listedOrder
+    if (toCancel.some(({ listedOrder }) => listedOrder.chainId !== chainId)) {
+      throw new EmittableError({
+        level: 'major',
+        message:
+          'Orders on different networks can’t be cancelled together. Cancel the orders of one network at a time.',
+        error: new SwapAndBridgeError('The orders to cancel are on different networks.')
+      })
+    }
+
+    const { network, provider } = this.#getNetworkAndProvider(chainId)
+    const calls = toCancel.map(({ call }) => call)
+
     const account = this.#selectedAccount.account
     if (!account) return
 
     if (account.safeCreation) {
-      this.#callsSentToWindow.set(
-        LimitOrdersController.#getSentCallKey(listedOrder.chainId, call),
-        {
+      toCancel.forEach(({ order, call }) => {
+        this.#callsSentToWindow.set(LimitOrdersController.#getSentCallKey(chainId, call), {
           orderUid: order.uid,
           purpose: 'cancel'
-        }
-      )
-      await this.#signInWindow({ account, network, calls: [call] })
+        })
+      })
+      await this.#signInWindow({ account, network, calls })
       // Shown as cancelling once the Safe's owners sign it and it's sent, see `onAccountOpBroadcast`
       return
     }
@@ -2005,16 +2045,21 @@ export class LimitOrdersController extends EventEmitter {
     const isInitialized = await this.#initSignAccountOp({
       purpose: 'cancel',
       account,
-      calls: [call],
+      calls,
       network,
       provider,
-      mainCallId: `${order.uid}-cancel`,
-      onBroadcasted: () => {
-        this.#unconfirmedOrderCalls.set(
-          LimitOrdersController.#getSentCallKey(listedOrder.chainId, call),
-          { orderUid: order.uid, purpose: 'cancel' }
-        )
-        this.#cancellingOrderUids.add(order.uid)
+      mainCallIds: calls.map((call) => call.id).filter((id): id is string => !!id),
+      onBroadcasted: (sentMainCallIds) => {
+        toCancel.forEach(({ order, call }) => {
+          // A basic account sends each cancel separately, and the user may stop partway
+          if (!call.id || !sentMainCallIds.has(call.id)) return
+
+          this.#unconfirmedOrderCalls.set(LimitOrdersController.#getSentCallKey(chainId, call), {
+            orderUid: order.uid,
+            purpose: 'cancel'
+          })
+          this.#cancellingOrderUids.add(order.uid)
+        })
       }
     })
     if (!isInitialized) return
@@ -2421,7 +2466,7 @@ export class LimitOrdersController extends EventEmitter {
       calls,
       network,
       provider,
-      mainCallId: approvalCallId,
+      mainCallIds: [approvalCallId],
       onBroadcasted: () => this.#markAllowing(chainId, approvalCall, sellToken.address)
     })
     if (!isInitialized) return

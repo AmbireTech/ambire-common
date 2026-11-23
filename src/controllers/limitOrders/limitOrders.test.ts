@@ -399,9 +399,12 @@ describe('LimitOrdersController orders for the dashboard', () => {
 
 /**
  * A Safe account's controller, which signs in the signing window. `getAccountOrders` answers each
- * refresh of My orders
+ * refresh of My orders on Ethereum, and `getBaseOrders` on Base
  */
-const makeSafeController = (getAccountOrders: () => CowSwapAccountOrder[] = () => []) => {
+const makeSafeController = (
+  getAccountOrders: () => CowSwapAccountOrder[] = () => [],
+  getBaseOrders: () => CowSwapAccountOrder[] = () => []
+) => {
   const ethToken = {
     address: ZeroAddress,
     chainId: 1n,
@@ -424,9 +427,12 @@ const makeSafeController = (getAccountOrders: () => CowSwapAccountOrder[] = () =
       quoteId: 1
     })),
     getToTokenList: jest.fn(async () => []),
-    getAccountLimitOrders: jest.fn(async ({ chainId }: { chainId: number }) =>
-      chainId === 1 ? getAccountOrders() : []
-    ),
+    getAccountLimitOrders: jest.fn(async ({ chainId }: { chainId: number }) => {
+      if (chainId === 1) return getAccountOrders()
+      if (chainId === 8453) return getBaseOrders()
+
+      return []
+    }),
     getToken: jest.fn(async ({ address, chainId }: { address: string; chainId: number }) => {
       const token = listedTokens[address.toLowerCase()]
       return token ? { ...token, address, chainId, name: token.symbol } : null
@@ -445,9 +451,14 @@ const makeSafeController = (getAccountOrders: () => CowSwapAccountOrder[] = () =
       accountStates: {},
       getOrFetchAccountOnChainState: jest.fn(async () => ({ nonce: 0n }))
     },
-    networks: { networks: [{ chainId: 1n, name: 'Ethereum', nativeAssetSymbol: 'ETH' }] },
+    networks: {
+      networks: [
+        { chainId: 1n, name: 'Ethereum', nativeAssetSymbol: 'ETH' },
+        { chainId: 8453n, name: 'Base', nativeAssetSymbol: 'ETH' }
+      ]
+    },
     // No allowance yet, so the batch includes the token permission
-    providers: { providers: { '1': { call: providerCall } } },
+    providers: { providers: { '1': { call: providerCall }, '8453': { call: providerCall } } },
     featureFlags: { isFeatureEnabled: () => false },
     portfolio: { getAccountPortfolioState: () => ({}) },
     ui: { uiEvent: { on: jest.fn() } },
@@ -577,6 +588,121 @@ describe('LimitOrdersController orders signed in the signing window', () => {
     controller.onAccountOpBroadcast({ accountAddr, chainId: 1n, calls: withNewIds(calls) })
 
     expect(controller.orders[0]?.status).toBe('cancelling')
+  })
+
+  describe('cancelling several orders at once', () => {
+    const firstUid = `0x${'31'.repeat(56)}`
+    const secondUid = `0x${'32'.repeat(56)}`
+    const baseUid = `0x${'33'.repeat(56)}`
+    const invalidateOrder = (uid: string) =>
+      new Interface(['function invalidateOrder(bytes)']).encodeFunctionData('invalidateOrder', [
+        uid
+      ])
+
+    it('cancels the orders of one network with one signature, and marks each once sent', async () => {
+      const { controller, requestSignatureInWindow } = makeSafeController(() => [
+        makeOrder({ uid: firstUid }),
+        makeOrder({ uid: secondUid })
+      ])
+      await controller.updateOrders()
+
+      await controller.cancelOrders([firstUid, secondUid])
+
+      expect(requestSignatureInWindow).toHaveBeenCalledTimes(1)
+      const { calls } = requestSignatureInWindow.mock.calls[0]![0]
+      expect(calls.map((call: { data: string }) => call.data)).toEqual([
+        invalidateOrder(firstUid),
+        invalidateOrder(secondUid)
+      ])
+      // Still waiting for the Safe's owners
+      expect(controller.orders.map((order) => order.status)).toEqual(['open', 'open'])
+
+      controller.onAccountOpBroadcast({ accountAddr, chainId: 1n, calls: withNewIds(calls) })
+
+      expect(controller.orders.map((order) => order.status)).toEqual(['cancelling', 'cancelling'])
+    })
+
+    it('cancels each order once when it is selected twice', async () => {
+      const { controller, requestSignatureInWindow } = makeSafeController(() => [
+        makeOrder({ uid: firstUid })
+      ])
+      await controller.updateOrders()
+
+      await controller.cancelOrders([firstUid, firstUid.toUpperCase().replace('0X', '0x')])
+
+      expect(requestSignatureInWindow.mock.calls[0]![0].calls).toHaveLength(1)
+    })
+
+    it('refuses to cancel orders on different networks together', async () => {
+      const { controller, requestSignatureInWindow } = makeSafeController(
+        () => [makeOrder({ uid: firstUid })],
+        () => [makeOrder({ uid: baseUid })]
+      )
+      await controller.updateOrders()
+      const errors: string[] = []
+      controller.onError((error) => errors.push(error.message))
+
+      await controller.cancelOrders([firstUid, baseUid])
+
+      expect(requestSignatureInWindow).not.toHaveBeenCalled()
+      expect(errors).toHaveLength(1)
+      expect(controller.orders.map((order) => order.status)).toEqual(['open', 'open'])
+    })
+
+    it('cancels nothing when one of the orders can no longer be cancelled', async () => {
+      const { controller, requestSignatureInWindow } = makeSafeController(() => [
+        makeOrder({ uid: firstUid }),
+        makeOrder({ uid: secondUid, status: 'fulfilled' })
+      ])
+      await controller.updateOrders()
+      const errors: string[] = []
+      controller.onError((error) => errors.push(error.message))
+
+      await controller.cancelOrders([firstUid, secondUid])
+
+      expect(requestSignatureInWindow).not.toHaveBeenCalled()
+      expect(errors).toHaveLength(1)
+    })
+
+    it('asks for an order when none is given', async () => {
+      const { controller, requestSignatureInWindow } = makeSafeController(() => [
+        makeOrder({ uid: firstUid })
+      ])
+      await controller.updateOrders()
+      const errors: string[] = []
+      controller.onError((error) => errors.push(error.message))
+
+      await controller.cancelOrders([])
+
+      expect(requestSignatureInWindow).not.toHaveBeenCalled()
+      expect(errors).toHaveLength(1)
+    })
+
+    it('shows only the orders whose cancel went through as waiting again when the rest did not', async () => {
+      const { controller, requestSignatureInWindow } = makeSafeController(() => [
+        makeOrder({ uid: firstUid }),
+        makeOrder({ uid: secondUid })
+      ])
+      await controller.updateOrders()
+      await controller.cancelOrders([firstUid, secondUid])
+      const broadcastCalls = withNewIds(requestSignatureInWindow.mock.calls[0]![0].calls)
+      controller.onAccountOpBroadcast({ accountAddr, chainId: 1n, calls: broadcastCalls })
+
+      controller.onAccountOpsFinalized([
+        {
+          accountAddr,
+          chainId: 1n,
+          status: AccountOpStatus.PartiallyComplete,
+          calls: [
+            { ...broadcastCalls[0], status: AccountOpStatus.Success },
+            { ...broadcastCalls[1], status: AccountOpStatus.Failure }
+          ]
+        } as any
+      ])
+
+      const statusByUid = Object.fromEntries(controller.orders.map((o) => [o.uid, o.status]))
+      expect(statusByUid).toEqual({ [firstUid]: 'cancelling', [secondUid]: 'open' })
+    })
   })
 
   describe('when the transaction does not go through', () => {
