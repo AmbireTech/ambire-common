@@ -4,36 +4,29 @@ import {
   PrivacyPoolsNote,
   PrivacyPoolsSendCover
 } from '../../../interfaces/privacyPools'
-import { PrivacyPoolsDepositIndex } from '../poolStats'
+import { PrivacyPoolsPoolCover } from '../poolStats'
 
-/** The part of a send paid from one note. */
+/** What a send spends from its one deposit. */
 export type PrivacyPoolsNoteSpend = { note: PrivacyPoolsNote; amount: bigint }
 
-/** A common amount the notes can pay, with how many deposits would hide a send of it. */
+/** A common amount the deposit can pay, with how many deposits would hide a send of it. */
 export type CommonAmountCover = { amount: bigint; cover: PrivacyPoolsSendCover }
-
-/**
- * The values the account's own deposits put into the pool, of all time in `all` and of the last
- * `PRIVACY_POOLS_COVER_WINDOW_DAYS` in `recent`. They hide nobody, as they all point to the user.
- */
-export type OwnDepositValues = { all: bigint[]; recent: bigint[] }
 
 export type WithdrawalFacts = {
   amount: bigint
-  notes: PrivacyPoolsNote[]
-  tokenAddress: string
-  spends: PrivacyPoolsNoteSpend[]
+  /** Null before an amount is entered, so only the recipient is checked. */
+  spend: PrivacyPoolsNoteSpend | null
   cover: PrivacyPoolsSendCover
   commonAmountCovers: CommonAmountCover[]
   recipient: string | null
-  depositIndex: PrivacyPoolsDepositIndex
-  ownDepositValues: OwnDepositValues
+  /** The deposits of others that hide the send - see `getSendPoolCover`. */
+  poolCover: PrivacyPoolsPoolCover
 }
 
 export type DepositFacts = {
   amount: bigint
   maxAmount: bigint
-  depositIndex: PrivacyPoolsDepositIndex
+  poolCover: PrivacyPoolsPoolCover
   commonAmounts: bigint[]
 }
 

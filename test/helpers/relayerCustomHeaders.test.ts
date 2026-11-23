@@ -4,25 +4,34 @@ import {
 } from './relayerCustomHeaders'
 
 const RELAYER_URL = 'https://relayer.example.com'
+const CENA_URL = 'https://cena.example.com'
 const HEADERS = { 'x-test-header': 'secret-value' }
 
 describe('createFetchWithRelayerCustomHeaders', () => {
   const baseFetch = jest.fn(() => Promise.resolve(new Response()))
-  const fetchWithHeaders = createFetchWithRelayerCustomHeaders(baseFetch, HEADERS, RELAYER_URL)
+  const fetchWithHeaders = createFetchWithRelayerCustomHeaders(baseFetch, HEADERS, [
+    RELAYER_URL,
+    CENA_URL
+  ])
 
   beforeEach(() => baseFetch.mockClear())
 
-  it('adds the headers to a relayer request and keeps the ones of the caller', async () => {
-    await fetchWithHeaders(`${RELAYER_URL}/gas-tank/assets`, { headers: { a: 'b' } })
+  it.each([`${RELAYER_URL}/gas-tank/assets`, `${CENA_URL}/api/v3/simple/price?ids=ethereum`])(
+    'adds the headers to %s and keeps the ones of the caller',
+    async (url) => {
+      await fetchWithHeaders(url, { headers: { a: 'b' } })
 
-    const sentHeaders = (baseFetch.mock.calls[0] as any)[1].headers as Headers
-    expect(sentHeaders.get('x-test-header')).toBe('secret-value')
-    expect(sentHeaders.get('a')).toBe('b')
-  })
+      const sentHeaders = (baseFetch.mock.calls[0] as any)[1].headers as Headers
+      expect(sentHeaders.get('x-test-header')).toBe('secret-value')
+      expect(sentHeaders.get('a')).toBe('b')
+    }
+  )
 
   it.each([
     `${RELAYER_URL}.evil.com/x`,
     'https://relayer.example.com@evil.com/x',
+    `${CENA_URL}.evil.com/x`,
+    'https://cena.example.com@evil.com/x',
     'https://example.com/x'
   ])('does not add the headers to %s', async (url) => {
     await fetchWithHeaders(url)

@@ -624,6 +624,51 @@ describe('getRpcTokenPrices', () => {
       }
     })
 
+    test("prices EURe's current address on Gnosis, which no pool trades, the same as its old one", async () => {
+      const gnosis: Network = {
+        ...ethereum,
+        name: 'Gnosis',
+        chainId: 100n,
+        rpcUrls: ['https://invictus.ambire.com/gnosis'],
+        selectedRpcUrl: 'https://invictus.ambire.com/gnosis'
+      }
+      const provider = getRpcProvider(gnosis.rpcUrls, gnosis.chainId)
+      const EURE = '0x420CA0f9B9b604cE0fd9C18EF134C705e5Fa3430'
+      const OLD_EURE = '0xcB444e90D8198415266c6a2724b7900fb12FC56E'
+
+      try {
+        const { prices } = await getRpcTokenPrices({
+          provider,
+          network: gnosis,
+          tokenAddresses: [EURE, OLD_EURE]
+        })
+
+        expect(prices.get(OLD_EURE.toLowerCase())).toBeGreaterThan(0)
+        expect(prices.get(EURE.toLowerCase())).toBe(prices.get(OLD_EURE.toLowerCase()))
+      } finally {
+        provider.destroy()
+      }
+    })
+
+    test('prices USDT0 on Polygon, whose pools take the aggregator about 18.8M gas to walk', async () => {
+      const polygon = networks.find(({ chainId }) => chainId === 137n)!
+      const provider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
+      const USDT0 = '0xc2132D05D31c914a87C6611C10748AEb04B58e8F'
+
+      try {
+        const { prices } = await getRpcTokenPrices({
+          provider,
+          network: polygon,
+          tokenAddresses: [USDT0]
+        })
+
+        expect(prices.get(USDT0.toLowerCase())).toBeGreaterThan(0.95)
+        expect(prices.get(USDT0.toLowerCase())).toBeLessThan(1.05)
+      } finally {
+        provider.destroy()
+      }
+    })
+
     test('gives no price to scam tokens priced only by a drained pool, unlike real tokens', async () => {
       const baseNetwork = networks.find(({ chainId }) => chainId === 8453n)!
       const provider = getRpcProvider(baseNetwork.rpcUrls, baseNetwork.chainId)
@@ -729,7 +774,7 @@ describe('getRpcTokenPrices', () => {
             { wrappedNative: WETH, stablecoins: [], factories: [] },
             [true, true]
           ],
-          // An RPC that gives a call 12M gas, less than the 16M a single token is allowed
+          // An RPC that gives a call 12M gas, less than the 30M a single token is allowed
           { gasLimit: '0xb71b00' }
         )
 

@@ -202,6 +202,7 @@ import {
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
   getSafeGasRefundWarning,
+  getSafeTxNotShownAsCallsWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
@@ -343,6 +344,13 @@ export class SignAccountOpController
    * in requests/actions.
    */
   #accountOp: AccountOp
+
+  /**
+   * Set when the calls of a Safe transaction from the Safe Transaction Service aren't exactly
+   * what gets signed. Kept up to date with the account op, so the banners getter doesn't have
+   * to encode the calls again on every update
+   */
+  #safeTxNotShownAsCallsWarning: Warning | null = null
 
   #customSafeNonce: bigint | null = null
 
@@ -605,6 +613,13 @@ export class SignAccountOpController
   #replacement?: TxnReplacement
 
   /**
+   * Set when the user cancels the signing, which rejects the request waiting on the device
+   * (e.g. "Operation cancelled by user"). That rejection is only logged, not shown as an error.
+   * Cleared when signing starts again
+   */
+  #isSigningCancelledByUser = false
+
+  /**
    * An earlier sent op that is not confirmed yet and holds a nonce this op needs, and the
    * account op to replace it with, when this op can (see `replacePendingAccountOp`). Null when
    * nothing holds this op back, and during a speed up or a cancel, as they take no new nonce.
@@ -615,6 +630,8 @@ export class SignAccountOpController
   } | null = null
 
   #onActivityUpdateUnsubscribe?: () => void
+
+  #onKeystoreUpdateUnsubscribe?: () => void
 
   #isReplacedPendingAccountOpProcessed = false
 
@@ -709,6 +726,7 @@ export class SignAccountOpController
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
+    this.#safeTxNotShownAsCallsWarning = getSafeTxNotShownAsCallsWarning(this.#accountOp)
     this.#replacement = replacement
     this.#updateSafeEip712Data()
 
@@ -888,6 +906,8 @@ export class SignAccountOpController
       ...accountOp,
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
+    if (hasUpdatedCalls || 'safeTx' in accountOp)
+      this.#safeTxNotShownAsCallsWarning = getSafeTxNotShownAsCallsWarning(this.#accountOp)
     this.#updateSafeEip712Data()
 
     if (hasUpdatedCalls) void this.#updateFirstTimeRecipients()
@@ -1289,6 +1309,35 @@ export class SignAccountOpController
     return this.#replacement ? this.#replacement.applyMinFees(gasPrices) : gasPrices
   }
 
+  #isKeyStored(addr: Key['addr'], type: Key['type']) {
+    return this.#keystore.keys.some((key) => key.addr === addr && key.type === type)
+  }
+
+  /**
+   * Forgets the signing and the fee payer key once they are removed, so `update` picks the
+   * default ones again and the user sees them before signing. Never while signing, as the user
+   * agreed to what is on the screen. A speed up keeps its signer, as it can't sign with another
+   */
+  #forgetRemovedKeys() {
+    if (this.status?.type && noStateUpdateStatuses.indexOf(this.status.type) !== -1) return
+
+    const { signingKeyAddr, signingKeyType, gasFeePayment } = this.accountOp
+    const isSigningKeyRemoved =
+      !!signingKeyAddr &&
+      !!signingKeyType &&
+      this.canChangeSigningKey &&
+      !this.#isKeyStored(signingKeyAddr, signingKeyType)
+    // Set only when an imported key pays the fee
+    const isFeePayerKeyRemoved =
+      !!gasFeePayment?.paidByKeyType &&
+      !this.#isKeyStored(gasFeePayment.paidBy, gasFeePayment.paidByKeyType)
+    if (!isSigningKeyRemoved && !isFeePayerKeyRemoved) return
+
+    if (isSigningKeyRemoved) this.#updateAccountOp({ signingKeyAddr: null, signingKeyType: null })
+    if (gasFeePayment && isFeePayerKeyRemoved) gasFeePayment.paidByKeyType = null
+    this.update({})
+  }
+
   async #getDefaultSigner() {
     // call this method during signing only
 
@@ -1431,6 +1480,11 @@ export class SignAccountOpController
       this.propagateUpdate(forceEmit)
     }, `sign-account-op-earlier-pending-${generateUuid()}`)
     this.#updateEarlierPendingAccountOp()
+
+    // A key can be removed (e.g. in Settings, in another window) while this op waits
+    this.#onKeystoreUpdateUnsubscribe = this.#keystore.onUpdate(() => {
+      this.#forgetRemovedKeys()
+    }, `sign-account-op-removed-keys-${generateUuid()}`)
 
     this.#simulateAndEstimateOrSimulateInterval.start({
       runImmediately: true,
@@ -2493,6 +2547,9 @@ export class SignAccountOpController
     }
 
     if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
+    // Shown as a banner (see `banners`), but it's also in the warnings so the user has to confirm
+    // it before signing (see its `promptBefore`)
+    if (this.#safeTxNotShownAsCallsWarning) warnings.push(this.#safeTxNotShownAsCallsWarning)
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
@@ -3066,6 +3123,8 @@ export class SignAccountOpController
     this.#replacement?.destroy()
     this.#onActivityUpdateUnsubscribe?.()
     this.#onActivityUpdateUnsubscribe = undefined
+    this.#onKeystoreUpdateUnsubscribe?.()
+    this.#onKeystoreUpdateUnsubscribe = undefined
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
@@ -4367,7 +4426,12 @@ export class SignAccountOpController
     sendCrashReport?: boolean
     accountState?: AccountOnchainState
   }) {
-    this.emitError({ level: 'major', message, error: new Error(message), sendCrashReport })
+    this.emitError({
+      level: this.#isSigningCancelledByUser ? 'silent' : 'major',
+      message,
+      error: new Error(message),
+      sendCrashReport
+    })
     this.status = { type: SigningStatus.ReadyToSign }
 
     this.emitUpdate()
@@ -4634,6 +4698,8 @@ export class SignAccountOpController
   }
 
   async sign() {
+    this.#isSigningCancelledByUser = false
+
     if (!this.readyToSign) {
       const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
@@ -4651,6 +4717,19 @@ export class SignAccountOpController
 
     if (!isSafeDeploy && !this.#isSafeFullySigned && (!signingKeyAddr || !signingKeyType)) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#emitSigningErrorAndResetToReadyToSign({ message })
+    }
+
+    // E.g. a speed up, which can only be signed by the key of the transaction it replaces
+    if (
+      !isSafeDeploy &&
+      !this.#isSafeFullySigned &&
+      !!signingKeyAddr &&
+      !!signingKeyType &&
+      !this.#isKeyStored(signingKeyAddr, signingKeyType)
+    ) {
+      const message =
+        'The key that has to sign this transaction was removed from the wallet. Import it again to sign.'
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
@@ -5876,9 +5955,13 @@ export class SignAccountOpController
 
     this.emitError({
       // Keep the report for Sentry/logging, but don't show a toast when we're
-      // handling this softly via the "Gas fee updated" confirmation modal
-      // or when the speed up is no longer needed.
-      level: softFeeUpdateConfirmation || isSpeedUpNotNeeded ? 'silent' : 'major',
+      // handling this softly via the "Gas fee updated" confirmation modal,
+      // when the speed up is no longer needed, or when the user cancelled the signing
+      // (the device's rejection that follows isn't an error to them).
+      level:
+        softFeeUpdateConfirmation || isSpeedUpNotNeeded || this.#isSigningCancelledByUser
+          ? 'silent'
+          : 'major',
       message,
       error: _err || new Error(message),
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
@@ -5934,6 +6017,8 @@ export class SignAccountOpController
   }
 
   cancelSignReq() {
+    // Before the reset, as it rejects the request waiting on the device right away
+    this.#isSigningCancelledByUser = true
     this.#resetToReadyToSign()
     this.emitUpdate()
     this.#checkReplacementStillNeeded()
@@ -6053,6 +6138,15 @@ export class SignAccountOpController
         type: 'warning',
         title: safeDelegateCallWarning.title,
         text: safeDelegateCallWarning.text || safeDelegateCallWarning.title
+      })
+    }
+
+    if (this.#safeTxNotShownAsCallsWarning) {
+      banners.push({
+        id: this.#safeTxNotShownAsCallsWarning.id,
+        type: 'warning',
+        title: this.#safeTxNotShownAsCallsWarning.title,
+        text: this.#safeTxNotShownAsCallsWarning.text || this.#safeTxNotShownAsCallsWarning.title
       })
     }
 

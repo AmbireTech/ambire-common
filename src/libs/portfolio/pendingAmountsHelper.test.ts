@@ -120,5 +120,94 @@ describe('Portfolio -> Pending Amounts Helper', () => {
         pendingToBeConfirmed: 2000000000000000000n // Here we expect pendingToBeConfirmed property
       })
     })
+
+    test('[PendingDelivery] - Having only an in-progress swap or bridge; should result in `pendingDelivery` badge', async () => {
+      const latestAmount = 2000000000000000000n
+      const pendingAmount = 2000000000000000000n
+      const pendingDelivery = 500000000000000000n
+
+      const result = calculatePendingAmounts(
+        latestAmount,
+        pendingAmount,
+        undefined,
+        undefined,
+        undefined,
+        pendingDelivery
+      )
+
+      expect(result).toEqual({
+        isPending: true,
+        pendingBalance: 2500000000000000000n,
+        pendingDelivery: 500000000000000000n
+      })
+    })
+
+    test('[PendingDelivery] - Receiving a token the account does not hold yet; should start from a zero balance', async () => {
+      const result = calculatePendingAmounts(0n, 0n, undefined, undefined, undefined, 1000n)
+
+      expect(result).toEqual({ isPending: true, pendingBalance: 1000n, pendingDelivery: 1000n })
+    })
+
+    test('[PendingDelivery] - Sending tokens with a CoW Swap order; should reduce the pending balance', async () => {
+      const result = calculatePendingAmounts(3000n, 3000n, undefined, undefined, undefined, -1000n)
+
+      expect(result).toEqual({ isPending: true, pendingBalance: 2000n, pendingDelivery: -1000n })
+    })
+
+    test('[PendingDelivery] - Sending more than the balance; should not result in a negative pending balance', async () => {
+      const result = calculatePendingAmounts(500n, 500n, undefined, undefined, undefined, -1000n)
+
+      expect(result).toEqual({ isPending: true, pendingBalance: 0n, pendingDelivery: -1000n })
+    })
+
+    test('[PendingDelivery] - A zero delivery; should not result in a pending state', async () => {
+      expect(calculatePendingAmounts(500n, 500n, undefined, undefined, undefined, 0n)).toBeNull()
+    })
+
+    test('[PendingToBeSigned], [PendingDelivery] - Having an AccOp (not broadcasted) and an in-progress swap or bridge; should result in both badges, with the delivery added to the simulated balance', async () => {
+      const latestAmount = 2000000000000000000n
+      const pendingAmount = 2000000000000000000n
+      const amountPostSimulation = 1000000000000000000n
+      const simulationDelta = -1000000000000000000n
+      const pendingDelivery = 300000000000000000n
+
+      const result = calculatePendingAmounts(
+        latestAmount,
+        pendingAmount,
+        amountPostSimulation,
+        simulationDelta,
+        {} as AccountOp,
+        pendingDelivery
+      )
+
+      expect(result).toEqual({
+        isPending: true,
+        pendingBalance: 1300000000000000000n,
+        pendingToBeSigned: -1000000000000000000n,
+        pendingDelivery: 300000000000000000n
+      })
+    })
+
+    test('[PendingToBeConfirmed], [PendingDelivery] - Having a latest/pending block delta and an in-progress swap or bridge; should add the delivery to the pending block amount', async () => {
+      const latestAmount = 1000000000000000000n
+      const pendingAmount = 2000000000000000000n
+      const pendingDelivery = 500000000000000000n
+
+      const result = calculatePendingAmounts(
+        latestAmount,
+        pendingAmount,
+        undefined,
+        undefined,
+        undefined,
+        pendingDelivery
+      )
+
+      expect(result).toEqual({
+        isPending: true,
+        pendingBalance: 2500000000000000000n,
+        pendingToBeConfirmed: 1000000000000000000n,
+        pendingDelivery: 500000000000000000n
+      })
+    })
   })
 })

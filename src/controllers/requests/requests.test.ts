@@ -933,6 +933,48 @@ describe('RequestsController ', () => {
     })
   })
 
+  describe('upper-case call data', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const to = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const lowerCaseData = `0xa9059cbb${'00'.repeat(12)}${'ab'.repeat(20)}${'00'.repeat(29)}abcdef`
+    const upperCaseData = `0x${lowerCaseData.slice(2).toUpperCase()}`
+
+    const buildCallsRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      data: string
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [{ to, value: 0n, data }],
+            meta: { accountAddr, chainId: 1n }
+          }
+        }
+      })
+
+    const getCallDatas = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.userRequests
+        .filter((r) => r.kind === 'calls')
+        .flatMap((r) => r.signAccountOp.accountOp.calls.map((call) => call.data))
+
+    test('a new request keeps the call data in lower case', async () => {
+      const { controller } = await prepareTest()
+      await buildCallsRequest(controller, upperCaseData)
+
+      expect(getCallDatas(controller)).toEqual([lowerCaseData])
+    })
+
+    test('calls added to an open request keep their call data in lower case', async () => {
+      const { controller } = await prepareTest()
+      await buildCallsRequest(controller, lowerCaseData)
+      await buildCallsRequest(controller, upperCaseData)
+
+      expect(getCallDatas(controller)).toEqual([lowerCaseData, lowerCaseData])
+    })
+  })
+
   describe('closing the side panel', () => {
     /** Requests show up in the panel, which has no window of its own. */
     const prepareSidePanelTest = async () => {
@@ -1723,6 +1765,61 @@ describe('RequestsController ', () => {
     controller.userRequests.forEach((request) => {
       if (request.kind === 'calls') request.signAccountOp.destroy()
     })
+  })
+
+  test('keeps an open Safe transaction when the Safe API returns other details for it', async () => {
+    const { controller } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const reviewedRecipient = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const otherRecipient = '0x1111111111111111111111111111111111111111'
+    const firstSigner = new Wallet(`0x${'1'.repeat(64)}`)
+    const secondSigner = new Wallet(`0x${'2'.repeat(64)}`)
+    const confirmation = (signer: Wallet): SafeMultisigConfirmationResponse => ({
+      owner: signer.address,
+      signature: signer.signingKey.sign(SAFE_TX_HASH).serialized,
+      signatureType: 'EOA',
+      submissionDate: '2026-08-18T00:00:00Z'
+    })
+    const buildSafeRequest = (to: string, confirmations: SafeMultisigConfirmationResponse[]) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [{ to, value: 1n, data: '0x' }],
+            meta: {
+              accountAddr,
+              chainId: 1n,
+              safeTxnProps: {
+                txnId: SAFE_TX_HASH,
+                signature: `0x${confirmations.map(({ signature }) => signature.slice(2)).join('')}`,
+                nonce: 0n
+              },
+              safeTx: {
+                ...getSafeTx(0)!,
+                to,
+                value: '1',
+                safeTxHash: SAFE_TX_HASH,
+                confirmations
+              }
+            }
+          }
+        }
+      })
+
+    await buildSafeRequest(reviewedRecipient, [confirmation(firstSigner)])
+    // Same Safe txn hash, other recipient, and one more signature to take
+    await buildSafeRequest(otherRecipient, [confirmation(firstSigner), confirmation(secondSigner)])
+
+    expect(controller.userRequests).toHaveLength(1)
+    const request = controller.userRequests[0]
+    if (request?.kind !== 'calls') throw new Error('Expected a calls request')
+    const { accountOp } = request.signAccountOp
+    expect(accountOp.safeTx?.to).toBe(reviewedRecipient)
+    expect(accountOp.calls.map(({ to }) => to)).toEqual([reviewedRecipient])
+    expect(accountOp.signed).toEqual([firstSigner.address])
+
+    request.signAccountOp.destroy()
   })
 
   test('emits completed humanization for a Safe transaction already in the queue', async () => {
@@ -6417,5 +6514,129 @@ describe('a request that arrives while the request window is closing', () => {
     expect(rejectMessage).not.toHaveBeenCalled()
     expect(controller.currentUserRequest?.id).toBe('message-after-connect')
     expect(sheet.isOpen).toBe(true)
+  })
+})
+
+describe('dapp verification banners of the current request', () => {
+  const BLACKLISTED_BANNER = {
+    id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
+    type: 'error' as const,
+    title: 'Potentially harmful app',
+    text: "This app didn't pass our safety check. Proceed at your own risk."
+  }
+
+  const makeDappRequest = (kind: UserRequest['kind'], session = MOCK_SESSION): UserRequest =>
+    ({
+      id: `${kind}-request`,
+      kind,
+      meta: { params: [] },
+      dappPromises: [{ id: 'a', resolve: () => {}, reject: () => {}, session, meta: {} }]
+    }) as unknown as UserRequest
+
+  test.each([
+    'walletAddEthereumChain',
+    'walletWatchAsset',
+    'ethGetEncryptionPublicKey',
+    'ethDecrypt'
+  ])('warns about a flagged app on a %s request', async (kind) => {
+    const { controller, dappsCtrl } = await prepareTest()
+    const getBanner = jest
+      .spyOn(dappsCtrl, 'getDappVerificationBanner')
+      .mockReturnValue(BLACKLISTED_BANNER)
+    controller.currentUserRequest = makeDappRequest(kind as UserRequest['kind'])
+
+    expect(controller.currentRequestDappVerificationBanners).toEqual([BLACKLISTED_BANNER])
+    // Checks the page the request came from, so an embedded frame is judged by its context
+    expect(getBanner).toHaveBeenCalledWith([MOCK_SESSION.origin], {
+      includeDappNamesInText: false,
+      sessionId: MOCK_SESSION.sessionId
+    })
+    expect(controller.toJSON().currentRequestDappVerificationBanners).toEqual([BLACKLISTED_BANNER])
+  })
+
+  test('leaves signing and connect requests to their own flows', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    jest.spyOn(dappsCtrl, 'getDappVerificationBanner').mockReturnValue(BLACKLISTED_BANNER)
+
+    controller.currentUserRequest = makeDappRequest('message')
+    expect(controller.currentRequestDappVerificationBanners).toEqual([])
+
+    controller.currentUserRequest = makeDappRequest('dappConnect')
+    expect(controller.currentRequestDappVerificationBanners).toEqual([])
+  })
+
+  test('has no banners without a current request', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    jest.spyOn(dappsCtrl, 'getDappVerificationBanner').mockReturnValue(BLACKLISTED_BANNER)
+    controller.currentUserRequest = null
+
+    expect(controller.currentRequestDappVerificationBanners).toEqual([])
+  })
+
+  test('has no banners when the request has no app behind it', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    jest.spyOn(dappsCtrl, 'getDappVerificationBanner').mockReturnValue(BLACKLISTED_BANNER)
+    controller.currentUserRequest = {
+      ...makeDappRequest('walletWatchAsset'),
+      dappPromises: []
+    } as unknown as UserRequest
+
+    expect(controller.currentRequestDappVerificationBanners).toEqual([])
+  })
+
+  test('skips the "not in catalog" banner, as on the sign message screen', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    jest.spyOn(dappsCtrl, 'getDappVerificationBanner').mockReturnValue({
+      id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
+      type: 'warning',
+      text: 'Not in catalog'
+    })
+    controller.currentUserRequest = makeDappRequest('walletAddEthereumChain')
+
+    expect(controller.currentRequestDappVerificationBanners).toEqual([])
+  })
+
+  test('has no banners when the app passes the check', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    jest.spyOn(dappsCtrl, 'getDappVerificationBanner').mockReturnValue(null)
+    controller.currentUserRequest = makeDappRequest('ethDecrypt')
+
+    expect(controller.currentRequestDappVerificationBanners).toEqual([])
+  })
+
+  test('updates the screen when the verification of the app changes', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    controller.currentUserRequest = makeDappRequest('walletWatchAsset')
+    const onUpdate = jest.fn()
+    const unsubscribe = controller.onUpdate(onUpdate)
+
+    await dappsCtrl.addDapp(
+      makeDapp({
+        id: 'verification-update.com',
+        name: 'Update',
+        url: 'https://verification-update.com'
+      })
+    )
+    unsubscribe()
+
+    expect(onUpdate).toHaveBeenCalled()
+  })
+
+  test('does not re-emit for app updates while no such request is shown', async () => {
+    const { controller, dappsCtrl } = await prepareTest()
+    controller.currentUserRequest = makeDappRequest('dappConnect')
+    const onUpdate = jest.fn()
+    const unsubscribe = controller.onUpdate(onUpdate)
+
+    await dappsCtrl.addDapp(
+      makeDapp({
+        id: 'verification-update.com',
+        name: 'Update',
+        url: 'https://verification-update.com'
+      })
+    )
+    unsubscribe()
+
+    expect(onUpdate).not.toHaveBeenCalled()
   })
 })

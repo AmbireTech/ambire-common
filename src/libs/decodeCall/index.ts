@@ -110,7 +110,7 @@ export function decodeCall(
       const result = {
         diffInBytes,
         signature,
-        selector: data.slice(0, CALLDATA_SELECTOR_HEX_LENGTH),
+        selector: data.slice(0, CALLDATA_SELECTOR_HEX_LENGTH).toLowerCase(),
         args: argsToReturn
       }
       if (!diffInBytes) return result
@@ -166,7 +166,9 @@ function decodeCallDataWithNesting(
 ): DecodedCall | null {
   if (!isHex(data) || data.length < CALLDATA_SELECTOR_HEX_LENGTH) return null
 
-  const selector = data.slice(0, CALLDATA_SELECTOR_HEX_LENGTH)
+  // Selectors are saved and looked up in lower case, so upper or mixed-case calldata (the same
+  // bytes onchain) finds the same signatures
+  const selector = data.slice(0, CALLDATA_SELECTOR_HEX_LENGTH).toLowerCase()
   lookedUpSelectors.add(selector)
 
   const signatures = getSignatures(selector)

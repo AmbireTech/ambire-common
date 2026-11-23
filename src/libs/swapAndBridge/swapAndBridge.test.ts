@@ -17,6 +17,8 @@ import {
   calculateAmountWarnings,
   enrichRouteWithOutputTokenPrice,
   getFeeTokenForSponsorship,
+  getIsActiveRouteAccountOp,
+  getIsTokenEligibleForSwapAndBridge,
   getIsBridgeRoute,
   getIsIntentRoute,
   getSentPartOfSwap,
@@ -906,5 +908,73 @@ describe('getSwapAndBridgeCalls', () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]).not.toHaveProperty('cowSwapOrder')
+  })
+})
+
+describe('getIsActiveRouteAccountOp', () => {
+  const identifiedBy = { type: 'UserOperation' as const, identifier: 'route-user-op-hash' }
+
+  test('matches the account op by its identifier, even when its transaction hash changed', () => {
+    const activeRoute = { identifiedBy, userTxHash: 'first-bundle-transaction' }
+
+    expect(
+      getIsActiveRouteAccountOp(activeRoute, {
+        identifiedBy,
+        txnId: 'replacement-bundle-transaction'
+      })
+    ).toBe(true)
+    expect(
+      getIsActiveRouteAccountOp(activeRoute, {
+        identifiedBy: { type: 'UserOperation', identifier: 'other-user-op-hash' },
+        txnId: 'first-bundle-transaction'
+      })
+    ).toBe(false)
+  })
+
+  test('matches by the transaction hash when the route has no account op identifier', () => {
+    const accountOp = {
+      identifiedBy: { type: 'Transaction' as const, identifier: 'transaction' },
+      txnId: 'transaction'
+    }
+
+    expect(
+      getIsActiveRouteAccountOp({ identifiedBy: null, userTxHash: 'transaction' }, accountOp)
+    ).toBe(true)
+    expect(
+      getIsActiveRouteAccountOp({ identifiedBy: null, userTxHash: 'other-transaction' }, accountOp)
+    ).toBe(false)
+    expect(getIsActiveRouteAccountOp({ identifiedBy: null, userTxHash: null }, accountOp)).toBe(
+      false
+    )
+  })
+})
+
+describe('getIsTokenEligibleForSwapAndBridge', () => {
+  const token: TokenResult = {
+    symbol: 'USDC',
+    name: 'USD Coin',
+    decimals: 6,
+    address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    chainId: 8453n,
+    amount: 0n,
+    priceIn: [{ baseCurrency: 'usd', price: 1 }],
+    marketDataIn: [],
+    flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: false, isFeeToken: false }
+  }
+
+  test('a token without a balance is not eligible', () => {
+    expect(getIsTokenEligibleForSwapAndBridge(token)).toBe(false)
+  })
+
+  test('a token the account will receive from a swap or bridge is eligible', () => {
+    expect(getIsTokenEligibleForSwapAndBridge({ ...token, pendingDeliveryAmount: 100n })).toBe(
+      true
+    )
+  })
+
+  test('a token a CoW Swap order will take all of is not eligible', () => {
+    expect(
+      getIsTokenEligibleForSwapAndBridge({ ...token, amount: 100n, pendingDeliveryAmount: -100n })
+    ).toBe(false)
   })
 })

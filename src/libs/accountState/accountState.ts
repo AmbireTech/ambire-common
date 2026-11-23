@@ -2,7 +2,7 @@ import { concat, isAddress, ZeroAddress } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
 import { ProviderError } from '../../classes/ProviderError'
-import { eip7702AmbireContracts } from '../../consts/7702'
+import { EIP_7702_DELEGATION_PREFIX, eip7702AmbireContracts } from '../../consts/7702'
 import { EIP_7702_METAMASK, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
@@ -28,7 +28,7 @@ const hasAmbireDelegation = (code?: string) => {
 
   let hasCode = false
   for (let i = 0; i < eip7702AmbireContracts.length; i++) {
-    hasCode = code === concat(['0xef0100', eip7702AmbireContracts[i]!])
+    hasCode = code === concat([EIP_7702_DELEGATION_PREFIX, eip7702AmbireContracts[i]!])
     if (hasCode) break
   }
   return hasCode
@@ -132,7 +132,7 @@ export async function getAccountState(
     // - has an active authorization
     // - has an active AMBIRE delegation
     const delegatedContract =
-      eoaCodes[account.addr] && eoaCodes[account.addr]!.startsWith('0xef0100')
+      eoaCodes[account.addr] && eoaCodes[account.addr]!.startsWith(EIP_7702_DELEGATION_PREFIX)
         ? `0x${eoaCodes[account.addr]!.substring(8)}`
         : null
     const isSmarterEoa = accResult.isEOA && hasAmbireDelegation(eoaCodes[account.addr])
