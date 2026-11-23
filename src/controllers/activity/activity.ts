@@ -1,11 +1,12 @@
 import { toBeHex, TransactionReceipt, ZeroAddress } from 'ethers'
 
-import { AddressPoisoningMatch } from '@/interfaces/transfer'
+import { AddressPoisoningMatch, DomainTypoMatch } from '@/interfaces/transfer'
 import {
   getAddressPoisoningMatchCounts,
   pickBetterPoisoningMatch,
   ScoredAddressPoisoningMatch
 } from '@/libs/transfer/address-poisoning'
+import { getDomainTypoMatch } from '@/libs/transfer/domain-typo'
 import { AccountOpsPersistence } from '@/services/storage/accountOpsPersistence'
 import { MAX_OPS_PER_GROUP, STARTUP_RECENT_OPS_LIMIT } from '@/services/storage/activityIdb'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
@@ -1019,6 +1020,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (!normalizedDomain) return null
 
     return this.#sentToHistory.domains[normalizedDomain]?.address ?? null
+  }
+
+  /**
+   * Returns the domain the user has sent to before that `domain` most likely misspells, or null.
+   * See `getDomainTypoMatch` for what counts as a typo.
+   */
+  getSentToDomainTypoMatch(domain: string, resolvedAddress: string): DomainTypoMatch | null {
+    return getDomainTypoMatch(domain, resolvedAddress, this.#sentToHistory.domains)
   }
 
   async addExternalAccountOp({

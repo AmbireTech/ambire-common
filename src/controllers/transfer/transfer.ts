@@ -31,6 +31,7 @@ import { IStorageController } from '../../interfaces/storage'
 import {
   AddressPoisoningMatch,
   AmountAdjustmentInfo,
+  DomainTypoMatch,
   ITransferController,
   TransferNft,
   TransferUpdate
@@ -232,6 +233,12 @@ export class TransferController extends EventEmitter implements ITransferControl
    * to a DIFFERENT address than last time (possible expiry/snipe).
    */
   recipientDomainAddressChange: { previousAddress: string } | null = null
+
+  /**
+   * Set when the recipient is a domain the user has never sent to, but it is most likely a typo of
+   * a domain they have sent to before, which points to another address.
+   */
+  recipientDomainTypoMatch: DomainTypoMatch | null = null
 
   signAccountOpController: ISignAccountOpController | null = null
 
@@ -797,7 +804,8 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.addressPoisoningMatch,
         this.recipientDomainAddressChange,
         this.isRecipientAddressBlacklisted,
-        this.isRecipientAddressViewOnly
+        this.isRecipientAddressViewOnly,
+        this.recipientDomainTypoMatch
       )
     }
 
@@ -1152,6 +1160,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.lastSentToRecipientAt = null
       this.addressPoisoningMatch = null
       this.recipientDomainAddressChange = null
+      this.recipientDomainTypoMatch = null
       this.isRecipientAddressViewOnly = false
 
       return
@@ -1428,16 +1437,27 @@ export class TransferController extends EventEmitter implements ITransferControl
       ({ addr }) => addr.toLowerCase() === this.recipientAddress.toLowerCase()
     )
 
-    this.addressPoisoningMatch =
-      this.isRecipientAddressFirstTimeSend && !isRecipientOwnAccount
-        ? pickPoisoningMatchWithOwnAccounts(
-            this.recipientAddress,
-            ownAccounts,
-            addressPoisoningMatch
-          )
-        : null
+    const isRecipientNewToUser = this.isRecipientAddressFirstTimeSend && !isRecipientOwnAccount
+
+    this.addressPoisoningMatch = isRecipientNewToUser
+      ? pickPoisoningMatchWithOwnAccounts(this.recipientAddress, ownAccounts, addressPoisoningMatch)
+      : null
+    this.recipientDomainTypoMatch = isRecipientNewToUser
+      ? this.#getRecipientDomainTypoMatch()
+      : null
 
     this.#updateRecipientDomainAddressChange()
+  }
+
+  /**
+   * When the recipient was entered as a domain the user has never sent to, finds a domain they have
+   * sent to before that it most likely misspells, like `rnove.eth` instead of `move.eth`.
+   */
+  #getRecipientDomainTypoMatch(): DomainTypoMatch | null {
+    const { resolvedAddressType, resolvedAddress, fieldValue } = this.addressState
+    if (!resolvedAddressType || !isAddress(resolvedAddress) || isAddress(fieldValue)) return null
+
+    return this.#activity.getSentToDomainTypoMatch(fieldValue, resolvedAddress)
   }
 
   /**

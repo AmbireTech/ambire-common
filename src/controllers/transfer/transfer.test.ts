@@ -682,6 +682,79 @@ describe('Transfer Controller - address poisoning against own accounts', () => {
   })
 })
 
+describe('Transfer Controller - recipient domain typo', () => {
+  const MOVE_ADDRESS = getAddress('0x1111111111111111111111111111111111111111')
+  const TYPO_DOMAIN_ADDRESS = getAddress('0x2222222222222222222222222222222222222222')
+  const OTHER_PAST_RECIPIENT = getAddress('0x3333333333333333333333333333333333333333')
+  const TYPO_MESSAGE = 'Looks like a typo of move.eth, which you have sent to before.'
+
+  const prepareDomainTypoTest = async () => {
+    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', [account])
+      await storageCtrl.set('selectedAccount', account.addr)
+      await storageCtrl.set('sentToHistory', {
+        domains: { 'move.eth': { address: MOVE_ADDRESS, sentAt: 1_700_000_000_000 } },
+        recipients: {
+          [account.addr]: {
+            [MOVE_ADDRESS]: 1_700_000_000_000,
+            [OTHER_PAST_RECIPIENT]: 1_700_000_000_000
+          }
+        }
+      })
+    })
+    await mainCtrl.selectedAccount.select({ account })
+    mainCtrl.transfer.resetForm()
+
+    return mainCtrl.transfer
+  }
+
+  const setDomainRecipient = (
+    transferController: Awaited<ReturnType<typeof prepareDomainTypoTest>>,
+    fieldValue: string,
+    resolvedAddress: string
+  ) =>
+    transferController.update({
+      addressState: {
+        fieldValue,
+        resolvedAddress,
+        resolvedAddressType: 'ens',
+        isDomainResolving: false
+      }
+    })
+
+  test('should warn and require a hold when a new domain looks like a typo of a known one', async () => {
+    const transferController = await prepareDomainTypoTest()
+
+    await setDomainRecipient(transferController, 'rnove.eth', TYPO_DOMAIN_ADDRESS)
+
+    expect(transferController.recipientDomainTypoMatch).toEqual({ matchedDomain: 'move.eth' })
+    expect(transferController.validationFormMsgs.recipientAddress).toEqual({
+      severity: 'warning',
+      message: TYPO_MESSAGE,
+      shouldHold: true
+    })
+  })
+
+  test('should not warn when the domain resolves to an address the user has sent to before', async () => {
+    const transferController = await prepareDomainTypoTest()
+
+    await setDomainRecipient(transferController, 'rnove.eth', OTHER_PAST_RECIPIENT)
+
+    expect(transferController.recipientDomainTypoMatch).toBeNull()
+    expect(transferController.validationFormMsgs.recipientAddress.message).not.toBe(TYPO_MESSAGE)
+  })
+
+  test('should clear the warning once the user switches to the known domain', async () => {
+    const transferController = await prepareDomainTypoTest()
+
+    await setDomainRecipient(transferController, 'rnove.eth', TYPO_DOMAIN_ADDRESS)
+    await setDomainRecipient(transferController, 'move.eth', MOVE_ADDRESS)
+
+    expect(transferController.recipientDomainTypoMatch).toBeNull()
+    expect(transferController.validationFormMsgs.recipientAddress.shouldHold).toBeFalsy()
+  })
+})
+
 describe('Transfer Controller - Privacy Pools recipient', () => {
   const PRIVACY_POOLS_SEED_ID = 'privacy-pools-seed'
   const ETH_DEPOSIT_LIMITS = { minimumDepositAmount: 10n ** 16n, vettingFeeBPS: 50n }
