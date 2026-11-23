@@ -588,12 +588,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   }
 
   async reorderAccounts({ fromIndex, toIndex }: { fromIndex: number; toIndex: number }) {
-    if (
-      fromIndex < 0 ||
-      toIndex < 0 ||
-      fromIndex >= this.accounts.length ||
-      toIndex >= this.accounts.length
-    ) {
+    const movedAccount = this.accounts[fromIndex]
+    if (!movedAccount || toIndex < 0 || toIndex >= this.accounts.length) {
       return this.emitError({
         level: 'major',
         message: 'Failed to reorder accounts. Please reload the page and try again.',
@@ -604,8 +600,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     if (fromIndex === toIndex) return
 
     const updatedAccounts = [...this.accounts]
-    const [movedAccount] = updatedAccounts.splice(fromIndex, 1)
-    if (!movedAccount) return
+    updatedAccounts.splice(fromIndex, 1)
     updatedAccounts.splice(toIndex, 0, movedAccount)
 
     this.accounts = getUniqueAccountsArray(updatedAccounts)
