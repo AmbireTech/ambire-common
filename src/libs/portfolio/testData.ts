@@ -418,12 +418,14 @@ const PORTFOLIO_STATE: AccountState = {
             ],
             iconUrl: '',
             siteUrl: 'https://app.aave.com/',
-            positionInUSD: 18985.66497510702
+            positionInUSD: 170,
+            collateralInUSD: 200
           }
         ],
         nonceId: 'nonce-1'
       },
-      total: { usd: 260 }
+      // Net of the $30 borrowed against the aBasWETH
+      total: { usd: 230 }
     }
   },
   '8453': {

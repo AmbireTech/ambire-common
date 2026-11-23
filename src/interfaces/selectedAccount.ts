@@ -1,4 +1,4 @@
-import { PositionsByProvider } from '../libs/defiPositions/types'
+import { Position, PositionsByProvider } from '../libs/defiPositions/types'
 import {
   CollectionResult as CollectionResultInterface,
   NetworkSimulatedAccountOp,
@@ -60,6 +60,22 @@ export type SelectedAccountPortfolioVerification = {
   failedChains: string[]
 }
 
+/** A DeFi position of the selected account. */
+export type SelectedAccountPosition = Position & {
+  /**
+   * What the position supplied, without its loans subtracted, as it lists them. Only the app's
+   * balance subtracts them, when the user chose so.
+   */
+  balanceInUSD: number
+}
+
+/** The DeFi positions of the selected account in one app. */
+export type SelectedAccountPositionsByProvider = Omit<PositionsByProvider, 'positions'> & {
+  positions: SelectedAccountPosition[]
+  /** What the app's positions add to the total balance. */
+  balanceInUSD: number
+}
+
 export interface SelectedAccountPortfolio {
   tokens: SelectedAccountPortfolioTokenResult[]
   collections: CollectionResultInterface[]
@@ -86,7 +102,7 @@ export interface SelectedAccountPortfolio {
   balancePerNetwork: {
     [chainId: string]: number
   }
-  defiPositions: PositionsByProvider[]
+  defiPositions: SelectedAccountPositionsByProvider[]
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   portfolioState: SelectedAccountPortfolioState
   walletStaking?: PortfolioNetworkResult['walletStaking']

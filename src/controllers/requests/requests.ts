@@ -32,7 +32,13 @@ import { IActivityController } from '../../interfaces/activity'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { IContractInfoController } from '../../interfaces/contractInfo'
-import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/dapp'
+import {
+  Dapp,
+  DAPP_VERIFICATION_BANNER_IDS,
+  DappProviderRequest,
+  DappVerificationBanner,
+  IDappsController
+} from '../../interfaces/dapp'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
@@ -111,6 +117,7 @@ import {
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
+import { getSafeTxn, isSameSafeTx, toSafeTx } from '../../libs/safe/helpers'
 import {
   findDeployData,
   getSafeDeploymentCall,
@@ -135,7 +142,7 @@ import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 import { TxnReplacement } from '../signAccountOp/txnReplacement'
 
-import type { EIP712TypedData } from '@safe-global/types-kit'
+import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import type { Call } from '../../libs/accountOp/types'
 import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/signAccountOp'
@@ -146,6 +153,14 @@ const STATUS_WRAPPED_METHODS = {
 
 /** How long a resolved transitional request stays, so the app request it was blocking can arrive */
 const TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS = 300
+
+/** Dapp requests whose screen warns about the app, without a signing controller doing it */
+const DAPP_VERIFICATION_REQUEST_KINDS: UserRequest['kind'][] = [
+  'walletAddEthereumChain',
+  'walletWatchAsset',
+  'ethGetEncryptionPublicKey',
+  'ethDecrypt'
+]
 
 const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
   'Your Safe account is still being activated on this network. Wait a moment, then try again.'
@@ -476,6 +491,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
     this.shouldSimulateAccountOps = shouldSimulateAccountOps
+
+    // `currentRequestDappVerificationBanners` is derived from DappsController state (the dapp
+    // verification status), so its updates must be propagated - otherwise a banner computed
+    // before the status resolves would stay stale in the UI.
+    // NOTE: No unsubscribe needed - both controllers are singletons living for the app lifetime.
+    this.#dapps.onUpdate((forceEmit) => {
+      if (this.#getCurrentRequestDappSessionForVerification()) this.propagateUpdate(forceEmit)
+    }, 'requests-dapps-verification')
 
     this.#ui.window.event.on('windowRemoved', async (winId: number) => {
       // When windowManager.focus is called, it may close and reopen the request window as part of its fallback logic.
@@ -1662,6 +1685,38 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * of its requests are queued, and whether it has been refused enough to be worth silencing.
    * Null when the request didn't come from an app.
    */
+  /**
+   * The dapp session of the current request, when it is one of the dapp requests whose screen
+   * shows the dapp verification banners from `currentRequestDappVerificationBanners`. Signing
+   * requests are left out, as their own controllers (SignMessage, SignAccountOp) compute them.
+   */
+  #getCurrentRequestDappSessionForVerification(): DappProviderRequest['session'] | null {
+    const request = this.currentUserRequest
+    if (!request) return null
+    if (!DAPP_VERIFICATION_REQUEST_KINDS.includes(request.kind)) return null
+
+    return request.dappPromises[0]?.session || null
+  }
+
+  /**
+   * Scam checker warnings for the app behind the current add network, add token, get encryption
+   * public key or decrypt request. Empty for any other request, or when no warning applies.
+   */
+  get currentRequestDappVerificationBanners(): DappVerificationBanner[] {
+    const session = this.#getCurrentRequestDappSessionForVerification()
+    if (!session?.origin) return []
+
+    const banner = this.#dapps.getDappVerificationBanner([session.origin], {
+      includeDappNamesInText: false,
+      sessionId: session.sessionId
+    })
+    if (!banner) return []
+    // Same as in the SignMessage flow - "not in catalog" is too noisy and not actionable on its own.
+    if (banner.id === DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG) return []
+
+    return [banner]
+  }
+
   get currentRequestRejectOptions(): {
     dappRequestsCount: number
     canSilenceDapp: boolean
@@ -3035,6 +3090,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
       }
       await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
+      return
     }
 
     const typedData = message as EIP712TypedData
@@ -3783,9 +3839,42 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     return true
   }
 
+  /**
+   * Whether the Safe txn from the Safe API is the one the open request signs, so it only
+   * brings the signatures of more owners. What the user reviews and what gets signed must
+   * stay the same, so a different one is reported, and the caller must ignore it. The same
+   * Safe txn hash can't belong to another txn (see SafeController.fetchPending)
+   */
+  #isSameSafeTxAsOpen(request: CallsUserRequest, safeTx?: SafeMultisigTransactionResponse) {
+    if (!safeTx) return true
+
+    const { accountOp } = request.signAccountOp
+    const accountState =
+      this.#accounts.accountStates[accountOp.accountAddr]?.[accountOp.chainId.toString()]
+
+    let isSame = false
+    try {
+      isSame = !!accountState && isSameSafeTx(toSafeTx(safeTx), getSafeTxn(accountOp, accountState))
+    } catch {
+      // Malformed details (e.g. a value that isn't a number) can't be the open txn
+    }
+
+    if (!isSame) {
+      this.emitError({
+        level: 'silent',
+        message: 'Ignored an update that changes an open Safe transaction',
+        error: new Error(
+          `requestsController: the Safe API returned other details for the open Safe txn ${safeTx.safeTxHash} on chain ${accountOp.chainId}`
+        )
+      })
+    }
+
+    return isSame
+  }
+
   async #createOrUpdateCallsUserRequest(
     {
-      calls,
+      calls: rawCalls,
       meta,
       accountOp: providedAccountOp,
       dappPromises = [],
@@ -3794,6 +3883,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     executionType: RequestExecutionType = 'open-request-window',
     { accountOpNonce }: { accountOpNonce?: bigint } = {}
   ) {
+    // Every transaction request (app calls, queued Safe transactions, the wallet's own calls)
+    // comes through here. Hex is case-insensitive onchain, so the same bytes can arrive in upper
+    // or mixed case. Lower-case it once, so every check below and every consumer of the account
+    // op (humanizer, selector decoding, simulation) compares the same text. The bytes, the
+    // transaction hash and the safeTxHash do not change.
+    const calls = rawCalls.map((call) =>
+      call.data && isHex(call.data) ? { ...call, data: call.data.toLowerCase() } : call
+    )
+
     let callUserRequest: CallsUserRequest | undefined
     const isSafeAccount = !!this.#accounts.accounts.find((a) => a.addr === meta.accountAddr)
       ?.safeCreation
@@ -3812,6 +3910,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const openSafeCancelRequest =
       meta.safeTxnProps && this.#findOpenSafeCancelRequest(meta.safeTxnProps.txnId)
     if (meta.safeTxnProps && openSafeCancelRequest) {
+      // The Safe txn of the cancel the user reviews is never replaced
+      if (!this.#isSameSafeTxAsOpen(openSafeCancelRequest, meta.safeTx)) return
+
       // The rest is the same Safe transaction (same hash). The cancel takes the signatures of
       // owners who haven't signed it yet, compared by owner rather than by signature length
       openSafeCancelRequest.signAccountOp.update({
@@ -3901,6 +4002,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // we're allowing updates only on the signature field for
         // already signed accountOps
         if (meta.safeTxnProps) {
+          // The Safe txn of an open request is never replaced, only its signatures are added
+          if (!this.#isSameSafeTxAsOpen(existingUserRequest, meta.safeTx)) return
+
           const safeGlobalSig = meta.safeTxnProps.signature
           const accOpSig = existingUserRequest.signAccountOp.accountOp.signature
           if ((accOpSig?.length || 0) < safeGlobalSig.length) {
@@ -4351,6 +4455,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       banners: this.banners,
       visibleUserRequests: this.visibleUserRequests,
       currentUserRequest: this.currentUserRequest,
+      currentRequestDappVerificationBanners: this.currentRequestDappVerificationBanners,
       currentRequestRejectOptions: this.currentRequestRejectOptions
     }
   }

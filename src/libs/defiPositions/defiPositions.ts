@@ -1,12 +1,8 @@
 import { parseUnits, ZeroAddress } from 'ethers'
 import { getAddress, isHex } from 'viem'
 
-import { getSanitizedAmount } from '@/libs/transfer/amount'
-
 import { AccountId } from '../../interfaces/account'
-import { Network } from '../../interfaces/network'
-import { RPCProvider, RPCProviders } from '../../interfaces/provider'
-import { ITokenPricesController } from '../../interfaces/tokenPrices'
+import { RPCProviders } from '../../interfaces/provider'
 import {
   numberToDecimalString,
   safeTokenAmountAndNumberMultiplication
@@ -18,13 +14,15 @@ import {
   FormattedPortfolioDiscoveryResponse,
   PortfolioNetworkResult
 } from '../portfolio/interfaces'
-import { updatePositionsByProviderAssetPrices } from './defiPrices'
-import { getAssetValue, getProviderId, isTokenPriceWithinHalfPercent } from './helpers'
+import { getSanitizedAmount } from '../transfer/amount'
 import {
-  getAAVEPositions,
-  getDebankEnhancedUniV3Positions,
-  getStakedWalletPositions
-} from './providers'
+  getAssetValue,
+  getProviderId,
+  isTokenPriceWithinHalfPercent,
+  withCollateralValues
+} from './helpers'
+import { RpcDefiPositionsResult } from './rpc/types'
+import { getStakedWalletPositions } from './stkWallet'
 import {
   AssetType,
   DeFiPositionsError,
@@ -33,8 +31,7 @@ import {
   NetworksWithPositionsByAccounts,
   Position,
   PositionAsset,
-  PositionsByProvider,
-  ProviderError
+  PositionsByProvider
 } from './types'
 
 export const getIsExternalApiDefiPositionsCallSuccessful = (
@@ -44,129 +41,6 @@ export const getIsExternalApiDefiPositionsCallSuccessful = (
   if (!discoveryResponse) return true
 
   return !!discoveryResponse.data?.defi
-}
-
-/** The custom (RPC) positions of an account on a network, with the errors of fetching them */
-type CustomProviderPositionsResult = {
-  positionsByProvider: PositionsByProvider[]
-  providerErrors: ProviderError[]
-  error?: DeFiPositionsError | null
-}
-
-/**
- * Fetches the defi positions of certain protocols using RPC calls and custom logic.
- * Velcro (Debank) is used for most of the positions, but some protocols require additional data
- * that is not available in Velcro. This function fetches those positions on ENABLED
- * networks only.
- *
- * Returns the old positions if the call fails. Some positions, like that of Uniswap V3,
- * are merged with the data from Velcro/Debank. Assets left without a price (e.g. a new Uniswap V3
- * position Debank doesn't know about yet) are priced separately, by `priceCustomProviderPositions`.
- */
-const getCustomProviderPositions = async (
-  addr: string,
-  provider: RPCProvider,
-  network: Network,
-  previousPositions: PositionsByProvider[],
-  debankNetworkPositionsByProvider: PositionsByProvider[] | undefined,
-  isDebankCallSuccessful: boolean
-): Promise<CustomProviderPositionsResult> => {
-  if (network.disabled)
-    return {
-      positionsByProvider: [],
-      providerErrors: []
-    }
-
-  try {
-    const providerErrors: ProviderError[] = []
-
-    const newPositions = (
-      await Promise.all([
-        getAAVEPositions(addr, provider, network).catch((e: any) => {
-          providerErrors.push({
-            providerName: 'AAVE v3',
-            error: e?.message || 'Unknown error'
-          })
-
-          return null
-        }),
-        // Uniswap is a bit of an odd case. We return the positions merged with Debank data
-        getDebankEnhancedUniV3Positions(
-          addr,
-          provider,
-          network,
-          previousPositions,
-          debankNetworkPositionsByProvider ||
-            previousPositions.filter((p) => p.source !== 'custom'),
-          isDebankCallSuccessful
-        ).catch((e: any) => {
-          providerErrors.push({
-            providerName: 'Uniswap V3',
-            error: e?.message || 'Unknown error'
-          })
-
-          return null
-        })
-      ])
-    ).filter(Boolean) as PositionsByProvider[]
-
-    // Get the previous custom positions that were not updated in this call
-    // This is done so the user doesn't lose their custom positions when the
-    // new update fails
-    const filteredPrevious = previousPositions.filter(
-      (prev) =>
-        prev.source === 'custom' &&
-        !newPositions.some(
-          (n) => getProviderId(n.providerName) === getProviderId(prev.providerName)
-        )
-    )
-
-    return {
-      positionsByProvider: [...filteredPrevious, ...newPositions],
-      providerErrors,
-      error: null
-    }
-  } catch (e: any) {
-    console.error('Critical error fetching custom defi positions:', e)
-    return {
-      positionsByProvider: previousPositions.filter((p) => p.source === 'custom'),
-      providerErrors: [],
-      error: DeFiPositionsError.CriticalError
-    }
-  }
-}
-
-/**
- * Prices the assets of the custom positions that are left without a price (e.g. a new Uniswap V3
- * position Debank doesn't know about yet) through the token prices controller.
- */
-const priceCustomProviderPositions = async (
-  tokenPrices: ITokenPricesController,
-  {
-    network,
-    accountAddr,
-    customPositions
-  }: {
-    network: Network
-    accountAddr: string
-    customPositions: CustomProviderPositionsResult
-  }
-): Promise<CustomProviderPositionsResult> => {
-  const { positionsByProvider, error } = await updatePositionsByProviderAssetPrices(tokenPrices, {
-    network,
-    positionsByProvider: customPositions.positionsByProvider
-  })
-
-  if (!error) return { ...customPositions, positionsByProvider }
-
-  console.error(`#setAssetPrices error for ${accountAddr} on ${network.name}:`, error)
-
-  return {
-    ...customPositions,
-    positionsByProvider,
-    // A critical error of the positions call is more important than a missing price
-    error: customPositions.error || DeFiPositionsError.AssetPriceError
-  }
 }
 
 /**
@@ -195,15 +69,19 @@ const getUniqueMergedPositions = (
   let positionsArray = Array.from(debankPositionMap.values())
 
   // Sort the assets, positions by provider and provider positions by their value in USD descending
-  positionsArray = positionsArray.map((providerPositions) => ({
-    ...providerPositions,
-    positions: providerPositions.positions
-      .map((position) => ({
-        ...position,
-        assets: position.assets.sort((a, b) => (b.value || 0) - (a.value || 0))
-      }))
-      .sort((a, b) => (b.additionalData.positionInUSD || 0) - (a.additionalData.positionInUSD || 0))
-  }))
+  positionsArray = positionsArray.map((providerPositions) =>
+    withCollateralValues({
+      ...providerPositions,
+      positions: providerPositions.positions
+        .map((position) => ({
+          ...position,
+          assets: position.assets.sort((a, b) => (b.value || 0) - (a.value || 0))
+        }))
+        .sort(
+          (a, b) => (b.additionalData.positionInUSD || 0) - (a.additionalData.positionInUSD || 0)
+        )
+    })
+  )
 
   positionsArray = positionsArray.sort((a, b) => (b.positionInUSD || 0) - (a.positionInUSD || 0))
 
@@ -246,12 +124,17 @@ const getAllAssetsAsHints = (
 const getNewDefiState = (
   pastPortfolioState: PortfolioNetworkResult | undefined,
   discoveryResponse: FormattedPortfolioDiscoveryResponse | null,
-  customPositionsByProvider: PositionsByProvider[],
-  customPositionsError: DeFiPositionsError | null,
-  customProvidersErrors: ProviderError[],
+  /** The positions read from the chain in this update, or reused from the previous one */
+  rpcPositions: RpcDefiPositionsResult,
   stkWalletToken: TokenResult | null,
   nonceId: string | undefined
 ): NetworkState => {
+  const {
+    positionsByProvider: customPositionsByProvider,
+    providerErrors: customProvidersErrors,
+    rpcRead
+  } = rpcPositions
+  const customPositionsError = rpcPositions.error || null
   const isForceApiUpdate = !!discoveryResponse?.data?.defi?.isForceUpdate
   const isDebankCallSuccessful = getIsExternalApiDefiPositionsCallSuccessful(discoveryResponse)
   const previousPositionsByProvider = pastPortfolioState?.defiPositions?.positionsByProvider || []
@@ -275,6 +158,7 @@ const getNewDefiState = (
     error: !isDebankCallSuccessful ? DeFiPositionsError.CriticalError : customPositionsError,
     lastSuccessfulUpdate:
       isDebankCallSuccessful && !customPositionsError ? Date.now() : lastSuccessfulUpdate,
+    rpcRead,
     lastForceApiUpdate: isForceApiUpdate ? Date.now() : lastForceApiUpdate,
     providerErrors: customProvidersErrors,
     positionsByProvider: uniqueAndMerged || previousPositionsByProvider
@@ -491,9 +375,24 @@ const enhancePortfolioTokensWithDefiPositions = (
           pos.assets.forEach((asset) => {
             const protocolAsset = asset.protocolAsset || null
 
-            const tokenCorrespondingToProtocolAsset = protocolAsset?.address
-              ? findTokenByProtocolAssetAddress(tokensByAddress, protocolAsset.address)
-              : findTokenBySimilarSymbolAndValue(portfolioTokens, asset)
+            // Positions read on-chain set the token that represents an asset, if any (as
+            // `protocolAsset` or `pool.controller`), so a token is never guessed for them: e.g.
+            // 10k USDC.e in the wallet would match a 10k USDC Morpho borrow (a similar symbol
+            // with a similar value), which would then remove the price of the USDC.e
+            const canGuessToken = posByProvider.source !== 'custom'
+            let tokenCorrespondingToProtocolAsset: TokenResult | undefined
+
+            if (protocolAsset?.address) {
+              tokenCorrespondingToProtocolAsset = findTokenByProtocolAssetAddress(
+                tokensByAddress,
+                protocolAsset.address
+              )
+            } else if (canGuessToken) {
+              tokenCorrespondingToProtocolAsset = findTokenBySimilarSymbolAndValue(
+                portfolioTokens,
+                asset
+              )
+            }
 
             if (tokenCorrespondingToProtocolAsset) {
               defiAssetsMap.set(tokenCorrespondingToProtocolAsset.address.toLowerCase(), {
@@ -727,13 +626,10 @@ export {
   getAccountNetworksWithPositions,
   getAllAssetsAsHints,
   getAssetValue,
-  getCustomProviderPositions,
   getDefiUpdateMode,
   getFormattedApiPositions,
   getHasNonceChangedSinceLastUpdate,
   getNewDefiState,
   getUniqueMergedPositions,
-  mergeDefiUpdateModes,
-  priceCustomProviderPositions,
-  updatePositionsByProviderAssetPrices
+  mergeDefiUpdateModes
 }

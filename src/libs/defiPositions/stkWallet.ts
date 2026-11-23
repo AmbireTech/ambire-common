@@ -1,6 +1,6 @@
-import { TokenResult } from '../../portfolio'
-import { getAssetValue } from '../helpers'
-import { AssetType, Position, PositionAsset, PositionsByProvider } from '../types'
+import { TokenResult } from '../portfolio'
+import { getAssetValue } from './helpers'
+import { AssetType, Position, PositionAsset, PositionsByProvider } from './types'
 
 export function getStakedWalletPositions(
   stkWallet?: TokenResult | null

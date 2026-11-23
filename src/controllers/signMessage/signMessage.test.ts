@@ -1,4 +1,4 @@
-import { ZeroAddress } from 'ethers'
+import { Wallet, ZeroAddress } from 'ethers'
 
 import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { afterEach, describe, expect, jest, test } from '@jest/globals'
@@ -14,6 +14,7 @@ import {
   suspiciousHostingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { InternalSigner } from '../../../test/keystore'
@@ -25,7 +26,7 @@ import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
-import { IKeystoreController } from '../../interfaces/keystore'
+import { IKeystoreController, Key } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController } from '../../interfaces/signMessage'
@@ -1104,6 +1105,111 @@ describe('SignMessageController', () => {
 
     signMessageController.removeAccountData(account.addr)
     expect(signMessageController.isInitialized).toBeFalsy()
+  })
+
+  describe('a picked signer removed while the message waits', () => {
+    const [walletA, walletB] = [Wallet.createRandom(), Wallet.createRandom()]
+    const toKey = (wallet: typeof walletA, label: string): Key => ({
+      addr: wallet.address,
+      type: 'internal',
+      label,
+      dedicatedToOneSA: false,
+      meta: { createdAt: Date.now() },
+      isExternallyStored: false
+    })
+    const keyA = toKey(walletA, 'Key A')
+    const keyB = toKey(walletB, 'Key B')
+    let restoreAccountState: () => void = () => {}
+
+    beforeAll(async () => {
+      await keystoreCtrl.addSecret('password', 'password', '', true)
+    })
+
+    beforeEach(async () => {
+      await keystoreCtrl.addKeys(
+        [keyA, keyB].map(({ addr, label }, index) => ({
+          addr,
+          label,
+          type: 'internal' as const,
+          privateKey: [walletA, walletB][index]!.privateKey,
+          dedicatedToOneSA: false,
+          meta: { createdAt: Date.now() }
+        }))
+      )
+      // Both keys sign for the account, Key A first, so it is the default signer
+      const accountState = { ...accountOnchainState, importedAccountKeys: [keyA, keyB] }
+      const getAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'getOrFetchAccountOnChainState')
+        .mockResolvedValue(accountState)
+      const previousAccountStates = accountsCtrl.accountStates
+      accountsCtrl.accountStates = { [account.addr]: { '1': accountState } }
+      restoreAccountState = () => {
+        getAccountStateSpy.mockRestore()
+        accountsCtrl.accountStates = previousAccountStates
+      }
+      await signMessageController.init({ messageToSign })
+    })
+
+    afterEach(async () => {
+      restoreAccountState()
+      const leftKeys = keystoreCtrl.keys.filter(({ addr }) => [keyA.addr, keyB.addr].includes(addr))
+      for (const { addr, type } of leftKeys) {
+        await keystoreCtrl.deleteKey(addr, type)
+      }
+    })
+
+    test('picks the default signer again', async () => {
+      expect(signMessageController.signers).toEqual([keyA])
+
+      await keystoreCtrl.deleteKey(keyA.addr, 'internal')
+
+      expect(signMessageController.signers?.map(({ addr }) => addr)).toEqual([keyB.addr])
+    })
+
+    test('keeps the picked signer when another key is removed', async () => {
+      signMessageController.setSigners([{ addr: keyB.addr, type: 'internal' }])
+
+      await keystoreCtrl.deleteKey(keyA.addr, 'internal')
+
+      expect(signMessageController.signers).toEqual([{ addr: keyB.addr, type: 'internal' }])
+    })
+
+    test('leaves no signer when no key is left', async () => {
+      await keystoreCtrl.deleteKey(keyB.addr, 'internal')
+      await keystoreCtrl.deleteKey(keyA.addr, 'internal')
+
+      expect(signMessageController.signers).toBeUndefined()
+    })
+
+    test('refuses to sign with a removed key the UI still picks', async () => {
+      const { restore } = suppressConsole()
+      await keystoreCtrl.deleteKey(keyA.addr, 'internal')
+      // Like the UI does from an account state that has not reloaded yet
+      signMessageController.setSigners([{ addr: keyA.addr, type: 'internal' }])
+      const getSignerSpy = jest.spyOn(keystoreCtrl, 'getSigner')
+      const errors: string[] = []
+      const unsubscribe = signMessageController.onError(({ message }) => errors.push(message))
+
+      await signMessageController.sign()
+      unsubscribe()
+      restore()
+
+      expect(errors).toContain(
+        'The key picked to sign this message was removed from the wallet. Pick another key, or import it again to sign.'
+      )
+      expect(getSignerSpy).toHaveBeenCalledTimes(1)
+      expect(signMessageController.signedMessage).toBeNull()
+      getSignerSpy.mockRestore()
+    })
+
+    test('changes nothing while signing', async () => {
+      signMessageController.statuses.sign = 'LOADING'
+
+      await keystoreCtrl.deleteKey(keyA.addr, 'internal')
+
+      expect(signMessageController.signers).toEqual([keyA])
+      signMessageController.statuses.sign = 'INITIAL'
+    })
   })
 
   describe('signing authentication', () => {

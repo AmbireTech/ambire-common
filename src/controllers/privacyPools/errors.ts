@@ -1,3 +1,4 @@
+import type { PPv1NoteUnavailableReason } from '@kohaku-eth/privacy-pools'
 import { formatUnits } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
@@ -84,7 +85,7 @@ export const privacyPoolsErrors = {
   depositUnsupportedPool: (symbol: string, poolAddress: string) =>
     expectedError(
       `Sending ${symbol} to a Privacy Pools account is not supported yet.`,
-      `no paymaster adapter for pool ${poolAddress}`
+      `pool ${poolAddress} cannot be sent from`
     ),
   depositAwaitingChain: () =>
     expectedError(
@@ -105,15 +106,15 @@ export const privacyPoolsErrors = {
     ),
 
   // Withdrawals
-  withdrawalUnsupportedNetwork: (chainId: string) =>
+  withdrawalUnsupportedNetwork: (chainId: string, broadcaster: string) =>
     expectedError(
       'Sending from a Privacy Pools account is not available on this network yet.',
-      `no paymaster configured for chain ${chainId}`
+      `no ${broadcaster} broadcaster configured for chain ${chainId}`
     ),
   withdrawalUnsupportedToken: (symbol: string, poolAddress: string) =>
     expectedError(
       `Sending ${symbol} from a Privacy Pools account is not supported yet.`,
-      `no paymaster adapter for pool ${poolAddress}`
+      `pool ${poolAddress} cannot be sent from`
     ),
   withdrawalBundlerOptedOut: () =>
     expectedError(
@@ -127,10 +128,19 @@ export const privacyPoolsErrors = {
       'Another transfer from a Privacy Pools account is still in progress. Please wait for it to finish.',
       'a withdrawal is already in flight'
     ),
-  withdrawalBatchNotSimulated: () =>
+  // Only the SDK's reason, never its error: that names the note's label and balance, which link
+  // the withdrawal to its deposit if they reach a log or a crash report
+  withdrawalDepositUnavailable: (sdkReason?: PPv1NoteUnavailableReason) =>
     expectedError(
-      'This transfer combines several of your deposits, and we could not confirm it would go through, so it was not sent. Please try again in a moment, or send a smaller amount.',
-      'a batch withdrawal could not be simulated'
+      'This deposit does not have enough left for this amount. Please send less, or pick another deposit.',
+      sdkReason
+        ? `the SDK cannot spend the chosen note (${sdkReason})`
+        : 'the chosen note is missing, not approved or too small'
+    ),
+  withdrawalDepositBusy: () =>
+    expectedError(
+      'Your previous transfer from this deposit is still being confirmed. Please try again once it is.',
+      'a withdrawal from this note is not in the notes yet'
     ),
   withdrawalFeeAboveAmount: (sdkError: Error) =>
     new EmittableError({
@@ -139,6 +149,46 @@ export const privacyPoolsErrors = {
       level: 'expected',
       error: sdkError
     }),
+  withdrawalRelayersUnavailable: (sdkError: Error) =>
+    new EmittableError({
+      message:
+        'The 0xBow relayers could not take this transfer right now. Please try again in a moment, or choose Kohaku in the send settings.',
+      level: 'expected',
+      error: sdkError
+    }),
+  withdrawalRelayerFeeTooHigh: (sdkError: Error) =>
+    new EmittableError({
+      message:
+        'The 0xBow relayers are asking a higher fee than this pool allows right now. Please try again later, or choose Kohaku in the send settings.',
+      level: 'expected',
+      error: sdkError
+    }),
+  // Major: a payload that does not match the request means a faulty or malicious relayer, or an
+  // SDK bug. Trying again likely reaches the same relayer, so it points to Kohaku, which does not
+  // go through one
+  withdrawalRelayerMismatch: (cause: Error) =>
+    majorError(
+      "The 0xBow relayers sent back a transfer that doesn't match what you asked for, so nothing was sent. Please choose Kohaku in the send settings, or try again later.",
+      cause,
+      'the relayed withdrawal does not match the request'
+    ),
+  withdrawalOfferExpired: () =>
+    expectedError(
+      'The fee quote for this transfer expired before it could be sent. Nothing left your account - please try again.',
+      'the relayer quote expired while proving'
+    ),
+  withdrawalNotAccepted: (sdkError: Error) =>
+    new EmittableError({
+      message: 'The transfer was not sent, so nothing left your account. Please try again.',
+      level: 'expected',
+      error: sdkError
+    }),
+  withdrawalReverted: (sdkError: Error) =>
+    majorError(
+      'The transfer did not go through. Please check your balance before you send it again.',
+      sdkError,
+      'the withdrawal userOp reverted'
+    ),
   withdrawalNotReady: () =>
     expectedError('There is no transfer ready to send.', 'no prepared withdrawal'),
 
@@ -166,6 +216,14 @@ export const privacyPoolsErrors = {
       level: 'silent',
       error:
         cause instanceof Error ? cause : new Error('privacyPools: reading the pool stats failed')
+    }),
+  fingerprintCheckFailed: (cause: unknown) =>
+    new EmittableError({
+      // The transfer's privacy shows as not checked instead, so not as a toast
+      message: 'Could not check which deposits were made with Ambire.',
+      level: 'silent',
+      error:
+        cause instanceof Error ? cause : new Error('privacyPools: checking the depositors failed')
     }),
   ragequitPreparationFailed: (cause: unknown) =>
     majorError(

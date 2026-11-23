@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
+import { produceMemoryStore } from '../../../test/helpers'
+import { StorageController } from '../../controllers/storage/storage'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
-import { createKohakuKeystore, createKohakuNetwork, createKohakuProvider } from './host'
+import {
+  createKohakuKeystore,
+  createKohakuNetwork,
+  createKohakuProvider,
+  createKohakuStorage
+} from './host'
 
 const SIGNING_KEY_PATH = "m/28784'/1'/0'"
 const KEY: Hex = `0x${'11'.repeat(32)}`
@@ -91,6 +98,31 @@ describe('createKohakuNetwork', () => {
 
     expect(settled).not.toHaveBeenCalled()
   })
+
+  test('fails a POST that only asks for something, such as a relayer quote, that gets no answer', async () => {
+    jest.useFakeTimers()
+    const quoteUrl = 'https://relayer.example/quote'
+    const network = createKohakuNetwork(createSilentFetch(), READ_TIMEOUT, [quoteUrl])
+
+    const quoting = network.fetch(quoteUrl, { method: 'POST' })
+    jest.advanceTimersByTime(READ_TIMEOUT)
+
+    await expect(quoting).rejects.toThrow('request-timeout')
+  })
+
+  test('keeps waiting on a POST to the same relayer that is not one of the listed URLs', async () => {
+    jest.useFakeTimers()
+    const network = createKohakuNetwork(createSilentFetch(), READ_TIMEOUT, [
+      'https://relayer.example/quote'
+    ])
+
+    const settled = jest.fn()
+    network.fetch('https://relayer.example/request', { method: 'POST' }).then(settled, settled)
+    jest.advanceTimersByTime(READ_TIMEOUT * 10)
+    await Promise.resolve()
+
+    expect(settled).not.toHaveBeenCalled()
+  })
 })
 
 describe('createKohakuProvider', () => {
@@ -138,5 +170,79 @@ describe('createKohakuProvider', () => {
     const provider = { getTransactionReceipt: jest.fn(async () => null) }
 
     expect(await createKohakuProvider(provider as any).getTransactionReceipt(TX_HASH)).toBeNull()
+  })
+})
+
+describe('createKohakuStorage', () => {
+  const OBSOLETE_KEY = 'privacy-pool-state-1-123'
+  const CURRENT_KEY = 'privacy-pool-state-v2-1-123'
+
+  const prepareStorage = async (blob: Record<string, string>) => {
+    const storage = new StorageController(produceMemoryStore())
+    await storage.set('privacyPoolsState', blob)
+    const onError = jest.fn()
+    const kohakuStorage = createKohakuStorage({
+      storage,
+      storageKey: 'privacyPoolsState',
+      isObsoleteKey: (key) => key === OBSOLETE_KEY,
+      onError
+    })
+
+    return { storage, kohakuStorage, onError }
+  }
+
+  /** The removal is written after the read that triggered it. */
+  const readStoredBlob = async (storage: StorageController) => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    return storage.get('privacyPoolsState', {})
+  }
+
+  test('removes the obsolete keys from storage on the first read, keeping the others', async () => {
+    const { storage, kohakuStorage, onError } = await prepareStorage({
+      [OBSOLETE_KEY]: 'old state',
+      [CURRENT_KEY]: 'new state'
+    })
+
+    expect(await kohakuStorage.get(CURRENT_KEY)).toBe('new state')
+    expect(await kohakuStorage.get(OBSOLETE_KEY)).toBeNull()
+    expect(await readStoredBlob(storage)).toEqual({ [CURRENT_KEY]: 'new state' })
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  test('removes the obsolete keys when the first call is a write', async () => {
+    const { storage, kohakuStorage } = await prepareStorage({ [OBSOLETE_KEY]: 'old state' })
+
+    await kohakuStorage.set(CURRENT_KEY, 'new state')
+
+    expect(await readStoredBlob(storage)).toEqual({ [CURRENT_KEY]: 'new state' })
+  })
+
+  test('writes nothing when no obsolete key is stored', async () => {
+    const { storage, kohakuStorage } = await prepareStorage({ [CURRENT_KEY]: 'new state' })
+    const set = jest.spyOn(storage, 'set')
+
+    expect(await kohakuStorage.get(CURRENT_KEY)).toBe('new state')
+    await readStoredBlob(storage)
+
+    expect(set).not.toHaveBeenCalled()
+  })
+
+  test('reports a failed removal and keeps serving the current keys', async () => {
+    const { storage, kohakuStorage, onError } = await prepareStorage({
+      [OBSOLETE_KEY]: 'old state',
+      [CURRENT_KEY]: 'new state'
+    })
+    jest.spyOn(storage, 'set').mockRejectedValueOnce(new Error('storage: quota exceeded'))
+
+    expect(await kohakuStorage.get(CURRENT_KEY)).toBe('new state')
+    await readStoredBlob(storage)
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'storage: quota exceeded' }),
+      expect.any(String)
+    )
   })
 })
