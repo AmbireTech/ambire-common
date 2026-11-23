@@ -146,6 +146,13 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   readyToRemoveAccounts: Account[] = []
 
   /**
+   * The prepared accounts the wallet has already that come with a key it doesn't hold (by
+   * address and type), e.g. a view-only account whose recovery phrase is imported. The
+   * personalize step lists them as getting new keys rather than as already added.
+   */
+  readyToUpdateKeysAccountAddrs: Account['addr'][] = []
+
+  /**
    * Whether the picker runs on a recovery phrase the wallet has just generated, so its
    * accounts are new rather than imported. Set by `init`.
    */
@@ -665,6 +672,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#linkedAccounts = []
     this.readyToAddAccounts = []
     this.readyToRemoveAccounts = []
+    this.readyToUpdateKeysAccountAddrs = []
     this.#readyToAddKeys = null
     this.#readyToAddSeeds = []
     this.#onPreparedAccountsAdded = undefined
@@ -1188,6 +1196,15 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           : getDefaultAccountPreferences(account.addr, this.#alreadyImportedAccounts, i)
       }
     })
+    const keyType = this.type
+    this.readyToUpdateKeysAccountAddrs = keyType
+      ? this.#getAccountAddrsWithNewKeys(
+          this.#preparedSelection.map(({ account, accountKeys }) => ({
+            account,
+            keys: accountKeys.map(({ addr }) => ({ addr, type: keyType }))
+          }))
+        )
+      : []
     this.#readyToAddKeys = null
     this.#readyToAddSeeds = []
     this.#onPreparedAccountsAdded = undefined
@@ -1236,6 +1253,13 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     })
     this.readyToRemoveAccounts = accountsToRemove
     this.#preparedAccountsToRemove = accountsToRemove
+    const preparedKeys = [...keys.internal, ...keys.external]
+    this.readyToUpdateKeysAccountAddrs = this.#getAccountAddrsWithNewKeys(
+      accounts.map((account) => ({
+        account,
+        keys: preparedKeys.filter(({ addr }) => account.associatedKeys.includes(addr))
+      }))
+    )
     this.#readyToAddKeys = keys
     this.#readyToAddSeeds = seeds
     this.#onPreparedAccountsAdded = onAdded
@@ -1312,6 +1336,26 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     this.addAccountsStatus = 'SUCCESS'
     await this.forceEmitUpdate()
+  }
+
+  /**
+   * The accounts the wallet has already, out of the given ones, that come with a key the
+   * keystore doesn't hold. A key of another type for the same address counts as new, as it is
+   * another way to sign.
+   */
+  #getAccountAddrsWithNewKeys(
+    accountsWithKeys: { account: Account; keys: Pick<Key, 'addr' | 'type'>[] }[]
+  ): Account['addr'][] {
+    const isKeyStored = ({ addr, type }: Pick<Key, 'addr' | 'type'>) =>
+      this.#keystore.keys.some((key) => key.addr === addr && key.type === type)
+
+    return accountsWithKeys
+      .filter(
+        ({ account, keys }) =>
+          this.#accounts.accounts.some(({ addr }) => addr === account.addr) &&
+          keys.some((key) => !isKeyStored(key))
+      )
+      .map(({ account }) => account.addr)
   }
 
   /**

@@ -821,6 +821,85 @@ describe('Main Controller ', () => {
       expect(mainCtrl.accounts.accounts[0]!.preferences.label).toBe('Other name')
     })
 
+    test('tells the accounts the wallet has that come with a key it does not hold', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      const [walletAccount] = mainCtrl.accounts.accounts
+      const keyAddr = walletAccount!.associatedKeys[0]!
+      const newWallet = Wallet.createRandom()
+      const notInWallet = {
+        addr: newWallet.address,
+        associatedKeys: [newWallet.address],
+        initialPrivileges: [],
+        creation: null,
+        preferences: { label: 'New', pfp: newWallet.address }
+      }
+      const internalKey = {
+        addr: keyAddr,
+        type: 'internal' as const,
+        label: 'Key 1',
+        privateKey: Wallet.createRandom().privateKey,
+        dedicatedToOneSA: false,
+        meta: { createdAt: Date.now() }
+      }
+
+      // A new account is added, not updated, whatever keys it brings
+      await picker.prepareAccounts({
+        accounts: [walletAccount!, notInWallet],
+        keys: { internal: [internalKey], external: [] }
+      })
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([walletAccount!.addr])
+
+      await picker.addPreparedAccounts()
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([])
+
+      // The same key again brings nothing new
+      await picker.prepareAccounts({
+        accounts: [walletAccount!],
+        keys: { internal: [internalKey], external: [] }
+      })
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([])
+
+      // A key of another type for the same address is another way to sign
+      await picker.prepareAccounts({
+        accounts: [walletAccount!],
+        keys: {
+          internal: [],
+          external: [
+            {
+              addr: keyAddr,
+              type: 'ledger',
+              label: 'Ledger Key 1',
+              dedicatedToOneSA: false,
+              meta: {
+                deviceId: '1',
+                deviceModel: 'nanoX',
+                hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+                index: 0,
+                createdAt: Date.now()
+              }
+            }
+          ]
+        }
+      })
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([walletAccount!.addr])
+
+      // Without keys (view-only) there is nothing to update
+      await picker.prepareAccounts({ accounts: [walletAccount!] })
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([])
+    })
+
+    test('tells a selected account the wallet has view-only as getting a key', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      await picker.init()
+      const [derived] = picker.readyToAddAccounts
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([])
+
+      await mainCtrl.accounts.addAccounts([derived!])
+      picker.prepareSelectedAccounts()
+
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([derived!.addr])
+    })
+
     test('adds the key of the prepared account after another derivation path was browsed', async () => {
       const { mainCtrl, picker } = await prepareNewSeedFlow()
       await picker.init()
