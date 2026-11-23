@@ -1,5 +1,6 @@
 import { isAddress } from 'ethers'
 
+import { Account } from '@/interfaces/account'
 import { AddressPoisoningMatch } from '@/interfaces/transfer'
 
 /**
@@ -136,4 +137,44 @@ export const pickBetterPoisoningMatch = (
   }
 
   return bestMatch
+}
+
+/**
+ * Also compares the recipient with the user's own accounts and returns the strongest match
+ * between them and `sentToMatch` (the match against the addresses the user has sent to before).
+ * Catches a lookalike of an own account that the current account has never sent to.
+ * On equal strength, `sentToMatch` is kept.
+ */
+export const pickPoisoningMatchWithOwnAccounts = (
+  candidate: string,
+  ownAccounts: Account[],
+  sentToMatch: AddressPoisoningMatch | null
+): AddressPoisoningMatch | null => {
+  let bestMatch: ScoredAddressPoisoningMatch | null = sentToMatch
+    ? { ...sentToMatch, lastInteractedAt: null }
+    : null
+
+  for (const { addr, preferences } of ownAccounts) {
+    const matchCounts = getAddressPoisoningMatchCounts(candidate, addr)
+    if (!matchCounts) continue
+
+    bestMatch = pickBetterPoisoningMatch(bestMatch, {
+      matchedAddress: addr,
+      ...matchCounts,
+      matchedOwnAccountLabel: preferences.label,
+      lastInteractedAt: null
+    })
+  }
+
+  if (!bestMatch) return null
+
+  return {
+    matchedAddress: bestMatch.matchedAddress,
+    matchedPrefixCharsCount: bestMatch.matchedPrefixCharsCount,
+    matchedSuffixCharsCount: bestMatch.matchedSuffixCharsCount,
+    differingCharsCount: bestMatch.differingCharsCount,
+    ...(bestMatch.matchedOwnAccountLabel && {
+      matchedOwnAccountLabel: bestMatch.matchedOwnAccountLabel
+    })
+  }
 }

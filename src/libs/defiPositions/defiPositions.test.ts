@@ -176,11 +176,9 @@ describe('DeFi positions providers', () => {
         accountWithNoPositions,
         providerPolygon,
         polygon,
-        fetch,
         storedPositions,
         [],
-        true,
-        false
+        true
       )
 
       expect(res.providerErrors).toEqual([])
@@ -193,11 +191,9 @@ describe('DeFi positions providers', () => {
         userAddrUni,
         unreachableProvider,
         polygon,
-        fetch,
         storedPositions,
         [],
-        true,
-        false
+        true
       )
 
       expect(res.providerErrors.map((e) => e.providerName).sort()).toEqual([

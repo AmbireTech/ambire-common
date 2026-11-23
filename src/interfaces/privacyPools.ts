@@ -73,7 +73,27 @@ export type PrivacyPoolsPaymasterConfig = {
 export type PrivacyPoolsAccount = {
   seedId: string
   createdAt: number
+  /** The name the user gave it. Missing on accounts added before they had names. */
+  label?: string
 }
+
+/**
+ * A Privacy Pools account an adding flow prepared, named `label` until the user renames it. Its
+ * recovery phrase is a stored one, or a new one the keystore holds as its temp seed until added.
+ */
+export type PrivacyPoolsAccountToAdd =
+  | { isNewSeed: false; seedId: string; label: string }
+  | { isNewSeed: true; label: string }
+
+/**
+ * Prepares the Privacy Pools account of a flow, from a stored recovery phrase (`seedId`) or a new
+ * one. Resolves with `null` when `signal` aborts first - the user left the flow.
+ */
+export type PreparePrivacyPoolsAccount = (params: {
+  seedId: string | null
+  extraEntropy?: string
+  signal: AbortSignal
+}) => Promise<PrivacyPoolsAccountToAdd | null>
 
 export type PrivacyPoolsSyncStatus = 'idle' | 'syncing' | 'ready'
 
@@ -82,8 +102,14 @@ export type PrivacyPoolsSyncStatus = 'idle' | 'syncing' | 'ready'
  * - 'locked' - the keystore is locked, so the note secrets can't be derived
  * - 'no-account' - no Privacy Pools account is selected
  * - 'unsupported-network' - no Privacy Pools chain is in the user's network list
+ * - 'passphrase-needed' - the phrase's passphrase isn't saved and its account's key is missing or
+ *   can't be read, so the account has to be added again with the passphrase
  */
-export type PrivacyPoolsUnavailableReason = 'locked' | 'no-account' | 'unsupported-network'
+export type PrivacyPoolsUnavailableReason =
+  | 'locked'
+  | 'no-account'
+  | 'unsupported-network'
+  | 'passphrase-needed'
 
 /**
  * Set by the Association Set Provider, not the protocol. A deposit is 'pending' until 0xBow adds
@@ -102,6 +128,12 @@ export type PrivacyPoolsNote = {
   depositorAddr: Hex
   /** The account's deposits are numbered in the order they were made, so a higher one is newer. */
   depositIndex: number
+  /** What the deposit put into the pool, after the vetting fee. `amount` is what is left of it. */
+  depositValue: bigint
+  /** How many sends were already made from this note. */
+  withdrawCount: number
+  /** The block of the deposit. */
+  blockNumber: bigint
 }
 
 /**
@@ -140,7 +172,11 @@ export type PrivacyPoolsChainPoolStats = {
   error: string | null
 }
 
-/** Notes summed per token. Only `approvedAmount` can be withdrawn. */
+/**
+ * Notes summed per token. Only `approvedAmount` can be withdrawn. What deposits, withdrawals and
+ * ragequits still on their way will do is not in the notes yet, so the amounts above do not
+ * include it. The fields below are named like the regular portfolio's.
+ */
 export type PrivacyPoolsTokenBalance = {
   tokenAddress: string
   symbol: string
@@ -149,6 +185,13 @@ export type PrivacyPoolsTokenBalance = {
   approvedAmount: bigint
   pendingAmount: bigint
   totalAmount: bigint
+  /**
+   * How much `totalAmount` will change once what is on its way shows in the notes: positive for a
+   * deposit, after the pool's fee, negative for a withdrawal or a deposit taken back.
+   */
+  simulationAmount: bigint
+  /** `approvedAmount` less what withdrawals on their way take out of it. What can be sent now. */
+  approvedAmountPostSimulation: bigint
 }
 
 /**
@@ -183,7 +226,13 @@ export type PrivacyPoolsAccountChainState = Pick<
   PrivacyPoolsChainState,
   'syncStatus' | 'syncStartedAt' | 'error' | 'lastSyncedAt' | 'lastSyncDuration'
 > & {
+  /** The notes with a balance. */
   notes: PrivacyPoolsNote[]
+  /**
+   * The notes sent in full or taken back, apart from `notes` as only the privacy checks need them,
+   * to tell the user's own deposits from others'.
+   */
+  spentNotes: PrivacyPoolsNote[]
   /** Newest first. Null until read: it is read only while the UI shows it. */
   history: PrivacyPoolsHistoryEntry[] | null
   /** Whether `history` was read by the sync that read `notes`. Kept, though stale, until reread. */
@@ -297,6 +346,8 @@ export type PrivacyPoolsOperation = {
    * the simulation. Set with `quote`.
    */
   humanization: IrCall | null
+  /** The privacy of the proved withdrawal, from the deposits it spends. Set with `quote`. */
+  privacy: PrivacyPoolsWithdrawalPrivacy | null
   // Set when `status` is 'failed', in the same plain language the toast would have used
   error: string | null
 }
@@ -315,12 +366,115 @@ export type PrivacyPoolsSendForm = {
   amountFieldMode: 'token' | 'fiat'
 }
 
-/** The entrypoint's deposit requirements for one asset, read from the chain as 0xBow tunes them. */
+/**
+ * The entrypoint's deposit requirements for one asset that the Send form checks, read from the
+ * chain as 0xBow tunes them. The pool is kept privately, and read again once per Send session, as
+ * 0xBow can replace a pool while the wallet runs.
+ */
 export type PrivacyPoolsDepositAssetConfig = {
-  /** The pool the entrypoint sends the asset's deposits to. */
-  poolAddress: string
   minimumDepositAmount: bigint
+  /** The share of a deposit the entrypoint keeps, in basis points (1 = 0.01%). */
+  vettingFeeBPS: bigint
 }
 
 /** 'pending' means "not observed as complete yet". It resolves from the broadcast result. */
 export type PrivacyPoolsOperationStatus = 'pending' | 'success' | 'failed'
+
+/**
+ * A privacy leak a transfer can have. Deposits that stand out (`cover`) and deposits that are too
+ * recent are not leaks: the user is shown how many deposits hide theirs and decides.
+ */
+export type PrivacyPoolsLeakId =
+  /** The send spends a whole deposit whose amount no other deposit has. */
+  | 'unique-amount'
+  /** The send takes part of an untouched deposit back to the address it came from. */
+  | 'send-to-depositor'
+  /** The send takes any of a deposit that earlier sends took part of back to where it came from. */
+  | 'send-rest-to-depositor'
+  /** The send uses up a deposit that earlier sends already took part of. */
+  | 'empties-partly-sent-deposit'
+  /** No deposit has put this amount into the pool yet. */
+  | 'unusual-deposit-amount'
+  /** The send spends more than one deposit, which links them. */
+  | 'several-deposits'
+  /** The send spends a deposit made in the last day, so its timing can point to the user. */
+  | 'fresh-deposit'
+
+/** A change the user can make to fix a leak. */
+export type PrivacyPoolsLeakAction = {
+  actionName: 'set-amount'
+  meta: { amount: bigint }
+} & {
+  /** English, to translate as it is. The amount is shown next to it. */
+  label: string
+}
+
+export type PrivacyPoolsLeak = {
+  id: PrivacyPoolsLeakId
+  title: string
+  text?: string
+  /**
+   * 'error' breaks privacy (Traceable), 'warning' weakens it (Weak privacy). 'info' is only a
+   * note and does not lower the rating.
+   */
+  type: 'error' | 'warning' | 'info'
+  actions: PrivacyPoolsLeakAction[]
+}
+
+/**
+ * How well a transfer hides. `unchecked` means nothing could be checked, as when the pool's
+ * deposits are not read yet.
+ */
+export type PrivacyPoolsRating = 'standard' | 'weak' | 'traceable' | 'unchecked'
+
+/**
+ * How many recent deposits (see `PRIVACY_POOLS_COVER_WINDOW_DAYS`) hide a send. Each is the
+ * smallest over the deposits it spends, as the least hidden one is what can link it.
+ */
+export type PrivacyPoolsSendCover = {
+  /** Deposits large enough to pay the part spent from each deposit. */
+  bigEnough: number
+  /** Deposits of exactly the part spent from each deposit. */
+  sameAmount: number
+}
+
+/** The privacy of a send from a Privacy Pools account. */
+export type PrivacyPoolsWithdrawalPrivacy = {
+  rating: PrivacyPoolsRating
+  leaks: PrivacyPoolsLeak[]
+  cover: PrivacyPoolsSendCover
+  /** How many deposits the send spends. */
+  notesCount: number
+}
+
+/** The privacy of a deposit into a pool. */
+export type PrivacyPoolsDepositPrivacy = {
+  rating: PrivacyPoolsRating
+  leaks: PrivacyPoolsLeak[]
+  /** Recent deposits (see `PRIVACY_POOLS_COVER_WINDOW_DAYS`) of exactly this amount. */
+  sameAmount: number
+}
+
+/** A send from a Privacy Pools account to check, as the Send form has it. */
+export type PrivacyPoolsWithdrawalPrivacyParams = {
+  seedId: string
+  chainId: string
+  tokenAddress: string
+  amount: bigint
+  /** Null before the user enters one, so only the amount is checked. */
+  recipient: string | null
+}
+
+/**
+ * The privacy of a send the Send form asked about, with what it was asked for, so the screen can
+ * tell whether it still matches the form. `privacy` is null when the notes cannot pay `amount`,
+ * or before the chain's first sync.
+ */
+export type PrivacyPoolsWithdrawalPrivacyCheck = {
+  chainId: string
+  tokenAddress: string
+  amount: bigint
+  /** Null before the user enters one. */
+  recipient: string | null
+  privacy: PrivacyPoolsWithdrawalPrivacy | null
+}

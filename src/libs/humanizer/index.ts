@@ -16,6 +16,7 @@ import {
   entryPointModule,
   erc20Module,
   erc721Module,
+  hashMessageModule,
   legendsMessageModule,
   openseaMessageModule,
   permit2Module,
@@ -29,6 +30,8 @@ import { dedupeWarnings } from './utils'
 // from least generic to most generic
 // the final visualization and warnings are from the first triggered module
 const humanizerTMModules = [
+  // first, so no other module can describe a hash message without its warning
+  hashMessageModule,
   safeMessageModule,
   erc20Module,
   erc721Module,

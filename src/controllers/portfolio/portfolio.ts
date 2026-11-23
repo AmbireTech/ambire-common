@@ -35,6 +35,7 @@ import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { ITokenPricesController } from '../../interfaces/tokenPrices'
 import { IUiController } from '../../interfaces/ui'
 import { IVerificationController } from '../../interfaces/verification'
 import { isBasicAccount } from '../../libs/account/account'
@@ -53,7 +54,8 @@ import {
   getIsExternalApiDefiPositionsCallSuccessful,
   getNewDefiState,
   getUniqueMergedPositions,
-  mergeDefiUpdateModes
+  mergeDefiUpdateModes,
+  priceCustomProviderPositions
 } from '../../libs/defiPositions/defiPositions'
 import {
   NetworksWithPositions,
@@ -72,8 +74,8 @@ import {
   getAssetCacheKey,
   getCollectibleCacheKey,
   getHintsError,
-  getTokenDataCacheKey,
   getTotal,
+  getUsdPriceIn,
   validateCollectibleOwnership,
   validateERC20Token,
   validateERC721Token
@@ -98,7 +100,6 @@ import {
   ScheduledUpdates,
   TemporaryTokens,
   TokenBlacklist,
-  TokenDataCache,
   TokenDataCacheValue,
   TokenError,
   TokenResult,
@@ -117,7 +118,6 @@ const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
   static: 60 * 60 * 1000
 }
-const TOKEN_PRICE_CACHE_TTL = 5 * 60 * 1000
 export const EXCHANGE_LIST_URL = 'https://cena.ambire.com/api/v3/exchanges'
 const EXCHANGE_LIST_MAX_RETRIES = 5
 const EXCHANGE_LIST_RETRY_DELAY = 10 * 60 * 1000
@@ -220,7 +220,8 @@ export class PortfolioController
 
   #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
-  protected tokenDataCache: { [chainId: string]: TokenDataCache } = {}
+  /** The only source of token prices and their cache, shared with the other controllers */
+  #tokenPrices: ITokenPricesController
 
   #providers: IProvidersController
 
@@ -298,6 +299,8 @@ export class PortfolioController
     banner: IBannerController,
     featureFlags: IFeatureFlagsController,
     ui: IUiController,
+    /** The only source of token prices, shared with the other controllers that price tokens */
+    tokenPrices: ITokenPricesController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
     verification?: IVerificationController,
     platform: Platform = 'default'
@@ -309,6 +312,7 @@ export class PortfolioController
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#fetch = fetch
+    this.#tokenPrices = tokenPrices
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#velcroUrl = velcroUrl
     this.#providers = providers
@@ -1202,12 +1206,7 @@ export class PortfolioController
       try {
         const provider = providers[network.chainId.toString()]
         if (!provider) return null
-        this.#portfolioLibs.set(
-          key,
-          new Portfolio(this.#fetch, provider, network, () =>
-            this.#featureFlags.isFeatureEnabled('tokenPrices')
-          )
-        )
+        this.#portfolioLibs.set(key, new Portfolio(provider, network, this.#tokenPrices))
       } catch (e: any) {
         this.emitError({
           level: 'silent',
@@ -1272,7 +1271,6 @@ export class PortfolioController
       }
 
       const result = await portfolioLib.get(accountId, {
-        tokenDataRecency: 60000 * 5,
         additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)]
       })
       this.temporaryTokens[network.chainId.toString()] = {
@@ -1300,21 +1298,23 @@ export class PortfolioController
     }
   }
 
-  async getTokenPrice(accountId: AccountId, chainId: bigint, address: string) {
+  /**
+   * The price of a single token that isn't necessarily held, e.g. the token being swapped to.
+   * Read from the cache when it was answered recently, requested otherwise (see
+   * `TokenPricesController.getTokenData`). Throws if the request fails and there's no cached price.
+   */
+  async getTokenPrice(chainId: bigint, address: string): Promise<number | undefined> {
     const network = this.#networks.networks.find((x) => x.chainId === chainId)
 
     if (!network) throw new Error(`Network with chainId ${chainId} not found`)
 
-    const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, chainId, network)
-    if (!portfolioLib) return undefined
-
-    const networkTokenDataCache = this.tokenDataCache[chainId.toString()] || new Map()
-    const price = await portfolioLib.getTokenPrice(address, {
-      tokenDataCache: networkTokenDataCache,
-      tokenDataRecency: TOKEN_PRICE_CACHE_TTL
+    const { tokenData, error } = await this.#tokenPrices.getTokenData({
+      network,
+      tokenAddresses: [address]
     })
+    const price = getUsdPriceIn(tokenData, address)?.price
 
-    this.tokenDataCache[chainId.toString()] = networkTokenDataCache
+    if (error && price === undefined) throw error
 
     return price
   }
@@ -1694,19 +1694,16 @@ export class PortfolioController
 
     // Update the price cache so the lib can use the latest prices from velcro
     if (response.prices) {
-      const networkTokenDataCache: TokenDataCache =
-        this.tokenDataCache[chainId.toString()] || new Map<string, [number, TokenDataCacheValue]>()
-
-      for (const [key, priceData] of Object.entries(response.prices)) {
-        if (!priceData || !('price' in priceData) || !('baseCurrency' in priceData)) continue
-
-        networkTokenDataCache.set(getTokenDataCacheKey(key), [
-          Date.now(),
+      const velcroTokenData = Object.entries(response.prices)
+        .filter(
+          ([, priceData]) => !!priceData && 'price' in priceData && 'baseCurrency' in priceData
+        )
+        .map(([address, priceData]): [string, TokenDataCacheValue] => [
+          address,
           convertApiTokenDataToTokenDataCache(priceData as ExternalAPITokenMarketDataResponse)
         ])
-      }
 
-      this.tokenDataCache[chainId.toString()] = networkTokenDataCache
+      this.#tokenPrices.setTokenData(chainId, velcroTokenData)
     }
 
     response.lastUpdate = Date.now()
@@ -1793,8 +1790,6 @@ export class PortfolioController
           `a portfolio library is not initialized for ${network.name} (${network.chainId})`
         )
 
-      const networkTokenDataCache = this.tokenDataCache[network.chainId.toString()] || new Map()
-
       const hintsResponse =
         this.#state[account.addr]?.[network.chainId.toString()]?.result?.lastExternalApiUpdateData
       const discoveryData = await this.getPortfolioFromApiDiscovery({
@@ -1833,8 +1828,6 @@ export class PortfolioController
       // Fetch the portfolio and custom defi positions in parallel
       const [portfolioResult, customPositionsResult] = await Promise.all([
         portfolioLib.get(account.addr, {
-          tokenDataRecency: 60000 * 5,
-          tokenDataCache: networkTokenDataCache,
           knownTokenMetadata: this.hints.getKnownTokenMetadata(network.chainId),
           knownCollectionMetadata: this.hints.getKnownCollectionMetadata(network.chainId),
           fetchPinned: !hasNonZeroTokens,
@@ -1847,11 +1840,15 @@ export class PortfolioController
           account.addr,
           portfolioLib.provider,
           network,
-          this.#fetch,
           state.result?.defiPositions.positionsByProvider || [],
           discoveryData?.data?.defi?.positions,
-          getIsExternalApiDefiPositionsCallSuccessful(discoveryData),
-          this.#featureFlags.isFeatureEnabled('tokenPrices')
+          getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
+        ).then((customPositions) =>
+          priceCustomProviderPositions(this.#tokenPrices, {
+            network,
+            accountAddr: account.addr,
+            customPositions
+          })
         )
       ])
 
@@ -1881,8 +1878,6 @@ export class PortfolioController
       )
 
       const combinedErrors = [...portfolioResult.errors, ...(discoveryData?.errors || [])]
-
-      this.tokenDataCache[network.chainId.toString()] = portfolioResult.tokenDataCache
 
       const rpcUrl = network.selectedRpcUrl
 
@@ -1992,13 +1987,11 @@ export class PortfolioController
             network,
             rpcResult: portfolioResult,
             getOptions: {
-              tokenDataRecency: 60000 * 5,
               fetchPinned: !hasNonZeroTokens,
               ...allHints,
               ...portfolioProps,
               blacklist: this.#blacklist
-            },
-            tokenDataCache: portfolioResult.tokenDataCache
+            }
           })
           .then((verificationResult) => {
             if (this.#state[account.addr]?.[network.chainId.toString()] !== verifiedState) return
@@ -2654,9 +2647,8 @@ export class PortfolioController
       tokenPreferences: this.tokenPreferences,
       scheduledUpdateChainIds: this.scheduledUpdateChainIds,
       // Left out of the UI state. The hints already reach it through customTokens and
-      // tokenPreferences, and the UI never reads the token data cache
-      hints: undefined,
-      tokenDataCache: undefined
+      // tokenPreferences
+      hints: undefined
     }
   }
 }

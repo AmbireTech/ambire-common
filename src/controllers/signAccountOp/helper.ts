@@ -8,11 +8,20 @@ import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { buildSafeTxGasRefund } from '../../libs/humanizer/erc7730/safeTxGasRefund'
 import { shouldDisplaySafeDelegateCallWarning } from '../../libs/humanizer/modules/Safe'
 import { TokenResult } from '../../libs/portfolio'
+import { doCallsMatchSafeTx } from '../../libs/safe/helpers'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 
-export type SignAccountOpType = 'default' | 'one-click-swap-and-bridge' | 'one-click-transfer'
+/**
+ * - `safe-owner-approval` - the transaction of a smart account owner of a Safe that approves a Safe
+ * transaction onchain, see SignAccountOpController.initSafeOwnerApproval
+ */
+export type SignAccountOpType =
+  | 'default'
+  | 'one-click-swap-and-bridge'
+  | 'one-click-transfer'
+  | 'safe-owner-approval'
 
 function getFeeSpeedIdentifier(option: FeePaymentOption, accountAddr: string) {
   return `${option.paidBy}:${option.token.address}:${option.token.symbol.toLowerCase()}:${
@@ -115,6 +124,17 @@ function getSafeDelegateCallWarning(accountOp: AccountOp): Warning | null {
   return shouldWarn ? WARNINGS.safeDelegateCall : null
 }
 
+/**
+ * A warning for a Safe transaction from the Safe Transaction Service that is shown as it will be
+ * sent instead of as its calls, because they couldn't be read from it exactly (see getSafeTxCalls).
+ * Its estimated effects come from simulating it as a plain call, so they may be inaccurate
+ */
+function getSafeTxNotShownAsCallsWarning(accountOp: AccountOp): Warning | null {
+  if (!accountOp.safeTx || doCallsMatchSafeTx(accountOp.calls, accountOp.safeTx)) return null
+
+  return WARNINGS.safeTxNotShownAsCalls
+}
+
 // Reuses the same "sus" gas refund detection the humanizer already applies when a Safe signer
 // signs the raw SafeTx message (see getSafeTxMessageWarnings in libs/humanizer/erc7730/humanize.ts),
 // so the account-op level sign screen (i.e. signing with the Safe account itself) warns about it too.
@@ -205,6 +225,7 @@ export {
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
   getSafeGasRefundWarning,
+  getSafeTxNotShownAsCallsWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,

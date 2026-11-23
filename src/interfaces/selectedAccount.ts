@@ -33,8 +33,8 @@ export type SelectedAccountPortfolioState = {
           | 'collections'
           | 'tokenErrors'
           | 'collectionErrors'
-          | 'hintsFromExternalAPI'
-          | 'priceCache'
+          | 'toBeLearned'
+          | 'lastExternalApiUpdateData'
           | 'total'
           | 'defiPositions'
         > & {

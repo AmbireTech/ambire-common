@@ -24,7 +24,10 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
       return
     }
 
-    // A trick to exclude specific keys
+    // A trick to exclude specific keys: these are large and the UI reads them from elsewhere
+    // (the tokens and collections are built separately) or never, so they are left out of
+    // the state that is sent to it on every update.
+    /* eslint-disable @typescript-eslint/no-unused-vars */
     const {
       tokens,
       collections,
@@ -32,10 +35,10 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
       collectionErrors,
       toBeLearned,
       lastExternalApiUpdateData,
-      tokenDataCache,
       defiPositions,
       ...result
     } = networkState.result
+    /* eslint-enable @typescript-eslint/no-unused-vars */
 
     strippedState[chainId] = {
       ...networkState,

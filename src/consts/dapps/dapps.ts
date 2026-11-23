@@ -107,7 +107,7 @@ export const predefinedDapps: Dapp[] = [
   },
   {
     id: 'drops.bot',
-    url: 'https://www.drops.bot/?r=ambire',
+    url: 'https://www.drops.bot',
     name: 'Drops',
     icon: 'https://avatars.githubusercontent.com/u/175563563?v=4',
     description: 'Check any crypto wallet address for unclaimed airdrops with Drops.',
@@ -469,6 +469,16 @@ export const predefinedDapps: Dapp[] = [
     description: 'Fast and low-cost moving and swapping of tokens between networks.',
     twitter: 'RelayProtocol',
     category: 'Cross Chain Bridge'
+  },
+  // Not listed by DefiLlama at all, as it's a tool (by DefiLlama), not a protocol
+  {
+    id: 'chainlist.org',
+    url: 'https://chainlist.org',
+    name: 'Chainlist',
+    icon: 'https://chainlist.org/favicon.ico',
+    description: 'Find networks and add them to your wallet in one click.',
+    twitter: 'DefiLlama',
+    category: 'Services'
   }
 ]
 
