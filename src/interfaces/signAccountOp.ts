@@ -102,6 +102,12 @@ type SafeFeePayerLinks = {
 type HardwareWalletSigningRequest = {
   type: 'raw-transaction' | 'eip-712' | 'eip-7702-authorization' | 'message'
   data: unknown
+  /**
+   * The address of the key that signs the request. A transaction doesn't
+   * carry its sender (it's recovered from the signature), so the device shows
+   * this address as "From" without it being in `data`
+   */
+  signerAddr?: string
 }
 
 enum TraceCallDiscoveryStatus {
