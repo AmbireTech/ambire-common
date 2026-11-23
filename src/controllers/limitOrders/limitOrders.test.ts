@@ -2,13 +2,13 @@ import { Interface, ZeroAddress } from 'ethers'
 
 import { describe, expect, it, jest } from '@jest/globals'
 
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
   COWSWAP_BUY_NATIVE_TOKEN_ADDRESS,
   COWSWAP_SETTLEMENT_ADDRESS,
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from '../../services/cowswap/constants'
 import { buildLimitOrderAppData } from '../../services/cowswap/helper'
-import { AccountOpStatus } from '../../libs/accountOp/types'
 import { CowSwapAccountOrder } from '../../services/cowswap/types'
 import { LimitOrdersController } from './limitOrders'
 
@@ -211,6 +211,38 @@ describe('LimitOrdersController My orders', () => {
     await refresh
 
     expect(controller.orders).toEqual([])
+  })
+
+  it('loads the orders of the account the user switched to during a refresh of the previous one', async () => {
+    const otherAccountAddr = '0x0000000000000000000000000000000000000002'
+    let resolvePreviousOrders: (orders: CowSwapAccountOrder[]) => void = () => {}
+    const previousOrders = new Promise<CowSwapAccountOrder[]>((resolve) => {
+      resolvePreviousOrders = resolve
+    })
+    const { controller, selectedAccount, cowSwapApi } = makeController(() => previousOrders)
+
+    const previousRefresh = controller.updateOrders()
+    selectedAccount.account = { addr: otherAccountAddr }
+    cowSwapApi.getAccountLimitOrders.mockImplementation(async () => [makeOrder()])
+    // e.g. the dashboard asks for the new account's orders
+    const refresh = controller.updateOrders()
+    resolvePreviousOrders([])
+    await Promise.all([previousRefresh, refresh])
+
+    expect(controller.ordersAccountAddr).toBe(otherAccountAddr)
+    expect(controller.orders).toHaveLength(1)
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledWith(
+      expect.objectContaining({ owner: otherAccountAddr })
+    )
+  })
+
+  it('shares a refresh of the same account instead of starting another', async () => {
+    const { controller, cowSwapApi } = makeController(() => [makeOrder()])
+
+    await Promise.all([controller.updateOrders(), controller.updateOrders()])
+
+    // One request for the account's only network, not two
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledTimes(1)
   })
 })
 

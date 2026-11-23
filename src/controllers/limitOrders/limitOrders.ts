@@ -319,6 +319,9 @@ export class LimitOrdersController extends EventEmitter {
   /** The My orders refresh in progress, which simultaneous refreshes share */
   #ordersUpdate: Promise<void> | null = null
 
+  /** The account whose orders `#ordersUpdate` loads */
+  #ordersUpdateAccountAddr: string | null = null
+
   /** Whether only the token permission of the order being signed was sent */
   #hasPartiallyBroadcast = false
 
@@ -2088,11 +2091,20 @@ export class LimitOrdersController extends EventEmitter {
    * Refreshes My orders. Not wrapped in `withStatus`, which would turn away placing or
    * cancelling an order while it runs, as it does every 30 seconds
    */
-  async updateOrders() {
-    if (this.#ordersUpdate) return this.#ordersUpdate
+  async updateOrders(): Promise<void> {
+    if (this.#ordersUpdate) {
+      if (this.#ordersUpdateAccountAddr === (this.#selectedAccount.account?.addr ?? null)) {
+        return this.#ordersUpdate
+      }
+      // The refresh in progress is of the account the user switched away from, and it stops
+      // without loading the selected account's orders
+      await this.#ordersUpdate
+      return this.updateOrders()
+    }
 
     this.isUpdatingOrders = true
     this.emitUpdate()
+    this.#ordersUpdateAccountAddr = this.#selectedAccount.account?.addr ?? null
     this.#ordersUpdate = this.#updateOrders()
       .catch((error) => {
         const { message } = getHumanReadableSwapAndBridgeError(error)
