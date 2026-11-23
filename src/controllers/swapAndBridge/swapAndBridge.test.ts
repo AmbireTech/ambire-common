@@ -1844,6 +1844,44 @@ describe('SwapAndBridge Controller', () => {
       jest.useRealTimers()
       restore()
     })
+
+    it('checks a CoW Swap order every 10 seconds, while a bridge backs off up to 30 seconds', async () => {
+      const { restore } = suppressConsole()
+      jest.useFakeTimers()
+      jest
+        .spyOn(swapAndBridgeController, 'checkForActiveRoutesStatusUpdate')
+        .mockImplementation((() => {}) as any)
+      const interval = swapAndBridgeController.updateActiveRoutesInterval
+      const route = swapAndBridgeController.activeRoutes[0]!.route!
+      const originalProviderId = route.providerId
+      const runChecks = async (count: number) => {
+        const timeouts: number[] = []
+        for (let i = 0; i < count; i++) {
+          await waitForFnToBeCalledAndExecuted(interval)
+          timeouts.push(interval.currentTimeout)
+        }
+        return timeouts
+      }
+
+      try {
+        expect(swapAndBridgeController.activeRoutesInProgress).toHaveLength(1)
+        // The previous test cleared the timer of the running interval, so it's started again
+        interval.stop()
+        swapAndBridgeController.activeRoutes = [...swapAndBridgeController.activeRoutes]
+        const bridgeTimeouts = await runChecks(5)
+        expect(bridgeTimeouts).toEqual([10000, 20000, 30000, 30000, 30000])
+
+        route.providerId = 'cowswap'
+        const cowSwapTimeouts = await runChecks(3)
+        expect(cowSwapTimeouts).toEqual([10000, 10000, 10000])
+      } finally {
+        route.providerId = originalProviderId
+        interval.stop()
+        jest.clearAllTimers()
+        jest.useRealTimers()
+        restore()
+      }
+    })
   }) // end describe('continuous active-route updates')
 
   test('should check for route status', async () => {

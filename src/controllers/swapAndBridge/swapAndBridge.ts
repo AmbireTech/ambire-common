@@ -4041,6 +4041,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       return
     }
 
+    // Once a CoW Swap order is filled, the portfolio may already show the tokens while the
+    // dashboard still shows them as on their way, until the order's status is checked again.
+    // So its status is checked often instead of backing off, to keep that window short
+    const hasCowSwapRouteInProgress = this.activeRoutesInProgress.some(
+      (activeRoute) => activeRoute.route?.providerId === COW_SWAP_PROVIDER_ID
+    )
+    if (hasCowSwapRouteInProgress) {
+      this.#updateActiveRoutesInterval.updateTimeout({ timeout: BRIDGE_STATUS_INTERVAL })
+      return
+    }
+
     // coming here means the bridge should complete any second now
     // so start with BRIDGE_STATUS_INTERVAL
     // upon status pending, increase by BRIDGE_STATUS_INTERVAL until the ceiling is hit
