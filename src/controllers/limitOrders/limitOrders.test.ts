@@ -307,7 +307,9 @@ describe('LimitOrdersController placing an order that sells the native token', (
     expect(calls.map((call: any) => call.to)).toEqual([weth, weth, COWSWAP_SETTLEMENT_ADDRESS])
     // Wrapping first, with the amount sold
     expect(calls[0].value).toBe(sellAmount)
-    expect(calls[0].data).toBe(new Interface(['function deposit() payable']).encodeFunctionData('deposit'))
+    expect(calls[0].data).toBe(
+      new Interface(['function deposit() payable']).encodeFunctionData('deposit')
+    )
     // Then the permission for the wrapped token, then the pre-sign
     expect(calls[1].data).toBe(
       erc20Interface.encodeFunctionData('approve', [COWSWAP_VAULT_RELAYER_ADDRESS, sellAmount])
@@ -367,9 +369,7 @@ describe('LimitOrdersController orders for the dashboard', () => {
  * A Safe account's controller, which signs in the signing window. `getAccountOrders` answers each
  * refresh of My orders
  */
-const makeSafeController = (
-  getAccountOrders: () => CowSwapAccountOrder[] = () => []
-) => {
+const makeSafeController = (getAccountOrders: () => CowSwapAccountOrder[] = () => []) => {
   const ethToken = {
     address: ZeroAddress,
     chainId: 1n,
@@ -462,7 +462,9 @@ describe('LimitOrdersController orders signed in the signing window', () => {
 
     const { orderUid } = await placeOrder()
     // CoW Swap lists the order as soon as it's submitted, before it's signed
-    orders = [makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })]
+    orders = [
+      makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })
+    ]
     await controller.updateOrders()
 
     expect(controller.orders).toEqual([])
@@ -473,7 +475,9 @@ describe('LimitOrdersController orders signed in the signing window', () => {
     const { controller, placeOrder } = makeSafeController(() => orders)
 
     const { orderUid } = await placeOrder()
-    orders = [makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })]
+    orders = [
+      makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })
+    ]
     // Rejecting broadcasts nothing, while other transactions of the account still go out
     controller.onAccountOpBroadcast({
       accountAddr,
@@ -490,14 +494,20 @@ describe('LimitOrdersController orders signed in the signing window', () => {
     const { controller, cowSwapApi, placeOrder } = makeSafeController(() => orders)
 
     const { orderUid, calls } = await placeOrder()
-    orders = [makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })]
+    orders = [
+      makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })
+    ]
     const fetchesBeforeBroadcast = cowSwapApi.getAccountLimitOrders.mock.calls.length
     controller.onAccountOpBroadcast({ accountAddr, chainId: 1n, calls: withNewIds(calls) })
     // The broadcast refreshes My orders, as the new order isn't listed yet
     await controller.updateOrders()
 
-    expect(cowSwapApi.getAccountLimitOrders.mock.calls.length).toBeGreaterThan(fetchesBeforeBroadcast)
-    expect(controller.orders.map((order) => [order.uid, order.status])).toEqual([[orderUid, 'placing']])
+    expect(cowSwapApi.getAccountLimitOrders.mock.calls.length).toBeGreaterThan(
+      fetchesBeforeBroadcast
+    )
+    expect(controller.orders.map((order) => [order.uid, order.status])).toEqual([
+      [orderUid, 'placing']
+    ])
   })
 
   it('does not mark an order broadcast on another network', async () => {
@@ -505,7 +515,9 @@ describe('LimitOrdersController orders signed in the signing window', () => {
     const { controller, placeOrder } = makeSafeController(() => orders)
 
     const { orderUid, calls } = await placeOrder()
-    orders = [makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })]
+    orders = [
+      makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })
+    ]
     controller.onAccountOpBroadcast({ accountAddr, chainId: 10n, calls: withNewIds(calls) })
     await controller.updateOrders()
 
@@ -533,6 +545,109 @@ describe('LimitOrdersController orders signed in the signing window', () => {
     controller.onAccountOpBroadcast({ accountAddr, chainId: 1n, calls: withNewIds(calls) })
 
     expect(controller.orders[0]?.status).toBe('cancelling')
+  })
+
+  describe('when the transaction does not go through', () => {
+    /** Places an order, broadcasts its transaction and returns what the tests need */
+    const placeAndBroadcast = async () => {
+      let orders: CowSwapAccountOrder[] = []
+      const safe = makeSafeController(() => orders)
+      const { orderUid, calls } = await safe.placeOrder()
+      // CoW Swap keeps listing the order as waiting for its signature until it expires
+      orders = [
+        makeOrder({ uid: orderUid, sellToken: weth, buyToken: usdc, status: 'presignaturePending' })
+      ]
+      const broadcastCalls = withNewIds(calls)
+      safe.controller.onAccountOpBroadcast({ accountAddr, chainId: 1n, calls: broadcastCalls })
+      await safe.controller.updateOrders()
+      expect(safe.controller.orders[0]?.status).toBe('placing')
+
+      return { ...safe, orderUid, broadcastCalls }
+    }
+    const finalizedOp = (status: AccountOpStatus, calls: any[]) =>
+      ({ chainId: 1n, status, calls }) as any
+
+    it('stops showing the order as placing when the user cancels its stuck transaction', async () => {
+      const { controller, broadcastCalls } = await placeAndBroadcast()
+
+      // Another transaction, the user's cancel, took the nonce of the stuck one
+      controller.onAccountOpsFinalized([
+        finalizedOp(AccountOpStatus.UnknownButPastNonce, broadcastCalls)
+      ])
+
+      expect(controller.orders).toEqual([])
+    })
+
+    it('stops showing the order as placing when its transaction fails', async () => {
+      const { controller, broadcastCalls } = await placeAndBroadcast()
+
+      controller.onAccountOpsFinalized([finalizedOp(AccountOpStatus.Failure, broadcastCalls)])
+
+      expect(controller.orders).toEqual([])
+    })
+
+    it('keeps the order placing when a sped-up copy of its transaction goes through', async () => {
+      const { controller, broadcastCalls } = await placeAndBroadcast()
+
+      controller.onAccountOpsFinalized([
+        finalizedOp(AccountOpStatus.UnknownButPastNonce, broadcastCalls),
+        finalizedOp(AccountOpStatus.Success, withNewIds(broadcastCalls))
+      ])
+
+      expect(controller.orders[0]?.status).toBe('placing')
+    })
+
+    it('keeps the order placing while its transaction waits', async () => {
+      const { controller, broadcastCalls } = await placeAndBroadcast()
+
+      controller.onAccountOpsFinalized([
+        finalizedOp(AccountOpStatus.BroadcastedButNotConfirmed, broadcastCalls)
+      ])
+
+      expect(controller.orders[0]?.status).toBe('placing')
+    })
+
+    it('keeps the order placing when its call went through in a partly complete batch', async () => {
+      const { controller, broadcastCalls } = await placeAndBroadcast()
+
+      controller.onAccountOpsFinalized([
+        finalizedOp(
+          AccountOpStatus.PartiallyComplete,
+          broadcastCalls.map((call) => ({ ...call, status: AccountOpStatus.Success }))
+        )
+      ])
+
+      expect(controller.orders[0]?.status).toBe('placing')
+    })
+
+    it('shows the order as waiting again when its cancel transaction does not go through', async () => {
+      const orderUid = `0x${'22'.repeat(56)}`
+      const { controller, requestSignatureInWindow } = makeSafeController(() => [
+        makeOrder({ uid: orderUid })
+      ])
+      await controller.updateOrders()
+      await controller.cancelOrder(orderUid)
+      const broadcastCalls = withNewIds(requestSignatureInWindow.mock.calls[0]![0].calls)
+      controller.onAccountOpBroadcast({ accountAddr, chainId: 1n, calls: broadcastCalls })
+      expect(controller.orders[0]?.status).toBe('cancelling')
+
+      controller.onAccountOpsFinalized([
+        finalizedOp(AccountOpStatus.UnknownButPastNonce, broadcastCalls)
+      ])
+
+      // So the user can cancel it again
+      expect(controller.orders[0]?.status).toBe('open')
+    })
+
+    it('ignores finalized transactions that are not about its orders', async () => {
+      const { controller } = await placeAndBroadcast()
+
+      controller.onAccountOpsFinalized([
+        finalizedOp(AccountOpStatus.Failure, [{ id: 'other', to: usdc, value: 0n, data: '0x' }])
+      ])
+
+      expect(controller.orders[0]?.status).toBe('placing')
+    })
   })
 })
 
@@ -812,7 +927,9 @@ describe('LimitOrdersController orders that cannot fill', () => {
 
     it('refreshes the order as soon as the transaction is confirmed', async () => {
       const { controller, providerCall, broadcastCalls } = await allowAgainAndBroadcast()
-      providerCall.mockImplementation(async () => `0x${(10n ** 12n).toString(16).padStart(64, '0')}`)
+      providerCall.mockImplementation(
+        async () => `0x${(10n ** 12n).toString(16).padStart(64, '0')}`
+      )
 
       controller.onAccountOpsFinalized([
         { chainId: 1n, status: AccountOpStatus.Success, calls: broadcastCalls } as any
@@ -846,7 +963,11 @@ describe('LimitOrdersController orders that cannot fill', () => {
       const fetchCount = cowSwapApi.getAccountLimitOrders.mock.calls.length
 
       controller.onAccountOpsFinalized([
-        { chainId: 1n, status: AccountOpStatus.BroadcastedButNotConfirmed, calls: broadcastCalls } as any
+        {
+          chainId: 1n,
+          status: AccountOpStatus.BroadcastedButNotConfirmed,
+          calls: broadcastCalls
+        } as any
       ])
 
       expect(cowSwapApi.getAccountLimitOrders.mock.calls.length).toBe(fetchCount)

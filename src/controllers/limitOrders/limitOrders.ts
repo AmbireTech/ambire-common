@@ -336,6 +336,13 @@ export class LimitOrdersController extends EventEmitter {
    */
   #allowingCalls = new Map<string, { tokenKey: string; sentAt: number }>()
 
+  /**
+   * The broadcast calls that place or cancel an order and aren't confirmed yet, by
+   * `#getSentCallKey`. If their transaction doesn't go through, e.g. the user cancels it while
+   * it's stuck, the order is no longer shown as placing or cancelling, see `onAccountOpsFinalized`
+   */
+  #unconfirmedOrderCalls = new Map<string, { orderUid: string; purpose: 'place' | 'cancel' }>()
+
   #tokenInfoCache = new Map<string, LimitOrderToken>()
 
   #lastSelectedAccountAddr: string | null = null
@@ -1589,6 +1596,16 @@ export class LimitOrdersController extends EventEmitter {
       // The call that places the order, as opposed to the token permission before it
       mainCallId: orderUid,
       onBroadcasted: () => {
+        const placeCall = calls.find((call) => call.id === orderUid)
+        if (placeCall) {
+          this.#unconfirmedOrderCalls.set(
+            LimitOrdersController.#getSentCallKey(chainId, placeCall),
+            {
+              orderUid,
+              purpose: 'place'
+            }
+          )
+        }
         this.#rememberAccountWithOrders(account.addr)
         this.#placingOrderUids.add(orderUid)
         // So a fill is noticed even if the order is first listed after it filled
@@ -1944,10 +1961,13 @@ export class LimitOrdersController extends EventEmitter {
     if (!account) return
 
     if (account.safeCreation) {
-      this.#callsSentToWindow.set(LimitOrdersController.#getSentCallKey(listedOrder.chainId, call), {
-        orderUid: order.uid,
-        purpose: 'cancel'
-      })
+      this.#callsSentToWindow.set(
+        LimitOrdersController.#getSentCallKey(listedOrder.chainId, call),
+        {
+          orderUid: order.uid,
+          purpose: 'cancel'
+        }
+      )
       await this.#signInWindow({ account, network, calls: [call] })
       // Shown as cancelling once the Safe's owners sign it and it's sent, see `onAccountOpBroadcast`
       return
@@ -1961,6 +1981,10 @@ export class LimitOrdersController extends EventEmitter {
       provider,
       mainCallId: `${order.uid}-cancel`,
       onBroadcasted: () => {
+        this.#unconfirmedOrderCalls.set(
+          LimitOrdersController.#getSentCallKey(listedOrder.chainId, call),
+          { orderUid: order.uid, purpose: 'cancel' }
+        )
         this.#cancellingOrderUids.add(order.uid)
       }
     })
@@ -2291,6 +2315,7 @@ export class LimitOrdersController extends EventEmitter {
     this.#cancellingOrderUids.clear()
     this.#callsSentToWindow.clear()
     this.#allowingCalls.clear()
+    this.#unconfirmedOrderCalls.clear()
     this.#fillIssues.clear()
     this.orders = []
     this.ordersAccountAddr = this.#selectedAccount.account?.addr ?? null
@@ -2322,6 +2347,7 @@ export class LimitOrdersController extends EventEmitter {
       this.#callsSentToWindow.delete(key)
       hasMarkedOrders = true
       if (sentCall.purpose === 'cancel') {
+        this.#unconfirmedOrderCalls.set(key, { orderUid: sentCall.orderUid, purpose: 'cancel' })
         this.#cancellingOrderUids.add(sentCall.orderUid)
         return
       }
@@ -2336,6 +2362,7 @@ export class LimitOrdersController extends EventEmitter {
         return
       }
 
+      this.#unconfirmedOrderCalls.set(key, { orderUid: sentCall.orderUid, purpose: 'place' })
       this.#rememberAccountWithOrders(accountAddr)
       this.#placingOrderUids.add(sentCall.orderUid)
       // So a fill is noticed even if the order is first listed after it filled
@@ -2353,12 +2380,14 @@ export class LimitOrdersController extends EventEmitter {
   }
 
   /**
-   * Refreshes the orders once a transaction that gives back their permission is confirmed or
-   * fails, instead of waiting for the next scheduled refresh. Called with every finalized
-   * transaction, after the RPC reached its block, so it ignores the ones that aren't ours
+   * Updates the orders once a transaction that places or cancels one, or gives back their
+   * permission, is confirmed or won't go through (it failed, or the user cancelled or replaced
+   * it while it was stuck), instead of waiting for the next scheduled refresh. Called with every
+   * finalized transaction, after the RPC reached its block, so it ignores the ones that aren't ours
    */
   onAccountOpsFinalized(ops: SubmittedAccountOp[]) {
-    const finalizedKeys: string[] = []
+    const finalizedKeys = new Set<string>()
+    const landedKeys = new Set<string>()
     ops.forEach(({ chainId, status, calls }) => {
       if (
         !status ||
@@ -2369,21 +2398,47 @@ export class LimitOrdersController extends EventEmitter {
 
       calls.forEach((call) => {
         const key = LimitOrdersController.#getSentCallKey(chainId, call)
-        if (this.#allowingCalls.has(key)) finalizedKeys.push(key)
+        if (!this.#allowingCalls.has(key) && !this.#unconfirmedOrderCalls.has(key)) return
+
+        finalizedKeys.add(key)
+        // Some of the calls of a batch sent as separate transactions may have gone through
+        const hasLanded =
+          status === AccountOpStatus.Success ||
+          (status === AccountOpStatus.PartiallyComplete && call.status === AccountOpStatus.Success)
+        if (hasLanded) landedKeys.add(key)
       })
     })
-    if (!finalizedKeys.length) return
+    if (!finalizedKeys.size) return
+
+    let hasDroppedOrders = false
+    finalizedKeys.forEach((key) => {
+      const orderCall = this.#unconfirmedOrderCalls.get(key)
+      if (!orderCall) return
+
+      this.#unconfirmedOrderCalls.delete(key)
+      // A transaction that went through leaves it to CoW Swap to list the order's new status. A
+      // sped-up transaction has the same calls, so it went through if either of them did
+      if (landedKeys.has(key)) return
+
+      hasDroppedOrders = true
+      if (orderCall.purpose === 'place') this.#placingOrderUids.delete(orderCall.orderUid)
+      else this.#cancellingOrderUids.delete(orderCall.orderUid)
+    })
+    if (hasDroppedOrders) {
+      this.#rebuildOrders()
+      this.emitUpdate()
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#refreshAfterAllowing(finalizedKeys)
+    this.#refreshAfterFinalized([...finalizedKeys])
   }
 
-  async #refreshAfterAllowing(finalizedKeys: string[]) {
+  async #refreshAfterFinalized(finalizedKeys: string[]) {
     // A refresh in progress may have read the permission before the confirmation, so the orders
     // stay shown as being allowed again until a refresh that starts after it
     await this.#ordersUpdate
     finalizedKeys.forEach((key) => this.#allowingCalls.delete(key))
-    // Whether it worked or failed, the refresh reads the permission again
+    // Whether it worked or failed, the refresh reads the permission and the statuses again
     await this.updateOrders()
   }
 
