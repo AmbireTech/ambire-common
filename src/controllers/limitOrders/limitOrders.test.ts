@@ -750,29 +750,37 @@ describe('LimitOrdersController orders that cannot fill', () => {
   const allowanceSelector = erc20.getFunction('allowance')!.selector
   const toWord = (value: bigint) => `0x${value.toString(16).padStart(64, '0')}`
 
-  /** The controller with a network whose token reads return `allowance` and `balance` */
+  /**
+   * The controller with a network whose token reads return `reads.allowance` and `reads.balance`.
+   * A test can change them, and the portfolio, then call `updateBalances`
+   */
   const makeControllerWithToken = (
     orders: CowSwapAccountOrder[],
-    { allowance, balance }: { allowance: bigint; balance: bigint },
+    reads: { allowance: bigint; balance: bigint },
     { shouldFailReads = false } = {}
   ) => {
     const call = jest.fn(async ({ data }: { data: string }) => {
       if (shouldFailReads) throw new Error('The network did not answer')
-      return toWord(data.startsWith(allowanceSelector) ? allowance : balance)
+      return toWord(data.startsWith(allowanceSelector) ? reads.allowance : reads.balance)
     })
+    let onSelectedAccountUpdate = () => {}
+    const selectedAccount = {
+      account: { addr: accountAddr },
+      portfolio: { tokens: [] as { chainId: bigint; address: string; amount: bigint }[] },
+      onUpdate: jest.fn((callback: () => void) => {
+        onSelectedAccountUpdate = callback
+      })
+    }
+    const getAccountLimitOrders = jest.fn(async ({ chainId }: { chainId: number }) =>
+      chainId === 1 ? orders : []
+    )
     const controller = new LimitOrdersController({
-      selectedAccount: {
-        account: { addr: accountAddr },
-        portfolio: { tokens: [] },
-        onUpdate: jest.fn()
-      },
+      selectedAccount,
       networks: { networks: [{ chainId: 1n, name: 'Ethereum', nativeAssetSymbol: 'ETH' }] },
       providers: { providers: { '1': { call } } },
       ui: { uiEvent: { on: jest.fn() } },
       cowSwapApi: {
-        getAccountLimitOrders: jest.fn(async ({ chainId }: { chainId: number }) =>
-          chainId === 1 ? orders : []
-        ),
+        getAccountLimitOrders,
         getToken: jest.fn(async ({ address, chainId }: { address: string; chainId: number }) => {
           const token = listedTokens[address.toLowerCase()]
           return token ? { ...token, address, chainId, name: token.symbol } : null
@@ -786,7 +794,16 @@ describe('LimitOrdersController orders that cannot fill', () => {
       onBroadcastFailed: jest.fn()
     } as unknown as ConstructorParameters<typeof LimitOrdersController>[0])
 
-    return { controller, call }
+    /** The portfolio updated with the account's USDC balance, and the checks it starts ended */
+    const updateBalances = async (usdcAmount: bigint) => {
+      selectedAccount.portfolio.tokens = [{ chainId: 1n, address: usdc, amount: usdcAmount }]
+      onSelectedAccountUpdate()
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
+    }
+
+    return { controller, call, getAccountLimitOrders, updateBalances }
   }
 
   it('shows an order as unable to fill when the permission to use the token was removed', async () => {
@@ -890,6 +907,74 @@ describe('LimitOrdersController orders that cannot fill', () => {
 
     expect(errors).toHaveLength(1)
   })
+  describe('when the balances update', () => {
+    it('notices an order that can no longer fill, without asking CoW Swap', async () => {
+      const reads = { allowance: 10n ** 12n, balance: 10n ** 12n }
+      const { controller, getAccountLimitOrders, updateBalances } = makeControllerWithToken(
+        [makeOrder()],
+        reads
+      )
+      await controller.updateOrders()
+      expect(controller.orders[0]?.fillIssue).toBeNull()
+      const fetchCount = getAccountLimitOrders.mock.calls.length
+
+      // e.g. the USDC was sent to another account
+      reads.balance = 0n
+      await updateBalances(0n)
+
+      expect(controller.orders[0]?.fillIssue).toBe('balance')
+      expect(getAccountLimitOrders.mock.calls.length).toBe(fetchCount)
+    })
+
+    it('reads nothing for an account whose orders were never fetched', async () => {
+      const { call, getAccountLimitOrders, updateBalances } = makeControllerWithToken(
+        [makeOrder()],
+        { allowance: 0n, balance: 0n }
+      )
+
+      await updateBalances(0n)
+
+      expect(call).not.toHaveBeenCalled()
+      expect(getAccountLimitOrders).not.toHaveBeenCalled()
+    })
+
+    it('reads nothing when no order of the account needs a permission', async () => {
+      const { controller, call, updateBalances } = makeControllerWithToken(
+        [makeOrder({ status: 'fulfilled' })],
+        { allowance: 0n, balance: 0n }
+      )
+      await controller.updateOrders()
+
+      await updateBalances(5n)
+
+      expect(call).not.toHaveBeenCalled()
+    })
+
+    it('reads again only when a sold token balance changed, or after a while', async () => {
+      const reads = { allowance: 10n ** 12n, balance: 10n ** 12n }
+      const { controller, call, updateBalances } = makeControllerWithToken([makeOrder()], reads)
+      await updateBalances(10n ** 12n)
+      await controller.updateOrders()
+      const readCount = call.mock.calls.length
+
+      await updateBalances(10n ** 12n)
+      expect(call.mock.calls.length).toBe(readCount)
+
+      // e.g. the permission was removed on another site, which no balance shows
+      reads.allowance = 0n
+      const now = Date.now()
+      const dateNow = jest.spyOn(Date, 'now').mockReturnValue(now + 61 * 1000)
+      try {
+        await updateBalances(10n ** 12n)
+      } finally {
+        dateNow.mockRestore()
+      }
+
+      expect(call.mock.calls.length).toBeGreaterThan(readCount)
+      expect(controller.orders[0]?.fillIssue).toBe('permission')
+    })
+  })
+
   describe('while the permission is given back', () => {
     const allowedUid = `0x${'51'.repeat(56)}`
 

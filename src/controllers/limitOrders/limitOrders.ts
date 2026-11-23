@@ -129,6 +129,13 @@ const MARKET_QUOTE_MAX_AGE = 3 * MARKET_QUOTE_UPDATE_INTERVAL
 /** How old the orders can be when the dashboard opens before they're fetched again */
 const DASHBOARD_ORDERS_MAX_AGE = 60 * 1000
 
+/**
+ * How often the permission and the balance of the known waiting orders are read again on a
+ * balance update at most, when the balances of the tokens they sell didn't change. Catches a
+ * permission removed on another site
+ */
+const FILL_ISSUES_MAX_AGE = 60 * 1000
+
 /** How often My orders is refreshed while it's open */
 const ORDERS_UPDATE_INTERVAL = 30 * 1000
 
@@ -318,8 +325,20 @@ export class LimitOrdersController extends EventEmitter {
   /** Orders whose cancel transaction was broadcast this session */
   #cancellingOrderUids = new Set<string>()
 
-  /** Why each waiting order of `ordersAccountAddr` can't fill, see `#updateFillIssues` */
+  /** Why each waiting order of `ordersAccountAddr` can't fill, see `#getFillIssues` */
   #fillIssues = new Map<string, LimitOrderFillIssue>()
+
+  /** When `#fillIssues` were last read */
+  #fillIssuesReadAt = 0
+
+  /** Counts the reads of `#fillIssues`, so a check that a newer read overtook is dropped */
+  #fillIssuesReadId = 0
+
+  /** The check that runs on a balance update, see `#recheckFillIssuesIfNeeded` */
+  #fillIssuesRecheck: Promise<void> | null = null
+
+  /** The balances of the tokens the known waiting orders sell, at the last check */
+  #soldTokensBalancesSignature = ''
 
   /**
    * The calls that place or cancel an order, handed to the signing window (Safe accounts), by
@@ -593,6 +612,8 @@ export class LimitOrdersController extends EventEmitter {
       this.emitUpdate()
       return
     }
+
+    this.#recheckFillIssuesIfNeeded()
 
     // The balances and the stkWALLET amount (the fee) come from the portfolio
     if (!this.sessionIds.length) return
@@ -2139,9 +2160,12 @@ export class LimitOrdersController extends EventEmitter {
     await this.#resolveOrderTokens()
     if (this.#selectedAccount.account?.addr !== account.addr) return
 
+    this.#fillIssuesReadId++
     const fillIssues = await this.#getFillIssues(account.addr)
     if (this.#selectedAccount.account?.addr !== account.addr) return
     this.#fillIssues = fillIssues
+    this.#fillIssuesReadAt = Date.now()
+    this.#soldTokensBalancesSignature = this.#getSoldTokensBalancesSignature()
 
     this.#rebuildOrders()
     this.ordersUpdatedAt = Date.now()
@@ -2161,10 +2185,8 @@ export class LimitOrdersController extends EventEmitter {
     this.#accountOrders.forEach((orders, chainId) => {
       const remainingByToken = new Map<string, { uid: string; remaining: bigint }[]>()
       orders.forEach((order) => {
-        // The ETH-flow contract holds what an ETH-flow order sells, so it needs no permission
-        if (order.status !== 'open' || order.ethflowData) return
-        const remaining = BigInt(order.sellAmount) - BigInt(order.executedSellAmount)
-        if (remaining <= 0n) return
+        const remaining = LimitOrdersController.#getRemainingSellAmountNeedingPermission(order)
+        if (!remaining) return
 
         const tokenAddress = order.sellToken.toLowerCase()
         remainingByToken.set(tokenAddress, [
@@ -2205,6 +2227,89 @@ export class LimitOrdersController extends EventEmitter {
     })
 
     return fillIssues
+  }
+
+  /**
+   * What a waiting order still sells from the account, which needs CoW Swap's permission and the
+   * balance. Null for an order that needs neither
+   */
+  static #getRemainingSellAmountNeedingPermission(order: CowSwapAccountOrder): bigint | null {
+    // The ETH-flow contract holds what an ETH-flow order sells, so it needs no permission
+    if (order.status !== 'open' || order.ethflowData) return null
+    const remaining = BigInt(order.sellAmount) - BigInt(order.executedSellAmount)
+
+    return remaining > 0n ? remaining : null
+  }
+
+  /**
+   * The account's balances of the tokens its known waiting orders sell, as the portfolio has them.
+   * Empty if no known order needs a permission or a balance
+   */
+  #getSoldTokensBalancesSignature(): string {
+    const tokenKeys = new Set<string>()
+    this.#accountOrders.forEach((orders, chainId) => {
+      orders.forEach((order) => {
+        if (!LimitOrdersController.#getRemainingSellAmountNeedingPermission(order)) return
+        tokenKeys.add(LimitOrdersController.#getTokenKey(chainId, order.sellToken))
+      })
+    })
+    if (!tokenKeys.size) return ''
+
+    const balances = new Map<string, bigint>()
+    this.#selectedAccount.portfolio.tokens.forEach((token) => {
+      const key = LimitOrdersController.#getTokenKey(Number(token.chainId), token.address)
+      if (tokenKeys.has(key)) balances.set(key, token.amount)
+    })
+
+    return [...tokenKeys]
+      .sort()
+      .map((key) => `${key}:${balances.get(key)?.toString() ?? ''}`)
+      .join(',')
+  }
+
+  /**
+   * Reads the permission and the balance of the waiting orders again when the account's balances
+   * update, so an order that can no longer fill (e.g. the tokens were sent elsewhere) is shown
+   * without opening My orders. Only for orders already fetched for the account, so nothing is
+   * read for an account without orders, or whose orders aren't known. Reads the network only,
+   * never CoW Swap, and only when a sold token's balance changed or `FILL_ISSUES_MAX_AGE` passed
+   */
+  #recheckFillIssuesIfNeeded() {
+    const accountAddr = this.#selectedAccount.account?.addr
+    if (!accountAddr || this.ordersAccountAddr !== accountAddr || this.ordersUpdatedAt === null)
+      return
+    // A refresh of the orders reads them too
+    if (this.#ordersUpdate || this.#fillIssuesRecheck) return
+
+    const signature = this.#getSoldTokensBalancesSignature()
+    if (!signature) return
+    const hasBalanceChanged = signature !== this.#soldTokensBalancesSignature
+    if (!hasBalanceChanged && Date.now() - this.#fillIssuesReadAt < FILL_ISSUES_MAX_AGE) return
+
+    this.#soldTokensBalancesSignature = signature
+    this.#fillIssuesRecheck = this.#recheckFillIssues(accountAddr)
+      .catch((error) => {
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to check whether the limit orders can fill',
+          error
+        })
+      })
+      .finally(() => {
+        this.#fillIssuesRecheck = null
+      })
+  }
+
+  async #recheckFillIssues(accountAddr: string) {
+    const readId = ++this.#fillIssuesReadId
+    const fillIssues = await this.#getFillIssues(accountAddr)
+    // A refresh of the orders or another account overtook it
+    if (readId !== this.#fillIssuesReadId || this.ordersAccountAddr !== accountAddr) return
+
+    this.#fillIssues = fillIssues
+    this.#fillIssuesReadAt = Date.now()
+    this.#rebuildOrders()
+    this.emitUpdate()
   }
 
   /** CoW Swap's permission to use the token, and how much of it the account holds */
@@ -2317,6 +2422,10 @@ export class LimitOrdersController extends EventEmitter {
     this.#allowingCalls.clear()
     this.#unconfirmedOrderCalls.clear()
     this.#fillIssues.clear()
+    // Drops a check of the previous account's orders that is still running
+    this.#fillIssuesReadId++
+    this.#fillIssuesReadAt = 0
+    this.#soldTokensBalancesSignature = ''
     this.orders = []
     this.ordersAccountAddr = this.#selectedAccount.account?.addr ?? null
     this.ordersError = null
