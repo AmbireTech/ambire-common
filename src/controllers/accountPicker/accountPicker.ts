@@ -143,6 +143,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   readyToRemoveAccounts: Account[] = []
 
   /**
+   * Whether the picker runs on a recovery phrase the wallet has just generated, so its
+   * accounts are new rather than imported. Set by `init`.
+   */
+  isFromNewSeed: boolean = false
+
+  /**
    * A Privacy Pools account flow set up by `setPrivacyPoolsInitParams`, from a stored recovery
    * phrase (`seedId`) or a new one. Prepared by the personalize step (`initIfNotStarted`).
    */
@@ -549,6 +555,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.page = page || DEFAULT_PAGE
     if (pageSize) this.pageSize = pageSize
     this.hdPathTemplate = hdPathTemplate
+    this.isFromNewSeed =
+      this.#keystore.isTempSeedNew &&
+      this.#keystore.isKeyIteratorInitializedWithTempSeed(keyIterator)
     this.isInitialized = true
     this.#alreadyImportedAccounts = [...this.#accounts.accounts]
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
@@ -652,6 +661,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#preparedAccountsToRemove = []
     this.#preparedHdPathTemplate = undefined
     this.networksWithAccountStateError = []
+    this.isFromNewSeed = false
     this.isInitialized = false
 
     await this.forceEmitUpdate()

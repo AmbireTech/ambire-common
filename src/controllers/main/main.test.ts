@@ -698,6 +698,34 @@ describe('Main Controller ', () => {
       expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(true)
     })
 
+    test('marks the picker as running on a new recovery phrase until it is reset', async () => {
+      const { picker } = await prepareNewSeedFlow()
+
+      await picker.init()
+      expect(picker.isFromNewSeed).toBe(true)
+
+      await picker.reset()
+      expect(picker.isFromNewSeed).toBe(false)
+    })
+
+    test('does not mark an entered recovery phrase as new', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      await picker.reset()
+      await mainCtrl.keystore.addTempSeed({
+        seed: process.env.SEED!,
+        seedPassphrase: null,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      await picker.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      await picker.init()
+
+      expect(picker.isFromNewSeed).toBe(false)
+    })
+
     test('adds the prepared account, its key and the new recovery phrase on proceeding', async () => {
       const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
       const before = snapshot()

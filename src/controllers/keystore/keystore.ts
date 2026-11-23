@@ -343,6 +343,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     return !!this.#tempSeed
   }
 
+  /** Whether the temp seed is a phrase the wallet generated (not one the user entered) */
+  get isTempSeedNew() {
+    return !!this.#tempSeed?.notBackedUp
+  }
+
   get isReadyToStoreKeys() {
     return this.#isReadyToStoreKeys
   }
