@@ -36,8 +36,7 @@ export interface ExternalSignerController {
   isUnlocked?: (path?: string, expectedKeyOnThisPath?: string) => boolean
   unlock?: (
     path: ReturnType<typeof getHdPathFromTemplate>,
-    expectedKeyOnThisPath?: string,
-    shouldOpenLatticeConnectorInTab?: boolean // Lattice specific
+    expectedKeyOnThisPath?: string
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
   unlockedPath?: string
   unlockedPathKeyAddr?: string
@@ -52,7 +51,6 @@ export interface ExternalSignerController {
   isWebHID?: boolean // Ledger specific
   singerEth?: any // Ledger specific
   appName?: string // Lattice specific
-  creds?: any // Lattice specific
   network?: any // Lattice specific
   masterFingerprint?: string // Optional for some wallets, but can be used for additional info
   currentRequest?: QrRequest | null // Qr based specific
