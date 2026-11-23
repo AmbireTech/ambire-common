@@ -46,7 +46,6 @@ const citrea = {
   },
   nativeAssetId: 'bitcoin',
   hasSingleton: true,
-  features: [],
   predefined: true,
   wrappedAddr: '0x0000000000000000000000000000000000000000',
   has7702: true

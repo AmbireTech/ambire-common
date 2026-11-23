@@ -11,13 +11,14 @@ import wait from '../../utils/wait'
 import type { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import {
   fetchNetworkPriceIds,
-  getFeaturesByNetworkProperties,
   getLoadingNetworkInfo,
   getNetworkInfo,
   getNetworksUpdatedWithRelayerNetworks,
+  getSmartAccountsFeature,
   getSupportedNetworks,
   getStateOverrideSupport,
-  isNetworkInfoPending
+  isNetworkInfoPending,
+  SMART_ACCOUNTS_SUPPORT_LOADING_INFO
 } from './networks'
 
 const getByKey = <T>(record: Record<string, T>, key: string): T => {
@@ -66,91 +67,118 @@ describe('Networks lib', () => {
     })
   })
 
-  describe('Network features', () => {
-    test('should check if valid messages for smart account support get shown depending on the network properties', async () => {
-      const networkInfo: NetworkInfo = {
-        chainId: 1n,
-        isSAEnabled: false,
-        hasSingleton: true,
-        isOptimistic: false,
-        rpcNoStateOverride: false,
-        erc4337: { enabled: true, hasPaymaster: true },
-        areContractsDeployed: true,
-        feeOptions: { is1559: true },
-        platformId: 'ethereum',
-        nativeAssetId: 'ethereum',
-        flagged: false
-      }
-      const results = getFeaturesByNetworkProperties(networkInfo, network)
-      const saSupport = results.find((sup) => sup.id === 'saSupport')
-      expect(saSupport?.msg).toBe(
-        'We were unable to detect Smart Account support on the network with the provided RPC. Try choosing a different RPC.'
-      )
+  describe('getSmartAccountsFeature', () => {
+    const networkInfo: NetworkInfo = {
+      chainId: 1n,
+      isSAEnabled: true,
+      hasSingleton: true,
+      isOptimistic: false,
+      rpcNoStateOverride: false,
+      erc4337: { enabled: true, hasPaymaster: true },
+      areContractsDeployed: true,
+      feeOptions: { is1559: true },
+      platformId: 'ethereum',
+      nativeAssetId: 'ethereum',
+      flagged: false
+    }
 
-      networkInfo.hasSingleton = false
-      const results2 = getFeaturesByNetworkProperties(networkInfo, network)
-      const saSupport2 = results2.find((sup) => sup.id === 'saSupport')
-      expect(saSupport2?.msg).toBe(
-        "Unfortunately, this network doesn't support Smart Accounts. It can be used only with EOA accounts."
-      )
+    test('is initial when there is no info at all', () => {
+      expect(getSmartAccountsFeature(undefined)).toMatchObject({
+        id: 'saSupport',
+        level: 'initial'
+      })
     })
 
-    describe('Token prices', () => {
-      const networkInfo: NetworkInfo = {
-        chainId: 1n,
-        isSAEnabled: true,
-        hasSingleton: true,
-        isOptimistic: false,
-        rpcNoStateOverride: false,
-        erc4337: { enabled: true, hasPaymaster: true },
-        areContractsDeployed: true,
-        feeOptions: { is1559: true },
-        platformId: 'ethereum',
-        nativeAssetId: 'ethereum',
-        flagged: false
-      }
-      const getPricesFeature = (...args: Parameters<typeof getFeaturesByNetworkProperties>) =>
-        getFeaturesByNetworkProperties(...args).find((feature) => feature.id === 'prices')
+    test('is loading while the smart accounts info is still being checked', () => {
+      expect(getSmartAccountsFeature(SMART_ACCOUNTS_SUPPORT_LOADING_INFO).level).toBe('loading')
+      expect(
+        getSmartAccountsFeature({ ...networkInfo, isSAEnabled: 'LOADING', erc4337: 'LOADING' })
+          .level
+      ).toBe('loading')
+    })
 
-      test('are reported as supported when the network has price ids', () => {
-        expect(getPricesFeature(networkInfo, network)?.level).toBe('success')
+    test('is supported when the network supports smart accounts and has the contracts', () => {
+      expect(getSmartAccountsFeature(networkInfo, network)).toMatchObject({
+        id: 'saSupport',
+        level: 'success'
+      })
+    })
+
+    test('asks to deploy the contracts when they are missing', () => {
+      expect(
+        getSmartAccountsFeature({ ...networkInfo, areContractsDeployed: false }, network)
+      ).toMatchObject({ level: 'warning', title: 'Contracts not deployed' })
+    })
+
+    test('is not supported when the network does not support smart accounts, with no explanation', () => {
+      const unsupported = getSmartAccountsFeature({ ...networkInfo, isSAEnabled: false }, network)
+      const withoutSingleton = getSmartAccountsFeature(
+        { ...networkInfo, isSAEnabled: false, hasSingleton: false },
+        network
+      )
+
+      ;[unsupported, withoutSingleton].forEach((feature) => {
+        expect(feature).toEqual({ id: 'saSupport', title: 'Not supported', level: 'danger' })
+      })
+    })
+
+    test('has no explanation when supported', () => {
+      expect(getSmartAccountsFeature(networkInfo, network).msg).toBeUndefined()
+    })
+
+    test('is not supported when nothing can broadcast the transactions', () => {
+      expect(
+        getSmartAccountsFeature(
+          { ...networkInfo, erc4337: { enabled: false, hasPaymaster: false } },
+          { ...network, hasRelayer: false }
+        ).level
+      ).toBe('danger')
+    })
+
+    test('works out the status from a stored network as well', () => {
+      expect(getSmartAccountsFeature(network, network).level).toBe('success')
+    })
+
+    test('reports the RPC error instead of the smart accounts status', () => {
+      expect(getSmartAccountsFeature({ ...networkInfo, flagged: true }, network)).toMatchObject({
+        id: 'flagged',
+        level: 'danger'
+      })
+    })
+
+    describe('when opted out of ERC-4337', () => {
+      test('is not marked as turned off by default', () => {
+        expect(getSmartAccountsFeature(networkInfo, network).isTurnedOff).toBeUndefined()
       })
 
-      test('are reported as unsupported when the network has no price ids', () => {
-        const pricesFeature = getPricesFeature(
-          { ...networkInfo, platformId: '', nativeAssetId: '' },
-          network
-        )
-
-        expect(pricesFeature?.level).toBe('danger')
-        expect(pricesFeature?.msg).toContain("don't support this network yet")
-      })
-
-      test('are reported as turned off when opted out, regardless of network support', () => {
-        const withPriceIds = getPricesFeature(networkInfo, network, false)
-        const withoutPriceIds = getPricesFeature(
-          { ...networkInfo, platformId: '', nativeAssetId: '' },
+      test('is reported as disabled, regardless of network support', () => {
+        const supported = getSmartAccountsFeature(networkInfo, network, false)
+        const unsupported = getSmartAccountsFeature(
+          { ...networkInfo, isSAEnabled: false, hasSingleton: false },
           network,
           false
         )
-        const stillLoading = getPricesFeature(
-          { ...networkInfo, platformId: 'LOADING', nativeAssetId: 'LOADING' },
-          network,
+        const stillLoading = getSmartAccountsFeature(
+          SMART_ACCOUNTS_SUPPORT_LOADING_INFO,
+          undefined,
           false
         )
 
-        ;[withPriceIds, withoutPriceIds, stillLoading].forEach((pricesFeature) => {
-          expect(pricesFeature?.level).toBe('warning')
-          expect(pricesFeature?.msg).toContain('turned off in your privacy settings')
+        ;[supported, unsupported, stillLoading].forEach((feature) => {
+          expect(feature).toMatchObject({
+            id: 'saSupport',
+            level: 'warning',
+            title: 'Disabled',
+            isTurnedOff: true
+          })
+          expect(feature.msg).toContain('turned off in your privacy settings')
         })
       })
 
       test('the RPC error still takes priority over the opt-out', () => {
-        expect(
-          getFeaturesByNetworkProperties({ ...networkInfo, flagged: true }, network, false).map(
-            (feature) => feature.id
-          )
-        ).toEqual(['flagged'])
+        expect(getSmartAccountsFeature({ ...networkInfo, flagged: true }, network, false)).toMatchObject(
+          { id: 'flagged', level: 'danger' }
+        )
       })
     })
   })
@@ -524,13 +552,11 @@ describe('getNetworkInfo emissions', () => {
 
     expect(emissions).toHaveLength(2)
     expect(emissions[0]).toEqual(getLoadingNetworkInfo(TEST_CHAIN_ID))
-    // The prices row can already render while the smart-account ones still spin.
+    // The price ids are already in while the smart-account ones are still being checked.
     expect(emissions[1]!.platformId).toBe(COINGECKO_PLATFORM_ID)
     expect(emissions[1]!.nativeAssetId).toBe(COINGECKO_NATIVE_ASSET_ID)
     expect(getLoadingFieldNames(emissions[1]!)).toContain('isSAEnabled')
-    expect(
-      getFeaturesByNetworkProperties(emissions[1]!, undefined).map((feature) => feature.level)
-    ).toEqual(['loading', 'loading', 'success'])
+    expect(getSmartAccountsFeature(emissions[1]!).level).toBe('loading')
 
     releaseSmartAccountProbes()
     await infoPromise
@@ -586,23 +612,16 @@ describe('getNetworkInfo emissions', () => {
     expect(getLoadingFieldNames(finalInfo)).toEqual([])
 
     // The regression test for the enabled -> disabled flip. There IS an emission whose
-    // features all read as resolved while `flagged` is still pending, so a gate only gets
-    // the answer right if it asks `isNetworkInfoPending` instead of the feature levels.
+    // smart accounts status reads as resolved while `flagged` is still pending, so a gate only
+    // gets the answer right if it asks `isNetworkInfoPending` instead of the status.
     const misleadingEmissions = emissions
       .slice(0, -1)
-      .filter(
-        (info) =>
-          !getFeaturesByNetworkProperties(info, undefined).some(
-            (feature) => feature.level === 'loading'
-          )
-      )
+      .filter((info) => getSmartAccountsFeature(info).level !== 'loading')
     expect(misleadingEmissions.length).toBeGreaterThan(0)
     expect(emissions.slice(0, -1).map(isNetworkInfoPending)).not.toContain(false)
 
-    // Once the verdict is in, the list collapses to the single RPC error row.
-    expect(
-      getFeaturesByNetworkProperties(finalInfo, undefined).map((feature) => feature.level)
-    ).toEqual(['danger'])
+    // Once the verdict is in, the status turns into the RPC error.
+    expect(getSmartAccountsFeature(finalInfo)).toMatchObject({ id: 'flagged', level: 'danger' })
   })
 
   describe('when opted out of token prices', () => {
@@ -666,6 +685,87 @@ describe('getNetworkInfo emissions', () => {
     })
   })
 
+  describe('when opted out of ERC-4337', () => {
+    const BUNDLER_HEALTH_PATH = 'api.pimlico.io/health'
+
+    const getBundlerCalls = (fetch: Fetch) =>
+      (fetch as unknown as jest.Mock).mock.calls.filter(([url]) =>
+        String(url).includes(BUNDLER_HEALTH_PATH)
+      )
+
+    const getFinalInfo = async (fetch: Fetch, storedNetwork: Network | undefined) => {
+      const { provider } = createProviderStub()
+      const emissions: NetworkInfoLoading<NetworkInfo>[] = []
+
+      await getNetworkInfo(
+        fetch,
+        TEST_CHAIN_ID,
+        provider,
+        (info) => emissions.push(info),
+        storedNetwork,
+        true,
+        false
+      )
+
+      return emissions[emissions.length - 1]!
+    }
+
+    test('does not call the bundler, and leaves a new network unchecked', async () => {
+      const fetch = jest.fn(okFetch) as unknown as Fetch
+
+      const finalInfo = await getFinalInfo(fetch, undefined)
+
+      expect(getBundlerCalls(fetch)).toEqual([])
+      // No `hasBundlerSupport`, so that it gets checked once ERC-4337 is turned back on
+      expect(finalInfo.erc4337).toEqual({ enabled: false, hasPaymaster: false })
+      // Resolved instead of left 'LOADING', otherwise the network could never be added
+      expect(isNetworkInfoPending(finalInfo)).toBe(false)
+      expect(finalInfo.flagged).toBe(false)
+    })
+
+    test('keeps the ERC-4337 settings the network already has', async () => {
+      const fetch = jest.fn(okFetch) as unknown as Fetch
+      const storedErc4337 = {
+        enabled: true,
+        hasPaymaster: true,
+        hasBundlerSupport: true,
+        increasePreVerGas: 10
+      }
+
+      const finalInfo = await getFinalInfo(fetch, {
+        ...network,
+        chainId: TEST_CHAIN_ID,
+        predefined: false,
+        erc4337: storedErc4337
+      })
+
+      expect(getBundlerCalls(fetch)).toEqual([])
+      expect(finalInfo.erc4337).toEqual(storedErc4337)
+    })
+
+    test('calls the bundler by default', async () => {
+      const { provider } = createProviderStub()
+      const fetch = jest.fn(okFetch) as unknown as Fetch
+      const emissions: NetworkInfoLoading<NetworkInfo>[] = []
+
+      await getNetworkInfo(
+        fetch,
+        TEST_CHAIN_ID,
+        provider,
+        (info) => emissions.push(info),
+        undefined
+      )
+
+      expect(getBundlerCalls(fetch)).toHaveLength(1)
+      // The stubbed fetch answers with 200, which means supported
+      expect(emissions[emissions.length - 1]!.erc4337).toEqual({
+        enabled: true,
+        hasPaymaster: false,
+        hasBundlerSupport: true
+      })
+    })
+  })
+
   describe('timer cleanup', () => {
     let setTimeoutSpy: jest.SpiedFunction<typeof setTimeout>
     let clearTimeoutSpy: jest.SpiedFunction<typeof clearTimeout>
@@ -713,7 +813,6 @@ const network: Network = {
   platformId: 'ethereum',
   nativeAssetId: 'ethereum',
   hasSingleton: true,
-  features: [],
   feeOptions: { is1559: true },
   predefined: true,
   wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',

@@ -1,7 +1,7 @@
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { KeystoreSeed, StoredKey, StoredKeystoreSeed } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { getFeaturesByNetworkProperties, relayerAdditionalNetworks } from '../networks/networks'
+import { relayerAdditionalNetworks } from '../networks/networks'
 import { LegacyTokenPreference } from '../portfolio/customToken'
 
 /**
@@ -80,7 +80,6 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
       id: networkId,
       ...preference,
       ...networkInfo,
-      features: getFeaturesByNetworkProperties(networkInfo, undefined),
       hasRelayer: !!relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId!),
       predefined: false
     } as Network

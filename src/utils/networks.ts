@@ -1,11 +1,5 @@
 import { BUNDLER } from '../consts/bundlers'
-import {
-  ChainlistNetwork,
-  Erc4337settings,
-  Network,
-  NetworkFeature,
-  RelayerNetwork
-} from '../interfaces/network'
+import { ChainlistNetwork, Erc4337settings, Network, RelayerNetwork } from '../interfaces/network'
 import { FetchJsonRpcProvider } from '../services/provider/fetchJsonRpcProvider'
 
 const hardcodedRpcUrls: { [chainId: string]: string } = {
@@ -99,7 +93,6 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
     hasRelayer: false,
     rpcNoStateOverride: false, // TODO
     areContractsDeployed: false, // TODO
-    features: [],
     feeOptions: { is1559: false },
     flagged: false,
     hasSingleton: false,
@@ -187,7 +180,6 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
   // the RPC for the custom networks.
   const isSAEnabled = !!smartAccounts
   const areContractsDeployed = !!smartAccounts
-  const features: NetworkFeature[] = []
   const hasSingleton = true
 
   // Coming from the RPC, only for the custom networks
@@ -224,7 +216,6 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     predefined: !disabledByDefault,
     predefinedConfigVersion,
     areContractsDeployed,
-    features,
     hasSingleton,
     has7702: is7702Enabled,
     disabledByDefault

@@ -16,6 +16,7 @@ import { DappConnectRequest, Message, PlainTextMessageUserRequest } from '@/inte
 import { isSmartAccount } from '@/libs/account/account'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
+import { getSmartAccountsFeature } from '@/libs/networks/networks'
 import * as magicLinkLib from '@/libs/magicLink/magicLink'
 import { stringify } from '@/libs/richJson/richJson'
 import wait from '@/utils/wait'
@@ -1445,25 +1446,12 @@ describe('Main Controller ', () => {
     })
   })
 
-  test('should check if network features get displayed correctly for ethereum', async () => {
+  test('should report smart accounts as supported on ethereum', async () => {
     const eth = controller.networks.networks.find((n) => n.chainId === 1n)!
-    expect(eth?.features.length).toBe(3)
-
-    const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')!
-    expect(saSupport).not.toBe(null)
-    expect(saSupport).not.toBe(undefined)
-    expect(saSupport!.level).toBe('success')
-    expect(saSupport!.title).toBe('Ambire Smart Accounts')
-
-    const simulation = eth?.features.find((feat) => feat.id === 'simulation')
-    expect(simulation).not.toBe(null)
-    expect(simulation).not.toBe(undefined)
-    expect(simulation!.level).toBe('success')
-
-    const prices = eth?.features.find((feat) => feat.id === 'prices')
-    expect(prices).not.toBe(null)
-    expect(prices).not.toBe(undefined)
-    expect(prices!.level).toBe('success')
+    const saSupport = getSmartAccountsFeature(eth, eth)
+    expect(saSupport.id).toBe('saSupport')
+    expect(saSupport.level).toBe('success')
+    expect(saSupport.title).toBe('Supported')
 
     // set first to false so we could test setContractsDeployedToTrueIfDeployed
     await controller.networks.updateNetwork({ areContractsDeployed: false }, 1n)

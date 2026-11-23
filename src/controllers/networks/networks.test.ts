@@ -16,8 +16,8 @@ import {
 } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
-  getFeaturesByNetworkProperties,
   getLoadingNetworkInfo,
+  getSmartAccountsFeature,
   isNetworkInfoPending
 } from '../../libs/networks/networks'
 import wait from '../../utils/wait'
@@ -563,11 +563,11 @@ describe('Networks Controller - add or update network info', () => {
   test('streams a single request without ever reporting it as finished early', async () => {
     const { controller, harness } = await buildForNetworkInfo()
 
-    const emissions: { levels: NetworkFeature['level'][]; isPending: boolean }[] = []
+    const emissions: { level: NetworkFeature['level']; isPending: boolean }[] = []
     const unsubscribe = controller.onUpdate(() => {
       const info = controller.networkToAddOrUpdate?.info
       emissions.push({
-        levels: getFeaturesByNetworkProperties(info, undefined).map((feature) => feature.level),
+        level: getSmartAccountsFeature(info).level,
         isPending: isNetworkInfoPending(info)
       })
     })
@@ -582,11 +582,11 @@ describe('Networks Controller - add or update network info', () => {
 
     // `initial` means "nothing requested yet" and leaves the add/save button clickable, so
     // it must never appear while a request is in flight.
-    expect(emissions.filter(({ levels }) => levels.includes('initial'))).toEqual([])
+    expect(emissions.filter(({ level }) => level === 'initial')).toEqual([])
 
-    // The rows fill in progressively, so the feature levels do change more than once.
+    // The info fills in progressively, so it's emitted more than once.
     expect(emissions.length).toBeGreaterThan(2)
-    expect(emissions[0]!.levels).toEqual(['loading', 'loading', 'loading'])
+    expect(emissions[0]!.level).toBe('loading')
 
     // The gate the button reads is the part that must not oscillate: pending until the
     // final emission, then finished, and never back.
@@ -594,7 +594,7 @@ describe('Networks Controller - add or update network info', () => {
       ...emissions.slice(0, -1).map(() => true),
       false
     ])
-    expect(emissions[emissions.length - 1]!.levels).not.toContain('loading')
+    expect(emissions[emissions.length - 1]!.level).not.toBe('loading')
   })
 
   test('an RPC change does not take the network info fetched for another network', async () => {
@@ -844,29 +844,6 @@ describe('Networks Controller - token prices opt-out', () => {
     expect(controller.networkToAddOrUpdate?.info?.nativeAssetId).toBe('')
   })
 
-  test('reports token prices as turned off for every network while opted out', async () => {
-    const { controller, featureFlags } = await buildOptedOutWithCustomNetworks(
-      createPriceApiFetchStub()
-    )
-    const getPricesLevels = () =>
-      controller.allNetworks.map(
-        (network) => network.features.find((feature) => feature.id === 'prices')?.level
-      )
-
-    expect(new Set(getPricesLevels())).toEqual(new Set(['warning']))
-
-    let hasEmitted = false
-    const unsubscribe = controller.onUpdate(() => {
-      hasEmitted = true
-    })
-    await featureFlags.setFeatureFlag('tokenPrices', true)
-    unsubscribe()
-
-    // Emitted, so that the UI picks up the features that changed with the opt-out
-    expect(hasEmitted).toBe(true)
-    expect(getPricesLevels()).not.toContain('warning')
-  })
-
   test('opting back in fetches the missing price ids of custom networks only', async () => {
     const fetch = createPriceApiFetchStub()
     const { controller, featureFlags, onAddOrUpdateNetworks } =
@@ -949,6 +926,265 @@ describe('Networks Controller - token prices opt-out', () => {
     for (let i = 0; i < 25; i++) await wait(0)
 
     expect(getPriceApiUrls(fetch)).toEqual([])
+  })
+})
+
+describe('Networks Controller - ERC-4337 opt-out', () => {
+  const BUNDLER_HEALTH_PATH = 'api.pimlico.io/health'
+  const UNCHECKED_CUSTOM_NETWORK: Network = {
+    ...predefinedNetworks[0]!,
+    chainId: 987654331n,
+    name: 'Custom network added while opted out',
+    rpcUrls: ['https://custom.example'],
+    selectedRpcUrl: 'https://custom.example',
+    predefined: false,
+    erc4337: { enabled: false, hasPaymaster: false }
+  }
+  const DISABLED_UNCHECKED_CUSTOM_NETWORK: Network = {
+    ...UNCHECKED_CUSTOM_NETWORK,
+    chainId: 987654332n,
+    name: 'Disabled custom network added while opted out',
+    disabled: true
+  }
+  const CHECKED_CUSTOM_NETWORK: Network = {
+    ...UNCHECKED_CUSTOM_NETWORK,
+    chainId: 987654333n,
+    name: 'Custom network the bundler does not support',
+    erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false }
+  }
+  const RELAYER_NETWORK_WITHOUT_BUNDLER_INFO: Network = {
+    ...UNCHECKED_CUSTOM_NETWORK,
+    chainId: 987654334n,
+    name: 'Relayer network',
+    predefinedConfigVersion: 1
+  }
+  const stubProvider = async (
+    _: { rpcUrl: string; chainId: bigint },
+    callback: (provider: RPCProvider) => Promise<void>
+  ) => {
+    await callback({
+      getCode: async () => '0x1234',
+      getBlock: async () => ({ baseFeePerGas: 1n }),
+      send: async () => '0x',
+      call: async () => '0x'
+    } as unknown as RPCProvider)
+  }
+
+  const createFeatureFlags = (erc4337: boolean) =>
+    new FeatureFlagsController({ erc4337 }, new StorageController(produceMemoryStore()))
+
+  const createBundlerFetchStub = ({
+    gate,
+    status = 200
+  }: { gate?: Promise<void>; status?: number } = {}) =>
+    jest.fn(async () => {
+      if (gate) await gate
+
+      return { status, json: async () => ({}) }
+    }) as unknown as Fetch
+
+  const getBundlerChainIds = (fetch: Fetch) =>
+    (fetch as unknown as jest.Mock).mock.calls
+      .map(([url]) => String(url))
+      .filter((url) => url.includes(BUNDLER_HEALTH_PATH))
+      .map((url) => url.split('chain-id=')[1])
+
+  const byChainId = (controller: NetworksController, chainId: bigint) =>
+    controller.allNetworks.find((n) => n.chainId === chainId)
+
+  /** Builds an opted-out controller that already has custom networks. */
+  const buildOptedOutWithCustomNetworks = async (fetch: Fetch) => {
+    const featureFlags = createFeatureFlags(false)
+    await featureFlags.initialLoadPromise
+    const built = buildNetworksController({ fetch, featureFlags })
+    await built.controller.initialLoadPromise
+    await settleBackgroundSync(built.controller)
+    await built.controller.mergeNetworks([
+      UNCHECKED_CUSTOM_NETWORK,
+      DISABLED_UNCHECKED_CUSTOM_NETWORK,
+      CHECKED_CUSTOM_NETWORK,
+      RELAYER_NETWORK_WITHOUT_BUNDLER_INFO
+    ])
+    built.onAddOrUpdateNetworks.mockClear()
+
+    return { ...built, featureFlags }
+  }
+
+  const waitUntil = async (condition: () => boolean) => {
+    for (let i = 0; i < 100 && !condition(); i++) await wait(0)
+  }
+
+  beforeEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  test('adding a network while opted out does not call the bundler', async () => {
+    const featureFlags = createFeatureFlags(false)
+    await featureFlags.initialLoadPromise
+    const fetch = createBundlerFetchStub()
+    const { controller } = buildNetworksController({
+      fetch,
+      featureFlags,
+      useTempProvider: stubProvider
+    })
+    await controller.initialLoadPromise
+    await settleBackgroundSync(controller)
+
+    await controller.setNetworkToAddOrUpdate({
+      chainId: UNCHECKED_CUSTOM_NETWORK.chainId,
+      rpcUrl: UNCHECKED_CUSTOM_NETWORK.selectedRpcUrl
+    })
+
+    expect(getBundlerChainIds(fetch)).toEqual([])
+    expect(isNetworkInfoPending(controller.networkToAddOrUpdate?.info)).toBe(false)
+    expect(controller.networkToAddOrUpdate?.info?.erc4337).toEqual({
+      enabled: false,
+      hasPaymaster: false
+    })
+  })
+
+  test('opting back in checks the network that is being added again, with the bundler', async () => {
+    const featureFlags = createFeatureFlags(false)
+    await featureFlags.initialLoadPromise
+    const fetch = createBundlerFetchStub()
+    const { controller } = buildNetworksController({
+      fetch,
+      featureFlags,
+      useTempProvider: stubProvider
+    })
+    await controller.initialLoadPromise
+    await settleBackgroundSync(controller)
+    await controller.setNetworkToAddOrUpdate({
+      chainId: UNCHECKED_CUSTOM_NETWORK.chainId,
+      rpcUrl: UNCHECKED_CUSTOM_NETWORK.selectedRpcUrl
+    })
+    expect(getBundlerChainIds(fetch)).toEqual([])
+
+    await featureFlags.setFeatureFlag('erc4337', true)
+    await waitUntil(
+      () =>
+        getBundlerChainIds(fetch).length > 0 &&
+        !isNetworkInfoPending(controller.networkToAddOrUpdate?.info)
+    )
+
+    expect(getBundlerChainIds(fetch)).toEqual([UNCHECKED_CUSTOM_NETWORK.chainId.toString()])
+    expect(controller.networkToAddOrUpdate).toMatchObject({
+      chainId: UNCHECKED_CUSTOM_NETWORK.chainId,
+      rpcUrl: UNCHECKED_CUSTOM_NETWORK.selectedRpcUrl
+    })
+    expect(controller.networkToAddOrUpdate?.info?.erc4337).toEqual({
+      enabled: true,
+      hasPaymaster: false,
+      hasBundlerSupport: true
+    })
+  })
+
+  test('opting back in checks only the custom networks that were never checked', async () => {
+    const fetch = createBundlerFetchStub()
+    const { controller, featureFlags, onAddOrUpdateNetworks } =
+      await buildOptedOutWithCustomNetworks(fetch)
+    expect(getBundlerChainIds(fetch)).toEqual([])
+
+    await featureFlags.setFeatureFlag('erc4337', true)
+    await waitUntil(
+      () => byChainId(controller, UNCHECKED_CUSTOM_NETWORK.chainId)?.erc4337.enabled === true
+    )
+
+    // Predefined and Relayer networks get their settings from the network config, and the
+    // checked network keeps its answer until the usual refresh of the network info
+    expect(getBundlerChainIds(fetch).sort()).toEqual(
+      [
+        UNCHECKED_CUSTOM_NETWORK.chainId.toString(),
+        DISABLED_UNCHECKED_CUSTOM_NETWORK.chainId.toString()
+      ].sort()
+    )
+    ;[UNCHECKED_CUSTOM_NETWORK, DISABLED_UNCHECKED_CUSTOM_NETWORK].forEach(({ chainId }) => {
+      expect(byChainId(controller, chainId)?.erc4337).toEqual({
+        enabled: true,
+        hasPaymaster: false,
+        hasBundlerSupport: true
+      })
+    })
+    expect(byChainId(controller, CHECKED_CUSTOM_NETWORK.chainId)?.erc4337).toEqual(
+      CHECKED_CUSTOM_NETWORK.erc4337
+    )
+    expect(byChainId(controller, RELAYER_NETWORK_WITHOUT_BUNDLER_INFO.chainId)?.erc4337).toEqual(
+      RELAYER_NETWORK_WITHOUT_BUNDLER_INFO.erc4337
+    )
+    // Nothing else changed, so the portfolio isn't reloaded
+    expect(onAddOrUpdateNetworks).not.toHaveBeenCalled()
+    // Persisted, so a restart doesn't check them again
+    const networksInStorage = await controller.getNetworksInStorage()
+    expect(
+      networksInStorage[UNCHECKED_CUSTOM_NETWORK.chainId.toString()]?.erc4337.hasBundlerSupport
+    ).toBe(true)
+  })
+
+  test('records that the bundler does not support a network', async () => {
+    const fetch = createBundlerFetchStub({ status: 404 })
+    const { controller, featureFlags } = await buildOptedOutWithCustomNetworks(fetch)
+
+    await featureFlags.setFeatureFlag('erc4337', true)
+    await waitUntil(
+      () =>
+        byChainId(controller, UNCHECKED_CUSTOM_NETWORK.chainId)?.erc4337.hasBundlerSupport ===
+        false
+    )
+
+    expect(byChainId(controller, UNCHECKED_CUSTOM_NETWORK.chainId)?.erc4337).toEqual({
+      enabled: false,
+      hasPaymaster: false,
+      hasBundlerSupport: false
+    })
+  })
+
+  test('leaves a network unchecked when the bundler request fails, to retry it later', async () => {
+    const fetch = jest.fn(async () => {
+      throw new Error('Network error')
+    }) as unknown as Fetch
+    const { controller, featureFlags } = await buildOptedOutWithCustomNetworks(fetch)
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    await featureFlags.setFeatureFlag('erc4337', true)
+    await waitUntil(() => getBundlerChainIds(fetch).length === 2)
+    for (let i = 0; i < 25; i++) await wait(0)
+
+    expect(byChainId(controller, UNCHECKED_CUSTOM_NETWORK.chainId)?.erc4337).toEqual(
+      UNCHECKED_CUSTOM_NETWORK.erc4337
+    )
+    // Logged, not swallowed
+    expect(consoleErrorSpy).toHaveBeenCalled()
+  })
+
+  test('does not apply the bundler answers if the user opts out again meanwhile', async () => {
+    let releaseBundler: () => void = () => {}
+    const bundlerGate = new Promise<void>((resolve) => {
+      releaseBundler = resolve
+    })
+    const fetch = createBundlerFetchStub({ gate: bundlerGate })
+    const { controller, featureFlags } = await buildOptedOutWithCustomNetworks(fetch)
+
+    await featureFlags.setFeatureFlag('erc4337', true)
+    await waitUntil(() => getBundlerChainIds(fetch).length > 0)
+    await featureFlags.setFeatureFlag('erc4337', false)
+    releaseBundler()
+    // Gives the check plenty of turns to (wrongly) apply its results
+    for (let i = 0; i < 25; i++) await wait(0)
+
+    expect(byChainId(controller, UNCHECKED_CUSTOM_NETWORK.chainId)?.erc4337).toEqual(
+      UNCHECKED_CUSTOM_NETWORK.erc4337
+    )
+  })
+
+  test('stops reacting to the opt-out once destroyed', async () => {
+    const fetch = createBundlerFetchStub()
+    const { controller, featureFlags } = await buildOptedOutWithCustomNetworks(fetch)
+
+    controller.destroy()
+    await featureFlags.setFeatureFlag('erc4337', true)
+    for (let i = 0; i < 25; i++) await wait(0)
+
+    expect(getBundlerChainIds(fetch)).toEqual([])
   })
 })
 

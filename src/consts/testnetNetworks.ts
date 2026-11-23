@@ -28,7 +28,6 @@ const testnetNetworks: Network[] = [
     platformId: 'ethereum-sepolia',
     nativeAssetId: 'ethereum-sepolia',
     hasSingleton: true,
-    features: [],
     feeOptions: { is1559: true },
     predefined: true
   },
@@ -55,7 +54,6 @@ const testnetNetworks: Network[] = [
     platformId: 'base-sepolia',
     nativeAssetId: 'base-sepolia',
     hasSingleton: true,
-    features: [],
     feeOptions: { is1559: true },
     predefined: true
   },
@@ -82,7 +80,6 @@ const testnetNetworks: Network[] = [
     platformId: 'arbitrum-sepolia',
     nativeAssetId: 'arbitrum-sepolia',
     hasSingleton: true,
-    features: [],
     feeOptions: { is1559: true },
     predefined: true
   }

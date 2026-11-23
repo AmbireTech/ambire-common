@@ -22,7 +22,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import {
   fetchNetworkPriceIds,
-  getFeaturesByNetworkProperties,
+  getErc4337Info,
   getLoadingNetworkInfo,
   getNetworkInfo,
   getNetworksUpdatedWithRelayerNetworks,
@@ -30,6 +30,7 @@ import {
   isNetworkInfoPending
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { Bundler } from '../../services/bundlers/bundler'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
@@ -39,7 +40,7 @@ export const STATUS_WRAPPED_METHODS = {
 
 /**
  * Thrown when an update targets a chainId that isn't among the networks. Saving it anyway
- * would store a network without a chainId and features, which breaks every following update.
+ * would store a network without a chainId, which breaks every following update.
  * The chainId type and the updated fields are reported, so the crash report shows the caller.
  */
 const getUnknownNetworkError = (chainId: ChainId, networkUpdate: Partial<Network>) => {
@@ -76,10 +77,16 @@ export class NetworksController extends EventEmitter implements INetworksControl
   // The last known value of the `tokenPrices` opt-out, to react only when it flips
   #areTokenPricesEnabled: boolean
 
+  // The last known value of the `erc4337` opt-out, to react only when it flips
+  #wasErc4337Enabled: boolean
+
   #unsubscribeFromFeatureFlags?: () => void
 
   // Prevents race conditions in #refetchMissingPriceIds
   #priceIdsRefetchId = 0
+
+  // Prevents race conditions in #checkMissingBundlerSupport
+  #bundlerSupportCheckId = 0
 
   #networks: { [key: string]: Network } = {}
 
@@ -151,6 +158,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     this.#onReady = onReady
     this.#featureFlags = featureFlags
     this.#areTokenPricesEnabled = this.#isTokenPricesEnabled()
+    this.#wasErc4337Enabled = this.#isErc4337Enabled()
     this.#unsubscribeFromFeatureFlags = this.#featureFlags?.onUpdate(
       () => this.#onFeatureFlagsUpdate(),
       'networks'
@@ -181,14 +189,103 @@ export class NetworksController extends EventEmitter implements INetworksControl
     return this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false
   }
 
+  #isErc4337Enabled(): boolean {
+    return this.#featureFlags?.isFeatureEnabled('erc4337') !== false
+  }
+
   #onFeatureFlagsUpdate() {
+    this.#onTokenPricesFlagUpdate()
+    this.#onErc4337FlagUpdate()
+  }
+
+  #onErc4337FlagUpdate() {
+    const isErc4337Enabled = this.#isErc4337Enabled()
+    if (isErc4337Enabled === this.#wasErc4337Enabled) return
+
+    this.#wasErc4337Enabled = isErc4337Enabled
+    if (!isErc4337Enabled) return
+
+    // The network that is being added was checked without asking the bundler, so it's checked
+    // again. Otherwise it would be shown and saved as not supporting smart accounts.
+    if (this.networkToAddOrUpdate) {
+      const { chainId, rpcUrl } = this.networkToAddOrUpdate
+      this.setNetworkToAddOrUpdate({ chainId, rpcUrl }).catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to check again the network that is being added.',
+          error
+        })
+      )
+    }
+
+    this.#checkMissingBundlerSupport().catch((error) =>
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to check the ERC-4337 support of the custom networks.',
+        error
+      })
+    )
+  }
+
+  /**
+   * Asks the bundler whether it supports the custom networks that were added while ERC-4337 was
+   * turned off, because they were never checked. The rest of the networks are not refreshed: they
+   * kept their last known ERC-4337 settings while it was off, and the other network info doesn't
+   * depend on it. They get refreshed as usual, with the rest of the network info.
+   */
+  async #checkMissingBundlerSupport() {
+    await this.initialLoadPromise
+
+    this.#bundlerSupportCheckId += 1
+    const checkId = this.#bundlerSupportCheckId
+
+    // Predefined and Relayer networks get their ERC-4337 settings from the network config instead
+    const uncheckedNetworks = Object.values(this.#networks).filter(
+      (network) =>
+        !network.predefined &&
+        network.predefinedConfigVersion === undefined &&
+        typeof network.erc4337?.hasBundlerSupport !== 'boolean'
+    )
+    if (!uncheckedNetworks.length) return
+
+    const results = await Promise.all(
+      uncheckedNetworks.map(async ({ chainId }) => ({
+        chainId,
+        // Left unchecked if the request fails, so that it's retried the next time
+        hasBundlerSupport: await Bundler.isNetworkSupported(this.#fetch, chainId).catch((error) => {
+          console.error(`Failed to check the ERC-4337 support of network ${chainId}`, error)
+          return null
+        })
+      }))
+    )
+
+    // Opted out again or a newer check has started in the meantime
+    if (checkId !== this.#bundlerSupportCheckId || !this.#isErc4337Enabled()) return
+
+    let hasUpdates = false
+    results.forEach(({ chainId, hasBundlerSupport }) => {
+      const stringChainId = chainId.toString()
+      const storedNetwork = this.#networks[stringChainId]
+      // The request failed or the network got removed
+      if (hasBundlerSupport === null || !storedNetwork) return
+
+      this.#networks[stringChainId] = {
+        ...storedNetwork,
+        erc4337: getErc4337Info(hasBundlerSupport, storedNetwork)
+      }
+      hasUpdates = true
+    })
+    if (!hasUpdates) return
+
+    this.emitUpdate()
+    await this.#storage.set('networks', this.#networks)
+  }
+
+  #onTokenPricesFlagUpdate() {
     const areTokenPricesEnabled = this.#isTokenPricesEnabled()
     if (areTokenPricesEnabled === this.#areTokenPricesEnabled) return
 
     this.#areTokenPricesEnabled = areTokenPricesEnabled
-    // The "Token prices" feature of every network depends on the opt-out
-    this.emitUpdate()
-
     if (!areTokenPricesEnabled) return
 
     this.#refetchMissingPriceIds().catch((error) =>
@@ -260,30 +357,9 @@ export class NetworksController extends EventEmitter implements INetworksControl
       return this.defaultNetworksMode === 'mainnet' ? predefinedNetworks : predefinedTestnetNetworks
     }
 
-    const uniqueNetworksByChainId = Object.values(this.#networks)
+    return Object.values(this.#networks)
       .sort((a, b) => +b.predefined - +a.predefined) // first predefined
       .filter((item, index, self) => self.findIndex((i) => i.chainId === item.chainId) === index) // unique by chainId (predefined with priority)
-
-    return uniqueNetworksByChainId.map((network) => {
-      network.features = getFeaturesByNetworkProperties(
-        {
-          isSAEnabled: network.isSAEnabled,
-          isOptimistic: network.isOptimistic ?? false,
-          rpcNoStateOverride: network.rpcNoStateOverride,
-          erc4337: network.erc4337,
-          areContractsDeployed: network.areContractsDeployed,
-          feeOptions: network.feeOptions,
-          platformId: network.platformId,
-          nativeAssetId: network.nativeAssetId,
-          flagged: network.flagged ?? false,
-          chainId: network.chainId,
-          hasSingleton: network.hasSingleton
-        },
-        network,
-        this.#areTokenPricesEnabled
-      )
-      return network
-    })
   }
 
   get networks(): Network[] {
@@ -502,7 +578,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
               this.emitUpdate()
             },
             network,
-            this.#isTokenPricesEnabled()
+            this.#isTokenPricesEnabled(),
+            this.#isErc4337Enabled()
           )
         }
       )
@@ -551,7 +628,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
             this.emitUpdate()
           },
           this.#networks[networkToAddOrUpdate.chainId.toString()],
-          this.#isTokenPricesEnabled()
+          this.#isTokenPricesEnabled(),
+          this.#isErc4337Enabled()
         )
       }
     )
@@ -587,7 +665,6 @@ export class NetworksController extends EventEmitter implements INetworksControl
       ...network,
       ...info,
       feeOptions,
-      features: getFeaturesByNetworkProperties(info, undefined, this.#isTokenPricesEnabled()),
       hasRelayer: false,
       predefined: false,
       has7702: false
@@ -699,7 +776,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
                 this.emitUpdate()
               },
               this.#networks[stringChainId],
-              this.#isTokenPricesEnabled()
+              this.#isTokenPricesEnabled(),
+              this.#isErc4337Enabled()
             )
           }
         )

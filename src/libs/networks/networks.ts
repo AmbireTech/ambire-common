@@ -191,11 +191,36 @@ export async function fetchNetworkPriceIds(
 }
 
 /**
+ * The ERC-4337 settings of a network's info, from the bundler's answer to whether it supports
+ * the network.
+ *
+ * `hasBundlerSupport` is null when the bundler wasn't asked, because the user turned ERC-4337
+ * off. Then the network's last known settings are kept, and a network that is being added gets
+ * no `hasBundlerSupport` at all, which marks it as never checked - so that it gets checked once
+ * ERC-4337 is turned back on.
+ */
+export function getErc4337Info(
+  hasBundlerSupport: boolean | null,
+  network: Network | undefined
+): Erc4337settings {
+  if (hasBundlerSupport === null) return network?.erc4337 ?? { enabled: false, hasPaymaster: false }
+
+  return {
+    enabled: is4337Enabled(hasBundlerSupport, network),
+    hasPaymaster: network ? network.erc4337.hasPaymaster : false,
+    hasBundlerSupport
+  }
+}
+
+/**
  * Fetches a network's capabilities from an RPC provider - smart account support, ERC-4337,
  * fee options and price metadata.
  *
  * The price metadata is fetched only if `isTokenPricesEnabled` - otherwise the network's
  * current values are kept (empty for a network that is being added).
+ *
+ * The bundler is asked about ERC-4337 support only if `isErc4337Enabled` - otherwise the
+ * network's current ERC-4337 settings are kept (see `getErc4337Info`).
  *
  * Streams progress through `callback`.
  */
@@ -205,7 +230,8 @@ export async function getNetworkInfo(
   provider: RPCProvider,
   callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void,
   network: Network | undefined,
-  isTokenPricesEnabled: boolean = true
+  isTokenPricesEnabled: boolean = true,
+  isErc4337Enabled: boolean = true
 ) {
   let networkInfo: NetworkInfoLoading<NetworkInfo> = getLoadingNetworkInfo(chainId)
   callback(networkInfo)
@@ -237,10 +263,16 @@ export async function getNetworkInfo(
             retryRequest(() => provider.getCode(AMBIRE_ACCOUNT_FACTORY)),
             retryRequest(() => getSASupport(provider)),
             retryRequest(() => getStateOverrideSupport(provider)),
-            Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
+            isErc4337Enabled ? Bundler.isNetworkSupported(fetch, chainId).catch(() => false) : null
             // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
           ]).catch((e: Error) =>
-            raiseFlagged(e, ['0x', '0x', { addressMatches: false }, false, false])
+            raiseFlagged(e, [
+              '0x',
+              '0x',
+              { addressMatches: false },
+              false,
+              isErc4337Enabled ? false : null
+            ])
           )
           const [singletonCode, factoryCode, saSupport, supportsStateOverride, hasBundlerSupport] =
             responses
@@ -259,11 +291,7 @@ export async function getNetworkInfo(
             isSAEnabled: supportsAmbire && singletonCode !== '0x',
             areContractsDeployed,
             rpcNoStateOverride: !supportsStateOverride,
-            erc4337: {
-              enabled: is4337Enabled(hasBundlerSupport, network),
-              hasPaymaster: network ? network.erc4337.hasPaymaster : false,
-              hasBundlerSupport
-            }
+            erc4337: getErc4337Info(hasBundlerSupport, network)
           }
 
           callback(networkInfo)
@@ -309,169 +337,79 @@ export async function getNetworkInfo(
 }
 
 /**
- * Determines supported features for a network based on its properties.
- *
- * Smart Accounts, ERC-4337, transaction simulation, and price tracking are supported.
- * Price tracking is reported as turned off if the user has opted out of token prices
- * (`isTokenPricesEnabled` is false), regardless of whether the network supports it.
+ * The network properties that the smart accounts support is decided from. Both a stored
+ * `Network` and the info of a network that is being checked (`NetworkInfoLoading`) fit.
  */
-// call this if you have the network props already calculated
-export function getFeaturesByNetworkProperties(
-  networkInfo: NetworkInfo | NetworkInfoLoading<NetworkInfo> | undefined,
+export type SmartAccountsSupportInfo = {
+  [K in 'isSAEnabled' | 'areContractsDeployed' | 'erc4337' | 'hasSingleton']:
+    | NetworkInfo[K]
+    | 'LOADING'
+} & { flagged?: NetworkInfo['flagged'] | 'LOADING' }
+
+/** The smart accounts support info of a network that is still being checked */
+export const SMART_ACCOUNTS_SUPPORT_LOADING_INFO: SmartAccountsSupportInfo = {
+  isSAEnabled: 'LOADING',
+  areContractsDeployed: 'LOADING',
+  erc4337: 'LOADING',
+  hasSingleton: 'LOADING',
+  flagged: 'LOADING'
+}
+
+/**
+ * Whether Ambire smart accounts can be used on a network, as one status to show to the user.
+ *
+ * - An RPC error (`flagged`) takes priority, as nothing else about the network is known then
+ * - Reported as disabled if the user has opted out of ERC-4337 (`isErc4337Enabled` is false),
+ *   regardless of whether the network supports smart accounts
+ * - `initial` when there is no info at all and `loading` while it's still being checked
+ */
+export function getSmartAccountsFeature(
+  info: SmartAccountsSupportInfo | undefined,
   network?: Network,
-  isTokenPricesEnabled: boolean = true
-): NetworkFeature[] {
-  const features: NetworkFeature[] = [
-    {
+  isErc4337Enabled: boolean = true
+): NetworkFeature {
+  if (!info) return { id: 'saSupport', title: 'Not checked yet', level: 'initial' }
+
+  if (info.flagged === true) {
+    return {
+      id: 'flagged',
+      title: 'RPC error',
+      level: 'danger',
+      msg: 'We were unable to fetch the network information with the provided RPC. Try choosing a different RPC.'
+    }
+  }
+
+  if (!isErc4337Enabled) {
+    return {
       id: 'saSupport',
-      title: 'Ambire Smart Accounts',
-      level: 'loading'
-    },
-    {
-      id: 'simulation',
-      title: 'Transaction simulation',
-      level: 'loading'
-    },
-    {
-      id: 'prices',
-      title: 'Token prices',
-      level: 'loading'
-    }
-  ]
-
-  if (!networkInfo) return features.map((f) => ({ ...f, level: 'initial' }))
-
-  const {
-    flagged,
-    isSAEnabled,
-    areContractsDeployed,
-    erc4337,
-    rpcNoStateOverride,
-    nativeAssetId,
-    hasSingleton
-  } = networkInfo
-
-  const updateFeature = (
-    id: string,
-    update: {
-      msg: string
-      title?: string
-      level: 'success' | 'danger' | 'warning' | 'loading'
-    }
-  ) => {
-    const foundFeature = features.find((f) => f.id === id)
-
-    if (foundFeature) {
-      Object.assign(foundFeature, update)
-    }
-  }
-  if (flagged && flagged !== 'LOADING') {
-    return [
-      {
-        id: 'flagged',
-        title: 'RPC error',
-        level: 'danger',
-        msg: 'We were unable to fetch the network information with the provided RPC. Try choosing a different RPC.'
-      }
-    ]
-  }
-
-  if ([isSAEnabled, areContractsDeployed, erc4337, hasSingleton].every((p) => p !== 'LOADING')) {
-    const canBroadcast = (erc4337 as Erc4337settings).enabled || network?.hasRelayer
-
-    if (!isSAEnabled || !canBroadcast) {
-      updateFeature('saSupport', {
-        level: 'danger',
-        title: 'Smart contract wallets are not supported',
-        msg: hasSingleton
-          ? 'We were unable to detect Smart Account support on the network with the provided RPC. Try choosing a different RPC.'
-          : "Unfortunately, this network doesn't support Smart Accounts. It can be used only with EOA accounts."
-      })
-    }
-
-    const erc4337Settings = {
-      enabled: is4337Enabled((erc4337 as Erc4337settings).enabled, network),
-      hasPaymaster: network
-        ? network.erc4337.hasPaymaster
-        : (erc4337 as Erc4337settings).hasPaymaster
-    }
-
-    const title = (erc4337Settings as any)?.enabled
-      ? 'Ambire Smart Accounts via ERC-4337 (Account Abstraction)'
-      : 'Ambire Smart Accounts'
-
-    if (canBroadcast && isSAEnabled && areContractsDeployed) {
-      updateFeature('saSupport', {
-        title,
-        level: 'success',
-        msg: "This network supports Smart Accounts, and Ambire Wallet's smart contracts are deployed."
-      })
-    } else if (canBroadcast && isSAEnabled && !areContractsDeployed) {
-      updateFeature('saSupport', {
-        title,
-        level: 'warning',
-        msg: "This network supports Smart Accounts, but Ambire Wallet's contracts have not yet been deployed. You can deploy them by using an EOA account and the deploy contracts option to unlock the Smart Accounts feature. Otherwise, only EOA accounts can be used on this network."
-      })
-    }
-  }
-
-  if ([rpcNoStateOverride].every((p) => p !== 'LOADING')) {
-    const isPredefinedNetwork = network?.predefined
-    if (!rpcNoStateOverride && isPredefinedNetwork) {
-      updateFeature('simulation', {
-        level: 'success',
-        title: 'Transaction simulation is fully supported',
-        msg: 'Transaction simulation helps predict the outcome of a transaction and your future account balance before it’s broadcasted to the blockchain, enhancing security.'
-      })
-    } else if (!rpcNoStateOverride) {
-      updateFeature('simulation', {
-        level: 'warning',
-        title: 'Transaction simulation is partially supported',
-        msg: 'Transaction simulation, one of our security features that predicts the outcome of a transaction before it is broadcast to the blockchain, is not fully functioning on this chain. The reasons might be network or RPC limitations. Try choosing a different RPC.'
-      })
-    } else {
-      updateFeature('simulation', {
-        level: 'danger',
-        title: 'Transaction simulation is not supported',
-        msg: "Transaction simulation helps predict the outcome of a transaction and your future account balance before it’s broadcasted to the blockchain, enhancing security. Unfortunately, this feature isn't available for the current network or RPC. Try choosing a different RPC."
-      })
-    }
-  }
-
-  if (!isTokenPricesEnabled) {
-    updateFeature('prices', {
+      title: 'Disabled',
       level: 'warning',
-      msg: 'Token prices are turned off in your privacy settings. Turn them back on to see them.'
-    })
-  } else if (nativeAssetId !== 'LOADING') {
-    const hasNativeAssetId = nativeAssetId && nativeAssetId !== ''
-    updateFeature('prices', {
-      level: hasNativeAssetId ? 'success' : 'danger',
-      msg: hasNativeAssetId
-        ? 'We pull token price information in real-time using third-party providers.'
-        : "Our third-party providers don't support this network yet, so we cannot show token prices."
-    })
+      msg: 'ERC-4337 is turned off in your privacy settings, so smart accounts can’t use some of their features, like paying the fee with other tokens. Turn it back on to use them.',
+      isTurnedOff: true
+    }
   }
 
-  return features
-}
+  const { isSAEnabled, areContractsDeployed, erc4337, hasSingleton } = info
+  if (
+    isSAEnabled === 'LOADING' ||
+    areContractsDeployed === 'LOADING' ||
+    erc4337 === 'LOADING' ||
+    hasSingleton === 'LOADING'
+  ) {
+    return { id: 'saSupport', title: 'Checking...', level: 'loading' }
+  }
 
-/** The feature list to render while a network's info is still being fetched. */
-export function getLoadingFeatures(): NetworkFeature[] {
-  return getFeaturesByNetworkProperties(undefined, undefined).map((feature) => ({
-    ...feature,
-    level: 'loading'
-  }))
-}
+  const canBroadcast = erc4337.enabled || network?.hasRelayer
+  if (!isSAEnabled || !canBroadcast) return { id: 'saSupport', title: 'Not supported', level: 'danger' }
 
-// call this if you have only the rpcUrls and chainId
-// this method makes an RPC request, calculates the network info and returns the features
-export function getFeatures(
-  networkInfo: NetworkInfoLoading<NetworkInfo> | undefined,
-  network: Network | undefined,
-  isTokenPricesEnabled: boolean = true
-): NetworkFeature[] {
-  return getFeaturesByNetworkProperties(networkInfo, network, isTokenPricesEnabled)
+  if (areContractsDeployed) return { id: 'saSupport', title: 'Supported', level: 'success' }
+
+  return {
+    id: 'saSupport',
+    title: 'Contracts not deployed',
+    level: 'warning',
+    msg: "This network supports Smart Accounts, but Ambire Wallet's contracts have not yet been deployed. You can deploy them by using an EOA account and the deploy contracts option to unlock the Smart Accounts feature. Otherwise, only EOA accounts can be used on this network."
+  }
 }
 
 export function hasRelayerSupport(network: Network) {

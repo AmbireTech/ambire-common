@@ -47,11 +47,17 @@ export type NetworkInfoLoading<T> = {
   [K in keyof T]: T[K] | 'LOADING'
 }
 
+/**
+ * A network status to show to the user - whether Ambire smart accounts can be used on it
+ * (`saSupport`), or the RPC error that prevents telling that (`flagged`)
+ */
 export interface NetworkFeature {
-  id: string
+  id: 'saSupport' | 'flagged'
   title: string
   msg?: string
   level: 'success' | 'danger' | 'warning' | 'loading' | 'initial'
+  /** The user turned the feature off in their privacy settings, so it can be turned back on */
+  isTurnedOff?: boolean
 }
 
 /**
@@ -85,7 +91,6 @@ export interface Network {
   feeOptions: NetworkInfo['feeOptions']
   isSAEnabled: NetworkInfo['isSAEnabled']
   areContractsDeployed: NetworkInfo['areContractsDeployed']
-  features: NetworkFeature[]
   hasRelayer: boolean
   hasSingleton: NetworkInfo['hasSingleton']
   /**

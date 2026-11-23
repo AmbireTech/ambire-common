@@ -21,7 +21,6 @@ const networks: Network[] = [
     platformId: 'ethereum',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
-    features: [],
     feeOptions: { is1559: true },
     predefined: true,
     wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
@@ -50,7 +49,6 @@ const networks: Network[] = [
     platformId: 'polygon-pos',
     nativeAssetId: 'matic-network',
     hasSingleton: true,
-    features: [],
     feeOptions: { is1559: false },
     predefined: true,
     wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
@@ -81,7 +79,6 @@ const networks: Network[] = [
     platformId: 'optimistic-ethereum',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
-    features: [],
     feeOptions: {
       is1559: true,
       elasticityMultiplier: 6n,
@@ -113,7 +110,6 @@ const networks: Network[] = [
     platformId: 'avalanche',
     nativeAssetId: 'avalanche-2',
     hasSingleton: true,
-    features: [],
     feeOptions: {
       is1559: true,
       minBaseFee: 25000000000n // 25 gwei
@@ -145,7 +141,6 @@ const networks: Network[] = [
     platformId: 'arbitrum-one',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
-    features: [],
     feeOptions: {
       is1559: true,
       minBaseFee: 100000000n // 1 gwei
@@ -178,7 +173,6 @@ const networks: Network[] = [
     nativeAssetId: 'ethereum',
     hasSingleton: true,
     isOptimistic: true,
-    features: [],
     feeOptions: {
       is1559: true,
       minBaseFeeEqualToLastBlock: true
@@ -208,7 +202,6 @@ const networks: Network[] = [
     platformId: 'scroll',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
-    features: [],
     feeOptions: { is1559: false },
     predefined: true,
     disableEstimateGas: true,
@@ -237,7 +230,6 @@ const networks: Network[] = [
     platformId: 'binance-smart-chain',
     nativeAssetId: 'binancecoin',
     hasSingleton: true,
-    features: [],
     feeOptions: { is1559: true },
     predefined: true,
     disableEstimateGas: true,
@@ -265,7 +257,6 @@ const networks: Network[] = [
     nativeAssetId: 'mantle',
     hasSingleton: true,
     isOptimistic: true,
-    features: [],
     feeOptions: {
       is1559: true,
       minBaseFeeEqualToLastBlock: true
