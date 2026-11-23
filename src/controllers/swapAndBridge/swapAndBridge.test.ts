@@ -1963,7 +1963,14 @@ describe('SwapAndBridge Controller', () => {
       return restartSpy
     }
 
-    const setActiveRoute = (overrides: { sender?: string; fromChainId?: number } = {}) => {
+    const setActiveRoute = (
+      overrides: {
+        sender?: string
+        fromChainId?: number
+        providerId?: string
+        serviceTime?: number
+      } = {}
+    ) => {
       const baseActiveRoute = originalActiveRoutes[0]!
       swapAndBridgeController.activeRoutes = [
         {
@@ -1974,10 +1981,14 @@ describe('SwapAndBridge Controller', () => {
           sender: overrides.sender ?? selectedAccountCtrl.account!.addr,
           route: {
             ...baseActiveRoute.route!,
-            providerId: 'lifi',
+            providerId: overrides.providerId ?? 'lifi',
             fromChainId: overrides.fromChainId ?? 1,
             toChainId: DESTINATION_CHAIN_ID,
-            isIntent: false
+            isIntent: false,
+            userTxs: baseActiveRoute.route!.userTxs.map((userTx) => ({
+              ...userTx,
+              serviceTime: overrides.serviceTime ?? userTx.serviceTime
+            }))
           }
         }
       ]
@@ -2042,6 +2053,55 @@ describe('SwapAndBridge Controller', () => {
       await selectedAccountCtrl.forceEmitUpdate()
 
       expect(restartSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('backs off a CoW Swap order, and checks it again 10 seconds after a refresh', async () => {
+      // This test needs real interval behavior, so it undoes the outer beforeEach mocks
+      jest.restoreAllMocks()
+      const { restore } = suppressConsole()
+      jest.useFakeTimers()
+      const interval = swapAndBridgeController.updateActiveRoutesInterval
+      const checkSpy = jest
+        .spyOn(swapAndBridgeController, 'checkForActiveRoutesStatusUpdate')
+        .mockResolvedValue()
+      const runChecks = async (count: number) => {
+        const timeouts: number[] = []
+        for (let i = 0; i < count; i++) {
+          await waitForFnToBeCalledAndExecuted(interval)
+          timeouts.push(interval.currentTimeout)
+        }
+        return timeouts
+      }
+
+      try {
+        // The mocked check doesn't record when it ran, so no refresh may count as newer yet
+        setDestinationRefreshedAt(undefined)
+        // Started from scratch, so the poll first waits for the order's service time
+        interval.stop()
+        // CoW Swap orders take 10 seconds, the same as the first back-off step
+        setActiveRoute({
+          providerId: 'cowswap',
+          fromChainId: DESTINATION_CHAIN_ID,
+          serviceTime: 10
+        })
+        expect(await runChecks(4)).toEqual([10000, 20000, 30000, 30000])
+
+        jest.mocked(portfolioCtrl.getAccountPortfolioState).mockRestore()
+        setDestinationRefreshedAt(Date.now())
+        checkSpy.mockClear()
+        const emitUpdatePromise = selectedAccountCtrl.forceEmitUpdate()
+        await jest.advanceTimersByTimeAsync(1)
+        await emitUpdatePromise
+        expect(checkSpy).toHaveBeenCalledTimes(1)
+
+        await jest.advanceTimersByTimeAsync(10000)
+        expect(checkSpy).toHaveBeenCalledTimes(2)
+      } finally {
+        interval.stop()
+        jest.clearAllTimers()
+        jest.useRealTimers()
+        restore()
+      }
     })
 
     test('does not check the routes when the destination network has not been refreshed', async () => {
