@@ -1199,7 +1199,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   /**
    * Prepares accounts from a flow that has no key iterator (view-only, Safe, account
    * JSON, a sync), for the personalize step to show and `addPreparedAccounts` to add.
-   * `onAdded` runs once they are added, for what the flow adds along with them.
+   * `onAdded` runs once they are added, for what the flow adds along with them. An account
+   * the wallet has already keeps its name unless `shouldOverridePreferences` (a sync, where
+   * the other device's name wins).
    */
   async prepareAccounts(
     {
@@ -1207,13 +1209,15 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       keys = { internal: [], external: [] },
       seeds = [],
       accountsToRemove = [],
-      onAdded
+      onAdded,
+      shouldOverridePreferences = false
     }: {
       accounts: Account[]
       keys?: ReadyToAddKeys
       seeds?: SyncedSeed[]
       accountsToRemove?: Account[]
       onAdded?: () => Promise<void>
+      shouldOverridePreferences?: boolean
     },
     requestId?: string
   ) {
@@ -1225,7 +1229,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       // Persist the already imported account preferences on purpose, like
       // `prepareSelectedAccounts` does. Adding the account again keeps them, so the
       // personalize step would otherwise show a default name the account never gets.
-      return alreadyImportedAcc
+      // Overridden ones are saved on adding (see `#addPreparedAccounts`).
+      return alreadyImportedAcc && !shouldOverridePreferences
         ? { ...account, preferences: alreadyImportedAcc.preferences }
         : account
     })
@@ -1279,7 +1284,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       preferences: preferencesByAddr.get(account.addr) || account.preferences
     }))
     // Adding keeps the preferences of an account already in the wallet, so the ones the
-    // user changed on the personalize step are saved separately
+    // user changed on the personalize step (or a sync brought) are saved separately
     const renamedImportedAccounts = accounts.filter(({ addr, preferences }) => {
       const importedAcc = this.#accounts.accounts.find((a) => a.addr === addr)
 

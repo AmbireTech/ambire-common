@@ -212,7 +212,14 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
         if (contacts) await this.#addressBook.mergeContacts(contacts)
       }
       if (accounts.length) {
-        await this.#accountPicker.prepareAccounts({ accounts, keys, seeds, onAdded: mergeContacts })
+        // What comes from the other product overrides what is here, the names included
+        await this.#accountPicker.prepareAccounts({
+          accounts,
+          keys,
+          seeds,
+          onAdded: mergeContacts,
+          shouldOverridePreferences: true
+        })
       } else {
         await mergeContacts()
       }

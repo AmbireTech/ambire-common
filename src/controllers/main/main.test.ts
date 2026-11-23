@@ -804,6 +804,23 @@ describe('Main Controller ', () => {
       expect(snapshot().keys).toEqual(before.keys)
     })
 
+    test('keeps the name of an account the wallet has already, unless a sync overrides it', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      const [walletAccount] = mainCtrl.accounts.accounts
+      const withOtherName = {
+        ...walletAccount!,
+        preferences: { ...walletAccount!.preferences, label: 'Other name' }
+      }
+
+      await picker.prepareAccounts({ accounts: [withOtherName] })
+      expect(picker.readyToAddAccounts[0]!.preferences.label).toBe(walletAccount!.preferences.label)
+
+      await picker.prepareAccounts({ accounts: [withOtherName], shouldOverridePreferences: true })
+      expect(picker.readyToAddAccounts[0]!.preferences.label).toBe('Other name')
+      await picker.addPreparedAccounts()
+      expect(mainCtrl.accounts.accounts[0]!.preferences.label).toBe('Other name')
+    })
+
     test('adds the key of the prepared account after another derivation path was browsed', async () => {
       const { mainCtrl, picker } = await prepareNewSeedFlow()
       await picker.init()

@@ -269,6 +269,45 @@ describe('AppDataSyncController', () => {
     expect(keys).toEqual([expect.objectContaining({ addr: LEDGER_ADDR, type: 'ledger' })])
   })
 
+  test('renames an account this device has to its name on the other device', async () => {
+    const exportingDevice = await makeExportingDevice()
+    const payload = await exportPayload(exportingDevice, [accounts[0]!.addr, accounts[1]!.addr])
+
+    const importingDevice = await makeImportingDevice({ withPassword: true })
+    await importingDevice.accounts.addAccounts([
+      { ...accounts[0]!, preferences: { ...accounts[0]!.preferences, label: 'Name here' } }
+    ])
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+
+    // The personalize step shows the synced name already
+    expect(
+      importingDevice.accountPicker.readyToAddAccounts.map((a) => a.preferences.label)
+    ).toEqual(['Account 1', DEFAULT_ACCOUNT_LABEL])
+
+    await importingDevice.accountPicker.addPreparedAccounts()
+
+    expect(importingDevice.accounts.accounts.map((a) => a.preferences.label)).toEqual([
+      'Account 1',
+      DEFAULT_ACCOUNT_LABEL
+    ])
+  })
+
+  test('keeps the name the user gives a synced account on the personalize step', async () => {
+    const exportingDevice = await makeExportingDevice()
+    const payload = await exportPayload(exportingDevice, [accounts[0]!.addr])
+
+    const importingDevice = await makeImportingDevice({ withPassword: true })
+    await importingDevice.accounts.addAccounts([
+      { ...accounts[0]!, preferences: { ...accounts[0]!.preferences, label: 'Name here' } }
+    ])
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+    await importingDevice.accountPicker.addPreparedAccounts([
+      { addr: accounts[0]!.addr, preferences: { ...accounts[0]!.preferences, label: 'Renamed' } }
+    ])
+
+    expect(importingDevice.accounts.accounts[0]!.preferences.label).toBe('Renamed')
+  })
+
   test('does not duplicate an account the other device already has', async () => {
     const exportingDevice = await makeExportingDevice()
     const payload = await exportPayload(exportingDevice, [accounts[0]!.addr])
