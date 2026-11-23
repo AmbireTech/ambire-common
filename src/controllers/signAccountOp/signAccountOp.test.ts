@@ -3057,9 +3057,9 @@ describe('throwBroadcastAccountOp', () => {
 
       controller.cancelSignReq()
 
-      await expect(
+      expect(() =>
         controller.throwBroadcastAccountOp({ error: new Error('Operation cancelled by user') })
-      ).rejects.toThrow()
+      ).toThrow()
       expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'silent' }))
       expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
     })
@@ -3073,9 +3073,9 @@ describe('throwBroadcastAccountOp', () => {
       // A new signing clears the cancellation. Without a fee option it fails right away
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       controller.sign()
-      await expect(
+      expect(() =>
         controller.throwBroadcastAccountOp({ error: new Error('Device disconnected') })
-      ).rejects.toThrow()
+      ).toThrow()
 
       expect(onError).toHaveBeenLastCalledWith(expect.objectContaining({ level: 'major' }))
     })
@@ -3085,9 +3085,9 @@ describe('throwBroadcastAccountOp', () => {
       const onError = jest.fn()
       controller.onError(onError)
 
-      await expect(
+      expect(() =>
         controller.throwBroadcastAccountOp({ error: new Error('Device disconnected') })
-      ).rejects.toThrow()
+      ).toThrow()
 
       expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'major' }))
     })
