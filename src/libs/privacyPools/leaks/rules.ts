@@ -43,8 +43,8 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
   {
     id: 'unique-amount',
     type: 'error',
-    title: 'Only you deposited this amount, making this send traceable',
-    text: 'Anyone can match a send to a deposit of the same unique amount, which links the recipient to the address you deposited from. Send a common amount so it blends in.',
+    title: 'Your unique deposit amount makes this send traceable',
+    text: 'Anyone can match this send to your deposit by its unique amount, linking the recipient to your original deposit address. Send a more common amount to make this connection harder to trace.',
     // Counts all deposits, not only the cover window's, as an older deposit of the same amount by
     // someone else still hides this one
     applies: ({ spend, poolCover }) =>
@@ -62,8 +62,8 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
   {
     id: 'send-to-depositor',
     type: 'warning',
-    title: 'Sending part of your deposit back here can make the rest easier to trace',
-    text: 'Anyone can see this address made the deposit, so the rest of it may be matched to your other sends, mostly when their amounts are unusual. Send the whole deposit, or change the recipient.',
+    title: 'Sending part of your deposit back makes the rest easier to trace',
+    text: 'Anyone can link this address to your original deposit, making it easier to trace the remaining funds to other recipients, especially if the amounts are unusual. Send the full deposit back or choose a different recipient.',
     applies: isPartOfUnsentDepositToDepositor,
     // All of a deposit no send has touched leaves nothing to match later sends to
     getActions: ({ spend }) =>
@@ -73,7 +73,7 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
   {
     id: 'send-rest-to-depositor',
     type: 'warning',
-    title: 'This address made the deposit, so sending here may link your earlier sends to you',
+    title: 'Sending here may link your earlier sends to your original address',
     text: 'Anyone can see this address made the deposit. Part of it was already sent elsewhere, so sending more of it here can help match those sends to you, mostly when their amounts are unusual. Send to a different address.',
     applies: isPartlySentDepositToDepositor
   },
@@ -82,7 +82,7 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
     id: 'empties-partly-sent-deposit',
     type: 'warning',
     title: 'Consider sending the rest later',
-    text: 'This transfer sends all that is left of your deposit. Together with your earlier transfers, it adds up to exactly what you deposited, so someone can tell they all came from that deposit. Waiting while more people use the pool makes this harder to see.',
+    text: 'This send uses the rest of your deposit. Combined with your earlier sends, the amounts add up to your exact deposit, making it easier to link them together. Waiting until more people use the pool can make this connection harder to trace.',
     applies: ({ spend }) =>
       !!spend && spend.note.withdrawCount > 0 && spend.amount === spend.note.amount
   },
@@ -90,7 +90,7 @@ export const WITHDRAWAL_LEAKS: LeakRule<WithdrawalFacts>[] = [
     id: 'fresh-deposit',
     type: 'warning',
     title: 'This deposit is less than a day old, making it easier to link to you',
-    text: 'Anyone can see when you deposited and when you send, and a send soon after a deposit is an easy match. Wait a day or more, so more people deposit in between.',
+    text: 'Anyone can see when you deposited and when you send. Sending shortly after depositing makes it easier to link the two. Wait at least a day to let more deposits enter the pool, making yours harder to identify.',
     applies: ({ spend, poolCover }) => !!spend && spend.note.blockNumber > poolCover.dayAgoBlock
   }
 ]
@@ -104,7 +104,7 @@ export const DEPOSIT_LEAKS: LeakRule<DepositFacts>[] = [
     id: 'unusual-deposit-amount',
     type: 'info',
     title: 'No one else has deposited this amount, so it stands out',
-    text: 'You can still send it privately, just never all of it in one send, as that points straight back to this deposit. A common amount makes it harder to make mistakes later.',
+    text: 'You can still send it privately, but sending the full amount at once could link the recipient to your deposit. Using a more common amount reduces this risk.',
     // Counts all deposits, not only the cover window's, the same as `unique-amount` does for the send
     applies: ({ amount, poolCover }) =>
       countPrivacyPoolsDepositsOf(poolCover.deposits, amount) === 0,
