@@ -933,6 +933,98 @@ describe('RequestsController ', () => {
     })
   })
 
+  describe('smart account upgrade', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const call = { to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143', value: 1n, data: '0x' }
+    const upgradeCall = { to: ZeroAddress, value: 0n, data: '0x' }
+
+    const buildBatchRequest = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: { calls: [call], meta: { accountAddr, chainId: 1n } }
+        }
+      })
+
+    // The same request the settings build for turning the upgrade on (true) or revoking it (false)
+    const buildUpgradeRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      setDelegation: boolean
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [upgradeCall],
+            meta: { accountAddr, chainId: 1n, setDelegation }
+          }
+        }
+      })
+
+    const getCallsRequests = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.userRequests.filter((r) => r.kind === 'calls')
+    const findUpgradeRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller']
+    ) => getCallsRequests(controller).find((r) => r.meta.setDelegation !== undefined)
+    const findBatchRequest = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      getCallsRequests(controller).find((r) => r.meta.setDelegation === undefined)
+
+    test.each([true, false])(
+      'the upgrade (setDelegation: %s) is not added to the batch already open on the same chain',
+      async (setDelegation) => {
+        const { controller } = await prepareTest()
+        await buildBatchRequest(controller)
+        await buildUpgradeRequest(controller, setDelegation)
+
+        const batch = findBatchRequest(controller)
+        const upgrade = findUpgradeRequest(controller)
+        expect(getCallsRequests(controller)).toHaveLength(2)
+        expect(batch!.signAccountOp.accountOp.calls).toHaveLength(1)
+        expect(batch!.signAccountOp.accountOp.meta?.setDelegation).toBeUndefined()
+        expect(upgrade!.signAccountOp.accountOp.calls).toHaveLength(1)
+        expect(upgrade!.id).not.toBe(batch!.id)
+      }
+    )
+
+    // The sign screen shows only the upgrade, so a call added to it would be signed unseen
+    test.each([true, false])(
+      'new calls are not added to an open upgrade (setDelegation: %s)',
+      async (setDelegation) => {
+        const { controller } = await prepareTest()
+        await buildUpgradeRequest(controller, setDelegation)
+        await buildBatchRequest(controller)
+
+        const upgrade = findUpgradeRequest(controller)
+        expect(getCallsRequests(controller)).toHaveLength(2)
+        expect(upgrade!.signAccountOp.accountOp.calls).toHaveLength(1)
+        expect(upgrade!.signAccountOp.accountOp.calls[0]!.to).toBe(ZeroAddress)
+        expect(findBatchRequest(controller)!.signAccountOp.accountOp.calls).toHaveLength(1)
+      }
+    )
+
+    test('batching normal calls still works next to an open upgrade', async () => {
+      const { controller } = await prepareTest()
+      await buildUpgradeRequest(controller, true)
+      await buildBatchRequest(controller)
+      await buildBatchRequest(controller)
+
+      expect(getCallsRequests(controller)).toHaveLength(2)
+      expect(findBatchRequest(controller)!.signAccountOp.accountOp.calls).toHaveLength(2)
+      expect(findUpgradeRequest(controller)!.signAccountOp.accountOp.calls).toHaveLength(1)
+    })
+
+    test('pressing the upgrade again reopens the open one', async () => {
+      const { controller } = await prepareTest()
+      await buildUpgradeRequest(controller, true)
+      await buildUpgradeRequest(controller, true)
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      expect(getCallsRequests(controller)[0]!.signAccountOp.accountOp.calls).toHaveLength(1)
+    })
+  })
+
   describe('closing the side panel', () => {
     /** Requests show up in the panel, which has no window of its own. */
     const prepareSidePanelTest = async () => {
