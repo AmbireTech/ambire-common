@@ -510,6 +510,11 @@ export class LimitOrdersController extends EventEmitter {
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#selectedAccount = selectedAccount
+    // The account already selected owns what is tracked from now on, so its first update isn't
+    // taken for an account switch and its first orders refresh doesn't drop the orders being
+    // placed or cancelled
+    this.#lastSelectedAccountAddr = selectedAccount.account?.addr ?? null
+    this.ordersAccountAddr = this.#lastSelectedAccountAddr
     this.#networks = networks
     this.#activity = activity
     this.#signAccountOpPreference = signAccountOpPreference
