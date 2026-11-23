@@ -104,8 +104,8 @@ type HardwareWalletSigningRequest = {
   data: unknown
   /**
    * The address of the key that signs the request. A transaction doesn't
-   * carry its sender (it's recovered from the signature), so the device shows
-   * this address as "From" without it being in `data`
+   * carry its sender (it's recovered from the signature), so it's not in
+   * `data`, even though a device may show it as "From"
    */
   signerAddr?: string
 }
