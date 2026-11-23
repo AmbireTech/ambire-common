@@ -32,7 +32,8 @@ import {
   HdExternalKey,
   IKeystoreController,
   Key,
-  ReadyToAddKeys
+  ReadyToAddKeys,
+  SyncedSeed
 } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { PreparePrivacyPoolsAccount, PrivacyPoolsAccountToAdd } from '../../interfaces/privacyPools'
@@ -61,6 +62,8 @@ const DEFAULT_SHOULD_SELECT_NEXT_ACCOUNT_AUTOMATICALLY = true
 export type PreparedAccounts = {
   accounts: Account[]
   keys: ReadyToAddKeys
+  /** The recovery phrases a sync brought, stored before the keys that point to them */
+  seeds: SyncedSeed[]
   accountsToRemove: Account[]
   /** The derivation path the keys were derived with - none for a flow without a key iterator */
   hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
@@ -184,6 +187,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * selected accounts are derived only when they are added.
    */
   #readyToAddKeys: ReadyToAddKeys | null = null
+
+  // The recovery phrases handed in with the keys (a sync). Private for the same reason
+  #readyToAddSeeds: SyncedSeed[] = []
+
+  // Runs once the prepared accounts are added, for what a flow adds along with them
+  #onPreparedAccountsAdded?: () => Promise<void>
 
   /**
    * The selection `readyToAddAccounts` was prepared from, which their keys are derived
@@ -657,6 +666,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.readyToAddAccounts = []
     this.readyToRemoveAccounts = []
     this.#readyToAddKeys = null
+    this.#readyToAddSeeds = []
+    this.#onPreparedAccountsAdded = undefined
     this.#preparedSelection = []
     this.#preparedAccountsToRemove = []
     this.#preparedHdPathTemplate = undefined
@@ -1178,6 +1189,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       }
     })
     this.#readyToAddKeys = null
+    this.#readyToAddSeeds = []
+    this.#onPreparedAccountsAdded = undefined
 
     this.emitUpdate()
     this.#replyToRequest(requestId)
@@ -1185,14 +1198,23 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   /**
    * Prepares accounts from a flow that has no key iterator (view-only, Safe, account
-   * JSON), for the personalize step to show and `addPreparedAccounts` to add.
+   * JSON, a sync), for the personalize step to show and `addPreparedAccounts` to add.
+   * `onAdded` runs once they are added, for what the flow adds along with them.
    */
   async prepareAccounts(
     {
       accounts,
       keys = { internal: [], external: [] },
-      accountsToRemove = []
-    }: { accounts: Account[]; keys?: ReadyToAddKeys; accountsToRemove?: Account[] },
+      seeds = [],
+      accountsToRemove = [],
+      onAdded
+    }: {
+      accounts: Account[]
+      keys?: ReadyToAddKeys
+      seeds?: SyncedSeed[]
+      accountsToRemove?: Account[]
+      onAdded?: () => Promise<void>
+    },
     requestId?: string
   ) {
     await this.reset()
@@ -1210,6 +1232,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.readyToRemoveAccounts = accountsToRemove
     this.#preparedAccountsToRemove = accountsToRemove
     this.#readyToAddKeys = keys
+    this.#readyToAddSeeds = seeds
+    this.#onPreparedAccountsAdded = onAdded
     this.#preparedSelection = []
 
     this.emitUpdate()
@@ -1269,6 +1293,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     await this.#onAddPreparedAccounts({
       accounts,
       keys: this.#readyToAddKeys || this.#getKeysOfPreparedSelection(),
+      seeds: this.#readyToAddSeeds,
       accountsToRemove: this.#preparedAccountsToRemove,
       hdPathTemplate: this.#preparedHdPathTemplate
     })
@@ -1278,6 +1303,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         renamedImportedAccounts.map(({ addr, preferences }) => ({ addr, preferences }))
       )
     }
+    await this.#onPreparedAccountsAdded?.()
 
     this.addAccountsStatus = 'SUCCESS'
     await this.forceEmitUpdate()

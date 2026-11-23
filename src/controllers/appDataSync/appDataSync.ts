@@ -4,6 +4,7 @@ import EmittableError from '@/classes/EmittableError'
 import { USER_FEATURE_FLAGS } from '@/consts/featureFlags'
 import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { Account, IAccountsController } from '@/interfaces/account'
+import { IAccountPickerController } from '@/interfaces/accountPicker'
 import { IAddressBookController } from '@/interfaces/addressBook'
 import { IAppDataSyncController } from '@/interfaces/appDataSync'
 import { IEventEmitterRegistryController, Statuses } from '@/interfaces/eventEmitter'
@@ -38,6 +39,8 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
 
   #accounts: IAccountsController
 
+  #accountPicker: IAccountPickerController
+
   #networks: INetworksController
 
   #addressBook: IAddressBookController
@@ -54,6 +57,7 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
     eventEmitterRegistry,
     keystore,
     accounts,
+    accountPicker,
     networks,
     addressBook,
     featureFlags,
@@ -63,6 +67,7 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
     eventEmitterRegistry?: IEventEmitterRegistryController
     keystore: IKeystoreController
     accounts: IAccountsController
+    accountPicker: IAccountPickerController
     networks: INetworksController
     addressBook: IAddressBookController
     featureFlags: IFeatureFlagsController
@@ -73,6 +78,7 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
 
     this.#keystore = keystore
     this.#accounts = accounts
+    this.#accountPicker = accountPicker
     this.#networks = networks
     this.#addressBook = addressBook
     this.#featureFlags = featureFlags
@@ -169,6 +175,10 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
    * `payload` is the hex encoded data assembled from the scanned codes and `password`
    * is the device password of the product that exported them, required whatever was
    * synced, so that nothing is taken over without the user confirming it.
+   *
+   * The accounts, their keys and the contacts are only prepared: like in every other
+   * account adding flow, they are added on the personalize step (see `prepareAccounts`).
+   * The settings and networks are merged right away.
    */
   async importData(
     { payload, password }: { payload: string; password: string },
@@ -189,18 +199,23 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
         })
       }
 
-      // The accounts are added only if the keys made it in, so that the user doesn't
-      // end up with accounts they cannot sign with
-      await this.#keystore.importFromSync(parsedPayload, password)
+      // The accounts are prepared only if the keys could be decrypted, so that the user
+      // doesn't end up with accounts they cannot sign with
+      const { keys, seeds } = await this.#keystore.decryptSyncPayload(parsedPayload, password)
 
-      const { networks, contacts, settings } = parsedPayload
+      const { accounts, networks, contacts, settings } = parsedPayload
       // Before the accounts, so their first update already runs on the synced networks
       if (networks) await this.#networks.mergeNetworks(networks)
 
-      if (parsedPayload.accounts.length) await this.#accounts.addAccounts(parsedPayload.accounts)
-
       // After the accounts, so the ones that are contacts here already are skipped
-      if (contacts) await this.#addressBook.mergeContacts(contacts)
+      const mergeContacts = async () => {
+        if (contacts) await this.#addressBook.mergeContacts(contacts)
+      }
+      if (accounts.length) {
+        await this.#accountPicker.prepareAccounts({ accounts, keys, seeds, onAdded: mergeContacts })
+      } else {
+        await mergeContacts()
+      }
 
       // The app settings (like the theme) are kept by the app, so it applies them itself
       if (settings) {
