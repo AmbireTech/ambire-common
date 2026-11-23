@@ -743,7 +743,8 @@ const init = async (
     providers: providersCtrl,
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore
+    keystore,
+    featureFlags: featureFlagsCtrl
   })
   const activity = new ActivityController(
     storageCtrl,
@@ -3020,6 +3021,78 @@ describe('Negative cases', () => {
 
 describe('throwBroadcastAccountOp', () => {
   suppressConsoleBeforeEach()
+
+  describe('after the user cancels the signing', () => {
+    const initEoaController = () =>
+      init(
+        eoaAccount,
+        createEOAAccountOp(eoaAccount),
+        eoaSigner,
+        {
+          providerEstimation: { gasUsed: 10000n, feePaymentOptions: [] },
+          ambireEstimation: {
+            deploymentGas: 0n,
+            gasUsed: 10000n,
+            feePaymentOptions: [],
+            ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+            flags: {}
+          },
+          flags: {},
+          updatedAt: Date.now()
+        },
+        {
+          slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+          medium: {
+            maxFeePerGas: toBeHex(400n) as Hex,
+            maxPriorityFeePerGas: toBeHex(200n) as Hex
+          },
+          fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+          ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+        }
+      )
+
+    it("logs the device's rejection silently, without failing quietly", async () => {
+      const { controller } = await initEoaController()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      controller.cancelSignReq()
+
+      expect(() =>
+        controller.throwBroadcastAccountOp({ error: new Error('Operation cancelled by user') })
+      ).toThrow()
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'silent' }))
+      expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
+    })
+
+    it('shows the errors of the next signing again', async () => {
+      const { controller } = await initEoaController()
+      controller.cancelSignReq()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      // A new signing clears the cancellation. Without a fee option it fails right away
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      controller.sign()
+      expect(() =>
+        controller.throwBroadcastAccountOp({ error: new Error('Device disconnected') })
+      ).toThrow()
+
+      expect(onError).toHaveBeenLastCalledWith(expect.objectContaining({ level: 'major' }))
+    })
+
+    it('shows a device error when the signing was not cancelled', async () => {
+      const { controller } = await initEoaController()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      expect(() =>
+        controller.throwBroadcastAccountOp({ error: new Error('Device disconnected') })
+      ).toThrow()
+
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'major' }))
+    })
+  })
 
   it('Should prefer message to error', async () => {
     const { controller } = await init(
@@ -7752,7 +7825,8 @@ describe('an earlier pending transaction', () => {
       nonce = 3n,
       paidBy = safeAccount.addr,
       hasOwnerKey = true,
-      signature
+      signature,
+      featureFlags
     }: {
       threshold: number
       signed: string[]
@@ -7760,6 +7834,7 @@ describe('an earlier pending transaction', () => {
       paidBy?: string
       hasOwnerKey?: boolean
       signature?: string
+      featureFlags?: Partial<FeatureFlags>
     }) => {
       const feePaymentOptions = [nativeFeeOption(paidBy)]
       const accountOp = createAccountOp(safeAccount, chainId)
@@ -7789,7 +7864,9 @@ describe('an earlier pending transaction', () => {
         false,
         {
           // The paying EOA is an account of the wallet too
-          initialSetStorage: (storageCtrl) => storageCtrl.set('accounts', [safeAccount, eoaAccount])
+          initialSetStorage: (storageCtrl) =>
+            storageCtrl.set('accounts', [safeAccount, eoaAccount]),
+          featureFlags
         }
       )
       // On Ethereum the state is read at the pending block, so it can count the pending op
@@ -7966,6 +8043,29 @@ describe('an earlier pending transaction', () => {
 
         expectBothSignatures(controller)
       })
+    })
+
+    test('signing while opted out of the Safe API keeps the signature here without a failure', async () => {
+      const { controller } = await initSafe({
+        threshold: 2,
+        signed: [],
+        featureFlags: { safeApi: false }
+      })
+      controller.update({
+        signingKeyAddr: eoaSigner.keyPublicAddress,
+        signingKeyType: 'internal'
+      })
+      const proposeSpy = jest.spyOn(safeLib, 'propose').mockResolvedValue(undefined)
+      const confirmSpy = jest.spyOn(safeLib, 'confirm').mockResolvedValue(undefined as never)
+
+      await controller.sign()
+
+      expect(controller.accountOp.signed).toEqual([eoaSigner.keyPublicAddress])
+      expect(proposeSpy).not.toHaveBeenCalled()
+      expect(confirmSpy).not.toHaveBeenCalled()
+      // the user's choice, not a failure, so signing ends as if it was shared
+      expect(controller.hasSafeApiFailed).toBe(false)
+      expect(controller.status?.type).toBe(SigningStatus.Queued)
     })
 
     test('signing keeps the Safe nonce set by the request, even if the Safe moved on', async () => {

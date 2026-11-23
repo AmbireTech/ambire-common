@@ -254,6 +254,9 @@ export class MainController extends EventEmitter implements IMainController {
 
   #fetchSafeTxnsPromise: Promise<void> | undefined
 
+  /** Stop the listeners to the feature flags changes, see `destroy` */
+  #featureFlagChangeUnsubscribes: (() => void)[] = []
+
   safe: ISafeController
 
   get continuousUpdates() {
@@ -375,15 +378,30 @@ export class MainController extends EventEmitter implements IMainController {
     // Switching the price source empties the price cache (see TokenPricesController), so the
     // portfolio is updated right away to show what the setting changed, instead of keeping the
     // other source's prices until the next scheduled update
-    onFeatureFlagChange(this.featureFlags, 'tokenPrices', () => {
-      this.updateSelectedAccountPortfolio().catch((error) =>
-        this.emitError({
-          level: 'silent',
-          message: 'Failed to update the portfolio after the token prices setting changed',
-          error
-        })
-      )
-    })
+    const unsubscribeTokenPricesChange = onFeatureFlagChange(
+      this.featureFlags,
+      'tokenPrices',
+      () => {
+        this.updateSelectedAccountPortfolio().catch((error) =>
+          this.emitError({
+            level: 'silent',
+            message: 'Failed to update the portfolio after the token prices setting changed',
+            error
+          })
+        )
+      }
+    )
+    // Opting back in to the Safe API syncs the Safes right away, instead of on the next
+    // time a view is opened or focused. Opting out is handled by the SafeController
+    const unsubscribeSafeApiChange = onFeatureFlagChange(
+      this.featureFlags,
+      'safeApi',
+      (isEnabled) => {
+        if (!isEnabled) return
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchAllSafesPending()
+      }
+    )
     // Turning auto discovery off must hide the DeFi positions found through the API, and turning
     // it on must bring them back. Every account is marked as outdated, as its data would otherwise
     // look fresh and its next update could be skipped (e.g. after switching to it), and the
@@ -391,16 +409,25 @@ export class MainController extends EventEmitter implements IMainController {
     // `defiMaxDataAgeMs: 0` is still needed for the selected account: an update that was already
     // running when the setting changed finishes first and saves its data as fresh again, so the
     // API call of this update could otherwise be skipped
-    onFeatureFlagChange(this.featureFlags, 'tokenAndDefiAutoDiscovery', () => {
-      this.portfolio.markAllAccountsAsOutdated()
-      this.updateSelectedAccountPortfolio({ defiMaxDataAgeMs: 0 }).catch((error) =>
-        this.emitError({
-          level: 'silent',
-          message: 'Failed to update the portfolio after the auto discovery setting changed',
-          error
-        })
-      )
-    })
+    const unsubscribeAutoDiscoveryChange = onFeatureFlagChange(
+      this.featureFlags,
+      'tokenAndDefiAutoDiscovery',
+      () => {
+        this.portfolio.markAllAccountsAsOutdated()
+        this.updateSelectedAccountPortfolio({ defiMaxDataAgeMs: 0 }).catch((error) =>
+          this.emitError({
+            level: 'silent',
+            message: 'Failed to update the portfolio after the auto discovery setting changed',
+            error
+          })
+        )
+      }
+    )
+    this.#featureFlagChangeUnsubscribes = [
+      unsubscribeTokenPricesChange,
+      unsubscribeSafeApiChange,
+      unsubscribeAutoDiscoveryChange
+    ]
     this.providers = new ProvidersController({
       eventEmitterRegistry,
       storage: this.storage,
@@ -447,7 +474,8 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       storage: this.storage,
       accounts: this.accounts,
-      keystore: this.keystore
+      keystore: this.keystore,
+      featureFlags: this.featureFlags
     })
 
     this.survey = new SurveyController({
@@ -619,7 +647,8 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       this.dapps,
       this.erc7730,
-      platform
+      platform,
+      this.safe
     )
 
     this.activity = new ActivityController(
@@ -2434,7 +2463,16 @@ export class MainController extends EventEmitter implements IMainController {
     // the wallet may have been locked while the selected Safe was fetched
     if (!this.keystore.isUnlocked) return
 
-    await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
+    // Caught here, as every caller fires this without awaiting it
+    await this.safe
+      .updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
+      .catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the pending transactions of the other Safe accounts',
+          error
+        })
+      )
   }
 
   async refreshSafeTxns() {
@@ -2444,9 +2482,14 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
+    // The flags are read once loaded, as until then they are the defaults. Awaited before the
+    // checks below, as the selected account may change meanwhile
+    await this.featureFlags.initialLoadPromise
     if (!this.selectedAccount?.account?.safeCreation) return
     // do not make Safe requests if the wallet is locked
     if (!this.keystore.isUnlocked) return
+    // Opted out of the Safe API: nothing would be fetched, so don't show a fetch in progress
+    if (!this.featureFlags.isFeatureEnabled('safeApi')) return
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex
 
@@ -2939,6 +2982,12 @@ export class MainController extends EventEmitter implements IMainController {
     this.ui.message.sendUiMessage(
       error ? { requestId, ok: false, error } : { requestId, ok: true, res }
     )
+  }
+
+  destroy() {
+    super.destroy()
+    // Emptied as they're called, so a second call can't remove other listeners of the flags
+    this.#featureFlagChangeUnsubscribes.splice(0).forEach((unsubscribe) => unsubscribe())
   }
 
   // includes the getters in the stringified instance
