@@ -309,6 +309,17 @@ export type KeystoreTempSeed = {
   notBackedUp?: boolean
 }
 
+/**
+ * A recovery phrase decrypted from a sync, held until the synced accounts are added. `id` is
+ * its id on the other device, which the synced keys' `fromSeedId` point to.
+ */
+export type SyncedSeed = KeystoreTempSeed & {
+  id: StoredKeystoreSeed['id']
+  /** Brought instead of a passphrase that the other device doesn't save */
+  passphraseFingerprint?: string
+  passphraseLabel?: StoredKeystoreSeed['passphraseLabel']
+}
+
 export type KeystoreSignerType = {
   new (key: Key, privateKey?: string): KeystoreSignerInterface
 }

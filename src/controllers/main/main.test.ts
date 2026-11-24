@@ -698,6 +698,34 @@ describe('Main Controller ', () => {
       expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(true)
     })
 
+    test('marks the picker as running on a new recovery phrase until it is reset', async () => {
+      const { picker } = await prepareNewSeedFlow()
+
+      await picker.init()
+      expect(picker.isFromNewSeed).toBe(true)
+
+      await picker.reset()
+      expect(picker.isFromNewSeed).toBe(false)
+    })
+
+    test('does not mark an entered recovery phrase as new', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      await picker.reset()
+      await mainCtrl.keystore.addTempSeed({
+        seed: process.env.SEED!,
+        seedPassphrase: null,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      await picker.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      await picker.init()
+
+      expect(picker.isFromNewSeed).toBe(false)
+    })
+
     test('adds the prepared account, its key and the new recovery phrase on proceeding', async () => {
       const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
       const before = snapshot()
@@ -776,6 +804,102 @@ describe('Main Controller ', () => {
       expect(snapshot().keys).toEqual(before.keys)
     })
 
+    test('keeps the name of an account the wallet has already, unless a sync overrides it', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      const [walletAccount] = mainCtrl.accounts.accounts
+      const withOtherName = {
+        ...walletAccount!,
+        preferences: { ...walletAccount!.preferences, label: 'Other name' }
+      }
+
+      await picker.prepareAccounts({ accounts: [withOtherName] })
+      expect(picker.readyToAddAccounts[0]!.preferences.label).toBe(walletAccount!.preferences.label)
+
+      await picker.prepareAccounts({ accounts: [withOtherName], shouldOverridePreferences: true })
+      expect(picker.readyToAddAccounts[0]!.preferences.label).toBe('Other name')
+      await picker.addPreparedAccounts()
+      expect(mainCtrl.accounts.accounts[0]!.preferences.label).toBe('Other name')
+    })
+
+    test('tells the accounts the wallet has that come with a key it does not hold', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      const [walletAccount] = mainCtrl.accounts.accounts
+      const keyAddr = walletAccount!.associatedKeys[0]!
+      const newWallet = Wallet.createRandom()
+      const notInWallet = {
+        addr: newWallet.address,
+        associatedKeys: [newWallet.address],
+        initialPrivileges: [],
+        creation: null,
+        preferences: { label: 'New', pfp: newWallet.address }
+      }
+      const internalKey = {
+        addr: keyAddr,
+        type: 'internal' as const,
+        label: 'Key 1',
+        privateKey: Wallet.createRandom().privateKey,
+        dedicatedToOneSA: false,
+        meta: { createdAt: Date.now() }
+      }
+
+      // A new account is added, not updated, whatever keys it brings
+      await picker.prepareAccounts({
+        accounts: [walletAccount!, notInWallet],
+        keys: { internal: [internalKey], external: [] }
+      })
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([walletAccount!.addr])
+
+      await picker.addPreparedAccounts()
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([])
+
+      // The same key again brings nothing new
+      await picker.prepareAccounts({
+        accounts: [walletAccount!],
+        keys: { internal: [internalKey], external: [] }
+      })
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([])
+
+      // A key of another type for the same address is another way to sign
+      await picker.prepareAccounts({
+        accounts: [walletAccount!],
+        keys: {
+          internal: [],
+          external: [
+            {
+              addr: keyAddr,
+              type: 'ledger',
+              label: 'Ledger Key 1',
+              dedicatedToOneSA: false,
+              meta: {
+                deviceId: '1',
+                deviceModel: 'nanoX',
+                hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+                index: 0,
+                createdAt: Date.now()
+              }
+            }
+          ]
+        }
+      })
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([walletAccount!.addr])
+
+      // Without keys (view-only) there is nothing to update
+      await picker.prepareAccounts({ accounts: [walletAccount!] })
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([])
+    })
+
+    test('tells a selected account the wallet has view-only as getting a key', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      await picker.init()
+      const [derived] = picker.readyToAddAccounts
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([])
+
+      await mainCtrl.accounts.addAccounts([derived!])
+      picker.prepareSelectedAccounts()
+
+      expect(picker.readyToUpdateKeysAccountAddrs).toEqual([derived!.addr])
+    })
+
     test('adds the key of the prepared account after another derivation path was browsed', async () => {
       const { mainCtrl, picker } = await prepareNewSeedFlow()
       await picker.init()
@@ -849,6 +973,54 @@ describe('Main Controller ', () => {
       await enterPhrase()
 
       expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(true)
+    })
+
+    test('drops the prepared accounts, keys and recovery phrases on lock', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      const wallet = Wallet.createRandom()
+      const syncedSeedId = 'synced-seed-id'
+      const syncedAccount = {
+        addr: wallet.address,
+        associatedKeys: [wallet.address],
+        initialPrivileges: [],
+        creation: null,
+        preferences: { label: 'Synced', pfp: wallet.address }
+      }
+      await picker.prepareAccounts({
+        accounts: [syncedAccount],
+        keys: {
+          internal: [
+            {
+              addr: wallet.address,
+              type: 'internal',
+              label: 'Synced key',
+              privateKey: wallet.privateKey,
+              dedicatedToOneSA: false,
+              meta: { createdAt: Date.now(), fromSeedId: syncedSeedId }
+            }
+          ],
+          external: []
+        },
+        seeds: [{ id: syncedSeedId, seed: wallet.mnemonic!.phrase }]
+      })
+      expect(picker.readyToAddAccounts).toEqual([syncedAccount])
+
+      const isReset = new Promise<void>((resolve) => {
+        const unsubscribe = picker.onUpdate(() => {
+          if (picker.readyToAddAccounts.length) return
+          unsubscribe()
+          resolve()
+        })
+      })
+      mainCtrl.lock()
+      await isReset
+
+      expect(picker.isInitialized).toBe(false)
+      // Proceeding after unlocking adds nothing from before the lock
+      await mainCtrl.keystore.unlockWithSecret('password', '12345678')
+      await picker.addPreparedAccounts()
+      expect(snapshot()).toEqual(before)
     })
 
     test('never sends the private keys of the prepared accounts to the UI', async () => {
