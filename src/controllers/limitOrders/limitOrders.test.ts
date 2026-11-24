@@ -442,8 +442,8 @@ describe('LimitOrdersController banner for filled orders', () => {
       dismissAction: { actionName: 'dismiss-limit-orders-filled-banner' },
       meta: { accountAddr }
     })
-    expect(banner?.text).toContain('USDC')
-    expect(banner?.text).toContain('WETH')
+    // The same digits as My orders
+    expect(banner?.text).toBe('You sold 1 USDC and got 0.0006 WETH.')
   })
 
   it('counts the orders when several filled', async () => {
@@ -690,6 +690,29 @@ describe('LimitOrdersController orders signed in the signing window', () => {
     expect(controller.orders.map((order) => [order.uid, order.status])).toEqual([
       [orderUid, 'placing']
     ])
+  })
+
+  it('tells about the first order of an account filling before its orders ever loaded', async () => {
+    let orders: CowSwapAccountOrder[] = []
+    const { controller, placeOrder } = makeSafeController(() => orders)
+
+    const { orderUid, calls } = await placeOrder()
+    // Already filled when the broadcast refreshes the orders, e.g. as the wallet was closed
+    // until it filled
+    orders = [
+      makeOrder({
+        uid: orderUid,
+        sellToken: weth,
+        buyToken: usdc,
+        status: 'fulfilled',
+        executedSellAmount: '500000000000000000',
+        executedBuyAmount: '870000000'
+      })
+    ]
+    controller.onAccountOpBroadcast({ accountAddr, chainId: 1n, calls: withNewIds(calls) })
+    await controller.updateOrders()
+
+    expect(controller.banners).toHaveLength(1)
   })
 
   it('does not mark an order broadcast on another network', async () => {

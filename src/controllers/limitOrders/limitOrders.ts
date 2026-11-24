@@ -50,6 +50,7 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
+import { formatLimitOrderAmount } from '../../libs/limitOrders/formatAmount'
 import { getAccountNetworks } from '../../libs/networks/networks'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenMetaViaRPC } from '../../libs/portfolio/getTokenMetaViaRPC'
@@ -75,7 +76,6 @@ import {
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { CowSwapAPI } from '../../services/cowswap/api'
-import formatDecimals from '../../utils/formatDecimals/formatDecimals'
 import {
   COWSWAP_BUY_NATIVE_TOKEN_ADDRESS,
   COWSWAP_ETH_FLOW_ADDRESS,
@@ -623,6 +623,25 @@ export class LimitOrdersController extends EventEmitter {
   }
 
   /**
+   * Starts telling about the account's fills when it places an order, if its orders never fully
+   * loaded. Otherwise its first load would count the new order as seen if it filled before then,
+   * e.g. while the wallet was closed. Only Ambire orders are listed, so the fills it doesn't know
+   * of can only be of orders it placed with Ambire on another device
+   */
+  #startSeenFillsOnPlacing(accountAddr: string) {
+    const addr = accountAddr.toLowerCase()
+    if (this.#seenFills.has(addr)) return
+
+    const areOrdersLoaded =
+      this.ordersAccountAddr?.toLowerCase() === addr && this.ordersUpdatedAt !== null
+    const filledUids = areOrdersLoaded
+      ? this.orders.filter((order) => order.status === 'filled').map((order) => order.uid)
+      : []
+    this.#seenFills.set(addr, new Set(filledUids))
+    this.#saveSeenFills()
+  }
+
+  /**
    * The selected account's orders that filled since the user last saw its filled orders. None
    * until all of its orders loaded once, see `#markFillsSoFarAsSeen`
    */
@@ -648,8 +667,9 @@ export class LimitOrdersController extends EventEmitter {
 
     const [order] = unseenFilledOrders
     const isSingle = unseenFilledOrders.length === 1
+    // The same digits as My orders, so the user can find the amounts there
     const getAmount = (amount: string, decimals: number) =>
-      formatDecimals(Number(formatUnits(amount, decimals)), 'amount')
+      formatLimitOrderAmount(formatUnits(amount, decimals))
 
     return [
       {
@@ -1756,6 +1776,7 @@ export class LimitOrdersController extends EventEmitter {
           )
         }
         this.#rememberAccountWithOrders(account.addr)
+        this.#startSeenFillsOnPlacing(account.addr)
         this.#placingOrderUids.add(orderUid)
         // So a fill is noticed even if the order is first listed after it filled
         this.#executedBuyAmounts.set(orderUid, 0n)
@@ -2657,6 +2678,7 @@ export class LimitOrdersController extends EventEmitter {
 
       this.#unconfirmedOrderCalls.set(key, { orderUid: sentCall.orderUid, purpose: 'place' })
       this.#rememberAccountWithOrders(accountAddr)
+      this.#startSeenFillsOnPlacing(accountAddr)
       this.#placingOrderUids.add(sentCall.orderUid)
       // So a fill is noticed even if the order is first listed after it filled
       this.#executedBuyAmounts.set(sentCall.orderUid, 0n)
