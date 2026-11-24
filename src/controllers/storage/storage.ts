@@ -104,6 +104,8 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#indexSentToHistoryFromAccountsOps() // As of the accountsOps → IDB release
       await this.#sortPhishingLists() // As of the sorted phishing lists release
       await this.#removeTokenRecordsWithoutChainId() // As of the Manage Tokens crash fix
+      await this.#removeErc7730RegistryCache() // As of the bundled ERC-7730 registry release
+      await this.#removeClearSigningFeatureFlag() // As of the bundled ERC-7730 registry release
     } catch (error) {
       // Reported, because a failed migration skips all the ones after it on every start — and
       // the failure is invisible in the meantime, which for #indexSentToHistoryFromAccountsOps
@@ -231,6 +233,42 @@ export class StorageController extends EventEmitter implements IStorageControlle
     }
     if (tokenPreferencesWithChainId.length !== tokenPreferences.length) {
       await this.#storage.set('tokenPreferences', tokenPreferencesWithChainId)
+    }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
+  /**
+   * Removes the ERC-7730 descriptors cached from the relayer. The descriptors are bundled with
+   * the app now, so nothing reads or writes that cache anymore - and it could hold up to a few MB.
+   *
+   * Safe to re-run: removing a key that is not stored does nothing.
+   */
+  async #removeErc7730RegistryCache() {
+    const MIGRATION_KEY = 'removeErc7730RegistryCache'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    await this.#storage.remove('erc7730RegistryCache')
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
+  /**
+   * Removes the "Clear signing" opt-out from the stored feature flags. The descriptors are bundled
+   * with the app now instead of fetched, so there is nothing left to opt out of and the flag is
+   * gone - but a stored `clearSigning: false` would otherwise stay in the flags forever.
+   *
+   * Safe to re-run: the flags are stored again only when they still hold the flag, and nothing is
+   * stored when there are no flags.
+   */
+  async #removeClearSigningFeatureFlag() {
+    const MIGRATION_KEY = 'removeClearSigningFeatureFlag'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const flags: Record<string, unknown> | null = await this.#storage.get('flags', null)
+    if (flags && Object.prototype.hasOwnProperty.call(flags, 'clearSigning')) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { clearSigning, ...currentFlags } = flags
+      await this.#storage.set('flags', currentFlags)
     }
 
     await this.#markMigrationPassed(MIGRATION_KEY)

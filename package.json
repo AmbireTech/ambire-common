@@ -5,6 +5,7 @@
   "scripts": {
     "humanizer:update:metamaskContactMetadata": "node scripts/updateHumanizerInfoWithMetaMaskContactMetadata.js",
     "defiPositions:update:morphoListed": "node scripts/updateMorphoListedMarketsAndVaults.js",
+    "humanizer:update:erc7730Registry": "node scripts/updateErc7730Registry.js",
     "humanizer:generate:combineHumanizerJsons": "node scripts/combineHumanizerJsons.js",
     "compile:contracts": "npx hardhat compile && ts-node scripts/compileContracts.js",
     "hardhat": "npx hardhat compile; npx hardhat test",
