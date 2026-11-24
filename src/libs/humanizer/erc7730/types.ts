@@ -142,16 +142,16 @@ export type Erc7730Eip712Index = Record<string, Record<string, Erc7730Eip712Inde
 
 export type Erc7730TypedDataTypes = Record<string, Array<{ name: string; type: string }>>
 
-export type CacheEntry<T> = {
-  value: T
-  fetchedAt: number
-}
-
-// Shape persisted under the `erc7730RegistryCache` storage key - mirrors the in-memory caches in
-// registry.ts (calldata index, EIP-712 index, resolved descriptors keyed by descriptor path), so
-// descriptors fetched once from the relayer survive reloads and are reusable without a network call.
-export type Erc7730PersistedRegistryCache = {
-  calldataIndex: CacheEntry<Erc7730CalldataIndex> | null
-  eip712Index: CacheEntry<Erc7730Eip712Index> | null
-  descriptors: Record<string, CacheEntry<Erc7730Descriptor>>
+/**
+ * The ERC-7730 data descriptors are looked up in - the bundled one is `BUNDLED_ERC7730_REGISTRY`
+ * (`consts/erc7730`). Paths are relative to the root of the registry, without a leading slash
+ * (e.g. `registry/safe/calldata-Safe-1.4.1.json`).
+ */
+export type Erc7730Registry = {
+  /** `eip155:{chainId}:{address}` -> the path of the contract's descriptor */
+  calldataIndex: Erc7730CalldataIndex
+  /** `eip155:{chainId}:{verifyingContract}` -> primary type -> the candidate descriptors */
+  eip712Index: Erc7730Eip712Index
+  /** The descriptors by their path, validated only when they are used */
+  descriptors: Record<string, unknown>
 }

@@ -66,7 +66,7 @@ export const getSafeTxCallsFromMessage = (message: Message): Call[] | null => {
   }
 }
 
-/** The key a descriptor is registered under, both in the relayer index and in the resolved maps */
+/** The key a descriptor is registered under, both in the registry index and in the resolved maps */
 export const getRegistryKey = (chainId: bigint | number | string, address: string): string =>
   `eip155:${BigInt(chainId).toString()}:${address.toLowerCase()}`
 

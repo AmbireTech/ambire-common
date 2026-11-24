@@ -516,6 +516,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    */
   #lastActiveRoutesStatusCheckAt = 0
 
+  /**
+   * How many times the statuses of the in-progress swaps and bridges were checked since the poll
+   * last waited for their service time. The poll backs off by this count, as its timeout can
+   * equal the service time and can't tell the first check from the later ones.
+   */
+  #activeRoutesStatusChecksCount = 0
+
   get updateActiveRoutesInterval() {
     return this.#updateActiveRoutesInterval
   }
@@ -1007,8 +1014,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // the check starts only on the next tick, so the updates in the meantime don't restart it again
     this.#lastActiveRoutesStatusCheckAt = Date.now()
 
-    // Keeps the current timeout, so the poll keeps backing off. Restarting it from the shortest
-    // one would undo that on every refresh, and poll a long bridge every few seconds
+    // A CoW Swap order's status can lag behind the balances that already have its tokens, so its
+    // back-off starts over and the next check comes soon. Other routes keep the current timeout,
+    // as starting over on every refresh would poll a long bridge every few seconds
+    const hasCowSwapRouteInProgress = activeRoutesInProgress.some(
+      (activeRoute) => activeRoute.route?.providerId === COW_SWAP_PROVIDER_ID
+    )
+    if (hasCowSwapRouteInProgress) this.#activeRoutesStatusChecksCount = 0
+
     this.#updateActiveRoutesInterval.restart({
       timeout: this.#updateActiveRoutesInterval.currentTimeout,
       runImmediately: true
@@ -1032,6 +1045,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
 
     if (!this.#updateActiveRoutesInterval.running) {
+      this.#activeRoutesStatusChecksCount = 0
       this.#updateActiveRoutesInterval.start({ timeout: minServiceTime })
       return
     }
@@ -1039,6 +1053,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // If the interval is running, check if minServiceTime * 2 is still less than currentTimeout.
     // If it is, restart it with the new minServiceTime, as the difference makes it worth it.
     if (minServiceTime * 2 < this.#updateActiveRoutesInterval.currentTimeout) {
+      this.#activeRoutesStatusChecksCount = 0
       this.#updateActiveRoutesInterval.restart({ timeout: minServiceTime })
     }
   }
@@ -3563,6 +3578,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       activeRoute.routeStatus === 'in-progress' &&
       opStatus === AccountOpStatus.Success
     ) {
+      this.#activeRoutesStatusChecksCount = 0
       this.#updateActiveRoutesInterval.restart({
         timeout: getActiveRoutesLowestServiceTime(this.activeRoutesInProgress),
         runImmediately: true
@@ -4047,17 +4063,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // coming here means the bridge should complete any second now
     // so start with BRIDGE_STATUS_INTERVAL
     // upon status pending, increase by BRIDGE_STATUS_INTERVAL until the ceiling is hit
-    const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
-    const startTimeout =
-      minServiceTime === this.#updateActiveRoutesInterval.currentTimeout
-        ? BRIDGE_STATUS_INTERVAL
-        : this.#updateActiveRoutesInterval.currentTimeout + BRIDGE_STATUS_INTERVAL
-
+    this.#activeRoutesStatusChecksCount += 1
     this.#updateActiveRoutesInterval.updateTimeout({
-      timeout:
-        startTimeout < BRIDGE_STATUS_INTERVAL_CEILING
-          ? startTimeout
-          : BRIDGE_STATUS_INTERVAL_CEILING
+      timeout: Math.min(
+        BRIDGE_STATUS_INTERVAL * this.#activeRoutesStatusChecksCount,
+        BRIDGE_STATUS_INTERVAL_CEILING
+      )
     })
   }
 
