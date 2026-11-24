@@ -111,8 +111,28 @@ export const getTokenPriceRequests = (
 const getResponseKey = (address: string, network: Network): string =>
   geckoIdMapper(address, network) || getTokenDataCacheKey(address)
 
-const getRequestInFlightKey = (chainId: bigint, address: string): string =>
-  `${chainId.toString()}:${getTokenDataCacheKey(address)}`
+/**
+ * The key a token is tracked under while a request for it is in flight. A token looked up by coin
+ * id (e.g. ETH, the native token of many networks) gets the same answer on every network, so it
+ * is tracked by its coin id alone and a request for it on one network is waited for on the others.
+ */
+const getRequestInFlightKey = (network: Network, address: string): string => {
+  const coinId = geckoIdMapper(address, network)
+  if (coinId) return `coin:${coinId}`
+
+  return `${network.chainId.toString()}:${getTokenDataCacheKey(address)}`
+}
+
+/** The entry of a cached token, if `isUsable` accepts the time it was cached at */
+const getUsableEntry = (
+  cached: [cachedAt: number, entry: TokenDataCacheValue] | undefined,
+  isUsable: (cachedAt: number) => boolean
+): TokenDataCacheValue | null => {
+  if (!cached) return null
+
+  const [cachedAt, entry] = cached
+  return isUsable(cachedAt) ? entry : null
+}
 
 const EMPTY_RESULT = (): GetTokenDataResult => ({ tokenData: new Map(), error: null })
 
@@ -122,8 +142,10 @@ const EMPTY_RESULT = (): GetTokenDataResult => ({ tokenData: new Map(), error: n
  * The cache belongs to no account: every token keeps the time it was last answered at, and a
  * token answered (with a price or with "no price") within TOKEN_PRICE_MAX_AGE_MS is read from
  * the cache, whichever account or feature asked for it. Only the tokens missing from the cache
- * are requested. A call never adds its tokens to the request of another call, so a request
- * never carries the tokens of two accounts. Every request also carries the Privacy Pools assets
+ * are requested. The tokens looked up by coin id (e.g. ETH, the native token of many networks)
+ * are cached by it, so they are requested once for all the networks that share them. A call
+ * never adds its tokens to the request of another call, so a request never carries the tokens of
+ * two accounts. Every request also carries the Privacy Pools assets
  * that aren't fresh in the cache, which are the same for every user, so that pricing them
  * reveals nothing and the Privacy Pools lookups are answered from the cache.
  *
@@ -142,10 +164,16 @@ export class TokenPricesController extends EventEmitter {
 
   #addsPrivacyPoolsAssets: boolean
 
-  /** chainId -> token data cache */
+  /** chainId -> token data cache, for the tokens looked up by contract address */
   #cacheByChainId = new Map<string, TokenDataCache>()
 
-  /** `${chainId}:${lowercased address}` -> the request in flight that asks for the token */
+  /**
+   * coin id -> token data, for the tokens looked up by coin id, shared by every network, as cena
+   * answers a coin id the same on all of them
+   */
+  #cacheByCoinId: TokenDataCache = new Map()
+
+  /** {@link getRequestInFlightKey} -> the request in flight that asks for the token */
   #requestsInFlight = new Map<string, Promise<void>>()
 
   constructor({
@@ -189,7 +217,7 @@ export class TokenPricesController extends EventEmitter {
     const callStartedAt = Date.now()
     const isFresh = (cachedAt: number) => callStartedAt - cachedAt <= TOKEN_PRICE_MAX_AGE_MS
     const unansweredAddresses = tokenAddresses.filter(
-      (address) => !this.#getCacheEntry(network.chainId, address, isFresh)
+      (address) => !this.#getTokenCacheEntry(network, address, isFresh)
     )
 
     // Without a CoinGecko platform cena has nothing to look the tokens up by
@@ -203,16 +231,14 @@ export class TokenPricesController extends EventEmitter {
     const requestsInFlight = new Set<Promise<void>>()
     const addressesToRequest: string[] = []
     unansweredAddresses.forEach((address) => {
-      const requestInFlight = this.#requestsInFlight.get(
-        getRequestInFlightKey(network.chainId, address)
-      )
+      const requestInFlight = this.#requestsInFlight.get(getRequestInFlightKey(network, address))
       if (requestInFlight) requestsInFlight.add(requestInFlight)
       else addressesToRequest.push(address)
     })
 
     const requests = [...requestsInFlight]
     if (addressesToRequest.length) {
-      requests.push(this.#requestTokens(network, addressesToRequest, baseCurrency, isFresh))
+      requests.push(...this.#requestTokens(network, addressesToRequest, baseCurrency, isFresh))
     }
 
     const failedRequest = (await Promise.allSettled(requests)).find(
@@ -248,7 +274,8 @@ export class TokenPricesController extends EventEmitter {
 
   /**
    * A cached entry younger than TOKEN_PRICE_MAX_AGE_MS, without requesting it (e.g. NFT floor
-   * prices, which only come with Velcro's discovery response)
+   * prices, which only come with Velcro's discovery response). Reads only the entries of the
+   * network, so not the tokens cena answered by coin id.
    */
   getCachedTokenData(
     chainId: bigint,
@@ -294,6 +321,7 @@ export class TokenPricesController extends EventEmitter {
     if (this.#isTokenPricesEnabled()) return true
 
     this.#cacheByChainId.clear()
+    this.#cacheByCoinId.clear()
     return false
   }
 
@@ -307,17 +335,50 @@ export class TokenPricesController extends EventEmitter {
     return cache
   }
 
-  /** The cached entry of a token, if `isUsable` accepts the time it was cached at */
+  /**
+   * The cached entry of a token among the entries of the network, if `isUsable` accepts the time
+   * it was cached at
+   */
   #getCacheEntry(
     chainId: bigint,
     address: string,
     isUsable: (cachedAt: number) => boolean
   ): TokenDataCacheValue | null {
-    const cached = this.#cacheByChainId.get(chainId.toString())?.get(getTokenDataCacheKey(address))
-    if (!cached) return null
+    return getUsableEntry(
+      this.#cacheByChainId.get(chainId.toString())?.get(getTokenDataCacheKey(address)),
+      isUsable
+    )
+  }
 
-    const [cachedAt, entry] = cached
-    return isUsable(cachedAt) ? entry : null
+  /**
+   * The cached entry of a token on the network, if `isUsable` accepts the time it was cached at.
+   * A token looked up by coin id is found by it, whichever network it was answered on, or else
+   * among the entries of the network set from elsewhere (e.g. Velcro's prices).
+   */
+  #getTokenCacheEntry(
+    network: Network,
+    address: string,
+    isUsable: (cachedAt: number) => boolean
+  ): TokenDataCacheValue | null {
+    const coinId = geckoIdMapper(address, network)
+    const coinEntry = coinId ? getUsableEntry(this.#cacheByCoinId.get(coinId), isUsable) : null
+
+    return coinEntry || this.#getCacheEntry(network.chainId, address, isUsable)
+  }
+
+  /** Caches cena's answer for a token: by its coin id if it has one, otherwise on the network */
+  #setCacheEntry(
+    network: Network,
+    address: string,
+    cached: [cachedAt: number, entry: TokenDataCacheValue]
+  ) {
+    const coinId = geckoIdMapper(address, network)
+    if (coinId) {
+      this.#cacheByCoinId.set(coinId, cached)
+      return
+    }
+
+    this.#getOrCreateCache(network.chainId).set(getTokenDataCacheKey(address), cached)
   }
 
   /** The usable cached entries of the tokens that have a price in `baseCurrency` */
@@ -330,7 +391,7 @@ export class TokenPricesController extends EventEmitter {
     const tokenData = new Map<string, TokenDataCacheValue>()
 
     tokenAddresses.forEach((address) => {
-      const entry = this.#getCacheEntry(network.chainId, address, isUsable)
+      const entry = this.#getTokenCacheEntry(network, address, isUsable)
       if (!entry || !entry.priceIn.some((price) => price.baseCurrency === baseCurrency)) return
 
       tokenData.set(getTokenDataCacheKey(address), entry)
@@ -341,83 +402,72 @@ export class TokenPricesController extends EventEmitter {
 
   /**
    * Requests the tokens together with the Privacy Pools assets of the network that are neither
-   * fresh in the cache nor already requested, and marks all of them as in flight until the
-   * request settles, so that other calls wait for it instead of requesting them again.
+   * fresh in the cache nor already requested, and marks each of them as in flight until its page
+   * settles, so that other calls wait for it instead of requesting them again. Each page is
+   * tracked on its own, so a call that waits for a token (e.g. ETH, requested on another network)
+   * doesn't get the error of a page it didn't need. Returns the requests of the pages.
    */
   #requestTokens(
     network: Network,
     tokenAddresses: string[],
     baseCurrency: string,
     isFresh: (cachedAt: number) => boolean
-  ): Promise<void> {
-    const privacyPoolsAssets = this.#getPrivacyPoolsAssetsToRequest(network.chainId, isFresh)
+  ): Promise<void>[] {
+    const privacyPoolsAssets = this.#getPrivacyPoolsAssetsToRequest(network, isFresh)
     const allTokens = getUniqueSortedAddresses([...tokenAddresses, ...privacyPoolsAssets])
-    const inFlightKeys = allTokens.map((address) => getRequestInFlightKey(network.chainId, address))
 
-    const request = this.#fetchAndCacheTokens(network, allTokens, baseCurrency)
-    inFlightKeys.forEach((key) => this.#requestsInFlight.set(key, request))
+    return getTokenPriceRequests(network, allTokens, baseCurrency).map((priceRequest) => {
+      const inFlightKeys = priceRequest.tokenAddresses.map((address) =>
+        getRequestInFlightKey(network, address)
+      )
 
-    const forgetRequest = () => {
-      inFlightKeys.forEach((key) => {
-        if (this.#requestsInFlight.get(key) === request) this.#requestsInFlight.delete(key)
-      })
-    }
-    // Its outcome (and error) reaches the callers through `request` itself
-    request.then(forgetRequest, forgetRequest)
+      const request = this.#fetchAndCachePage(network, priceRequest)
+      inFlightKeys.forEach((key) => this.#requestsInFlight.set(key, request))
 
-    return request
+      const forgetRequest = () => {
+        inFlightKeys.forEach((key) => {
+          if (this.#requestsInFlight.get(key) === request) this.#requestsInFlight.delete(key)
+        })
+      }
+      // Its outcome (and error) reaches the callers through `request` itself
+      request.then(forgetRequest, forgetRequest)
+
+      return request
+    })
   }
 
   /** The Privacy Pools assets of the network that are neither fresh in the cache nor in flight */
   #getPrivacyPoolsAssetsToRequest(
-    chainId: bigint,
+    network: Network,
     isFresh: (cachedAt: number) => boolean
   ): string[] {
     if (!this.#addsPrivacyPoolsAssets) return []
 
     const assetAddresses =
-      getPrivacyPoolsChainConfig(chainId)?.assets.map(({ address }) => address) || []
+      getPrivacyPoolsChainConfig(network.chainId)?.assets.map(({ address }) => address) || []
 
     return assetAddresses.filter(
       (address) =>
-        !this.#getCacheEntry(chainId, address, isFresh) &&
-        !this.#requestsInFlight.has(getRequestInFlightKey(chainId, address))
+        !this.#getTokenCacheEntry(network, address, isFresh) &&
+        !this.#requestsInFlight.has(getRequestInFlightKey(network, address))
     )
   }
 
   /**
-   * Requests exactly the given tokens and caches every answer, including "no price". Pages that
-   * succeed are cached even if another page fails, after which the first failure is thrown.
+   * Requests exactly the tokens of a page and caches every answer, including "no price". A page
+   * is cached as soon as it succeeds, even if another page of the same call fails.
    */
-  async #fetchAndCacheTokens(network: Network, tokenAddresses: string[], baseCurrency: string) {
-    const results = await Promise.allSettled(
-      getTokenPriceRequests(network, tokenAddresses, baseCurrency).map(async (request) => ({
-        request,
-        body: await this.#fetchPrices(request.url)
-      }))
-    )
-
-    const cache = this.#getOrCreateCache(network.chainId)
+  async #fetchAndCachePage(network: Network, { url, tokenAddresses }: TokenPriceRequest) {
+    const body = await this.#fetchPrices(url)
     const cachedAt = Date.now()
-    let firstError: unknown = null
 
-    results.forEach((result) => {
-      if (result.status === 'rejected') {
-        firstError = firstError || result.reason
-        return
-      }
-
-      const { request, body } = result.value
-      request.tokenAddresses.forEach((address) => {
-        const tokenData = body[getResponseKey(address, network)] || null
-        cache.set(getTokenDataCacheKey(address), [
-          cachedAt,
-          convertApiTokenDataToTokenDataCache(tokenData)
-        ])
-      })
+    tokenAddresses.forEach((address) => {
+      const tokenData = body[getResponseKey(address, network)] || null
+      this.#setCacheEntry(network, address, [
+        cachedAt,
+        convertApiTokenDataToTokenDataCache(tokenData)
+      ])
     })
-
-    if (firstError) throw firstError
   }
 
   static #toPriceRequestError(error: unknown, network: Network): Error {
