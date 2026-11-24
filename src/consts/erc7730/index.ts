@@ -9,8 +9,8 @@ import upstreamRegistry from './registry.json'
 
 /**
  * The ERC-7730 ("clear signing") registry the wallet ships with: the registry of
- * https://github.com/ethereum/clear-signing-erc7730-registry (`./registry.json`, refreshed every
- * week by `.github/workflows/update-erc7730-registry.yml`) merged with Ambire's own descriptors
+ * https://github.com/ethereum/clear-signing-erc7730-registry (`./registry.json`, refreshed with
+ * `npm run humanizer:update:erc7730Registry`) merged with Ambire's own descriptors
  * (`./ambireDescriptors.ts`). Descriptors are read only from here, never fetched.
  *
  * Import it only where descriptors are looked up (`Erc7730Controller`), so the few MB of

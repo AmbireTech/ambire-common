@@ -7,8 +7,8 @@ const { execFileSync } = require('child_process')
 // descriptors of https://github.com/ethereum/clear-signing-erc7730-registry. The wallet reads
 // descriptors only from this file (see `src/consts/erc7730/index.ts`), so describing a
 // transaction or a message sends nothing about it anywhere. New descriptors are added to the
-// registry every week, so a weekly workflow runs this and opens a PR with the changes
-// (`.github/workflows/update-erc7730-registry.yml`). It is NOT called at runtime.
+// registry every week, so run this from time to time with
+// `npm run humanizer:update:erc7730Registry` and commit the changes. It is NOT called at runtime.
 //
 // Only the descriptors the indexes point at (and the ones they include) are kept, plus the ones
 // Ambire's fallback index points at (`src/consts/erc7730/fallbackCalldataIndex.json`); the tests
@@ -340,7 +340,7 @@ const assertNotTooManyRemoved = ({ previousCount, removed }, label) => {
   if (!previousCount || removed.length / previousCount <= MAX_REMOVED_SHARE) return
 
   throw new Error(
-    `${removed.length} of the ${previousCount} ${label} are no longer in the registry. Check the registry, and if they really were removed, run again with ERC7730_REGISTRY_ALLOW_MANY_REMOVALS=true ("Allow many removals" in the workflow)`
+    `${removed.length} of the ${previousCount} ${label} are no longer in the registry. Check the registry, and if they really were removed, run again with ERC7730_REGISTRY_ALLOW_MANY_REMOVALS=true`
   )
 }
 

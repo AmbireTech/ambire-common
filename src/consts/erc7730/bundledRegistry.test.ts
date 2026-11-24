@@ -18,8 +18,7 @@ const generatorScript = require('../../../scripts/updateErc7730Registry')
 const resolveScriptIncludePath: (includePath: string, parentPath: string) => string =
   generatorScript.resolveIncludePath
 
-// Run by `.github/workflows/update-erc7730-registry.yml` before it opens a PR with a refreshed
-// `registry.json`, so keep the describe name in sync with the filter there.
+// Run these after refreshing `registry.json` with `npm run humanizer:update:erc7730Registry`.
 
 const { calldataIndex, eip712Index, descriptors } = BUNDLED_ERC7730_REGISTRY
 
