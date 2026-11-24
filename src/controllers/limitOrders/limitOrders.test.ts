@@ -1,6 +1,6 @@
 import { Interface, ZeroAddress } from 'ethers'
 
-import { describe, expect, it, jest } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals'
 
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
@@ -84,11 +84,14 @@ const makeController = (
     isTokenSupported: jest.fn(async () => false)
   }
 
+  // No wallet screen open, so the waiting orders aren't refreshed on their own
+  const ui = { uiEvent: { on: jest.fn() }, views: [] as { id: string; type: string }[] }
+
   const controller = new LimitOrdersController({
     selectedAccount,
     networks: { networks: [{ chainId: 1n, name: 'Ethereum', nativeAssetSymbol: 'ETH' }] },
     providers: { providers: {} },
-    ui: { uiEvent: { on: jest.fn() } },
+    ui,
     cowSwapApi,
     portfolioUpdate,
     storage,
@@ -97,7 +100,7 @@ const makeController = (
     onBroadcastFailed: jest.fn()
   } as unknown as ConstructorParameters<typeof LimitOrdersController>[0])
 
-  return { controller, portfolioUpdate, selectedAccount, cowSwapApi, storage }
+  return { controller, portfolioUpdate, selectedAccount, cowSwapApi, storage, ui }
 }
 
 describe('LimitOrdersController My orders', () => {
@@ -290,7 +293,7 @@ describe('LimitOrdersController placing an order that sells the native token', (
       providers: { providers: { '1': { call: jest.fn(async () => `0x${'0'.repeat(64)}`) } } },
       featureFlags: { isFeatureEnabled: () => false },
       portfolio: { getAccountPortfolioState: () => ({}) },
-      ui: { uiEvent: { on: jest.fn() } },
+      ui: { uiEvent: { on: jest.fn() }, views: [] },
       cowSwapApi,
       relayerUrl: '',
       storage: makeStorage(),
@@ -394,6 +397,140 @@ describe('LimitOrdersController orders for the dashboard', () => {
     })
 
     expect(storage.data.limitOrdersAccounts).toEqual([accountAddr.toLowerCase()])
+  })
+})
+
+describe('LimitOrdersController refreshing the waiting orders', () => {
+  const popup = { id: 'popup', type: 'popup' }
+  const filledOrder = makeOrder({
+    status: 'fulfilled',
+    executedSellAmount: '1000000',
+    executedBuyAmount: '600000000000000'
+  })
+
+  /** Calls the controller's listeners of a screen opening or closing */
+  const emitViewEvent = (
+    ui: ReturnType<typeof makeController>['ui'],
+    event: 'addView' | 'removeView',
+    view: typeof popup
+  ) => {
+    ui.uiEvent.on.mock.calls.forEach(([eventName, handler]) => {
+      if (eventName === event) (handler as (v: typeof popup) => void)(view)
+    })
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers()
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('refreshes every minute while an order waits and a wallet screen is open', async () => {
+    const { controller, cowSwapApi, ui } = makeController(() => [makeOrder()])
+    ui.views.push(popup)
+
+    await controller.updateOrders()
+    const callsPerRefresh = cowSwapApi.getAccountLimitOrders.mock.calls.length
+
+    await jest.advanceTimersByTimeAsync(59_999)
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledTimes(callsPerRefresh)
+
+    await jest.advanceTimersByTimeAsync(1)
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledTimes(callsPerRefresh * 2)
+
+    await jest.advanceTimersByTimeAsync(60_000)
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledTimes(callsPerRefresh * 3)
+  })
+
+  it('shows the banner for an order that fills while the wallet stays open', async () => {
+    let orders = [makeOrder()]
+    const { controller, ui } = makeController(() => orders)
+    ui.views.push(popup)
+
+    await controller.updateOrders()
+    expect(controller.banners).toEqual([])
+
+    orders = [filledOrder]
+    await jest.advanceTimersByTimeAsync(60_000)
+
+    expect(controller.banners).toHaveLength(1)
+  })
+
+  it('stops once no order waits, e.g. the last one filled', async () => {
+    let orders = [makeOrder()]
+    const { controller, cowSwapApi, ui } = makeController(() => orders)
+    ui.views.push(popup)
+
+    await controller.updateOrders()
+    const callsPerRefresh = cowSwapApi.getAccountLimitOrders.mock.calls.length
+    orders = [filledOrder]
+    await jest.advanceTimersByTimeAsync(60_000)
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledTimes(callsPerRefresh * 2)
+
+    await jest.advanceTimersByTimeAsync(180_000)
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledTimes(callsPerRefresh * 2)
+  })
+
+  it('does not refresh orders that are all finished', async () => {
+    const { controller, cowSwapApi, ui } = makeController(() => [filledOrder])
+    ui.views.push(popup)
+
+    await controller.updateOrders()
+    const callsPerRefresh = cowSwapApi.getAccountLimitOrders.mock.calls.length
+    await jest.advanceTimersByTimeAsync(180_000)
+
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledTimes(callsPerRefresh)
+  })
+
+  it('refreshes only while a wallet screen is open', async () => {
+    const { controller, cowSwapApi, ui } = makeController(() => [makeOrder()])
+
+    await controller.updateOrders()
+    const callsPerRefresh = cowSwapApi.getAccountLimitOrders.mock.calls.length
+    await jest.advanceTimersByTimeAsync(180_000)
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledTimes(callsPerRefresh)
+
+    ui.views.push(popup)
+    emitViewEvent(ui, 'addView', popup)
+    await jest.advanceTimersByTimeAsync(60_000)
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledTimes(callsPerRefresh * 2)
+
+    ui.views.splice(0)
+    emitViewEvent(ui, 'removeView', popup)
+    await jest.advanceTimersByTimeAsync(180_000)
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledTimes(callsPerRefresh * 2)
+  })
+
+  it('stops when the user switches to another account', async () => {
+    const { controller, cowSwapApi, ui, selectedAccount } = makeController(() => [makeOrder()])
+    ui.views.push(popup)
+
+    await controller.updateOrders()
+    const callsPerRefresh = cowSwapApi.getAccountLimitOrders.mock.calls.length
+
+    selectedAccount.account = { addr: '0x0000000000000000000000000000000000000002' }
+    const [[onSelectedAccountUpdate]] = selectedAccount.onUpdate.mock.calls as [[() => void]]
+    onSelectedAccountUpdate()
+    await jest.advanceTimersByTimeAsync(180_000)
+
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledTimes(callsPerRefresh)
+  })
+
+  it('stops after My orders closes when no order waits', async () => {
+    const { controller, cowSwapApi, ui } = makeController(() => [filledOrder])
+    ui.views.push(popup)
+
+    await controller.initOrders('my-orders')
+    await jest.advanceTimersByTimeAsync(0)
+    const callsAfterOpening = cowSwapApi.getAccountLimitOrders.mock.calls.length
+    expect(callsAfterOpening).toBeGreaterThan(0)
+
+    controller.unloadOrders('my-orders')
+    await jest.advanceTimersByTimeAsync(180_000)
+
+    expect(cowSwapApi.getAccountLimitOrders).toHaveBeenCalledTimes(callsAfterOpening)
   })
 })
 
@@ -600,7 +737,7 @@ const makeSafeController = (
     providers: { providers: { '1': { call: providerCall }, '8453': { call: providerCall } } },
     featureFlags: { isFeatureEnabled: () => false },
     portfolio: { getAccountPortfolioState: () => ({}) },
-    ui: { uiEvent: { on: jest.fn() } },
+    ui: { uiEvent: { on: jest.fn() }, views: [] },
     cowSwapApi,
     relayerUrl: '',
     storage: makeStorage(),
@@ -980,7 +1117,8 @@ describe('LimitOrdersController form in a popup that closes', () => {
         on: jest.fn((event: string, handler: (view: any) => void) => {
           viewHandlers[event] = handler
         })
-      }
+      },
+      views: []
     }
     const controller = new LimitOrdersController({
       selectedAccount: {
@@ -1098,7 +1236,7 @@ describe('LimitOrdersController orders that cannot fill', () => {
       selectedAccount,
       networks: { networks: [{ chainId: 1n, name: 'Ethereum', nativeAssetSymbol: 'ETH' }] },
       providers: { providers: { '1': { call } } },
-      ui: { uiEvent: { on: jest.fn() } },
+      ui: { uiEvent: { on: jest.fn() }, views: [] },
       cowSwapApi: {
         getAccountLimitOrders,
         getToken: jest.fn(async ({ address, chainId }: { address: string; chainId: number }) => {

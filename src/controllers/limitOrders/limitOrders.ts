@@ -141,6 +141,20 @@ const FILL_ISSUES_MAX_AGE = 60 * 1000
 /** How often My orders is refreshed while it's open */
 const ORDERS_UPDATE_INTERVAL = 30 * 1000
 
+/**
+ * How often the selected account's orders are refreshed while some of them wait to fill and a
+ * wallet screen is open, so a fill shows up soon, e.g. as the dashboard's banner
+ */
+const WAITING_ORDERS_UPDATE_INTERVAL = 60 * 1000
+
+/** The statuses of the orders that can change without the user, e.g. fill or get confirmed */
+const WAITING_ORDER_STATUSES: LimitOrderStatus[] = [
+  'placing',
+  'open',
+  'partiallyFilled',
+  'cancelling'
+]
+
 /** How long to wait for the user to stop typing before asking for today's price */
 const MARKET_QUOTE_DEBOUNCE_MS = 400
 
@@ -292,7 +306,10 @@ export class LimitOrdersController extends EventEmitter {
 
   #updateMarketQuoteInterval: RecurringTimeout
 
+  /** Refreshes the orders while needed, see `#getOrdersUpdateTimeout` */
   #updateOrdersInterval: RecurringTimeout
+
+  #ui: IUiController
 
   /** The orders of `ordersAccountAddr` as CoW Swap returned them, per network */
   #accountOrders = new Map<number, CowSwapAccountOrder[]>()
@@ -542,6 +559,7 @@ export class LimitOrdersController extends EventEmitter {
     this.#requestSignatureInWindow = requestSignatureInWindow
     this.#portfolioUpdate = portfolioUpdate
     this.#storage = storage
+    this.#ui = ui
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
     })
@@ -566,9 +584,12 @@ export class LimitOrdersController extends EventEmitter {
       }
       this.#onViewLeftTradeRoutes(view.id)
     })
-    ui.uiEvent.on('removeView', (view: View) =>
+    ui.uiEvent.on('removeView', (view: View) => {
       this.#onViewLeftTradeRoutes(view.id, { isClosedPopup: view.type === 'popup' })
-    )
+      // Waiting orders are refreshed only while a wallet screen is open
+      this.#syncOrdersUpdates()
+    })
+    ui.uiEvent.on('addView', () => this.#syncOrdersUpdates())
   }
 
   async #load() {
@@ -2256,16 +2277,53 @@ export class LimitOrdersController extends EventEmitter {
       this.#clearOrders()
     }
     this.emitUpdate()
-    this.#updateOrdersInterval.restart({ runImmediately: true })
+    this.#updateOrdersInterval.restart({ runImmediately: true, timeout: ORDERS_UPDATE_INTERVAL })
   }
 
   unloadOrders(sessionId: string) {
     this.ordersSessionIds = this.ordersSessionIds.filter((id) => id !== sessionId)
-    if (!this.ordersSessionIds.length) this.#updateOrdersInterval.stop()
+    // Slows down to the waiting orders' refresh, or stops
+    this.#syncOrdersUpdates()
+  }
+
+  /**
+   * How often the orders should be refreshed now: every 30 seconds while My orders is open, every
+   * minute while the selected account has orders waiting and a wallet screen is open (so a fill
+   * shows up on the dashboard). Null when nothing needs them, so CoW Swap isn't asked for nothing
+   */
+  #getOrdersUpdateTimeout(): number | null {
+    if (this.ordersSessionIds.length) return ORDERS_UPDATE_INTERVAL
+    if (!this.#ui.views.length) return null
+
+    const accountAddr = this.#selectedAccount.account?.addr
+    // The orders of the previous account, until the selected one's load
+    if (!accountAddr || this.ordersAccountAddr !== accountAddr) return null
+
+    const hasWaitingOrders = this.orders.some((order) =>
+      WAITING_ORDER_STATUSES.includes(order.status)
+    )
+
+    return hasWaitingOrders ? WAITING_ORDERS_UPDATE_INTERVAL : null
+  }
+
+  /** Starts, speeds up, slows down or stops refreshing the orders, see `#getOrdersUpdateTimeout` */
+  #syncOrdersUpdates() {
+    const timeout = this.#getOrdersUpdateTimeout()
+    if (timeout === null) {
+      this.#updateOrdersInterval.stop()
+      return
+    }
+
+    // Applies from the next refresh on
+    if (this.#updateOrdersInterval.currentTimeout !== timeout) {
+      this.#updateOrdersInterval.updateTimeout({ timeout })
+    }
+    // Not right away, as the orders were just loaded or the screen that opened loads them
+    if (!this.#updateOrdersInterval.running) this.#updateOrdersInterval.start({ timeout })
   }
 
   async #continuouslyUpdateOrders() {
-    if (!this.ordersSessionIds.length) {
+    if (this.#getOrdersUpdateTimeout() === null) {
       this.#updateOrdersInterval.stop()
       return
     }
@@ -2275,7 +2333,8 @@ export class LimitOrdersController extends EventEmitter {
 
   /**
    * Refreshes My orders. Not wrapped in `withStatus`, which would turn away placing or
-   * cancelling an order while it runs, as it does every 30 seconds
+   * cancelling an order while it runs, as it runs every 30 seconds while My orders is open and
+   * every minute while orders wait (see `#getOrdersUpdateTimeout`)
    */
   async updateOrders(): Promise<void> {
     if (this.#ordersUpdate) {
@@ -2635,6 +2694,7 @@ export class LimitOrdersController extends EventEmitter {
     this.ordersAccountAddr = this.#selectedAccount.account?.addr ?? null
     this.ordersError = null
     this.ordersUpdatedAt = null
+    this.#syncOrdersUpdates()
   }
 
   /**
@@ -2925,6 +2985,8 @@ export class LimitOrdersController extends EventEmitter {
     })
 
     this.orders = orders.sort((a, b) => b.createdAt - a.createdAt)
+    // Orders started or stopped waiting, e.g. one was placed or the last one filled
+    this.#syncOrdersUpdates()
   }
 
   /* -------------------------------- Reset -------------------------------- */
