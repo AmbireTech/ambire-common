@@ -748,6 +748,7 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       keystore: this.keystore,
       accounts: this.accounts,
+      accountPicker: this.accountPicker,
       networks: this.networks,
       addressBook: this.addressBook,
       featureFlags: this.featureFlags,
@@ -1058,6 +1059,15 @@ export class MainController extends EventEmitter implements IMainController {
 
   lock() {
     this.keystore.lock()
+    // A prepared flow holds its keys (and a sync's recovery phrases) unencrypted until added,
+    // so it ends with the lock. After unlocking, the personalize step has nothing to add.
+    this.accountPicker.reset().catch((error) => {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to reset the account picker on lock',
+        error
+      })
+    })
     void this.ui.syncViewRoutes()
     this.emailVault?.cleanMagicAndSessionKeys()
     this.selectedAccount.setDashboardNetworkFilter(null)
@@ -1379,13 +1389,17 @@ export class MainController extends EventEmitter implements IMainController {
   async #onAccountPickerSuccess({
     accounts,
     keys,
+    seeds,
     accountsToRemove,
     hdPathTemplate
   }: PreparedAccounts) {
     if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator))
       await this.keystore.persistTempSeed()
 
-    let internalKeys = keys.internal
+    // A sync's keys point to the recovery phrases it brought, so those are stored first
+    let internalKeys = seeds.length
+      ? await this.keystore.addSyncedSeeds(seeds, keys.internal)
+      : keys.internal
     const storedSeed = await this.keystore.getKeystoreSeed(this.accountPicker.keyIterator)
     if (storedSeed) {
       await this.keystore.updateSeed({ id: storedSeed.id, hdPathTemplate })

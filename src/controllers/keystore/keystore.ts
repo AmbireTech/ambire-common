@@ -64,7 +64,8 @@ import {
   ReadyToAddKeys,
   SigningAuthResult,
   StoredKey,
-  StoredKeystoreSeed
+  StoredKeystoreSeed,
+  SyncedSeed
 } from '../../interfaces/keystore'
 import { Platform } from '../../interfaces/platform'
 import { PrivacyProviderId } from '../../interfaces/privateAccount'
@@ -341,6 +342,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   get hasTempSeed() {
     return !!this.#tempSeed
+  }
+
+  /** Whether the temp seed is a phrase the wallet generated (not one the user entered) */
+  get isTempSeedNew() {
+    return !!this.#tempSeed?.notBackedUp
   }
 
   get isReadyToStoreKeys() {
@@ -1800,19 +1806,24 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Takes over the keys and seeds exported by another Ambire product. The password of
-   * that other device unwraps its main key, which is used only to decrypt the synced
-   * data in memory - everything is then re-encrypted with this device's main key.
+   * Decrypts the keys and seeds exported by another Ambire product. The password of that
+   * other device unwraps its main key, which is used only to decrypt the synced data in
+   * memory. Nothing is stored here: the account picker holds what this returns until the
+   * user adds the synced accounts, which stores it with this device's main key (see
+   * `addSyncedSeeds`). The synced keys' `fromSeedId` point to the returned seeds' ids.
    *
    * Intentionally not wrapped in `withStatus` and lets errors propagate, because the
-   * MainController orchestrates the whole migration (and must not add the accounts if
+   * AppDataSyncController orchestrates the whole sync (and must not prepare the accounts if
    * this fails).
    *
    * The password is required even without anything encrypted in the payload (hardware
    * wallet keys only, or no keys at all), as unwrapping the main key is how the user
    * confirms the sync came from their other device.
    */
-  async importFromSync(payload: AppDataSyncPayload, password: string) {
+  async decryptSyncPayload(
+    payload: AppDataSyncPayload,
+    password: string
+  ): Promise<{ keys: ReadyToAddKeys; seeds: SyncedSeed[] }> {
     await this.initialLoadPromise
 
     const { secret, keys, seeds } = payload
@@ -1825,15 +1836,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     const exportedMainKey = await this.#unwrapSyncedMainKey(secretKey, secret.aesEncrypted)
 
     try {
-      // Seeds first, so the keys below can be linked to the seed they were derived from
-      const syncedSeedIds: { [exportedSeedId: string]: StoredKeystoreSeed['id'] } = {}
+      const syncedSeeds: SyncedSeed[] = []
       for (const seed of seeds) {
         const { seed: decryptedSeed, seedPassphrase } = await decryptStoredSeed(
           exportedMainKey,
           seed
         )
 
-        syncedSeedIds[seed.id] = await this.#storeSyncedSeed({
+        syncedSeeds.push({
           id: seed.id,
           seed: decryptedSeed,
           seedPassphrase,
@@ -1842,12 +1852,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
           // A passphrase that isn't saved doesn't travel, so its fingerprint comes instead
           passphraseFingerprint: seed.passphraseFingerprint,
           passphraseLabel: seed.passphraseLabel,
-          isSynced: true,
           hdPathTemplate: seed.hdPathTemplate,
           notBackedUp: seed.notBackedUp
         })
       }
 
+      const syncedSeedIds = new Set(seeds.map(({ id }) => id))
       const internalKeys: ReadyToAddKeys['internal'] = []
       const externalKeys: ReadyToAddKeys['external'] = []
 
@@ -1858,8 +1868,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         }
 
         const { fromSeedId, ...restMeta } = key.meta
-        // Drop the reference if the seed didn't come along, so it doesn't dangle
-        const syncedFromSeedId = fromSeedId ? syncedSeedIds[fromSeedId] : undefined
 
         internalKeys.push({
           addr: key.addr,
@@ -1867,22 +1875,43 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
           label: key.label,
           dedicatedToOneSA: key.dedicatedToOneSA,
           privateKey: hexlify(await decryptWithKey(exportedMainKey, key.privKey)),
-          meta: syncedFromSeedId ? { ...restMeta, fromSeedId: syncedFromSeedId } : restMeta
+          // Drop the reference if the seed didn't come along, so it doesn't dangle
+          meta: fromSeedId && syncedSeedIds.has(fromSeedId) ? { ...restMeta, fromSeedId } : restMeta
         })
       }
 
-      // Both queue themselves until the keystore is ready to store keys, which is what
-      // makes syncing before the device password is set (onboarding) work
-      await this.#addKeys(internalKeys)
-      await this.#addKeysExternallyStored(externalKeys)
+      return { keys: { internal: internalKeys, external: externalKeys }, seeds: syncedSeeds }
     } finally {
-      // Everything is re-encrypted with this device's main key by now, so the key derived
-      // from the other device's password is of no further use and gets wiped. Its main key
-      // itself is a non-extractable handle that goes out of scope with this method, so
-      // there are no bytes of it left to wipe
+      // Everything is decrypted by now, so the key derived from the other device's password
+      // is of no further use and gets wiped. Its main key itself is a non-extractable handle
+      // that goes out of scope with this method, so there are no bytes of it left to wipe
       secretKey.fill(0)
-      this.emitUpdate()
     }
+  }
+
+  /**
+   * Stores the seeds a sync brought (see `decryptSyncPayload`) and returns the synced keys
+   * linked to the ids the seeds are stored with, which differ from the other device's ones
+   * when this device has a phrase already. Called before the keys are added, so the keys
+   * can be linked to the seed they were derived from.
+   */
+  async addSyncedSeeds(
+    seeds: SyncedSeed[],
+    internalKeys: ReadyToAddKeys['internal']
+  ): Promise<ReadyToAddKeys['internal']> {
+    await this.initialLoadPromise
+
+    const storedSeedIds: { [syncedSeedId: string]: StoredKeystoreSeed['id'] } = {}
+    for (const seed of seeds) {
+      storedSeedIds[seed.id] = await this.#storeSyncedSeed({ ...seed, isSynced: true })
+    }
+    this.emitUpdate()
+
+    return internalKeys.map((key) => {
+      const storedSeedId = key.meta.fromSeedId ? storedSeedIds[key.meta.fromSeedId] : undefined
+
+      return storedSeedId ? { ...key, meta: { ...key.meta, fromSeedId: storedSeedId } } : key
+    })
   }
 
   /**
