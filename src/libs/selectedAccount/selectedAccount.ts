@@ -3,6 +3,7 @@ import {
   SelectedAccountPortfolioState
 } from '../../interfaces/selectedAccount'
 import { AccountState, InternalPortfolioChain, NetworkState } from '../portfolio/interfaces'
+import { addPendingDeliveryAmounts, PendingDeliveries } from '../swapAndBridge/pendingDeliveries'
 import PortfolioViewBuilder from './portfolioView'
 
 export const isInternalChain = (chainId: InternalPortfolioChain | string) => {
@@ -24,7 +25,10 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
       return
     }
 
-    // A trick to exclude specific keys
+    // A trick to exclude specific keys: these are large and the UI reads them from elsewhere
+    // (the tokens and collections are built separately) or never, so they are left out of
+    // the state that is sent to it on every update.
+    /* eslint-disable @typescript-eslint/no-unused-vars */
     const {
       tokens,
       collections,
@@ -32,10 +36,10 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
       collectionErrors,
       toBeLearned,
       lastExternalApiUpdateData,
-      tokenDataCache,
       defiPositions,
       ...result
     } = networkState.result
+    /* eslint-enable @typescript-eslint/no-unused-vars */
 
     strippedState[chainId] = {
       ...networkState,
@@ -79,17 +83,20 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
 }
 
 /**
- * Calculates the selected account portfolio that is used by the UI
+ * Calculates the selected account portfolio that is used by the UI. The tokens that in-progress
+ * swaps and bridges will still move get their `pendingDeliveryAmount` from `pendingDeliveries`.
+ * Always returns a new object, so the caller can add fields to it.
  */
 export function calculateSelectedAccountPortfolio(
   portfolioState: AccountState,
   shouldShowPartialResult: boolean,
-  isManualUpdate: boolean
+  isManualUpdate: boolean,
+  pendingDeliveries: PendingDeliveries = {}
 ): SelectedAccountPortfolio {
   const strippedPortfolioState = stripPortfolioState(portfolioState)
 
   if (Object.keys(portfolioState).length === 0) {
-    return DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+    return { ...DEFAULT_SELECTED_ACCOUNT_PORTFOLIO }
   }
 
   const portfolioViewBuilder = new PortfolioViewBuilder()
@@ -98,5 +105,7 @@ export function calculateSelectedAccountPortfolio(
     portfolioViewBuilder.addNetworkData(chainId, networkData, isManualUpdate)
   })
 
-  return portfolioViewBuilder.build(shouldShowPartialResult, strippedPortfolioState)
+  const portfolio = portfolioViewBuilder.build(shouldShowPartialResult, strippedPortfolioState)
+
+  return { ...portfolio, tokens: addPendingDeliveryAmounts(portfolio.tokens, pendingDeliveries) }
 }

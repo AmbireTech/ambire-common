@@ -40,6 +40,7 @@ import { uniswapHumanizer } from './modules/Uniswap'
 import privacyPoolsModule from './modules/PrivacyPools'
 import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
+import { withLowerCaseCallData } from './utils'
 
 // The modules that describe a single call. Kept separate only to compose `humanizerCallModules`
 // below - every caller runs the whole pipeline through `humanizeCallWithModules`.
@@ -103,12 +104,17 @@ export const humanizerCallModules: HumanizerCallModule[] = [
  * described by exactly the same modules, in the same order, as a top-level one.
  */
 export const humanizeCallWithModules = (accountOp: AccountOp, call: IrCall): IrCall =>
-  humanizerCallModules.reduce<IrCall>((currentCall, humanizeWithModule) => {
-    try {
-      return humanizeWithModule(accountOp, currentCall, humanizerInfo as HumanizerMeta)
-    } catch (error) {
-      console.error(error)
-      // No action is needed here; we only update `currentCall` if the module successfully resolves it.
-      return currentCall
-    }
-  }, call)
+  humanizerCallModules.reduce<IrCall>(
+    (currentCall, humanizeWithModule) => {
+      try {
+        return humanizeWithModule(accountOp, currentCall, humanizerInfo as HumanizerMeta)
+      } catch (error) {
+        console.error(error)
+        // No action is needed here; we only update `currentCall` if the module successfully resolves it.
+        return currentCall
+      }
+    },
+    // every module matches selectors against lower-case hex, so the calldata is normalized once
+    // here instead of in each of them
+    withLowerCaseCallData(call)
+  )

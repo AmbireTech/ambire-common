@@ -8,6 +8,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { USER_FEATURE_FLAGS } from '../../consts/featureFlags'
 import {
+  APP_DATA_SYNC_PAYLOAD_VERSION,
   AppDataSyncExportOptions,
   parseAppDataSyncPayload,
   serializeAppDataSyncPayload
@@ -369,7 +370,7 @@ describe('AppDataSyncController', () => {
       const importingDevice = await makeImportingDevice({ withPassword: true })
 
       await importingDevice.appDataSync.importData({
-        payload: serializeAppDataSyncPayload({ v: 3 } as any),
+        payload: serializeAppDataSyncPayload({ v: APP_DATA_SYNC_PAYLOAD_VERSION + 1 } as any),
         password: IMPORTING_PASS
       })
 

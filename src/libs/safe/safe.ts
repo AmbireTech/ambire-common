@@ -2,8 +2,11 @@ import {
   AbiCoder,
   concat,
   Contract,
+  dataSlice,
   getAddress,
+  getBytes,
   getCreate2Address,
+  hashMessage,
   hexlify,
   id,
   Interface,
@@ -11,8 +14,10 @@ import {
   keccak256,
   recoverAddress,
   toBeHex,
+  toBigInt,
   toUtf8Bytes,
   TransactionResponse,
+  ZeroAddress,
   zeroPadValue
 } from 'ethers'
 
@@ -20,24 +25,26 @@ import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 import SafeApiKit from '@safe-global/api-kit'
 
 import SafeAbi from '../../../contracts/compiled/Safe.json'
-import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
+import { SAFE_API_TIMEOUT_MS, SAFE_SENTINEL_OWNER, SAFE_V1_4_1 } from '../../consts/safe'
 import { Account, SafeAccountCreation } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Key } from '../../interfaces/keystore'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeAccountByOwner, SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
+import isSameAddr from '../../utils/isSameAddr'
 import { paginate } from '../../utils/paginate'
 import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
+import { getDefaultAccountPreferences } from '../account/account'
 import { Call } from '../accountOp/types'
-import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
 import {
-  decodeMultiSend,
-  multiCallAbi,
-  parseSafeMessageOrigin,
-  SuccessfullyDecoded
-} from './helpers'
+  adaptTypedMessageForMetaMaskSigUtil,
+  getEIP712Hash,
+  getSafeMessageTypedData,
+  getSafeTxTypedData
+} from '../signMessage/signMessage'
+import { getSafeTxCalls, parseSafeMessageOrigin, toSafeTx } from './helpers'
 
 import type {
   AddMessageOptions,
@@ -170,13 +177,25 @@ export async function getCalculatedSafeAddress(
   )
 }
 
+/**
+ * Derives the CREATE2 address a SafeProxyFactory deploys a Safe proxy to,
+ * the same way its createProxyWithNonce does.
+ */
+export function getSafeProxyAddress(creation: SafeAccountCreation, proxyCreationCode: Hex): Hex {
+  const salt = keccak256(
+    concat([keccak256(creation.setupData), zeroPadValue(creation.saltNonce, 32)])
+  )
+  const bytecode = concat([
+    proxyCreationCode,
+    new AbiCoder().encode(['address'], [creation.singleton])
+  ]) as Hex
+  return getCreate2Address(creation.factoryAddr, salt, keccak256(bytecode)) as Hex
+}
+
 async function getCalculatedSafeAddressFromCreation(
   creation: SafeAccountCreation,
   provider: RPCProvider
 ): Promise<Hex | null> {
-  const salt = keccak256(
-    concat([keccak256(creation.setupData), zeroPadValue(creation.saltNonce, 32)])
-  )
   const factoryAbi = ['function proxyCreationCode() view returns (bytes)']
   const factory = new Contract(creation.factoryAddr, factoryAbi, provider)
   let proxyCreationCode
@@ -189,12 +208,83 @@ async function getCalculatedSafeAddressFromCreation(
     )
     return null
   }
-  const abiCoder = new AbiCoder()
-  const bytecode = concat([
-    proxyCreationCode,
-    abiCoder.encode(['address'], [creation.singleton])
-  ]) as Hex
-  return getCreate2Address(creation.factoryAddr, salt, keccak256(bytecode)) as Hex
+  return getSafeProxyAddress(creation, proxyCreationCode)
+}
+
+const safeSetupInterface = new Interface([
+  'function setup(address[] calldata _owners,uint256 _threshold,address to,bytes calldata data,address fallbackHandler,address paymentToken,uint256 payment,address payable paymentReceiver)'
+])
+
+/**
+ * Whether Safe accepts the address as an owner. Its `setup` reverts for the zero address and
+ * the sentinel address, so a Safe with either one as an owner could never be activated.
+ */
+export function isAllowedSafeOwner(owner: string): boolean {
+  const normalizedOwner = owner.toLowerCase()
+
+  return normalizedOwner !== ZeroAddress && normalizedOwner !== SAFE_SENTINEL_OWNER
+}
+
+/**
+ * Builds the creation data of a new Safe v1.4.1 account with the given owners and threshold.
+ * The salt nonce is always zero, so the same owners (in the same order) and threshold
+ * always result in the same Safe address.
+ */
+export function getNewSafeCreation(owners: Hex[], threshold: number): SafeAccountCreation {
+  if (!owners.length) throw new Error('A Safe account needs at least one owner.')
+  if (new Set(owners.map((owner) => owner.toLowerCase())).size !== owners.length) {
+    throw new Error('Each Safe account owner can be added only once.')
+  }
+  if (!owners.every(isAllowedSafeOwner)) {
+    throw new Error('This address cannot be an owner of a Safe account.')
+  }
+  if (!Number.isInteger(threshold) || threshold < 1 || threshold > owners.length) {
+    throw new Error(
+      'The number of required confirmations must be between one and the number of owners.'
+    )
+  }
+
+  return {
+    factoryAddr: SAFE_V1_4_1.proxyFactory,
+    singleton: SAFE_V1_4_1.singletonL2,
+    setupData: safeSetupInterface.encodeFunctionData('setup', [
+      owners.map((owner) => getAddress(owner)),
+      threshold,
+      // no delegate call during setup
+      ZeroAddress,
+      '0x',
+      SAFE_V1_4_1.compatibilityFallbackHandler,
+      // no deployment payment
+      ZeroAddress,
+      0,
+      ZeroAddress
+    ]) as Hex,
+    saltNonce: toBeHex(0, 32) as Hex
+  }
+}
+
+/**
+ * Builds a new, not yet deployed Safe v1.4.1 account with the given owners and threshold.
+ * Its address is the counterfactual address the Safe will be deployed to. The accounts
+ * already in the wallet are used to give it the next default label.
+ */
+export function getNewSafeAccount(
+  owners: Hex[],
+  threshold: number,
+  prevAccounts: Account[]
+): Account {
+  const safeCreation = getNewSafeCreation(owners, threshold)
+  const addr = getAddress(getSafeProxyAddress(safeCreation, SAFE_V1_4_1.proxyCreationCode))
+  const associatedKeys = owners.map((owner) => getAddress(owner))
+
+  return {
+    addr,
+    associatedKeys,
+    initialPrivileges: associatedKeys.map((owner) => [owner, '0x01']),
+    creation: null,
+    safeCreation,
+    preferences: getDefaultAccountPreferences(addr, prevAccounts)
+  }
 }
 
 const safeProxyFactoryInterface = new Interface([
@@ -403,8 +493,26 @@ export async function isSafeContract(safeAddr: string, provider: RPCProvider): P
 }
 
 /**
+ * The fallback handler a Safe is set up with, or null when it has none. Also null when the setup
+ * data isn't a `setup` call this code can read (e.g. of a Safe older than v1.1.1), as there is
+ * nothing to check then.
+ */
+function getSetupFallbackHandler(setupData: Hex): Hex | null {
+  let decodedSetup
+  try {
+    decodedSetup = safeSetupInterface.decodeFunctionData('setup', setupData)
+  } catch (error) {
+    console.warn('the Safe setup data has no readable fallback handler', error)
+    return null
+  }
+
+  const fallbackHandler = getAddress(decodedSetup.fallbackHandler)
+  return fallbackHandler === ZeroAddress ? null : (fallbackHandler as Hex)
+}
+
+/**
  * Builds a Safe deployment call only when the stored creation data derives the imported address
- * and the configured singleton is deployed on the target network.
+ * and the configured singleton and fallback handler are deployed on the target network.
  */
 export async function getSafeDeploymentCall(
   account: Account,
@@ -421,8 +529,15 @@ export async function getSafeDeploymentCall(
       return null
     }
 
-    const singletonCode = await provider.getCode(account.safeCreation.singleton)
+    const fallbackHandler = getSetupFallbackHandler(account.safeCreation.setupData)
+    const [singletonCode, fallbackHandlerCode] = await Promise.all([
+      provider.getCode(account.safeCreation.singleton),
+      fallbackHandler ? provider.getCode(fallbackHandler) : null
+    ])
     if (singletonCode === '0x') return null
+    // Without its fallback handler the Safe would still be deployed, but it couldn't confirm
+    // the messages its owners sign (EIP-1271) on this network, so it isn't activated here either
+    if (fallbackHandlerCode === '0x') return null
 
     return {
       to: account.safeCreation.factoryAddr,
@@ -694,25 +809,9 @@ export function toCallsUserRequest(
   Object.keys(response).forEach((chainId: string) => {
     const txns = response[chainId]!.txns
     txns.forEach((txn) => {
-      let calls: CallsUserRequest['signAccountOp']['accountOp']['calls'] = []
-      try {
-        // try to decode the data to check if it's a batch
-        // if it is, use it; otherwise, construct a single call reqx
-        const multisendInterface = new Interface(multiCallAbi)
-        const multiSendCall = multisendInterface.decodeFunctionData('multiSend', txn.data!)
-        const decodedCalls = decodeMultiSend(multiSendCall[0])
-        if (!decodedCalls.every((call): call is SuccessfullyDecoded => call.success)) {
-          throw new Error('failed to decode one or more multiSend calls')
-        }
-        calls = decodedCalls.map((call) => ({
-          to: call.to,
-          value: call.value,
-          data: call.data
-        }))
-      } catch {
-        // this just means it's not a batch
-        calls = [{ to: txn.to, value: BigInt(txn.value), data: txn.data || '0x' }]
-      }
+      // A batch is shown as its calls only if they are exactly what gets signed,
+      // otherwise the txn is shown as it will be sent
+      const calls: CallsUserRequest['signAccountOp']['accountOp']['calls'] = getSafeTxCalls(txn)
 
       const signature = txn.confirmations
         ? sortSigs(
@@ -793,10 +892,7 @@ export function toSigMessageUserRequests(response: SafeResults): {
         params: {
           chainId: BigInt(chainId),
           signed: message.confirmations.map((confirm) => confirm.owner),
-          message:
-            typeof message.message === 'string'
-              ? (hexlify(toUtf8Bytes(message.message)) as Hex)
-              : message.message,
+          message: toSafeMessageToSign(message.message),
           messageHash: message.messageHash as Hex,
           signature: sortSigs(
             message.confirmations.map((c) => c.signature) as Hex[],
@@ -823,14 +919,326 @@ function getOwnerFromSafeTx(
   return confirmations?.find((c) => c.signature === sig)?.owner
 }
 
+/** The `v` of an approved hash signature, see getSafeApprovedHashSignature */
+const SAFE_APPROVED_HASH_SIGNATURE_V = 1
+
+/**
+ * The signature of an owner that approved the Safe transaction hash onchain, with
+ * `approveHash`, instead of signing it: {owner as r}{empty s}{v = 1}.
+ * The Safe accepts it if `approvedHashes(owner, safeTxHash)` is set when it executes
+ */
+export function getSafeApprovedHashSignature(owner: string): Hex {
+  return concat([
+    zeroPadValue(getAddress(owner), 32),
+    zeroPadValue('0x', 32),
+    toBeHex(SAFE_APPROVED_HASH_SIGNATURE_V, 1)
+  ]) as Hex
+}
+
+const isSafeApprovedHashSignature = (sig: string): boolean =>
+  getBytes(sig)[64] === SAFE_APPROVED_HASH_SIGNATURE_V
+
+const safeInterface = new Interface(SafeAbi)
+
+/** The call that approves a Safe transaction hash onchain on behalf of the caller (an owner) */
+export function getSafeApproveHashCall(safeAddr: string, safeTxHash: string): Call {
+  return {
+    to: getAddress(safeAddr),
+    value: 0n,
+    data: safeInterface.encodeFunctionData('approveHash', [safeTxHash]) as Hex
+  }
+}
+
+/** Whether the owner has approved the Safe transaction hash onchain, see getSafeApproveHashCall */
+export async function isSafeHashApproved(
+  safeAddr: string,
+  owner: string,
+  safeTxHash: string,
+  provider: RPCProvider
+): Promise<boolean> {
+  const safe = new Contract(safeAddr, SafeAbi, provider) as any
+  const approved: bigint = await safe.approvedHashes(owner, safeTxHash)
+  return approved !== 0n
+}
+
+/** An owner's signature of a Safe transaction or message, from the Safe Transaction Service */
+type SafeConfirmation = { owner: string; signature: string }
+
+/** The `v` of a contract (EIP-1271) owner signature */
+const SAFE_CONTRACT_SIGNATURE_V = 0
+
+/** The `v` values of an ECDSA signature of the EIP-712 Safe transaction hash */
+const SAFE_EIP712_SIGNATURE_V_VALUES = [27, 28]
+
+/**
+ * The Safe adds 4 to the `v` of an `eth_sign` signature (one of the Safe transaction hash
+ * as a message), to tell it apart from an EIP-712 one
+ */
+const SAFE_ETH_SIGN_V_OFFSET = 4
+
+const SAFE_SIGNATURE_LENGTH = 65
+
+/** The owner a contract or approved hash signature is for, which it carries in `r` */
+const getOwnerInSignature = (sig: string) => getAddress(dataSlice(sig, 12, 32))
+
+/**
+ * The parts of a contract (EIP-1271) owner signature from the Safe Transaction Service: the owner
+ * it's for, in `r`, and the signature the owner contract checks, which the offset in `s` points
+ * to, after the first 65 bytes (its length, then its bytes). Null if it isn't a contract
+ * signature with that part, or the part doesn't fit in it
+ */
+function parseSafeContractSignature(sig: string): { owner: string; contractSignature: Hex } | null {
+  const bytes = getBytes(sig)
+  if (bytes.length <= SAFE_SIGNATURE_LENGTH) return null
+  if (bytes[SAFE_SIGNATURE_LENGTH - 1] !== SAFE_CONTRACT_SIGNATURE_V) return null
+
+  const offset = toBigInt(bytes.slice(32, 64))
+  if (offset < BigInt(SAFE_SIGNATURE_LENGTH) || offset + 32n > BigInt(bytes.length)) return null
+
+  const start = Number(offset) + 32
+  const end = BigInt(start) + toBigInt(bytes.slice(start - 32, start))
+  if (end > BigInt(bytes.length)) return null
+
+  return {
+    owner: getOwnerInSignature(sig),
+    contractSignature: hexlify(bytes.slice(start, Number(end))) as Hex
+  }
+}
+
+/**
+ * Joins the owners' signatures, already sorted by owner, into the one signature the Safe checks.
+ * Each signature takes 65 bytes in order. A contract signature with more than its 65 bytes (see
+ * parseSafeContractSignature) has the rest added after all of them, and its offset in `s` set to
+ * where that rest starts. Without such a contract signature, or with anything that is neither
+ * one nor a 65-byte signature, the signatures are put one after the other as they are, as before
+ * contract signatures were joined
+ */
+function joinSafeSignatures(sortedSigs: string[]): Hex {
+  const contractSigs = sortedSigs.map(parseSafeContractSignature)
+  const hasContractSig = contractSigs.some((contractSig) => !!contractSig)
+  const canBeJoined = sortedSigs.every(
+    (sig, i) => !!contractSigs[i] || getBytes(sig).length === SAFE_SIGNATURE_LENGTH
+  )
+  if (!hasContractSig || !canBeJoined) return concat(sortedSigs) as Hex
+
+  const staticPartsLength = sortedSigs.length * SAFE_SIGNATURE_LENGTH
+  const staticParts: string[] = []
+  const dynamicParts: string[] = []
+  let dynamicPartsLength = 0
+
+  sortedSigs.forEach((sig, i) => {
+    const contractSig = contractSigs[i]
+    if (!contractSig) {
+      staticParts.push(sig)
+      return
+    }
+
+    staticParts.push(
+      concat([
+        zeroPadValue(contractSig.owner, 32),
+        toBeHex(staticPartsLength + dynamicPartsLength, 32),
+        toBeHex(SAFE_CONTRACT_SIGNATURE_V, 1)
+      ])
+    )
+    const dynamicPart = concat([
+      toBeHex(getBytes(contractSig.contractSignature).length, 32),
+      contractSig.contractSignature
+    ])
+    dynamicParts.push(dynamicPart)
+    dynamicPartsLength += getBytes(dynamicPart).length
+  })
+
+  return concat([...staticParts, ...dynamicParts]) as Hex
+}
+
+/** The checks a confirmation from the Safe Transaction Service has to pass, besides its signature */
+export type SafeConfirmationChecks = {
+  /**
+   * The Safe's owners (read onchain). A confirmation of anyone else doesn't count. When they
+   * aren't known, the confirmations are checked only against their signatures
+   */
+  owners?: string[]
+  /**
+   * Whether a contract (EIP-1271) signature with more than its 65 bytes counts. Only messages
+   * accept them: Safe transactions read signatures 65 bytes at a time (see getSigs)
+   */
+  acceptContractSignatures?: boolean
+}
+
+/** The signer of an ECDSA signature of the Safe transaction hash, made with EIP-712 or `eth_sign` */
+function recoverEcdsaSigner(sig: string, safeTxHash: string, v: number): string | null {
+  if (SAFE_EIP712_SIGNATURE_V_VALUES.includes(v)) return recoverAddress(safeTxHash, sig)
+
+  const ethSignV = v - SAFE_ETH_SIGN_V_OFFSET
+  if (!SAFE_EIP712_SIGNATURE_V_VALUES.includes(ethSignV)) return null
+
+  return recoverAddress(
+    hashMessage(getBytes(safeTxHash)),
+    concat([dataSlice(sig, 0, 64), toBeHex(ethSignV, 1)])
+  )
+}
+
+/**
+ * Whether the owner a confirmation from the Safe Transaction Service is attributed to really
+ * confirmed the Safe transaction. The app reads who signed from the confirmations (see
+ * recoverOwner), so each one is checked against its signature first:
+ * - it counts only if it's of one of the Safe's owners, when they're known
+ * - an approved hash signature counts only if the owner approved the hash onchain
+ * - an ECDSA signature counts only if it's signed by the owner
+ * - a contract signature counts if it's for the owner, the Safe checks it onchain (EIP-1271).
+ *   One with more than its 65 bytes counts only where they're accepted, if the owner is a contract
+ * Any other signature that isn't a single Safe signature is left out, as Safe transactions read
+ * signatures 65 bytes at a time (see getSigs)
+ */
+async function isSafeConfirmationVerified(
+  safeAddr: string,
+  safeTxHash: string,
+  { owner, signature }: SafeConfirmation,
+  provider: RPCProvider | undefined,
+  { owners, acceptContractSignatures }: SafeConfirmationChecks
+): Promise<boolean> {
+  if (owners && !owners.some((safeOwner) => isSameAddr(safeOwner, owner))) return false
+
+  const bytes = getBytes(signature)
+  if (bytes.length !== SAFE_SIGNATURE_LENGTH) {
+    if (!acceptContractSignatures || !provider) return false
+
+    const contractSignature = parseSafeContractSignature(signature)
+    if (!contractSignature || !isSameAddr(contractSignature.owner, owner)) return false
+
+    // The Safe checks a contract signature with the owner contract, which an address without
+    // code can't be. A stuck RPC must not hold up the fetch of the Safe's txns and messages
+    const code = await withTimeout(() => provider.getCode(owner), {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe: reading the code of a contract owner timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    })
+    return code !== '0x'
+  }
+
+  const v = bytes[SAFE_SIGNATURE_LENGTH - 1]!
+
+  if (v === SAFE_APPROVED_HASH_SIGNATURE_V) {
+    if (!provider || !isSameAddr(getOwnerInSignature(signature), owner)) return false
+
+    // A stuck RPC must not hold up the fetch of the Safe's txns and messages
+    return withTimeout(() => isSafeHashApproved(safeAddr, owner, safeTxHash, provider), {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe: checking an approved hash timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    })
+  }
+
+  if (v === SAFE_CONTRACT_SIGNATURE_V) return isSameAddr(getOwnerInSignature(signature), owner)
+
+  const signer = recoverEcdsaSigner(signature, safeTxHash, v)
+  return !!signer && isSameAddr(signer, owner)
+}
+
+/**
+ * The confirmations of a Safe transaction or message from the Safe Transaction Service whose
+ * owners really confirmed it (see isSafeConfirmationVerified). A confirmation that can't be
+ * checked, e.g. because the RPC fails or doesn't answer in time (see SAFE_API_TIMEOUT_MS), is
+ * left out, and gets checked again with the next fetch
+ *
+ * @param safeTxHash the Safe transaction hash, or the Safe message hash of a message
+ * @param checks the Safe's owners, and whether contract signatures count (see SafeConfirmationChecks)
+ */
+export async function getVerifiedSafeConfirmations<T extends SafeConfirmation>(
+  safeAddr: string,
+  safeTxHash: string,
+  confirmations: T[],
+  provider?: RPCProvider,
+  checks: SafeConfirmationChecks = {}
+): Promise<T[]> {
+  const verifications = await Promise.all(
+    confirmations.map((confirmation) =>
+      isSafeConfirmationVerified(safeAddr, safeTxHash, confirmation, provider, checks).catch(
+        (error: unknown) => {
+          console.error('Safe: failed to verify an owner confirmation, leaving it out', error)
+          return false
+        }
+      )
+    )
+  )
+
+  return confirmations.filter((_, i) => verifications[i])
+}
+
+/**
+ * Whether the Safe transaction hash (`safeTxHash`) from the Safe Transaction Service is the hash
+ * of the Safe transaction it came with, calculated the way the owners sign it. The owners'
+ * signatures are checked against this hash, so it must belong to the details that get signed
+ *
+ * @param safeVersion the version of the Safe on the chain, as it changes the hash
+ */
+export function isSafeTxHashValid(
+  txn: SafeMultisigTransactionResponse,
+  safeAddr: Hex,
+  chainId: bigint,
+  safeVersion: string | null | undefined
+): boolean {
+  try {
+    const typedData = getSafeTxTypedData(chainId, safeAddr, safeVersion, toSafeTx(txn))
+
+    return getSafeTxnHash(typedData).toLowerCase() === txn.safeTxHash.toLowerCase()
+  } catch (error) {
+    // The details of the transaction are malformed (e.g. a value that isn't a number)
+    console.error('Safe: failed to calculate the hash of a Safe transaction', error)
+    return false
+  }
+}
+
+/**
+ * A Safe message from the Safe Transaction Service as its owners sign it: a plain text message
+ * as its UTF-8 bytes (hex), or the EIP-712 typed data as it is
+ */
+export function toSafeMessageToSign(message: SafeMessage['message']): Hex | EIP712TypedData {
+  return typeof message === 'string' ? (hexlify(toUtf8Bytes(message)) as Hex) : message
+}
+
+/**
+ * Whether the Safe message hash (`messageHash`) from the Safe Transaction Service is the hash
+ * of the message it came with, calculated the way the owners sign it (see
+ * getSafeMessageTypedData). The owners' signatures are checked against this hash, so it must
+ * belong to the message that is shown and signed
+ */
+export function isSafeMessageHashValid(
+  { message, messageHash }: Pick<SafeMessage, 'message' | 'messageHash'>,
+  safeAddr: Hex,
+  chainId: bigint
+): boolean {
+  try {
+    const typedData = getSafeMessageTypedData(
+      toSafeMessageToSign(message) as Hex | TypedMessageUserRequest['meta']['params'],
+      chainId,
+      safeAddr
+    )
+
+    return getEIP712Hash(typedData).toLowerCase() === messageHash.toLowerCase()
+  } catch (error) {
+    // The message is malformed (e.g. typed data without types)
+    console.error('Safe: failed to calculate the hash of a Safe message', error)
+    return false
+  }
+}
+
 function recoverOwner(
   sig: string,
   hash: string,
   confirmations?: { owner: string; signature: string }[]
 ) {
+  // approved hash signatures carry the owner in `r`. Ones from the Safe Transaction Service
+  // are taken only if the owner approved the hash onchain (see getVerifiedSafeConfirmations)
+  if (isSafeApprovedHashSignature(sig)) return getOwnerInSignature(sig)
+
+  // contract (EIP-1271) signatures carry the owner in `r` too, the same way the Safe reads them.
+  // The Safe checks them with the owner contract onchain
+  if (getBytes(sig)[SAFE_SIGNATURE_LENGTH - 1] === SAFE_CONTRACT_SIGNATURE_V)
+    return getOwnerInSignature(sig)
+
   // a transaction from Safe Global may have signatures that are not
   // ecdsa; therefore, we cannot extract the owner from them by using
-  // a plain recoverAddress. We rely on the Safe Global information
+  // a plain recoverAddress. We rely on the Safe Global information,
+  // which is checked against the signatures when fetched (see getVerifiedSafeConfirmations)
   const safeOwner = getOwnerFromSafeTx(sig, confirmations)
   if (safeOwner) return safeOwner
 
@@ -897,7 +1305,19 @@ export function sortSigs(
   }
 
   const sorted = sortByAddress(signed)
-  return concat(sorted.map((s) => s.sig)) as Hex
+  return joinSafeSignatures(sorted.map((s) => s.sig))
+}
+
+/**
+ * A Safe transaction from the Safe Transaction Service: executed, with its onchain
+ * `transactionHash`, or still waiting for the owners, with their `confirmations`
+ */
+export type SafeFetchedTransaction = {
+  chainId: bigint
+  safeTxnHash: Hex
+  nonce: string
+  transactionHash?: Hex
+  confirmations?: SafeMultisigConfirmationResponse[]
 }
 
 /**
@@ -909,20 +1329,8 @@ export function sortSigs(
 export async function fetchExecutedTransactions(
   safeAddr: Hex,
   chains: { chainId: bigint; minNonce: number }[]
-): Promise<
-  {
-    safeTxnHash: Hex
-    nonce: string
-    transactionHash?: Hex
-    confirmations?: SafeMultisigConfirmationResponse[]
-  }[]
-> {
-  const results: {
-    safeTxnHash: Hex
-    nonce: string
-    transactionHash?: Hex
-    confirmations?: SafeMultisigConfirmationResponse[]
-  }[] = []
+): Promise<SafeFetchedTransaction[]> {
+  const results: SafeFetchedTransaction[] = []
   const pages = paginate(chains, 3)
 
   for (let i = 0; i < pages.length; i++) {
@@ -949,21 +1357,23 @@ export async function fetchExecutedTransactions(
           console.log(`failed to call getMultisigTransactions on ${chainId}`, error)
           return null
         })
-        return res
+        return res && { chainId, txns: res.results }
       })
     )
     responses
-      .filter((response): response is SafeMultisigTransactionListResponse => response !== null)
-      .forEach(({ results: txns }) => {
+      .filter((response) => response !== null)
+      .forEach(({ chainId, txns }) => {
         txns.forEach((tx) => {
           if (tx.transactionHash) {
             results.push({
+              chainId,
               safeTxnHash: tx.safeTxHash as Hex,
               transactionHash: tx.transactionHash as Hex,
               nonce: tx.nonce
             })
           } else {
             results.push({
+              chainId,
               safeTxnHash: tx.safeTxHash as Hex,
               nonce: tx.nonce,
               confirmations: tx.confirmations

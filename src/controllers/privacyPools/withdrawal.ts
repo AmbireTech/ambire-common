@@ -6,11 +6,21 @@ import EmittableError from '../../classes/EmittableError'
 import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig,
+  getPrivacyPoolsTokenId,
   isPrivacyPoolsNativeAsset,
+  PRIVACY_POOLS_DEPOSIT_CHIPS,
   toPrivacyPoolsAssetAddress
 } from '../../consts/privacyPools'
 import { Hex } from '../../interfaces/hex'
-import { PrivacyPoolsOperation, PrivacyPoolsPaymasterConfig } from '../../interfaces/privacyPools'
+import {
+  PrivacyPoolsNote,
+  PrivacyPoolsOperation,
+  PrivacyPoolsPaymasterConfig,
+  PrivacyPoolsWithdrawalPrivacy,
+  PrivacyPoolsWithdrawalPrivacyCheck,
+  PrivacyPoolsWithdrawalPrivacyParams
+} from '../../interfaces/privacyPools'
+import { RPCProvider } from '../../interfaces/provider'
 import { humanizePrivacyPoolsWithdrawal } from '../../libs/humanizer/modules/PrivacyPools/privacyPoolsModule'
 import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
 import {
@@ -19,8 +29,13 @@ import {
   PrivacyPoolsWithdrawalFeeEstimate,
   PrivacyPoolsWithdrawalWouldFailError
 } from '../../libs/privacyPools/estimateWithdrawal'
+import {
+  getPrivacyPoolsWithdrawalPrivacy,
+  getUncheckedPrivacyPoolsWithdrawalPrivacy
+} from '../../libs/privacyPools/leaks/leaks'
 import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdrawal'
 import { toPrivacyPoolsSdkError } from '../../libs/privacyPools/sdkError'
+import { getRpcProvider } from '../../services/provider'
 import { generateUuid } from '../../utils/uuid'
 import { withTimeout } from '../../utils/with-timeout'
 import {
@@ -31,8 +46,9 @@ import {
   PrivacyPoolsContext
 } from './context'
 import { privacyPoolsErrors } from './errors'
+import { PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
-import { PrivacyPoolsSync } from './sync'
+import { PrivacyPoolsSync, readPrivacyPoolsNotes } from './sync'
 
 /** After this, a proved withdrawal is shown with only its fee cap. */
 const WITHDRAWAL_ESTIMATION_TIMEOUT_MS = 8 * 1000
@@ -89,9 +105,14 @@ export type PrivacyPoolsWithdrawalParams = AssetRef & {
 
 /**
  * A withdrawal handed to the bundler. `isSent` when it went through while still the current
- * operation - not after a lock or a newer one replaced it.
+ * operation - not after a lock or a newer one replaced it. `blockNumber` is the block it landed
+ * in, or null when it failed or the block is unknown.
  */
-export type PrivacyPoolsBroadcastAttempt = { operation: PrivacyPoolsOperation; isSent: boolean }
+export type PrivacyPoolsBroadcastAttempt = {
+  operation: PrivacyPoolsOperation
+  isSent: boolean
+  blockNumber: number | null
+}
 
 type WithdrawalSimulationParams = AssetRef & {
   chainId: string
@@ -140,6 +161,8 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
   #sync: PrivacyPoolsSync
 
+  #poolStatsReader: PrivacyPoolsPoolStatsReader
+
   /** The latest withdrawal of any phrase. */
   #operation: PrivacyPoolsOperation | null = null
 
@@ -159,14 +182,22 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
    */
   #preparationQueue: Promise<void> = Promise.resolve()
 
+  /**
+   * The Send form's latest check. Phrase-derived (see the README), so a lock drops it, as it tells
+   * what the phrase's notes give away.
+   */
+  #privacyCheck: { seedId: string; check: PrivacyPoolsWithdrawalPrivacyCheck } | null = null
+
   constructor(
     ctx: PrivacyPoolsContext,
     registry: PrivacyPoolsProtocolRegistry,
-    sync: PrivacyPoolsSync
+    sync: PrivacyPoolsSync,
+    poolStatsReader: PrivacyPoolsPoolStatsReader
   ) {
     this.#ctx = ctx
     this.#registry = registry
     this.#sync = sync
+    this.#poolStatsReader = poolStatsReader
   }
 
   /** The latest withdrawal of any phrase - see `PrivacyPoolsController.operation`. */
@@ -246,6 +277,8 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       // withdrawal): the SDK's plain withdrawal may pick a pending deposit, failing the proof.
       // The unused gas is refunded to the recipient, which is the SDK's default too, so a
       // different default can't leave it on a batch's single-use sender.
+      // TODO: pass `obfuscateAmounts: true` once the SDK ships it (kohaku#388), so a batch keeps
+      // part of each deposit it spends and its amounts do not add up to the user's deposits.
       const privateOp = await protocol.prepareUnshield(
         {
           asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
@@ -258,6 +291,9 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       // Only paymaster mode is asked for, so anything else means the SDK ignored it
       if (privateOp.mode !== 'paymaster')
         throw new Error('privacyPools: the withdrawal came back in an unsupported form')
+
+      // The SDK synced before proving, so its notes may be newer than the last sync's
+      const provedNotes = await readPrivacyPoolsNotes(protocol, false)
 
       const paymasterWithdrawal = readPaymasterWithdrawal({
         withdrawal: privateOp.withdrawal,
@@ -285,10 +321,18 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       if (noteCount > 1 && expectedFeeAmount === null)
         throw privacyPoolsErrors.withdrawalBatchNotSimulated()
 
+      const privacy = this.#getProvedWithdrawalPrivacy(
+        { seedId, chainId, tokenAddress, amount, recipient },
+        provedNotes,
+        noteCount
+      )
+      throwIfWithdrawalCancelled(signal)
+
       const isStillCurrent = this.#updateOperation({
         ...operation,
         phase: 'ready',
         quote: { feeAmount: fee, amountAfterFee: amount - fee, expectedFeeAmount },
+        privacy,
         humanization: humanizePrivacyPoolsWithdrawal({
           chainId,
           withdrawal: paymasterWithdrawal,
@@ -315,6 +359,74 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     }
 
     this.#ctx.emitUpdate()
+  }
+
+  /** The Send form's latest check, if it was made for this account. */
+  getWithdrawalPrivacyCheck(seedId: string | null): PrivacyPoolsWithdrawalPrivacyCheck | null {
+    if (this.#privacyCheck?.seedId !== seedId) return null
+
+    return this.#privacyCheck.check
+  }
+
+  /** Checks the Send form's transfer and keeps the result in place of the previous one. */
+  checkWithdrawalPrivacy(params: PrivacyPoolsWithdrawalPrivacyParams) {
+    const privacy = this.#getWithdrawalPrivacy(params)
+    const { seedId, ...checkedParams } = params
+    this.#privacyCheck = { seedId, check: { ...checkedParams, privacy } }
+  }
+
+  /**
+   * The privacy of a send from `notes`, by default the account's as of its last sync. Rated
+   * `unchecked` before the pool's deposits are read. Null when the notes cannot pay `amount`.
+   */
+  #getWithdrawalPrivacy(
+    { seedId, chainId, tokenAddress, amount, recipient }: PrivacyPoolsWithdrawalPrivacyParams,
+    notes: PrivacyPoolsNote[] | undefined = this.#getNotes(seedId, chainId)
+  ): PrivacyPoolsWithdrawalPrivacy | null {
+    const depositIndex = this.#poolStatsReader.getDepositIndex(chainId, tokenAddress)
+    if (!notes) return null
+
+    return getPrivacyPoolsWithdrawalPrivacy({
+      amount,
+      notes,
+      tokenAddress,
+      recipient,
+      depositIndex,
+      commonAmounts:
+        PRIVACY_POOLS_DEPOSIT_CHIPS[getPrivacyPoolsTokenId(chainId, tokenAddress)] ?? []
+    })
+  }
+
+  /** The notes the privacy checks need, the spent ones too. Undefined before the chain's sync. */
+  #getNotes(seedId: string, chainId: string): PrivacyPoolsNote[] | undefined {
+    const state = this.#sync.getAccountChainStates(seedId)[chainId]
+    if (!state) return undefined
+
+    return [...state.notes, ...state.spentNotes]
+  }
+
+  /**
+   * The privacy of a proved withdrawal, from the notes the SDK proved with. The notes it spends are
+   * predicted the way the SDK picks them. A proof that spends a different number of them is
+   * reported and rated `unchecked`, as the rules ran on spends the proof does not make.
+   */
+  #getProvedWithdrawalPrivacy(
+    params: PrivacyPoolsWithdrawalPrivacyParams,
+    provedNotes: PrivacyPoolsNote[],
+    provedNoteCount: number
+  ): PrivacyPoolsWithdrawalPrivacy | null {
+    const privacy = this.#getWithdrawalPrivacy(params, provedNotes)
+    if (!privacy || privacy.notesCount === provedNoteCount) return privacy
+
+    this.#ctx.emitError({
+      level: 'silent',
+      message: 'Could not check the privacy of this transfer.',
+      error: new Error(
+        `privacyPools: the proof spends ${provedNoteCount} notes, ${privacy.notesCount} were predicted`
+      )
+    })
+
+    return getUncheckedPrivacyPoolsWithdrawalPrivacy(provedNoteCount)
   }
 
   /**
@@ -392,7 +504,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       const host = this.#registry.getHost(operation.chainId, seedId)
       // No relayers: a paymaster withdrawal goes to the bundler URL carried in the payload.
       const broadcaster = createPPv1Broadcaster(host, { broadcasterUrl: {} })
-      await broadcaster.broadcast(privateOp)
+      const { requestId } = await broadcaster.broadcast(privateOp)
 
       const isCurrentOperation = this.#updateOperation({
         ...operation,
@@ -401,7 +513,14 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       })
       this.#ctx.emitUpdate()
 
-      return { operation, isSent: isCurrentOperation }
+      // After the UI is told, as the sheet need not wait for it
+      const blockNumber = await this.#readBlockNumber(
+        requestId,
+        operation.chainId,
+        privateOp.withdrawal.bundlerUrl
+      )
+
+      return { operation, isSent: isCurrentOperation, blockNumber }
     } catch (error: any) {
       // Silent: the confirmation sheet is open and shows the error itself
       this.#failOperation(
@@ -412,7 +531,40 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       )
       this.#ctx.emitUpdate()
 
-      return { operation, isSent: false }
+      return { operation, isSent: false, blockNumber: null }
+    }
+  }
+
+  /**
+   * The block a sent withdrawal landed in, or null if unknown. Asks the bundler the withdrawal was
+   * sent to, not our RPC, so our RPC cannot link the user's IP to the withdrawal.
+   */
+  async #readBlockNumber(
+    userOpHash: string,
+    chainId: string,
+    bundlerUrl: string
+  ): Promise<number | null> {
+    let provider: RPCProvider | undefined
+
+    try {
+      provider = getRpcProvider([bundlerUrl], BigInt(chainId))
+      const receipt = await provider.send('eth_getUserOperationReceipt', [userOpHash])
+      // A hex string
+      const blockNumber = Number(receipt?.receipt?.blockNumber)
+      if (!Number.isSafeInteger(blockNumber))
+        throw new Error('privacyPools: the bundler returned no block for the withdrawal')
+
+      return blockNumber
+    } catch (error: any) {
+      this.#ctx.emitError({
+        level: 'silent',
+        message: 'Could not read the block of the Privacy Pools withdrawal.',
+        error: error instanceof Error ? error : new Error('privacyPools: block read failed')
+      })
+
+      return null
+    } finally {
+      provider?.destroy()
     }
   }
 
@@ -443,13 +595,22 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     return true
   }
 
+  /** Drops the Send form's check. Returns whether there was one. */
+  dropPrivacyCheck(): boolean {
+    const hadCheck = !!this.#privacyCheck
+    this.#privacyCheck = null
+
+    return hadCheck
+  }
+
   hasPhraseDerivedState(): boolean {
-    return !!this.#pendingWithdrawal || !!this.#preparationAbortController
+    return !!this.#pendingWithdrawal || !!this.#preparationAbortController || !!this.#privacyCheck
   }
 
   /** Drops the account's withdrawal unless it is being sent, which is left to finish. */
   forgetSeed(seedId: string) {
     if (this.#operation?.seedId === seedId) this.dropUnsent()
+    if (this.#privacyCheck?.seedId === seedId) this.dropPrivacyCheck()
   }
 
   /**
@@ -461,6 +622,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     this.#preparationAbortController = null
     this.#operation = null
     this.#discardPending()
+    this.dropPrivacyCheck()
   }
 
   #startOperation(params: {
@@ -479,6 +641,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       startedAt: Date.now(),
       quote: null,
       humanization: null,
+      privacy: null,
       error: null
     }
 

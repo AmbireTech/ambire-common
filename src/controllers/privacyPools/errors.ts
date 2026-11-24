@@ -35,6 +35,11 @@ export const privacyPoolsErrors = {
   locked: () => expectedError('Please unlock your wallet to use Privacy Pools.', 'keystore locked'),
   unavailableForAccount: () =>
     expectedError('Privacy Pools is not available for this account.', 'no seed id'),
+  passphraseNeeded: () =>
+    expectedError(
+      'This Privacy Pools account needs its passphrase again. Remove it and add it again with the passphrase - your funds stay where they are.',
+      'no readable key and the passphrase is not saved'
+    ),
 
   // Accounts
   seedRemoved: (seedId: string) =>

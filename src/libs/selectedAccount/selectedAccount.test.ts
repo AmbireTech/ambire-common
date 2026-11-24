@@ -1,6 +1,6 @@
 import { AccountState } from '../portfolio/interfaces'
-
 import { PORTFOLIO_STATE } from '../portfolio/testData'
+import { getPendingDeliveryKey } from '../swapAndBridge/pendingDeliveries'
 import { calculateSelectedAccountPortfolio, stripPortfolioState } from './selectedAccount'
 
 describe('Selected Account lib', () => {
@@ -32,6 +32,42 @@ describe('Selected Account lib', () => {
       expect(selectedAccountPortfolio.totalBalance).toBe(260 + 10 + 5)
       expect(selectedAccountPortfolio.isAllReady).toBe(true)
       expect(selectedAccountPortfolio.networkSimulatedAccountOp['1']).toBeDefined()
+    })
+    it('sets the pending delivery amount on a copy of the token, without changing the totals', () => {
+      const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
+      const stateToken = clonedPortfolioLatestState['1']!.result!.tokens.find(
+        (token) => !token.flags.onGasTank && !token.flags.rewardsType
+      )!
+      const pendingDeliveries = {
+        [getPendingDeliveryKey(stateToken.chainId, stateToken.address)]: {
+          amount: 1000n,
+          activeRouteIds: ['bridge']
+        }
+      }
+
+      const withoutDeliveries = calculateSelectedAccountPortfolio(
+        clonedPortfolioLatestState,
+        false,
+        true
+      )
+      const withDeliveries = calculateSelectedAccountPortfolio(
+        clonedPortfolioLatestState,
+        false,
+        true,
+        pendingDeliveries
+      )
+      const resultToken = withDeliveries.tokens.find(
+        (token) =>
+          token.chainId === stateToken.chainId &&
+          token.address === stateToken.address &&
+          !token.flags.onGasTank &&
+          !token.flags.rewardsType
+      )
+
+      expect(resultToken?.pendingDeliveryAmount).toBe(1000n)
+      // The portfolio state is shared with other controllers, which must not count the delivery
+      expect(stateToken).not.toHaveProperty('pendingDeliveryAmount')
+      expect(withDeliveries.totalBalance).toBe(withoutDeliveries.totalBalance)
     })
     it('should flip isReadyToVisualize to true if the portfolio has been loading for more than 5 seconds', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState

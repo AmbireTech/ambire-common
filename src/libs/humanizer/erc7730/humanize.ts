@@ -1318,12 +1318,15 @@ const getModuleFallbackValue = (
   call: Call,
   chainId: bigint,
   accountAddr: string,
-  collectedWarnings?: HumanizerWarning[]
+  collectedWarnings?: HumanizerWarning[],
+  // All calls of the transaction the call is part of, so the modules know it isn't the whole
+  // transaction when there are others (e.g. an empty call to the Safe in a batch isn't a cancel)
+  transactionCalls: Call[] = [call]
 ): HumanizerVisualization[] | null => {
   const accountOp = {
     accountAddr,
     chainId,
-    calls: [call]
+    calls: transactionCalls
   } as AccountOp
 
   const humanizedCall = humanizeCallWithModules(accountOp, call as IrCall)
@@ -1571,7 +1574,7 @@ const getInnerCallRows = (
       // No `modules` argument, so this runs the whole module pipeline, which ends in
       // `fallbackHumanizer` - it describes any call with a `to`, down to "Interacting with", and
       // already reads the known-selector names. Nothing is left for a further fallback to add.
-      return getModuleFallbackValue(innerCall, chainId, safeAddr, collectedWarnings)
+      return getModuleFallbackValue(innerCall, chainId, safeAddr, collectedWarnings, innerCalls)
     })
     .filter((value): value is HumanizerVisualization[] => !!value)
     .map((value) => ({ type: 'call', value }))
@@ -1587,14 +1590,16 @@ const getSafeTxCallRows = (
   const safeTxCalls = getSafeTxCallsFromMessage(message)
   if (!safeTxCalls?.length) return null
 
-  // A SafeTx message is signed as/for the Safe itself, so `message.accountAddr` already is the
-  // Safe executing these inner calls.
-  const innerCallRows = getInnerCallRows(
-    safeTxCalls,
-    chainId,
-    message.accountAddr,
-    resolvedDescriptor
-  )
+  // The Safe executing these inner calls is the one the SafeTx is signed for (its verifying
+  // contract). It's not `message.accountAddr` when an owner signs it, so the owner's address must
+  // not be taken for the Safe (e.g. an empty call to the owner isn't a cancel)
+  const verifyingContract =
+    message.content.kind === 'typedMessage' ? message.content.domain.verifyingContract : undefined
+  const safeAddr =
+    typeof verifyingContract === 'string' && isAddress(verifyingContract)
+      ? verifyingContract
+      : message.accountAddr
+  const innerCallRows = getInnerCallRows(safeTxCalls, chainId, safeAddr, resolvedDescriptor)
 
   return innerCallRows.length ? innerCallRows : null
 }

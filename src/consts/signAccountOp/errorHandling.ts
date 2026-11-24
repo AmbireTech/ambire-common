@@ -9,7 +9,8 @@ const WARNINGS: Record<
   | 'unknownToken'
   | 'feeTokenPriceUnavailable'
   | 'v1Acc'
-  | 'safeDelegateCall',
+  | 'safeDelegateCall'
+  | 'safeTxNotShownAsCalls',
   Warning
 > = {
   significantBalanceDecrease: {
@@ -34,8 +35,14 @@ const WARNINGS: Record<
   },
   safeDelegateCall: {
     id: 'safeDelegateCall',
-    title: 'Delegate call to an unverified contract',
-    text: 'This Safe transaction delegates permissions to a contract not whitelisted by Safe. Proceed with caution.'
+    title: 'Another contract gets full control of your Safe',
+    text: "This transaction lets a contract that isn't part of Safe act with full control of your Safe. Only continue if you trust it."
+  },
+  safeTxNotShownAsCalls: {
+    id: 'safeTxNotShownAsCalls',
+    title: "We can't show what this transaction does",
+    text: "It can give another contract full control of your Safe, and we can't check what that contract will do. Some apps do this on purpose, but scammers do it too. Only sign it if you started it yourself in an app you trust.",
+    promptBefore: ['sign']
   }
 }
 

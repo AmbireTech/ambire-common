@@ -17,7 +17,9 @@ import { CowSwapOrderStruct } from '../../interfaces/swapAndBridge'
 import { getCowSwapOrderUid } from '../../services/cowswap/helper'
 import { AccountOp } from '../accountOp/accountOp'
 import { EMPTY_ERC7730_KNOWN, Erc7730CallDescriptors, resolveErc7730Descriptors } from './erc7730'
+import { getSafeTxCallsFromMessage } from './erc7730/utils'
 import { humanizeAccountOp, humanizeMessage } from './index'
+import { HumanizerWarning } from './interfaces'
 import {
   erc20TransferAbi,
   erc20TransferFromAbi,
@@ -25,6 +27,7 @@ import {
   morphoWithdrawCollateralAbi,
   publicAllocatorReallocateToAbi
 } from './modules/Bundler3/generalAdapter'
+import { getSafeTxNotBrokenDownWarning } from './modules/Safe'
 import { compareHumanizerVisualizations, compareVisualizations } from './testHelpers'
 import {
   getAction,
@@ -3230,7 +3233,7 @@ describe('ERC-7730 descriptors', () => {
 
     expect(irCalls[0]?.warnings).toEqual([
       getWarning(
-        'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+        "This lets a contract that isn't part of Safe act with full control of your Safe. Only continue if you trust it.",
         'SAFE{WALLET}_DELEGATE_CALL',
         undefined,
         recipeExecutor
@@ -3452,7 +3455,7 @@ describe('ERC-7730 descriptors', () => {
     expect(irCalls[0]?.warnings).toEqual(
       expect.arrayContaining([
         getWarning(
-          'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+          "This lets a contract that isn't part of Safe act with full control of your Safe. Only continue if you trust it.",
           'SAFE{WALLET}_DELEGATE_CALL',
           undefined,
           delegateCallTarget
@@ -4303,11 +4306,13 @@ describe('ERC-7730 descriptors', () => {
     ])
     expect(irMessage.warnings).toEqual([
       getWarning(
-        'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+        "This lets a contract that isn't part of Safe act with full control of your Safe. Only continue if you trust it.",
         'SAFE{WALLET}_DELEGATE_CALL',
         undefined,
         recipeExecutor
-      )
+      ),
+      // it can't be broken down into calls either, and this is the warning to confirm before signing
+      getSafeTxNotBrokenDownWarning()
     ])
   })
 
@@ -4639,7 +4644,7 @@ describe('ERC-7730 descriptors', () => {
           chainId: 8453
         },
         message: {
-          to: '0x8d80ff0a632a8a7ba2e219e2c4b79f8f3cd2d81b',
+          to: multiSendAddr,
           value: '0',
           data: multiSendData,
           operation: 1,
@@ -4953,11 +4958,11 @@ describe('ERC-7730 descriptors', () => {
     })
 
     // A hidden delegatecall leg into a non-whitelisted contract must surface the same
-    // "not whitelisted by Safe" warning that a top-level delegatecall would get.
+    // "isn't part of Safe" warning that a top-level delegatecall would get.
     expect(irMessage.warnings).toEqual(
       expect.arrayContaining([
         getWarning(
-          'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+          "This lets a contract that isn't part of Safe act with full control of your Safe. Only continue if you trust it.",
           'SAFE{WALLET}_DELEGATE_CALL',
           undefined,
           getAddress(delegateCallTarget)
@@ -5696,5 +5701,266 @@ describe('non-strict encoding / dirty bytes', () => {
       [getAction('SetApprovalForAll'), getLabel('on'), getAddressVisualization(nftAddress)]
     ])
     restore()
+  })
+})
+
+describe('SafeTx messages and the calls they are shown as', () => {
+  const safeAddr = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
+  const recipient = '0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01'
+  const unlistedContract = '0x1234567890123456789012345678901234567890'
+  const multiSendInterface = new ethers.Interface(['function multiSend(bytes transactions)'])
+  const encodeLeg = (operation: number, to: string, value: bigint, data = '0x') =>
+    ethers.solidityPacked(
+      ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+      [operation, to, value, BigInt(ethers.getBytes(data).length), data]
+    )
+  const encodeBatch = (...legs: string[]) =>
+    multiSendInterface.encodeFunctionData('multiSend', [ethers.concat(legs)])
+  const firstLeg = encodeLeg(0, recipient, 1n)
+  const secondLeg = encodeLeg(0, recipient, 2n, '0x12345678')
+  const batchCalls = [
+    { to: recipient, value: 1n, data: '0x' },
+    { to: recipient, value: 2n, data: '0x12345678' }
+  ]
+  const notBrokenDownWarningCode = getSafeTxNotBrokenDownWarning().code
+  // the owner signing the Safe transaction, which isn't the Safe
+  const ownerAddr = '0xd8293ad21678c6f09da139b4b62d38e514a03b78'
+  const cancelAction = 'Cancel'
+  const safeTxDescriptor = {
+    descriptor: {
+      display: {
+        formats: {
+          'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+            {
+              intent: 'Safe',
+              fields: [
+                {
+                  path: 'data',
+                  label: 'Transaction',
+                  format: 'calldata',
+                  params: { calleePath: '#.to' }
+                }
+              ]
+            }
+        }
+      }
+    }
+  }
+
+  const buildSafeTxMessage = (
+    safeTx: {
+      to: string
+      value: string
+      data: string
+      operation: number
+    },
+    accountAddr = safeAddr
+  ) => ({
+    fromRequestId: 1,
+    accountAddr,
+    content: {
+      kind: 'typedMessage',
+      domain: { verifyingContract: safeAddr, chainId: 8453 },
+      types: {
+        EIP712Domain: [
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' }
+        ],
+        SafeTx: [
+          { type: 'address', name: 'to' },
+          { type: 'uint256', name: 'value' },
+          { type: 'bytes', name: 'data' },
+          { type: 'uint8', name: 'operation' },
+          { type: 'uint256', name: 'safeTxGas' },
+          { type: 'uint256', name: 'baseGas' },
+          { type: 'uint256', name: 'gasPrice' },
+          { type: 'address', name: 'gasToken' },
+          { type: 'address', name: 'refundReceiver' },
+          { type: 'uint256', name: 'nonce' }
+        ]
+      },
+      message: {
+        ...safeTx,
+        safeTxGas: '0',
+        baseGas: '0',
+        gasPrice: '0',
+        gasToken: ZeroAddress,
+        refundReceiver: ZeroAddress,
+        nonce: 1
+      },
+      primaryType: 'SafeTx'
+    },
+    signature: null,
+    chainId: 8453n
+  })
+  const getWarningCodes = (message: ReturnType<typeof buildSafeTxMessage>) =>
+    (humanizeMessage(message as any).warnings || []).map(({ code }) => code)
+  // whether a "Cancel" action is shown anywhere in the visualization, with the clear signing
+  // (ERC-7730) description of a Safe transaction and without it
+  const hasCancelAction = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(hasCancelAction)
+    if (!value || typeof value !== 'object') return false
+
+    return Object.values(value).some((item) => item === cancelAction || hasCancelAction(item))
+  }
+  const getShownCancelLabels = (message: ReturnType<typeof buildSafeTxMessage>) => ({
+    withDescriptor: hasCancelAction(
+      humanizeMessage(message as any, { erc7730Descriptor: safeTxDescriptor }).fullVisualization
+    ),
+    withoutDescriptor: hasCancelAction(humanizeMessage(message as any).fullVisualization)
+  })
+
+  test('shows a batch run through a known multiSend contract as its calls, without a warning', () => {
+    const message = buildSafeTxMessage({
+      to: multiSendAddr,
+      value: '0',
+      data: encodeBatch(firstLeg, secondLeg),
+      operation: 1
+    })
+
+    expect(getSafeTxCallsFromMessage(message as any)).toEqual(batchCalls)
+    expect(getWarningCodes(message)).not.toContain(notBrokenDownWarningCode)
+  })
+
+  test('shows a batch whose data is not padded to a full word at its end as its calls', () => {
+    // some apps leave out the zeros that pad the batch to a full 32-byte word, and the multiSend
+    // contract still runs it
+    const unpaddedData = encodeBatch(firstLeg, secondLeg).slice(0, -8)
+    const message = buildSafeTxMessage({
+      to: multiSendAddr,
+      value: '0',
+      data: unpaddedData,
+      operation: 1
+    })
+
+    expect(getSafeTxCallsFromMessage(message as any)).toEqual(batchCalls)
+    expect(getWarningCodes(message)).not.toContain(notBrokenDownWarningCode)
+  })
+
+  test('shows a plain call to a multiSend contract as that one call, without a warning', () => {
+    const data = encodeBatch(firstLeg, secondLeg)
+    const message = buildSafeTxMessage({ to: multiSendAddr, value: '0', data, operation: 0 })
+
+    expect(getSafeTxCallsFromMessage(message as any)).toEqual([
+      { to: multiSendAddr, value: 0n, data }
+    ])
+    expect(getWarningCodes(message)).not.toContain(notBrokenDownWarningCode)
+  })
+
+  test.each([
+    ['sends a value', { value: '1', data: encodeBatch(firstLeg, secondLeg) }],
+    [
+      'has a delegate call in it',
+      { value: '0', data: encodeBatch(firstLeg, encodeLeg(1, recipient, 0n)) }
+    ],
+    ['has bytes left after its calls', { value: '0', data: encodeBatch(firstLeg, '0x00') }],
+    ['has a call that cannot be read', { value: '0', data: encodeBatch(firstLeg, '0x0001') }],
+    ['is not a batch at all', { value: '0', data: '0x1234' }]
+  ])('does not break down a batch that %s and warns about it', (_, { value, data }) => {
+    const message = buildSafeTxMessage({ to: multiSendAddr, value, data, operation: 1 })
+
+    expect(getSafeTxCallsFromMessage(message as any)).toBeNull()
+    expect(getWarningCodes(message)).toContain(notBrokenDownWarningCode)
+  })
+
+  test('asks to confirm the warning before signing, with or without a clear signing description', () => {
+    const message = buildSafeTxMessage({
+      to: multiSendAddr,
+      value: '1',
+      data: encodeBatch(firstLeg, secondLeg),
+      operation: 1
+    })
+    const findWarning = (warnings: HumanizerWarning[] = []) =>
+      warnings.find(({ code }) => code === notBrokenDownWarningCode)
+
+    const warnings = [
+      findWarning(humanizeMessage(message as any).warnings),
+      findWarning(humanizeMessage(message as any, { erc7730Descriptor: safeTxDescriptor }).warnings)
+    ]
+
+    warnings.forEach((warning) => {
+      expect(warning?.promptBefore).toEqual(['sign'])
+      expect(warning?.title).toBe("We can't show what this transaction does")
+    })
+  })
+
+  test('does not ask to confirm anything before signing a batch that is broken down', () => {
+    const message = buildSafeTxMessage({
+      to: multiSendAddr,
+      value: '0',
+      data: encodeBatch(firstLeg, secondLeg),
+      operation: 1
+    })
+
+    expect(
+      (humanizeMessage(message as any).warnings || []).some(({ promptBefore }) => !!promptBefore)
+    ).toBe(false)
+  })
+
+  test('does not break down a batch run through an unlisted contract and asks to confirm it', () => {
+    const message = buildSafeTxMessage({
+      to: unlistedContract,
+      value: '0',
+      data: encodeBatch(firstLeg, secondLeg),
+      operation: 1
+    })
+    const { warnings = [] } = humanizeMessage(message as any)
+    const warningCodes = warnings.map(({ code }) => code)
+
+    expect(getSafeTxCallsFromMessage(message as any)).toBeNull()
+    // the same two warnings as on the sign transaction screen
+    expect(warningCodes).toContain('SAFE{WALLET}_DELEGATE_CALL')
+    expect(warningCodes).toContain(notBrokenDownWarningCode)
+    expect(warnings.find(({ code }) => code === notBrokenDownWarningCode)?.promptBefore).toEqual([
+      'sign'
+    ])
+  })
+
+  test('does not show empty calls to the signing owner as cancels', () => {
+    // the owner isn't the Safe, so an empty call to the owner cancels nothing
+    const emptyCallToOwner = encodeLeg(0, ownerAddr, 0n)
+    const message = buildSafeTxMessage(
+      {
+        to: multiSendAddr,
+        value: '0',
+        data: encodeBatch(emptyCallToOwner, emptyCallToOwner),
+        operation: 1
+      },
+      ownerAddr
+    )
+
+    expect(getShownCancelLabels(message)).toEqual({
+      withDescriptor: false,
+      withoutDescriptor: false
+    })
+  })
+
+  test('does not show an empty call to the Safe among other calls of a batch as a cancel', () => {
+    const message = buildSafeTxMessage(
+      {
+        to: multiSendAddr,
+        value: '0',
+        data: encodeBatch(encodeLeg(0, safeAddr, 0n), firstLeg),
+        operation: 1
+      },
+      ownerAddr
+    )
+
+    expect(getShownCancelLabels(message)).toEqual({
+      withDescriptor: false,
+      withoutDescriptor: false
+    })
+  })
+
+  test('shows a whole transaction that is an empty call to the Safe as a cancel, when an owner signs it', () => {
+    const message = buildSafeTxMessage(
+      { to: safeAddr, value: '0', data: '0x', operation: 0 },
+      ownerAddr
+    )
+
+    expect(getShownCancelLabels(message)).toEqual({
+      withDescriptor: true,
+      withoutDescriptor: true
+    })
   })
 })

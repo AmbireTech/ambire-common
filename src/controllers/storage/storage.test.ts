@@ -33,7 +33,8 @@ const ALL_MIGRATION_KEYS = [
   'migrateDappsAddMissingIds',
   'removeFetchingDisabledSelectors',
   'indexSentToHistoryFromAccountsOps',
-  'sortPhishingLists'
+  'sortPhishingLists',
+  'removeTokenRecordsWithoutChainId'
 ]
 
 // Wraps a memory store and counts how many times each key is read and how many
@@ -510,6 +511,120 @@ describe('StorageController', () => {
 
       expect(await storageCtrl.get('functionSelectors')).toBeUndefined()
       expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+  })
+
+  describe('removeTokenRecordsWithoutChainId', () => {
+    const MIGRATION_KEY = 'removeTokenRecordsWithoutChainId'
+    const TOKEN_A = '0x0000000000000000000000000000000000000001'
+    const TOKEN_B = '0x0000000000000000000000000000000000000002'
+    const currentCustomTokens = [
+      { address: TOKEN_A, standard: 'ERC20', chainId: 1n },
+      { address: TOKEN_B, standard: 'ERC721', chainId: 137n, tokenId: 5n }
+    ]
+    const currentTokenPreferences = [
+      { address: TOKEN_A, chainId: 1n, isHidden: true },
+      { address: TOKEN_B, chainId: 137n, isHidden: true, standard: 'ERC721', tokenId: 5n }
+    ]
+    // Stored before the switch to chainId, with a network that was removed before it got migrated
+    const customTokenWithRemovedNetwork = {
+      address: TOKEN_B,
+      standard: 'ERC20',
+      networkId: 'removed-network'
+    }
+    const tokenPreferenceWithRemovedNetwork = {
+      address: TOKEN_B,
+      networkId: 'removed-network',
+      isHidden: true
+    }
+
+    test('removes only the records without a chainId and keeps the rest as they are', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {
+        customTokens: [...currentCustomTokens, customTokenWithRemovedNetwork],
+        tokenPreferences: [
+          tokenPreferenceWithRemovedNetwork,
+          ...currentTokenPreferences,
+          { address: TOKEN_A, chainId: null, isHidden: true }
+        ]
+      })
+
+      expect(await storageCtrl.get('customTokens', [])).toEqual(currentCustomTokens)
+      expect(await storageCtrl.get('tokenPreferences', [])).toEqual(currentTokenPreferences)
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+
+    test('stores only the list that had records without a chainId', async () => {
+      const counting = produceCountingStore()
+      await counting.store.set(
+        'passedMigrations',
+        ALL_MIGRATION_KEYS.filter((key) => key !== MIGRATION_KEY)
+      )
+      await counting.store.set('customTokens', currentCustomTokens)
+      await counting.store.set('tokenPreferences', [
+        ...currentTokenPreferences,
+        tokenPreferenceWithRemovedNetwork
+      ])
+      counting.reset()
+
+      const storageCtrl = new StorageController(counting.store)
+      await storageCtrl.get('passedMigrations', [])
+
+      // `tokenPreferences` and the `passedMigrations` marker
+      expect(counting.setCount()).toBe(2)
+      expect(await storageCtrl.get('customTokens', [])).toEqual(currentCustomTokens)
+      expect(await storageCtrl.get('tokenPreferences', [])).toEqual(currentTokenPreferences)
+    })
+
+    test('writes only the migration marker when every record has a chainId', async () => {
+      const counting = produceCountingStore()
+      await counting.store.set(
+        'passedMigrations',
+        ALL_MIGRATION_KEYS.filter((key) => key !== MIGRATION_KEY)
+      )
+      await counting.store.set('customTokens', currentCustomTokens)
+      await counting.store.set('tokenPreferences', currentTokenPreferences)
+      counting.reset()
+
+      const storageCtrl = new StorageController(counting.store)
+      const passed = await storageCtrl.get('passedMigrations', [])
+
+      // The single write is the `passedMigrations` marker, the token lists are left as they were.
+      expect(counting.setCount()).toBe(1)
+      expect(passed).toContain(MIGRATION_KEY)
+      expect(await storageCtrl.get('customTokens', [])).toEqual(currentCustomTokens)
+      expect(await storageCtrl.get('tokenPreferences', [])).toEqual(currentTokenPreferences)
+    })
+
+    test('stores no token lists when none were saved', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {})
+
+      expect(await storageCtrl.get('customTokens')).toBeUndefined()
+      expect(await storageCtrl.get('tokenPreferences')).toBeUndefined()
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+
+    test('removes the records whose network was gone when they were moved to chainIds', async () => {
+      const storageCtrl = await bootWithPendingMigrations(
+        ['migrateNetworkIdToChainId', MIGRATION_KEY],
+        {
+          networks: { ethereum: { id: 'ethereum', chainId: 1n, name: 'Ethereum' } },
+          customTokens: [
+            { address: TOKEN_A, standard: 'ERC20', networkId: 'ethereum' },
+            customTokenWithRemovedNetwork
+          ],
+          tokenPreferences: [
+            { address: TOKEN_A, networkId: 'ethereum', isHidden: true },
+            tokenPreferenceWithRemovedNetwork
+          ]
+        }
+      )
+
+      expect(await storageCtrl.get('customTokens', [])).toEqual([
+        { address: TOKEN_A, standard: 'ERC20', chainId: 1n }
+      ])
+      expect(await storageCtrl.get('tokenPreferences', [])).toEqual([
+        { address: TOKEN_A, isHidden: true, chainId: 1n }
+      ])
     })
   })
 

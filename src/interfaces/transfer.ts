@@ -25,6 +25,11 @@ export interface TransferUpdate {
   /** Selecting a token switches the form out of NFT mode, if it was in it */
   selectedToken?: TokenResult
   amount?: string
+  /**
+   * Set when `amount` comes from outside the amount field, such as a suggested amount. The field
+   * shows the controller's amount only when told to, so typing isn't reset, and this tells it to.
+   */
+  isAmountUpdateFromOutsideField?: boolean
   shouldSetMaxAmount?: boolean
   addressState?: AddressStateOptional
   isRecipientAddressUnknownAgreed?: boolean
@@ -41,6 +46,9 @@ export type AddressPoisoningMatch = {
   matchedSuffixCharsCount: number
   // Number of positions where the address body differs. A very low count means a likely typo.
   differingCharsCount: number
+  // Set when the matched address is one of the user's own accounts, instead of an address
+  // they have sent to before
+  matchedOwnAccountLabel?: string
 }
 
 export type AmountAdjustmentInfo = {

@@ -1,7 +1,8 @@
-import { describe, expect, jest, test } from '@jest/globals'
+import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
+import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
-import { createKohakuKeystore, createKohakuProvider } from './host'
+import { createKohakuKeystore, createKohakuNetwork, createKohakuProvider } from './host'
 
 const SIGNING_KEY_PATH = "m/28784'/1'/0'"
 const KEY: Hex = `0x${'11'.repeat(32)}`
@@ -57,6 +58,38 @@ describe('createKohakuKeystore', () => {
     // A new instance, as after a lock, derives again
     expect(await createKohakuKeystore(deriveKey).deriveAt(SIGNING_KEY_PATH)).toBe(KEY)
     expect(deriveKey).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('createKohakuNetwork', () => {
+  const READ_TIMEOUT = 1_000
+  const ASP_URL = 'https://api.0xbow.io/1/public/mt-leaves'
+
+  /** A server that accepts the connection and never answers. */
+  const createSilentFetch = () => jest.fn(() => new Promise<never>(() => {})) as unknown as Fetch
+
+  afterEach(() => jest.useRealTimers())
+
+  test('fails a GET that gets no answer', async () => {
+    jest.useFakeTimers()
+    const network = createKohakuNetwork(createSilentFetch(), READ_TIMEOUT)
+
+    const reading = network.fetch(ASP_URL, { method: 'GET' })
+    jest.advanceTimersByTime(READ_TIMEOUT)
+
+    await expect(reading).rejects.toThrow('request-timeout')
+  })
+
+  test('keeps waiting on a POST, which may be a broadcast still on its way', async () => {
+    jest.useFakeTimers()
+    const network = createKohakuNetwork(createSilentFetch(), READ_TIMEOUT)
+
+    const settled = jest.fn()
+    network.fetch('https://relayer.example/request', { method: 'POST' }).then(settled, settled)
+    jest.advanceTimersByTime(READ_TIMEOUT * 10)
+    await Promise.resolve()
+
+    expect(settled).not.toHaveBeenCalled()
   })
 })
 

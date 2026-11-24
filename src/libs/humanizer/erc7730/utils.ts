@@ -2,8 +2,7 @@ import { isAddress, isHexString } from 'ethers'
 
 import { Message } from '../../../interfaces/userRequest'
 import { Call } from '../../accountOp/types'
-import { decodeMultiSend, SuccessfullyDecoded } from '../../safe/helpers'
-import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
+import { getExactSafeTxCalls } from '../../safe/helpers'
 import { SAFE_TX_PRIMARY_TYPE } from './consts'
 
 export const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -34,6 +33,12 @@ export const parseIntegerLiteral = (value: string): number | null => {
   return Number.isInteger(parsed) ? parsed : null
 }
 
+/**
+ * The calls a signed Safe transaction (a `SafeTx` typed message) makes, if they do exactly what it
+ * does: the transaction itself if it's a plain call, or the calls of a batch it runs through a
+ * known multiSend contract (see getExactSafeTxCalls). Null if it isn't a Safe transaction or it
+ * can't be broken down into such calls
+ */
 export const getSafeTxCallsFromMessage = (message: Message): Call[] | null => {
   if (message.content.kind !== 'typedMessage') return null
   if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return null
@@ -46,33 +51,17 @@ export const getSafeTxCallsFromMessage = (message: Message): Call[] | null => {
     const bigintValue = BigInt((value ?? 0) as string | number | bigint)
     const bigintOperation = BigInt((operation ?? 0) as string | number | bigint)
 
-    if (bigintOperation === 0n) {
-      return [
-        {
-          to,
-          data,
-          value: bigintValue
-        }
-      ]
-    }
-
-    if (bigintOperation !== 1n) return null
-
-    const multiSendDecoded = multiSendInterface.decodeFunctionData(
-      'multiSend',
-      getAbiBytesCalldataWithPadding(data)
-    )
-    const transactionsHex = multiSendDecoded[0]
-    if (typeof transactionsHex !== 'string') return null
-
-    return decodeMultiSend(transactionsHex)
-      .filter((transaction): transaction is SuccessfullyDecoded => transaction.success)
-      .map((transaction) => ({
-        to: transaction.to,
-        data: transaction.data,
-        value: transaction.value
-      }))
-  } catch {
+    // Only calls that do exactly what the signed transaction does are shown as its calls. If it
+    // can't be broken down into them, it's shown as signed (see getSafeTxMessageWarnings)
+    return getExactSafeTxCalls({
+      to,
+      value: bigintValue.toString(),
+      data,
+      operation: Number(bigintOperation)
+    })
+  } catch (error) {
+    // Malformed values (e.g. a value that isn't a number) can't be broken down into calls
+    console.error('Humanizer: failed to read the calls of a Safe transaction message', error)
     return null
   }
 }

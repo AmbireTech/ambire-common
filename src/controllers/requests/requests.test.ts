@@ -1,5 +1,6 @@
 import { errorCodes } from 'eth-rpc-errors'
-import { Wallet, ZeroAddress } from 'ethers'
+import { hexlify, toUtf8Bytes, Wallet, ZeroAddress } from 'ethers'
+import { createSiweMessage, SiweMessage } from 'viem/siwe'
 
 import { afterEach, describe, expect, test } from '@jest/globals'
 
@@ -21,9 +22,10 @@ import { Platform } from '../../interfaces/platform'
 import {
   BenzinUserRequest,
   CallsUserRequest,
-  SwitchAccountRequest,
   DappConnectRequest,
   PlainTextMessageUserRequest,
+  SiweMessageUserRequest,
+  SwitchAccountRequest,
   TypedMessageUserRequest,
   UserRequest
 } from '../../interfaces/userRequest'
@@ -37,11 +39,11 @@ import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
-import type { AccountOp } from '../../libs/accountOp/accountOp'
-import type { Call } from '../../libs/accountOp/types'
 import type { IRequestsController } from '../../interfaces/requests'
 import type { ISignAccountOpController } from '../../interfaces/signAccountOp'
+import type { AccountOp } from '../../libs/accountOp/accountOp'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import type { Call } from '../../libs/accountOp/types'
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
 const NOW = 1_700_000_000_000
@@ -417,6 +419,36 @@ const makeMessageRequest = (
   kind: 'message',
   meta: {
     params: { message: '0x48656c6c6f' },
+    accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+    chainId: 1n
+  },
+  dappPromises: [{ id, resolve: () => {}, reject, session: MOCK_SESSION, meta: {} }]
+})
+
+const SIWE_FIXTURE: SiweMessage = {
+  domain: 'test-dapp.com',
+  address: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+  statement: 'Sign in to the test dapp.',
+  uri: 'https://test-dapp.com',
+  version: '1',
+  chainId: 1,
+  nonce: '12345678',
+  issuedAt: new Date('2024-01-01T00:00:00.000Z')
+}
+
+/** A sign-in (SIWE) request for the selected account, from the test app. */
+const makeSiweRequest = (id: string, reject: (err: any) => void): SiweMessageUserRequest => ({
+  id,
+  kind: 'siwe',
+  meta: {
+    params: {
+      message: hexlify(toUtf8Bytes(createSiweMessage(SIWE_FIXTURE))) as Hex,
+      parsedMessage: SIWE_FIXTURE,
+      siweValidityStatus: 'valid',
+      autoLoginStatus: 'no-policy',
+      isAutoLoginEnabledByUser: false,
+      autoLoginDuration: 0
+    },
     accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
     chainId: 1n
   },
@@ -901,6 +933,98 @@ describe('RequestsController ', () => {
     })
   })
 
+  describe('smart account upgrade', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const call = { to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143', value: 1n, data: '0x' }
+    const upgradeCall = { to: ZeroAddress, value: 0n, data: '0x' }
+
+    const buildBatchRequest = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: { calls: [call], meta: { accountAddr, chainId: 1n } }
+        }
+      })
+
+    // The same request the settings build for turning the upgrade on (true) or revoking it (false)
+    const buildUpgradeRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      setDelegation: boolean
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [upgradeCall],
+            meta: { accountAddr, chainId: 1n, setDelegation }
+          }
+        }
+      })
+
+    const getCallsRequests = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.userRequests.filter((r) => r.kind === 'calls')
+    const findUpgradeRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller']
+    ) => getCallsRequests(controller).find((r) => r.meta.setDelegation !== undefined)
+    const findBatchRequest = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      getCallsRequests(controller).find((r) => r.meta.setDelegation === undefined)
+
+    test.each([true, false])(
+      'the upgrade (setDelegation: %s) is not added to the batch already open on the same chain',
+      async (setDelegation) => {
+        const { controller } = await prepareTest()
+        await buildBatchRequest(controller)
+        await buildUpgradeRequest(controller, setDelegation)
+
+        const batch = findBatchRequest(controller)
+        const upgrade = findUpgradeRequest(controller)
+        expect(getCallsRequests(controller)).toHaveLength(2)
+        expect(batch!.signAccountOp.accountOp.calls).toHaveLength(1)
+        expect(batch!.signAccountOp.accountOp.meta?.setDelegation).toBeUndefined()
+        expect(upgrade!.signAccountOp.accountOp.calls).toHaveLength(1)
+        expect(upgrade!.id).not.toBe(batch!.id)
+      }
+    )
+
+    // The sign screen shows only the upgrade, so a call added to it would be signed unseen
+    test.each([true, false])(
+      'new calls are not added to an open upgrade (setDelegation: %s)',
+      async (setDelegation) => {
+        const { controller } = await prepareTest()
+        await buildUpgradeRequest(controller, setDelegation)
+        await buildBatchRequest(controller)
+
+        const upgrade = findUpgradeRequest(controller)
+        expect(getCallsRequests(controller)).toHaveLength(2)
+        expect(upgrade!.signAccountOp.accountOp.calls).toHaveLength(1)
+        expect(upgrade!.signAccountOp.accountOp.calls[0]!.to).toBe(ZeroAddress)
+        expect(findBatchRequest(controller)!.signAccountOp.accountOp.calls).toHaveLength(1)
+      }
+    )
+
+    test('batching normal calls still works next to an open upgrade', async () => {
+      const { controller } = await prepareTest()
+      await buildUpgradeRequest(controller, true)
+      await buildBatchRequest(controller)
+      await buildBatchRequest(controller)
+
+      expect(getCallsRequests(controller)).toHaveLength(2)
+      expect(findBatchRequest(controller)!.signAccountOp.accountOp.calls).toHaveLength(2)
+      expect(findUpgradeRequest(controller)!.signAccountOp.accountOp.calls).toHaveLength(1)
+    })
+
+    test('pressing the upgrade again reopens the open one', async () => {
+      const { controller } = await prepareTest()
+      await buildUpgradeRequest(controller, true)
+      await buildUpgradeRequest(controller, true)
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      expect(getCallsRequests(controller)[0]!.signAccountOp.accountOp.calls).toHaveLength(1)
+    })
+  })
+
   describe('closing the side panel', () => {
     /** Requests show up in the panel, which has no window of its own. */
     const prepareSidePanelTest = async () => {
@@ -959,6 +1083,128 @@ describe('RequestsController ', () => {
       expect(arrivedReject).not.toHaveBeenCalled()
       expect(controller.userRequests.map((r) => r.id)).toEqual(['arrived-request'])
       expect(controller.currentUserRequest?.id).toBe('arrived-request')
+    })
+  })
+  describe('a Safe message signed by some of the owners', () => {
+    const SIGNED_BY = ['0x0000000000000000000000000000000000000002']
+    const SAFE_MESSAGE_HASH: Hex = `0x${'ab'.repeat(32)}`
+
+    const makeTypedMessageRequest = (
+      id: string,
+      reject: (err: any) => void
+    ): TypedMessageUserRequest => ({
+      id,
+      kind: 'typedMessage',
+      meta: {
+        params: {
+          domain: { name: 'Test', version: '1', chainId: 1n },
+          types: { Mail: [{ name: 'contents', type: 'string' }] },
+          message: { contents: 'test' },
+          primaryType: 'Mail'
+        },
+        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        chainId: 1n
+      },
+      dappPromises: [{ id, resolve: () => {}, reject, session: MOCK_SESSION, meta: {} }]
+    })
+
+    test.each([
+      ['plain message', makeMessageRequest],
+      ['typed message', makeTypedMessageRequest],
+      // App sign-ins were left out before, so the final signature never reached the app
+      ['sign-in (SIWE)', makeSiweRequest]
+    ])(
+      'records who signed a %s and keeps it waiting for the other owners',
+      async (_, makeRequest) => {
+        const { controller } = await prepareTest()
+        await controller.addUserRequests([makeRequest('partly-signed', jest.fn())])
+
+        controller.setPartiallyCompleteRequest('partly-signed', {
+          signed: SIGNED_BY,
+          hash: SAFE_MESSAGE_HASH
+        })
+
+        const request = controller.userRequests.find((r) => r.id === 'partly-signed')
+        expect(request?.meta.keepRequestAlive).toBe(true)
+        expect(request?.meta.signed).toEqual(SIGNED_BY)
+        expect(request?.meta.hash).toBe(SAFE_MESSAGE_HASH)
+      }
+    )
+
+    test('a partly signed sign-in stays open when the request window closes', async () => {
+      const { controller } = await prepareTest()
+      const reject = jest.fn()
+      await controller.addUserRequests([makeSiweRequest('partly-signed-siwe', reject)])
+      controller.setPartiallyCompleteRequest('partly-signed-siwe', {
+        signed: SIGNED_BY,
+        hash: SAFE_MESSAGE_HASH
+      })
+
+      await controller.closeRequestWindow()
+
+      expect(reject).not.toHaveBeenCalled()
+      expect(controller.userRequests.map((r) => r.id)).toEqual(['partly-signed-siwe'])
+    })
+
+    test('a sign-in nobody signed is still turned away when the request window closes', async () => {
+      const { controller } = await prepareTest()
+      const reject = jest.fn()
+      await controller.addUserRequests([makeSiweRequest('unsigned-siwe', reject)])
+
+      await controller.closeRequestWindow()
+
+      expect(reject).toHaveBeenCalledTimes(1)
+      expect(controller.userRequests).toHaveLength(0)
+    })
+
+    test('a partly signed sign-in is not rejected with the unsigned Safe requests', async () => {
+      const { controller } = await prepareTest()
+      const reject = jest.fn()
+      await controller.addUserRequests([makeSiweRequest('partly-signed-siwe', reject)])
+      controller.setPartiallyCompleteRequest('partly-signed-siwe', {
+        signed: SIGNED_BY,
+        hash: SAFE_MESSAGE_HASH
+      })
+
+      await controller.rejectSameChainNotSignedSafeRequest(
+        '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        1n,
+        'The Safe could not be activated'
+      )
+
+      expect(reject).not.toHaveBeenCalled()
+      expect(controller.userRequests.map((r) => r.id)).toEqual(['partly-signed-siwe'])
+    })
+
+    test('leaves transaction requests untouched', async () => {
+      const { controller, getCallsRequest } = await prepareTest()
+      const callsRequest = await getCallsRequest({
+        addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        chainId: 1n
+      })
+      await controller.addUserRequests([callsRequest])
+
+      controller.setPartiallyCompleteRequest(callsRequest.id, {
+        signed: SIGNED_BY,
+        hash: SAFE_MESSAGE_HASH
+      })
+
+      const request = controller.userRequests.find((r) => r.id === callsRequest.id)
+      expect(request?.meta.keepRequestAlive).toBeUndefined()
+      expect(request?.kind === 'calls' && 'hash' in request.meta).toBe(false)
+    })
+
+    test('does nothing for a request that is no longer there', async () => {
+      const { controller } = await prepareTest()
+      await controller.addUserRequests([makeSiweRequest('other-request', jest.fn())])
+
+      expect(() =>
+        controller.setPartiallyCompleteRequest('missing-request', {
+          signed: SIGNED_BY,
+          hash: SAFE_MESSAGE_HASH
+        })
+      ).not.toThrow()
+      expect(controller.userRequests[0]!.meta.keepRequestAlive).toBeUndefined()
     })
   })
   test('does not simulate a signed Safe transaction that is added to the queue', async () => {
@@ -1569,6 +1815,61 @@ describe('RequestsController ', () => {
     controller.userRequests.forEach((request) => {
       if (request.kind === 'calls') request.signAccountOp.destroy()
     })
+  })
+
+  test('keeps an open Safe transaction when the Safe API returns other details for it', async () => {
+    const { controller } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const reviewedRecipient = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const otherRecipient = '0x1111111111111111111111111111111111111111'
+    const firstSigner = new Wallet(`0x${'1'.repeat(64)}`)
+    const secondSigner = new Wallet(`0x${'2'.repeat(64)}`)
+    const confirmation = (signer: Wallet): SafeMultisigConfirmationResponse => ({
+      owner: signer.address,
+      signature: signer.signingKey.sign(SAFE_TX_HASH).serialized,
+      signatureType: 'EOA',
+      submissionDate: '2026-08-18T00:00:00Z'
+    })
+    const buildSafeRequest = (to: string, confirmations: SafeMultisigConfirmationResponse[]) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [{ to, value: 1n, data: '0x' }],
+            meta: {
+              accountAddr,
+              chainId: 1n,
+              safeTxnProps: {
+                txnId: SAFE_TX_HASH,
+                signature: `0x${confirmations.map(({ signature }) => signature.slice(2)).join('')}`,
+                nonce: 0n
+              },
+              safeTx: {
+                ...getSafeTx(0)!,
+                to,
+                value: '1',
+                safeTxHash: SAFE_TX_HASH,
+                confirmations
+              }
+            }
+          }
+        }
+      })
+
+    await buildSafeRequest(reviewedRecipient, [confirmation(firstSigner)])
+    // Same Safe txn hash, other recipient, and one more signature to take
+    await buildSafeRequest(otherRecipient, [confirmation(firstSigner), confirmation(secondSigner)])
+
+    expect(controller.userRequests).toHaveLength(1)
+    const request = controller.userRequests[0]
+    if (request?.kind !== 'calls') throw new Error('Expected a calls request')
+    const { accountOp } = request.signAccountOp
+    expect(accountOp.safeTx?.to).toBe(reviewedRecipient)
+    expect(accountOp.calls.map(({ to }) => to)).toEqual([reviewedRecipient])
+    expect(accountOp.signed).toEqual([firstSigner.address])
+
+    request.signAccountOp.destroy()
   })
 
   test('emits completed humanization for a Safe transaction already in the queue', async () => {
