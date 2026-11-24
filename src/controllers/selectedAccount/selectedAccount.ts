@@ -37,7 +37,6 @@ import {
   DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
 } from '../../libs/selectedAccount/selectedAccount'
 import {
-  addPendingDeliveryAmounts,
   getPendingDeliveries,
   getPendingDeliveriesSignature
 } from '../../libs/swapAndBridge/pendingDeliveries'
@@ -348,20 +347,16 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     const portfolioAccountState = this.#portfolio.getAccountPortfolioState(this.account.addr)
 
-    const calculatedPortfolio = calculateSelectedAccountPortfolio(
+    const pendingDeliveries = this.#getPendingDeliveries()
+    this.#pendingDeliveriesSignature = getPendingDeliveriesSignature(pendingDeliveries)
+
+    const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       portfolioAccountState,
       this.portfolio.shouldShowPartialResult,
       this.#isManualUpdate,
-      this.shouldSubtractBorrowedFunds
+      this.shouldSubtractBorrowedFunds,
+      pendingDeliveries
     )
-    const pendingDeliveries = this.#getPendingDeliveries()
-    this.#pendingDeliveriesSignature = getPendingDeliveriesSignature(pendingDeliveries)
-    // Copied instead of changed in place, as the calculation may return a shared default object.
-    // The totals stay without the tokens on their way, as they aren't in the account yet
-    const newSelectedAccountPortfolio = {
-      ...calculatedPortfolio,
-      tokens: addPendingDeliveryAmounts(calculatedPortfolio.tokens, pendingDeliveries)
-    }
 
     newSelectedAccountPortfolio.mobileInviteKey = this.#portfolio.getMobileInviteKey(
       this.account.addr

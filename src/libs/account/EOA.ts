@@ -13,6 +13,11 @@ import {
 import { TokenResult } from '../portfolio'
 import { BaseAccount } from './BaseAccount'
 
+/**
+ * The gas every transaction pays before executing anything (the cost of a plain native transfer)
+ */
+export const TXN_BASE_GAS = 21000n
+
 // this class describes a plain EOA that cannot transition
 // to 7702 either because the network or the hardware wallet doesnt' support it
 export class EOA extends BaseAccount {
@@ -82,7 +87,16 @@ export class EOA extends BaseAccount {
       if (call.data === '0x') return estimation.providerEstimation.gasUsed + revokeGas
     }
 
-    const ambireGasUsed = estimation.ambireEstimation ? estimation.ambireEstimation.gasUsed : 0n
+    // a batch is broadcast as one txn per call (see shouldBroadcastCallsSeparately)
+    // and each txn pays the base txn cost, which the ambire estimation of the
+    // calls doesn't include. Without it, the fee is lower than what the network
+    // requires the account to hold and the broadcast fails for insufficient funds
+    const separateTxnsBaseGas = this.shouldBroadcastCallsSeparately(options.op)
+      ? TXN_BASE_GAS * BigInt(calls.length)
+      : 0n
+    const ambireGasUsed = estimation.ambireEstimation
+      ? estimation.ambireEstimation.gasUsed + separateTxnsBaseGas
+      : 0n
     const gasUsed =
       estimation.providerEstimation.gasUsed > ambireGasUsed
         ? estimation.providerEstimation.gasUsed

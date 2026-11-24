@@ -59,7 +59,8 @@ import {
   ExternalSignerControllers,
   IKeystoreController,
   InternalKey,
-  Key
+  Key,
+  KeystoreSignerInterface
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -1260,24 +1261,25 @@ export class SignAccountOpController
   }
 
   /**
-   * Runs a signing step and marks `keyType` as the active signing key type.
-   * It intentionally stays set after the step, so the device prompt in the UI
-   * doesn't close and reopen between two device signatures in a row. It's
-   * cleared when sign() or the whole sign and broadcast flow no longer needs a key.
+   * Runs a signing step and marks the type of the signer's key as the active
+   * signing key type. It intentionally stays set after the step, so the device
+   * prompt in the UI doesn't close and reopen between two device signatures in
+   * a row. It's cleared when sign() or the whole sign and broadcast flow no
+   * longer needs a key.
    */
   async #withHardwareWalletSigningRequest<T>(
     request: HardwareWalletSigningRequest | null,
     sign: () => Promise<T>,
-    keyType: Key['type'] | null = this.accountOp.signingKeyType
+    signer: KeystoreSignerInterface
   ) {
-    this.activeSigningKeyType = keyType
+    this.activeSigningKeyType = signer.key.type
 
     if (!request) {
       this.emitUpdate()
       return sign()
     }
 
-    this.#setHardwareWalletSigningRequest(request)
+    this.#setHardwareWalletSigningRequest({ ...request, signerAddr: signer.key.addr })
 
     try {
       return await sign()
@@ -3630,7 +3632,9 @@ export class SignAccountOpController
       for (let i = 0; i < speeds.length; i++) {
         // we have two prices:
         // receivedPrices, from old lib/bundler
-        // and increasedPrices, which we use for the fee only
+        // and increasedPrices, which we use for the fee only on bundler
+        // broadcasts. On broadcasts by an EOA, increasedPrices are also
+        // signed in the txn, so the fee amount uses them as well
         const speed = speeds[i] as FeeSpeed
         const receivedPrices = gasPrices[speed]
         const increasedPrices = increasedGasPrices[speed]
@@ -3662,7 +3666,10 @@ export class SignAccountOpController
           simulatedGasLimit = getGasLimitWithOverheadForSelfEOA(gasUsed, this.accountOp.calls)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
-          amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
+          // the txn is signed with gasPrice as maxFeePerGas and the network requires
+          // the sender to hold gasLimit * maxFeePerGas upfront, so the fee amount
+          // (which is checked against the balance) must use the same price
+          amountGasPrice = gasPrice
 
           this.accountOp.calls.forEach((call) => {
             if (call.to && getAddress(call.to) === SINGLETON) {
@@ -3675,7 +3682,8 @@ export class SignAccountOpController
           simulatedGasLimit = getGasLimitWithOverhead(gasUsed)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
-          amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
+          // the paying EOA must hold gasLimit * maxFeePerGas upfront
+          amountGasPrice = gasPrice
         } else {
           // Relayer
           simulatedGasLimit = gasUsed + option.gasUsed
@@ -4846,11 +4854,14 @@ export class SignAccountOpController
 
         const { safeTxn, typedData, safeTxnHash, signingRequest } =
           this.#getSafeSigningData(accountState)
-        const signature = (await this.#withHardwareWalletSigningRequest(signingRequest, () =>
-          safeSigner.signTypedData(typedData, {
-            chainId: this.#network.chainId,
-            provider: this.provider
-          })
+        const signature = (await this.#withHardwareWalletSigningRequest(
+          signingRequest,
+          () =>
+            safeSigner.signTypedData(typedData, {
+              chainId: this.#network.chainId,
+              provider: this.provider
+            }),
+          safeSigner
         )) as Hex
 
         // The first free nonce, past this device's own pending txns, still goes out in one click.
@@ -4932,7 +4943,8 @@ export class SignAccountOpController
                   accountState,
                   signer,
                   this.provider
-                )
+                ),
+              signer
             )
           })
         }
@@ -4972,7 +4984,8 @@ export class SignAccountOpController
             contract,
             await this.#withHardwareWalletSigningRequest(
               get7702AuthorizationSigningRequest(authorization),
-              () => signer.sign7702(authorization)
+              () => signer.sign7702(authorization),
+              signer
             )
           )
           if (isExternalSignerInvolved)
@@ -5022,7 +5035,8 @@ export class SignAccountOpController
             contract,
             await this.#withHardwareWalletSigningRequest(
               get7702AuthorizationSigningRequest(authorization),
-              () => signer.sign7702(authorization)
+              () => signer.sign7702(authorization),
+              signer
             )
           )
           if (isExternalSignerInvolved)
@@ -5054,7 +5068,8 @@ export class SignAccountOpController
                 undefined,
                 true,
                 this.provider
-              )
+              ),
+            signer
           )
           if (!this.accountOp.meta) {
             this.#updateAccountOp({ meta: {} })
@@ -5138,11 +5153,14 @@ export class SignAccountOpController
               getUserOpHash(userOperation, this.#network.chainId)
             )
             const signature = wrapStandard(
-              await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-                signer.signTypedData(typedData, {
-                  chainId: this.#network.chainId,
-                  provider: this.provider
-                })
+              await this.#withHardwareWalletSigningRequest(
+                getEIP712SigningRequest(typedData),
+                () =>
+                  signer.signTypedData(typedData, {
+                    chainId: this.#network.chainId,
+                    provider: this.provider
+                  }),
+                signer
               )
             )
             userOperation.signature = signature
@@ -5155,11 +5173,14 @@ export class SignAccountOpController
               getUserOpHash(userOperation, this.#network.chainId)
             )
             const signature = wrapUnprotected(
-              await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-                signer.signTypedData(typedData, {
-                  chainId: this.#network.chainId,
-                  provider: this.provider
-                })
+              await this.#withHardwareWalletSigningRequest(
+                getEIP712SigningRequest(typedData),
+                () =>
+                  signer.signTypedData(typedData, {
+                    chainId: this.#network.chainId,
+                    provider: this.provider
+                  }),
+                signer
               )
             )
             userOperation.signature = signature
@@ -5388,7 +5409,8 @@ export class SignAccountOpController
                 gasPrice: gasFeePayment.gasPrice,
                 maxPriorityFeePerGas: gasFeePayment.maxPriorityFeePerGas
               }
-            })
+            }),
+          signer
         )
         // Identified the same way as any other bundler broadcast: the
         // ActivityController resolves the tx hash and reads per-op success
@@ -5478,7 +5500,7 @@ export class SignAccountOpController
                     eip7702Auth: accountOp.meta!.delegation!
                   })
                 : signer.signRawTransaction(rawTxn),
-            gasFeePayment.paidByKeyType
+            signer
           )
 
           try {

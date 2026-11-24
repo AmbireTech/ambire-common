@@ -393,7 +393,8 @@ export class SignMessageController
     request: HardwareWalletSigningRequest,
     sign: () => Promise<T>
   ) {
-    this.#setHardwareWalletSigningRequest(request)
+    // The message is always signed by this controller's signer
+    this.#setHardwareWalletSigningRequest({ ...request, signerAddr: this.signer?.key.addr })
 
     try {
       return await sign()
