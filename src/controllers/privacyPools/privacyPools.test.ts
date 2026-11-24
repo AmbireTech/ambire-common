@@ -3650,7 +3650,8 @@ describe('PrivacyPoolsController', () => {
           status: 'failed',
           // Nothing was sent, which the sheet tells by the phase
           phase: 'ready',
-          error: 'This transfer has expired. Go back to prepare it again.'
+          error:
+            'This transfer expired before it was sent, so nothing left your account. Go back to prepare it again.'
         })
         expect(createPPv1Broadcaster).not.toHaveBeenCalled()
         // Nothing to pick up, so no sync
@@ -4382,7 +4383,8 @@ describe('PrivacyPoolsController', () => {
         jest.mocked(Date.now).mockRestore()
       })
 
-      const STALE_ERROR = 'This transfer has expired. Go back to prepare it again.'
+      const STALE_ERROR =
+        'This transfer expired before it was sent, so nothing left your account. Go back to prepare it again.'
 
       it('goes stale once the offer runs out, and is never sent', async () => {
         const { controller } = await prepareRelayedWithdrawal()

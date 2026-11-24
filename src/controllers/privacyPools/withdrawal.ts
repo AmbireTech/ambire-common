@@ -93,7 +93,8 @@ const RELAYED_WITHDRAWAL_MIN_REMAINING_MS = 10 * 1000
 const RELAYED_WITHDRAWAL_TIMEOUT_MS = 2 * 60 * 1000
 
 /** Shown in the confirmation sheet when a proved withdrawal can no longer be sent as it is. */
-const STALE_WITHDRAWAL_MESSAGE = 'This transfer has expired. Go back to prepare it again.'
+const STALE_WITHDRAWAL_MESSAGE =
+  'This transfer expired before it was sent, so nothing left your account. Go back to prepare it again.'
 
 /**
  * The SDK's error when the paymaster fee exceeds the withdrawn amount. Matched by wording: it has
