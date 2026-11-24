@@ -252,22 +252,22 @@
             },
             "0xc04b8d59": {
                 "selector": "0xc04b8d59",
-                "signature": "function exactInput(tuple(bytes,address,uint256,uint256,uint256)) payable returns (uint256)",
+                "signature": "function exactInput((bytes,address,uint256,uint256,uint256)) payable returns (uint256)",
                 "type": "function"
             },
             "0x414bf389": {
                 "selector": "0x414bf389",
-                "signature": "function exactInputSingle(tuple(address,address,uint24,address,uint256,uint256,uint256,uint160)) payable returns (uint256)",
+                "signature": "function exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160)) payable returns (uint256)",
                 "type": "function"
             },
             "0xf28c0498": {
                 "selector": "0xf28c0498",
-                "signature": "function exactOutput(tuple(bytes,address,uint256,uint256,uint256)) payable returns (uint256)",
+                "signature": "function exactOutput((bytes,address,uint256,uint256,uint256)) payable returns (uint256)",
                 "type": "function"
             },
             "0xdb3e2198": {
                 "selector": "0xdb3e2198",
-                "signature": "function exactOutputSingle(tuple(address,address,uint24,address,uint256,uint256,uint256,uint160)) payable returns (uint256)",
+                "signature": "function exactOutputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160)) payable returns (uint256)",
                 "type": "function"
             },
             "0xc45a0155": {
@@ -374,22 +374,22 @@
             },
             "0xb858183f": {
                 "selector": "0xb858183f",
-                "signature": "function exactInput(tuple(bytes,address,uint256,uint256)) payable returns (uint256)",
+                "signature": "function exactInput((bytes,address,uint256,uint256)) payable returns (uint256)",
                 "type": "function"
             },
             "0x04e45aaf": {
                 "selector": "0x04e45aaf",
-                "signature": "function exactInputSingle(tuple(address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
+                "signature": "function exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
                 "type": "function"
             },
             "0x09b81346": {
                 "selector": "0x09b81346",
-                "signature": "function exactOutput(tuple(bytes,address,uint256,uint256)) payable returns (uint256)",
+                "signature": "function exactOutput((bytes,address,uint256,uint256)) payable returns (uint256)",
                 "type": "function"
             },
             "0x5023b4df": {
                 "selector": "0x5023b4df",
-                "signature": "function exactOutputSingle(tuple(address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
+                "signature": "function exactOutputSingle((address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
                 "type": "function"
             },
             "0xc45a0155": {
@@ -409,12 +409,12 @@
             },
             "0xf100b205": {
                 "selector": "0xf100b205",
-                "signature": "function increaseLiquidity(tuple(address,address,uint256,uint256,uint256)) payable returns (bytes)",
+                "signature": "function increaseLiquidity((address,address,uint256,uint256,uint256)) payable returns (bytes)",
                 "type": "function"
             },
             "0x11ed56c9": {
                 "selector": "0x11ed56c9",
-                "signature": "function mint(tuple(address,address,uint24,int24,int24,uint256,uint256,address)) payable returns (bytes)",
+                "signature": "function mint((address,address,uint24,int24,int24,uint256,uint256,address)) payable returns (bytes)",
                 "type": "function"
             },
             "0x1f0464d1": {
@@ -571,22 +571,22 @@
             },
             "0xb858183f": {
                 "selector": "0xb858183f",
-                "signature": "function exactInput(tuple(bytes,address,uint256,uint256)) payable returns (uint256)",
+                "signature": "function exactInput((bytes,address,uint256,uint256)) payable returns (uint256)",
                 "type": "function"
             },
             "0x04e45aaf": {
                 "selector": "0x04e45aaf",
-                "signature": "function exactInputSingle(tuple(address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
+                "signature": "function exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
                 "type": "function"
             },
             "0x09b81346": {
                 "selector": "0x09b81346",
-                "signature": "function exactOutput(tuple(bytes,address,uint256,uint256)) payable returns (uint256)",
+                "signature": "function exactOutput((bytes,address,uint256,uint256)) payable returns (uint256)",
                 "type": "function"
             },
             "0x5023b4df": {
                 "selector": "0x5023b4df",
-                "signature": "function exactOutputSingle(tuple(address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
+                "signature": "function exactOutputSingle((address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
                 "type": "function"
             },
             "0xc45a0155": {
@@ -606,12 +606,12 @@
             },
             "0xf100b205": {
                 "selector": "0xf100b205",
-                "signature": "function increaseLiquidity(tuple(address,address,uint256,uint256,uint256)) payable returns (bytes)",
+                "signature": "function increaseLiquidity((address,address,uint256,uint256,uint256)) payable returns (bytes)",
                 "type": "function"
             },
             "0x11ed56c9": {
                 "selector": "0x11ed56c9",
-                "signature": "function mint(tuple(address,address,uint24,int24,int24,uint256,uint256,address)) payable returns (bytes)",
+                "signature": "function mint((address,address,uint24,int24,int24,uint256,uint256,address)) payable returns (bytes)",
                 "type": "function"
             },
             "0x1f0464d1": {
@@ -768,22 +768,22 @@
             },
             "0xb858183f": {
                 "selector": "0xb858183f",
-                "signature": "function exactInput(tuple(bytes,address,uint256,uint256)) payable returns (uint256)",
+                "signature": "function exactInput((bytes,address,uint256,uint256)) payable returns (uint256)",
                 "type": "function"
             },
             "0x04e45aaf": {
                 "selector": "0x04e45aaf",
-                "signature": "function exactInputSingle(tuple(address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
+                "signature": "function exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
                 "type": "function"
             },
             "0x09b81346": {
                 "selector": "0x09b81346",
-                "signature": "function exactOutput(tuple(bytes,address,uint256,uint256)) payable returns (uint256)",
+                "signature": "function exactOutput((bytes,address,uint256,uint256)) payable returns (uint256)",
                 "type": "function"
             },
             "0x5023b4df": {
                 "selector": "0x5023b4df",
-                "signature": "function exactOutputSingle(tuple(address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
+                "signature": "function exactOutputSingle((address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
                 "type": "function"
             },
             "0xc45a0155": {
@@ -803,12 +803,12 @@
             },
             "0xf100b205": {
                 "selector": "0xf100b205",
-                "signature": "function increaseLiquidity(tuple(address,address,uint256,uint256,uint256)) payable returns (bytes)",
+                "signature": "function increaseLiquidity((address,address,uint256,uint256,uint256)) payable returns (bytes)",
                 "type": "function"
             },
             "0x11ed56c9": {
                 "selector": "0x11ed56c9",
-                "signature": "function mint(tuple(address,address,uint24,int24,int24,uint256,uint256,address)) payable returns (bytes)",
+                "signature": "function mint((address,address,uint24,int24,int24,uint256,uint256,address)) payable returns (bytes)",
                 "type": "function"
             },
             "0x1f0464d1": {
@@ -965,22 +965,22 @@
             },
             "0xb858183f": {
                 "selector": "0xb858183f",
-                "signature": "function exactInput(tuple(bytes,address,uint256,uint256)) payable returns (uint256)",
+                "signature": "function exactInput((bytes,address,uint256,uint256)) payable returns (uint256)",
                 "type": "function"
             },
             "0x04e45aaf": {
                 "selector": "0x04e45aaf",
-                "signature": "function exactInputSingle(tuple(address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
+                "signature": "function exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
                 "type": "function"
             },
             "0x09b81346": {
                 "selector": "0x09b81346",
-                "signature": "function exactOutput(tuple(bytes,address,uint256,uint256)) payable returns (uint256)",
+                "signature": "function exactOutput((bytes,address,uint256,uint256)) payable returns (uint256)",
                 "type": "function"
             },
             "0x5023b4df": {
                 "selector": "0x5023b4df",
-                "signature": "function exactOutputSingle(tuple(address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
+                "signature": "function exactOutputSingle((address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)",
                 "type": "function"
             },
             "0xc45a0155": {
@@ -1000,12 +1000,12 @@
             },
             "0xf100b205": {
                 "selector": "0xf100b205",
-                "signature": "function increaseLiquidity(tuple(address,address,uint256,uint256,uint256)) payable returns (bytes)",
+                "signature": "function increaseLiquidity((address,address,uint256,uint256,uint256)) payable returns (bytes)",
                 "type": "function"
             },
             "0x11ed56c9": {
                 "selector": "0x11ed56c9",
-                "signature": "function mint(tuple(address,address,uint24,int24,int24,uint256,uint256,address)) payable returns (bytes)",
+                "signature": "function mint((address,address,uint24,int24,int24,uint256,uint256,address)) payable returns (bytes)",
                 "type": "function"
             },
             "0x1f0464d1": {
@@ -1157,7 +1157,7 @@
             },
             "0xfc6f7865": {
                 "selector": "0xfc6f7865",
-                "signature": "function collect(tuple(uint256,address,uint128,uint128)) payable returns (uint256,uint256)",
+                "signature": "function collect((uint256,address,uint128,uint128)) payable returns (uint256,uint256)",
                 "type": "function"
             },
             "0x13ead562": {
@@ -1167,7 +1167,7 @@
             },
             "0x0c49ccbe": {
                 "selector": "0x0c49ccbe",
-                "signature": "function decreaseLiquidity(tuple(uint256,uint128,uint256,uint256,uint256)) payable returns (uint256,uint256)",
+                "signature": "function decreaseLiquidity((uint256,uint128,uint256,uint256,uint256)) payable returns (uint256,uint256)",
                 "type": "function"
             },
             "0xc45a0155": {
@@ -1182,7 +1182,7 @@
             },
             "0x219f5d17": {
                 "selector": "0x219f5d17",
-                "signature": "function increaseLiquidity(tuple(uint256,uint256,uint256,uint256,uint256,uint256)) payable returns (uint128,uint256,uint256)",
+                "signature": "function increaseLiquidity((uint256,uint256,uint256,uint256,uint256,uint256)) payable returns (uint128,uint256,uint256)",
                 "type": "function"
             },
             "0xe985e9c5": {
@@ -1192,7 +1192,7 @@
             },
             "0x88316456": {
                 "selector": "0x88316456",
-                "signature": "function mint(tuple(address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) payable returns (uint256,uint128,uint256,uint256)",
+                "signature": "function mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) payable returns (uint256,uint128,uint256,uint256)",
                 "type": "function"
             },
             "0xac9650d8": {
@@ -1571,7 +1571,7 @@
             },
             "0x13d79a0b": {
                 "selector": "0x13d79a0b",
-                "signature": "function settle(address[],uint256[],tuple(uint256,uint256,address,uint256,uint256,uint32,bytes32,uint256,uint256,uint256,bytes)[],tuple(address,uint256,bytes)[][3])",
+                "signature": "function settle(address[],uint256[],(uint256,uint256,address,uint256,uint256,uint32,bytes32,uint256,uint256,uint256,bytes)[],(address,uint256,bytes)[][3])",
                 "type": "function"
             },
             "0xf84436bd": {
@@ -1586,7 +1586,7 @@
             },
             "0x845a101f": {
                 "selector": "0x845a101f",
-                "signature": "function swap(tuple(bytes32,uint256,uint256,uint256,bytes)[],address[],tuple(uint256,uint256,address,uint256,uint256,uint32,bytes32,uint256,uint256,uint256,bytes))",
+                "signature": "function swap((bytes32,uint256,uint256,uint256,bytes)[],address[],(uint256,uint256,address,uint256,uint256,uint32,bytes32,uint256,uint256,uint256,bytes))",
                 "type": "function"
             },
             "0xfbfa77cf": {
@@ -1628,12 +1628,12 @@
         "CowSwapGPv2VaultRelayer": {
             "0x4817a286": {
                 "selector": "0x4817a286",
-                "signature": "function batchSwapWithFee(uint8,tuple(bytes32,uint256,uint256,uint256,bytes)[],address[],tuple(address,bool,address,bool),int256[],uint256,tuple(address,address,uint256,bytes32)) returns (int256[])",
+                "signature": "function batchSwapWithFee(uint8,(bytes32,uint256,uint256,uint256,bytes)[],address[],(address,bool,address,bool),int256[],uint256,(address,address,uint256,bytes32)) returns (int256[])",
                 "type": "function"
             },
             "0x7d10d11f": {
                 "selector": "0x7d10d11f",
-                "signature": "function transferFromAccounts(tuple(address,address,uint256,bytes32)[])",
+                "signature": "function transferFromAccounts((address,address,uint256,bytes32)[])",
                 "type": "function"
             }
         },
@@ -1697,7 +1697,7 @@
             },
             "0x6df77496": {
                 "selector": "0x6df77496",
-                "signature": "function getPartnerFeeStructure(address) view returns (tuple(uint256,bool,bool,uint16,string,bytes))",
+                "signature": "function getPartnerFeeStructure(address) view returns ((uint256,bool,bool,uint16,string,bytes))",
                 "type": "function"
             },
             "0x248a9ca3": {
@@ -1899,7 +1899,7 @@
             },
             "0xcc53287f": {
                 "selector": "0xcc53287f",
-                "signature": "function lockdown(tuple(address,address)[])",
+                "signature": "function lockdown((address,address)[])",
                 "type": "function"
             },
             "0x4fe02b44": {
@@ -1909,37 +1909,37 @@
             },
             "0x2a2d80d1": {
                 "selector": "0x2a2d80d1",
-                "signature": "function permit(address,tuple(tuple(address,uint160,uint48,uint48)[],address,uint256),bytes)",
+                "signature": "function permit(address,((address,uint160,uint48,uint48)[],address,uint256),bytes)",
                 "type": "function"
             },
             "0x2b67b570": {
                 "selector": "0x2b67b570",
-                "signature": "function permit(address,tuple(tuple(address,uint160,uint48,uint48),address,uint256),bytes)",
+                "signature": "function permit(address,((address,uint160,uint48,uint48),address,uint256),bytes)",
                 "type": "function"
             },
             "0x30f28b7a": {
                 "selector": "0x30f28b7a",
-                "signature": "function permitTransferFrom(tuple(tuple(address,uint256),uint256,uint256),tuple(address,uint256),address,bytes)",
+                "signature": "function permitTransferFrom(((address,uint256),uint256,uint256),(address,uint256),address,bytes)",
                 "type": "function"
             },
             "0xedd9444b": {
                 "selector": "0xedd9444b",
-                "signature": "function permitTransferFrom(tuple(tuple(address,uint256)[],uint256,uint256),tuple(address,uint256)[],address,bytes)",
+                "signature": "function permitTransferFrom(((address,uint256)[],uint256,uint256),(address,uint256)[],address,bytes)",
                 "type": "function"
             },
             "0x137c29fe": {
                 "selector": "0x137c29fe",
-                "signature": "function permitWitnessTransferFrom(tuple(tuple(address,uint256),uint256,uint256),tuple(address,uint256),address,bytes32,string,bytes)",
+                "signature": "function permitWitnessTransferFrom(((address,uint256),uint256,uint256),(address,uint256),address,bytes32,string,bytes)",
                 "type": "function"
             },
             "0xfe8ec1a7": {
                 "selector": "0xfe8ec1a7",
-                "signature": "function permitWitnessTransferFrom(tuple(tuple(address,uint256)[],uint256,uint256),tuple(address,uint256)[],address,bytes32,string,bytes)",
+                "signature": "function permitWitnessTransferFrom(((address,uint256)[],uint256,uint256),(address,uint256)[],address,bytes32,string,bytes)",
                 "type": "function"
             },
             "0x0d58b1db": {
                 "selector": "0x0d58b1db",
-                "signature": "function transferFrom(tuple(address,address,uint160,address)[])",
+                "signature": "function transferFrom((address,address,uint160,address)[])",
                 "type": "function"
             },
             "0x36c78516": {
@@ -2282,12 +2282,12 @@
             },
             "0xc44b11f7": {
                 "selector": "0xc44b11f7",
-                "signature": "function getConfiguration(address) view returns (tuple(uint256))",
+                "signature": "function getConfiguration(address) view returns ((uint256))",
                 "type": "function"
             },
             "0x35ea6a75": {
                 "selector": "0x35ea6a75",
-                "signature": "function getReserveData(address) view returns (tuple(tuple(uint256),uint128,uint128,uint128,uint128,uint128,uint40,address,address,address,address,uint8))",
+                "signature": "function getReserveData(address) view returns (((uint256),uint128,uint128,uint128,uint128,uint128,uint40,address,address,address,address,uint8))",
                 "type": "function"
             },
             "0xd15e0053": {
@@ -2312,7 +2312,7 @@
             },
             "0x4417a583": {
                 "selector": "0x4417a583",
-                "signature": "function getUserConfiguration(address) view returns (tuple(uint256))",
+                "signature": "function getUserConfiguration(address) view returns ((uint256))",
                 "type": "function"
             },
             "0x7a708e92": {
@@ -2704,7 +2704,7 @@
             },
             "0x945bcec9": {
                 "selector": "0x945bcec9",
-                "signature": "function batchSwap(uint8,tuple(bytes32,uint256,uint256,uint256,bytes)[],address[],tuple(address,bool,address,bool),int256[],uint256) payable returns (int256[])",
+                "signature": "function batchSwap(uint8,(bytes32,uint256,uint256,uint256,bytes)[],address[],(address,bool,address,bool),int256[],uint256) payable returns (int256[])",
                 "type": "function"
             },
             "0x7d3aeb96": {
@@ -2714,7 +2714,7 @@
             },
             "0x8bdb3913": {
                 "selector": "0x8bdb3913",
-                "signature": "function exitPool(bytes32,address,address,tuple(address[],uint256[],bytes,bool))",
+                "signature": "function exitPool(bytes32,address,address,(address[],uint256[],bytes,bool))",
                 "type": "function"
             },
             "0x5c38449e": {
@@ -2779,22 +2779,22 @@
             },
             "0xb95cac28": {
                 "selector": "0xb95cac28",
-                "signature": "function joinPool(bytes32,address,address,tuple(address[],uint256[],bytes,bool)) payable",
+                "signature": "function joinPool(bytes32,address,address,(address[],uint256[],bytes,bool)) payable",
                 "type": "function"
             },
             "0xe6c46092": {
                 "selector": "0xe6c46092",
-                "signature": "function managePoolBalance(tuple(uint8,bytes32,address,uint256)[])",
+                "signature": "function managePoolBalance((uint8,bytes32,address,uint256)[])",
                 "type": "function"
             },
             "0x0e8e3e84": {
                 "selector": "0x0e8e3e84",
-                "signature": "function manageUserBalance(tuple(uint8,address,uint256,address,address)[]) payable",
+                "signature": "function manageUserBalance((uint8,address,uint256,address,address)[]) payable",
                 "type": "function"
             },
             "0xf84d066e": {
                 "selector": "0xf84d066e",
-                "signature": "function queryBatchSwap(uint8,tuple(bytes32,uint256,uint256,uint256,bytes)[],address[],tuple(address,bool,address,bool)) returns (int256[])",
+                "signature": "function queryBatchSwap(uint8,(bytes32,uint256,uint256,uint256,bytes)[],address[],(address,bool,address,bool)) returns (int256[])",
                 "type": "function"
             },
             "0x09b2760f": {
@@ -2824,7 +2824,7 @@
             },
             "0x52bbbe29": {
                 "selector": "0x52bbbe29",
-                "signature": "function swap(tuple(bytes32,uint8,address,address,uint256,bytes),tuple(address,bool,address,bool),uint256,uint256) payable returns (uint256)",
+                "signature": "function swap((bytes32,uint8,address,address,uint256,bytes),(address,bool,address,bool),uint256,uint256) payable returns (uint256)",
                 "type": "function"
             },
             "0x94b979b6": {
@@ -2963,7 +2963,7 @@
             },
             "0x4e1028ba": {
                 "selector": "0x4e1028ba",
-                "signature": "function execute(tuple(uint8,address,address,uint256,bool)[]) payable",
+                "signature": "function execute((uint8,address,address,uint256,bool)[]) payable",
                 "type": "function"
             },
             "0xbde12718": {
@@ -3020,7 +3020,7 @@
             },
             "0x4e1028ba": {
                 "selector": "0x4e1028ba",
-                "signature": "function execute(tuple(uint8,address,address,uint256,bool)[]) payable",
+                "signature": "function execute((uint8,address,address,uint256,bool)[]) payable",
                 "type": "function"
             },
             "0xbde12718": {
@@ -3077,7 +3077,7 @@
             },
             "0x4e1028ba": {
                 "selector": "0x4e1028ba",
-                "signature": "function execute(tuple(uint8,address,address,uint256,bool)[]) payable",
+                "signature": "function execute((uint8,address,address,uint256,bool)[]) payable",
                 "type": "function"
             },
             "0xbde12718": {
@@ -3099,7 +3099,7 @@
         "MovrRouter": {
             "0x02a9c051": {
                 "selector": "0x02a9c051",
-                "signature": "function addRoutes(tuple(address,bool,bool)[]) returns (uint256[])",
+                "signature": "function addRoutes((address,bool,bool)[]) returns (uint256[])",
                 "type": "function"
             },
             "0xffcdf4ed": {
@@ -3109,7 +3109,7 @@
             },
             "0xa44bbb15": {
                 "selector": "0xa44bbb15",
-                "signature": "function outboundTransferTo(tuple(address,uint256,uint256,tuple(uint256,uint256,address,bytes),tuple(uint256,uint256,address,bytes))) payable",
+                "signature": "function outboundTransferTo((address,uint256,uint256,(uint256,uint256,address,bytes),(uint256,uint256,address,bytes))) payable",
                 "type": "function"
             },
             "0x8da5cb5b": {
@@ -3927,7 +3927,7 @@
             },
             "0x1e86da2a": {
                 "selector": "0x1e86da2a",
-                "signature": "function deployAndExecute(bytes,uint256,tuple(address,uint256,bytes)[],bytes)",
+                "signature": "function deployAndExecute(bytes,uint256,(address,uint256,bytes)[],bytes)",
                 "type": "function"
             },
             "0xd9caed12": {
@@ -3944,7 +3944,7 @@
         "Batcher": {
             "0x86df7292": {
                 "selector": "0x86df7292",
-                "signature": "function batchCall(tuple(address,uint256,bytes)[])",
+                "signature": "function batchCall((address,uint256,bytes)[])",
                 "type": "function"
             }
         },
@@ -4610,12 +4610,12 @@
             },
             "0xbc6a629c": {
                 "selector": "0xbc6a629c",
-                "signature": "function getPublicDrop(address) view returns (tuple(uint80,uint48,uint48,uint16,uint16,bool))",
+                "signature": "function getPublicDrop(address) view returns ((uint80,uint48,uint48,uint16,uint16,bool))",
                 "type": "function"
             },
             "0x81bf9af3": {
                 "selector": "0x81bf9af3",
-                "signature": "function getSignedMintValidationParams(address,address) view returns (tuple(uint80,uint24,uint40,uint40,uint40,uint16,uint16))",
+                "signature": "function getSignedMintValidationParams(address,address) view returns ((uint80,uint24,uint40,uint40,uint40,uint16,uint16))",
                 "type": "function"
             },
             "0x7e3ba6af": {
@@ -4630,17 +4630,17 @@
             },
             "0x0b0e8a6e": {
                 "selector": "0x0b0e8a6e",
-                "signature": "function getTokenGatedDrop(address,address) view returns (tuple(uint80,uint16,uint48,uint48,uint8,uint32,uint16,bool))",
+                "signature": "function getTokenGatedDrop(address,address) view returns ((uint80,uint16,uint48,uint48,uint8,uint32,uint16,bool))",
                 "type": "function"
             },
             "0x4300a4e6": {
                 "selector": "0x4300a4e6",
-                "signature": "function mintAllowList(address,address,address,uint256,tuple(uint256,uint256,uint256,uint256,uint256,uint256,uint256,bool),bytes32[]) payable",
+                "signature": "function mintAllowList(address,address,address,uint256,(uint256,uint256,uint256,uint256,uint256,uint256,uint256,bool),bytes32[]) payable",
                 "type": "function"
             },
             "0x99eb900f": {
                 "selector": "0x99eb900f",
-                "signature": "function mintAllowedTokenHolder(address,address,address,tuple(address,uint256[])) payable",
+                "signature": "function mintAllowedTokenHolder(address,address,address,(address,uint256[])) payable",
                 "type": "function"
             },
             "0x161ac21f": {
@@ -4650,12 +4650,12 @@
             },
             "0x4b61cd6f": {
                 "selector": "0x4b61cd6f",
-                "signature": "function mintSigned(address,address,address,uint256,tuple(uint256,uint256,uint256,uint256,uint256,uint256,uint256,bool),uint256,bytes) payable",
+                "signature": "function mintSigned(address,address,address,uint256,(uint256,uint256,uint256,uint256,uint256,uint256,uint256,bool),uint256,bytes) payable",
                 "type": "function"
             },
             "0xebb4a55f": {
                 "selector": "0xebb4a55f",
-                "signature": "function updateAllowList(tuple(bytes32,string[],string))",
+                "signature": "function updateAllowList((bytes32,string[],string))",
                 "type": "function"
             },
             "0x8e7d1e43": {
@@ -4680,17 +4680,17 @@
             },
             "0x01308e65": {
                 "selector": "0x01308e65",
-                "signature": "function updatePublicDrop(tuple(uint80,uint48,uint48,uint16,uint16,bool))",
+                "signature": "function updatePublicDrop((uint80,uint48,uint48,uint16,uint16,bool))",
                 "type": "function"
             },
             "0x4d380178": {
                 "selector": "0x4d380178",
-                "signature": "function updateSignedMintValidationParams(address,tuple(uint80,uint24,uint40,uint40,uint40,uint16,uint16))",
+                "signature": "function updateSignedMintValidationParams(address,(uint80,uint24,uint40,uint40,uint40,uint16,uint16))",
                 "type": "function"
             },
             "0xfd9ab22a": {
                 "selector": "0xfd9ab22a",
-                "signature": "function updateTokenGatedDrop(address,tuple(uint80,uint16,uint48,uint48,uint8,uint32,uint16,bool))",
+                "signature": "function updateTokenGatedDrop(address,(uint80,uint16,uint48,uint48,uint8,uint32,uint16,bool))",
                 "type": "function"
             },
             "0xefcd7e01": {
@@ -4720,7 +4720,7 @@
             },
             "0x3e30d8e1": {
                 "selector": "0x3e30d8e1",
-                "signature": "event PublicDropUpdated(address indexed,tuple(uint80,uint48,uint48,uint16,uint16,bool))",
+                "signature": "event PublicDropUpdated(address indexed,(uint80,uint48,uint48,uint16,uint16,bool))",
                 "type": "event"
             },
             "0xe90cf9cc": {
@@ -4730,12 +4730,12 @@
             },
             "0xcaeb4009": {
                 "selector": "0xcaeb4009",
-                "signature": "event SignedMintValidationParamsUpdated(address indexed,address indexed,tuple(uint80,uint24,uint40,uint40,uint40,uint16,uint16))",
+                "signature": "event SignedMintValidationParamsUpdated(address indexed,address indexed,(uint80,uint24,uint40,uint40,uint40,uint16,uint16))",
                 "type": "event"
             },
             "0xc695f93a": {
                 "selector": "0xc695f93a",
-                "signature": "event TokenGatedDropStageUpdated(address indexed,address indexed,tuple(uint80,uint16,uint48,uint48,uint8,uint32,uint16,bool))",
+                "signature": "event TokenGatedDropStageUpdated(address indexed,address indexed,(uint80,uint16,uint48,uint48,uint8,uint32,uint16,bool))",
                 "type": "event"
             }
         },
@@ -4762,17 +4762,17 @@
             },
             "0xd0a3b665": {
                 "selector": "0xd0a3b665",
-                "signature": "function fillOrderRFQ(tuple(uint256,address,address,address,address,uint256,uint256),bytes,uint256,uint256) payable returns (uint256,uint256)",
+                "signature": "function fillOrderRFQ((uint256,address,address,address,address,uint256,uint256),bytes,uint256,uint256) payable returns (uint256,uint256)",
                 "type": "function"
             },
             "0xbaba5855": {
                 "selector": "0xbaba5855",
-                "signature": "function fillOrderRFQTo(tuple(uint256,address,address,address,address,uint256,uint256),bytes,uint256,uint256,address) payable returns (uint256,uint256)",
+                "signature": "function fillOrderRFQTo((uint256,address,address,address,address,uint256,uint256),bytes,uint256,uint256,address) payable returns (uint256,uint256)",
                 "type": "function"
             },
             "0x4cc4a27b": {
                 "selector": "0x4cc4a27b",
-                "signature": "function fillOrderRFQToWithPermit(tuple(uint256,address,address,address,address,uint256,uint256),bytes,uint256,uint256,address,bytes) returns (uint256,uint256)",
+                "signature": "function fillOrderRFQToWithPermit((uint256,address,address,address,address,uint256,uint256),bytes,uint256,uint256,address,bytes) returns (uint256,uint256)",
                 "type": "function"
             },
             "0x56f16124": {
@@ -4797,7 +4797,7 @@
             },
             "0x7c025200": {
                 "selector": "0x7c025200",
-                "signature": "function swap(address,tuple(address,address,address,address,uint256,uint256,uint256,bytes),bytes) payable returns (uint256,uint256,uint256)",
+                "signature": "function swap(address,(address,address,address,address,uint256,uint256,uint256,bytes),bytes) payable returns (uint256,uint256,uint256)",
                 "type": "function"
             },
             "0xf2fde38b": {
@@ -4859,7 +4859,7 @@
             },
             "0x6b9ae9e0": {
                 "selector": "0x6b9ae9e0",
-                "signature": "function execute(tuple(address,uint256,bool,bytes)[],int8,bytes32,bytes) payable",
+                "signature": "function execute((address,uint256,bool,bytes)[],int8,bytes32,bytes) payable",
                 "type": "function"
             },
             "0xfc442176": {
@@ -4874,7 +4874,7 @@
             },
             "0x2c0aa444": {
                 "selector": "0x2c0aa444",
-                "signature": "function payWithAnyToken(tuple(bytes32,uint64,address,address,uint256),tuple(address,address,address,uint256,uint256,bytes)[],tuple(uint8,bytes)) payable",
+                "signature": "function payWithAnyToken((bytes32,uint64,address,address,uint256),(address,address,address,uint256,uint256,bytes)[],(uint8,bytes)) payable",
                 "type": "function"
             },
             "0x715018a6": {
@@ -4991,7 +4991,7 @@
             },
             "0x272ec365": {
                 "selector": "0x272ec365",
-                "signature": "function mint(tuple(bytes32,uint256,bytes),tuple(uint256,uint256,address)[])",
+                "signature": "function mint((bytes32,uint256,bytes),(uint256,uint256,address)[])",
                 "type": "function"
             },
             "0x06fdde03": {
@@ -5016,7 +5016,7 @@
             },
             "0x022abd4b": {
                 "selector": "0x022abd4b",
-                "signature": "function redeem(tuple(bytes32,uint256,bytes),uint256[],tuple(uint256,uint256,address)[])",
+                "signature": "function redeem((bytes32,uint256,bytes),uint256[],(uint256,uint256,address)[])",
                 "type": "function"
             },
             "0x715018a6": {
@@ -5343,7 +5343,7 @@
             },
             "0x51eb05a6": {
                 "selector": "0x51eb05a6",
-                "signature": "function updatePool(uint256) returns (tuple(uint256,uint256,uint256,uint256,bool))",
+                "signature": "function updatePool(uint256) returns ((uint256,uint256,uint256,uint256,bool))",
                 "type": "function"
             },
             "0xac1d0609": {
@@ -5455,7 +5455,7 @@
             },
             "0x59722caa": {
                 "selector": "0x59722caa",
-                "signature": "function createPairERC20(tuple(address,address,address,address,uint8,uint128,uint96,uint128,uint256[],uint256)) returns (address)",
+                "signature": "function createPairERC20((address,address,address,address,uint8,uint128,uint96,uint128,uint256[],uint256)) returns (address)",
                 "type": "function"
             },
             "0xce9c095d": {
@@ -5617,82 +5617,82 @@
             },
             "0xc5cf5704": {
                 "selector": "0xc5cf5704",
-                "signature": "function robustSwapERC20ForAnyNFTs(tuple(tuple(address,uint256),uint256)[],uint256,address,uint256) returns (uint256)",
+                "signature": "function robustSwapERC20ForAnyNFTs(((address,uint256),uint256)[],uint256,address,uint256) returns (uint256)",
                 "type": "function"
             },
             "0xdb6ddb26": {
                 "selector": "0xdb6ddb26",
-                "signature": "function robustSwapERC20ForSpecificNFTs(tuple(tuple(address,uint256[]),uint256)[],uint256,address,uint256) payable returns (uint256)",
+                "signature": "function robustSwapERC20ForSpecificNFTs(((address,uint256[]),uint256)[],uint256,address,uint256) payable returns (uint256)",
                 "type": "function"
             },
             "0x8c1daa2b": {
                 "selector": "0x8c1daa2b",
-                "signature": "function robustSwapERC20ForSpecificNFTsAndNFTsToToken(tuple(tuple(tuple(address,uint256[]),uint256)[],tuple(tuple(address,uint256[]),uint256)[],uint256,address,address)) payable returns (uint256,uint256)",
+                "signature": "function robustSwapERC20ForSpecificNFTsAndNFTsToToken((((address,uint256[]),uint256)[],((address,uint256[]),uint256)[],uint256,address,address)) payable returns (uint256,uint256)",
                 "type": "function"
             },
             "0x2f9b9d4e": {
                 "selector": "0x2f9b9d4e",
-                "signature": "function robustSwapETHForAnyNFTs(tuple(tuple(address,uint256),uint256)[],address,address,uint256) payable returns (uint256)",
+                "signature": "function robustSwapETHForAnyNFTs(((address,uint256),uint256)[],address,address,uint256) payable returns (uint256)",
                 "type": "function"
             },
             "0x3efd9e71": {
                 "selector": "0x3efd9e71",
-                "signature": "function robustSwapETHForSpecificNFTs(tuple(tuple(address,uint256[]),uint256)[],address,address,uint256) payable returns (uint256)",
+                "signature": "function robustSwapETHForSpecificNFTs(((address,uint256[]),uint256)[],address,address,uint256) payable returns (uint256)",
                 "type": "function"
             },
             "0xab5c0da2": {
                 "selector": "0xab5c0da2",
-                "signature": "function robustSwapETHForSpecificNFTsAndNFTsToToken(tuple(tuple(tuple(address,uint256[]),uint256)[],tuple(tuple(address,uint256[]),uint256)[],uint256,address,address)) payable returns (uint256,uint256)",
+                "signature": "function robustSwapETHForSpecificNFTsAndNFTsToToken((((address,uint256[]),uint256)[],((address,uint256[]),uint256)[],uint256,address,address)) payable returns (uint256,uint256)",
                 "type": "function"
             },
             "0x2b997f8e": {
                 "selector": "0x2b997f8e",
-                "signature": "function robustSwapNFTsForToken(tuple(tuple(address,uint256[]),uint256)[],address,uint256) returns (uint256)",
+                "signature": "function robustSwapNFTsForToken(((address,uint256[]),uint256)[],address,uint256) returns (uint256)",
                 "type": "function"
             },
             "0xad134450": {
                 "selector": "0xad134450",
-                "signature": "function swapERC20ForAnyNFTs(tuple(address,uint256)[],uint256,address,uint256) returns (uint256)",
+                "signature": "function swapERC20ForAnyNFTs((address,uint256)[],uint256,address,uint256) returns (uint256)",
                 "type": "function"
             },
             "0x14db3784": {
                 "selector": "0x14db3784",
-                "signature": "function swapERC20ForSpecificNFTs(tuple(address,uint256[])[],uint256,address,uint256) returns (uint256)",
+                "signature": "function swapERC20ForSpecificNFTs((address,uint256[])[],uint256,address,uint256) returns (uint256)",
                 "type": "function"
             },
             "0xdb42312a": {
                 "selector": "0xdb42312a",
-                "signature": "function swapETHForAnyNFTs(tuple(address,uint256)[],address,address,uint256) payable returns (uint256)",
+                "signature": "function swapETHForAnyNFTs((address,uint256)[],address,address,uint256) payable returns (uint256)",
                 "type": "function"
             },
             "0x11132000": {
                 "selector": "0x11132000",
-                "signature": "function swapETHForSpecificNFTs(tuple(address,uint256[])[],address,address,uint256) payable returns (uint256)",
+                "signature": "function swapETHForSpecificNFTs((address,uint256[])[],address,address,uint256) payable returns (uint256)",
                 "type": "function"
             },
             "0xf138513a": {
                 "selector": "0xf138513a",
-                "signature": "function swapNFTsForAnyNFTsThroughERC20(tuple(tuple(address,uint256[])[],tuple(address,uint256)[]),uint256,uint256,address,uint256) returns (uint256)",
+                "signature": "function swapNFTsForAnyNFTsThroughERC20(((address,uint256[])[],(address,uint256)[]),uint256,uint256,address,uint256) returns (uint256)",
                 "type": "function"
             },
             "0xd89bb2b5": {
                 "selector": "0xd89bb2b5",
-                "signature": "function swapNFTsForAnyNFTsThroughETH(tuple(tuple(address,uint256[])[],tuple(address,uint256)[]),uint256,address,address,uint256) payable returns (uint256)",
+                "signature": "function swapNFTsForAnyNFTsThroughETH(((address,uint256[])[],(address,uint256)[]),uint256,address,address,uint256) payable returns (uint256)",
                 "type": "function"
             },
             "0x84a4c8c4": {
                 "selector": "0x84a4c8c4",
-                "signature": "function swapNFTsForSpecificNFTsThroughERC20(tuple(tuple(address,uint256[])[],tuple(address,uint256[])[]),uint256,uint256,address,uint256) returns (uint256)",
+                "signature": "function swapNFTsForSpecificNFTsThroughERC20(((address,uint256[])[],(address,uint256[])[]),uint256,uint256,address,uint256) returns (uint256)",
                 "type": "function"
             },
             "0xa833d43a": {
                 "selector": "0xa833d43a",
-                "signature": "function swapNFTsForSpecificNFTsThroughETH(tuple(tuple(address,uint256[])[],tuple(address,uint256[])[]),uint256,address,address,uint256) payable returns (uint256)",
+                "signature": "function swapNFTsForSpecificNFTsThroughETH(((address,uint256[])[],(address,uint256[])[]),uint256,address,address,uint256) payable returns (uint256)",
                 "type": "function"
             },
             "0xdabf67d7": {
                 "selector": "0xdabf67d7",
-                "signature": "function swapNFTsForToken(tuple(address,uint256[])[],uint256,address,uint256) returns (uint256)",
+                "signature": "function swapNFTsForToken((address,uint256[])[],uint256,address,uint256) returns (uint256)",
                 "type": "function"
             }
         },
@@ -6096,17 +6096,17 @@
             },
             "0x6b29e1bd": {
                 "selector": "0x6b29e1bd",
-                "signature": "function deposit(address,address,uint256,uint32,uint32,address,tuple(address,uint8[])[]) returns (uint256)",
+                "signature": "function deposit(address,address,uint256,uint32,uint32,address,(address,uint8[])[]) returns (uint256)",
                 "type": "function"
             },
             "0xb2b513c1": {
                 "selector": "0xb2b513c1",
-                "signature": "function deposit(address,address,uint256,uint32,uint32,address,tuple(address,uint8[])[],bytes) returns (uint256)",
+                "signature": "function deposit(address,address,uint256,uint32,uint32,address,(address,uint8[])[],bytes) returns (uint256)",
                 "type": "function"
             },
             "0x4997cdc3": {
                 "selector": "0x4997cdc3",
-                "signature": "function getNextSwapInfo(address[],tuple(uint8,uint8)[],bool,bytes) view returns (tuple(tuple(address,uint256,uint256,uint256)[],tuple(address,address,uint256,uint256,uint256,uint256,bytes1)[]))",
+                "signature": "function getNextSwapInfo(address[],(uint8,uint8)[],bool,bytes) view returns (((address,uint256,uint256,uint256)[],(address,address,uint256,uint256,uint256,uint256,bytes1)[]))",
                 "type": "function"
             },
             "0x248a9ca3": {
@@ -6206,7 +6206,7 @@
             },
             "0xb39461e5": {
                 "selector": "0xb39461e5",
-                "signature": "function swap(address[],tuple(uint8,uint8)[],address,address,uint256[],bytes,bytes) returns (tuple(tuple(address,uint256,uint256,uint256)[],tuple(address,address,uint256,uint256,uint256,uint256,bytes1)[]))",
+                "signature": "function swap(address[],(uint8,uint8)[],address,address,uint256[],bytes,bytes) returns (((address,uint256,uint256,uint256)[],(address,address,uint256,uint256,uint256,uint256,bytes1)[]))",
                 "type": "function"
             },
             "0x4aa91aee": {
@@ -6246,12 +6246,12 @@
             },
             "0x5b6fd01d": {
                 "selector": "0x5b6fd01d",
-                "signature": "function userPosition(uint256) view returns (tuple(address,address,uint32,uint32,uint256,uint32,uint256,uint120))",
+                "signature": "function userPosition(uint256) view returns ((address,address,uint32,uint32,uint256,uint32,uint256,uint120))",
                 "type": "function"
             },
             "0x560c6499": {
                 "selector": "0x560c6499",
-                "signature": "function withdrawFromPlatformBalance(tuple(address,uint256)[],address)",
+                "signature": "function withdrawFromPlatformBalance((address,uint256)[],address)",
                 "type": "function"
             },
             "0x17621890": {
@@ -6261,12 +6261,12 @@
             },
             "0x480b3796": {
                 "selector": "0x480b3796",
-                "signature": "function withdrawSwappedMany(tuple(address,uint256[])[],address) returns (uint256[])",
+                "signature": "function withdrawSwappedMany((address,uint256[])[],address) returns (uint256[])",
                 "type": "function"
             },
             "0x1915b09a": {
                 "selector": "0x1915b09a",
-                "signature": "event Deposited(address indexed,address indexed,uint256,address,address,uint32,uint120,uint32,uint32,tuple(address,uint8[])[])",
+                "signature": "event Deposited(address indexed,address indexed,uint256,address,address,uint32,uint120,uint32,uint32,(address,uint8[])[])",
                 "type": "event"
             },
             "0xa9c989cd": {
@@ -6326,7 +6326,7 @@
             },
             "0xcd70d819": {
                 "selector": "0xcd70d819",
-                "signature": "event Swapped(address indexed,address indexed,address indexed,tuple(tuple(address,uint256,uint256,uint256)[],tuple(address,address,uint256,uint256,uint256,uint256,bytes1)[]),uint256[],uint32)",
+                "signature": "event Swapped(address indexed,address indexed,address indexed,((address,uint256,uint256,uint256)[],(address,address,uint256,uint256,uint256,uint256,bytes1)[]),uint256[],uint32)",
                 "type": "event"
             },
             "0x2577f709": {
@@ -6351,12 +6351,12 @@
             },
             "0xc3721404": {
                 "selector": "0xc3721404",
-                "signature": "event WithdrewFromPlatform(address indexed,address indexed,tuple(address,uint256)[])",
+                "signature": "event WithdrewFromPlatform(address indexed,address indexed,(address,uint256)[])",
                 "type": "event"
             },
             "0xdc1e0c1e": {
                 "selector": "0xdc1e0c1e",
-                "signature": "event WithdrewMany(address indexed,address indexed,tuple(address,uint256[])[],uint256[])",
+                "signature": "event WithdrewMany(address indexed,address indexed,(address,uint256[])[],uint256[])",
                 "type": "event"
             }
         },
@@ -6393,7 +6393,7 @@
             },
             "0x493703af": {
                 "selector": "0x493703af",
-                "signature": "error SimulatedCall(tuple(bool,bytes,uint256))",
+                "signature": "error SimulatedCall((bool,bytes,uint256))",
                 "type": "error"
             },
             "0x220d24fd": {
@@ -6438,22 +6438,22 @@
             },
             "0x62b850c7": {
                 "selector": "0x62b850c7",
-                "signature": "function batchPermitTakeFromCaller(tuple(address,uint256)[],uint256,uint256,bytes,address) payable",
+                "signature": "function batchPermitTakeFromCaller((address,uint256)[],uint256,uint256,bytes,address) payable",
                 "type": "function"
             },
             "0xfa0c9555": {
                 "selector": "0xfa0c9555",
-                "signature": "function deposit(address,address,address,uint256,uint32,uint32,address,tuple(address,uint8[])[],bytes) payable returns (uint256)",
+                "signature": "function deposit(address,address,address,uint256,uint32,uint32,address,(address,uint8[])[],bytes) payable returns (uint256)",
                 "type": "function"
             },
             "0x89352328": {
                 "selector": "0x89352328",
-                "signature": "function depositWithBalanceOnContract(address,address,address,uint32,uint32,address,tuple(address,uint8[])[],bytes) payable returns (uint256)",
+                "signature": "function depositWithBalanceOnContract(address,address,address,uint32,uint32,address,(address,uint8[])[],bytes) payable returns (uint256)",
                 "type": "function"
             },
             "0x484b3577": {
                 "selector": "0x484b3577",
-                "signature": "function getNextSwapInfo(address,tuple(address,address)[],bool,bytes) view returns (tuple(tuple(address,uint256,uint256,uint256)[],tuple(address,address,uint256,uint256,uint256,uint256,bytes1)[]))",
+                "signature": "function getNextSwapInfo(address,(address,address)[],bool,bytes) view returns (((address,uint256,uint256,uint256)[],(address,address,uint256,uint256,uint256,uint256,bytes1)[]))",
                 "type": "function"
             },
             "0x0c340a24": {
@@ -6483,12 +6483,12 @@
             },
             "0x5684c275": {
                 "selector": "0x5684c275",
-                "signature": "function legacyGetNextSwapInfo(address,tuple(address,address)[]) view returns (tuple(tuple(address,uint256,uint256,uint256)[],tuple(address,address,uint256,uint256,bytes1)[]))",
+                "signature": "function legacyGetNextSwapInfo(address,(address,address)[]) view returns (((address,uint256,uint256,uint256)[],(address,address,uint256,uint256,bytes1)[]))",
                 "type": "function"
             },
             "0x62dd9af3": {
                 "selector": "0x62dd9af3",
-                "signature": "function multiPermissionPermit(address,tuple(uint256,tuple(address,uint8[])[])[],uint256,uint8,bytes32,bytes32) payable",
+                "signature": "function multiPermissionPermit(address,(uint256,(address,uint8[])[])[],uint256,uint8,bytes32,bytes32) payable",
                 "type": "function"
             },
             "0xac9650d8": {
@@ -6503,7 +6503,7 @@
             },
             "0x1f8b479d": {
                 "selector": "0x1f8b479d",
-                "signature": "function permissionPermit(address,tuple(address,uint8[])[],uint256,uint256,uint8,bytes32,bytes32) payable",
+                "signature": "function permissionPermit(address,(address,uint8[])[],uint256,uint256,uint8,bytes32,bytes32) payable",
                 "type": "function"
             },
             "0xd9a673ef": {
@@ -6518,7 +6518,7 @@
             },
             "0xe9c04071": {
                 "selector": "0xe9c04071",
-                "signature": "function revokeAllowances(tuple(address,address[])[])",
+                "signature": "function revokeAllowances((address,address[])[])",
                 "type": "function"
             },
             "0x5d25d6eb": {
@@ -6528,7 +6528,7 @@
             },
             "0xbb2871a5": {
                 "selector": "0xbb2871a5",
-                "signature": "function secondsUntilNextSwap(address,tuple(address,address)[],bool) view returns (uint256[])",
+                "signature": "function secondsUntilNextSwap(address,(address,address)[],bool) view returns (uint256[])",
                 "type": "function"
             },
             "0x340b532f": {
@@ -6553,7 +6553,7 @@
             },
             "0x3ed242b4": {
                 "selector": "0x3ed242b4",
-                "signature": "function simulate(bytes[]) payable returns (tuple(bool,bytes,uint256)[])",
+                "signature": "function simulate(bytes[]) payable returns ((bool,bytes,uint256)[])",
                 "type": "function"
             },
             "0xbcbef206": {
@@ -6588,7 +6588,7 @@
             },
             "0x35ac2a50": {
                 "selector": "0x35ac2a50",
-                "signature": "function withdrawSwappedMany(address,tuple(address,uint256[])[],address) payable returns (uint256[])",
+                "signature": "function withdrawSwappedMany(address,(address,uint256[])[],address) payable returns (uint256[])",
                 "type": "function"
             },
             "0xdc57ca23": {
@@ -7087,7 +7087,7 @@
             },
             "0xaf6c1dc3": {
                 "selector": "0xaf6c1dc3",
-                "signature": "function _executeOrder(bytes32,tuple(tuple(address,address,address,address,address,address,address[]),tuple(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256),tuple(bool,bool,bool)),tuple(uint256,address[],uint256[],uint256[],uint256[],uint256[],uint256[],uint256[],uint256[],uint256[],bytes[],address[],address[],bytes[]),address)",
+                "signature": "function _executeOrder(bytes32,((address,address,address,address,address,address,address[]),(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256),(bool,bool,bool)),(uint256,address[],uint256[],uint256[],uint256[],uint256[],uint256[],uint256[],uint256[],uint256[],bytes[],address[],address[],bytes[]),address)",
                 "type": "function"
             },
             "0x7489ec23": {
@@ -7097,7 +7097,7 @@
             },
             "0xe3146172": {
                 "selector": "0xe3146172",
-                "signature": "function createOrder(address,tuple(tuple(address,address,address,address,address,address[]),tuple(uint256,uint256,uint256,uint256,uint256,uint256,uint256),uint8,uint8,bool,bool,bytes32)) returns (bytes32)",
+                "signature": "function createOrder(address,((address,address,address,address,address,address[]),(uint256,uint256,uint256,uint256,uint256,uint256,uint256),uint8,uint8,bool,bool,bytes32)) returns (bytes32)",
                 "type": "function"
             },
             "0x660d0d67": {
@@ -7112,7 +7112,7 @@
             },
             "0x943a6f4a": {
                 "selector": "0x943a6f4a",
-                "signature": "function executeOrder(bytes32,tuple(uint256,address[],uint256[],uint256[],uint256[],uint256[],uint256[],uint256[],uint256[],uint256[],bytes[],address[],address[],bytes[]))",
+                "signature": "function executeOrder(bytes32,(uint256,address[],uint256[],uint256[],uint256[],uint256[],uint256[],uint256[],uint256[],uint256[],bytes[],address[],address[],bytes[]))",
                 "type": "function"
             },
             "0x7dc0d1d0": {
@@ -7137,7 +7137,7 @@
             },
             "0x263ea0fa": {
                 "selector": "0x263ea0fa",
-                "signature": "function simulateExecuteOrder(bytes32,tuple(address[],tuple(uint256,uint256)[]))",
+                "signature": "function simulateExecuteOrder(bytes32,(address[],(uint256,uint256)[]))",
                 "type": "function"
             },
             "0x8a53aaac": {
@@ -7147,7 +7147,7 @@
             },
             "0x96fe6a93": {
                 "selector": "0x96fe6a93",
-                "signature": "function updateOrder(bytes32,uint256,uint256,uint256,uint256,tuple(tuple(address,address,address,address,address,address,address[]),tuple(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256),tuple(bool,bool,bool)))",
+                "signature": "function updateOrder(bytes32,uint256,uint256,uint256,uint256,((address,address,address,address,address,address,address[]),(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256),(bool,bool,bool)))",
                 "type": "function"
             },
             "0x9966b250": {
@@ -7294,17 +7294,17 @@
             },
             "0x5b4e9561": {
                 "selector": "0x5b4e9561",
-                "signature": "function createDeposit(tuple(address,address,address,address,address,address,address[],address[],uint256,bool,uint256,uint256)) payable returns (bytes32)",
+                "signature": "function createDeposit((address,address,address,address,address,address,address[],address[],uint256,bool,uint256,uint256)) payable returns (bytes32)",
                 "type": "function"
             },
             "0x4a393a41": {
                 "selector": "0x4a393a41",
-                "signature": "function createOrder(tuple(tuple(address,address,address,address,address,address[]),tuple(uint256,uint256,uint256,uint256,uint256,uint256,uint256),uint8,uint8,bool,bool,bytes32)) payable returns (bytes32)",
+                "signature": "function createOrder(((address,address,address,address,address,address[]),(uint256,uint256,uint256,uint256,uint256,uint256,uint256),uint8,uint8,bool,bool,bytes32)) payable returns (bytes32)",
                 "type": "function"
             },
             "0xad23c5a1": {
                 "selector": "0xad23c5a1",
-                "signature": "function createWithdrawal(tuple(address,address,address,address,address[],address[],uint256,uint256,bool,uint256,uint256)) payable returns (bytes32)",
+                "signature": "function createWithdrawal((address,address,address,address,address[],address[],uint256,uint256,bool,uint256,uint256)) payable returns (bytes32)",
                 "type": "function"
             },
             "0x660d0d67": {
@@ -7369,17 +7369,17 @@
             },
             "0xb9e2f5ee": {
                 "selector": "0xb9e2f5ee",
-                "signature": "function simulateExecuteDeposit(bytes32,tuple(address[],tuple(uint256,uint256)[])) payable",
+                "signature": "function simulateExecuteDeposit(bytes32,(address[],(uint256,uint256)[])) payable",
                 "type": "function"
             },
             "0x263ea0fa": {
                 "selector": "0x263ea0fa",
-                "signature": "function simulateExecuteOrder(bytes32,tuple(address[],tuple(uint256,uint256)[])) payable",
+                "signature": "function simulateExecuteOrder(bytes32,(address[],(uint256,uint256)[])) payable",
                 "type": "function"
             },
             "0x6331d7a7": {
                 "selector": "0x6331d7a7",
-                "signature": "function simulateExecuteWithdrawal(bytes32,tuple(address[],tuple(uint256,uint256)[])) payable",
+                "signature": "function simulateExecuteWithdrawal(bytes32,(address[],(uint256,uint256)[])) payable",
                 "type": "function"
             },
             "0xaab286f8": {
@@ -7476,12 +7476,12 @@
             },
             "0x37c6145a": {
                 "selector": "0x37c6145a",
-                "signature": "function executeController(tuple(uint32,bytes)) payable returns (bytes)",
+                "signature": "function executeController((uint32,bytes)) payable returns (bytes)",
                 "type": "function"
             },
             "0x5dbd8f6b": {
                 "selector": "0x5dbd8f6b",
-                "signature": "function executeControllers(tuple(uint32,bytes)[]) payable",
+                "signature": "function executeControllers((uint32,bytes)[]) payable",
                 "type": "function"
             },
             "0x1028c2bd": {
@@ -7546,7 +7546,7 @@
             },
             "0x96f4130c": {
                 "selector": "0x96f4130c",
-                "signature": "function swapAndMultiBridge(tuple(uint32,bytes,uint32[],bytes[],uint256[],bytes[])) payable",
+                "signature": "function swapAndMultiBridge((uint32,bytes,uint32[],bytes[],uint256[],bytes[])) payable",
                 "type": "function"
             },
             "0x7601ed90": {
@@ -8457,7 +8457,7 @@
             },
             "0xeed53bf5": {
                 "selector": "0xeed53bf5",
-                "signature": "function calculateFinalizationBatches(uint256,uint256,uint256,tuple(uint256,bool,uint256[36],uint256)) view returns (tuple(uint256,bool,uint256[36],uint256))",
+                "signature": "function calculateFinalizationBatches(uint256,uint256,uint256,(uint256,bool,uint256[36],uint256)) view returns ((uint256,bool,uint256[36],uint256))",
                 "type": "function"
             },
             "0xf8444436": {
@@ -8557,7 +8557,7 @@
             },
             "0xb8c4b85a": {
                 "selector": "0xb8c4b85a",
-                "signature": "function getWithdrawalStatus(uint256[]) view returns (tuple(uint256,uint256,address,uint256,bool,bool)[])",
+                "signature": "function getWithdrawalStatus(uint256[]) view returns ((uint256,uint256,address,uint256,bool,bool)[])",
                 "type": "function"
             },
             "0x2f2ff15d": {
@@ -8632,7 +8632,7 @@
             },
             "0xacf41e4d": {
                 "selector": "0xacf41e4d",
-                "signature": "function requestWithdrawalsWithPermit(uint256[],address,tuple(uint256,uint256,uint8,bytes32,bytes32)) returns (uint256[])",
+                "signature": "function requestWithdrawalsWithPermit(uint256[],address,(uint256,uint256,uint8,bytes32,bytes32)) returns (uint256[])",
                 "type": "function"
             },
             "0x19aa6257": {
@@ -8642,7 +8642,7 @@
             },
             "0x7951b76f": {
                 "selector": "0x7951b76f",
-                "signature": "function requestWithdrawalsWstETHWithPermit(uint256[],address,tuple(uint256,uint256,uint8,bytes32,bytes32)) returns (uint256[])",
+                "signature": "function requestWithdrawalsWstETHWithPermit(uint256[],address,(uint256,uint256,uint8,bytes32,bytes32)) returns (uint256[])",
                 "type": "function"
             },
             "0x046f7da2": {
@@ -8924,7 +8924,7 @@
             },
             "0x253d1735": {
                 "selector": "0x253d1735",
-                "signature": "function getToken2WithdrawRequests(uint256) view returns (tuple(uint256,uint256,uint256,address)[])",
+                "signature": "function getToken2WithdrawRequests(uint256) view returns ((uint256,uint256,uint256,address)[])",
                 "type": "function"
             },
             "0xe00222a0": {
@@ -8944,7 +8944,7 @@
             },
             "0x916b9eba": {
                 "selector": "0x916b9eba",
-                "signature": "function getTotalWithdrawRequest() view returns (tuple(uint256,uint256,uint256,address)[])",
+                "signature": "function getTotalWithdrawRequest() view returns ((uint256,uint256,uint256,address)[])",
                 "type": "function"
             },
             "0x2f2ff15d": {
@@ -9433,12 +9433,12 @@
             },
             "0x2ffc4222": {
                 "selector": "0x2ffc4222",
-                "signature": "function bridgeERC20To(address,address,address,uint256,tuple(uint256,uint256,uint256,uint256,uint256,uint16,uint32,bytes32,bytes,bytes)) payable",
+                "signature": "function bridgeERC20To(address,address,address,uint256,(uint256,uint256,uint256,uint256,uint256,uint16,uint32,bytes32,bytes,bytes)) payable",
                 "type": "function"
             },
             "0xb1f98a65": {
                 "selector": "0xb1f98a65",
-                "signature": "function bridgeNativeTo(address,address,uint256,tuple(uint256,uint256,uint256,uint256,uint256,uint16,uint32,bytes32,bytes,bytes)) payable",
+                "signature": "function bridgeNativeTo(address,address,uint256,(uint256,uint256,uint256,uint256,uint256,uint16,uint32,bytes32,bytes,bytes)) payable",
                 "type": "function"
             },
             "0x24d97a4a": {
@@ -9483,7 +9483,7 @@
             },
             "0xa1b4f14b": {
                 "selector": "0xa1b4f14b",
-                "signature": "function swapAndBridge(uint32,bytes,tuple(address,address,uint256,uint256,uint256,uint256,uint256,bool,uint16,uint32,bytes,bytes32,bytes)) payable",
+                "signature": "function swapAndBridge(uint32,bytes,(address,address,uint256,uint256,uint256,uint256,uint256,bool,uint16,uint32,bytes,bytes32,bytes)) payable",
                 "type": "function"
             },
             "0x74594da9": {
@@ -9515,12 +9515,12 @@
             },
             "0xe0cff05f": {
                 "selector": "0xe0cff05f",
-                "signature": "error ValidationResult(tuple(uint256,uint256,bool,uint48,uint48,bytes),tuple(uint256,uint256),tuple(uint256,uint256),tuple(uint256,uint256))",
+                "signature": "error ValidationResult((uint256,uint256,bool,uint48,uint48,bytes),(uint256,uint256),(uint256,uint256),(uint256,uint256))",
                 "type": "error"
             },
             "0xfaecb4e4": {
                 "selector": "0xfaecb4e4",
-                "signature": "error ValidationResultWithAggregation(tuple(uint256,uint256,bool,uint48,uint48,bytes),tuple(uint256,uint256),tuple(uint256,uint256),tuple(uint256,uint256),tuple(address,tuple(uint256,uint256)))",
+                "signature": "error ValidationResultWithAggregation((uint256,uint256,bool,uint48,uint48,bytes),(uint256,uint256),(uint256,uint256),(uint256,uint256),(address,(uint256,uint256)))",
                 "type": "error"
             },
             "0x8f41ec5a": {
@@ -9555,7 +9555,7 @@
             },
             "0x5287ce12": {
                 "selector": "0x5287ce12",
-                "signature": "function getDepositInfo(address) view returns (tuple(uint112,bool,uint112,uint32,uint48))",
+                "signature": "function getDepositInfo(address) view returns ((uint112,bool,uint112,uint32,uint48))",
                 "type": "function"
             },
             "0x35567e1a": {
@@ -9570,17 +9570,17 @@
             },
             "0xa6193531": {
                 "selector": "0xa6193531",
-                "signature": "function getUserOpHash(tuple(address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes)) view returns (bytes32)",
+                "signature": "function getUserOpHash((address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes)) view returns (bytes32)",
                 "type": "function"
             },
             "0x4b1d7cf5": {
                 "selector": "0x4b1d7cf5",
-                "signature": "function handleAggregatedOps(tuple(tuple(address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes)[],address,bytes)[],address)",
+                "signature": "function handleAggregatedOps(((address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes)[],address,bytes)[],address)",
                 "type": "function"
             },
             "0x1fad948c": {
                 "selector": "0x1fad948c",
-                "signature": "function handleOps(tuple(address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes)[],address)",
+                "signature": "function handleOps((address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes)[],address)",
                 "type": "function"
             },
             "0x0bd28e3b": {
@@ -9590,7 +9590,7 @@
             },
             "0x1d732756": {
                 "selector": "0x1d732756",
-                "signature": "function innerHandleOp(bytes,tuple(tuple(address,uint256,uint256,uint256,uint256,address,uint256,uint256),bytes32,uint256,uint256,uint256),bytes) returns (uint256)",
+                "signature": "function innerHandleOp(bytes,((address,uint256,uint256,uint256,uint256,address,uint256,uint256),bytes32,uint256,uint256,uint256),bytes) returns (uint256)",
                 "type": "function"
             },
             "0x1b2e01b8": {
@@ -9600,12 +9600,12 @@
             },
             "0xd6383f94": {
                 "selector": "0xd6383f94",
-                "signature": "function simulateHandleOp(tuple(address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes),address,bytes)",
+                "signature": "function simulateHandleOp((address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes),address,bytes)",
                 "type": "function"
             },
             "0xee219423": {
                 "selector": "0xee219423",
-                "signature": "function simulateValidation(tuple(address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes))",
+                "signature": "function simulateValidation((address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes))",
                 "type": "function"
             },
             "0xbb9fe6bf": {
@@ -24619,7 +24619,7 @@
             },
             "0x8faa7087": {
                 "selector": "0x8faa7087",
-                "signature": "event DiamondCut(tuple(address,uint8,bytes4[])[],address,bytes)",
+                "signature": "event DiamondCut((address,uint8,bytes4[])[],address,bytes)",
                 "type": "event"
             },
             "0x8be0079c": {
@@ -24739,57 +24739,57 @@
             },
             "0xe3ead59e": {
                 "selector": "0xe3ead59e",
-                "signature": "function swapExactAmountIn(address,tuple(address,address,uint256,uint256,uint256,bytes32,address),uint256,bytes,bytes) payable returns (uint256,uint256,uint256)",
+                "signature": "function swapExactAmountIn(address,(address,address,uint256,uint256,uint256,bytes32,address),uint256,bytes,bytes) payable returns (uint256,uint256,uint256)",
                 "type": "function"
             },
             "0xd85ca173": {
                 "selector": "0xd85ca173",
-                "signature": "function swapExactAmountInOnBalancerV2(tuple(uint256,uint256,uint256,bytes32,uint256),uint256,bytes,bytes) payable returns (uint256,uint256,uint256)",
+                "signature": "function swapExactAmountInOnBalancerV2((uint256,uint256,uint256,bytes32,uint256),uint256,bytes,bytes) payable returns (uint256,uint256,uint256)",
                 "type": "function"
             },
             "0x1a01c532": {
                 "selector": "0x1a01c532",
-                "signature": "function swapExactAmountInOnCurveV1(tuple(uint256,uint256,address,address,uint256,uint256,uint256,bytes32,address),uint256,bytes) payable returns (uint256,uint256,uint256)",
+                "signature": "function swapExactAmountInOnCurveV1((uint256,uint256,address,address,uint256,uint256,uint256,bytes32,address),uint256,bytes) payable returns (uint256,uint256,uint256)",
                 "type": "function"
             },
             "0xe37ed256": {
                 "selector": "0xe37ed256",
-                "signature": "function swapExactAmountInOnCurveV2(tuple(uint256,uint256,uint256,address,address,address,uint256,uint256,uint256,bytes32,address),uint256,bytes) payable returns (uint256,uint256,uint256)",
+                "signature": "function swapExactAmountInOnCurveV2((uint256,uint256,uint256,address,address,address,uint256,uint256,uint256,bytes32,address),uint256,bytes) payable returns (uint256,uint256,uint256)",
                 "type": "function"
             },
             "0xe8bb3b6c": {
                 "selector": "0xe8bb3b6c",
-                "signature": "function swapExactAmountInOnUniswapV2(tuple(address,address,uint256,uint256,uint256,bytes32,address,bytes),uint256,bytes) payable returns (uint256,uint256,uint256)",
+                "signature": "function swapExactAmountInOnUniswapV2((address,address,uint256,uint256,uint256,bytes32,address,bytes),uint256,bytes) payable returns (uint256,uint256,uint256)",
                 "type": "function"
             },
             "0x876a02f6": {
                 "selector": "0x876a02f6",
-                "signature": "function swapExactAmountInOnUniswapV3(tuple(address,address,uint256,uint256,uint256,bytes32,address,bytes),uint256,bytes) payable returns (uint256,uint256,uint256)",
+                "signature": "function swapExactAmountInOnUniswapV3((address,address,uint256,uint256,uint256,bytes32,address,bytes),uint256,bytes) payable returns (uint256,uint256,uint256)",
                 "type": "function"
             },
             "0x7f457675": {
                 "selector": "0x7f457675",
-                "signature": "function swapExactAmountOut(address,tuple(address,address,uint256,uint256,uint256,bytes32,address),uint256,bytes,bytes) payable returns (uint256,uint256,uint256,uint256)",
+                "signature": "function swapExactAmountOut(address,(address,address,uint256,uint256,uint256,bytes32,address),uint256,bytes,bytes) payable returns (uint256,uint256,uint256,uint256)",
                 "type": "function"
             },
             "0xd6ed22e6": {
                 "selector": "0xd6ed22e6",
-                "signature": "function swapExactAmountOutOnBalancerV2(tuple(uint256,uint256,uint256,bytes32,uint256),uint256,bytes,bytes) payable returns (uint256,uint256,uint256,uint256)",
+                "signature": "function swapExactAmountOutOnBalancerV2((uint256,uint256,uint256,bytes32,uint256),uint256,bytes,bytes) payable returns (uint256,uint256,uint256,uint256)",
                 "type": "function"
             },
             "0xa76f4eb6": {
                 "selector": "0xa76f4eb6",
-                "signature": "function swapExactAmountOutOnUniswapV2(tuple(address,address,uint256,uint256,uint256,bytes32,address,bytes),uint256,bytes) payable returns (uint256,uint256,uint256,uint256)",
+                "signature": "function swapExactAmountOutOnUniswapV2((address,address,uint256,uint256,uint256,bytes32,address,bytes),uint256,bytes) payable returns (uint256,uint256,uint256,uint256)",
                 "type": "function"
             },
             "0x5e94e28d": {
                 "selector": "0x5e94e28d",
-                "signature": "function swapExactAmountOutOnUniswapV3(tuple(address,address,uint256,uint256,uint256,bytes32,address,bytes),uint256,bytes) payable returns (uint256,uint256,uint256,uint256)",
+                "signature": "function swapExactAmountOutOnUniswapV3((address,address,uint256,uint256,uint256,bytes32,address,bytes),uint256,bytes) payable returns (uint256,uint256,uint256,uint256)",
                 "type": "function"
             },
             "0xda35bb0d": {
                 "selector": "0xda35bb0d",
-                "signature": "function swapOnAugustusRFQTryBatchFill(tuple(uint256,uint256,uint8,bytes32,address),tuple(tuple(uint256,uint128,address,address,address,address,uint256,uint256),bytes,uint256,bytes,bytes)[],bytes) payable returns (uint256,uint256)",
+                "signature": "function swapOnAugustusRFQTryBatchFill((uint256,uint256,uint8,bytes32,address),((uint256,uint128,address,address,address,address,uint256,uint256),bytes,uint256,bytes,bytes)[],bytes) payable returns (uint256,uint256)",
                 "type": "function"
             },
             "0xfa461e33": {
@@ -30229,7 +30229,10 @@
                 "symbol": "APE"
             },
             "isSC": true,
-            "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/APE.svg"
+            "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/APE.svg",
+            "chainIds": [
+                1
+            ]
         },
         "0xAf5191B0De278C7286d6C7CC6ab6BB8A73bA2Cd6": {
             "name": "STG token contract",
@@ -30346,7 +30349,10 @@
                 "decimals": 18,
                 "symbol": "JPYC"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                43114
+            ]
         },
         "0x9E6be44cC1236eEf7e1f197418592D363BedCd5A": {
             "token": {
@@ -30553,7 +30559,10 @@
                 "decimals": 18,
                 "symbol": "BHIGH"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                43114
+            ]
         },
         "0xBe9895146f7AF43049ca1c1AE358B0541Ea49704": {
             "name": "CBETH token contract",
@@ -34234,7 +34243,11 @@
                 "symbol": "MTBILL",
                 "decimals": 18
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                1,
+                8453
+            ]
         },
         "0xbf52F2ab39e26E0951d2a02b49B7702aBe30406a": {
             "name": "ODE token contract",
@@ -40347,7 +40360,10 @@
                 "decimals": 18,
                 "symbol": "RAIL"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                1
+            ]
         },
         "0x53Bd789F2cDb846b227d8ffc7B46eD4263231FDf": {
             "name": "SMBSWAP token contract",
@@ -40491,7 +40507,10 @@
                 "decimals": 18,
                 "symbol": "ELG"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                1
+            ]
         },
         "0x4EcE5C5CfB9B960A49aAe739E15cDB6cfDcc5782": {
             "name": "DBUY token contract",
@@ -41193,7 +41212,8 @@
             "chainIds": [
                 56,
                 8453,
-                43114
+                43114,
+                1
             ]
         },
         "0xDB5C3C46E28B53a39C255AA39A411dD64e5fed9c": {
@@ -43611,7 +43631,10 @@
                 "decimals": 18,
                 "symbol": "TEMPLE"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                1
+            ]
         },
         "0x7717f2828fE4daC8558d23eE4CdfED9544E9321F": {
             "name": "OTX token contract",
@@ -44658,7 +44681,10 @@
                 "decimals": 18,
                 "symbol": "DOLA"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                1
+            ]
         },
         "0x24a5FE2C2240e58252CDFc43bB94ae67d2eAD218": {
             "token": {
@@ -45115,7 +45141,10 @@
                 "decimals": 18,
                 "symbol": "CRVUSD"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                1
+            ]
         },
         "0x6dDe4fFD6dB302Bc9a46850f61399e082f6c2122": {
             "name": "IAI token contract",
@@ -48039,7 +48068,11 @@
                 "decimals": 18,
                 "symbol": "BIB01"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                8453,
+                43114
+            ]
         },
         "0x3C4008eca800Ec1283E4cf500E68D06BFaBc00a8": {
             "name": "HAO token contract",
@@ -52780,7 +52813,10 @@
                 "decimals": 18,
                 "symbol": "EURCV"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                1
+            ]
         },
         "0x4Bb3205bf648B7F59EF90Dee0F1B62F6116Bc7ca": {
             "name": "BYN token contract",
@@ -53127,7 +53163,10 @@
                 "decimals": 18,
                 "symbol": "BC3M"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                43114
+            ]
         },
         "0x1e2C4fb7eDE391d116E6B41cD0608260e8801D59": {
             "name": "BCSPX token contract",
@@ -53136,7 +53175,10 @@
                 "decimals": 18,
                 "symbol": "BCSPX"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                43114
+            ]
         },
         "0xFE60FbA03048EfFB4aCf3f0088Ec2f53d779D3BB": {
             "name": "3D3D token contract",
@@ -53395,7 +53437,10 @@
                 "symbol": "SHFL",
                 "decimals": 18
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                1
+            ]
         },
         "0xCeDefE438860D2789dA6419b3a19cEcE2A41038d": {
             "name": "LHINU token contract",
@@ -55941,7 +55986,10 @@
                 "decimals": 18,
                 "symbol": "NPC"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                1
+            ]
         },
         "0xFe6f2e70f30a0894D0aEe79e11653275e89c7Bd6": {
             "name": "KEPE token contract",
@@ -57224,7 +57272,10 @@
                 "decimals": 18,
                 "symbol": "BIBTA"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                43114
+            ]
         },
         "0x8BF30e9F44E5d068A9d0C20DA22660997a532e33": {
             "name": "GDAG token contract",
@@ -60656,7 +60707,10 @@
                 "decimals": 18,
                 "symbol": "RLB"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                1
+            ]
         },
         "0xd7C9F0e536dC865Ae858b0C0453Fe76D13c3bEAc": {
             "name": "XAI token contract",
@@ -68922,7 +68976,8 @@
             },
             "isSC": true,
             "chainIds": [
-                8453
+                8453,
+                1
             ]
         },
         "0xeEEE2a622330E6d2036691e983DEe87330588603": {
@@ -69558,7 +69613,10 @@
                 "symbol": "EURI",
                 "decimals": 18
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                56
+            ]
         },
         "0x76bf2D1e6dFda645c0c17440B17Eccc181dfC351": {
             "token": {
@@ -70364,7 +70422,10 @@
                 "symbol": "LINDA",
                 "decimals": 18
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                43114
+            ]
         },
         "0x4184Aa04215e5d716dD4C213FeD519aCADc68f92": {
             "name": "ONUS token contract",
@@ -72199,7 +72260,10 @@
                 "symbol": "PXP",
                 "decimals": 18
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                43114
+            ]
         },
         "0xF5e11df1ebCf78b6b6D26E04FF19cD786a1e81dC": {
             "address": "0xf5e11df1ebcf78b6b6d26e04ff19cd786a1e81dc",
@@ -72427,7 +72491,10 @@
                 "decimals": 18,
                 "symbol": "ELK"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                43114
+            ]
         },
         "0x2e7B0d4F9B2EaF782eD3D160e3a0a4b1a7930aDA": {
             "name": "CERES token contract",
@@ -72635,7 +72702,11 @@
                 "symbol": "HTX",
                 "decimals": 18
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                1,
+                56
+            ]
         },
         "0x40A32606A4CE9b4F350421642Ebf65C052d5389b": {
             "token": {
@@ -72893,7 +72964,8 @@
             },
             "isSC": true,
             "chainIds": [
-                10
+                10,
+                43114
             ]
         },
         "0xbbcb0356bB9e6B3Faa5CbF9E5F36185d53403Ac9": {
@@ -72903,7 +72975,10 @@
                 "decimals": 18,
                 "symbol": "BCOIN"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                43114
+            ]
         },
         "0x37F24b26bCEFBFAC7F261b97F8036DA98F81a299": {
             "token": {
@@ -73025,7 +73100,10 @@
                 "decimals": 18,
                 "symbol": "BNIU"
             },
-            "isSC": true
+            "isSC": true,
+            "chainIds": [
+                43114
+            ]
         },
         "0x9FD22a17b4A96Da3F83797d122172C450381fb88": {
             "name": "JEFE token contract",
@@ -96090,7 +96168,8 @@
                 "symbol": "MOVE"
             },
             "chainIds": [
-                1
+                1,
+                8453
             ],
             "isSC": true
         },
@@ -96712,7 +96791,8 @@
             },
             "chainIds": [
                 10,
-                43114
+                43114,
+                56
             ],
             "isSC": true
         },
@@ -96730,7 +96810,8 @@
                 "symbol": "WCT"
             },
             "chainIds": [
-                10
+                10,
+                8453
             ],
             "isSC": true
         },
@@ -96925,7 +97006,8 @@
             },
             "chainIds": [
                 10,
-                43114
+                43114,
+                8453
             ],
             "isSC": true
         },
@@ -97043,7 +97125,9 @@
             },
             "chainIds": [
                 10,
-                43114
+                43114,
+                56,
+                8453
             ],
             "isSC": true
         },
@@ -98803,7 +98887,8 @@
                 "symbol": "ERA"
             },
             "chainIds": [
-                56
+                56,
+                8453
             ],
             "isSC": true
         },
@@ -99402,7 +99487,8 @@
                 "symbol": "OHM"
             },
             "chainIds": [
-                8453
+                8453,
+                10
             ],
             "isSC": true
         },
@@ -99519,7 +99605,8 @@
                 "symbol": "BIO"
             },
             "chainIds": [
-                8453
+                8453,
+                56
             ],
             "isSC": true
         },
@@ -101313,7 +101400,8 @@
                 "symbol": "AKITA"
             },
             "chainIds": [
-                43114
+                43114,
+                56
             ],
             "isSC": true
         },
@@ -115227,6 +115315,3122 @@
             },
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg"
+        },
+        "0xe343167631d89B6Ffc58B88d6b7fB0228795491D": {
+            "token": {
+                "symbol": "USDG"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x0990b149e915cb08E2143a5c6f669c907edDC8B0": {
+            "token": {
+                "symbol": "EURSAFO"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xcE24439F2D9C6a2289F741120FE202248B666666": {
+            "token": {
+                "symbol": "U"
+            },
+            "chainIds": [
+                1,
+                56
+            ],
+            "isSC": true
+        },
+        "0x3A63DE3572c69a1307ff08394f3Ee7702C16d25d": {
+            "token": {
+                "symbol": "BTW"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x4CF5920Df52F5b1f246e2E38E1786Ae1Cf03ECF5": {
+            "token": {
+                "symbol": "USDGO"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x9f6F3991D525015a6F8CaF062C83b62fD3AC4436": {
+            "token": {
+                "symbol": "OUSD"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9": {
+            "token": {
+                "symbol": "PIEVERSE"
+            },
+            "chainIds": [
+                1,
+                56
+            ],
+            "isSC": true
+        },
+        "0x232CE3bd40fCd6f80f3d55A522d03f25Df784Ee2": {
+            "token": {
+                "symbol": "LIT"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x5a0F93D040De44e78F251b03c43be9CF317Dcf64": {
+            "token": {
+                "symbol": "JAAA"
+            },
+            "chainIds": [
+                1,
+                8453
+            ],
+            "isSC": true
+        },
+        "0x0CB6d03B0aC88A463F67B7Ad99f9f3ec4678092E": {
+            "token": {
+                "symbol": "SOFID"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x5086bf358635B81D8C47C66d1C8b9E567Db70c72": {
+            "token": {
+                "symbol": "REUSD"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x14DAB79fD7B7B3f748d434812Fd6a9Aac460EA52": {
+            "token": {
+                "symbol": "KAU"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x118B70dF4F06Fa5678E7d543e6066e028C8ea0c0": {
+            "token": {
+                "symbol": "KITE"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xB1D1eae60EEA9525032a6DCb4c1CE336a1dE71BE": {
+            "token": {
+                "symbol": "DRV"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x98A878b1Cd98131B271883B390f68D2c90674665": {
+            "token": {
+                "symbol": "APXUSD"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x6944E1DF6Bf5972305f9Ab25dF47ef10De01bcc8": {
+            "token": {
+                "symbol": "UB"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xcBaDe7D9BdEe88411CB6cbCbB29952b742036992": {
+            "token": {
+                "symbol": "SAFO"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x07041776f5007ACa2A54844F50503a18A72A8b68": {
+            "token": {
+                "symbol": "USAT"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x1DD91a111606382B77A917633ED90feAf25E0F76": {
+            "token": {
+                "symbol": "MGLO"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x6fA0BE17e4beA2fCfA22ef89BF8ac9aab0AB0fc9": {
+            "token": {
+                "symbol": "A7A5"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x56Ba8B58B7d1f6d384A1C4dD553F39ebc8741B8e": {
+            "token": {
+                "symbol": "KAG"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x0A1a1A107E45b7Ced86833863f482BC5f4ed82EF": {
+            "token": {
+                "symbol": "USDAI"
+            },
+            "chainIds": [
+                1,
+                8453
+            ],
+            "isSC": true
+        },
+        "0x56A3BA04E95d34268A19b2a4474DC979baBDaf76": {
+            "token": {
+                "symbol": "SENT"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xA12CC123ba206d4031D1c7f6223D1C2Ec249f4f3": {
+            "token": {
+                "symbol": "ZAMA"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x99991c6AAbba5a096f24f250b73580F5179b9999": {
+            "token": {
+                "symbol": "CAP"
+            },
+            "chainIds": [
+                1,
+                56
+            ],
+            "isSC": true
+        },
+        "0x056B269Eb1f75477a8666ae8C7fE01b64dD55eCc": {
+            "token": {
+                "symbol": "USD3"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x38EEb52F0771140d10c4E9A9a72349A329Fe8a6A": {
+            "token": {
+                "symbol": "APYUSD"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x9B61879e91a0b1322F3d61c23Aaf936231882096": {
+            "token": {
+                "symbol": "BR"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x6781d5631BFe47432b089e64e3EaB3b6eDd26177": {
+            "token": {
+                "symbol": "JPYSC"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xc07e1300dc138601FA6B0b59f8D0FA477e690589": {
+            "token": {
+                "symbol": "Q"
+            },
+            "chainIds": [
+                1,
+                56
+            ],
+            "isSC": true
+        },
+        "0xAEEAa594e7dc112D67b8547fe9767a02c15B5597": {
+            "token": {
+                "symbol": "ANVL"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x5FA487BCa6158c64046B2813623e20755091DA0b": {
+            "token": {
+                "symbol": "THBILL"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xc845b2894dBddd03858fd2D643B4eF725fE0849d": {
+            "token": {
+                "symbol": "NVDAX"
+            },
+            "chainIds": [
+                1,
+                56
+            ],
+            "isSC": true
+        },
+        "0x997E2Efbce91D170B00EA402e35a66C887EE1da9": {
+            "token": {
+                "symbol": "AUTO"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x1Aad217B8F78dbA5E6693460e8470F8b1A3977f3": {
+            "token": {
+                "symbol": "STRCX"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x51C2d74017390CbBd30550179A16A1c28F7210fc": {
+            "token": {
+                "symbol": "STAC"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x119Dd7dAFf816f29D7eE47596ae5E4bdC4299165": {
+            "token": {
+                "symbol": "NOPAL"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xfEbDEd1B0986a8ee107f5AB1a1c5a813491DeCEB": {
+            "token": {
+                "symbol": "CRCLX"
+            },
+            "chainIds": [
+                1,
+                56
+            ],
+            "isSC": true
+        },
+        "0x61a10E8556BEd032eA176330e7F17D6a12a10000": {
+            "token": {
+                "symbol": "UUSD"
+            },
+            "chainIds": [
+                1,
+                56,
+                8453
+            ],
+            "isSC": true
+        },
+        "0xf4c13D631450De6B12a19829E37c8e2826891dC4": {
+            "token": {
+                "symbol": "AVUSD"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xe5e0b73380181273abCfD88695F52C4D0C825661": {
+            "token": {
+                "symbol": "ICNT"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xB0076DE78Dc50581770BBa1D211dDc0aD4F2a241": {
+            "token": {
+                "symbol": "EDGE"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x23238f20b894f29041f48D88eE91131C395Aaa71": {
+            "token": {
+                "symbol": "USDAT"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xAE2f842EF90C0d5213259Ab82639D5BBF649b08E": {
+            "token": {
+                "symbol": "MSTRX"
+            },
+            "chainIds": [
+                1,
+                56
+            ],
+            "isSC": true
+        },
+        "0xCAcd6fd266aF91b8AeD52aCCc382b4e165586E29": {
+            "token": {
+                "symbol": "FRXUSD"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x0520930F21b14Cafac7a27b102487beE7138a017": {
+            "token": {
+                "symbol": "BGBTC"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29": {
+            "token": {
+                "symbol": "JPYC"
+            },
+            "chainIds": [
+                1,
+                43114
+            ],
+            "isSC": true
+        },
+        "0x68fa48B1C2FE52b3D776E1953e0E782b5044Ce28": {
+            "token": {
+                "symbol": "SPCXX"
+            },
+            "chainIds": [
+                1,
+                56
+            ],
+            "isSC": true
+        },
+        "0x17418038ecF73BA4026c4f428547BF099706F27B": {
+            "token": {
+                "symbol": "ACRED"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xd0580192E98eA6CEB9c7b6191Ed2E27560911697": {
+            "token": {
+                "symbol": "TRUSD"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x863F08A3d3B14fbD3D42fFD061D0e290F7dBC538": {
+            "token": {
+                "symbol": "NES"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x7e2ac793f3E692f388e66c7DC28F739d13B0B71A": {
+            "token": {
+                "symbol": "GGBR"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x90A2a4c76b5D8c0bc892A69EA28Aa775a8f2dD48": {
+            "token": {
+                "symbol": "SPYX"
+            },
+            "chainIds": [
+                1,
+                56
+            ],
+            "isSC": true
+        },
+        "0xa753A7395cAe905Cd615Da0B82A53E0560f250af": {
+            "token": {
+                "symbol": "QQQX"
+            },
+            "chainIds": [
+                1,
+                56
+            ],
+            "isSC": true
+        },
+        "0x48f9e38f3070AD8945DFEae3FA70987722E3D89c": {
+            "token": {
+                "symbol": "IUSD"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x437cc33344a0B27A429f795ff6B469C72698B291": {
+            "token": {
+                "symbol": "WM"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xa1fA7777974312f7d801A8880714a218F76233f8": {
+            "token": {
+                "symbol": "USDX"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x516d31321928700C6B4fB0DB0c8c6BC5d6799787": {
+            "token": {
+                "symbol": "SHX"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xAcE8E719899F6E91831B18AE746C9A965c2119F1": {
+            "token": {
+                "symbol": "USDON"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x8B1484d57abBE239bB280661377363b03c89CaEa": {
+            "token": {
+                "symbol": "ADI"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x8aD3c73F833d3F9A523aB01476625F269aEB7Cf0": {
+            "token": {
+                "symbol": "TSLAX"
+            },
+            "chainIds": [
+                1,
+                56
+            ],
+            "isSC": true
+        },
+        "0xe92f673Ca36C5E2Efd2DE7628f815f84807e803F": {
+            "token": {
+                "symbol": "GOOGLX"
+            },
+            "chainIds": [
+                1,
+                56
+            ],
+            "isSC": true
+        },
+        "0x238a700eD6165261Cf8b2e544ba797BC11e466Ba": {
+            "token": {
+                "symbol": "MF-ONE"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xc43C6bfeDA065fE2c4c11765Bf838789bd0BB5dE": {
+            "token": {
+                "symbol": "RED"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xd7Ca0e2C36d647446b782D1b72308E598373E2F5": {
+            "token": {
+                "symbol": "BRLV"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x3632DEa96A953C11dac2f00b4A05a32CD1063fAE": {
+            "token": {
+                "symbol": "CRCLON"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x2103E845C5E135493Bb6c2A4f0B8651956eA8682": {
+            "token": {
+                "symbol": "XAUM"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xC273986a91e4BFC543610a5cb5860b7Cfefb6cC0": {
+            "token": {
+                "symbol": "GBPSAFO"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x1EeF208926667594E5136e89D0e9DD6907959197": {
+            "token": {
+                "symbol": "PEAQ"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x2255718832bC9fD3bE1CaF75084F4803DA14FF01": {
+            "token": {
+                "symbol": "VBILL"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x62cA254a363dc3c748e7E955c20447aB5bF06fF7": {
+            "token": {
+                "symbol": "IVVON"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x0C1c1C109FE34733fca54b82d7B46B75CFb71F6e": {
+            "token": {
+                "symbol": "CHIP"
+            },
+            "chainIds": [
+                1,
+                8453
+            ],
+            "isSC": true
+        },
+        "0xcCcc62962d17b8914c62D74FfB843d73B2a3cccC": {
+            "token": {
+                "symbol": "CUSD"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0x4Ce1ac8F43E0E5BD7A346A98aF777bF8fbeA1981": {
+            "token": {
+                "symbol": "EARNUSD"
+            },
+            "chainIds": [
+                1
+            ],
+            "isSC": true
+        },
+        "0xDCB612005417Dc906fF72c87DF732e5a90D49e11": {
+            "token": {
+                "symbol": "EURC"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x1Eaf7cceAA5DC6d605760718722fbcC58579b3Ff": {
+            "token": {
+                "symbol": "MGLO"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0xAd42D013ac31486B73b6b059e748172994736426": {
+            "token": {
+                "symbol": "1INCH"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0xE9185Ee218cae427aF7B9764A011bb89FeA761B4": {
+            "token": {
+                "symbol": "BRZ"
+            },
+            "chainIds": [
+                10,
+                8453
+            ],
+            "isSC": true
+        },
+        "0xcC476B1a49bcDf5192561e87b6Fb8ea78aa28C13": {
+            "token": {
+                "symbol": "WEEUR"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0xE7Ba07519dFA06e60059563F484d6090dedF21B3": {
+            "token": {
+                "symbol": "MRE7ETH"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x03cc5feF38896537c10Fcb30A53A1B12be101da6": {
+            "token": {
+                "symbol": "WWB"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0xF4F447E6AFa04c9D11Ef0e2fC0d7f19C24Ee55de": {
+            "token": {
+                "symbol": "VYUSD"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0xca5921DF65E2e1b0B98Ae91c0187BA80D4124898": {
+            "token": {
+                "symbol": "LIQUIDRESERVE"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x1f22279C89B213944b7Ea41daCB0a868DdCDFd13": {
+            "token": {
+                "symbol": "SODA"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x647fE0cCA3DF596ba414C8c600D441BB3D10d616": {
+            "token": {
+                "symbol": "BOSON"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x000000001DC8bd45d7E7829fb1c969cbe4D0D1eC": {
+            "token": {
+                "symbol": "GTUSDA"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0xfD28f108e95f4D41daAE9dbfFf707D677985998E": {
+            "token": {
+                "symbol": "PRL"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x084382D1cc4f4DFD1769b1cC1Ac2A9b1f8365e90": {
+            "token": {
+                "symbol": "MODE"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74": {
+            "token": {
+                "symbol": "VLR"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0xeFD30445A4ec1f4b3E0a6f4d9bDbd215F805047F": {
+            "token": {
+                "symbol": "MRNAX"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x4933A85b5b5466Fbaf179F72D3DE273c287EC2c2": {
+            "token": {
+                "symbol": "EURAU"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x10398AbC267496E49106B07dd6BE13364D10dC71": {
+            "token": {
+                "symbol": "HAI"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x74dB7a52773A52699dbC0c01b1254E5301E3e119": {
+            "token": {
+                "symbol": "AVLT"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0xf706585e7e8900bE0267bEE3B9A2F70835EC6628": {
+            "token": {
+                "symbol": "PYPLX"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x4b0eE7C047D43cA403239f28f42115bEdB7c0076": {
+            "token": {
+                "symbol": "OKLOX"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x0E6607Ab45D2CA779068Cd6D9426C409773969FD": {
+            "token": {
+                "symbol": "URAX"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x44E49ddE02c954cD9B67923af7B1070412e8f34e": {
+            "token": {
+                "symbol": "VIDAX"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x4d0ba049C430a7a80a61E7EBdF50b6dAac6c3Bd6": {
+            "token": {
+                "symbol": "SHEINX"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0xc5A9F6EdB48160eD9d9FB156A23c39d7140457eE": {
+            "token": {
+                "symbol": "DEHYB"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0xAA28cB97D7f7E172f54deE950743886D2d65447d": {
+            "token": {
+                "symbol": "IJRX"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x22E1991e5f82736A2a990322a46aac0e95826c5B": {
+            "token": {
+                "symbol": "BTBTX"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0xC0c2150cf0870E2d7aBc7cDe17C20A542faFBB9B": {
+            "token": {
+                "symbol": "WULFX"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0xf0197f10eA542A67914eCC0eC5304Dc9df1fAf6F": {
+            "token": {
+                "symbol": "DEAD"
+            },
+            "chainIds": [
+                10
+            ],
+            "isSC": true
+        },
+        "0x06e8bdE95BE4ce5cB1134BD47aD18a79fFB35822": {
+            "token": {
+                "symbol": "UNI"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x608593d17A2decBbc4399e4185bE4922F97eD32E": {
+            "token": {
+                "symbol": "USDY"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x8D0fA28f221eB5735BC71d3a0Da67EE5bC821311": {
+            "token": {
+                "symbol": "USYC"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x2D5BdC96D9C8AabBDB38c9A27398513e7E5ef84F": {
+            "token": {
+                "symbol": "BUIDL"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x45E51bc23D592EB2DBA86da3985299f7895d66Ba": {
+            "token": {
+                "symbol": "USDD"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x444045B0EE1ee319A660a5E3d604CA0ffA35ACaA": {
+            "token": {
+                "symbol": "BTW"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xFe930c2d63AeD9b82fC4DBC801920dD2c1a3224F": {
+            "token": {
+                "symbol": "NIGHT"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x58F93d6b1EF2F44eC379Cb975657C132CBeD3B6b": {
+            "token": {
+                "symbol": "JAAA"
+            },
+            "chainIds": [
+                56,
+                43114
+            ],
+            "isSC": true
+        },
+        "0x9d10a1ec41Fe7878429BB457e31F9b050D38c633": {
+            "token": {
+                "symbol": "BDX"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x011EBe7d75E2C9D1E0bD0be0bEf5C36f0A90075F": {
+            "token": {
+                "symbol": "STABLE"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xbA9425EC55ee0E72216D18e0ad8BBbA2553bFb60": {
+            "token": {
+                "symbol": "REUSD"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x904567252D8F48555b7447c67dCA23F0372E16be": {
+            "token": {
+                "symbol": "KITE"
+            },
+            "chainIds": [
+                56,
+                43114
+            ],
+            "isSC": true
+        },
+        "0x6b3788Fd6604BBF03c5378D24e57BB334BAAD4aF": {
+            "token": {
+                "symbol": "APXUSD"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x02Fca66C1D1aFB4E2A7884261eB00F63598a7436": {
+            "token": {
+                "symbol": "NVDAB"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x6907A5986C4950Bdaf2F81828Ec0737ce787519f": {
+            "token": {
+                "symbol": "ZAMA"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xa14556f13516C53FF035858Ffd21E1625e7EADfd": {
+            "token": {
+                "symbol": "APYUSD"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x80F1fF15B887CB19295D88C8c16F89d47f6D8888": {
+            "token": {
+                "symbol": "COCO"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xFf7d6A96ae471BbCD7713aF9CB1fEeB16cf56B41": {
+            "token": {
+                "symbol": "BR"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x80f3D493EBCe97e343c53D29a137942416B4ffC0": {
+            "token": {
+                "symbol": "CRCLB"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xbe9D156892E55e7154BcD3cB0FEA677F9D3103E1": {
+            "token": {
+                "symbol": "SPCXB"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x10D4183389e99233db3cc981c43443Ebd28Ebd5e": {
+            "token": {
+                "symbol": "DGAI"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x1F12B85aAC097E43Aa1555b2881E98a51090e9A6": {
+            "token": {
+                "symbol": "GENIUS"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x0Bb150DFa86EA5d7742F07FEfCD8E8edA81D64eF": {
+            "token": {
+                "symbol": "USDAT"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xd97d097a89113fa59b76c572E5b2Eb647E8eefaf": {
+            "token": {
+                "symbol": "SOXLB"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x5668a83B46016B494A30Dd14066A451E5417A8B8": {
+            "token": {
+                "symbol": "ULTIMA"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x3F53De71c126BdaBAe20f9cD64848d317f6C3238": {
+            "token": {
+                "symbol": "GOOGLB"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xcdf2f3e0fa43C47A6662a91C9E4a7C5f69762699": {
+            "token": {
+                "symbol": "MUB"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x500A02a20B0B0A3F3efCCFc0559543F5743bd1C4": {
+            "token": {
+                "symbol": "O"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x5aFadCd1E8E3CA78Ee2D37100102f2aec8Bc0Aa8": {
+            "token": {
+                "symbol": "PLUME"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x097acf27503753e77bCA940277806156C5925B81": {
+            "token": {
+                "symbol": "NES"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xC0214a33480648Aa434922992c70473096f286F1": {
+            "token": {
+                "symbol": "CRX"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xfBd09f771D1D76275B58ECA4016978a8A8dc46DE": {
+            "token": {
+                "symbol": "APES"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x0782b6d8c4551B9760e74c0545a9bCD90bdc41E5": {
+            "token": {
+                "symbol": "LISUSD"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x8f86a15EC17cb3369d8b3E666dAdBC11daA82b79": {
+            "token": {
+                "symbol": "APE"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x862829e8dCf0Fd939D61d1b0D4a3aaf983ee4F73": {
+            "token": {
+                "symbol": "VEREM"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x1f8955E640Cbd9abc3C3Bb408c9E2E1f5F20DfE6": {
+            "token": {
+                "symbol": "USDON"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xbAb528425Edb1E0E36D3719bc3307d9C8ccE8888": {
+            "token": {
+                "symbol": "MOOLAH"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x00f8Da33734FeB9b946fEC2228C25072D2e2E41f": {
+            "token": {
+                "symbol": "NILA"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x992879Cd8ce0c312d98648875B5A8D6D042cbF34": {
+            "token": {
+                "symbol": "CRCLON"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x755341c49f4427e43d99d8254a8dD87056f1Ee00": {
+            "token": {
+                "symbol": "ELG"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x23AE4fd8E7844cdBc97775496eBd0E8248656028": {
+            "token": {
+                "symbol": "XAUM"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x8b9Ee39195eA99d6ddD68030F44131116bc218F6": {
+            "token": {
+                "symbol": "PEAQ"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x3eE4dF61bd4F867E349BEaE8bFE07bc31b4850fb": {
+            "token": {
+                "symbol": "SNDKB"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x1104EB7e85E25eB45F88e638b0C27A06C1A91CB2": {
+            "token": {
+                "symbol": "IVVON"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x208bF3E7dA9639f1Eaefa2DE78c23396B0682025": {
+            "token": {
+                "symbol": "TAG"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xd69a4b260ef021CCD4e1C5F5a4fB522B032Ce831": {
+            "token": {
+                "symbol": "MCAT"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xe614E2fc6C787035FF51f452e8E826Bfd32D5283": {
+            "token": {
+                "symbol": "INTCB"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xCCe5F304fD043d6A4E8cCB5376A4a4Fb583B98d5": {
+            "token": {
+                "symbol": "ALLO"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x5BfdAa3f7C28B9994B56135403bF1aCEA02595b0": {
+            "token": {
+                "symbol": "COW"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x9A4a67721573f2c9209DfFf972c52Be4E3F6642e": {
+            "token": {
+                "symbol": "GPS"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x5191b13fc0E90026942dA71D619d64f4289Ddc69": {
+            "token": {
+                "symbol": "NOXO"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x6EF2FFB38D64aFE18ce782DA280b300e358CFeAF": {
+            "token": {
+                "symbol": "ACU"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x3B4de3c7855C03bB9F50ea252cD2c9FA1125Ab07": {
+            "token": {
+                "symbol": "IDOL"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x3d4f0513E8a29669B960f9dBcA61861548A9A760": {
+            "token": {
+                "symbol": "BANANAS31"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x5DD1A7A369e8273371d2DBf9d83356057088082c": {
+            "token": {
+                "symbol": "FT"
+            },
+            "chainIds": [
+                56,
+                8453,
+                43114
+            ],
+            "isSC": true
+        },
+        "0x2c3a8Ee94dDD97244a93Bc48298f97d2C412F7Db": {
+            "token": {
+                "symbol": "AKE"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x000008D2175F9AEAdDb2430c26f8A6f73c5A0000": {
+            "token": {
+                "symbol": "UP"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x71be881e9C5d4465B3FfF61e89c6f3651E69B5bb": {
+            "token": {
+                "symbol": "BRZ"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x44Fc58fAaaCA03E5d52e493DAe930fFa63e2A664": {
+            "token": {
+                "symbol": "UMXM"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x6a708EAD771238919D85930b5a0f10454E1C331a": {
+            "token": {
+                "symbol": "SPYON"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x71E9dc9DEbc18650BD2342B93623B88C2aD00c89": {
+            "token": {
+                "symbol": "STRCON"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xBEEA1D618e533a387D941F58a7d4c9b7bD377777": {
+            "token": {
+                "symbol": "牛来"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x91152B4Ef635403efBAe860edD0F8c321d7c035d": {
+            "token": {
+                "symbol": "IRYS"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xac246674Dd88dD08f9c6Dd0ab5e2115988BFF34a": {
+            "token": {
+                "symbol": "MMT"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xeA953eA6634d55dAC6697C436B1e81A679Db5882": {
+            "token": {
+                "symbol": "USDU"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x5d3A12c42E5372B2CC3264AB3cdcF660a1555238": {
+            "token": {
+                "symbol": "ARIA"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x9DAF1a070F882d870A8D58D7a27041c752F3B88D": {
+            "token": {
+                "symbol": "MHORSE"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xFF7F8F301F7A706E3CfD3D2275f5dc0b9EE8009B": {
+            "token": {
+                "symbol": "FOLKS"
+            },
+            "chainIds": [
+                56,
+                8453,
+                43114
+            ],
+            "isSC": true
+        },
+        "0xECa41281c24451168a37211F0bc2b8645AF45092": {
+            "token": {
+                "symbol": "TPT"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x5FCA51aff213bFBEAB0b711b93c3374252fD6aC3": {
+            "token": {
+                "symbol": "SHARE"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x8b194370825E37b33373e74A41009161808C1488": {
+            "token": {
+                "symbol": "VELVET"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x0cdE6936d305d5B34667fC46425E852efd73559a": {
+            "token": {
+                "symbol": "QQQON"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xAB3dBcD9B096C3fF76275038bf58eAC10D22C61f": {
+            "token": {
+                "symbol": "YUSD"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xB2BD0749DBE21f623d9BABa856D3B0f0e1BFEc9C": {
+            "token": {
+                "symbol": "DUSK"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xd5f6ef5dEabE61E6d5CDB49BFB6f156F2c1cA715": {
+            "token": {
+                "symbol": "ARX"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x92aa03137385F18539301349dcfC9EbC923fFb10": {
+            "token": {
+                "symbol": "SKYAI"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x0A8D6C86e1bcE73fE4D0bD531e1a567306836EA5": {
+            "token": {
+                "symbol": "COAI"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xA7440029ecA41dEaBd8775Ef1D6086b37d4dF8D6": {
+            "token": {
+                "symbol": "BRETT"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xFe189E97832DA1573e4e4Ff034F4fFC3a15c7777": {
+            "token": {
+                "symbol": "MARSCOIN"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xD955c9bA56Fb1AB30e34766e252A97ccCE3D31A6": {
+            "token": {
+                "symbol": "XPIN"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xE87afb3076AeB0f9B14E368DE8145ae6a2826A14": {
+            "token": {
+                "symbol": "MSTRB"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x67ee3Cb086F8a16f34beE3ca72FAD36F7Db929e2": {
+            "token": {
+                "symbol": "DODO"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x9BAFC8d4b487cEBff201721702507a3E2C67ad79": {
+            "token": {
+                "symbol": "KAVA"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x97693439EA2f0ecdeb9135881E49f354656a911c": {
+            "token": {
+                "symbol": "RAVE"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x365DE036A1F7dcCb621530d517133521debB2013": {
+            "token": {
+                "symbol": "NEX"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x79270684b422F44aF5F82c52EaC7078Eaca5f30f": {
+            "token": {
+                "symbol": "JETT"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x5feCcD17C393CaF1001D18164236A37E731FCb9d": {
+            "token": {
+                "symbol": "OPG"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x35aE9AcCf59D646b181e816fDb86811671919d74": {
+            "token": {
+                "symbol": "GPT"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xA9eE28C80f960B889dFbd1902055218cBa016F75": {
+            "token": {
+                "symbol": "NVDAON"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xEEC6574eAbBa52bac3f0277F2cD5Ac7e67197886": {
+            "token": {
+                "symbol": "KII"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x0F0df6cB17ee5E883eddFEf9153fC6036BDB4e37": {
+            "token": {
+                "symbol": "BAS"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0x30117E4bC17d7B044194b76A38365C53b72F7D49": {
+            "token": {
+                "symbol": "GWEI"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xaa036928c9c0Df07d525B55ea8EE690Bb5a628C1": {
+            "token": {
+                "symbol": "EVAA"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xdA7AD9dea9397cffdDAE2F8a052B82f1484252B3": {
+            "token": {
+                "symbol": "RIVER"
+            },
+            "chainIds": [
+                56,
+                8453
+            ],
+            "isSC": true
+        },
+        "0xB0f09ea9ae0515C3551080D4a745C8115aA30e37": {
+            "token": {
+                "symbol": "DOS"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xce5098Dc1748789f66926a43c054D7D2e150F46B": {
+            "token": {
+                "symbol": "UNP"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xf8A80D1cb9cFD70D03D655D9dF42339846F3B3C8": {
+            "token": {
+                "symbol": "INTCX"
+            },
+            "chainIds": [
+                56
+            ],
+            "isSC": true
+        },
+        "0xc3De830EA07524a0761646a6a4e4be0e114a3C83": {
+            "token": {
+                "symbol": "UNI"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xD879846CbE20751bDE8a9342a3CCa00A3E56CA47": {
+            "token": {
+                "symbol": "EURSAFO"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xe904AEA5E1b110c9174728fA2efFc8aeD19E98Ef": {
+            "token": {
+                "symbol": "PAXG"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xB2000000000000000000002fEb517dFeC7415344": {
+            "token": {
+                "symbol": "OUSD"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x6C240DDA6b5c336DF09A4D011139beAAa1eA2Aa2": {
+            "token": {
+                "symbol": "ETHFI"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x7D214438D0F27AfCcC23B3d1e1a53906aCE5CFEa": {
+            "token": {
+                "symbol": "REUSD"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x3f5bF3EdAc59d650D8fDf9657a71F2f904A3a4Ee": {
+            "token": {
+                "symbol": "AERO"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xD993935E13851dd7517af10687EC7e5022127228": {
+            "token": {
+                "symbol": "APXUSD"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x0BB754d8940e283D9Ff6855ab5dAfBC14165c059": {
+            "token": {
+                "symbol": "SAFO"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xFCc9Cc1209651Ed8867332d6F664CF82743A2584": {
+            "token": {
+                "symbol": "MGLO"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x2A66d51407b84b82b5AFF3DeC4D49f72CBCD322a": {
+            "token": {
+                "symbol": "BEAM"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x2c271ddF484aC0386d216eB7eB9Ff02D4Dc0F6AA": {
+            "token": {
+                "symbol": "APYUSD"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xA81a52B4dda010896cDd386C7fBdc5CDc835ba23": {
+            "token": {
+                "symbol": "TRAC"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xd6122ddADa244913521F3d62006eaF756c157660": {
+            "token": {
+                "symbol": "BR"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x19CF86D38ae55d1dC08F50588f11b6acc297f977": {
+            "token": {
+                "symbol": "ALFW"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xac531Eb26Ca1d21b85126De8FB87E80E09002DcF": {
+            "token": {
+                "symbol": "SAND"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x70c8392DE9b39a1E48d12A70Af6FF4Be25D6D0A2": {
+            "token": {
+                "symbol": "CHZ"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xc5fecC3a29Fb57B5024eEc8a2239d4621e111CBE": {
+            "token": {
+                "symbol": "1INCH"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x182FA643E5f29d5EcA75e7b9CF9336A3fe4620b2": {
+            "token": {
+                "symbol": "O"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xCa72827a3D211CfD8F6b00Ac98824872b72CAb49": {
+            "token": {
+                "symbol": "CGUSD"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xb80194e3868511b8f43E1D5d6E255cD9e7c3e7dD": {
+            "token": {
+                "symbol": "KNTQ"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xF4d97F2da56e8c3098f3a8D538DB630A2606a024": {
+            "token": {
+                "symbol": "DIEM"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x4eB92702bA4cfbF80561BAd64D89C706Ac824960": {
+            "token": {
+                "symbol": "RED"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xd2047ebdb205Ee6862b69ae9fB3501652cC97d36": {
+            "token": {
+                "symbol": "BRLV"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x2f6c0e5E06b43512706a9cdf66cD21f723Fe0eC3": {
+            "token": {
+                "symbol": "GBPSAFO"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x9B56B112BbD6343a8961a093315A9A60b8cB1F36": {
+            "token": {
+                "symbol": "PEAQ"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x032d86656Db142138AC97d2c5C4E3766E8c0482d": {
+            "token": {
+                "symbol": "ALLO"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xc5fEd7c8cCC75D8A72b601a66DffD7A489073F0b": {
+            "token": {
+                "symbol": "ACU"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x9208d82F121806A34a39bB90733b4C5c54F3993e": {
+            "token": {
+                "symbol": "AP3X"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x58ecEF26335Af7b04A998105a6603B0Dc475aF33": {
+            "token": {
+                "symbol": "BABYDOGE"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xBD4DfC058eb95b8De5ceAF39966A1a70F5556F78": {
+            "token": {
+                "symbol": "CHFAU"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x526728DBc96689597F85ae4cd716d4f7fCcBAE9d": {
+            "token": {
+                "symbol": "MSUSD"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xac485391EB2d7D88253a7F1eF18C37f4242D1A24": {
+            "token": {
+                "symbol": "LSK"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x9B5E262cF9bb04869ab40b19AF91D2dc85761722": {
+            "token": {
+                "symbol": "NOCK"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xbF927b841994731C573BDF09ceB0c6B0Aa887cDd": {
+            "token": {
+                "symbol": "VELVET"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xA2c22252cDc8b7cDdEe1B0b2E242818509fCf7b8": {
+            "token": {
+                "symbol": "SXT"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xeD664536023d8E4b1640C394777D34aBAFF1dF8F": {
+            "token": {
+                "symbol": "POD"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x9470Ef4E54520F0369aC850E239205bacf27008A": {
+            "token": {
+                "symbol": "SN120"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x1aA8fD5BCce2231C6100d55Bf8B377cff33Acfc3": {
+            "token": {
+                "symbol": "RAVE"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xFbC2051AE2265686a469421b2C5A2D5462FbF5eB": {
+            "token": {
+                "symbol": "OPG"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x4f33aCf823E6eEb697180d553cE0c710124C8D59": {
+            "token": {
+                "symbol": "EURSPKCC"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x119B63B1605Be3A8ff4543c7F76f7f1f79eECd1f": {
+            "token": {
+                "symbol": "OPAL"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x27f6c8289550fCE67f6B50BeD1F519966aFE5287": {
+            "token": {
+                "symbol": "TGBP"
+            },
+            "chainIds": [
+                8453,
+                43114
+            ],
+            "isSC": true
+        },
+        "0x11030f79109269d796fd0FB956D6244e502757f7": {
+            "token": {
+                "symbol": "CTR"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x8c213ee79581Ff4984583C6a801e5263418C4b86": {
+            "token": {
+                "symbol": "JTRSY"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x432036208d2717394d2614d6697c46DF3Ed69540": {
+            "token": {
+                "symbol": "SYN"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xC3cE78B037DDA1B966D31EC7979d3f3a38571A8E": {
+            "token": {
+                "symbol": "BCSPX"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xCfA3Ef56d303AE4fAabA0592388F19d7C3399FB4": {
+            "token": {
+                "symbol": "EUSD"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xF1572d1Da5c3CcE14eE5a1c9327d17e9ff0E3f43": {
+            "token": {
+                "symbol": "MAGIC"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xF3d5b4c34Ed623478cc5141861776E6cf7AE3A1E": {
+            "token": {
+                "symbol": "KGEN"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105": {
+            "token": {
+                "symbol": "FP"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x4a9f3ed92892c0168DC194eC3867f8316288B32a": {
+            "token": {
+                "symbol": "ELON"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x55380fe7A1910dFf29A47B622057ab4139DA42C5": {
+            "token": {
+                "symbol": "FXUSD"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xdD468A1DDc392dcdbEf6db6e34E89AA338F9F186": {
+            "token": {
+                "symbol": "MUSD"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xfdcC3dd6671eaB0709A4C0f3F53De9a333d80798": {
+            "token": {
+                "symbol": "SBC"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xb9cAA63e09c646C1ec79aCB2158d173e64a5FEd3": {
+            "token": {
+                "symbol": "SKL"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x086F405146Ce90135750Bbec9A063a8B20A8bfFb": {
+            "token": {
+                "symbol": "BREV"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x0dc28eFBA8c6E0C14Fa7391636B8Bec86C4C83D6": {
+            "token": {
+                "symbol": "BSB"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x832b55B0fA6397ca9e63B8c15DAdeF3f6E44614c": {
+            "token": {
+                "symbol": "DUAL"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x29cC30f9D113B356Ce408667aa6433589CeCBDcA": {
+            "token": {
+                "symbol": "ELSA"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xfAB99fCF605fD8f4593EDb70A43bA56542777777": {
+            "token": {
+                "symbol": "ZBT"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x0C03Ce270B4826Ec62e7DD007f0B716068639F7B": {
+            "token": {
+                "symbol": "TIG"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x7297968FFb753dd12e4f6B1f18d9865c76707FC2": {
+            "token": {
+                "symbol": "ZEST"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x07b3D902783c3C12b077508c3B5c00113d1291D0": {
+            "token": {
+                "symbol": "XDP"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xAAA0008C8CF3A7Dca931adaF04336A5D808C82Cc": {
+            "token": {
+                "symbol": "DEJAAA"
+            },
+            "chainIds": [
+                8453,
+                43114
+            ],
+            "isSC": true
+        },
+        "0x26C358F7c5fEdB20a6ddEf108cD91Efb6B8Da0Cb": {
+            "token": {
+                "symbol": "USDSM"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x8bFAc1b375bf2894D6F12fb2Eb48B1C1a7916789": {
+            "token": {
+                "symbol": "MEY"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x0A4C9cb2778aB3302996A34BeFCF9a8Bc288C33b": {
+            "token": {
+                "symbol": "XSGD"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x5bE75e3b0aFf5D1A042A5363Ae36AcB1d6d755ea": {
+            "token": {
+                "symbol": "AXIS"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xC52aeDec3374422d7510E294cfAa90799595CBa3": {
+            "token": {
+                "symbol": "SURPLUS"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xA6233014B9b7aaa74f38fa1977ffC7A89642dC72": {
+            "token": {
+                "symbol": "DEJTRSY"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xb20A4Bd059F5914a2F8B9c18881c637f79efb7df": {
+            "token": {
+                "symbol": "ADS"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xe67F39FbE8C24ef8b3542efED1eE9963cEFC1f2a": {
+            "token": {
+                "symbol": "ANYONE"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xBA515304d8153c4b162dC79f867E152DF9c127eb": {
+            "token": {
+                "symbol": "UTY"
+            },
+            "chainIds": [
+                8453,
+                43114
+            ],
+            "isSC": true
+        },
+        "0xD9AA2300E126869182dfB6Ecf54984E4c687F36B": {
+            "token": {
+                "symbol": "CHFSAFO"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xA8De1f55Aa0E381cb456e1DcC9ff781eA0079068": {
+            "token": {
+                "symbol": "UKTBL"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x5b2193fDc451C1f847bE09CA9d13A4Bf60f8c86B": {
+            "token": {
+                "symbol": "UP"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x6Bd83ABC39391Af1E24826E90237C4BD3468b5D2": {
+            "token": {
+                "symbol": "SLC"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x306aCd0c07c430AbBBb2e74Ef7bdE94F32A898c0": {
+            "token": {
+                "symbol": "SEDA"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x2C24497D4086490e7EaD87CC12597fb50c2E6eD6": {
+            "token": {
+                "symbol": "F"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0xbbd27C575fB0e113219D610cc787B02Eeff71d42": {
+            "token": {
+                "symbol": "HALO"
+            },
+            "chainIds": [
+                8453
+            ],
+            "isSC": true
+        },
+        "0x180aF87b47Bf272B2df59dccf2D76a6eaFa625Bf": {
+            "token": {
+                "symbol": "REUSD"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x491a4eB4f1FC3BfF8E1d2FC856a6A46663aD556f": {
+            "token": {
+                "symbol": "BRZ"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x25C2067D8b04931A6e2eb078eA8D65c8B8500031": {
+            "token": {
+                "symbol": "MGLOBAL"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x5954fF4099ac47C4d6D098A9216f3278BB8C9506": {
+            "token": {
+                "symbol": "SECZ"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x0f875Ae3EB1fc8a3289657676FC2A288585982a5": {
+            "token": {
+                "symbol": "REKT"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xa5d465251fBCc907f5Dd6bB2145488DFC6a2627b": {
+            "token": {
+                "symbol": "JTRSY"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x4586AF10ecceeD4E383e3f2Ec93b6C61e26500b5": {
+            "token": {
+                "symbol": "HUNDRED"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xF14f4CE569cB3679E99d5059909E23B07bd2F387": {
+            "token": {
+                "symbol": "NXUSD"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xf5fA39A16449B1ee07AA52Ae79C6b00567c59f83": {
+            "token": {
+                "symbol": "HINC"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x61daEEb998bC5415DF8512A4Be1b71f4275Ef314": {
+            "token": {
+                "symbol": "MWIN"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x8835A2F66A7AaCCB297Cb985831A616B75e2E16c": {
+            "token": {
+                "symbol": "EUROP"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x787B8caD6f6539E90734780f370bFdDf299713E1": {
+            "token": {
+                "symbol": "CURR"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9": {
+            "token": {
+                "symbol": "P33"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xB44a9B6905aF7c801311e8F4E76932ee959c663C": {
+            "token": {
+                "symbol": "ANY"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x77146784315Ba81904d654466968e3a7c196d1f3": {
+            "token": {
+                "symbol": "TREE"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x549d49BaF4C6f4437826E4E472c9dFAb5E5cF58E": {
+            "token": {
+                "symbol": "USFR"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x501eBf66d76A96D4FB26ccead42957653e16B8B8": {
+            "token": {
+                "symbol": "EVAUSDT"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x741bD193B6b40f8703d2e116FD1965421f290F58": {
+            "token": {
+                "symbol": "EVAUSDC"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x13A466998Ce03Db73aBc2d4DF3bBD845Ed1f28E7": {
+            "token": {
+                "symbol": "PHAR"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x08d58F06DDfA9b99AE651f68232014BE3914C5cd": {
+            "token": {
+                "symbol": "ERN"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x390ceed555905ec225Da330A188EA04e85570f00": {
+            "token": {
+                "symbol": "SODA"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x4B16f5251cd4c853f28998809DcA61ccCBcB898B": {
+            "token": {
+                "symbol": "NVDA"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x869D0329295C4A33076F2BBBd8147dB44BC3356B": {
+            "token": {
+                "symbol": "JAAA"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xc445d35F74F8cD24A596d4dB8228840D0a938f6d": {
+            "token": {
+                "symbol": "SATA"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xb6314518b61b4864162c7aE7fdc36261e0A14C4b": {
+            "token": {
+                "symbol": "YOM"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xA0242929502ad4c953f8aAb811440ceFaC99F9C8": {
+            "token": {
+                "symbol": "STRC"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x30C74769eA97C6454e2a4d4e9D2dA947C64cA1E0": {
+            "token": {
+                "symbol": "BTC.ℏ"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x9eE1963f05553eF838604Dd39403be21ceF26AA4": {
+            "token": {
+                "symbol": "USDP"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x7944e6F238f13740121323f837f2f1022b38525e": {
+            "token": {
+                "symbol": "MSTR"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x4193C2B9B176763f48B1eF5266aEd71f6348ba81": {
+            "token": {
+                "symbol": "TSLA"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x36E78DA8653946108C83941Cf5818013cCA86EDA": {
+            "token": {
+                "symbol": "ASST"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x4036f3d9c45a20f44f0b8B85dD6CA33005fF9654": {
+            "token": {
+                "symbol": "ROOBEE"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x34a1D2105dd1b658A48EAD516A9CE3032082799C": {
+            "token": {
+                "symbol": "GLADIUS"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x7024f993A0781169E064346396c5F6139DC6d98A": {
+            "token": {
+                "symbol": "GOOGL"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x3fE4902B275CaF603C46C81F3d921BB8515B5BC0": {
+            "token": {
+                "symbol": "JACK"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xe916BeB9ADdfEcC2c7C12C241d8EC65e0c55897F": {
+            "token": {
+                "symbol": "PEAK"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xB6b0149009eb78239213b97A960b5c793C03373b": {
+            "token": {
+                "symbol": "AAPL"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x82E9e5725dA9050e121D12802fCC302752aBaA1A": {
+            "token": {
+                "symbol": "SPY"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x00386CF770BA7D8Aff9e650a20750F498ad83F41": {
+            "token": {
+                "symbol": "VOO"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x6e7f5C0b9f4432716bDd0a77a3601291b9D9e985": {
+            "token": {
+                "symbol": "SPORE"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x038Dbe3D967bB8389190446DACdfE7B95b44F73D": {
+            "token": {
+                "symbol": "BUSDC"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x4e3642603a75528489C2D94f86e9507260d3c5a1": {
+            "token": {
+                "symbol": "JGN"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x7CE79FDf5bbf74869C28C05F568b8422cFFacd6E": {
+            "token": {
+                "symbol": "SPUS"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xa4FB4F0Ff2431262D236778495145EcBC975c38B": {
+            "token": {
+                "symbol": "INFRA"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x14Eb40fb7900185C01ADC6a5b8ac506d8a600e3c": {
+            "token": {
+                "symbol": "EUROT"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xaeeC29B5edA336ef717B52c0E2A27fFC870339b8": {
+            "token": {
+                "symbol": "AVGO"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xb7b378265C9E271659C87f513Eba2E5F215B7EB2": {
+            "token": {
+                "symbol": "IAU"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x0cBD6fAdcF8096cC9A43d90B45F65826102e3eCE": {
+            "token": {
+                "symbol": "CDT"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x2B7c9A6448576790aa6CE639E4c70BBb32E65c43": {
+            "token": {
+                "symbol": "AMD"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x841Aef70237a88027ccb2d15C1bBAf88a669674a": {
+            "token": {
+                "symbol": "SPACE"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x4F94b8AEF08c92fEfe416af073F1Df1E284438EC": {
+            "token": {
+                "symbol": "WOLF"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x82013D59c643b91972245A2E2cbFE796CF52dE1E": {
+            "token": {
+                "symbol": "NKE"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x3C594084dC7AB1864AC69DFd01AB77E8f65B83B7": {
+            "token": {
+                "symbol": "BUSDT"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x02Bfd11499847003De5f0F5AA081C43854d48815": {
+            "token": {
+                "symbol": "RADIO"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x296F68E3896d5603C39169F116f84373f245AD72": {
+            "token": {
+                "symbol": "SIVR"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xAbA4a08C36404f6EFf79Dc85b0b4c5172A095504": {
+            "token": {
+                "symbol": "AMZN"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x5183EfaBdDA4F872788307B705163982036ba962": {
+            "token": {
+                "symbol": "META"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xD1234e7Dc6c710E9F95C4eEC5f90907D0db2DAF1": {
+            "token": {
+                "symbol": "QQQ"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0xEd2b42D3C9c6E97e11755BB37df29B6375ede3EB": {
+            "token": {
+                "symbol": "HON"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x1831FdAC7Fcb9271f2E2FfB1bbba965CcAf8136B": {
+            "token": {
+                "symbol": "MSFT"
+            },
+            "chainIds": [
+                43114
+            ],
+            "isSC": true
+        },
+        "0x056A5FA5da84ceb7f93d36e545C5905607D8bD81": {
+            "token": {
+                "symbol": "ETHFI"
+            },
+            "chainIds": [
+                534352
+            ],
+            "isSC": true
+        },
+        "0x3b005fefC63Ca7c8d25eE21FbA3787229ba4CF03": {
+            "token": {
+                "symbol": "USX"
+            },
+            "chainIds": [
+                534352
+            ],
+            "isSC": true
         }
     }
 }
