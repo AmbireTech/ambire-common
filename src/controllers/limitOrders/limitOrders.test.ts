@@ -397,6 +397,145 @@ describe('LimitOrdersController orders for the dashboard', () => {
   })
 })
 
+describe('LimitOrdersController banner for filled orders', () => {
+  const firstUid = `0x${'11'.repeat(56)}`
+  const secondUid = `0x${'22'.repeat(56)}`
+  const filled = (uid: string) =>
+    makeOrder({
+      uid,
+      status: 'fulfilled',
+      executedSellAmount: '1000000',
+      executedBuyAmount: '600000000000000'
+    })
+  // Lets the storage writes, which run after the update, finish
+  const flushWrites = () =>
+    new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+  it('does not tell about orders that had filled before the account first loaded', async () => {
+    const storage = makeStorage()
+    const { controller } = makeController(() => [filled(firstUid)], storage)
+
+    await controller.updateOrders()
+    await flushWrites()
+
+    expect(controller.banners).toEqual([])
+    expect(storage.data.limitOrdersSeenFills).toEqual({ [accountAddr.toLowerCase()]: [firstUid] })
+  })
+
+  it('tells about an order that fills later, with what it sold and got', async () => {
+    let orders = [makeOrder({ uid: firstUid })]
+    const { controller } = makeController(() => orders)
+
+    await controller.updateOrders()
+    orders = [filled(firstUid)]
+    await controller.updateOrders()
+
+    expect(controller.banners).toHaveLength(1)
+    const [banner] = controller.banners
+    expect(banner).toMatchObject({
+      id: 'limit-orders-filled',
+      type: 'success',
+      title: 'Your limit order went through',
+      actions: [{ actionName: 'open-limit-orders-history', label: 'See order' }],
+      dismissAction: { actionName: 'dismiss-limit-orders-filled-banner' },
+      meta: { accountAddr }
+    })
+    expect(banner?.text).toContain('USDC')
+    expect(banner?.text).toContain('WETH')
+  })
+
+  it('counts the orders when several filled', async () => {
+    let orders = [makeOrder({ uid: firstUid }), makeOrder({ uid: secondUid })]
+    const { controller } = makeController(() => orders)
+
+    await controller.updateOrders()
+    orders = [filled(firstUid), filled(secondUid)]
+    await controller.updateOrders()
+
+    expect(controller.banners[0]).toMatchObject({
+      title: '2 limit orders went through',
+      actions: [{ actionName: 'open-limit-orders-history', label: 'See orders' }]
+    })
+  })
+
+  it('tells about an order that filled while the wallet was closed', async () => {
+    // Seen before the restart, while it was still open
+    const storage = makeStorage({ limitOrdersSeenFills: { [accountAddr.toLowerCase()]: [] } })
+    const { controller } = makeController(() => [filled(firstUid)], storage)
+
+    await controller.updateOrders()
+
+    expect(controller.banners).toHaveLength(1)
+  })
+
+  it('stops telling once the orders are marked as seen, also after a restart', async () => {
+    const storage = makeStorage({ limitOrdersSeenFills: { [accountAddr.toLowerCase()]: [] } })
+    const { controller } = makeController(() => [filled(firstUid)], storage)
+
+    await controller.updateOrders()
+    controller.markFilledOrdersAsSeen()
+    await flushWrites()
+
+    expect(controller.banners).toEqual([])
+    expect(storage.data.limitOrdersSeenFills).toEqual({ [accountAddr.toLowerCase()]: [firstUid] })
+
+    const { controller: restarted } = makeController(() => [filled(firstUid)], storage)
+    await restarted.updateOrders()
+    expect(restarted.banners).toEqual([])
+  })
+
+  it('tells about a new fill after older ones were seen', async () => {
+    const storage = makeStorage({
+      limitOrdersSeenFills: { [accountAddr.toLowerCase()]: [firstUid] }
+    })
+    const { controller } = makeController(() => [filled(firstUid), filled(secondUid)], storage)
+
+    await controller.updateOrders()
+
+    expect(controller.banners[0]?.title).toBe('Your limit order went through')
+  })
+
+  it('does not count fills as seen while a network fails to load, so none is missed later', async () => {
+    let shouldFail = true
+    const storage = makeStorage()
+    const { controller } = makeController(() => {
+      if (shouldFail) throw new Error('CoW Swap is unavailable')
+      return [filled(firstUid)]
+    }, storage)
+
+    await controller.updateOrders()
+    await flushWrites()
+    expect(storage.data.limitOrdersSeenFills).toBeUndefined()
+
+    // Loads in full now, so its fills so far count as seen, rather than as new
+    shouldFail = false
+    await controller.updateOrders()
+    expect(controller.banners).toEqual([])
+  })
+
+  it('does nothing when there is nothing new to mark as seen', async () => {
+    const storage = makeStorage()
+    const { controller } = makeController(() => [makeOrder({ uid: firstUid })], storage)
+
+    await controller.updateOrders()
+    await flushWrites()
+    storage.set.mockClear()
+    controller.markFilledOrdersAsSeen()
+    await flushWrites()
+
+    expect(storage.set).not.toHaveBeenCalled()
+  })
+
+  it('does not show the banner before the selected account orders load', () => {
+    const storage = makeStorage({ limitOrdersSeenFills: { [accountAddr.toLowerCase()]: [] } })
+    const { controller } = makeController(() => [filled(firstUid)], storage)
+
+    expect(controller.banners).toEqual([])
+  })
+})
+
 /**
  * A Safe account's controller, which signs in the signing window. `getAccountOrders` answers each
  * refresh of My orders on Ethereum, and `getBaseOrders` on Base

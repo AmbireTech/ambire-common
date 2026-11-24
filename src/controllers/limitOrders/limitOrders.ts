@@ -8,6 +8,7 @@ import { DEFAULT_LIMIT_ORDER_PRICE } from '../../consts/limitOrders'
 import { TO_TOKEN_LIST_CACHE_THRESHOLD, TO_TOKEN_LIST_LIMIT } from '../../consts/swapAndBridge'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { Banner } from '../../interfaces/banner'
 import { IContractInfoController } from '../../interfaces/contractInfo'
 import { IDappsController } from '../../interfaces/dapp'
 import { IErc7730Controller } from '../../interfaces/erc7730'
@@ -74,6 +75,7 @@ import {
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { CowSwapAPI } from '../../services/cowswap/api'
+import formatDecimals from '../../utils/formatDecimals/formatDecimals'
 import {
   COWSWAP_BUY_NATIVE_TOKEN_ADDRESS,
   COWSWAP_ETH_FLOW_ADDRESS,
@@ -309,6 +311,12 @@ export class LimitOrdersController extends EventEmitter {
 
   /** The last write of `#accountsWithOrders`, as writes to the storage must not run in parallel */
   #accountsWithOrdersWrite: Promise<unknown> = Promise.resolve()
+
+  /** See `limitOrdersSeenFills` in the storage */
+  #seenFills = new Map<string, Set<string>>()
+
+  /** The last write of `#seenFills`, as writes to the storage must not run in parallel */
+  #seenFillsWrite: Promise<unknown> = Promise.resolve()
 
   /**
    * How much each order of the account had received at the last refresh, to notice when one
@@ -570,6 +578,118 @@ export class LimitOrdersController extends EventEmitter {
     } catch (error: any) {
       this.emitError({ level: 'silent', message: 'Failed to load the limit order accounts', error })
     }
+    try {
+      const seenFills = await this.#storage.get('limitOrdersSeenFills', {})
+      Object.entries(seenFills).forEach(([addr, uids]) => {
+        this.#seenFills.set(addr.toLowerCase(), new Set(uids))
+      })
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to load the seen limit order fills',
+        error
+      })
+    }
+  }
+
+  #saveSeenFills() {
+    const seenFills = Object.fromEntries(
+      [...this.#seenFills.entries()].map(([addr, uids]) => [addr, [...uids]])
+    )
+    this.#seenFillsWrite = this.#seenFillsWrite
+      .then(() => this.#storage.set('limitOrdersSeenFills', seenFills))
+      .catch((error) => {
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to save the seen limit order fills',
+          error
+        })
+      })
+  }
+
+  /**
+   * The first time all of the account's orders load, its fills so far count as seen, so the
+   * dashboard tells the user only about the orders that fill from then on, not about old ones
+   */
+  #markFillsSoFarAsSeen(accountAddr: string) {
+    const addr = accountAddr.toLowerCase()
+    if (this.#seenFills.has(addr)) return
+
+    const filledUids = this.orders
+      .filter((order) => order.status === 'filled')
+      .map((order) => order.uid)
+    this.#seenFills.set(addr, new Set(filledUids))
+    this.#saveSeenFills()
+  }
+
+  /**
+   * The selected account's orders that filled since the user last saw its filled orders. None
+   * until all of its orders loaded once, see `#markFillsSoFarAsSeen`
+   */
+  get #unseenFilledOrders(): LimitOrder[] {
+    const accountAddr = this.#selectedAccount.account?.addr
+    if (!accountAddr || this.ordersAccountAddr !== accountAddr || this.ordersUpdatedAt === null) {
+      return []
+    }
+    const seenUids = this.#seenFills.get(accountAddr.toLowerCase())
+    if (!seenUids) return []
+
+    return this.orders.filter((order) => order.status === 'filled' && !seenUids.has(order.uid))
+  }
+
+  /**
+   * Tells the user on the dashboard that orders filled since they last looked, as orders usually
+   * fill while they're away. Goes away once they see the orders or dismiss it
+   */
+  get banners(): Banner[] {
+    const unseenFilledOrders = this.#unseenFilledOrders
+    const accountAddr = this.#selectedAccount.account?.addr
+    if (!unseenFilledOrders.length || !accountAddr) return []
+
+    const [order] = unseenFilledOrders
+    const isSingle = unseenFilledOrders.length === 1
+    const getAmount = (amount: string, decimals: number) =>
+      formatDecimals(Number(formatUnits(amount, decimals)), 'amount')
+
+    return [
+      {
+        id: 'limit-orders-filled',
+        type: 'success',
+        title: isSingle
+          ? 'Your limit order went through'
+          : `${unseenFilledOrders.length} limit orders went through`,
+        text:
+          isSingle && order
+            ? `You sold ${getAmount(order.executedSellAmount, order.sellToken.decimals)} ${
+                order.sellToken.symbol
+              } and got ${getAmount(order.executedBuyAmount, order.buyToken.decimals)} ${
+                order.buyToken.symbol
+              }.`
+            : 'See what each one got in My orders.',
+        actions: [
+          { actionName: 'open-limit-orders-history', label: isSingle ? 'See order' : 'See orders' }
+        ],
+        dismissAction: { actionName: 'dismiss-limit-orders-filled-banner' },
+        meta: { accountAddr }
+      }
+    ]
+  }
+
+  /**
+   * Marks the selected account's filled orders as seen, which hides the dashboard banner about
+   * them. Called when the user opens them, or dismisses the banner
+   */
+  markFilledOrdersAsSeen() {
+    const accountAddr = this.#selectedAccount.account?.addr
+    const unseenFilledOrders = this.#unseenFilledOrders
+    if (!accountAddr || !unseenFilledOrders.length) return
+
+    const seenUids = this.#seenFills.get(accountAddr.toLowerCase())
+    if (!seenUids) return
+
+    unseenFilledOrders.forEach((order) => seenUids.add(order.uid))
+    this.emitUpdate()
+    this.#saveSeenFills()
   }
 
   /** Remembers that the account has limit orders, so the dashboard shows them */
@@ -2230,6 +2350,8 @@ export class LimitOrdersController extends EventEmitter {
     this.#soldTokensBalancesSignature = this.#getSoldTokensBalancesSignature()
 
     this.#rebuildOrders()
+    // Not when a network's orders didn't load, as their old fills would count as new later
+    if (!failedCount) this.#markFillsSoFarAsSeen(account.addr)
     this.ordersUpdatedAt = Date.now()
     this.emitUpdate()
   }
@@ -2828,7 +2950,8 @@ export class LimitOrdersController extends EventEmitter {
       signErrors: this.signErrors,
       toTokenShortList: this.toTokenShortList,
       signAccountOpController: this.signAccountOpController,
-      isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress
+      isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,
+      banners: this.banners
     }
   }
 }
