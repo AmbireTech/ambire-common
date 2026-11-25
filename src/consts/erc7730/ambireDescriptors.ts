@@ -521,7 +521,7 @@ export const FALLBACK_DESCRIPTORS: Record<string, Erc7730Descriptor> = {
  * The entries that point at a registry descriptor rather than one of ours are in
  * `./fallbackCalldataIndex.json` - Safe 1.4.1 on Mantle, Unichain, Linea, Monad, Avalanche, World
  * Chain, Ink, HyperEVM, Robinhood, Celo, MegaETH, Scroll and Kaia - so that
- * `scripts/updateErc7730Registry.js` can read it and keep those descriptors in `./registry.json`
+ * `scripts/updateErc7730Registry.ts` can read it and keep those descriptors in `./registry.json`
  * even if the registry's own index stops pointing at them.
  */
 export const FALLBACK_CALLDATA_INDEX: Erc7730CalldataIndex = {

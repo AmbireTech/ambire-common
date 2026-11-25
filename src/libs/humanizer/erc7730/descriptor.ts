@@ -99,10 +99,13 @@ export const validateDescriptor = (payload: unknown): payload is Erc7730Descript
 }
 
 /** The names of the descriptors a descriptor includes, as a list */
-export const getIncludes = (descriptor: Pick<Erc7730Descriptor, 'includes'>): string[] => {
-  if (!descriptor.includes) return []
+export const getIncludes = (descriptor: { includes?: unknown }): string[] => {
+  const { includes } = descriptor
+  if (typeof includes === 'string') return includes ? [includes] : []
 
-  return Array.isArray(descriptor.includes) ? descriptor.includes : [descriptor.includes]
+  return Array.isArray(includes)
+    ? includes.filter((include): include is string => typeof include === 'string')
+    : []
 }
 
 /**

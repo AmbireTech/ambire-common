@@ -229,9 +229,8 @@ export const normalizeDescriptorPath = (path: string): string =>
  * than with `URL`, which would percent-encode spaces and non-ASCII characters and cut the path at
  * a `#` or a `?`, while the registry keeps its descriptors under their plain file names.
  *
- * `scripts/updateErc7730Registry.js` resolves includes the same way to decide which files to
- * bundle - keep the two in sync (`bundledRegistry.test.ts` checks them against each other). It
- * also refuses an include that is a URL, as only files of the registry are bundled.
+ * `resolveIncludePath` of `scripts/erc7730/build.ts` resolves includes the same way to decide
+ * which files to bundle, and fails for any include that is not a file of the registry.
  */
 export const resolveIncludePath = (includePath: string, parentPath: string): string => {
   const parentFolderSegments = includePath.startsWith('/')

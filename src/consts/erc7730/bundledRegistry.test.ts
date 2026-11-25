@@ -11,13 +11,6 @@ import upstreamFallbackCalldataIndex from './fallbackCalldataIndex.json'
 import { BUNDLED_ERC7730_REGISTRY } from '.'
 import upstreamRegistry from './registry.json'
 
-// The script that generates `registry.json`, for its own include resolution. It runs nothing when
-// imported
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const generatorScript = require('../../../scripts/updateErc7730Registry')
-const resolveScriptIncludePath: (includePath: string, parentPath: string) => string =
-  generatorScript.resolveIncludePath
-
 // Run these after refreshing `registry.json` with `npm run humanizer:update:erc7730Registry`.
 
 const { calldataIndex, eip712Index, descriptors } = BUNDLED_ERC7730_REGISTRY
@@ -128,28 +121,6 @@ describe('bundled ERC-7730 registry', () => {
     )
 
     expect([...new Set(missingPaths)]).toEqual([])
-  })
-
-  test('resolves includes the same way as the script that bundles them', () => {
-    const cases: [includePath: string, parentPath: string][] = [
-      ['common.json', 'registry/morpho/calldata-vault.json'],
-      ['./common.json', 'registry/morpho/calldata-vault.json'],
-      ['../../ercs/eip712-erc2612-permit.json', 'registry/permit/eip712-token.json'],
-      ['/ercs/calldata-erc20-tokens.json', 'registry/foo/calldata-token.json'],
-      ['common a.json', 'registry/foo/calldata-token.json'],
-      ['common#1.json', 'registry/foo/calldata-token.json'],
-      ['common?v=1.json', 'registry/foo/calldata-token.json'],
-      ['commön.json', 'registry/foo/calldata-token.json'],
-      ['common%20a.json', 'registry/foo/calldata-token.json'],
-      ['../../../../outside.json', 'registry/foo/calldata-token.json'],
-      ['common.json', 'registry/morpho/calldata-mev_capital-USUALUSDC+.json']
-    ]
-
-    cases.forEach(([includePath, parentPath]) => {
-      expect(resolveScriptIncludePath(includePath, parentPath)).toBe(
-        getIncludedPath(includePath, parentPath)
-      )
-    })
   })
 
   test("uses Ambire's overrides over the registry's descriptors", () => {

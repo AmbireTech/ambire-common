@@ -1,5 +1,5 @@
 {
-  "source": {"repository":"https://github.com/ethereum/clear-signing-erc7730-registry","commit":"93a3729595151c94ef07358041135e42a05358dd"},
+  "source": {"repository":"https://github.com/ethereum/clear-signing-erc7730-registry","commit":"93a3729595151c94ef07358041135e42a05358dd","date":"2026-11-19T19:38:04+00:00"},
   "calldataIndex": {
     "eip155:1:0x0000000000000068f116a894984e2db1123eb395": "registry/opensea/calldata-Seaport-1.6.json",
     "eip155:1:0x00000000219ab540356cbb839cbe05303d7705fa": "registry/consensus-specs/calldata-DepositContract.json",

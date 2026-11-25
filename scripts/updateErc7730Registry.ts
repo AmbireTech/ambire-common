@@ -1,0 +1,331 @@
+import { execFileSync } from 'child_process'
+import { promises as fsPromises } from 'fs'
+import os from 'os'
+import path from 'path'
+
+import { BuiltRegistry, buildRegistry, UpstreamFiles } from './erc7730/build'
+
+// Regenerates the ERC-7730 ("clear signing") registry the wallet ships with: the indexes and the
+// descriptors of https://github.com/ethereum/clear-signing-erc7730-registry. The wallet reads
+// descriptors only from this file (see `src/consts/erc7730/index.ts`), so describing a
+// transaction or a message sends nothing about it anywhere. New descriptors are added to the
+// registry every week, so run this from time to time with
+// `npm run humanizer:update:erc7730Registry` and commit the changes. It is NOT called at runtime.
+//
+// It reads the last commit of the registry's main branch that is at least
+// `UPSTREAM_MIN_AGE_DAYS` old, so that a mistake made upstream can be found and fixed there
+// before the wallet ships it - or the commit the wallet already ships, if that one is newer.
+//
+// Only the descriptors the indexes point at (and the ones they include) are kept, plus the ones
+// Ambire's fallback index points at (`src/consts/erc7730/fallbackCalldataIndex.json`); the tests
+// and the rest of the registry are left out. Ambire's own descriptors are not in this file, they
+// are in `src/consts/erc7730/ambireDescriptors.ts`. The update fails, and writes nothing, if any
+// of these descriptors is missing, invalid or of a version of ERC-7730 the wallet doesn't support
+// (see `buildRegistry`).
+//
+// The file only changes when the registry data does: the indexes and the descriptors are sorted
+// by their key, and `source` is kept when nothing was added, removed or changed. Each index entry
+// and each descriptor is on a line of its own (see `serializeRegistry`).
+//
+// Set `ERC7730_REGISTRY_SUMMARY_PATH` to also write a summary of the changes in Markdown there.
+// Set `ERC7730_REGISTRY_ALLOW_MANY_REMOVALS=true` to save a registry from which many contracts
+// really were removed (see `assertNotTooManyRemoved`).
+
+const REGISTRY_REPOSITORY_URL = 'https://github.com/ethereum/clear-signing-erc7730-registry'
+const REGISTRY_BRANCH = 'master'
+
+/** How old the registry commit has to be, see the comment at the top */
+const UPSTREAM_MIN_AGE_DAYS = 14
+
+/**
+ * The share of an index that can disappear in one update. More likely means that the registry
+ * was restructured or partially published, and saving it would stop describing transactions that
+ * were described until now
+ */
+const MAX_REMOVED_SHARE = 0.2
+
+/**
+ * The size of `registry.json` above which the update warns, and above which it fails. The
+ * registry is one module of the extension's background script, and Firefox doesn't load a file
+ * of more than 5 MB (`webpack/extension.js` of the app splits its chunks at 4.5 MB)
+ */
+const WARN_REGISTRY_BYTES = 3 * 1024 * 1024
+const MAX_REGISTRY_BYTES = 4 * 1024 * 1024
+
+/** How many paths each list of the summary shows, so that it fits in the body of a PR */
+const MAX_LISTED_PATHS = 100
+
+const erc7730ConstsPath = path.join(__dirname, '..', 'src', 'consts', 'erc7730')
+const outputPath = path.join(erc7730ConstsPath, 'registry.json')
+const fallbackCalldataIndexPath = path.join(erc7730ConstsPath, 'fallbackCalldataIndex.json')
+
+type Source = { repository: string; commit: string; date: string }
+type Registry = BuiltRegistry & { source: Source }
+
+const git = (directory: string, args: string[]) =>
+  execFileSync('git', ['-C', directory, ...args], {
+    encoding: 'utf8',
+    // The largest descriptors are a few hundred KB, the default 1 MB would be close
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
+
+/** Whether `ancestor` is `descendant` or a commit before it on its branch */
+const isAncestor = (directory: string, ancestor: string, descendant: string) => {
+  try {
+    git(directory, ['merge-base', '--is-ancestor', ancestor, descendant])
+    return true
+  } catch {
+    // Also when `descendant` isn't on the branch at all, e.g. after a force push upstream
+    return false
+  }
+}
+
+/**
+ * Clones the registry repository and picks the commit to read: the last one that is at least
+ * `UPSTREAM_MIN_AGE_DAYS` old, or the one the wallet already ships if that is newer, so that an
+ * update never goes back to an older registry. Bare, as the files are read from git itself: the
+ * registry has files whose paths differ only in case, which a case-insensitive file system
+ * (macOS) would check out as one file
+ */
+const cloneRegistry = (
+  directory: string,
+  shippedCommit: string | undefined
+): { source: Source; files: UpstreamFiles } => {
+  execFileSync(
+    'git',
+    [
+      'clone',
+      '--quiet',
+      '--bare',
+      '--single-branch',
+      '--branch',
+      REGISTRY_BRANCH,
+      REGISTRY_REPOSITORY_URL,
+      directory
+    ],
+    { stdio: 'inherit' }
+  )
+
+  const oldEnoughCommit = git(directory, [
+    'rev-list',
+    '-1',
+    `--before=${UPSTREAM_MIN_AGE_DAYS} days ago`,
+    REGISTRY_BRANCH
+  ]).trim()
+  if (!oldEnoughCommit) {
+    throw new Error(`The registry has no commit older than ${UPSTREAM_MIN_AGE_DAYS} days`)
+  }
+  const commit =
+    shippedCommit && isAncestor(directory, oldEnoughCommit, shippedCommit)
+      ? shippedCommit
+      : oldEnoughCommit
+  const date = git(directory, ['show', '-s', '--format=%cI', commit]).trim()
+  const paths = new Set(
+    git(directory, ['ls-tree', '-r', '--name-only', commit]).split('\n').filter(Boolean)
+  )
+
+  return {
+    source: { repository: REGISTRY_REPOSITORY_URL, commit, date },
+    files: {
+      paths,
+      read: (filePath) => JSON.parse(git(directory, ['show', `${commit}:${filePath}`]))
+    }
+  }
+}
+
+/**
+ * The registry as JSON with one line per index entry and per descriptor, so that a diff shows
+ * which entries changed while the file stays about half the size of a fully indented one
+ */
+const serializeRegistry = ({ source, calldataIndex, eip712Index, descriptors }: Registry) => {
+  const serializeMap = (map: Record<string, unknown>) => {
+    const lines = Object.entries(map).map(
+      ([key, value]) => `    ${JSON.stringify(key)}: ${JSON.stringify(value)}`
+    )
+
+    return lines.length ? `{\n${lines.join(',\n')}\n  }` : '{}'
+  }
+
+  return [
+    '{',
+    `  "source": ${JSON.stringify(source)},`,
+    `  "calldataIndex": ${serializeMap(calldataIndex)},`,
+    `  "eip712Index": ${serializeMap(eip712Index)},`,
+    `  "descriptors": ${serializeMap(descriptors)}`,
+    '}',
+    ''
+  ].join('\n')
+}
+
+/** The registry paths Ambire's fallback index points at, see `fallbackCalldataIndexPath` */
+const readFallbackPaths = async (): Promise<string[]> => {
+  const fallbackCalldataIndex: Record<string, string> = JSON.parse(
+    await fsPromises.readFile(fallbackCalldataIndexPath, 'utf8')
+  )
+
+  return [...new Set(Object.values(fallbackCalldataIndex))].sort()
+}
+
+const readPreviousRegistry = async (): Promise<Partial<Registry> | null> => {
+  try {
+    return JSON.parse(await fsPromises.readFile(outputPath, 'utf8'))
+  } catch (error: any) {
+    if (error.code === 'ENOENT') return null
+    throw error
+  }
+}
+
+type Changes = { previousCount: number; added: string[]; removed: string[]; changed: string[] }
+
+/** The keys added, removed and changed in `next`, compared with `previous` */
+const getChanges = (
+  previous: Record<string, unknown> = {},
+  next: Record<string, unknown> = {}
+): Changes => {
+  const nextKeys = Object.keys(next)
+
+  return {
+    previousCount: Object.keys(previous).length,
+    added: nextKeys.filter((key) => !(key in previous)),
+    removed: Object.keys(previous).filter((key) => !(key in next)),
+    changed: nextKeys.filter(
+      (key) => key in previous && JSON.stringify(previous[key]) !== JSON.stringify(next[key])
+    )
+  }
+}
+
+const hasChanges = ({ added, removed, changed }: Changes) =>
+  added.length > 0 || removed.length > 0 || changed.length > 0
+
+/**
+ * Throws if too much of an index disappeared, which likely means the registry was restructured
+ * or partially published. Skipped with `ERC7730_REGISTRY_ALLOW_MANY_REMOVALS=true`, for when the
+ * contracts really were removed
+ */
+const assertNotTooManyRemoved = ({ previousCount, removed }: Changes, label: string) => {
+  if (process.env.ERC7730_REGISTRY_ALLOW_MANY_REMOVALS === 'true') return
+  if (!previousCount || removed.length / previousCount <= MAX_REMOVED_SHARE) return
+
+  throw new Error(
+    `${removed.length} of the ${previousCount} ${label} are no longer in the registry. Check the registry, and if they really were removed, run again with ERC7730_REGISTRY_ALLOW_MANY_REMOVALS=true`
+  )
+}
+
+/** Throws if the registry is too big to bundle, and warns when it gets close */
+const assertSize = (serialized: string) => {
+  const bytes = Buffer.byteLength(serialized, 'utf8')
+  const megabytes = (bytes / 1024 / 1024).toFixed(2)
+  if (bytes > MAX_REGISTRY_BYTES) {
+    throw new Error(
+      `The registry is ${megabytes} MB, more than the ${MAX_REGISTRY_BYTES / 1024 / 1024} MB the extension can bundle as one file. Split it before updating it`
+    )
+  }
+  if (bytes > WARN_REGISTRY_BYTES) {
+    console.warn(`The registry is ${megabytes} MB, close to the most the extension can bundle`)
+  }
+}
+
+const formatList = (title: string, paths: string[]) => {
+  if (!paths.length) return []
+
+  const listed = paths.slice(0, MAX_LISTED_PATHS).map((listedPath) => `- \`${listedPath}\``)
+  const notListedCount = paths.length - listed.length
+
+  return [
+    '',
+    `<details><summary>${title} (${paths.length})</summary>`,
+    '',
+    ...listed,
+    ...(notListedCount > 0 ? [`- ...and ${notListedCount} more`] : []),
+    '',
+    '</details>'
+  ]
+}
+
+const getSummary = ({
+  calldataChanges,
+  eip712Changes,
+  descriptorChanges,
+  source,
+  previousCommit
+}: {
+  calldataChanges: Changes
+  eip712Changes: Changes
+  descriptorChanges: Changes
+  source: Source
+  previousCommit?: string
+}) => {
+  const formatChanges = ({ added, removed, changed }: Changes) =>
+    `+${added.length} / -${removed.length} / ~${changed.length}`
+  const compareLink =
+    previousCommit && previousCommit !== source.commit
+      ? `${REGISTRY_REPOSITORY_URL}/compare/${previousCommit}...${source.commit}`
+      : `${REGISTRY_REPOSITORY_URL}/tree/${source.commit}`
+
+  return [
+    `The ERC-7730 registry at [${source.commit.slice(0, 7)}](${compareLink}) (${source.date}).`,
+    '',
+    '| | Added / removed / changed |',
+    '|---|---|',
+    `| Contracts (calldata index) | ${formatChanges(calldataChanges)} |`,
+    `| Typed messages (EIP-712 index) | ${formatChanges(eip712Changes)} |`,
+    `| Descriptor files | ${formatChanges(descriptorChanges)} |`,
+    ...formatList('Added descriptors', descriptorChanges.added),
+    ...formatList('Changed descriptors', descriptorChanges.changed),
+    ...formatList('Removed descriptors', descriptorChanges.removed),
+    '',
+    'Transactions and messages of removed contracts are no longer described with ERC-7730.'
+  ].join('\n')
+}
+
+const run = async () => {
+  const registryDirectory = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'erc7730-registry-'))
+
+  try {
+    const [fallbackPaths, previous] = await Promise.all([
+      readFallbackPaths(),
+      readPreviousRegistry()
+    ])
+    const { source: upstreamSource, files } = cloneRegistry(
+      registryDirectory,
+      previous?.source?.commit
+    )
+    const { calldataIndex, eip712Index, descriptors } = buildRegistry(files, fallbackPaths)
+
+    const calldataChanges = getChanges(previous?.calldataIndex, calldataIndex)
+    const eip712Changes = getChanges(previous?.eip712Index, eip712Index)
+    const descriptorChanges = getChanges(previous?.descriptors, descriptors)
+    assertNotTooManyRemoved(calldataChanges, 'contracts of the calldata index')
+    assertNotTooManyRemoved(eip712Changes, 'contracts of the EIP-712 index')
+
+    const hasRegistryChanged = [calldataChanges, eip712Changes, descriptorChanges].some(hasChanges)
+    // Kept when nothing changed, so the file doesn't change just because of an unrelated commit
+    const source = hasRegistryChanged || !previous?.source?.date ? upstreamSource : previous.source
+    const serialized = serializeRegistry({ source, calldataIndex, eip712Index, descriptors })
+    assertSize(serialized)
+
+    await fsPromises.mkdir(path.dirname(outputPath), { recursive: true })
+    await fsPromises.writeFile(outputPath, serialized, 'utf8')
+
+    const summary = getSummary({
+      calldataChanges,
+      eip712Changes,
+      descriptorChanges,
+      source,
+      previousCommit: previous?.source?.commit
+    })
+    if (process.env.ERC7730_REGISTRY_SUMMARY_PATH) {
+      await fsPromises.writeFile(process.env.ERC7730_REGISTRY_SUMMARY_PATH, `${summary}\n`, 'utf8')
+    }
+
+    console.log(summary)
+  } finally {
+    await fsPromises.rm(registryDirectory, { recursive: true, force: true })
+  }
+}
+
+run().catch((error) => {
+  console.error('Failed to update the ERC-7730 registry:', error.message ?? error)
+  process.exitCode = 1
+})
