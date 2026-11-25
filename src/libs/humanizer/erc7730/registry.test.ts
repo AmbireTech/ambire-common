@@ -10,7 +10,7 @@ import {
   SAFE_PROXY_V1_4_1_RUNTIME_CODE
 } from '../../../controllers/erc7730/testDescriptors'
 import { AccountOp } from '../../accountOp/accountOp'
-import { resolveErc7730Call, resolveIncludePath } from './registry'
+import { resolveErc7730Call } from './registry'
 import { EMPTY_ERC7730_KNOWN, Erc7730Registry } from './types'
 
 describe('ERC-7730 registry', () => {
@@ -417,49 +417,5 @@ describe('ERC-7730 test helpers', () => {
 
     expect(descriptor?.path).toBe(safePath)
     expect(provider.getCode).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe('resolveIncludePath', () => {
-  const PARENT_PATH = 'registry/morpho/calldata-vault.json'
-
-  test('resolves an include next to the descriptor that includes it', () => {
-    expect(resolveIncludePath('common-VaultV1.json', PARENT_PATH)).toBe(
-      '/registry/morpho/common-VaultV1.json'
-    )
-    expect(resolveIncludePath('./common-VaultV1.json', `/${PARENT_PATH}`)).toBe(
-      '/registry/morpho/common-VaultV1.json'
-    )
-  })
-
-  test('goes up a folder for each `..`', () => {
-    expect(resolveIncludePath('../../ercs/eip712-erc2612-permit.json', PARENT_PATH)).toBe(
-      '/ercs/eip712-erc2612-permit.json'
-    )
-  })
-
-  test('resolves an include with a leading slash from the root of the registry', () => {
-    expect(resolveIncludePath('/ercs/calldata-erc20-tokens.json', PARENT_PATH)).toBe(
-      '/ercs/calldata-erc20-tokens.json'
-    )
-  })
-
-  test('keeps the plain file name, unlike a URL', () => {
-    expect(resolveIncludePath('common a.json', PARENT_PATH)).toBe('/registry/morpho/common a.json')
-    expect(resolveIncludePath('common#1.json', PARENT_PATH)).toBe('/registry/morpho/common#1.json')
-    expect(resolveIncludePath('common?v=1.json', PARENT_PATH)).toBe(
-      '/registry/morpho/common?v=1.json'
-    )
-    expect(resolveIncludePath('commön.json', PARENT_PATH)).toBe('/registry/morpho/commön.json')
-  })
-
-  test('does not follow a URL, only files of the registry', () => {
-    expect(resolveIncludePath('https://example.com/common.json', PARENT_PATH)).toBe(
-      '/registry/morpho/https:/example.com/common.json'
-    )
-  })
-
-  test('never goes above the root of the registry', () => {
-    expect(resolveIncludePath('../../../../../outside.json', PARENT_PATH)).toBe('/outside.json')
   })
 })

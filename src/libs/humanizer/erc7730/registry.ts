@@ -31,11 +31,7 @@ import {
   Erc7730TypedDataTypes,
   Erc7730Want
 } from './types'
-import {
-  getRegistryKey,
-  getSafeSingletonKey,
-  getSafeTxCallsFromMessage
-} from './utils'
+import { getRegistryKey, getSafeSingletonKey, getSafeTxCallsFromMessage } from './utils'
 
 /** How deep `includes` chains and nested calls are followed before giving up. */
 export const ERC7730_MAX_RESOLUTION_DEPTH = 5
@@ -213,40 +209,6 @@ const ERC2612_PERMIT_DESCRIPTOR: Erc7730ResolvedDescriptor = {
       }
     }
   }
-}
-
-/**
- * The path of a descriptor with a leading slash, from a registry path with or without one, so that
- * each descriptor has one key.
- */
-export const normalizeDescriptorPath = (path: string): string =>
-  path.startsWith('/') ? path : `/${path}`
-
-/**
- * The path (with a leading slash) of the descriptor an `includes` entry points at, resolved
- * against the path of the descriptor that includes it the way a file path is: `..` goes up a
- * folder and a leading `/` starts at the root of the registry. Resolved segment by segment rather
- * than with `URL`, which would percent-encode spaces and non-ASCII characters and cut the path at
- * a `#` or a `?`, while the registry keeps its descriptors under their plain file names.
- *
- * `resolveIncludePath` of `scripts/erc7730/build.ts` resolves includes the same way to decide
- * which files to bundle, and fails for any include that is not a file of the registry.
- */
-export const resolveIncludePath = (includePath: string, parentPath: string): string => {
-  const parentFolderSegments = includePath.startsWith('/')
-    ? []
-    : normalizeDescriptorPath(parentPath).split('/').slice(0, -1)
-  const segments = [...parentFolderSegments, ...includePath.split('/')].reduce<string[]>(
-    (resolved, segment) => {
-      if (segment === '' || segment === '.') return resolved
-      if (segment === '..') return resolved.slice(0, -1)
-
-      return [...resolved, segment]
-    },
-    []
-  )
-
-  return `/${segments.join('/')}`
 }
 
 const applyBuiltInFormatOverrides = (
@@ -519,8 +481,8 @@ const getEip712Key = (chainId: bigint, verifyingContract: string, primaryType: s
   `${getRegistryKey(chainId, verifyingContract)}:${primaryType}`
 
 /**
- * Merges a descriptor with everything its `includes` point at, collecting a want for any include
- * not looked up yet. Returns null while anything is still missing, so the caller reports its wants
+ * Merges a descriptor with everything its `includes` point at (by path, as the registry script
+ * writes them), collecting a want for any include not looked up yet. Returns null while anything is still missing, so the caller reports its wants
  * and is asked again next round.
  */
 const mergeIncludes = (
@@ -529,7 +491,10 @@ const mergeIncludes = (
   wants: Erc7730Want[],
   depth = 0
 ): Erc7730Descriptor | null => {
-  const descriptor = known.descriptorsByPath[path]
+  // An own property only: a name such as `toString` must not read what every object inherits
+  const descriptor = Object.prototype.hasOwnProperty.call(known.descriptorsByPath, path)
+    ? known.descriptorsByPath[path]
+    : undefined
   // undefined means not asked for yet; null means asked for and unavailable, so stop asking
   if (descriptor === undefined) {
     wants.push({ kind: 'includedDescriptor', path })
@@ -543,7 +508,7 @@ const mergeIncludes = (
   if (!includes.length || depth >= ERC7730_MAX_RESOLUTION_DEPTH) return descriptor
 
   const included = includes.map((includePath) =>
-    mergeIncludes(resolveIncludePath(includePath, path), known, wants, depth + 1)
+    mergeIncludes(includePath, known, wants, depth + 1)
   )
   if (included.some((one) => !one)) return null
 

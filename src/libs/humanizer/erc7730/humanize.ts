@@ -1178,8 +1178,12 @@ const formatToVisualizations = (
   ]
 }
 
+/** Whether a descriptor is one of 1inch's, by its path in the registry (`registry/1inch/...`) */
+const isOneInchDescriptor = (descriptorPath?: string) =>
+  !!descriptorPath?.startsWith('registry/1inch/')
+
 const isOneInchFillOrderFormat = (formatKey: string, descriptorPath?: string) =>
-  !!descriptorPath?.includes('registry/1inch/') && formatKey.startsWith('fillOrder(')
+  isOneInchDescriptor(descriptorPath) && formatKey.startsWith('fillOrder(')
 
 const hasResolvableTokenReference = (field: Erc7730Field, context: FormatContext): boolean => {
   const resolvedField = resolveFieldReference(field, context)
@@ -1212,7 +1216,7 @@ const hideOneInchMinimumReceiveWithoutToken = (
   context: FormatContext,
   fullVisualization: HumanizerVisualization[]
 ): HumanizerVisualization[] => {
-  if (!context.descriptorPath?.includes('registry/1inch/')) return fullVisualization
+  if (!isOneInchDescriptor(context.descriptorPath)) return fullVisualization
 
   const minimumReceiveField = match.format.fields
     ?.map((field) => resolveFieldReference(field, context))

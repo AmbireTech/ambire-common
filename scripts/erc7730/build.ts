@@ -16,6 +16,11 @@ import { getRegistryKey, isPlainObject } from '../../src/libs/humanizer/erc7730/
 // Builds the ERC-7730 registry the wallet ships with from the files of the upstream registry. It
 // reads nothing itself, so that the tests can run it on their own files: see
 // `scripts/updateErc7730Registry.ts` for where the files come from.
+//
+// The wallet knows each descriptor by its path in the upstream registry (e.g.
+// `registry/uniswap/calldata-X.json` or `ercs/calldata-erc20-tokens.json`). Each `includes` is
+// rewritten to the path of the descriptor it includes, so the wallet never resolves a relative
+// path.
 
 /** The files of one commit of the upstream registry */
 export type UpstreamFiles = {
@@ -223,9 +228,21 @@ export const buildRegistry = (
 
   if (problems.length) throw new RegistryBuildError(problems)
 
+  const descriptorsWithResolvedIncludes = Object.fromEntries(
+    [...descriptors].map(([path, descriptor]) => {
+      if (descriptor.includes === undefined) return [path, descriptor]
+
+      const toIncludedPath = (includePath: string) => resolveIncludePath(includePath, path)
+      const includes = Array.isArray(descriptor.includes)
+        ? getIncludes(descriptor).map(toIncludedPath)
+        : toIncludedPath(getIncludes(descriptor)[0]!)
+
+      return [path, { ...descriptor, includes }]
+    })
+  )
   return {
     calldataIndex: sortByKey(calldataIndex),
     eip712Index: sortByKey(eip712Index),
-    descriptors: sortByKey(Object.fromEntries(descriptors))
+    descriptors: sortByKey(descriptorsWithResolvedIncludes)
   }
 }

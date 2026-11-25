@@ -4,7 +4,6 @@ import { describe, expect, test } from '@jest/globals'
 
 import { SUPPORTED_ERC7730_SCHEMA_FILES } from '../../libs/humanizer/erc7730/consts'
 import { getSchemaFileName, validateDescriptor } from '../../libs/humanizer/erc7730/descriptor'
-import { resolveIncludePath } from '../../libs/humanizer/erc7730/registry'
 import { getRegistryKey } from '../../libs/humanizer/erc7730/utils'
 import { FALLBACK_CALLDATA_INDEX, OVERRIDE_CALLDATA_INDEX } from './ambireDescriptors'
 import upstreamFallbackCalldataIndex from './fallbackCalldataIndex.json'
@@ -16,10 +15,6 @@ import upstreamRegistry from './registry.json'
 const { calldataIndex, eip712Index, descriptors } = BUNDLED_ERC7730_REGISTRY
 
 const isOwnKey = (record: object, key: string) => Object.prototype.hasOwnProperty.call(record, key)
-
-/** The registry path an `includes` entry points at, as the wallet looks it up */
-const getIncludedPath = (includePath: string, descriptorPath: string) =>
-  resolveIncludePath(includePath, descriptorPath).slice(1)
 
 const getIncludes = (descriptor: unknown): string[] => {
   if (!descriptor || typeof descriptor !== 'object' || !('includes' in descriptor)) return []
@@ -104,10 +99,9 @@ describe('bundled ERC-7730 registry', () => {
     expect([...new Set(missingPaths)]).toEqual([])
   })
 
-  test('has every descriptor a descriptor includes', () => {
+  test('has every descriptor a descriptor includes, by its name', () => {
     const missingIncludes = Object.entries(descriptors).flatMap(([path, descriptor]) =>
       getIncludes(descriptor)
-        .map((includePath) => getIncludedPath(includePath, path))
         .filter((includedPath) => !isOwnKey(descriptors, includedPath))
         .map((includedPath) => `${path} -> ${includedPath}`)
     )

@@ -62,7 +62,7 @@ describe('Erc7730Controller', () => {
     const controller = makeController(
       makeRegistry({
         descriptors: {
-          [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: 'common.json' },
+          [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: INCLUDED_PATH },
           [INCLUDED_PATH]: { metadata: { owner: 'Included owner' } }
         }
       })
@@ -130,7 +130,7 @@ describe('Erc7730Controller', () => {
       const { found, errors } = await describeCall({
         [REGISTRY_PATH]: {
           ...declaring('../../specs/erc7730-v2.schema.json'),
-          includes: 'common.json'
+          includes: INCLUDED_PATH
         },
         [INCLUDED_PATH]: { $schema: '../../specs/erc7730-v3.schema.json' }
       })
@@ -156,7 +156,7 @@ describe('Erc7730Controller', () => {
     ['is not an object', { [REGISTRY_PATH]: 'not a descriptor' }],
     [
       'includes a missing file',
-      { [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: 'common.json' } }
+      { [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: INCLUDED_PATH } }
     ]
   ])('does not name a descriptor that %s in the errors it reports', async (_, descriptors) => {
     const controller = makeController(makeRegistry({ descriptors }))
@@ -241,7 +241,7 @@ describe('Erc7730Controller', () => {
   test('does not take what an object inherits for an included descriptor', async () => {
     const controller = makeController(
       makeRegistry({
-        descriptors: { [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: '/toString' } }
+        descriptors: { [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: 'toString' } }
       })
     )
 

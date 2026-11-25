@@ -17,7 +17,6 @@ import { getSchemaFileName, validateDescriptor } from '../../libs/humanizer/erc7
 import {
   ERC7730_MAX_RESOLUTION_DEPTH,
   getAddressFromStorageSlot,
-  normalizeDescriptorPath,
   planErc7730MessageWants,
   planErc7730Wants,
   resolveErc7730Descriptors,
@@ -119,13 +118,11 @@ export class Erc7730Controller extends EventEmitter {
   }
 
   /**
-   * A descriptor by the path the registry wrote it with, validated the first time it is used, or
-   * null if it isn't in the registry, isn't of a supported version or isn't valid. That is reported only the first time, as the
-   * calls of an accountOp are humanized again on every update of it.
+   * A descriptor by its path in the registry, validated the first time it is used, or null if it
+   * isn't in the registry, isn't of a supported version or isn't valid. That is reported only the
+   * first time, as the calls of an accountOp are humanized again on every update of it.
    */
-  #getDescriptor(pathOrUrl: string): Erc7730Descriptor | null {
-    // Index entries are written without a leading slash, `includes` resolve to one
-    const registryPath = normalizeDescriptorPath(pathOrUrl).slice(1)
+  #getDescriptor(registryPath: string): Erc7730Descriptor | null {
     const lookedUpDescriptor = this.#descriptors.get(registryPath)
     if (lookedUpDescriptor !== undefined) return lookedUpDescriptor
 
