@@ -649,6 +649,21 @@ describe('SwapAndBridge Controller', () => {
     const controller = buildSwapAndBridgeController()
     // On OP Mainnet, where the RPC can price every token
     const tokensWithoutPrices = PORTFOLIO_TOKENS.map((token) => ({ ...token, priceIn: [] }))
+    // The "from" token is picked only on the networks the swap provider supports, which a new
+    // controller fetches in the background, announcing them with an update
+    await new Promise<void>((resolve) => {
+      if (controller.supportedChainIds.length) {
+        resolve()
+        return
+      }
+
+      const unsubscribe = controller.onUpdate(() => {
+        if (!controller.supportedChainIds.length) return
+
+        unsubscribe()
+        resolve()
+      })
+    })
 
     try {
       await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
