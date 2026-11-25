@@ -608,6 +608,38 @@ describe('getRpcTokenPrices', () => {
       }
     })
 
+    test('prices tokens on Robinhood Chain through our own deployment of the aggregator', async () => {
+      const robinhood: Network = {
+        ...ethereum,
+        name: 'Robinhood Chain',
+        chainId: 4663n,
+        rpcUrls: ['https://rpc.mainnet.chain.robinhood.com'],
+        selectedRpcUrl: 'https://rpc.mainnet.chain.robinhood.com',
+        wrappedAddr: undefined
+      }
+      const provider = getRpcProvider(robinhood.rpcUrls, robinhood.chainId)
+      const ROBINHOOD_WETH = '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73'
+      const USDG = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168'
+      const DEAD = '0x000000000000000000000000000000000000dEaD'
+
+      try {
+        const { prices, error } = await getRpcTokenPrices({
+          provider,
+          network: robinhood,
+          tokenAddresses: [ZeroAddress, ROBINHOOD_WETH, USDG, DEAD]
+        })
+
+        expect(error).toBeNull()
+        expect(prices.get(ZeroAddress)).toBeGreaterThan(0)
+        expect(prices.get(ROBINHOOD_WETH.toLowerCase())).toBe(prices.get(ZeroAddress))
+        expect(prices.get(USDG.toLowerCase())).toBeGreaterThan(0.95)
+        expect(prices.get(USDG.toLowerCase())).toBeLessThan(1.05)
+        expect(prices.get(DEAD.toLowerCase())).toBeNull()
+      } finally {
+        provider.destroy()
+      }
+    })
+
     test('prices stkWALLET, which no pool trades, the same as WALLET', async () => {
       const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
 

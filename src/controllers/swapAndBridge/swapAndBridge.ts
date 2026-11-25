@@ -78,7 +78,6 @@ import { TokenResult } from '../../libs/portfolio'
 import { getTokenMetaViaRPC } from '../../libs/portfolio/getTokenMetaViaRPC'
 import { convertApiTokenDataToTokenDataCache, getTokenAmount } from '../../libs/portfolio/helpers'
 import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
@@ -105,7 +104,6 @@ import {
   getTokenMarketDataKey,
   marketDataRequestBatcher
 } from '../../libs/swapAndBridge/tokenMarketData'
-import { isMissingPriceMeaningful } from '../../libs/tokenPrices/canPriceNetwork'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { NULL_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount, Validation } from '../../services/validations/validate'
@@ -515,6 +513,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    * the portfolio has fresher balances since. See `#checkActiveRoutesAfterPortfolioRefresh`.
    */
   #lastActiveRoutesStatusCheckAt = 0
+
+  /**
+   * How many times the statuses of the in-progress swaps and bridges were checked since the poll
+   * last waited for their service time. The poll backs off by this count, as its timeout can
+   * equal the service time and can't tell the first check from the later ones.
+   */
+  #activeRoutesStatusChecksCount = 0
 
   get updateActiveRoutesInterval() {
     return this.#updateActiveRoutesInterval
@@ -1007,8 +1012,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // the check starts only on the next tick, so the updates in the meantime don't restart it again
     this.#lastActiveRoutesStatusCheckAt = Date.now()
 
-    // Keeps the current timeout, so the poll keeps backing off. Restarting it from the shortest
-    // one would undo that on every refresh, and poll a long bridge every few seconds
+    // A CoW Swap order's status can lag behind the balances that already have its tokens, so its
+    // back-off starts over and the next check comes soon. Other routes keep the current timeout,
+    // as starting over on every refresh would poll a long bridge every few seconds
+    const hasCowSwapRouteInProgress = activeRoutesInProgress.some(
+      (activeRoute) => activeRoute.route?.providerId === COW_SWAP_PROVIDER_ID
+    )
+    if (hasCowSwapRouteInProgress) this.#activeRoutesStatusChecksCount = 0
+
     this.#updateActiveRoutesInterval.restart({
       timeout: this.#updateActiveRoutesInterval.currentTimeout,
       runImmediately: true
@@ -1032,6 +1043,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
 
     if (!this.#updateActiveRoutesInterval.running) {
+      this.#activeRoutesStatusChecksCount = 0
       this.#updateActiveRoutesInterval.start({ timeout: minServiceTime })
       return
     }
@@ -1039,6 +1051,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // If the interval is running, check if minServiceTime * 2 is still less than currentTimeout.
     // If it is, restart it with the new minServiceTime, as the difference makes it worth it.
     if (minServiceTime * 2 < this.#updateActiveRoutesInterval.currentTimeout) {
+      this.#activeRoutesStatusChecksCount = 0
       this.#updateActiveRoutesInterval.restart({ timeout: minServiceTime })
     }
   }
@@ -1613,26 +1626,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#requestedToToken = null
     }
 
-    // A token without a USD price is left out only when the missing price means it has no
-    // market, by the same rule that collapses it into the "Other" tokens of the dashboard (see
-    // `isMissingPriceMeaningful`). Otherwise (e.g. the RPC can't price the network's tokens) or
-    // when the prices failed to load for its chain, it would be hidden for no reason, so the
-    // price requirement is skipped.
-    const chainIdsWithPriceError = new Set<string>()
-    const priceError = this.#selectedAccount.balanceAffectingErrors.find(
-      (error) => error.id === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
-    )
-    priceError?.networkNames.forEach((networkName) => {
-      const network = this.#networks.networks.find((n) => n.name === networkName)
-      if (network) chainIdsWithPriceError.add(network.chainId.toString())
-    })
-
-    const areTokenPricesEnabled = this.#featureFlags.isFeatureEnabled('tokenPrices')
-    const isAutoDiscoveryEnabled = this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')
-    const getIsPriceRequired = (token: TokenResult) =>
-      !chainIdsWithPriceError.has(token.chainId.toString()) &&
-      isMissingPriceMeaningful(token.chainId, areTokenPricesEnabled, isAutoDiscoveryEnabled)
-
     const tokens = nextPortfolioTokenList
       .filter(
         (token) =>
@@ -1641,8 +1634,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           // added to the "Receive" token list as additional tokens from portfolio,
           // BUT 3) They will appear in the "Receive" if they are present in service
           // provider's to token list. This is the desired behavior.
-          getIsTokenEligibleForSwapAndBridge(token, true, getIsPriceRequired(token)) &&
-          !token.flags.isHidden
+          // Tokens without a USD price stay in the list: a legit token may just not be priced
+          // (e.g. when prices come from the network alone), and the swap providers decide whether
+          // it can be swapped or bridged.
+          getIsTokenEligibleForSwapAndBridge(token, true) && !token.flags.isHidden
       )
       .map((token) => ({
         ...token,
@@ -3563,6 +3558,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       activeRoute.routeStatus === 'in-progress' &&
       opStatus === AccountOpStatus.Success
     ) {
+      this.#activeRoutesStatusChecksCount = 0
       this.#updateActiveRoutesInterval.restart({
         timeout: getActiveRoutesLowestServiceTime(this.activeRoutesInProgress),
         runImmediately: true
@@ -4047,17 +4043,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // coming here means the bridge should complete any second now
     // so start with BRIDGE_STATUS_INTERVAL
     // upon status pending, increase by BRIDGE_STATUS_INTERVAL until the ceiling is hit
-    const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
-    const startTimeout =
-      minServiceTime === this.#updateActiveRoutesInterval.currentTimeout
-        ? BRIDGE_STATUS_INTERVAL
-        : this.#updateActiveRoutesInterval.currentTimeout + BRIDGE_STATUS_INTERVAL
-
+    this.#activeRoutesStatusChecksCount += 1
     this.#updateActiveRoutesInterval.updateTimeout({
-      timeout:
-        startTimeout < BRIDGE_STATUS_INTERVAL_CEILING
-          ? startTimeout
-          : BRIDGE_STATUS_INTERVAL_CEILING
+      timeout: Math.min(
+        BRIDGE_STATUS_INTERVAL * this.#activeRoutesStatusChecksCount,
+        BRIDGE_STATUS_INTERVAL_CEILING
+      )
     })
   }
 

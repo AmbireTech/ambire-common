@@ -3,6 +3,7 @@ import {
   SelectedAccountPortfolioState
 } from '../../interfaces/selectedAccount'
 import { AccountState, InternalPortfolioChain, NetworkState } from '../portfolio/interfaces'
+import { addPendingDeliveryAmounts, PendingDeliveries } from '../swapAndBridge/pendingDeliveries'
 import PortfolioViewBuilder from './portfolioView'
 
 export const isInternalChain = (chainId: InternalPortfolioChain | string) => {
@@ -82,18 +83,21 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
 }
 
 /**
- * Calculates the selected account portfolio that is used by the UI
+ * Calculates the selected account portfolio that is used by the UI. The tokens that in-progress
+ * swaps and bridges will still move get their `pendingDeliveryAmount` from `pendingDeliveries`.
+ * Always returns a new object, so the caller can add fields to it.
  */
 export function calculateSelectedAccountPortfolio(
   portfolioState: AccountState,
   shouldShowPartialResult: boolean,
   isManualUpdate: boolean,
-  shouldSubtractBorrowedFunds: boolean
+  shouldSubtractBorrowedFunds: boolean,
+  pendingDeliveries: PendingDeliveries = {}
 ): SelectedAccountPortfolio {
   const strippedPortfolioState = stripPortfolioState(portfolioState)
 
   if (Object.keys(portfolioState).length === 0) {
-    return DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+    return { ...DEFAULT_SELECTED_ACCOUNT_PORTFOLIO }
   }
 
   const portfolioViewBuilder = new PortfolioViewBuilder(shouldSubtractBorrowedFunds)
@@ -102,5 +106,7 @@ export function calculateSelectedAccountPortfolio(
     portfolioViewBuilder.addNetworkData(chainId, networkData, isManualUpdate)
   })
 
-  return portfolioViewBuilder.build(shouldShowPartialResult, strippedPortfolioState)
+  const portfolio = portfolioViewBuilder.build(shouldShowPartialResult, strippedPortfolioState)
+
+  return { ...portfolio, tokens: addPendingDeliveryAmounts(portfolio.tokens, pendingDeliveries) }
 }

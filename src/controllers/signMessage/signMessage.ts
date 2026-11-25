@@ -393,7 +393,8 @@ export class SignMessageController
     request: HardwareWalletSigningRequest,
     sign: () => Promise<T>
   ) {
-    this.#setHardwareWalletSigningRequest(request)
+    // The message is always signed by this controller's signer
+    this.#setHardwareWalletSigningRequest({ ...request, signerAddr: this.signer?.key.addr })
 
     try {
       return await sign()
@@ -430,9 +431,9 @@ export class SignMessageController
     const erc7730 = this.#erc7730
 
     if (!messageToSign) return
-    // `Erc7730Controller` is the only route to a descriptor (it owns the relayer and the cache), so
-    // its absence means clear signing is simply not available here - as in the auto-login flow,
-    // which builds this controller without any relayer access at all.
+    // `Erc7730Controller` is the only route to a descriptor (it owns the bundled registry and the
+    // Safe proxy reads), so its absence means clear signing is simply not available here - as in
+    // the auto-login flow, which builds this controller without one.
     if (messageToSign.content.kind !== 'typedMessage' || !erc7730) {
       this.#setFallbackHumanization(humanizationId)
       return
