@@ -3,12 +3,14 @@ import { formatUnits, getAddress, Interface, ZeroAddress } from 'ethers'
 import { expect, jest } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
+import { LedgerSigner } from '../../../test/keystore'
 import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { StoredKey } from '../../interfaces/keystore'
+import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { CollectionResult, TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
@@ -593,15 +595,19 @@ describe('Transfer Controller - address poisoning against own accounts', () => {
     isOwnAccountViewOnly?: boolean
     sentToRecipients?: { [toAddress: string]: number }
   } = {}) => {
-    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
-      await storageCtrl.set('accounts', [account, ownAccount])
-      await storageCtrl.set('selectedAccount', account.addr)
-      await storageCtrl.set('keystoreKeys', isOwnAccountViewOnly ? [] : [ownAccountKey])
-      await storageCtrl.set('sentToHistory', {
-        domains: {},
-        recipients: { [account.addr]: sentToRecipients }
-      })
-    })
+    const { mainCtrl } = await makeMainController(
+      async (storageCtrl) => {
+        await storageCtrl.set('accounts', [account, ownAccount])
+        await storageCtrl.set('selectedAccount', account.addr)
+        await storageCtrl.set('keystoreKeys', isOwnAccountViewOnly ? [] : [ownAccountKey])
+        await storageCtrl.set('sentToHistory', {
+          domains: {},
+          recipients: { [account.addr]: sentToRecipients }
+        })
+      },
+      // Without a Ledger signer the Ledger key is unsupported, which makes the own account view-only
+      { overrides: { keystoreSigners: { internal: KeystoreSigner, ledger: LedgerSigner } } }
+    )
     await mainCtrl.selectedAccount.select({ account })
     mainCtrl.transfer.resetForm()
 

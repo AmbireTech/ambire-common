@@ -15,9 +15,10 @@ import {
   getNewDefiState,
   getUniqueMergedPositions
 } from './defiPositions'
+import { RpcDefiPositionsResult } from './rpc/types'
 import { getStakedWalletPositions } from './stkWallet'
 import { DEBANK_UNI_V3 } from './testData'
-import { AssetType, DeFiPositionsError, PositionsByProvider } from './types'
+import { AssetType, DeFiPositionsError, PositionsByProvider, RpcDefiRead } from './types'
 
 describe('Defi positions helper and portfolio functions', () => {
   describe('enhancePortfolioTokensWithDefiPositions', () => {
@@ -387,6 +388,18 @@ describe('Defi positions helper and portfolio functions', () => {
     const previousDebankLido = getStoredPositions('Lido', 'debank')
     const previousMixedUniV3 = getStoredPositions('Uniswap V3', 'mixed')
     const customAave = getStoredPositions('AAVE v3', 'custom')
+    const getRpcPositions = (
+      overrides: Partial<RpcDefiPositionsResult> = {}
+    ): RpcDefiPositionsResult => ({
+      positionsByProvider: [customAave],
+      providerErrors: [],
+      error: null,
+      ...overrides
+    })
+    const getRpcRead = (readAt: number): RpcDefiRead => ({
+      positionsByProviderName: { [customAave.providerName]: customAave },
+      readAt
+    })
     const getPastPortfolioState = (): PortfolioNetworkResult => {
       const ethereumState = structuredClone(
         PORTFOLIO_STATE['1']
@@ -407,9 +420,7 @@ describe('Defi positions helper and portfolio functions', () => {
       const res = getNewDefiState(
         getPastPortfolioState(),
         null,
-        [customAave],
-        null,
-        [],
+        getRpcPositions(),
         null,
         undefined
       )
@@ -421,9 +432,7 @@ describe('Defi positions helper and portfolio functions', () => {
       const res = getNewDefiState(
         getPastPortfolioState(),
         { data: null, discoveryTime: 0, errors: [] },
-        [customAave],
-        null,
-        [],
+        getRpcPositions(),
         null,
         undefined
       )
@@ -444,9 +453,7 @@ describe('Defi positions helper and portfolio functions', () => {
           discoveryTime: 0,
           errors: []
         },
-        [customAave],
-        null,
-        [],
+        getRpcPositions(),
         null,
         undefined
       )
@@ -469,9 +476,7 @@ describe('Defi positions helper and portfolio functions', () => {
         const res = getNewDefiState(
           getPastStateUpdatedAt(1),
           null,
-          [customAave],
-          null,
-          [],
+          getRpcPositions(),
           null,
           undefined
         )
@@ -482,14 +487,47 @@ describe('Defi positions helper and portfolio functions', () => {
         const res = getNewDefiState(
           getPastStateUpdatedAt(1),
           null,
-          [customAave],
-          DeFiPositionsError.CriticalError,
-          [],
+          getRpcPositions({ error: DeFiPositionsError.CriticalError }),
           null,
           undefined
         )
 
         expect(res.lastSuccessfulUpdate).toBe(1)
+      })
+      // A skipped read is a routine occurrence (the positions are fresh enough), not a failure
+      it('is refreshed when the positions read from the chain are reused', () => {
+        const res = getNewDefiState(
+          getPastStateUpdatedAt(1),
+          null,
+          getRpcPositions({ rpcRead: getRpcRead(2) }),
+          null,
+          undefined
+        )
+
+        expect(res.lastSuccessfulUpdate).toBeGreaterThan(2)
+      })
+    })
+    describe('the last read from the chain', () => {
+      it('is the read the positions come from', () => {
+        const rpcRead = getRpcRead(5)
+
+        const res = getNewDefiState(
+          getPastPortfolioState(),
+          null,
+          getRpcPositions({ rpcRead }),
+          null,
+          undefined
+        )
+
+        expect(res.rpcRead).toEqual(rpcRead)
+      })
+      it('is dropped when a protocol failed to read, so the next update reads them all again', () => {
+        const pastState = getPastPortfolioState()
+        pastState.defiPositions.rpcRead = getRpcRead(5)
+
+        const res = getNewDefiState(pastState, null, getRpcPositions(), null, undefined)
+
+        expect(res.rpcRead).toBeUndefined()
       })
     })
   })

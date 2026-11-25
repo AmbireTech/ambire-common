@@ -81,9 +81,11 @@ interface ICurveFactory {
  */
 contract PriceGetter {
   // The aggregator walks every pool it knows of for a token, which can take over 10M gas (about
-  // 12.6M for USDC on Ethereum), and the pool search after it about 0.4M more: 15M for the walk
-  // and 1M for the search. The limit keeps a single token from using up the gas of the whole call.
-  uint256 private constant TOKEN_GAS_LIMIT = 16_000_000;
+  // 12M for USDC on Ethereum, and 18.8M for USDT0 on Polygon, the most of the main stablecoins on
+  // the networks we price), and the pool search after it about 0.4M more: 29M for the walk, which
+  // leaves room for the tokens' pools to grow, and 1M for the search. The limit keeps a single
+  // token from using up the gas of the whole call.
+  uint256 private constant TOKEN_GAS_LIMIT = 30_000_000;
   // With less gas than this left, no further token is tried
   uint256 private constant MIN_TOKEN_GAS = 1_000_000;
   // Left for finishing the loop and returning the results once the tokens stop being checked

@@ -68,6 +68,7 @@ import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { isCancelAccountOp } from '../../libs/accountOp/cancel'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getIntentBanners } from '../../libs/banners/banners'
@@ -77,16 +78,15 @@ import { TokenResult } from '../../libs/portfolio'
 import { getTokenMetaViaRPC } from '../../libs/portfolio/getTokenMetaViaRPC'
 import { convertApiTokenDataToTokenDataCache, getTokenAmount } from '../../libs/portfolio/helpers'
 import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import {
   addCustomTokensIfNeeded,
-  convertNullAddressToZeroAddressIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
   enrichRouteWithOutputTokenPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
   getFeeTokenForSponsorship,
+  getIsActiveRouteAccountOp,
   getIsIntentRoute,
   getIsTokenEligibleForSwapAndBridge,
   getRouteOutputValuesForSorting,
@@ -108,6 +108,8 @@ import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { NULL_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount, Validation } from '../../services/validations/validate'
 import batcher from '../../utils/batcher'
+import convertNullAddressToZeroAddressIfNeeded from '../../utils/convertNullAddressToZeroAddressIfNeeded'
+import isSameAddr from '../../utils/isSameAddr'
 import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue,
@@ -135,6 +137,17 @@ type SwapAndBridgeErrorType = {
 
 const isSwapAndBridge = (route: string | undefined) => route === 'swap-and-bridge'
 const COW_SWAP_PROVIDER_ID = 'cowswap'
+
+/** The statuses of an active route that has finished, whether it went through or not */
+const FINISHED_ROUTE_STATUSES: SwapAndBridgeActiveRoute['routeStatus'][] = [
+  'completed',
+  'refunded',
+  'failed'
+]
+
+/** Whether the transaction of the account op was mined, whether it succeeded or reverted */
+const getIsAccountOpMined = (accountOp: Pick<SubmittedAccountOp, 'status'>) =>
+  accountOp.status === AccountOpStatus.Success || accountOp.status === AccountOpStatus.Failure
 
 const STATUS_WRAPPED_METHODS = {
   addToTokenByAddress: 'INITIAL'
@@ -495,6 +508,19 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #updateActiveRoutesInterval: RecurringTimeout
 
+  /**
+   * When the statuses of the in-progress swaps and bridges were last checked, to tell whether
+   * the portfolio has fresher balances since. See `#checkActiveRoutesAfterPortfolioRefresh`.
+   */
+  #lastActiveRoutesStatusCheckAt = 0
+
+  /**
+   * How many times the statuses of the in-progress swaps and bridges were checked since the poll
+   * last waited for their service time. The poll backs off by this count, as its timeout can
+   * equal the service time and can't tell the first check from the later ones.
+   */
+  #activeRoutesStatusChecksCount = 0
+
   get updateActiveRoutesInterval() {
     return this.#updateActiveRoutesInterval
   }
@@ -804,6 +830,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // this.activeRoutes = this.activeRoutes.filter((r) => !filterOutStatuses.includes(r.routeStatus))
 
     this.#selectedAccount.onUpdate(() => {
+      this.#checkActiveRoutesAfterPortfolioRefresh()
       this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', async () => {
         if (this.#selectedAccount.portfolio.isReadyToVisualize && this.sessionIds.length) {
           this.isTokenListLoading = false
@@ -952,6 +979,53 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return this.activeRoutes.filter((r) => r.routeStatus === 'in-progress' && r.userTxHash)
   }
 
+  /**
+   * Checks the status of the in-progress swaps and bridges right away, instead of waiting for
+   * the next poll, when the portfolio has fetched the balances of a network one of them delivers
+   * to since the last check. The delivery may be in those balances already, and the sooner the
+   * status is updated, the shorter the dashboard counts the tokens both in the balance and as on
+   * their way. It's fine to check when nothing has arrived yet: that's one more status request
+   * per refresh of the network, while a swap or bridge is in progress.
+   */
+  #checkActiveRoutesAfterPortfolioRefresh() {
+    const accountAddr = this.#selectedAccount.account?.addr
+    const { activeRoutesInProgress } = this
+    if (!accountAddr || !activeRoutesInProgress.length) return
+    // A check that is already running would make the restarted one wait for it instead of checking
+    // again, although it may have started before the refresh. Once it's done, the next update of
+    // the selected account triggers a check, as the refresh is still newer than its start
+    if (this.#continuouslyUpdateActiveRoutesPromise) return
+
+    const portfolioState = this.#portfolio.getAccountPortfolioState(accountAddr)
+    const hasFreshBalances = activeRoutesInProgress.some((activeRoute) => {
+      const { route } = activeRoute
+      if (!route || !getIsIntentRoute(route) || !isSameAddr(activeRoute.sender, accountAddr))
+        return false
+
+      // A CoW Swap order is on a single network, so this also covers the tokens it sells
+      const lastUpdate = portfolioState[route.toChainId.toString()]?.lastSuccessfulUpdate
+      return !!lastUpdate && lastUpdate > this.#lastActiveRoutesStatusCheckAt
+    })
+    if (!hasFreshBalances) return
+
+    // Set right away, as the selected account updates in bursts (e.g. network by network) and
+    // the check starts only on the next tick, so the updates in the meantime don't restart it again
+    this.#lastActiveRoutesStatusCheckAt = Date.now()
+
+    // A CoW Swap order's status can lag behind the balances that already have its tokens, so its
+    // back-off starts over and the next check comes soon. Other routes keep the current timeout,
+    // as starting over on every refresh would poll a long bridge every few seconds
+    const hasCowSwapRouteInProgress = activeRoutesInProgress.some(
+      (activeRoute) => activeRoute.route?.providerId === COW_SWAP_PROVIDER_ID
+    )
+    if (hasCowSwapRouteInProgress) this.#activeRoutesStatusChecksCount = 0
+
+    this.#updateActiveRoutesInterval.restart({
+      timeout: this.#updateActiveRoutesInterval.currentTimeout,
+      runImmediately: true
+    })
+  }
+
   get activeRoutes() {
     return this.#activeRoutes
   }
@@ -969,6 +1043,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
 
     if (!this.#updateActiveRoutesInterval.running) {
+      this.#activeRoutesStatusChecksCount = 0
       this.#updateActiveRoutesInterval.start({ timeout: minServiceTime })
       return
     }
@@ -976,6 +1051,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // If the interval is running, check if minServiceTime * 2 is still less than currentTimeout.
     // If it is, restart it with the new minServiceTime, as the difference makes it worth it.
     if (minServiceTime * 2 < this.#updateActiveRoutesInterval.currentTimeout) {
+      this.#activeRoutesStatusChecksCount = 0
       this.#updateActiveRoutesInterval.restart({ timeout: minServiceTime })
     }
   }
@@ -1550,21 +1626,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#requestedToToken = null
     }
 
-    // When price fetching is disabled or the endpoint is down, tokens come back without
-    // a USD price. We must not exclude them as "priceless" in that case, otherwise
-    // switching to an account with such tokens would wrongly hide them. Skip the price
-    // requirement entirely when disabled and for chains with a current price fetch error.
-    const chainIdsWithPriceError = new Set<string>()
-    const priceError = this.#selectedAccount.balanceAffectingErrors.find(
-      (error) => error.id === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
-    )
-    priceError?.networkNames.forEach((networkName) => {
-      const network = this.#networks.networks.find((n) => n.name === networkName)
-      if (network) chainIdsWithPriceError.add(network.chainId.toString())
-    })
-
-    const areTokenPricesEnabled = this.#featureFlags.isFeatureEnabled('tokenPrices')
-
     const tokens = nextPortfolioTokenList
       .filter(
         (token) =>
@@ -1573,11 +1634,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           // added to the "Receive" token list as additional tokens from portfolio,
           // BUT 3) They will appear in the "Receive" if they are present in service
           // provider's to token list. This is the desired behavior.
-          getIsTokenEligibleForSwapAndBridge(
-            token,
-            true,
-            areTokenPricesEnabled && !chainIdsWithPriceError.has(token.chainId.toString())
-          ) && !token.flags.isHidden
+          // Tokens without a USD price stay in the list: a legit token may just not be priced
+          // (e.g. when prices come from the network alone), and the swap providers decide whether
+          // it can be swapped or bridged.
+          getIsTokenEligibleForSwapAndBridge(token, true) && !token.flags.isHidden
       )
       .map((token) => ({
         ...token,
@@ -2920,23 +2980,37 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   async checkForActiveRoutesStatusUpdate() {
     await this.#initialLoadPromise
+    this.#lastActiveRoutesStatusCheckAt = Date.now()
     const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {
       let status: SwapAndBridgeRouteStatus = null
       let routeStatusResult: SwapAndBridgeRouteStatusResult = { status: null }
 
       if (!activeRoute.userTxHash || activeRoute.routeStatus === 'completed') return
 
-      const latestSubmittedAccountOps = this.#activity.getAccountOpsForAccount({
-        accountAddr: activeRoute.sender,
-        from: 0,
-        numberOfItems: 10
-      })
-
-      const activeRouteSubmittedAccountOp = latestSubmittedAccountOps.find(
-        (op) => op.txnId === activeRoute.userTxHash
-      )
+      const activeRouteSubmittedAccountOp = this.#findActiveRouteAccountOp(activeRoute)
 
       if (!activeRouteSubmittedAccountOp) return
+      if (isCancelAccountOp(activeRouteSubmittedAccountOp)) {
+        // Once the cancel is mined, even if it reverted, it has taken the nonce of the route's
+        // transaction. The calls of the route never ran, so there is nothing to wait for
+        if (getIsAccountOpMined(activeRouteSubmittedAccountOp)) {
+          this.updateActiveRoute(activeRoute.activeRouteId, {
+            routeStatus: 'failed',
+            error: 'The transaction was canceled'
+          })
+        }
+        return
+      }
+
+      // The account op knows the latest hash, in case it changed after broadcasting
+      const userTxHash = activeRouteSubmittedAccountOp.txnId || activeRoute.userTxHash
+      if (!getIsActiveRouteAccountOp(activeRoute, activeRouteSubmittedAccountOp)) {
+        // A speed up went through instead of the route's transaction, so the route follows it
+        this.updateActiveRoute(activeRoute.activeRouteId, {
+          userTxHash,
+          identifiedBy: activeRouteSubmittedAccountOp.identifiedBy
+        })
+      }
       if (
         activeRoute.route?.providerId === 'cowswap' &&
         activeRouteSubmittedAccountOp.status !== AccountOpStatus.Success
@@ -2951,7 +3025,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           fromChainId: activeRoute.route.fromChainId,
           toChainId: activeRoute.route.toChainId,
           bridge: activeRoute.route.usedBridgeNames?.[0],
-          txHash: activeRoute.userTxHash!,
+          txHash: userTxHash,
           providerId: activeRoute.route.providerId,
           requestId: (activeRoute.route.rawRoute as any)?.requestId,
           routeId: activeRoute.route.routeId,
@@ -3338,6 +3412,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         userTxHash: submittedAccountOp.txnId,
         identifiedBy: submittedAccountOp.identifiedBy
       })
+    } else {
+      this.#updateActiveRouteUserTxHashIfChanged(activeRoute, submittedAccountOp)
     }
 
     if (
@@ -3422,7 +3498,55 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         userTxHash: submittedAccountOp?.txnId,
         identifiedBy: submittedAccountOp.identifiedBy
       })
+      return
     }
+
+    this.#updateActiveRouteUserTxHashIfChanged(activeRoute, submittedAccountOp)
+  }
+
+  /**
+   * The account op that sent the transaction of an active route. When a speed up or a cancel
+   * replaced that transaction and was mined, it's the account op that replaced it, as only one
+   * of them can go through.
+   */
+  #findActiveRouteAccountOp(activeRoute: SwapAndBridgeActiveRoute) {
+    // All of the account's ops are searched, not only the latest ones, because the user
+    // may send other transactions while the route is in progress
+    const accountOp = this.#activity
+      .getAccountOpsForAccount({ accountAddr: activeRoute.sender, sortAccOps: false })
+      .find((op) => getIsActiveRouteAccountOp(activeRoute, op))
+    if (!accountOp || getIsAccountOpMined(accountOp)) return accountOp
+
+    // Looked up for any status, not only for a replaced one, because a transaction that left
+    // the mempool when it was sped up may be declared stuck and never checked again
+    const replacement = this.#activity.findReplacement(
+      accountOp.identifiedBy,
+      accountOp.accountAddr,
+      accountOp.chainId
+    )
+    // Until a replacement is mined, the route's own transaction may still go through
+    if (!replacement || !getIsAccountOpMined(replacement)) return accountOp
+
+    return replacement
+  }
+
+  /**
+   * Updates the transaction hash of an active route when the hash of its account op changed
+   * after broadcasting, e.g. when the bundler or the relayer replaced the transaction.
+   * Otherwise the route keeps the hash of a transaction that was never mined.
+   */
+  #updateActiveRouteUserTxHashIfChanged(
+    activeRoute: SwapAndBridgeActiveRoute,
+    submittedAccountOp: SubmittedAccountOp
+  ) {
+    // A finished route keeps its hash, as updating it would also move its progress back
+    if (FINISHED_ROUTE_STATUSES.includes(activeRoute.routeStatus)) return
+
+    const { txnId } = submittedAccountOp
+    if (!activeRoute.userTxHash || !txnId || txnId === activeRoute.userTxHash) return
+    if (!getIsActiveRouteAccountOp(activeRoute, submittedAccountOp)) return
+
+    this.updateActiveRoute(activeRoute.activeRouteId, { userTxHash: txnId })
   }
 
   #handleActiveRoutesCompleted(callId: Call['id'], opStatus: SubmittedAccountOp['status']) {
@@ -3434,6 +3558,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       activeRoute.routeStatus === 'in-progress' &&
       opStatus === AccountOpStatus.Success
     ) {
+      this.#activeRoutesStatusChecksCount = 0
       this.#updateActiveRoutesInterval.restart({
         timeout: getActiveRoutesLowestServiceTime(this.activeRoutesInProgress),
         runImmediately: true
@@ -3918,17 +4043,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // coming here means the bridge should complete any second now
     // so start with BRIDGE_STATUS_INTERVAL
     // upon status pending, increase by BRIDGE_STATUS_INTERVAL until the ceiling is hit
-    const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
-    const startTimeout =
-      minServiceTime === this.#updateActiveRoutesInterval.currentTimeout
-        ? BRIDGE_STATUS_INTERVAL
-        : this.#updateActiveRoutesInterval.currentTimeout + BRIDGE_STATUS_INTERVAL
-
+    this.#activeRoutesStatusChecksCount += 1
     this.#updateActiveRoutesInterval.updateTimeout({
-      timeout:
-        startTimeout < BRIDGE_STATUS_INTERVAL_CEILING
-          ? startTimeout
-          : BRIDGE_STATUS_INTERVAL_CEILING
+      timeout: Math.min(
+        BRIDGE_STATUS_INTERVAL * this.#activeRoutesStatusChecksCount,
+        BRIDGE_STATUS_INTERVAL_CEILING
+      )
     })
   }
 

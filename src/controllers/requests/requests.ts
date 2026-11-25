@@ -117,6 +117,7 @@ import {
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
+import { getSafeTxn, isSameSafeTx, toSafeTx } from '../../libs/safe/helpers'
 import {
   findDeployData,
   getSafeDeploymentCall,
@@ -141,7 +142,7 @@ import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 import { TxnReplacement } from '../signAccountOp/txnReplacement'
 
-import type { EIP712TypedData } from '@safe-global/types-kit'
+import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import type { Call } from '../../libs/accountOp/types'
 import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/signAccountOp'
@@ -868,6 +869,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         r.signAccountOp.accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier ===
           replacedIdentifier &&
         TxnReplacement.isCancel(r.signAccountOp.accountOp) === isCancel
+    )
+  }
+
+  /**
+   * An open request that already turns the smart account upgrade on (or revokes it) for the
+   * account on the chain. Pressing the button again reopens it instead of building another one
+   */
+  #findOpenDelegationRequest(meta: CallsUserRequestParams['meta']): CallsUserRequest | undefined {
+    return this.userRequests.find(
+      (r): r is CallsUserRequest =>
+        r.kind === 'calls' &&
+        r.meta.setDelegation === meta.setDelegation &&
+        r.meta.accountAddr === meta.accountAddr &&
+        r.meta.chainId === meta.chainId
     )
   }
 
@@ -3089,6 +3104,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
       }
       await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
+      return
     }
 
     const typedData = message as EIP712TypedData
@@ -3577,6 +3593,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     account: Account,
     sourceNetworks: Network[]
   ): Promise<SafeAccountCreation | null> {
+    // The creation data comes from the Safe API, which the user opted out of. The request is
+    // turned away, asking the user to activate the Safe on this network in the Safe app instead.
+    // Read once the flags are loaded, as until then they are the defaults (e.g. a dapp request
+    // right after the background restarted)
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#featureFlags.isFeatureEnabled('safeApi')) return null
+
     for (const network of sourceNetworks) {
       const provider = this.#providers.providers[network.chainId.toString()]
       if (!provider) return null
@@ -3830,9 +3853,42 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     return true
   }
 
+  /**
+   * Whether the Safe txn from the Safe API is the one the open request signs, so it only
+   * brings the signatures of more owners. What the user reviews and what gets signed must
+   * stay the same, so a different one is reported, and the caller must ignore it. The same
+   * Safe txn hash can't belong to another txn (see SafeController.fetchPending)
+   */
+  #isSameSafeTxAsOpen(request: CallsUserRequest, safeTx?: SafeMultisigTransactionResponse) {
+    if (!safeTx) return true
+
+    const { accountOp } = request.signAccountOp
+    const accountState =
+      this.#accounts.accountStates[accountOp.accountAddr]?.[accountOp.chainId.toString()]
+
+    let isSame = false
+    try {
+      isSame = !!accountState && isSameSafeTx(toSafeTx(safeTx), getSafeTxn(accountOp, accountState))
+    } catch {
+      // Malformed details (e.g. a value that isn't a number) can't be the open txn
+    }
+
+    if (!isSame) {
+      this.emitError({
+        level: 'silent',
+        message: 'Ignored an update that changes an open Safe transaction',
+        error: new Error(
+          `requestsController: the Safe API returned other details for the open Safe txn ${safeTx.safeTxHash} on chain ${accountOp.chainId}`
+        )
+      })
+    }
+
+    return isSame
+  }
+
   async #createOrUpdateCallsUserRequest(
     {
-      calls,
+      calls: rawCalls,
       meta,
       accountOp: providedAccountOp,
       dappPromises = [],
@@ -3841,6 +3897,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     executionType: RequestExecutionType = 'open-request-window',
     { accountOpNonce }: { accountOpNonce?: bigint } = {}
   ) {
+    // Every transaction request (app calls, queued Safe transactions, the wallet's own calls)
+    // comes through here. Hex is case-insensitive onchain, so the same bytes can arrive in upper
+    // or mixed case. Lower-case it once, so every check below and every consumer of the account
+    // op (humanizer, selector decoding, simulation) compares the same text. The bytes, the
+    // transaction hash and the safeTxHash do not change.
+    const calls = rawCalls.map((call) =>
+      call.data && isHex(call.data) ? { ...call, data: call.data.toLowerCase() } : call
+    )
+
     let callUserRequest: CallsUserRequest | undefined
     const isSafeAccount = !!this.#accounts.accounts.find((a) => a.addr === meta.accountAddr)
       ?.safeCreation
@@ -3849,6 +3914,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // sent again as a new transaction instead of replacing the pending one. A speed up of the
     // same transaction that is already open is reopened instead of building another one
     const isSpeedUpRequest = !!providedAccountOp && TxnReplacement.isSpeedUp(providedAccountOp)
+
+    // The smart account upgrade (or its revoke) is always a request of its own too: it's never
+    // added to a batch and nothing gets added to it. The sign screen shows only the upgrade.
+    const isDelegationRequest = meta.setDelegation !== undefined
 
     // A Safe accountOp built in advance (e.g. resending an already sent transaction or cancelling
     // it) is pinned to that transaction's nonce, so it must always be a request of its own instead
@@ -3859,6 +3928,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const openSafeCancelRequest =
       meta.safeTxnProps && this.#findOpenSafeCancelRequest(meta.safeTxnProps.txnId)
     if (meta.safeTxnProps && openSafeCancelRequest) {
+      // The Safe txn of the cancel the user reviews is never replaced
+      if (!this.#isSameSafeTxAsOpen(openSafeCancelRequest, meta.safeTx)) return
+
       // The rest is the same Safe transaction (same hash). The cancel takes the signatures of
       // owners who haven't signed it yet, compared by owner rather than by signature length
       openSafeCancelRequest.signAccountOp.update({
@@ -3874,34 +3946,39 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       isSpeedUpRequest
         ? this.#findOpenSpeedUpRequest(accountOp)
         : this.#findOpenPrebuiltSafeRequest(accountOp)
-    const existingUserRequest =
-      (isSpeedUpRequest || isPrebuiltSafeAccountOp) && providedAccountOp
-        ? findOpenReplacementRequest(providedAccountOp)
-        : (this.userRequests.find(
-            (r) =>
-              r.kind === 'calls' &&
-              !r.signAccountOp.isSpeedUpTransaction &&
-              // done like this so 1) a safe onchain rejection tx is not bundled with a normal batch
-              // 2) a fetched rejection is bundled with the current local present rejection.
-              // Only for Safes - any other account would get a second request under the same id as
-              // its batch, which replaces the batch and drops what was in it
-              (!isSafeAccount ||
-                isSafeRejectionCall(calls, meta.accountAddr) ===
-                  isSafeRejectionCall(r.signAccountOp.accountOp.calls, meta.accountAddr)) &&
-              !!r.meta.isSafeDeploy === !!meta.isSafeDeploy &&
-              r.meta.accountAddr === meta.accountAddr &&
-              r.meta.chainId === meta.chainId &&
-              (accountOpNonce === undefined ||
-                (!r.signAccountOp.accountOp.signature &&
-                  getAccountOpNonce(r.signAccountOp.accountOp) === accountOpNonce)) &&
-              // find an accountOp with no txnId, if the meta does not have a Safe
-              // txnId. If it has, it should not get the existingUserRequest
-              ((!meta.safeTxnProps?.txnId && !r.signAccountOp.accountOp.txnId) ||
-                // if meta has txnId, the accountOp should have the same txnId
-                (meta.safeTxnProps?.txnId &&
-                  r.signAccountOp.accountOp.txnId &&
-                  meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId))
-          ) as CallsUserRequest | undefined)
+    const findExistingUserRequest = () => {
+      if ((isSpeedUpRequest || isPrebuiltSafeAccountOp) && providedAccountOp)
+        return findOpenReplacementRequest(providedAccountOp)
+      if (isDelegationRequest) return this.#findOpenDelegationRequest(meta)
+
+      return this.userRequests.find(
+        (r) =>
+          r.kind === 'calls' &&
+          !r.signAccountOp.isSpeedUpTransaction &&
+          r.meta.setDelegation === undefined &&
+          // done like this so 1) a safe onchain rejection tx is not bundled with a normal batch
+          // 2) a fetched rejection is bundled with the current local present rejection.
+          // Only for Safes - any other account would get a second request under the same id as
+          // its batch, which replaces the batch and drops what was in it
+          (!isSafeAccount ||
+            isSafeRejectionCall(calls, meta.accountAddr) ===
+              isSafeRejectionCall(r.signAccountOp.accountOp.calls, meta.accountAddr)) &&
+          !!r.meta.isSafeDeploy === !!meta.isSafeDeploy &&
+          r.meta.accountAddr === meta.accountAddr &&
+          r.meta.chainId === meta.chainId &&
+          (accountOpNonce === undefined ||
+            (!r.signAccountOp.accountOp.signature &&
+              getAccountOpNonce(r.signAccountOp.accountOp) === accountOpNonce)) &&
+          // find an accountOp with no txnId, if the meta does not have a Safe
+          // txnId. If it has, it should not get the existingUserRequest
+          ((!meta.safeTxnProps?.txnId && !r.signAccountOp.accountOp.txnId) ||
+            // if meta has txnId, the accountOp should have the same txnId
+            (meta.safeTxnProps?.txnId &&
+              r.signAccountOp.accountOp.txnId &&
+              meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId))
+      ) as CallsUserRequest | undefined
+    }
+    const existingUserRequest = findExistingUserRequest()
 
     // A Safe is deployed once per chain, so a pending deployment is reused as it is. Adding
     // the deployment to it a second time would make the whole transaction fail
@@ -3948,6 +4025,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // we're allowing updates only on the signature field for
         // already signed accountOps
         if (meta.safeTxnProps) {
+          // The Safe txn of an open request is never replaced, only its signatures are added
+          if (!this.#isSameSafeTxAsOpen(existingUserRequest, meta.safeTx)) return
+
           const safeGlobalSig = meta.safeTxnProps.signature
           const accOpSig = existingUserRequest.signAccountOp.accountOp.signature
           if ((accOpSig?.length || 0) < safeGlobalSig.length) {
@@ -3966,7 +4046,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           return
         } else if (
           !existingUserRequest.signAccountOp.isSpeedUpTransaction &&
-          !isPrebuiltSafeAccountOp
+          !isPrebuiltSafeAccountOp &&
+          !isDelegationRequest
         ) {
           existingUserRequest.signAccountOp.update({
             accountOpData: {
@@ -4051,10 +4132,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
       const baseRequestId = `${meta.accountAddr}-${meta.chainId}${meta.safeTxnProps?.txnId ? `-${meta.safeTxnProps.txnId}` : ''}`
-      // add a unique id for safe and speed up requests as we want to make sure
-      // new requests do not replace already existing ones (e.g. the batch on the same chain)
+      // add a unique id for safe, speed up and smart account upgrade requests as we want to make
+      // sure new requests do not replace already existing ones (e.g. the batch on the same chain)
       const requestId =
-        !!account.safeCreation || isSpeedUpRequest
+        !!account.safeCreation || isSpeedUpRequest || isDelegationRequest
           ? `${baseRequestId}-${generateUuid()}`
           : baseRequestId
       // A Safe accountOp built in advance (a speed up, a cancel or a resend) keeps the Safe nonce

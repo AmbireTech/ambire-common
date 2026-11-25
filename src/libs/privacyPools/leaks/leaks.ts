@@ -1,4 +1,5 @@
 import {
+  PrivacyPoolsBroadcaster,
   PrivacyPoolsDepositPrivacy,
   PrivacyPoolsLeak,
   PrivacyPoolsNote,
@@ -11,24 +12,21 @@ import {
   getPrivacyPoolsCoverWindowDeposits,
   PrivacyPoolsPoolCover
 } from '../poolStats'
-import { getPrivacyPoolsNotesToSpend, getSendCover, getSendPoolCover } from './helpers'
+import { getPrivacyPoolsNoteSpend, getSendCover, getSendPoolCover } from './helpers'
 import { DEPOSIT_LEAKS, WITHDRAWAL_LEAKS } from './rules'
 import { CommonAmountCover, LeakRule, WithdrawalFacts } from './types'
 
 const NO_COVER: PrivacyPoolsSendCover = { bigEnough: 0, sameAmount: 0 }
 
 /**
- * The privacy of a send of `notesCount` deposits that could not be checked, with no leaks and no
- * cover. The user is asked to confirm it, as anything in it could link it to them.
+ * The privacy of a send that could not be checked, with no leaks and no cover. The user is asked to
+ * confirm it, as anything in it could link it to them.
  */
-export const getUncheckedPrivacyPoolsWithdrawalPrivacy = (
-  notesCount: number
-): PrivacyPoolsWithdrawalPrivacy => ({
+const UNCHECKED_WITHDRAWAL_PRIVACY: PrivacyPoolsWithdrawalPrivacy = {
   rating: 'unchecked',
   leaks: [],
-  cover: NO_COVER,
-  notesCount
-})
+  cover: NO_COVER
+}
 
 /** The leaks the facts have, in the order of `rules`. */
 const findLeaks = <Facts>(rules: LeakRule<Facts>[], facts: Facts): PrivacyPoolsLeak[] =>
@@ -55,76 +53,77 @@ const getRating = (leaks: PrivacyPoolsLeak[]): PrivacyPoolsRating => {
 }
 
 /**
- * How many deposits would hide a send of each common amount the notes can pay. Each is counted
- * against the deposits its own spends hide among, and left out when those are not read yet.
+ * How many deposits would hide a send of each common amount the deposit with `noteLabel` can pay.
+ * All of them spend that deposit, so all are counted against the deposits it hides among.
  */
 const getCommonAmountCovers = (
   notes: PrivacyPoolsNote[],
   tokenAddress: string,
+  noteLabel: bigint,
   commonAmounts: bigint[],
-  poolCover: PrivacyPoolsPoolCover | null,
-  fingerprints: ReadonlyMap<string, boolean> | null
+  sendPoolCover: PrivacyPoolsPoolCover
 ): CommonAmountCover[] =>
   commonAmounts.flatMap((commonAmount) => {
-    const commonAmountSpends = getPrivacyPoolsNotesToSpend(notes, tokenAddress, commonAmount)
-    if (!commonAmountSpends) return []
+    const commonAmountSpend = getPrivacyPoolsNoteSpend(notes, tokenAddress, noteLabel, commonAmount)
+    if (!commonAmountSpend) return []
 
-    const sendPoolCover = getSendPoolCover(commonAmountSpends, notes, poolCover, fingerprints)
-    if (!sendPoolCover) return []
-
-    return [{ amount: commonAmount, cover: getSendCover(sendPoolCover, commonAmountSpends) }]
+    return [{ amount: commonAmount, cover: getSendCover(sendPoolCover, commonAmountSpend) }]
   })
 
 /**
- * The privacy of a send of `amount` of a token from the account's notes. Rated `unchecked`, with no
- * leaks and no cover, until the deposits it hides among are read - see `getSendPoolCover`. An
- * `amount` of 0 means none is entered yet, so only the recipient is checked and there is no cover.
- * Null when the notes cannot pay `amount`, or it is negative.
+ * The privacy of a send of `amount` of a token from the deposit with `noteLabel`. Rated
+ * `unchecked`, with no leaks and no cover, until the deposits it hides among are read - see
+ * `getSendPoolCover`. An `amount` of 0 means none is entered yet, so only the recipient is checked
+ * and there is no cover. Null when the deposit cannot pay `amount`, or it is negative.
  */
 export const getPrivacyPoolsWithdrawalPrivacy = ({
   amount,
   commonAmounts,
   poolCover,
   fingerprints,
+  broadcaster,
   ...params
 }: {
   amount: bigint
   /** The account's notes on the chain, in the order the SDK lists them. */
   notes: PrivacyPoolsNote[]
   tokenAddress: string
+  /** The deposit the send spends. */
+  noteLabel: bigint
   /** Null before the user enters one, so only the amount is checked. */
   recipient: string | null
   /** Null before the pool's deposits are read. */
   poolCover: PrivacyPoolsPoolCover | null
   /** See `getSendPoolCover`. */
   fingerprints: ReadonlyMap<string, boolean> | null
+  /** Who sends it, which sets the deposits it hides among - see `getSendPoolCover`. */
+  broadcaster: PrivacyPoolsBroadcaster
   /** The pool's common amounts, smallest first - see `PRIVACY_POOLS_DEPOSIT_CHIPS`. */
   commonAmounts: bigint[]
 }): PrivacyPoolsWithdrawalPrivacy | null => {
-  const { notes, tokenAddress } = params
+  const { notes, tokenAddress, noteLabel, recipient } = params
   // No amount is entered yet, so only the recipient can be checked
   const isRecipientOnly = amount === 0n
-  const spends = isRecipientOnly ? [] : getPrivacyPoolsNotesToSpend(notes, tokenAddress, amount)
-  if (!spends) return null
+  const spend = getPrivacyPoolsNoteSpend(notes, tokenAddress, noteLabel, amount)
+  if (!isRecipientOnly && !spend) return null
 
-  const sendPoolCover = getSendPoolCover(spends, notes, poolCover, fingerprints)
-  if (!sendPoolCover) return getUncheckedPrivacyPoolsWithdrawalPrivacy(spends.length)
+  const sendPoolCover = getSendPoolCover(spend, notes, poolCover, fingerprints, broadcaster)
+  if (!sendPoolCover) return UNCHECKED_WITHDRAWAL_PRIVACY
 
   const facts: WithdrawalFacts = {
-    ...params,
-    poolCover: sendPoolCover,
     amount,
-    spends,
-    // `getSendCover` takes the smallest count over the spends, which is Infinity with none
-    cover: isRecipientOnly ? NO_COVER : getSendCover(sendPoolCover, spends),
+    spend,
+    recipient,
+    poolCover: sendPoolCover,
+    cover: spend ? getSendCover(sendPoolCover, spend) : NO_COVER,
     // Common amounts are only suggested in place of an entered amount
-    commonAmountCovers: isRecipientOnly
-      ? []
-      : getCommonAmountCovers(notes, tokenAddress, commonAmounts, poolCover, fingerprints)
+    commonAmountCovers: spend
+      ? getCommonAmountCovers(notes, tokenAddress, noteLabel, commonAmounts, sendPoolCover)
+      : []
   }
   const leaks = findLeaks(WITHDRAWAL_LEAKS, facts)
 
-  return { rating: getRating(leaks), leaks, cover: facts.cover, notesCount: spends.length }
+  return { rating: getRating(leaks), leaks, cover: facts.cover }
 }
 
 /**

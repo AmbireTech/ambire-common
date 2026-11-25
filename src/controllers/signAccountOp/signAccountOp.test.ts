@@ -37,7 +37,7 @@ import {
 } from '../../../test/helpers/dapps'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { mockBundlerRequestsBeforeEach } from '../../../test/mocks/bundler'
-import { noErc7730DescriptorsRelayer } from '../../../test/mocks/erc7730Relayer'
+import { EMPTY_ERC7730_REGISTRY } from '../../../test/mocks/erc7730Registry'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -72,10 +72,8 @@ import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { getMinReplacementFees } from '../../libs/gasPrice/speedUp'
-import {
-  ERC7730_CALLDATA_INDEX_RELAYER_PATH,
-  ERC7730_DESCRIPTOR_WAIT_MS
-} from '../../libs/humanizer/erc7730/consts'
+import { ERC7730_DESCRIPTOR_WAIT_MS } from '../../libs/humanizer/erc7730/consts'
+import { Erc7730Registry } from '../../libs/humanizer/erc7730/types'
 import { HumanizerWarning } from '../../libs/humanizer/interfaces'
 import { hasErc7730Humanization, UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -144,6 +142,21 @@ const createDeferred = <T>() => {
   })
 
   return { promise, resolve }
+}
+
+/**
+ * Providers for the `Erc7730Controller` that hold its descriptor lookups until `releaseLookups` is
+ * called, as it waits for the providers to load before looking anything up. They have no network,
+ * so nothing is read from the chain.
+ */
+const makeHeldErc7730Providers = () => {
+  const initialLoad = createDeferred<void>()
+  const providers = { initialLoadPromise: initialLoad.promise, providers: {} }
+
+  return {
+    providers: providers as unknown as IProvidersController,
+    releaseLookups: () => initialLoad.resolve()
+  }
 }
 
 const createEOAAccountOp = (account: Account) => {
@@ -527,6 +540,10 @@ const init = async (
     onBroadcastSuccess?: (params: any) => Promise<void>
     onPartialBroadcast?: (sentAccountOp: any) => Promise<void>
     featureFlags?: Partial<FeatureFlags>
+    /** The registry ERC-7730 descriptors are looked up in. An empty one by default */
+    erc7730Registry?: Erc7730Registry
+    /** For holding the ERC-7730 lookups, see `makeHeldErc7730Providers` */
+    erc7730Providers?: IProvidersController
     contractInfoFetch?: Fetch
     // Lets several controllers share one, like the requests of a real wallet do
     contractInfo?: ContractInfoController
@@ -730,20 +747,15 @@ const init = async (
     featureFlagsCtrl.isFeatureEnabled('eip7702')
   )
 
-  const unreachableRelayer = relayerCall.bind({ url: '', fetch })
-  // An empty ERC-7730 registry gives the same default view as a failed lookup, without the
-  // failure. Every other relayer call stays unreachable.
-  const emptyErc7730Relayer: BindedRelayerCall = async (path, ...args) =>
-    path === ERC7730_CALLDATA_INDEX_RELAYER_PATH
-      ? { success: true, data: {}, errorState: [] }
-      : unreachableRelayer(path, ...args)
-  const callRelayer = options?.callRelayer || emptyErc7730Relayer
+  // The relayer stays unreachable unless the test passes its own
+  const callRelayer = options?.callRelayer || relayerCall.bind({ url: '', fetch })
   const safe = new SafeController({
     networks: networksCtrl,
     providers: providersCtrl,
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore
+    keystore,
+    featureFlags: featureFlagsCtrl
   })
   const activity = new ActivityController(
     storageCtrl,
@@ -819,13 +831,12 @@ const init = async (
     fetchAndUpdateSpy.mockRestore()
     dapps = realDappsController
   }
-  // A real controller over the test's storage, not a stub - the ERC-7730 tests assert on
-  // descriptor caching, which is exactly what this controller owns.
+  // A real controller, not a stub - the ERC-7730 tests assert on the descriptors it looks up in
+  // the registry they pass
   const erc7730 = new Erc7730Controller({
-    storage: storageCtrl,
-    // The default relayer isn't bound, so every descriptor lookup would fail and log an error
-    callRelayer: options?.callRelayer || noErc7730DescriptorsRelayer,
-    featureFlags: featureFlagsCtrl,
+    // Not the bundled registry, whose descriptors change with every refresh
+    registry: options?.erc7730Registry || EMPTY_ERC7730_REGISTRY,
+    providers: options?.erc7730Providers,
     ui: ui
   })
   const contractInfo =
@@ -892,7 +903,8 @@ const initDappVerificationBannerTest = async (
   {
     isPermit2 = false,
     calls,
-    callRelayer,
+    erc7730Registry,
+    erc7730Providers,
     dappSessionId,
     sessions,
     contractInfoFetch,
@@ -902,7 +914,8 @@ const initDappVerificationBannerTest = async (
   }: {
     isPermit2?: boolean
     calls?: AccountOp['calls']
-    callRelayer?: BindedRelayerCall
+    erc7730Registry?: Erc7730Registry
+    erc7730Providers?: IProvidersController
     dappSessionId?: string
     sessions?: Session[]
     contractInfoFetch?: Fetch
@@ -989,7 +1002,8 @@ const initDappVerificationBannerTest = async (
     false,
     {
       dapps: getDappVerificationTestDapps(),
-      callRelayer,
+      erc7730Registry,
+      erc7730Providers,
       sessions,
       contractInfoFetch,
       contractInfo,
@@ -3021,6 +3035,78 @@ describe('Negative cases', () => {
 describe('throwBroadcastAccountOp', () => {
   suppressConsoleBeforeEach()
 
+  describe('after the user cancels the signing', () => {
+    const initEoaController = () =>
+      init(
+        eoaAccount,
+        createEOAAccountOp(eoaAccount),
+        eoaSigner,
+        {
+          providerEstimation: { gasUsed: 10000n, feePaymentOptions: [] },
+          ambireEstimation: {
+            deploymentGas: 0n,
+            gasUsed: 10000n,
+            feePaymentOptions: [],
+            ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+            flags: {}
+          },
+          flags: {},
+          updatedAt: Date.now()
+        },
+        {
+          slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+          medium: {
+            maxFeePerGas: toBeHex(400n) as Hex,
+            maxPriorityFeePerGas: toBeHex(200n) as Hex
+          },
+          fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+          ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+        }
+      )
+
+    it("logs the device's rejection silently, without failing quietly", async () => {
+      const { controller } = await initEoaController()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      controller.cancelSignReq()
+
+      expect(() =>
+        controller.throwBroadcastAccountOp({ error: new Error('Operation cancelled by user') })
+      ).toThrow()
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'silent' }))
+      expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
+    })
+
+    it('shows the errors of the next signing again', async () => {
+      const { controller } = await initEoaController()
+      controller.cancelSignReq()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      // A new signing clears the cancellation. Without a fee option it fails right away
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      controller.sign()
+      expect(() =>
+        controller.throwBroadcastAccountOp({ error: new Error('Device disconnected') })
+      ).toThrow()
+
+      expect(onError).toHaveBeenLastCalledWith(expect.objectContaining({ level: 'major' }))
+    })
+
+    it('shows a device error when the signing was not cancelled', async () => {
+      const { controller } = await initEoaController()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      expect(() =>
+        controller.throwBroadcastAccountOp({ error: new Error('Device disconnected') })
+      ).toThrow()
+
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'major' }))
+    })
+  })
+
   it('Should prefer message to error', async () => {
     const { controller } = await init(
       eoaAccount,
@@ -3647,7 +3733,7 @@ test('Signing [V1 with EOA payment]: working case', async () => {
 })
 
 describe('ERC-7730 humanization', () => {
-  test('shows loading, uses ERC-7730 data, caches it and fetches a shared batch descriptor once', async () => {
+  test('shows loading, uses the ERC-7730 descriptor for every call of a batch and keeps it shown while humanizing again', async () => {
     const tokenAddress = '0x1111111111111111111111111111111111111111'
     const spender = '0x2222222222222222222222222222222222222222'
     const registryPath = 'registry/test/approve.json'
@@ -3657,72 +3743,51 @@ describe('ERC-7730 humanization', () => {
       value: 0n,
       data: approveInterface.encodeFunctionData('approve', [spender, BigInt(index + 1)])
     }))
-    const descriptorResponse = createDeferred<any>()
-    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/account-op') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:1:${tokenAddress}`]: registryPath
-          },
-          errorState: []
+    const erc7730Registry: Erc7730Registry = {
+      calldataIndex: { [`eip155:1:${tokenAddress}`]: registryPath },
+      eip712Index: {},
+      descriptors: {
+        [registryPath]: {
+          display: {
+            formats: {
+              'approve(address _spender, uint256 _value)': {
+                intent: 'Approve with ERC-7730',
+                fields: [
+                  {
+                    path: '#._spender',
+                    label: 'Spender',
+                    format: 'addressName',
+                    visible: 'always'
+                  },
+                  {
+                    path: '#._value',
+                    label: 'Amount',
+                    format: 'tokenAmount',
+                    params: { tokenPath: '@.to' },
+                    visible: 'always'
+                  }
+                ]
+              }
+            }
+          }
         }
       }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-
-        return descriptorResponse.promise
-      }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
-    })
+    }
+    const heldProviders = makeHeldErc7730Providers()
     const { controller } = await initDappVerificationBannerTest(customDapp, {
       calls,
-      callRelayer
+      erc7730Registry,
+      erc7730Providers: heldProviders.providers
     })
 
     try {
       expect(controller.isHumanizing).toBe(true)
       expect(controller.humanization).toEqual([])
 
-      descriptorResponse.resolve({
-        success: true,
-        display: {
-          formats: {
-            'approve(address _spender, uint256 _value)': {
-              intent: 'Approve with ERC-7730',
-              fields: [
-                {
-                  path: '#._spender',
-                  label: 'Spender',
-                  format: 'addressName',
-                  visible: 'always'
-                },
-                {
-                  path: '#._value',
-                  label: 'Amount',
-                  format: 'tokenAmount',
-                  params: { tokenPath: '@.to' },
-                  visible: 'always'
-                }
-              ]
-            }
-          }
-        }
-      })
+      heldProviders.releaseLookups()
       await wait(0)
 
       expect(controller.isHumanizing).toBe(false)
-      expect(
-        callRelayer.mock.calls.filter(([path]) => path === '/v2/erc7730/account-op')
-      ).toHaveLength(1)
-      expect(
-        callRelayer.mock.calls.filter(([path]) => path === '/v2/erc7730/fetch-descriptor')
-      ).toHaveLength(1)
       expect(controller.humanization).toHaveLength(10)
       controller.humanization.forEach((humanizedCall, index) => {
         expect(humanizedCall.fullVisualization?.[0]).toMatchObject({
@@ -3743,14 +3808,12 @@ describe('ERC-7730 humanization', () => {
         })
       })
 
-      callRelayer.mockClear()
       const previousHumanization = controller.humanization
       controller.humanize()
       expect(controller.isHumanizing).toBe(true)
       expect(controller.humanization).toBe(previousHumanization)
       await wait(0)
 
-      expect(callRelayer).not.toHaveBeenCalled()
       expect(controller.humanization[0]?.fullVisualization?.[0]).toMatchObject({
         type: 'erc7730',
         intent: [expect.objectContaining({ content: 'Approve with ERC-7730' })]
@@ -3761,22 +3824,9 @@ describe('ERC-7730 humanization', () => {
   })
 
   test('falls back to the old humanizer when no ERC-7730 descriptor is available', async () => {
-    const callRelayer = jest.fn(async (path: string, method?: string) => {
-      if (path === '/v2/erc7730/account-op') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {},
-          errorState: []
-        }
-      }
-
-      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
-    })
     const { controller } = await initDappVerificationBannerTest(customDapp, {
       calls: [{ value: 1n, data: '0x' }],
-      callRelayer
+      erc7730Registry: EMPTY_ERC7730_REGISTRY
     })
 
     try {
@@ -3788,7 +3838,6 @@ describe('ERC-7730 humanization', () => {
         value: 1n,
         data: '0x'
       })
-      expect(callRelayer).not.toHaveBeenCalled()
       expect(controller.humanization[0]?.fullVisualization).not.toEqual(
         expect.arrayContaining([expect.objectContaining({ type: 'erc7730' })])
       )
@@ -4466,8 +4515,8 @@ describe('unlimited approval warnings', () => {
     const { controller } = await initDappVerificationBannerTest(dapp, {
       calls: [approveCall(amount, includeDappOnCall ? dapp : undefined)] as AccountOp['calls'],
       // the ERC-7730 registry has no descriptor here, so every approval falls back to the
-      // built-in descriptor - the path a real approval takes as well
-      callRelayer: noErc7730DescriptorsRelayer
+      // built-in descriptor - the path a real approval of a token without one takes as well
+      erc7730Registry: EMPTY_ERC7730_REGISTRY
     })
     await wait(0)
 
@@ -5413,29 +5462,18 @@ describe('Call data decoding', () => {
 
   const ERC7730_REGISTRY_PATH = 'registry/test/vault.json'
 
-  // Holds the ERC-7730 lookup until the test lets it through, so the test decides when the
-  // humanization lands. Without `erc7730Descriptor` no descriptors are found, so every call falls
-  // back to the default view.
-  const makeErc7730Relayer = (erc7730Descriptor?: { contract: string; display: unknown }) => {
-    const descriptorLookup = createDeferred<void>()
-    const callRelayer = jest.fn(async (path: string) => {
-      if (path === '/v2/erc7730/account-op') {
-        await descriptorLookup.promise
-        const data = erc7730Descriptor
-          ? { [`eip155:1:${erc7730Descriptor.contract}`]: ERC7730_REGISTRY_PATH }
-          : {}
-        return { success: true, data, errorState: [] }
-      }
-      if (erc7730Descriptor && path === '/v2/erc7730/fetch-descriptor') {
-        return { success: true, display: erc7730Descriptor.display }
-      }
-
-      throw new Error(`Unexpected relayer call: ${path}`)
-    })
+  // Without `erc7730Descriptor` no descriptors are found, so every call falls back to the
+  // default view.
+  const makeErc7730Registry = (erc7730Descriptor?: {
+    contract: string
+    display: unknown
+  }): Erc7730Registry => {
+    if (!erc7730Descriptor) return EMPTY_ERC7730_REGISTRY
 
     return {
-      callRelayer: callRelayer as unknown as BindedRelayerCall,
-      releaseHumanization: () => descriptorLookup.resolve()
+      calldataIndex: { [`eip155:1:${erc7730Descriptor.contract}`]: ERC7730_REGISTRY_PATH },
+      eip712Index: {},
+      descriptors: { [ERC7730_REGISTRY_PATH]: { display: erc7730Descriptor.display } }
     }
   }
 
@@ -5445,13 +5483,16 @@ describe('Call data decoding', () => {
       contractInfoFetch?: Fetch
       contractInfo?: ContractInfoController
       savedSignatures?: Record<string, string>
-      erc7730Descriptor?: Parameters<typeof makeErc7730Relayer>[0]
+      erc7730Descriptor?: Parameters<typeof makeErc7730Registry>[0]
     } = {}
   ) => {
-    const relayer = makeErc7730Relayer(options.erc7730Descriptor)
+    // Holds the ERC-7730 lookup until the test lets it through, so the test decides when the
+    // humanization lands
+    const heldProviders = makeHeldErc7730Providers()
     const { controller, contractInfo } = await initDappVerificationBannerTest(customDapp, {
       calls,
-      callRelayer: relayer.callRelayer,
+      erc7730Registry: makeErc7730Registry(options.erc7730Descriptor),
+      erc7730Providers: heldProviders.providers,
       contractInfoFetch: options.contractInfoFetch,
       contractInfo: options.contractInfo,
       initialSetStorage: options.savedSignatures
@@ -5469,7 +5510,7 @@ describe('Call data decoding', () => {
         : undefined
     })
 
-    return { controller, contractInfo, releaseHumanization: relayer.releaseHumanization }
+    return { controller, contractInfo, releaseHumanization: heldProviders.releaseLookups }
   }
 
   const waitForHumanization = (controller: SignAccountOpController) =>
@@ -6232,6 +6273,32 @@ describe('RPC gas prices with a bundler fallback', () => {
     ).toBe(BigInt(bundlerGasPrices.slow.maxFeePerGas))
     controller.update({ feeToken: nativeFeeTokenPolygon, paidBy: eoaAccount.addr })
     expect(controller.selectedOptionGasPrices).toEqual(bundlerGasPrices)
+  })
+
+  test('an EOA paying for the fee is charged the gas price it signs, so the balance check matches what the network requires', async () => {
+    const { controller } = await initSmartAccount(137n, nativeFeeTokenPolygon, smartAccount)
+
+    const speedTypes = [FeeSpeed.Slow, FeeSpeed.Medium, FeeSpeed.Fast, FeeSpeed.Ape]
+    speedTypes.forEach((speedType) => {
+      const speed = getSpeed(controller, eoaAccount.addr, speedType, nativeFeeTokenPolygon)
+      // the network requires the sender to hold gasLimit * maxFeePerGas upfront
+      expect(speed.amount).toBe(speed.simulatedGasLimit * speed.gasPrice)
+    })
+
+    // the bundler prices are increased for the faster speeds and the increased ones are signed,
+    // so the fee amount must not use the lower, original bundler price
+    const fast = getSpeed(controller, eoaAccount.addr, FeeSpeed.Fast, nativeFeeTokenPolygon)
+    expect(fast.gasPrice).toBeGreaterThan(BigInt(bundlerGasPrices.fast.maxFeePerGas))
+    expect(fast.amount).toBeGreaterThan(
+      fast.simulatedGasLimit * BigInt(bundlerGasPrices.fast.maxFeePerGas)
+    )
+  })
+
+  test('the account paying through the bundler still signs the original bundler gas price', async () => {
+    const { controller } = await initSmartAccount(137n, nativeFeeTokenPolygon, smartAccount)
+
+    const fast = getSpeed(controller, smartAccount.addr, FeeSpeed.Fast, nativeFeeTokenPolygon)
+    expect(fast.gasPrice).toBe(BigInt(bundlerGasPrices.fast.maxFeePerGas))
   })
 })
 
@@ -7752,7 +7819,8 @@ describe('an earlier pending transaction', () => {
       nonce = 3n,
       paidBy = safeAccount.addr,
       hasOwnerKey = true,
-      signature
+      signature,
+      featureFlags
     }: {
       threshold: number
       signed: string[]
@@ -7760,6 +7828,7 @@ describe('an earlier pending transaction', () => {
       paidBy?: string
       hasOwnerKey?: boolean
       signature?: string
+      featureFlags?: Partial<FeatureFlags>
     }) => {
       const feePaymentOptions = [nativeFeeOption(paidBy)]
       const accountOp = createAccountOp(safeAccount, chainId)
@@ -7789,7 +7858,9 @@ describe('an earlier pending transaction', () => {
         false,
         {
           // The paying EOA is an account of the wallet too
-          initialSetStorage: (storageCtrl) => storageCtrl.set('accounts', [safeAccount, eoaAccount])
+          initialSetStorage: (storageCtrl) =>
+            storageCtrl.set('accounts', [safeAccount, eoaAccount]),
+          featureFlags
         }
       )
       // On Ethereum the state is read at the pending block, so it can count the pending op
@@ -7966,6 +8037,29 @@ describe('an earlier pending transaction', () => {
 
         expectBothSignatures(controller)
       })
+    })
+
+    test('signing while opted out of the Safe API keeps the signature here without a failure', async () => {
+      const { controller } = await initSafe({
+        threshold: 2,
+        signed: [],
+        featureFlags: { safeApi: false }
+      })
+      controller.update({
+        signingKeyAddr: eoaSigner.keyPublicAddress,
+        signingKeyType: 'internal'
+      })
+      const proposeSpy = jest.spyOn(safeLib, 'propose').mockResolvedValue(undefined)
+      const confirmSpy = jest.spyOn(safeLib, 'confirm').mockResolvedValue(undefined as never)
+
+      await controller.sign()
+
+      expect(controller.accountOp.signed).toEqual([eoaSigner.keyPublicAddress])
+      expect(proposeSpy).not.toHaveBeenCalled()
+      expect(confirmSpy).not.toHaveBeenCalled()
+      // the user's choice, not a failure, so signing ends as if it was shared
+      expect(controller.hasSafeApiFailed).toBe(false)
+      expect(controller.status?.type).toBe(SigningStatus.Queued)
     })
 
     test('signing keeps the Safe nonce set by the request, even if the Safe moved on', async () => {

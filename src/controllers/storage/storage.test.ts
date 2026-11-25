@@ -34,7 +34,9 @@ const ALL_MIGRATION_KEYS = [
   'removeFetchingDisabledSelectors',
   'indexSentToHistoryFromAccountsOps',
   'sortPhishingLists',
-  'removeTokenRecordsWithoutChainId'
+  'removeTokenRecordsWithoutChainId',
+  'removeErc7730RegistryCache',
+  'removeClearSigningFeatureFlag'
 ]
 
 // Wraps a memory store and counts how many times each key is read and how many
@@ -510,6 +512,76 @@ describe('StorageController', () => {
       const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {})
 
       expect(await storageCtrl.get('functionSelectors')).toBeUndefined()
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+  })
+
+  describe('removeErc7730RegistryCache', () => {
+    const MIGRATION_KEY = 'removeErc7730RegistryCache'
+
+    test('removes the ERC-7730 descriptors cached from the relayer', async () => {
+      const storage = produceMemoryStore()
+      const storageCtrl = await bootWithPendingMigrations(
+        [MIGRATION_KEY],
+        {
+          erc7730RegistryCache: {
+            calldataIndex: { value: {}, fetchedAt: 1 },
+            eip712Index: null,
+            descriptors: {}
+          }
+        },
+        storage
+      )
+      // Read through the controller, so that it waits for the migrations to complete
+      const passed = await storageCtrl.get('passedMigrations', [])
+
+      // Read from the raw storage without the key's type, as the key is no longer in `StorageProps`
+      const getRemovedKey = storage.get as (key: string, defaultValue: null) => Promise<unknown>
+      expect(await getRemovedKey('erc7730RegistryCache', null)).toBeNull()
+      expect(passed).toContain(MIGRATION_KEY)
+    })
+
+    test('marks the migration passed when there is no cache', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {})
+
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+  })
+
+  describe('removeClearSigningFeatureFlag', () => {
+    const MIGRATION_KEY = 'removeClearSigningFeatureFlag'
+
+    test('removes only the clear signing flag and keeps the rest as they are', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {
+        flags: { clearSigning: false, tokenPrices: false, gasTank: true }
+      })
+
+      expect(await storageCtrl.get('flags', {})).toEqual({ tokenPrices: false, gasTank: true })
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+
+    test('writes only the migration marker when the flags have no clear signing flag', async () => {
+      const counting = produceCountingStore()
+      await counting.store.set(
+        'passedMigrations',
+        ALL_MIGRATION_KEYS.filter((key) => key !== MIGRATION_KEY)
+      )
+      await counting.store.set('flags', { tokenPrices: false })
+      counting.reset()
+
+      const storageCtrl = new StorageController(counting.store)
+      const passed = await storageCtrl.get('passedMigrations', [])
+
+      // The single write is the `passedMigrations` marker, `flags` is left as it was.
+      expect(counting.setCount()).toBe(1)
+      expect(passed).toContain(MIGRATION_KEY)
+      expect(await storageCtrl.get('flags', {})).toEqual({ tokenPrices: false })
+    })
+
+    test('stores no flags when none were saved', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {})
+
+      expect(await storageCtrl.get('flags')).toBeUndefined()
       expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
     })
   })

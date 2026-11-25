@@ -54,7 +54,14 @@ import {
   getUniqueMergedPositions,
   mergeDefiUpdateModes
 } from '../../libs/defiPositions/defiPositions'
-import { getHeldTokenAddresses, getRpcDefiPositions } from '../../libs/defiPositions/rpc'
+import {
+  getHeldCollectibles,
+  getHeldTokenAddresses,
+  getReusableRpcDefiRead,
+  getRpcDefiPositions
+} from '../../libs/defiPositions/rpc'
+import { getUniswapV2PairsFromApiPositions } from '../../libs/defiPositions/rpc/uniswapV2/uniswapV2'
+import { getUniswapV4NftsFromApiPositions } from '../../libs/defiPositions/rpc/uniswapV4/uniswapV4'
 import {
   NetworksWithPositions,
   NetworksWithPositionsByAccounts,
@@ -1817,7 +1824,9 @@ export class PortfolioController
       // changed here, so if this update fails, the positions and the total balance shown stay in
       // sync. Read before the discovery call, so both use the same value of the setting (and so
       // does the read of the positions from the chain).
-      const isAutoDiscoveryEnabled = this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')
+      const isAutoDiscoveryEnabled = this.#featureFlags.isFeatureEnabled(
+        'tokenAndDefiAutoDiscovery'
+      )
       const previousResult = isAutoDiscoveryEnabled
         ? state.result
         : PortfolioController.#withoutApiDefiPositions(state.result)
@@ -1831,6 +1840,30 @@ export class PortfolioController
         defiMaxDataAgeMs,
         hasKeys: portfolioProps.hasKeys
       })
+      const apiDefiPositions = discoveryData?.data?.defi?.positions
+      // The API leaves the NFTs of the Uniswap v4 positions out of its NFT hints, so they are
+      // learned from its positions. This update's hints include them, and they are learned once
+      // the portfolio finds them in the account, so the positions can still be read from the chain
+      // after auto discovery is turned off
+      if (apiDefiPositions) {
+        this.hints.addErc721sToBeLearned(
+          getUniswapV4NftsFromApiPositions(apiDefiPositions, network.chainId),
+          account.addr,
+          network.chainId
+        )
+        // The same goes for the liquidity tokens of the Uniswap V2 positions. Only those not in the
+        // portfolio yet are added, as the tokens to be learned are shown to every account of the
+        // network until they are learned, even without a balance
+        const portfolioTokenAddresses = new Set(
+          (previousResult?.tokens || []).map(({ address }) => address.toLowerCase())
+        )
+        this.hints.addTokensToBeLearned(
+          getUniswapV2PairsFromApiPositions(apiDefiPositions, network.chainId).filter(
+            (pairAddress) => !portfolioTokenAddresses.has(pairAddress)
+          ),
+          network.chainId
+        )
+      }
       await yieldToMain()
       const allHints = this.hints.getAllHints(
         account.addr,
@@ -1854,8 +1887,27 @@ export class PortfolioController
         delete state.verification
       }
 
-      // Fetch the portfolio and custom defi positions in parallel
-      const [portfolioResult, customPositionsResult] = await Promise.all([
+      const previousDefiState = previousResult?.defiPositions
+      const reusableRpcDefiRead = getReusableRpcDefiRead({
+        previousState: previousDefiState,
+        isManualUpdate: !!isManualUpdate,
+        bypassServerSideCache: !!bypassServerSideCache,
+        hasNonceChangedSinceLastUpdate: getHasNonceChangedSinceLastUpdate(
+          previousDefiState,
+          this.#getNonceId(account, network.chainId)
+        ),
+        maxDataAgeMs: defiMaxDataAgeMs
+      })
+
+      if (reusableRpcDefiRead) {
+        this.debugLog(
+          'defi',
+          `${network.chainId.toString()}: Reusing the DeFi positions read from the chain for ${account.addr}`,
+          () => ({ readAt: reusableRpcDefiRead.readAt, defiMaxDataAgeMs })
+        )
+      }
+
+      const getPortfolio = () =>
         portfolioLib.get(account.addr, {
           knownTokenMetadata: this.hints.getKnownTokenMetadata(network.chainId),
           knownCollectionMetadata: this.hints.getKnownCollectionMetadata(network.chainId),
@@ -1864,18 +1916,41 @@ export class PortfolioController
           ...portfolioProps,
           blockTag: 'both',
           blacklist: this.#blacklist
-        }),
+        })
+      // Some positions are found from the tokens and NFTs the account holds (e.g. Morpho vaults
+      // and Uniswap pairs), which are taken from `heldAssets`
+      const readRpcDefiPositions = (
+        heldAssets: Pick<PortfolioNetworkResult, 'tokens' | 'collections'> | undefined
+      ) =>
         getRpcDefiPositions(this.#tokenPrices, {
           accountAddr: account.addr,
           provider: portfolioLib.provider,
           network,
-          // The tokens of this update aren't fetched yet, so those of the previous one are used
-          heldTokenAddresses: getHeldTokenAddresses(previousResult?.tokens),
-          previousPositions: previousResult?.defiPositions.positionsByProvider || [],
+          heldTokenAddresses: getHeldTokenAddresses(heldAssets?.tokens),
+          heldCollectibles: getHeldCollectibles(heldAssets?.collections),
+          previousPositions: previousDefiState?.positionsByProvider || [],
           apiPositions: discoveryData?.data?.defi?.positions,
-          isAutoDiscoveryEnabled
+          isAutoDiscoveryEnabled,
+          reusableRead: reusableRpcDefiRead
         })
-      ])
+
+      // Without a previous update to take the tokens from (e.g. right after the extension starts,
+      // as the portfolio isn't stored), the positions are read after the portfolio. Otherwise the
+      // positions found from the tokens would be missing, and the read without them would be
+      // reused by the next updates. Only with auto discovery off, as the protocols read with it on
+      // don't need the tokens
+      const getPortfolioThenRpcDefiPositions = async () => {
+        const portfolio = await getPortfolio()
+
+        return [portfolio, await readRpcDefiPositions(portfolio)] as const
+      }
+      const canReadInParallel = !!previousResult || isAutoDiscoveryEnabled
+
+      // Fetch the portfolio and custom defi positions in parallel when possible. The tokens of
+      // this update aren't fetched yet, so those of the previous one are used
+      const [portfolioResult, customPositionsResult] = canReadInParallel
+        ? await Promise.all([getPortfolio(), readRpcDefiPositions(previousResult)])
+        : await getPortfolioThenRpcDefiPositions()
 
       const stkWalletToken =
         portfolioResult.tokens.find(
@@ -1890,9 +1965,7 @@ export class PortfolioController
       const newDefiState = getNewDefiState(
         previousResult,
         discoveryData,
-        customPositionsResult.positionsByProvider,
-        customPositionsResult.error || null,
-        customPositionsResult.providerErrors,
+        customPositionsResult,
         stkWalletToken,
         this.#getNonceId(account, network.chainId)
       )
@@ -2229,7 +2302,10 @@ export class PortfolioController
         if (!result) return
 
         if ('updateStarted' in result) result.updateStarted = 0
-        if ('defiPositions' in result) delete result.defiPositions.lastSuccessfulUpdate
+        if (!('defiPositions' in result)) return
+
+        delete result.defiPositions.lastSuccessfulUpdate
+        delete result.defiPositions.rpcRead
       })
     })
   }

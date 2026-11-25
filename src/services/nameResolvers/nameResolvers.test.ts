@@ -172,6 +172,18 @@ describe('isNameExpiryStale (generic staleness policy)', () => {
     }
     expect(isNameExpiryStale(closeStale)).toBe(true)
   })
+
+  it('refetches a stale cache inside the warn window even when the grace period ends much later', () => {
+    // A .eth name 30 days before expiry, with ENS's 90-day grace period after it
+    const DAY = 24 * 60 * 60 * 1000
+    const expiresAt = Date.now() + 30 * DAY
+    const renewableName: NameExpiry = {
+      expiresAt,
+      gracePeriodEndsAt: expiresAt + 90 * DAY,
+      updatedAt: Date.now() - EXPIRY_CLOSE_TO_DEADLINE_POLL_IN_MS - 60_000
+    }
+    expect(isNameExpiryStale(renewableName)).toBe(true)
+  })
 })
 
 describe('EnsResolver shouldRefetchExpiry', () => {

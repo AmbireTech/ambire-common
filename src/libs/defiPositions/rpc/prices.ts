@@ -5,14 +5,19 @@ import { getUsdPriceIn } from '../../portfolio/helpers'
 import { TokenDataCacheValue } from '../../portfolio/interfaces'
 import { getAssetValue, getProviderId } from '../helpers'
 import { AssetType, PositionAsset, PositionsByProvider } from '../types'
+import { AAVE_V3_PROVIDER_NAME } from './aaveV3/aaveV3'
+import { AAVE_V4_PROVIDER_NAME } from './aaveV4/aaveV4'
 
 // This function is separated to its own file to allow mocking in the
 // portfolio controller test. If the function is in the same file as
 // the logic that reads the positions from the chain (`rpc/index.ts`), it's referenced directly from the
 // file scope and mocking doesn't work.
 
-// Aave positions are priced by the Aave oracle in the corresponding lib
-const getIsPricedByProvider = (providerName: string) => getProviderId(providerName).includes('aave')
+// The Aave v3 and v4 positions are priced by the Aave oracle in the corresponding lib. Not those of
+// Aave v2, whose oracle prices in ETH on some networks
+const PROVIDERS_PRICED_BY_ORACLE = [AAVE_V3_PROVIDER_NAME, AAVE_V4_PROVIDER_NAME].map(getProviderId)
+const getIsPricedByProvider = (providerName: string) =>
+  PROVIDERS_PRICED_BY_ORACLE.includes(getProviderId(providerName))
 
 const getIsMissingPrice = (asset: PositionAsset): asset is PositionAsset & { address: string } =>
   !!asset.address && !asset.priceIn

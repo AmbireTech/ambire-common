@@ -1,6 +1,6 @@
 import { Network } from '../../../interfaces/network'
 import { RPCProvider } from '../../../interfaces/provider'
-import { DeFiPositionsError, PositionsByProvider, ProviderError } from '../types'
+import { DeFiPositionsError, PositionsByProvider, ProviderError, RpcDefiRead } from '../types'
 
 /** What every protocol needs to read the positions of an account from the chain */
 export type RpcFetchParams = {
@@ -12,6 +12,11 @@ export type RpcFetchParams = {
    * token (e.g. the shares of a Morpho vault)
    */
   heldTokenAddresses: string[]
+  /**
+   * The ids of the NFTs the account holds on the network, by lowercased collection address, as
+   * some positions are represented by an NFT (e.g. the positions of Uniswap v4)
+   */
+  heldCollectibles: { [collectionAddress: string]: bigint[] }
 }
 
 /**
@@ -42,4 +47,9 @@ export type RpcDefiPositionsResult = {
   positionsByProvider: PositionsByProvider[]
   providerErrors: ProviderError[]
   error?: DeFiPositionsError | null
+  /**
+   * The read the positions come from - a new one or one reused from a previous update. Missing
+   * if a protocol failed to read, so the next update reads them all again
+   */
+  rpcRead?: RpcDefiRead
 }

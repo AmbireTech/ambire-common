@@ -1,21 +1,34 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
+import { suppressConsole } from '../../../../test/helpers/console'
 import { networks } from '../../../consts/networks'
 import { ITokenPricesController } from '../../../interfaces/tokenPrices'
 import { RPCProvider } from '../../../interfaces/provider'
 import { TokenDataCacheValue } from '../../portfolio/interfaces'
 import { DEBANK_UNI_V3 } from '../testData'
-import { AssetType, PositionsByProvider } from '../types'
+import {
+  AssetType,
+  DeFiPositionsError,
+  NetworkState,
+  PositionsByProvider,
+  RpcDefiRead
+} from '../types'
+import { aaveV2DefiProvider } from './aaveV2/aaveV2'
 import { aaveV3DefiProvider } from './aaveV3/aaveV3'
-import { TokenResult } from '../../portfolio/interfaces'
+import { CollectionResult, TokenResult } from '../../portfolio/interfaces'
 import {
   ALWAYS_FETCHED_PROVIDERS,
   FETCHED_WITHOUT_API_PROVIDERS,
+  getHeldCollectibles,
   getHeldTokenAddresses,
+  getReusableRpcDefiRead,
   getRpcDefiPositions
 } from './index'
+import { aaveV4DefiProvider } from './aaveV4/aaveV4'
 import { morphoDefiProvider } from './morpho/morpho'
+import { uniswapV2DefiProvider } from './uniswapV2/uniswapV2'
 import { uniswapV3DefiProvider } from './uniswapV3/uniswapV3'
+import { uniswapV4DefiProvider } from './uniswapV4/uniswapV4'
 
 const polygon = networks.find((n) => n.chainId === 137n)!
 const ACCOUNT = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -73,6 +86,10 @@ const mockFetchedPositions = (positions: {
   aave?: PositionsByProvider | null | Error
   uniswap?: PositionsByProvider | null | Error
   morpho?: PositionsByProvider | null | Error
+  aaveV4?: PositionsByProvider | null | Error
+  uniswapV4?: PositionsByProvider | null | Error
+  uniswapV2?: PositionsByProvider | null | Error
+  aaveV2?: PositionsByProvider | null | Error
 }) => {
   const toImplementation = (result: PositionsByProvider | null | Error | undefined) => async () => {
     if (result instanceof Error) throw result
@@ -88,7 +105,19 @@ const mockFetchedPositions = (positions: {
       .mockImplementation(toImplementation(positions.uniswap)),
     morphoSpy: jest
       .spyOn(morphoDefiProvider, 'fetchPositions')
-      .mockImplementation(toImplementation(positions.morpho))
+      .mockImplementation(toImplementation(positions.morpho)),
+    aaveV4Spy: jest
+      .spyOn(aaveV4DefiProvider, 'fetchPositions')
+      .mockImplementation(toImplementation(positions.aaveV4)),
+    uniswapV4Spy: jest
+      .spyOn(uniswapV4DefiProvider, 'fetchPositions')
+      .mockImplementation(toImplementation(positions.uniswapV4)),
+    uniswapV2Spy: jest
+      .spyOn(uniswapV2DefiProvider, 'fetchPositions')
+      .mockImplementation(toImplementation(positions.uniswapV2)),
+    aaveV2Spy: jest
+      .spyOn(aaveV2DefiProvider, 'fetchPositions')
+      .mockImplementation(toImplementation(positions.aaveV2))
   }
 }
 
@@ -102,9 +131,11 @@ const callGetRpcDefiPositions = (
     provider: rpcProvider,
     network: polygon,
     heldTokenAddresses: [],
+    heldCollectibles: {},
     previousPositions: [],
     apiPositions: [],
     isAutoDiscoveryEnabled: true,
+    reusableRead: null,
     ...params
   })
 }
@@ -125,21 +156,37 @@ describe('getRpcDefiPositions', () => {
   })
 
   test('the protocols the API returns fully are read from the chain only without the API', () => {
-    expect(FETCHED_WITHOUT_API_PROVIDERS.map(({ name }) => name)).toEqual(['Morpho'])
+    expect(FETCHED_WITHOUT_API_PROVIDERS.map(({ name }) => name)).toEqual([
+      'Morpho',
+      'AAVE v4',
+      'Uniswap V4',
+      'Uniswap V2',
+      'AAVE v2'
+    ])
   })
 
   test('passes the tokens the account holds to the protocols', async () => {
-    const { morphoSpy } = mockFetchedPositions({})
+    const { morphoSpy, uniswapV2Spy } = mockFetchedPositions({})
     const heldTokenAddresses = ['0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270']
 
     await callGetRpcDefiPositions({ isAutoDiscoveryEnabled: false, heldTokenAddresses })
 
     expect(morphoSpy).toHaveBeenCalledWith(expect.objectContaining({ heldTokenAddresses }))
+    expect(uniswapV2Spy).toHaveBeenCalledWith(expect.objectContaining({ heldTokenAddresses }))
+  })
+
+  test('passes the NFTs the account holds to the protocols', async () => {
+    const { uniswapV4Spy } = mockFetchedPositions({})
+    const heldCollectibles = { '0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e': [1n] }
+
+    await callGetRpcDefiPositions({ isAutoDiscoveryEnabled: false, heldCollectibles })
+
+    expect(uniswapV4Spy).toHaveBeenCalledWith(expect.objectContaining({ heldCollectibles }))
   })
 
   describe('with auto discovery on', () => {
     test('reads only the protocols that are always read from the chain', async () => {
-      const { aaveSpy, uniswapSpy, morphoSpy } = mockFetchedPositions({
+      const { aaveSpy, uniswapSpy, morphoSpy, aaveV4Spy } = mockFetchedPositions({
         morpho: getPositions('Morpho', 'custom')
       })
 
@@ -148,6 +195,7 @@ describe('getRpcDefiPositions', () => {
       expect(aaveSpy).toHaveBeenCalledTimes(1)
       expect(uniswapSpy).toHaveBeenCalledTimes(1)
       expect(morphoSpy).not.toHaveBeenCalled()
+      expect(aaveV4Spy).not.toHaveBeenCalled()
       expect(res.positionsByProvider).toEqual([])
     })
     test('merges the positions with those of the API', async () => {
@@ -204,14 +252,19 @@ describe('getRpcDefiPositions', () => {
   describe('with auto discovery off', () => {
     test('reads all the protocols from the chain', async () => {
       const morpho = getPositions('Morpho', 'custom')
-      const { aaveSpy, uniswapSpy, morphoSpy } = mockFetchedPositions({ morpho })
+      const rpcAaveV4 = getPositions('AAVE v4', 'custom')
+      const { aaveSpy, uniswapSpy, morphoSpy, aaveV4Spy } = mockFetchedPositions({
+        morpho,
+        aaveV4: rpcAaveV4
+      })
 
       const res = await callGetRpcDefiPositions({ isAutoDiscoveryEnabled: false })
 
       expect(aaveSpy).toHaveBeenCalledTimes(1)
       expect(uniswapSpy).toHaveBeenCalledTimes(1)
       expect(morphoSpy).toHaveBeenCalledTimes(1)
-      expect(res.positionsByProvider).toEqual([morpho])
+      expect(aaveV4Spy).toHaveBeenCalledTimes(1)
+      expect(res.positionsByProvider).toEqual([morpho, rpcAaveV4])
     })
     test('never merges with API positions, new or previous', async () => {
       const apiUniV3 = DEBANK_UNI_V3[0]!
@@ -231,6 +284,165 @@ describe('getRpcDefiPositions', () => {
 
       expect(mergeSpy).not.toHaveBeenCalled()
       expect(getUniswapV3(res.positionsByProvider)).toEqual(rpcUniV3)
+    })
+  })
+
+  describe('the read', () => {
+    test('has what each protocol read, before it was merged with the API positions', async () => {
+      const apiUniV3 = DEBANK_UNI_V3[0]!
+      const rpcUniV3 = getPositions(
+        'Uniswap V3',
+        'custom',
+        apiUniV3.positions[0]!.additionalData.positionIndex
+      )
+      mockFetchedPositions({ uniswap: rpcUniV3 })
+      const readStartedAt = Date.now()
+
+      const res = await callGetRpcDefiPositions({ apiPositions: [apiUniV3] })
+
+      expect(getUniswapV3(res.positionsByProvider)?.source).toBe('mixed')
+      expect(res.rpcRead?.positionsByProviderName).toEqual({
+        'AAVE v3': null,
+        'Uniswap V3': rpcUniV3
+      })
+      expect(res.rpcRead?.readAt).toBeGreaterThanOrEqual(readStartedAt)
+    })
+    test('is left out when a protocol fails, so the next update reads them all again', async () => {
+      mockFetchedPositions({ morpho: new Error('Morpho error') })
+
+      const res = await callGetRpcDefiPositions({ isAutoDiscoveryEnabled: false })
+
+      expect(res.rpcRead).toBeUndefined()
+    })
+    test('is kept when an asset cannot be priced, as the price is requested on every update', async () => {
+      const { restore } = suppressConsole()
+      const rpcUniV3 = getPositions('Uniswap V3', 'custom')
+      delete rpcUniV3.positions[0]!.assets[0]!.priceIn
+      mockFetchedPositions({ uniswap: rpcUniV3 })
+      const failingTokenPrices = {
+        getTokenData: jest.fn(async () => ({
+          tokenData: new Map<string, TokenDataCacheValue>(),
+          error: new Error('Prices error')
+        }))
+      } as unknown as ITokenPricesController
+
+      const res = await getRpcDefiPositions(failingTokenPrices, {
+        accountAddr: ACCOUNT,
+        provider: rpcProvider,
+        network: polygon,
+        heldTokenAddresses: [],
+        heldCollectibles: {},
+        previousPositions: [],
+        apiPositions: undefined,
+        isAutoDiscoveryEnabled: false,
+        reusableRead: null
+      })
+      restore()
+
+      expect(res.error).toBe(DeFiPositionsError.AssetPriceError)
+      expect(res.rpcRead).toBeDefined()
+    })
+  })
+
+  describe('with a previous read to reuse', () => {
+    const getRead = (positionsByProviderName: RpcDefiRead['positionsByProviderName']) => ({
+      positionsByProviderName,
+      readAt: 1
+    })
+
+    test('takes the positions from the read instead of the chain', async () => {
+      const rpcAave = getPositions('AAVE v3', 'custom')
+      const rpcMorpho = getPositions('Morpho', 'custom')
+      const { aaveSpy, uniswapSpy, morphoSpy, aaveV4Spy } = mockFetchedPositions({})
+
+      const res = await callGetRpcDefiPositions({
+        isAutoDiscoveryEnabled: false,
+        reusableRead: getRead({
+          'AAVE v3': rpcAave,
+          'Uniswap V3': null,
+          Morpho: rpcMorpho,
+          'AAVE v4': null,
+          'Uniswap V4': null,
+          'Uniswap V2': null,
+          'AAVE v2': null
+        })
+      })
+
+      expect(aaveSpy).not.toHaveBeenCalled()
+      expect(uniswapSpy).not.toHaveBeenCalled()
+      expect(morphoSpy).not.toHaveBeenCalled()
+      expect(aaveV4Spy).not.toHaveBeenCalled()
+      expect(res.positionsByProvider).toEqual([rpcAave, rpcMorpho])
+    })
+    test('merges the read with the new API positions, so what only the chain has is kept', async () => {
+      const apiUniV3 = DEBANK_UNI_V3[0]!
+      const rpcUniV3 = getPositions(
+        'Uniswap V3',
+        'custom',
+        apiUniV3.positions[0]!.additionalData.positionIndex
+      )
+      rpcUniV3.positions[0]!.additionalData.inRange = true
+      const { uniswapSpy } = mockFetchedPositions({})
+
+      const res = await callGetRpcDefiPositions({
+        apiPositions: [apiUniV3],
+        reusableRead: getRead({ 'AAVE v3': null, 'Uniswap V3': rpcUniV3 })
+      })
+      const uniswapV3 = getUniswapV3(res.positionsByProvider)
+
+      expect(uniswapSpy).not.toHaveBeenCalled()
+      expect(uniswapV3?.source).toBe('mixed')
+      expect(uniswapV3?.positions[0]!.additionalData.inRange).toBe(true)
+    })
+    test('reads the protocols the read does not have (made while auto discovery was on)', async () => {
+      const rpcMorpho = getPositions('Morpho', 'custom')
+      const { aaveSpy, uniswapSpy, morphoSpy, aaveV4Spy } = mockFetchedPositions({
+        morpho: rpcMorpho
+      })
+
+      const res = await callGetRpcDefiPositions({
+        isAutoDiscoveryEnabled: false,
+        reusableRead: getRead({ 'AAVE v3': null, 'Uniswap V3': null })
+      })
+
+      expect(aaveSpy).not.toHaveBeenCalled()
+      expect(uniswapSpy).not.toHaveBeenCalled()
+      expect(morphoSpy).toHaveBeenCalledTimes(1)
+      expect(aaveV4Spy).toHaveBeenCalledTimes(1)
+      expect(res.positionsByProvider).toEqual([rpcMorpho])
+    })
+    test('keeps the time of the read, so it is not reused for longer than allowed', async () => {
+      mockFetchedPositions({})
+
+      const res = await callGetRpcDefiPositions({
+        reusableRead: getRead({ 'AAVE v3': null, 'Uniswap V3': null })
+      })
+
+      expect(res.rpcRead?.readAt).toBe(1)
+    })
+    test('prices the assets of the read that have no price', async () => {
+      const rpcUniV3 = getPositions('Uniswap V3', 'custom')
+      delete rpcUniV3.positions[0]!.assets[0]!.priceIn
+      mockFetchedPositions({})
+      const { tokenPrices, getTokenData } = createTokenPrices()
+
+      const res = await getRpcDefiPositions(tokenPrices, {
+        accountAddr: ACCOUNT,
+        provider: rpcProvider,
+        network: polygon,
+        heldTokenAddresses: [],
+        heldCollectibles: {},
+        previousPositions: [],
+        apiPositions: [],
+        isAutoDiscoveryEnabled: true,
+        reusableRead: getRead({ 'AAVE v3': null, 'Uniswap V3': rpcUniV3 })
+      })
+
+      expect(getTokenData).toHaveBeenCalledTimes(1)
+      expect(getUniswapV3(res.positionsByProvider)?.positions[0]!.assets[0]!.priceIn).toEqual({
+        baseCurrency: 'usd',
+        price: 1
+      })
     })
   })
 
@@ -360,9 +572,11 @@ describe('getRpcDefiPositions', () => {
       provider: rpcProvider,
       network: polygon,
       heldTokenAddresses: [],
+      heldCollectibles: {},
       previousPositions: [],
       apiPositions: [],
-      isAutoDiscoveryEnabled: true
+      isAutoDiscoveryEnabled: true,
+      reusableRead: null
     })
 
     expect(getTokenData).toHaveBeenCalledTimes(1)
@@ -370,6 +584,93 @@ describe('getRpcDefiPositions', () => {
       baseCurrency: 'usd',
       price: 1
     })
+  })
+})
+
+describe('getReusableRpcDefiRead', () => {
+  const ONE_MINUTE = 60 * 1000
+  const getRead = (readAt = Date.now() - ONE_MINUTE): RpcDefiRead => ({
+    positionsByProviderName: { Morpho: getPositions('Morpho', 'custom') },
+    readAt
+  })
+  // Without a read, as the last one failed
+  const getPreviousState = (rpcRead?: RpcDefiRead): NetworkState => ({
+    positionsByProvider: [getPositions('Morpho', 'custom')],
+    rpcRead,
+    error: null,
+    providerErrors: []
+  })
+  // An update that doesn't need fresh DeFi positions, like the periodic one
+  const callGetReusableRpcDefiRead = (
+    params: Partial<Parameters<typeof getReusableRpcDefiRead>[0]> = {}
+  ) =>
+    getReusableRpcDefiRead({
+      previousState: getPreviousState(getRead()),
+      isManualUpdate: false,
+      bypassServerSideCache: false,
+      hasNonceChangedSinceLastUpdate: false,
+      maxDataAgeMs: -1,
+      ...params
+    })
+
+  test('reuses the previous read on an update that does not need fresh positions', () => {
+    const rpcRead = getRead(1)
+
+    expect(callGetReusableRpcDefiRead({ previousState: getPreviousState(rpcRead) })).toBe(rpcRead)
+  })
+  test('reuses the previous read while it is younger than maxDataAgeMs', () => {
+    expect(callGetReusableRpcDefiRead({ maxDataAgeMs: 2 * ONE_MINUTE })).not.toBeNull()
+  })
+  test('reads the positions again once the read is older than maxDataAgeMs', () => {
+    expect(callGetReusableRpcDefiRead({ maxDataAgeMs: ONE_MINUTE / 2 })).toBeNull()
+  })
+  test('reads the positions again when fresh ones are requested (maxDataAgeMs of 0)', () => {
+    expect(
+      callGetReusableRpcDefiRead({
+        previousState: getPreviousState(getRead(Date.now())),
+        maxDataAgeMs: 0
+      })
+    ).toBeNull()
+  })
+  test('reads the positions again when the user refreshes', () => {
+    expect(callGetReusableRpcDefiRead({ isManualUpdate: true })).toBeNull()
+  })
+  test('reads the positions again after a transaction or a signed message (scheduled update)', () => {
+    expect(callGetReusableRpcDefiRead({ bypassServerSideCache: true })).toBeNull()
+  })
+  test('reads the positions again when the account sent a transaction', () => {
+    expect(callGetReusableRpcDefiRead({ hasNonceChangedSinceLastUpdate: true })).toBeNull()
+  })
+  test('reads the positions on the first update', () => {
+    expect(callGetReusableRpcDefiRead({ previousState: undefined })).toBeNull()
+  })
+  test('retries a read that failed', () => {
+    expect(callGetReusableRpcDefiRead({ previousState: getPreviousState() })).toBeNull()
+  })
+})
+
+describe('getHeldCollectibles', () => {
+  const collection = (address: string, collectibles: bigint[]) =>
+    ({ address, collectibles }) as CollectionResult
+
+  test('returns the ids of the NFTs the account holds, by lowercased collection address', () => {
+    expect(
+      getHeldCollectibles([
+        collection('0xBD216513d74C8cf14cf4747E6AaA6420FF64ee9e', [1n, 2n]),
+        collection('0x0000000000000000000000000000000000000001', [3n])
+      ])
+    ).toEqual({
+      '0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e': [1n, 2n],
+      '0x0000000000000000000000000000000000000001': [3n]
+    })
+  })
+
+  test('leaves out collections without NFTs', () => {
+    expect(getHeldCollectibles([collection('0x01', [])])).toEqual({})
+  })
+
+  test('returns nothing without collections', () => {
+    expect(getHeldCollectibles(undefined)).toEqual({})
   })
 })
 

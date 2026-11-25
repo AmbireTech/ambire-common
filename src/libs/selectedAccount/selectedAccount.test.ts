@@ -1,7 +1,7 @@
 import { getTotal } from '../portfolio/helpers'
 import { AccountState, PortfolioNetworkResult } from '../portfolio/interfaces'
-
 import { PORTFOLIO_STATE } from '../portfolio/testData'
+import { getPendingDeliveryKey } from '../swapAndBridge/pendingDeliveries'
 import { calculateSelectedAccountPortfolio, stripPortfolioState } from './selectedAccount'
 
 describe('Selected Account lib', () => {
@@ -61,14 +61,54 @@ describe('Selected Account lib', () => {
         expect(withLoans.balancePerNetwork['1']).toBeCloseTo(netEthereumBalance + 30)
         expect(withLoans.totalBalance).toBeCloseTo(withoutLoans.totalBalance + 30)
         expect(withLoans.balancePerNetwork['8453']).toBe(withoutLoans.balancePerNetwork['8453'])
-        // The DeFi tab shows the value the total counts
+        // The DeFi tab shows the value the total counts for the app
         const getAave = ({ defiPositions }: typeof withLoans) =>
           defiPositions.find(({ providerName }) => providerName === 'AAVE v3')!
         expect(getAave(withoutLoans).balanceInUSD).toBe(170)
         expect(getAave(withLoans).balanceInUSD).toBe(200)
+        // Its position always shows what it supplied, as it lists the loans subtracted from the app
         expect(getAave(withLoans).positions[0]!.balanceInUSD).toBe(200)
+        expect(getAave(withoutLoans).positions[0]!.balanceInUSD).toBe(200)
       }
     )
+    it('sets the pending delivery amount on a copy of the token, without changing the totals', () => {
+      const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
+      const stateToken = clonedPortfolioLatestState['1']!.result!.tokens.find(
+        (token) => !token.flags.onGasTank && !token.flags.rewardsType
+      )!
+      const pendingDeliveries = {
+        [getPendingDeliveryKey(stateToken.chainId, stateToken.address)]: {
+          amount: 1000n,
+          activeRouteIds: ['bridge']
+        }
+      }
+
+      const withoutDeliveries = calculateSelectedAccountPortfolio(
+        clonedPortfolioLatestState,
+        false,
+        true,
+        false
+      )
+      const withDeliveries = calculateSelectedAccountPortfolio(
+        clonedPortfolioLatestState,
+        false,
+        true,
+        false,
+        pendingDeliveries
+      )
+      const resultToken = withDeliveries.tokens.find(
+        (token) =>
+          token.chainId === stateToken.chainId &&
+          token.address === stateToken.address &&
+          !token.flags.onGasTank &&
+          !token.flags.rewardsType
+      )
+
+      expect(resultToken?.pendingDeliveryAmount).toBe(1000n)
+      // The portfolio state is shared with other controllers, which must not count the delivery
+      expect(stateToken).not.toHaveProperty('pendingDeliveryAmount')
+      expect(withDeliveries.totalBalance).toBe(withoutDeliveries.totalBalance)
+    })
     it('should flip isReadyToVisualize to true if the portfolio has been loading for more than 5 seconds', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
 

@@ -376,6 +376,19 @@ describe('cancel queued transaction', () => {
     compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
 
+  test('an empty self-call among other calls is not labeled as a cancel', () => {
+    // only a whole transaction can be a cancel, an empty call in a batch cancels nothing
+    const emptySelfCall = { to: accountOp.accountAddr, value: 0n, data: '0x' }
+    const batchAccountOp: AccountOp = {
+      ...accountOp,
+      nonce: 5n,
+      calls: [emptySelfCall, { to: zeroAddress, value: 1n, data: '0x' }]
+    }
+    const irCall = SafeModule(batchAccountOp, emptySelfCall, humanizerInfo as HumanizerMeta)
+
+    expect(irCall.fullVisualization?.[0]?.content).not.toBe('Cancel')
+  })
+
   test('a call to the zero address is labeled with its nonce', () => {
     const cancelAccountOp: AccountOp = { ...accountOp, nonce: 5n }
     const cancelCall = {

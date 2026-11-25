@@ -132,6 +132,13 @@ export interface HumanizerWarning {
   blocking?: boolean
   code: string
   address?: string
+  /** A short title, for where the warning is shown on its own (e.g. when it has to be confirmed) */
+  title?: string
+  /**
+   * Whether the user has to confirm the warning before signing. Only the sign message screen
+   * reads it (the sign transaction screen confirms its own warnings, see `Warning.promptBefore`)
+   */
+  promptBefore?: 'sign'[]
 }
 export interface Ir {
   calls: IrCall[]

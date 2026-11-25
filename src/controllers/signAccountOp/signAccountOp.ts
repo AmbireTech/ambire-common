@@ -59,7 +59,8 @@ import {
   ExternalSignerControllers,
   IKeystoreController,
   InternalKey,
-  Key
+  Key,
+  KeystoreSignerInterface
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -202,6 +203,7 @@ import {
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
   getSafeGasRefundWarning,
+  getSafeTxNotShownAsCallsWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
@@ -343,6 +345,13 @@ export class SignAccountOpController
    * in requests/actions.
    */
   #accountOp: AccountOp
+
+  /**
+   * Set when the calls of a Safe transaction from the Safe Transaction Service aren't exactly
+   * what gets signed. Kept up to date with the account op, so the banners getter doesn't have
+   * to encode the calls again on every update
+   */
+  #safeTxNotShownAsCallsWarning: Warning | null = null
 
   #customSafeNonce: bigint | null = null
 
@@ -605,6 +614,13 @@ export class SignAccountOpController
   #replacement?: TxnReplacement
 
   /**
+   * Set when the user cancels the signing, which rejects the request waiting on the device
+   * (e.g. "Operation cancelled by user"). That rejection is only logged, not shown as an error.
+   * Cleared when signing starts again
+   */
+  #isSigningCancelledByUser = false
+
+  /**
    * An earlier sent op that is not confirmed yet and holds a nonce this op needs, and the
    * account op to replace it with, when this op can (see `replacePendingAccountOp`). Null when
    * nothing holds this op back, and during a speed up or a cancel, as they take no new nonce.
@@ -711,6 +727,7 @@ export class SignAccountOpController
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
+    this.#safeTxNotShownAsCallsWarning = getSafeTxNotShownAsCallsWarning(this.#accountOp)
     this.#replacement = replacement
     this.#updateSafeEip712Data()
 
@@ -890,6 +907,8 @@ export class SignAccountOpController
       ...accountOp,
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
+    if (hasUpdatedCalls || 'safeTx' in accountOp)
+      this.#safeTxNotShownAsCallsWarning = getSafeTxNotShownAsCallsWarning(this.#accountOp)
     this.#updateSafeEip712Data()
 
     if (hasUpdatedCalls) void this.#updateFirstTimeRecipients()
@@ -1242,24 +1261,25 @@ export class SignAccountOpController
   }
 
   /**
-   * Runs a signing step and marks `keyType` as the active signing key type.
-   * It intentionally stays set after the step, so the device prompt in the UI
-   * doesn't close and reopen between two device signatures in a row. It's
-   * cleared when sign() or the whole sign and broadcast flow no longer needs a key.
+   * Runs a signing step and marks the type of the signer's key as the active
+   * signing key type. It intentionally stays set after the step, so the device
+   * prompt in the UI doesn't close and reopen between two device signatures in
+   * a row. It's cleared when sign() or the whole sign and broadcast flow no
+   * longer needs a key.
    */
   async #withHardwareWalletSigningRequest<T>(
     request: HardwareWalletSigningRequest | null,
     sign: () => Promise<T>,
-    keyType: Key['type'] | null = this.accountOp.signingKeyType
+    signer: KeystoreSignerInterface
   ) {
-    this.activeSigningKeyType = keyType
+    this.activeSigningKeyType = signer.key.type
 
     if (!request) {
       this.emitUpdate()
       return sign()
     }
 
-    this.#setHardwareWalletSigningRequest(request)
+    this.#setHardwareWalletSigningRequest({ ...request, signerAddr: signer.key.addr })
 
     try {
       return await sign()
@@ -2529,6 +2549,9 @@ export class SignAccountOpController
     }
 
     if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
+    // Shown as a banner (see `banners`), but it's also in the warnings so the user has to confirm
+    // it before signing (see its `promptBefore`)
+    if (this.#safeTxNotShownAsCallsWarning) warnings.push(this.#safeTxNotShownAsCallsWarning)
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
@@ -3609,7 +3632,9 @@ export class SignAccountOpController
       for (let i = 0; i < speeds.length; i++) {
         // we have two prices:
         // receivedPrices, from old lib/bundler
-        // and increasedPrices, which we use for the fee only
+        // and increasedPrices, which we use for the fee only on bundler
+        // broadcasts. On broadcasts by an EOA, increasedPrices are also
+        // signed in the txn, so the fee amount uses them as well
         const speed = speeds[i] as FeeSpeed
         const receivedPrices = gasPrices[speed]
         const increasedPrices = increasedGasPrices[speed]
@@ -3641,7 +3666,10 @@ export class SignAccountOpController
           simulatedGasLimit = getGasLimitWithOverheadForSelfEOA(gasUsed, this.accountOp.calls)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
-          amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
+          // the txn is signed with gasPrice as maxFeePerGas and the network requires
+          // the sender to hold gasLimit * maxFeePerGas upfront, so the fee amount
+          // (which is checked against the balance) must use the same price
+          amountGasPrice = gasPrice
 
           this.accountOp.calls.forEach((call) => {
             if (call.to && getAddress(call.to) === SINGLETON) {
@@ -3654,7 +3682,8 @@ export class SignAccountOpController
           simulatedGasLimit = getGasLimitWithOverhead(gasUsed)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
-          amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
+          // the paying EOA must hold gasLimit * maxFeePerGas upfront
+          amountGasPrice = gasPrice
         } else {
           // Relayer
           simulatedGasLimit = gasUsed + option.gasUsed
@@ -4275,6 +4304,12 @@ export class SignAccountOpController
     signature: Hex
     shouldPropose: boolean
   }) {
+    // Opted out of the Safe API: the signature only stays here. Not a failure, as it's the
+    // user's choice, so signing continues as if it was shared (e.g. sign and close closes).
+    // Read once the flags are loaded, as until then they are the defaults
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#featureFlags.isFeatureEnabled('safeApi')) return
+
     if (shouldPropose) {
       // propose the txn to Safe Global upon first entry
       await withTimeout(
@@ -4405,7 +4440,12 @@ export class SignAccountOpController
     sendCrashReport?: boolean
     accountState?: AccountOnchainState
   }) {
-    this.emitError({ level: 'major', message, error: new Error(message), sendCrashReport })
+    this.emitError({
+      level: this.#isSigningCancelledByUser ? 'silent' : 'major',
+      message,
+      error: new Error(message),
+      sendCrashReport
+    })
     this.status = { type: SigningStatus.ReadyToSign }
 
     this.emitUpdate()
@@ -4672,6 +4712,8 @@ export class SignAccountOpController
   }
 
   async sign() {
+    this.#isSigningCancelledByUser = false
+
     if (!this.readyToSign) {
       const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
@@ -4812,11 +4854,14 @@ export class SignAccountOpController
 
         const { safeTxn, typedData, safeTxnHash, signingRequest } =
           this.#getSafeSigningData(accountState)
-        const signature = (await this.#withHardwareWalletSigningRequest(signingRequest, () =>
-          safeSigner.signTypedData(typedData, {
-            chainId: this.#network.chainId,
-            provider: this.provider
-          })
+        const signature = (await this.#withHardwareWalletSigningRequest(
+          signingRequest,
+          () =>
+            safeSigner.signTypedData(typedData, {
+              chainId: this.#network.chainId,
+              provider: this.provider
+            }),
+          safeSigner
         )) as Hex
 
         // The first free nonce, past this device's own pending txns, still goes out in one click.
@@ -4898,7 +4943,8 @@ export class SignAccountOpController
                   accountState,
                   signer,
                   this.provider
-                )
+                ),
+              signer
             )
           })
         }
@@ -4938,7 +4984,8 @@ export class SignAccountOpController
             contract,
             await this.#withHardwareWalletSigningRequest(
               get7702AuthorizationSigningRequest(authorization),
-              () => signer.sign7702(authorization)
+              () => signer.sign7702(authorization),
+              signer
             )
           )
           if (isExternalSignerInvolved)
@@ -4988,7 +5035,8 @@ export class SignAccountOpController
             contract,
             await this.#withHardwareWalletSigningRequest(
               get7702AuthorizationSigningRequest(authorization),
-              () => signer.sign7702(authorization)
+              () => signer.sign7702(authorization),
+              signer
             )
           )
           if (isExternalSignerInvolved)
@@ -5020,7 +5068,8 @@ export class SignAccountOpController
                 undefined,
                 true,
                 this.provider
-              )
+              ),
+            signer
           )
           if (!this.accountOp.meta) {
             this.#updateAccountOp({ meta: {} })
@@ -5104,11 +5153,14 @@ export class SignAccountOpController
               getUserOpHash(userOperation, this.#network.chainId)
             )
             const signature = wrapStandard(
-              await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-                signer.signTypedData(typedData, {
-                  chainId: this.#network.chainId,
-                  provider: this.provider
-                })
+              await this.#withHardwareWalletSigningRequest(
+                getEIP712SigningRequest(typedData),
+                () =>
+                  signer.signTypedData(typedData, {
+                    chainId: this.#network.chainId,
+                    provider: this.provider
+                  }),
+                signer
               )
             )
             userOperation.signature = signature
@@ -5121,11 +5173,14 @@ export class SignAccountOpController
               getUserOpHash(userOperation, this.#network.chainId)
             )
             const signature = wrapUnprotected(
-              await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-                signer.signTypedData(typedData, {
-                  chainId: this.#network.chainId,
-                  provider: this.provider
-                })
+              await this.#withHardwareWalletSigningRequest(
+                getEIP712SigningRequest(typedData),
+                () =>
+                  signer.signTypedData(typedData, {
+                    chainId: this.#network.chainId,
+                    provider: this.provider
+                  }),
+                signer
               )
             )
             userOperation.signature = signature
@@ -5354,7 +5409,8 @@ export class SignAccountOpController
                 gasPrice: gasFeePayment.gasPrice,
                 maxPriorityFeePerGas: gasFeePayment.maxPriorityFeePerGas
               }
-            })
+            }),
+          signer
         )
         // Identified the same way as any other bundler broadcast: the
         // ActivityController resolves the tx hash and reads per-op success
@@ -5444,7 +5500,7 @@ export class SignAccountOpController
                     eip7702Auth: accountOp.meta!.delegation!
                   })
                 : signer.signRawTransaction(rawTxn),
-            gasFeePayment.paidByKeyType
+            signer
           )
 
           try {
@@ -5927,9 +5983,13 @@ export class SignAccountOpController
 
     this.emitError({
       // Keep the report for Sentry/logging, but don't show a toast when we're
-      // handling this softly via the "Gas fee updated" confirmation modal
-      // or when the speed up is no longer needed.
-      level: softFeeUpdateConfirmation || isSpeedUpNotNeeded ? 'silent' : 'major',
+      // handling this softly via the "Gas fee updated" confirmation modal,
+      // when the speed up is no longer needed, or when the user cancelled the signing
+      // (the device's rejection that follows isn't an error to them).
+      level:
+        softFeeUpdateConfirmation || isSpeedUpNotNeeded || this.#isSigningCancelledByUser
+          ? 'silent'
+          : 'major',
       message,
       error: _err || new Error(message),
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
@@ -5985,6 +6045,8 @@ export class SignAccountOpController
   }
 
   cancelSignReq() {
+    // Before the reset, as it rejects the request waiting on the device right away
+    this.#isSigningCancelledByUser = true
     this.#resetToReadyToSign()
     this.emitUpdate()
     this.#checkReplacementStillNeeded()
@@ -6104,6 +6166,15 @@ export class SignAccountOpController
         type: 'warning',
         title: safeDelegateCallWarning.title,
         text: safeDelegateCallWarning.text || safeDelegateCallWarning.title
+      })
+    }
+
+    if (this.#safeTxNotShownAsCallsWarning) {
+      banners.push({
+        id: this.#safeTxNotShownAsCallsWarning.id,
+        type: 'warning',
+        title: this.#safeTxNotShownAsCallsWarning.title,
+        text: this.#safeTxNotShownAsCallsWarning.text || this.#safeTxNotShownAsCallsWarning.title
       })
     }
 
