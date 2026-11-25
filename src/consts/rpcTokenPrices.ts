@@ -68,6 +68,12 @@ export type RpcTokenPriceConfig = {
 
 const SLACK_SECONDS = 60 * 60
 const ONE_INCH_SPOT_PRICE_ORACLE = '0x00000000000D6FFc74A8feb35aF5827bf57f6786'
+/**
+ * Our own deployment of 1inch's spot price aggregator on Robinhood Chain, which has no working one
+ * from 1inch. Deployed with `scripts/oneInchSpotPriceAggregator/deploy.sh`, with oracles for
+ * Uniswap v2, v3 and v4.
+ */
+const ROBINHOOD_SPOT_PRICE_ORACLE = '0xfff080dc36A0FFe32Db1AE7079830Dff72147cbb'
 const UNISWAP_V3_FEES = [100, 500, 3000, 10000]
 const PANCAKESWAP_V3_FEES = [100, 500, 2500, 10000]
 const SLIPSTREAM_TICK_SPACINGS = [1, 10, 50, 100, 200, 2000]
@@ -364,10 +370,23 @@ export const RPC_TOKEN_PRICE_CONFIGS: { [chainId: string]: RpcTokenPriceConfig }
     nativeUsdFeed: '0x963d5d3aD2Dfd3fe759d376fF62A0963176DBdF5',
     nativeUsdFeedMaxAgeSeconds: 3600 + SLACK_SECONDS
   },
-  // Robinhood Chain, ETH / USD. 1inch's aggregator isn't deployed here.
+  // Robinhood Chain, ETH / USD. Its stablecoin is USDG rather than USDC. Most of its liquidity is
+  // on Uniswap v4 too, which isn't looked up for liquidity, so a token that trades only there has
+  // no price.
   '4663': {
     nativeUsdFeed: '0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9',
-    nativeUsdFeedMaxAgeSeconds: 86400 + SLACK_SECONDS
+    nativeUsdFeedMaxAgeSeconds: 86400 + SLACK_SECONDS,
+    spotPrices: {
+      oracle: ROBINHOOD_SPOT_PRICE_ORACLE,
+      wrappedNative: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73',
+      stablecoins: [
+        '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168' // USDG
+      ],
+      poolFactories: [
+        uniswapV2('0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f'), // Uniswap v2
+        uniswapV3('0x1f7d7550B1b028f7571E69A784071F0205FD2EfA') // Uniswap v3
+      ]
+    }
   },
   // Celo, CELO / USD. 1inch's aggregator isn't deployed here.
   '42220': {

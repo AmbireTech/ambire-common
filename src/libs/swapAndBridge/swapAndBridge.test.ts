@@ -977,4 +977,8 @@ describe('getIsTokenEligibleForSwapAndBridge', () => {
       getIsTokenEligibleForSwapAndBridge({ ...token, amount: 100n, pendingDeliveryAmount: -100n })
     ).toBe(false)
   })
+
+  test('a token without a price is eligible', () => {
+    expect(getIsTokenEligibleForSwapAndBridge({ ...token, amount: 100n, priceIn: [] })).toBe(true)
+  })
 })

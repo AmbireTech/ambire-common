@@ -78,7 +78,6 @@ import { TokenResult } from '../../libs/portfolio'
 import { getTokenMetaViaRPC } from '../../libs/portfolio/getTokenMetaViaRPC'
 import { convertApiTokenDataToTokenDataCache, getTokenAmount } from '../../libs/portfolio/helpers'
 import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
@@ -105,7 +104,6 @@ import {
   getTokenMarketDataKey,
   marketDataRequestBatcher
 } from '../../libs/swapAndBridge/tokenMarketData'
-import { isMissingPriceMeaningful } from '../../libs/tokenPrices/canPriceNetwork'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { NULL_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount, Validation } from '../../services/validations/validate'
@@ -1628,26 +1626,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#requestedToToken = null
     }
 
-    // A token without a USD price is left out only when the missing price means it has no
-    // market, by the same rule that collapses it into the "Other" tokens of the dashboard (see
-    // `isMissingPriceMeaningful`). Otherwise (e.g. the RPC can't price the network's tokens) or
-    // when the prices failed to load for its chain, it would be hidden for no reason, so the
-    // price requirement is skipped.
-    const chainIdsWithPriceError = new Set<string>()
-    const priceError = this.#selectedAccount.balanceAffectingErrors.find(
-      (error) => error.id === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
-    )
-    priceError?.networkNames.forEach((networkName) => {
-      const network = this.#networks.networks.find((n) => n.name === networkName)
-      if (network) chainIdsWithPriceError.add(network.chainId.toString())
-    })
-
-    const areTokenPricesEnabled = this.#featureFlags.isFeatureEnabled('tokenPrices')
-    const isAutoDiscoveryEnabled = this.#featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')
-    const getIsPriceRequired = (token: TokenResult) =>
-      !chainIdsWithPriceError.has(token.chainId.toString()) &&
-      isMissingPriceMeaningful(token.chainId, areTokenPricesEnabled, isAutoDiscoveryEnabled)
-
     const tokens = nextPortfolioTokenList
       .filter(
         (token) =>
@@ -1656,8 +1634,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           // added to the "Receive" token list as additional tokens from portfolio,
           // BUT 3) They will appear in the "Receive" if they are present in service
           // provider's to token list. This is the desired behavior.
-          getIsTokenEligibleForSwapAndBridge(token, true, getIsPriceRequired(token)) &&
-          !token.flags.isHidden
+          // Tokens without a USD price stay in the list: a legit token may just not be priced
+          // (e.g. when prices come from the network alone), and the swap providers decide whether
+          // it can be swapped or bridged.
+          getIsTokenEligibleForSwapAndBridge(token, true) && !token.flags.isHidden
       )
       .map((token) => ({
         ...token,
