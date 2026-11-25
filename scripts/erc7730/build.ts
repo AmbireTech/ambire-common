@@ -54,7 +54,7 @@ export class RegistryBuildError extends Error {
   }
 }
 
-const sortByKey = <T>(object: Record<string, T>): Record<string, T> =>
+export const sortByKey = <T>(object: Record<string, T>): Record<string, T> =>
   Object.fromEntries(Object.entries(object).sort(([a], [b]) => a.localeCompare(b)))
 
 /** Whether a key is written the way lookups build it: `eip155:{chainId}:{lowercase address}` */
@@ -98,7 +98,7 @@ export const resolveIncludePath = (includePath: string, parentPath: string): str
 }
 
 /** Why a descriptor can't be bundled, or null if it can */
-const getDescriptorProblem = (descriptor: unknown): string | null => {
+export const getDescriptorProblem = (descriptor: unknown): string | null => {
   if (!isPlainObject(descriptor)) return 'it is not a JSON object'
 
   const schemaFileName = getSchemaFileName(descriptor)

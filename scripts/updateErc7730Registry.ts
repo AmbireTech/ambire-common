@@ -3,6 +3,8 @@ import { promises as fsPromises } from 'fs'
 import os from 'os'
 import path from 'path'
 
+import { applyAmendments } from './erc7730/amend'
+import { amendments } from './erc7730/amendments'
 import { BuiltRegistry, buildRegistry, UpstreamFiles } from './erc7730/build'
 
 // Regenerates the ERC-7730 ("clear signing") registry the wallet ships with: the indexes and the
@@ -58,6 +60,7 @@ const MAX_LISTED_PATHS = 100
 const erc7730ConstsPath = path.join(__dirname, '..', 'src', 'consts', 'erc7730')
 const outputPath = path.join(erc7730ConstsPath, 'registry.json')
 const fallbackCalldataIndexPath = path.join(erc7730ConstsPath, 'fallbackCalldataIndex.json')
+const ownDescriptorsPath = path.join(__dirname, 'erc7730', 'descriptors')
 
 type Source = { repository: string; commit: string; date: string }
 type Registry = BuiltRegistry & { source: Source }
@@ -167,6 +170,27 @@ const readFallbackPaths = async (): Promise<string[]> => {
   return [...new Set(Object.values(fallbackCalldataIndex))].sort()
 }
 
+/** Ambire's own descriptors (see `ownDescriptorsPath`), by their path in that folder */
+const readOwnDescriptors = async (): Promise<Record<string, unknown>> => {
+  let entries: string[]
+  try {
+    entries = await fsPromises.readdir(ownDescriptorsPath, { recursive: true })
+  } catch (error: any) {
+    if (error.code === 'ENOENT') return {}
+    throw error
+  }
+  const files = entries.filter((file) => file.endsWith('.json')).sort()
+  const descriptors = await Promise.all(
+    files.map(async (file) =>
+      JSON.parse(await fsPromises.readFile(path.join(ownDescriptorsPath, file), 'utf8'))
+    )
+  )
+
+  return Object.fromEntries(
+    files.map((file, i) => [file.split(path.sep).join('/'), descriptors[i]])
+  )
+}
+
 const readPreviousRegistry = async (): Promise<Partial<Registry> | null> => {
   try {
     return JSON.parse(await fsPromises.readFile(outputPath, 'utf8'))
@@ -226,10 +250,12 @@ const assertSize = (serialized: string) => {
   }
 }
 
-const formatList = (title: string, paths: string[]) => {
+const formatList = (title: string, paths: string[], { asCode = true } = {}) => {
   if (!paths.length) return []
 
-  const listed = paths.slice(0, MAX_LISTED_PATHS).map((listedPath) => `- \`${listedPath}\``)
+  const listed = paths
+    .slice(0, MAX_LISTED_PATHS)
+    .map((listedPath) => (asCode ? `- \`${listedPath}\`` : `- ${listedPath}`))
   const notListedCount = paths.length - listed.length
 
   return [
@@ -248,13 +274,15 @@ const getSummary = ({
   eip712Changes,
   descriptorChanges,
   source,
-  previousCommit
+  previousCommit,
+  notes
 }: {
   calldataChanges: Changes
   eip712Changes: Changes
   descriptorChanges: Changes
   source: Source
   previousCommit?: string
+  notes: string[]
 }) => {
   const formatChanges = ({ added, removed, changed }: Changes) =>
     `+${added.length} / -${removed.length} / ~${changed.length}`
@@ -274,6 +302,7 @@ const getSummary = ({
     ...formatList('Added descriptors', descriptorChanges.added),
     ...formatList('Changed descriptors', descriptorChanges.changed),
     ...formatList('Removed descriptors', descriptorChanges.removed),
+    ...formatList("Ambire's changes", notes, { asCode: false }),
     '',
     'Transactions and messages of removed contracts are no longer described with ERC-7730.'
   ].join('\n')
@@ -283,15 +312,19 @@ const run = async () => {
   const registryDirectory = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'erc7730-registry-'))
 
   try {
-    const [fallbackPaths, previous] = await Promise.all([
+    const [fallbackPaths, ownDescriptors, previous] = await Promise.all([
       readFallbackPaths(),
+      readOwnDescriptors(),
       readPreviousRegistry()
     ])
     const { source: upstreamSource, files } = cloneRegistry(
       registryDirectory,
       previous?.source?.commit
     )
-    const { calldataIndex, eip712Index, descriptors } = buildRegistry(files, fallbackPaths)
+    const {
+      registry: { calldataIndex, eip712Index, descriptors },
+      notes
+    } = applyAmendments(buildRegistry(files, fallbackPaths), amendments, ownDescriptors)
 
     const calldataChanges = getChanges(previous?.calldataIndex, calldataIndex)
     const eip712Changes = getChanges(previous?.eip712Index, eip712Index)
@@ -313,7 +346,8 @@ const run = async () => {
       eip712Changes,
       descriptorChanges,
       source,
-      previousCommit: previous?.source?.commit
+      previousCommit: previous?.source?.commit,
+      notes
     })
     if (process.env.ERC7730_REGISTRY_SUMMARY_PATH) {
       await fsPromises.writeFile(process.env.ERC7730_REGISTRY_SUMMARY_PATH, `${summary}\n`, 'utf8')
