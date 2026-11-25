@@ -10,6 +10,11 @@ import { getTokenPriceRequests, TokenPricesController } from './tokenPrices'
 
 const ethereum = networks.find(({ chainId }) => chainId === 1n)!
 const base = networks.find(({ chainId }) => chainId === 8453n)!
+const optimism = networks.find(({ chainId }) => chainId === 10n)!
+const arbitrum = networks.find(({ chainId }) => chainId === 42161n)!
+const polygon = networks.find(({ chainId }) => chainId === 137n)!
+
+const ETH_PRICE_URL = 'https://cena.ambire.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd'
 
 const TOKEN_1 = '0x1111111111111111111111111111111111111111'
 const TOKEN_2 = '0x2222222222222222222222222222222222222222'
@@ -433,6 +438,26 @@ describe('TokenPricesController', () => {
       expect(getRpcTokenPricesSpy).toHaveBeenCalledTimes(2)
     })
 
+    test("reads ETH on every network, as each network's RPC prices it on its own", async () => {
+      const controller = createRpcController(createPriceFetch().fetch)
+
+      await Promise.all(
+        [base, optimism].map((network) =>
+          controller.getTokenData({ network, tokenAddresses: [ZeroAddress] })
+        )
+      )
+      const { tokenData } = await controller.getTokenData({
+        network: optimism,
+        tokenAddresses: [ZeroAddress]
+      })
+
+      expect(getRpcTokenPricesSpy.mock.calls.map(([{ network }]) => network.chainId)).toEqual([
+        base.chainId,
+        optimism.chainId
+      ])
+      expect(tokenData.get(ZeroAddress)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 5 }])
+    })
+
     test('never asks cena while opted out, whatever the network, currency or failure', async () => {
       const { fetch } = createPriceFetch()
       const controller = createRpcController(fetch)
@@ -851,6 +876,172 @@ describe('TokenPricesController', () => {
       expect(fetch.mock.calls.length).toBe(
         getTokenPriceRequests(ethereum, [TOKEN_1, ...privacyPoolsAssetAddresses], 'usd').length
       )
+    })
+  })
+
+  describe('tokens looked up by coin id, shared by networks', () => {
+    const createControllerWithoutCover = (fetch: any) =>
+      new TokenPricesController({
+        fetch,
+        isTokenPricesEnabled: () => isEnabled,
+        addsPrivacyPoolsAssets: false
+      })
+
+    test('requests ETH once for every network that has it as its native token', async () => {
+      const { fetch, urls } = createPriceFetch({ price: 3000 })
+      const controller = createControllerWithoutCover(fetch)
+
+      await controller.getTokenData({ network: base, tokenAddresses: [ZeroAddress] })
+      const { tokenData } = await controller.getTokenData({
+        network: optimism,
+        tokenAddresses: [ZeroAddress]
+      })
+
+      expect(urls).toEqual([ETH_PRICE_URL])
+      expect(tokenData.get(ZeroAddress)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 3000 }])
+    })
+
+    test('networks asking for ETH at the same time wait for a single request', async () => {
+      const { fetch, urls } = createPriceFetch({ price: 3000 })
+      const controller = createControllerWithoutCover(fetch)
+
+      const results = await Promise.all(
+        [ethereum, base, optimism, arbitrum].map((network) =>
+          controller.getTokenData({ network, tokenAddresses: [ZeroAddress] })
+        )
+      )
+
+      expect(urls).toEqual([ETH_PRICE_URL])
+      results.forEach(({ tokenData, error }) => {
+        expect(error).toBeNull()
+        expect(tokenData.get(ZeroAddress)?.priceIn).toEqual([{ baseCurrency: 'usd', price: 3000 }])
+      })
+    })
+
+    test('still requests the native tokens of different coins separately', async () => {
+      const { fetch, urls } = createPriceFetch()
+      const controller = createControllerWithoutCover(fetch)
+
+      await controller.getTokenData({ network: base, tokenAddresses: [ZeroAddress] })
+      await controller.getTokenData({ network: polygon, tokenAddresses: [ZeroAddress] })
+
+      expect(getAllRequestedIds(urls)).toEqual(['ethereum', polygon.nativeAssetId])
+    })
+
+    test('keeps the tokens looked up by address per network', async () => {
+      const { fetch, urls } = createPriceFetch()
+      const controller = createControllerWithoutCover(fetch)
+
+      await controller.getTokenData({ network: base, tokenAddresses: [TOKEN_1] })
+      await controller.getTokenData({ network: optimism, tokenAddresses: [TOKEN_1] })
+
+      expect(urls).toHaveLength(2)
+      expect(urls[0]).toContain('/simple/token_price/base?')
+      expect(urls[1]).toContain('/simple/token_price/optimistic-ethereum?')
+    })
+
+    test("a network waiting for ETH doesn't get the error of another network's tokens", async () => {
+      const fetch = jest.fn(async (url: any) => {
+        if (url.includes('/simple/token_price/')) throw new Error('cena is down')
+        return { status: 200, json: async () => ({ ethereum: { usd: 3000 } }) } as any
+      })
+      const controller = createControllerWithoutCover(fetch)
+
+      const [onBase, onOptimism] = await Promise.all([
+        controller.getTokenData({ network: base, tokenAddresses: [ZeroAddress, TOKEN_1] }),
+        controller.getTokenData({ network: optimism, tokenAddresses: [ZeroAddress] })
+      ])
+
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(onBase.error?.message).toBe('cena is down')
+      expect(onBase.tokenData.get(ZeroAddress)?.priceIn).toEqual([
+        { baseCurrency: 'usd', price: 3000 }
+      ])
+      expect(onOptimism.error).toBeNull()
+      expect(onOptimism.tokenData.get(ZeroAddress)?.priceIn).toEqual([
+        { baseCurrency: 'usd', price: 3000 }
+      ])
+    })
+
+    test('a network waiting for ETH gets the error when the ETH request fails', async () => {
+      const { fetch } = createPriceFetch({ fail: true })
+      const controller = createControllerWithoutCover(fetch)
+
+      const [onBase, onOptimism] = await Promise.all([
+        controller.getTokenData({ network: base, tokenAddresses: [ZeroAddress] }),
+        controller.getTokenData({ network: optimism, tokenAddresses: [ZeroAddress] })
+      ])
+
+      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(onBase.error?.message).toBe('cena is down')
+      expect(onOptimism.error?.message).toBe('cena is down')
+      expect(onOptimism.tokenData.size).toBe(0)
+    })
+
+    test('requests ETH again once it was answered more than 5 minutes ago', async () => {
+      const { fetch, urls } = createPriceFetch()
+      const controller = createControllerWithoutCover(fetch)
+
+      const now = Date.now()
+      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(now)
+      await controller.getTokenData({ network: base, tokenAddresses: [ZeroAddress] })
+      dateSpy.mockReturnValue(now + 6 * MINUTE)
+      await controller.getTokenData({ network: optimism, tokenAddresses: [ZeroAddress] })
+      dateSpy.mockRestore()
+
+      expect(urls).toEqual([ETH_PRICE_URL, ETH_PRICE_URL])
+    })
+
+    test('the native Privacy Pools asset is answered by ETH requested on another network', async () => {
+      const { fetch, urls } = createPriceFetch()
+      const controller = createController(fetch)
+
+      await controller.getTokenData({ network: base, tokenAddresses: [ZeroAddress] })
+      urls.length = 0
+      await controller.getTokenData({ network: ethereum, tokenAddresses: [TOKEN_1] })
+
+      const requested = getAllRequestedIds(urls)
+      expect(requested).toContain(TOKEN_1)
+      expect(requested).not.toContain(ethereum.nativeAssetId)
+    })
+
+    test('drops the prices cached by coin id when the user opts out', async () => {
+      const { fetch, urls } = createPriceFetch()
+      const controller = createControllerWithoutCover(fetch)
+      await controller.getTokenData({ network: base, tokenAddresses: [ZeroAddress] })
+
+      isEnabled = false
+      const optedOut = await controller.getTokenData({
+        network: optimism,
+        tokenAddresses: [ZeroAddress]
+      })
+      isEnabled = true
+      await controller.getTokenData({ network: optimism, tokenAddresses: [ZeroAddress] })
+
+      expect(optedOut.tokenData.size).toBe(0)
+      expect(urls).toEqual([ETH_PRICE_URL, ETH_PRICE_URL])
+    })
+
+    test('uses a native price set from elsewhere only on its own network', async () => {
+      const { fetch, urls } = createPriceFetch({ price: 3000 })
+      const controller = createControllerWithoutCover(fetch)
+      controller.setTokenData(base.chainId, [
+        [ZeroAddress, { priceIn: [{ baseCurrency: 'usd', price: 7 }], marketDataIn: [] }]
+      ])
+
+      const onBase = await controller.getTokenData({ network: base, tokenAddresses: [ZeroAddress] })
+      const onOptimism = await controller.getTokenData({
+        network: optimism,
+        tokenAddresses: [ZeroAddress]
+      })
+
+      expect(onBase.tokenData.get(ZeroAddress)?.priceIn).toEqual([
+        { baseCurrency: 'usd', price: 7 }
+      ])
+      expect(urls).toEqual([ETH_PRICE_URL])
+      expect(onOptimism.tokenData.get(ZeroAddress)?.priceIn).toEqual([
+        { baseCurrency: 'usd', price: 3000 }
+      ])
     })
   })
 

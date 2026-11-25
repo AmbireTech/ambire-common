@@ -48,7 +48,7 @@ import { Call } from '../accountOp/types'
 import { AssetType } from '../defiPositions/types'
 import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
-import { getTokenBalanceInUSD, getTokenUsdPrice } from '../portfolio/helpers'
+import { getTokenBalanceInUSD } from '../portfolio/helpers'
 import {
   getSwapEstimatedLossUsd,
   getSwapQuoteLossUsd,
@@ -265,8 +265,7 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[])
  */
 export const getIsTokenEligibleForSwapAndBridge = (
   token: TokenResult,
-  requirePositiveBalance: boolean = true,
-  requirePrice: boolean = false
+  requirePositiveBalance: boolean = true
 ) => {
   const flagsRequirement =
     // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
@@ -277,14 +276,6 @@ export const getIsTokenEligibleForSwapAndBridge = (
     // Borrow tokens (e.g. variableDebt tokens) are protocol accounting assets
     // and are not transferable/swappable by design.
     token.flags.defiTokenType !== AssetType.Borrow
-
-  // Tokens without a known USD price most prob can't be quoted reliably, so exclude them
-  // from the list when the caller opts in (e.g. the Swap & Bridge "form" tokens).
-  // Custom tokens are exempt - the user explicitly imported them and likely wants
-  // to use them for something (maybe swap or bridge).
-  if (requirePrice && !token.flags.isCustom && getTokenUsdPrice(token) <= 0) {
-    return false
-  }
 
   if (!requirePositiveBalance) {
     return flagsRequirement

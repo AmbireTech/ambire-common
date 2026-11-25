@@ -645,29 +645,44 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromChainId).toEqual(10)
     expect(swapAndBridgeController.toChainId).toEqual(10)
   })
-  test('should require portfolio token prices only when a missing price means no market, like the dashboard', async () => {
+  test('should list the portfolio tokens without a price, whatever the price source', async () => {
     const controller = buildSwapAndBridgeController()
     // On OP Mainnet, where the RPC can price every token
     const tokensWithoutPrices = PORTFOLIO_TOKENS.map((token) => ({ ...token, priceIn: [] }))
+    // The "from" token is picked only on the networks the swap provider supports, which a new
+    // controller fetches in the background, announcing them with an update
+    await new Promise<void>((resolve) => {
+      if (controller.supportedChainIds.length) {
+        resolve()
+        return
+      }
+
+      const unsubscribe = controller.onUpdate(() => {
+        if (!controller.supportedChainIds.length) return
+
+        unsubscribe()
+        resolve()
+      })
+    })
 
     try {
       await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
-      await controller.updatePortfolioTokenList(tokensWithoutPrices)
-      expect(controller.portfolioTokenList).toEqual([])
-
-      // The RPC prices the tokens, but with auto discovery on a missing price says nothing
-      await featureFlagsCtrl.setFeatureFlag('tokenPrices', false)
       await controller.updatePortfolioTokenList(tokensWithoutPrices)
 
       expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
       expect(controller.fromSelectedToken).not.toBeNull()
 
-      // Without auto discovery any received token is learned, and one the RPC can't price has
-      // no market, so it's left out, as the dashboard collapses it into the "Other" tokens
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', false)
+      await controller.updatePortfolioTokenList(tokensWithoutPrices)
+
+      expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
+
+      // Prices only from the network and no auto discovery: the dashboard collapses these into
+      // the "Other" tokens, but a legit token may just not be priced, so it stays selectable
       await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', false)
       await controller.updatePortfolioTokenList(tokensWithoutPrices)
 
-      expect(controller.portfolioTokenList).toEqual([])
+      expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
     } finally {
       await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
       await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
