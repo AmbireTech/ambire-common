@@ -1,12 +1,8 @@
-import { COWSWAP_LIMIT_ORDER_EXPIRY_SECONDS } from '../services/cowswap/constants'
 import { ControllerInterface } from './controller'
 
 export type ILimitOrdersController = ControllerInterface<
   InstanceType<typeof import('../controllers/limitOrders/limitOrders').LimitOrdersController>
 >
-
-/** How long a limit order stays open, one of the options the user picks from */
-export type LimitOrderExpiry = keyof typeof COWSWAP_LIMIT_ORDER_EXPIRY_SECONDS
 
 /**
  * Which way the price is shown and typed:

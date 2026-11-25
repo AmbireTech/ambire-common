@@ -4,7 +4,12 @@ import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { STK_WALLET } from '../../consts/addresses'
-import { DEFAULT_LIMIT_ORDER_PRICE } from '../../consts/limitOrders'
+import {
+  DEFAULT_LIMIT_ORDER_EXPIRY_DAYS,
+  DEFAULT_LIMIT_ORDER_PRICE,
+  LIMIT_ORDER_MAX_EXPIRY_DAYS
+} from '../../consts/limitOrders'
+import { getRpcTokenPriceConfig } from '../../consts/rpcTokenPrices'
 import { TO_TOKEN_LIST_CACHE_THRESHOLD, TO_TOKEN_LIST_LIMIT } from '../../consts/swapAndBridge'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -17,7 +22,6 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import {
   LimitOrder,
-  LimitOrderExpiry,
   LimitOrderFillIssue,
   LimitOrderFormStatus,
   LimitOrderMarketQuote,
@@ -78,7 +82,6 @@ import { CowSwapAPI } from '../../services/cowswap/api'
 import {
   COWSWAP_BUY_NATIVE_TOKEN_ADDRESS,
   COWSWAP_ETH_FLOW_ADDRESS,
-  COWSWAP_LIMIT_ORDER_EXPIRY_SECONDS,
   COWSWAP_SETTLEMENT_ADDRESS,
   COWSWAP_SUPPORTED_CHAINS,
   COWSWAP_VAULT_RELAYER_ADDRESS
@@ -187,9 +190,61 @@ const PRICE_EXTRA_DECIMALS = 18
 /** The highest relative `bps` that keeps the "cost" price above zero */
 const MAX_COST_VIEW_BPS = 9900
 
+/**
+ * How much, in USD, of the token being sold today's price is asked for before the user enters an
+ * amount, so the form shows a price as soon as both tokens are picked. Large enough for the
+ * network cost not to skew it, as it would for a few cents
+ */
+const REFERENCE_QUOTE_USD_VALUE = 1000
+
+/** Networks whose native token is a USD stablecoin, so it's not offered as the "other" token */
+const STABLECOIN_NATIVE_CHAIN_IDS = [100]
+
+/** How many significant digits the price taken from today's price is rounded to */
+const PRICE_SIGNIFICANT_DIGITS = 6
+
+/** How many significant digits a typed price keeps when the user flips the way it reads */
+const FLIPPED_PRICE_SIGNIFICANT_DIGITS = 12
+
+const SECONDS_IN_DAY = 60 * 60 * 24
+
 /** A number as a decimal string without exponent notation, e.g. 0.0000000033 not 3.3e-9 */
 const toPlainDecimalString = (value: number) =>
   value.toLocaleString('en-US', { useGrouping: false, maximumSignificantDigits: 12 })
+
+/** Rounds a positive number up or down to `digits` significant digits. 0 if it isn't positive */
+const roundToSignificantDigits = (value: number, digits: number, direction: 'up' | 'down') => {
+  if (!Number.isFinite(value) || value <= 0) return 0
+
+  const scale = 10 ** (digits - 1 - Math.floor(Math.log10(value)))
+  const round = direction === 'up' ? Math.ceil : Math.floor
+
+  return round(value * scale) / scale
+}
+
+/**
+ * The addresses, lowercased and in order of preference, of the token a new form trades the token
+ * sold for: the network's main USD stablecoins, or its native token (or the wrapped one) when the
+ * token sold is a stablecoin itself
+ */
+const getDefaultPricedInTokenAddresses = (fromToken: TokenResult): string[] => {
+  const chainId = Number(fromToken.chainId)
+  const nativeAddress = ZeroAddress.toLowerCase()
+  const stablecoins = (
+    getRpcTokenPriceConfig(fromToken.chainId)?.spotPrices?.stablecoins ?? []
+  ).map((address) => address.toLowerCase())
+  const isNativeStablecoin = STABLECOIN_NATIVE_CHAIN_IDS.includes(chainId)
+  const fromAddress = fromToken.address.toLowerCase()
+  const isFromStablecoin =
+    stablecoins.includes(fromAddress) || (isNativeStablecoin && fromAddress === nativeAddress)
+
+  if (!isFromStablecoin) return stablecoins
+  if (isNativeStablecoin) return []
+
+  const wrappedNativeAddress = getWrappedNativeTokenAddress(chainId)?.toLowerCase()
+
+  return wrappedNativeAddress ? [nativeAddress, wrappedNativeAddress] : [nativeAddress]
+}
 
 type ToTokenList = {
   apiTokens: SwapAndBridgeToToken[]
@@ -393,6 +448,12 @@ export class LimitOrdersController extends EventEmitter {
 
   #lastSelectedAccountAddr: string | null = null
 
+  /** How the user chose to read the price, see `priceView`. Null until it's set for the pair */
+  #priceView: LimitOrderPriceView | null = null
+
+  /** Whether the user picked the token received, rather than only the one picked for them */
+  #hasUserPickedTokens = false
+
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   /** The screens that show the form. The form resets when the last one closes */
@@ -418,12 +479,14 @@ export class LimitOrdersController extends EventEmitter {
 
   toSelectedToken: SwapAndBridgeToToken | null = null
 
-  /** Null until today's price is known, then the side whose price reads as 1 or more */
-  priceView: LimitOrderPriceView | null = null
-
+  /**
+   * The price the user set. Starts relative to today's price and turns into a typed one when
+   * today's price comes, see `#setPriceFromMarketQuote`
+   */
   price: LimitOrderPrice = DEFAULT_LIMIT_ORDER_PRICE
 
-  expiry: LimitOrderExpiry = '7d'
+  /** How many days the order stays open */
+  expiryDays: number = DEFAULT_LIMIT_ORDER_EXPIRY_DAYS
 
   marketQuote: LimitOrderMarketQuote | null = null
 
@@ -893,6 +956,63 @@ export class LimitOrdersController extends EventEmitter {
     return formatUnits(this.#fromBalance, token.decimals)
   }
 
+  /** A typed amount in the smallest unit of a token. Null if empty, invalid or not positive */
+  #parseAmount(amount: string, decimals: number): bigint | null {
+    if (!amount) return null
+
+    try {
+      const parsed = parseUnits(getSanitizedAmount(amount, decimals), decimals)
+      return parsed > 0n ? parsed : null
+    } catch {
+      // Not a number, e.g. a lone decimal point while the user types
+      return null
+    }
+  }
+
+  /**
+   * The typed price in the smallest unit of the token the current view prices in, with
+   * `PRICE_EXTRA_DECIMALS` more, see `#getAbsoluteTargetBuyAmount`. Null if the price is relative
+   * or can't be read
+   */
+  #getTypedPriceUnits(): bigint | null {
+    if (this.price.mode !== 'absolute') return null
+
+    const token = this.priceView === 'cost' ? this.fromSelectedToken : this.toSelectedToken
+    if (!token) return null
+
+    return this.#parseAmount(this.price.amount, token.decimals + PRICE_EXTRA_DECIMALS)
+  }
+
+  /**
+   * The amount today's price is asked for: the amount sold, or `#referenceSellAmount` until there
+   * is one
+   */
+  get #quoteSellAmount(): bigint | null {
+    return this.#sellAmount ?? this.#referenceSellAmount
+  }
+
+  /**
+   * An amount of `fromSelectedToken` to ask today's price for before the user enters one: worth
+   * `REFERENCE_QUOTE_USD_VALUE`, or the whole balance if the token has no USD price, or one token
+   */
+  get #referenceSellAmount(): bigint | null {
+    const token = this.fromSelectedToken
+    if (!token) return null
+
+    const usdPrice = token.priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')?.price
+    const amountWorthReference =
+      usdPrice && usdPrice > 0
+        ? this.#parseAmount(
+            toPlainDecimalString(REFERENCE_QUOTE_USD_VALUE / usdPrice),
+            token.decimals
+          )
+        : null
+    if (amountWorthReference) return amountWorthReference
+    if (this.#fromBalance > 0n) return this.#fromBalance
+
+    return 10n ** BigInt(token.decimals)
+  }
+
   /** `fromAmount` in the smallest unit of `fromSelectedToken`. Null if empty or invalid */
   get #sellAmount(): bigint | null {
     if (!this.fromSelectedToken || !this.fromAmount) return null
@@ -970,6 +1090,15 @@ export class LimitOrdersController extends EventEmitter {
     this.feePercent = getFeePercentForStkWalletToken(stkWalletToken)
   }
 
+  /**
+   * How the price is shown and typed: what 1 sell token gets ("4.51 USDC / UNI") or what 1
+   * receive token costs ("0.22 UNI / USDC"). The readable one, whose price is 1 or more, until the
+   * user flips it, see `flipPriceView`
+   */
+  get priceView(): LimitOrderPriceView {
+    return this.#priceView ?? 'get'
+  }
+
   /** `marketQuote`, if it's for the current tokens and amount */
   get #currentMarketQuote(): LimitOrderMarketQuote | null {
     const quote = this.marketQuote
@@ -1026,7 +1155,7 @@ export class LimitOrdersController extends EventEmitter {
    * until it can be calculated
    */
   get #triggerBuyAmount(): bigint | null {
-    const view = this.priceView ?? 'cost'
+    const view = this.priceView
 
     if (this.price.mode === 'absolute') {
       return this.#getAbsoluteTargetBuyAmount(this.price.amount, view)
@@ -1075,6 +1204,13 @@ export class LimitOrdersController extends EventEmitter {
 
   /** Why the price can't be used. Null if it can, or if it's not known yet */
   get priceError(): LimitOrderPriceError | null {
+    // When buying, the amount sold follows from the price, so it's checked before there is one
+    const isTypedPriceInvalid =
+      this.price.mode === 'absolute' &&
+      !!this.fromSelectedToken &&
+      !!this.toSelectedToken &&
+      this.#getTypedPriceUnits() === null
+    if (isTypedPriceInvalid) return 'invalid'
     if (!this.#sellAmount || !this.toSelectedToken) return null
 
     const triggerBuyAmount = this.#triggerBuyAmount
@@ -1204,19 +1340,21 @@ export class LimitOrdersController extends EventEmitter {
     this.emitUpdate()
   }
 
-  /** Whether the user entered something in the form, rather than only the token picked for them */
+  /** Whether the user entered something in the form, rather than only the tokens picked for them */
   get #isFormFilled() {
-    return !!this.fromAmount || !!this.toSelectedToken
+    return !!this.fromAmount || this.#hasUserPickedTokens
   }
 
   async updateForm(props: {
     fromAmount?: string
     fromSelectedToken?: TokenResult | null
     toSelectedToken?: SwapAndBridgeToToken | null
-    expiry?: LimitOrderExpiry
+    expiryDays?: number
   }) {
-    const { fromAmount, fromSelectedToken, toSelectedToken, expiry } = props
+    const { fromAmount, fromSelectedToken, toSelectedToken, expiryDays } = props
     const previousChainId = this.fromChainId
+    const previousFromToken = this.fromSelectedToken
+    const previousToToken = this.toSelectedToken
     this.lastPlacedOrderUid = null
 
     if (fromSelectedToken !== undefined) {
@@ -1233,8 +1371,17 @@ export class LimitOrdersController extends EventEmitter {
       this.fromSelectedToken = fromSelectedToken
     }
     if (fromAmount !== undefined) this.fromAmount = fromAmount
-    if (toSelectedToken !== undefined) this.toSelectedToken = toSelectedToken
-    if (expiry !== undefined) this.expiry = expiry
+    if (toSelectedToken !== undefined) {
+      this.toSelectedToken = toSelectedToken
+      this.#hasUserPickedTokens = true
+    }
+    if (expiryDays !== undefined) this.#setExpiryDays(expiryDays)
+
+    const haveTokensTradedPlaces = this.#tradePlacesIfSameToken({
+      previousFromToken,
+      previousToToken,
+      pickedSide: this.#getPickedSide(fromSelectedToken, toSelectedToken)
+    })
 
     // Limit orders stay on one network, so a sell token on another network clears what the
     // user receives
@@ -1244,6 +1391,7 @@ export class LimitOrdersController extends EventEmitter {
       this.toTokenSearchTerm = ''
       this.toTokenSearchResults = []
       this.#deriveToTokens()
+      this.#selectDefaultToToken()
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.updateToTokenList()
     }
@@ -1251,15 +1399,120 @@ export class LimitOrdersController extends EventEmitter {
     const hasPairOrAmountChanged =
       fromSelectedToken !== undefined || toSelectedToken !== undefined || fromAmount !== undefined
     if (hasPairOrAmountChanged) {
-      // A price typed for another pair means nothing for this one
+      // A price typed for another pair means nothing for this one, nor does today's price or
+      // the way the price reads. Tokens that only traded places are the same pair, so today's
+      // price stays, read the other way (see `marketPrice`), and the price starts from it
       if (fromSelectedToken !== undefined || toSelectedToken !== undefined) {
         this.price = DEFAULT_LIMIT_ORDER_PRICE
-        this.priceView = null
+        this.#priceView = null
+        if (haveTokensTradedPlaces) this.#setPriceFromMarketQuote()
+        else this.marketQuote = null
       }
       this.#scheduleMarketQuoteUpdate()
     }
 
     this.emitUpdate()
+  }
+
+  /**
+   * Swaps the two tokens: the token received becomes the one sold, and the other way around. Only
+   * possible when the account holds the token received, as the token sold is always one it holds.
+   * The amount is cleared, as it was in the other token
+   */
+  async switchFromAndToTokens() {
+    const toToken = this.toSelectedToken
+    if (!this.fromSelectedToken || !toToken) return
+
+    const nextFromToken = this.#getHeldPortfolioToken(toToken)
+    if (!nextFromToken) {
+      this.emitError({
+        level: 'major',
+        message: `You don't have any ${toToken.symbol} to sell.`,
+        error: new SwapAndBridgeError('The token to sell is not in the portfolio.')
+      })
+      return
+    }
+
+    this.#hasUserPickedTokens = true
+    // The tokens trade places, see `#tradePlacesIfSameToken`
+    await this.updateForm({ fromSelectedToken: nextFromToken, fromAmount: '' })
+  }
+
+  /** Which token the user just picked: the one sold, the one received, or neither */
+  #getPickedSide(
+    fromSelectedToken: TokenResult | null | undefined,
+    toSelectedToken: SwapAndBridgeToToken | null | undefined
+  ): 'from' | 'to' | null {
+    if (fromSelectedToken) return 'from'
+    if (toSelectedToken) return 'to'
+
+    return null
+  }
+
+  /**
+   * Picking on one side the token that's on the other makes the two trade places, as a token
+   * can't be traded for itself: with UNI sold for USDC, picking USDC to sell makes UNI the token
+   * received. The token sold must be one the account holds, so picking UNI to receive while
+   * selling it makes USDC the token sold only if the account holds USDC. Returns whether they
+   * traded places
+   */
+  #tradePlacesIfSameToken({
+    previousFromToken,
+    previousToToken,
+    pickedSide
+  }: {
+    previousFromToken: TokenResult | null
+    previousToToken: SwapAndBridgeToToken | null
+    pickedSide: 'from' | 'to' | null
+  }): boolean {
+    if (!pickedSide || !this.#isSameToken) return false
+
+    if (pickedSide === 'from') {
+      if (!previousFromToken) return false
+
+      this.toSelectedToken = convertPortfolioTokenToSwapAndBridgeToToken(
+        previousFromToken,
+        Number(previousFromToken.chainId)
+      )
+      return true
+    }
+
+    const heldPreviousToToken = previousToToken
+      ? this.#getHeldPortfolioToken(previousToToken)
+      : null
+    if (!heldPreviousToToken) return false
+
+    this.fromSelectedToken = heldPreviousToToken
+    return true
+  }
+
+  /** The account's own copy of a token, if it holds some of it */
+  #getHeldPortfolioToken(token: { chainId: bigint | number; address: string }): TokenResult | null {
+    return (
+      this.#selectedAccount.portfolio.tokens.find(
+        (t) =>
+          t.chainId === BigInt(token.chainId) &&
+          t.address.toLowerCase() === token.address.toLowerCase() &&
+          !t.flags.onGasTank &&
+          !t.flags.rewardsType &&
+          getTokenAmount(t) > 0n
+      ) ?? null
+    )
+  }
+
+  /** Takes a whole number of days, from 1 to `LIMIT_ORDER_MAX_EXPIRY_DAYS` */
+  #setExpiryDays(days: number) {
+    const isValid = Number.isInteger(days) && days >= 1 && days <= LIMIT_ORDER_MAX_EXPIRY_DAYS
+    if (!isValid) {
+      this.emitError({
+        level: 'silent',
+        message: `Pick between 1 and ${LIMIT_ORDER_MAX_EXPIRY_DAYS} days.`,
+        error: new SwapAndBridgeError(`Invalid limit order expiry: ${days} days.`)
+      })
+      return
+    }
+
+    this.expiryDays = days
   }
 
   setPrice(price: LimitOrderPrice) {
@@ -1271,61 +1524,27 @@ export class LimitOrdersController extends EventEmitter {
     this.emitUpdate()
   }
 
-  /** Shows the price the other way around and converts a typed price to it */
+  /**
+   * Shows the price the other way around, e.g. what 1 UNI gets in USDC instead of what 1 USDC
+   * costs in UNI, and turns a typed price into the same price read that way. Rounded in the
+   * user's favour, so a price at today's doesn't become worse than it
+   */
   flipPriceView() {
-    const currentView = this.priceView ?? 'cost'
-    const nextView: LimitOrderPriceView = currentView === 'cost' ? 'get' : 'cost'
+    const nextView: LimitOrderPriceView = this.priceView === 'cost' ? 'get' : 'cost'
 
     if (this.price.mode === 'absolute') {
-      const typedPrice = Number(this.price.amount)
-      this.price =
-        Number.isFinite(typedPrice) && typedPrice > 0
-          ? { mode: 'absolute', amount: toPlainDecimalString(1 / typedPrice) }
-          : DEFAULT_LIMIT_ORDER_PRICE
+      const flippedPrice = roundToSignificantDigits(
+        1 / Number(this.price.amount),
+        FLIPPED_PRICE_SIGNIFICANT_DIGITS,
+        nextView === 'get' ? 'up' : 'down'
+      )
+      this.price = flippedPrice
+        ? { mode: 'absolute', amount: toPlainDecimalString(flippedPrice) }
+        : DEFAULT_LIMIT_ORDER_PRICE
     }
 
-    this.priceView = nextView
-    this.emitUpdate()
-  }
-
-  /**
-   * Turns the receive token into the sell token and the other way around. Only possible when the
-   * account holds the receive token, as it's what gets sold
-   */
-  async switchFromAndToTokens() {
-    const fromToken = this.fromSelectedToken
-    const toToken = this.toSelectedToken
-    if (!fromToken || !toToken) return
-
-    const nextFromToken = this.#selectedAccount.portfolio.tokens.find(
-      (t) =>
-        t.chainId === BigInt(toToken.chainId) &&
-        t.address.toLowerCase() === toToken.address.toLowerCase() &&
-        !t.flags.onGasTank &&
-        !t.flags.rewardsType &&
-        getTokenAmount(t) > 0n
-    )
-    if (!nextFromToken) {
-      this.emitError({
-        level: 'major',
-        message: `You don't have any ${toToken.symbol} to sell.`,
-        error: new SwapAndBridgeError('The receive token is not in the portfolio.')
-      })
-      return
-    }
-
-    this.fromSelectedToken = nextFromToken
-    this.toSelectedToken = convertPortfolioTokenToSwapAndBridgeToToken(
-      fromToken,
-      Number(fromToken.chainId)
-    )
-    this.fromAmount = ''
-    this.price = DEFAULT_LIMIT_ORDER_PRICE
-    this.priceView = null
-    this.marketQuote = null
-    // Drops the answer of a price request for the previous pair
-    this.#scheduleMarketQuoteUpdate()
-    this.#deriveToTokens()
+    this.#priceView = nextView
+    this.lastPlacedOrderUid = null
     this.emitUpdate()
   }
 
@@ -1334,7 +1553,7 @@ export class LimitOrdersController extends EventEmitter {
     // Drops the answer of a request in progress, as it's for the previous form
     this.#marketQuoteRequestId++
 
-    if (!this.fromSelectedToken || !this.toSelectedToken || !this.#sellAmount) {
+    if (!this.fromSelectedToken || !this.toSelectedToken || !this.#quoteSellAmount) {
       this.#updateMarketQuoteInterval.stop()
       this.marketQuoteStatus = 'INITIAL'
       this.marketQuoteError = null
@@ -1354,7 +1573,7 @@ export class LimitOrdersController extends EventEmitter {
       !this.hasProceeded &&
       !!this.fromSelectedToken &&
       !!this.toSelectedToken &&
-      !!this.#sellAmount &&
+      !!this.#quoteSellAmount &&
       !this.#isSameToken
 
     if (!shouldUpdate) {
@@ -1369,7 +1588,7 @@ export class LimitOrdersController extends EventEmitter {
     const account = this.#selectedAccount.account
     const fromToken = this.fromSelectedToken
     const toToken = this.toSelectedToken
-    const sellAmount = this.#sellAmount
+    const sellAmount = this.#quoteSellAmount
     const chainId = this.fromChainId
     if (!account || !fromToken || !toToken || !sellAmount || !chainId) return
 
@@ -1403,7 +1622,7 @@ export class LimitOrdersController extends EventEmitter {
       }
       this.marketQuoteStatus = 'INITIAL'
       this.marketQuoteError = null
-      if (!this.priceView) this.priceView = this.#getReadablePriceView()
+      this.#setPriceFromMarketQuote()
     } catch (error: any) {
       if (requestId !== this.#marketQuoteRequestId) return
 
@@ -1417,21 +1636,81 @@ export class LimitOrdersController extends EventEmitter {
   }
 
   /**
-   * The view whose price is 1 or more, which is easier to read: "1 WETH costs 1,746 USDC"
-   * rather than "1 USDC gets you 0.00057 WETH", and "1 WBTC gets you 53.42 WETH" rather than
-   * "1 WETH costs 0.0187 WBTC"
+   * Turns a relative price into a typed one once today's price is known, so the price field shows
+   * a number the user adjusts from there, read the readable way unless the user flipped it.
+   * Rounded to a few digits, in the user's favour, so it doesn't become worse than today's price
    */
-  #getReadablePriceView(): LimitOrderPriceView {
+  #setPriceFromMarketQuote() {
+    if (this.price.mode !== 'relative') return
+
+    const marketPriceGetView = this.#getMarketPrice('get')
+    if (!this.#priceView && marketPriceGetView) {
+      this.#priceView = marketPriceGetView >= 1 ? 'get' : 'cost'
+    }
+
+    const marketPrice = this.marketPrice
+    const price = marketPrice ? this.#getPriceBetterThanMarket(marketPrice, this.price.bps) : null
+    if (!price) return
+
+    this.price = price
+  }
+
+  /** Today's price, read the way the form shows prices, see `priceView` and `#getMarketPrice` */
+  get marketPrice(): number | null {
+    return this.#getMarketPrice(this.priceView)
+  }
+
+  /**
+   * Today's price read the given way: what 1 sell token gets, or what 1 receive token costs.
+   * Read from `marketQuote` whichever way it was asked for, so it still shows right after the
+   * tokens trade places, while the price for the new way loads. Null if there's no price for the
+   * current tokens
+   */
+  #getMarketPrice(view: LimitOrderPriceView): number | null {
     const quote = this.marketQuote
     const fromToken = this.fromSelectedToken
     const toToken = this.toSelectedToken
-    if (!quote || !fromToken || !toToken) return 'cost'
+    if (!quote || !fromToken || !toToken) return null
 
-    const sellAmount = Number(formatUnits(quote.sellAmount, fromToken.decimals))
-    const buyAmount = Number(formatUnits(quote.marketBuyAmount, toToken.decimals))
-    if (!buyAmount) return 'cost'
+    const quoteSellAddress = quote.sellTokenAddress.toLowerCase()
+    const quoteBuyAddress = quote.buyTokenAddress.toLowerCase()
+    const fromAddress = fromToken.address.toLowerCase()
+    const toAddress = toToken.address.toLowerCase()
+    const isSameWay = quoteSellAddress === fromAddress && quoteBuyAddress === toAddress
+    const isReversed = quoteSellAddress === toAddress && quoteBuyAddress === fromAddress
+    if (!isSameWay && !isReversed) return null
 
-    return sellAmount / buyAmount >= 1 ? 'cost' : 'get'
+    const soldToken = isSameWay ? fromToken : toToken
+    const boughtToken = isSameWay ? toToken : fromToken
+    const sold = Number(formatUnits(quote.sellAmount, soldToken.decimals))
+    const bought = Number(formatUnits(quote.marketBuyAmount, boughtToken.decimals))
+    if (!sold || !bought) return null
+
+    // "get" is the price of the token the form sells, "cost" of the one it receives
+    const isPriceForSoldToken = (view === 'get') === isSameWay
+
+    return isPriceForSoldToken ? bought / sold : sold / bought
+  }
+
+  /**
+   * A typed price `bps` better than `marketPrice`: more received for 1 sell token ("get"), or
+   * less paid for 1 receive token ("cost"). Rounded to a few digits in the user's favour, so it
+   * doesn't become worse than today's price
+   */
+  #getPriceBetterThanMarket(marketPrice: number, bps: number): LimitOrderPrice | null {
+    const isHigherBetter = this.priceView === 'get'
+    const clampedBps = Math.min(Math.max(bps, 0), MAX_COST_VIEW_BPS)
+    const price = isHigherBetter
+      ? marketPrice * (1 + clampedBps / 10000)
+      : marketPrice * (1 - clampedBps / 10000)
+    const roundedPrice = roundToSignificantDigits(
+      price,
+      PRICE_SIGNIFICANT_DIGITS,
+      isHigherBetter ? 'up' : 'down'
+    )
+    if (!roundedPrice) return null
+
+    return { mode: 'absolute', amount: toPlainDecimalString(roundedPrice) }
   }
 
   /* ---------------------------- "To" token list ---------------------------- */
@@ -1475,6 +1754,27 @@ export class LimitOrdersController extends EventEmitter {
       portfolioTokens.filter((t) => getIsTokenEligibleForSwapAndBridge(t))
     )
     this.#toTokensPortfolioSignature = this.#getToTokensPortfolioSignature()
+  }
+
+  /**
+   * Picks the token to trade the token sold for when there's none, see
+   * `getDefaultPricedInTokenAddresses`. Only from the tokens listed for the network, by address,
+   * so a token that merely copies a name is never picked
+   */
+  #selectDefaultToToken() {
+    const fromToken = this.fromSelectedToken
+    if (this.toSelectedToken || !fromToken) return
+
+    const defaultToken = getDefaultPricedInTokenAddresses(fromToken)
+      .map((address) => this.#toTokens.find((t) => t.address.toLowerCase() === address))
+      .find((token): token is SwapAndBridgeToToken => !!token)
+    if (!defaultToken) return
+
+    this.toSelectedToken = defaultToken
+    this.price = DEFAULT_LIMIT_ORDER_PRICE
+    this.#priceView = null
+    this.marketQuote = null
+    this.#scheduleMarketQuoteUpdate()
   }
 
   /** The first tokens of the "to" token list, without the token being sold */
@@ -1530,6 +1830,7 @@ export class LimitOrdersController extends EventEmitter {
     if (chainId === this.fromChainId) {
       this.isTokenListLoading = false
       this.#deriveToTokens()
+      this.#selectDefaultToToken()
       if (this.toTokenSearchTerm) this.#updateToTokenSearchResults()
     }
     this.emitUpdate()
@@ -1655,7 +1956,7 @@ export class LimitOrdersController extends EventEmitter {
       receiver: account.addr,
       sellAmount: sellAmount.toString(),
       buyAmount: buyAmount.toString(),
-      validTo: Math.floor(Date.now() / 1000) + COWSWAP_LIMIT_ORDER_EXPIRY_SECONDS[this.expiry],
+      validTo: Math.floor(Date.now() / 1000) + this.expiryDays * SECONDS_IN_DAY,
       appData: fullAppData,
       appDataHash,
       feeAmount: '0',
@@ -2979,7 +3280,6 @@ export class LimitOrdersController extends EventEmitter {
   #resetFormFields() {
     this.fromAmount = ''
     this.price = DEFAULT_LIMIT_ORDER_PRICE
-    this.priceView = null
     this.marketQuote = null
     this.marketQuoteStatus = 'INITIAL'
     this.marketQuoteError = null
@@ -2995,7 +3295,9 @@ export class LimitOrdersController extends EventEmitter {
     this.hasPersistedPopupForm = false
     this.fromSelectedToken = null
     this.toSelectedToken = null
-    this.expiry = '7d'
+    this.#priceView = null
+    this.#hasUserPickedTokens = false
+    this.expiryDays = DEFAULT_LIMIT_ORDER_EXPIRY_DAYS
     this.toTokenSearchTerm = ''
     this.toTokenSearchResults = []
     this.lastPlacedOrderUid = null
@@ -3011,6 +3313,8 @@ export class LimitOrdersController extends EventEmitter {
       supportedChainIds: this.supportedChainIds,
       maxFromAmount: this.maxFromAmount,
       fromAmountError: this.fromAmountError,
+      priceView: this.priceView,
+      marketPrice: this.marketPrice,
       feeExemptionReason: this.feeExemptionReason,
       triggerBuyAmount: this.triggerBuyAmount,
       targetBuyAmount: this.targetBuyAmount,
