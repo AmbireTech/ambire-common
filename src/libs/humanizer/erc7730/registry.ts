@@ -717,7 +717,7 @@ const getEip712Key = (chainId: bigint, verifyingContract: string, primaryType: s
 
 /**
  * Merges a descriptor with everything its `includes` point at, collecting a want for any include
- * not yet fetched. Returns null while anything is still missing, so the caller reports its wants
+ * not looked up yet. Returns null while anything is still missing, so the caller reports its wants
  * and is asked again next round.
  */
 const mergeIncludes = (
@@ -1026,7 +1026,7 @@ const resolveInnerCalls = (
   return resolved
 }
 
-/** What the controller still has to fetch before an accountOp can be fully described. */
+/** What the controller still has to look up before an accountOp can be fully described. */
 export const planErc7730Wants = (accountOp: AccountOp, known: Erc7730Known): Erc7730Want[] =>
   accountOp.calls.flatMap(
     (call) =>
@@ -1035,7 +1035,7 @@ export const planErc7730Wants = (accountOp: AccountOp, known: Erc7730Known): Erc
       }).wants
   )
 
-/** The descriptor for each call that has one, given everything fetched so far. */
+/** The descriptor for each call that has one, given everything looked up so far. */
 export const resolveErc7730Descriptors = (
   accountOp: AccountOp,
   known: Erc7730Known

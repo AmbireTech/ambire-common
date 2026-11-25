@@ -1,8 +1,8 @@
 import { Call } from '../../accountOp/types'
 
 /**
- * A resource the library found it needs but does not have yet. The library never fetches: it
- * reports wants, the controller answers them, and the library is asked again with more `known`.
+ * A resource the library found it needs but does not have yet. The library looks nothing up itself:
+ * it reports wants, the controller answers them, and the library is asked again with more `known`.
  */
 export type Erc7730Want =
   /** The descriptor registered for a contract - the controller does the index lookup. */

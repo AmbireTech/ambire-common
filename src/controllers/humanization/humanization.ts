@@ -4,7 +4,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 type DescriptorFirstHumanizationOptions<T> = {
   humanizationId: number
-  fetchDescriptor: () => Promise<T>
+  lookUpDescriptor: () => Promise<T>
   applyDescriptorHumanization: (descriptor: T, humanizationId: number) => boolean
   applyFallbackHumanization: (humanizationId: number) => boolean
 }
@@ -50,7 +50,7 @@ export default abstract class HumanizationController extends EventEmitter {
 
   protected async applyDescriptorFirstHumanization<T>({
     humanizationId,
-    fetchDescriptor,
+    lookUpDescriptor,
     applyDescriptorHumanization,
     applyFallbackHumanization
   }: DescriptorFirstHumanizationOptions<T>) {
@@ -68,7 +68,7 @@ export default abstract class HumanizationController extends EventEmitter {
     this.#fallbackTimeout = fallbackTimeout
 
     try {
-      const descriptor = await fetchDescriptor()
+      const descriptor = await lookUpDescriptor()
       hasResolvedBeforeFallback = true
       this.#clearFallbackTimeout(fallbackTimeout)
 

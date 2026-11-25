@@ -753,8 +753,8 @@ const getNestedErc7730CalldataValue = (
   }
   context.collectedNestedCalls?.push(nestedCall)
 
-  // The descriptor of the contract the embedded call actually goes to, fetched for it by the
-  // registry. The descriptor of the call that carries it stands in only when both go to the same
+  // The descriptor of the contract the embedded call actually goes to, looked up for it through
+  // the registry. The descriptor of the call that carries it stands in only when both go to the same
   // contract, which is the one case where it describes the embedded call too. For any other
   // contract the embedded call is left to the plain humanizer modules further down, rather than
   // described by a format of an unrelated contract that happens to share a selector.
@@ -1650,7 +1650,7 @@ export const humanizeCallWithErc7730 = (
   nativeAssetSymbol?: string,
   /**
    * Set only by the registry, which runs the formatting to find out which calls are embedded in
-   * this one so it can fetch a descriptor for each of them.
+   * this one so it can ask for a descriptor for each of them.
    */
   collectedNestedCalls?: Call[]
 ): IrCall | null => {
