@@ -55,7 +55,6 @@ import { getAccountNetworks } from '../../libs/networks/networks'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenMetaViaRPC } from '../../libs/portfolio/getTokenMetaViaRPC'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import {
   FeeExemptionReason,
@@ -819,28 +818,14 @@ export class LimitOrdersController extends EventEmitter {
 
   /**
    * The same tokens Swap & Bridge offers to sell, by the same rules, on the networks where CoW
-   * Swap takes limit orders: with a balance, a price (unless prices are off or failed to load
-   * for the network) and not hidden
+   * Swap takes limit orders: with a balance and not hidden. Tokens without a USD price stay in
+   * the list, as in Swap & Bridge, since a legit token may just not be priced
    */
   #updateFromTokenList() {
-    const chainIdsWithPriceError = new Set<string>()
-    const priceError = this.#selectedAccount.balanceAffectingErrors.find(
-      (error) => error.id === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
-    )
-    priceError?.networkNames.forEach((networkName) => {
-      const network = this.#networks.networks.find((n) => n.name === networkName)
-      if (network) chainIdsWithPriceError.add(network.chainId.toString())
-    })
-    const areTokenPricesEnabled = this.#featureFlags.isFeatureEnabled('tokenPrices')
-
     const tokens = this.#selectedAccount.portfolio.tokens.filter(
       (token) =>
         this.supportedChainIds.includes(Number(token.chainId)) &&
-        getIsTokenEligibleForSwapAndBridge(
-          token,
-          true,
-          areTokenPricesEnabled && !chainIdsWithPriceError.has(token.chainId.toString())
-        ) &&
+        getIsTokenEligibleForSwapAndBridge(token, true) &&
         !token.flags.isHidden
     )
 
