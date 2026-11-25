@@ -20,10 +20,8 @@ import { getEip712EncodeTypeHash } from './eip712'
 import { humanizeCallWithErc7730 } from './humanize'
 import { MULTICALL_DESCRIPTOR, MULTICALL_SELECTOR } from './multicall'
 import {
-  Erc7730CalldataIndex,
   Erc7730CallDescriptors,
   Erc7730Descriptor,
-  Erc7730Eip712Index,
   Erc7730Eip712IndexEntry,
   Erc7730Field,
   Erc7730Known,
@@ -36,7 +34,6 @@ import {
   getRegistryKey,
   getSafeSingletonKey,
   getSafeTxCallsFromMessage,
-  isHexOfLength,
   isPlainObject
 } from './utils'
 
@@ -56,80 +53,9 @@ const EXEC_TRANSACTION_STATIC_WORDS = 10
 const ERC2612_PERMIT_ENCODE_TYPE_HASH =
   '0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9'
 
-const isDecimalString = (value: string) =>
-  !!value && [...value].every((char) => char >= '0' && char <= '9')
-
-const isRegistryKey = (key: string): boolean => {
-  const parts = key.split(':')
-
-  return (
-    parts.length === 3 &&
-    parts[0] === 'eip155' &&
-    isDecimalString(parts[1]!) &&
-    isHexOfLength(parts[2]!, 40)
-  )
-}
-
-const isHexHash = (value: string): boolean => isHexOfLength(value, 64)
-
 /** The message names no descriptor, as these errors are reported outside of the device */
 function throwInvalidRegistryData(): never {
   throw new Error('Invalid ERC-7730 registry data')
-}
-
-export const validateCalldataIndex = (payload: unknown): payload is Erc7730CalldataIndex => {
-  if (!isPlainObject(payload)) throwInvalidRegistryData()
-
-  const index = payload
-
-  Object.entries(index).forEach(([key, value]) => {
-    if (!isRegistryKey(key) || typeof value !== 'string') throwInvalidRegistryData()
-  })
-
-  return true
-}
-
-const validateEip712IndexEntry = (entry: unknown): entry is Erc7730Eip712IndexEntry => {
-  if (!isPlainObject(entry)) throwInvalidRegistryData()
-
-  const indexEntry = entry
-  if (typeof indexEntry.path !== 'string') throwInvalidRegistryData()
-
-  const { encodeTypeHashes } = indexEntry
-  if (
-    encodeTypeHashes !== undefined &&
-    (!Array.isArray(encodeTypeHashes) ||
-      encodeTypeHashes.some((hash: unknown) => typeof hash !== 'string' || !isHexHash(hash)))
-  ) {
-    throwInvalidRegistryData()
-  }
-
-  return true
-}
-
-export const validateEip712Index = (payload: unknown): payload is Erc7730Eip712Index => {
-  if (!isPlainObject(payload)) throwInvalidRegistryData()
-
-  const index = payload
-
-  Object.entries(index).forEach(([registryKey, primaryTypes]) => {
-    if (!isRegistryKey(registryKey) || !isPlainObject(primaryTypes)) {
-      throwInvalidRegistryData()
-    }
-
-    const primaryTypesIndex = primaryTypes
-
-    Object.entries(primaryTypesIndex).forEach(([primaryType, entries]) => {
-      if (typeof primaryType !== 'string' || !Array.isArray(entries)) {
-        throwInvalidRegistryData()
-      }
-
-      const indexEntries = entries
-      indexEntries.forEach((entry) => validateEip712IndexEntry(entry))
-    })
-  })
-
-  return true
 }
 
 const validateDescriptorField = (field: unknown): field is Erc7730Field => {
@@ -382,17 +308,11 @@ const ERC2612_PERMIT_DESCRIPTOR: Erc7730ResolvedDescriptor = {
 }
 
 /**
- * The path of a descriptor with a leading slash, from a registry path, a path with a leading
- * slash or a URL (whose path is used), so that each descriptor has one key.
+ * The path of a descriptor with a leading slash, from a registry path with or without one, so that
+ * each descriptor has one key.
  */
-export const normalizeDescriptorPath = (pathOrUrl: string): string => {
-  try {
-    const url = new URL(pathOrUrl)
-    return `${url.pathname}${url.search}`
-  } catch {
-    return pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`
-  }
-}
+export const normalizeDescriptorPath = (path: string): string =>
+  path.startsWith('/') ? path : `/${path}`
 
 /**
  * The path (with a leading slash) of the descriptor an `includes` entry points at, resolved
@@ -402,13 +322,10 @@ export const normalizeDescriptorPath = (pathOrUrl: string): string => {
  * a `#` or a `?`, while the registry keeps its descriptors under their plain file names.
  *
  * `scripts/updateErc7730Registry.js` resolves includes the same way to decide which files to
- * bundle - keep the two in sync (`bundledRegistry.test.ts` checks them against each other).
+ * bundle - keep the two in sync (`bundledRegistry.test.ts` checks them against each other). It
+ * also refuses an include that is a URL, as only files of the registry are bundled.
  */
 export const resolveIncludePath = (includePath: string, parentPath: string): string => {
-  if (includePath.startsWith('http://') || includePath.startsWith('https://')) {
-    return normalizeDescriptorPath(includePath)
-  }
-
   const parentFolderSegments = includePath.startsWith('/')
     ? []
     : normalizeDescriptorPath(parentPath).split('/').slice(0, -1)

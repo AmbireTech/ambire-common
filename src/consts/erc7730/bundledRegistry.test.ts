@@ -1,13 +1,14 @@
+import { isHexString } from 'ethers'
+
 import { describe, expect, test } from '@jest/globals'
 
 import { SUPPORTED_ERC7730_SCHEMA_FILES } from '../../libs/humanizer/erc7730/consts'
 import {
   getSchemaFileName,
   resolveIncludePath,
-  validateCalldataIndex,
-  validateDescriptor,
-  validateEip712Index
+  validateDescriptor
 } from '../../libs/humanizer/erc7730/registry'
+import { getRegistryKey } from '../../libs/humanizer/erc7730/utils'
 import { FALLBACK_CALLDATA_INDEX, OVERRIDE_CALLDATA_INDEX } from './ambireDescriptors'
 import upstreamFallbackCalldataIndex from './fallbackCalldataIndex.json'
 import { BUNDLED_ERC7730_REGISTRY } from '.'
@@ -39,6 +40,13 @@ const getIncludes = (descriptor: unknown): string[] => {
   return Array.isArray(includes) ? includes : []
 }
 
+/** Whether a key is written the way lookups build it: `eip155:{chainId}:{lowercase address}` */
+const isRegistryKey = (key: string) => {
+  const [, chainId = '', address = ''] = key.split(':')
+
+  return isHexString(address, 20) && getRegistryKey(chainId, address) === key
+}
+
 const getEip712Paths = () =>
   Object.values(eip712Index).flatMap((entriesByPrimaryType) =>
     Object.values(entriesByPrimaryType).flatMap((entries) => entries.map(({ path }) => path))
@@ -52,9 +60,27 @@ describe('bundled ERC-7730 registry', () => {
     expect(Object.keys(descriptors).length).toBeGreaterThan(0)
   })
 
-  test('has valid indexes', () => {
-    expect(validateCalldataIndex(calldataIndex)).toBe(true)
-    expect(validateEip712Index(eip712Index)).toBe(true)
+  test('has the keys of both indexes written the way lookups build them', () => {
+    const keys = [...Object.keys(calldataIndex), ...Object.keys(eip712Index)]
+
+    expect(keys.filter((key) => !isRegistryKey(key))).toEqual([])
+  })
+
+  test('has a descriptor path in every index entry', () => {
+    const invalidPaths = [...Object.values(calldataIndex), ...getEip712Paths()].filter(
+      (path) => typeof path !== 'string'
+    )
+
+    expect(invalidPaths).toEqual([])
+  })
+
+  test('has only 32 byte hashes as the encode type hashes of the EIP-712 index', () => {
+    const invalidHashes = Object.values(eip712Index)
+      .flatMap((entriesByPrimaryType) => Object.values(entriesByPrimaryType).flat())
+      .flatMap(({ encodeTypeHashes = [] }) => encodeTypeHashes)
+      .filter((hash) => !isHexString(hash, 32))
+
+    expect(invalidHashes).toEqual([])
   })
 
   test('has only valid descriptors', () => {
