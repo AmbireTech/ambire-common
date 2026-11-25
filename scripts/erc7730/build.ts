@@ -120,13 +120,8 @@ export const getDescriptorProblem = (descriptor: unknown): string | null => {
  * they point at, with everything those include. Throws a `RegistryBuildError` with every problem
  * found - a missing, invalid or unsupported descriptor, a missing include or an invalid index
  * entry - instead of leaving anything out, so that a change upstream is never dropped unnoticed.
- *
- * `extraDescriptorPaths` are bundled too, even though no index points at them.
  */
-export const buildRegistry = (
-  upstream: UpstreamFiles,
-  extraDescriptorPaths: string[] = []
-): BuiltRegistry => {
+export const buildRegistry = (upstream: UpstreamFiles): BuiltRegistry => {
   const problems: string[] = []
   const descriptors = new Map<string, Record<string, unknown>>()
   const visited = new Set<string>()
@@ -223,8 +218,6 @@ export const buildRegistry = (
     })
     eip712Index[key] = indexEntry
   })
-
-  extraDescriptorPaths.forEach((path) => load(path, "Ambire's fallback index"))
 
   if (problems.length) throw new RegistryBuildError(problems)
 

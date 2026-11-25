@@ -18,12 +18,12 @@ import { BuiltRegistry, buildRegistry, UpstreamFiles } from './erc7730/build'
 // `UPSTREAM_MIN_AGE_DAYS` old, so that a mistake made upstream can be found and fixed there
 // before the wallet ships it - or the commit the wallet already ships, if that one is newer.
 //
-// Only the descriptors the indexes point at (and the ones they include) are kept, plus the ones
-// Ambire's fallback index points at (`src/consts/erc7730/fallbackCalldataIndex.json`); the tests
-// and the rest of the registry are left out. Ambire's own descriptors are not in this file, they
-// are in `src/consts/erc7730/ambireDescriptors.ts`. The update fails, and writes nothing, if any
-// of these descriptors is missing, invalid or of a version of ERC-7730 the wallet doesn't support
-// (see `buildRegistry`).
+// Only the descriptors the indexes point at (and the ones they include) are kept; the tests and
+// the rest of the registry are left out. The update fails, and writes nothing, if any of these
+// descriptors is missing, invalid or of a version of ERC-7730 the wallet doesn't support (see
+// `buildRegistry`). Then Ambire's changes and own descriptors are applied (see
+// `scripts/erc7730/amendments.ts` and `applyAmendments`), which fail the update in the same way
+// once an upstream change makes one of them wrong or no longer needed.
 //
 // The file only changes when the registry data does: the indexes and the descriptors are sorted
 // by their key, and `source` is kept when nothing was added, removed or changed. Each index entry
@@ -59,7 +59,6 @@ const MAX_LISTED_PATHS = 100
 
 const erc7730ConstsPath = path.join(__dirname, '..', 'src', 'consts', 'erc7730')
 const outputPath = path.join(erc7730ConstsPath, 'registry.json')
-const fallbackCalldataIndexPath = path.join(erc7730ConstsPath, 'fallbackCalldataIndex.json')
 const ownDescriptorsPath = path.join(__dirname, 'erc7730', 'descriptors')
 
 type Source = { repository: string; commit: string; date: string }
@@ -159,15 +158,6 @@ const serializeRegistry = ({ source, calldataIndex, eip712Index, descriptors }: 
     '}',
     ''
   ].join('\n')
-}
-
-/** The registry paths Ambire's fallback index points at, see `fallbackCalldataIndexPath` */
-const readFallbackPaths = async (): Promise<string[]> => {
-  const fallbackCalldataIndex: Record<string, string> = JSON.parse(
-    await fsPromises.readFile(fallbackCalldataIndexPath, 'utf8')
-  )
-
-  return [...new Set(Object.values(fallbackCalldataIndex))].sort()
 }
 
 /** Ambire's own descriptors (see `ownDescriptorsPath`), by their path in that folder */
@@ -312,8 +302,7 @@ const run = async () => {
   const registryDirectory = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'erc7730-registry-'))
 
   try {
-    const [fallbackPaths, ownDescriptors, previous] = await Promise.all([
-      readFallbackPaths(),
+    const [ownDescriptors, previous] = await Promise.all([
       readOwnDescriptors(),
       readPreviousRegistry()
     ])
@@ -324,7 +313,7 @@ const run = async () => {
     const {
       registry: { calldataIndex, eip712Index, descriptors },
       notes
-    } = applyAmendments(buildRegistry(files, fallbackPaths), amendments, ownDescriptors)
+    } = applyAmendments(buildRegistry(files), amendments, ownDescriptors)
 
     const calldataChanges = getChanges(previous?.calldataIndex, calldataIndex)
     const eip712Changes = getChanges(previous?.eip712Index, eip712Index)

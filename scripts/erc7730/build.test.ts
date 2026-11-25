@@ -33,9 +33,9 @@ const withIndexes = (
   upstreamOf({ [CALLDATA_INDEX_FILE]: calldataIndex, [EIP712_INDEX_FILE]: eip712Index, ...files })
 
 /** The problems a build reports, or [] if it succeeds */
-const getProblems = (upstream: UpstreamFiles, extraPaths?: string[]): string[] => {
+const getProblems = (upstream: UpstreamFiles): string[] => {
   try {
-    buildRegistry(upstream, extraPaths)
+    buildRegistry(upstream)
     return []
   } catch (error) {
     if (error instanceof RegistryBuildError) return error.problems
@@ -193,17 +193,6 @@ describe('buildRegistry', () => {
     )
 
     expect(getProblems(upstream)).toHaveLength(2)
-  })
-
-  test('bundles extra descriptors and fails when one is missing', () => {
-    const upstream = withIndexes({ 'registry/safe/calldata-Safe.json': descriptor() })
-
-    expect(
-      Object.keys(buildRegistry(upstream, ['registry/safe/calldata-Safe.json']).descriptors)
-    ).toEqual(['registry/safe/calldata-Safe.json'])
-    expect(getProblems(upstream, ['registry/safe/calldata-Gone.json'])).toEqual([
-      "Ambire's fallback index points at registry/safe/calldata-Gone.json, which is not in the registry"
-    ])
   })
 
   test('fails when the registry has no indexes', () => {

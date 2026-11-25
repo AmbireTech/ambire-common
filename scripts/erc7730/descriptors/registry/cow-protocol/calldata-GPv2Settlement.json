@@ -1,0 +1,186 @@
+{
+  "$schema": "https://eips.ethereum.org/assets/eip-7730/erc7730-v2.schema.json",
+  "context": {
+    "contract": {
+      "deployments": [
+        {
+          "chainId": 1,
+          "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+        },
+        {
+          "chainId": 56,
+          "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+        },
+        {
+          "chainId": 100,
+          "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+        },
+        {
+          "chainId": 137,
+          "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+        },
+        {
+          "chainId": 8453,
+          "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+        },
+        {
+          "chainId": 9745,
+          "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+        },
+        {
+          "chainId": 42161,
+          "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+        },
+        {
+          "chainId": 43114,
+          "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+        },
+        {
+          "chainId": 57073,
+          "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+        },
+        {
+          "chainId": 59144,
+          "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+        },
+        {
+          "chainId": 11155111,
+          "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+        }
+      ]
+    }
+  },
+  "metadata": {
+    "owner": "CoW Protocol",
+    "contractName": "GPv2Settlement",
+    "info": {
+      "url": "https://cow.fi/"
+    }
+  },
+  "display": {
+    "formats": {
+      "setPreSignature(bytes orderUid,bool signed)": {
+        "intent": "Pre-sign CowSwap order",
+        "fields": [
+          {
+            "path": "orderUid",
+            "label": "Order ID",
+            "format": "raw",
+            "visible": "always"
+          },
+          {
+            "path": "orderUid.[32:52]",
+            "label": "Owner",
+            "format": "addressName",
+            "visible": "always"
+          },
+          {
+            "path": "orderUid.[52:56]",
+            "label": "Valid until",
+            "format": "date",
+            "params": {
+              "encoding": "timestamp"
+            },
+            "visible": "always"
+          },
+          {
+            "path": "signed",
+            "label": "Pre-signature enabled",
+            "format": "raw",
+            "visible": "always"
+          }
+        ]
+      },
+      "invalidateOrder(bytes orderUid)": {
+        "intent": "Cancel CowSwap order",
+        "fields": [
+          {
+            "path": "orderUid",
+            "label": "Order ID",
+            "format": "raw",
+            "visible": "always"
+          },
+          {
+            "path": "orderUid.[32:52]",
+            "label": "Owner",
+            "format": "addressName",
+            "visible": "always"
+          },
+          {
+            "path": "orderUid.[52:56]",
+            "label": "Valid until",
+            "format": "date",
+            "params": {
+              "encoding": "timestamp"
+            },
+            "visible": "always"
+          }
+        ]
+      },
+      "freeFilledAmountStorage(bytes[] orderUids)": {
+        "intent": "Clear CowSwap filled amount storage",
+        "fields": [
+          {
+            "path": "orderUids[]",
+            "label": "Order",
+            "fields": [
+              {
+                "path": ".",
+                "label": "Order ID",
+                "format": "raw",
+                "visible": "always"
+              },
+              {
+                "path": ".[32:52]",
+                "label": "Owner",
+                "format": "addressName",
+                "visible": "always"
+              },
+              {
+                "path": ".[52:56]",
+                "label": "Valid until",
+                "format": "date",
+                "params": {
+                  "encoding": "timestamp"
+                },
+                "visible": "always"
+              }
+            ]
+          }
+        ]
+      },
+      "freePreSignatureStorage(bytes[] orderUids)": {
+        "intent": "Clear CowSwap pre-signature storage",
+        "fields": [
+          {
+            "path": "orderUids[]",
+            "label": "Order",
+            "fields": [
+              {
+                "path": ".",
+                "label": "Order ID",
+                "format": "raw",
+                "visible": "always"
+              },
+              {
+                "path": ".[32:52]",
+                "label": "Owner",
+                "format": "addressName",
+                "visible": "always"
+              },
+              {
+                "path": ".[52:56]",
+                "label": "Valid until",
+                "format": "date",
+                "params": {
+                  "encoding": "timestamp"
+                },
+                "visible": "always"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

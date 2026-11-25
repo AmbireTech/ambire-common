@@ -1,0 +1,53 @@
+{
+  "invalidateOrdersIgnoringNotAllowed((address buyToken,address receiver,uint256 sellAmount,uint256 buyAmount,bytes32 appData,uint256 feeAmount,uint32 validTo,bool partiallyFillable,int64 quoteId)[] orderArray)": {
+    "intent": "Cancel CowSwap ETH orders",
+    "fields": [
+      {
+        "path": "orderArray[]",
+        "label": "Order",
+        "fields": [
+          {
+            "path": "sellAmount",
+            "label": "Sell amount",
+            "format": "amount",
+            "visible": "always"
+          },
+          {
+            "path": "buyAmount",
+            "label": "Buy amount",
+            "format": "tokenAmount",
+            "params": {
+              "tokenPath": "buyToken"
+            },
+            "visible": "always"
+          },
+          {
+            "path": "receiver",
+            "label": "To",
+            "format": "addressName",
+            "visible": "always"
+          },
+          {
+            "path": "validTo",
+            "label": "Valid until",
+            "format": "date",
+            "params": {
+              "encoding": "timestamp"
+            },
+            "visible": "always"
+          },
+          {
+            "path": "appData",
+            "label": "App data",
+            "visible": "never"
+          },
+          {
+            "path": "quoteId",
+            "label": "Quote ID",
+            "visible": "never"
+          }
+        ]
+      }
+    ]
+  }
+}
