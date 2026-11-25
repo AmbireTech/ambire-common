@@ -8,6 +8,7 @@ import {
   Erc7730ResolvedDescriptor
 } from '../../libs/humanizer/erc7730/types'
 import { Erc7730Controller } from './erc7730'
+import { declareSupportedSchema } from '../../../test/mocks/erc7730Registry'
 
 /** Runtime code of a real SafeProxy v1.4.1, so a mocked provider looks like a deployed Safe.
  * The proxy version is fixed here on purpose: its keccak256 must match a hash in
@@ -55,7 +56,7 @@ const getTestController = (registry: Erc7730Registry, provider?: any): Erc7730Co
   const controller = new Erc7730Controller({
     providers: makeProvidersStub(provider),
     ui: makeUiStub(),
-    registry
+    registry: declareSupportedSchema(registry)
   })
   controllersByProvider.set(provider, controller)
 

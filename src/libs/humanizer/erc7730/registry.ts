@@ -163,6 +163,17 @@ const validateDescriptorField = (field: unknown): field is Erc7730Field => {
   return true
 }
 
+/**
+ * The file name of the `$schema` a descriptor declares, which tells its version of ERC-7730, or
+ * null if it declares none. Only the file name is read, as descriptors link to the same schema
+ * through relative paths and through different URLs
+ */
+export const getSchemaFileName = (descriptor: unknown): string | null => {
+  if (!isPlainObject(descriptor) || typeof descriptor.$schema !== 'string') return null
+
+  return descriptor.$schema.split('/').pop() || null
+}
+
 export const validateDescriptor = (payload: unknown): payload is Erc7730Descriptor => {
   if (!isPlainObject(payload)) throwInvalidRegistryData()
 

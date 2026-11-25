@@ -1,6 +1,8 @@
 import { describe, expect, test } from '@jest/globals'
 
+import { SUPPORTED_ERC7730_SCHEMA_FILES } from '../../libs/humanizer/erc7730/consts'
 import {
+  getSchemaFileName,
   resolveIncludePath,
   validateCalldataIndex,
   validateDescriptor,
@@ -67,6 +69,16 @@ describe('bundled ERC-7730 registry', () => {
       .map(([path]) => path)
 
     expect(invalidPaths).toEqual([])
+  })
+
+  test('has only descriptors of a supported version of ERC-7730', () => {
+    const unsupportedPaths = Object.entries(descriptors)
+      .filter(
+        ([, descriptor]) => !SUPPORTED_ERC7730_SCHEMA_FILES.has(getSchemaFileName(descriptor) ?? '')
+      )
+      .map(([path]) => path)
+
+    expect(unsupportedPaths).toEqual([])
   })
 
   test('has the descriptor of every index entry', () => {

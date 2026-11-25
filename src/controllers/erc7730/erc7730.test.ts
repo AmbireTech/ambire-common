@@ -1,5 +1,6 @@
 import { describe, expect, jest, test } from '@jest/globals'
 
+import { declareSupportedSchema } from '../../../test/mocks/erc7730Registry'
 import { IUiController } from '../../interfaces/ui'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -33,7 +34,11 @@ const makeUi = (sendUiMessage = jest.fn()): IUiController =>
   ({ message: { sendUiMessage } }) as unknown as IUiController
 
 const makeController = (registry: Erc7730Registry, providers?: any) =>
-  new Erc7730Controller({ registry, providers, ui: makeUi() })
+  new Erc7730Controller({
+    registry: declareSupportedSchema(registry),
+    providers,
+    ui: makeUi()
+  })
 
 describe('Erc7730Controller', () => {
   test('describes a call with the descriptor the registry has for its contract', async () => {
@@ -67,6 +72,72 @@ describe('Erc7730Controller', () => {
 
     expect(descriptors[0]?.descriptor.metadata?.owner).toBe('Included owner')
     expect(descriptors[0]?.descriptor.display?.formats?.['test()']?.intent).toBe('Controller test')
+  })
+
+  describe('versions of ERC-7730', () => {
+    // These build the controller directly, so that no schema is declared for them
+    const describeCall = async (descriptors: Erc7730Registry['descriptors']) => {
+      const controller = new Erc7730Controller({
+        registry: makeRegistry({ descriptors }),
+        ui: makeUi()
+      })
+      const found = await controller.getDescriptorsForAccountOp(accountOp)
+
+      return { found, errors: controller.emittedErrors.map(({ error }) => error.message) }
+    }
+    const declaring = ($schema: unknown) => ({ $schema, ...CONTRACT_DESCRIPTOR })
+
+    test.each([
+      '../../specs/erc7730-v2.schema.json',
+      'https://eips.ethereum.org/assets/eip-7730/erc7730-v2.schema.json'
+    ])('uses a descriptor that declares %s', async ($schema) => {
+      const { found, errors } = await describeCall({ [REGISTRY_PATH]: declaring($schema) })
+
+      expect(found[0]?.path).toBe(REGISTRY_PATH)
+      expect(errors).toEqual([])
+    })
+
+    test.each([
+      ['a newer version', '../../specs/erc7730-v3.schema.json', 'erc7730-v3.schema.json'],
+      ['an older version', '../../specs/erc7730-v1.schema.json', 'erc7730-v1.schema.json'],
+      [
+        'a supported name only as a folder',
+        'https://example.com/erc7730-v2.schema.json/erc7730-v3.schema.json',
+        'erc7730-v3.schema.json'
+      ],
+      ['an empty schema', '', 'none declared'],
+      ['a schema that is not a text', 2, 'none declared'],
+      ['no schema', undefined, 'none declared']
+    ])('does not use a descriptor with %s, and reports it', async (_, $schema, reported) => {
+      const { found, errors } = await describeCall({ [REGISTRY_PATH]: declaring($schema) })
+
+      expect(found).toEqual({})
+      expect(errors).toEqual([`Unsupported ERC-7730 schema: ${reported}`])
+    })
+
+    test('reports a newer version as unsupported even when its shape changed', async () => {
+      const { errors } = await describeCall({
+        [REGISTRY_PATH]: {
+          $schema: '../../specs/erc7730-v3.schema.json',
+          display: { formats: 'a new shape' }
+        }
+      })
+
+      expect(errors).toEqual(['Unsupported ERC-7730 schema: erc7730-v3.schema.json'])
+    })
+
+    test('does not use a descriptor that includes a file of an unsupported version', async () => {
+      const { found, errors } = await describeCall({
+        [REGISTRY_PATH]: {
+          ...declaring('../../specs/erc7730-v2.schema.json'),
+          includes: 'common.json'
+        },
+        [INCLUDED_PATH]: { $schema: '../../specs/erc7730-v3.schema.json' }
+      })
+
+      expect(found).toEqual({})
+      expect(errors).toEqual(['Unsupported ERC-7730 schema: erc7730-v3.schema.json'])
+    })
   })
 
   test('reports and skips an index entry whose descriptor is not in the registry', async () => {
@@ -234,7 +305,7 @@ describe('Erc7730Controller', () => {
   test('replies to the UI request with the resolved descriptors', async () => {
     const sendUiMessage = jest.fn()
     const controller = new Erc7730Controller({
-      registry: makeRegistry(),
+      registry: declareSupportedSchema(makeRegistry()),
       ui: makeUi(sendUiMessage)
     })
 
