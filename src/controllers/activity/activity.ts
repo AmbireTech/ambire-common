@@ -6,7 +6,11 @@ import {
   pickBetterPoisoningMatch,
   ScoredAddressPoisoningMatch
 } from '@/libs/transfer/address-poisoning'
-import { AddressBookDomains, getDomainTypoMatch } from '@/libs/transfer/domain-typo'
+import {
+  AddressBookDomains,
+  getDomainTypoMatch,
+  getKnownDomains
+} from '@/libs/transfer/domain-typo'
 import { AccountOpsPersistence } from '@/services/storage/accountOpsPersistence'
 import { MAX_OPS_PER_GROUP, STARTUP_RECENT_OPS_LIMIT } from '@/services/storage/activityIdb'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
@@ -1023,20 +1027,27 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   /**
-   * Returns the domain the user has sent to before, or the Address Book name, that `domain` most
-   * likely misspells, or null. See `getDomainTypoMatch` for what counts as a typo.
+   * Returns the domain the user has sent to before that `domain` most likely misspells, or null.
+   * Address Book names count only when `accountAddr` has sent to their address, see
+   * `getKnownDomains`. See `getDomainTypoMatch` for what counts as a typo.
    */
-  getDomainTypoMatch(
+  getSentToDomainTypoMatch(
     domain: string,
     resolvedAddress: string,
+    accountAddr: string | undefined,
     addressBookDomains: AddressBookDomains
   ): DomainTypoMatch | null {
-    return getDomainTypoMatch(
-      domain,
-      resolvedAddress,
+    const recipientsKey = accountAddr
+      ? getAccountOpsAccountKey(this.#sentToHistory.recipients, accountAddr)
+      : undefined
+    const recipients = recipientsKey ? this.#sentToHistory.recipients[recipientsKey] : undefined
+    const knownDomains = getKnownDomains(
       this.#sentToHistory.domains,
-      addressBookDomains
+      addressBookDomains,
+      recipients
     )
+
+    return getDomainTypoMatch(domain, resolvedAddress, knownDomains)
   }
 
   async addExternalAccountOp({

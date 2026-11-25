@@ -88,7 +88,7 @@ describe('validateSendTransferAddress - recipient domain typo', () => {
 
   it('shows the typo instead of the address poisoning and first-time-send warnings', () => {
     const result = validate({
-      recipientDomainTypoMatch: { matchedDomain: 'move.eth', source: 'sentTo' },
+      recipientDomainTypoMatch: { matchedDomain: 'move.eth' },
       addressPoisoningMatch: {
         matchedAddress: POISONING_LOOKALIKE,
         matchedPrefixCharsCount: 4,
@@ -104,7 +104,7 @@ describe('validateSendTransferAddress - recipient domain typo', () => {
 
   it('keeps the hold after the user agrees to send to a new address', () => {
     const result = validate({
-      recipientDomainTypoMatch: { matchedDomain: 'move.eth', source: 'sentTo' },
+      recipientDomainTypoMatch: { matchedDomain: 'move.eth' },
       isRecipientAddressFirstTimeSend: true,
       isRecipientAddressUnknown: true,
       isRecipientAddressUnknownAgreed: true

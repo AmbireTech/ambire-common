@@ -1,6 +1,6 @@
 import { SentToHistory } from '../../controllers/activity/types'
 import { Domains } from '../../interfaces/domains'
-import { getAddressBookDomains, getDomainTypoMatch } from './domain-typo'
+import { getAddressBookDomains, getDomainTypoMatch, getKnownDomains } from './domain-typo'
 
 const MOVE_ADDRESS = '0x1111111111111111111111111111111111111111'
 const REMOVE_ADDRESS = '0x2222222222222222222222222222222222222222'
@@ -23,7 +23,7 @@ const sentToDomains: SentToHistory['domains'] = {
 }
 
 const findMatchedDomain = (typedDomain: string, resolvedAddress = TYPED_DOMAIN_ADDRESS) =>
-  getDomainTypoMatch(typedDomain, resolvedAddress, sentToDomains, {})?.matchedDomain ?? null
+  getDomainTypoMatch(typedDomain, resolvedAddress, sentToDomains)?.matchedDomain ?? null
 
 describe('getDomainTypoMatch', () => {
   test.each([
@@ -53,12 +53,9 @@ describe('getDomainTypoMatch', () => {
   test('does not match a name that is only contained in a longer known name', () => {
     // "move.eth" is inside "remove.eth", but two chars are missing
     expect(
-      getDomainTypoMatch(
-        'move.eth',
-        TYPED_DOMAIN_ADDRESS,
-        { 'remove.eth': sentToDomains['remove.eth']! },
-        {}
-      )
+      getDomainTypoMatch('move.eth', TYPED_DOMAIN_ADDRESS, {
+        'remove.eth': sentToDomains['remove.eth']!
+      })
     ).toBeNull()
   })
 
@@ -88,7 +85,7 @@ describe('getDomainTypoMatch', () => {
 
   test('returns null for an empty name or no history', () => {
     expect(findMatchedDomain('  ')).toBeNull()
-    expect(getDomainTypoMatch('mpve.eth', TYPED_DOMAIN_ADDRESS, {}, {})).toBeNull()
+    expect(getDomainTypoMatch('mpve.eth', TYPED_DOMAIN_ADDRESS, {})).toBeNull()
   })
 
   test.each([
@@ -108,39 +105,51 @@ describe('getDomainTypoMatch', () => {
   })
 })
 
-describe('getDomainTypoMatch with Address Book names', () => {
+describe('getKnownDomains', () => {
   const addressBookDomains = { 'satoshi.eth': CONTACT_ADDRESS }
 
-  test('matches a typo of an Address Book name the user never sent to', () => {
-    expect(
-      getDomainTypoMatch('sat0shi.eth', TYPED_DOMAIN_ADDRESS, sentToDomains, addressBookDomains)
-    ).toEqual({ matchedDomain: 'satoshi.eth', source: 'addressBook' })
+  test('adds an Address Book name the user sent to, with the time of the last send', () => {
+    const knownDomains = getKnownDomains(sentToDomains, addressBookDomains, {
+      [CONTACT_ADDRESS]: 9000
+    })
+
+    expect(knownDomains['satoshi.eth']).toEqual({ address: CONTACT_ADDRESS, sentAt: 9000 })
+    expect(getDomainTypoMatch('sat0shi.eth', TYPED_DOMAIN_ADDRESS, knownDomains)).toEqual({
+      matchedDomain: 'satoshi.eth'
+    })
   })
 
-  test('prefers a sent-to name over an Address Book name', () => {
-    expect(
-      getDomainTypoMatch('mpve.eth', TYPED_DOMAIN_ADDRESS, sentToDomains, {
-        'mave.eth': CONTACT_ADDRESS
-      })
-    ).toEqual({ matchedDomain: 'move.eth', source: 'sentTo' })
+  test('leaves out an Address Book name the user never sent to', () => {
+    const knownDomains = getKnownDomains(sentToDomains, addressBookDomains, {
+      [MOVE_ADDRESS]: 9000
+    })
+
+    expect(knownDomains['satoshi.eth']).toBeUndefined()
+    expect(getDomainTypoMatch('sat0shi.eth', TYPED_DOMAIN_ADDRESS, knownDomains)).toBeNull()
+    expect(getKnownDomains(sentToDomains, addressBookDomains, undefined)).toEqual(sentToDomains)
   })
 
-  test('returns null when the typed name is an Address Book name that now points elsewhere', () => {
-    // satoshi.eth is one typo away from satoshl.eth, but the user knows it from the Address Book
-    expect(
-      getDomainTypoMatch(
-        'satoshi.eth',
-        TYPED_DOMAIN_ADDRESS,
-        { 'satoshl.eth': { address: VITALIK_ADDRESS, sentAt: 1000 } },
-        addressBookDomains
-      )
-    ).toBeNull()
+  test('keeps the typed name when an Address Book name is the same', () => {
+    const knownDomains = getKnownDomains(
+      sentToDomains,
+      { 'move.eth': CONTACT_ADDRESS },
+      { [CONTACT_ADDRESS]: 9000 }
+    )
+
+    expect(knownDomains['move.eth']).toEqual(sentToDomains['move.eth'])
   })
 
-  test('skips an Address Book name that points to the same address as the typed one', () => {
-    expect(
-      getDomainTypoMatch('sat0shi.eth', CONTACT_ADDRESS, sentToDomains, addressBookDomains)
-    ).toBeNull()
+  test('picks an Address Book name sent to more recently over an older typed name', () => {
+    // mpve.eth is one char away from both move.eth (typed, sent at 1000) and mave.eth
+    const knownDomains = getKnownDomains(
+      sentToDomains,
+      { 'mave.eth': CONTACT_ADDRESS },
+      { [CONTACT_ADDRESS]: 9000 }
+    )
+
+    expect(getDomainTypoMatch('mpve.eth', TYPED_DOMAIN_ADDRESS, knownDomains)).toEqual({
+      matchedDomain: 'mave.eth'
+    })
   })
 })
 

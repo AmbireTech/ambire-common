@@ -5,7 +5,7 @@ import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { getPrivacyPoolsDepositAsset, getPrivacyPoolsTokenId } from '../../consts/privacyPools'
-import { Account, IAccountsController } from '../../interfaces/account'
+import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { IContractInfoController } from '../../interfaces/contractInfo'
@@ -1449,38 +1449,34 @@ export class TransferController extends EventEmitter implements ITransferControl
       ? pickPoisoningMatchWithOwnAccounts(this.recipientAddress, ownAccounts, addressPoisoningMatch)
       : null
     this.recipientDomainTypoMatch = isRecipientNewToUser
-      ? this.#getRecipientDomainTypoMatch(ownAccounts)
+      ? this.#getRecipientDomainTypoMatch()
       : null
 
     this.#updateRecipientDomainAddressChange()
   }
 
   /**
-   * When the recipient was typed as a domain the user has never sent to, finds a domain they know
-   * that it most likely misspells, like `rnove.eth` instead of `move.eth`. Pasted or picked
-   * addresses are not checked.
-   *
-   * Besides the domains the user sent to, it checks the names of manually added contacts and of
-   * `ownAccounts`, because picking a recipient from the Address Book saves no domain in the send
-   * history. View-only accounts are left out, since the user didn't create them and the warning
-   * offers to switch to the matched name, so a planted lookalike could steer the user to it.
+   * When the recipient was typed as a domain the user has never sent to, finds a domain they have
+   * sent to before that it most likely misspells, like `rnove.eth` instead of `move.eth`. Pasted or
+   * picked addresses are not checked. Address Book names count too when the selected account has
+   * sent to their address, since picking a recipient from the Address Book saves no domain with the
+   * send.
    */
-  #getRecipientDomainTypoMatch(ownAccounts: Account[]): DomainTypoMatch | null {
+  #getRecipientDomainTypoMatch(): DomainTypoMatch | null {
     const { resolvedAddressType, resolvedAddress, fieldValue } = this.addressState
     if (!resolvedAddressType || !isAddress(resolvedAddress) || isAddress(fieldValue)) return null
 
-    const trustedAddressBookAddresses = [
-      ...this.#addressBook.contacts
-        .filter(({ isWalletAccount }) => !isWalletAccount)
-        .map(({ address }) => address),
-      ...ownAccounts.map(({ addr }) => addr)
-    ]
     const addressBookDomains = getAddressBookDomains(
-      trustedAddressBookAddresses,
+      this.#addressBook.contacts.map(({ address }) => address),
       this.#getDomains()
     )
 
-    return this.#activity.getDomainTypoMatch(fieldValue, resolvedAddress, addressBookDomains)
+    return this.#activity.getSentToDomainTypoMatch(
+      fieldValue,
+      resolvedAddress,
+      this.#selectedAccount.account?.addr,
+      addressBookDomains
+    )
   }
 
   /**

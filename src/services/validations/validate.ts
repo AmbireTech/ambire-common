@@ -223,17 +223,13 @@ const validateSendTransferAddress = (
         shouldHold: true
       }
     },
-    // A new domain that is most likely a typo of one the user knows. Kept short because the UI
-    // shows a "Use <domain>" button next to it.
+    // A new domain that is most likely a typo of one the user has sent to before. Kept short
+    // because the UI shows a "Use <domain>" button next to it.
     () => {
       if (!recipientDomainTypoMatch) return undefined
 
-      const { matchedDomain, source } = recipientDomainTypoMatch
-      const knownFrom =
-        source === 'sentTo' ? 'which you have sent to before' : 'which is in your Address Book'
-
       return {
-        message: `Looks like a typo of ${matchedDomain}, ${knownFrom}.`,
+        message: `Looks like a typo of ${recipientDomainTypoMatch.matchedDomain}, which you have sent to before.`,
         severity: 'warning',
         shouldHold: true
       }

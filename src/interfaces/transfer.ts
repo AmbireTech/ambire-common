@@ -52,13 +52,11 @@ export type AddressPoisoningMatch = {
 }
 
 /**
- * A domain the user knows that the typed recipient domain most likely misspells.
+ * A domain the user has sent to before that the typed recipient domain most likely misspells.
  * `matchedDomain` is lowercased, so it can be put back in the recipient field as it is.
  */
 export type DomainTypoMatch = {
   matchedDomain: string
-  /** Whether the user has sent to `matchedDomain` before or has it in the Address Book. */
-  source: 'sentTo' | 'addressBook'
 }
 
 export type AmountAdjustmentInfo = {

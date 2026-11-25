@@ -107,46 +107,62 @@ export const getAddressBookDomains = (addresses: string[], domains: Domains): Ad
   }, {})
 
 /**
- * Finds the domain the user most likely meant when the typed one is new to them. A known domain
- * matches when it is one typo away (see `getIsOneTypoApart`) or reads the same once lookalike chars
- * like `rn` and `m` are swapped. When both names are 3 chars or shorter, only lookalikes match.
+ * Adds to the domains the user typed when sending the Address Book names of addresses in
+ * `sentToRecipients`, each with the time of the last send there. This covers a recipient the user
+ * picks from the Address Book, since that saves no domain with the send.
  *
- * Domains the user sent to come first, and on several matches the most recently used one wins.
- * Address Book names (see `getAddressBookDomains`) are checked only when no sent-to domain
- * matches, which covers a recipient the user always picks from the Address Book and never types.
+ * Names of addresses the user never sent to are left out. Anyone can get an address into the
+ * Address Book, and the typo warning offers to switch to the matched name, so a planted lookalike
+ * could otherwise steer the user to it. A past send makes the name as trusted as a typed one.
+ * When a name is in both, the typed one is kept, since it is what the user used.
+ */
+export const getKnownDomains = (
+  sentToDomains: SentToHistory['domains'],
+  addressBookDomains: AddressBookDomains,
+  sentToRecipients: SentToHistory['recipients'][string] | undefined
+): SentToHistory['domains'] => {
+  const knownDomains = { ...sentToDomains }
+
+  Object.entries(addressBookDomains).forEach(([domain, address]) => {
+    const sentAt = sentToRecipients?.[address]
+    if (!sentAt || knownDomains[domain]) return
+
+    knownDomains[domain] = { address, sentAt }
+  })
+
+  return knownDomains
+}
+
+/**
+ * Finds the domain the user most likely meant when the typed one is new to them: a known domain
+ * (see `getKnownDomains`) that is one typo away (see `getIsOneTypoApart`), or that reads the same
+ * once lookalike chars like `rn` and `m` are swapped. When both names are 3 chars or shorter, only
+ * lookalikes match. Domains that point to `resolvedAddress` are skipped, since sending there
+ * reaches the same recipient anyway. On several matches the most recently used one wins.
  *
- * Known domains that point to `resolvedAddress` are skipped, since sending there reaches the same
- * recipient anyway. Returns null when nothing matches, or when the typed domain is itself a known
- * one. That holds even when the known domain now points to another address, since that is a
- * changed name and not a typo.
+ * Returns null when nothing matches, or when the typed domain is itself a known one. That holds
+ * even when the known domain now points to another address, since that is a changed name and not
+ * a typo.
  */
 export const getDomainTypoMatch = (
   typedDomain: string,
   resolvedAddress: string,
-  sentToDomains: SentToHistory['domains'],
-  addressBookDomains: AddressBookDomains
+  knownDomains: SentToHistory['domains']
 ): DomainTypoMatch | null => {
   const normalizedTypedDomain = typedDomain.toLowerCase().trim()
-  if (!normalizedTypedDomain) return null
-  if (sentToDomains[normalizedTypedDomain] || addressBookDomains[normalizedTypedDomain]) return null
+  if (!normalizedTypedDomain || knownDomains[normalizedTypedDomain]) return null
 
   const typedDomainWithoutLookalikes = replaceLookalikeChars(normalizedTypedDomain)
-  const getIsTypoOfKnownDomain = (knownDomain: string, knownAddress: string) =>
-    knownAddress.toLowerCase() !== resolvedAddress.toLowerCase() &&
-    getIsTypo(normalizedTypedDomain, typedDomainWithoutLookalikes, knownDomain)
+  let bestMatch: { domain: string; sentAt: number } | null = null
 
-  let bestSentToMatch: { domain: string; sentAt: number } | null = null
+  for (const [domain, { address, sentAt }] of Object.entries(knownDomains)) {
+    if (address.toLowerCase() === resolvedAddress.toLowerCase()) continue
+    if (bestMatch && bestMatch.sentAt >= sentAt) continue
 
-  for (const [domain, { address, sentAt }] of Object.entries(sentToDomains)) {
-    if (bestSentToMatch && bestSentToMatch.sentAt >= sentAt) continue
-    if (getIsTypoOfKnownDomain(domain, address)) bestSentToMatch = { domain, sentAt }
+    if (getIsTypo(normalizedTypedDomain, typedDomainWithoutLookalikes, domain)) {
+      bestMatch = { domain, sentAt }
+    }
   }
 
-  if (bestSentToMatch) return { matchedDomain: bestSentToMatch.domain, source: 'sentTo' }
-
-  const addressBookMatch = Object.entries(addressBookDomains).find(([domain, address]) =>
-    getIsTypoOfKnownDomain(domain, address)
-  )
-
-  return addressBookMatch ? { matchedDomain: addressBookMatch[0], source: 'addressBook' } : null
+  return bestMatch ? { matchedDomain: bestMatch.domain } : null
 }
