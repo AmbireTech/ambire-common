@@ -13,17 +13,16 @@ import {
   SAFE_SINGLETON_CACHE_TTL_MS,
   SUPPORTED_ERC7730_SCHEMA_FILES
 } from '../../libs/humanizer/erc7730/consts'
+import { getSchemaFileName, validateDescriptor } from '../../libs/humanizer/erc7730/descriptor'
 import {
   ERC7730_MAX_RESOLUTION_DEPTH,
   getAddressFromStorageSlot,
-  getSchemaFileName,
   normalizeDescriptorPath,
   planErc7730MessageWants,
   planErc7730Wants,
   resolveErc7730Descriptors,
   resolveErc7730MessageDescriptor,
-  selectEip712IndexEntry,
-  validateDescriptor
+  selectEip712IndexEntry
 } from '../../libs/humanizer/erc7730/registry'
 import {
   EMPTY_ERC7730_KNOWN,

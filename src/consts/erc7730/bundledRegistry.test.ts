@@ -3,11 +3,8 @@ import { isHexString } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { SUPPORTED_ERC7730_SCHEMA_FILES } from '../../libs/humanizer/erc7730/consts'
-import {
-  getSchemaFileName,
-  resolveIncludePath,
-  validateDescriptor
-} from '../../libs/humanizer/erc7730/registry'
+import { getSchemaFileName, validateDescriptor } from '../../libs/humanizer/erc7730/descriptor'
+import { resolveIncludePath } from '../../libs/humanizer/erc7730/registry'
 import { getRegistryKey } from '../../libs/humanizer/erc7730/utils'
 import { FALLBACK_CALLDATA_INDEX, OVERRIDE_CALLDATA_INDEX } from './ambireDescriptors'
 import upstreamFallbackCalldataIndex from './fallbackCalldataIndex.json'

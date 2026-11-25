@@ -16,6 +16,7 @@ import { Call } from '../../accountOp/types'
 import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../decodeCall'
 import { decodeMultiSend, SuccessfullyDecoded } from '../../safe/helpers'
 import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
+import { getIncludes, mergeDescriptors } from './descriptor'
 import { getEip712EncodeTypeHash } from './eip712'
 import { humanizeCallWithErc7730 } from './humanize'
 import { MULTICALL_DESCRIPTOR, MULTICALL_SELECTOR } from './multicall'
@@ -33,8 +34,7 @@ import {
 import {
   getRegistryKey,
   getSafeSingletonKey,
-  getSafeTxCallsFromMessage,
-  isPlainObject
+  getSafeTxCallsFromMessage
 } from './utils'
 
 /** How deep `includes` chains and nested calls are followed before giving up. */
@@ -52,98 +52,6 @@ const ABI_WORD_HEX_LENGTH = 64
 const EXEC_TRANSACTION_STATIC_WORDS = 10
 const ERC2612_PERMIT_ENCODE_TYPE_HASH =
   '0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9'
-
-/** The message names no descriptor, as these errors are reported outside of the device */
-function throwInvalidRegistryData(): never {
-  throw new Error('Invalid ERC-7730 registry data')
-}
-
-const validateDescriptorField = (field: unknown): field is Erc7730Field => {
-  if (!isPlainObject(field)) throwInvalidRegistryData()
-
-  const descriptorField = field
-
-  if (descriptorField.path !== undefined && typeof descriptorField.path !== 'string')
-    throwInvalidRegistryData()
-  if (descriptorField.label !== undefined && typeof descriptorField.label !== 'string')
-    throwInvalidRegistryData()
-  if (descriptorField.format !== undefined && typeof descriptorField.format !== 'string') {
-    throwInvalidRegistryData()
-  }
-
-  const { encryption } = descriptorField
-  if (encryption !== undefined) {
-    if (!isPlainObject(encryption)) throwInvalidRegistryData()
-    if (encryption.fallbackLabel !== undefined && typeof encryption.fallbackLabel !== 'string')
-      throwInvalidRegistryData()
-  }
-
-  const { fields } = descriptorField
-  if (fields !== undefined) {
-    if (!Array.isArray(fields)) throwInvalidRegistryData()
-
-    const nestedFields = fields
-    nestedFields.forEach((nestedField) => validateDescriptorField(nestedField))
-  }
-
-  return true
-}
-
-/**
- * The file name of the `$schema` a descriptor declares, which tells its version of ERC-7730, or
- * null if it declares none. Only the file name is read, as descriptors link to the same schema
- * through relative paths and through different URLs
- */
-export const getSchemaFileName = (descriptor: unknown): string | null => {
-  if (!isPlainObject(descriptor) || typeof descriptor.$schema !== 'string') return null
-
-  return descriptor.$schema.split('/').pop() || null
-}
-
-export const validateDescriptor = (payload: unknown): payload is Erc7730Descriptor => {
-  if (!isPlainObject(payload)) throwInvalidRegistryData()
-
-  const descriptor = payload
-  const { includes } = descriptor
-
-  if (
-    includes !== undefined &&
-    typeof includes !== 'string' &&
-    (!Array.isArray(includes) ||
-      includes.some((includePath: unknown) => typeof includePath !== 'string'))
-  ) {
-    throwInvalidRegistryData()
-  }
-
-  const { display } = descriptor
-  if (display === undefined) return true
-  if (!isPlainObject(display)) throwInvalidRegistryData()
-
-  const { formats, definitions } = display
-  if (definitions !== undefined && !isPlainObject(definitions)) throwInvalidRegistryData()
-  if (formats === undefined) return true
-  if (!isPlainObject(formats)) throwInvalidRegistryData()
-
-  const descriptorFormats = formats
-
-  Object.values(descriptorFormats).forEach((format: unknown) => {
-    if (!isPlainObject(format)) throwInvalidRegistryData()
-
-    const descriptorFormat = format
-    if (descriptorFormat.intent !== undefined && typeof descriptorFormat.intent !== 'string') {
-      throwInvalidRegistryData()
-    }
-
-    const { fields } = descriptorFormat
-    if (fields === undefined) return
-    if (!Array.isArray(fields)) throwInvalidRegistryData()
-
-    const descriptorFields = fields
-    descriptorFields.forEach((field) => validateDescriptorField(field))
-  })
-
-  return true
-}
 
 const getErc20ApproveDescriptor = (
   path: string,
@@ -340,27 +248,6 @@ export const resolveIncludePath = (includePath: string, parentPath: string): str
   )
 
   return `/${segments.join('/')}`
-}
-
-const mergeDescriptors = (
-  base: Erc7730Descriptor,
-  override: Erc7730Descriptor
-): Erc7730Descriptor => {
-  const merge = (left: unknown, right: unknown): unknown => {
-    if (isPlainObject(left) && isPlainObject(right)) {
-      return Object.keys(right).reduce<Record<string, unknown>>(
-        (acc, key) => ({
-          ...acc,
-          [key]: merge(acc[key], right[key])
-        }),
-        { ...left }
-      )
-    }
-
-    return right === undefined ? left : right
-  }
-
-  return merge(base, override) as Erc7730Descriptor
 }
 
 const applyBuiltInFormatOverrides = (
@@ -652,11 +539,7 @@ const mergeIncludes = (
   }
   if (!descriptor) return null
 
-  const includes = descriptor.includes
-    ? Array.isArray(descriptor.includes)
-      ? descriptor.includes
-      : [descriptor.includes]
-    : []
+  const includes = getIncludes(descriptor)
 
   if (!includes.length || depth >= ERC7730_MAX_RESOLUTION_DEPTH) return descriptor
 
