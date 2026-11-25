@@ -63,6 +63,9 @@ export type Erc7730VisibleRule =
   | 'optional'
   | {
       ifNotIn?: Erc7730Primitive[]
+      /** The field is hidden, and the descriptor applies only if its value is one of these */
+      mustMatch?: Erc7730Primitive[]
+      /** Another name for `mustMatch` */
       mustBe?: Erc7730Primitive[]
     }
 

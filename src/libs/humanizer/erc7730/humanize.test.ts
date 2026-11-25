@@ -1,6 +1,6 @@
 import { describe, expect, test } from '@jest/globals'
 
-import { encodeFunctionData, maxUint256, parseAbi } from 'viem'
+import { encodeFunctionData, getAddress, maxUint256, parseAbi } from 'viem'
 
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
@@ -12,7 +12,7 @@ import {
 } from '../utils'
 import { humanizeCallWithErc7730 } from './humanize'
 import { MULTICALL_DESCRIPTOR } from './multicall'
-import { Erc7730Descriptor } from './types'
+import { Erc7730Descriptor, Erc7730Field } from './types'
 
 const STEAK_USDC_VAULT = '0xbeeF010f9cb27031ad51e3333f9aF9C6B1228183'
 const USDC_ON_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
@@ -272,5 +272,78 @@ describe('encrypted values', () => {
     const intent = humanizeConfidentialTransfer()?.intent
 
     expect(intent?.[1]).toMatchObject({ type: 'text', content: '[Hidden value]' })
+  })
+})
+
+describe('conditional visibility rules', () => {
+  const getRowLabelsWithRule = (path: string, visible: Erc7730Field['visible']) => {
+    const humanizedCall = humanizeCallWithErc7730(
+      depositCall,
+      8453n as AccountOp['chainId'],
+      RECEIVER,
+      {
+        descriptor: {
+          display: {
+            formats: {
+              'deposit(uint256 assets, address receiver)': {
+                intent: 'Deposit',
+                fields: [
+                  { path, label: 'Checked value', format: 'raw', visible },
+                  { path: 'receiver', label: 'Send shares to', format: 'addressName' }
+                ]
+              }
+            }
+          }
+        },
+        path: 'registry/example/calldata-vault.json'
+      },
+      'ETH'
+    )
+
+    const visualization = humanizedCall?.fullVisualization?.[0]
+
+    return visualization?.type === 'erc7730' ? visualization.fields.map(getErc7730RowLabel) : null
+  }
+
+  const APPLIES = ['Send shares to']
+  const DOES_NOT_APPLY = null
+
+  test.each(['mustMatch', 'mustBe'] as const)(
+    'applies the descriptor and hides the field when a `%s` value matches',
+    (rule) => {
+      expect(getRowLabelsWithRule('assets', { [rule]: [5, 1000000] })).toEqual(APPLIES)
+    }
+  )
+
+  test.each(['mustMatch', 'mustBe'] as const)(
+    'does not apply the descriptor when no `%s` value matches',
+    (rule) => {
+      expect(getRowLabelsWithRule('assets', { [rule]: [5, 1000001] })).toBe(DOES_NOT_APPLY)
+    }
+  )
+
+  test('matches a number written as a string', () => {
+    expect(getRowLabelsWithRule('assets', { mustMatch: ['1000000'] })).toEqual(APPLIES)
+  })
+
+  test('matches an address in any letter case', () => {
+    const checksummedReceiver = getAddress(RECEIVER)
+
+    expect(getRowLabelsWithRule('receiver', { mustMatch: [checksummedReceiver] })).toEqual(APPLIES)
+  })
+
+  test('does not apply the descriptor when the checked value is missing', () => {
+    expect(getRowLabelsWithRule('missing', { mustMatch: ['0x'] })).toBe(DOES_NOT_APPLY)
+  })
+
+  test('hides a number that `ifNotIn` lists', () => {
+    expect(getRowLabelsWithRule('assets', { ifNotIn: [1000000] })).toEqual(APPLIES)
+  })
+
+  test('shows a number that `ifNotIn` does not list', () => {
+    expect(getRowLabelsWithRule('assets', { ifNotIn: [0] })).toEqual([
+      'Checked value',
+      'Send shares to'
+    ])
   })
 })

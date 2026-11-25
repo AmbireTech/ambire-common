@@ -117,10 +117,14 @@ const toBigIntOrNull = (value: unknown): bigint | null => {
   return null
 }
 
-const normalizeComparableValue = (value: unknown): string | number | boolean | null => {
-  if (typeof value === 'bigint') return value.toString()
+/**
+ * Numbers are compared as text, since a decoded transaction holds them as a `bigint` while a
+ * descriptor writes them as a number or as a string
+ */
+const normalizeComparableValue = (value: unknown): string | boolean | null => {
+  if (typeof value === 'bigint' || typeof value === 'number') return value.toString()
   if (typeof value === 'string') return value.toLowerCase()
-  if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
+  if (typeof value === 'boolean' || value === null) return value
 
   return String(value)
 }
@@ -132,10 +136,11 @@ const getVisibility = (rule: Erc7730VisibleRule | undefined, value: unknown): Vi
   if (!rule || rule === 'always' || rule === 'optional') return { visible: true, valid: true }
   if (rule === 'never') return { visible: false, valid: true }
 
-  if (rule.mustBe) {
+  const requiredValues = rule.mustMatch ?? rule.mustBe
+  if (requiredValues) {
     return {
       visible: false,
-      valid: rule.mustBe.some((expectedValue) => matchesPrimitive(value, expectedValue))
+      valid: requiredValues.some((expectedValue) => matchesPrimitive(value, expectedValue))
     }
   }
 
