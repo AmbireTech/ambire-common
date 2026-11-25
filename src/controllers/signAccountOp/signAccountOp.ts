@@ -4382,9 +4382,9 @@ export class SignAccountOpController
   get unpricedNativeTokenSymbol(): string | null {
     const native = this.#portfolio
       .getAccountPortfolioState(this.accountOp.accountAddr)
-      [this.accountOp.chainId.toString()]?.result?.tokens.find(
-        (token) => token.address === ZeroAddress
-      )
+      [
+        this.accountOp.chainId.toString()
+      ]?.result?.tokens.find((token) => token.address === ZeroAddress)
     if (!native || native.priceIn.some((price) => price.baseCurrency === 'usd')) return null
 
     return native.symbol

@@ -3352,9 +3352,7 @@ describe('Portfolio Controller ', () => {
         isManualUpdate: true
       })
 
-      expect(controller.getDefiPositionsCountOnDisabledNetworks(DEFI_TEST_ACCOUNT.addr)).toEqual(
-        {}
-      )
+      expect(controller.getDefiPositionsCountOnDisabledNetworks(DEFI_TEST_ACCOUNT.addr)).toEqual({})
     })
 
     it('keeps the shown positions and the total in sync if an update fails after the user turns auto discovery off', async () => {
@@ -3772,8 +3770,8 @@ describe('Portfolio Controller ', () => {
         const { portfolioGetSpy, getNetworkDiscoveryCallsCount } = mockUpdateRequests(controller)
         const getProviderNames = () =>
           controller
-            .getAccountPortfolioState(account.addr)['1']!
-            .result!.defiPositions.positionsByProvider.map((p) => p.providerName)
+            .getAccountPortfolioState(account.addr)
+            ['1']!.result!.defiPositions.positionsByProvider.map((p) => p.providerName)
 
         await controller.updateSelectedAccount(account.addr, [ethereum])
 

@@ -1002,7 +1002,13 @@ describe('Main Controller ', () => {
           ],
           external: []
         },
-        seeds: [{ id: syncedSeedId, seed: wallet.mnemonic!.phrase }]
+        seeds: [
+          {
+            id: syncedSeedId,
+            seed: wallet.mnemonic!.phrase,
+            hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+          }
+        ]
       })
       expect(picker.readyToAddAccounts).toEqual([syncedAccount])
 

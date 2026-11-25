@@ -15,8 +15,8 @@ Note: This package does not include compiled JS and TS output in the repository.
 ## Common commands
 - Install dependencies: `npm install`
 - Run one Jest test file: `npm run jest -- path/to/file.test.ts`
-- Type-check: `npm run type:check`
-- Lint and auto-fix source files: `npm run lint:fix`
+- Type-check: `npm run type:check-new`. It fails only on errors that are not in `.tsc-baseline.json`. A standalone install and the app checkout report different errors and the baseline covers both, so never regenerate it from one setup only
+- Lint and auto-fix source files: `npm run lint:fix`. Errors in `eslint-suppressions.json` are allowed. After you fix one, run `npx eslint ./src --prune-suppressions`
 - Compile contracts: `npm run compile:contracts`
 - Run Hardhat compile + tests: `npm run hardhat`
 

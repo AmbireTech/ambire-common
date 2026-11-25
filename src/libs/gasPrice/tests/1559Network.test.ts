@@ -138,9 +138,7 @@ describe('1559 Network gas price tests', () => {
     expect(getByName(gasPrice, 'medium').baseFeePerGas).toBe(
       ethers.parseUnits('1.423828125', 'gwei')
     )
-    expect(getByName(gasPrice, 'fast').baseFeePerGas).toBe(
-      ethers.parseUnits('1.423828125', 'gwei')
-    )
+    expect(getByName(gasPrice, 'fast').baseFeePerGas).toBe(ethers.parseUnits('1.423828125', 'gwei'))
     // 1.601806640625 gwei, rounded down to wei
     expect(getByName(gasPrice, 'ape').baseFeePerGas).toBe(1601806640n)
     provider.destroy()

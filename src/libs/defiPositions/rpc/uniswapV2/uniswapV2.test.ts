@@ -77,9 +77,7 @@ describe('Uniswap V2 positions', () => {
       })
     })
     test('has no description when a token has no symbol', () => {
-      const position = getUniswapV2Position(
-        pairResult({ token1Info: { ...tokenInfo('', 18) } })
-      )!
+      const position = getUniswapV2Position(pairResult({ token1Info: { ...tokenInfo('', 18) } }))!
 
       expect(position.additionalData.description).toBeUndefined()
     })
@@ -173,9 +171,9 @@ describe('Uniswap V2 positions', () => {
     })
 
     test('returns the liquidity tokens of the positions, lowercased and once each', () => {
-      expect(
-        getUniswapV2PairsFromApiPositions([apiPositions(), apiPositions()], 1n)
-      ).toEqual([UNI_V2_USDC_WETH.toLowerCase()])
+      expect(getUniswapV2PairsFromApiPositions([apiPositions(), apiPositions()], 1n)).toEqual([
+        UNI_V2_USDC_WETH.toLowerCase()
+      ])
     })
     test('returns only the assets with the symbol of the pairs, so no other token is learned', () => {
       expect(
@@ -201,9 +199,9 @@ describe('Uniswap V2 positions', () => {
       ).toEqual([])
     })
     test('returns nothing on networks without Uniswap V2', () => {
-      expect(
-        getUniswapV2PairsFromApiPositions([apiPositions({ chainId: 1337n })], 1337n)
-      ).toEqual([])
+      expect(getUniswapV2PairsFromApiPositions([apiPositions({ chainId: 1337n })], 1337n)).toEqual(
+        []
+      )
     })
   })
 

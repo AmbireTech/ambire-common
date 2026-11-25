@@ -70,10 +70,14 @@ export class BundlerSwitcher {
       throw new Error('no available bundlers to switch')
     }
 
-    const availableBundlers = getAvailableBunlders(this.network).filter((bundler) => {
+    const [nextBundler] = getAvailableBunlders(this.network).filter((bundler) => {
       return this.usedBundlers.indexOf(bundler.getName()) === -1
     })
-    this.bundler = availableBundlers[0]
+    if (!nextBundler) {
+      throw new Error('no available bundlers to switch')
+    }
+
+    this.bundler = nextBundler
     this.usedBundlers.push(this.bundler.getName())
     return this.bundler
   }
@@ -83,18 +87,22 @@ export class BundlerSwitcher {
    * userOp and you are guessing. Otherwise, refrain from using it
    */
   forceSwitch(): Bundler {
-    const availableBundlers = getAvailableBunlders(this.network).filter((bundler) => {
+    const allBundlers = getAvailableBunlders(this.network)
+    const [nextBundler] = allBundlers.filter((bundler) => {
       return this.usedBundlers.indexOf(bundler.getName()) === -1
     })
 
     // reset on force so we always have a bundler available
-    if (availableBundlers.length === 0) {
+    if (!nextBundler) {
+      const [firstBundler] = allBundlers
+      if (!firstBundler) return this.bundler
+
       this.usedBundlers = []
-      this.bundler = getAvailableBunlders(this.network)[0]
+      this.bundler = firstBundler
       return this.bundler
     }
 
-    this.bundler = availableBundlers[0]
+    this.bundler = nextBundler
     this.usedBundlers.push(this.bundler.getName())
     return this.bundler
   }
