@@ -1,6 +1,7 @@
 import { id, isHexString } from 'ethers'
 import { readdirSync, readFileSync } from 'fs'
 import path from 'path'
+import { isDeepStrictEqual as isEqual } from 'util'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -177,6 +178,17 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
     Object.entries(amendments.amendCalldataDescriptors).forEach(([name, { addresses }]) => {
       addresses.forEach((key) => expect(calldataIndex[key]).toBe(name))
     })
+  })
+
+  test('shows the ETH sent to the Uniswap V3 position manager instead of refusing it', () => {
+    const valueFields = getFields(
+      getMergedDescriptor('registry/uniswap/calldata-UniswapV3NonfungiblePositionManager.json')
+    ).filter((field) => field.path === '@.value')
+
+    expect(valueFields.filter((field) => isEqual(field.visible, { ifNotIn: [0] }))).toHaveLength(14)
+    expect(
+      valueFields.filter((field) => typeof field.visible === 'object' && field.visible.mustMatch)
+    ).toEqual([])
   })
 
   test('shows the destination network of LiFi by its name', () => {

@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'util'
+
 import { Erc7730DisplayFormat } from '../../src/libs/humanizer/erc7730/types'
 import { getRegistryKey } from '../../src/libs/humanizer/erc7730/utils'
 import { Amendments } from './amend'
@@ -90,6 +92,28 @@ const SAFE_1_4_1_DESCRIPTORS: [address: string, name: string][] = [
 
 export const amendments: Amendments = {
   amendCalldataDescriptors: {
+    'registry/uniswap/calldata-UniswapV3NonfungiblePositionManager.json': {
+      reason:
+        'show the ETH sent instead of refusing the call, as `multicall` passes its ETH on to each call it makes (upstream PR #3185; drop this once it is merged)',
+      addresses: [getRegistryKey(1, '0xc36442b4a4522e871399cd717abdd847ab11fe88')],
+      amend: ({ fields, expectMatches }) => {
+        const valueFields = fields(
+          (field) =>
+            field.path === '@.value' &&
+            typeof field.visible === 'object' &&
+            isDeepStrictEqual(field.visible.mustMatch, [0])
+        )
+        expectMatches('`@.value` fields that must be 0', valueFields, 14).forEach(({ field }) => {
+          field.visible = { ifNotIn: [0] }
+          field.label = 'Transaction Value'
+        })
+        expectMatches(
+          'other fields that must match a value',
+          fields((field) => typeof field.visible === 'object' && !!field.visible.mustMatch),
+          0
+        )
+      }
+    },
     [LIFI_DIAMOND_NAME]: {
       reason:
         'show the destination network by its name, and keep describing functions LiFi no longer uses, for older transactions',
