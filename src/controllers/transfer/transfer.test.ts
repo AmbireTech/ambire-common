@@ -688,10 +688,13 @@ describe('Transfer Controller - recipient domain typo', () => {
   const OTHER_PAST_RECIPIENT = getAddress('0x3333333333333333333333333333333333333333')
   const TYPO_MESSAGE = 'Looks like a typo of move.eth, which you have sent to before.'
 
+  const CONTACT_ADDRESS = getAddress('0x4444444444444444444444444444444444444444')
+
   const prepareDomainTypoTest = async () => {
     const { mainCtrl } = await makeMainController(async (storageCtrl) => {
-      await storageCtrl.set('accounts', [account])
+      await storageCtrl.set('accounts', [account, viewOnlyRecipientAccount])
       await storageCtrl.set('selectedAccount', account.addr)
+      await storageCtrl.set('contacts', [{ name: 'Satoshi', address: CONTACT_ADDRESS }])
       await storageCtrl.set('sentToHistory', {
         domains: { 'move.eth': { address: MOVE_ADDRESS, sentAt: 1_700_000_000_000 } },
         recipients: {
@@ -703,6 +706,9 @@ describe('Transfer Controller - recipient domain typo', () => {
       })
     })
     await mainCtrl.selectedAccount.select({ account })
+    // Names the reverse lookup found for the contact and for the view-only account
+    mainCtrl.domains.domains[CONTACT_ADDRESS] = { names: { ens: 'satoshi.eth' } }
+    mainCtrl.domains.domains[VIEW_ONLY_RECIPIENT_ADDRESS] = { names: { ens: 'nakamoto.eth' } }
     mainCtrl.transfer.resetForm()
 
     return mainCtrl.transfer
@@ -727,7 +733,10 @@ describe('Transfer Controller - recipient domain typo', () => {
 
     await setDomainRecipient(transferController, 'rnove.eth', TYPO_DOMAIN_ADDRESS)
 
-    expect(transferController.recipientDomainTypoMatch).toEqual({ matchedDomain: 'move.eth' })
+    expect(transferController.recipientDomainTypoMatch).toEqual({
+      matchedDomain: 'move.eth',
+      source: 'sentTo'
+    })
     expect(transferController.validationFormMsgs.recipientAddress).toEqual({
       severity: 'warning',
       message: TYPO_MESSAGE,
@@ -752,6 +761,31 @@ describe('Transfer Controller - recipient domain typo', () => {
 
     expect(transferController.recipientDomainTypoMatch).toBeNull()
     expect(transferController.validationFormMsgs.recipientAddress.shouldHold).toBeFalsy()
+  })
+
+  test('should warn when a new domain looks like a typo of a contact name never typed before', async () => {
+    // Picking the contact from the Address Book saves no domain in the send history
+    const transferController = await prepareDomainTypoTest()
+
+    await setDomainRecipient(transferController, 'sat0shi.eth', TYPO_DOMAIN_ADDRESS)
+
+    expect(transferController.recipientDomainTypoMatch).toEqual({
+      matchedDomain: 'satoshi.eth',
+      source: 'addressBook'
+    })
+    expect(transferController.validationFormMsgs.recipientAddress).toEqual({
+      severity: 'warning',
+      message: 'Looks like a typo of satoshi.eth, which is in your Address Book.',
+      shouldHold: true
+    })
+  })
+
+  test('should not suggest the name of a view-only account', async () => {
+    const transferController = await prepareDomainTypoTest()
+
+    await setDomainRecipient(transferController, 'nakam0to.eth', TYPO_DOMAIN_ADDRESS)
+
+    expect(transferController.recipientDomainTypoMatch).toBeNull()
   })
 })
 

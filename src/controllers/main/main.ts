@@ -748,6 +748,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.erc7730,
       this.contractInfo,
       platform,
+      // DomainsController is created after this one, so it is read only when needed
+      () => this.domains.domains,
       this.privacyPools,
       eventEmitterRegistry
     )

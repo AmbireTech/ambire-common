@@ -6,7 +6,7 @@ import {
   pickBetterPoisoningMatch,
   ScoredAddressPoisoningMatch
 } from '@/libs/transfer/address-poisoning'
-import { getDomainTypoMatch } from '@/libs/transfer/domain-typo'
+import { AddressBookDomains, getDomainTypoMatch } from '@/libs/transfer/domain-typo'
 import { AccountOpsPersistence } from '@/services/storage/accountOpsPersistence'
 import { MAX_OPS_PER_GROUP, STARTUP_RECENT_OPS_LIMIT } from '@/services/storage/activityIdb'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
@@ -1023,11 +1023,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   /**
-   * Returns the domain the user has sent to before that `domain` most likely misspells, or null.
-   * See `getDomainTypoMatch` for what counts as a typo.
+   * Returns the domain the user has sent to before, or the Address Book name, that `domain` most
+   * likely misspells, or null. See `getDomainTypoMatch` for what counts as a typo.
    */
-  getSentToDomainTypoMatch(domain: string, resolvedAddress: string): DomainTypoMatch | null {
-    return getDomainTypoMatch(domain, resolvedAddress, this.#sentToHistory.domains)
+  getDomainTypoMatch(
+    domain: string,
+    resolvedAddress: string,
+    addressBookDomains: AddressBookDomains
+  ): DomainTypoMatch | null {
+    return getDomainTypoMatch(
+      domain,
+      resolvedAddress,
+      this.#sentToHistory.domains,
+      addressBookDomains
+    )
   }
 
   async addExternalAccountOp({

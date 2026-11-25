@@ -5,12 +5,12 @@ import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { getPrivacyPoolsDepositAsset, getPrivacyPoolsTokenId } from '../../consts/privacyPools'
-import { IAccountsController } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { IContractInfoController } from '../../interfaces/contractInfo'
 import { IDappsController } from '../../interfaces/dapp'
-import { AddressState } from '../../interfaces/domains'
+import { AddressState, Domains } from '../../interfaces/domains'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
@@ -60,6 +60,7 @@ import {
   getSanitizedAmount
 } from '../../libs/transfer/amount'
 import { pickPoisoningMatchWithOwnAccounts } from '../../libs/transfer/address-poisoning'
+import { getAddressBookDomains } from '../../libs/transfer/domain-typo'
 import { getAmountsFromFieldValue } from '../../libs/transfer/fieldAmounts'
 import { getNftParamsFromSearchParams } from '../../libs/transfer/nftSearchParams'
 import {
@@ -125,6 +126,9 @@ export class TransferController extends EventEmitter implements ITransferControl
   #featureFlags: IFeatureFlagsController
 
   #platform: Platform
+
+  /** Reads the cached names of addresses, used to spot typos of Address Book names. */
+  #getDomains: () => Domains
 
   #networks: INetworksController
 
@@ -290,6 +294,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     erc7730: IErc7730Controller,
     contractInfo: IContractInfoController,
     platform: Platform,
+    getDomains: () => Domains,
     privacyPools?: IPrivacyPoolsController,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
@@ -319,6 +324,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#ui = ui
     this.#platform = platform
+    this.#getDomains = getDomains
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -1443,21 +1449,38 @@ export class TransferController extends EventEmitter implements ITransferControl
       ? pickPoisoningMatchWithOwnAccounts(this.recipientAddress, ownAccounts, addressPoisoningMatch)
       : null
     this.recipientDomainTypoMatch = isRecipientNewToUser
-      ? this.#getRecipientDomainTypoMatch()
+      ? this.#getRecipientDomainTypoMatch(ownAccounts)
       : null
 
     this.#updateRecipientDomainAddressChange()
   }
 
   /**
-   * When the recipient was entered as a domain the user has never sent to, finds a domain they have
-   * sent to before that it most likely misspells, like `rnove.eth` instead of `move.eth`.
+   * When the recipient was typed as a domain the user has never sent to, finds a domain they know
+   * that it most likely misspells, like `rnove.eth` instead of `move.eth`. Pasted or picked
+   * addresses are not checked.
+   *
+   * Besides the domains the user sent to, it checks the names of manually added contacts and of
+   * `ownAccounts`, because picking a recipient from the Address Book saves no domain in the send
+   * history. View-only accounts are left out, since the user didn't create them and the warning
+   * offers to switch to the matched name, so a planted lookalike could steer the user to it.
    */
-  #getRecipientDomainTypoMatch(): DomainTypoMatch | null {
+  #getRecipientDomainTypoMatch(ownAccounts: Account[]): DomainTypoMatch | null {
     const { resolvedAddressType, resolvedAddress, fieldValue } = this.addressState
     if (!resolvedAddressType || !isAddress(resolvedAddress) || isAddress(fieldValue)) return null
 
-    return this.#activity.getSentToDomainTypoMatch(fieldValue, resolvedAddress)
+    const trustedAddressBookAddresses = [
+      ...this.#addressBook.contacts
+        .filter(({ isWalletAccount }) => !isWalletAccount)
+        .map(({ address }) => address),
+      ...ownAccounts.map(({ addr }) => addr)
+    ]
+    const addressBookDomains = getAddressBookDomains(
+      trustedAddressBookAddresses,
+      this.#getDomains()
+    )
+
+    return this.#activity.getDomainTypoMatch(fieldValue, resolvedAddress, addressBookDomains)
   }
 
   /**
