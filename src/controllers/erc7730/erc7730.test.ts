@@ -74,7 +74,28 @@ describe('Erc7730Controller', () => {
 
     await expect(controller.getDescriptorsForAccountOp(accountOp)).resolves.toEqual({})
     expect(controller.emittedErrors).toHaveLength(1)
-    expect(controller.emittedErrors[0]?.error.message).toContain(REGISTRY_PATH)
+    expect(controller.emittedErrors[0]?.error.message).toBe(
+      'An ERC-7730 descriptor is not in the registry'
+    )
+  })
+
+  test.each([
+    ['is missing', {}],
+    ['is invalid', { [REGISTRY_PATH]: { display: { formats: 'not formats' } } }],
+    ['is not an object', { [REGISTRY_PATH]: 'not a descriptor' }],
+    [
+      'includes a missing file',
+      { [REGISTRY_PATH]: { ...CONTRACT_DESCRIPTOR, includes: 'common.json' } }
+    ]
+  ])('does not name a descriptor that %s in the errors it reports', async (_, descriptors) => {
+    const controller = makeController(makeRegistry({ descriptors }))
+
+    await controller.getDescriptorsForAccountOp(accountOp)
+
+    expect(controller.emittedErrors.length).toBeGreaterThan(0)
+    controller.emittedErrors.forEach(({ message, error }) => {
+      expect(`${message} ${error.message}`).not.toContain('registry/test')
+    })
   })
 
   test('reports and skips an invalid descriptor instead of using it', async () => {

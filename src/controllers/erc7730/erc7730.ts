@@ -94,15 +94,19 @@ export class Erc7730Controller extends EventEmitter {
   // Answering wants
   //
 
-  /** A descriptor by its path in the registry. Throws if it isn't there or isn't valid */
+  /**
+   * A descriptor by its path in the registry. Throws if it isn't there or isn't valid. The errors
+   * don't name the path: they are reported, and it would tell which contract the user was about
+   * to use
+   */
   #readDescriptor(registryPath: string): Erc7730Descriptor {
     const descriptor = getOwn(this.#registry.descriptors, registryPath)
     if (descriptor === undefined) {
-      throw new Error(`ERC-7730 descriptor not in the registry: ${registryPath}`)
+      throw new Error('An ERC-7730 descriptor is not in the registry')
     }
     // Throws if the descriptor is invalid
-    if (!validateDescriptor(descriptor, registryPath)) {
-      throw new Error(`Invalid ERC-7730 descriptor: ${registryPath}`)
+    if (!validateDescriptor(descriptor)) {
+      throw new Error('An ERC-7730 descriptor is invalid')
     }
 
     return descriptor

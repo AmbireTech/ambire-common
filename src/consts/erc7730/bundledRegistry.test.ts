@@ -51,15 +51,15 @@ describe('bundled ERC-7730 registry', () => {
   })
 
   test('has valid indexes', () => {
-    expect(validateCalldataIndex(calldataIndex, 'calldata index')).toBe(true)
-    expect(validateEip712Index(eip712Index, 'EIP-712 index')).toBe(true)
+    expect(validateCalldataIndex(calldataIndex)).toBe(true)
+    expect(validateEip712Index(eip712Index)).toBe(true)
   })
 
   test('has only valid descriptors', () => {
     const invalidPaths = Object.entries(descriptors)
-      .filter(([path, descriptor]) => {
+      .filter(([, descriptor]) => {
         try {
-          return !validateDescriptor(descriptor, path)
+          return !validateDescriptor(descriptor)
         } catch {
           return true
         }
