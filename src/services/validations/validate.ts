@@ -3,7 +3,7 @@ import isEmail from 'validator/lib/isEmail'
 
 import { Account, AccountStates } from '@/interfaces/account'
 import { Network } from '@/interfaces/network'
-import { AddressPoisoningMatch } from '@/interfaces/transfer'
+import { AddressPoisoningMatch, DomainTypoMatch } from '@/interfaces/transfer'
 import { getSupportedNetworks } from '@/libs/networks/networks'
 import { isNearIdenticalAddressMatch } from '@/libs/transfer/address-poisoning'
 
@@ -171,7 +171,8 @@ const validateSendTransferAddress = (
   addressPoisoningMatch?: AddressPoisoningMatch | null,
   recipientDomainAddressChange?: { previousAddress: string } | null,
   isRecipientAddressBlacklisted?: boolean,
-  isRecipientAddressViewOnly?: boolean
+  isRecipientAddressViewOnly?: boolean,
+  recipientDomainTypoMatch?: DomainTypoMatch | null
 ): RecipientValidation => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
@@ -218,6 +219,17 @@ const validateSendTransferAddress = (
       return {
         message:
           'This name now resolves to a different address than the last time you sent to it. Verify the new recipient before proceeding.',
+        severity: 'warning',
+        shouldHold: true
+      }
+    },
+    // A new domain that is most likely a typo of one the user has sent to before. Kept short
+    // because the UI shows a "Use <domain>" button next to it.
+    () => {
+      if (!recipientDomainTypoMatch) return undefined
+
+      return {
+        message: `Looks like a typo of ${recipientDomainTypoMatch.matchedDomain}, which you have sent to before.`,
         severity: 'warning',
         shouldHold: true
       }
