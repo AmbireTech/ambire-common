@@ -6,6 +6,9 @@ export const HARD_CODED_CURRENCY = 'usd'
 // difference between two routes is below this, the sort falls back to service time
 export const ROUTE_SORT_AMOUNT_THRESHOLD_PERCENT = 1.2
 
+/** Swaps worth less than this (in USD) list CoW Swap routes last */
+export const COW_SWAP_DEPRIORITIZE_BELOW_USD = 100
+
 export const CONVERSION_PRECISION = 16
 export const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 
