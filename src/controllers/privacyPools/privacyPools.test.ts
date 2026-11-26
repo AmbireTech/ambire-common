@@ -17,7 +17,8 @@ import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig,
   getPrivacyPoolsDepositAsset,
-  PRIVACY_POOLS_READ_TIMEOUT
+  PRIVACY_POOLS_READ_TIMEOUT,
+  toPrivacyPoolsAssetAddress
 } from '../../consts/privacyPools'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -463,6 +464,8 @@ let preparedWithdrawal:
 let relayFailure: unknown = null
 /** What `prepareUnshield` throws instead, when set - the SDK's thunks throw plain objects, not `Error`s. */
 let prepareUnshieldFailure: unknown = null
+/** What `estimateUnshield` prices a withdrawal through Kohaku at, or throws when an `Error`. */
+let paymasterFeeEstimate: bigint | Error = 0n
 /** Whether `prepareUnshield` proves through the controller's prover first, as the SDK does. */
 let isProvingOnUnshield = false
 /** The latest block's base fee. A proved withdrawal signs 1 gwei as its most per gas. */
@@ -588,6 +591,15 @@ class FakeProtocol {
     if (preparedWithdrawal) return preparedWithdrawal
 
     throw new Error('prepareUnshield is not faked')
+  }
+
+  estimateUnshieldCalls: unknown[][] = []
+
+  async estimateUnshield(...args: unknown[]) {
+    this.estimateUnshieldCalls.push(args)
+    if (paymasterFeeEstimate instanceof Error) throw paymasterFeeEstimate
+
+    return { mode: 'paymaster', fee: paymasterFeeEstimate }
   }
 
   historyCount = 0
@@ -1101,6 +1113,7 @@ describe('PrivacyPoolsController', () => {
     preparedWithdrawal = null
     relayFailure = null
     prepareUnshieldFailure = null
+    paymasterFeeEstimate = 0n
     isProvingOnUnshield = false
     latestBaseFee = 10n ** 8n
     simulateWithdrawal = async () => successfulSimulation()
@@ -3036,11 +3049,47 @@ describe('PrivacyPoolsController', () => {
       return test
     }
 
-    it('explains a fee above the amount, although the SDK throws it from a thunk', async () => {
+    it('explains a fee above the amount with the least amount to send, although the SDK throws it from a thunk', async () => {
       const { restore } = suppressConsole()
       prepareUnshieldFailure = toThunkFailure(
         'Withdrawal amount too small to cover the sponsored gas fee'
       )
+      paymasterFeeEstimate = 151_234n * 10n ** 12n
+
+      const { controller } = await prepareFailingWithdrawal()
+
+      // With a 10% buffer, rounded up, so it still covers the fee
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error:
+          'The network fee is too high for this amount. Send at least 0.167 ETH, or try again when fees are lower.'
+      })
+      // Priced for the same withdrawal, the way the SDK priced it before refusing it
+      expect(protocols[0]?.estimateUnshieldCalls).toEqual([
+        [
+          {
+            asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(ZERO_ADDRESS) },
+            amount: WITHDRAWAL_AMOUNT
+          },
+          WITHDRAWAL_RECIPIENT,
+          { mode: 'paymaster' }
+        ]
+      ])
+      // A toast, but not reported
+      expect(controller.emittedErrors.at(-1)).toMatchObject({
+        message:
+          'The network fee is too high for this amount. Send at least 0.167 ETH, or try again when fees are lower.',
+        level: 'expected'
+      })
+      restore()
+    })
+
+    it('still explains a fee above the amount when it cannot be priced again', async () => {
+      const { restore } = suppressConsole()
+      prepareUnshieldFailure = toThunkFailure(
+        'Withdrawal amount too small to cover the sponsored gas fee'
+      )
+      paymasterFeeEstimate = new Error('bundler unreachable')
 
       const { controller } = await prepareFailingWithdrawal()
 
@@ -3049,8 +3098,12 @@ describe('PrivacyPoolsController', () => {
         error:
           'The network fee is too high for this amount. Try a larger amount, or try again when fees are lower.'
       })
-      // A toast, but not reported
-      expect(controller.emittedErrors.at(-1)).toMatchObject({ level: 'expected' })
+      expect(controller.emittedErrors).toContainEqual(
+        expect.objectContaining({
+          message: 'Could not work out the least amount to send.',
+          level: 'silent'
+        })
+      )
       restore()
     })
 

@@ -70,7 +70,10 @@ import { PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsSync, readPrivacyPoolsNotes } from './sync'
 
-/** After this, a proved withdrawal is shown with only its fee cap. */
+/**
+ * After this, a proved withdrawal is shown with only its fee cap, and one refused as the fee is too
+ * high without the least amount to send.
+ */
 const WITHDRAWAL_ESTIMATION_TIMEOUT_MS = 8 * 1000
 
 /**
@@ -164,6 +167,8 @@ const isFeeAboveAmountSdkError = (error: unknown) =>
 
 /** Makes the SDK errors the user can act on readable; passes anything else through as an `Error`. */
 const toReadableWithdrawalError = (error: unknown, refused: RefusedWithdrawal) => {
+  // Made readable where it was thrown, as with the least amount to send through Kohaku
+  if (error instanceof PrivacyPoolsFeeTooHighError) return error
   // The SDK's sync before proving found the chosen deposit can no longer pay
   if (error instanceof PPv1NoteUnavailableError)
     return privacyPoolsErrors.withdrawalDepositUnavailable(error.reason)
@@ -486,14 +491,25 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       const sdkRecipient = recipient as Hex
       // Through Kohaku it prices gas, proves and signs the userOp; through 0xBow it takes the
       // cheapest relayer's quote and proves against it. Spends only the chosen deposit.
-      const privateOp = await protocol.prepareUnshield(
-        {
-          asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
-          amount
-        },
-        sdkRecipient,
-        { ...getUnshieldOptions(broadcaster, sdkRecipient), label: noteLabel }
-      )
+      const sdkAsset = {
+        __type: 'erc20' as const,
+        contract: toPrivacyPoolsAssetAddress(tokenAddress)
+      }
+      const privateOp = await protocol
+        .prepareUnshield({ asset: sdkAsset, amount }, sdkRecipient, {
+          ...getUnshieldOptions(broadcaster, sdkRecipient),
+          label: noteLabel
+        })
+        .catch(async (error: unknown) => {
+          if (broadcaster !== 'kohaku' || !isFeeAboveAmountSdkError(error)) throw error
+
+          // The SDK's error does not tell the fee, so it is priced again the same way
+          throw privacyPoolsErrors.withdrawalFeeTooHigh(
+            toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed'),
+            await this.#estimatePaymasterFee(protocol, { asset: sdkAsset, amount }, sdkRecipient),
+            getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)
+          )
+        })
 
       // The SDK synced before proving, so its notes may be newer than the last sync's
       const provedNotes = await readPrivacyPoolsNotes(protocol, false)
@@ -972,6 +988,36 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
             ? error
             : new Error('privacyPools: withdrawal fee estimation failed')
       }
+    }
+  }
+
+  /**
+   * The most a withdrawal through Kohaku may cost now, priced as the SDK prices it before proving -
+   * so the least amount it can send. Null when it cannot be priced.
+   */
+  async #estimatePaymasterFee(
+    protocol: PrivacyPoolsV1Protocol,
+    assetAmount: Parameters<PrivacyPoolsV1Protocol['estimateUnshield']>[0],
+    recipient: Hex
+  ): Promise<bigint | null> {
+    try {
+      const { fee } = await withTimeout(
+        () => protocol.estimateUnshield(assetAmount, recipient, { mode: 'paymaster' }),
+        {
+          timeoutMs: WITHDRAWAL_ESTIMATION_TIMEOUT_MS,
+          message: 'privacyPools: the withdrawal fee estimation timed out'
+        }
+      )
+
+      return fee
+    } catch (error: unknown) {
+      this.#ctx.emitError({
+        message: 'Could not work out the least amount to send.',
+        level: 'silent',
+        error: toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal fee estimation failed')
+      })
+
+      return null
     }
   }
 
