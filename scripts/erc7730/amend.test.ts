@@ -347,7 +347,10 @@ describe("applyAmendments: Ambire's own descriptors", () => {
         {},
         {
           'pool/calldata-Pool.json': own(),
-          'dex/calldata-V3.json': own({ $schema: 'erc7730-v3.schema.json' }),
+          'dex/calldata-V3.json': own({
+            $schema: 'erc7730-v3.schema.json',
+            context: { contract: { deployments: [{ chainId: 100, address: KEY.split(':')[2] }] } }
+          }),
           'dex/calldata-Unused.json': own({ context: {} })
         }
       )
@@ -364,5 +367,67 @@ describe("applyAmendments: Ambire's own descriptors", () => {
     ).toEqual([
       "Ambire's descriptor dex/calldata-Dex.json includes dex/common.json, which are not bundled"
     ])
+  })
+})
+
+describe("applyAmendments: keys in more than one of Ambire's changes", () => {
+  const ownOn = (key: string, kind: 'contract' | 'eip712' = 'contract') => ({
+    $schema: SCHEMA,
+    context: {
+      [kind]: { deployments: [{ chainId: Number(key.split(':')[1]), address: key.split(':')[2] }] }
+    },
+    display: { formats: { 'Swap(uint256 amount)': { intent: 'Swap' } } }
+  })
+
+  test('fails for a key that is both amended and added', () => {
+    expect(
+      getProblems({
+        amendCalldataDescriptors: { 'pool/calldata-Pool.json': fixValue },
+        addCalldataDescriptors: { [KEY]: 'pool/calldata-Pool.json' }
+      })
+    ).toEqual([
+      `The calldata key ${KEY} is in more than one of Ambire's changes: the amend of pool/calldata-Pool.json, the add of pool/calldata-Pool.json. Keep it in one`
+    ])
+  })
+
+  test('fails for a key in two amends, or in an add and an own descriptor', () => {
+    expect(
+      getProblems(
+        {
+          amendCalldataDescriptors: {
+            'pool/calldata-Pool.json': fixValue,
+            'pool/calldata-Other.json': fixValue
+          },
+          addCalldataDescriptors: { [NEW_KEY]: 'pool/calldata-Pool.json' }
+        },
+        { 'dex/calldata-Dex.json': ownOn(NEW_KEY) }
+      )
+    ).toEqual([
+      `The calldata key ${KEY} is in more than one of Ambire's changes: the amend of pool/calldata-Pool.json, the amend of pool/calldata-Other.json. Keep it in one`,
+      `The calldata key ${NEW_KEY} is in more than one of Ambire's changes: the add of pool/calldata-Pool.json, the deployments of Ambire's descriptor dex/calldata-Dex.json. Keep it in one`
+    ])
+  })
+
+  test('fails for EIP-712 keys the same way', () => {
+    expect(
+      getProblems(
+        { addEip712Descriptors: { [NEW_KEY]: 'permit/eip712-Permit.json' } },
+        { 'dex/eip712-Dex.json': ownOn(NEW_KEY, 'eip712') }
+      )
+    ).toEqual([
+      `The EIP-712 key ${NEW_KEY} is in more than one of Ambire's changes: the add of permit/eip712-Permit.json, the deployments of Ambire's descriptor dex/eip712-Dex.json. Keep it in one`
+    ])
+  })
+
+  test('allows the same key for calldata and for EIP-712, and adds of an amended descriptor', () => {
+    expect(
+      getProblems(
+        {
+          amendCalldataDescriptors: { 'pool/calldata-Pool.json': fixValue },
+          addCalldataDescriptors: { [NEW_KEY]: 'pool/calldata-Pool.json' }
+        },
+        { 'dex/eip712-Dex.json': ownOn(NEW_KEY, 'eip712') }
+      )
+    ).toEqual([])
   })
 })

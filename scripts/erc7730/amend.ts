@@ -100,6 +100,60 @@ const getDeployments = (value: unknown): { chainId: number; address: string }[] 
 }
 
 /**
+ * The registry keys Ambire's changes list more than once - in an amend's `addresses`, in an add,
+ * or in the `deployments` of an own descriptor - each as a problem naming every place it is in.
+ * Calldata and EIP-712 keys are checked separately, as a contract can have both
+ */
+export const findOverlappingKeys = (
+  amendments: Amendments,
+  ownDescriptors: Record<string, unknown>
+): string[] => {
+  const usesByKind: Record<'calldata' | 'EIP-712', Map<string, string[]>> = {
+    calldata: new Map(),
+    'EIP-712': new Map()
+  }
+  const use = (kind: 'calldata' | 'EIP-712', key: string, place: string) => {
+    const uses = usesByKind[kind]
+    uses.set(key, [...(uses.get(key) ?? []), place])
+  }
+
+  Object.entries(amendments.amendCalldataDescriptors).forEach(([name, { addresses }]) =>
+    addresses.forEach((key) => use('calldata', key, `the amend of ${name}`))
+  )
+  Object.entries(amendments.amendEip712Descriptors).forEach(([name, { addresses }]) =>
+    addresses.forEach((key) => use('EIP-712', key, `the amend of ${name}`))
+  )
+  Object.entries(amendments.addCalldataDescriptors).forEach(([key, name]) =>
+    use('calldata', key, `the add of ${name}`)
+  )
+  Object.entries(amendments.addEip712Descriptors).forEach(([key, name]) =>
+    use('EIP-712', key, `the add of ${name}`)
+  )
+  Object.entries(ownDescriptors).forEach(([name, descriptor]) => {
+    if (!isPlainObject(descriptor) || !isPlainObject(descriptor.context)) return
+    const { contract, eip712 } = descriptor.context
+    const place = `the deployments of Ambire's descriptor ${name}`
+    const addDeployments = (kind: 'calldata' | 'EIP-712', deployments: unknown) =>
+      getDeployments(deployments)?.forEach(({ chainId, address }) =>
+        use(kind, getRegistryKey(chainId, address), place)
+      )
+    if (isPlainObject(contract)) addDeployments('calldata', contract.deployments)
+    if (isPlainObject(eip712)) addDeployments('EIP-712', eip712.deployments)
+  })
+
+  return Object.entries(usesByKind).flatMap(([kind, uses]) =>
+    [...uses]
+      .filter(([, places]) => places.length > 1)
+      .map(
+        ([key, places]) =>
+          `The ${kind} key ${key} is in more than one of Ambire's changes: ${places.join(
+            ', '
+          )}. Keep it in one`
+      )
+  )
+}
+
+/**
  * The registry with Ambire's own descriptors, amends and adds applied. Throws a
  * `RegistryBuildError` with every problem found. Also returns notes for the summary: what was
  * changed, and upstream entries that use an amended descriptor without being listed
@@ -109,6 +163,10 @@ export const applyAmendments = (
   amendments: Amendments,
   ownDescriptors: Record<string, unknown>
 ): { registry: BuiltRegistry; notes: string[] } => {
+  // Checked first: otherwise an overlap fails later with a message that doesn't tell its cause
+  const overlaps = findOverlappingKeys(amendments, ownDescriptors)
+  if (overlaps.length) throw new RegistryBuildError(overlaps)
+
   const problems: string[] = []
   const notes: string[] = []
   const descriptors: Record<string, Record<string, unknown>> = { ...built.descriptors }
