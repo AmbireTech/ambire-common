@@ -2085,6 +2085,12 @@ describe('KeystoreController Lattice session', () => {
     new KeystoreController('default', storageCtrl, keystoreSigners, new UiController({ uiManager }))
 
   const getStoredEntry = () => storage.get('keystoreLatticeSession', null)
+  /** The stored entry of a session the test has just saved */
+  const getSavedEntry = async () => {
+    const stored = await getStoredEntry()
+    if (!stored) throw new Error('No Lattice session is saved')
+    return stored
+  }
 
   beforeEach(async () => {
     storage = produceMemoryStore()
@@ -2216,7 +2222,7 @@ describe('KeystoreController Lattice session', () => {
 
     test('is removed and reported without its contents when it was tampered with', async () => {
       await keystoreCtrl.saveLatticeSession(SESSION)
-      const stored = await getStoredEntry()
+      const stored = await getSavedEntry()
       const lastChar = stored.encrypted.ciphertext.at(-1)
       const tamperedCiphertext = `${stored.encrypted.ciphertext.slice(0, -1)}${lastChar === '0' ? '1' : '0'}`
 
@@ -2235,7 +2241,7 @@ describe('KeystoreController Lattice session', () => {
 
     test('a session saved while it is being read is kept', async () => {
       await keystoreCtrl.saveLatticeSession(SESSION)
-      const stored = await getStoredEntry()
+      const stored = await getSavedEntry()
       const { restartedKeystore } = await restartWithStoredEntry({
         ...stored,
         encrypted: { ...stored.encrypted, ciphertext: `${stored.encrypted.ciphertext}00` }
@@ -2252,7 +2258,7 @@ describe('KeystoreController Lattice session', () => {
 
     test('is removed when it was saved in another format version', async () => {
       await keystoreCtrl.saveLatticeSession(SESSION)
-      const stored = await getStoredEntry()
+      const stored = await getSavedEntry()
 
       const { restartedKeystore, emittedErrors } = await restartWithStoredEntry({
         ...stored,
@@ -2296,7 +2302,7 @@ describe('KeystoreController Lattice session', () => {
 
   test('is not part of the app data sync', async () => {
     await keystoreCtrl.saveLatticeSession(SESSION)
-    const stored = await getStoredEntry()
+    const stored = await getSavedEntry()
 
     const exported = await keystoreCtrl.exportForSync([])
 
