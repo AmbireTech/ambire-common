@@ -21,6 +21,7 @@ import {
 import {
   CONVERSION_PRECISION,
   CONVERSION_PRECISION_POW,
+  COW_SWAP_DEPRIORITIZE_BELOW_USD,
   HARD_CODED_CURRENCY,
   MARKET_DATA_THRESHOLD_BY_STATUS,
   NETWORK_MISMATCH_MESSAGE,
@@ -201,10 +202,39 @@ type ToTokenMarketDataRecord = {
   data?: TokenDataCacheValue
 }
 
+/**
+ * Whether CoW Swap confirmed the quote of a CoW Swap route with a simulation. An unconfirmed
+ * quote can promise more than any solver delivers, so the order may never be filled.
+ * A route without the quote details counts as unconfirmed.
+ */
+const isCowSwapQuoteVerified = (route: SwapAndBridgeRoute) =>
+  !!route.rawRoute &&
+  'quoteResponse' in route.rawRoute &&
+  route.rawRoute.quoteResponse?.verified === true
+
+/**
+ * Whether a route is a CoW Swap one that goes last: on small swaps, or when CoW Swap
+ * couldn't confirm its quote, as the order may not be filled
+ */
+const isDeprioritizedCowSwapRoute = (route: SwapAndBridgeRoute, isSmallSwap: boolean) => {
+  if (route.providerId !== COW_SWAP_PROVIDER_ID) return false
+  if (isSmallSwap) return true
+
+  return !isCowSwapQuoteVerified(route)
+}
+
+/**
+ * Sorts swap & bridge routes from best to worst.
+ * CoW Swap routes go last when CoW Swap couldn't confirm their quote.
+ * @param swapInputValueInUsd - the USD value of the swapped amount, the same for every
+ * route. Below COW_SWAP_DEPRIORITIZE_BELOW_USD, CoW Swap routes go last. Unknown (0 or
+ * missing) doesn't count as a small swap.
+ */
 export const sortSwapAndBridgeRoutes = (
   r1: SwapAndBridgeRoute,
   r2: SwapAndBridgeRoute,
-  outputTokenPriceUSD?: number | null
+  outputTokenPriceUSD?: number | null,
+  swapInputValueInUsd?: number
 ) => {
   const isBridge = r1.fromChainId !== r1.toChainId
 
@@ -319,6 +349,13 @@ export const sortSwapAndBridgeRoutes = (
     if (percentage < threshold) return sortByTime()
     return 1
   }
+
+  // move CoW Swap to the bottom on small swaps and when its quote isn't confirmed
+  const isSmallSwap = !!swapInputValueInUsd && swapInputValueInUsd < COW_SWAP_DEPRIORITIZE_BELOW_USD
+  const isR1Deprioritized = isDeprioritizedCowSwapRoute(r1, isSmallSwap)
+  const isR2Deprioritized = isDeprioritizedCowSwapRoute(r2, isSmallSwap)
+  if (isR1Deprioritized && !isR2Deprioritized) return 1
+  if (isR2Deprioritized && !isR1Deprioritized) return -1
 
   // move the routes with service fee to the bottom
   const r1ServiceFee = r1.serviceFee && Number(r1.serviceFee.amountUSD) > 0
@@ -2766,6 +2803,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             feePercent: this.feePercent
           })
         ])
+        // All routes swap the same amount, so take a single value for the whole list.
+        // The providers price the input on their own and may differ slightly
+        const swapInputValueInUsd = Math.max(
+          0,
+          ...quoteResult.routes.map((route) => route.inputValueInUsd || 0)
+        )
         // sort the routes by value and them by disabled, making disabled last
         quoteResult.routes = quoteResult.routes
           .map((route) => enrichRouteWithOutputTokenPrice(route, toTokenPriceUSD))
@@ -2788,7 +2831,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
             return !hasNoRouteId
           })
-          .sort((a, b) => sortSwapAndBridgeRoutes(a, b, toTokenPriceUSD))
+          .sort((a, b) => sortSwapAndBridgeRoutes(a, b, toTokenPriceUSD, swapInputValueInUsd))
           .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
         // select the first enabled route
         quoteResult.selectedRoute = quoteResult.routes.length ? quoteResult.routes[0] : undefined

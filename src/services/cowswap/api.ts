@@ -432,7 +432,9 @@ export class CowSwapAPI implements SwapProvider {
       validFor: COWSWAP_ORDER_VALIDITY_SECONDS,
       appData: quoteAppData.fullAppData,
       appDataHash: quoteAppData.appDataHash,
-      priceQuality: 'optimal',
+      // Only quotes confirmed by a simulation. An unconfirmed quote can promise more than any
+      // solver delivers, and an order placed from it is never filled
+      priceQuality: 'verified',
       signingScheme: isEthFlow ? 'eip1271' : 'presign',
       ...(isEthFlow
         ? {
