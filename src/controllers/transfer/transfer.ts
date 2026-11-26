@@ -10,7 +10,7 @@ import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { IContractInfoController } from '../../interfaces/contractInfo'
 import { IDappsController } from '../../interfaces/dapp'
-import { AddressState } from '../../interfaces/domains'
+import { AddressState, Domains } from '../../interfaces/domains'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
@@ -31,6 +31,7 @@ import { IStorageController } from '../../interfaces/storage'
 import {
   AddressPoisoningMatch,
   AmountAdjustmentInfo,
+  DomainTypoMatch,
   ITransferController,
   TransferNft,
   TransferUpdate
@@ -59,6 +60,7 @@ import {
   getSanitizedAmount
 } from '../../libs/transfer/amount'
 import { pickPoisoningMatchWithOwnAccounts } from '../../libs/transfer/address-poisoning'
+import { getAddressBookDomains } from '../../libs/transfer/domain-typo'
 import { getAmountsFromFieldValue } from '../../libs/transfer/fieldAmounts'
 import { getNftParamsFromSearchParams } from '../../libs/transfer/nftSearchParams'
 import {
@@ -124,6 +126,9 @@ export class TransferController extends EventEmitter implements ITransferControl
   #featureFlags: IFeatureFlagsController
 
   #platform: Platform
+
+  /** Reads the cached names of addresses, used to spot typos of Address Book names. */
+  #getDomains: () => Domains
 
   #networks: INetworksController
 
@@ -233,6 +238,12 @@ export class TransferController extends EventEmitter implements ITransferControl
    */
   recipientDomainAddressChange: { previousAddress: string } | null = null
 
+  /**
+   * Set when the recipient is a domain the user has never sent to, but it is most likely a typo of
+   * a domain they have sent to before, which points to another address.
+   */
+  recipientDomainTypoMatch: DomainTypoMatch | null = null
+
   signAccountOpController: ISignAccountOpController | null = null
 
   latestBroadcastedAccountOp: AccountOp | null = null
@@ -283,6 +294,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     erc7730: IErc7730Controller,
     contractInfo: IContractInfoController,
     platform: Platform,
+    getDomains: () => Domains,
     privacyPools?: IPrivacyPoolsController,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
@@ -312,6 +324,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#ui = ui
     this.#platform = platform
+    this.#getDomains = getDomains
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -797,7 +810,8 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.addressPoisoningMatch,
         this.recipientDomainAddressChange,
         this.isRecipientAddressBlacklisted,
-        this.isRecipientAddressViewOnly
+        this.isRecipientAddressViewOnly,
+        this.recipientDomainTypoMatch
       )
     }
 
@@ -1152,6 +1166,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.lastSentToRecipientAt = null
       this.addressPoisoningMatch = null
       this.recipientDomainAddressChange = null
+      this.recipientDomainTypoMatch = null
       this.isRecipientAddressViewOnly = false
 
       return
@@ -1428,16 +1443,40 @@ export class TransferController extends EventEmitter implements ITransferControl
       ({ addr }) => addr.toLowerCase() === this.recipientAddress.toLowerCase()
     )
 
-    this.addressPoisoningMatch =
-      this.isRecipientAddressFirstTimeSend && !isRecipientOwnAccount
-        ? pickPoisoningMatchWithOwnAccounts(
-            this.recipientAddress,
-            ownAccounts,
-            addressPoisoningMatch
-          )
-        : null
+    const isRecipientNewToUser = this.isRecipientAddressFirstTimeSend && !isRecipientOwnAccount
+
+    this.addressPoisoningMatch = isRecipientNewToUser
+      ? pickPoisoningMatchWithOwnAccounts(this.recipientAddress, ownAccounts, addressPoisoningMatch)
+      : null
+    this.recipientDomainTypoMatch = isRecipientNewToUser
+      ? this.#getRecipientDomainTypoMatch()
+      : null
 
     this.#updateRecipientDomainAddressChange()
+  }
+
+  /**
+   * When the recipient was typed as a domain the user has never sent to, finds a domain they have
+   * sent to before that it most likely misspells, like `rnove.eth` instead of `move.eth`. Pasted or
+   * picked addresses are not checked. Address Book names count too when the selected account has
+   * sent to their address, since picking a recipient from the Address Book saves no domain with the
+   * send.
+   */
+  #getRecipientDomainTypoMatch(): DomainTypoMatch | null {
+    const { resolvedAddressType, resolvedAddress, fieldValue } = this.addressState
+    if (!resolvedAddressType || !isAddress(resolvedAddress) || isAddress(fieldValue)) return null
+
+    const addressBookDomains = getAddressBookDomains(
+      this.#addressBook.contacts.map(({ address }) => address),
+      this.#getDomains()
+    )
+
+    return this.#activity.getSentToDomainTypoMatch(
+      fieldValue,
+      resolvedAddress,
+      this.#selectedAccount.account?.addr,
+      addressBookDomains
+    )
   }
 
   /**
