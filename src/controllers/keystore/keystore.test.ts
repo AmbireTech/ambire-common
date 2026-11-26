@@ -1397,6 +1397,18 @@ describe('app data sync between two devices', () => {
     }
   })
 
+  /** Decrypts a sync payload and stores what it carries, like adding the synced accounts does */
+  const importFromSync = async (
+    keystore: IKeystoreController,
+    payload: Parameters<IKeystoreController['decryptSyncPayload']>[0],
+    password: string
+  ) => {
+    const { keys, seeds } = await keystore.decryptSyncPayload(payload, password)
+    const internalKeys = await keystore.addSyncedSeeds(seeds, keys.internal)
+    await keystore.addKeys(internalKeys)
+    await keystore.addKeysExternallyStored(keys.external)
+  }
+
   const buildPayload = (keyAddrs: string[]) =>
     exportingKeystore
       .exportForSync(keyAddrs)
@@ -1472,7 +1484,8 @@ describe('app data sync between two devices', () => {
 
     // The key still signs on the other device, it is just no longer tied to a seed
     await importingKeystore.addSecret('password', importingPass, '', true)
-    await importingKeystore.importFromSync(
+    await importFromSync(
+      importingKeystore,
       { v: 1 as const, accounts: [], ...exported },
       exportingPass
     )
@@ -1495,7 +1508,7 @@ describe('app data sync between two devices', () => {
     await importingKeystore.addSecret('password', importingPass, '', true)
     const payload = await buildPayload([EXTERNAL_ADDR])
 
-    await importingKeystore.importFromSync(payload, exportingPass)
+    await importFromSync(importingKeystore, payload, exportingPass)
 
     expect(importingKeystore.keys).toEqual([
       expect.objectContaining({ addr: EXTERNAL_ADDR, type: 'ledger', isExternallyStored: true })
@@ -1538,7 +1551,7 @@ describe('app data sync between two devices', () => {
       await importingKeystore.addSecret('password', importingPass, '', true)
 
       const payload = await buildPayload([passphraseKeyAddr])
-      await importingKeystore.importFromSync(payload, exportingPass)
+      await importFromSync(importingKeystore, payload, exportingPass)
 
       expect(payload.seeds[0]).not.toHaveProperty('privacyKeys')
       expect(importingKeystore.seeds).toEqual([
@@ -1568,7 +1581,11 @@ describe('app data sync between two devices', () => {
       await importingKeystore.persistTempSeed()
       const existingSeedId = importingKeystore.seeds[0]!.id
 
-      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
+      await importFromSync(
+        importingKeystore,
+        await buildPayload([passphraseKeyAddr]),
+        exportingPass
+      )
 
       expect(importingKeystore.seeds).toHaveLength(1)
       await expect(
@@ -1584,7 +1601,11 @@ describe('app data sync between two devices', () => {
       const seedId = await addPassphrasePhraseWithKey(true)
       await importingKeystore.addSecret('password', importingPass, '', true)
 
-      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
+      await importFromSync(
+        importingKeystore,
+        await buildPayload([passphraseKeyAddr]),
+        exportingPass
+      )
 
       expect(importingKeystore.seeds[0]).toMatchObject({ id: seedId, isPassphraseNeeded: false })
       expect((await importingKeystore.getSavedSeed(seedId)).seedPassphrase).toBe(PASSPHRASE)
@@ -1601,7 +1622,11 @@ describe('app data sync between two devices', () => {
       await importingKeystore.persistTempSeed()
       const existingSeedId = importingKeystore.seeds[0]!.id
 
-      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
+      await importFromSync(
+        importingKeystore,
+        await buildPayload([passphraseKeyAddr]),
+        exportingPass
+      )
 
       expect(importingKeystore.seeds).toEqual([
         expect.objectContaining({ id: existingSeedId, isPassphraseNeeded: true })
@@ -1612,7 +1637,11 @@ describe('app data sync between two devices', () => {
     test('is queued with its fingerprint when synced before the device password is set', async () => {
       const seedId = await addPassphrasePhraseWithKey(false)
 
-      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
+      await importFromSync(
+        importingKeystore,
+        await buildPayload([passphraseKeyAddr]),
+        exportingPass
+      )
       await importingKeystore.addSecret('password', importingPass, '', true)
 
       expect(importingKeystore.seeds[0]).toMatchObject({ id: seedId, withPassphrase: true })
@@ -1624,7 +1653,11 @@ describe('app data sync between two devices', () => {
       await exportingKeystore.updateSeed({ id: seedId, passphraseLabel: 'Savings' })
       await importingKeystore.addSecret('password', importingPass, '', true)
 
-      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
+      await importFromSync(
+        importingKeystore,
+        await buildPayload([passphraseKeyAddr]),
+        exportingPass
+      )
 
       expect(importingKeystore.seeds[0]).toMatchObject({ id: seedId, passphraseLabel: 'Savings' })
     })
@@ -1640,7 +1673,11 @@ describe('app data sync between two devices', () => {
       await importingKeystore.persistTempSeed()
       const otherPassphraseSeedId = importingKeystore.seeds[0]!.id
 
-      await importingKeystore.importFromSync(await buildPayload([passphraseKeyAddr]), exportingPass)
+      await importFromSync(
+        importingKeystore,
+        await buildPayload([passphraseKeyAddr]),
+        exportingPass
+      )
 
       // Both are "1" on the device they were added on
       expect(exportingKeystore.seeds.find(({ id }) => id === seedId)!.passphraseLabel).toBe('1')
@@ -1658,7 +1695,7 @@ describe('app data sync between two devices', () => {
       await importingKeystore.addSecret('password', importingPass, '', true)
       const payload = await buildPayload([EXTERNAL_ADDR])
 
-      await expect(importingKeystore.importFromSync(payload, 'wrongPass')).rejects.toThrow(
+      await expect(importFromSync(importingKeystore, payload, 'wrongPass')).rejects.toThrow(
         'Incorrect password. Please try again.'
       )
       expect(importingKeystore.keys).toHaveLength(0)
@@ -1696,7 +1733,7 @@ describe('app data sync between two devices', () => {
       await importingKeystore.addSecret('password', importingPass, '', true)
       const payload = await buildPayload([keyPublicAddress])
 
-      await expect(importingKeystore.importFromSync(payload, 'wrongPass')).rejects.toThrow(
+      await expect(importFromSync(importingKeystore, payload, 'wrongPass')).rejects.toThrow(
         'Incorrect password. Please try again.'
       )
       expect(importingKeystore.keys).toHaveLength(0)
@@ -1704,11 +1741,25 @@ describe('app data sync between two devices', () => {
     })
   })
 
+  test('decrypting a payload stores nothing until the synced accounts are added', async () => {
+    await importingKeystore.addSecret('password', importingPass, '', true)
+    const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
+
+    const { keys, seeds } = await importingKeystore.decryptSyncPayload(payload, exportingPass)
+
+    expect(keys.internal.map((k) => k.addr)).toEqual([keyPublicAddress])
+    expect(keys.internal[0]!.meta.fromSeedId).toBe(exportedSeedId)
+    expect(keys.external.map((k) => k.addr)).toEqual([EXTERNAL_ADDR])
+    expect(seeds.map((seed) => seed.id)).toEqual([exportedSeedId])
+    expect(importingKeystore.keys).toHaveLength(0)
+    expect(importingKeystore.seeds).toHaveLength(0)
+  })
+
   test('imports keys and seeds into a device that already has a password', async () => {
     await importingKeystore.addSecret('password', importingPass, '', true)
     const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
 
-    await importingKeystore.importFromSync(payload, exportingPass)
+    await importFromSync(importingKeystore, payload, exportingPass)
 
     expect(importingKeystore.keys).toHaveLength(2)
     expect(importingKeystore.keys).toContainEqual(
@@ -1729,7 +1780,7 @@ describe('app data sync between two devices', () => {
   test('imports before the device password is set (onboarding) and stores everything once it is', async () => {
     const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
 
-    await importingKeystore.importFromSync(payload, exportingPass)
+    await importFromSync(importingKeystore, payload, exportingPass)
 
     // Nothing can be stored yet, as there is no main key to encrypt with
     expect(importingKeystore.keys).toHaveLength(0)
@@ -1755,7 +1806,7 @@ describe('app data sync between two devices', () => {
     const keyCountsSeenByTheUi: number[] = []
     importingKeystore.onUpdate(() => keyCountsSeenByTheUi.push(importingKeystore.keys.length))
 
-    await importingKeystore.importFromSync(payload, exportingPass)
+    await importFromSync(importingKeystore, payload, exportingPass)
 
     expect(importingKeystore.keys).toHaveLength(2)
     expect(keyCountsSeenByTheUi.at(-1)).toBe(2)
@@ -1772,7 +1823,7 @@ describe('app data sync between two devices', () => {
       keystoreSigners,
       uiCtrl
     )
-    await slowKeystore.importFromSync(payload, exportingPass)
+    await importFromSync(slowKeystore, payload, exportingPass)
 
     const keyCountsSeenByTheUi: number[] = []
     slowKeystore.onUpdate(() => keyCountsSeenByTheUi.push(slowKeystore.keys.length))
@@ -1794,7 +1845,7 @@ describe('app data sync between two devices', () => {
     await importingKeystore.persistTempSeed()
     const alreadyStoredSeedId = importingKeystore.seeds[0]!.id
 
-    await importingKeystore.importFromSync(await buildPayload([keyPublicAddress]), exportingPass)
+    await importFromSync(importingKeystore, await buildPayload([keyPublicAddress]), exportingPass)
 
     expect(importingKeystore.seeds).toHaveLength(1)
     expect(importingKeystore.seeds[0]!.id).toBe(alreadyStoredSeedId)
@@ -1807,8 +1858,8 @@ describe('app data sync between two devices', () => {
     await importingKeystore.addSecret('password', importingPass, '', true)
     const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
 
-    await importingKeystore.importFromSync(payload, exportingPass)
-    await importingKeystore.importFromSync(payload, exportingPass)
+    await importFromSync(importingKeystore, payload, exportingPass)
+    await importFromSync(importingKeystore, payload, exportingPass)
 
     expect(importingKeystore.keys).toHaveLength(2)
     expect(importingKeystore.seeds).toHaveLength(1)

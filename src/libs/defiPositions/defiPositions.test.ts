@@ -417,13 +417,7 @@ describe('Defi positions helper and portfolio functions', () => {
       positionsByProvider.map((p) => p.providerName).sort()
 
     it('keeps the previous API positions when the API call is skipped', () => {
-      const res = getNewDefiState(
-        getPastPortfolioState(),
-        null,
-        getRpcPositions(),
-        null,
-        undefined
-      )
+      const res = getNewDefiState(getPastPortfolioState(), null, getRpcPositions(), null, undefined)
 
       expect(getProviderNames(res.positionsByProvider)).toEqual(['AAVE v3', 'Lido', 'Uniswap V3'])
       expect(res.error).toBeNull()

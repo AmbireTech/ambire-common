@@ -3830,4 +3830,168 @@ describe('DappsController', () => {
       expect(controller.getDapp(CUSTOM_ID)).toBeDefined()
     })
   })
+
+  describe('dApp icons from other hosts', () => {
+    const SITE_URL = 'https://icon-test-dapp.xyz'
+    const OWN_ICON = 'https://icon-test-dapp.xyz/logo.png'
+    const THIRD_PARTY_ICON = 'https://res.cloudinary.com/logo.png'
+    // The icon of an app on the hand-picked impersonation list, used by a site posing as it
+    const IMPERSONATED_APP_ICON = 'https://app.uniswap.org/favicon.png'
+
+    const makeConnectRequest = (session: Session): DappConnectRequest => ({
+      id: 1,
+      kind: 'dappConnect',
+      meta: { params: {} },
+      dappPromises: [{ id: '', resolve: () => {}, reject: () => {}, meta: {}, session }]
+    })
+
+    const prepareSession = async (icon: string, name = 'Icon Test Dapp') => {
+      const { controller, mainCtrl } = await prepareTest()
+      await controller.initialLoadPromise
+      const session = await controller.getOrCreateDappSession({ tabId: 90, url: SITE_URL })
+      controller.setSessionProp(session.sessionId, { name, icon })
+
+      return { controller, mainCtrl, session }
+    }
+
+    test('a session keeps an icon on the site own domain', async () => {
+      const { session } = await prepareSession(OWN_ICON)
+
+      expect(session.icon).toBe(OWN_ICON)
+      expect(session.declaredIcon).toBe(OWN_ICON)
+    })
+
+    test('a session drops an icon on another host, keeping it only for the security checks', async () => {
+      const { session } = await prepareSession(THIRD_PARTY_ICON)
+
+      expect(session.icon).toBe('')
+      expect(session.declaredIcon).toBe(THIRD_PARTY_ICON)
+      // Never part of the state sent to the UI
+      expect(JSON.stringify(session.toJSON())).not.toContain(THIRD_PARTY_ICON)
+    })
+
+    test('a catalog app keeps its icon from any host', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.initialLoadPromise
+      const catalogDapp = predefinedDapps.find((d) => d.url.startsWith('https://'))!
+      const session = await controller.getOrCreateDappSession({ tabId: 91, url: catalogDapp.url })
+
+      controller.setSessionProp(session.sessionId, { icon: THIRD_PARTY_ICON })
+
+      expect(session.icon).toBe(THIRD_PARTY_ICON)
+    })
+
+    test('the app to connect gets no icon from another host', async () => {
+      const { controller, mainCtrl, session } = await prepareSession(THIRD_PARTY_ICON)
+      await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest(session))
+
+      expect(controller.dappToConnect?.icon).toBe('')
+      expect(JSON.stringify(controller.toJSON().dappToConnect)).not.toContain(THIRD_PARTY_ICON)
+    })
+
+    test('flags a site that uses the icon of a well-known app, although the icon is not shown', async () => {
+      const { controller, mainCtrl, session } = await prepareSession(
+        IMPERSONATED_APP_ICON,
+        'Claim Rewards'
+      )
+      await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest(session))
+
+      expect(controller.dappToConnect?.icon).toBe('')
+      expect(controller.dappToConnectImpersonation).toMatchObject({
+        appName: 'Uniswap',
+        reason: 'icon'
+      })
+    })
+
+    test('a site already on the scam lists gets no impersonation warning', async () => {
+      const { controller, mainCtrl, session } = await prepareSession(
+        IMPERSONATED_APP_ICON,
+        'Claim Rewards'
+      )
+      const updateDomainsSpy = jest
+        .spyOn(mainCtrl.phishing, 'updateDomainsBlacklistedStatus')
+        .mockImplementation(async (_urls, callback) => {
+          callback({ [session.id]: 'BLACKLISTED' })
+        })
+
+      try {
+        await controller.setDappToConnectIfNeeded(makeConnectRequest(session))
+
+        expect(controller.dappToConnect?.blacklisted).toBe('BLACKLISTED')
+        expect(controller.dappToConnectImpersonation).toBe(null)
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
+
+    test('clears the impersonation warning when there is no app to connect anymore', async () => {
+      const { controller, mainCtrl, session } = await prepareSession(
+        IMPERSONATED_APP_ICON,
+        'Claim Rewards'
+      )
+      await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+      await controller.setDappToConnectIfNeeded(makeConnectRequest(session))
+      expect(controller.dappToConnectImpersonation).not.toBe(null)
+
+      await controller.setDappToConnectIfNeeded(null)
+
+      expect(controller.dappToConnectImpersonation).toBe(null)
+    })
+
+    test('an app added from the UI with an icon on another host is stored without it', async () => {
+      const { controller } = await prepareTest()
+      await controller.initialLoadPromise
+
+      await controller.addDapp(
+        makeDapp({
+          id: 'icon-test-dapp.xyz',
+          name: 'Icon Test Dapp',
+          url: SITE_URL,
+          icon: THIRD_PARTY_ICON,
+          isCustom: true,
+          isConnected: true
+        })
+      )
+
+      expect(controller.getDapp('icon-test-dapp.xyz')?.icon).toBe('')
+    })
+
+    test('drops an icon on another host from apps stored before it was checked', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [
+          makeDapp({
+            id: 'icon-test-dapp.xyz',
+            name: 'Icon Test Dapp',
+            url: SITE_URL,
+            icon: THIRD_PARTY_ICON,
+            isCustom: true,
+            isConnected: true,
+            connectedSources: ['injected']
+          }),
+          makeDapp({
+            id: 'own-icon-dapp.xyz',
+            name: 'Own Icon Dapp',
+            url: 'https://own-icon-dapp.xyz',
+            icon: 'https://own-icon-dapp.xyz/logo.png',
+            isCustom: true,
+            isConnected: true,
+            connectedSources: ['injected']
+          })
+        ])
+      })
+      await controller.initialLoadPromise
+
+      expect(controller.getDapp('icon-test-dapp.xyz')?.icon).toBe('')
+      expect(controller.getDapp('own-icon-dapp.xyz')?.icon).toBe(
+        'https://own-icon-dapp.xyz/logo.png'
+      )
+    })
+  })
 })

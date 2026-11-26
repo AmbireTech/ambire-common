@@ -467,7 +467,8 @@ describe('SelectedAccount Controller', () => {
     await wait(1)
 
     const tokenAfterDelivery = selectedAccountCtrl.portfolio.tokens.find(
-      (token) => token.address === deliveredToken.address && token.chainId === deliveredToken.chainId
+      (token) =>
+        token.address === deliveredToken.address && token.chainId === deliveredToken.chainId
     )
     expect(tokenAfterDelivery?.pendingDeliveryAmount).toBeUndefined()
   })

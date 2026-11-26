@@ -132,9 +132,7 @@ describe('V1 fee options', () => {
 
   test('always broadcasts by another wallet', () => {
     allFeeOptions.forEach((feeOption) => {
-      expect(v1.getBroadcastOption(feeOption, { op: accountOp })).toBe(
-        BROADCAST_OPTIONS.byOtherEOA
-      )
+      expect(v1.getBroadcastOption(feeOption, { op: accountOp })).toBe(BROADCAST_OPTIONS.byOtherEOA)
     })
   })
 })

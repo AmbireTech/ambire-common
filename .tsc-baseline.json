@@ -1,0 +1,858 @@
+{
+  "meta": {
+    "baselineFileVersion": 1,
+    "ignoreMessages": true
+  },
+  "errors": {
+    "cb0cf769f3f7a29551dc8065719e3eb7f6660e70": {
+      "file": "src/consts/privacyPools.test.ts",
+      "code": "TS2532",
+      "count": 1
+    },
+    "dc50fc07b2c78353a5ffd1325de26ec4e46d620e": {
+      "file": "src/controllers/accounts/accounts.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    "c58385fbd3c408b108eea2e81636005f88f9190e": {
+      "file": "src/controllers/activity/activityIdbMigration.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    "261e1ab18a256d1b70945e43778739ac00113d2a": {
+      "file": "src/controllers/activity/activityRegressions.test.ts",
+      "code": "TS1323",
+      "count": 1
+    },
+    "2385d438da6f7d21d7133d6c0150b03f67dbdb01": {
+      "file": "src/controllers/appDataSync/appDataSync.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    "552f22102a36794dcf9bb9e1630edf19ac756c54": {
+      "file": "src/controllers/autoLogin/autoLogin.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    "cbfd849ea0ba19e9626b05d491daf3744de8fd91": {
+      "file": "src/controllers/dapps/dapps.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    "757eb9994cb7a67dfbffbbefef19c9e781f24df9": {
+      "file": "src/controllers/dapps/dapps.test.ts",
+      "code": "TS2769",
+      "count": 1
+    },
+    "d038aeef53c5368fd0f7e1a4bf6aa6d70a979a56": {
+      "file": "src/controllers/domains/domains.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    "7261f0bbbad1368cb4a45283bf024062e0e850b3": {
+      "file": "src/controllers/gasPrice/gasPrice.test.ts",
+      "code": "TS2554",
+      "count": 4
+    },
+    "6fb2de0c36c6b5f0bd3fdcb91628cafe779d5afb": {
+      "file": "src/controllers/keystore/keystore.test.ts",
+      "code": "TS18048",
+      "count": 6
+    },
+    "fcf1b1fffcfdb2796e270341ab44ff4ce9d80ddd": {
+      "file": "src/controllers/keystore/keystore.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    "580fc033c3bf9b94b45cfea45d3010c2a0d6bcb8": {
+      "file": "src/controllers/keystore/keystore.test.ts",
+      "code": "TS2339",
+      "count": 2
+    },
+    "e1bf92673eba39d6c13ef80ea2a0a20ed8c68850": {
+      "file": "src/controllers/keystore/keystore.test.ts",
+      "code": "TS2532",
+      "count": 8
+    },
+    "be30d46855b4e9e244ce7a5cef58acf3c23e5fa3": {
+      "file": "src/controllers/keystore/keystore.test.ts",
+      "code": "TS2554",
+      "count": 2
+    },
+    "c926cb68daa4901a8b7ab9a25f31d70a9c41c6c5": {
+      "file": "src/controllers/main/main.test.ts",
+      "code": "TS2345",
+      "count": 3
+    },
+    "5136a7f30aac47c3959821a3ebc826139ce2c6ab": {
+      "file": "src/controllers/main/main.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "ae0469764210ce05f7cbf0c9ac08741f4cac42d8": {
+      "file": "src/controllers/phishing/phishing.test.ts",
+      "code": "TS2769",
+      "count": 1
+    },
+    "83eda8ca4c641dba7598f704f88794ab304b184d": {
+      "file": "src/controllers/portfolio/portfolio.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    "129f1b6556fc6dc8e265bfd52a4ce03598aea772": {
+      "file": "src/controllers/privacyPools/context.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "0dcdd3c4a63a09ae1ab2c01fdff50ae968f4ce39": {
+      "file": "src/controllers/privacyPools/errors.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "0f1420e4e5b2d99bc62095c52da1a9ab91e6e24b": {
+      "file": "src/controllers/privacyPools/privacyPools.test.ts",
+      "code": "TS2300",
+      "count": 2
+    },
+    "4c9d219bd1b713cc104391ae0f22b143f07f18a0": {
+      "file": "src/controllers/privacyPools/privacyPools.test.ts",
+      "code": "TS2307",
+      "count": 3
+    },
+    "6c3ec4fed9c8531168f9707c241b9ad81c38d0c7": {
+      "file": "src/controllers/privacyPools/privacyPools.test.ts",
+      "code": "TS2339",
+      "count": 10
+    },
+    "c8aa6d9853848100f5040ee7654ac06e3c4ab06b": {
+      "file": "src/controllers/privacyPools/privacyPools.test.ts",
+      "code": "TS2352",
+      "count": 1
+    },
+    "3f603781ad90b2bd68e3c9c77ed53429155b714a": {
+      "file": "src/controllers/privacyPools/privacyPools.test.ts",
+      "code": "TS2554",
+      "count": 4
+    },
+    "06f1a3d45a1c13d9735983de4be30a0441649d3b": {
+      "file": "src/controllers/privacyPools/privacyPools.test.ts",
+      "code": "TS7006",
+      "count": 16
+    },
+    "f9dbb84f242b1d70913c5f1a462c5704dadaea2f": {
+      "file": "src/controllers/privacyPools/privacyPools.test.ts",
+      "code": "TS7031",
+      "count": 2
+    },
+    "28f7ae734548b13ae5469e77013d7194ab7f5db6": {
+      "file": "src/controllers/privacyPools/privacyPools.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "49ee66193e07ff7b03dfcd089ae8fafa7365c2c3": {
+      "file": "src/controllers/privacyPools/protocolRegistry.ts",
+      "code": "TS2307",
+      "count": 2
+    },
+    "d4fcc3a213c0f6904702bda98fddce8a2eb5ae7d": {
+      "file": "src/controllers/privacyPools/sync.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "5738440eb6f1512edb0f23ea77a11d1dfd4e869a": {
+      "file": "src/controllers/privacyPools/sync.ts",
+      "code": "TS7006",
+      "count": 1
+    },
+    "3b101b7007d7f874e3c7878e90d74da8dfac1cd7": {
+      "file": "src/controllers/privacyPools/withdrawal.ts",
+      "code": "TS18046",
+      "count": 3
+    },
+    "0784c1f168a2b57b94dc0b69a9a50b7fb24e87fe": {
+      "file": "src/controllers/privacyPools/withdrawal.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "3c1f4171607ece9ee860a53d69382aa3ad9c2b00": {
+      "file": "src/controllers/privacyPools/withdrawal.ts",
+      "code": "TS2345",
+      "count": 4
+    },
+    "7a72c7ff57bcf1042d69adbe9010599312e5bb2c": {
+      "file": "src/controllers/privacyPools/withdrawal.ts",
+      "code": "TS7031",
+      "count": 1
+    },
+    "f5b458c7ca50de641dbde64f6584ff62f95268f8": {
+      "file": "src/controllers/requests/requests.test.ts",
+      "code": "TS2554",
+      "count": 2
+    },
+    "05d0d7d4708c26114e88cb7435c6a078168ac248": {
+      "file": "src/controllers/safe/safe.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    "9a344befe07317b3dd96a24fd96fa8604905d9ff": {
+      "file": "src/controllers/safe/safe.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    "dd535f00bfc80b16d7e747fede55dec2d40ffb4a": {
+      "file": "src/controllers/selectedAccount/selectedAccount.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    "55a068bc9cfcfdad6268a2aaa5fa87519d3abb36": {
+      "file": "src/controllers/selectedAccount/selectedAccount.test.ts",
+      "code": "TS7006",
+      "count": 2
+    },
+    "e1a0e898ee7f8095a9101d199880f836cb60ce7e": {
+      "file": "src/controllers/signAccountOp/signAccountOp.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    "bcd016b0d37be8fb1d03bf7cd5ac42a6330dbee8": {
+      "file": "src/controllers/signAccountOp/signAccountOp.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    "0ae724df38ff58279d40453beee27f296fe87503": {
+      "file": "src/controllers/signAccountOp/signAccountOp.test.ts",
+      "code": "TS2538",
+      "count": 1
+    },
+    "777ca2b974f07a2670a41f02899906a637d257e8": {
+      "file": "src/controllers/signAccountOp/txnReplacement.test.ts",
+      "code": "TS2493",
+      "count": 1
+    },
+    "42f877651f07217d7928c7fa8e8efae519e11bd7": {
+      "file": "src/controllers/signAccountOp/txnReplacement.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    "55f9a2fb70fdceae3beabfa820f17d3a26af39d3": {
+      "file": "src/controllers/signMessage/signMessage.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    "7b546b1d7a171b6934f9ac7a5a50b3c526b5ce01": {
+      "file": "src/controllers/signMessage/signMessage.test.ts",
+      "code": "TS2554",
+      "count": 5
+    },
+    "b1995009e9b241130d636d42f2b2322de262b684": {
+      "file": "src/controllers/swapAndBridge/swapAndBridge.test.ts",
+      "code": "TS2339",
+      "count": 3
+    },
+    "2e7e04e6cced103e32f3cbc5bb0aca95eef42dc8": {
+      "file": "src/controllers/swapAndBridge/swapAndBridge.test.ts",
+      "code": "TS7006",
+      "count": 3
+    },
+    "eb693c52f95905134e3c39da22ddcbd706cc791f": {
+      "file": "src/controllers/transfer/transfer.test.ts",
+      "code": "TS2339",
+      "count": 2
+    },
+    "9d4d0a260b060a209e0def5d7054b208e3b9ead5": {
+      "file": "src/controllers/transfer/transfer.test.ts",
+      "code": "TS7006",
+      "count": 4
+    },
+    "39278087208822fe9782c2895c66c92f86742b01": {
+      "file": "src/controllers/transfersScanner/transfersScanner.test.ts",
+      "code": "TS2353",
+      "count": 2
+    },
+    "028893b5907265b31db16ee32e1c9213084c00c9": {
+      "file": "src/controllers/transfersScanner/transfersScanner.test.ts",
+      "code": "TS2554",
+      "count": 6
+    },
+    "ee826dd3559a7c73b694dc62b92dcf6d046c57b2": {
+      "file": "src/controllers/walletToken/walletToken.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    "3b8d381e47fe73871707e797aff8c4cf788b8305": {
+      "file": "src/libs/accountOp/accountOp.test.ts",
+      "code": "TS2741",
+      "count": 2
+    },
+    "93748a1412814baf0166a2aac55f797bea8a4c57": {
+      "file": "src/libs/accountState/accountState.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    "c96eec26d05ab71e4bec44c84c990afa9fd87ebc": {
+      "file": "src/libs/dapps/helpers.test.ts",
+      "code": "TS18048",
+      "count": 2
+    },
+    "f2accfb7c5b4376efda2e7fcee0ce0b9216a7b3e": {
+      "file": "src/libs/decodeCall/decodeCall.test.ts",
+      "code": "TS2353",
+      "count": 3
+    },
+    "a7edb4ecce7fd159a0b5c64d81b8a8528db1e5a6": {
+      "file": "src/libs/deployless/deployless.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    "e23e805b90256d6aef7364cd011997f3d6a23664": {
+      "file": "src/libs/emailVault/emailVault.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    "4b9de5f0cf80e2501cecb511f84b456fec11cb6a": {
+      "file": "src/libs/emailVault/emailVault.test.ts",
+      "code": "TS2538",
+      "count": 1
+    },
+    "772ab7eb6e0557516dce0082fe4cdb9b5d1b13af": {
+      "file": "src/libs/entropyGenerator/entropyGenerator.test.ts",
+      "code": "TS2532",
+      "count": 1
+    },
+    "fae296e6c1600e0ed15ec03aa3b0823928521c24": {
+      "file": "src/libs/estimate/estimate.test.ts",
+      "code": "TS2345",
+      "count": 19
+    },
+    "9b025e00bcdfd3029500090bd54b106c8441795a": {
+      "file": "src/libs/humanizer/erc7730/humanize.test.ts",
+      "code": "TS2339",
+      "count": 5
+    },
+    "4f4ce46512d9c128abab2497bb0d44f05d18d994": {
+      "file": "src/libs/humanizer/erc7730/humanize.test.ts",
+      "code": "TS2532",
+      "count": 2
+    },
+    "390f8fae3f6de9078f1ad6e3e2c09c0fb2749c21": {
+      "file": "src/libs/humanizer/erc7730/humanize.test.ts",
+      "code": "TS7031",
+      "count": 2
+    },
+    "fdc22240971386c15ba331a2f1711914aae376ce": {
+      "file": "src/libs/humanizer/humanizeMessages.test.ts",
+      "code": "TS2339",
+      "count": 11
+    },
+    "167964dfe9e2a939826118caf46caa273fd5674c": {
+      "file": "src/libs/humanizer/humanizeMessages.test.ts",
+      "code": "TS7006",
+      "count": 17
+    },
+    "bc8199b6d2283c257115f79c9ea50075fbe32e7a": {
+      "file": "src/libs/humanizer/humanizeMessages.test.ts",
+      "code": "TS7019",
+      "count": 1
+    },
+    "104efeee87d78a769d6fcd1e90640339401defb0": {
+      "file": "src/libs/humanizer/humanizeMessages.test.ts",
+      "code": "TS7031",
+      "count": 6
+    },
+    "c130173ee40ba94639167b7b556f6654111962bc": {
+      "file": "src/libs/humanizer/humanizerModules.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    "77512c6a568813f1bff03aee094e068eabfbe7f4": {
+      "file": "src/libs/humanizer/humanizerModules.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "aae55edd2d661d4fb2932f212026dd91b4563bcf": {
+      "file": "src/libs/humanizer/messageModules/hashMessageModule.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    "fd8440917c89d87d5ddaf8af82a61b9f3f8b08c2": {
+      "file": "src/libs/humanizer/messageModules/hashMessageModule.test.ts",
+      "code": "TS7006",
+      "count": 2
+    },
+    "4757d392be428060504e2d3325960d5743054778": {
+      "file": "src/libs/humanizer/modules/1Inch/1inch.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "a10f3b1b63a71b827d69e53b3b30d0534580fd4f": {
+      "file": "src/libs/humanizer/modules/Aave/aave.test.ts",
+      "code": "TS2488",
+      "count": 1
+    },
+    "623a659fa546828bafc10f81dd96316d6032e5ba": {
+      "file": "src/libs/humanizer/modules/Aave/aave.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "7b3717378d801ea71d14dafdc9df77a75e58d1e6": {
+      "file": "src/libs/humanizer/modules/CowSwap/cowSwap.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    "edb53138fe1834a02788ffc1bb566805060bb590": {
+      "file": "src/libs/humanizer/modules/Curve/curve.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "712d6d0808844768283375ef6daa722e7c361f6f": {
+      "file": "src/libs/humanizer/modules/Guild/Guild.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "07db9b8fd6b786ec90f20179da6a91be38f7e2f4": {
+      "file": "src/libs/humanizer/modules/KyberSwap/kyberSwap.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "09fd1e3eae8a5896cc642e06fa33a921d3f2f734": {
+      "file": "src/libs/humanizer/modules/Lido/lido.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "a10372cd96e83d7249dbb3b0b1afe980495009d0": {
+      "file": "src/libs/humanizer/modules/Lifi/lifi.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "11034e89d0892d843bd3c1b40843e37b4e34c06e": {
+      "file": "src/libs/humanizer/modules/MetaMorpho/metaMorpho.test.ts",
+      "code": "TS2532",
+      "count": 1
+    },
+    "2c8bfbddd0b253735b4ee2ff8a604a0b11d93a48": {
+      "file": "src/libs/humanizer/modules/Pancake/Pancake.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    "a2275bb72181d886498bac48303f709de7382f1b": {
+      "file": "src/libs/humanizer/modules/Privileges/privileges.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "92dbc55ad6748db443ad079789148c901246a288": {
+      "file": "src/libs/humanizer/modules/Safe/safe.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    "720482279e24571387b38127de203fd2d45d199f": {
+      "file": "src/libs/humanizer/modules/Safe/safe.test.ts",
+      "code": "TS7006",
+      "count": 1
+    },
+    "6b6391650555c600f62043308628a3c0f0a2276d": {
+      "file": "src/libs/humanizer/modules/Socket/socket.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "155b5c9be825204f31507e6d5b69e90ef51d30b0": {
+      "file": "src/libs/humanizer/modules/Sushiswap/sushiswap.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "3c4096d52f1f1e8275e4794b7cf0ebf56c313099": {
+      "file": "src/libs/humanizer/modules/TraderJoe/traderjoe.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "96da6e555e1909e5a3352a58d814dbeae21d7da5": {
+      "file": "src/libs/humanizer/modules/Uniswap/uniswapRecipient.test.ts",
+      "code": "TS2339",
+      "count": 6
+    },
+    "8baae51993886ed95e8c9e68e9d6623394c76dad": {
+      "file": "src/libs/humanizer/modules/Uniswap/uniswapRecipient.test.ts",
+      "code": "TS7006",
+      "count": 9
+    },
+    "51483e3aec7b2df61c2b71628b19e757f3df6477": {
+      "file": "src/libs/humanizer/modules/Uniswap/uniswapSoundness.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    "e7c380cd7a9537f367b39b24f0f53b9e7d2e2311": {
+      "file": "src/libs/humanizer/modules/Uniswap/uniswapSoundness.test.ts",
+      "code": "TS7006",
+      "count": 1
+    },
+    "c3aeecc1f1476523a79939123244c040503df9c9": {
+      "file": "src/libs/humanizer/modules/WALLET/wallet.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "426750828a578afa40be0fd44aedbbaa4865ffc2": {
+      "file": "src/libs/humanizer/modules/Wrapping/wrapping.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    "f9eba060cedbc6006228925f0621ea72f131b0f0": {
+      "file": "src/libs/keystoreSigner/keystoreSigner.test.ts",
+      "code": "TS2353",
+      "count": 1
+    },
+    "5cae379e0613ddd99d2ee95b5f5c310e780ee557": {
+      "file": "src/libs/kohaku/host.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    "eb5300eb02fadc6a9b837130e0312f522bf99ac2": {
+      "file": "src/libs/kohaku/host.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    "69b6c8482f4b988845f0bc9ee6790fd3da8afe18": {
+      "file": "src/libs/kohaku/host.ts",
+      "code": "TS2307",
+      "count": 2
+    },
+    "c4bf2b610a65e4d90f9fa315d8b9c47327bcbaba": {
+      "file": "src/libs/kohaku/host.ts",
+      "code": "TS7006",
+      "count": 5
+    },
+    "4de06ff954b6c44dbac41bdef700d25b8615ea36": {
+      "file": "src/libs/kohaku/host.ts",
+      "code": "TS7031",
+      "count": 2
+    },
+    "b573b0f6da5aa19a2a0f15499393b4218cfed974": {
+      "file": "src/libs/networks/networks.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    "009350f8b1c9518ba4086810c49df4fe30a9c64b": {
+      "file": "src/libs/portfolio/helpers.test.ts",
+      "code": "TS2322",
+      "count": 4
+    },
+    "182359898758fee3dd94b9f8bd243160d6c5a2cc": {
+      "file": "src/libs/portfolio/helpers.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    "4e57ce6844e10d94a72701cedb21082fc89ab144": {
+      "file": "src/libs/portfolio/helpers.test.ts",
+      "code": "TS2353",
+      "count": 1
+    },
+    "390cd568d21103858e7ffa4537d4fcff83245c6f": {
+      "file": "src/libs/portfolio/helpers.test.ts",
+      "code": "TS2532",
+      "count": 2
+    },
+    "a6022cd5b921c60d3192a24e447998ff7a743c8d": {
+      "file": "src/libs/privacyPools/dataService.test.ts",
+      "code": "TS2307",
+      "count": 2
+    },
+    "7b15e81039963f607240feb305c72e4f55f41a70": {
+      "file": "src/libs/privacyPools/dataService.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    "13da1f80289a94067d717c57326fdbc6e3cc727f": {
+      "file": "src/libs/privacyPools/dataService.test.ts",
+      "code": "TS7031",
+      "count": 1
+    },
+    "7f3f933edd4b08602a7d3d7110efd3288f5a9494": {
+      "file": "src/libs/privacyPools/dataService.ts",
+      "code": "TS18046",
+      "count": 1
+    },
+    "e4addc1da3248211cfc1bb278fdd18ef32424615": {
+      "file": "src/libs/privacyPools/dataService.ts",
+      "code": "TS2307",
+      "count": 2
+    },
+    "e2d7607e8f27b169e0f7e54849df3ebdb6901cf3": {
+      "file": "src/libs/privacyPools/entrypointAssetConfig.test.ts",
+      "code": "TS2339",
+      "count": 3
+    },
+    "6f4be5af50abe8c002edc6e04394b2a9afdec7a9": {
+      "file": "src/libs/privacyPools/entrypointAssetConfig.test.ts",
+      "code": "TS7006",
+      "count": 3
+    },
+    "b32c4c140fac548155deeae0a56e80d24df8d159": {
+      "file": "src/libs/privacyPools/history.test.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "2e4cde4fc451145b14b990cd92fb7122023625b7": {
+      "file": "src/libs/privacyPools/history.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "4fdb030df6a2cd1c0e0ea8e318cd16f0089b2bff": {
+      "file": "src/libs/privacyPools/parallelLogSource.test.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "e7cb46d7cba33963b7937f41b085b9245bfb440e": {
+      "file": "src/libs/privacyPools/parallelLogSource.test.ts",
+      "code": "TS2353",
+      "count": 1
+    },
+    "a1f5a43f82b965b542b2a99eb71c22f042d65a38": {
+      "file": "src/libs/privacyPools/parallelLogSource.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "bb258af68b858a432057ac2eb24248cc494d1285": {
+      "file": "src/libs/privacyPools/paymasterWithdrawal.test.ts",
+      "code": "TS2322",
+      "count": 2
+    },
+    "2bfb08e59fbf7febbc7023b0538521f052b052cc": {
+      "file": "src/libs/privacyPools/paymasterWithdrawal.test.ts",
+      "code": "TS2418",
+      "count": 2
+    },
+    "07754a516478a3b4fd868c6c68bcc4a4e629148d": {
+      "file": "src/libs/privacyPools/paymasterWithdrawal.test.ts",
+      "code": "TS2739",
+      "count": 1
+    },
+    "7f7c77daa6e5f571e3984cc2f4b1ca3c953bcc24": {
+      "file": "src/libs/privacyPools/prover.test.ts",
+      "code": "TS2554",
+      "count": 2
+    },
+    "5eabff1c2586998df7fcac0effe29d7e428d81f8": {
+      "file": "src/libs/privacyPools/prover.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "b247f17eaec2fbd12b882bd8887f636b0d0a7d2a": {
+      "file": "src/libs/privacyPools/prover.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    "e28c50b9a63b2e1cc64254eebf014f71aef2494e": {
+      "file": "src/libs/privacyPools/prover.ts",
+      "code": "TS7006",
+      "count": 1
+    },
+    "edc57eafa852d86e082233402b8b1a10ed48c5c8": {
+      "file": "src/libs/privacyPools/relayedWithdrawal.test.ts",
+      "code": "TS2339",
+      "count": 2
+    },
+    "9d3333aaafb807db1852036b7d2e39497ce3814f": {
+      "file": "src/libs/privacyPools/relayedWithdrawal.test.ts",
+      "code": "TS7006",
+      "count": 4
+    },
+    "93cb8e86412f5b9537a667e2a0aacea53828fdd5": {
+      "file": "src/libs/privacyPools/storeKeys.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "bfccebfe7f5a9845a660509e914e796c913c93f1": {
+      "file": "src/libs/relayerCall/relayerCall.test.ts",
+      "code": "TS18048",
+      "count": 1
+    },
+    "39faee1ffbef22995c8990a751db60edc32861da": {
+      "file": "src/libs/relayerCall/relayerCall.test.ts",
+      "code": "TS2722",
+      "count": 1
+    },
+    "eca6678491cc194cff3f6ab0367f579ea8530631": {
+      "file": "src/libs/scamFilter/scamFilter.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    "53fe403d5cfcee9775813084cba863e5252cce6e": {
+      "file": "src/libs/selectedAccount/errors.test.ts",
+      "code": "TS2352",
+      "count": 3
+    },
+    "9f708360b7b0dec51f6f90972799184460a36842": {
+      "file": "src/libs/selectedAccount/selectedAccount.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    "0ba159f9249aeeb2959d9064c04e91c8739811eb": {
+      "file": "src/libs/selectedAccount/selectedAccount.test.ts",
+      "code": "TS7006",
+      "count": 2
+    },
+    "15b4f256f2fccadb75b4fb2e89083534d770274f": {
+      "file": "src/libs/swapAndBridge/fee.test.ts",
+      "code": "TS2339",
+      "count": 3
+    },
+    "b47f515dc195be122f5e749cd8b21010cacacc65": {
+      "file": "src/libs/swapAndBridge/fee.test.ts",
+      "code": "TS7006",
+      "count": 7
+    },
+    "9706eea189a2e44df72334c191551f00e7fc9e4e": {
+      "file": "src/libs/swapAndBridge/swapAndBridge.test.ts",
+      "code": "TS18048",
+      "count": 2
+    },
+    "96b1a9c0158e7704242821ab8bba7c2a6da8d6b0": {
+      "file": "src/libs/swapAndBridge/swapAndBridge.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    "9a8dcea455249087252cce5f833b7907a3f0f82d": {
+      "file": "src/libs/transfer/nftSearchParams.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    "b6b74e6890ef575a826ad32ab9b7bc77051938f7": {
+      "file": "src/libs/transfer/nftSearchParams.test.ts",
+      "code": "TS7006",
+      "count": 2
+    },
+    "49118306ff7cf39e7b4d226b07b69cdd92da0bb4": {
+      "file": "src/libs/walletStaking/pendingWithdrawal.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    "57b1a2869ef888aabb75aa8f45fb0afe23b4bf99": {
+      "file": "src/libs/walletStaking/pendingWithdrawal.test.ts",
+      "code": "TS7006",
+      "count": 1
+    },
+    "5a7d08b1463994995d603ff390148a8148dea567": {
+      "file": "src/services/across/api.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    "4bf6461d2a5e2ae2339a6967934073955a3f5834": {
+      "file": "src/services/cowswap/api.test.ts",
+      "code": "TS2554",
+      "count": 2
+    },
+    "c00451702964af0249ba106bb895220cd15d365a": {
+      "file": "src/services/uniswap/api.test.ts",
+      "code": "TS2554",
+      "count": 3
+    },
+    "f18d93689b17e9de2bcafcd40d04f9b8fc380e65": {
+      "file": "test/config.ts",
+      "code": "TS1192",
+      "count": 1
+    },
+    "37b9253ce333755ed9289d957339f9eba82477a9": {
+      "file": "test/hardhat/AmbireAccount/721and1155Test.ts",
+      "code": "TS18048",
+      "count": 1
+    },
+    "5bf18e118f38c61197460ed7430d696267ed9291": {
+      "file": "test/hardhat/AmbireAccount/erc4337deployTest.ts",
+      "code": "TS18048",
+      "count": 9
+    },
+    "fed7845578f68b2ad0483902d6b4ca8ac62beec7": {
+      "file": "test/hardhat/AmbireAccount/erc4337deployTest.ts",
+      "code": "TS2769",
+      "count": 1
+    },
+    "5c2da75ef694d79549372bfd0849db7224a273bc": {
+      "file": "test/hardhat/AmbireAccount/ETHReceiveTest.ts",
+      "code": "TS18048",
+      "count": 3
+    },
+    "9c2bbd1ac239aeffc0746f331b69f3d91233e436": {
+      "file": "test/hardhat/AmbireAccount/MultiSigTest.ts",
+      "code": "TS18048",
+      "count": 10
+    },
+    "6079798bc7fa8e188dc972d775b55bf1fec88cfc": {
+      "file": "test/hardhat/AmbireAccount/SchnorrTest.ts",
+      "code": "TS2532",
+      "count": 3
+    },
+    "6ef33dab75547b92812eac5ff773ba541681e7ce": {
+      "file": "test/hardhat/AmbireAccountFactory/DeployTest.ts",
+      "code": "TS18048",
+      "count": 3
+    },
+    "b579edebb714190a8e73d8d9308bdaf3dee28da2": {
+      "file": "test/hardhat/Paymaster/SendUserOpTest.ts",
+      "code": "TS18048",
+      "count": 8
+    },
+    "a62447fa2f715512c1b50a2bf298cc8656abd22b": {
+      "file": "test/hardhat/stkWallet/stkWallet.ts",
+      "code": "TS18048",
+      "count": 3
+    },
+    "1920f608c1c039e1417e9d2b9eb363fc88cc66c9": {
+      "file": "test/hardhat/stkWallet/stkWallet.ts",
+      "code": "TS2722",
+      "count": 4
+    },
+    "369372618c20c0d7b77024b6b9d7adeebb3677bc": {
+      "file": "test/helpers.ts",
+      "code": "TS18048",
+      "count": 2
+    },
+    "ff5e57ad9dfa32773f643fcfb74c4f8797b6f1ad": {
+      "file": "test/helpers.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    "b481f825427ced46b88337abe6c3c03fd17934a7": {
+      "file": "test/helpers.ts",
+      "code": "TS2722",
+      "count": 1
+    },
+    "f694beb5d2224da9f982e1d6a1594e6c572a3329": {
+      "file": "test/helpers/relayerCustomHeaders.test.ts",
+      "code": "TS2339",
+      "count": 2
+    },
+    "48781c16e54ca4eddde1fe3f742a99626282e7c0": {
+      "file": "test/helpers/relayerCustomHeaders.test.ts",
+      "code": "TS7006",
+      "count": 2
+    },
+    "403486d505dac7bdf60adda5cd1cec6532531d00": {
+      "file": "test/helpers/relayerCustomHeaders.ts",
+      "code": "TS2769",
+      "count": 1
+    },
+    "e6c2a781a2f41a37f7d7926e00b1788be38e4524": {
+      "file": "test/helpers/requests.ts",
+      "code": "TS2578",
+      "count": 4
+    },
+    "d946c884b092177ed57869741ea890403cf845c9": {
+      "file": "test/implementations.ts",
+      "code": "TS18048",
+      "count": 1
+    },
+    "a3c637ed2676303ccdfd9859deb535dfc4699bab": {
+      "file": "test/implementations.ts",
+      "code": "TS2532",
+      "count": 2
+    },
+    "29a967903285342e627500e522e8f60e5cefe35e": {
+      "file": "test/implementations.ts",
+      "code": "TS2722",
+      "count": 1
+    },
+    "2cb49eb2f830d1d999d4ba60638a86fef11b3229": {
+      "file": "v1/hooks/useConstants/useConstants.ts",
+      "code": "TS7016",
+      "count": 1
+    }
+  }
+}

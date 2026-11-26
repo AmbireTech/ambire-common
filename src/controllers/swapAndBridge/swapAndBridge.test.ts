@@ -9,7 +9,7 @@ import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
-import { noErc7730DescriptorsRelayer } from '../../../test/mocks/erc7730Relayer'
+import { EMPTY_ERC7730_REGISTRY } from '../../../test/mocks/erc7730Registry'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -237,10 +237,7 @@ const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, sel
 const callRelayer = relayerCall.bind({ url: '', fetch })
 const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
 const erc7730Ctrl = new Erc7730Controller({
-  storage: storageCtrl,
-  // callRelayer isn't bound, so every descriptor lookup would fail and log an error
-  callRelayer: noErc7730DescriptorsRelayer,
-  featureFlags: featureFlagsCtrl,
+  registry: EMPTY_ERC7730_REGISTRY,
   providers: providersCtrl,
   ui: uiCtrl
 })
@@ -274,7 +271,8 @@ const safe = new SafeController({
   providers: providersCtrl,
   storage: storageCtrl,
   accounts: accountsCtrl,
-  keystore
+  keystore,
+  featureFlags: featureFlagsCtrl
 })
 
 const activityCtrl = new ActivityController(
@@ -648,29 +646,44 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromChainId).toEqual(10)
     expect(swapAndBridgeController.toChainId).toEqual(10)
   })
-  test('should require portfolio token prices only when a missing price means no market, like the dashboard', async () => {
+  test('should list the portfolio tokens without a price, whatever the price source', async () => {
     const controller = buildSwapAndBridgeController()
     // On OP Mainnet, where the RPC can price every token
     const tokensWithoutPrices = PORTFOLIO_TOKENS.map((token) => ({ ...token, priceIn: [] }))
+    // The "from" token is picked only on the networks the swap provider supports, which a new
+    // controller fetches in the background, announcing them with an update
+    await new Promise<void>((resolve) => {
+      if (controller.supportedChainIds.length) {
+        resolve()
+        return
+      }
+
+      const unsubscribe = controller.onUpdate(() => {
+        if (!controller.supportedChainIds.length) return
+
+        unsubscribe()
+        resolve()
+      })
+    })
 
     try {
       await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
-      await controller.updatePortfolioTokenList(tokensWithoutPrices)
-      expect(controller.portfolioTokenList).toEqual([])
-
-      // The RPC prices the tokens, but with auto discovery on a missing price says nothing
-      await featureFlagsCtrl.setFeatureFlag('tokenPrices', false)
       await controller.updatePortfolioTokenList(tokensWithoutPrices)
 
       expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
       expect(controller.fromSelectedToken).not.toBeNull()
 
-      // Without auto discovery any received token is learned, and one the RPC can't price has
-      // no market, so it's left out, as the dashboard collapses it into the "Other" tokens
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', false)
+      await controller.updatePortfolioTokenList(tokensWithoutPrices)
+
+      expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
+
+      // Prices only from the network and no auto discovery: the dashboard collapses these into
+      // the "Other" tokens, but a legit token may just not be priced, so it stays selectable
       await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', false)
       await controller.updatePortfolioTokenList(tokensWithoutPrices)
 
-      expect(controller.portfolioTokenList).toEqual([])
+      expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
     } finally {
       await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
       await featureFlagsCtrl.setFeatureFlag('tokenAndDefiAutoDiscovery', true)
@@ -1974,7 +1987,14 @@ describe('SwapAndBridge Controller', () => {
       return restartSpy
     }
 
-    const setActiveRoute = (overrides: { sender?: string; fromChainId?: number } = {}) => {
+    const setActiveRoute = (
+      overrides: {
+        sender?: string
+        fromChainId?: number
+        providerId?: string
+        serviceTime?: number
+      } = {}
+    ) => {
       const baseActiveRoute = originalActiveRoutes[0]!
       swapAndBridgeController.activeRoutes = [
         {
@@ -1985,10 +2005,14 @@ describe('SwapAndBridge Controller', () => {
           sender: overrides.sender ?? selectedAccountCtrl.account!.addr,
           route: {
             ...baseActiveRoute.route!,
-            providerId: 'lifi',
+            providerId: overrides.providerId ?? 'lifi',
             fromChainId: overrides.fromChainId ?? 1,
             toChainId: DESTINATION_CHAIN_ID,
-            isIntent: false
+            isIntent: false,
+            userTxs: baseActiveRoute.route!.userTxs.map((userTx) => ({
+              ...userTx,
+              serviceTime: overrides.serviceTime ?? userTx.serviceTime
+            }))
           }
         }
       ]
@@ -2053,6 +2077,55 @@ describe('SwapAndBridge Controller', () => {
       await selectedAccountCtrl.forceEmitUpdate()
 
       expect(restartSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('backs off a CoW Swap order, and checks it again 10 seconds after a refresh', async () => {
+      // This test needs real interval behavior, so it undoes the outer beforeEach mocks
+      jest.restoreAllMocks()
+      const { restore } = suppressConsole()
+      jest.useFakeTimers()
+      const interval = swapAndBridgeController.updateActiveRoutesInterval
+      const checkSpy = jest
+        .spyOn(swapAndBridgeController, 'checkForActiveRoutesStatusUpdate')
+        .mockResolvedValue()
+      const runChecks = async (count: number) => {
+        const timeouts: number[] = []
+        for (let i = 0; i < count; i++) {
+          await waitForFnToBeCalledAndExecuted(interval)
+          timeouts.push(interval.currentTimeout)
+        }
+        return timeouts
+      }
+
+      try {
+        // The mocked check doesn't record when it ran, so no refresh may count as newer yet
+        setDestinationRefreshedAt(undefined)
+        // Started from scratch, so the poll first waits for the order's service time
+        interval.stop()
+        // CoW Swap orders take 10 seconds, the same as the first back-off step
+        setActiveRoute({
+          providerId: 'cowswap',
+          fromChainId: DESTINATION_CHAIN_ID,
+          serviceTime: 10
+        })
+        expect(await runChecks(4)).toEqual([10000, 20000, 30000, 30000])
+
+        jest.mocked(portfolioCtrl.getAccountPortfolioState).mockRestore()
+        setDestinationRefreshedAt(Date.now())
+        checkSpy.mockClear()
+        const emitUpdatePromise = selectedAccountCtrl.forceEmitUpdate()
+        await jest.advanceTimersByTimeAsync(1)
+        await emitUpdatePromise
+        expect(checkSpy).toHaveBeenCalledTimes(1)
+
+        await jest.advanceTimersByTimeAsync(10000)
+        expect(checkSpy).toHaveBeenCalledTimes(2)
+      } finally {
+        interval.stop()
+        jest.clearAllTimers()
+        jest.useRealTimers()
+        restore()
+      }
     })
 
     test('does not check the routes when the destination network has not been refreshed', async () => {
