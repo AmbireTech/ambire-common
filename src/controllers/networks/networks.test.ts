@@ -683,6 +683,52 @@ describe('Networks Controller - add or update network info', () => {
       restore()
     })
   })
+
+  describe('a network without a block explorer', () => {
+    const addResolvedNetwork = async (explorerUrl: string | undefined) => {
+      const { controller, harness } = await buildForNetworkInfo()
+      const pendingRun = controller.setNetworkToAddOrUpdate({
+        chainId: CHAIN_ID_A,
+        rpcUrl: RPC_URL_A
+      })
+      harness.release(RPC_URL_A)
+      await pendingRun
+
+      await controller.addNetwork({ ...addNetworkParams(CHAIN_ID_A, RPC_URL_A), explorerUrl })
+
+      return controller
+    }
+
+    test.each([
+      ['an empty', ''],
+      ['an undefined', undefined]
+    ])('is stored without the explorer URL key when added with %s one', async (_, explorerUrl) => {
+      const controller = await addResolvedNetwork(explorerUrl)
+
+      const addedNetwork = controller.allNetworks.find((n) => n.chainId === CHAIN_ID_A)
+      expect(addedNetwork).toBeDefined()
+      expect('explorerUrl' in addedNetwork!).toBe(false)
+
+      // Read back the way `#load` does, which drops networks that fail the sanity check
+      const reloadedNetworks = await controller.getNetworksInStorage()
+      const reloadedNetwork = reloadedNetworks[CHAIN_ID_A.toString()]
+      expect(reloadedNetwork).toBeDefined()
+      expect('explorerUrl' in reloadedNetwork!).toBe(false)
+    })
+
+    test('loses the explorer URL key when updated with an empty one', async () => {
+      const controller = await addResolvedNetwork('https://explorer.test')
+      const networkBefore = controller.allNetworks.find((n) => n.chainId === CHAIN_ID_A)!
+      const { explorerUrl, ...expectedNetwork } = networkBefore
+
+      await controller.updateNetwork({ explorerUrl: '' }, CHAIN_ID_A)
+
+      const networkAfter = controller.allNetworks.find((n) => n.chainId === CHAIN_ID_A)!
+      expect(explorerUrl).toBe('https://explorer.test')
+      expect('explorerUrl' in networkAfter).toBe(false)
+      expect(networkAfter).toEqual(expectedNetwork)
+    })
+  })
 })
 
 describe('Networks Controller - merge networks from another device', () => {

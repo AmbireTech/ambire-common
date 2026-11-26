@@ -490,13 +490,25 @@ export function sanityCheckImportantNetworkProperties(network: Network) {
   if (typeof network.name !== 'string') return false
   if (typeof network.nativeAssetSymbol !== 'string') return false
   if (typeof network.nativeAssetName !== 'string') return false
-  if (typeof network.explorerUrl !== 'string') return false
+  // A network may have no block explorer
+  if (network.explorerUrl !== undefined && typeof network.explorerUrl !== 'string') return false
   if (typeof network.selectedRpcUrl !== 'string') return false
 
   if (!Array.isArray(network.rpcUrls)) return false
   if (network.rpcUrls.some((url) => typeof url !== 'string')) return false
 
   return true
+}
+
+/**
+ * Returns the network without the `explorerUrl` key when the explorer URL is empty, as a
+ * network with no block explorer is stored without the key.
+ */
+export function omitEmptyExplorerUrl(network: Network): Network {
+  const { explorerUrl, ...networkWithoutExplorerUrl } = network
+  if (explorerUrl) return network
+
+  return networkWithoutExplorerUrl
 }
 
 /**

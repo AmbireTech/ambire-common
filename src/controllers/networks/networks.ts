@@ -27,7 +27,8 @@ import {
   getNetworkInfo,
   getNetworksUpdatedWithRelayerNetworks,
   getValidNetworks,
-  isNetworkInfoPending
+  isNetworkInfoPending,
+  omitEmptyExplorerUrl
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -583,7 +584,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
     // @ts-expect-error delete is ok
     delete info.feeOptions
-    this.#networks[network.chainId.toString()] = {
+    this.#networks[network.chainId.toString()] = omitEmptyExplorerUrl({
       ...network,
       ...info,
       feeOptions,
@@ -591,7 +592,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
       hasRelayer: false,
       predefined: false,
       has7702: false
-    }
+    })
 
     void this.#onAddOrUpdateNetworks([this.#networks[network.chainId.toString()]!])
 
@@ -628,11 +629,11 @@ export class NetworksController extends EventEmitter implements INetworksControl
       return { ...acc, [key]: network[key as keyof Network] }
     }, {} as Network)
 
-    // Update the networks with the incoming new values
-    this.#networks[chainId.toString()] = {
+    // Update the networks with the incoming new values. An empty explorer URL removes it.
+    this.#networks[chainId.toString()] = omitEmptyExplorerUrl({
       ...networkData,
       ...changedNetwork
-    }
+    })
 
     await this.#storage.set('networks', this.#networks)
 
