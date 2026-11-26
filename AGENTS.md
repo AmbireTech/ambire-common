@@ -26,6 +26,7 @@ Note: This package does not include compiled JS and TS output in the repository.
 - Use `npm` for package management
 - All code must be environment-agnostic; do not use platform-specific APIs (e.g. `window`, `document`, `React Native` APIs)
 - NO new RPC providers should be constructed. ALWAYS use `ProvidersController`.
+- Before changing the bundled ERC-7730 registry (`scripts/erc7730/`, `src/consts/erc7730/`), read `scripts/erc7730/AGENTS.md`
 
 ### Public repository:
 This repository is public. Anyone can read the code comments, test names, log messages, commit messages, branch names, PR titles, PR descriptions and PR comments. Follow responsible disclosure and keep it professional:
