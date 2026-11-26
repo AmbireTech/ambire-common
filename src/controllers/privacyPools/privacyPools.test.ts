@@ -4175,6 +4175,13 @@ describe('PrivacyPoolsController', () => {
       message: 'Quote request failed (HTTP 503)',
       reason: 'quote-failed'
     }
+    // As the SDK words a relayer's 400, keeping its `error` field over its code
+    const QUOTE_REFUSED = {
+      relayerId: 'fastrelay',
+      relayerUrl: 'https://fastrelay.xyz/relayer',
+      message: 'Quote request failed (HTTP 400): Bad Request',
+      reason: 'quote-failed'
+    }
     const FEE_TOO_HIGH = {
       relayerId: 'cloaked',
       relayerUrl: 'https://api.clkd.xyz/relayer',
@@ -4192,7 +4199,18 @@ describe('PrivacyPoolsController', () => {
         [FEE_TOO_HIGH, QUOTE_FAILED],
         RELAYERS_UNAVAILABLE_ERROR
       ],
-      ['every relayer asked more than the pool allows', [FEE_TOO_HIGH], RELAYER_FEE_TOO_HIGH_ERROR]
+      ['every relayer asked more than the pool allows', [FEE_TOO_HIGH], RELAYER_FEE_TOO_HIGH_ERROR],
+      [
+        'one relayer asked too much and another turned the request down',
+        [FEE_TOO_HIGH, QUOTE_REFUSED],
+        RELAYER_FEE_TOO_HIGH_ERROR
+      ],
+      // Nothing tells it was the fee
+      [
+        'the only relayer that answered turned the request down',
+        [QUOTE_REFUSED],
+        RELAYERS_UNAVAILABLE_ERROR
+      ]
     ])('explains when %s', async (_case, failures, error) => {
       const { restore } = suppressConsole()
       prepareUnshieldFailure = new (PPv1RelayerQuoteError as any)(failures)

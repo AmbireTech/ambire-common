@@ -6,6 +6,7 @@ import {
   PPv1Broadcaster,
   PPv1NoteUnavailableError,
   PPv1RelayerQuoteError,
+  PPv1RelayerQuoteFailure,
   PPv1UnshieldOptions,
   PrivacyPoolsV1Protocol
 } from '@kohaku-eth/privacy-pools'
@@ -106,11 +107,19 @@ const STALE_WITHDRAWAL_MESSAGE =
 const FEE_ABOVE_AMOUNT_SDK_MESSAGE = 'Withdrawal amount too small to cover the sponsored gas fee'
 
 /**
- * Whether every relayer answered, but each asked a higher fee than the pool allows. Retrying soon
- * won't help then, unlike when a relayer could not be reached.
+ * Whether a relayer turned the quote request down as invalid (HTTP 400). A relayer may answer a fee
+ * above what the pool allows this way, with a reason the SDK does not keep.
+ */
+const isQuoteRequestRefused = (failure: PPv1RelayerQuoteFailure) =>
+  failure.reason === 'quote-failed' && failure.message.includes('(HTTP 400)')
+
+/**
+ * Whether at least one relayer asked a higher fee than the pool allows, and every other one turned
+ * the request down too. Retrying soon won't help then, unlike when a relayer could not be reached.
  */
 const isEveryRelayerFeeTooHigh = ({ failures }: PPv1RelayerQuoteError) =>
-  failures.length > 0 && failures.every(({ reason }) => reason === 'fee-too-high')
+  failures.some(({ reason }) => reason === 'fee-too-high') &&
+  failures.every((failure) => failure.reason === 'fee-too-high' || isQuoteRequestRefused(failure))
 
 /**
  * What the user reads when `readRelayedWithdrawal` refuses the relayer's payload: an amount too
