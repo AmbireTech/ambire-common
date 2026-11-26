@@ -3047,8 +3047,10 @@ describe('PrivacyPoolsController', () => {
       expect(controller.operation).toMatchObject({
         status: 'failed',
         error:
-          'This amount is too small to cover the network fee for sending it. Please try a larger amount.'
+          'The network fee is too high for this amount. Try a larger amount, or try again when fees are lower.'
       })
+      // A toast, but not reported
+      expect(controller.emittedErrors.at(-1)).toMatchObject({ level: 'expected' })
       restore()
     })
 
@@ -4167,8 +4169,11 @@ describe('PrivacyPoolsController', () => {
 
     const RELAYERS_UNAVAILABLE_ERROR =
       'The 0xBow relayers could not take this transfer right now. Please try again in a moment, or choose Kohaku in the send settings.'
+    // 0.1 ETH at 120 bps where the pool allows 100: 0.12 ETH, with a 10% buffer
     const RELAYER_FEE_TOO_HIGH_ERROR =
-      'The 0xBow relayers are asking a higher fee than this pool allows right now. Please try again later, or choose Kohaku in the send settings.'
+      'The network fee is too high for this amount. Send at least 0.132 ETH, or try again when fees are lower.'
+    const FEE_TOO_HIGH_WITHOUT_AMOUNT_ERROR =
+      'The network fee is too high for this amount. Try a larger amount, or try again when fees are lower.'
     const QUOTE_FAILED = {
       relayerId: 'fastrelay',
       relayerUrl: 'https://fastrelay.xyz/relayer',
@@ -4221,6 +4226,21 @@ describe('PrivacyPoolsController', () => {
       restore()
     })
 
+    it('tells the least amount the cheapest relayer that asked too much would take', async () => {
+      const { restore } = suppressConsole()
+      prepareUnshieldFailure = new (PPv1RelayerQuoteError as any)([
+        { ...FEE_TOO_HIGH, requiredFeeBPS: 300n },
+        FEE_TOO_HIGH,
+        // Says no amount, so it is left out
+        QUOTE_REFUSED
+      ])
+
+      const { controller } = await prepareRelayedWithdrawal()
+
+      expect(controller.operation).toMatchObject({ error: RELAYER_FEE_TOO_HIGH_ERROR })
+      restore()
+    })
+
     it('explains a relayer fee above what the pool allows, as when no relayer offers less', async () => {
       const { restore } = suppressConsole()
       // The mocked pool allows 100 bps
@@ -4228,9 +4248,10 @@ describe('PrivacyPoolsController', () => {
         buildPreparedRelayedWithdrawal({ relayFeeBPS: 101n })
       )
 
+      // The payload does not tell how much the relayer would take for a larger amount
       expect(controller.operation).toMatchObject({
         status: 'failed',
-        error: RELAYER_FEE_TOO_HIGH_ERROR
+        error: FEE_TOO_HIGH_WITHOUT_AMOUNT_ERROR
       })
       restore()
     })
