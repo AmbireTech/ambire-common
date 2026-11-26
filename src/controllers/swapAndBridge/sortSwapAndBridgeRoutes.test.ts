@@ -78,14 +78,14 @@ describe('sortSwapAndBridgeRoutes', () => {
   describe('CoW Swap routes', () => {
     const getCowSwapRoute = (
       route: Partial<SwapAndBridgeRoute>,
-      verified: boolean | undefined = true
+      verified: boolean = true
     ): SwapAndBridgeRoute =>
       getRoute({
         providerId: 'cowswap',
         rawRoute: { quoteResponse: { verified } } as SwapAndBridgeRoute['rawRoute'],
         ...route
       })
-    const getRoutes = (verified: boolean | undefined = true) => [
+    const getRoutes = (verified: boolean = true) => [
       getCowSwapRoute(
         {
           routeId: 'cowswap-best-output',
@@ -173,7 +173,13 @@ describe('sortSwapAndBridgeRoutes', () => {
       })
 
       it('treats a quote without the confirmation as unconfirmed', () => {
-        expect(sortIds(getRoutes(undefined), 5000)).toEqual([
+        const [cowSwapRoute, lifiRoute] = getRoutes()
+        const cowSwapRouteWithoutConfirmation = {
+          ...cowSwapRoute!,
+          rawRoute: { quoteResponse: {} } as SwapAndBridgeRoute['rawRoute']
+        }
+
+        expect(sortIds([cowSwapRouteWithoutConfirmation, lifiRoute!], 5000)).toEqual([
           'lifi-worse-output',
           'cowswap-best-output'
         ])
