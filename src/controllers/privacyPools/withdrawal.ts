@@ -507,14 +507,24 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
           label: noteLabel
         })
         .catch(async (error: unknown) => {
-          if (broadcaster !== 'kohaku' || !isFeeAboveAmountSdkError(error)) throw error
+          // Through 0xBow, the relayers' refusal already tells the least amount to send, so it is
+          // read from it below. Through Kohaku, the SDK only says the fee is too high, so the least
+          // amount is worked out here.
+          const isKohakuFeeTooHigh = broadcaster === 'kohaku' && isFeeAboveAmountSdkError(error)
+          if (isKohakuFeeTooHigh) {
+            // The SDK's error does not tell the fee, so it is priced again the same way
+            const minAmount = await this.#estimatePaymasterFee(
+              protocol,
+              { asset: sdkAsset, amount },
+              sdkRecipient
+            )
+            const sdkError = toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
+            const asset = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)
 
-          // The SDK's error does not tell the fee, so it is priced again the same way
-          throw privacyPoolsErrors.withdrawalFeeTooHigh(
-            toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed'),
-            await this.#estimatePaymasterFee(protocol, { asset: sdkAsset, amount }, sdkRecipient),
-            getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)
-          )
+            throw privacyPoolsErrors.withdrawalFeeTooHigh(sdkError, minAmount, asset)
+          }
+
+          throw error
         })
 
       // The SDK synced before proving, so its notes may be newer than the last sync's
