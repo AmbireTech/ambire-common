@@ -1012,16 +1012,10 @@ export class LimitOrdersController extends EventEmitter {
   }
 
   /**
-   * The amount today's price is asked for: the amount sold, or `#referenceSellAmount` until there
-   * is one
-   */
-  get #quoteSellAmount(): bigint | null {
-    return this.#sellAmount ?? this.#referenceSellAmount
-  }
-
-  /**
-   * An amount of `fromSelectedToken` to ask today's price for before the user enters one: worth
-   * `REFERENCE_QUOTE_USD_VALUE`, or the whole balance if the token has no USD price, or one token
+   * The amount of `fromSelectedToken` today's price is asked for, whatever amount the user enters,
+   * so the market price doesn't change with it: worth `REFERENCE_QUOTE_USD_VALUE`, or the whole
+   * balance if the token has no USD price, or one token. A quote for a small amount is less
+   * reliable, and the network cost would weigh more on it
    */
   get #referenceSellAmount(): bigint | null {
     const token = this.fromSelectedToken
@@ -1127,21 +1121,27 @@ export class LimitOrdersController extends EventEmitter {
     return this.#priceView ?? 'get'
   }
 
-  /** `marketQuote`, if it's for the current tokens and amount */
+  /** `marketQuote`, if it's for the current tokens, whatever the amount (see `marketQuote`) */
   get #currentMarketQuote(): LimitOrderMarketQuote | null {
     const quote = this.marketQuote
-    const sellAmount = this.#sellAmount
-    if (!quote || !this.fromSelectedToken || !this.toSelectedToken || !sellAmount) return null
+    if (!quote || !this.fromSelectedToken || !this.toSelectedToken) return null
 
     const isCurrent =
       quote.chainId === this.fromChainId &&
       quote.sellTokenAddress.toLowerCase() === this.fromSelectedToken.address.toLowerCase() &&
-      quote.buyTokenAddress.toLowerCase() === this.toSelectedToken.address.toLowerCase() &&
-      quote.sellAmount === sellAmount.toString()
+      quote.buyTokenAddress.toLowerCase() === this.toSelectedToken.address.toLowerCase()
     // An old price could let an order through that's worse than today's
     const isFresh = Date.now() - quote.fetchedAt < MARKET_QUOTE_MAX_AGE
 
     return isCurrent && isFresh ? quote : null
+  }
+
+  /**
+   * What `sellAmount` gets at today's price, before the Ambire fee: the quoted amount scaled to
+   * it, as today's price is asked for a set amount (see `#referenceSellAmount`)
+   */
+  static #getMarketBuyAmount(quote: LimitOrderMarketQuote, sellAmount: bigint): bigint {
+    return (BigInt(quote.marketBuyAmount) * sellAmount) / BigInt(quote.sellAmount)
   }
 
   /** The receive amount for `price` read as an absolute price. Null if it can't be read */
@@ -1190,9 +1190,10 @@ export class LimitOrdersController extends EventEmitter {
     }
 
     const quote = this.#currentMarketQuote
-    if (!quote) return null
+    const sellAmount = this.#sellAmount
+    if (!quote || !sellAmount) return null
 
-    const marketBuyAmount = BigInt(quote.marketBuyAmount)
+    const marketBuyAmount = LimitOrdersController.#getMarketBuyAmount(quote, sellAmount)
     if (view === 'cost') {
       // A price lower by `bps` gets proportionally more
       const bps = BigInt(Math.min(Math.max(Math.round(this.price.bps), 0), MAX_COST_VIEW_BPS))
@@ -1239,7 +1240,8 @@ export class LimitOrdersController extends EventEmitter {
       !!this.toSelectedToken &&
       this.#getTypedPriceUnits() === null
     if (isTypedPriceInvalid) return 'invalid'
-    if (!this.#sellAmount || !this.toSelectedToken) return null
+    const sellAmount = this.#sellAmount
+    if (!sellAmount || !this.toSelectedToken) return null
 
     const triggerBuyAmount = this.#triggerBuyAmount
     if (this.price.mode === 'absolute' && triggerBuyAmount === null) return 'invalid'
@@ -1249,9 +1251,12 @@ export class LimitOrdersController extends EventEmitter {
 
     // An order can't ask for a worse price than today's. It would fill right away at today's
     // price at best, so the user is better off with a swap
-    if (triggerBuyAmount < BigInt(quote.marketBuyAmount)) return 'worse-than-today'
+    const marketBuyAmount = LimitOrdersController.#getMarketBuyAmount(quote, sellAmount)
+    if (triggerBuyAmount < marketBuyAmount) return 'worse-than-today'
     // The network cost and the fees would take everything the order gets
-    if (this.#targetBuyAmount === null) return 'too-small'
+    if (sellAmount <= BigInt(quote.networkFee) || this.#targetBuyAmount === null) {
+      return 'too-small'
+    }
 
     return null
   }
@@ -1428,19 +1433,18 @@ export class LimitOrdersController extends EventEmitter {
       this.updateToTokenList()
     }
 
-    const hasPairOrAmountChanged =
-      fromSelectedToken !== undefined || toSelectedToken !== undefined || fromAmount !== undefined
-    if (hasPairOrAmountChanged) {
+    // Today's price is for the tokens, not the amount (see `#referenceSellAmount`), so only
+    // picking a token asks for it again
+    const hasPairChanged = fromSelectedToken !== undefined || toSelectedToken !== undefined
+    if (hasPairChanged) {
       // A price typed for another pair means nothing for this one, nor does today's price or
       // the way the price reads. Tokens that only traded places are the same pair, so today's
       // price stays, read the other way (see `marketPrice`), and the price starts from it
-      if (fromSelectedToken !== undefined || toSelectedToken !== undefined) {
-        this.price = DEFAULT_LIMIT_ORDER_PRICE
-        this.isPriceTyped = false
-        this.#priceView = null
-        if (haveTokensTradedPlaces) this.#setPriceFromMarketQuote()
-        else this.marketQuote = null
-      }
+      this.price = DEFAULT_LIMIT_ORDER_PRICE
+      this.isPriceTyped = false
+      this.#priceView = null
+      if (haveTokensTradedPlaces) this.#setPriceFromMarketQuote()
+      else this.marketQuote = null
       this.#scheduleMarketQuoteUpdate()
     }
 
@@ -1652,7 +1656,7 @@ export class LimitOrdersController extends EventEmitter {
     // Drops the answer of a request in progress, as it's for the previous form
     this.#marketQuoteRequestId++
 
-    if (!this.fromSelectedToken || !this.toSelectedToken || !this.#quoteSellAmount) {
+    if (!this.fromSelectedToken || !this.toSelectedToken || !this.#referenceSellAmount) {
       this.#updateMarketQuoteInterval.stop()
       this.marketQuoteStatus = 'INITIAL'
       this.marketQuoteError = null
@@ -1672,7 +1676,7 @@ export class LimitOrdersController extends EventEmitter {
       !this.hasProceeded &&
       !!this.fromSelectedToken &&
       !!this.toSelectedToken &&
-      !!this.#quoteSellAmount &&
+      !!this.#referenceSellAmount &&
       !this.#isSameToken
 
     if (!shouldUpdate) {
@@ -1687,7 +1691,7 @@ export class LimitOrdersController extends EventEmitter {
     const account = this.#selectedAccount.account
     const fromToken = this.fromSelectedToken
     const toToken = this.toSelectedToken
-    const sellAmount = this.#quoteSellAmount
+    const sellAmount = this.#referenceSellAmount
     const chainId = this.fromChainId
     if (!account || !fromToken || !toToken || !sellAmount || !chainId) return
 
@@ -1697,7 +1701,7 @@ export class LimitOrdersController extends EventEmitter {
     this.emitUpdate()
 
     try {
-      const { buyAmount, marketBuyAmount, quoteId } =
+      const { buyAmount, marketBuyAmount, networkFee, quoteId } =
         await this.#cowSwapApi.getLimitOrderMarketQuote({
           chainId,
           // The native token is sold as its wrapped version, see #placeOrder
@@ -1716,6 +1720,7 @@ export class LimitOrdersController extends EventEmitter {
         sellAmount: sellAmount.toString(),
         buyAmount: buyAmount.toString(),
         marketBuyAmount: marketBuyAmount.toString(),
+        networkFee: networkFee.toString(),
         quoteId,
         fetchedAt: Date.now()
       }
@@ -1738,9 +1743,8 @@ export class LimitOrdersController extends EventEmitter {
    * Turns a relative price into a typed one once today's price is known, so the price field shows
    * a number the user adjusts from there, read the readable way unless the user flipped it.
    * Rounded to a few digits, in the user's favour, so it doesn't become worse than today's price.
-   * Until the user sets the price, it's set again from each new price, as today's price depends
-   * on the amount (the network cost weighs more on a small one) and on which way the tokens go.
-   * Not while a screen reviews the order, see `setIsReviewing`
+   * Until the user sets the price, it's set again from each new price of today, e.g. as it moves
+   * or after the tokens trade places. Not while a screen reviews the order, see `setIsReviewing`
    */
   #setPriceFromMarketQuote() {
     const isPriceKept = this.isPriceTyped || !!this.#reviewingSessionIds.size
@@ -2071,7 +2075,8 @@ export class LimitOrdersController extends EventEmitter {
       signingScheme: 'presign',
       signature: '0x',
       from: account.addr,
-      quoteId: marketQuote?.quoteId ?? null
+      // Only a quote for the order's own amount describes it, see `#referenceSellAmount`
+      quoteId: marketQuote?.sellAmount === sellAmount.toString() ? marketQuote.quoteId : null
     }
     const orderUid = computeOrderUid({ chainId, order, owner: account.addr, isEthFlow: false })
     // The form or the account may change while the order is being prepared

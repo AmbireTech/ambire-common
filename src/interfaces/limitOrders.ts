@@ -32,12 +32,15 @@ export type LimitOrderPriceTypedFor = {
   toTokenAddress: string
 }
 
-/** Today's price for the current form, as CoW Swap quoted it */
+/**
+ * Today's price for the current tokens, as CoW Swap quoted it. Asked for a set amount rather than
+ * the one the user enters, so the market price doesn't change with the amount
+ */
 export type LimitOrderMarketQuote = {
   chainId: number
   sellTokenAddress: string
   buyTokenAddress: string
-  /** In the smallest unit of the sell token */
+  /** In the smallest unit of the sell token. The amount the price was asked for, not the order's */
   sellAmount: string
   /**
    * What selling `sellAmount` gets today, after CoW Swap's costs and the Ambire fee, in the
@@ -50,6 +53,11 @@ export type LimitOrderMarketQuote = {
    * user sets is compared to
    */
   marketBuyAmount: string
+  /**
+   * CoW Swap's network cost of a trade, in the smallest unit of the sell token. It's a cost per
+   * trade, so it's about the same whatever the amount
+   */
+  networkFee: string
   quoteId: number | null
   fetchedAt: number
 }

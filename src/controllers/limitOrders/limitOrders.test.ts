@@ -265,13 +265,19 @@ describe('LimitOrdersController placing an order that sells the native token', (
     const usdcToken = { address: usdc, chainId: 1, decimals: 6, symbol: 'USDC', name: 'USD Coin' }
     const requestSignatureInWindow = jest.fn<(params: any) => Promise<void>>(async () => {})
     const cowSwapApi = {
-      getLimitOrderMarketQuote: jest.fn<(params: any) => Promise<any>>(async () => ({
-        buyAmount: 870000000n,
-        marketBuyAmount: 875000000n,
-        networkFee: 0n,
-        protocolFeeBps: 0,
-        quoteId: 1
-      })),
+      // 1750 USDC for 1 ETH, for whatever amount today's price is asked for
+      getLimitOrderMarketQuote: jest.fn(
+        async (params: { sellAmount: bigint; sellToken: string }) => {
+          const marketBuyAmount = (params.sellAmount * 1750n * 10n ** 6n) / 10n ** 18n
+          return {
+            buyAmount: marketBuyAmount,
+            marketBuyAmount,
+            networkFee: 0n,
+            protocolFeeBps: 0,
+            quoteId: 1
+          }
+        }
+      ),
       getToTokenList: jest.fn(async () => []),
       getAccountLimitOrders: jest.fn(async () => []),
       submitLimitOrder: jest.fn<(params: any) => Promise<void>>(async () => {})
@@ -1587,16 +1593,31 @@ describe('LimitOrdersController price', () => {
       setTimeout(resolve, 600)
     })
 
+  /** Today's market, which a test can move before asking for today's price again */
+  const market = { usdcPerWeth: 2000n }
+  const networkFee = 5n * 10n ** 15n
+
+  beforeEach(() => {
+    market.usdcPerWeth = 2000n
+  })
+
+  /** Asks for today's price again, as when another screen opens the form */
+  const refreshMarketQuote = async (controller: LimitOrdersController) => {
+    await controller.initForm(`refresh-${Math.random()}`)
+    await waitForMarketQuote()
+  }
+
   const makePriceController = async () => {
     const cowSwapApi = {
-      // 2000 USDC for 1 WETH, minus a network cost of 10 USDC, which weighs more on a small
-      // amount: 1 WETH gets 1990 USDC (1990 each), and 0.01 WETH gets 10 USDC (1000 each)
+      // `market.usdcPerWeth` USDC for 1 WETH, minus a network cost of 0.005 WETH (10 USDC at
+      // 2000): today's price is asked for 1 WETH, which gets 1990 USDC at 2000
       getLimitOrderMarketQuote: jest.fn(async ({ sellAmount }: { sellAmount: bigint }) => {
-        const marketBuyAmount = (sellAmount * 2000n * 10n ** 6n) / 10n ** 18n - 10n * 10n ** 6n
+        const marketBuyAmount =
+          ((sellAmount - networkFee) * market.usdcPerWeth * 10n ** 6n) / 10n ** 18n
         return {
           buyAmount: marketBuyAmount,
           marketBuyAmount,
-          networkFee: 0n,
+          networkFee,
           protocolFeeBps: 0,
           quoteId: 1
         }
@@ -1645,19 +1666,35 @@ describe('LimitOrdersController price', () => {
     toTokenAddress: controller.toSelectedToken!.address
   })
 
-  it('starts 1% better than today’s price, and follows today’s price for the amount typed', async () => {
-    const { controller } = await makePriceController()
+  it('starts 1% better than today’s price, which stays the same whatever the amount', async () => {
+    const { controller, cowSwapApi } = await makePriceController()
 
     expect(controller.priceView).toBe('get')
+    expect(controller.marketPrice).toBeCloseTo(1990, 6)
     expect(getPrice(controller)).toBeCloseTo(1990 * 1.01, 1)
     expect(controller.isPriceTyped).toBe(false)
 
     await controller.updateForm({ fromAmount: '0.01' })
     await waitForMarketQuote()
 
-    // A small amount gets less for each WETH, so a price from the 1 WETH price would never fill
-    expect(getPrice(controller)).toBeCloseTo(1000 * 1.01, 1)
-    expect(controller.priceError).toBeNull()
+    // Today's price was asked for 1 WETH once, not again for the amount entered
+    expect(cowSwapApi.getLimitOrderMarketQuote).toHaveBeenCalledTimes(1)
+    expect(cowSwapApi.getLimitOrderMarketQuote.mock.calls[0]![0].sellAmount).toBe(10n ** 18n)
+    expect(controller.marketPrice).toBeCloseTo(1990, 6)
+    expect(getPrice(controller)).toBeCloseTo(1990 * 1.01, 1)
+    expect(controller.formStatus).toBe('READY')
+    // 0.01 WETH at 2009.9 USDC each
+    expect(Number(controller.triggerBuyAmount)).toBeCloseTo(20.099 * 10 ** 6, -1)
+
+    controller.resetForm()
+  })
+
+  it('shows an amount the network cost would take as too small', async () => {
+    const { controller } = await makePriceController()
+
+    await controller.updateForm({ fromAmount: '0.005' })
+
+    expect(controller.priceError).toBe('too-small')
 
     controller.resetForm()
   })
@@ -1680,21 +1717,16 @@ describe('LimitOrdersController price', () => {
     const reviewedPrice = controller.price
 
     controller.setIsReviewing('test', true)
-    // A new price of today, as the price refreshes while the review is open
-    await controller.updateForm({ fromAmount: '0.01' })
-    await waitForMarketQuote()
+    // Today's price moves and refreshes while the review is open
+    market.usdcPerWeth = 3000n
+    await refreshMarketQuote(controller)
 
     expect(controller.price).toEqual(reviewedPrice)
 
     controller.setIsReviewing('test', false)
-    // Catches up with today's price for the amount right away: 0.01 WETH gets 10 USDC
-    expect(getPrice(controller)).toBeCloseTo(1000 * 1.01, 1)
 
-    await controller.updateForm({ fromAmount: '0.02' })
-    await waitForMarketQuote()
-
-    // 0.02 WETH gets 30 USDC, 1500 for each
-    expect(getPrice(controller)).toBeCloseTo(1500 * 1.01, 1)
+    // Catches up with today's price right away: 1 WETH gets 2985 USDC after the network cost
+    expect(getPrice(controller)).toBeCloseTo(2985 * 1.01, 1)
     expect(controller.isPriceTyped).toBe(false)
 
     controller.resetForm()
@@ -1707,14 +1739,14 @@ describe('LimitOrdersController price', () => {
     // Another screen shows the form while the popup reviews the order
     await controller.initForm('popup')
     controller.setIsReviewing('popup', true)
-    await controller.updateForm({ fromAmount: '0.01' })
-    await waitForMarketQuote()
+    market.usdcPerWeth = 3000n
+    await refreshMarketQuote(controller)
     expect(controller.price).toEqual(reviewedPrice)
 
     // The popup closes without saying it stopped reviewing
     controller.unloadScreen('popup')
 
-    expect(getPrice(controller)).toBeCloseTo(1000 * 1.01, 1)
+    expect(getPrice(controller)).toBeCloseTo(2985 * 1.01, 1)
 
     controller.resetForm()
   })
