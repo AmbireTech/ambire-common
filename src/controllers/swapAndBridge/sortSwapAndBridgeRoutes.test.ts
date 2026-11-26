@@ -75,15 +75,26 @@ describe('sortSwapAndBridgeRoutes', () => {
     expect(routes.sort(sortSwapAndBridgeRoutes)[0]!.routeId).toBe('higher-raw-output')
   })
 
-  describe('CoW Swap on small swaps', () => {
-    const getRoutes = () => [
+  describe('CoW Swap routes', () => {
+    const getCowSwapRoute = (
+      route: Partial<SwapAndBridgeRoute>,
+      verified: boolean = true
+    ): SwapAndBridgeRoute =>
       getRoute({
-        routeId: 'cowswap-best-output',
         providerId: 'cowswap',
-        toAmount: '100',
-        outputValueInUsd: 100,
-        outputValueAfterGasInUsd: 99
-      }),
+        rawRoute: { quoteResponse: { verified } } as SwapAndBridgeRoute['rawRoute'],
+        ...route
+      })
+    const getRoutes = (verified: boolean = true) => [
+      getCowSwapRoute(
+        {
+          routeId: 'cowswap-best-output',
+          toAmount: '100',
+          outputValueInUsd: 100,
+          outputValueAfterGasInUsd: 99
+        },
+        verified
+      ),
       getRoute({
         routeId: 'lifi-worse-output',
         providerId: 'lifi',
@@ -92,52 +103,146 @@ describe('sortSwapAndBridgeRoutes', () => {
         outputValueAfterGasInUsd: 89
       })
     ]
-    const getSortedIds = (swapInputValueInUsd?: number) =>
-      getRoutes()
+    const sortIds = (routes: SwapAndBridgeRoute[], swapInputValueInUsd?: number) =>
+      routes
         .sort((a, b) => sortSwapAndBridgeRoutes(a, b, null, swapInputValueInUsd))
         .map(({ routeId }) => routeId)
 
-    it('puts CoW Swap last when the swap is worth less than $100', () => {
-      expect(getSortedIds(99.99)).toEqual(['lifi-worse-output', 'cowswap-best-output'])
-      expect(getSortedIds(1)).toEqual(['lifi-worse-output', 'cowswap-best-output'])
+    describe('on small swaps', () => {
+      it('puts CoW Swap last when the swap is worth less than $100', () => {
+        expect(sortIds(getRoutes(), 99.99)).toEqual(['lifi-worse-output', 'cowswap-best-output'])
+        expect(sortIds(getRoutes(), 1)).toEqual(['lifi-worse-output', 'cowswap-best-output'])
+      })
+
+      it('keeps the regular order when the swap is worth $100 or more', () => {
+        expect(sortIds(getRoutes(), 100)).toEqual(['cowswap-best-output', 'lifi-worse-output'])
+        expect(sortIds(getRoutes(), 5000)).toEqual(['cowswap-best-output', 'lifi-worse-output'])
+      })
+
+      it('keeps the regular order when the swap value is unknown', () => {
+        expect(sortIds(getRoutes(), undefined)).toEqual([
+          'cowswap-best-output',
+          'lifi-worse-output'
+        ])
+        expect(sortIds(getRoutes(), 0)).toEqual(['cowswap-best-output', 'lifi-worse-output'])
+      })
+
+      it('puts CoW Swap last even when it is the only route without a service fee', () => {
+        const routes = [
+          ...getRoutes(),
+          getRoute({
+            routeId: 'socket-with-service-fee',
+            providerId: 'socket',
+            toAmount: '95',
+            outputValueInUsd: 95,
+            serviceFee: { amountUSD: '1' } as SwapAndBridgeRoute['serviceFee']
+          })
+        ]
+
+        expect(sortIds(routes, 50)).toEqual([
+          'lifi-worse-output',
+          'socket-with-service-fee',
+          'cowswap-best-output'
+        ])
+      })
+
+      it('sorts CoW Swap routes among themselves by output', () => {
+        const routes = [
+          getCowSwapRoute({ routeId: 'cowswap-lower', toAmount: '80' }),
+          getCowSwapRoute({ routeId: 'cowswap-higher', toAmount: '85' })
+        ]
+
+        expect(sortIds(routes, 50)).toEqual(['cowswap-higher', 'cowswap-lower'])
+      })
     })
 
-    it('keeps the regular order when the swap is worth $100 or more', () => {
-      expect(getSortedIds(100)).toEqual(['cowswap-best-output', 'lifi-worse-output'])
-      expect(getSortedIds(5000)).toEqual(['cowswap-best-output', 'lifi-worse-output'])
-    })
+    describe('with a quote CoW Swap could not confirm', () => {
+      it('puts CoW Swap last on a swap worth $100 or more', () => {
+        expect(sortIds(getRoutes(false), 100)).toEqual(['lifi-worse-output', 'cowswap-best-output'])
+        expect(sortIds(getRoutes(false), 5000)).toEqual([
+          'lifi-worse-output',
+          'cowswap-best-output'
+        ])
+      })
 
-    it('keeps the regular order when the swap value is unknown', () => {
-      expect(getSortedIds(undefined)).toEqual(['cowswap-best-output', 'lifi-worse-output'])
-      expect(getSortedIds(0)).toEqual(['cowswap-best-output', 'lifi-worse-output'])
-    })
+      it('puts CoW Swap last when the swap value is unknown', () => {
+        expect(sortIds(getRoutes(false), undefined)).toEqual([
+          'lifi-worse-output',
+          'cowswap-best-output'
+        ])
+      })
 
-    it('puts CoW Swap last even when it is the only route without a service fee', () => {
-      const routes = [
-        ...getRoutes(),
-        getRoute({
-          routeId: 'socket-with-service-fee',
-          providerId: 'socket',
-          toAmount: '95',
-          outputValueInUsd: 95,
-          serviceFee: { amountUSD: '1' } as SwapAndBridgeRoute['serviceFee']
-        })
-      ]
+      it('treats a quote without the confirmation as unconfirmed', () => {
+        const [cowSwapRoute, lifiRoute] = getRoutes()
+        const cowSwapRouteWithoutConfirmation = {
+          ...cowSwapRoute!,
+          rawRoute: { quoteResponse: {} } as SwapAndBridgeRoute['rawRoute']
+        }
 
-      expect(
-        routes.sort((a, b) => sortSwapAndBridgeRoutes(a, b, null, 50)).map(({ routeId }) => routeId)
-      ).toEqual(['lifi-worse-output', 'socket-with-service-fee', 'cowswap-best-output'])
-    })
+        expect(sortIds([cowSwapRouteWithoutConfirmation, lifiRoute!], 5000)).toEqual([
+          'lifi-worse-output',
+          'cowswap-best-output'
+        ])
+      })
 
-    it('sorts CoW Swap routes among themselves by output on small swaps', () => {
-      const routes = [
-        getRoute({ routeId: 'cowswap-lower', providerId: 'cowswap', toAmount: '80' }),
-        getRoute({ routeId: 'cowswap-higher', providerId: 'cowswap', toAmount: '85' })
-      ]
+      it('treats a CoW Swap route without the quote details as unconfirmed', () => {
+        const routes = [
+          getRoute({
+            routeId: 'cowswap-without-quote',
+            providerId: 'cowswap',
+            toAmount: '100',
+            outputValueInUsd: 100,
+            outputValueAfterGasInUsd: 99
+          }),
+          getRoute({
+            routeId: 'lifi-worse-output',
+            providerId: 'lifi',
+            toAmount: '90',
+            outputValueInUsd: 90,
+            outputValueAfterGasInUsd: 89
+          })
+        ]
 
-      expect(
-        routes.sort((a, b) => sortSwapAndBridgeRoutes(a, b, null, 50)).map(({ routeId }) => routeId)
-      ).toEqual(['cowswap-higher', 'cowswap-lower'])
+        expect(sortIds(routes, 5000)).toEqual(['lifi-worse-output', 'cowswap-without-quote'])
+      })
+
+      it('puts an unconfirmed CoW Swap quote below a confirmed one with less output', () => {
+        const routes = [
+          getCowSwapRoute(
+            { routeId: 'cowswap-unconfirmed-higher', toAmount: '100', outputValueInUsd: 100 },
+            false
+          ),
+          getCowSwapRoute({
+            routeId: 'cowswap-confirmed-lower',
+            toAmount: '90',
+            outputValueInUsd: 90
+          })
+        ]
+
+        expect(sortIds(routes, 5000)).toEqual([
+          'cowswap-confirmed-lower',
+          'cowswap-unconfirmed-higher'
+        ])
+      })
+
+      it('puts CoW Swap last when it is the only route without a service fee', () => {
+        const routes = [
+          ...getRoutes(false),
+          getRoute({
+            routeId: 'socket-with-service-fee',
+            providerId: 'socket',
+            toAmount: '95',
+            outputValueInUsd: 95,
+            serviceFee: { amountUSD: '1' } as SwapAndBridgeRoute['serviceFee']
+          })
+        ]
+
+        expect(sortIds(routes, 5000)).toEqual([
+          'lifi-worse-output',
+          'socket-with-service-fee',
+          'cowswap-best-output'
+        ])
+      })
     })
   })
 })

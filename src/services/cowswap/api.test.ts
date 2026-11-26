@@ -427,7 +427,8 @@ describe('CowSwapAPI', () => {
       kind: 'sell',
       sellAmountBeforeFee: '1000000',
       from: userAddress,
-      receiver: userAddress
+      receiver: userAddress,
+      priceQuality: 'verified'
     })
     expect(appData).toMatchObject({
       appCode: 'Ambire',
@@ -622,7 +623,8 @@ describe('CowSwapAPI', () => {
       signingScheme: 'eip1271',
       onchainOrder: true,
       verificationGasLimit: 0,
-      sellAmountBeforeFee: '1000000000000000000'
+      sellAmountBeforeFee: '1000000000000000000',
+      priceQuality: 'verified'
     })
     expect(route.routeId.toLowerCase()).toMatch(
       new RegExp(`${COWSWAP_ETH_FLOW_ADDRESS.slice(2).toLowerCase()}ffffffff$`)

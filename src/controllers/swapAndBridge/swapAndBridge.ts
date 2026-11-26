@@ -202,10 +202,32 @@ type ToTokenMarketDataRecord = {
 }
 
 /**
+ * Whether CoW Swap confirmed the quote of a CoW Swap route with a simulation. An unconfirmed
+ * quote can promise more than any solver delivers, so the order may never be filled.
+ * A route without the quote details counts as unconfirmed.
+ */
+const isCowSwapQuoteVerified = (route: SwapAndBridgeRoute) =>
+  !!route.rawRoute &&
+  'quoteResponse' in route.rawRoute &&
+  route.rawRoute.quoteResponse?.verified === true
+
+/**
+ * Whether a route is a CoW Swap one that goes last: on small swaps, or when CoW Swap
+ * couldn't confirm its quote, as the order may not be filled
+ */
+const isDeprioritizedCowSwapRoute = (route: SwapAndBridgeRoute, isSmallSwap: boolean) => {
+  if (route.providerId !== COW_SWAP_PROVIDER_ID) return false
+  if (isSmallSwap) return true
+
+  return !isCowSwapQuoteVerified(route)
+}
+
+/**
  * Sorts swap & bridge routes from best to worst.
+ * CoW Swap routes go last when CoW Swap couldn't confirm their quote.
  * @param swapInputValueInUsd - the USD value of the swapped amount, the same for every
  * route. Below COW_SWAP_DEPRIORITIZE_BELOW_USD, CoW Swap routes go last. Unknown (0 or
- * missing) keeps the regular order.
+ * missing) doesn't count as a small swap.
  */
 export const sortSwapAndBridgeRoutes = (
   r1: SwapAndBridgeRoute,
@@ -327,14 +349,12 @@ export const sortSwapAndBridgeRoutes = (
     return 1
   }
 
-  // move CoW Swap to the bottom on small swaps
+  // move CoW Swap to the bottom on small swaps and when its quote isn't confirmed
   const isSmallSwap = !!swapInputValueInUsd && swapInputValueInUsd < COW_SWAP_DEPRIORITIZE_BELOW_USD
-  if (isSmallSwap) {
-    const isR1CowSwap = r1.providerId === COW_SWAP_PROVIDER_ID
-    const isR2CowSwap = r2.providerId === COW_SWAP_PROVIDER_ID
-    if (isR1CowSwap && !isR2CowSwap) return 1
-    if (isR2CowSwap && !isR1CowSwap) return -1
-  }
+  const isR1Deprioritized = isDeprioritizedCowSwapRoute(r1, isSmallSwap)
+  const isR2Deprioritized = isDeprioritizedCowSwapRoute(r2, isSmallSwap)
+  if (isR1Deprioritized && !isR2Deprioritized) return 1
+  if (isR2Deprioritized && !isR1Deprioritized) return -1
 
   // move the routes with service fee to the bottom
   const r1ServiceFee = r1.serviceFee && Number(r1.serviceFee.amountUSD) > 0
