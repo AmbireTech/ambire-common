@@ -559,6 +559,47 @@ describe('CowSwapAPI', () => {
     expect(transaction.approvalData?.minimumApprovalAmount).toBe('3000000')
   })
 
+  it('reuses the account limit orders for a while, as a swap is quoted again and again', async () => {
+    const fetch = makeQuoteFetch()
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+    const route = (await api.quote(makeQuoteParams())).routes[0]!
+
+    await api.startRoute(route)
+    await api.startRoute(route)
+
+    expect(fetch.mock.calls.filter(([url]) => isAccountOrdersUrl(url))).toHaveLength(1)
+  })
+
+  it('asks about the account limit orders again while one placed moments ago waits', async () => {
+    const pendingOrder = {
+      uid: `0x${'11'.repeat(56)}`,
+      status: 'presignaturePending',
+      sellToken: tokenIn,
+      buyToken: tokenOut,
+      receiver: userAddress,
+      sellAmount: '3000000',
+      buyAmount: '600000000000000',
+      validTo: 1900000000,
+      appData: buildLimitOrderAppData({ feeBps: 50 }).appDataHash,
+      fullAppData: buildLimitOrderAppData({ feeBps: 50 }).fullAppData,
+      feeAmount: '0',
+      kind: 'sell',
+      partiallyFillable: true,
+      creationDate: new Date().toISOString(),
+      executedSellAmount: '0',
+      executedBuyAmount: '0',
+      invalidated: false
+    }
+    const fetch = makeQuoteFetch(undefined, async () => makeResponse([pendingOrder]))
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+    const route = (await api.quote(makeQuoteParams())).routes[0]!
+
+    await api.startRoute(route)
+    await api.startRoute(route)
+
+    expect(fetch.mock.calls.filter(([url]) => isAccountOrdersUrl(url))).toHaveLength(2)
+  })
+
   it('asks for the swap amount only when the open limit orders cannot be checked', async () => {
     const fetch = makeQuoteFetch(undefined, async () => makeResponse({}, false, 500))
     const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })

@@ -263,9 +263,9 @@ describe('LimitOrdersController placing an order that sells the native token', (
       flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true }
     }
     const usdcToken = { address: usdc, chainId: 1, decimals: 6, symbol: 'USDC', name: 'USD Coin' }
-    const requestSignatureInWindow = jest.fn(async (_params: any) => {})
+    const requestSignatureInWindow = jest.fn<(params: any) => Promise<void>>(async () => {})
     const cowSwapApi = {
-      getLimitOrderMarketQuote: jest.fn(async (_params: any) => ({
+      getLimitOrderMarketQuote: jest.fn<(params: any) => Promise<any>>(async () => ({
         buyAmount: 870000000n,
         marketBuyAmount: 875000000n,
         networkFee: 0n,
@@ -274,7 +274,7 @@ describe('LimitOrdersController placing an order that sells the native token', (
       })),
       getToTokenList: jest.fn(async () => []),
       getAccountLimitOrders: jest.fn(async () => []),
-      submitLimitOrder: jest.fn(async (_params: any) => {})
+      submitLimitOrder: jest.fn<(params: any) => Promise<void>>(async () => {})
     }
     const controller = new LimitOrdersController({
       selectedAccount: {
@@ -691,11 +691,11 @@ const makeSafeController = (
     priceIn: [],
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true }
   }
-  const requestSignatureInWindow = jest.fn(async (_params: any) => {})
+  const requestSignatureInWindow = jest.fn<(params: any) => Promise<void>>(async () => {})
   // No allowance or balance yet
-  const providerCall = jest.fn(async (_params: any) => `0x${'0'.repeat(64)}`)
+  const providerCall = jest.fn<(params: any) => Promise<string>>(async () => `0x${'0'.repeat(64)}`)
   const cowSwapApi = {
-    getLimitOrderMarketQuote: jest.fn(async (_params: any) => ({
+    getLimitOrderMarketQuote: jest.fn<(params: any) => Promise<any>>(async () => ({
       buyAmount: 870000000n,
       marketBuyAmount: 875000000n,
       networkFee: 0n,
@@ -714,7 +714,7 @@ const makeSafeController = (
       return token ? { ...token, address, chainId, name: token.symbol } : null
     }),
     isTokenSupported: jest.fn(async () => false),
-    submitLimitOrder: jest.fn(async (_params: any) => {})
+    submitLimitOrder: jest.fn<(params: any) => Promise<void>>(async () => {})
   }
   const controller = new LimitOrdersController({
     selectedAccount: {
@@ -1671,6 +1671,50 @@ describe('LimitOrdersController price', () => {
 
     expect(controller.isPriceTyped).toBe(true)
     expect(controller.price).toEqual({ mode: 'absolute', amount: '2500' })
+
+    controller.resetForm()
+  })
+
+  it('keeps the price while the order is reviewed, and follows today’s price again after', async () => {
+    const { controller } = await makePriceController()
+    const reviewedPrice = controller.price
+
+    controller.setIsReviewing('test', true)
+    // A new price of today, as the price refreshes while the review is open
+    await controller.updateForm({ fromAmount: '0.01' })
+    await waitForMarketQuote()
+
+    expect(controller.price).toEqual(reviewedPrice)
+
+    controller.setIsReviewing('test', false)
+    // Catches up with today's price for the amount right away: 0.01 WETH gets 10 USDC
+    expect(getPrice(controller)).toBeCloseTo(1000 * 1.01, 1)
+
+    await controller.updateForm({ fromAmount: '0.02' })
+    await waitForMarketQuote()
+
+    // 0.02 WETH gets 30 USDC, 1500 for each
+    expect(getPrice(controller)).toBeCloseTo(1500 * 1.01, 1)
+    expect(controller.isPriceTyped).toBe(false)
+
+    controller.resetForm()
+  })
+
+  it('follows today’s price again once a closed window that reviewed the order unloads', async () => {
+    const { controller } = await makePriceController()
+    const reviewedPrice = controller.price
+
+    // Another screen shows the form while the popup reviews the order
+    await controller.initForm('popup')
+    controller.setIsReviewing('popup', true)
+    await controller.updateForm({ fromAmount: '0.01' })
+    await waitForMarketQuote()
+    expect(controller.price).toEqual(reviewedPrice)
+
+    // The popup closes without saying it stopped reviewing
+    controller.unloadScreen('popup')
+
+    expect(getPrice(controller)).toBeCloseTo(1000 * 1.01, 1)
 
     controller.resetForm()
   })

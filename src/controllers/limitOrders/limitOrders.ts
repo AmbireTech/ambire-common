@@ -474,6 +474,14 @@ export class LimitOrdersController extends EventEmitter {
    */
   isPriceTyped: boolean = false
 
+  /**
+   * The screens (`sessionIds`) that show the review of the order. The price then stays as
+   * reviewed, instead of following today's price, see `#setPriceFromMarketQuote`. By screen, as
+   * one screen may review the order while another shows the form, and a closed window can't say
+   * it stopped reviewing, see `unloadScreen`
+   */
+  #reviewingSessionIds = new Set<string>()
+
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   /** The screens that show the form. The form resets when the last one closes */
@@ -1334,6 +1342,8 @@ export class LimitOrdersController extends EventEmitter {
   unloadScreen(sessionId: string) {
     this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
     if (!this.sessionIds.length) this.#updateMarketQuoteInterval.stop()
+    // A closed window can't say it stopped reviewing the order
+    if (this.#reviewingSessionIds.delete(sessionId)) this.#followMarketPriceAfterReview()
     this.emitUpdate()
   }
 
@@ -1539,6 +1549,32 @@ export class LimitOrdersController extends EventEmitter {
   }
 
   /**
+   * Called when a screen opens or closes the review of the order. While it's open, the price the
+   * user reviews stays, rather than following today's price under the review and while the order
+   * is placed. Back on the form it follows again, unless the user set it
+   */
+  setIsReviewing(sessionId: string, isReviewing: boolean) {
+    if (isReviewing) {
+      this.#reviewingSessionIds.add(sessionId)
+      return
+    }
+
+    if (!this.#reviewingSessionIds.delete(sessionId)) return
+    this.#followMarketPriceAfterReview()
+  }
+
+  /**
+   * Back on the form, a price the user didn't set catches up with today's price right away,
+   * rather than with the next one, so the form doesn't show it as worse than today's meanwhile
+   */
+  #followMarketPriceAfterReview() {
+    if (this.#reviewingSessionIds.size || this.isPriceTyped) return
+
+    this.#setPriceFromMarketQuote()
+    this.emitUpdate()
+  }
+
+  /**
    * Sets the price the user typed. With `typedFor`, a price typed for other tokens is dropped,
    * and one typed in the other view is turned into the current one, as the field sends it after a
    * short pause, which may end after the user flipped the view or changed the tokens
@@ -1703,10 +1739,12 @@ export class LimitOrdersController extends EventEmitter {
    * a number the user adjusts from there, read the readable way unless the user flipped it.
    * Rounded to a few digits, in the user's favour, so it doesn't become worse than today's price.
    * Until the user sets the price, it's set again from each new price, as today's price depends
-   * on the amount (the network cost weighs more on a small one) and on which way the tokens go
+   * on the amount (the network cost weighs more on a small one) and on which way the tokens go.
+   * Not while a screen reviews the order, see `setIsReviewing`
    */
   #setPriceFromMarketQuote() {
-    if (this.isPriceTyped && this.price.mode !== 'relative') return
+    const isPriceKept = this.isPriceTyped || !!this.#reviewingSessionIds.size
+    if (isPriceKept && this.price.mode !== 'relative') return
 
     const marketPriceGetView = this.#getMarketPrice('get')
     if (!this.#priceView && marketPriceGetView) {
@@ -3367,6 +3405,7 @@ export class LimitOrdersController extends EventEmitter {
     this.toSelectedToken = null
     this.#priceView = null
     this.#hasUserPickedTokens = false
+    this.#reviewingSessionIds.clear()
     this.expiryDays = DEFAULT_LIMIT_ORDER_EXPIRY_DAYS
     this.toTokenSearchTerm = ''
     this.toTokenSearchResults = []

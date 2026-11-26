@@ -220,13 +220,13 @@ describe('CowSwapAPI limit orders', () => {
 
       const { buyAmount, marketBuyAmount, networkFee, protocolFeeBps, quoteId } =
         await api.getLimitOrderMarketQuote({
-        chainId: 1,
-        sellToken: usdc,
-        buyToken: weth,
-        sellAmount: 1000000n,
-        owner: userAddress,
-        feeBps: 50
-      })
+          chainId: 1,
+          sellToken: usdc,
+          buyToken: weth,
+          sellAmount: 1000000n,
+          owner: userAddress,
+          feeBps: 50
+        })
 
       const request = JSON.parse((fetch.mock.calls[0] as any)[1].body)
       expect(request.signingScheme).toBe('presign')

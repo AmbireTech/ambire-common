@@ -71,6 +71,27 @@ import {
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from './constants'
 
+/**
+ * How long a swap reuses the account's limit orders fetched before, see
+ * `#getSwapMinimumApprovalAmount`. The limit order screens fetch them again on their own
+ */
+const SWAP_ACCOUNT_LIMIT_ORDERS_MAX_AGE_MS = 60 * 1000
+
+const getAccountLimitOrdersCacheKey = (chainId: number, owner: string) =>
+  `${chainId}:${owner.toLowerCase()}`
+
+/** How long after it's created an order still waiting for its transaction may soon open */
+const RECENTLY_SENT_ORDER_MAX_AGE_MS = 10 * 60 * 1000
+
+/**
+ * An order placed moments ago, whose transaction may be confirmed any time. It's not open yet,
+ * so a swap asks about the orders again rather than reuse them, or it would leave it out. One
+ * whose transaction was never sent stays like this until it expires, so only recent ones count
+ */
+const isRecentlySentOrder = (order: CowSwapAccountOrder) =>
+  order.status === 'presignaturePending' &&
+  Date.now() - new Date(order.creationDate).getTime() < RECENTLY_SENT_ORDER_MAX_AGE_MS
+
 export class CowSwapAPI implements SwapProvider {
   id = 'cowswap'
 
@@ -102,6 +123,13 @@ export class CowSwapAPI implements SwapProvider {
     string,
     { expiresAt: number; slippageBps: Promise<number | null> }
   >()
+
+  /**
+   * The last fetched limit orders of each account on each network, by `chainId:owner`, kept in
+   * memory only. A swap reads them to cover their permission, and is quoted again and again, so
+   * it reuses them for a while instead of asking each time, see `#getSwapMinimumApprovalAmount`
+   */
+  #accountLimitOrdersCache = new Map<string, { fetchedAt: number; orders: CowSwapAccountOrder[] }>()
 
   isHealthy: boolean | null = null
 
@@ -1150,10 +1178,16 @@ export class CowSwapAPI implements SwapProvider {
       )
     }
 
-    return orders.filter(
+    const limitOrders = orders.filter(
       (order): order is CowSwapAccountOrder =>
         isCowSwapAccountOrder(order) && isAmbireLimitOrderAppData(order.fullAppData)
     )
+    this.#accountLimitOrdersCache.set(getAccountLimitOrdersCacheKey(chainId, owner), {
+      fetchedAt: Date.now(),
+      orders: limitOrders
+    })
+
+    return limitOrders
   }
 
   /**
@@ -1174,7 +1208,17 @@ export class CowSwapAPI implements SwapProvider {
     sellAmount: string
   }): Promise<string> {
     try {
-      const orders = await this.getAccountLimitOrders({ chainId, owner })
+      const cached = this.#accountLimitOrdersCache.get(
+        getAccountLimitOrdersCacheKey(chainId, owner)
+      )
+      const isCacheFresh =
+        !!cached &&
+        Date.now() - cached.fetchedAt < SWAP_ACCOUNT_LIMIT_ORDERS_MAX_AGE_MS &&
+        !cached.orders.some(isRecentlySentOrder)
+      const orders =
+        isCacheFresh && cached
+          ? cached.orders
+          : await this.getAccountLimitOrders({ chainId, owner })
       const openLimitOrdersSellAmount = getOpenLimitOrdersSellAmount(orders, sellToken)
 
       return (BigInt(sellAmount) + openLimitOrdersSellAmount).toString()
