@@ -967,9 +967,7 @@ describe('getIsTokenEligibleForSwapAndBridge', () => {
   })
 
   test('a token the account will receive from a swap or bridge is eligible', () => {
-    expect(getIsTokenEligibleForSwapAndBridge({ ...token, pendingDeliveryAmount: 100n })).toBe(
-      true
-    )
+    expect(getIsTokenEligibleForSwapAndBridge({ ...token, pendingDeliveryAmount: 100n })).toBe(true)
   })
 
   test('a token a CoW Swap order will take all of is not eligible', () => {

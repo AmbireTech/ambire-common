@@ -131,7 +131,10 @@ describe('EOA7702', () => {
     })
 
     test('blocks a single call with the ambire error when all estimations fail', () => {
-      const estimation = { ...getFullEstimation(providerError, notEnoughGasError), bundler: providerError }
+      const estimation = {
+        ...getFullEstimation(providerError, notEnoughGasError),
+        bundler: providerError
+      }
 
       expect(eoa.getEstimationCriticalError(estimation, getOp(1))).toBe(notEnoughGasError)
     })

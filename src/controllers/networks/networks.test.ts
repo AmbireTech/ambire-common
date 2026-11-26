@@ -845,9 +845,8 @@ describe('Networks Controller - token prices opt-out', () => {
   })
 
   test('reports token prices as turned off for every network while opted out', async () => {
-    const { controller, featureFlags } = await buildOptedOutWithCustomNetworks(
-      createPriceApiFetchStub()
-    )
+    const { controller, featureFlags } =
+      await buildOptedOutWithCustomNetworks(createPriceApiFetchStub())
     const getPricesLevels = () =>
       controller.allNetworks.map(
         (network) => network.features.find((feature) => feature.id === 'prices')?.level
