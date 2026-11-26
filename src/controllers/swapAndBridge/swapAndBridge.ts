@@ -21,6 +21,7 @@ import {
 import {
   CONVERSION_PRECISION,
   CONVERSION_PRECISION_POW,
+  COW_SWAP_DEPRIORITIZE_BELOW_USD,
   HARD_CODED_CURRENCY,
   MARKET_DATA_THRESHOLD_BY_STATUS,
   NETWORK_MISMATCH_MESSAGE,
@@ -200,10 +201,17 @@ type ToTokenMarketDataRecord = {
   data?: TokenDataCacheValue
 }
 
+/**
+ * Sorts swap & bridge routes from best to worst.
+ * @param swapInputValueInUsd - the USD value of the swapped amount, the same for every
+ * route. Below COW_SWAP_DEPRIORITIZE_BELOW_USD, CoW Swap routes go last. Unknown (0 or
+ * missing) keeps the regular order.
+ */
 export const sortSwapAndBridgeRoutes = (
   r1: SwapAndBridgeRoute,
   r2: SwapAndBridgeRoute,
-  outputTokenPriceUSD?: number | null
+  outputTokenPriceUSD?: number | null,
+  swapInputValueInUsd?: number
 ) => {
   const isBridge = r1.fromChainId !== r1.toChainId
 
@@ -317,6 +325,15 @@ export const sortSwapAndBridgeRoutes = (
     const percentage = ((bUsd - aUsd) / bUsd) * 100
     if (percentage < threshold) return sortByTime()
     return 1
+  }
+
+  // move CoW Swap to the bottom on small swaps
+  const isSmallSwap = !!swapInputValueInUsd && swapInputValueInUsd < COW_SWAP_DEPRIORITIZE_BELOW_USD
+  if (isSmallSwap) {
+    const isR1CowSwap = r1.providerId === COW_SWAP_PROVIDER_ID
+    const isR2CowSwap = r2.providerId === COW_SWAP_PROVIDER_ID
+    if (isR1CowSwap && !isR2CowSwap) return 1
+    if (isR2CowSwap && !isR1CowSwap) return -1
   }
 
   // move the routes with service fee to the bottom
@@ -2749,6 +2766,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             feePercent: this.feePercent
           })
         ])
+        // All routes swap the same amount, so take a single value for the whole list.
+        // The providers price the input on their own and may differ slightly
+        const swapInputValueInUsd = Math.max(
+          0,
+          ...quoteResult.routes.map((route) => route.inputValueInUsd || 0)
+        )
         // sort the routes by value and them by disabled, making disabled last
         quoteResult.routes = quoteResult.routes
           .map((route) => enrichRouteWithOutputTokenPrice(route, toTokenPriceUSD))
@@ -2771,7 +2794,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
             return !hasNoRouteId
           })
-          .sort((a, b) => sortSwapAndBridgeRoutes(a, b, toTokenPriceUSD))
+          .sort((a, b) => sortSwapAndBridgeRoutes(a, b, toTokenPriceUSD, swapInputValueInUsd))
           .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
         // select the first enabled route
         quoteResult.selectedRoute = quoteResult.routes.length ? quoteResult.routes[0] : undefined
