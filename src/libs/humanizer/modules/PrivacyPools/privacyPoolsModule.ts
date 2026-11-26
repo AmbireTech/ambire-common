@@ -1,7 +1,8 @@
 import {
   fromPrivacyPoolsAssetAddress,
   getPrivacyPoolsAsset,
-  getPrivacyPoolsChainConfig
+  getPrivacyPoolsChainConfig,
+  isPrivacyPoolsNativeAsset
 } from '../../../../consts/privacyPools'
 import { PrivacyPoolsBroadcaster } from '../../../../interfaces/privacyPools'
 import { AccountOp } from '../../../accountOp/accountOp'
@@ -54,11 +55,16 @@ export const privacyPoolsModule: HumanizerCallModule = (accountOp: AccountOp, ca
   const deposit = readPrivacyPoolsDeposit({ data: call.data, value: call.value })
   if (!deposit) return call
 
+  const tokenAddress = fromPrivacyPoolsAssetAddress(deposit.assetAddress)
+
   return {
     ...call,
+    // A native deposit's amount is the call's value. An ERC-20 one sends no value, so any value it
+    // has is still shown on its own
+    showsCallValue: isPrivacyPoolsNativeAsset(tokenAddress),
     fullVisualization: [
       getAction('Send'),
-      getToken(fromPrivacyPoolsAssetAddress(deposit.assetAddress), deposit.amount),
+      getToken(tokenAddress, deposit.amount),
       getLabel('to a Privacy Pools account')
     ]
   }

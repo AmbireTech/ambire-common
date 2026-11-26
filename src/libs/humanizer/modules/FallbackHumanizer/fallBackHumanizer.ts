@@ -70,6 +70,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
           : [getAction('Interacting'), getLabel('with'), getAddressVisualization(call.to!)])
       if (
         call.value &&
+        !call.showsCallValue &&
         !['Swap', 'Bridge', 'Swap/Bridge', 'Supply', 'Deposit', 'Supply to vault', 'Wrap'].includes(
           fullVisualization[0]?.content || ''
         )

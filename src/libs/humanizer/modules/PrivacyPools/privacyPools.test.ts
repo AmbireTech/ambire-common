@@ -5,6 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 import { getPrivacyPoolsAsset, getPrivacyPoolsChainConfig } from '../../../../consts/privacyPools'
 import { encodePrivacyPoolsDeposit } from '../../../privacyPools/deposit'
 import { POOL_RAGEQUIT_INTERFACE } from '../../../privacyPools/ragequit'
+import { humanizeCallWithModules } from '../../callModules'
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import {
@@ -56,6 +57,71 @@ describe('Privacy Pools humanizer', () => {
     ]
 
     compareHumanizerVisualizations(humanize(calls), expectedVisualizations)
+  })
+
+  describe('with all the humanizer modules', () => {
+    const fullAccountOp = {
+      id: 'test',
+      accountAddr: RECIPIENT,
+      chainId: 1n,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      nonce: null,
+      calls: [],
+      gasLimit: null,
+      signature: null,
+      gasFeePayment: null
+    }
+
+    test('shows the ETH of a native deposit once, not again as a separate send', () => {
+      const call: IrCall = {
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: true,
+          assetAddress: ZeroAddress,
+          amount: 10n ** 16n,
+          precommitment: 42n
+        })
+      }
+
+      compareHumanizerVisualizations(
+        [humanizeCallWithModules(fullAccountOp, call)],
+        [
+          [
+            getAction('Send'),
+            getToken(ZeroAddress, 10n ** 16n),
+            getLabel('to a Privacy Pools account')
+          ]
+        ]
+      )
+    })
+
+    test('still shows ETH sent along with a token deposit', () => {
+      const call: IrCall = {
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: false,
+          assetAddress: USDC,
+          amount: 5_000_000n,
+          precommitment: 42n
+        }),
+        value: 10n ** 16n
+      }
+
+      compareHumanizerVisualizations(
+        [humanizeCallWithModules(fullAccountOp, call)],
+        [
+          [
+            getAction('Send'),
+            getToken(ZeroAddress, 10n ** 16n),
+            getLabel('and'),
+            getAction('Send'),
+            getToken(USDC, 5_000_000n),
+            getLabel('to a Privacy Pools account')
+          ]
+        ]
+      )
+    })
   })
 
   test('leaves other calls alone, including a deposit on a network without Privacy Pools', () => {

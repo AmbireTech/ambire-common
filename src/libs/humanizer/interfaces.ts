@@ -121,6 +121,11 @@ export interface IrCall extends Omit<Call, 'to'> {
    * of the descriptor's.
    */
   preferredOverErc7730?: boolean
+  /**
+   * Set by a module whose visualization already shows the native amount the call sends (e.g. a
+   * Privacy Pools deposit of ETH), so the fallback humanizer does not add it again as a "Send".
+   */
+  showsCallValue?: boolean
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
