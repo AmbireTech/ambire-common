@@ -71,6 +71,8 @@ the descriptor, not only the ones in `addresses`.
   "... (upstream PR #N; drop this once it is merged)".
 - `addresses`: the keys you audited. When the summary says "is also amended for ...", audit those
   keys, then add them.
+- Adds have no `reason` field. Put a comment above each group of adds that says why the keys are
+  added and when they can be removed (usually: once the registry lists them, which fails the update).
 - Check what you change so that a relevant upstream change fails the build:
   - `expectMatches(label, items, <exact count>)`; use `{ min }` only if the count changes often.
   - `expectEqual` for single values (the old format, old label, a key that must not exist yet).
@@ -96,7 +98,10 @@ that comes later to the Ambire change. Upstream expects:
 
 About 14 days after upstream merges the same fix, `npm run humanizer:update:erc7730Registry`
 fails, for example `The amend of <path> (<reason>): expected 14 ... found 0`, or for an add
-`the registry already has <path> for <key>`. The Ambire-only amend script change (the amend or add in `amendments.ts`) is then likely no longer needed.
+`the registry already has <path> for <key>`. The Ambire-only amend script change (the amend or add
+in `amendments.ts`) is then likely no longer needed.
+Fix it soon: the update writes nothing while any check fails, so no other upstream change (new
+descriptors, new networks, fixes) reaches the wallet until then.
 1. Open the upstream PR linked in `reason`. If it does the same, delete the amend or add, and update
    its test in `src/consts/erc7730/bundledRegistry.test.ts`.
 2. If upstream did something different, update the amend and its checks. Never loosen a check only

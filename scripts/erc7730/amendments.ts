@@ -167,7 +167,8 @@ export const amendments: Amendments = {
     }
   },
   addCalldataDescriptors: {
-    // LiFi Diamond on networks the registry doesn't list
+    // LiFi Diamond on networks the registry doesn't list, so that LiFi bridges there are
+    // clear-signed. Remove a key once the registry lists its network (the update fails then)
     'eip155:204:0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae': LIFI_DIAMOND_NAME,
     'eip155:232:0xf3b20515d9b193531c48e47c18af16d1e5d28f9a': LIFI_DIAMOND_NAME,
     'eip155:288:0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae': LIFI_DIAMOND_NAME,
@@ -179,7 +180,8 @@ export const amendments: Amendments = {
     'eip155:6900:0x926c22dc753e543cf9cab75ceeb46ecf865d006a': LIFI_DIAMOND_NAME,
     'eip155:60808:0x452cf1b8597e6319cd21abd847312bf17e26d8d1': LIFI_DIAMOND_NAME,
     'eip155:81457:0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae': LIFI_DIAMOND_NAME,
-    // CoW Swap EthFlow on the networks besides Ethereum, which the registry lists
+    // CoW Swap EthFlow on the CoW networks besides Ethereum (the only one the registry lists), so
+    // that ETH orders there are clear-signed. Remove a key once the registry lists its network
     'eip155:56:0xba3cb449bd2b4adddbc894d8697f5170800eadec': COW_SWAP_ETH_FLOW_NAME,
     'eip155:100:0xba3cb449bd2b4adddbc894d8697f5170800eadec': COW_SWAP_ETH_FLOW_NAME,
     'eip155:137:0xba3cb449bd2b4adddbc894d8697f5170800eadec': COW_SWAP_ETH_FLOW_NAME,
@@ -190,7 +192,8 @@ export const amendments: Amendments = {
     'eip155:57073:0xba3cb449bd2b4adddbc894d8697f5170800eadec': COW_SWAP_ETH_FLOW_NAME,
     'eip155:59144:0xba3cb449bd2b4adddbc894d8697f5170800eadec': COW_SWAP_ETH_FLOW_NAME,
     'eip155:11155111:0xba3cb449bd2b4adddbc894d8697f5170800eadec': COW_SWAP_ETH_FLOW_NAME,
-    // Safe-1.4.1 on networks the registry doesn't list
+    // Safe 1.4.1 on networks the registry doesn't list, so that Safe transactions there are
+    // clear-signed. Remove a key once the registry lists its network (also for the two below)
     'eip155:130:0x41675c099f32341bf84bfc5382af534df5c7461a': SAFE_1_4_1_NAME,
     'eip155:143:0x41675c099f32341bf84bfc5382af534df5c7461a': SAFE_1_4_1_NAME,
     'eip155:480:0x41675c099f32341bf84bfc5382af534df5c7461a': SAFE_1_4_1_NAME,
@@ -204,7 +207,7 @@ export const amendments: Amendments = {
     'eip155:57073:0x41675c099f32341bf84bfc5382af534df5c7461a': SAFE_1_4_1_NAME,
     'eip155:59144:0x41675c099f32341bf84bfc5382af534df5c7461a': SAFE_1_4_1_NAME,
     'eip155:534352:0x41675c099f32341bf84bfc5382af534df5c7461a': SAFE_1_4_1_NAME,
-    // SafeProxyFactory-1.4.1 on networks the registry doesn't list
+    // SafeProxyFactory 1.4.1 on the same networks, for creating a Safe
     'eip155:130:0x4e1dcf7ad4e460cfd30791ccc4f9c8a4f820ec67': SAFE_PROXY_FACTORY_1_4_1_NAME,
     'eip155:143:0x4e1dcf7ad4e460cfd30791ccc4f9c8a4f820ec67': SAFE_PROXY_FACTORY_1_4_1_NAME,
     'eip155:480:0x4e1dcf7ad4e460cfd30791ccc4f9c8a4f820ec67': SAFE_PROXY_FACTORY_1_4_1_NAME,
@@ -218,7 +221,7 @@ export const amendments: Amendments = {
     'eip155:57073:0x4e1dcf7ad4e460cfd30791ccc4f9c8a4f820ec67': SAFE_PROXY_FACTORY_1_4_1_NAME,
     'eip155:59144:0x4e1dcf7ad4e460cfd30791ccc4f9c8a4f820ec67': SAFE_PROXY_FACTORY_1_4_1_NAME,
     'eip155:534352:0x4e1dcf7ad4e460cfd30791ccc4f9c8a4f820ec67': SAFE_PROXY_FACTORY_1_4_1_NAME,
-    // SafeToL2Setup-1.4.1 on networks the registry doesn't list
+    // SafeToL2Setup 1.4.1 on the same networks, for setting up a new Safe
     'eip155:130:0xbd89a1ce4dde368ffab0ec35506eece0b1ffdc54': SAFE_TO_L2_SETUP_1_4_1_NAME,
     'eip155:143:0xbd89a1ce4dde368ffab0ec35506eece0b1ffdc54': SAFE_TO_L2_SETUP_1_4_1_NAME,
     'eip155:480:0xbd89a1ce4dde368ffab0ec35506eece0b1ffdc54': SAFE_TO_L2_SETUP_1_4_1_NAME,
