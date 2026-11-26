@@ -144,22 +144,6 @@
         }
       ]
     },
-    "startBridgeTokensViaAcrossV4ERC20Min((bytes8 transactionId, bytes32 receiver, bytes32 depositor, uint64 destinationChainId, bytes32 receivingAssetId, uint256 outputAmount, bytes32 exclusiveRelayer, uint32 quoteTimestamp, uint32 fillDeadline, uint32 exclusivityParameter, bytes message) _parameters, bytes32 sendingAssetId, uint256 inputAmount)": {
-      "intent": "Bridge via AcrossV4 (ERC-20, min)",
-      "fields": []
-    },
-    "startBridgeTokensViaAcrossV4ERC20Packed()": {
-      "intent": "Bridge via AcrossV4 (ERC-20, packed)",
-      "fields": []
-    },
-    "startBridgeTokensViaAcrossV4NativeMin((bytes8 transactionId, bytes32 receiver, bytes32 depositor, uint64 destinationChainId, bytes32 receivingAssetId, uint256 outputAmount, bytes32 exclusiveRelayer, uint32 quoteTimestamp, uint32 fillDeadline, uint32 exclusivityParameter, bytes message) _parameters)": {
-      "intent": "Bridge via AcrossV4 (native, min)",
-      "fields": []
-    },
-    "startBridgeTokensViaAcrossV4NativePacked()": {
-      "intent": "Bridge via AcrossV4 (native, packed)",
-      "fields": []
-    },
     "startBridgeTokensViaCBridge((bytes32 transactionId, string bridge, string integrator, address referrer, address sendingAssetId, address receiver, uint256 minAmount, uint256 destinationChainId, bool hasSourceSwaps, bool hasDestinationCall) _bridgeData, (uint32 maxSlippage, uint64 nonce) _cBridgeData)": {
       "intent": "Bridge via CBridge",
       "interpolatedIntent": "Bridge {_bridgeData.minAmount} via CBridge to chain {_bridgeData.destinationChainId} for {_bridgeData.receiver}",
@@ -223,22 +207,6 @@
           "visible": "never"
         }
       ]
-    },
-    "startBridgeTokensViaCBridgeERC20Min(bytes32 transactionId, address receiver, uint64 destinationChainId, address sendingAssetId, uint256 amount, uint64 nonce, uint32 maxSlippage)": {
-      "intent": "Bridge via CBridge (ERC-20, min)",
-      "fields": []
-    },
-    "startBridgeTokensViaCBridgeERC20Packed()": {
-      "intent": "Bridge via CBridge (ERC-20, packed)",
-      "fields": []
-    },
-    "startBridgeTokensViaCBridgeNativeMin(bytes32 transactionId, address receiver, uint64 destinationChainId, uint64 nonce, uint32 maxSlippage)": {
-      "intent": "Bridge via CBridge (native, min)",
-      "fields": []
-    },
-    "startBridgeTokensViaCBridgeNativePacked()": {
-      "intent": "Bridge via CBridge (native, packed)",
-      "fields": []
     },
     "startBridgeTokensViaEco((bytes32 transactionId, string bridge, string integrator, address referrer, address sendingAssetId, address receiver, uint256 minAmount, uint256 destinationChainId, bool hasSourceSwaps, bool hasDestinationCall) _bridgeData, (bytes nonEVMReceiver, address prover, uint64 rewardDeadline, bytes encodedRoute, bytes32 solanaATA, address refundRecipient) _ecoData)": {
       "intent": "Bridge via Eco",
@@ -438,14 +406,6 @@
         }
       ]
     },
-    "startBridgeTokensViaHopL1ERC20Min(bytes8 transactionId, address receiver, uint256 destinationChainId, address sendingAssetId, uint256 minAmount, uint256 destinationAmountOutMin, address relayer, uint256 relayerFee, address hopBridge)": {
-      "intent": "Bridge via HopL1 (L1, ERC-20, min)",
-      "fields": []
-    },
-    "startBridgeTokensViaHopL1ERC20Packed()": {
-      "intent": "Bridge via HopL1 (L1, ERC-20, packed)",
-      "fields": []
-    },
     "startBridgeTokensViaHopL1Native((bytes32 transactionId, string bridge, string integrator, address referrer, address sendingAssetId, address receiver, uint256 minAmount, uint256 destinationChainId, bool hasSourceSwaps, bool hasDestinationCall) _bridgeData, (uint256 bonderFee, uint256 amountOutMin, uint256 deadline, uint256 destinationAmountOutMin, uint256 destinationDeadline, address hopBridge, address relayer, uint256 relayerFee, uint256 nativeFee) _hopData)": {
       "intent": "Bridge via HopL1",
       "interpolatedIntent": "Bridge {_bridgeData.minAmount} via HopL1 to chain {_bridgeData.destinationChainId} for {_bridgeData.receiver}",
@@ -509,14 +469,6 @@
           "visible": "never"
         }
       ]
-    },
-    "startBridgeTokensViaHopL1NativeMin(bytes8 transactionId, address receiver, uint256 destinationChainId, uint256 destinationAmountOutMin, address relayer, uint256 relayerFee, address hopBridge)": {
-      "intent": "Bridge via HopL1 (L1, native, min)",
-      "fields": []
-    },
-    "startBridgeTokensViaHopL1NativePacked()": {
-      "intent": "Bridge via HopL1 (L1, native, packed)",
-      "fields": []
     },
     "startBridgeTokensViaHopL2ERC20((bytes32 transactionId, string bridge, string integrator, address referrer, address sendingAssetId, address receiver, uint256 minAmount, uint256 destinationChainId, bool hasSourceSwaps, bool hasDestinationCall) _bridgeData, (uint256 bonderFee, uint256 amountOutMin, uint256 deadline, uint256 destinationAmountOutMin, uint256 destinationDeadline, address hopBridge, address relayer, uint256 relayerFee, uint256 nativeFee) _hopData)": {
       "intent": "Bridge via HopL2",
@@ -582,14 +534,6 @@
         }
       ]
     },
-    "startBridgeTokensViaHopL2ERC20Min(bytes8 transactionId, address receiver, uint256 destinationChainId, address sendingAssetId, uint256 minAmount, uint256 bonderFee, uint256 amountOutMin, uint256 destinationAmountOutMin, uint256 destinationDeadline, address hopBridge)": {
-      "intent": "Bridge via HopL2 (L2, ERC-20, min)",
-      "fields": []
-    },
-    "startBridgeTokensViaHopL2ERC20Packed()": {
-      "intent": "Bridge via HopL2 (L2, ERC-20, packed)",
-      "fields": []
-    },
     "startBridgeTokensViaHopL2Native((bytes32 transactionId, string bridge, string integrator, address referrer, address sendingAssetId, address receiver, uint256 minAmount, uint256 destinationChainId, bool hasSourceSwaps, bool hasDestinationCall) _bridgeData, (uint256 bonderFee, uint256 amountOutMin, uint256 deadline, uint256 destinationAmountOutMin, uint256 destinationDeadline, address hopBridge, address relayer, uint256 relayerFee, uint256 nativeFee) _hopData)": {
       "intent": "Bridge via HopL2",
       "interpolatedIntent": "Bridge {_bridgeData.minAmount} via HopL2 to chain {_bridgeData.destinationChainId} for {_bridgeData.receiver}",
@@ -653,14 +597,6 @@
           "visible": "never"
         }
       ]
-    },
-    "startBridgeTokensViaHopL2NativeMin(bytes8 transactionId, address receiver, uint256 destinationChainId, uint256 bonderFee, uint256 amountOutMin, uint256 destinationAmountOutMin, uint256 destinationDeadline, address hopBridge)": {
-      "intent": "Bridge via HopL2 (L2, native, min)",
-      "fields": []
-    },
-    "startBridgeTokensViaHopL2NativePacked()": {
-      "intent": "Bridge via HopL2 (L2, native, packed)",
-      "fields": []
     },
     "startBridgeTokensViaNEARIntents((bytes32 transactionId, string bridge, string integrator, address referrer, address sendingAssetId, address receiver, uint256 minAmount, uint256 destinationChainId, bool hasSourceSwaps, bool hasDestinationCall) _bridgeData, (bytes32 nonEVMReceiver, address depositAddress, bytes32 quoteId, uint256 deadline, uint256 minAmountOut, address refundRecipient, bytes signature) _nearData)": {
       "intent": "Bridge via NEARIntents",
