@@ -1,3 +1,5 @@
+import { describe, expect, test } from '@jest/globals'
+
 import { SentToHistory } from '../../controllers/activity/types'
 import { Domains } from '../../interfaces/domains'
 import { getAddressBookDomains, getDomainTypoMatch, getKnownDomains } from './domain-typo'
