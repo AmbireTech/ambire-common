@@ -8,6 +8,7 @@ import {
   getApiNetwork,
   getCowSwapOrderStruct,
   getNetworkCostSlippageBps,
+  getOpenLimitOrdersSellAmount,
   getOutputValueInUsd,
   getPriceSlippageBps,
   getProtocolFeeAmount,
@@ -753,7 +754,12 @@ export class CowSwapAPI implements SwapProvider {
       approvalData: {
         allowanceTarget: COWSWAP_VAULT_RELAYER_ADDRESS,
         approvalTokenAddress: rawRoute.order.sellToken,
-        minimumApprovalAmount: rawRoute.order.sellAmount,
+        minimumApprovalAmount: await this.#getSwapMinimumApprovalAmount({
+          chainId: route.fromChainId,
+          owner: route.userAddress,
+          sellToken: rawRoute.order.sellToken,
+          sellAmount: rawRoute.order.sellAmount
+        }),
         owner: route.userAddress
       },
       chainId: route.fromChainId,
@@ -1148,5 +1154,36 @@ export class CowSwapAPI implements SwapProvider {
       (order): order is CowSwapAccountOrder =>
         isCowSwapAccountOrder(order) && isAmbireLimitOrderAppData(order.fullAppData)
     )
+  }
+
+  /**
+   * The permission a swap needs: its own amount, plus what the open limit orders selling the
+   * same token still sell, as they share one permission (see `getOpenLimitOrdersSellAmount`).
+   * Otherwise the swap would use up what they need and they'd stop filling. If they can't be
+   * checked, the swap still goes ahead with its own amount
+   */
+  async #getSwapMinimumApprovalAmount({
+    chainId,
+    owner,
+    sellToken,
+    sellAmount
+  }: {
+    chainId: number
+    owner: string
+    sellToken: string
+    sellAmount: string
+  }): Promise<string> {
+    try {
+      const orders = await this.getAccountLimitOrders({ chainId, owner })
+      const openLimitOrdersSellAmount = getOpenLimitOrdersSellAmount(orders, sellToken)
+
+      return (BigInt(sellAmount) + openLimitOrdersSellAmount).toString()
+    } catch (error) {
+      console.warn(
+        'CoW Swap: unable to check the open limit orders, asking for the swap amount only',
+        error
+      )
+      return sellAmount
+    }
   }
 }

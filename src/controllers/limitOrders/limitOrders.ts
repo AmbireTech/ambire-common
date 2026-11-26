@@ -7,6 +7,7 @@ import { STK_WALLET } from '../../consts/addresses'
 import {
   DEFAULT_LIMIT_ORDER_EXPIRY_DAYS,
   DEFAULT_LIMIT_ORDER_PRICE,
+  DEFAULT_LIMIT_ORDER_PRICE_BPS,
   LIMIT_ORDER_MAX_EXPIRY_DAYS
 } from '../../consts/limitOrders'
 import { getRpcTokenPriceConfig } from '../../consts/rpcTokenPrices'
@@ -27,6 +28,7 @@ import {
   LimitOrderMarketQuote,
   LimitOrderPrice,
   LimitOrderPriceError,
+  LimitOrderPriceTypedFor,
   LimitOrderPriceView,
   LimitOrderSignPurpose,
   LimitOrderStatus,
@@ -92,6 +94,7 @@ import {
   ethFlowInterface,
   getCowSwapOrderStruct,
   getEthFlowOrderData,
+  getOpenLimitOrdersSellAmount,
   getPartnerFeeBpsFromAppData,
   getWrappedNativeTokenAddress,
   normalizeBuyTokenAddress,
@@ -205,6 +208,17 @@ const PRICE_SIGNIFICANT_DIGITS = 6
 
 /** How many significant digits a typed price keeps when the user flips the way it reads */
 const FLIPPED_PRICE_SIGNIFICANT_DIGITS = 12
+
+/**
+ * What to tell a user whose basic account sent only the first steps of a transaction (e.g. the
+ * token permission, or wrapping the native token) and not the one it was for
+ */
+const PARTIAL_BROADCAST_MESSAGES: Record<LimitOrderSignPurpose, string> = {
+  place: 'Only the first steps were sent, so the order isn’t placed yet. Please place it again.',
+  cancel: 'The orders weren’t cancelled. Please try again.',
+  allow:
+    'Only the first step was sent, so your orders still can’t use this token. Please allow it again.'
+}
 
 const SECONDS_IN_DAY = 60 * 60 * 24
 
@@ -453,6 +467,12 @@ export class LimitOrdersController extends EventEmitter {
 
   /** Whether the user picked the token received, rather than only the one picked for them */
   #hasUserPickedTokens = false
+
+  /**
+   * Whether the user set the price, by typing it or with the arrows. Until then the price follows
+   * today's price for the current amount and direction, see `#setPriceFromMarketQuote`
+   */
+  isPriceTyped: boolean = false
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -1204,7 +1224,7 @@ export class LimitOrdersController extends EventEmitter {
 
   /** Why the price can't be used. Null if it can, or if it's not known yet */
   get priceError(): LimitOrderPriceError | null {
-    // When buying, the amount sold follows from the price, so it's checked before there is one
+    // Checked before there is an amount, so a price that can't be read shows as soon as it's typed
     const isTypedPriceInvalid =
       this.price.mode === 'absolute' &&
       !!this.fromSelectedToken &&
@@ -1382,6 +1402,8 @@ export class LimitOrdersController extends EventEmitter {
       previousToToken,
       pickedSide: this.#getPickedSide(fromSelectedToken, toSelectedToken)
     })
+    // The amount was in the token that was sold before, e.g. 2 UNI must not become 2 USDC
+    if (haveTokensTradedPlaces) this.fromAmount = ''
 
     // Limit orders stay on one network, so a sell token on another network clears what the
     // user receives
@@ -1404,6 +1426,7 @@ export class LimitOrdersController extends EventEmitter {
       // price stays, read the other way (see `marketPrice`), and the price starts from it
       if (fromSelectedToken !== undefined || toSelectedToken !== undefined) {
         this.price = DEFAULT_LIMIT_ORDER_PRICE
+        this.isPriceTyped = false
         this.#priceView = null
         if (haveTokensTradedPlaces) this.#setPriceFromMarketQuote()
         else this.marketQuote = null
@@ -1515,13 +1538,59 @@ export class LimitOrdersController extends EventEmitter {
     this.expiryDays = days
   }
 
-  setPrice(price: LimitOrderPrice) {
+  /**
+   * Sets the price the user typed. With `typedFor`, a price typed for other tokens is dropped,
+   * and one typed in the other view is turned into the current one, as the field sends it after a
+   * short pause, which may end after the user flipped the view or changed the tokens
+   */
+  setPrice(price: LimitOrderPrice, typedFor?: LimitOrderPriceTypedFor) {
+    const priceInCurrentView = typedFor ? this.#getPriceInCurrentView(price, typedFor) : price
+    if (!priceInCurrentView) return
+
     this.price =
-      price.mode === 'relative'
-        ? { mode: 'relative', bps: Math.min(Math.max(Math.round(price.bps), 0), MAX_COST_VIEW_BPS) }
-        : { mode: 'absolute', amount: price.amount }
+      priceInCurrentView.mode === 'relative'
+        ? {
+            mode: 'relative',
+            bps: Math.min(Math.max(Math.round(priceInCurrentView.bps), 0), MAX_COST_VIEW_BPS)
+          }
+        : { mode: 'absolute', amount: priceInCurrentView.amount }
+    this.isPriceTyped = true
     this.lastPlacedOrderUid = null
     this.emitUpdate()
+  }
+
+  /**
+   * A price typed for `typedFor`, read the way the form shows prices now. Null if it was typed
+   * for other tokens, or can't be read the other way
+   */
+  #getPriceInCurrentView(
+    price: LimitOrderPrice,
+    typedFor: LimitOrderPriceTypedFor
+  ): LimitOrderPrice | null {
+    const isSamePair =
+      !!this.fromSelectedToken &&
+      !!this.toSelectedToken &&
+      this.fromSelectedToken.address.toLowerCase() === typedFor.fromTokenAddress.toLowerCase() &&
+      this.toSelectedToken.address.toLowerCase() === typedFor.toTokenAddress.toLowerCase()
+    if (!isSamePair) return null
+    // A relative price is better than today's by the same share whichever way it's read
+    if (price.mode === 'relative' || typedFor.priceView === this.priceView) return price
+
+    return this.#getFlippedAbsolutePrice(price.amount, this.priceView)
+  }
+
+  /**
+   * A typed price read the other way (`1 / price`), rounded in the user's favour for `nextView`.
+   * Null if it can't be read
+   */
+  #getFlippedAbsolutePrice(amount: string, nextView: LimitOrderPriceView): LimitOrderPrice | null {
+    const flippedPrice = roundToSignificantDigits(
+      1 / Number(amount),
+      FLIPPED_PRICE_SIGNIFICANT_DIGITS,
+      nextView === 'get' ? 'up' : 'down'
+    )
+
+    return flippedPrice ? { mode: 'absolute', amount: toPlainDecimalString(flippedPrice) } : null
   }
 
   /**
@@ -1533,14 +1602,8 @@ export class LimitOrdersController extends EventEmitter {
     const nextView: LimitOrderPriceView = this.priceView === 'cost' ? 'get' : 'cost'
 
     if (this.price.mode === 'absolute') {
-      const flippedPrice = roundToSignificantDigits(
-        1 / Number(this.price.amount),
-        FLIPPED_PRICE_SIGNIFICANT_DIGITS,
-        nextView === 'get' ? 'up' : 'down'
-      )
-      this.price = flippedPrice
-        ? { mode: 'absolute', amount: toPlainDecimalString(flippedPrice) }
-        : DEFAULT_LIMIT_ORDER_PRICE
+      this.price =
+        this.#getFlippedAbsolutePrice(this.price.amount, nextView) ?? DEFAULT_LIMIT_ORDER_PRICE
     }
 
     this.#priceView = nextView
@@ -1638,18 +1701,21 @@ export class LimitOrdersController extends EventEmitter {
   /**
    * Turns a relative price into a typed one once today's price is known, so the price field shows
    * a number the user adjusts from there, read the readable way unless the user flipped it.
-   * Rounded to a few digits, in the user's favour, so it doesn't become worse than today's price
+   * Rounded to a few digits, in the user's favour, so it doesn't become worse than today's price.
+   * Until the user sets the price, it's set again from each new price, as today's price depends
+   * on the amount (the network cost weighs more on a small one) and on which way the tokens go
    */
   #setPriceFromMarketQuote() {
-    if (this.price.mode !== 'relative') return
+    if (this.isPriceTyped && this.price.mode !== 'relative') return
 
     const marketPriceGetView = this.#getMarketPrice('get')
     if (!this.#priceView && marketPriceGetView) {
       this.#priceView = marketPriceGetView >= 1 ? 'get' : 'cost'
     }
 
+    const bps = this.price.mode === 'relative' ? this.price.bps : DEFAULT_LIMIT_ORDER_PRICE_BPS
     const marketPrice = this.marketPrice
-    const price = marketPrice ? this.#getPriceBetterThanMarket(marketPrice, this.price.bps) : null
+    const price = marketPrice ? this.#getPriceBetterThanMarket(marketPrice, bps) : null
     if (!price) return
 
     this.price = price
@@ -2059,6 +2125,8 @@ export class LimitOrdersController extends EventEmitter {
       await this.#signInWindow({ account, network, calls })
       // Shown as placing once the Safe's owners sign it and it's sent, see `onAccountOpBroadcast`
       this.#resetFormFields()
+      // The tokens stay for the next order, so it starts from today's price
+      this.#scheduleMarketQuoteUpdate()
       this.emitUpdate()
       return
     }
@@ -2090,7 +2158,13 @@ export class LimitOrdersController extends EventEmitter {
         this.lastPlacedOrderUid = orderUid
       }
     })
-    if (!isInitialized || isStale()) return
+    if (!isInitialized) return
+    // The form changed while the account details loaded, so the transaction is for an old one
+    if (isStale()) {
+      this.#destroySignAccountOp()
+      this.emitUpdate()
+      return
+    }
 
     this.hasProceeded = true
     this.emitUpdate()
@@ -2111,15 +2185,7 @@ export class LimitOrdersController extends EventEmitter {
   }): Promise<bigint> {
     const orders = await this.#cowSwapApi.getAccountLimitOrders({ chainId, owner })
 
-    return orders.reduce((total, order) => {
-      const isWaiting = order.status === 'open' || this.#placingOrderUids.has(order.uid)
-      if (!isWaiting || order.ethflowData) return total
-      if (order.sellToken.toLowerCase() !== sellToken.toLowerCase()) return total
-
-      const remaining = BigInt(order.sellAmount) - BigInt(order.executedSellAmount)
-
-      return remaining > 0n ? total + remaining : total
-    }, 0n)
+    return getOpenLimitOrdersSellAmount(orders, sellToken, this.#placingOrderUids)
   }
 
   /**
@@ -2301,9 +2367,8 @@ export class LimitOrdersController extends EventEmitter {
           this.#hasPartiallyBroadcast = true
           this.emitError({
             level: 'major',
-            message:
-              'Only the token permission was sent, so the order isn’t placed yet. Please place it again.',
-            error: new SwapAndBridgeError('The limit order call was not broadcast.')
+            message: PARTIAL_BROADCAST_MESSAGES[purpose],
+            error: new SwapAndBridgeError(`The limit order ${purpose} call was not broadcast.`)
           })
         }
         this.#portfolio
@@ -2349,7 +2414,11 @@ export class LimitOrdersController extends EventEmitter {
     this.#hasPartiallyBroadcast = false
     this.#destroySignAccountOp()
     // A partly sent order keeps its form, so the user can place it again
-    if (purpose === 'place' && !hasPartiallyBroadcast) this.#resetFormFields()
+    if (purpose === 'place' && !hasPartiallyBroadcast) {
+      this.#resetFormFields()
+      // The tokens stay for the next order, so it starts from today's price
+      this.#scheduleMarketQuoteUpdate()
+    }
 
     this.#rebuildOrders()
     this.emitUpdate()
@@ -3280,6 +3349,7 @@ export class LimitOrdersController extends EventEmitter {
   #resetFormFields() {
     this.fromAmount = ''
     this.price = DEFAULT_LIMIT_ORDER_PRICE
+    this.isPriceTyped = false
     this.marketQuote = null
     this.marketQuoteStatus = 'INITIAL'
     this.marketQuoteError = null

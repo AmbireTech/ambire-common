@@ -9,9 +9,6 @@ export const DEFAULT_LIMIT_ORDER_PRICE: LimitOrderPrice = {
   bps: DEFAULT_LIMIT_ORDER_PRICE_BPS
 }
 
-/** How much better than today's price the limit order slider goes, in basis points */
-export const LIMIT_ORDER_MAX_RELATIVE_BPS = 3000
-
 /** How many days a new limit order stays open, unless the user changes it */
 export const DEFAULT_LIMIT_ORDER_EXPIRY_DAYS = 30
 

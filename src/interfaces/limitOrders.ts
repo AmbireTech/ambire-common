@@ -22,6 +22,16 @@ export type LimitOrderPrice =
   | { mode: 'relative'; bps: number }
   | { mode: 'absolute'; amount: string }
 
+/**
+ * The tokens and the view a price was typed for. The price field sends a typed price after a
+ * short pause, so it may arrive after the user flipped the view or changed the tokens
+ */
+export type LimitOrderPriceTypedFor = {
+  priceView: LimitOrderPriceView
+  fromTokenAddress: string
+  toTokenAddress: string
+}
+
 /** Today's price for the current form, as CoW Swap quoted it */
 export type LimitOrderMarketQuote = {
   chainId: number

@@ -1558,3 +1558,164 @@ describe('LimitOrdersController orders that cannot fill', () => {
     })
   })
 })
+
+describe('LimitOrdersController price', () => {
+  const wethToken = {
+    address: weth,
+    chainId: 1n,
+    decimals: 18,
+    symbol: 'WETH',
+    name: 'Wrapped Ether',
+    amount: 10n ** 18n,
+    // No USD price, so today's price is first asked for the whole balance, 1 WETH
+    priceIn: [],
+    flags: { onGasTank: false, rewardsType: null, isFeeToken: false, canTopUpGasTank: false }
+  }
+  const usdcPortfolioToken = {
+    ...wethToken,
+    address: usdc,
+    decimals: 6,
+    symbol: 'USDC',
+    name: 'USD Coin',
+    amount: 5000n * 10n ** 6n
+  }
+  const usdcToken = { address: usdc, chainId: 1, decimals: 6, symbol: 'USDC', name: 'USD Coin' }
+
+  /** Waits for the pause before today's price is requested, and for its answer */
+  const waitForMarketQuote = () =>
+    new Promise((resolve) => {
+      setTimeout(resolve, 600)
+    })
+
+  const makePriceController = async () => {
+    const cowSwapApi = {
+      // 2000 USDC for 1 WETH, minus a network cost of 10 USDC, which weighs more on a small
+      // amount: 1 WETH gets 1990 USDC (1990 each), and 0.01 WETH gets 10 USDC (1000 each)
+      getLimitOrderMarketQuote: jest.fn(async ({ sellAmount }: { sellAmount: bigint }) => {
+        const marketBuyAmount = (sellAmount * 2000n * 10n ** 6n) / 10n ** 18n - 10n * 10n ** 6n
+        return {
+          buyAmount: marketBuyAmount,
+          marketBuyAmount,
+          networkFee: 0n,
+          protocolFeeBps: 0,
+          quoteId: 1
+        }
+      }),
+      getToTokenList: jest.fn(async () => []),
+      getAccountLimitOrders: jest.fn(async () => [])
+    }
+    const controller = new LimitOrdersController({
+      selectedAccount: {
+        account: { addr: accountAddr },
+        portfolio: { tokens: [wethToken, usdcPortfolioToken] },
+        balanceAffectingErrors: [],
+        onUpdate: jest.fn()
+      },
+      networks: { networks: [{ chainId: 1n, name: 'Ethereum', nativeAssetSymbol: 'ETH' }] },
+      providers: { providers: {} },
+      featureFlags: { isFeatureEnabled: () => false },
+      portfolio: { getAccountPortfolioState: () => ({}) },
+      ui: { uiEvent: { on: jest.fn() }, views: [] },
+      cowSwapApi,
+      relayerUrl: '',
+      storage: makeStorage(),
+      requestSignatureInWindow: jest.fn(async () => {}),
+      portfolioUpdate: jest.fn(),
+      onBroadcastSuccess: jest.fn(async () => {}),
+      onBroadcastFailed: jest.fn()
+    } as unknown as ConstructorParameters<typeof LimitOrdersController>[0])
+
+    await controller.initForm('test')
+    await controller.updateForm({
+      fromSelectedToken: wethToken as any,
+      toSelectedToken: usdcToken
+    })
+    await waitForMarketQuote()
+
+    return { controller, cowSwapApi }
+  }
+
+  const getPrice = (controller: LimitOrdersController) =>
+    controller.price.mode === 'absolute' ? Number(controller.price.amount) : null
+
+  /** What a price typed in the current view, for the current tokens, was typed for */
+  const typedForCurrentForm = (controller: LimitOrdersController) => ({
+    priceView: controller.priceView,
+    fromTokenAddress: controller.fromSelectedToken!.address,
+    toTokenAddress: controller.toSelectedToken!.address
+  })
+
+  it('starts 1% better than today’s price, and follows today’s price for the amount typed', async () => {
+    const { controller } = await makePriceController()
+
+    expect(controller.priceView).toBe('get')
+    expect(getPrice(controller)).toBeCloseTo(1990 * 1.01, 1)
+    expect(controller.isPriceTyped).toBe(false)
+
+    await controller.updateForm({ fromAmount: '0.01' })
+    await waitForMarketQuote()
+
+    // A small amount gets less for each WETH, so a price from the 1 WETH price would never fill
+    expect(getPrice(controller)).toBeCloseTo(1000 * 1.01, 1)
+    expect(controller.priceError).toBeNull()
+
+    controller.resetForm()
+  })
+
+  it('keeps the price the user set when the amount changes', async () => {
+    const { controller } = await makePriceController()
+
+    controller.setPrice({ mode: 'absolute', amount: '2500' }, typedForCurrentForm(controller))
+    await controller.updateForm({ fromAmount: '0.01' })
+    await waitForMarketQuote()
+
+    expect(controller.isPriceTyped).toBe(true)
+    expect(controller.price).toEqual({ mode: 'absolute', amount: '2500' })
+
+    controller.resetForm()
+  })
+
+  it('reads a price typed before the user flipped the view the new way', async () => {
+    const { controller } = await makePriceController()
+    const typedFor = typedForCurrentForm(controller)
+
+    // The field sends the typed price after a short pause, which ends after the flip
+    controller.flipPriceView()
+    controller.setPrice({ mode: 'absolute', amount: '2500' }, typedFor)
+
+    expect(controller.priceView).toBe('cost')
+    // 2500 USDC for 1 WETH is 0.0004 WETH for 1 USDC
+    expect(controller.price).toEqual({ mode: 'absolute', amount: '0.0004' })
+
+    controller.resetForm()
+  })
+
+  it('drops a price typed for other tokens', async () => {
+    const { controller } = await makePriceController()
+    const priceBefore = controller.price
+
+    controller.setPrice(
+      { mode: 'absolute', amount: '1' },
+      { priceView: controller.priceView, fromTokenAddress: usdc, toTokenAddress: weth }
+    )
+
+    expect(controller.price).toEqual(priceBefore)
+    expect(controller.isPriceTyped).toBe(false)
+
+    controller.resetForm()
+  })
+
+  it('clears the amount when picking the other token makes the two trade places', async () => {
+    const { controller } = await makePriceController()
+    await controller.updateForm({ fromAmount: '0.5' })
+
+    await controller.updateForm({ fromSelectedToken: usdcPortfolioToken as any })
+
+    expect(controller.fromSelectedToken?.address).toBe(usdc)
+    expect(controller.toSelectedToken?.address).toBe(weth)
+    // 0.5 WETH must not become 0.5 USDC
+    expect(controller.fromAmount).toBe('')
+
+    controller.resetForm()
+  })
+})

@@ -16,7 +16,7 @@ import {
   COWSWAP_TOKEN_LIST_URL,
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from './constants'
-import { getCowSwapOrderStruct, getCowSwapOrderUid } from './helper'
+import { buildLimitOrderAppData, getCowSwapOrderStruct, getCowSwapOrderUid } from './helper'
 
 const settlementInterface = new Interface(['function setPreSignature(bytes orderUid, bool signed)'])
 const ethFlowInterface = new Interface([
@@ -83,9 +83,15 @@ const networkCostSlippageBps = 51n
 
 const isSmartSlippageUrl = (url: string) => url.startsWith(COWSWAP_BFF_BASE_URL)
 
-/** The calls to the CoW Swap order book, without the smart slippage requests */
+/** The request for the account's orders, which a swap checks for its limit orders */
+const isAccountOrdersUrl = (url: string) => url.includes(`/account/`)
+
+/**
+ * The calls to the CoW Swap order book, without the smart slippage requests and the requests
+ * for the account's orders
+ */
 const getOrderBookCalls = (fetch: { mock: { calls: [any, any][] } }) =>
-  fetch.mock.calls.filter(([url]) => !isSmartSlippageUrl(url))
+  fetch.mock.calls.filter(([url]) => !isSmartSlippageUrl(url) && !isAccountOrdersUrl(url))
 
 /** The calls to the CoW Swap smart slippage endpoint */
 const getSmartSlippageCalls = (fetch: { mock: { calls: [any, any][] } }) =>
@@ -96,10 +102,12 @@ const getSmartSlippageCalls = (fetch: { mock: { calls: [any, any][] } }) =>
  * the fixed slippage
  */
 const makeQuoteFetch = (
-  smartSlippageResponse: () => Promise<any> = async () => makeResponse({ slippageBps: 0 })
+  smartSlippageResponse: () => Promise<any> = async () => makeResponse({ slippageBps: 0 }),
+  accountOrdersResponse: () => Promise<any> = async () => makeResponse([])
 ) =>
   jest.fn(async (url: any, init: any) => {
     if (isSmartSlippageUrl(url)) return smartSlippageResponse()
+    if (isAccountOrdersUrl(url)) return accountOrdersResponse()
 
     const request = JSON.parse(init.body)
     if (init.method === 'PUT') return makeResponse({ fullAppData: request.fullAppData })
@@ -512,6 +520,53 @@ describe('CowSwapAPI', () => {
     expect(transaction.txTarget).toBe(COWSWAP_SETTLEMENT_ADDRESS)
     expect(orderUid).toBe(route.routeId)
     expect(signed).toBe(true)
+  })
+
+  it('asks for a permission that also covers the open limit orders selling the same token', async () => {
+    const limitOrder = (overrides: Record<string, unknown>) => ({
+      uid: `0x${'11'.repeat(56)}`,
+      status: 'open',
+      sellToken: tokenIn,
+      buyToken: tokenOut,
+      receiver: userAddress,
+      sellAmount: '3000000',
+      buyAmount: '600000000000000',
+      validTo: 1900000000,
+      appData: buildLimitOrderAppData({ feeBps: 50 }).appDataHash,
+      fullAppData: buildLimitOrderAppData({ feeBps: 50 }).fullAppData,
+      feeAmount: '0',
+      kind: 'sell',
+      partiallyFillable: true,
+      creationDate: '2026-11-20T10:00:00.000Z',
+      executedSellAmount: '1000000',
+      executedBuyAmount: '0',
+      invalidated: false,
+      ...overrides
+    })
+    const fetch = makeQuoteFetch(undefined, async () =>
+      makeResponse([
+        // 2 USDC of it are still to be sold
+        limitOrder({}),
+        limitOrder({ uid: `0x${'22'.repeat(56)}`, status: 'fulfilled' }),
+        limitOrder({ uid: `0x${'33'.repeat(56)}`, sellToken: tokenOut })
+      ])
+    )
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+    const route = (await api.quote(makeQuoteParams())).routes[0]!
+
+    const transaction = await api.startRoute(route)
+
+    expect(transaction.approvalData?.minimumApprovalAmount).toBe('3000000')
+  })
+
+  it('asks for the swap amount only when the open limit orders cannot be checked', async () => {
+    const fetch = makeQuoteFetch(undefined, async () => makeResponse({}, false, 500))
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+    const route = (await api.quote(makeQuoteParams())).routes[0]!
+
+    const transaction = await api.startRoute(route)
+
+    expect(transaction.approvalData?.minimumApprovalAmount).toBe('1000000')
   })
 
   it('attaches the pre-signed order, which hashes back to the pre-signed order ID', async () => {

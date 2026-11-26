@@ -475,3 +475,25 @@ export const getOutputValueInUsd = ({
 
   return Number(formatUnits(toAmount, toAsset.decimals)) * priceUSD
 }
+
+/**
+ * How much of `sellToken` the given limit orders still sell. All the CoW Swap orders selling a
+ * token use one permission, e.g. a swap and the limit orders, so a new permission must cover
+ * these too, or they stop filling. `waitingOrderUids` are orders that count before CoW Swap
+ * lists them as open, e.g. while their transaction is being sent
+ */
+export const getOpenLimitOrdersSellAmount = (
+  orders: CowSwapAccountOrder[],
+  sellToken: string,
+  waitingOrderUids?: Set<string>
+): bigint =>
+  orders.reduce((total, order) => {
+    const isWaiting = order.status === 'open' || !!waitingOrderUids?.has(order.uid)
+    // An ETH order sends the ETH with it, so it doesn't use a permission
+    if (!isWaiting || order.ethflowData) return total
+    if (order.sellToken.toLowerCase() !== sellToken.toLowerCase()) return total
+
+    const remaining = BigInt(order.sellAmount) - BigInt(order.executedSellAmount)
+
+    return remaining > 0n ? total + remaining : total
+  }, 0n)
