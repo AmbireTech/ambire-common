@@ -46,7 +46,8 @@ const buildNetworksController = ({
   useTempProvider = async () => {},
   // Never invoked by default: `mergeRelayerNetworks` (the only relayer caller) is spied.
   fetch = jest.fn() as unknown as Fetch,
-  featureFlags
+  featureFlags,
+  storage = new StorageController(produceMemoryStore())
 }: {
   defaultNetworksMode?: 'mainnet' | 'testnet'
   mergeImpl?: NetworksController['mergeRelayerNetworks']
@@ -56,9 +57,9 @@ const buildNetworksController = ({
   ) => Promise<void>
   fetch?: Fetch
   featureFlags?: FeatureFlagsController
+  storage?: StorageController
 } = {}) => {
   const onAddOrUpdateNetworks = jest.fn<(networks: Network[]) => Promise<void>>(async () => {})
-  const storage = new StorageController(produceMemoryStore())
   const controller = new NetworksController({
     defaultNetworksMode,
     storage,
@@ -701,7 +702,9 @@ describe('Networks Controller - add or update network info', () => {
 
     test.each([
       ['an empty', ''],
-      ['an undefined', undefined]
+      ['an undefined', undefined],
+      ['an http', 'http://explorer.test'],
+      ['an ftp', 'ftp://explorer.test']
     ])('is stored without the explorer URL key when added with %s one', async (_, explorerUrl) => {
       const controller = await addResolvedNetwork(explorerUrl)
 
@@ -725,8 +728,39 @@ describe('Networks Controller - add or update network info', () => {
 
       const networkAfter = controller.allNetworks.find((n) => n.chainId === CHAIN_ID_A)!
       expect(explorerUrl).toBe('https://explorer.test')
-      expect('explorerUrl' in networkAfter).toBe(false)
       expect(networkAfter).toEqual(expectedNetwork)
+    })
+
+    test('drops a non-https stored explorer URL on load and keeps a valid one', async () => {
+      const [httpNetwork, validNetwork] = predefinedNetworks
+      const storage = new StorageController(produceMemoryStore())
+      await storage.set('networks', {
+        [httpNetwork!.chainId.toString()]: { ...httpNetwork!, explorerUrl: 'http://explorer.test' },
+        [validNetwork!.chainId.toString()]: validNetwork!
+      })
+
+      const { controller } = buildNetworksController({ storage })
+      await controller.initialLoadPromise
+      await settleBackgroundSync(controller)
+
+      const getNetwork = (chainId: bigint) =>
+        controller.allNetworks.find((n) => n.chainId === chainId)!
+      expect('explorerUrl' in getNetwork(httpNetwork!.chainId)).toBe(false)
+      expect(getNetwork(validNetwork!.chainId).explorerUrl).toBe(validNetwork!.explorerUrl)
+      // Guards the fixture: the network must have had a valid explorer to begin with
+      expect(validNetwork!.explorerUrl?.startsWith('https://')).toBe(true)
+    })
+
+    test.each([
+      ['the empty one the sync sends for a network without an explorer', ''],
+      ['a non-https one', 'ftp://explorer.test']
+    ])('drops %s from a network merged from another device', async (_, explorerUrl) => {
+      const { controller } = await buildForNetworkInfo()
+      const ethereum = controller.allNetworks.find((n) => n.chainId === 1n)!
+
+      await controller.mergeNetworks([{ ...ethereum, explorerUrl }])
+
+      expect('explorerUrl' in controller.allNetworks.find((n) => n.chainId === 1n)!).toBe(false)
     })
   })
 })

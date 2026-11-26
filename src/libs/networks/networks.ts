@@ -490,7 +490,7 @@ export function sanityCheckImportantNetworkProperties(network: Network) {
   if (typeof network.name !== 'string') return false
   if (typeof network.nativeAssetSymbol !== 'string') return false
   if (typeof network.nativeAssetName !== 'string') return false
-  // A network may have no block explorer
+  // A network that a dApp added without a block explorer may be stored without the key
   if (network.explorerUrl !== undefined && typeof network.explorerUrl !== 'string') return false
   if (typeof network.selectedRpcUrl !== 'string') return false
 
@@ -500,13 +500,24 @@ export function sanityCheckImportantNetworkProperties(network: Network) {
   return true
 }
 
+/** Returns true for a block explorer URL that links can be built from, a valid https URL. */
+export function isValidExplorerUrl(url: unknown): url is string {
+  if (typeof url !== 'string') return false
+
+  try {
+    return new URL(url).protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 /**
- * Returns the network without the `explorerUrl` key when the explorer URL is empty, as a
- * network with no block explorer is stored without the key.
+ * Returns the network without the `explorerUrl` key when its explorer URL is missing,
+ * empty or not a valid https URL, as a network with no block explorer is stored without it.
  */
-export function omitEmptyExplorerUrl(network: Network): Network {
+export function omitInvalidExplorerUrl(network: Network): Network {
   const { explorerUrl, ...networkWithoutExplorerUrl } = network
-  if (explorerUrl) return network
+  if (isValidExplorerUrl(explorerUrl)) return network
 
   return networkWithoutExplorerUrl
 }
