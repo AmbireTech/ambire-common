@@ -17,7 +17,8 @@ import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig,
   getPrivacyPoolsDepositAsset,
-  PRIVACY_POOLS_READ_TIMEOUT
+  PRIVACY_POOLS_READ_TIMEOUT,
+  toPrivacyPoolsAssetAddress
 } from '../../consts/privacyPools'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -463,6 +464,8 @@ let preparedWithdrawal:
 let relayFailure: unknown = null
 /** What `prepareUnshield` throws instead, when set - the SDK's thunks throw plain objects, not `Error`s. */
 let prepareUnshieldFailure: unknown = null
+/** What `estimateUnshield` prices a withdrawal through Kohaku at, or throws when an `Error`. */
+let paymasterFeeEstimate: bigint | Error = 0n
 /** Whether `prepareUnshield` proves through the controller's prover first, as the SDK does. */
 let isProvingOnUnshield = false
 /** The latest block's base fee. A proved withdrawal signs 1 gwei as its most per gas. */
@@ -588,6 +591,15 @@ class FakeProtocol {
     if (preparedWithdrawal) return preparedWithdrawal
 
     throw new Error('prepareUnshield is not faked')
+  }
+
+  estimateUnshieldCalls: unknown[][] = []
+
+  async estimateUnshield(...args: unknown[]) {
+    this.estimateUnshieldCalls.push(args)
+    if (paymasterFeeEstimate instanceof Error) throw paymasterFeeEstimate
+
+    return { mode: 'paymaster', fee: paymasterFeeEstimate }
   }
 
   historyCount = 0
@@ -1101,6 +1113,7 @@ describe('PrivacyPoolsController', () => {
     preparedWithdrawal = null
     relayFailure = null
     prepareUnshieldFailure = null
+    paymasterFeeEstimate = 0n
     isProvingOnUnshield = false
     latestBaseFee = 10n ** 8n
     simulateWithdrawal = async () => successfulSimulation()
@@ -3036,19 +3049,61 @@ describe('PrivacyPoolsController', () => {
       return test
     }
 
-    it('explains a fee above the amount, although the SDK throws it from a thunk', async () => {
+    it('explains a fee above the amount with the least amount to send, although the SDK throws it from a thunk', async () => {
       const { restore } = suppressConsole()
       prepareUnshieldFailure = toThunkFailure(
         'Withdrawal amount too small to cover the sponsored gas fee'
       )
+      paymasterFeeEstimate = 151_234n * 10n ** 12n
+
+      const { controller } = await prepareFailingWithdrawal()
+
+      // With a 10% buffer, rounded up, so it still covers the fee
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error:
+          'The network fee is too high for this amount. Send at least 0.167 ETH, or try again when fees are lower.'
+      })
+      // Priced for the same withdrawal, the way the SDK priced it before refusing it
+      expect(protocols[0]?.estimateUnshieldCalls).toEqual([
+        [
+          {
+            asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(ZERO_ADDRESS) },
+            amount: WITHDRAWAL_AMOUNT
+          },
+          WITHDRAWAL_RECIPIENT,
+          { mode: 'paymaster' }
+        ]
+      ])
+      // A toast, but not reported
+      expect(controller.emittedErrors.at(-1)).toMatchObject({
+        message:
+          'The network fee is too high for this amount. Send at least 0.167 ETH, or try again when fees are lower.',
+        level: 'expected'
+      })
+      restore()
+    })
+
+    it('still explains a fee above the amount when it cannot be priced again', async () => {
+      const { restore } = suppressConsole()
+      prepareUnshieldFailure = toThunkFailure(
+        'Withdrawal amount too small to cover the sponsored gas fee'
+      )
+      paymasterFeeEstimate = new Error('bundler unreachable')
 
       const { controller } = await prepareFailingWithdrawal()
 
       expect(controller.operation).toMatchObject({
         status: 'failed',
         error:
-          'This amount is too small to cover the network fee for sending it. Please try a larger amount.'
+          'The network fee is too high for this amount. Try a larger amount, or try again when fees are lower.'
       })
+      expect(controller.emittedErrors).toContainEqual(
+        expect.objectContaining({
+          message: 'Could not work out the least amount to send.',
+          level: 'silent'
+        })
+      )
       restore()
     })
 
@@ -4167,12 +4222,22 @@ describe('PrivacyPoolsController', () => {
 
     const RELAYERS_UNAVAILABLE_ERROR =
       'The 0xBow relayers could not take this transfer right now. Please try again in a moment, or choose Kohaku in the send settings.'
+    // 0.1 ETH at 120 bps where the pool allows 100: 0.12 ETH, with a 10% buffer
     const RELAYER_FEE_TOO_HIGH_ERROR =
-      'The 0xBow relayers are asking a higher fee than this pool allows right now. Please try again later, or choose Kohaku in the send settings.'
+      'The network fee is too high for this amount. Send at least 0.132 ETH, or try again when fees are lower.'
+    const FEE_TOO_HIGH_WITHOUT_AMOUNT_ERROR =
+      'The network fee is too high for this amount. Try a larger amount, or try again when fees are lower.'
     const QUOTE_FAILED = {
       relayerId: 'fastrelay',
       relayerUrl: 'https://fastrelay.xyz/relayer',
       message: 'Quote request failed (HTTP 503)',
+      reason: 'quote-failed'
+    }
+    // As the SDK words a relayer's 400, keeping its `error` field over its code
+    const QUOTE_REFUSED = {
+      relayerId: 'fastrelay',
+      relayerUrl: 'https://fastrelay.xyz/relayer',
+      message: 'Quote request failed (HTTP 400): Bad Request',
       reason: 'quote-failed'
     }
     const FEE_TOO_HIGH = {
@@ -4192,7 +4257,18 @@ describe('PrivacyPoolsController', () => {
         [FEE_TOO_HIGH, QUOTE_FAILED],
         RELAYERS_UNAVAILABLE_ERROR
       ],
-      ['every relayer asked more than the pool allows', [FEE_TOO_HIGH], RELAYER_FEE_TOO_HIGH_ERROR]
+      ['every relayer asked more than the pool allows', [FEE_TOO_HIGH], RELAYER_FEE_TOO_HIGH_ERROR],
+      [
+        'one relayer asked too much and another turned the request down',
+        [FEE_TOO_HIGH, QUOTE_REFUSED],
+        RELAYER_FEE_TOO_HIGH_ERROR
+      ],
+      // Nothing tells it was the fee
+      [
+        'the only relayer that answered turned the request down',
+        [QUOTE_REFUSED],
+        RELAYERS_UNAVAILABLE_ERROR
+      ]
     ])('explains when %s', async (_case, failures, error) => {
       const { restore } = suppressConsole()
       prepareUnshieldFailure = new (PPv1RelayerQuoteError as any)(failures)
@@ -4203,6 +4279,21 @@ describe('PrivacyPoolsController', () => {
       restore()
     })
 
+    it('tells the least amount the cheapest relayer that asked too much would take', async () => {
+      const { restore } = suppressConsole()
+      prepareUnshieldFailure = new (PPv1RelayerQuoteError as any)([
+        { ...FEE_TOO_HIGH, requiredFeeBPS: 300n },
+        FEE_TOO_HIGH,
+        // Says no amount, so it is left out
+        QUOTE_REFUSED
+      ])
+
+      const { controller } = await prepareRelayedWithdrawal()
+
+      expect(controller.operation).toMatchObject({ error: RELAYER_FEE_TOO_HIGH_ERROR })
+      restore()
+    })
+
     it('explains a relayer fee above what the pool allows, as when no relayer offers less', async () => {
       const { restore } = suppressConsole()
       // The mocked pool allows 100 bps
@@ -4210,9 +4301,10 @@ describe('PrivacyPoolsController', () => {
         buildPreparedRelayedWithdrawal({ relayFeeBPS: 101n })
       )
 
+      // The payload does not tell how much the relayer would take for a larger amount
       expect(controller.operation).toMatchObject({
         status: 'failed',
-        error: RELAYER_FEE_TOO_HIGH_ERROR
+        error: FEE_TOO_HIGH_WITHOUT_AMOUNT_ERROR
       })
       restore()
     })

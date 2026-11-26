@@ -18,6 +18,49 @@ const majorError = (message: string, cause: unknown, reason: string) =>
 type DepositAsset = { decimals: number; symbol: string }
 
 /**
+ * A transfer refused as the network fee is too high for its amount. Shown as a toast, but not
+ * reported, as nothing went wrong.
+ */
+export class PrivacyPoolsFeeTooHighError extends EmittableError {}
+
+/**
+ * Added on top of the least amount to send that is suggested, in percent: the network fee moves
+ * before the user sends again, and through 0xBow the relayer's fee also has a share that grows with
+ * the amount (see `PrivacyPoolsRelayedWithdrawal.serviceFee`).
+ */
+const MIN_AMOUNT_BUFFER_PERCENT = 10n
+
+/** How many leading digits a minimum amount to send is shown with. */
+const MIN_AMOUNT_SIGNIFICANT_DIGITS = 3
+
+/**
+ * Rounds `amount` up to its leading `MIN_AMOUNT_SIGNIFICANT_DIGITS` digits, so a minimum to send
+ * reads short and still covers what it must.
+ */
+const roundUpToSignificantDigits = (amount: bigint) => {
+  const extraDigits = amount.toString().length - MIN_AMOUNT_SIGNIFICANT_DIGITS
+  if (extraDigits <= 0) return amount
+
+  const unit = 10n ** BigInt(extraDigits)
+
+  return ((amount + unit - 1n) / unit) * unit
+}
+
+/**
+ * What the user reads when the fee is too high, with the least amount to send if it is known. Not
+ * "fees are high right now": a small amount is refused at usual fees too.
+ */
+const getFeeTooHighMessage = (minAmount: bigint | null, asset: DepositAsset | undefined) => {
+  if (minAmount === null || !asset)
+    return 'The network fee is too high for this amount. Try a larger amount, or try again when fees are lower.'
+
+  const bufferedMinAmount = (minAmount * (100n + MIN_AMOUNT_BUFFER_PERCENT)) / 100n
+  const shownMinAmount = formatUnits(roundUpToSignificantDigits(bufferedMinAmount), asset.decimals)
+
+  return `The network fee is too high for this amount. Send at least ${shownMinAmount} ${asset.symbol}, or try again when fees are lower.`
+}
+
+/**
  * The errors Privacy Pools actions throw, in one place so what the user reads can be reviewed
  * together. Every message must make sense to someone who knows nothing about how it works.
  */
@@ -142,13 +185,6 @@ export const privacyPoolsErrors = {
       'Your previous transfer from this deposit is still being confirmed. Please try again once it is.',
       'a withdrawal from this note is not in the notes yet'
     ),
-  withdrawalFeeAboveAmount: (sdkError: Error) =>
-    new EmittableError({
-      message:
-        'This amount is too small to cover the network fee for sending it. Please try a larger amount.',
-      level: 'expected',
-      error: sdkError
-    }),
   withdrawalRelayersUnavailable: (sdkError: Error) =>
     new EmittableError({
       message:
@@ -156,12 +192,13 @@ export const privacyPoolsErrors = {
       level: 'expected',
       error: sdkError
     }),
-  withdrawalRelayerFeeTooHigh: (sdkError: Error) =>
-    new EmittableError({
-      message:
-        'The 0xBow relayers are asking a higher fee than this pool allows right now. Please try again later, or choose Kohaku in the send settings.',
+  // Through 0xBow, the relayers asked more than the pool lets them keep; through Kohaku, the most
+  // the network fee may cost is more than the amount. Expected, so not reported
+  withdrawalFeeTooHigh: (cause: Error, minAmount: bigint | null, asset: DepositAsset | undefined) =>
+    new PrivacyPoolsFeeTooHighError({
+      message: getFeeTooHighMessage(minAmount, asset),
       level: 'expected',
-      error: sdkError
+      error: cause
     }),
   // Major: a payload that does not match the request means a faulty or malicious relayer, or an
   // SDK bug. Trying again likely reaches the same relayer, so it points to Kohaku, which does not

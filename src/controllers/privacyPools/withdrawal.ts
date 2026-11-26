@@ -6,6 +6,7 @@ import {
   PPv1Broadcaster,
   PPv1NoteUnavailableError,
   PPv1RelayerQuoteError,
+  PPv1RelayerQuoteFailure,
   PPv1UnshieldOptions,
   PrivacyPoolsV1Protocol
 } from '@kohaku-eth/privacy-pools'
@@ -63,13 +64,16 @@ import {
   PhraseScopedModule,
   PrivacyPoolsContext
 } from './context'
-import { privacyPoolsErrors } from './errors'
+import { PrivacyPoolsFeeTooHighError, privacyPoolsErrors } from './errors'
 import { PrivacyPoolsExpectedChanges } from './expectedChanges'
 import { PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsSync, readPrivacyPoolsNotes } from './sync'
 
-/** After this, a proved withdrawal is shown with only its fee cap. */
+/**
+ * After this, a proved withdrawal is shown with only its fee cap, and one refused as the fee is too
+ * high without the least amount to send.
+ */
 const WITHDRAWAL_ESTIMATION_TIMEOUT_MS = 8 * 1000
 
 /**
@@ -106,42 +110,87 @@ const STALE_WITHDRAWAL_MESSAGE =
 const FEE_ABOVE_AMOUNT_SDK_MESSAGE = 'Withdrawal amount too small to cover the sponsored gas fee'
 
 /**
- * Whether every relayer answered, but each asked a higher fee than the pool allows. Retrying soon
- * won't help then, unlike when a relayer could not be reached.
+ * Whether a relayer turned the quote request down as invalid (HTTP 400). A relayer may answer a fee
+ * above what the pool allows this way, with a reason the SDK does not keep.
+ */
+const isQuoteRequestRefused = (failure: PPv1RelayerQuoteFailure) =>
+  failure.reason === 'quote-failed' && failure.message.includes('(HTTP 400)')
+
+/**
+ * Whether at least one relayer asked a higher fee than the pool allows, and every other one turned
+ * the request down too. Retrying soon won't help then, unlike when a relayer could not be reached.
  */
 const isEveryRelayerFeeTooHigh = ({ failures }: PPv1RelayerQuoteError) =>
-  failures.length > 0 && failures.every(({ reason }) => reason === 'fee-too-high')
+  failures.some(({ reason }: PPv1RelayerQuoteFailure) => reason === 'fee-too-high') &&
+  failures.every(
+    (failure: PPv1RelayerQuoteFailure) =>
+      failure.reason === 'fee-too-high' || isQuoteRequestRefused(failure)
+  )
+
+/** What a refused withdrawal is told against: its amount, and the token it is in. */
+type RefusedWithdrawal = {
+  amount: bigint
+  asset: { decimals: number; symbol: string } | undefined
+}
+
+/**
+ * The least amount the cheapest relayer that asked too much would take, or null when none said how
+ * much. Its fee is mostly the network fee, a fixed sum, so its share of the amount shrinks as the
+ * amount grows - down to what the pool allows.
+ */
+const getRelayedMinAmount = ({ failures }: PPv1RelayerQuoteError, amount: bigint) =>
+  failures.reduce<bigint | null>((minAmount: bigint | null, failure: PPv1RelayerQuoteFailure) => {
+    if (failure.reason !== 'fee-too-high' || failure.maxRelayFeeBPS <= 0n) return minAmount
+
+    const relayerMinAmount = (amount * failure.requiredFeeBPS) / failure.maxRelayFeeBPS
+
+    return minAmount === null || relayerMinAmount < minAmount ? relayerMinAmount : minAmount
+  }, null)
 
 /**
  * What the user reads when `readRelayedWithdrawal` refuses the relayer's payload: an amount too
  * small for the fee, or a fee above the pool's limit, as they are told elsewhere. Anything else does
  * not match the request.
  */
-const toReadableRelayedWithdrawalError = (error: PrivacyPoolsRelayedWithdrawalError) => {
-  if (error.reason === 'fee-takes-whole-amount')
-    return privacyPoolsErrors.withdrawalFeeAboveAmount(error)
-  if (error.reason === 'fee-above-pool-limit')
-    return privacyPoolsErrors.withdrawalRelayerFeeTooHigh(error)
+const toReadableRelayedWithdrawalError = (
+  error: PrivacyPoolsRelayedWithdrawalError,
+  { asset }: RefusedWithdrawal
+) => {
+  if (error.reason === 'fee-takes-whole-amount' || error.reason === 'fee-above-pool-limit')
+    return privacyPoolsErrors.withdrawalFeeTooHigh(error, null, asset)
 
   return privacyPoolsErrors.withdrawalRelayerMismatch(error)
 }
 
+/** Whether the SDK refused a withdrawal through Kohaku as the most its fee may cost is above it. */
+const isFeeAboveAmountSdkError = (error: unknown) =>
+  toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed').message.includes(
+    FEE_ABOVE_AMOUNT_SDK_MESSAGE
+  )
+
 /** Makes the SDK errors the user can act on readable; passes anything else through as an `Error`. */
-const toReadableWithdrawalError = (error: unknown) => {
+const toReadableWithdrawalError = (error: unknown, refused: RefusedWithdrawal) => {
+  // Made readable where it was thrown, as with the least amount to send through Kohaku
+  if (error instanceof PrivacyPoolsFeeTooHighError) return error
   // The SDK's sync before proving found the chosen deposit can no longer pay
   if (error instanceof PPv1NoteUnavailableError)
     return privacyPoolsErrors.withdrawalDepositUnavailable(error.reason)
   // No relayer gave a usable quote: each failed, or quoted a fee above what the pool allows
   if (error instanceof PPv1RelayerQuoteError && isEveryRelayerFeeTooHigh(error))
-    return privacyPoolsErrors.withdrawalRelayerFeeTooHigh(error)
+    return privacyPoolsErrors.withdrawalFeeTooHigh(
+      error,
+      getRelayedMinAmount(error, refused.amount),
+      refused.asset
+    )
   if (error instanceof PPv1RelayerQuoteError)
     return privacyPoolsErrors.withdrawalRelayersUnavailable(error)
   if (error instanceof PrivacyPoolsRelayedWithdrawalError)
-    return toReadableRelayedWithdrawalError(error)
+    return toReadableRelayedWithdrawalError(error, refused)
 
   const sdkError = toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
-  if (sdkError.message.includes(FEE_ABOVE_AMOUNT_SDK_MESSAGE))
-    return privacyPoolsErrors.withdrawalFeeAboveAmount(sdkError)
+  // Thrown only through Kohaku: the SDK checks the paymaster's fee against the amount
+  if (isFeeAboveAmountSdkError(sdkError))
+    return privacyPoolsErrors.withdrawalFeeTooHigh(sdkError, null, refused.asset)
 
   return sdkError
 }
@@ -214,6 +263,9 @@ export type PrivacyPoolsBroadcastAttempt = {
   isSent: boolean
   blockNumber: number | null
 }
+
+/** What the SDK prices a withdrawal at before proving it. */
+type PaymasterFeeEstimate = Awaited<ReturnType<PrivacyPoolsV1Protocol['estimateUnshield']>>
 
 /**
  * A paymaster-sponsored withdrawal: an ERC-4337 userOp signed by its single-use sender. Narrowed
@@ -445,14 +497,35 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       const sdkRecipient = recipient as Hex
       // Through Kohaku it prices gas, proves and signs the userOp; through 0xBow it takes the
       // cheapest relayer's quote and proves against it. Spends only the chosen deposit.
-      const privateOp = await protocol.prepareUnshield(
-        {
-          asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
-          amount
-        },
-        sdkRecipient,
-        { ...getUnshieldOptions(broadcaster, sdkRecipient), label: noteLabel }
-      )
+      const sdkAsset = {
+        __type: 'erc20' as const,
+        contract: toPrivacyPoolsAssetAddress(tokenAddress)
+      }
+      const privateOp = await protocol
+        .prepareUnshield({ asset: sdkAsset, amount }, sdkRecipient, {
+          ...getUnshieldOptions(broadcaster, sdkRecipient),
+          label: noteLabel
+        })
+        .catch(async (error: unknown) => {
+          // Through 0xBow, the relayers' refusal already tells the least amount to send, so it is
+          // read from it below. Through Kohaku, the SDK only says the fee is too high, so the least
+          // amount is worked out here.
+          const isKohakuFeeTooHigh = broadcaster === 'kohaku' && isFeeAboveAmountSdkError(error)
+          if (isKohakuFeeTooHigh) {
+            // The SDK's error does not tell the fee, so it is priced again the same way
+            const minAmount = await this.#estimatePaymasterFee(
+              protocol,
+              { asset: sdkAsset, amount },
+              sdkRecipient
+            )
+            const sdkError = toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
+            const asset = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)
+
+            throw privacyPoolsErrors.withdrawalFeeTooHigh(sdkError, minAmount, asset)
+          }
+
+          throw error
+        })
 
       // The SDK synced before proving, so its notes may be newer than the last sync's
       const provedNotes = await readPrivacyPoolsNotes(protocol, false)
@@ -498,7 +571,10 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       if (!signal.aborted)
         this.#failOperation(
           operation,
-          toReadableWithdrawalError(error),
+          toReadableWithdrawalError(error, {
+            amount,
+            asset: getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)
+          }),
           'The transfer could not be prepared. Please try again.'
         )
     } finally {
@@ -931,6 +1007,36 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     }
   }
 
+  /**
+   * The most a withdrawal through Kohaku may cost now, priced as the SDK prices it before proving -
+   * so the least amount it can send. Null when it cannot be priced.
+   */
+  async #estimatePaymasterFee(
+    protocol: PrivacyPoolsV1Protocol,
+    assetAmount: Parameters<PrivacyPoolsV1Protocol['estimateUnshield']>[0],
+    recipient: Hex
+  ): Promise<bigint | null> {
+    try {
+      const { fee } = await withTimeout<PaymasterFeeEstimate>(
+        () => protocol.estimateUnshield(assetAmount, recipient, { mode: 'paymaster' }),
+        {
+          timeoutMs: WITHDRAWAL_ESTIMATION_TIMEOUT_MS,
+          message: 'privacyPools: the withdrawal fee estimation timed out'
+        }
+      )
+
+      return fee
+    } catch (error: unknown) {
+      this.#ctx.emitError({
+        message: 'Could not work out the least amount to send.',
+        level: 'silent',
+        error: toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal fee estimation failed')
+      })
+
+      return null
+    }
+  }
+
   /** The run of `#simulateWithdrawal`, without its timeout. */
   async #runWithdrawal(
     proved: ProvedWithdrawal,
@@ -1180,7 +1286,8 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     this.#updateOperation({ ...operation, status: 'failed', error: message })
     this.#ctx.emitError({
       message,
-      level,
+      // Still a toast, but not reported: the network fee being too high is not a failure of ours
+      level: error instanceof PrivacyPoolsFeeTooHighError ? 'expected' : level,
       error: toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
     })
   }
