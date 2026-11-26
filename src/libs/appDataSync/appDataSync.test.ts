@@ -499,6 +499,19 @@ describe('appDataSync payload', () => {
       expect(() => serializeAndParse(payload)).toThrow('invalid networks')
     })
 
+    it('sends a network without a block explorer with an empty explorer URL', () => {
+      const payload = buildFullPayload()
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { explorerUrl, ...networkWithoutExplorer } = payload.networks![0]!
+      payload.networks![0] = networkWithoutExplorer
+
+      const parsed = serializeAndParse(payload)
+
+      // Older app versions reject the whole payload without an explorer URL string
+      expect(parsed.networks![0]!.explorerUrl).toBe('')
+      expect(parsed.networks![1]!.explorerUrl).toBe(payload.networks![1]!.explorerUrl)
+    })
+
     it('rejects a contact with an invalid address', () => {
       const payload: any = buildFullPayload()
       payload.contacts[0].address = '0x1234'

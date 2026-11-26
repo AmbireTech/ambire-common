@@ -304,8 +304,15 @@ export const getAppDataSyncPayloadVersion = (
  * byte saved is one less QR frame the other device has to catch. Rich JSON, because
  * the networks hold bigints.
  */
-export const serializeAppDataSyncPayload = (payload: AppDataSyncPayload): string =>
-  hexlify(gzip(toUtf8Bytes(stringify(payload))))
+export const serializeAppDataSyncPayload = (payload: AppDataSyncPayload): string => {
+  // Older app versions reject the whole payload if a network has no explorer URL string
+  const networks = payload.networks?.map((network) => ({
+    ...network,
+    explorerUrl: network.explorerUrl ?? ''
+  }))
+
+  return hexlify(gzip(toUtf8Bytes(stringify({ ...payload, ...(networks && { networks }) }))))
+}
 
 /**
  * Parses and validates the bytes assembled from the scanned animated QR codes.

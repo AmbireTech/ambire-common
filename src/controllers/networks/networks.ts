@@ -27,7 +27,8 @@ import {
   getNetworkInfo,
   getNetworksUpdatedWithRelayerNetworks,
   getValidNetworks,
-  isNetworkInfoPending
+  isNetworkInfoPending,
+  omitInvalidExplorerUrl
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -342,8 +343,12 @@ export class NetworksController extends EventEmitter implements INetworksControl
       // Instantiate the RPC providers from the seeded networks before resolving.
       await this.#onReady()
     } else {
+      // Only https explorer URLs are kept, as links are built from them
       this.#networks = Object.fromEntries(
-        Object.values(networksInStorage).map((network) => [network.chainId.toString(), network])
+        Object.values(networksInStorage).map((network) => [
+          network.chainId.toString(),
+          omitInvalidExplorerUrl(network)
+        ])
       )
     }
 
@@ -583,7 +588,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
     // @ts-expect-error delete is ok
     delete info.feeOptions
-    this.#networks[network.chainId.toString()] = {
+    this.#networks[network.chainId.toString()] = omitInvalidExplorerUrl({
       ...network,
       ...info,
       feeOptions,
@@ -591,7 +596,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
       hasRelayer: false,
       predefined: false,
       has7702: false
-    }
+    })
 
     void this.#onAddOrUpdateNetworks([this.#networks[network.chainId.toString()]!])
 
@@ -628,11 +633,11 @@ export class NetworksController extends EventEmitter implements INetworksControl
       return { ...acc, [key]: network[key as keyof Network] }
     }, {} as Network)
 
-    // Update the networks with the incoming new values
-    this.#networks[chainId.toString()] = {
+    // Update the networks with the incoming new values. An empty explorer URL removes the explorer.
+    this.#networks[chainId.toString()] = omitInvalidExplorerUrl({
       ...networkData,
       ...changedNetwork
-    }
+    })
 
     await this.#storage.set('networks', this.#networks)
 
@@ -747,7 +752,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     if (!networks.length) return
 
     networks.forEach((network) => {
-      this.#networks[network.chainId.toString()] = network
+      this.#networks[network.chainId.toString()] = omitInvalidExplorerUrl(network)
     })
 
     await this.#storage.set('networks', this.#networks)
