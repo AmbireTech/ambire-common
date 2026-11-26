@@ -226,7 +226,12 @@ type ExternalKeyBase = {
 
 /** A key on a hardware wallet that derives it on a BIP-32 path (`hdPathTemplate` + `index`). */
 export type HdExternalKey = ExternalKeyBase & {
-  type: 'trezor' | 'onekey' | 'ledger' | 'lattice' | 'qr' | 'nfc'
+  /**
+   * The maker (or the protocol, for `qr` and `nfc`), the model is in `meta.deviceModel`.
+   * `ambire` keys (the Ambire Ice) are signed for through the Trezor flows, as the Ambire Ice
+   * runs Trezor's firmware, but by their own device, so they're a type of their own
+   */
+  type: 'trezor' | 'ambire' | 'onekey' | 'ledger' | 'lattice' | 'qr' | 'nfc'
   meta: {
     deviceId: string
     deviceModel: string
@@ -316,6 +321,17 @@ export type KeystoreTempSeed = {
   shouldSavePassphrase?: boolean
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   notBackedUp?: boolean
+}
+
+/**
+ * A recovery phrase decrypted from a sync, held until the synced accounts are added. `id` is
+ * its id on the other device, which the synced keys' `fromSeedId` point to.
+ */
+export type SyncedSeed = KeystoreTempSeed & {
+  id: StoredKeystoreSeed['id']
+  /** Brought instead of a passphrase that the other device doesn't save */
+  passphraseFingerprint?: string
+  passphraseLabel?: StoredKeystoreSeed['passphraseLabel']
 }
 
 export type KeystoreSignerType = {

@@ -13,6 +13,7 @@ import mockChains from '../../consts/dapps/mockChains'
 import mockDapps from '../../consts/dapps/mockDapps'
 import { DAPP_SILENCE_DURATION } from '../../consts/safeguards/dappRequestSpam'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp'
+import { Messenger } from '../../interfaces/messenger'
 import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
 import * as ensContenthashModule from '../../services/ensDomains/ensContenthash'
@@ -2683,6 +2684,225 @@ describe('DappsController', () => {
       expect(stored.connectedSources).toEqual(['injected'])
       expect(stored.isConnected).toBe(true)
     })
+
+    test('revokes only wc-in-app when the in-app browser session ends, keeping an external wc session', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.addDapp(wcDapp(), 'wc-in-app')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-external'
+      })
+      await controller.getOrCreateDappSession({
+        tabId: 1000002,
+        url: 'https://aave.com',
+        wcTopic: 'topic-in-app',
+        isWcFromInAppBrowser: true
+      })
+
+      controller.disconnectWcSessionByTopic('topic-in-app')
+
+      expect(controller.getDappSessionByWcTopic('topic-external')).toBeDefined()
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc'])
+      expect(controller.hasPermission('aave.com', 'wc-in-app')).toBe(false)
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(true)
+    })
+
+    test('revokes only wc when the external session ends, keeping an in-app browser session', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.addDapp(wcDapp(), 'wc-in-app')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-external'
+      })
+      await controller.getOrCreateDappSession({
+        tabId: 1000002,
+        url: 'https://aave.com',
+        wcTopic: 'topic-in-app',
+        isWcFromInAppBrowser: true
+      })
+
+      controller.disconnectWcSessionByTopic('topic-external')
+
+      expect(controller.getDappSessionByWcTopic('topic-in-app')).toBeDefined()
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc-in-app'])
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(false)
+      expect(controller.hasPermission('aave.com', 'wc-in-app')).toBe(true)
+    })
+  })
+
+  describe('dropWcSourcesWithoutSessions', () => {
+    const makeConnectedDapp = (id: string, isCustom = false): Dapp =>
+      makeDapp({
+        id,
+        name: id,
+        url: `https://${id}`,
+        isCustom,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+
+    const prepare = async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      return controller
+    }
+
+    test('drops WalletConnect sources without a live session and keeps the injected one', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'injected')
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc')
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc-in-app')
+
+      const disconnectedDapps = await controller.dropWcSourcesWithoutSessions()
+
+      // Still connected through the injected provider, so its auto-login must survive
+      expect(disconnectedDapps).toEqual([])
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['injected'])
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(false)
+      expect(controller.hasPermission('aave.com', 'wc-in-app')).toBe(false)
+    })
+
+    test('keeps each WalletConnect source that a live session of the same kind backs', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc')
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc-in-app')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-in-app',
+        isWcFromInAppBrowser: true
+      })
+
+      const disconnectedDapps = await controller.dropWcSourcesWithoutSessions()
+
+      // Only the in-app session is live, so the external connection is the stale one
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc-in-app'])
+      expect(disconnectedDapps).toEqual([])
+    })
+
+    test('returns a dapp whose only source was a stale WalletConnect one', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc')
+
+      const disconnectedDapps = await controller.dropWcSourcesWithoutSessions()
+
+      expect(disconnectedDapps).toEqual([{ id: 'aave.com', url: 'https://aave.com' }])
+      expect(controller.getDapp('aave.com')!.isConnected).toBe(false)
+      expect(controller.hasPermission('aave.com')).toBe(false)
+    })
+
+    test('removes a custom dapp whose only source was a stale WalletConnect one', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('custom-wc-dapp.com', true), 'wc')
+
+      const disconnectedDapps = await controller.dropWcSourcesWithoutSessions()
+
+      expect(controller.getDapp('custom-wc-dapp.com')).toBeUndefined()
+      // Removed, but its auto-login policies still have to be revoked
+      expect(disconnectedDapps).toEqual([
+        { id: 'custom-wc-dapp.com', url: 'https://custom-wc-dapp.com' }
+      ])
+    })
+
+    test('leaves the dapps untouched when every source is backed', async () => {
+      const controller = await prepare()
+      await controller.addDapp(makeConnectedDapp('aave.com'), 'wc')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-external'
+      })
+      const emitUpdateSpy = jest.spyOn(controller, 'emitUpdate')
+
+      const disconnectedDapps = await controller.dropWcSourcesWithoutSessions()
+
+      expect(disconnectedDapps).toEqual([])
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc'])
+      expect(emitUpdateSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('wc-in-app source', () => {
+    const inAppDapp = (): Dapp =>
+      makeDapp({
+        id: 'aave.com',
+        name: 'Aave',
+        url: 'https://aave.com',
+        isCustom: false,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+
+    const makeMessengerMock = () => ({ send: jest.fn() }) as unknown as Messenger
+
+    test('disconnectDappSource broadcasts disconnect only to the sessions of that source', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.addDapp(inAppDapp(), 'injected')
+      await controller.addDapp(inAppDapp(), 'wc')
+      await controller.addDapp(inAppDapp(), 'wc-in-app')
+
+      const injectedSession = await controller.getOrCreateDappSession({
+        tabId: 1,
+        url: 'https://aave.com'
+      })
+      const externalSession = await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-external'
+      })
+      const inAppSession = await controller.getOrCreateDappSession({
+        tabId: 1000002,
+        url: 'https://aave.com',
+        wcTopic: 'topic-in-app',
+        isWcFromInAppBrowser: true
+      })
+      const injectedMessenger = makeMessengerMock()
+      const externalMessenger = makeMessengerMock()
+      const inAppMessenger = makeMessengerMock()
+      controller.setSessionMessenger(injectedSession.sessionId, injectedMessenger, false)
+      controller.setSessionMessenger(externalSession.sessionId, externalMessenger, false)
+      controller.setSessionMessenger(inAppSession.sessionId, inAppMessenger, false)
+
+      await controller.disconnectDappSource('aave.com', 'wc-in-app')
+
+      expect(inAppMessenger.send).toHaveBeenCalledWith(
+        'broadcast',
+        expect.objectContaining({ event: 'disconnect' }),
+        expect.anything()
+      )
+      expect(injectedMessenger.send).not.toHaveBeenCalled()
+      expect(externalMessenger.send).not.toHaveBeenCalled()
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['injected', 'wc'])
+      expect(controller.getDappSessionByWcTopic('topic-in-app')).toBeUndefined()
+      expect(controller.getDappSessionByWcTopic('topic-external')).toBeDefined()
+    })
+
+    test('a wc connection does not grant the wc-in-app permission (and vice versa)', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.addDapp(inAppDapp(), 'wc')
+
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(true)
+      expect(controller.hasPermission('aave.com', 'wc-in-app')).toBe(false)
+      expect(controller.hasPermission('aave.com', 'injected')).toBe(false)
+
+      await controller.disconnectDappSource('aave.com', 'wc')
+      await controller.addDapp(inAppDapp(), 'wc-in-app')
+
+      expect(controller.hasPermission('aave.com', 'wc-in-app')).toBe(true)
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(false)
+    })
   })
 
   describe('disconnectAllDapps', () => {
@@ -3608,6 +3828,170 @@ describe('DappsController', () => {
 
       expect(controller.getDapp(AAVE_ID)?.isConnected).toBe(true)
       expect(controller.getDapp(CUSTOM_ID)).toBeDefined()
+    })
+  })
+
+  describe('dApp icons from other hosts', () => {
+    const SITE_URL = 'https://icon-test-dapp.xyz'
+    const OWN_ICON = 'https://icon-test-dapp.xyz/logo.png'
+    const THIRD_PARTY_ICON = 'https://res.cloudinary.com/logo.png'
+    // The icon of an app on the hand-picked impersonation list, used by a site posing as it
+    const IMPERSONATED_APP_ICON = 'https://app.uniswap.org/favicon.png'
+
+    const makeConnectRequest = (session: Session): DappConnectRequest => ({
+      id: 1,
+      kind: 'dappConnect',
+      meta: { params: {} },
+      dappPromises: [{ id: '', resolve: () => {}, reject: () => {}, meta: {}, session }]
+    })
+
+    const prepareSession = async (icon: string, name = 'Icon Test Dapp') => {
+      const { controller, mainCtrl } = await prepareTest()
+      await controller.initialLoadPromise
+      const session = await controller.getOrCreateDappSession({ tabId: 90, url: SITE_URL })
+      controller.setSessionProp(session.sessionId, { name, icon })
+
+      return { controller, mainCtrl, session }
+    }
+
+    test('a session keeps an icon on the site own domain', async () => {
+      const { session } = await prepareSession(OWN_ICON)
+
+      expect(session.icon).toBe(OWN_ICON)
+      expect(session.declaredIcon).toBe(OWN_ICON)
+    })
+
+    test('a session drops an icon on another host, keeping it only for the security checks', async () => {
+      const { session } = await prepareSession(THIRD_PARTY_ICON)
+
+      expect(session.icon).toBe('')
+      expect(session.declaredIcon).toBe(THIRD_PARTY_ICON)
+      // Never part of the state sent to the UI
+      expect(JSON.stringify(session.toJSON())).not.toContain(THIRD_PARTY_ICON)
+    })
+
+    test('a catalog app keeps its icon from any host', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.initialLoadPromise
+      const catalogDapp = predefinedDapps.find((d) => d.url.startsWith('https://'))!
+      const session = await controller.getOrCreateDappSession({ tabId: 91, url: catalogDapp.url })
+
+      controller.setSessionProp(session.sessionId, { icon: THIRD_PARTY_ICON })
+
+      expect(session.icon).toBe(THIRD_PARTY_ICON)
+    })
+
+    test('the app to connect gets no icon from another host', async () => {
+      const { controller, mainCtrl, session } = await prepareSession(THIRD_PARTY_ICON)
+      await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest(session))
+
+      expect(controller.dappToConnect?.icon).toBe('')
+      expect(JSON.stringify(controller.toJSON().dappToConnect)).not.toContain(THIRD_PARTY_ICON)
+    })
+
+    test('flags a site that uses the icon of a well-known app, although the icon is not shown', async () => {
+      const { controller, mainCtrl, session } = await prepareSession(
+        IMPERSONATED_APP_ICON,
+        'Claim Rewards'
+      )
+      await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+
+      await controller.setDappToConnectIfNeeded(makeConnectRequest(session))
+
+      expect(controller.dappToConnect?.icon).toBe('')
+      expect(controller.dappToConnectImpersonation).toMatchObject({
+        appName: 'Uniswap',
+        reason: 'icon'
+      })
+    })
+
+    test('a site already on the scam lists gets no impersonation warning', async () => {
+      const { controller, mainCtrl, session } = await prepareSession(
+        IMPERSONATED_APP_ICON,
+        'Claim Rewards'
+      )
+      const updateDomainsSpy = jest
+        .spyOn(mainCtrl.phishing, 'updateDomainsBlacklistedStatus')
+        .mockImplementation(async (_urls, callback) => {
+          callback({ [session.id]: 'BLACKLISTED' })
+        })
+
+      try {
+        await controller.setDappToConnectIfNeeded(makeConnectRequest(session))
+
+        expect(controller.dappToConnect?.blacklisted).toBe('BLACKLISTED')
+        expect(controller.dappToConnectImpersonation).toBe(null)
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
+
+    test('clears the impersonation warning when there is no app to connect anymore', async () => {
+      const { controller, mainCtrl, session } = await prepareSession(
+        IMPERSONATED_APP_ICON,
+        'Claim Rewards'
+      )
+      await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+      await controller.setDappToConnectIfNeeded(makeConnectRequest(session))
+      expect(controller.dappToConnectImpersonation).not.toBe(null)
+
+      await controller.setDappToConnectIfNeeded(null)
+
+      expect(controller.dappToConnectImpersonation).toBe(null)
+    })
+
+    test('an app added from the UI with an icon on another host is stored without it', async () => {
+      const { controller } = await prepareTest()
+      await controller.initialLoadPromise
+
+      await controller.addDapp(
+        makeDapp({
+          id: 'icon-test-dapp.xyz',
+          name: 'Icon Test Dapp',
+          url: SITE_URL,
+          icon: THIRD_PARTY_ICON,
+          isCustom: true,
+          isConnected: true
+        })
+      )
+
+      expect(controller.getDapp('icon-test-dapp.xyz')?.icon).toBe('')
+    })
+
+    test('drops an icon on another host from apps stored before it was checked', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [
+          makeDapp({
+            id: 'icon-test-dapp.xyz',
+            name: 'Icon Test Dapp',
+            url: SITE_URL,
+            icon: THIRD_PARTY_ICON,
+            isCustom: true,
+            isConnected: true,
+            connectedSources: ['injected']
+          }),
+          makeDapp({
+            id: 'own-icon-dapp.xyz',
+            name: 'Own Icon Dapp',
+            url: 'https://own-icon-dapp.xyz',
+            icon: 'https://own-icon-dapp.xyz/logo.png',
+            isCustom: true,
+            isConnected: true,
+            connectedSources: ['injected']
+          })
+        ])
+      })
+      await controller.initialLoadPromise
+
+      expect(controller.getDapp('icon-test-dapp.xyz')?.icon).toBe('')
+      expect(controller.getDapp('own-icon-dapp.xyz')?.icon).toBe(
+        'https://own-icon-dapp.xyz/logo.png'
+      )
     })
   })
 })

@@ -11,6 +11,7 @@ import {
 } from '../../consts/safe'
 import { IAccountsController, SafeAccountCreation } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -18,6 +19,8 @@ import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { ISafeController, SafeAccountByOwner } from '../../interfaces/safe'
 import { IStorageController } from '../../interfaces/storage'
 import {
+  addMessage,
+  addMessageSignature,
   ExtendedSafeMessage,
   fetchAllPending,
   fetchExecutedTransactions,
@@ -25,16 +28,22 @@ import {
   getApiKit,
   getMessage,
   getSafeAccountByOwner,
+  getVerifiedSafeConfirmations,
   isSafeContract,
+  isSafeMessageHashValid,
+  isSafeTxHashValid,
+  SafeFetchedTransaction,
   SafePendingFetchNetwork,
-  SafeResults
+  SafeResults,
+  sortSigs
 } from '../../libs/safe/safe'
 import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { onFeatureFlagChange } from '../featureFlags/onFeatureFlagChange'
 
 import type { SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
-import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
+import type { EIP712TypedData } from '@safe-global/types-kit'
 
 const SAFE_OWNER_SEARCH_TTL = 5 * 60 * 1000
 const SAFE_OWNER_SEARCH_DEBOUNCE = 3 * 1000
@@ -64,6 +73,10 @@ export class SafeController extends EventEmitter implements ISafeController {
   #keystore: IKeystoreController
 
   #providers: IProvidersController
+
+  #featureFlags: IFeatureFlagsController
+
+  #onSafeApiSettingChangeUnsubscribe?: () => void
 
   /**
    * The last time a request to fetch pending Safe txns was made, per Safe
@@ -107,7 +120,8 @@ export class SafeController extends EventEmitter implements ISafeController {
     providers,
     storage,
     accounts,
-    keystore
+    keystore,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     networks: INetworksController
@@ -115,6 +129,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     storage: IStorageController
     accounts: IAccountsController
     keystore: IKeystoreController
+    featureFlags: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
     this.#networks = networks
@@ -122,9 +137,34 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.#storage = storage
     this.#accounts = accounts
     this.#keystore = keystore
+    this.#featureFlags = featureFlags
+    // Opted out of the Safe API: the counts would never refresh again, so drop them
+    this.#onSafeApiSettingChangeUnsubscribe = onFeatureFlagChange(
+      featureFlags,
+      'safeApi',
+      (isEnabled) => {
+        if (isEnabled) return
+        this.pendingCountBySafe = {}
+        this.#pendingFetchedAt = {}
+        this.emitUpdate()
+      }
+    )
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
+  }
+
+  /**
+   * Await `#featureFlags.initialLoadPromise` before reading it, as until the flags are loaded
+   * from storage it's the default (on), even for a user who opted out
+   */
+  get #isSafeApiEnabled() {
+    return this.#featureFlags.isFeatureEnabled('safeApi')
+  }
+
+  /** Background Safe API requests are made only while unlocked and not opted out */
+  get #canSyncWithSafeApi() {
+    return this.#keystore.isUnlocked && this.#isSafeApiEnabled
   }
 
   async #load() {
@@ -142,6 +182,9 @@ export class SafeController extends EventEmitter implements ISafeController {
   async #findSafe(safeAddr: string) {
     this.importError = undefined
     this.safeInfo = undefined
+    await this.#featureFlags.initialLoadPromise
+    // The UI asks the user to turn the Safe API back on before searching
+    if (!this.#isSafeApiEnabled) return
 
     // search enabled networks that are Safe supported
     const safeNetworks = this.#networks.networks.filter(
@@ -157,6 +200,8 @@ export class SafeController extends EventEmitter implements ISafeController {
           .catch(() => ({ chainId: n.chainId, code: '0x' }))
       )
     )
+    // Opted out while the networks were checked: the rest of the search asks the Safe API
+    if (!this.#isSafeApiEnabled) return
     const deployedOn = codes.find((c) => c.code && c.code !== '0x')
     if (!deployedOn) {
       this.importError = {
@@ -247,6 +292,9 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.emitUpdate()
   }
   async findSafesByOwner(ownerAddress: string) {
+    await this.#featureFlags.initialLoadPromise
+    // The UI asks the user to turn the Safe API back on before searching
+    if (!this.#isSafeApiEnabled) return
     const owner = getAddress(ownerAddress) as Hex
     await this.#networks.initialLoadPromise
 
@@ -284,6 +332,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.emitUpdate()
 
     for (let i = 0; i < safeNetworks.length; i += SAFE_API_BATCH_SIZE) {
+      if (this.#stopOwnerSearchIfOptedOut(owner)) return
       const networkBatch = safeNetworks.slice(i, i + SAFE_API_BATCH_SIZE)
       const batchResults = await Promise.allSettled(
         networkBatch.map(async (network) => {
@@ -327,6 +376,7 @@ export class SafeController extends EventEmitter implements ISafeController {
         ([address]) => !accountsByAddress.has(address)
       )
       for (let safeIndex = 0; safeIndex < newSafeEntries.length; safeIndex += SAFE_API_BATCH_SIZE) {
+        if (this.#stopOwnerSearchIfOptedOut(owner)) return
         const safeBatch = newSafeEntries.slice(safeIndex, safeIndex + SAFE_API_BATCH_SIZE)
         const safeAccounts = await Promise.all(
           safeBatch.map(([, safeData]) =>
@@ -383,6 +433,19 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.emitUpdate()
   }
 
+  /**
+   * Stops an owner search the user opted out of the Safe API during, as each of its next steps
+   * asks it. Its results so far are dropped, so turning sync back on searches again in full.
+   * Returns whether the search was stopped
+   */
+  #stopOwnerSearchIfOptedOut(owner: Hex): boolean {
+    if (this.#isSafeApiEnabled) return false
+
+    delete this.safeOwnerSearches[owner]
+    this.emitUpdate()
+    return true
+  }
+
   getMessageId(msg: SafeMessage): string {
     return `${msg.messageHash}`
   }
@@ -414,6 +477,114 @@ export class SafeController extends EventEmitter implements ISafeController {
     )
   }
 
+  /**
+   * The Safe's owners on the chain, from its account state, where they're read onchain. Undefined
+   * when the state isn't loaded, so that confirmations are then checked only against their
+   * signatures, the same as before the owners were checked
+   */
+  #getOwners(safeAddr: string, chainId: bigint | string): string[] | undefined {
+    const owners = this.#accounts.accountStates[safeAddr]?.[chainId.toString()]?.associatedKeys
+
+    return owners?.length ? owners : undefined
+  }
+
+  /**
+   * The Safe message from the Safe Transaction Service if it matches its Safe message hash, with
+   * only the owner confirmations that could be verified (see getVerifiedSafeConfirmations).
+   * Whether it's confirmed and its prepared signature are worked out again from them, as the
+   * prepared signature is what the app that asked for the message gets. Null if the hash doesn't
+   * match the message
+   */
+  async #verifyMessage(
+    safeAddr: Hex,
+    chainId: bigint,
+    threshold: number,
+    message: SafeMessage
+  ): Promise<ExtendedSafeMessage | null> {
+    if (!isSafeMessageHashValid(message, safeAddr, chainId)) return null
+
+    // A contract owner (e.g. another Safe) signs a message with a contract signature, which the
+    // signature the app gets can carry (see sortSigs)
+    const confirmations = await getVerifiedSafeConfirmations(
+      safeAddr,
+      message.messageHash,
+      message.confirmations,
+      this.#providers.providers[chainId.toString()],
+      { owners: this.#getOwners(safeAddr, chainId), acceptContractSignatures: true }
+    )
+
+    return {
+      ...message,
+      confirmations,
+      isConfirmed: threshold > 0 && confirmations.length >= threshold,
+      preparedSignature: sortSigs(
+        confirmations.map(({ signature }) => signature as Hex),
+        message.messageHash,
+        confirmations
+      )
+    }
+  }
+
+  /**
+   * Keeps the pending Safe txns and messages from the Safe Transaction Service that match their
+   * hash, each with only the owner confirmations that could be verified. The owners sign and
+   * execute these from the app, so what the service returns isn't trusted
+   */
+  async #verifyPending(
+    safeAddr: Hex,
+    pending: SafeResults,
+    networks: SafePendingFetchNetwork[]
+  ): Promise<SafeResults> {
+    const verifiedPending: SafeResults = {}
+
+    for (const [chainId, { txns, messages }] of Object.entries(pending)) {
+      const safeVersion = this.#accounts.accountStates[safeAddr]?.[chainId]?.safeVersion
+      const validTxns = txns.filter((txn) =>
+        isSafeTxHashValid(txn, safeAddr, BigInt(chainId), safeVersion)
+      )
+      const threshold = networks.find((n) => n.chainId.toString() === chainId)?.threshold ?? 0
+      const verifiedMessages = (
+        await Promise.all(
+          messages.map((message) =>
+            this.#verifyMessage(safeAddr, BigInt(chainId), threshold, message)
+          )
+        )
+      ).filter((message) => message !== null)
+
+      if (validTxns.length !== txns.length || verifiedMessages.length !== messages.length) {
+        this.emitError({
+          level: 'silent',
+          message: 'Ignored pending Safe transactions or messages that do not match their hash',
+          error: new Error(
+            `safe: ${txns.length - validTxns.length} pending txn(s) and ${messages.length - verifiedMessages.length} message(s) of ${safeAddr} on chain ${chainId} do not match their hash`
+          )
+        })
+      }
+
+      const provider = this.#providers.providers[chainId]
+      const verifiedTxns = await Promise.all(
+        validTxns.map(async (txn) =>
+          txn.confirmations
+            ? {
+                ...txn,
+                confirmations: await getVerifiedSafeConfirmations(
+                  safeAddr,
+                  txn.safeTxHash,
+                  txn.confirmations,
+                  provider,
+                  { owners: this.#getOwners(safeAddr, chainId) }
+                )
+              }
+            : txn
+        )
+      )
+
+      verifiedPending[chainId] = { txns: verifiedTxns, messages: verifiedMessages }
+    }
+
+    return verifiedPending
+  }
+
   shouldSkipFetchPending(safeAddr: string, maxAge = FETCH_SAFE_TXNS): boolean {
     const fetchedAt = this.#pendingFetchedAt[safeAddr]
 
@@ -428,14 +599,20 @@ export class SafeController extends EventEmitter implements ISafeController {
     safeAddr: Hex,
     networks: SafePendingFetchNetwork[]
   ): Promise<SafeResults | null> {
-    // do not make Safe requests if the extension is locked
-    if (!this.#keystore.isUnlocked) return null
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#canSyncWithSafeApi) return null
 
     this.#pendingFetchedAt[safeAddr] = Date.now()
     const pending = await fetchAllPending(networks, safeAddr)
     if (!pending) return null
+    // Opted out while the request was on its way: its answer would bring back the counts
+    // (and the requests the MainController builds from it) that opting out has just cleared
+    if (!this.#isSafeApiEnabled) return null
 
-    const visiblePending = this.#filterOutHidden(pending, safeAddr)
+    const verifiedPending = await this.#verifyPending(safeAddr, pending, networks)
+    // Checked again, as verifying them waits for the network too
+    if (!this.#isSafeApiEnabled) return null
+    const visiblePending = this.#filterOutHidden(verifiedPending, safeAddr)
     this.#setPendingCounts(safeAddr, visiblePending)
     return visiblePending
   }
@@ -517,8 +694,8 @@ export class SafeController extends EventEmitter implements ISafeController {
   }
 
   async #updateOtherSafesPendingCounts(selectedAccountAddr?: string) {
-    // do not make Safe requests if the extension is locked
-    if (!this.#keystore.isUnlocked) return
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#canSyncWithSafeApi) return
 
     this.#clearCountsOfSafesWithoutOwner(selectedAccountAddr)
 
@@ -545,8 +722,8 @@ export class SafeController extends EventEmitter implements ISafeController {
         if (!isFirstRequest) await wait(SAFE_PENDING_REQUEST_PAUSE)
         isFirstRequest = false
 
-        // the wallet may get locked while the Safes are updated one after the other
-        if (!this.#keystore.isUnlocked) return
+        // the wallet may get locked (or opted out) while the Safes are updated one by one
+        if (!this.#canSyncWithSafeApi) return
 
         const { threshold, nonce } = chainAccountState
         await this.fetchPending(safe.addr as Hex, [{ chainId, threshold, nonce }]).catch(
@@ -562,21 +739,37 @@ export class SafeController extends EventEmitter implements ISafeController {
     }
   }
 
+  /**
+   * Fetches the Safe txns from the nonces of the passed chains on. The ones still waiting for
+   * the owners keep only the owner confirmations that could be verified (see
+   * getVerifiedSafeConfirmations), as they are added to the signatures of open requests
+   */
   async fetchExecuted(
     safeAddr: Hex,
     chains: { chainId: bigint; minNonce: number }[]
-  ): Promise<
-    {
-      safeTxnHash: Hex
-      nonce: string
-      transactionHash?: Hex
-      confirmations?: SafeMultisigConfirmationResponse[]
-    }[]
-  > {
-    // do not make Safe requests if the extension is locked
-    if (!this.#keystore.isUnlocked) return []
+  ): Promise<SafeFetchedTransaction[]> {
+    await this.#featureFlags.initialLoadPromise
+    // do not make Safe requests if the extension is locked or the user opted out
+    if (!this.#canSyncWithSafeApi) return []
 
-    return fetchExecutedTransactions(safeAddr, chains)
+    const txns = await fetchExecutedTransactions(safeAddr, chains)
+
+    return Promise.all(
+      txns.map(async (txn) =>
+        txn.confirmations
+          ? {
+              ...txn,
+              confirmations: await getVerifiedSafeConfirmations(
+                safeAddr,
+                txn.safeTxnHash,
+                txn.confirmations,
+                this.#providers.providers[txn.chainId.toString()],
+                { owners: this.#getOwners(safeAddr, txn.chainId) }
+              )
+            }
+          : txn
+      )
+    )
   }
 
   async rejectTxnId(safeTxnIds: string[]) {
@@ -589,20 +782,105 @@ export class SafeController extends EventEmitter implements ISafeController {
     return this.#storage.set('rejectedSafeTxns', this.#rejectedSafeTxns)
   }
 
+  /**
+   * Fetches the Safe messages of the Safe with the passed hashes. A message is returned only if
+   * it's the one asked for and matches its hash, with only the owner confirmations that could be
+   * verified (see #verifyMessage)
+   */
   async getMessagesByHash(
+    safeAddr: Hex,
     data: { chainId: bigint; threshold: number; messageHash: Hex }[]
   ): Promise<ExtendedSafeMessage[]> {
+    await this.#featureFlags.initialLoadPromise
     const messages = []
     for (let i = 0; i < data.length; i++) {
-      // do not make Safe requests if the extension is locked, even if it got locked midway
-      if (!this.#keystore.isUnlocked) break
+      // do not make Safe requests if locked or opted out, even if it happened midway
+      if (!this.#canSyncWithSafeApi) break
 
       const entry = data[i]!
       const msg = await getMessage(entry).catch((e) => e)
       if (!msg || msg instanceof Error) continue
-      messages.push(msg)
+
+      const verifiedMsg =
+        msg.messageHash.toLowerCase() === entry.messageHash.toLowerCase()
+          ? await this.#verifyMessage(safeAddr, entry.chainId, entry.threshold, msg)
+          : null
+      if (!verifiedMsg) {
+        this.emitError({
+          level: 'silent',
+          message: 'Ignored a Safe message that does not match its hash',
+          error: new Error(
+            `safe: the Safe API returned a message of ${safeAddr} on chain ${entry.chainId} that does not match the hash ${entry.messageHash}`
+          )
+        })
+        continue
+      }
+
+      messages.push(verifiedMsg)
     }
     return messages
+  }
+
+  /**
+   * Adds a Safe message with its first owner signature to the Safe API, so the other owners can
+   * sign it too. Nothing is sent while the user opted out of the Safe API. A failure is only
+   * logged, as the signature is kept in the wallet either way
+   */
+  async addMsgToSafeGlobal({
+    chainId,
+    safeAddr,
+    message,
+    signature,
+    origin
+  }: {
+    chainId: bigint
+    safeAddr: Hex
+    message: string | EIP712TypedData
+    signature: string
+    /** The requesting dapp, so the other owners see where the request came from */
+    origin?: string
+  }) {
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#isSafeApiEnabled) return
+
+    await withTimeout(() => addMessage(chainId, safeAddr, message, signature, origin), {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    }).catch((e) => {
+      console.log('failed to send message to Safe Global: ', e)
+    })
+  }
+
+  /**
+   * Adds another owner signature to a Safe message the Safe API already has. Nothing is sent
+   * while the user opted out of the Safe API. A failure is only logged, as the signature is kept
+   * in the wallet either way
+   */
+  async addSigToSafeGlobal({
+    chainId,
+    messageHash,
+    signature
+  }: {
+    chainId: bigint
+    messageHash: string
+    signature: string
+  }) {
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#isSafeApiEnabled) return
+
+    await withTimeout(() => addMessageSignature(chainId, messageHash, signature), {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe API: add message signature timed out after ${SAFE_API_TIMEOUT_MS}ms`
+    }).catch((e) => {
+      console.log('failed to send message to Safe Global: ', e)
+    })
+  }
+
+  destroy() {
+    super.destroy()
+    // Once only: a second call would remove another listener of the feature flags
+    this.#onSafeApiSettingChangeUnsubscribe?.()
+    this.#onSafeApiSettingChangeUnsubscribe = undefined
   }
 
   toJSON() {

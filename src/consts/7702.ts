@@ -9,6 +9,9 @@ export interface Custom7702Settings {
 
 export const eip7702AmbireContracts = [EIP_7702_AMBIRE_ACCOUNT, EIP_7702_KATANA, EIP_7702_GRID_PLUS]
 
+/** The code of an EIP-7702 delegated EOA is this prefix followed by the delegate's address. */
+export const EIP_7702_DELEGATION_PREFIX = '0xef0100'
+
 export interface EIP7702Auth {
   address: Hex
   chainId: Hex

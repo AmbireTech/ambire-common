@@ -137,8 +137,7 @@ export const AMBIRE_IDB_SCHEMA: IdbSchema = {
     {
       fromVersion: 0,
       toVersion: 1,
-      description:
-        'Initial schema: accountsOps store with timestamp, status and txnId indexes'
+      description: 'Initial schema: accountsOps store with timestamp, status and txnId indexes'
     }
   ]
 }

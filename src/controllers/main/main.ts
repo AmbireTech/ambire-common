@@ -8,6 +8,7 @@ import {
   BIP44_STANDARD_DERIVATION_TEMPLATE
 } from '@/consts/derivation'
 import { FeatureFlags } from '@/consts/featureFlags'
+import { HARDWARE_WALLET_DEVICE_NAMES } from '@/consts/hardwareWallets'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
 import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
 import { PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS } from '@/consts/privacyPools'
@@ -119,6 +120,7 @@ import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
 import { PrivacyPoolsProverFactory } from '@/libs/privacyPools/prover'
+import type { MerkleTreeBuilder } from '@kohaku-eth/privacy-pools'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
@@ -249,6 +251,9 @@ export class MainController extends EventEmitter implements IMainController {
 
   #fetchSafeTxnsPromise: Promise<void> | undefined
 
+  /** Stop the listeners to the feature flags changes, see `destroy` */
+  #featureFlagChangeUnsubscribes: (() => void)[] = []
+
   safe: ISafeController
 
   get continuousUpdates() {
@@ -273,6 +278,7 @@ export class MainController extends EventEmitter implements IMainController {
     uiManager,
     privacyPoolsCircuitsBaseUrl,
     privacyPoolsProverFactory,
+    privacyPoolsMerkleTreeBuilder,
     idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -294,6 +300,8 @@ export class MainController extends EventEmitter implements IMainController {
     privacyPoolsCircuitsBaseUrl: string
     /** Where to generate Privacy Pools proofs if not here - see `PrivacyPoolsController`. */
     privacyPoolsProverFactory?: PrivacyPoolsProverFactory
+    /** Where to build Privacy Pools' large Merkle trees if not here - see `PrivacyPoolsController`. */
+    privacyPoolsMerkleTreeBuilder?: MerkleTreeBuilder
     idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
@@ -367,15 +375,56 @@ export class MainController extends EventEmitter implements IMainController {
     // Switching the price source empties the price cache (see TokenPricesController), so the
     // portfolio is updated right away to show what the setting changed, instead of keeping the
     // other source's prices until the next scheduled update
-    onFeatureFlagChange(this.featureFlags, 'tokenPrices', () => {
-      this.updateSelectedAccountPortfolio().catch((error) =>
-        this.emitError({
-          level: 'silent',
-          message: 'Failed to update the portfolio after the token prices setting changed',
-          error
-        })
-      )
-    })
+    const unsubscribeTokenPricesChange = onFeatureFlagChange(
+      this.featureFlags,
+      'tokenPrices',
+      () => {
+        this.updateSelectedAccountPortfolio().catch((error) =>
+          this.emitError({
+            level: 'silent',
+            message: 'Failed to update the portfolio after the token prices setting changed',
+            error
+          })
+        )
+      }
+    )
+    // Opting back in to the Safe API syncs the Safes right away, instead of on the next
+    // time a view is opened or focused. Opting out is handled by the SafeController
+    const unsubscribeSafeApiChange = onFeatureFlagChange(
+      this.featureFlags,
+      'safeApi',
+      (isEnabled) => {
+        if (!isEnabled) return
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchAllSafesPending()
+      }
+    )
+    // Turning auto discovery off must hide the DeFi positions found through the API, and turning
+    // it on must bring them back. Every account is marked as outdated, as its data would otherwise
+    // look fresh and its next update could be skipped (e.g. after switching to it), and the
+    // selected account is updated right away instead of on the next scheduled update.
+    // `defiMaxDataAgeMs: 0` is still needed for the selected account: an update that was already
+    // running when the setting changed finishes first and saves its data as fresh again, so the
+    // API call of this update could otherwise be skipped
+    const unsubscribeAutoDiscoveryChange = onFeatureFlagChange(
+      this.featureFlags,
+      'tokenAndDefiAutoDiscovery',
+      () => {
+        this.portfolio.markAllAccountsAsOutdated()
+        this.updateSelectedAccountPortfolio({ defiMaxDataAgeMs: 0 }).catch((error) =>
+          this.emitError({
+            level: 'silent',
+            message: 'Failed to update the portfolio after the auto discovery setting changed',
+            error
+          })
+        )
+      }
+    )
+    this.#featureFlagChangeUnsubscribes = [
+      unsubscribeTokenPricesChange,
+      unsubscribeSafeApiChange,
+      unsubscribeAutoDiscoveryChange
+    ]
     this.providers = new ProvidersController({
       eventEmitterRegistry,
       storage: this.storage,
@@ -422,7 +471,8 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       storage: this.storage,
       accounts: this.accounts,
-      keystore: this.keystore
+      keystore: this.keystore,
+      featureFlags: this.featureFlags
     })
 
     this.survey = new SurveyController({
@@ -489,6 +539,7 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
+      merkleTreeBuilder: privacyPoolsMerkleTreeBuilder,
       onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds),
       getPendingAccountOps: () => this.getPendingAccountOps(),
       tokenPrices
@@ -569,9 +620,6 @@ export class MainController extends EventEmitter implements IMainController {
     })
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.erc7730 = new Erc7730Controller({
-      storage: this.storage,
-      callRelayer: this.callRelayer,
-      featureFlags: this.featureFlags,
       providers: this.providers,
       ui: this.ui,
       eventEmitterRegistry
@@ -593,7 +641,8 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       this.dapps,
       this.erc7730,
-      platform
+      platform,
+      this.safe
     )
 
     this.activity = new ActivityController(
@@ -697,6 +746,7 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       keystore: this.keystore,
       accounts: this.accounts,
+      accountPicker: this.accountPicker,
       networks: this.networks,
       addressBook: this.addressBook,
       featureFlags: this.featureFlags,
@@ -726,6 +776,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.erc7730,
       this.contractInfo,
       platform,
+      // DomainsController is created after this one, so it is read only when needed
+      () => this.domains.domains,
       this.privacyPools,
       eventEmitterRegistry
     )
@@ -970,7 +1022,8 @@ export class MainController extends EventEmitter implements IMainController {
       portfolio: this.portfolio,
       networks: this.networks,
       providers: this.providers,
-      domains: this.domains
+      domains: this.domains,
+      swapAndBridge: this.swapAndBridge
     })
 
     await this.selectedAccount.initialLoadPromise
@@ -1006,6 +1059,15 @@ export class MainController extends EventEmitter implements IMainController {
 
   lock() {
     this.keystore.lock()
+    // A prepared flow holds its keys (and a sync's recovery phrases) unencrypted until added,
+    // so it ends with the lock. After unlocking, the personalize step has nothing to add.
+    this.accountPicker.reset().catch((error) => {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to reset the account picker on lock',
+        error
+      })
+    })
     void this.ui.syncViewRoutes()
     this.emailVault?.cleanMagicAndSessionKeys()
     this.selectedAccount.setDashboardNetworkFilter(null)
@@ -1327,13 +1389,17 @@ export class MainController extends EventEmitter implements IMainController {
   async #onAccountPickerSuccess({
     accounts,
     keys,
+    seeds,
     accountsToRemove,
     hdPathTemplate
   }: PreparedAccounts) {
     if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator))
       await this.keystore.persistTempSeed()
 
-    let internalKeys = keys.internal
+    // A sync's keys point to the recovery phrases it brought, so those are stored first
+    let internalKeys = seeds.length
+      ? await this.keystore.addSyncedSeeds(seeds, keys.internal)
+      : keys.internal
     const storedSeed = await this.keystore.getKeystoreSeed(this.accountPicker.keyIterator)
     if (storedSeed) {
       await this.keystore.updateSeed({ id: storedSeed.id, hdPathTemplate })
@@ -1727,28 +1793,35 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  /**
+   * Sets up the picker for the devices that run Trezor's firmware: a Trezor, and the
+   * Ambire Ice, whose keys are of their own type (`ambire`), served by their own controller.
+   */
   async #handleAccountPickerInitTrezor(
-    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */
+    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    keyType: 'trezor' | 'ambire' = 'trezor'
   ) {
+    const deviceName = HARDWARE_WALLET_DEVICE_NAMES[keyType]
+
     try {
-      const trezorCtrl = this.#externalSignerControllers.trezor
+      const trezorCtrl = this.#externalSignerControllers[keyType]
 
       if (!trezorCtrl) {
-        const message =
-          'Could not initialize connection with your Trezor device. Please try again later or contact Ambire support.'
+        const message = `Could not initialize connection with your ${deviceName} device. Please try again later or contact Ambire support.`
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
       const { walletSDK } = trezorCtrl
       await this.accountPicker.setInitParams({
-        keyIterator: new TrezorKeyIterator({ walletSDK }),
+        keyIterator: new TrezorKeyIterator({ walletSDK, keyType }),
         hdPathTemplate,
         pageSize: 5,
         shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
-      const message = error?.message || 'Could not unlock the Trezor device. Please try again.'
+      const message =
+        error?.message || `Could not unlock the ${deviceName} device. Please try again.`
       throw new EmittableError({ message, level: 'major', error })
     }
   }
@@ -1760,6 +1833,17 @@ export class MainController extends EventEmitter implements IMainController {
     await this.#setUpPickerForHardwareWallet(
       'handleAccountPickerInitTrezor',
       () => this.#handleAccountPickerInitTrezor(TrezorKeyIterator),
+      requestId
+    )
+  }
+
+  async handleAccountPickerInitAmbireIce(
+    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    requestId?: string
+  ) {
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitAmbireIce',
+      () => this.#handleAccountPickerInitTrezor(TrezorKeyIterator, 'ambire'),
       requestId
     )
   }
@@ -2162,9 +2246,9 @@ export class MainController extends EventEmitter implements IMainController {
     await this.networks.updateNetwork({ areContractsDeployed: true }, network.chainId)
   }
 
-  // remove all keys that have this addr
+  // remove all keys that have this addr, including the ones this device can't sign with
   #removeAccountKeyData(address: Account['addr']) {
-    this.keystore.keys
+    ;[...this.keystore.keys, ...this.keystore.unsupportedKeys]
       .filter((key) => key.addr === address)
       .forEach((key) => {
         this.keystore.removeKey(key.addr, key.type).catch((e) => {
@@ -2209,6 +2293,41 @@ export class MainController extends EventEmitter implements IMainController {
 
   async removeAccount(address: Account['addr']) {
     await this.withStatus('removeAccount', async () => this.#removeAccount(address))
+  }
+
+  /**
+   * Removes a key on the user's request, from every account it signs for, and reloads those
+   * accounts' state so signing and view-only checks stop counting it right away.
+   * Resolves with, and replies to the UI request with, whether the key was removed (a failure is
+   * emitted by the keystore).
+   */
+  async deleteKey(addr: Key['addr'], type: Key['type'], requestId?: string): Promise<boolean> {
+    const accountsWithKey = this.accounts.accounts.filter((account) =>
+      Object.values(this.accounts.accountStates[account.addr] || {}).some((state) =>
+        state.importedAccountKeys.some((key) => key.addr === addr && key.type === type)
+      )
+    )
+
+    const isStored = () =>
+      [...this.keystore.keys, ...this.keystore.unsupportedKeys].some(
+        (key) => key.addr === addr && key.type === type
+      )
+    const wasStored = isStored()
+
+    await this.keystore.deleteKey(addr, type)
+
+    const isRemoved = wasStored && !isStored()
+    if (requestId) this.ui.message.sendUiMessage({ requestId, ok: true, res: isRemoved })
+    if (!isRemoved) return false
+
+    await Promise.all(
+      // Forced, as a fetch that started before the removal would still count the key
+      accountsWithKey.map((account) =>
+        this.accounts.updateAccountState(account.addr, 'latest', [], true)
+      )
+    )
+
+    return true
   }
 
   async #updateAccounts({ accountsToAdd, accountAddressesToRemove }: AccountsUpdate) {
@@ -2306,7 +2425,16 @@ export class MainController extends EventEmitter implements IMainController {
     // the wallet may have been locked while the selected Safe was fetched
     if (!this.keystore.isUnlocked) return
 
-    await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
+    // Caught here, as every caller fires this without awaiting it
+    await this.safe
+      .updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
+      .catch((error) =>
+        this.emitError({
+          level: 'silent',
+          message: 'Failed to update the pending transactions of the other Safe accounts',
+          error
+        })
+      )
   }
 
   async refreshSafeTxns() {
@@ -2316,9 +2444,14 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
+    // The flags are read once loaded, as until then they are the defaults. Awaited before the
+    // checks below, as the selected account may change meanwhile
+    await this.featureFlags.initialLoadPromise
     if (!this.selectedAccount?.account?.safeCreation) return
     // do not make Safe requests if the wallet is locked
     if (!this.keystore.isUnlocked) return
+    // Opted out of the Safe API: nothing would be fetched, so don't show a fetch in progress
+    if (!this.featureFlags.isFeatureEnabled('safeApi')) return
     // cache the addr here to prevent race conditions
     const safeAddr = this.selectedAccount?.account?.addr as Hex
 
@@ -2811,6 +2944,12 @@ export class MainController extends EventEmitter implements IMainController {
     this.ui.message.sendUiMessage(
       error ? { requestId, ok: false, error } : { requestId, ok: true, res }
     )
+  }
+
+  destroy() {
+    super.destroy()
+    // Emptied as they're called, so a second call can't remove other listeners of the flags
+    this.#featureFlagChangeUnsubscribes.splice(0).forEach((unsubscribe) => unsubscribe())
   }
 
   // includes the getters in the stringified instance

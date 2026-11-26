@@ -1,3 +1,4 @@
+import { BICONOMY, PIMLICO } from '../../consts/bundlers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -111,5 +112,37 @@ describe('bundler switcher: no switch cases', () => {
     })
     expect(switcher.hasControllerForbiddenUpdates()).toBe(false)
     expect(switcher.canSwitch(baseAcc)).toBe(true)
+  })
+})
+
+describe('bundler switcher: running out of bundlers', () => {
+  const baseWithTwoBundlers: Network = {
+    ...base,
+    erc4337: { ...base.erc4337, bundlers: [PIMLICO, BICONOMY], defaultBundler: PIMLICO }
+  }
+  const noUpdatesForbidden = () => false
+
+  it('throws a clear error when every bundler was already used', () => {
+    const switcher = new BundlerSwitcher(baseWithTwoBundlers, noUpdatesForbidden)
+    switcher.switch()
+
+    expect(() => switcher.switch()).toThrow('no available bundlers to switch')
+  })
+  it('starts over from the first bundler on a force switch after every bundler was used', () => {
+    const switcher = new BundlerSwitcher(baseWithTwoBundlers, noUpdatesForbidden)
+    switcher.switch()
+
+    expect(switcher.forceSwitch().getName()).toBe(PIMLICO)
+    expect(switcher.canSwitch()).toBe(true)
+  })
+  it('keeps the current bundler on a force switch when the network has no bundler support', () => {
+    const noBundlerSupport: Network = {
+      ...base,
+      erc4337: { ...base.erc4337, hasBundlerSupport: false }
+    }
+    const switcher = new BundlerSwitcher(noBundlerSupport, noUpdatesForbidden)
+    const currentBundler = switcher.getBundler()
+
+    expect(switcher.forceSwitch()).toBe(currentBundler)
   })
 })

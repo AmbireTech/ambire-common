@@ -1,6 +1,5 @@
-import { ZeroAddress } from 'ethers'
+import { Wallet, ZeroAddress } from 'ethers'
 
-import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { afterEach, describe, expect, jest, test } from '@jest/globals'
 
 import {
@@ -14,25 +13,25 @@ import {
   suspiciousHostingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
+import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { InternalSigner } from '../../../test/keystore'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
-import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
-import { IKeystoreController } from '../../interfaces/keystore'
+import { IKeystoreController, Key } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
+import { ISafeController } from '../../interfaces/safe'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
+import { Erc7730Registry } from '../../libs/humanizer/erc7730/types'
 import * as safeLib from '../../libs/safe/safe'
 import { Erc7730Controller } from '../erc7730/erc7730'
-import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { UiController } from '../ui/ui'
 import { SignMessageController } from './signMessage'
 
@@ -91,6 +90,21 @@ const createDeferred = <T>() => {
   return { promise, resolve }
 }
 
+/**
+ * Providers for the `Erc7730Controller` that hold its descriptor lookups until `releaseLookups` is
+ * called, as it waits for the providers to load before looking anything up. They have no network,
+ * so nothing is read from the chain.
+ */
+const makeHeldErc7730Providers = () => {
+  const initialLoad = createDeferred<void>()
+  const providers = { initialLoadPromise: initialLoad.promise, providers: {} }
+
+  return {
+    providers: providers as unknown as IProvidersController,
+    releaseLookups: () => initialLoad.resolve()
+  }
+}
+
 const createPermitTypedMessage = (): Message => ({
   fromRequestId: 2,
   accountAddr: account.addr,
@@ -125,29 +139,14 @@ const createPermitTypedMessage = (): Message => ({
 })
 
 /**
- * `SignMessageController` reaches the relayer only through `Erc7730Controller`, which owns the
- * fetching, the descriptor cache and its persistence - so the tests give it a real one over the
- * mocked relayer, with the cache kept in memory for the duration of the test.
+ * `SignMessageController` gets its ERC-7730 descriptors only through `Erc7730Controller`, which
+ * looks them up in the registry - so the tests give it a real one over a registry of their own.
  */
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
 
-const makeErc7730Controller = (callRelayer: any, featureFlags?: IFeatureFlagsController) => {
-  const store: Record<string, any> = {}
-  const storage = {
-    get: async (key: string, defaultValue?: any) => (key in store ? store[key] : defaultValue),
-    set: async (key: string, value: any) => {
-      store[key] = value
-    }
-  }
-
-  return new Erc7730Controller({
-    storage: storage as any,
-    callRelayer,
-    featureFlags: featureFlags || new FeatureFlagsController({}, storage as any),
-    ui: uiCtrl
-  })
-}
+const makeErc7730Controller = (registry: Erc7730Registry, providers?: IProvidersController) =>
+  new Erc7730Controller({ registry, providers, ui: uiCtrl })
 
 describe('SignMessageController', () => {
   let signMessageController: ISignMessageController
@@ -157,7 +156,6 @@ describe('SignMessageController', () => {
   let providersCtrl: IProvidersController
   let inviteCtrl: IInviteController
   let dappsCtrl: IDappsController
-  let featureFlagsCtrl: IFeatureFlagsController
 
   beforeEach(() => {})
   beforeAll(async () => {
@@ -176,7 +174,6 @@ describe('SignMessageController', () => {
     accountsCtrl = mainCtrl.accounts
     inviteCtrl = mainCtrl.invite
     dappsCtrl = mainCtrl.dapps
-    featureFlagsCtrl = mainCtrl.featureFlags
   })
 
   beforeEach(async () => {
@@ -260,42 +257,98 @@ describe('SignMessageController', () => {
     expect(controller.messageToSign).toBeNull()
   })
 
-  test('should resolve when adding a message to Safe Global times out', async () => {
-    const accountsController = {
-      initialLoadPromise: Promise.resolve(),
-      accounts: [account],
-      getOrFetchAccountOnChainState: jest.fn(() => Promise.resolve(accountOnchainState))
-    } as unknown as IAccountsController
-    const controller = new SignMessageController(
-      keystoreCtrl,
-      providersCtrl,
-      networksCtrl,
-      accountsController,
-      {},
-      inviteCtrl
-    )
-    await controller.init({ messageToSign })
-    jest.useFakeTimers()
-    const addMessageSpy = jest
-      .spyOn(safeLib, 'addMessage')
-      .mockImplementation(() => new Promise(() => undefined))
-    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
-
-    try {
-      const addMessagePromise = controller.addMsgToSafeGlobal('0xsignature', 'message')
-
-      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
-
-      await expect(addMessagePromise).resolves.toBeUndefined()
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        'failed to send message to Safe Global: ',
-        new Error(`Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`)
-      )
-    } finally {
-      addMessageSpy.mockRestore()
-      consoleLogSpy.mockRestore()
-      jest.useRealTimers()
+  describe('the signatures of a Safe message that needs more owners', () => {
+    const safeSignature = `0x${'11'.repeat(65)}`
+    const safeAccount: Account = {
+      ...account,
+      safeCreation: {
+        factoryAddr: account.addr as Hex,
+        singleton: account.addr as Hex,
+        saltNonce: '0x00',
+        setupData: '0x'
+      }
     }
+
+    /** Signs the message with one owner of a Safe that needs two */
+    const signWithOneOfTwoOwners = async (safe?: ISafeController) => {
+      const safeAccountsCtrl = {
+        initialLoadPromise: Promise.resolve(),
+        accounts: [safeAccount],
+        getOrFetchAccountOnChainState: jest.fn(() =>
+          Promise.resolve({ ...accountOnchainState, threshold: 2 })
+        )
+      } as unknown as IAccountsController
+      const controller = new SignMessageController(
+        keystoreCtrl,
+        providersCtrl,
+        networksCtrl,
+        safeAccountsCtrl,
+        {},
+        inviteCtrl,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        safe
+      )
+      const mockSigner = {
+        // @ts-expect-error for mocking purposes only
+        signTypedData: jest.fn().mockResolvedValue(safeSignature),
+        key: { addr: account.addr, type: 'internal', dedicatedToOneSA: true, meta: {} }
+      }
+      // @ts-expect-error spy on the getSigner method and mock its implementation
+      const getSignerSpy = jest.spyOn(keystoreCtrl, 'getSigner').mockResolvedValue(mockSigner)
+
+      try {
+        await controller.init({
+          messageToSign: { ...messageToSign, accountAddr: safeAccount.addr }
+        })
+        controller.setSigners([{ addr: account.addr, type: 'internal' }])
+        await controller.sign()
+      } finally {
+        getSignerSpy.mockRestore()
+      }
+
+      return controller
+    }
+
+    test('are shared with the other owners through the SafeController', async () => {
+      const safe = {
+        addMsgToSafeGlobal: jest.fn<ISafeController['addMsgToSafeGlobal']>(async () => {}),
+        addSigToSafeGlobal: jest.fn<ISafeController['addSigToSafeGlobal']>(async () => {})
+      }
+
+      await signWithOneOfTwoOwners(safe as unknown as ISafeController)
+
+      expect(safe.addMsgToSafeGlobal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chainId: messageToSign.chainId,
+          safeAddr: safeAccount.addr,
+          message: 'test',
+          signature: safeSignature
+        })
+      )
+      expect(safe.addSigToSafeGlobal).not.toHaveBeenCalled()
+    })
+
+    test('are not sent anywhere without a SafeController, as for the auto login', async () => {
+      // stubbed, so a regression fails here instead of reaching the Safe API
+      const addMessageSpy = jest.spyOn(safeLib, 'addMessage').mockResolvedValue(undefined)
+      const addMessageSignatureSpy = jest
+        .spyOn(safeLib, 'addMessageSignature')
+        .mockResolvedValue(undefined as never)
+
+      try {
+        const controller = await signWithOneOfTwoOwners()
+
+        expect(controller.signatures).toEqual([safeSignature])
+        expect(addMessageSpy).not.toHaveBeenCalled()
+        expect(addMessageSignatureSpy).not.toHaveBeenCalled()
+      } finally {
+        addMessageSpy.mockRestore()
+        addMessageSignatureSpy.mockRestore()
+      }
+    })
   })
 
   test('should expose Safe EIP-712 data when initializing a Safe message', async () => {
@@ -370,35 +423,42 @@ describe('SignMessageController', () => {
     expect(signMessageController.signers![0]!.type).toBe('internal')
   })
 
-  test('fetches ERC-7730 EIP-712 descriptors through the relayer', async () => {
+  test('shows loading, then humanizes an EIP-712 message with its ERC-7730 descriptor from the registry', async () => {
     const usdc = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
     const registryPath = 'registry/permit/eip712-permit-ethereum-usdc.json'
     const typedMessageToSign = createPermitTypedMessage()
-    const descriptorResponse = createDeferred<any>()
-    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/eip-712') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:1:${usdc}`]: {
-              Permit: [{ path: registryPath }]
+    const registry: Erc7730Registry = {
+      calldataIndex: {},
+      eip712Index: { [`eip155:1:${usdc}`]: { Permit: [{ path: registryPath }] } },
+      descriptors: {
+        [registryPath]: {
+          display: {
+            formats: {
+              'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)':
+                {
+                  intent: 'Authorize spending of tokens',
+                  fields: [
+                    {
+                      path: 'spender',
+                      label: 'Spender',
+                      format: 'addressName',
+                      visible: 'always'
+                    },
+                    {
+                      path: 'value',
+                      label: 'Max spending amount',
+                      format: 'tokenAmount',
+                      params: { tokenPath: '@.to' },
+                      visible: 'always'
+                    }
+                  ]
+                }
             }
-          },
-          errorState: []
+          }
         }
       }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-
-        return descriptorResponse.promise
-      }
-
-      throw new Error(`Unexpected relayer call: ${path}`)
-    })
+    }
+    const heldProviders = makeHeldErc7730Providers()
 
     signMessageController = new SignMessageController(
       keystoreCtrl,
@@ -409,7 +469,7 @@ describe('SignMessageController', () => {
       inviteCtrl,
       undefined,
       dappsCtrl,
-      makeErc7730Controller(callRelayer, featureFlagsCtrl)
+      makeErc7730Controller(registry, heldProviders.providers)
     )
 
     await signMessageController.init({ messageToSign: typedMessageToSign })
@@ -417,52 +477,12 @@ describe('SignMessageController', () => {
     expect(signMessageController.isHumanizing).toBe(true)
     expect(signMessageController.humanizedMessage).toBeUndefined()
 
-    descriptorResponse.resolve({
-      success: true,
-      display: {
-        formats: {
-          'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)': {
-            intent: 'Authorize spending of tokens',
-            fields: [
-              {
-                path: 'spender',
-                label: 'Spender',
-                format: 'addressName',
-                visible: 'always'
-              },
-              {
-                path: 'value',
-                label: 'Max spending amount',
-                format: 'tokenAmount',
-                params: { tokenPath: '@.to' },
-                visible: 'always'
-              }
-            ]
-          }
-        }
-      }
-    })
+    heldProviders.releaseLookups()
     await new Promise((resolve) => {
       setTimeout(resolve, 0)
     })
 
     expect(signMessageController.isHumanizing).toBe(false)
-    expect(callRelayer).toHaveBeenCalledWith(
-      '/v2/erc7730/eip-712',
-      'GET',
-      undefined,
-      undefined,
-      ERC7730_DESCRIPTOR_WAIT_MS
-    )
-    expect(callRelayer).toHaveBeenCalledWith(
-      '/v2/erc7730/fetch-descriptor',
-      'POST',
-      {
-        descriptorPath: `/${registryPath}`
-      },
-      undefined,
-      ERC7730_DESCRIPTOR_WAIT_MS
-    )
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
       intent: [{ type: 'action', content: 'Authorize spending of tokens' }],
@@ -479,37 +499,33 @@ describe('SignMessageController', () => {
         }
       ]
     })
-
-    callRelayer.mockClear()
-    signMessageController.reset()
-    await signMessageController.init({ messageToSign: typedMessageToSign })
-    await new Promise((resolve) => {
-      setTimeout(resolve, 0)
-    })
-
-    expect(callRelayer).not.toHaveBeenCalled()
-    expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
-      type: 'erc7730',
-      intent: [{ type: 'action', content: 'Authorize spending of tokens' }]
-    })
   })
 
   test('applies nothing from a humanization that was still in progress when it was reset', async () => {
     const usdc = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
     const registryPath = 'registry/permit/eip712-permit-ethereum-usdc.json'
-    const descriptorResponse = createDeferred<any>()
-    const callRelayer = jest.fn(async (path: string) => {
-      if (path === '/v2/erc7730/eip-712') {
-        return {
-          success: true,
-          data: { [`eip155:1:${usdc}`]: { Permit: [{ path: registryPath }] } },
-          errorState: []
+    const registry: Erc7730Registry = {
+      calldataIndex: {},
+      eip712Index: { [`eip155:1:${usdc}`]: { Permit: [{ path: registryPath }] } },
+      descriptors: {
+        [registryPath]: {
+          display: {
+            formats: {
+              'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)':
+                {
+                  intent: 'Authorize spending of tokens',
+                  fields: [
+                    { path: 'spender', label: 'Spender', format: 'addressName', visible: 'always' }
+                  ]
+                }
+            }
+          }
         }
       }
-      if (path === '/v2/erc7730/fetch-descriptor') return descriptorResponse.promise
-
-      throw new Error(`Unexpected relayer call: ${path}`)
-    })
+    }
+    const heldProviders = makeHeldErc7730Providers()
+    const erc7730Ctrl = makeErc7730Controller(registry, heldProviders.providers)
+    const getDescriptorForMessage = jest.spyOn(erc7730Ctrl, 'getDescriptorForMessage')
     signMessageController = new SignMessageController(
       keystoreCtrl,
       providersCtrl,
@@ -519,80 +535,26 @@ describe('SignMessageController', () => {
       inviteCtrl,
       undefined,
       dappsCtrl,
-      makeErc7730Controller(callRelayer, featureFlagsCtrl)
+      erc7730Ctrl
     )
     await signMessageController.init({ messageToSign: createPermitTypedMessage() })
     expect(signMessageController.isHumanizing).toBe(true)
 
     signMessageController.reset()
-    descriptorResponse.resolve({
-      success: true,
-      display: {
-        formats: {
-          'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)': {
-            intent: 'Authorize spending of tokens',
-            fields: [
-              { path: 'spender', label: 'Spender', format: 'addressName', visible: 'always' }
-            ]
-          }
-        }
-      }
-    })
+    heldProviders.releaseLookups()
     await new Promise((resolve) => {
       setTimeout(resolve, 0)
     })
 
-    expect(callRelayer).toHaveBeenCalledWith(
-      '/v2/erc7730/fetch-descriptor',
-      'POST',
-      { descriptorPath: `/${registryPath}` },
-      undefined,
-      ERC7730_DESCRIPTOR_WAIT_MS
-    )
+    // The descriptor did arrive, only after the reset
+    await expect(getDescriptorForMessage.mock.results[0]!.value).resolves.toMatchObject({
+      path: registryPath
+    })
     expect(signMessageController.humanizedMessage).toBeUndefined()
     expect(signMessageController.isHumanizing).toBe(false)
   })
 
-  test('uses fallback humanization without calling the relayer when clear signing is disabled', async () => {
-    const callRelayer = jest.fn(async () => {
-      throw new Error('The relayer should not be called')
-    })
-    const accountsController = {
-      initialLoadPromise: Promise.resolve(),
-      accounts: [account],
-      getOrFetchAccountOnChainState: jest.fn(() => Promise.resolve(accountOnchainState))
-    } as unknown as IAccountsController
-    await featureFlagsCtrl.setFeatureFlag('clearSigning', false)
-
-    try {
-      signMessageController = new SignMessageController(
-        keystoreCtrl,
-        providersCtrl,
-        networksCtrl,
-        accountsController,
-        {},
-        inviteCtrl,
-        undefined,
-        dappsCtrl,
-        makeErc7730Controller(callRelayer, featureFlagsCtrl)
-      )
-
-      await signMessageController.init({ messageToSign: createPermitTypedMessage() })
-      await new Promise((resolve) => {
-        setTimeout(resolve, 0)
-      })
-
-      expect(callRelayer).not.toHaveBeenCalled()
-      expect(signMessageController.isHumanizing).toBe(false)
-      expect(signMessageController.humanizedMessage?.fullVisualization).not.toEqual(
-        expect.arrayContaining([expect.objectContaining({ type: 'erc7730' })])
-      )
-    } finally {
-      await featureFlagsCtrl.setFeatureFlag('clearSigning', true)
-    }
-  })
-
-  test('humanizes a 1inch Order EIP-712 descriptor served as raw relayer JSON', async () => {
+  test('humanizes a 1inch Order EIP-712 message with its ERC-7730 descriptor from the registry', async () => {
     const aggregationRouter = '0x111111125421ca6dc452d289314280a0f8842a65'
     const registryPath = 'registry/1inch/eip712-AggregationRouterV6.json'
     const typedMessageToSign: Message = {
@@ -640,33 +602,22 @@ describe('SignMessageController', () => {
         primaryType: 'Order'
       }
     }
-    const callRelayer = jest.fn(async (path: string, method?: string, body?: any) => {
-      if (path === '/v2/erc7730/eip-712') {
-        expect(method).toBe('GET')
-
-        return {
-          success: true,
-          data: {
-            [`eip155:10:${aggregationRouter}`]: {
-              Order: [
-                {
-                  path: registryPath,
-                  encodeTypeHashes: [
-                    '0x3af21ec5a20011b88d3b7b4ed7c806cef05a5980cf34974bcd53566a131f7e4c'
-                  ]
-                }
+    const registry: Erc7730Registry = {
+      calldataIndex: {},
+      eip712Index: {
+        [`eip155:10:${aggregationRouter}`]: {
+          Order: [
+            {
+              path: registryPath,
+              encodeTypeHashes: [
+                '0x3af21ec5a20011b88d3b7b4ed7c806cef05a5980cf34974bcd53566a131f7e4c'
               ]
             }
-          },
-          errorState: []
+          ]
         }
-      }
-
-      if (path === '/v2/erc7730/fetch-descriptor') {
-        expect(method).toBe('POST')
-        expect(body).toEqual({ descriptorPath: `/${registryPath}` })
-
-        return {
+      },
+      descriptors: {
+        [registryPath]: {
           $schema: '../../specs/erc7730-v2.schema.json',
           context: {
             eip712: {
@@ -703,9 +654,7 @@ describe('SignMessageController', () => {
           }
         }
       }
-
-      throw new Error(`Unexpected relayer call: ${path}`)
-    })
+    }
 
     signMessageController = new SignMessageController(
       keystoreCtrl,
@@ -716,7 +665,7 @@ describe('SignMessageController', () => {
       inviteCtrl,
       undefined,
       dappsCtrl,
-      makeErc7730Controller(callRelayer, featureFlagsCtrl)
+      makeErc7730Controller(registry)
     )
 
     await signMessageController.init({ messageToSign: typedMessageToSign })
@@ -724,22 +673,6 @@ describe('SignMessageController', () => {
       setTimeout(resolve, 0)
     })
 
-    expect(callRelayer).toHaveBeenCalledWith(
-      '/v2/erc7730/eip-712',
-      'GET',
-      undefined,
-      undefined,
-      ERC7730_DESCRIPTOR_WAIT_MS
-    )
-    expect(callRelayer).toHaveBeenCalledWith(
-      '/v2/erc7730/fetch-descriptor',
-      'POST',
-      {
-        descriptorPath: `/${registryPath}`
-      },
-      undefined,
-      ERC7730_DESCRIPTOR_WAIT_MS
-    )
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
       intent: [{ type: 'action', content: '1inch Order' }]
@@ -1104,6 +1037,111 @@ describe('SignMessageController', () => {
 
     signMessageController.removeAccountData(account.addr)
     expect(signMessageController.isInitialized).toBeFalsy()
+  })
+
+  describe('a picked signer removed while the message waits', () => {
+    const [walletA, walletB] = [Wallet.createRandom(), Wallet.createRandom()]
+    const toKey = (wallet: typeof walletA, label: string): Key => ({
+      addr: wallet.address,
+      type: 'internal',
+      label,
+      dedicatedToOneSA: false,
+      meta: { createdAt: Date.now() },
+      isExternallyStored: false
+    })
+    const keyA = toKey(walletA, 'Key A')
+    const keyB = toKey(walletB, 'Key B')
+    let restoreAccountState: () => void = () => {}
+
+    beforeAll(async () => {
+      await keystoreCtrl.addSecret('password', 'password', '', true)
+    })
+
+    beforeEach(async () => {
+      await keystoreCtrl.addKeys(
+        [keyA, keyB].map(({ addr, label }, index) => ({
+          addr,
+          label,
+          type: 'internal' as const,
+          privateKey: [walletA, walletB][index]!.privateKey,
+          dedicatedToOneSA: false,
+          meta: { createdAt: Date.now() }
+        }))
+      )
+      // Both keys sign for the account, Key A first, so it is the default signer
+      const accountState = { ...accountOnchainState, importedAccountKeys: [keyA, keyB] }
+      const getAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'getOrFetchAccountOnChainState')
+        .mockResolvedValue(accountState)
+      const previousAccountStates = accountsCtrl.accountStates
+      accountsCtrl.accountStates = { [account.addr]: { '1': accountState } }
+      restoreAccountState = () => {
+        getAccountStateSpy.mockRestore()
+        accountsCtrl.accountStates = previousAccountStates
+      }
+      await signMessageController.init({ messageToSign })
+    })
+
+    afterEach(async () => {
+      restoreAccountState()
+      const leftKeys = keystoreCtrl.keys.filter(({ addr }) => [keyA.addr, keyB.addr].includes(addr))
+      for (const { addr, type } of leftKeys) {
+        await keystoreCtrl.deleteKey(addr, type)
+      }
+    })
+
+    test('picks the default signer again', async () => {
+      expect(signMessageController.signers).toEqual([keyA])
+
+      await keystoreCtrl.deleteKey(keyA.addr, 'internal')
+
+      expect(signMessageController.signers?.map(({ addr }) => addr)).toEqual([keyB.addr])
+    })
+
+    test('keeps the picked signer when another key is removed', async () => {
+      signMessageController.setSigners([{ addr: keyB.addr, type: 'internal' }])
+
+      await keystoreCtrl.deleteKey(keyA.addr, 'internal')
+
+      expect(signMessageController.signers).toEqual([{ addr: keyB.addr, type: 'internal' }])
+    })
+
+    test('leaves no signer when no key is left', async () => {
+      await keystoreCtrl.deleteKey(keyB.addr, 'internal')
+      await keystoreCtrl.deleteKey(keyA.addr, 'internal')
+
+      expect(signMessageController.signers).toBeUndefined()
+    })
+
+    test('refuses to sign with a removed key the UI still picks', async () => {
+      const { restore } = suppressConsole()
+      await keystoreCtrl.deleteKey(keyA.addr, 'internal')
+      // Like the UI does from an account state that has not reloaded yet
+      signMessageController.setSigners([{ addr: keyA.addr, type: 'internal' }])
+      const getSignerSpy = jest.spyOn(keystoreCtrl, 'getSigner')
+      const errors: string[] = []
+      const unsubscribe = signMessageController.onError(({ message }) => errors.push(message))
+
+      await signMessageController.sign()
+      unsubscribe()
+      restore()
+
+      expect(errors).toContain(
+        'The key picked to sign this message was removed from the wallet. Pick another key, or import it again to sign.'
+      )
+      expect(getSignerSpy).toHaveBeenCalledTimes(1)
+      expect(signMessageController.signedMessage).toBeNull()
+      getSignerSpy.mockRestore()
+    })
+
+    test('changes nothing while signing', async () => {
+      signMessageController.statuses.sign = 'LOADING'
+
+      await keystoreCtrl.deleteKey(keyA.addr, 'internal')
+
+      expect(signMessageController.signers).toEqual([keyA])
+      signMessageController.statuses.sign = 'INITIAL'
+    })
   })
 
   describe('signing authentication', () => {

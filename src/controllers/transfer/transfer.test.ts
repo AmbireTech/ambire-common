@@ -3,12 +3,14 @@ import { formatUnits, getAddress, Interface, ZeroAddress } from 'ethers'
 import { expect, jest } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
+import { LedgerSigner } from '../../../test/keystore'
 import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { StoredKey } from '../../interfaces/keystore'
+import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { CollectionResult, TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
@@ -593,15 +595,19 @@ describe('Transfer Controller - address poisoning against own accounts', () => {
     isOwnAccountViewOnly?: boolean
     sentToRecipients?: { [toAddress: string]: number }
   } = {}) => {
-    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
-      await storageCtrl.set('accounts', [account, ownAccount])
-      await storageCtrl.set('selectedAccount', account.addr)
-      await storageCtrl.set('keystoreKeys', isOwnAccountViewOnly ? [] : [ownAccountKey])
-      await storageCtrl.set('sentToHistory', {
-        domains: {},
-        recipients: { [account.addr]: sentToRecipients }
-      })
-    })
+    const { mainCtrl } = await makeMainController(
+      async (storageCtrl) => {
+        await storageCtrl.set('accounts', [account, ownAccount])
+        await storageCtrl.set('selectedAccount', account.addr)
+        await storageCtrl.set('keystoreKeys', isOwnAccountViewOnly ? [] : [ownAccountKey])
+        await storageCtrl.set('sentToHistory', {
+          domains: {},
+          recipients: { [account.addr]: sentToRecipients }
+        })
+      },
+      // Without a Ledger signer the Ledger key is unsupported, which makes the own account view-only
+      { overrides: { keystoreSigners: { internal: KeystoreSigner, ledger: LedgerSigner } } }
+    )
     await mainCtrl.selectedAccount.select({ account })
     mainCtrl.transfer.resetForm()
 
@@ -673,6 +679,107 @@ describe('Transfer Controller - address poisoning against own accounts', () => {
       matchedPrefixCharsCount: 4,
       matchedSuffixCharsCount: 4
     })
+  })
+})
+
+describe('Transfer Controller - recipient domain typo', () => {
+  const MOVE_ADDRESS = getAddress('0x1111111111111111111111111111111111111111')
+  const TYPO_DOMAIN_ADDRESS = getAddress('0x2222222222222222222222222222222222222222')
+  const OTHER_PAST_RECIPIENT = getAddress('0x3333333333333333333333333333333333333333')
+  const TYPO_MESSAGE = 'Looks like a typo of move.eth, which you have sent to before.'
+
+  const CONTACT_ADDRESS = getAddress('0x4444444444444444444444444444444444444444')
+
+  const prepareDomainTypoTest = async ({ hasSentToContact = false } = {}) => {
+    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', [account])
+      await storageCtrl.set('selectedAccount', account.addr)
+      await storageCtrl.set('contacts', [{ name: 'Satoshi', address: CONTACT_ADDRESS }])
+      await storageCtrl.set('sentToHistory', {
+        domains: { 'move.eth': { address: MOVE_ADDRESS, sentAt: 1_700_000_000_000 } },
+        recipients: {
+          [account.addr]: {
+            [MOVE_ADDRESS]: 1_700_000_000_000,
+            [OTHER_PAST_RECIPIENT]: 1_700_000_000_000,
+            // Picked from the Address Book, so the send saved no domain
+            ...(hasSentToContact && { [CONTACT_ADDRESS]: 1_600_000_000_000 })
+          }
+        }
+      })
+    })
+    await mainCtrl.selectedAccount.select({ account })
+    // The name the reverse lookup found for the contact
+    mainCtrl.domains.domains[CONTACT_ADDRESS] = { names: { ens: 'satoshi.eth' } }
+    mainCtrl.transfer.resetForm()
+
+    return mainCtrl.transfer
+  }
+
+  const setDomainRecipient = (
+    transferController: Awaited<ReturnType<typeof prepareDomainTypoTest>>,
+    fieldValue: string,
+    resolvedAddress: string
+  ) =>
+    transferController.update({
+      addressState: {
+        fieldValue,
+        resolvedAddress,
+        resolvedAddressType: 'ens',
+        isDomainResolving: false
+      }
+    })
+
+  test('should warn and require a hold when a new domain looks like a typo of a known one', async () => {
+    const transferController = await prepareDomainTypoTest()
+
+    await setDomainRecipient(transferController, 'rnove.eth', TYPO_DOMAIN_ADDRESS)
+
+    expect(transferController.recipientDomainTypoMatch).toEqual({ matchedDomain: 'move.eth' })
+    expect(transferController.validationFormMsgs.recipientAddress).toEqual({
+      severity: 'warning',
+      message: TYPO_MESSAGE,
+      shouldHold: true
+    })
+  })
+
+  test('should not warn when the domain resolves to an address the user has sent to before', async () => {
+    const transferController = await prepareDomainTypoTest()
+
+    await setDomainRecipient(transferController, 'rnove.eth', OTHER_PAST_RECIPIENT)
+
+    expect(transferController.recipientDomainTypoMatch).toBeNull()
+    expect(transferController.validationFormMsgs.recipientAddress.message).not.toBe(TYPO_MESSAGE)
+  })
+
+  test('should clear the warning once the user switches to the known domain', async () => {
+    const transferController = await prepareDomainTypoTest()
+
+    await setDomainRecipient(transferController, 'rnove.eth', TYPO_DOMAIN_ADDRESS)
+    await setDomainRecipient(transferController, 'move.eth', MOVE_ADDRESS)
+
+    expect(transferController.recipientDomainTypoMatch).toBeNull()
+    expect(transferController.validationFormMsgs.recipientAddress.shouldHold).toBeFalsy()
+  })
+
+  test('should warn when a new domain looks like a typo of a contact name the user sent to', async () => {
+    const transferController = await prepareDomainTypoTest({ hasSentToContact: true })
+
+    await setDomainRecipient(transferController, 'sat0shi.eth', TYPO_DOMAIN_ADDRESS)
+
+    expect(transferController.recipientDomainTypoMatch).toEqual({ matchedDomain: 'satoshi.eth' })
+    expect(transferController.validationFormMsgs.recipientAddress).toEqual({
+      severity: 'warning',
+      message: 'Looks like a typo of satoshi.eth, which you have sent to before.',
+      shouldHold: true
+    })
+  })
+
+  test('should not suggest the name of a contact the user never sent to', async () => {
+    const transferController = await prepareDomainTypoTest()
+
+    await setDomainRecipient(transferController, 'sat0shi.eth', TYPO_DOMAIN_ADDRESS)
+
+    expect(transferController.recipientDomainTypoMatch).toBeNull()
   })
 })
 

@@ -4,7 +4,13 @@ import {
   IRecurringTimeout,
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
-import { getSessionId, Session, SessionInitProps, SessionProp } from '../../classes/session'
+import {
+  getSessionConnectionSource,
+  getSessionId,
+  Session,
+  SessionInitProps,
+  SessionProp
+} from '../../classes/session'
 import {
   categoriesNotToFilterOut,
   categoriesToExclude,
@@ -54,6 +60,7 @@ import {
   getDappIdFromUrl,
   getDappNameFromId,
   getDomainFromUrl,
+  getLoadableDappIcon,
   getNormalizedHostnameFromUrl,
   isAccountAllowedForDapp,
   modifyDappPropsIfNeeded,
@@ -64,6 +71,7 @@ import {
   unifyDefiLlamaDappUrl,
   withoutUnusedAccountPreferences
 } from '../../libs/dapps/helpers'
+import { getImpersonation, Impersonation } from '../../libs/dapps/impersonation'
 import { networkChainIdToHex } from '../../libs/networks/networks'
 import {
   EnsWebsiteContentUpdate,
@@ -169,6 +177,14 @@ export class DappsController extends EventEmitter implements IDappsController {
   #dappToConnectContextStatus: BlacklistedStatus | undefined
 
   #dappToConnectSession: Session | undefined
+
+  /**
+   * The well-known or connected app `dappToConnect` pretends to be, if any. Checked here, not in
+   * the UI, because the check needs the icon the site declares, which the UI never gets (see
+   * `SessionProp.declaredIcon`). Null until the scam lists are checked, as a site that is already
+   * on them gets the stronger warning.
+   */
+  dappToConnectImpersonation: Impersonation | null = null
 
   /**
    * When the website of `dappToConnect` was last replaced. Null unless it's served from an ENS
@@ -412,7 +428,12 @@ export class DappsController extends EventEmitter implements IDappsController {
       // resolves to, and its permissions are the ones the user reviewed for it.
       if (id !== dapp.id && this.#dapps.has(id)) return
 
-      this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
+      // Apps outside the catalog stored before their icon was checked (see `canLoadDappIcon`)
+      // may still have one on another host. Catalog apps are rebuilt from the catalog anyway.
+      const icon = dapp.isCustom
+        ? getLoadableDappIcon({ icon: dapp.icon, siteUrl: dapp.url, isInAppCatalog: false })
+        : dapp.icon
+      this.#dapps.set(id, normalizeDappConnection({ ...dapp, id, icon }))
     })
     if (skippedDappsWithoutIdCount) {
       this.emitError({
@@ -812,6 +833,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     tabId,
     url,
     wcTopic,
+    isWcFromInAppBrowser,
     frameId,
     topFrameUrl
   }: SessionInitProps) {
@@ -828,7 +850,15 @@ export class DappsController extends EventEmitter implements IDappsController {
       return existingSession
     }
 
-    return this.#createDappSession({ windowId, tabId, url, wcTopic, frameId, topFrameUrl })
+    return this.#createDappSession({
+      windowId,
+      tabId,
+      url,
+      wcTopic,
+      isWcFromInAppBrowser,
+      frameId,
+      topFrameUrl
+    })
   }
 
   getDappSessionByWcTopic(wcTopic: string): Session | undefined {
@@ -866,8 +896,20 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
   }
 
-  setSessionProp = (sessionId: string, props: SessionProp) => {
-    this.dappSessions[sessionId]?.setProp(props)
+  /**
+   * Sets the name and icon a site declares. The icon is shown only if loading it reaches no host
+   * other than the site (see `canLoadDappIcon`), and the declared one is kept for the security
+   * checks only.
+   */
+  setSessionProp = (sessionId: string, { icon, ...props }: SessionProp) => {
+    const session = this.dappSessions[sessionId]
+    if (!session) return
+
+    session.setProp({
+      ...props,
+      icon: this.#getLoadableIcon(icon, session.origin),
+      declaredIcon: icon
+    })
   }
 
   deleteDappSession = (sessionId: string) => {
@@ -902,28 +944,70 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   /**
-   * Removes a WalletConnect session terminated by the dApp and, once none of its WC sessions
-   * remain, revokes the `'wc'` connection so the next pairing asks for approval again.
+   * Removes a WalletConnect session terminated by the dApp and, once none of the same source
+   * remain, revokes that connection so the next pairing asks for approval again.
    */
   disconnectWcSessionByTopic = (wcTopic: string) => {
     const session = this.getDappSessionByWcTopic(wcTopic)
     if (!session) return
 
     const dappId = session.id
+    const sessionSource = getSessionConnectionSource(session)
     delete this.dappSessions[session.sessionId]
     this.emitUpdate()
 
-    const hasOtherWcSession = Object.values(this.dappSessions).some(
-      (s) => s.id === dappId && !!s.wcTopic
+    const hasOtherWcSessionOfSameSource = Object.values(this.dappSessions).some(
+      (s) => s.id === dappId && getSessionConnectionSource(s) === sessionSource
     )
-    if (hasOtherWcSession) return
+    if (hasOtherWcSessionOfSameSource) return
 
     const dapp = this.#dapps.get(dappId)
-    if (!dapp?.connectedSources?.includes('wc')) return
+    if (!dapp?.connectedSources?.includes(sessionSource)) return
 
     this.updateDapp(dappId, {
-      connectedSources: dapp.connectedSources.filter((source) => source !== 'wc')
+      connectedSources: dapp.connectedSources.filter((source) => source !== sessionSource)
     })
+  }
+
+  /**
+   * Drops the WalletConnect sources no live session backs anymore (e.g. one that expired while
+   * the app was closed). Call once the live WalletConnect sessions are restored.
+   * @returns The dapps left with no connection, whose auto-login policies the caller should revoke.
+   */
+  async dropWcSourcesWithoutSessions(): Promise<{ id: string; url: string }[]> {
+    if (!this.isReady) return []
+
+    const disconnectedDapps: { id: string; url: string }[] = []
+    const liveWcSessions = Object.values(this.dappSessions).filter((s) => !!s.wcTopic)
+    const hasLiveSession = (dappId: string, source: ConnectionSource) =>
+      liveWcSessions.some((s) => s.id === dappId && getSessionConnectionSource(s) === source)
+
+    let hasChanges = false
+    Array.from(this.#dapps.values()).forEach((dapp) => {
+      const current = dapp.connectedSources ?? []
+      const nextSources = current.filter(
+        (source) => source === 'injected' || hasLiveSession(dapp.id, source)
+      )
+      if (nextSources.length === current.length) return
+
+      hasChanges = true
+      if (nextSources.length === 0) disconnectedDapps.push({ id: dapp.id, url: dapp.url })
+      // Mirror `updateDapp`: a custom dapp that loses its last source is removed.
+      if (dapp.isCustom && nextSources.length === 0) {
+        this.#dapps.delete(dapp.id)
+        return
+      }
+      this.#dapps.set(dapp.id, {
+        ...dapp,
+        connectedSources: nextSources,
+        isConnected: nextSources.length > 0
+      })
+    })
+    if (!hasChanges) return disconnectedDapps
+
+    this.emitUpdate()
+    await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+    return disconnectedDapps
   }
 
   broadcastDappSessionEvent = async (
@@ -945,11 +1029,11 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (id) {
       dappSessions = dappSessions.filter((dappSession) => dappSession.data.id === id)
     }
-    // Source filter: 'wc' → only sessions with a wcTopic; 'injected' → only sessions without one.
-    // Used by `disconnectDappSource` so disconnecting one channel doesn't tear down the other.
+    // Source filter: only the sessions of that channel (see `getSessionConnectionSource`).
+    // Used by `disconnectDappSource` so disconnecting one channel doesn't tear down the others.
     if (sourceFilter) {
-      dappSessions = dappSessions.filter((dappSession) =>
-        sourceFilter === 'wc' ? !!dappSession.data.wcTopic : !dappSession.data.wcTopic
+      dappSessions = dappSessions.filter(
+        (dappSession) => getSessionConnectionSource(dappSession.data) === sourceFilter
       )
     }
 
@@ -972,6 +1056,40 @@ export class DappsController extends EventEmitter implements IDappsController {
         }
       })
     }
+  }
+
+  /**
+   * Whether the site is part of the app catalog - by its own hostname or by its root domain, the
+   * same way `#buildDapp` takes the catalog's details for it.
+   */
+  #isInAppCatalog(siteUrl: string): boolean {
+    const catalogIds = [getDappIdFromUrl(siteUrl), getDomainFromUrl(siteUrl)]
+
+    return catalogIds.some((id) => {
+      const dapp = id ? this.#dapps.get(id) : undefined
+      return !!dapp && !dapp.isCustom
+    })
+  }
+
+  /** The icon the wallet can show for a site, or an empty string (see `canLoadDappIcon`) */
+  #getLoadableIcon(icon: string | null | undefined, siteUrl: string): string {
+    return getLoadableDappIcon({ icon, siteUrl, isInAppCatalog: this.#isInAppCatalog(siteUrl) })
+  }
+
+  #getDappToConnectImpersonation(dapp: Dapp, session: Session): Impersonation | null {
+    const connectedApps = Array.from(this.#dapps.values())
+      .filter((d) => d.isConnected)
+      .map(({ name, url }) => ({ name, url }))
+
+    return getImpersonation({
+      hostname: dapp.id,
+      name: dapp.name,
+      // The declared icon, as the one `dapp` has is left empty when it's on another site's domain -
+      // which is exactly what the check looks for
+      icon: session.declaredIcon || dapp.icon,
+      isInAppCatalog: !dapp.isCustom,
+      connectedApps
+    })
   }
 
   async #buildDapp(dapp: {
@@ -1009,7 +1127,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       name: existingByDomain?.name || dapp.name || getDappNameFromId(dapp.id),
       chainId: network ? dapp.chainId! : existingByDomain?.chainId || DEFAULT_CHAIN_ID,
       description: existingByDomain?.description || '',
-      icon: existingByDomain?.icon || dapp.icon,
+      icon: existingByDomain?.icon || this.#getLoadableIcon(dapp.icon, dapp.url),
       category: existingByDomain?.category || null,
       favorite: existingByDomain?.favorite || false,
       isConnected: dapp.isConnected,
@@ -1052,8 +1170,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   /**
    * Convenience for callers that have a dapp identity (id/url/name/icon) but not a full
    * Dapp record yet — used by the WalletConnect session setup/restore paths, which need
-   * to register the dapp with `'wc'` as the source even when there's no prior catalog
-   * entry. Defers to `#buildDapp` so existing catalog metadata is preserved.
+   * to register the dapp with `'wc'` or `'wc-in-app'` as the source even when there's no
+   * prior catalog entry. Defers to `#buildDapp` so existing catalog metadata is preserved.
    *
    * `candidateChainIds` are the chains the WC dapp approved in its eip155 namespace; the
    * dapp's stored chainId is resolved from them via `pickWalletConnectChainId`, falling
@@ -1114,6 +1232,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     const sources: ConnectionSource[] = dapp.isConnected ? [source] : []
     this.#dapps.set(dapp.id, {
       ...dapp,
+      // The record may come back from the UI, so its icon is checked again before it's stored
+      icon: dapp.isCustom ? this.#getLoadableIcon(dapp.icon, dapp.url) : dapp.icon,
       connectedSources: sources,
       isConnected: sources.length > 0
     })
@@ -1622,6 +1742,13 @@ export class DappsController extends EventEmitter implements IDappsController {
         // Remembered so the trust flags can tell a warning about the dApp's own hosting -
         // which the user may silence - apart from one about the document embedding it.
         this.#dappToConnectContextStatus = contextStatus
+        // A site that is already on the scam lists gets the stronger warning instead. Not tied to
+        // the scam checker - it can be turned off to avoid its network requests, while this check
+        // runs fully on the device.
+        this.dappToConnectImpersonation =
+          effectiveStatus === 'BLACKLISTED'
+            ? null
+            : this.#getDappToConnectImpersonation(this.dappToConnect, session)
       }
 
       // Update #dapps with intrinsic status only — never the context-derived one.
@@ -1685,6 +1812,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (dapp) {
       dapp.blacklisted = 'LOADING'
       this.#dappToConnectContextStatus = undefined
+      this.dappToConnectImpersonation = null
       this.emitUpdate()
     }
 
@@ -1713,6 +1841,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           // Don't persist the preferences after the dapp has been disconnected
           delete this.dappToConnect.accountPreferences
           this.#dappToConnectContextStatus = undefined
+          this.dappToConnectImpersonation = null
           this.#dappToConnectSession = dappPromises[0].session
           const ensName = getEnsNameFromGatewayUrl(dapp.url)
           this.dappToConnectWebsiteContentUpdate = ensName ? { status: 'LOADING' } : null
@@ -1732,6 +1861,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (this.dappToConnect) {
         this.dappToConnect = null
         this.#dappToConnectContextStatus = undefined
+        this.dappToConnectImpersonation = null
         this.#dappToConnectSession = undefined
         this.dappToConnectWebsiteContentUpdate = null
         this.emitUpdate()

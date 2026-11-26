@@ -32,7 +32,8 @@ import {
   HdExternalKey,
   IKeystoreController,
   Key,
-  ReadyToAddKeys
+  ReadyToAddKeys,
+  SyncedSeed
 } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { PreparePrivacyPoolsAccount, PrivacyPoolsAccountToAdd } from '../../interfaces/privacyPools'
@@ -61,6 +62,8 @@ const DEFAULT_SHOULD_SELECT_NEXT_ACCOUNT_AUTOMATICALLY = true
 export type PreparedAccounts = {
   accounts: Account[]
   keys: ReadyToAddKeys
+  /** The recovery phrases a sync brought, stored before the keys that point to them */
+  seeds: SyncedSeed[]
   accountsToRemove: Account[]
   /** The derivation path the keys were derived with - none for a flow without a key iterator */
   hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
@@ -143,6 +146,19 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   readyToRemoveAccounts: Account[] = []
 
   /**
+   * The prepared accounts the wallet has already that come with a key it doesn't hold (by
+   * address and type), e.g. a view-only account whose recovery phrase is imported. The
+   * personalize step lists them as getting new keys rather than as already added.
+   */
+  readyToUpdateKeysAccountAddrs: Account['addr'][] = []
+
+  /**
+   * Whether the picker runs on a recovery phrase the wallet has just generated, so its
+   * accounts are new rather than imported. Set by `init`.
+   */
+  isFromNewSeed: boolean = false
+
+  /**
    * A Privacy Pools account flow set up by `setPrivacyPoolsInitParams`, from a stored recovery
    * phrase (`seedId`) or a new one. Prepared by the personalize step (`initIfNotStarted`).
    */
@@ -178,6 +194,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * selected accounts are derived only when they are added.
    */
   #readyToAddKeys: ReadyToAddKeys | null = null
+
+  // The recovery phrases handed in with the keys (a sync). Private for the same reason
+  #readyToAddSeeds: SyncedSeed[] = []
+
+  // Runs once the prepared accounts are added, for what a flow adds along with them
+  #onPreparedAccountsAdded?: () => Promise<void>
 
   /**
    * The selection `readyToAddAccounts` was prepared from, which their keys are derived
@@ -549,6 +571,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.page = page || DEFAULT_PAGE
     if (pageSize) this.pageSize = pageSize
     this.hdPathTemplate = hdPathTemplate
+    this.isFromNewSeed =
+      this.#keystore.isTempSeedNew &&
+      this.#keystore.isKeyIteratorInitializedWithTempSeed(keyIterator)
     this.isInitialized = true
     this.#alreadyImportedAccounts = [...this.#accounts.accounts]
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
@@ -647,11 +672,15 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#linkedAccounts = []
     this.readyToAddAccounts = []
     this.readyToRemoveAccounts = []
+    this.readyToUpdateKeysAccountAddrs = []
     this.#readyToAddKeys = null
+    this.#readyToAddSeeds = []
+    this.#onPreparedAccountsAdded = undefined
     this.#preparedSelection = []
     this.#preparedAccountsToRemove = []
     this.#preparedHdPathTemplate = undefined
     this.networksWithAccountStateError = []
+    this.isFromNewSeed = false
     this.isInitialized = false
 
     await this.forceEmitUpdate()
@@ -1167,7 +1196,18 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           : getDefaultAccountPreferences(account.addr, this.#alreadyImportedAccounts, i)
       }
     })
+    const keyType = this.type
+    this.readyToUpdateKeysAccountAddrs = keyType
+      ? this.#getAccountAddrsWithNewKeys(
+          this.#preparedSelection.map(({ account, accountKeys }) => ({
+            account,
+            keys: accountKeys.map(({ addr }) => ({ addr, type: keyType }))
+          }))
+        )
+      : []
     this.#readyToAddKeys = null
+    this.#readyToAddSeeds = []
+    this.#onPreparedAccountsAdded = undefined
 
     this.emitUpdate()
     this.#replyToRequest(requestId)
@@ -1175,14 +1215,27 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   /**
    * Prepares accounts from a flow that has no key iterator (view-only, Safe, account
-   * JSON), for the personalize step to show and `addPreparedAccounts` to add.
+   * JSON, a sync), for the personalize step to show and `addPreparedAccounts` to add.
+   * `onAdded` runs once they are added, for what the flow adds along with them. An account
+   * the wallet has already keeps its name unless `shouldOverridePreferences` (a sync, where
+   * the other device's name wins).
    */
   async prepareAccounts(
     {
       accounts,
       keys = { internal: [], external: [] },
-      accountsToRemove = []
-    }: { accounts: Account[]; keys?: ReadyToAddKeys; accountsToRemove?: Account[] },
+      seeds = [],
+      accountsToRemove = [],
+      onAdded,
+      shouldOverridePreferences = false
+    }: {
+      accounts: Account[]
+      keys?: ReadyToAddKeys
+      seeds?: SyncedSeed[]
+      accountsToRemove?: Account[]
+      onAdded?: () => Promise<void>
+      shouldOverridePreferences?: boolean
+    },
     requestId?: string
   ) {
     await this.reset()
@@ -1193,13 +1246,23 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       // Persist the already imported account preferences on purpose, like
       // `prepareSelectedAccounts` does. Adding the account again keeps them, so the
       // personalize step would otherwise show a default name the account never gets.
-      return alreadyImportedAcc
+      // Overridden ones are saved on adding (see `#addPreparedAccounts`).
+      return alreadyImportedAcc && !shouldOverridePreferences
         ? { ...account, preferences: alreadyImportedAcc.preferences }
         : account
     })
     this.readyToRemoveAccounts = accountsToRemove
     this.#preparedAccountsToRemove = accountsToRemove
+    const preparedKeys = [...keys.internal, ...keys.external]
+    this.readyToUpdateKeysAccountAddrs = this.#getAccountAddrsWithNewKeys(
+      accounts.map((account) => ({
+        account,
+        keys: preparedKeys.filter(({ addr }) => account.associatedKeys.includes(addr))
+      }))
+    )
     this.#readyToAddKeys = keys
+    this.#readyToAddSeeds = seeds
+    this.#onPreparedAccountsAdded = onAdded
     this.#preparedSelection = []
 
     this.emitUpdate()
@@ -1245,7 +1308,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       preferences: preferencesByAddr.get(account.addr) || account.preferences
     }))
     // Adding keeps the preferences of an account already in the wallet, so the ones the
-    // user changed on the personalize step are saved separately
+    // user changed on the personalize step (or a sync brought) are saved separately
     const renamedImportedAccounts = accounts.filter(({ addr, preferences }) => {
       const importedAcc = this.#accounts.accounts.find((a) => a.addr === addr)
 
@@ -1259,6 +1322,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     await this.#onAddPreparedAccounts({
       accounts,
       keys: this.#readyToAddKeys || this.#getKeysOfPreparedSelection(),
+      seeds: this.#readyToAddSeeds,
       accountsToRemove: this.#preparedAccountsToRemove,
       hdPathTemplate: this.#preparedHdPathTemplate
     })
@@ -1268,9 +1332,30 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         renamedImportedAccounts.map(({ addr, preferences }) => ({ addr, preferences }))
       )
     }
+    await this.#onPreparedAccountsAdded?.()
 
     this.addAccountsStatus = 'SUCCESS'
     await this.forceEmitUpdate()
+  }
+
+  /**
+   * The accounts the wallet has already, out of the given ones, that come with a key the
+   * keystore doesn't hold. A key of another type for the same address counts as new, as it is
+   * another way to sign.
+   */
+  #getAccountAddrsWithNewKeys(
+    accountsWithKeys: { account: Account; keys: Pick<Key, 'addr' | 'type'>[] }[]
+  ): Account['addr'][] {
+    const isKeyStored = ({ addr, type }: Pick<Key, 'addr' | 'type'>) =>
+      this.#keystore.keys.some((key) => key.addr === addr && key.type === type)
+
+    return accountsWithKeys
+      .filter(
+        ({ account, keys }) =>
+          this.#accounts.accounts.some(({ addr }) => addr === account.addr) &&
+          keys.some((key) => !isKeyStored(key))
+      )
+      .map(({ account }) => account.addr)
   }
 
   /**

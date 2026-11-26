@@ -1,5 +1,6 @@
 import { Price } from '../../interfaces/assets'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
+import { AssetType, DefiValues, Position, PositionsByProvider } from './types'
 
 const getAssetValue = (amount: bigint, decimals: number, priceIn: Price[]): number | undefined => {
   if (!priceIn.length) return undefined
@@ -22,4 +23,48 @@ const getProviderId = (providerName: string): string => {
   return providerName.toLowerCase()
 }
 
-export { getAssetValue, getProviderId, isTokenPriceWithinHalfPercent }
+const getPositionBorrowedValue = (position: Position): number =>
+  position.assets.reduce(
+    (sum, asset) => (asset.type === AssetType.Borrow ? sum + (asset.value || 0) : sum),
+    0
+  )
+
+/**
+ * Sets the value without loans of the app and each of its positions, from the value of the
+ * assets they borrowed.
+ */
+const withCollateralValues = (provider: PositionsByProvider): PositionsByProvider => {
+  let providerBorrowedValue = 0
+  const positions = provider.positions.map((position) => {
+    const borrowedValue = getPositionBorrowedValue(position)
+    providerBorrowedValue += borrowedValue
+
+    return {
+      ...position,
+      additionalData: {
+        ...position.additionalData,
+        collateralInUSD: (position.additionalData.positionInUSD || 0) + borrowedValue
+      }
+    }
+  })
+
+  return {
+    ...provider,
+    positions,
+    collateralInUSD: (provider.positionInUSD || 0) + providerBorrowedValue
+  }
+}
+
+/** The value borrowed in a DeFi app or position. Zero when it has no loans. */
+const getBorrowedValueInUSD = ({
+  positionInUSD = 0,
+  collateralInUSD = positionInUSD
+}: DefiValues): number => collateralInUSD - positionInUSD
+
+export {
+  getAssetValue,
+  getBorrowedValueInUSD,
+  getProviderId,
+  isTokenPriceWithinHalfPercent,
+  withCollateralValues
+}

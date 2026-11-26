@@ -7,7 +7,6 @@ import {
   parseUnits,
   ZeroAddress
 } from 'ethers'
-import { ethAddress, zeroAddress } from 'viem'
 
 import {
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
@@ -20,7 +19,8 @@ import { MAX_UINT256 } from '../../consts/deploy'
 import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import {
   HIGH_PRICE_IMPACT_PERCENT_THRESHOLD,
-  SLIPPAGE_MIN_QUOTE_DIFF_USD
+  SLIPPAGE_MIN_QUOTE_DIFF_USD,
+  SMALL_SWAP_MAX_USD
 } from '../../consts/safeguards/extremeSwapLoss'
 import { SwapAmountWarning } from '../../consts/safeguards/swapAmountWarnings'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
@@ -48,7 +48,7 @@ import { Call } from '../accountOp/types'
 import { AssetType } from '../defiPositions/types'
 import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
-import { getTokenBalanceInUSD, getTokenUsdPrice } from '../portfolio/helpers'
+import { getTokenBalanceInUSD } from '../portfolio/helpers'
 import {
   getSwapEstimatedLossUsd,
   getSwapQuoteLossUsd,
@@ -265,8 +265,7 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[])
  */
 export const getIsTokenEligibleForSwapAndBridge = (
   token: TokenResult,
-  requirePositiveBalance: boolean = true,
-  requirePrice: boolean = false
+  requirePositiveBalance: boolean = true
 ) => {
   const flagsRequirement =
     // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
@@ -278,14 +277,6 @@ export const getIsTokenEligibleForSwapAndBridge = (
     // and are not transferable/swappable by design.
     token.flags.defiTokenType !== AssetType.Borrow
 
-  // Tokens without a known USD price most prob can't be quoted reliably, so exclude them
-  // from the list when the caller opts in (e.g. the Swap & Bridge "form" tokens).
-  // Custom tokens are exempt - the user explicitly imported them and likely wants
-  // to use them for something (maybe swap or bridge).
-  if (requirePrice && !token.flags.isCustom && getTokenUsdPrice(token) <= 0) {
-    return false
-  }
-
   if (!requirePositiveBalance) {
     return flagsRequirement
   }
@@ -296,7 +287,8 @@ export const getIsTokenEligibleForSwapAndBridge = (
     token.amountPostSimulation === 0n && token.amount > 0n
       ? token.amount
       : (token.amountPostSimulation ?? token.amount)
-  const hasPositiveBalance = Number(amount) > 0
+  // Tokens on their way count too, so the user can prepare a swap with them
+  const hasPositiveBalance = Number(amount + (token.pendingDeliveryAmount ?? 0n)) > 0
 
   return flagsRequirement && hasPositiveBalance
 }
@@ -514,6 +506,24 @@ export const getIsIntentRoute = (route: SwapAndBridgeRoute) => {
 }
 
 /**
+ * Whether `accountOp` is the account op that sent the transaction of `activeRoute`. It is
+ * matched by the account op's identifier (e.g. its user operation hash), because the
+ * transaction hash of an account op can change after it is broadcast, e.g. when the bundler or
+ * the relayer replaces the transaction. A route that doesn't know the identifier yet is matched
+ * by its transaction hash.
+ */
+export const getIsActiveRouteAccountOp = (
+  activeRoute: Pick<SwapAndBridgeActiveRoute, 'identifiedBy' | 'userTxHash'>,
+  accountOp: Pick<SubmittedAccountOp, 'identifiedBy' | 'txnId'>
+) => {
+  if (activeRoute.identifiedBy) {
+    return accountOp.identifiedBy?.identifier === activeRoute.identifiedBy.identifier
+  }
+
+  return !!activeRoute.userTxHash && accountOp.txnId === activeRoute.userTxHash
+}
+
+/**
  * Checks if a network is supported by our Swap & Bridge service provider. As of v4.43.0
  * there are 16 networks supported, so user could have (many) custom networks that are not.
  */
@@ -624,7 +634,7 @@ const getSlippage = (
   // so each time the from amount makes a jump of 20000$, we lower
   // the slippage by half
   const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
-  return Number(fromAmountInUsd) < 400
+  return Number(fromAmountInUsd) < SMALL_SWAP_MAX_USD
     ? upperBoundary
     : (delimeter / Math.ceil(Number(fromAmountInUsd) / 20000)).toPrecision(2)
 }
@@ -674,7 +684,7 @@ export const calculateAmountWarnings = (
     )
     const minInUsdNumber = Number(minInUsd)
     const allowedSlippage =
-      Number(inputValueInUsd) < 400
+      Number(inputValueInUsd) < SMALL_SWAP_MAX_USD
         ? 1.05
         : Number((0.005 / Math.ceil(Number(inputValueInUsd) / 20000)).toPrecision(2)) * 100 + 0.01
     // Percentage of the loss relative to the amount the user is putting in (not the quote),
@@ -749,9 +759,6 @@ const getLink = (route: SwapAndBridgeActiveRoute) => {
 const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
   return txn.fromAsset.chainId !== txn.toAsset.chainId
 }
-
-const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
-  addr === ethAddress ? zeroAddress : addr
 
 /**
  * Get the swap sponsorship details.
@@ -949,7 +956,6 @@ const getSentPartOfSwap = (sentAccountOp: SubmittedAccountOp): SubmittedAccountO
 
 export {
   addCustomTokensIfNeeded,
-  convertNullAddressToZeroAddressIfNeeded,
   enrichRouteWithOutputTokenPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,

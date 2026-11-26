@@ -29,8 +29,7 @@ class BundlerErrorHandler implements ErrorHandler {
         userOperationRevertedRegex
       ]
 
-      for (let i = 0; i < regexes.length; i++) {
-        const regex = regexes[i]
+      for (const regex of regexes) {
         if (regex.test(message)) {
           const EntryPointErrorCode = /AA[0-9]{1,2}\s?/
           reason = message.replace(regex, '')

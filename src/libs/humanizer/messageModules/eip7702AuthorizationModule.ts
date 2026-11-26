@@ -1,10 +1,10 @@
-import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule } from '../interfaces'
+import { HumanizerAuthorizationMessage, HumanizerMessageResult } from '../interfaces'
 import { getAction, getAddressVisualization, getChain, getLabel, getText } from '../utils'
 
-export const eip7702AuthorizationModule: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind !== 'authorization-7702') return { fullVisualization: [] }
-
+/** Humanizes an EIP-7702 authorization */
+export const eip7702AuthorizationModule = (
+  message: HumanizerAuthorizationMessage
+): HumanizerMessageResult => {
   return {
     fullVisualization: [
       getAction('EIP-7702 Authorization'),

@@ -8,10 +8,13 @@ import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { defiPositionsOnDisabledNetworksBannerId } from '../../libs/banners/banners'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import * as keystoreLib from '../../libs/keystore/keystore'
+import { AccountState } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
+import { PORTFOLIO_STATE } from '../../libs/portfolio/testData'
 import { stringify } from '../../libs/richJson/richJson'
 import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO } from '../../libs/selectedAccount/selectedAccount'
 import wait from '../../utils/wait'
@@ -99,6 +102,7 @@ const prepareTest = async () => {
     networksCtrl: mainCtrl.networks,
     autoLoginCtrl: mainCtrl.autoLogin,
     accountsCtrl: mainCtrl.accounts,
+    swapAndBridgeCtrl: mainCtrl.swapAndBridge,
     storage: mainCtrl.storage
   }
 }
@@ -319,6 +323,154 @@ describe('SelectedAccount Controller', () => {
 
     expect(getMobileInviteKeySpy).toHaveBeenCalledWith(accountAddr)
     expect(selectedAccountCtrl.portfolio.mobileInviteKey).toBe(mobileInviteKey)
+  })
+
+  describe('subtracting borrowed funds', () => {
+    const loadSelectedAccountCtrl = async (
+      initialSetStorage: Parameters<typeof makeMainController>[0]
+    ) => {
+      const { mainCtrl } = await makeMainController(initialSetStorage)
+      await mainCtrl.selectedAccount.initialLoadPromise
+
+      return { selectedAccountCtrl: mainCtrl.selectedAccount, storage: mainCtrl.storage }
+    }
+
+    it('is off for an existing user who never changed it', async () => {
+      const { selectedAccountCtrl, storage } = await loadSelectedAccountCtrl(
+        async (storageCtrl) => {
+          await storageCtrl.set('accounts', accounts)
+        }
+      )
+
+      expect(selectedAccountCtrl.shouldSubtractBorrowedFunds).toBe(false)
+      expect(await storage.get('shouldSubtractBorrowedFunds', null)).toBeNull()
+    })
+
+    it('loads the saved choice and saves a new one', async () => {
+      const { selectedAccountCtrl, storage } = await loadSelectedAccountCtrl(
+        async (storageCtrl) => {
+          await storageCtrl.set('shouldSubtractBorrowedFunds', true)
+        }
+      )
+      expect(selectedAccountCtrl.shouldSubtractBorrowedFunds).toBe(true)
+
+      await selectedAccountCtrl.setShouldSubtractBorrowedFunds(false)
+
+      expect(selectedAccountCtrl.shouldSubtractBorrowedFunds).toBe(false)
+      expect(await storage.get('shouldSubtractBorrowedFunds', null)).toBe(false)
+    })
+
+    describe('recalculates the balances when the setting changes', () => {
+      const selectedAddr = accounts[0]!.addr
+      const otherAddr = accounts[1]!.addr
+      // The fixture has $30 borrowed on Aave
+      const BORROWED_IN_USD = 30
+
+      const prepareLoadedPortfolios = async (loadedAddrs: string[]) => {
+        const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
+        jest
+          .spyOn(portfolioCtrl, 'getAccountPortfolioState')
+          .mockImplementation((addr) =>
+            loadedAddrs.includes(addr) ? structuredClone(PORTFOLIO_STATE) : ({} as AccountState)
+          )
+        selectedAccountCtrl.updateSelectedAccountPortfolio(true)
+        const fullBalance = selectedAccountCtrl.portfolio.totalBalance
+        // The account list keeps the balance the other account had when it was last selected
+        selectedAccountCtrl.balanceByAccounts[otherAddr] = fullBalance
+
+        return { selectedAccountCtrl, fullBalance }
+      }
+
+      it('of the selected account and the other accounts', async () => {
+        const { selectedAccountCtrl, fullBalance } = await prepareLoadedPortfolios([
+          selectedAddr,
+          otherAddr
+        ])
+        expect(fullBalance).toBeGreaterThan(BORROWED_IN_USD)
+
+        await selectedAccountCtrl.setShouldSubtractBorrowedFunds(true)
+
+        const netBalance = fullBalance - BORROWED_IN_USD
+        expect(selectedAccountCtrl.portfolio.totalBalance).toBeCloseTo(netBalance)
+        expect(selectedAccountCtrl.balanceByAccounts[selectedAddr]).toBeCloseTo(netBalance)
+        expect(selectedAccountCtrl.balanceByAccounts[otherAddr]).toBeCloseTo(netBalance)
+
+        await selectedAccountCtrl.setShouldSubtractBorrowedFunds(false)
+
+        expect(selectedAccountCtrl.portfolio.totalBalance).toBeCloseTo(fullBalance)
+        expect(selectedAccountCtrl.balanceByAccounts[otherAddr]).toBeCloseTo(fullBalance)
+      })
+
+      it('without keeping a balance calculated with the old setting for an account that is not loaded', async () => {
+        const { selectedAccountCtrl } = await prepareLoadedPortfolios([selectedAddr])
+
+        await selectedAccountCtrl.setShouldSubtractBorrowedFunds(true)
+
+        expect(selectedAccountCtrl.balanceByAccounts[otherAddr]).toBeUndefined()
+        expect(selectedAccountCtrl.balanceByAccounts[selectedAddr]).toBeDefined()
+      })
+    })
+  })
+
+  it('the tokens get what in-progress swaps and bridges will deliver, without changing the totals', async () => {
+    const { selectedAccountCtrl, portfolioCtrl, swapAndBridgeCtrl } = await prepareTest()
+    const accountAddr = accounts[0]!.addr
+
+    await portfolioCtrl.updateSelectedAccount(accountAddr, [ethereum])
+    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+    const deliveredToken = selectedAccountCtrl.portfolio.tokens.find(
+      (token) => !token.flags.onGasTank && !token.flags.rewardsType
+    )!
+    expect(deliveredToken).toBeDefined()
+    const totalBalanceBefore = selectedAccountCtrl.portfolio.totalBalance
+
+    // A bridge to the token. Its transaction isn't in the activity, so its status check stops early
+    const bridgeToToken = {
+      activeRouteId: 'bridge-to-token',
+      routeStatus: 'in-progress',
+      userTxHash: 'bridge-to-token-source-transaction',
+      identifiedBy: null,
+      sender: accountAddr,
+      fromAssetAddress: '0x0000000000000000000000000000000000000000',
+      toAssetAddress: deliveredToken.address,
+      steps: [],
+      route: {
+        providerId: 'lifi',
+        // Another network than the token's, so it's a bridge
+        fromChainId: deliveredToken.chainId === 10n ? 1 : 10,
+        toChainId: Number(deliveredToken.chainId),
+        fromAmount: '1',
+        toAmount: '1000',
+        steps: [],
+        // Read for the service time when the route's status poll starts
+        userTxs: []
+      }
+    } as unknown as SwapAndBridgeActiveRoute
+    swapAndBridgeCtrl.activeRoutes = [bridgeToToken]
+    await swapAndBridgeCtrl.forceEmitUpdate()
+    // The portfolio is rebuilt on the next tick
+    await wait(1)
+
+    const tokenWithDelivery = selectedAccountCtrl.portfolio.tokens.find(
+      (token) =>
+        token.address === deliveredToken.address &&
+        token.chainId === deliveredToken.chainId &&
+        !token.flags.onGasTank &&
+        !token.flags.rewardsType
+    )
+    expect(tokenWithDelivery?.pendingDeliveryAmount).toBe(1000n)
+    expect(selectedAccountCtrl.portfolio.totalBalance).toBe(totalBalanceBefore)
+
+    swapAndBridgeCtrl.activeRoutes = []
+    await swapAndBridgeCtrl.forceEmitUpdate()
+    await wait(1)
+
+    const tokenAfterDelivery = selectedAccountCtrl.portfolio.tokens.find(
+      (token) =>
+        token.address === deliveredToken.address && token.chainId === deliveredToken.chainId
+    )
+    expect(tokenAfterDelivery?.pendingDeliveryAmount).toBeUndefined()
   })
 
   describe('Privacy Pools account', () => {

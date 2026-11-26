@@ -2,7 +2,6 @@ import { toUtf8String } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
-import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Account, IAccountsController } from '../../interfaces/account'
 import {
   DAPP_VERIFICATION_BANNER_IDS,
@@ -22,6 +21,7 @@ import {
 import { INetworksController, Network } from '../../interfaces/network'
 import { Platform } from '../../interfaces/platform'
 import { IProvidersController } from '../../interfaces/provider'
+import { ISafeController } from '../../interfaces/safe'
 import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import {
   ISignMessageController,
@@ -37,8 +37,6 @@ import {
 import { humanizeMessage } from '../../libs/humanizer'
 import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
 import {
-  addMessage,
-  addMessageSignature,
   canHotOwnersMeetSafeThreshold,
   getImportedSignersThatHaveNotSigned,
   sortSigs
@@ -59,7 +57,6 @@ import {
 } from '../../libs/signMessage/signMessage'
 import { verifyMessage } from '../../libs/signMessage/verifyMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
-import { withTimeout } from '../../utils/with-timeout'
 import { SignedMessage } from '../activity/types'
 import HumanizationController from '../humanization/humanization'
 
@@ -67,6 +64,9 @@ import type { EIP712TypedData } from '@safe-global/types-kit'
 
 import type { HardwareWalletSigningRequest } from '../../interfaces/signAccountOp'
 import type { IrMessage } from '../../libs/humanizer/interfaces'
+/** The internal key if any, as it signs without a device, otherwise the first one */
+const getDefaultSigner = (keys: Key[]) => keys.find((k) => k.type === 'internal') || keys[0]
+
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
 } as const
@@ -92,6 +92,12 @@ export class SignMessageController
   #erc7730?: IErc7730Controller
 
   #platform?: Platform
+
+  /**
+   * Shares the signatures of Safe messages with the other owners. Not passed where Safe messages
+   * aren't signed (e.g. the auto login), so nothing can reach the Safe API from there
+   */
+  #safe?: ISafeController
 
   // Bumped when init() starts and whenever reset() is called; async operations
   // capture it and re-check after each await, so obsolete requests can't update
@@ -154,7 +160,8 @@ export class SignMessageController
     eventEmitterRegistry?: IEventEmitterRegistryController,
     dapps?: IDappsController,
     erc7730?: IErc7730Controller,
-    platform?: Platform
+    platform?: Platform,
+    safe?: ISafeController
   ) {
     super(eventEmitterRegistry)
 
@@ -167,6 +174,7 @@ export class SignMessageController
     this.#dapps = dapps
     this.#erc7730 = erc7730
     this.#platform = platform
+    this.#safe = safe
     this.status = SignMessageStatus.Initial
 
     // `banners` is derived from DappsController state (the dapp verification status), so its
@@ -177,6 +185,42 @@ export class SignMessageController
     this.#dapps?.onUpdate((forceEmit) => {
       if (this.dapp?.url) this.propagateUpdate(forceEmit)
     }, 'sign-message-dapps-verification')
+
+    // A key can be removed (e.g. in Settings, in another window) while a message waits.
+    // NOTE: No unsubscribe needed, for the same reason as above
+    this.#keystore.onUpdate(() => this.#forgetRemovedSigners(), 'sign-message-removed-keys')
+  }
+
+  #isKeyStored({ addr, type }: { addr: Key['addr']; type: Key['type'] }) {
+    return this.#keystore.keys.some((key) => key.addr === addr && key.type === type)
+  }
+
+  /**
+   * Forgets the picked signers whose key was removed, so the user never signs with a key that is
+   * gone. Without any left, the default one is picked again, like in `init`. Never while signing
+   */
+  #forgetRemovedSigners() {
+    if (!this.signers?.length || this.statuses.sign === 'LOADING') return
+    if (this.signers.every((signer) => this.#isKeyStored(signer))) return
+
+    const signers = this.signers.filter((signer) => this.#isKeyStored(signer))
+    if (signers.length) {
+      this.signers = signers
+    } else {
+      this.signers = this.#getDefaultSigners()
+    }
+    this.emitUpdate()
+  }
+
+  /** A Safe's signer is picked by the user, any other account signs with its imported key */
+  #getDefaultSigners() {
+    if (!this.#account || !this.network || this.#account.safeCreation) return undefined
+
+    const importedKeys =
+      this.#accounts.accountStates[this.#account.addr]?.[this.network.chainId.toString()]
+        ?.importedAccountKeys || []
+    const defaultSigner = getDefaultSigner(importedKeys.filter((key) => this.#isKeyStored(key)))
+    return defaultSigner ? [defaultSigner] : undefined
   }
 
   async init({
@@ -254,9 +298,7 @@ export class SignMessageController
       } else {
         // if the account is not safe & view only, set a default signer
         // the default signer should be the internal key if any
-        const defaultSigner =
-          accountState.importedAccountKeys?.find((k) => k.type === 'internal') ||
-          accountState.importedAccountKeys?.[0]
+        const defaultSigner = getDefaultSigner(accountState.importedAccountKeys || [])
         this.signers = defaultSigner ? [defaultSigner] : undefined
       }
 
@@ -351,7 +393,8 @@ export class SignMessageController
     request: HardwareWalletSigningRequest,
     sign: () => Promise<T>
   ) {
-    this.#setHardwareWalletSigningRequest(request)
+    // The message is always signed by this controller's signer
+    this.#setHardwareWalletSigningRequest({ ...request, signerAddr: this.signer?.key.addr })
 
     try {
       return await sign()
@@ -388,9 +431,9 @@ export class SignMessageController
     const erc7730 = this.#erc7730
 
     if (!messageToSign) return
-    // `Erc7730Controller` is the only route to a descriptor (it owns the relayer and the cache), so
-    // its absence means clear signing is simply not available here - as in the auto-login flow,
-    // which builds this controller without any relayer access at all.
+    // `Erc7730Controller` is the only route to a descriptor (it owns the bundled registry and the
+    // Safe proxy reads), so its absence means clear signing is simply not available here - as in
+    // the auto-login flow, which builds this controller without one.
     if (messageToSign.content.kind !== 'typedMessage' || !erc7730) {
       this.#setFallbackHumanization(humanizationId)
       return
@@ -463,7 +506,12 @@ export class SignMessageController
     )
   }
 
-  async addMsgToSafeGlobal(sig: string, message: string | EIP712TypedData) {
+  /**
+   * Shares the first owner signature of a Safe message with the other owners, see
+   * SafeController.addMsgToSafeGlobal. Never without a SafeController (e.g. the auto login's)
+   */
+  async #addMsgToSafeGlobal(sig: string, message: string | EIP712TypedData) {
+    if (!this.#safe) return
     const network = this.network
     const account = this.#account
     if (!network || !account) return
@@ -473,26 +521,28 @@ export class SignMessageController
     const origin = buildSafeMessageOrigin(this.dapp)
 
     // send only to Safe Global if it doesn't already exists and if the threshold is not met
-    await withTimeout(
-      () => addMessage(network.chainId, account.addr as Hex, message, sig, origin),
-      {
-        timeoutMs: SAFE_API_TIMEOUT_MS,
-        message: `Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`
-      }
-    ).catch((e) => {
-      console.log('failed to send message to Safe Global: ', e)
+    await this.#safe.addMsgToSafeGlobal({
+      chainId: network.chainId,
+      safeAddr: account.addr as Hex,
+      message,
+      signature: sig,
+      origin
     })
   }
 
-  async addSigToSafeGlobal(sig: string, hash: string) {
+  /**
+   * Shares another owner signature of a Safe message with the other owners, see
+   * SafeController.addSigToSafeGlobal. Never without a SafeController (e.g. the auto login's)
+   */
+  async #addSigToSafeGlobal(sig: string, hash: string) {
+    if (!this.#safe) return
     const network = this.network
     if (!network) return
 
-    await withTimeout(() => addMessageSignature(network.chainId, hash, sig), {
-      timeoutMs: SAFE_API_TIMEOUT_MS,
-      message: `Safe API: add message signature timed out after ${SAFE_API_TIMEOUT_MS}ms`
-    }).catch((e) => {
-      console.log('failed to send message to Safe Global: ', e)
+    await this.#safe.addSigToSafeGlobal({
+      chainId: network.chainId,
+      messageHash: hash,
+      signature: sig
     })
   }
 
@@ -522,7 +572,15 @@ export class SignMessageController
     // but it was too confusing, so we threw it away
     // the array of signers should be changed back to a single signer
     const signerKey = this.signers[0]!
-    this.signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
+    try {
+      this.signer = await this.#keystore.getSigner(signerKey.addr, signerKey.type)
+    } catch (error: any) {
+      // The UI picks from the account state, which still lists a removed key until it reloads
+      if (this.#isKeyStored(signerKey)) throw error
+      const message =
+        'The key picked to sign this message was removed from the wallet. Pick another key, or import it again to sign.'
+      return Promise.reject(new EmittableError({ level: 'major', message, error }))
+    }
     if (this.signer.init) {
       this.signer.init(this.#externalSignerControllers[signerKey.type])
     }
@@ -578,12 +636,12 @@ export class SignMessageController
             if (!!this.#account.safeCreation && signed.hash) {
               this.hash = signed.hash
               if (this.signed.length === 1) {
-                await this.addMsgToSafeGlobal(
+                await this.#addMsgToSafeGlobal(
                   signed.signature,
                   toUtf8String(this.messageToSign.content.message)
                 )
               } else {
-                await this.addSigToSafeGlobal(signed.signature, signed.hash)
+                await this.#addSigToSafeGlobal(signed.signature, signed.hash)
               }
             }
           }
@@ -629,12 +687,12 @@ export class SignMessageController
             if (!!this.#account.safeCreation && signed.hash) {
               this.hash = signed.hash
               if (this.signed.length === 1) {
-                await this.addMsgToSafeGlobal(
+                await this.#addMsgToSafeGlobal(
                   signed.signature,
                   this.messageToSign.content as EIP712TypedData
                 )
               } else {
-                await this.addSigToSafeGlobal(signed.signature, signed.hash)
+                await this.#addSigToSafeGlobal(signed.signature, signed.hash)
               }
             }
           }

@@ -1,0 +1,46 @@
+name: Lint and Type Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - v2
+      - main
+      - 'release/*'
+  pull_request:
+    branches:
+      - v2
+      - main
+      - 'release/*'
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint and type check
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout code 🛎️
+        uses: actions/checkout@v6
+
+      - name: Install Node.js ⚙️
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Install NPM packages ♾️🕳️
+        run: npm ci
+
+      # Errors listed in eslint-suppressions.json are allowed, so only new ones fail
+      - name: Lint 🧹
+        run: npm run lint
+
+      # Errors listed in .tsc-baseline.json are allowed, so only new ones fail
+      - name: Type check 🔎
+        run: npm run type:check-new

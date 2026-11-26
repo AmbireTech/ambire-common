@@ -608,6 +608,38 @@ describe('getRpcTokenPrices', () => {
       }
     })
 
+    test('prices tokens on Robinhood Chain through our own deployment of the aggregator', async () => {
+      const robinhood: Network = {
+        ...ethereum,
+        name: 'Robinhood Chain',
+        chainId: 4663n,
+        rpcUrls: ['https://rpc.mainnet.chain.robinhood.com'],
+        selectedRpcUrl: 'https://rpc.mainnet.chain.robinhood.com',
+        wrappedAddr: undefined
+      }
+      const provider = getRpcProvider(robinhood.rpcUrls, robinhood.chainId)
+      const ROBINHOOD_WETH = '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73'
+      const USDG = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168'
+      const DEAD = '0x000000000000000000000000000000000000dEaD'
+
+      try {
+        const { prices, error } = await getRpcTokenPrices({
+          provider,
+          network: robinhood,
+          tokenAddresses: [ZeroAddress, ROBINHOOD_WETH, USDG, DEAD]
+        })
+
+        expect(error).toBeNull()
+        expect(prices.get(ZeroAddress)).toBeGreaterThan(0)
+        expect(prices.get(ROBINHOOD_WETH.toLowerCase())).toBe(prices.get(ZeroAddress))
+        expect(prices.get(USDG.toLowerCase())).toBeGreaterThan(0.95)
+        expect(prices.get(USDG.toLowerCase())).toBeLessThan(1.05)
+        expect(prices.get(DEAD.toLowerCase())).toBeNull()
+      } finally {
+        provider.destroy()
+      }
+    })
+
     test('prices stkWALLET, which no pool trades, the same as WALLET', async () => {
       const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
 
@@ -619,6 +651,51 @@ describe('getRpcTokenPrices', () => {
         })
 
         expect(prices.get(STK_WALLET.toLowerCase())).toBeGreaterThan(0)
+      } finally {
+        provider.destroy()
+      }
+    })
+
+    test("prices EURe's current address on Gnosis, which no pool trades, the same as its old one", async () => {
+      const gnosis: Network = {
+        ...ethereum,
+        name: 'Gnosis',
+        chainId: 100n,
+        rpcUrls: ['https://invictus.ambire.com/gnosis'],
+        selectedRpcUrl: 'https://invictus.ambire.com/gnosis'
+      }
+      const provider = getRpcProvider(gnosis.rpcUrls, gnosis.chainId)
+      const EURE = '0x420CA0f9B9b604cE0fd9C18EF134C705e5Fa3430'
+      const OLD_EURE = '0xcB444e90D8198415266c6a2724b7900fb12FC56E'
+
+      try {
+        const { prices } = await getRpcTokenPrices({
+          provider,
+          network: gnosis,
+          tokenAddresses: [EURE, OLD_EURE]
+        })
+
+        expect(prices.get(OLD_EURE.toLowerCase())).toBeGreaterThan(0)
+        expect(prices.get(EURE.toLowerCase())).toBe(prices.get(OLD_EURE.toLowerCase()))
+      } finally {
+        provider.destroy()
+      }
+    })
+
+    test('prices USDT0 on Polygon, whose pools take the aggregator about 18.8M gas to walk', async () => {
+      const polygon = networks.find(({ chainId }) => chainId === 137n)!
+      const provider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
+      const USDT0 = '0xc2132D05D31c914a87C6611C10748AEb04B58e8F'
+
+      try {
+        const { prices } = await getRpcTokenPrices({
+          provider,
+          network: polygon,
+          tokenAddresses: [USDT0]
+        })
+
+        expect(prices.get(USDT0.toLowerCase())).toBeGreaterThan(0.95)
+        expect(prices.get(USDT0.toLowerCase())).toBeLessThan(1.05)
       } finally {
         provider.destroy()
       }
@@ -729,7 +806,7 @@ describe('getRpcTokenPrices', () => {
             { wrappedNative: WETH, stablecoins: [], factories: [] },
             [true, true]
           ],
-          // An RPC that gives a call 12M gas, less than the 16M a single token is allowed
+          // An RPC that gives a call 12M gas, less than the 30M a single token is allowed
           { gasLimit: '0xb71b00' }
         )
 

@@ -51,6 +51,14 @@ export type AddressPoisoningMatch = {
   matchedOwnAccountLabel?: string
 }
 
+/**
+ * A domain the user has sent to before that the typed recipient domain most likely misspells.
+ * `matchedDomain` is lowercased, so it can be put back in the recipient field as it is.
+ */
+export type DomainTypoMatch = {
+  matchedDomain: string
+}
+
 export type AmountAdjustmentInfo = {
   feeAmount: string
   tokenSymbol: string

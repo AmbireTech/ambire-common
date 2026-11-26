@@ -4,7 +4,7 @@ import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { networks as defaultNetworks } from '../../consts/networks'
 import { Network } from '../../interfaces/network'
-import { AddressPoisoningMatch } from '../../interfaces/transfer'
+import { AddressPoisoningMatch, DomainTypoMatch } from '../../interfaces/transfer'
 import { validateSendTransferAddress } from './validate'
 
 const RECIPIENT = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
@@ -24,6 +24,7 @@ const accountStates: AccountStates = {}
 // Thin wrapper so each test only sets the args it cares about.
 const validate = (overrides: {
   recipientDomainAddressChange?: { previousAddress: string } | null
+  recipientDomainTypoMatch?: DomainTypoMatch | null
   isRecipientAddressFirstTimeSend?: boolean
   isRecipientAddressUnknown?: boolean
   isRecipientAddressBlacklisted?: boolean
@@ -53,7 +54,8 @@ const validate = (overrides: {
     overrides.addressPoisoningMatch ?? null,
     overrides.recipientDomainAddressChange ?? null,
     overrides.isRecipientAddressBlacklisted ?? false,
-    overrides.isRecipientAddressViewOnly ?? false
+    overrides.isRecipientAddressViewOnly ?? false,
+    overrides.recipientDomainTypoMatch ?? null
   )
 
 describe('validateSendTransferAddress - recipient domain address change', () => {
@@ -78,6 +80,38 @@ describe('validateSendTransferAddress - recipient domain address change', () => 
     const result = validate({ recipientDomainAddressChange: null })
 
     expect(result.message).not.toBe(CHANGED_MESSAGE)
+  })
+})
+
+describe('validateSendTransferAddress - recipient domain typo', () => {
+  const TYPO_MESSAGE = 'Looks like a typo of move.eth, which you have sent to before.'
+
+  it('shows the typo instead of the address poisoning and first-time-send warnings', () => {
+    const result = validate({
+      recipientDomainTypoMatch: { matchedDomain: 'move.eth' },
+      addressPoisoningMatch: {
+        matchedAddress: POISONING_LOOKALIKE,
+        matchedPrefixCharsCount: 4,
+        matchedSuffixCharsCount: 4,
+        differingCharsCount: 32
+      },
+      isRecipientAddressFirstTimeSend: true,
+      isRecipientAddressUnknown: true
+    })
+
+    expect(result).toEqual({ severity: 'warning', message: TYPO_MESSAGE, shouldHold: true })
+  })
+
+  it('keeps the hold after the user agrees to send to a new address', () => {
+    const result = validate({
+      recipientDomainTypoMatch: { matchedDomain: 'move.eth' },
+      isRecipientAddressFirstTimeSend: true,
+      isRecipientAddressUnknown: true,
+      isRecipientAddressUnknownAgreed: true
+    })
+
+    expect(result.message).toBe(TYPO_MESSAGE)
+    expect(result.shouldHold).toBe(true)
   })
 })
 
