@@ -121,8 +121,11 @@ const isQuoteRequestRefused = (failure: PPv1RelayerQuoteFailure) =>
  * the request down too. Retrying soon won't help then, unlike when a relayer could not be reached.
  */
 const isEveryRelayerFeeTooHigh = ({ failures }: PPv1RelayerQuoteError) =>
-  failures.some(({ reason }) => reason === 'fee-too-high') &&
-  failures.every((failure) => failure.reason === 'fee-too-high' || isQuoteRequestRefused(failure))
+  failures.some(({ reason }: PPv1RelayerQuoteFailure) => reason === 'fee-too-high') &&
+  failures.every(
+    (failure: PPv1RelayerQuoteFailure) =>
+      failure.reason === 'fee-too-high' || isQuoteRequestRefused(failure)
+  )
 
 /** What a refused withdrawal is told against: its amount, and the token it is in. */
 type RefusedWithdrawal = {
@@ -136,7 +139,7 @@ type RefusedWithdrawal = {
  * amount grows - down to what the pool allows.
  */
 const getRelayedMinAmount = ({ failures }: PPv1RelayerQuoteError, amount: bigint) =>
-  failures.reduce<bigint | null>((minAmount, failure) => {
+  failures.reduce<bigint | null>((minAmount: bigint | null, failure: PPv1RelayerQuoteFailure) => {
     if (failure.reason !== 'fee-too-high' || failure.maxRelayFeeBPS <= 0n) return minAmount
 
     const relayerMinAmount = (amount * failure.requiredFeeBPS) / failure.maxRelayFeeBPS
@@ -260,6 +263,9 @@ export type PrivacyPoolsBroadcastAttempt = {
   isSent: boolean
   blockNumber: number | null
 }
+
+/** What the SDK prices a withdrawal at before proving it. */
+type PaymasterFeeEstimate = Awaited<ReturnType<PrivacyPoolsV1Protocol['estimateUnshield']>>
 
 /**
  * A paymaster-sponsored withdrawal: an ERC-4337 userOp signed by its single-use sender. Narrowed
@@ -1001,7 +1007,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     recipient: Hex
   ): Promise<bigint | null> {
     try {
-      const { fee } = await withTimeout(
+      const { fee } = await withTimeout<PaymasterFeeEstimate>(
         () => protocol.estimateUnshield(assetAmount, recipient, { mode: 'paymaster' }),
         {
           timeoutMs: WITHDRAWAL_ESTIMATION_TIMEOUT_MS,
