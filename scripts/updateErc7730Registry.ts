@@ -240,17 +240,34 @@ const assertSize = (serialized: string) => {
   }
 }
 
-const formatList = (title: string, paths: string[], { asCode = true } = {}) => {
-  if (!paths.length) return []
+/**
+ * Where a summary is shown: the terminal, or the Markdown file of `ERC7730_REGISTRY_SUMMARY_PATH`,
+ * which is meant for the body of a PR
+ */
+type SummaryFormat = 'terminal' | 'markdown'
 
-  const listed = paths
+/**
+ * A titled list. In Markdown it is folded in `<details>` and cut at `MAX_LISTED_PATHS`, so that a
+ * PR body stays short; in the terminal it is listed in full
+ */
+const formatList = (
+  title: string,
+  items: string[],
+  format: SummaryFormat,
+  { asCode = true } = {}
+) => {
+  if (!items.length) return []
+  if (format === 'terminal')
+    return ['', `${title} (${items.length}):`, ...items.map((item) => `- ${item}`)]
+
+  const listed = items
     .slice(0, MAX_LISTED_PATHS)
-    .map((listedPath) => (asCode ? `- \`${listedPath}\`` : `- ${listedPath}`))
-  const notListedCount = paths.length - listed.length
+    .map((item) => (asCode ? `- \`${item}\`` : `- ${item}`))
+  const notListedCount = items.length - listed.length
 
   return [
     '',
-    `<details><summary>${title} (${paths.length})</summary>`,
+    `<details><summary>${title} (${items.length})</summary>`,
     '',
     ...listed,
     ...(notListedCount > 0 ? [`- ...and ${notListedCount} more`] : []),
@@ -259,13 +276,35 @@ const formatList = (title: string, paths: string[], { asCode = true } = {}) => {
   ]
 }
 
+/**
+ * A Markdown table with every column padded to the same width, so that it reads as a table in the
+ * terminal too. Columns after the first are numbers, aligned to the right
+ */
+const formatTable = (header: string[], rows: string[][]) => {
+  const widths = header.map((title, column) =>
+    Math.max(title.length, 3, ...rows.map((row) => row[column]!.length))
+  )
+  const formatRow = (cells: string[]) =>
+    `| ${cells
+      .map((cell, column) =>
+        column === 0 ? cell.padEnd(widths[column]!) : cell.padStart(widths[column]!)
+      )
+      .join(' | ')} |`
+  const separator = `| ${widths
+    .map((width, column) => (column === 0 ? '-'.repeat(width) : `${'-'.repeat(width - 1)}:`))
+    .join(' | ')} |`
+
+  return [formatRow(header), separator, ...rows.map(formatRow)]
+}
+
 const getSummary = ({
   calldataChanges,
   eip712Changes,
   descriptorChanges,
   source,
   previousCommit,
-  notes
+  notes,
+  format
 }: {
   calldataChanges: Changes
   eip712Changes: Changes
@@ -273,26 +312,36 @@ const getSummary = ({
   source: Source
   previousCommit?: string
   notes: string[]
+  format: SummaryFormat
 }) => {
-  const formatChanges = ({ added, removed, changed }: Changes) =>
-    `+${added.length} / -${removed.length} / ~${changed.length}`
+  const toRow = (label: string, { added, removed, changed }: Changes) => [
+    label,
+    `${added.length}`,
+    `${removed.length}`,
+    `${changed.length}`
+  ]
   const compareLink =
     previousCommit && previousCommit !== source.commit
       ? `${REGISTRY_REPOSITORY_URL}/compare/${previousCommit}...${source.commit}`
       : `${REGISTRY_REPOSITORY_URL}/tree/${source.commit}`
 
   return [
-    `The ERC-7730 registry at [${source.commit.slice(0, 7)}](${compareLink}) (${source.date}).`,
+    format === 'markdown'
+      ? `The ERC-7730 registry at [${source.commit.slice(0, 7)}](${compareLink}) (${source.date}).`
+      : `The ERC-7730 registry at ${source.commit.slice(0, 7)} (${source.date}): ${compareLink}`,
     '',
-    '| | Added / removed / changed |',
-    '|---|---|',
-    `| Contracts (calldata index) | ${formatChanges(calldataChanges)} |`,
-    `| Typed messages (EIP-712 index) | ${formatChanges(eip712Changes)} |`,
-    `| Descriptor files | ${formatChanges(descriptorChanges)} |`,
-    ...formatList('Added descriptors', descriptorChanges.added),
-    ...formatList('Changed descriptors', descriptorChanges.changed),
-    ...formatList('Removed descriptors', descriptorChanges.removed),
-    ...formatList("Ambire's changes", notes, { asCode: false }),
+    ...formatTable(
+      ['', 'Added', 'Removed', 'Changed'],
+      [
+        toRow('Contracts (calldata index)', calldataChanges),
+        toRow('Typed messages (EIP-712 index)', eip712Changes),
+        toRow('Descriptor files', descriptorChanges)
+      ]
+    ),
+    ...formatList('Added descriptors', descriptorChanges.added, format),
+    ...formatList('Changed descriptors', descriptorChanges.changed, format),
+    ...formatList('Removed descriptors', descriptorChanges.removed, format),
+    ...formatList("Ambire's changes", notes, format, { asCode: false }),
     '',
     'Transactions and messages of removed contracts are no longer described with ERC-7730.'
   ].join('\n')
@@ -330,19 +379,23 @@ const run = async () => {
     await fsPromises.mkdir(path.dirname(outputPath), { recursive: true })
     await fsPromises.writeFile(outputPath, serialized, 'utf8')
 
-    const summary = getSummary({
+    const summaryInput = {
       calldataChanges,
       eip712Changes,
       descriptorChanges,
       source,
       previousCommit: previous?.source?.commit,
       notes
-    })
+    }
     if (process.env.ERC7730_REGISTRY_SUMMARY_PATH) {
-      await fsPromises.writeFile(process.env.ERC7730_REGISTRY_SUMMARY_PATH, `${summary}\n`, 'utf8')
+      await fsPromises.writeFile(
+        process.env.ERC7730_REGISTRY_SUMMARY_PATH,
+        `${getSummary({ ...summaryInput, format: 'markdown' })}\n`,
+        'utf8'
+      )
     }
 
-    console.log(summary)
+    console.log(getSummary({ ...summaryInput, format: 'terminal' }))
   } finally {
     await fsPromises.rm(registryDirectory, { recursive: true, force: true })
   }
