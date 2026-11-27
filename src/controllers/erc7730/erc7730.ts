@@ -13,7 +13,11 @@ import {
   SAFE_SINGLETON_CACHE_TTL_MS,
   SUPPORTED_ERC7730_SCHEMA_FILES
 } from '../../libs/humanizer/erc7730/consts'
-import { getSchemaFileName, validateDescriptor } from '../../libs/humanizer/erc7730/descriptor'
+import {
+  getIncludes,
+  getSchemaFileName,
+  validateDescriptor
+} from '../../libs/humanizer/erc7730/descriptor'
 import {
   ERC7730_MAX_RESOLUTION_DEPTH,
   getAddressFromStorageSlot,
@@ -262,7 +266,7 @@ export class Erc7730Controller extends EventEmitter {
     }
 
     if (want.kind === 'includedDescriptor') {
-      known.descriptorsByPath[want.path] = this.#getDescriptor(want.path)
+      this.#recordWithIncludes(want.path, this.#getDescriptor(want.path), known)
 
       return
     }
@@ -281,7 +285,7 @@ export class Erc7730Controller extends EventEmitter {
       }
 
       known.contractDescriptors[key] = { path }
-      known.descriptorsByPath[path] = descriptor
+      this.#recordWithIncludes(path, descriptor, known)
 
       return
     }
@@ -300,7 +304,20 @@ export class Erc7730Controller extends EventEmitter {
     }
 
     known.eip712Descriptors[key] = { path: entry.path }
-    known.descriptorsByPath[entry.path] = descriptor
+    this.#recordWithIncludes(entry.path, descriptor, known)
+  }
+
+  /**
+   * Records a descriptor and everything it includes, at any depth, in the same round: they are all
+   * in the bundled registry, so includes never cost a round. Each path is read once, so includes
+   * that loop still end
+   */
+  #recordWithIncludes(path: string, descriptor: Erc7730Descriptor | null, known: Erc7730Known) {
+    known.descriptorsByPath[path] = descriptor
+    getIncludes(descriptor ?? {}).forEach((includePath) => {
+      if (Object.prototype.hasOwnProperty.call(known.descriptorsByPath, includePath)) return
+      this.#recordWithIncludes(includePath, this.#getDescriptor(includePath), known)
+    })
   }
 
   /**

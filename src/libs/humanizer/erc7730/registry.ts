@@ -482,14 +482,15 @@ const getEip712Key = (chainId: bigint, verifyingContract: string, primaryType: s
 
 /**
  * Merges a descriptor with everything its `includes` point at (by path, as the registry script
- * writes them), collecting a want for any include not looked up yet. Returns null while anything is still missing, so the caller reports its wants
- * and is asked again next round.
+ * writes them), at any depth, collecting a want for any include not looked up yet. Returns null
+ * while anything is still missing, so the caller reports its wants and is asked again next round.
+ * An include already on the chain being merged is skipped, so includes that loop still end
  */
 const mergeIncludes = (
   path: string,
   known: Erc7730Known,
   wants: Erc7730Want[],
-  depth = 0
+  chain: ReadonlySet<string> = new Set()
 ): Erc7730Descriptor | null => {
   // An own property only: a name such as `toString` must not read what every object inherits
   const descriptor = Object.prototype.hasOwnProperty.call(known.descriptorsByPath, path)
@@ -505,11 +506,12 @@ const mergeIncludes = (
 
   const includes = getIncludes(descriptor)
 
-  if (!includes.length || depth >= ERC7730_MAX_RESOLUTION_DEPTH) return descriptor
+  if (!includes.length) return descriptor
 
-  const included = includes.map((includePath) =>
-    mergeIncludes(includePath, known, wants, depth + 1)
-  )
+  const nextChain = new Set(chain).add(path)
+  const included = includes
+    .filter((includePath) => !nextChain.has(includePath))
+    .map((includePath) => mergeIncludes(includePath, known, wants, nextChain))
   if (included.some((one) => !one)) return null
 
   const mergedIncludes = included.reduce<Erc7730Descriptor>(
