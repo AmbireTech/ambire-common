@@ -203,7 +203,7 @@ describe('SignMessageController', () => {
     expect(signMessageController.isInitialized).toBeFalsy()
     expect(signMessageController.messageToSign).toBeNull()
     expect(signMessageController.signedMessage).toBeNull()
-    expect(signMessageController.signer).toBeUndefined()
+    expect(signMessageController.signingKeyType).toBeUndefined()
   })
 
   test('does not initialize after being reset while accounts are loading', async () => {
