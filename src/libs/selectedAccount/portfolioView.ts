@@ -1,3 +1,4 @@
+import { ACCOUNT_DATA_DISPLAY_MAX_AGE } from '../../consts/account'
 import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState,
@@ -110,16 +111,34 @@ export default class PortfolioViewBuilder {
   }
 
   /**
-   * Checks if network data is loading from scratch (first load or manual update)
+   * Checks if network data is loading from scratch (first load, manual update or a reload of
+   * outdated assets)
    */
   private static isLoadingFromScratch(
     networkData: NetworkState | undefined,
     isManualUpdate: boolean
   ): boolean {
     return (
-      (!PortfolioViewBuilder.isNetworkReady(networkData) || isManualUpdate) &&
-      !!networkData?.isLoading
+      ((!PortfolioViewBuilder.isNetworkReady(networkData) || isManualUpdate) &&
+        !!networkData?.isLoading) ||
+      PortfolioViewBuilder.isReloadingOutdatedAssets(networkData)
     )
+  }
+
+  /**
+   * Whether the network's assets are older than ACCOUNT_DATA_DISPLAY_MAX_AGE and are being
+   * fetched again, so they aren't shown until then. A network without assets has nothing to hide.
+   */
+  private static isReloadingOutdatedAssets(networkData: NetworkState | undefined): boolean {
+    if (!networkData?.result || !PortfolioViewBuilder.shouldMarkAsReloading(networkData)) {
+      return false
+    }
+
+    const result = networkData.result as NetworkResult
+    const hasDefiPositions =
+      'defiPositions' in result && !!result.defiPositions?.positionsByProvider?.length
+
+    return hasDefiPositions || PortfolioViewBuilder.hasVisibleTokens(result.tokens || [])
   }
 
   /**
@@ -130,9 +149,7 @@ export default class PortfolioViewBuilder {
       return false
     }
 
-    const ONE_HOUR_MS = 60 * 60 * 1000
-    const oneHourAgo = Date.now() - ONE_HOUR_MS
-    return networkData.lastSuccessfulUpdate < oneHourAgo
+    return Date.now() - networkData.lastSuccessfulUpdate > ACCOUNT_DATA_DISPLAY_MAX_AGE
   }
 
   /**
@@ -227,11 +244,14 @@ export default class PortfolioViewBuilder {
 
     this.addVerificationData(chainId, networkData)
 
-    const networkResult = networkData.result as NetworkResult
     const loadingFromScratch = PortfolioViewBuilder.isLoadingFromScratch(
       networkData,
       isManualUpdate
     )
+    // A network that loads from scratch shows nothing, not its old data next to the skeleton
+    const isNetworkDataHidden =
+      loadingFromScratch || !PortfolioViewBuilder.isNetworkReady(networkData)
+    const networkResult = (isNetworkDataHidden ? undefined : networkData.result) as NetworkResult
 
     const positionsByProvider =
       networkResult && 'defiPositions' in networkResult
