@@ -1095,8 +1095,7 @@ export class MainController extends EventEmitter implements IMainController {
     // approved - so it stays open and the user can pick the account to connect with.
     await this.#leaveSelectedAccount({ keepsDappConnectRequest: true })
     await this.selectedAccount.select({ account: accountToSelect })
-    this.#continuousUpdates?.restartAccountTimers()
-    this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true })
+    this.#continuousUpdates?.onAccountSwitch()
     this.swapAndBridge.updateActiveRoutesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
     this.transfer.reset({ destroyAccountOp: true })

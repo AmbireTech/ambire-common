@@ -8,6 +8,7 @@ import {
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
   SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL,
+  SAFE_RESOLVE_INACTIVE_INTERVAL,
   SAFE_TXNS_RESOLVE_ACTIVE_INTERVAL,
   TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
   TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
@@ -37,74 +38,116 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 cadence before falling back to the normal one, so a long API outage isn't retried every minute. */
 export const MAX_TRENDING_TOKENS_FAILED_RETRIES = 5
 
+/**
+ * What the user is doing with the wallet, which decides which timers run and how often. The
+ * wallet is `background` when it is unlocked but no wallet window is open (the user closed the
+ * popup), and `inUse` when it is unlocked and at least one window is open. Opening a second
+ * window doesn't change the state.
+ */
+type WalletState = 'locked' | 'background' | 'inUse'
+
+/**
+ * Something that just happened, like the user sending a txn or switching the account. Unlike
+ * the wallet state, an event doesn't last, so a timer reacts to it only at the moment it happens.
+ */
+type TimerEvent =
+  | 'viewOpen'
+  | 'viewFocus'
+  | 'accountSwitch'
+  | 'txnSent'
+  | 'providersChange'
+  | 'activityChange'
+
+export type TimerName =
+  | 'portfolio'
+  | 'accountState'
+  | 'failedRpcReFetch'
+  | 'trendingTokens'
+  | 'safeTxns'
+  | 'safeMessages'
+  | 'accountsOpsStatuses'
+
+type Interval = number | (() => number)
+
+type TimerSchedule = {
+  /** The work the timer does each time it fires, like updating the portfolio */
+  run: () => Promise<void>
+  /**
+   * How long to wait between runs in each wallet state. The timer doesn't run at all in a state
+   * that is left out. For example, `{ background: 10 min, inUse: 2 min }` updates every 10
+   * minutes while the popup is closed, every 2 minutes while it is open, and never while the
+   * wallet is locked. When the state changes to one with a different interval, the timer starts
+   * over with the new one at once. A function is called each time the timer starts, for an
+   * interval that depends on data.
+   */
+  intervals: Partial<Record<WalletState, Interval>> & { inUse: Interval }
+  /**
+   * For a timer that is needed only sometimes. When this returns false, the timer stops even in
+   * a state where it would run. For example, the txn status timer has work only while a sent
+   * txn waits for confirmation.
+   */
+  hasWork?: () => boolean
+  /**
+   * Runs once as soon as the timer starts, instead of waiting a full interval first. For
+   * example, trending tokens update the moment the user opens the wallet.
+   */
+  runOnStart?: boolean
+  /**
+   * Events after which the full wait starts again from now. Use it when the event already did
+   * the work of the timer. For example, switching the account loads its portfolio, so the next
+   * portfolio update waits a full interval instead of coming a few seconds later.
+   */
+  restartOn?: TimerEvent[]
+  /**
+   * Events after which a timer that has slowed down goes back to the interval of the state at
+   * once. A timer that already runs at that interval is left alone, so the event can't push
+   * its next run later. For example, a Safe check that slowed down to 30 seconds goes back to
+   * 10 seconds when the user focuses the wallet, but a check that is 2 seconds away still runs
+   * in 2 seconds.
+   */
+  speedUpOn?: TimerEvent[]
+  /**
+   * Events after which `hasWork` may give a different answer, so the timer starts or stops to
+   * match it. A timer that already runs is left alone. For example, the txn status timer starts
+   * when a txn is sent and stops when the last one is confirmed.
+   */
+  checkOn?: TimerEvent[]
+  /**
+   * For a timer that slows itself down in `run`. Undoes that slowdown before the timer starts
+   * over or speeds up, otherwise its next run would pick the slow interval again. For example,
+   * the Safe checks wait longer each time they find nothing new, and this sets that count back
+   * to zero.
+   */
+  resetPace?: () => void
+}
+
+type TimerAction = 'start' | 'restart' | 'speedUp'
+
+type Timer = TimerSchedule & { timer: IRecurringTimeout }
+
+const toTimeout = (interval: Interval) => (typeof interval === 'function' ? interval() : interval)
+
 export class ContinuousUpdatesController extends EventEmitter {
   #main: IMainController
 
-  #updatePortfolioInterval: IRecurringTimeout
+  #timers: Record<TimerName, Timer>
 
-  get updatePortfolioInterval() {
-    return this.#updatePortfolioInterval
-  }
-
-  #accountsOpsStatusesInterval: IRecurringTimeout
-
-  get accountsOpsStatusesInterval() {
-    return this.#accountsOpsStatusesInterval
-  }
-
-  restartAccountsOpsStatusesInterval({ runImmediately = false } = {}) {
-    const allBroadcastedButNotConfirmed = Object.values(
-      this.#main.activity.broadcastedButNotConfirmed
-    ).flat()
-
-    this.#accountsOpsStatusesInterval.restart({
-      timeout: this.#getAccountsOpsStatusesRefreshInterval(allBroadcastedButNotConfirmed),
-      runImmediately
-    })
-  }
-
-  #accountStateLatestInterval: IRecurringTimeout
-
-  get accountStateLatestInterval() {
-    return this.#accountStateLatestInterval
-  }
-
-  #fastAccountStateReFetchTimeout: IRecurringTimeout
-
-  get fastAccountStateReFetchTimeout() {
-    return this.#fastAccountStateReFetchTimeout
+  getTimer(name: TimerName) {
+    return this.#timers[name].timer
   }
 
   #accountStateRetriesByNetwork: {
     [chainId: string]: number
   } = {}
 
-  #safeGlobalTxnInterval: IRecurringTimeout
-
-  get safeGlobalTxnInterval() {
-    return this.#safeGlobalTxnInterval
-  }
-
-  #safeGlobalMessageInterval: IRecurringTimeout
-
-  get safeGlobalMessageInterval() {
-    return this.#safeGlobalMessageInterval
-  }
-
   /** What the last checks for resolved Safe txns and messages found, to slow them down */
   #safeTxnsPollState: SafeResolvePollState = INITIAL_SAFE_RESOLVE_POLL_STATE
 
   #safeMessagesPollState: SafeResolvePollState = INITIAL_SAFE_RESOLVE_POLL_STATE
 
-  #updateTrendingTokensInterval: IRecurringTimeout
-
-  get updateTrendingTokensInterval() {
-    return this.#updateTrendingTokensInterval
-  }
-
   #trendingTokensFailedRetries = 0
 
-  #wasUnlocked: boolean
+  #walletState: WalletState
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
@@ -119,103 +162,98 @@ export class ContinuousUpdatesController extends EventEmitter {
     super(eventEmitterRegistry)
 
     this.#main = main
-    this.#wasUnlocked = this.#main.keystore.isUnlocked
+    this.#walletState = this.#getWalletState()
 
-    this.#updatePortfolioInterval = new RecurringTimeout(
-      this.#updatePortfolio.bind(this),
-      INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
-      this.emitError.bind(this)
-    )
-
-    // The account timers depend on the lock state and the open windows, see #syncAccountTimers
-    this.#main.ui.uiEvent.on('addView', () => this.#syncAccountTimers())
-    this.#main.ui.uiEvent.on('removeView', () => this.#syncAccountTimers())
-    this.#main.keystore.onUpdate(() => {
-      const { isUnlocked } = this.#main.keystore
-      if (isUnlocked === this.#wasUnlocked) return
-
-      this.#wasUnlocked = isUnlocked
-      this.#syncAccountTimers()
-    }, 'continuous-update')
+    const getAccountsOpsStatusesInterval = () =>
+      this.#getAccountsOpsStatusesRefreshInterval(this.#getOpsWaitingForConfirmation())
 
     /**
-     * Updates the account state for the selected account. Doesn't update the state for networks with failed RPC as this is handled by a different interval.
+     * When and how often each timer runs. The account state timers run only while a wallet
+     * window is open (a request from a connected app opens one too). Trending tokens are shown
+     * only in a window, so they refresh at once on opening one, and the freshness guard in
+     * #updateTrendingTokens skips the fetch when it is recent. The other timers don't fetch at
+     * once, as opening a window refreshes the data that is old. The Safe checks also slow down
+     * while they keep finding nothing new (see `getSafeResolveTimeout`). The user opening or
+     * coming back to the wallet may be waiting on the other owners of a Safe, so the Safe checks
+     * start over at the fast interval.
      */
-    this.#accountStateLatestInterval = new RecurringTimeout(
-      this.#updateAccountStateLatest.bind(this),
-      ACCOUNT_STATE_STAND_BY_INTERVAL,
-      this.emitError.bind(this)
-    )
+    this.#timers = {
+      portfolio: this.#createTimer('portfolio', {
+        run: this.#updatePortfolio,
+        intervals: {
+          background: INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
+          inUse: ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+        },
+        restartOn: ['accountSwitch']
+      }),
+      accountState: this.#createTimer('accountState', {
+        run: this.#updateAccountStateLatest,
+        intervals: { inUse: ACCOUNT_STATE_STAND_BY_INTERVAL },
+        restartOn: ['accountSwitch', 'txnSent']
+      }),
+      failedRpcReFetch: this.#createTimer('failedRpcReFetch', {
+        run: this.#fastAccountStateReFetch,
+        intervals: { inUse: 8000 },
+        hasWork: () =>
+          !!getNetworksWithFailedRPC({ providers: this.#main.providers.providers }).length,
+        restartOn: ['providersChange']
+      }),
+      trendingTokens: this.#createTimer('trendingTokens', {
+        run: this.#updateTrendingTokens,
+        intervals: { inUse: TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL },
+        runOnStart: true
+      }),
+      safeTxns: this.#createTimer('safeTxns', {
+        run: this.#pollConfirmedSafeTxns,
+        intervals: {
+          background: SAFE_RESOLVE_INACTIVE_INTERVAL,
+          inUse: SAFE_TXNS_RESOLVE_ACTIVE_INTERVAL
+        },
+        speedUpOn: ['viewOpen', 'viewFocus'],
+        resetPace: () => {
+          this.#safeTxnsPollState = { ...this.#safeTxnsPollState, unchangedChecksCount: 0 }
+        }
+      }),
+      safeMessages: this.#createTimer('safeMessages', {
+        run: this.#pollConfirmedSafeMessages,
+        intervals: {
+          background: SAFE_RESOLVE_INACTIVE_INTERVAL,
+          inUse: SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL
+        },
+        speedUpOn: ['viewOpen', 'viewFocus'],
+        resetPace: () => {
+          this.#safeMessagesPollState = { ...this.#safeMessagesPollState, unchangedChecksCount: 0 }
+        }
+      }),
+      accountsOpsStatuses: this.#createTimer('accountsOpsStatuses', {
+        run: this.#updateAccountsOpsStatuses,
+        intervals: {
+          locked: getAccountsOpsStatusesInterval,
+          background: getAccountsOpsStatusesInterval,
+          inUse: getAccountsOpsStatusesInterval
+        },
+        hasWork: () => !!this.#getOpsWaitingForConfirmation().length,
+        checkOn: ['activityChange']
+      })
+    }
 
-    this.#accountsOpsStatusesInterval = new RecurringTimeout(
-      this.#updateAccountsOpsStatuses.bind(this),
-      ACTIVITY_REFRESH_INTERVAL,
-      this.emitError.bind(this)
-    )
-
-    /**
-     * Update failed network states more often. If a network's first failed
-     *  update is just now, retry in 8s. If it's a repeated failure, retry in 20s.
-     */
-    this.#fastAccountStateReFetchTimeout = new RecurringTimeout(
-      this.#fastAccountStateReFetch.bind(this),
-      8000,
-      this.emitError.bind(this),
-      'fastAccountStateReFetchTimeout'
-    )
-
-    // The Safe checks run fast while a wallet window is open, slower while none is, and slow
-    // down further while they keep finding nothing new (see `getSafeResolveTimeout`)
-    this.#safeGlobalTxnInterval = new RecurringTimeout(
-      this.#pollConfirmedSafeTxns.bind(this),
-      SAFE_TXNS_RESOLVE_ACTIVE_INTERVAL,
-      this.emitError.bind(this),
-      'safeGlobalTxnInterval'
-    )
-
-    this.#safeGlobalMessageInterval = new RecurringTimeout(
-      this.#pollConfirmedSafeMessages.bind(this),
-      SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL,
-      this.emitError.bind(this),
-      'resolveConfirmedSafeMessages'
-    )
-
-    // The user opening or coming back to the wallet may be waiting on the other owners, so
-    // the Safe checks go back to the fast interval instead of waiting out a long one
-    this.#main.ui.uiEvent.on('addView', () => this.#speedUpSafeChecks())
-    this.#main.ui.uiEvent.on('viewFocus', () => this.#speedUpSafeChecks())
-
-    // Trending tokens are shown only in a wallet window, so they poll only while one is open.
-    // On opening one we refresh immediately, but the freshness guard in #updateTrendingTokens
-    // skips the fetch when the last update is still recent.
-    this.#updateTrendingTokensInterval = new RecurringTimeout(
-      this.#updateTrendingTokens.bind(this),
-      TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
-      this.emitError.bind(this),
-      'updateTrendingTokensInterval'
-    )
-
+    this.#main.keystore.onUpdate(() => this.#setWalletState(), 'continuous-update')
     this.#main.ui.uiEvent.on('addView', () => {
-      if (this.#main.ui.views.length === 1 && !this.#updateTrendingTokensInterval.running) {
-        this.#updateTrendingTokensInterval.restart({
-          timeout: TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
-          runImmediately: true
-        })
-      }
+      this.#setWalletState()
+      this.#onEvent('viewOpen')
     })
-    this.#main.ui.uiEvent.on('removeView', () => {
-      if (!this.#main.ui.views.length) this.#updateTrendingTokensInterval.stop()
-    })
+    this.#main.ui.uiEvent.on('removeView', () => this.#setWalletState())
+    this.#main.ui.uiEvent.on('viewFocus', () => this.#onEvent('viewFocus'))
 
     this.#main.swapAndBridge.onUpdate(() => {
       if (this.#main.swapAndBridge.signAccountOpController?.broadcastStatus === 'SUCCESS') {
-        this.#restartAccountStateTimer()
+        this.#onEvent('txnSent')
       }
     }, 'continuous-update')
 
     this.#main.transfer.onUpdate(() => {
       if (this.#main.transfer.signAccountOpController?.broadcastStatus === 'SUCCESS') {
-        this.#restartAccountStateTimer()
+        this.#onEvent('txnSent')
       }
     }, 'continuous-update')
 
@@ -231,30 +269,15 @@ export class ContinuousUpdatesController extends EventEmitter {
               this.#main.requests.currentUserRequest?.kind === 'calls' &&
               this.#main.requests.currentUserRequest.signAccountOp.broadcastStatus === 'SUCCESS'
             ) {
-              this.#restartAccountStateTimer()
+              this.#onEvent('txnSent')
             }
           }, 'continuous-update')
         }
       }
     }, 'continuous-update')
 
-    this.#main.providers.onUpdate(() => {
-      if (this.#isWalletInUse()) this.#fastAccountStateReFetchTimeout.restart()
-    }, 'continuous-update')
-
-    this.#main.activity.onUpdate(() => {
-      const allBroadcastedButNotConfirmed = Object.values(
-        this.#main.activity.broadcastedButNotConfirmed
-      ).flat()
-
-      if (allBroadcastedButNotConfirmed.length) {
-        this.#accountsOpsStatusesInterval.start({
-          timeout: this.#getAccountsOpsStatusesRefreshInterval(allBroadcastedButNotConfirmed)
-        })
-      } else {
-        this.#accountsOpsStatusesInterval.stop()
-      }
-    }, 'continuous-update')
+    this.#main.providers.onUpdate(() => this.#onEvent('providersChange'), 'continuous-update')
+    this.#main.activity.onUpdate(() => this.#onEvent('activityChange'), 'continuous-update')
 
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -264,82 +287,82 @@ export class ContinuousUpdatesController extends EventEmitter {
   async #load() {
     await this.#main.initialLoadPromise
 
-    this.#syncAccountTimers()
-    this.#safeGlobalTxnInterval.start()
-    this.#safeGlobalMessageInterval.start()
+    this.#walletState = this.#getWalletState()
+    Object.values(this.#timers).forEach((timer) => this.#apply(timer, 'start'))
   }
 
-  /**
-   * Whether the account state timers may run: the wallet is unlocked and a wallet window is open.
-   * A request from a connected app opens a window, so it counts too.
-   */
-  #isWalletInUse() {
-    return this.#main.keystore.isUnlocked && this.#isUiActive()
+  /** Creates the timer of a schedule. #apply sets its interval again on every start */
+  #createTimer(name: TimerName, schedule: TimerSchedule): Timer {
+    const timer = new RecurringTimeout(
+      schedule.run.bind(this),
+      toTimeout(schedule.intervals.inUse),
+      this.emitError.bind(this),
+      name
+    )
+
+    return { ...schedule, timer }
   }
 
-  /** How often the portfolio updates, which is more often while a wallet window is open. */
-  #getPortfolioUpdateInterval() {
-    return this.#isUiActive()
-      ? ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
-      : INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+  /** Starts the interval of the portfolio and account state timers over for the new account */
+  onAccountSwitch() {
+    this.#onEvent('accountSwitch')
   }
 
-  /**
-   * Runs the portfolio timer while the wallet is unlocked, at a shorter interval while a window
-   * is open, and the account state timers, with the re-fetch of failed networks, only while the
-   * wallet is in use. Starting or switching a timer doesn't fetch at once, as opening a window
-   * refreshes the data that is old.
-   */
-  #syncAccountTimers() {
-    this.#syncPortfolioTimer()
+  #getWalletState(): WalletState {
+    if (!this.#main.keystore.isUnlocked) return 'locked'
 
-    if (!this.#isWalletInUse()) {
-      this.#accountStateLatestInterval.stop()
-      this.#fastAccountStateReFetchTimeout.stop()
+    return this.#isUiActive() ? 'inUse' : 'background'
+  }
+
+  /** Moves the timers to the new wallet state. Only the ones whose interval changes are touched */
+  #setWalletState() {
+    const previousState = this.#walletState
+    const nextState = this.#getWalletState()
+    if (nextState === previousState) return
+
+    this.#walletState = nextState
+    Object.values(this.#timers).forEach((timer) => {
+      const previousInterval = timer.intervals[previousState]
+      const nextInterval = timer.intervals[nextState]
+      if (previousInterval === nextInterval) return
+
+      this.#apply(timer, previousInterval === undefined ? 'start' : 'restart')
+    })
+  }
+
+  #onEvent(event: TimerEvent) {
+    Object.values(this.#timers).forEach((timer) => {
+      if (timer.restartOn?.includes(event)) this.#apply(timer, 'restart')
+      else if (timer.speedUpOn?.includes(event)) this.#apply(timer, 'speedUp')
+      else if (timer.checkOn?.includes(event)) this.#apply(timer, 'start')
+    })
+  }
+
+  /** Stops, starts or restarts a timer to match its schedule in the current wallet state */
+  #apply({ timer, intervals, hasWork, runOnStart, resetPace }: Timer, action: TimerAction) {
+    const interval = intervals[this.#walletState]
+    if (interval === undefined || (hasWork && !hasWork())) {
+      timer.stop()
       return
     }
 
-    this.#accountStateLatestInterval.start()
-    this.#fastAccountStateReFetchTimeout.start()
-  }
-
-  #syncPortfolioTimer() {
-    if (!this.#main.keystore.isUnlocked) {
-      this.#updatePortfolioInterval.stop()
+    const timeout = toTimeout(interval)
+    if (action === 'start') {
+      timer.start({ timeout, runImmediately: runOnStart })
       return
     }
 
-    const timeout = this.#getPortfolioUpdateInterval()
-    const isTimeoutChanged = this.#updatePortfolioInterval.currentTimeout !== timeout
+    resetPace?.()
+    if (action === 'speedUp' && timer.running && timer.currentTimeout <= timeout) return
 
-    if (this.#updatePortfolioInterval.running && isTimeoutChanged) {
-      this.#updatePortfolioInterval.restart({ timeout })
-      return
-    }
-
-    this.#updatePortfolioInterval.start({ timeout })
-  }
-
-  /** Restarts the portfolio and account state timers after an account switch, if they may run. */
-  restartAccountTimers() {
-    if (this.#main.keystore.isUnlocked) {
-      this.#updatePortfolioInterval.restart({ timeout: this.#getPortfolioUpdateInterval() })
-    }
-    if (this.#isWalletInUse()) this.#accountStateLatestInterval.restart()
-  }
-
-  #restartAccountStateTimer() {
-    if (this.#isWalletInUse()) this.#accountStateLatestInterval.restart()
+    // A restart during a run would let the next run start before this one ends, so the running
+    // one schedules the next run with the new interval instead
+    if (timer.promise) timer.updateTimeout({ timeout })
+    else timer.restart({ timeout })
   }
 
   async #updatePortfolio() {
     await this.initialLoadPromise
-    // Stops the timer when it was restarted while the wallet is locked
-    if (!this.#main.keystore.isUnlocked) {
-      this.#syncAccountTimers()
-      return
-    }
-
     await Promise.all([
       this.#main.updateSelectedAccountPortfolio({
         maxDataAgeMs: 60 * 1000,
@@ -363,7 +386,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     if (
       updatedAt &&
       timeSinceLastUpdate !== null &&
-      timeSinceLastUpdate < this.#updateTrendingTokensInterval.currentTimeout
+      timeSinceLastUpdate < this.#timers.trendingTokens.timer.currentTimeout
     ) {
       return
     }
@@ -374,9 +397,9 @@ export class ContinuousUpdatesController extends EventEmitter {
 
       // Recover the normal cadence after a previously failed fetch bumped it down.
       if (
-        this.#updateTrendingTokensInterval.currentTimeout === TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
+        this.#timers.trendingTokens.timer.currentTimeout === TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
       ) {
-        this.#updateTrendingTokensInterval.updateTimeout({
+        this.#timers.trendingTokens.timer.updateTimeout({
           timeout: TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL
         })
       }
@@ -388,7 +411,7 @@ export class ContinuousUpdatesController extends EventEmitter {
       // Back off to the fast failed-retry cadence, but give up on it once the retries are
       // exhausted (the API is likely down for a while), then rethrow so RecurringTimeout's
       // onError handler reports it (with level 'silent', i.e. no user-facing toast).
-      this.#updateTrendingTokensInterval.updateTimeout({
+      this.#timers.trendingTokens.timer.updateTimeout({
         timeout: hasExhaustedRetries
           ? TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL
           : TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
@@ -402,13 +425,17 @@ export class ContinuousUpdatesController extends EventEmitter {
       await this.initialLoadPromise
       await this.#main.updateAccountsOpsStatuses()
     } finally {
-      this.#accountsOpsStatusesInterval.updateTimeout({
+      this.#timers.accountsOpsStatuses.timer.updateTimeout({
         timeout: Math.min(
-          this.#accountsOpsStatusesInterval.currentTimeout + 1000,
+          this.#timers.accountsOpsStatuses.timer.currentTimeout + 1000,
           ACTIVITY_REFRESH_INTERVAL
         )
       })
     }
+  }
+
+  #getOpsWaitingForConfirmation() {
+    return Object.values(this.#main.activity.broadcastedButNotConfirmed).flat()
   }
 
   #getAccountsOpsStatusesRefreshInterval(accountOps: SubmittedAccountOp[]) {
@@ -429,15 +456,12 @@ export class ContinuousUpdatesController extends EventEmitter {
     }, ACTIVITY_REFRESH_INTERVAL)
   }
 
+  /**
+   * Updates the account state for the selected account. Doesn't update the state for networks with failed RPC as this is handled by a different interval.
+   */
   async #updateAccountStateLatest() {
     await this.initialLoadPromise
     await this.#main.accounts.accountStateInitialLoadPromise
-    // Stops the timers when they were restarted while the wallet is not in use
-    if (!this.#isWalletInUse()) {
-      this.#syncAccountTimers()
-      return
-    }
-
     if (!this.#main.accounts.accounts.length) return // no accounts imported yet
 
     // A Privacy Pools account has no address, so it has no account state
@@ -475,14 +499,12 @@ export class ContinuousUpdatesController extends EventEmitter {
     )
   }
 
+  /**
+   * Update failed network states more often. If a network's first failed
+   *  update is just now, retry in 8s. If it's a repeated failure, retry in 20s.
+   */
   async #fastAccountStateReFetch() {
     await this.initialLoadPromise
-    // Stops the timers when they were restarted while the wallet is not in use
-    if (!this.#isWalletInUse()) {
-      this.#syncAccountTimers()
-      return
-    }
-
     const selectedAccountAddr = this.#main.selectedAccount.account?.addr
 
     const failedChainIds: string[] = getNetworksWithFailedRPC({
@@ -496,7 +518,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     })
 
     if (!chainIdsToRetry.length || !selectedAccountAddr) {
-      this.#fastAccountStateReFetchTimeout.stop()
+      this.#timers.failedRpcReFetch.timer.stop()
       this.#accountStateRetriesByNetwork = {}
       return
     }
@@ -536,7 +558,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     }
 
     if (!failedChainIdsAfterUpdate.length) {
-      this.#fastAccountStateReFetchTimeout.stop()
+      this.#timers.failedRpcReFetch.timer.stop()
       return
     }
 
@@ -547,43 +569,11 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     const updateTime = networksNotYetRetried.length ? 8000 : 20000
 
-    this.#fastAccountStateReFetchTimeout.updateTimeout({ timeout: updateTime })
+    this.#timers.failedRpcReFetch.timer.updateTimeout({ timeout: updateTime })
   }
 
   #isUiActive() {
     return !!this.#main.ui.views.length
-  }
-
-  /**
-   * Resets the slowdown of the Safe checks and, if one is waiting out a longer interval than
-   * the fast one, reschedules it to run at the fast interval. A check that is running is not
-   * rescheduled: a restart doesn't stop it, so the next check could start while it's still
-   * running and both could resolve the same request. When it finishes, it picks the fast
-   * interval by itself, as the slowdown is reset here.
-   */
-  #speedUpSafeChecks() {
-    this.#safeTxnsPollState = {
-      ...this.#safeTxnsPollState,
-      unchangedChecksCount: 0
-    }
-    this.#safeMessagesPollState = {
-      ...this.#safeMessagesPollState,
-      unchangedChecksCount: 0
-    }
-
-    const safeChecks = [
-      { interval: this.#safeGlobalTxnInterval, activeTimeout: SAFE_TXNS_RESOLVE_ACTIVE_INTERVAL },
-      {
-        interval: this.#safeGlobalMessageInterval,
-        activeTimeout: SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL
-      }
-    ]
-    safeChecks.forEach(({ interval, activeTimeout }) => {
-      const isCheckRunning = !!interval.promise
-      if (!interval.running || isCheckRunning || interval.currentTimeout <= activeTimeout) return
-
-      interval.restart({ timeout: activeTimeout })
-    })
   }
 
   async #pollConfirmedSafeTxns() {
@@ -591,7 +581,7 @@ export class ContinuousUpdatesController extends EventEmitter {
       const fingerprint = await this.#resolveConfirmedSafeTxns()
       this.#safeTxnsPollState = getNextSafeResolvePollState(this.#safeTxnsPollState, fingerprint)
     } finally {
-      this.#safeGlobalTxnInterval.updateTimeout({
+      this.#timers.safeTxns.timer.updateTimeout({
         timeout: getSafeResolveTimeout({
           activeTimeout: SAFE_TXNS_RESOLVE_ACTIVE_INTERVAL,
           isUiActive: this.#isUiActive(),
@@ -609,7 +599,7 @@ export class ContinuousUpdatesController extends EventEmitter {
         fingerprint
       )
     } finally {
-      this.#safeGlobalMessageInterval.updateTimeout({
+      this.#timers.safeMessages.timer.updateTimeout({
         timeout: getSafeResolveTimeout({
           activeTimeout: SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL,
           isUiActive: this.#isUiActive(),

@@ -180,7 +180,7 @@ describe('ContinuousUpdatesController intervals', () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
     await waitForAccountStatesInitialLoad(mainCtrl)
-    const { updatePortfolioInterval } = mainCtrl.continuousUpdates!
+    const updatePortfolioInterval = mainCtrl.continuousUpdates!.getTimer('portfolio')
 
     // Locked: nothing runs, with or without a window
     expect(updatePortfolioInterval.running).toBe(false)
@@ -226,7 +226,7 @@ describe('ContinuousUpdatesController intervals', () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
     await waitForAccountStatesInitialLoad(mainCtrl)
-    const { accountStateLatestInterval } = mainCtrl.continuousUpdates!
+    const accountStateLatestInterval = mainCtrl.continuousUpdates!.getTimer('accountState')
 
     // Locked: a window that opens refreshes its data, but the timer stays off
     await openView(mainCtrl)
@@ -250,22 +250,26 @@ describe('ContinuousUpdatesController intervals', () => {
     const { mainCtrl } = await prepareTest()
     await waitForMainCtrlReady(mainCtrl)
 
-    jest.spyOn(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval, 'start')
-    jest.spyOn(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval, 'stop')
+    jest.spyOn(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses'), 'start')
+    jest.spyOn(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses'), 'stop')
 
     await mainCtrl.activity.addAccountOp(submittedAccountOp)
     await jest.advanceTimersByTimeAsync(0)
 
     const initialFnExecutionsCount =
-      mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.fnExecutionsCount
+      mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').fnExecutionsCount
 
-    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.start).toHaveBeenCalled()
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
-    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.fnExecutionsCount).toBe(
+    expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').start).toHaveBeenCalled()
+    await waitForFnToBeCalledAndExecuted(
+      mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses')
+    )
+    expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').fnExecutionsCount).toBe(
       initialFnExecutionsCount + 1
     )
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
-    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.fnExecutionsCount).toBe(
+    await waitForFnToBeCalledAndExecuted(
+      mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses')
+    )
+    expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').fnExecutionsCount).toBe(
       initialFnExecutionsCount + 2
     )
     jest
@@ -274,7 +278,7 @@ describe('ContinuousUpdatesController intervals', () => {
     // @ts-expect-error no-desc
     mainCtrl.activity.emitUpdate()
     await jest.advanceTimersByTimeAsync(0)
-    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.stop).toHaveBeenCalled()
+    expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').stop).toHaveBeenCalled()
   })
 
   test('should gradually slow accountsOpsStatusesInterval from the network refresh interval', async () => {
@@ -289,33 +293,48 @@ describe('ContinuousUpdatesController intervals', () => {
     await mainCtrl.activity.addAccountOp(submittedAccountOp)
     await jest.advanceTimersByTimeAsync(0)
 
-    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(500)
+    expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').currentTimeout).toBe(500)
 
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
-    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(1500)
+    await waitForFnToBeCalledAndExecuted(
+      mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses')
+    )
+    expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').currentTimeout).toBe(1500)
 
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
-    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(2500)
+    await waitForFnToBeCalledAndExecuted(
+      mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses')
+    )
+    expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').currentTimeout).toBe(2500)
 
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
-    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(3500)
+    await waitForFnToBeCalledAndExecuted(
+      mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses')
+    )
+    expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').currentTimeout).toBe(3500)
 
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
-    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(4500)
+    await waitForFnToBeCalledAndExecuted(
+      mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses')
+    )
+    expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').currentTimeout).toBe(4500)
 
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
-    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(
+    await waitForFnToBeCalledAndExecuted(
+      mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses')
+    )
+    expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').currentTimeout).toBe(
       ACTIVITY_REFRESH_INTERVAL
     )
 
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval)
-    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(
+    await waitForFnToBeCalledAndExecuted(
+      mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses')
+    )
+    expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').currentTimeout).toBe(
       ACTIVITY_REFRESH_INTERVAL
     )
 
-    mainCtrl.continuousUpdates!.restartAccountsOpsStatusesInterval()
+    // Once it stops, the next sent txn starts it again from the network refresh interval
+    mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').stop()
+    // @ts-expect-error emitUpdate is protected, and the emit must be synchronous here
+    mainCtrl.activity.emitUpdate()
     await jest.advanceTimersByTimeAsync(0)
-    expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(500)
+    expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').currentTimeout).toBe(500)
   })
   ;[undefined, 0, -1, ACTIVITY_REFRESH_INTERVAL + 1000].forEach((refreshInterval) => {
     test(`should use ACTIVITY_REFRESH_INTERVAL for an invalid or too large network refresh interval: ${refreshInterval}`, async () => {
@@ -330,7 +349,7 @@ describe('ContinuousUpdatesController intervals', () => {
       await mainCtrl.activity.addAccountOp(submittedAccountOp)
       await jest.advanceTimersByTimeAsync(0)
 
-      expect(mainCtrl.continuousUpdates!.accountsOpsStatusesInterval.currentTimeout).toBe(
+      expect(mainCtrl.continuousUpdates!.getTimer('accountsOpsStatuses').currentTimeout).toBe(
         ACTIVITY_REFRESH_INTERVAL
       )
     })
@@ -340,7 +359,7 @@ describe('ContinuousUpdatesController intervals', () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
     await waitForAccountStatesInitialLoad(mainCtrl)
-    const { updatePortfolioInterval } = mainCtrl.continuousUpdates!
+    const updatePortfolioInterval = mainCtrl.continuousUpdates!.getTimer('portfolio')
     const syncInBackground = jest
       .spyOn(mainCtrl.privacyPools, 'syncInBackground')
       .mockResolvedValue(undefined)
@@ -361,15 +380,15 @@ describe('ContinuousUpdatesController intervals', () => {
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
     setIsUnlocked(mainCtrl, true)
     await openView(mainCtrl)
-    jest.spyOn(mainCtrl.continuousUpdates!.accountStateLatestInterval, 'restart')
+    jest.spyOn(mainCtrl.continuousUpdates!.getTimer('accountState'), 'restart')
 
     const initialAccountStateLatestFnExecutionsCount =
-      mainCtrl.continuousUpdates!.accountStateLatestInterval.fnExecutionsCount
+      mainCtrl.continuousUpdates!.getTimer('accountState').fnExecutionsCount
 
-    expect(mainCtrl.continuousUpdates!.accountStateLatestInterval.running).toBe(true)
+    expect(mainCtrl.continuousUpdates!.getTimer('accountState').running).toBe(true)
 
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.accountStateLatestInterval)
-    expect(mainCtrl.continuousUpdates!.accountStateLatestInterval.fnExecutionsCount).toBe(
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.getTimer('accountState'))
+    expect(mainCtrl.continuousUpdates!.getTimer('accountState').fnExecutionsCount).toBe(
       initialAccountStateLatestFnExecutionsCount + 1
     )
     const mockAccountOp = new EventEmitter() as any
@@ -383,8 +402,8 @@ describe('ContinuousUpdatesController intervals', () => {
     mainCtrl.requests.emitUpdate()
     mockAccountOp.emitUpdate()
     await jest.advanceTimersByTimeAsync(0)
-    expect(mainCtrl.continuousUpdates!.accountStateLatestInterval.restart).toHaveBeenCalledTimes(1)
-    expect(mainCtrl.continuousUpdates!.accountStateLatestInterval.running).toBe(true)
+    expect(mainCtrl.continuousUpdates!.getTimer('accountState').restart).toHaveBeenCalledTimes(1)
+    expect(mainCtrl.continuousUpdates!.getTimer('accountState').running).toBe(true)
   })
 
   test('should run fastAccountStateReFetchTimeout', async () => {
@@ -392,11 +411,11 @@ describe('ContinuousUpdatesController intervals', () => {
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
     await waitForAccountStatesInitialLoad(mainCtrl)
 
-    jest.spyOn(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout, 'start')
-    mainCtrl.continuousUpdates!.accountStateLatestInterval.start = jest
+    jest.spyOn(mainCtrl.continuousUpdates!.getTimer('failedRpcReFetch'), 'start')
+    mainCtrl.continuousUpdates!.getTimer('accountState').start = jest
       .fn()
       .mockResolvedValue(undefined)
-    mainCtrl.continuousUpdates!.accountStateLatestInterval.restart = jest
+    mainCtrl.continuousUpdates!.getTimer('accountState').restart = jest
       .fn()
       .mockResolvedValue(undefined)
 
@@ -406,11 +425,9 @@ describe('ContinuousUpdatesController intervals', () => {
     setIsUnlocked(mainCtrl, true)
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
     const initialFnExecutionsCount =
-      mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount
-    expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.start).toHaveBeenCalledTimes(
-      1
-    )
-    expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
+      mainCtrl.continuousUpdates!.getTimer('failedRpcReFetch').fnExecutionsCount
+    expect(mainCtrl.continuousUpdates!.getTimer('failedRpcReFetch').start).toHaveBeenCalledTimes(1)
+    expect(mainCtrl.continuousUpdates!.getTimer('failedRpcReFetch').fnExecutionsCount).toBe(
       initialFnExecutionsCount
     )
     // @ts-expect-error no-desc
@@ -420,13 +437,13 @@ describe('ContinuousUpdatesController intervals', () => {
     // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
 
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout)
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.getTimer('failedRpcReFetch'))
     // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
     // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
 
-    expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
+    expect(mainCtrl.continuousUpdates!.getTimer('failedRpcReFetch').fnExecutionsCount).toBe(
       initialFnExecutionsCount + 1
     )
     // @ts-expect-error no-desc no-desc
@@ -436,8 +453,8 @@ describe('ContinuousUpdatesController intervals', () => {
     // @ts-expect-error no-desc
     mainCtrl.providers.emitUpdate()
 
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout)
-    expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates!.getTimer('failedRpcReFetch'))
+    expect(mainCtrl.continuousUpdates!.getTimer('failedRpcReFetch').fnExecutionsCount).toBe(
       initialFnExecutionsCount + 2
     )
   })
@@ -446,7 +463,8 @@ describe('ContinuousUpdatesController intervals', () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
 
-    const interval = mainCtrl.continuousUpdates!.updateTrendingTokensInterval
+    const interval = mainCtrl.continuousUpdates!.getTimer('trendingTokens')
+    setIsUnlocked(mainCtrl, true)
     await openView(mainCtrl)
     expect(interval.currentTimeout).toBe(TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL)
 
@@ -465,7 +483,8 @@ describe('ContinuousUpdatesController intervals', () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
 
-    const interval = mainCtrl.continuousUpdates!.updateTrendingTokensInterval
+    const interval = mainCtrl.continuousUpdates!.getTimer('trendingTokens')
+    setIsUnlocked(mainCtrl, true)
     await openView(mainCtrl)
     const updateSpy = mainCtrl.dapps.updateTrendingTokens as jest.Mock
     updateSpy.mockRejectedValue(new Error('boom'))
@@ -498,12 +517,13 @@ describe('ContinuousUpdatesController intervals', () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
 
-    const interval = mainCtrl.continuousUpdates!.updateTrendingTokensInterval
+    const interval = mainCtrl.continuousUpdates!.getTimer('trendingTokens')
+    setIsUnlocked(mainCtrl, true)
     expect(interval.running).toBe(false)
 
-    jest.spyOn(interval, 'restart')
+    jest.spyOn(interval, 'start')
     await openView(mainCtrl)
-    expect(interval.restart).toHaveBeenCalledWith({
+    expect(interval.start).toHaveBeenCalledWith({
       timeout: TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
       runImmediately: true
     })
@@ -511,11 +531,17 @@ describe('ContinuousUpdatesController intervals', () => {
 
     // A second view doesn't restart it
     await openView(mainCtrl, '2')
-    expect(interval.restart).toHaveBeenCalledTimes(1)
+    expect(interval.start).toHaveBeenCalledTimes(1)
 
     await closeView(mainCtrl)
     expect(interval.running).toBe(true)
     await closeView(mainCtrl, '2')
+    expect(interval.running).toBe(false)
+
+    // Not while the wallet is locked, even with a view open
+    await openView(mainCtrl)
+    expect(interval.running).toBe(true)
+    setIsUnlocked(mainCtrl, false)
     expect(interval.running).toBe(false)
   })
 
@@ -523,7 +549,7 @@ describe('ContinuousUpdatesController intervals', () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
 
-    const interval = mainCtrl.continuousUpdates!.updateTrendingTokensInterval
+    const interval = mainCtrl.continuousUpdates!.getTimer('trendingTokens')
     const updateSpy = mainCtrl.dapps.updateTrendingTokens as jest.Mock
     // Pretend trending was just refreshed. Resolved on every read, as the fake timers advance the
     // clock by the whole interval while waiting for the scheduled run below.
@@ -531,6 +557,7 @@ describe('ContinuousUpdatesController intervals', () => {
       .spyOn(mainCtrl.dapps, 'trendingTokensUpdatedAt', 'get')
       .mockImplementation(() => Date.now())
     updateSpy.mockClear()
+    setIsUnlocked(mainCtrl, true)
 
     // Becoming active triggers an immediate refresh, but the freshness guard skips the fetch.
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
@@ -561,6 +588,8 @@ describe('ContinuousUpdatesController intervals', () => {
       // opening a view fetches the pending Safe txns too, which is not under test here
       jest.spyOn(mainCtrl, 'fetchSafeTxns').mockResolvedValue()
       const isUnlockedSpy = jest.spyOn(mainCtrl.keystore, 'isUnlocked', 'get').mockReturnValue(true)
+      // @ts-expect-error emitUpdate is protected, and the emit must be synchronous here
+      mainCtrl.keystore.emitUpdate()
       jest
         .spyOn(mainCtrl.accounts, 'getOrFetchAccountStates')
         .mockResolvedValue({ '1': { isDeployed: true, threshold: 3, nonce: 0n } } as any)
@@ -580,7 +609,7 @@ describe('ContinuousUpdatesController intervals', () => {
 
       return {
         mainCtrl,
-        interval: mainCtrl.continuousUpdates!.safeGlobalMessageInterval,
+        interval: mainCtrl.continuousUpdates!.getTimer('safeMessages'),
         isUnlockedSpy,
         getMessagesByHashSpy
       }
@@ -662,6 +691,29 @@ describe('ContinuousUpdatesController intervals', () => {
       // the check that was running picks the fast interval by itself
       expect(interval.currentTimeout).toBe(SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL)
       expect(getMessagesByHashSpy).toHaveBeenCalledTimes(6)
+    })
+
+    test('does not push back the next check when the wallet window is focused again', async () => {
+      const { mainCtrl, interval } = await prepareSafeMessageTest()
+      await openView(mainCtrl)
+      await waitForFnToBeCalledAndExecuted(interval)
+      expect(interval.currentTimeout).toBe(SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL)
+
+      const restartSpy = jest.spyOn(interval, 'restart')
+      mainCtrl.ui.uiEvent.emit('viewFocus', { id: '1', type: 'popup' })
+      await jest.advanceTimersByTimeAsync(0)
+
+      expect(restartSpy).not.toHaveBeenCalled()
+    })
+
+    test('stops the checks while the wallet is locked', async () => {
+      const { mainCtrl, interval } = await prepareSafeMessageTest()
+      await jest.advanceTimersByTimeAsync(0)
+      expect(interval.running).toBe(true)
+
+      setIsUnlocked(mainCtrl, false)
+
+      expect(interval.running).toBe(false)
     })
 
     test('does not ask the Safe API about messages while the wallet is locked', async () => {
