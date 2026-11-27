@@ -153,6 +153,8 @@ const STATUS_WRAPPED_METHODS = {
 
 /** How long a resolved transitional request stays, so the app request it was blocking can arrive */
 const TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS = 300
+/** How long an app's transaction may take to build before its window opens with a loader */
+export const DAPP_REQUEST_LOADER_DELAY_MS = 2000
 
 /** Dapp requests whose screen warns about the app, without a signing controller doing it */
 const DAPP_VERIFICATION_REQUEST_KINDS: UserRequest['kind'][] = [
@@ -320,6 +322,19 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * the request window in a quick succession.
    */
   #userRequestsBeingAdded = 0
+
+  /**
+   * Whether an app's transaction is being built. The request window shows a loader meanwhile
+   * and stays open while it has no request.
+   */
+  isBuildingDappRequest = false
+
+  #dappRequestsBeingBuilt = 0
+
+  #dappRequestLoaderTimeoutId: ReturnType<typeof setTimeout> | undefined
+
+  /** Requests whose account state was fetched while they were built, so adding them can skip it */
+  #requestsWithFreshAccountState = new WeakSet<UserRequest>()
 
   /**
    * Set only while the wallet is closing a request window itself. Closing it fires
@@ -666,26 +681,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           continue
         }
 
-        const accountStateBefore =
-          this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
-
-        // Try to update the account state for 2 seconds. If that fails, use the previous account state if it exists,
-        // otherwise wait for the fetch to complete (no matter how long it takes).
-        // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
-        let fallbackTimeoutId: ReturnType<typeof setTimeout> | undefined
-        const accountState = await Promise.race([
-          this.#accounts
-            .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
-            .then(() => this.#accounts.accountStates[meta.accountAddr]?.[meta.chainId.toString()]),
-          // Fallback to the old account state if it exists and the fetch takes too long
-          accountStateBefore
-            ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
-              new Promise<AccountOnchainState | undefined>((res) => {
-                fallbackTimeoutId = setTimeout(() => res(accountStateBefore), 2000)
-              })
-            : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
-        ])
-        clearTimeout(fallbackTimeoutId)
+        const accountState = this.#requestsWithFreshAccountState.delete(req)
+          ? this.#accounts.accountStates[meta.accountAddr]?.[meta.chainId.toString()]
+          : await this.#getAccountStateWithFallback(meta.accountAddr, meta.chainId)
 
         if (!accountState) {
           const message =
@@ -1061,6 +1059,68 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
+  /**
+   * Tries to update the account state for 2 seconds. If that fails, uses the previous account
+   * state if it exists, otherwise waits for the fetch to complete (no matter how long it takes).
+   * This is done in an attempt to always have the latest nonce, but without blocking the UI for
+   * too long if the RPC is slow to respond.
+   */
+  async #getAccountStateWithFallback(
+    accountAddr: string,
+    chainId: bigint
+  ): Promise<AccountOnchainState | undefined> {
+    const accountStateBefore = this.#accounts.accountStates?.[accountAddr]?.[chainId.toString()]
+
+    let fallbackTimeoutId: ReturnType<typeof setTimeout> | undefined
+    const accountState = await Promise.race([
+      this.#accounts
+        .updateAccountState(accountAddr, 'pending', [chainId])
+        .then(() => this.#accounts.accountStates[accountAddr]?.[chainId.toString()]),
+      // Fallback to the old account state if it exists and the fetch takes too long
+      accountStateBefore
+        ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
+          new Promise<AccountOnchainState | undefined>((res) => {
+            fallbackTimeoutId = setTimeout(() => res(accountStateBefore), 2000)
+          })
+        : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
+    ])
+    clearTimeout(fallbackTimeoutId)
+
+    return accountState
+  }
+
+  /**
+   * Marks an app's transaction as being built. If the build takes longer than
+   * DAPP_REQUEST_LOADER_DELAY_MS, the request window opens with a loader.
+   */
+  #startDappRequestBuild(baseWindowId?: number) {
+    this.#dappRequestsBeingBuilt += 1
+    if (this.isBuildingDappRequest) return
+
+    this.isBuildingDappRequest = true
+    this.emitUpdate()
+    this.#dappRequestLoaderTimeoutId = setTimeout(() => {
+      this.#dappRequestLoaderTimeoutId = undefined
+      if (!this.isBuildingDappRequest || this.currentUserRequest) return
+
+      void this.openRequestWindow({ baseWindowId })
+    }, DAPP_REQUEST_LOADER_DELAY_MS)
+  }
+
+  async #endDappRequestBuild() {
+    this.#dappRequestsBeingBuilt -= 1
+    if (this.#dappRequestsBeingBuilt) return
+
+    clearTimeout(this.#dappRequestLoaderTimeoutId)
+    this.#dappRequestLoaderTimeoutId = undefined
+    this.isBuildingDappRequest = false
+    this.emitUpdate()
+
+    // The loader window closes if the build added no request to show
+    if (this.currentUserRequest) return
+    await this.#setCurrentUserRequest(null)
+  }
+
   async #setCurrentUserRequest(nextRequest: UserRequest | null, params?: OpenRequestWindowParams) {
     // Pause the previously active signAccountOp request
     if (
@@ -1090,6 +1150,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // switching between requests goes straight from one screen to the next.
       await this.#ui.syncViewRoutes(REQUEST_VIEW_TYPE)
       await this.openRequestWindow(params)
+      return
+    }
+
+    // The request window shows a loader until the app's transaction is built
+    if (this.isBuildingDappRequest) {
+      await this.#ui.syncViewRoutes(REQUEST_VIEW_TYPE)
       return
     }
 
@@ -2559,6 +2625,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   async #buildDappCallsBatch(batch: DappRequestQueueItem[]) {
     const [{ request: firstRequest, dapp }] = batch as [DappRequestQueueItem]
 
+    this.#startDappRequestBuild(firstRequest.session.windowId)
     try {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
 
@@ -2630,6 +2697,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } catch (error) {
       // Nothing was built, so every app in the batch is told the same thing
       batch.forEach((item) => item.fail(error))
+    } finally {
+      await this.#endDappRequestBuild()
     }
   }
 
@@ -4117,25 +4186,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
     } else {
       const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
-      const accountStateBefore =
-        this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
-      // Try to update the account state for 2 seconds. If that fails, use the previous account state if it exists,
-      // otherwise wait for the fetch to complete (no matter how long it takes).
-      // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
-      let fallbackTimeoutId: ReturnType<typeof setTimeout> | undefined
-      const accountState = await Promise.race([
-        this.#accounts
-          .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
-          .then(() => this.#accounts.accountStates[meta.accountAddr]?.[meta.chainId.toString()]),
-        // Fallback to the old account state if it exists and the fetch takes too long
-        accountStateBefore
-          ? new Promise<AccountOnchainState>((res) => {
-              fallbackTimeoutId = setTimeout(() => res(accountStateBefore), 2000)
-            })
-          : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
-      ])
-      clearTimeout(fallbackTimeoutId)
+      // Always waits for the fresh state, so the request starts with the latest nonce. A failed
+      // fetch keeps the previous state, which the request then uses.
+      await this.#accounts.updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
+      const accountState = this.#accounts.accountStates[meta.accountAddr]?.[meta.chainId.toString()]
 
       if (!accountState) {
         this.emitError({
@@ -4258,6 +4313,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         dappPromises
       } as CallsUserRequest
+
+      this.#requestsWithFreshAccountState.add(callUserRequest)
 
       if (accountOpNonce !== undefined) callUserRequest.signAccountOp.setSafeNonce(accountOpNonce)
 

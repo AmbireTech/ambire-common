@@ -37,6 +37,7 @@ import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { DAPP_REQUEST_LOADER_DELAY_MS } from './requests'
 
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
@@ -463,6 +464,96 @@ describe('RequestsController ', () => {
   // Registered after the restoreAllMocks above, so it's not undone right away. The requests
   // build signAccountOps that estimate in the background, nothing here asserts on the bundler
   mockBundlerRequestsBeforeEach()
+
+  describe('a dApp transaction that takes long to build', () => {
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    const buildDappTransaction = (controller: IRequestsController, id: string) =>
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'eth_sendTransaction',
+            params: [
+              {
+                from: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+                to: ZeroAddress,
+                value: '0x0',
+                data: '0x'
+              }
+            ],
+            session: MOCK_SESSION
+          },
+          dappPromise: { id, resolve: jest.fn(), reject: jest.fn(), session: MOCK_SESSION }
+        }
+      })
+
+    test('waits for the account state and shows a loader in the request window meanwhile', async () => {
+      const { controller, accountsCtrl } = await prepareTest(true)
+      let releaseStateFetch!: () => void
+      const stateFetchGate = new Promise<void>((resolve) => {
+        releaseStateFetch = resolve
+      })
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
+        .mockImplementation(async () => {
+          await stateFetchGate
+        })
+      const openRequestWindowSpy = jest.spyOn(controller, 'openRequestWindow')
+      // After the setup, which waits on real timers
+      jest.useFakeTimers()
+
+      const build = buildDappTransaction(controller, 'slow-build-test')
+      await jest.advanceTimersByTimeAsync(0)
+      expect(controller.isBuildingDappRequest).toBe(true)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(
+        '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        'pending',
+        [1n]
+      )
+      expect(openRequestWindowSpy).not.toHaveBeenCalled()
+
+      await jest.advanceTimersByTimeAsync(DAPP_REQUEST_LOADER_DELAY_MS)
+      expect(openRequestWindowSpy).toHaveBeenCalledTimes(1)
+      const loaderWindow = controller.requestWindow.windowProps
+      expect(loaderWindow).not.toBe(null)
+      expect(controller.currentUserRequest).toBe(null)
+
+      jest.useRealTimers()
+      releaseStateFetch()
+      await build
+
+      expect(controller.isBuildingDappRequest).toBe(false)
+      expect(controller.currentUserRequest?.kind).toBe('calls')
+      // The request shows in the loader's window, which never closed
+      expect(controller.requestWindow.windowProps?.id).toBe(loaderWindow?.id)
+
+      await controller.rejectUserRequests(
+        'Test cleanup',
+        controller.userRequests.map(({ id }) => id)
+      )
+    })
+
+    test('opens no loader when the account state arrives in time', async () => {
+      const { controller, accountsCtrl } = await prepareTest(true)
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+      const openRequestWindowSpy = jest.spyOn(controller, 'openRequestWindow')
+
+      await buildDappTransaction(controller, 'fast-build-test')
+
+      expect(controller.isBuildingDappRequest).toBe(false)
+      expect(controller.currentUserRequest?.kind).toBe('calls')
+      // Only the window of the request itself
+      expect(openRequestWindowSpy).toHaveBeenCalledTimes(1)
+
+      await controller.rejectUserRequests(
+        'Test cleanup',
+        controller.userRequests.map(({ id }) => id)
+      )
+    })
+  })
 
   test('Add and then remove a user request', async () => {
     const { controller, getCallsRequest } = await prepareTest()
