@@ -20,7 +20,13 @@ import { Selectors } from './contractInfo'
 import { ControllerInterface } from './controller'
 import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
-import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
+import {
+  Key,
+  MainKeyEncryptedWithSecret,
+  StoredKey,
+  StoredKeystoreSeed,
+  StoredLatticeSession
+} from './keystore'
 import { Network } from './network'
 import { PrivacyPoolsAccount, PrivacyPoolsBroadcaster } from './privacyPools'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
@@ -73,6 +79,7 @@ export type StorageProps = {
   keyPreferences: { addr: Key['addr']; type: Key['type']; label: string }[]
   keystoreKeys: StoredKey[]
   keystoreSeeds: StoredKeystoreSeed[]
+  keystoreLatticeSession: StoredLatticeSession | null
   // Dapps
   dappsV2: Dapp[]
   dapps: Dapp[]
