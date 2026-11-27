@@ -154,6 +154,11 @@ import {
   sortSigs
 } from '../../libs/safe/safe'
 import {
+  checkIncomingTokenSales,
+  getIncomingTokensToCheckSales,
+  IncomingTokenSaleRisk
+} from '../../libs/sellCheck/sellCheck'
+import {
   get7702AuthorizationSigningRequest,
   getEIP712SigningRequest,
   getExecuteSigningRequest,
@@ -509,6 +514,15 @@ export class SignAccountOpController
   // the banner may be incorrectly triggered due to the perceived balance drop.
   // Once discovery completes and updates the portfolio, the banner will be hidden.
   traceCallDiscoveryStatus: TraceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+
+  /**
+   * The tokens the transaction adds to the account that a simulated sale, right after it, found
+   * can't be sold or keep a large part of the sale. Shown on the simulation's "Assets in" card.
+   */
+  incomingTokenSaleRisks: IncomingTokenSaleRisk[] = []
+
+  /** The calls and incoming tokens the latest sale check ran for, so that it runs once for them */
+  #incomingTokenSalesCheckKey: string | null = null
 
   // the calculated gas used for the transaction estimation
   // it now depends on a variety of options and hence the need to move it
@@ -2631,6 +2645,59 @@ export class SignAccountOpController
     if (this.estimation.status === EstimationStatus.Error) {
       await this.#portfolio.overrideSimulationResults(this.accountOp)
     }
+
+    // Not awaited, so nothing waiting for the simulation and estimation waits for the sale check
+    // too: most transactions bring in no risky token. The check emits an update when it finds one
+    this.#checkIncomingTokenSales().catch((error) => {
+      // Without a result there's nothing to warn about, e.g. on an RPC without `eth_simulateV1`
+      this.emitError({
+        level: 'silent',
+        message: 'Error in signAccountOp.checkIncomingTokenSales',
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+    })
+  }
+
+  /**
+   * Checks whether the tokens the transaction adds to the account can be sold, from the latest
+   * portfolio simulation. It runs once for each set of calls and incoming tokens, as the result
+   * doesn't change between the re-estimations, and in the background, after the simulation and
+   * estimation are done. Throws when the check fails. See `checkIncomingTokenSales`
+   */
+  async #checkIncomingTokenSales() {
+    if (!this.canUpdate()) return
+
+    const portfolioNetworkState = this.#portfolio.getAccountPortfolioState(
+      this.accountOp.accountAddr
+    )?.[this.accountOp.chainId.toString()]
+    const tokens =
+      portfolioNetworkState?.result && !portfolioNetworkState.criticalError
+        ? getIncomingTokensToCheckSales(portfolioNetworkState.result.tokens, this.accountOp.chainId)
+        : []
+    const checkKey = JSON.stringify(
+      { calls: getSignableCalls(this.accountOp), tokens },
+      (_, value) => (typeof value === 'bigint' ? value.toString() : value)
+    )
+    if (checkKey === this.#incomingTokenSalesCheckKey) return
+
+    this.#incomingTokenSalesCheckKey = checkKey
+    // The risks found for other calls or tokens don't apply anymore
+    if (this.incomingTokenSaleRisks.length) {
+      this.incomingTokenSaleRisks = []
+      this.emitUpdate()
+    }
+    if (!tokens.length) return
+
+    const risks = await checkIncomingTokenSales({
+      provider: this.provider,
+      accountOp: this.accountOp,
+      tokens
+    })
+    // The calls or the incoming tokens changed while the check ran
+    if (checkKey !== this.#incomingTokenSalesCheckKey) return
+
+    this.incomingTokenSaleRisks = risks
+    if (risks.length) this.emitUpdate()
   }
 
   /**
@@ -6156,6 +6223,24 @@ export class SignAccountOpController
         title: significantBalanceDecreaseWarning.title,
         text: significantBalanceDecreaseWarning.text || significantBalanceDecreaseWarning.title,
         secondaryText: significantBalanceDecreaseWarning.secondaryText
+      })
+    }
+
+    // Shown on the simulation's "Assets in" card, which marks the tokens they're about
+    if (this.incomingTokenSaleRisks.some((risk) => risk.kind === 'cannot-sell')) {
+      banners.push({
+        id: WARNINGS.incomingTokenCannotBeSold.id,
+        type: 'error',
+        title: WARNINGS.incomingTokenCannotBeSold.title,
+        text: WARNINGS.incomingTokenCannotBeSold.text || WARNINGS.incomingTokenCannotBeSold.title
+      })
+    }
+    if (this.incomingTokenSaleRisks.some((risk) => risk.kind === 'high-sell-fee')) {
+      banners.push({
+        id: WARNINGS.incomingTokenHighSellFee.id,
+        type: 'warning',
+        title: WARNINGS.incomingTokenHighSellFee.title,
+        text: WARNINGS.incomingTokenHighSellFee.text || WARNINGS.incomingTokenHighSellFee.title
       })
     }
 
