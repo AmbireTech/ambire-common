@@ -966,6 +966,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
+    // The page was loaded without data the caller now asks for (e.g. the personalize step
+    // loads it without the linked accounts, then the user opens the picker), so it loads again
+    const isMissingRequestedData =
+      (!!shouldSearchForLinkedAccounts && !this.shouldSearchForLinkedAccounts) ||
+      (!!shouldGetAccountsUsedOnNetworks && !this.shouldGetAccountsUsedOnNetworks)
+
     if (shouldSearchForLinkedAccounts !== undefined) {
       this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
     }
@@ -977,7 +983,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (pageSize && pageSize !== this.pageSize) {
       this.pageSize = pageSize
       this.page = page
-    } else if (page === this.page && this.#derivedAccounts.length) return
+    } else if (page === this.page && this.#derivedAccounts.length && !isMissingRequestedData) return
 
     const requestId = ++this.#setPageRequestId
     this.page = page
@@ -1090,12 +1096,15 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       if (this.keyIterator?.type === 'internal' && this.keyIterator?.subType === 'private-key') {
         const accountsOnPageWithoutTheLinked = this.accountsOnPage.filter((acc) => !acc.isLinked)
         const usedAccounts = accountsOnPageWithoutTheLinked.filter(
-          (acc) => acc.account.usedOnNetworks?.length
+          (acc) =>
+            acc.account.usedOnNetworks?.length &&
+            acc.importStatus !== ImportStatus.ImportedWithTheSameKeys
         )
 
-        // Preselect every used account on the page (except the linked ones). Each private key
-        // gets its own account, so an unused key is not selected just because another one on
-        // the same page (bulk import) is used.
+        // Preselect every used account on the page (except the linked ones and the ones already
+        // in the wallet with this key, which would only be added again). Each private key gets
+        // its own account, so an unused key is not selected just because another one on the
+        // same page (bulk import) is used.
         usedAccounts.forEach((acc) => this.selectAccount(acc.account))
       }
     } catch (e: any) {

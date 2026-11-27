@@ -911,6 +911,98 @@ describe('AccountPicker', () => {
       expect(controller.readyToAddAccounts.map((a) => a.addr)).toEqual([bulkAddresses[0]])
     })
 
+    describe('opening the picker after the accounts were prepared without it', () => {
+      // What the picker screen asks for when it opens on a single private key
+      const PICKER_PAGE_PARAMS = {
+        page: 1,
+        pageSize: 1,
+        shouldSearchForLinkedAccounts: true,
+        shouldGetAccountsUsedOnNetworks: false
+      }
+
+      const prepareSinglePrivateKey = async () => {
+        const { controller } = await prepareTestWithImportedPrivateKeys([])
+        await initWithPrivateKeys(controller, bulkPrivateKeys[0]!, {
+          shouldSelectNextAccountAutomatically: true
+        })
+        // Keeps the test off the relayer - only whether the search runs matters here
+        const findLinkedAccountsSpy = jest
+          .spyOn(controller, 'findAndSetLinkedAccounts')
+          .mockResolvedValue(undefined)
+
+        return { controller, findLinkedAccountsSpy }
+      }
+
+      test('should look for linked accounts on the same page it loaded without them', async () => {
+        const { controller, findLinkedAccountsSpy } = await prepareSinglePrivateKey()
+        expect(controller.shouldSearchForLinkedAccounts).toBe(false)
+
+        await controller.setPage(PICKER_PAGE_PARAMS)
+
+        expect(findLinkedAccountsSpy).toHaveBeenCalledTimes(1)
+        expect(controller.shouldSearchForLinkedAccounts).toBe(true)
+        expect(controller.accountsOnPage.map((a) => a.account.addr)).toEqual([bulkAddresses[0]])
+        // The prepared account stays selected
+        expect(controller.selectedAccounts.map((a) => a.account.addr)).toEqual([bulkAddresses[0]])
+        findLinkedAccountsSpy.mockRestore()
+      })
+
+      test('should not load the same page again when nothing new is asked for', async () => {
+        const { controller, findLinkedAccountsSpy } = await prepareSinglePrivateKey()
+
+        await controller.setPage(PICKER_PAGE_PARAMS)
+        await controller.setPage(PICKER_PAGE_PARAMS)
+        // Turning the search off needs nothing loaded either
+        await controller.setPage({ ...PICKER_PAGE_PARAMS, shouldSearchForLinkedAccounts: false })
+
+        expect(findLinkedAccountsSpy).toHaveBeenCalledTimes(1)
+        findLinkedAccountsSpy.mockRestore()
+      })
+    })
+
+    test('should preselect the used accounts, except the ones already in the wallet with the key', async () => {
+      const [importedPrivateKey, newPrivateKey] = bulkPrivateKeys
+      const { controller } = await prepareTestWithImportedPrivateKeys([importedPrivateKey!])
+      // Every account is used, on every network
+      const getAccountStateSpy = jest
+        .spyOn(accountStateLib, 'getAccountState')
+        .mockImplementation(async (_provider, _network, accounts) =>
+          accounts.map(
+            (acc) =>
+              ({
+                accountAddr: acc.addr,
+                balance: 1n,
+                isEOA: true,
+                nonce: 0n,
+                eoaNonce: 0n,
+                erc4337Nonce: MAX_UINT256,
+                isDeployed: false
+              }) as AccountOnchainState
+          )
+        )
+      await controller.setInitParams({
+        keyIterator: new KeyIterator([importedPrivateKey!, newPrivateKey!]),
+        pageSize: 2,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        shouldGetAccountsUsedOnNetworks: true,
+        shouldSearchForLinkedAccounts: false,
+        shouldSelectNextAccountAutomatically: false
+      })
+      await controller.init()
+
+      await controller.setPage({ page: 1 })
+
+      expect(controller.accountsOnPage.every((a) => a.account.usedOnNetworks?.length)).toBe(true)
+      // The account already in the wallet shows as selected, but isn't added again
+      expect(controller.selectedAccounts.map((a) => a.account.addr)).toEqual(
+        expect.arrayContaining(bulkAddresses.slice(0, 2))
+      )
+      expect(controller.selectedAccountsFromCurrentSession.map((a) => a.account.addr)).toEqual([
+        bulkAddresses[1]
+      ])
+      getAccountStateSpy.mockRestore()
+    })
+
     test('should stop looking for the next account after the last private key when all are imported', async () => {
       const privateKeys = bulkPrivateKeys.slice(0, 3)
       const { controller } = await prepareTestWithImportedPrivateKeys(privateKeys)
