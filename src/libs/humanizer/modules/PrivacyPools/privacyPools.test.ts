@@ -108,12 +108,10 @@ describe('Privacy Pools humanizer', () => {
           precommitment
         })
       }))
-      const accountNames = ['Savings', 'Salary']
       const op = { ...fullAccountOp, calls: deposits }
 
       const humanized = humanizeAccountOp(op, {
-        getPrivacyPoolsAccountName: (call) =>
-          accountNames[deposits.findIndex(({ data }) => data === call.data)]
+        privacyPoolsAccountNames: { 0: 'Savings', 1: 'Salary' }
       })
 
       compareHumanizerVisualizations(humanized, [
@@ -136,8 +134,9 @@ describe('Privacy Pools humanizer', () => {
           getLabel('to a Privacy Pools account')
         ]
       ])
-      // Kept off the transaction itself, which is stored
+      // Kept off the transaction itself, which is stored, and off the humanized calls
       expect(op.calls.some((call) => 'privacyPoolsAccountName' in call)).toBe(false)
+      expect(humanized.some((call) => 'privacyPoolsAccountName' in call)).toBe(false)
     })
 
     test('still shows ETH sent along with a token deposit', () => {

@@ -27,7 +27,7 @@ import {
 
 /**
  * Names the Privacy Pools account a deposit goes to, when the wallet knows it (see
- * `IrCall.privacyPoolsAccountName`), so deposits into several accounts can be told apart.
+ * `HumanizerCallContext.privacyPoolsAccountName`), so deposits into several accounts can be told apart.
  */
 const getDepositRecipient = (accountName: string | undefined): HumanizerVisualization[] =>
   accountName
@@ -42,7 +42,12 @@ const getDepositRecipient = (accountName: string | undefined): HumanizerVisualiz
  * Also shows a ragequit, the public reclaim of a deposit still being verified, as getting it back
  * from Privacy Pools. Only for the pools we know, as the token comes from which pool it is.
  */
-export const privacyPoolsModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
+export const privacyPoolsModule: HumanizerCallModule = (
+  accountOp: AccountOp,
+  call: IrCall,
+  _humanizerMeta,
+  context
+) => {
   const config = accountOp.chainId ? getPrivacyPoolsChainConfig(accountOp.chainId) : undefined
   if (!config || !call.to) return call
 
@@ -76,7 +81,7 @@ export const privacyPoolsModule: HumanizerCallModule = (accountOp: AccountOp, ca
     fullVisualization: [
       getAction('Send'),
       getToken(tokenAddress, deposit.amount),
-      ...getDepositRecipient(call.privacyPoolsAccountName)
+      ...getDepositRecipient(context?.privacyPoolsAccountName)
     ]
   }
 }

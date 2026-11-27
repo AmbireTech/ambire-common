@@ -2,7 +2,7 @@ import MetaMorphoModule from '@/libs/humanizer/modules/MetaMorpho'
 
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerMeta, IrCall } from './interfaces'
+import { HumanizerCallContext, HumanizerCallModule, HumanizerMeta, IrCall } from './interfaces'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
@@ -103,11 +103,15 @@ export const humanizerCallModules: HumanizerCallModule[] = [
  * This is the single entry point for it: a nested call decoded inside an ERC-7730 descriptor is
  * described by exactly the same modules, in the same order, as a top-level one.
  */
-export const humanizeCallWithModules = (accountOp: AccountOp, call: IrCall): IrCall =>
+export const humanizeCallWithModules = (
+  accountOp: AccountOp,
+  call: IrCall,
+  context?: HumanizerCallContext
+): IrCall =>
   humanizerCallModules.reduce<IrCall>(
     (currentCall, humanizeWithModule) => {
       try {
-        return humanizeWithModule(accountOp, currentCall, humanizerInfo as HumanizerMeta)
+        return humanizeWithModule(accountOp, currentCall, humanizerInfo as HumanizerMeta, context)
       } catch (error) {
         console.error(error)
         // No action is needed here; we only update `currentCall` if the module successfully resolves it.

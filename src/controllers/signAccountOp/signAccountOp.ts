@@ -385,9 +385,17 @@ export class SignAccountOpController
 
   #privacyPools: IPrivacyPoolsController
 
-  /** See `PrivacyPoolsController.getDepositAccountName`. */
-  #getPrivacyPoolsAccountNameOfCall = (call: Call) =>
-    this.#privacyPools.getDepositAccountName(this.#network.chainId, call)
+  /**
+   * The names of the Privacy Pools accounts the calls deposit into, by call index (see
+   * `PrivacyPoolsController.getDepositAccountName`).
+   */
+  #getPrivacyPoolsAccountNames(): Record<number, string> {
+    return this.accountOp.calls.reduce<Record<number, string>>((names, call, index) => {
+      const name = this.#privacyPools.getDepositAccountName(this.#network.chainId, call)
+      if (name) names[index] = name
+      return names
+    }, {})
+  }
 
   #isDestroyed = false
 
@@ -1778,7 +1786,7 @@ export class SignAccountOpController
 
     this.#setHumanization(
       humanizeAccountOp(this.accountOp, {
-        getPrivacyPoolsAccountName: this.#getPrivacyPoolsAccountNameOfCall
+        privacyPoolsAccountNames: this.#getPrivacyPoolsAccountNames()
       }),
       humanizationId
     )
@@ -1799,7 +1807,7 @@ export class SignAccountOpController
     const erc7730Humanization = humanizeAccountOp(this.accountOp, {
       erc7730Descriptors,
       nativeAssetSymbol: this.#network.nativeAssetSymbol,
-      getPrivacyPoolsAccountName: this.#getPrivacyPoolsAccountNameOfCall
+      privacyPoolsAccountNames: this.#getPrivacyPoolsAccountNames()
     })
     if (
       !hasErc7730Humanization(erc7730Humanization) ||

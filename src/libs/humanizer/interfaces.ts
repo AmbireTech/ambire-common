@@ -126,12 +126,6 @@ export interface IrCall extends Omit<Call, 'to'> {
    * Privacy Pools deposit of ETH), so the fallback humanizer does not add it again as a "Send".
    */
   showsCallValue?: boolean
-  /**
-   * The name of the Privacy Pools account a deposit goes to, when the wallet knows it. Set only on
-   * the humanized copy, never stored with the transaction, as a stored log would link the deposit
-   * to the account.
-   */
-  privacyPoolsAccountName?: string
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
@@ -156,9 +150,26 @@ export interface Ir {
   messages: IrMessage[]
 }
 
+/**
+ * What the wallet knows about a call that the call itself does not say. The modules only read it,
+ * so it never ends up in the humanized call.
+ */
+export type HumanizerCallContext = {
+  /**
+   * The name of the Privacy Pools account a deposit goes to, when the wallet knows it. Never
+   * stored with the transaction, as a stored log would link the deposit to the account.
+   */
+  privacyPoolsAccountName?: string
+}
+
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
-  (accountOp: AccountOp, call: IrCall, humanizerMeta?: HumanizerMeta): IrCall
+  (
+    accountOp: AccountOp,
+    call: IrCall,
+    humanizerMeta?: HumanizerMeta,
+    context?: HumanizerCallContext
+  ): IrCall
 }
 
 /** What a message humanizer adds to a message: the visualization, warnings and display flags */
