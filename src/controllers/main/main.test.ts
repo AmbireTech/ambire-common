@@ -472,7 +472,11 @@ describe('Main Controller ', () => {
 
       controller.ui.uiEvent.emit('viewFocus', { id: 'focus-mobile', type: 'mobile' } as any)
       await wait(0)
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(controller.selectedAccount.account!.addr)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(
+        controller.selectedAccount.account!.addr,
+        'latest',
+        expect.any(Array)
+      )
     } finally {
       jest.restoreAllMocks()
     }

@@ -6,12 +6,10 @@ import {
   ACCOUNT_STATE_STAND_BY_INTERVAL,
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
-  INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   SAFE_MESSAGES_RESOLVE_ACTIVE_INTERVAL,
   SAFE_TXNS_RESOLVE_ACTIVE_INTERVAL,
   TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
-  TRENDING_TOKENS_FAILED_UPDATE_INTERVAL,
-  TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
+  TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
 } from '../../consts/intervals'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -105,6 +103,8 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   #trendingTokensFailedRetries = 0
 
+  #wasUnlocked: boolean
+
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
 
@@ -118,43 +118,24 @@ export class ContinuousUpdatesController extends EventEmitter {
     super(eventEmitterRegistry)
 
     this.#main = main
+    this.#wasUnlocked = this.#main.keystore.isUnlocked
 
-    // Postpone the portfolio update for the next interval
-    // if we have broadcasted but not yet confirmed acc op.
-    // Here's why:
-    // 1. On the Dashboard, we show a pending-to-be-confirmed token badge
-    //    if an acc op has been broadcasted but is still unconfirmed.
-    // 2. To display the expected balance change, we calculate it from the portfolio's pending simulation state.
-    // 3. When we sign and broadcast the acc op, we remove it from the Main controller.
-    // 4. If we trigger a portfolio update at this point, we will lose the pending simulation state.
-    // 5. Therefore, to ensure the badge is displayed, we pause the portfolio update temporarily.
-    //    Once the acc op is confirmed or failed, the portfolio interval will resume as normal.
-    // 6. Gotcha: If the user forcefully updates the portfolio, we will also lose the simulation.
-    //    However, this is not a frequent case, and we can make a compromise here.
     this.#updatePortfolioInterval = new RecurringTimeout(
       this.#updatePortfolio.bind(this),
-      INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
+      ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
       this.emitError.bind(this)
     )
 
-    this.#main.ui.uiEvent.on('addView', () => {
-      if (this.#main.ui.views.length === 1) {
-        this.#updatePortfolioInterval.restart({
-          timeout: ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
-        })
-        this.#fastAccountStateReFetchTimeout.start()
-      }
-    })
-    this.#main.ui.uiEvent.on('removeView', () => {
-      // Don't restart the timeout of the extension is locked to not overwrite the longer timeout set on lock
-      // How it could happen: the user locks the extension manually and closes the popup
-      if (!this.#main.ui.views.length && this.#main.keystore.isUnlocked) {
-        this.#updatePortfolioInterval.restart({
-          timeout: INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
-        })
-        this.#fastAccountStateReFetchTimeout.stop()
-      }
-    })
+    // The account timers run only while the wallet is in use, see #isWalletInUse
+    this.#main.ui.uiEvent.on('addView', () => this.#syncAccountTimers())
+    this.#main.ui.uiEvent.on('removeView', () => this.#syncAccountTimers())
+    this.#main.keystore.onUpdate(() => {
+      const { isUnlocked } = this.#main.keystore
+      if (isUnlocked === this.#wasUnlocked) return
+
+      this.#wasUnlocked = isUnlocked
+      this.#syncAccountTimers()
+    }, 'continuous-update')
 
     /**
      * Updates the account state for the selected account. Doesn't update the state for networks with failed RPC as this is handled by a different interval.
@@ -203,21 +184,18 @@ export class ContinuousUpdatesController extends EventEmitter {
     this.#main.ui.uiEvent.on('addView', () => this.#speedUpSafeChecks())
     this.#main.ui.uiEvent.on('viewFocus', () => this.#speedUpSafeChecks())
 
-    // Trending tokens poll frequently only while the extension is active and back off to a long
-    // cadence otherwise. On becoming active we refresh immediately, but the freshness guard in
-    // #updateTrendingTokens skips the fetch when the last update is still recent.
+    // Trending tokens are shown only in a wallet window, so they poll only while one is open.
+    // On opening one we refresh immediately, but the freshness guard in #updateTrendingTokens
+    // skips the fetch when the last update is still recent.
     this.#updateTrendingTokensInterval = new RecurringTimeout(
       this.#updateTrendingTokens.bind(this),
-      TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL,
+      TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
       this.emitError.bind(this),
       'updateTrendingTokensInterval'
     )
 
     this.#main.ui.uiEvent.on('addView', () => {
-      const isAlreadyActive =
-        this.#updateTrendingTokensInterval.currentTimeout === TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL
-
-      if (this.#main.ui.views.length === 1 && !isAlreadyActive) {
+      if (this.#main.ui.views.length === 1 && !this.#updateTrendingTokensInterval.running) {
         this.#updateTrendingTokensInterval.restart({
           timeout: TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
           runImmediately: true
@@ -225,22 +203,18 @@ export class ContinuousUpdatesController extends EventEmitter {
       }
     })
     this.#main.ui.uiEvent.on('removeView', () => {
-      if (!this.#main.ui.views.length) {
-        this.#updateTrendingTokensInterval.restart({
-          timeout: TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
-        })
-      }
+      if (!this.#main.ui.views.length) this.#updateTrendingTokensInterval.stop()
     })
 
     this.#main.swapAndBridge.onUpdate(() => {
       if (this.#main.swapAndBridge.signAccountOpController?.broadcastStatus === 'SUCCESS') {
-        this.#accountStateLatestInterval.restart()
+        this.#restartAccountStateTimer()
       }
     }, 'continuous-update')
 
     this.#main.transfer.onUpdate(() => {
       if (this.#main.transfer.signAccountOpController?.broadcastStatus === 'SUCCESS') {
-        this.#accountStateLatestInterval.restart()
+        this.#restartAccountStateTimer()
       }
     }, 'continuous-update')
 
@@ -256,7 +230,7 @@ export class ContinuousUpdatesController extends EventEmitter {
               this.#main.requests.currentUserRequest?.kind === 'calls' &&
               this.#main.requests.currentUserRequest.signAccountOp.broadcastStatus === 'SUCCESS'
             ) {
-              this.#accountStateLatestInterval.restart()
+              this.#restartAccountStateTimer()
             }
           }, 'continuous-update')
         }
@@ -264,7 +238,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     }, 'continuous-update')
 
     this.#main.providers.onUpdate(() => {
-      this.#fastAccountStateReFetchTimeout.restart()
+      if (this.#isWalletInUse()) this.#fastAccountStateReFetchTimeout.restart()
     }, 'continuous-update')
 
     this.#main.activity.onUpdate(() => {
@@ -289,23 +263,64 @@ export class ContinuousUpdatesController extends EventEmitter {
   async #load() {
     await this.#main.initialLoadPromise
 
-    this.#accountStateLatestInterval.start()
+    this.#syncAccountTimers()
     this.#safeGlobalTxnInterval.start()
     this.#safeGlobalMessageInterval.start()
-    this.#updateTrendingTokensInterval.start({ runImmediately: true })
+  }
+
+  /**
+   * Whether the account timers may run: the wallet is unlocked and a wallet window is open. A
+   * request from a connected app opens a window, so it counts too.
+   */
+  #isWalletInUse() {
+    return this.#main.keystore.isUnlocked && this.#isUiActive()
+  }
+
+  /**
+   * Starts the portfolio and account state timers while the wallet is in use, and stops them,
+   * with the re-fetch of failed networks, otherwise. Starting them doesn't fetch at once, as
+   * opening a window refreshes the data that is old.
+   */
+  #syncAccountTimers() {
+    if (!this.#isWalletInUse()) {
+      this.#updatePortfolioInterval.stop()
+      this.#accountStateLatestInterval.stop()
+      this.#fastAccountStateReFetchTimeout.stop()
+      return
+    }
+
+    this.#updatePortfolioInterval.start()
+    this.#accountStateLatestInterval.start()
+    this.#fastAccountStateReFetchTimeout.start()
+  }
+
+  /** Restarts the portfolio and account state timers after an account switch, if they may run. */
+  restartAccountTimers() {
+    if (!this.#isWalletInUse()) return
+
+    this.#updatePortfolioInterval.restart()
+    this.#accountStateLatestInterval.restart()
+  }
+
+  #restartAccountStateTimer() {
+    if (this.#isWalletInUse()) this.#accountStateLatestInterval.restart()
   }
 
   async #updatePortfolio() {
     await this.initialLoadPromise
+    // Stops the timers when they were restarted while the wallet is not in use
+    if (!this.#isWalletInUse()) {
+      this.#syncAccountTimers()
+      return
+    }
 
     await Promise.all([
       this.#main.updateSelectedAccountPortfolio({
         maxDataAgeMs: 60 * 1000,
         maxDataAgeMsUnused: 60 * 60 * 1000
       }),
-      // Only while a view is open, as a sync is much heavier than a portfolio update. Does nothing
-      // unless a Privacy Pools account is selected and the wallet is unlocked.
-      this.#main.ui.views.length ? this.#main.privacyPools.syncInBackground() : undefined
+      // Does nothing unless a Privacy Pools account is selected and the wallet is unlocked
+      this.#main.privacyPools.syncInBackground()
     ])
   }
 
@@ -335,7 +350,7 @@ export class ContinuousUpdatesController extends EventEmitter {
         this.#updateTrendingTokensInterval.currentTimeout === TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
       ) {
         this.#updateTrendingTokensInterval.updateTimeout({
-          timeout: this.#getTrendingTokensNormalInterval()
+          timeout: TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL
         })
       }
     } catch (err) {
@@ -348,17 +363,11 @@ export class ContinuousUpdatesController extends EventEmitter {
       // onError handler reports it (with level 'silent', i.e. no user-facing toast).
       this.#updateTrendingTokensInterval.updateTimeout({
         timeout: hasExhaustedRetries
-          ? this.#getTrendingTokensNormalInterval()
+          ? TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL
           : TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
       })
       throw err
     }
-  }
-
-  #getTrendingTokensNormalInterval() {
-    return this.#main.ui.views.length
-      ? TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL
-      : TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
   }
 
   async #updateAccountsOpsStatuses() {
@@ -396,6 +405,11 @@ export class ContinuousUpdatesController extends EventEmitter {
   async #updateAccountStateLatest() {
     await this.initialLoadPromise
     await this.#main.accounts.accountStateInitialLoadPromise
+    // Stops the timers when they were restarted while the wallet is not in use
+    if (!this.#isWalletInUse()) {
+      this.#syncAccountTimers()
+      return
+    }
 
     if (!this.#main.accounts.accounts.length) return // no accounts imported yet
 
@@ -436,6 +450,11 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   async #fastAccountStateReFetch() {
     await this.initialLoadPromise
+    // Stops the timers when they were restarted while the wallet is not in use
+    if (!this.#isWalletInUse()) {
+      this.#syncAccountTimers()
+      return
+    }
 
     const selectedAccountAddr = this.#main.selectedAccount.account?.addr
 
