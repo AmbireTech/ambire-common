@@ -12,8 +12,11 @@ change here as a security change.
   commit that is at least 14 days old, then applies Ambire's changes (see `amend.ts`).
 - There are three kinds of change:
   - **amend** (`amendCalldataDescriptors`, `amendEip712Descriptors`): changes an upstream
-    descriptor. It applies to **every** key that uses the descriptor, also keys upstream adds later
-    (the summary lists those as "is also amended for").
+    descriptor. The result is bundled as `ambire/<descriptor path>`, so it is clear which
+    descriptors Ambire changed. It applies to **every** key that uses the descriptor (adds of it
+    too), also keys upstream adds later (the summary lists those as "is also amended for"). Code
+    that checks a descriptor's path must accept the `ambire/` prefix (see `isOneInchDescriptor` in
+    `humanize.ts`).
   - **add** (`addCalldataDescriptors`, `addEip712Descriptors`): points a key
     (`eip155:{chainId}:{address}`) at a descriptor, e.g. on a network upstream does not list.
   - **own descriptor** (`descriptors/registry/<project>/`): only when upstream has no descriptor for
@@ -71,6 +74,13 @@ the descriptor, not only the ones in `addresses`.
   "... (upstream PR #N; drop this once it is merged)".
 - `addresses`: the keys you audited. When the summary says "is also amended for ...", audit those
   keys, then add them.
+- To use an amended descriptor for more contracts, add their keys to `addCalldataDescriptors` (or
+  `addEip712Descriptors`) with the **upstream** path, e.g. `'registry/lifi/calldata-LIFIDiamond.json'`.
+  The script points them at the `ambire/` copy, and back at the upstream descriptor once the amend
+  is removed. Never write an `ambire/` path in an add, and never put such a key in the amend's
+  `addresses`: those are only keys upstream already points at the descriptor.
+- Keys upstream points at an amended descriptor get the copy on their own, also ones it adds later.
+  Add them to `addresses` once you audited them, so the update fails if they ever stop using it.
 - Adds have no `reason` field. Put a comment above each group of adds that says why the keys are
   added and when they can be removed (usually: once the registry lists them, which fails the update).
 - Check what you change so that a relevant upstream change fails the build:

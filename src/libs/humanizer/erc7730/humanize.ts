@@ -41,7 +41,11 @@ import {
   getWarning,
   uintToAddress
 } from '../utils'
-import { MAX_DISPLAYED_NESTED_CALLDATA_DEPTH, SAFE_TX_PRIMARY_TYPE } from './consts'
+import {
+  ERC7730_AMBIRE_PATH_PREFIX,
+  MAX_DISPLAYED_NESTED_CALLDATA_DEPTH,
+  SAFE_TX_PRIMARY_TYPE
+} from './consts'
 import { getEip712EncodeType, getEip712EncodeTypeHashFromString } from './eip712'
 import {
   Erc7730Descriptor,
@@ -1178,9 +1182,18 @@ const formatToVisualizations = (
   ]
 }
 
-/** Whether a descriptor is one of 1inch's, by its path in the registry (`registry/1inch/...`) */
-const isOneInchDescriptor = (descriptorPath?: string) =>
-  !!descriptorPath?.startsWith('registry/1inch/')
+/**
+ * Whether a descriptor is one of 1inch's, by its path in the registry (`registry/1inch/...`), also
+ * when Ambire amended it (`ambire/registry/1inch/...`)
+ */
+const isOneInchDescriptor = (descriptorPath?: string) => {
+  if (!descriptorPath) return false
+  const upstreamPath = descriptorPath.startsWith(ERC7730_AMBIRE_PATH_PREFIX)
+    ? descriptorPath.slice(ERC7730_AMBIRE_PATH_PREFIX.length)
+    : descriptorPath
+
+  return upstreamPath.startsWith('registry/1inch/')
+}
 
 const isOneInchFillOrderFormat = (formatKey: string, descriptorPath?: string) =>
   isOneInchDescriptor(descriptorPath) && formatKey.startsWith('fillOrder(')

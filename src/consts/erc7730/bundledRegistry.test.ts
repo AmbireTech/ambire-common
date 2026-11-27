@@ -5,7 +5,10 @@ import { isDeepStrictEqual as isEqual } from 'util'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { SUPPORTED_ERC7730_SCHEMA_FILES } from '../../libs/humanizer/erc7730/consts'
+import {
+  ERC7730_AMBIRE_PATH_PREFIX,
+  SUPPORTED_ERC7730_SCHEMA_FILES
+} from '../../libs/humanizer/erc7730/consts'
 import {
   getSchemaFileName,
   mergeDescriptors,
@@ -137,12 +140,18 @@ describe('bundled ERC-7730 registry', () => {
     expect(missingIncludes).toEqual([])
   })
 
-  test('names descriptors by their path in the upstream registry', () => {
+  test('names descriptors by their path in the upstream registry, or as amended copies of one', () => {
     const otherPaths = [
       ...Object.keys(descriptors),
       ...Object.values(calldataIndex),
       ...getEip712Paths()
-    ].filter((path) => !path.startsWith('registry/') && !path.startsWith('ercs/'))
+    ]
+      .map((path) =>
+        path.startsWith(ERC7730_AMBIRE_PATH_PREFIX)
+          ? path.slice(ERC7730_AMBIRE_PATH_PREFIX.length)
+          : path
+      )
+      .filter((path) => !path.startsWith('registry/') && !path.startsWith('ercs/'))
 
     expect([...new Set(otherPaths)]).toEqual([])
   })
@@ -168,21 +177,36 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
     expect(unknownHashes).toEqual([])
   })
 
+  /** The path a descriptor is bundled at: its `ambire/` copy when Ambire amended it */
+  const getBundledPath = (name: string) =>
+    name in amendments.amendCalldataDescriptors || name in amendments.amendEip712Descriptors
+      ? `${ERC7730_AMBIRE_PATH_PREFIX}${name}`
+      : name
+
   test('uses each added descriptor for its key', () => {
     Object.entries(amendments.addCalldataDescriptors).forEach(([key, name]) => {
-      expect(calldataIndex[key]).toBe(name)
+      expect(calldataIndex[key]).toBe(getBundledPath(name))
+    })
+  })
+
+  test('bundles each amended descriptor as its ambire/ copy only', () => {
+    Object.keys(amendments.amendCalldataDescriptors).forEach((name) => {
+      expect(isOwnKey(descriptors, `${ERC7730_AMBIRE_PATH_PREFIX}${name}`)).toBe(true)
+      expect(Object.values(calldataIndex)).not.toContain(name)
     })
   })
 
   test('uses each amended descriptor for the keys it lists', () => {
     Object.entries(amendments.amendCalldataDescriptors).forEach(([name, { addresses }]) => {
-      addresses.forEach((key) => expect(calldataIndex[key]).toBe(name))
+      addresses.forEach((key) => expect(calldataIndex[key]).toBe(getBundledPath(name)))
     })
   })
 
   test('shows the ETH sent to the Uniswap V3 position manager instead of refusing it', () => {
     const valueFields = getFields(
-      getMergedDescriptor('registry/uniswap/calldata-UniswapV3NonfungiblePositionManager.json')
+      getMergedDescriptor(
+        'ambire/registry/uniswap/calldata-UniswapV3NonfungiblePositionManager.json'
+      )
     ).filter((field) => field.path === '@.value')
 
     expect(valueFields.filter((field) => isEqual(field.visible, { ifNotIn: [0] }))).toHaveLength(14)
@@ -192,7 +216,7 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
   })
 
   test('shows the destination network of LiFi by its name', () => {
-    const lifi = getMergedDescriptor('registry/lifi/calldata-LIFIDiamond.json')
+    const lifi = getMergedDescriptor('ambire/registry/lifi/calldata-LIFIDiamond.json')
     const chainIdFields = getFields(lifi).filter((field) =>
       field.path?.endsWith('destinationChainId')
     )
@@ -219,10 +243,10 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
       ])
       expect(
         calldataIndex[getRegistryKey(chainId, '0xba3cb449bd2b4adddbc894d8697f5170800eadec')]
-      ).toBe('registry/cow-protocol/calldata-CoWSwapEthFlow.json')
+      ).toBe('ambire/registry/cow-protocol/calldata-CoWSwapEthFlow.json')
     })
 
-    const ethFlow = getMergedDescriptor('registry/cow-protocol/calldata-CoWSwapEthFlow.json')
+    const ethFlow = getMergedDescriptor('ambire/registry/cow-protocol/calldata-CoWSwapEthFlow.json')
     const unwrapFields = ethFlow.display?.formats?.['unwrap(uint256 amount)']?.fields
 
     expect(unwrapFields?.map(({ format }) => format)).toEqual(['amount'])

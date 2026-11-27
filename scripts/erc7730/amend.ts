@@ -1,6 +1,7 @@
 import { id } from 'ethers'
 import { isDeepStrictEqual } from 'util'
 
+import { ERC7730_AMBIRE_PATH_PREFIX } from '../../src/libs/humanizer/erc7730/consts'
 import { getIncludes, mergeDescriptors } from '../../src/libs/humanizer/erc7730/descriptor'
 import { ERC7730_MAX_RESOLUTION_DEPTH } from '../../src/libs/humanizer/erc7730/registry'
 import {
@@ -22,7 +23,9 @@ import {
 // upstream change makes it wrong or useless, instead of shipping it silently:
 //
 // - an amend changes an upstream descriptor (or one of Ambire's own). It checks what it changes
-//   with `expectMatches` and `expectEqual`, and lists contracts that must still use the descriptor
+//   with `expectMatches` and `expectEqual`, and lists contracts that must still use the descriptor.
+//   The result is bundled as `ambire/<descriptor path>`, and every key that used the descriptor
+//   uses it
 // - an add points an index key at a descriptor (an upstream one, e.g. on a network the registry
 //   doesn't list, or one of Ambire's own), and fails once the registry has its own entry there
 // - Ambire's own descriptors are in the upstream format; their `deployments` are added to the
@@ -45,7 +48,11 @@ export type AmendContext = {
 export type Amendment = {
   /** Why the descriptor is changed, and when the change can be dropped */
   reason: string
-  /** Registry keys (`eip155:{chainId}:{address}`) that must still use the descriptor */
+  /**
+   * Registry keys (`eip155:{chainId}:{address}`) the upstream index points at the descriptor, and
+   * must keep pointing at it. Only a check: every key that uses the descriptor gets the amended
+   * copy. Use an add, with the upstream path, for a key the upstream index doesn't have
+   */
   addresses: string[]
   amend: (context: AmendContext) => void
 }
@@ -53,11 +60,17 @@ export type Amendment = {
 export type Amendments = {
   /** Calldata descriptors to change, by their name */
   amendCalldataDescriptors: Record<string, Amendment>
-  /** Registry key -> the name of the calldata descriptor to use for it */
+  /**
+   * Registry key -> the upstream path of the calldata descriptor to use for it. If that descriptor
+   * is amended, the key gets its `ambire/` copy
+   */
   addCalldataDescriptors: Record<string, string>
   /** EIP-712 descriptors to change, by their name. Their formats must stay the same */
   amendEip712Descriptors: Record<string, Amendment>
-  /** Registry key -> the name of the EIP-712 descriptor to use for its typed messages */
+  /**
+   * Registry key -> the upstream path of the EIP-712 descriptor to use for its typed messages. If
+   * that descriptor is amended, the key gets its `ambire/` copy
+   */
   addEip712Descriptors: Record<string, string>
 }
 
@@ -175,6 +188,8 @@ export const applyAmendments = (
     Object.entries(built.eip712Index).map(([key, entries]) => [key, { ...entries }])
   )
   const hasDescriptor = (name: string) => Object.prototype.hasOwnProperty.call(descriptors, name)
+  /** Registry path -> the path of its amended copy (`ambire/<path>`) */
+  const amendedPaths = new Map<string, string>()
 
   /** A descriptor merged with everything it includes, or null if anything is missing */
   const flatten = (name: string, depth = 0): Erc7730Descriptor | null => {
@@ -416,7 +431,30 @@ export const applyAmendments = (
       return
     }
 
-    descriptors[name] = first.descriptor as Record<string, unknown>
+    // Saved as a copy under `ambire/`, so that it is clear which descriptors are not the registry's
+    // as they are, and every key that used the registry's descriptor uses the copy
+    // One copy per descriptor, as amends are keyed by the descriptor path. To amend the same
+    // descriptor differently for different contracts in the future, give each copy a unique path,
+    // e.g. with a short hash of its `addresses`, and point only those keys at it
+    const copyName = `${ERC7730_AMBIRE_PATH_PREFIX}${name}`
+    if (hasDescriptor(copyName)) {
+      problems.push(`${reference}: ${copyName} is already in the registry`)
+      return
+    }
+    descriptors[copyName] = first.descriptor as Record<string, unknown>
+    amendedPaths.set(name, copyName)
+    keys.forEach((key) => {
+      if (kind === 'calldata') {
+        calldataIndex[key] = copyName
+        return
+      }
+      eip712Index[key] = Object.fromEntries(
+        Object.entries(eip712Index[key]!).map(([primaryType, entries]) => [
+          primaryType,
+          entries.map((entry) => (entry.path === name ? { ...entry, path: copyName } : entry))
+        ])
+      )
+    })
     notes.push(`${name} is amended: ${amendment.reason}`)
   }
 
@@ -427,16 +465,33 @@ export const applyAmendments = (
     amend(name, amendment, 'eip712')
   )
 
+  // An add of an amended descriptor uses its amended copy
   Object.entries(amendments.addCalldataDescriptors).forEach(([key, name]) => {
     const reference = `The add of ${name} for ${key}`
     if (!hasDescriptor(name)) problems.push(`${reference}: the descriptor is not bundled`)
-    else addCalldataKey(key, name, reference)
+    else addCalldataKey(key, amendedPaths.get(name) ?? name, reference)
   })
   Object.entries(amendments.addEip712Descriptors).forEach(([key, name]) => {
     const reference = `The add of ${name} for ${key}`
     if (!hasDescriptor(name)) problems.push(`${reference}: the descriptor is not bundled`)
-    else addEip712Key(key, name, reference)
+    else addEip712Key(key, amendedPaths.get(name) ?? name, reference)
   })
+
+  // The registry's version of an amended descriptor is not bundled when nothing uses it any more
+  // (another descriptor may still include it), and neither are the descriptors only it includes
+  const removeIfUnused = (name: string) => {
+    if (!hasDescriptor(name)) return
+    const isIncluded = Object.values(descriptors).some((descriptor) =>
+      getIncludes(descriptor).includes(name)
+    )
+    const isUsed = usesInIndex(name, 'calldata').length || usesInIndex(name, 'eip712').length
+    if (isUsed || isIncluded) return
+
+    const includes = getIncludes(descriptors[name]!)
+    delete descriptors[name]
+    includes.forEach(removeIfUnused)
+  }
+  amendedPaths.forEach((_, name) => removeIfUnused(name))
 
   if (problems.length) throw new RegistryBuildError(problems)
 

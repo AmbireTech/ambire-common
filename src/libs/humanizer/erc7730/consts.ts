@@ -13,6 +13,13 @@ export const SUPPORTED_ERC7730_SCHEMA_FILES: ReadonlySet<string> = new Set([
   'erc7730-v2.schema.json'
 ])
 
+/**
+ * The prefix of a descriptor Ambire amended: the amended copy of `registry/x.json` is
+ * `ambire/registry/x.json` (see `scripts/erc7730/amend.ts`), so it is clear which descriptors are
+ * not upstream's as they are. The upstream registry has no such paths
+ */
+export const ERC7730_AMBIRE_PATH_PREFIX = 'ambire/'
+
 export const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
 export const ERC20_TRANSFER_SELECTOR = '0xa9059cbb'
 export const PERMIT2_APPROVE_SELECTOR = '0x87517c45'

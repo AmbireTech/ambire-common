@@ -78,17 +78,51 @@ describe('applyAmendments: amends', () => {
       withAmendments({ amendCalldataDescriptors: { 'pool/calldata-Pool.json': fixValue } }),
       {}
     )
-    const amended = registry.descriptors['pool/calldata-Pool.json'] as any
+    const amended = registry.descriptors['ambire/pool/calldata-Pool.json'] as any
 
     expect(amended.includes).toBeUndefined()
     expect(amended.display.formats['mint()'].fields[0].visible).toEqual({ ifNotIn: [0] })
     expect(amended.display.formats['burn()'].fields[0].fields[0].visible).toEqual({ ifNotIn: [0] })
-    // The included descriptor itself is left as it is
-    expect(
-      (registry.descriptors['pool/common-Pool.json'] as any).display.formats['burn()'].fields[0]
-        .fields[0].visible
-    ).toEqual({ mustMatch: [0] })
+    // Every key of the descriptor uses the copy, so neither the registry's descriptor nor the one
+    // only it includes is bundled
+    expect(registry.calldataIndex[KEY]).toBe('ambire/pool/calldata-Pool.json')
+    expect(registry.calldataIndex[OTHER_KEY]).toBe('ambire/pool/calldata-Pool.json')
+    expect(registry.descriptors['pool/calldata-Pool.json']).toBeUndefined()
+    expect(registry.descriptors['pool/common-Pool.json']).toBeUndefined()
     expect(notes).toContain(`pool/calldata-Pool.json is also amended for ${OTHER_KEY}`)
+  })
+
+  test('gives an add of an amended descriptor its ambire/ copy', () => {
+    const { registry } = applyAmendments(
+      upstreamRegistry(),
+      withAmendments({
+        amendCalldataDescriptors: { 'pool/calldata-Pool.json': fixValue },
+        addCalldataDescriptors: { [NEW_KEY]: 'pool/calldata-Pool.json' }
+      }),
+      {}
+    )
+
+    expect(registry.calldataIndex[NEW_KEY]).toBe('ambire/pool/calldata-Pool.json')
+  })
+
+  test('keeps the registry descriptor while another descriptor includes it', () => {
+    const registry = upstreamRegistry()
+    registry.descriptors['pool/calldata-PoolV2.json'] = {
+      $schema: SCHEMA,
+      includes: 'pool/calldata-Pool.json'
+    }
+    registry.calldataIndex[NEW_KEY] = 'pool/calldata-PoolV2.json'
+
+    const { registry: amended } = applyAmendments(
+      registry,
+      withAmendments({ amendCalldataDescriptors: { 'pool/calldata-Pool.json': fixValue } }),
+      {}
+    )
+
+    expect(amended.descriptors['pool/calldata-Pool.json']).toEqual(
+      upstreamRegistry().descriptors['pool/calldata-Pool.json']
+    )
+    expect(amended.calldataIndex[NEW_KEY]).toBe('pool/calldata-PoolV2.json')
   })
 
   test('fails when what it expects is no longer there', () => {

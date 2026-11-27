@@ -1175,7 +1175,11 @@ describe('ERC-7730 descriptors', () => {
       ]
     ])
   })
-  test('resolves uint byte slices and uint-encoded token addresses', async () => {
+  // Also for a descriptor Ambire amended, which keeps the 1inch handling
+  test.each([
+    'registry/1inch/calldata-AggregationRouterV6.json',
+    'ambire/registry/1inch/calldata-AggregationRouterV6.json'
+  ])('resolves uint byte slices and uint-encoded token addresses (%s)', async (oneInchPath) => {
     const maker = '0x4446adc0b8136ffc55ddb7a488ba5509ace2a5ef'
     const oneInchAccountOp = {
       ...accountOp,
@@ -1195,7 +1199,7 @@ describe('ERC-7730 descriptors', () => {
     const irCalls = humanizeAccountOp(oneInchAccountOp, {
       erc7730Descriptors: {
         0: {
-          path: 'registry/1inch/calldata-AggregationRouterV6.json',
+          path: oneInchPath,
           descriptor: {
             metadata: {
               enums: {
