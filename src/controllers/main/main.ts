@@ -260,6 +260,18 @@ export class MainController extends EventEmitter implements IMainController {
     return this.#continuousUpdates
   }
 
+  /**
+   * The flag values the controller starts with, until the stored values load. The constructor
+   * reads some flags (for example `testnetMode` and `withEmailVaultController`) before the stored
+   * values can load, so these values decide them.
+   * Production uses the defaults. Only a subclass can change this (see `makeMainController` in
+   * `test/helpers/mainController.ts`), so an app cannot start with other values than the ones
+   * the user can see and change.
+   */
+  protected getInitialFeatureFlags(): Partial<FeatureFlags> {
+    return {}
+  }
+
   constructor({
     eventEmitterRegistry,
     appVersion,
@@ -272,7 +284,6 @@ export class MainController extends EventEmitter implements IMainController {
     cowSwapApiKey,
     bungeeApiKey,
     uniswapApiKey,
-    featureFlags,
     keystoreSigners,
     externalSignerControllers,
     uiManager,
@@ -292,7 +303,6 @@ export class MainController extends EventEmitter implements IMainController {
     cowSwapApiKey: string
     bungeeApiKey: string
     uniswapApiKey: string
-    featureFlags: Partial<FeatureFlags>
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
@@ -315,7 +325,11 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       storage: this.storage
     })
-    this.featureFlags = new FeatureFlagsController(featureFlags, this.storage, eventEmitterRegistry)
+    this.featureFlags = new FeatureFlagsController(
+      this.getInitialFeatureFlags(),
+      this.storage,
+      eventEmitterRegistry
+    )
     this.ui = new UiController({ eventEmitterRegistry, uiManager })
     this.invite = new InviteController({
       eventEmitterRegistry,

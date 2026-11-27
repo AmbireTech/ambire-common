@@ -18,6 +18,13 @@ export class FeatureFlagsController extends EventEmitter implements IFeatureFlag
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
+  /**
+   * Whether the saved flags have been read. The UI gates its own readiness on this flag, because
+   * a state sent before the load carries the default flags, and a screen that paints with them
+   * decides what to show and request from the wrong values.
+   */
+  isReady: boolean = false
+
   constructor(
     featureFlags: Partial<FeatureFlags>,
     storage: IStorageController,
@@ -34,8 +41,13 @@ export class FeatureFlagsController extends EventEmitter implements IFeatureFlag
   }
 
   async #load(): Promise<void> {
+    // A failed read is not caught on purpose: the controller stays not ready, so the UI shows its
+    // loading-failed screen instead of running with the default flags, which are not the
+    // privacy choices of the user. Missing saved flags are not a failure: the read returns the
+    // fallback and the defaults apply.
     const features = await this.#storage.get('flags', {})
     this.#flags = { ...this.#flags, ...(features || {}) }
+    this.isReady = true
     this.emitUpdate()
   }
 

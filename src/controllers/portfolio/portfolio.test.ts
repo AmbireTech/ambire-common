@@ -4609,6 +4609,38 @@ describe('Portfolio Controller ', () => {
       })
     })
 
+    const exchangeListFetches = () =>
+      jest
+        .mocked(exchangeListFetchOverride)
+        .mock.calls.filter(([input]) => String(input) === EXCHANGE_LIST_URL)
+
+    // A failed load of the saved flags leaves `isReady` false and the flags on their defaults
+    // (prices on), which are not the choice of a user who opted out of the price API
+    test('does not call the price API while the saved feature flags are not loaded', async () => {
+      const { controller, featureFlagsCtrl } = await prepareTest({
+        fetchOverride: exchangeListFetchOverride
+      })
+      featureFlagsCtrl.isReady = false
+      expect(featureFlagsCtrl.isFeatureEnabled('tokenPrices')).toBe(true)
+
+      await loadExchangeList(controller)
+
+      expect(exchangeListFetches()).toHaveLength(0)
+      expect(controller.exchangeListUpdatedAt).toBeNull()
+    })
+
+    test('does not call the price API when the user opted out of token prices', async () => {
+      const { controller } = await prepareTest({
+        fetchOverride: exchangeListFetchOverride,
+        featureFlags: { tokenPrices: false }
+      })
+
+      await loadExchangeList(controller)
+
+      expect(exchangeListFetches()).toHaveLength(0)
+      expect(controller.exchangeListUpdatedAt).toBeNull()
+    })
+
     test('the serialized state leaves out what the UI never reads', async () => {
       const { controller } = await prepareTest({ fetchOverride: exchangeListFetchOverride })
       await loadExchangeList(controller)
