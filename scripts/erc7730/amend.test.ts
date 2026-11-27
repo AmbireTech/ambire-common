@@ -1,9 +1,7 @@
-import { id } from 'ethers'
-
 import { describe, expect, test } from '@jest/globals'
 
 import { Amendment, Amendments, applyAmendments, getNamingProblems, NO_AMENDMENTS } from './amend'
-import { BuiltRegistry, RegistryBuildError } from './build'
+import { BuiltRegistry, BundledRegistry, RegistryBuildError } from './build'
 
 const SCHEMA = '../../specs/erc7730-v2.schema.json'
 const KEY = 'eip155:1:0x1111111111111111111111111111111111111111'
@@ -17,7 +15,7 @@ const valueField = { path: '@.value', label: 'ETH Sent', visible: { mustMatch: [
 const upstreamRegistry = (): BuiltRegistry => ({
   calldataIndex: { [KEY]: 'pool/calldata-Pool.json', [OTHER_KEY]: 'pool/calldata-Pool.json' },
   eip712Index: {
-    [KEY]: { Permit: [{ path: 'permit/eip712-Permit.json', encodeTypeHashes: ['0x01'] }] }
+    [KEY]: { Permit: ['permit/eip712-Permit.json'] }
   },
   descriptors: {
     'pool/calldata-Pool.json': {
@@ -335,7 +333,7 @@ describe('applyAmendments: amends', () => {
     expect(
       getProblems({ amendEip712Descriptors: { 'permit/eip712-Permit.json': amendment } })
     ).toEqual([
-      'The amend of permit/eip712-Permit.json (test): it changes the typed message formats, which the index uses'
+      'The amend of permit/eip712-Permit.json (test): it changes the typed message formats, which upstream indexed the contracts by'
     ])
   })
 })
@@ -395,7 +393,7 @@ describe('applyAmendments: adds', () => {
   test('says the add is no longer needed once the registry uses the same descriptor', () => {
     const registry = upstreamRegistry()
     registry.calldataIndex[NEW_KEY] = 'pool/calldata-Pool.json'
-    registry.eip712Index[NEW_KEY] = { Permit: [{ path: 'permit/eip712-Permit.json' }] }
+    registry.eip712Index[NEW_KEY] = { Permit: ['permit/eip712-Permit.json'] }
 
     expect(
       getProblems(
@@ -427,7 +425,7 @@ describe('applyAmendments: adds', () => {
     ])
   })
 
-  test('indexes EIP-712 descriptors per primary type, with the hashes of their formats', () => {
+  test('indexes EIP-712 descriptors by contract, with the registry descriptors of the contract', () => {
     const amendments = withAmendments({
       addEip712Descriptors: { [NEW_KEY]: 'permit/eip712-Permit.json' }
     })
@@ -439,17 +437,11 @@ describe('applyAmendments: adds', () => {
       }
     })
 
-    // Merged by primary type with the registry's own entries for the contract
-    expect(registry.eip712Index[KEY]).toEqual({
-      Permit: [{ path: 'permit/eip712-Permit.json', encodeTypeHashes: ['0x01'] }],
-      Order: [{ path: 'ambire-new/cow/eip712-Settlement.json', encodeTypeHashes: [id(ORDER)] }],
-      Cancel: [{ path: 'ambire-new/cow/eip712-Settlement.json', encodeTypeHashes: [id(CANCEL)] }]
-    })
-    expect(registry.eip712Index[NEW_KEY]).toEqual({
-      Permit: [
-        { path: 'permit/eip712-Permit.json', encodeTypeHashes: [id('Permit(address spender)')] }
-      ]
-    })
+    expect(registry.eip712Index[KEY]).toEqual([
+      'ambire-new/cow/eip712-Settlement.json',
+      'permit/eip712-Permit.json'
+    ])
+    expect(registry.eip712Index[NEW_KEY]).toEqual(['permit/eip712-Permit.json'])
   })
 
   test.each(['Permit', 'Permit(address spender'])(
@@ -471,7 +463,7 @@ describe('applyAmendments: adds', () => {
 
   test('fails once the registry has the primary type for the contract', () => {
     const registry = upstreamRegistry()
-    registry.eip712Index[NEW_KEY] = { Permit: [{ path: 'permit/eip712-Other.json' }] }
+    registry.eip712Index[NEW_KEY] = { Permit: ['permit/eip712-Other.json'] }
 
     expect(
       getProblems(
@@ -698,11 +690,11 @@ describe('getNamingProblems', () => {
     own: { 'dex/calldata-Dex.json': OWN },
     amended: new Set(['pool/calldata-Pool.json'])
   })
-  const bundled = (): BuiltRegistry => {
+  const bundled = (): BundledRegistry => {
     const { descriptors } = upstreamRegistry()
     return {
       calldataIndex: { [KEY]: 'ambire-change/pool/calldata-Pool.json' },
-      eip712Index: { [KEY]: { Permit: [{ path: 'permit/eip712-Permit.json' }] } },
+      eip712Index: { [KEY]: ['permit/eip712-Permit.json'] },
       descriptors: {
         'ambire-change/pool/calldata-Pool.json': { $schema: SCHEMA },
         'ambire-new/dex/calldata-Dex.json': OWN,
@@ -756,7 +748,7 @@ describe('getNamingProblems', () => {
   test('fails for an index entry that uses an amended or a missing descriptor', () => {
     const registry = bundled()
     registry.calldataIndex[OTHER_KEY] = 'pool/calldata-Pool.json'
-    registry.eip712Index[NEW_KEY] = { Permit: [{ path: 'permit/eip712-Gone.json' }] }
+    registry.eip712Index[NEW_KEY] = ['permit/eip712-Gone.json']
 
     expect(getNamingProblems(registry, sources())).toEqual([
       `${OTHER_KEY} uses pool/calldata-Pool.json, which is not bundled`,

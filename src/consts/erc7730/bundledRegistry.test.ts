@@ -1,4 +1,4 @@
-import { id, ZeroAddress } from 'ethers'
+import { ZeroAddress } from 'ethers'
 import { readdirSync, readFileSync } from 'fs'
 import path from 'path'
 import { isDeepStrictEqual as isEqual } from 'util'
@@ -47,10 +47,7 @@ const getFields = (descriptor: Erc7730Descriptor): Erc7730Field[] => {
   return Object.values(descriptor.display?.formats ?? {}).flatMap(({ fields }) => collect(fields))
 }
 
-const getEip712Paths = () =>
-  Object.values(eip712Index).flatMap((entriesByPrimaryType) =>
-    Object.values(entriesByPrimaryType).flatMap((entries) => entries.map(({ path }) => path))
-  )
+const getEip712Paths = () => Object.values(eip712Index).flat()
 
 describe('bundled ERC-7730 registry', () => {
   test('has the registry and its descriptors', () => {
@@ -81,21 +78,12 @@ describe('bundled ERC-7730 registry', () => {
 describe("Ambire's changes to the bundled ERC-7730 registry", () => {
   const COW_SWAP_CHAIN_IDS = [1, 56, 100, 137, 8453, 9745, 42161, 43114, 57073, 59144, 11155111]
 
-  test('has the encode type hash of a format of the descriptor in every EIP-712 index entry', () => {
-    const unknownHashes = Object.entries(eip712Index).flatMap(([key, entriesByPrimaryType]) =>
-      Object.values(entriesByPrimaryType)
-        .flat()
-        .flatMap(({ path: name, encodeTypeHashes = [] }) => {
-          const formatHashes = Object.keys(getMergedDescriptor(name).display?.formats ?? {}).map(
-            (format) => id(format)
-          )
-          return encodeTypeHashes
-            .filter((hash) => !formatHashes.includes(hash.toLowerCase()))
-            .map((hash) => `${key} ${name} ${hash}`)
-        })
+  test('has typed message formats in every descriptor of the EIP-712 index', () => {
+    const withoutFormats = [...new Set(getEip712Paths())].filter(
+      (name) => !Object.keys(getMergedDescriptor(name).display?.formats ?? {}).length
     )
 
-    expect(unknownHashes).toEqual([])
+    expect(withoutFormats).toEqual([])
   })
 
   test('shows the ETH sent to the Uniswap V3 position manager instead of refusing it', () => {
@@ -133,9 +121,8 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
       expect(calldataIndex[settlementKey]).toBe(
         'ambire-new/registry/cow-protocol/calldata-GPv2Settlement.json'
       )
-      expect(Object.keys(eip712Index[settlementKey] ?? {}).sort()).toEqual([
-        'Order',
-        'OrderCancellations'
+      expect(eip712Index[settlementKey]).toEqual([
+        'ambire-new/registry/cow-protocol/eip712-GPv2Settlement.json'
       ])
       expect(
         calldataIndex[getRegistryKey(chainId, '0xba3cb449bd2b4adddbc894d8697f5170800eadec')]

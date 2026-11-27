@@ -3516,9 +3516,7 @@ describe('ERC-7730 descriptors', () => {
     const registry: Erc7730Registry = {
       calldataIndex: {},
       eip712Index: {
-        [`eip155:1:${WETH_ADDRESS}`]: {
-          Permit: [{ path: registryPath }]
-        }
+        [`eip155:1:${WETH_ADDRESS}`]: [registryPath]
       },
       descriptors: {
         [registryPath]: {
@@ -4403,13 +4401,7 @@ describe('ERC-7730 descriptors', () => {
         [`eip155:8453:${safeSingleton}`]: calldataDescriptorPath
       },
       eip712Index: {
-        [`eip155:8453:${safeSingleton}`]: {
-          SafeTx: [
-            {
-              path: eip712DescriptorPath
-            }
-          ]
-        }
+        [`eip155:8453:${safeSingleton}`]: [eip712DescriptorPath]
       },
       descriptors: {
         [eip712DescriptorPath]: {

@@ -94,7 +94,8 @@ the descriptor, not only the ones in `addresses`.
   - `expectMatches(label, items, <exact count>)`; use `{ min }` only if the count changes often.
   - `expectEqual` for single values (the old format, old label, a key that must not exist yet).
   - Select fields by their **old** value, so the amend fails once upstream changes it.
-- EIP-712 amends must keep the format keys (the index uses their hashes).
+- EIP-712 amends must keep the format keys: upstream indexed the contracts by them, and the wallet
+  finds the format of a message by its primary type and encoded type hash.
 - A key can be in only one change (an amend's `addresses`, an add, or own `deployments`).
 - Put large data (formats, enums) in `amendments/<project>.json`.
 - Labels and intents are shown to users: plain language, no jargon.

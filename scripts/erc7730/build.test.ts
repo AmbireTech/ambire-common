@@ -66,10 +66,7 @@ describe('buildRegistry', () => {
       'registry/b/eip712-B.json'
     ])
     expect(registry.calldataIndex).toEqual({ [KEY]: 'registry/a/calldata-A.json' })
-    expect(registry.eip712Index[OTHER_KEY]?.Permit?.[0]).toEqual({
-      path: 'registry/b/eip712-B.json',
-      encodeTypeHashes: ['0x1']
-    })
+    expect(registry.eip712Index[OTHER_KEY]).toEqual({ Permit: ['registry/b/eip712-B.json'] })
     // Includes are rewritten to the paths of the descriptors they point at, keeping their shape
     expect(registry.descriptors['registry/a/calldata-A.json']?.includes).toBe(
       'registry/a/common-A.json'

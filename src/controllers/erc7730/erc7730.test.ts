@@ -118,6 +118,36 @@ describe('Erc7730Controller', () => {
     })
   })
 
+  test('describes a typed message with a format of an included descriptor', async () => {
+    const controller = makeController(
+      makeRegistry({
+        eip712Index: { [`eip155:1:${VERIFYING_CONTRACT}`]: [EIP712_PATH] },
+        descriptors: {
+          [EIP712_PATH]: { includes: INCLUDED_PATH },
+          [INCLUDED_PATH]: {
+            display: { formats: { 'Order(uint256 amount)': { intent: 'Place order', fields: [] } } }
+          }
+        }
+      })
+    )
+
+    const descriptor = await controller.getDescriptorForMessage({
+      content: {
+        kind: 'typedMessage',
+        types: { Order: [{ name: 'amount', type: 'uint256' }] },
+        domain: { chainId: 1, verifyingContract: VERIFYING_CONTRACT },
+        message: { amount: '1' },
+        primaryType: 'Order'
+      },
+      chainId: 1n
+    } as unknown as Message)
+
+    expect(descriptor?.path).toBe(EIP712_PATH)
+    expect(descriptor?.descriptor.display?.formats?.['Order(uint256 amount)']?.intent).toBe(
+      'Place order'
+    )
+  })
+
   describe('versions of ERC-7730', () => {
     // These build the controller directly, so that no schema is declared for them
     const describeCall = async (descriptors: Erc7730Registry['descriptors']) => {
@@ -297,7 +327,7 @@ describe('Erc7730Controller', () => {
     const controller = makeController(
       makeRegistry({
         eip712Index: {
-          [`eip155:1:${VERIFYING_CONTRACT}`]: { Order: [{ path: EIP712_PATH }] }
+          [`eip155:1:${VERIFYING_CONTRACT}`]: [EIP712_PATH]
         },
         descriptors: {
           [EIP712_PATH]: {

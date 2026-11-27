@@ -6,11 +6,7 @@ import {
   getSchemaFileName,
   validateDescriptor
 } from '../../src/libs/humanizer/erc7730/descriptor'
-import {
-  Erc7730CalldataIndex,
-  Erc7730Eip712Index,
-  Erc7730Eip712IndexEntry
-} from '../../src/libs/humanizer/erc7730/types'
+import { Erc7730CalldataIndex, Erc7730Eip712Index } from '../../src/libs/humanizer/erc7730/types'
 import { getRegistryKey, isPlainObject } from '../../src/libs/humanizer/erc7730/utils'
 
 // Builds the ERC-7730 registry the wallet ships with from the files of the upstream registry. It
@@ -30,11 +26,38 @@ export type UpstreamFiles = {
   read: (path: string) => unknown
 }
 
+/**
+ * `eip155:{chainId}:{verifyingContract}` -> primary type -> the paths of the descriptors for it, as
+ * upstream indexes them. The build checks Ambire's EIP-712 adds against it per primary type; the
+ * bundled index keeps only the paths (see `toEip712PathIndex`)
+ */
+export type Eip712IndexByPrimaryType = Record<string, Record<string, string[]>>
+
 export type BuiltRegistry = {
   calldataIndex: Erc7730CalldataIndex
-  eip712Index: Erc7730Eip712Index
+  eip712Index: Eip712IndexByPrimaryType
   descriptors: Record<string, Record<string, unknown>>
 }
+
+/** The registry as it is bundled */
+export type BundledRegistry = Omit<BuiltRegistry, 'eip712Index'> & {
+  eip712Index: Erc7730Eip712Index
+}
+
+/**
+ * The bundled EIP-712 index: each contract with the paths of its descriptors. The primary types and
+ * encoded type hashes are not kept: the wallet reads them from the descriptors' format keys, which
+ * is also how upstream computes them, so they are not repeated for every contract
+ */
+export const toEip712PathIndex = (index: Eip712IndexByPrimaryType): Erc7730Eip712Index =>
+  sortByKey(
+    Object.fromEntries(
+      Object.entries(index).map(([key, pathsByPrimaryType]) => [
+        key,
+        [...new Set(Object.values(pathsByPrimaryType).flat())].sort()
+      ])
+    )
+  )
 
 export const CALLDATA_INDEX_FILE = 'index.calldata.json'
 export const EIP712_INDEX_FILE = 'index.eip712.json'
@@ -96,6 +119,16 @@ export const resolveIncludePath = (includePath: string, parentPath: string): str
 
   return resolvedPath
 }
+
+/** Whether a value is an entry of upstream's EIP-712 index: `{ path, encodeTypeHashes? }` */
+const isEip712IndexEntry = (
+  entry: unknown
+): entry is { path: string; encodeTypeHashes?: string[] } =>
+  isPlainObject(entry) &&
+  typeof entry.path === 'string' &&
+  (entry.encodeTypeHashes === undefined ||
+    (Array.isArray(entry.encodeTypeHashes) &&
+      entry.encodeTypeHashes.every((hash) => typeof hash === 'string')))
 
 /** Why a descriptor can't be bundled, or null if it can */
 export const getDescriptorProblem = (descriptor: unknown): string | null => {
@@ -192,7 +225,7 @@ export const buildRegistry = (upstream: UpstreamFiles): BuiltRegistry => {
     calldataIndex[key] = path
   })
 
-  const eip712Index: Erc7730Eip712Index = {}
+  const eip712Index: Eip712IndexByPrimaryType = {}
   Object.entries(readIndex(EIP712_INDEX_FILE)).forEach(([key, entriesByPrimaryType]) => {
     const reference = `${EIP712_INDEX_FILE} (${key})`
     if (!isRegistryKey(key)) problems.push(`${reference}: the key is not written as expected`)
@@ -201,26 +234,15 @@ export const buildRegistry = (upstream: UpstreamFiles): BuiltRegistry => {
       return
     }
 
-    const indexEntry: Record<string, Erc7730Eip712IndexEntry[]> = {}
+    const indexEntry: Record<string, string[]> = {}
     Object.entries(entriesByPrimaryType).forEach(([primaryType, entries]) => {
-      const isValidList =
-        Array.isArray(entries) &&
-        entries.every(
-          (entry) =>
-            isPlainObject(entry) &&
-            typeof entry.path === 'string' &&
-            (entry.encodeTypeHashes === undefined ||
-              (Array.isArray(entry.encodeTypeHashes) &&
-                entry.encodeTypeHashes.every((hash) => typeof hash === 'string')))
-        )
-      if (!isValidList) {
+      if (!Array.isArray(entries) || !entries.every(isEip712IndexEntry)) {
         problems.push(`${reference} (${primaryType}): the entries are not written as expected`)
         return
       }
 
-      const validEntries = entries as Erc7730Eip712IndexEntry[]
-      validEntries.forEach(({ path }) => load(path, `${reference} (${primaryType})`))
-      indexEntry[primaryType] = validEntries
+      entries.forEach(({ path }) => load(path, `${reference} (${primaryType})`))
+      indexEntry[primaryType] = entries.map(({ path }) => path)
     })
     eip712Index[key] = indexEntry
   })

@@ -136,12 +136,11 @@ export type Erc7730CallDescriptors = Record<number, Erc7730ResolvedDescriptor>
 
 export type Erc7730CalldataIndex = Record<string, string>
 
-export type Erc7730Eip712IndexEntry = {
-  path: string
-  encodeTypeHashes?: string[]
-}
-
-export type Erc7730Eip712Index = Record<string, Record<string, Erc7730Eip712IndexEntry[]>>
+/**
+ * `eip155:{chainId}:{verifyingContract}` -> the paths of the descriptors with typed message formats
+ * for the contract. The format for a message is found by its primary type and encoded type hash
+ */
+export type Erc7730Eip712Index = Record<string, string[]>
 
 export type Erc7730TypedDataTypes = Record<string, Array<{ name: string; type: string }>>
 
@@ -153,7 +152,7 @@ export type Erc7730TypedDataTypes = Record<string, Array<{ name: string; type: s
 export type Erc7730Registry = {
   /** `eip155:{chainId}:{address}` -> the path of the contract's descriptor */
   calldataIndex: Erc7730CalldataIndex
-  /** `eip155:{chainId}:{verifyingContract}` -> primary type -> the candidate descriptors */
+  /** `eip155:{chainId}:{verifyingContract}` -> the paths of the candidate descriptors */
   eip712Index: Erc7730Eip712Index
   /** The descriptors by their path, validated only when they are used */
   descriptors: Record<string, unknown>

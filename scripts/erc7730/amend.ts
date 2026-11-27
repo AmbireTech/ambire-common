@@ -1,4 +1,3 @@
-import { id } from 'ethers'
 import { isDeepStrictEqual } from 'util'
 
 import {
@@ -8,6 +7,7 @@ import {
   isAmbireErc7730Path
 } from '../../src/libs/humanizer/erc7730/consts'
 import {
+  getEip712FormatPrimaryType,
   getIncludes,
   mergeDescriptors,
   validateDescriptor
@@ -16,8 +16,10 @@ import { Erc7730Descriptor, Erc7730Field } from '../../src/libs/humanizer/erc773
 import { getRegistryKey, isPlainObject } from '../../src/libs/humanizer/erc7730/utils'
 import {
   BuiltRegistry,
+  BundledRegistry,
   getDescriptorProblem,
   isRegistryKey,
+  toEip712PathIndex,
   RegistryBuildError,
   sortByKey
 } from './build'
@@ -89,16 +91,6 @@ class ExpectationError extends Error {}
 
 /** Whether an object has a key of its own, so that names such as `toString` never match */
 const has = (record: object, key: string) => Object.prototype.hasOwnProperty.call(record, key)
-
-/**
- * The type a typed message format is for: the name before the first `(` of its signature, or null
- * if the format is not written as a signature (`Type(...)`)
- */
-const getPrimaryType = (format: string): string | null => {
-  const bracketIndex = format.indexOf('(')
-
-  return bracketIndex > 0 && format.endsWith(')') ? format.slice(0, bracketIndex) : null
-}
 
 const getFormats = (descriptor: Erc7730Descriptor) => descriptor.display?.formats ?? {}
 
@@ -209,7 +201,7 @@ export const findOverlappingKeys = (
  * - the indexes point only at bundled descriptors, and never at one that is amended
  */
 export const getNamingProblems = (
-  registry: BuiltRegistry,
+  registry: BundledRegistry,
   sources: {
     /** The registry's descriptors, as the build read them */
     upstream: Record<string, unknown>
@@ -250,10 +242,8 @@ export const getNamingProblems = (
 
   const indexed = [
     ...Object.entries(registry.calldataIndex).map(([key, path]) => ({ key, path })),
-    ...Object.entries(registry.eip712Index).flatMap(([key, entriesByPrimaryType]) =>
-      Object.values(entriesByPrimaryType).flatMap((entries) =>
-        entries.map(({ path }) => ({ key, path }))
-      )
+    ...Object.entries(registry.eip712Index).flatMap(([key, paths]) =>
+      paths.map((path) => ({ key, path }))
     )
   ]
   indexed.forEach(({ key, path }) => {
@@ -275,7 +265,7 @@ export const applyAmendments = (
   built: BuiltRegistry,
   amendments: Amendments,
   ownDescriptors: Record<string, unknown>
-): { registry: BuiltRegistry; notes: string[] } => {
+): { registry: BundledRegistry; notes: string[] } => {
   // Checked first: otherwise an overlap fails later with a message that doesn't tell its cause
   const overlaps = findOverlappingKeys(amendments, ownDescriptors)
   if (overlaps.length) throw new RegistryBuildError(overlaps)
@@ -377,7 +367,7 @@ export const applyAmendments = (
       return
     }
 
-    const invalidFormats = formats.filter((format) => !getPrimaryType(format))
+    const invalidFormats = formats.filter((format) => !getEip712FormatPrimaryType(format))
     if (invalidFormats.length) {
       problems.push(
         `${reference}: ${name} has typed message formats not written as \`Type(...)\`: ${invalidFormats.join(
@@ -387,30 +377,26 @@ export const applyAmendments = (
       return
     }
 
-    const hashesByPrimaryType = formats.reduce<Record<string, string[]>>((acc, format) => {
-      const primaryType = getPrimaryType(format)!
-      acc[primaryType] = [...(acc[primaryType] ?? []), id(format)]
-      return acc
-    }, {})
-    const entries = { ...eip712Index[key] }
-    Object.entries(hashesByPrimaryType).forEach(([primaryType, encodeTypeHashes]) => {
-      const existing = entries[primaryType]
-      if (existing?.every(({ path }) => isSameDescriptor(path, name))) {
+    const primaryTypes = new Set(formats.map((format) => getEip712FormatPrimaryType(format)!))
+    const pathsByPrimaryType = { ...eip712Index[key] }
+    primaryTypes.forEach((primaryType) => {
+      const existing = pathsByPrimaryType[primaryType]
+      if (existing?.every((path) => isSameDescriptor(path, name))) {
         problems.push(
           `${reference}: ${getUpstreamHasItMessage(`${primaryType} messages of ${key}`, name)}`
         )
         return
       }
       if (existing) {
-        const existingNames = existing.map(({ path }) => path).join(', ')
+        const existingNames = existing.join(', ')
         problems.push(
           `${reference}: the registry already has ${existingNames} for ${primaryType} messages of ${key}. Remove ${key} from Ambire's changes, or amend ${existingNames} instead`
         )
         return
       }
-      entries[primaryType] = [{ path: name, encodeTypeHashes }]
+      pathsByPrimaryType[primaryType] = [name]
     })
-    eip712Index[key] = entries
+    eip712Index[key] = pathsByPrimaryType
   }
 
   // Ambire's prefixes tell its descriptors from the registry's, so the registry must not use them
@@ -481,9 +467,7 @@ export const applyAmendments = (
     kind === 'calldata'
       ? Object.keys(calldataIndex).filter((key) => calldataIndex[key] === name)
       : Object.keys(eip712Index).filter((key) =>
-          Object.values(eip712Index[key]!).some((entries) =>
-            entries.some(({ path }) => path === name)
-          )
+          Object.values(eip712Index[key]!).some((paths) => paths.includes(name))
         )
 
   const amend = (name: string, amendment: Amendment, kind: 'calldata' | 'eip712') => {
@@ -589,7 +573,7 @@ export const applyAmendments = (
         Object.keys(getFormats(original)).sort()
       )
     ) {
-      problems.push(`${reference}: it changes the typed message formats, which the index uses`)
+      problems.push(`${reference}: it changes the typed message formats, which upstream indexed the contracts by`)
       return
     }
     const problem = getDescriptorProblem(first.descriptor)
@@ -616,9 +600,9 @@ export const applyAmendments = (
         return
       }
       eip712Index[key] = Object.fromEntries(
-        Object.entries(eip712Index[key]!).map(([primaryType, entries]) => [
+        Object.entries(eip712Index[key]!).map(([primaryType, paths]) => [
           primaryType,
-          entries.map((entry) => (entry.path === name ? { ...entry, path: copyName } : entry))
+          paths.map((path) => (path === name ? copyName : path))
         ])
       )
     })
@@ -676,7 +660,7 @@ export const applyAmendments = (
 
   const registry = {
     calldataIndex: sortByKey(calldataIndex),
-    eip712Index: sortByKey(eip712Index),
+    eip712Index: toEip712PathIndex(eip712Index),
     descriptors: sortByKey(descriptors)
   }
   const namingProblems = getNamingProblems(registry, {

@@ -10,7 +10,8 @@ import {
   SAFE_PROXY_V1_4_1_RUNTIME_CODE
 } from '../../../controllers/erc7730/testDescriptors'
 import { AccountOp } from '../../accountOp/accountOp'
-import { resolveErc7730Call } from './registry'
+import { getEip712EncodeTypeHashFromString } from './eip712'
+import { resolveErc7730Call, selectEip712DescriptorPath } from './registry'
 import { EMPTY_ERC7730_KNOWN, Erc7730Registry } from './types'
 
 describe('ERC-7730 registry', () => {
@@ -35,16 +36,7 @@ describe('ERC-7730 registry', () => {
     const registry: Erc7730Registry = {
       calldataIndex: {},
       eip712Index: {
-        [`eip155:8453:${safeSingleton}`]: {
-          SafeTx: [
-            {
-              path: registryPath,
-              encodeTypeHashes: [
-                '0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8'
-              ]
-            }
-          ]
-        }
+        [`eip155:8453:${safeSingleton}`]: [registryPath]
       },
       descriptors: {
         [registryPath]: {
@@ -154,16 +146,7 @@ describe('ERC-7730 registry', () => {
     const registry: Erc7730Registry = {
       calldataIndex: {},
       eip712Index: {
-        [`eip155:8453:${safeSingleton}`]: {
-          SafeTx: [
-            {
-              path: registryPath,
-              encodeTypeHashes: [
-                '0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8'
-              ]
-            }
-          ]
-        }
+        [`eip155:8453:${safeSingleton}`]: [registryPath]
       },
       descriptors: {
         [registryPath]: {
@@ -337,9 +320,7 @@ describe('ERC-7730 registry', () => {
     const registry: Erc7730Registry = {
       calldataIndex: {},
       eip712Index: {
-        [`eip155:1:${verifyingContract}`]: {
-          Permit: [{ path: registryPath }]
-        }
+        [`eip155:1:${verifyingContract}`]: [registryPath]
       },
       descriptors: {
         [registryPath]: {
@@ -417,5 +398,42 @@ describe('ERC-7730 test helpers', () => {
 
     expect(descriptor?.path).toBe(safePath)
     expect(provider.getCode).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('selectEip712DescriptorPath', () => {
+  const ORDER_V1 = 'Order(uint256 amount)'
+  const ORDER_V2 = 'Order(uint256 amount,uint256 deadline)'
+  const candidates = [
+    { path: 'v1.json', formats: [ORDER_V1, 'Cancel(bytes uid)'] },
+    { path: 'v2.json', formats: [ORDER_V2] },
+    { path: 'permit.json', formats: ['Permit(address spender)'] }
+  ]
+
+  test('picks the descriptor with a format of the message type', () => {
+    expect(
+      selectEip712DescriptorPath(candidates, 'Order', getEip712EncodeTypeHashFromString(ORDER_V2))
+    ).toBe('v2.json')
+    expect(
+      selectEip712DescriptorPath(candidates, 'Order', getEip712EncodeTypeHashFromString(ORDER_V1))
+    ).toBe('v1.json')
+  })
+
+  test('picks none for a type no format has, or of another primary type', () => {
+    expect(
+      selectEip712DescriptorPath(
+        candidates,
+        'Order',
+        getEip712EncodeTypeHashFromString('Order(uint256 price)')
+      )
+    ).toBe(null)
+    expect(
+      selectEip712DescriptorPath(candidates, 'Permit', getEip712EncodeTypeHashFromString(ORDER_V1))
+    ).toBe(null)
+  })
+
+  test('without a type hash, picks only the sole descriptor of the primary type', () => {
+    expect(selectEip712DescriptorPath(candidates, 'Permit', null)).toBe('permit.json')
+    expect(selectEip712DescriptorPath(candidates, 'Order', null)).toBe(null)
   })
 })

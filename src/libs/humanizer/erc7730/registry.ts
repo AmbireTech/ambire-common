@@ -16,14 +16,13 @@ import { Call } from '../../accountOp/types'
 import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../decodeCall'
 import { decodeMultiSend, SuccessfullyDecoded } from '../../safe/helpers'
 import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
-import { getIncludes, mergeDescriptors } from './descriptor'
-import { getEip712EncodeTypeHash } from './eip712'
+import { getEip712FormatPrimaryType, getIncludes, mergeDescriptors } from './descriptor'
+import { getEip712EncodeTypeHash, getEip712EncodeTypeHashFromString } from './eip712'
 import { humanizeCallWithErc7730 } from './humanize'
 import { MULTICALL_DESCRIPTOR, MULTICALL_SELECTOR } from './multicall'
 import {
   Erc7730CallDescriptors,
   Erc7730Descriptor,
-  Erc7730Eip712IndexEntry,
   Erc7730Field,
   Erc7730Known,
   Erc7730Resolution,
@@ -458,23 +457,25 @@ export const getAddressFromStorageSlot = (slotValue: string): string | null => {
 }
 
 /**
- * Picks the index entry matching a typed message. Entries without `encodeTypeHashes` match
- * anything; otherwise the message's own hash has to be among them. A message whose hash could not
- * be computed falls back to the sole entry, when there is exactly one.
+ * Picks the descriptor of a typed message among the candidates the index lists for its contract:
+ * the one with a format for the message's primary type and encoded type hash. A message whose hash
+ * could not be computed falls back to the sole candidate with a format of its primary type.
  */
-export const selectEip712IndexEntry = (
-  entries: Erc7730Eip712IndexEntry[],
+export const selectEip712DescriptorPath = (
+  candidates: { path: string; formats: string[] }[],
+  primaryType: string,
   encodeTypeHash: string | null
-): Erc7730Eip712IndexEntry | null => {
-  if (!encodeTypeHash) return entries.length === 1 ? entries[0]! : null
-
-  return (
-    entries.find(
-      (entry) =>
-        !entry.encodeTypeHashes?.length ||
-        entry.encodeTypeHashes.some((hash) => hash.toLowerCase() === encodeTypeHash)
-    ) || null
+): string | null => {
+  const ofPrimaryType = candidates.filter(({ formats }) =>
+    formats.some((format) => getEip712FormatPrimaryType(format) === primaryType)
   )
+  if (!encodeTypeHash) return ofPrimaryType.length === 1 ? ofPrimaryType[0]!.path : null
+
+  const selected = ofPrimaryType.find(({ formats }) =>
+    formats.some((format) => getEip712EncodeTypeHashFromString(format) === encodeTypeHash)
+  )
+
+  return selected?.path ?? null
 }
 
 const getEip712Key = (chainId: bigint, verifyingContract: string, primaryType: string): string =>

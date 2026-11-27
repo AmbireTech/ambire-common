@@ -98,6 +98,16 @@ export const validateDescriptor = (payload: unknown): payload is Erc7730Descript
   return true
 }
 
+/**
+ * The primary type a typed message format is for: the name before the first `(` of its encoded
+ * type (`Type(...)`), or null if the format is not written that way
+ */
+export const getEip712FormatPrimaryType = (format: string): string | null => {
+  const bracketIndex = format.indexOf('(')
+
+  return bracketIndex > 0 && format.endsWith(')') ? format.slice(0, bracketIndex) : null
+}
+
 /** The names of the descriptors a descriptor includes, as a list */
 export const getIncludes = (descriptor: { includes?: unknown }): string[] => {
   const { includes } = descriptor

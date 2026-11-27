@@ -25,7 +25,7 @@ import {
   planErc7730Wants,
   resolveErc7730Descriptors,
   resolveErc7730MessageDescriptor,
-  selectEip712IndexEntry
+  selectEip712DescriptorPath
 } from '../../libs/humanizer/erc7730/registry'
 import {
   EMPTY_ERC7730_KNOWN,
@@ -69,6 +69,9 @@ export class Erc7730Controller extends EventEmitter {
    * validation, or null if it is missing, unsupported or invalid
    */
   #descriptors = new Map<string, Erc7730Descriptor | null>()
+
+  /** The typed message formats of each descriptor looked up so far, with those of its includes */
+  #eip712Formats = new Map<string, string[]>()
 
   #safeSingletons = new Map<string, { singleton: string | null; readAt: number }>()
 
@@ -292,19 +295,45 @@ export class Erc7730Controller extends EventEmitter {
 
     const registryKey = getRegistryKey(want.chainId, want.verifyingContract)
     const key = `${registryKey}:${want.primaryType}`
-    const entriesByPrimaryType = getOwn(this.#registry.eip712Index, registryKey)
-    const entries = entriesByPrimaryType && getOwn(entriesByPrimaryType, want.primaryType)
-    const entry = entries?.length ? selectEip712IndexEntry(entries, want.encodeTypeHash) : null
-    const descriptor = entry ? this.#getDescriptor(entry.path) : null
+    const candidates = (getOwn(this.#registry.eip712Index, registryKey) ?? []).map((path) => ({
+      path,
+      formats: this.#getEip712Formats(path)
+    }))
+    const path = selectEip712DescriptorPath(candidates, want.primaryType, want.encodeTypeHash)
+    const descriptor = path ? this.#getDescriptor(path) : null
 
-    if (!entry || !descriptor) {
+    if (!path || !descriptor) {
       known.eip712Descriptors[key] = null
 
       return
     }
 
-    known.eip712Descriptors[key] = { path: entry.path }
-    this.#recordWithIncludes(entry.path, descriptor, known)
+    known.eip712Descriptors[key] = { path }
+    this.#recordWithIncludes(path, descriptor, known)
+  }
+
+  /**
+   * The typed message formats of a descriptor, with those of everything it includes: the index
+   * lists only the descriptors of a contract, and the format of a message is found among these.
+   * An include already on the chain being read is skipped, so includes that loop still end
+   */
+  #getEip712Formats(path: string, chain: ReadonlySet<string> = new Set()): string[] {
+    const cached = this.#eip712Formats.get(path)
+    if (cached) return cached
+
+    const descriptor = this.#getDescriptor(path)
+    if (!descriptor) return []
+
+    const nextChain = new Set(chain).add(path)
+    const formats = [
+      ...getIncludes(descriptor)
+        .filter((includePath) => !nextChain.has(includePath))
+        .flatMap((includePath) => this.#getEip712Formats(includePath, nextChain)),
+      ...Object.keys(descriptor.display?.formats ?? {})
+    ]
+    this.#eip712Formats.set(path, formats)
+
+    return formats
   }
 
   /**

@@ -6,7 +6,7 @@ import path from 'path'
 import { ERC7730_AMBIRE_CHANGE_PATH_PREFIX } from '../src/libs/humanizer/erc7730/consts'
 import { applyAmendments } from './erc7730/amend'
 import { amendments } from './erc7730/amendments'
-import { BuiltRegistry, buildRegistry, UpstreamFiles } from './erc7730/build'
+import { buildRegistry, BundledRegistry, UpstreamFiles } from './erc7730/build'
 
 // Regenerates the ERC-7730 ("clear signing") registry the wallet ships with: the indexes and the
 // descriptors of https://github.com/ethereum/clear-signing-erc7730-registry. The wallet reads
@@ -60,7 +60,7 @@ const outputPath = path.join(erc7730ConstsPath, 'registry.json')
 const ownDescriptorsPath = path.join(__dirname, 'erc7730', 'descriptors')
 
 type Source = { repository: string; commit: string; date: string }
-type Registry = BuiltRegistry & { source: Source }
+type Registry = BundledRegistry & { source: Source }
 
 const git = (directory: string, args: string[]) =>
   execFileSync('git', ['-C', directory, ...args], {
