@@ -142,14 +142,14 @@ const readOwnDescriptors = async (): Promise<Record<string, unknown>> => {
     throw error
   }
   const files = entries.filter((file) => file.endsWith('.json')).sort()
-  const descriptors = await Promise.all(
-    files.map(async (file) =>
-      JSON.parse(await fsPromises.readFile(path.join(ownDescriptorsPath, file), 'utf8'))
-    )
-  )
 
   return Object.fromEntries(
-    files.map((file, i) => [file.split(path.sep).join('/'), descriptors[i]])
+    await Promise.all(
+      files.map(async (file) => [
+        file.split(path.sep).join('/'),
+        JSON.parse(await fsPromises.readFile(path.join(ownDescriptorsPath, file), 'utf8'))
+      ])
+    )
   )
 }
 
@@ -180,9 +180,6 @@ const getChanges = (
     )
   }
 }
-
-const hasChanges = ({ added, removed, changed }: Changes) =>
-  added.length > 0 || removed.length > 0 || changed.length > 0
 
 /**
  * Throws if too much of an index disappeared, which likely means the registry was restructured
@@ -362,13 +359,14 @@ const run = async () => {
     assertNotTooManyRemoved(calldataChanges, 'contracts of the calldata index')
     assertNotTooManyRemoved(eip712Changes, 'contracts of the EIP-712 index')
 
-    const hasRegistryChanged = [calldataChanges, eip712Changes, descriptorChanges].some(hasChanges)
+    const hasRegistryChanged = [calldataChanges, eip712Changes, descriptorChanges].some(
+      ({ added, removed, changed }) => added.length || removed.length || changed.length
+    )
     // Kept when nothing changed, so the file doesn't change just because of an unrelated commit
     const source = hasRegistryChanged || !previous?.source?.date ? upstreamSource : previous.source
     const serialized = serializeRegistry({ source, calldataIndex, eip712Index, descriptors })
     assertSize(serialized)
 
-    await fsPromises.mkdir(path.dirname(outputPath), { recursive: true })
     await fsPromises.writeFile(outputPath, serialized, 'utf8')
 
     const summaryInput = {

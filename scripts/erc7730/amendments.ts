@@ -2,16 +2,15 @@ import { ZeroAddress } from 'ethers'
 import { isDeepStrictEqual } from 'util'
 
 import { Erc7730DisplayFormat } from '../../src/libs/humanizer/erc7730/types'
-import { getRegistryKey } from '../../src/libs/humanizer/erc7730/utils'
 import { Amendments } from './amend'
 import cowSwapEthFlowFormats from './amendments/cowSwapEthFlow.json'
 import lifi from './amendments/lifi.json'
 
 // Ambire's changes to the ERC-7730 registry, applied by `npm run humanizer:update:erc7730Registry`
 // (see `./amend.ts` for what each kind of change checks). Ambire's own descriptors are the JSON
-// files in `./descriptors`, named by their path there - laid out like the upstream registry
-// (`registry/<project>/...`), so that a file upstream adds at the same path fails the build - and
-// indexed by their `deployments`.
+// files in `./descriptors`, laid out like the upstream registry (`registry/<project>/...`) so they
+// can be proposed upstream as they are. They are bundled as `ambire-new/<path>` and indexed by
+// their `deployments`.
 
 // Formats read from the JSON files of `./amendments`. TypeScript reads their `visible` rules as
 // any string; `applyAmendments` checks each descriptor once they are added to it
@@ -78,7 +77,6 @@ const LIFI_DIAMOND_KEYS = [
   'eip155:5734951:0x026f252016a7c47cdef1f05a3fc9e20c92a49c37'
 ]
 const COW_SWAP_ETH_FLOW_NAME = 'registry/cow-protocol/calldata-CoWSwapEthFlow.json'
-const COW_SWAP_ETH_FLOW_ADDRESS = '0xba3cb449bd2b4adddbc894d8697f5170800eadec'
 
 const SAFE_1_4_1_NAME = 'registry/safe/calldata-Safe-1.4.1.json'
 const SAFE_PROXY_FACTORY_1_4_1_NAME = 'registry/safe/calldata-SafeProxyFactory-1.4.1.json'
@@ -89,7 +87,7 @@ export const amendments: Amendments = {
     'registry/uniswap/calldata-UniswapV3NonfungiblePositionManager.json': {
       reason:
         'show the ETH sent instead of refusing the call, as `multicall` passes its ETH on to each call it makes (upstream PR #3185; drop this once it is merged)',
-      addresses: [getRegistryKey(1, '0xc36442b4a4522e871399cd717abdd847ab11fe88')],
+      addresses: ['eip155:1:0xc36442b4a4522e871399cd717abdd847ab11fe88'],
       amend: ({ fields, expectMatches }) => {
         const valueFields = fields(
           (field) =>
@@ -147,7 +145,7 @@ export const amendments: Amendments = {
     [COW_SWAP_ETH_FLOW_NAME]: {
       reason:
         "name each network's native token instead of ETH (the descriptor is used on all CoW networks), and describe cancelling many orders",
-      addresses: [getRegistryKey(1, COW_SWAP_ETH_FLOW_ADDRESS)],
+      addresses: ['eip155:1:0xba3cb449bd2b4adddbc894d8697f5170800eadec'],
       amend: ({ descriptor, fields, expectMatches, expectEqual }) => {
         const formats = descriptor.display!.formats!
         const getFormat = (name: string) => {

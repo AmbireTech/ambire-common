@@ -12,11 +12,7 @@ import {
   validateDescriptor
 } from '../../src/libs/humanizer/erc7730/descriptor'
 import { ERC7730_MAX_RESOLUTION_DEPTH } from '../../src/libs/humanizer/erc7730/registry'
-import {
-  Erc7730Descriptor,
-  Erc7730Eip712IndexEntry,
-  Erc7730Field
-} from '../../src/libs/humanizer/erc7730/types'
+import { Erc7730Descriptor, Erc7730Field } from '../../src/libs/humanizer/erc7730/types'
 import { getRegistryKey, isPlainObject } from '../../src/libs/humanizer/erc7730/utils'
 import {
   BuiltRegistry,
@@ -91,6 +87,9 @@ export const NO_AMENDMENTS: Amendments = {
 
 class ExpectationError extends Error {}
 
+/** Whether an object has a key of its own, so that names such as `toString` never match */
+const has = (record: object, key: string) => Object.prototype.hasOwnProperty.call(record, key)
+
 /**
  * The type a typed message format is for: the name before the first `(` of its signature, or null
  * if the format is not written as a signature (`Type(...)`)
@@ -136,6 +135,19 @@ const getDeployments = (value: unknown): { chainId: number; address: string }[] 
 }
 
 /**
+ * The deployments of one of Ambire's own descriptors, by kind: none when it has no list, and null
+ * when its list is not written as `{ chainId, address }` with decimal chain ids
+ */
+const getOwnDeployments = (descriptor: unknown) => {
+  const context =
+    isPlainObject(descriptor) && isPlainObject(descriptor.context) ? descriptor.context : {}
+  const read = (place: unknown) =>
+    isPlainObject(place) && place.deployments !== undefined ? getDeployments(place.deployments) : []
+
+  return { calldata: read(context.contract), eip712: read(context.eip712) }
+}
+
+/**
  * The registry keys Ambire's changes list more than once - in an amend's `addresses`, in an add,
  * or in the `deployments` of an own descriptor - each as a problem naming every place it is in.
  * Calldata and EIP-712 keys are checked separately, as a contract can have both
@@ -166,15 +178,14 @@ export const findOverlappingKeys = (
     use('EIP-712', key, `the add of ${name}`)
   )
   Object.entries(ownDescriptors).forEach(([name, descriptor]) => {
-    if (!isPlainObject(descriptor) || !isPlainObject(descriptor.context)) return
-    const { contract, eip712 } = descriptor.context
     const place = `the deployments of Ambire's descriptor ${name}`
-    const addDeployments = (kind: 'calldata' | 'EIP-712', deployments: unknown) =>
-      getDeployments(deployments)?.forEach(({ chainId, address }) =>
-        use(kind, getRegistryKey(chainId, address), place)
-      )
-    if (isPlainObject(contract)) addDeployments('calldata', contract.deployments)
-    if (isPlainObject(eip712)) addDeployments('EIP-712', eip712.deployments)
+    const { calldata, eip712 } = getOwnDeployments(descriptor)
+    calldata?.forEach(({ chainId, address }) =>
+      use('calldata', getRegistryKey(chainId, address), place)
+    )
+    eip712?.forEach(({ chainId, address }) =>
+      use('EIP-712', getRegistryKey(chainId, address), place)
+    )
   })
 
   return Object.entries(usesByKind).flatMap(([kind, uses]) =>
@@ -209,7 +220,6 @@ export const getNamingProblems = (
   }
 ): string[] => {
   const problems: string[] = []
-  const has = (record: object, key: string) => Object.prototype.hasOwnProperty.call(record, key)
   // Compared as JSON, as they are JSON: copies made with `structuredClone` can have another
   // prototype (e.g. in tests), which a strict deep comparison would count as a difference
   const isSame = (one: unknown, other: unknown) => JSON.stringify(one) === JSON.stringify(other)
@@ -278,10 +288,9 @@ export const applyAmendments = (
   const ownDescriptorsAsRead = structuredClone(ownDescriptors)
   const descriptors: Record<string, Record<string, unknown>> = { ...built.descriptors }
   const calldataIndex = { ...built.calldataIndex }
-  const eip712Index: Record<string, Record<string, Erc7730Eip712IndexEntry[]>> = Object.fromEntries(
-    Object.entries(built.eip712Index).map(([key, entries]) => [key, { ...entries }])
-  )
-  const hasDescriptor = (name: string) => Object.prototype.hasOwnProperty.call(descriptors, name)
+  // Shallow copies: an entry is never changed in place, only replaced
+  const eip712Index = { ...built.eip712Index }
+  const hasDescriptor = (name: string) => has(descriptors, name)
   /** Registry path -> the path of its amended copy (`ambire-change/<path>`) */
   const amendedPaths = new Map<string, string>()
 
@@ -392,28 +401,21 @@ export const applyAmendments = (
 
   // Ambire's own descriptors, bundled as `ambire-new/<path>` and indexed by their deployments.
   // The prefix keeps them apart from the registry's descriptors, also ones at the same path
-  /** The path of each of Ambire's own descriptors -> its bundled name */
-  const ownNames = new Map<string, string>()
   Object.entries(ownDescriptors).forEach(([path, descriptor]) => {
+    const reference = `Ambire's descriptor ${path}`
     const problem = getDescriptorProblem(descriptor)
     if (problem || !isPlainObject(descriptor)) {
-      problems.push(`Ambire's descriptor ${path}: ${problem}`)
+      problems.push(`${reference}: ${problem}`)
       return
     }
-    const name = `${ERC7730_AMBIRE_NEW_PATH_PREFIX}${path}`
-    descriptors[name] = descriptor
-    ownNames.set(path, name)
-  })
-  ownNames.forEach((name, path) => {
-    const reference = `Ambire's descriptor ${path}`
-    const descriptor = descriptors[name]
-    if (!isPlainObject(descriptor)) return
 
-    // Only the registry's descriptors can be included: an include is never rewritten to the
-    // `ambire-new/` name of another of Ambire's own
-    const ownIncludes = getIncludes(descriptor).filter(
+    // Only the registry's descriptors can be included, as an include is never rewritten to the
+    // `ambire-new/` name of another of Ambire's own. An unprefixed name is the registry's when it
+    // has one
+    const includes = getIncludes(descriptor)
+    const ownIncludes = includes.filter(
       (include) =>
-        isAmbireErc7730Path(include) || (ownNames.has(include) && !hasDescriptor(include))
+        isAmbireErc7730Path(include) || (has(ownDescriptors, include) && !hasDescriptor(include))
     )
     if (ownIncludes.length) {
       problems.push(
@@ -421,39 +423,32 @@ export const applyAmendments = (
       )
       return
     }
-    const missingIncludes = getIncludes(descriptor).filter((include) => !hasDescriptor(include))
+    const missingIncludes = includes.filter((include) => !hasDescriptor(include))
     if (missingIncludes.length) {
       problems.push(`${reference} includes ${missingIncludes.join(', ')}, which are not bundled`)
       return
     }
 
-    const context = isPlainObject(descriptor.context) ? descriptor.context : {}
-    const contract = isPlainObject(context.contract) ? context.contract : null
-    const eip712 = isPlainObject(context.eip712) ? context.eip712 : null
-    const calldataDeployments = contract && getDeployments(contract.deployments)
-    const eip712Deployments = eip712 && getDeployments(eip712.deployments)
-    const invalidLists = [
-      contract?.deployments !== undefined && !calldataDeployments && 'context.contract.deployments',
-      eip712?.deployments !== undefined && !eip712Deployments && 'context.eip712.deployments'
-    ].filter(Boolean)
-    if (invalidLists.length) {
-      invalidLists.forEach((list) =>
-        problems.push(
-          `${reference}: \`${list}\` is not a list of \`{ chainId, address }\` with decimal chain ids`
-        )
-      )
-      return
-    }
-    if (!calldataDeployments?.length && !eip712Deployments?.length) {
+    const deployments = getOwnDeployments(descriptor)
+    const invalidDeploymentsProblem = (list: string) =>
+      `${reference}: \`${list}\` is not a list of \`{ chainId, address }\` with decimal chain ids`
+    if (!deployments.calldata)
+      problems.push(invalidDeploymentsProblem('context.contract.deployments'))
+    if (!deployments.eip712) problems.push(invalidDeploymentsProblem('context.eip712.deployments'))
+    if (!deployments.calldata || !deployments.eip712) return
+    if (!deployments.calldata.length && !deployments.eip712.length) {
       problems.push(
         `${reference} has no \`context.contract.deployments\` or \`context.eip712.deployments\``
       )
       return
     }
-    calldataDeployments?.forEach(({ chainId, address }) =>
+
+    const name = `${ERC7730_AMBIRE_NEW_PATH_PREFIX}${path}`
+    descriptors[name] = descriptor
+    deployments.calldata.forEach(({ chainId, address }) =>
       addCalldataKey(getRegistryKey(chainId, address), name, reference)
     )
-    eip712Deployments?.forEach(({ chainId, address }) =>
+    deployments.eip712.forEach(({ chainId, address }) =>
       addEip712Key(getRegistryKey(chainId, address), name, reference)
     )
   })
@@ -579,8 +574,8 @@ export const applyAmendments = (
       return
     }
 
-    // Saved as a copy under `ambire-change/`, so that it is clear which descriptors are not the registry's
-    // as they are, and every key that used the registry's descriptor uses the copy
+    // Saved as a copy under `ambire-change/`, so that it is clear which descriptors are not the
+    // registry's as they are, and every key that used the registry's descriptor uses the copy.
     // One copy per descriptor, as amends are keyed by the descriptor path. To amend the same
     // descriptor differently for different contracts in the future, give each copy a unique path,
     // e.g. with a short hash of its `addresses`, and point only those keys at it
