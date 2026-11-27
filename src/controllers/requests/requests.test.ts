@@ -37,7 +37,6 @@ import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
-import { DAPP_REQUEST_LOADER_DELAY_MS } from './requests'
 
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
@@ -465,12 +464,11 @@ describe('RequestsController ', () => {
   // build signAccountOps that estimate in the background, nothing here asserts on the bundler
   mockBundlerRequestsBeforeEach()
 
-  describe('a dApp transaction that takes long to build', () => {
-    afterEach(() => {
-      jest.useRealTimers()
-    })
-
-    const buildDappTransaction = (controller: IRequestsController, id: string) =>
+  describe('a dApp transaction that is being built', () => {
+    const buildDappTransaction = (
+      controller: IRequestsController,
+      dappPromise: { id: string; resolve: jest.Mock; reject: jest.Mock }
+    ) =>
       controller.build({
         type: 'dappRequest',
         params: {
@@ -486,11 +484,11 @@ describe('RequestsController ', () => {
             ],
             session: MOCK_SESSION
           },
-          dappPromise: { id, resolve: jest.fn(), reject: jest.fn(), session: MOCK_SESSION }
+          dappPromise: { ...dappPromise, session: MOCK_SESSION }
         }
       })
 
-    test('waits for the account state and shows a loader in the request window meanwhile', async () => {
+    test('opens the request window with a loader right away and shows the transaction in it', async () => {
       const { controller, accountsCtrl } = await prepareTest(true)
       let releaseStateFetch!: () => void
       const stateFetchGate = new Promise<void>((resolve) => {
@@ -501,27 +499,25 @@ describe('RequestsController ', () => {
         .mockImplementation(async () => {
           await stateFetchGate
         })
-      const openRequestWindowSpy = jest.spyOn(controller, 'openRequestWindow')
-      // After the setup, which waits on real timers
-      jest.useFakeTimers()
 
-      const build = buildDappTransaction(controller, 'slow-build-test')
-      await jest.advanceTimersByTimeAsync(0)
+      const build = buildDappTransaction(controller, {
+        id: 'slow-build-test',
+        resolve: jest.fn(),
+        reject: jest.fn()
+      })
+      await wait(0)
+      await controller.requestWindow.openWindowPromise
+
       expect(controller.isBuildingDappRequest).toBe(true)
       expect(updateAccountStateSpy).toHaveBeenCalledWith(
         '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
         'pending',
         [1n]
       )
-      expect(openRequestWindowSpy).not.toHaveBeenCalled()
-
-      await jest.advanceTimersByTimeAsync(DAPP_REQUEST_LOADER_DELAY_MS)
-      expect(openRequestWindowSpy).toHaveBeenCalledTimes(1)
       const loaderWindow = controller.requestWindow.windowProps
       expect(loaderWindow).not.toBe(null)
       expect(controller.currentUserRequest).toBe(null)
 
-      jest.useRealTimers()
       releaseStateFetch()
       await build
 
@@ -536,22 +532,25 @@ describe('RequestsController ', () => {
       )
     })
 
-    test('opens no loader when the account state arrives in time', async () => {
+    test('closes the loader window when the transaction fails to build', async () => {
       const { controller, accountsCtrl } = await prepareTest(true)
-      jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
-      const openRequestWindowSpy = jest.spyOn(controller, 'openRequestWindow')
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockRejectedValue(new Error('RPC is down'))
+      const closeRequestWindowSpy = jest.spyOn(controller, 'closeRequestWindow')
 
-      await buildDappTransaction(controller, 'fast-build-test')
+      await expect(
+        buildDappTransaction(controller, {
+          id: 'failed-build-test',
+          resolve: jest.fn(),
+          reject: jest.fn()
+        })
+      ).rejects.toThrow('RPC is down')
+      // The app is told first, and the window closes right after
+      expect(closeRequestWindowSpy).toHaveBeenCalledTimes(1)
+      await closeRequestWindowSpy.mock.results[0]!.value
 
       expect(controller.isBuildingDappRequest).toBe(false)
-      expect(controller.currentUserRequest?.kind).toBe('calls')
-      // Only the window of the request itself
-      expect(openRequestWindowSpy).toHaveBeenCalledTimes(1)
-
-      await controller.rejectUserRequests(
-        'Test cleanup',
-        controller.userRequests.map(({ id }) => id)
-      )
+      expect(controller.currentUserRequest).toBe(null)
+      expect(controller.requestWindow.windowProps).toBe(null)
     })
   })
 
@@ -3523,7 +3522,9 @@ describe('RequestsController ', () => {
 
         await controller.handleSafeDeployStatusUpdate(makeSafeDeployOp(status))
 
-        expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], true)
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], {
+          force: true
+        })
         expect(rejectSpy).not.toHaveBeenCalled()
       }
     )
@@ -3693,7 +3694,9 @@ describe('RequestsController ', () => {
 
     await controller.resolveUserRequest({}, benzinRequest.id)
 
-    expect(updateAccountStateSpy).toHaveBeenCalledWith(accountAddr, 'latest', [chainId], true)
+    expect(updateAccountStateSpy).toHaveBeenCalledWith(accountAddr, 'latest', [chainId], {
+      force: true
+    })
     expect(controller.userRequests).toEqual([transactionRequest])
     expect(controller.currentUserRequest).toBe(transactionRequest)
     expect(resumeSpy).toHaveBeenCalledTimes(1)
@@ -4178,7 +4181,9 @@ describe('RequestsController ', () => {
 
       await controller.addUserRequests([messageRequest])
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], false)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], {
+        force: false
+      })
       expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
       const [deploymentRequest, addedMessageRequest] = controller.userRequests
       if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a deployment request')
@@ -4288,7 +4293,9 @@ describe('RequestsController ', () => {
 
       await controller.addUserRequests([messageRequest])
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], false)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], {
+        force: false
+      })
       expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
       expect(controller.userRequests).toEqual([messageRequest])
     })
@@ -4421,7 +4428,9 @@ describe('RequestsController ', () => {
 
       await controller.resolveUserRequest({}, benzinRequest.id)
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], true)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], {
+        force: true
+      })
       expect(controller.userRequests).toEqual([benzinRequest, messageRequest])
       expect(controller.currentUserRequest).toBe(benzinRequest)
       restore()

@@ -153,8 +153,6 @@ const STATUS_WRAPPED_METHODS = {
 
 /** How long a resolved transitional request stays, so the app request it was blocking can arrive */
 const TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS = 300
-/** How long an app's transaction may take to build before its window opens with a loader */
-export const DAPP_REQUEST_LOADER_DELAY_MS = 2000
 
 /** Dapp requests whose screen warns about the app, without a signing controller doing it */
 const DAPP_VERIFICATION_REQUEST_KINDS: UserRequest['kind'][] = [
@@ -330,8 +328,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   isBuildingDappRequest = false
 
   #dappRequestsBeingBuilt = 0
-
-  #dappRequestLoaderTimeoutId: ReturnType<typeof setTimeout> | undefined
 
   /** Requests whose account state was fetched while they were built, so adding them can skip it */
   #requestsWithFreshAccountState = new WeakSet<UserRequest>()
@@ -681,9 +677,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           continue
         }
 
-        const accountState = this.#requestsWithFreshAccountState.delete(req)
-          ? this.#accounts.accountStates[meta.accountAddr]?.[meta.chainId.toString()]
-          : await this.#getAccountStateWithFallback(meta.accountAddr, meta.chainId)
+        const accountState = await this.#getAccountStateForCallsRequest(
+          req,
+          meta.accountAddr,
+          meta.chainId
+        )
 
         if (!accountState) {
           const message =
@@ -1032,7 +1030,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     chainId: bigint
   ): Promise<boolean> {
     try {
-      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId], true)
+      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId], { force: true })
 
       const accountState = this.#accounts.accountStates[accountAddr]?.[chainId.toString()]
 
@@ -1057,6 +1055,21 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       })
       return false
     }
+  }
+
+  /**
+   * The account state a calls request starts with. A request built from an app's transaction
+   * already waited for a fresh state, so it's read from the saved states without a second fetch.
+   */
+  async #getAccountStateForCallsRequest(
+    req: UserRequest,
+    accountAddr: string,
+    chainId: bigint
+  ): Promise<AccountOnchainState | undefined> {
+    const wasFetchedWhileBuilt = this.#requestsWithFreshAccountState.delete(req)
+    if (wasFetchedWhileBuilt) return this.#accounts.accountStates[accountAddr]?.[chainId.toString()]
+
+    return this.#getAccountStateWithFallback(accountAddr, chainId)
   }
 
   /**
@@ -1090,8 +1103,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   /**
-   * Marks an app's transaction as being built. If the build takes longer than
-   * DAPP_REQUEST_LOADER_DELAY_MS, the request window opens with a loader.
+   * Marks an app's transaction as being built and opens the request window, which shows a loader
+   * until the transaction is ready.
    */
   #startDappRequestBuild(baseWindowId?: number) {
     this.#dappRequestsBeingBuilt += 1
@@ -1099,20 +1112,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     this.isBuildingDappRequest = true
     this.emitUpdate()
-    this.#dappRequestLoaderTimeoutId = setTimeout(() => {
-      this.#dappRequestLoaderTimeoutId = undefined
-      if (!this.isBuildingDappRequest || this.currentUserRequest) return
-
-      void this.openRequestWindow({ baseWindowId })
-    }, DAPP_REQUEST_LOADER_DELAY_MS)
+    void this.openRequestWindow({ baseWindowId })
   }
 
   async #endDappRequestBuild() {
     this.#dappRequestsBeingBuilt -= 1
     if (this.#dappRequestsBeingBuilt) return
 
-    clearTimeout(this.#dappRequestLoaderTimeoutId)
-    this.#dappRequestLoaderTimeoutId = undefined
     this.isBuildingDappRequest = false
     this.emitUpdate()
 
@@ -1154,10 +1160,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
 
     // The request window shows a loader until the app's transaction is built
-    if (this.isBuildingDappRequest) {
-      await this.#ui.syncViewRoutes(REQUEST_VIEW_TYPE)
-      return
-    }
+    if (this.isBuildingDappRequest) return
 
     // Don't close the request window if there are still requests to open automatically or if a
     // request is being added. Signed Safe transactions don't count, as they open only when picked.
@@ -2049,7 +2052,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     force = false
   ): Promise<boolean> {
     try {
-      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId], force)
+      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId], { force })
     } catch (error) {
       this.emitError({
         level: 'silent',
