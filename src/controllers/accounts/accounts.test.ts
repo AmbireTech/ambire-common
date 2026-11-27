@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globa
 import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
-import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { ACCOUNT_DATA_REFRESH_AGE, DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import {
   Account,
@@ -404,6 +404,43 @@ describe('AccountsController account state fetching', () => {
     fetches[0]!.resolve([makeAccountState(ADDR_A, 10n)])
     await update
     expect(loadingStates.at(-1)).toBe(false)
+  })
+
+  describe('refreshOutdatedAccountState', () => {
+    const setStateAge = (chainId: bigint, age: number) => {
+      const { accountsCtrl } = ctrl
+      accountsCtrl.accountStates[ADDR_A] = {
+        ...accountsCtrl.accountStates[ADDR_A],
+        [chainId.toString()]: { ...makeAccountState(ADDR_A, 10n), updatedAt: Date.now() - age }
+      }
+    }
+
+    test('fetches only the networks whose state is missing or outdated', async () => {
+      const { accountsCtrl } = ctrl
+      accountsCtrl.accountStates[ADDR_A] = {}
+      setStateAge(ETHEREUM.chainId, ACCOUNT_DATA_REFRESH_AGE - 1000)
+      const updateSpy = jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue()
+
+      await accountsCtrl.refreshOutdatedAccountState(ADDR_A)
+      expect(updateSpy).toHaveBeenLastCalledWith(ADDR_A, 'latest', [BASE.chainId])
+
+      setStateAge(BASE.chainId, 0)
+      setStateAge(ETHEREUM.chainId, ACCOUNT_DATA_REFRESH_AGE + 1000)
+      await accountsCtrl.refreshOutdatedAccountState(ADDR_A)
+      expect(updateSpy).toHaveBeenLastCalledWith(ADDR_A, 'latest', [ETHEREUM.chainId])
+    })
+
+    test('fetches nothing when every state is fresh', async () => {
+      const { accountsCtrl } = ctrl
+      setStateAge(ETHEREUM.chainId, 0)
+      setStateAge(BASE.chainId, 0)
+      const updateSpy = jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue()
+
+      await accountsCtrl.refreshOutdatedAccountState(ADDR_A)
+
+      // An empty list of networks would fetch every network
+      expect(updateSpy).not.toHaveBeenCalled()
+    })
   })
 
   describe('getLatestAccountNonce', () => {

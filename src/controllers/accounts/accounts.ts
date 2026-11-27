@@ -6,6 +6,7 @@ import {
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
+import { ACCOUNT_DATA_REFRESH_AGE } from '../../consts/account'
 import {
   SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
   VIEW_ONLY_ACCOUNT_IDENTITY_GET_INTERVAL
@@ -246,6 +247,26 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
     if (!accountData) return
     await this.updateAccountStates([accountData], blockTag, networks, force)
+  }
+
+  /**
+   * Fetches the state of an account on the networks where it is missing or older than
+   * ACCOUNT_DATA_REFRESH_AGE, so a repeated call fetches nothing.
+   */
+  async refreshOutdatedAccountState(accountAddr: Account['addr']) {
+    await this.initialLoadPromise
+
+    const now = Date.now()
+    const chainIdsToFetch = this.#networks.networks
+      .map(({ chainId }) => chainId)
+      .filter((chainId) => {
+        const updatedAt = this.accountStates[accountAddr]?.[chainId.toString()]?.updatedAt
+        return !updatedAt || now - updatedAt > ACCOUNT_DATA_REFRESH_AGE
+      })
+    // An empty list would fetch every network
+    if (!chainIdsToFetch.length) return
+
+    await this.updateAccountState(accountAddr, 'latest', chainIdsToFetch)
   }
 
   /**
