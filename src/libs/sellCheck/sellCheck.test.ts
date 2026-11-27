@@ -136,7 +136,7 @@ describe('getIncomingTokensToCheckSales', () => {
     ).toEqual([])
   })
 
-  test("leaves out the tokens of other networks", () => {
+  test('leaves out the tokens of other networks', () => {
     expect(getIncomingTokensToCheckSales([makeToken(TOKEN_1, 5n, { chainId: 10n })], 1n)).toEqual(
       []
     )
@@ -144,8 +144,9 @@ describe('getIncomingTokensToCheckSales', () => {
 
   test('checks nothing on a network whose DEXes we have no config for', () => {
     // Scroll prices only its native token from the RPC, with no DEXes configured
-    expect(getIncomingTokensToCheckSales([makeToken(TOKEN_1, 5n, { chainId: 534352n })], 534352n))
-      .toEqual([])
+    expect(
+      getIncomingTokensToCheckSales([makeToken(TOKEN_1, 5n, { chainId: 534352n })], 534352n)
+    ).toEqual([])
   })
 
   test(`checks at most ${MAX_TOKENS_TO_CHECK_SALES} tokens`, () => {
@@ -179,7 +180,7 @@ describe('getSellCheckRequest', () => {
 
   test("runs the transaction's calls from the account first, with the sell checker's code in place", () => {
     expect(transactionBlock!.calls).toEqual([
-      { to: TOKEN_1, value: '0x01', data: '0xabcdef', from: ACCOUNT }
+      { to: TOKEN_1, value: '0x1', data: '0xabcdef', from: ACCOUNT }
     ])
     expect(transactionBlock!.stateOverrides?.[SELL_CHECKER_ADDRESS]).toEqual({
       code: SellChecker.binRuntime
@@ -196,7 +197,7 @@ describe('getSellCheckRequest', () => {
     })
   })
 
-  test("approves the sell checker from the account for each token, then sells what the transaction added", () => {
+  test('approves the sell checker from the account for each token, then sells what the transaction added', () => {
     const calls = saleBlock!.calls
     expect(calls).toHaveLength(tokens.length + 1)
     tokens.forEach(({ address }, index) => {
@@ -295,7 +296,9 @@ describe('checkIncomingTokenSales', () => {
   })
 
   test('sends the request with eth_simulateV1 and reports what the sell check found', async () => {
-    const send = jest.fn(async (_method: string, _params: unknown) => makeResponse([[FAILED, 0]]))
+    const send = jest.fn<(method: string, params: unknown) => Promise<SimulatedBlock[]>>(async () =>
+      makeResponse([[FAILED, 0]])
+    )
     const provider = {
       send,
       getBlock: jest.fn(async () => ({ number: 1000, timestamp: 1_700_000_000 }))
@@ -337,12 +340,7 @@ describe('checkIncomingTokenSales', () => {
         value: parseEther('0.05'),
         data: new Interface([
           'function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline) payable'
-        ]).encodeFunctionData('swapExactETHForTokens', [
-          0,
-          [WETH, PEPE],
-          ACCOUNT,
-          MaxUint256
-        ])
+        ]).encodeFunctionData('swapExactETHForTokens', [0, [WETH, PEPE], ACCOUNT, MaxUint256])
       }
     ])
 
