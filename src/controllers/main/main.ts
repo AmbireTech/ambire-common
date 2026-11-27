@@ -1095,12 +1095,6 @@ export class MainController extends EventEmitter implements IMainController {
     // approved - so it stays open and the user can pick the account to connect with.
     await this.#leaveSelectedAccount({ keepsDappConnectRequest: true })
     await this.selectedAccount.select({ account: accountToSelect })
-    // Update reverse lookup data and ENS expiry
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.domains.reverseLookup(toAccountAddr, true, {
-      privacyUpdateMode: 'whenStale',
-      updateExpiry: true
-    })
     this.#continuousUpdates?.restartAccountTimers()
     this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true })
     this.swapAndBridge.updateActiveRoutesInterval.restart({ runImmediately: true })
