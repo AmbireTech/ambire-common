@@ -44,6 +44,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
+import { IPrivacyPoolsController } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp'
@@ -487,6 +488,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #contractInfo: IContractInfoController
 
+  #privacyPools: IPrivacyPoolsController
+
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
    * read the public getter `signAccountOpController` to get the up-to-date
@@ -574,6 +577,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     dapps,
     erc7730,
     contractInfo,
+    privacyPools,
     portfolioUpdate,
     relayerUrl,
     isCurrentSignAccountOpThrowingAnEstimationError,
@@ -602,6 +606,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     dapps: IDappsController
     erc7730: IErc7730Controller
     contractInfo: IContractInfoController
+    privacyPools: IPrivacyPoolsController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isCurrentSignAccountOpThrowingAnEstimationError?: Function
@@ -634,6 +639,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#dapps = dapps
     this.#erc7730 = erc7730
     this.#contractInfo = contractInfo
+    this.#privacyPools = privacyPools
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
     this.#onBroadcastSuccess = onBroadcastSuccess
@@ -3852,6 +3858,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       dapps: this.#dapps,
       erc7730: this.#erc7730,
       contractInfo: this.#contractInfo,
+      privacyPools: this.#privacyPools,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,

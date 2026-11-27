@@ -5,6 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 import { getPrivacyPoolsAsset, getPrivacyPoolsChainConfig } from '../../../../consts/privacyPools'
 import { encodePrivacyPoolsDeposit } from '../../../privacyPools/deposit'
 import { POOL_RAGEQUIT_INTERFACE } from '../../../privacyPools/ragequit'
+import { humanizeAccountOp } from '../..'
 import { humanizeCallWithModules } from '../../callModules'
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
@@ -13,6 +14,7 @@ import {
   getAddressVisualization,
   getErc7730Visualization,
   getLabel,
+  getText,
   getToken
 } from '../../utils'
 import { humanizePrivacyPoolsWithdrawal, privacyPoolsModule } from './privacyPoolsModule'
@@ -94,6 +96,48 @@ describe('Privacy Pools humanizer', () => {
           ]
         ]
       )
+    })
+
+    test('names the account each deposit of a batch goes to, when the wallet knows it', () => {
+      const deposits = [1n, 2n, 3n].map((precommitment) => ({
+        to: ENTRYPOINT,
+        ...encodePrivacyPoolsDeposit({
+          isNative: true,
+          assetAddress: ZeroAddress,
+          amount: 10n ** 16n,
+          precommitment
+        })
+      }))
+      const accountNames = ['Savings', 'Salary']
+      const op = { ...fullAccountOp, calls: deposits }
+
+      const humanized = humanizeAccountOp(op, {
+        getPrivacyPoolsAccountName: (call) =>
+          accountNames[deposits.findIndex(({ data }) => data === call.data)]
+      })
+
+      compareHumanizerVisualizations(humanized, [
+        [
+          getAction('Send'),
+          getToken(ZeroAddress, 10n ** 16n),
+          getLabel('to the Privacy Pools account'),
+          { ...getText('Savings'), isBold: true }
+        ],
+        [
+          getAction('Send'),
+          getToken(ZeroAddress, 10n ** 16n),
+          getLabel('to the Privacy Pools account'),
+          { ...getText('Salary'), isBold: true }
+        ],
+        // No name known, e.g. a deposit built before a restart
+        [
+          getAction('Send'),
+          getToken(ZeroAddress, 10n ** 16n),
+          getLabel('to a Privacy Pools account')
+        ]
+      ])
+      // Kept off the transaction itself, which is stored
+      expect(op.calls.some((call) => 'privacyPoolsAccountName' in call)).toBe(false)
     })
 
     test('still shows ETH sent along with a token deposit', () => {

@@ -1712,6 +1712,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       dapps: this.#dapps,
       erc7730: this.#erc7730,
       contractInfo: this.#contractInfo,
+      privacyPools: this.#privacyPools,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,

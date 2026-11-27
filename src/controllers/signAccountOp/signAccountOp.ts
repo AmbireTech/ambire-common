@@ -66,6 +66,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
+import { IPrivacyPoolsController } from '../../interfaces/privacyPools'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeTx } from '../../interfaces/safe'
 import {
@@ -382,6 +383,12 @@ export class SignAccountOpController
 
   #isRegistrable: boolean
 
+  #privacyPools: IPrivacyPoolsController
+
+  /** See `PrivacyPoolsController.getDepositAccountName`. */
+  #getPrivacyPoolsAccountNameOfCall = (call: Call) =>
+    this.#privacyPools.getDepositAccountName(this.#network.chainId, call)
+
   #isDestroyed = false
 
   /** Safes only: the checks for sent approvals of smart account owners, stopped on destroy */
@@ -663,7 +670,8 @@ export class SignAccountOpController
     onBroadcastSuccess,
     onBroadcastFailed,
     onPartialBroadcast,
-    replacement
+    replacement,
+    privacyPools
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
@@ -693,9 +701,12 @@ export class SignAccountOpController
     onPartialBroadcast?: OnPartialBroadcast
     /** Pass only when speeding up or canceling a pending transaction */
     replacement?: TxnReplacement
+    /** Names the Privacy Pools account each deposit in the batch goes to */
+    privacyPools: IPrivacyPoolsController
   }) {
     super(eventEmitterRegistry, false)
     this.#isRegistrable = !!eventEmitterRegistry
+    this.#privacyPools = privacyPools
     this.#networks = networks
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
@@ -1765,7 +1776,12 @@ export class SignAccountOpController
       return false
     }
 
-    this.#setHumanization(humanizeAccountOp(this.accountOp), humanizationId)
+    this.#setHumanization(
+      humanizeAccountOp(this.accountOp, {
+        getPrivacyPoolsAccountName: this.#getPrivacyPoolsAccountNameOfCall
+      }),
+      humanizationId
+    )
     this.learnTokens()
 
     return true
@@ -1782,7 +1798,8 @@ export class SignAccountOpController
 
     const erc7730Humanization = humanizeAccountOp(this.accountOp, {
       erc7730Descriptors,
-      nativeAssetSymbol: this.#network.nativeAssetSymbol
+      nativeAssetSymbol: this.#network.nativeAssetSymbol,
+      getPrivacyPoolsAccountName: this.#getPrivacyPoolsAccountNameOfCall
     })
     if (
       !hasErc7730Humanization(erc7730Humanization) ||
@@ -4006,6 +4023,7 @@ export class SignAccountOpController
       dapps: this.#dapps,
       erc7730: this.#erc7730,
       contractInfo: this.#contractInfo,
+      privacyPools: this.#privacyPools,
       // not a request of its own, so broadcasting it doesn't resolve any request
       fromRequestId: `${this.fromRequestId}-safe-owner-approval-${owner.addr}`,
       accountOp: getSafeOwnerApprovalAccountOp({

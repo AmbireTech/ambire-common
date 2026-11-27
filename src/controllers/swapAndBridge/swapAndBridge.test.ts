@@ -383,6 +383,7 @@ const buildSwapAndBridgeController = (
     swapProvider: socketAPIMock as any,
     erc7730: erc7730Ctrl,
     contractInfo: contractInfoCtrl,
+    privacyPools: privacyPoolsCtrl,
     keystore,
     portfolio: portfolioCtrl,
     providers: providersCtrl,
@@ -462,7 +463,8 @@ requestsCtrl = new RequestsController({
   addTokensToBeLearned: () => {},
   onSetCurrentUserRequest: () => {},
   onBroadcastSuccess: async () => {},
-  onBroadcastFailed: () => {}
+  onBroadcastFailed: () => {},
+  privacyPools: privacyPoolsCtrl
 })
 
 describe('SwapAndBridge Controller', () => {
@@ -2664,6 +2666,7 @@ describe('SwapAndBridge Controller: to token market data', () => {
       swapProvider: socketAPIMock as any,
       erc7730: erc7730Ctrl,
       contractInfo: contractInfoCtrl,
+      privacyPools: privacyPoolsCtrl,
       keystore,
       portfolio: portfolioCtrl,
       providers: providersCtrl,

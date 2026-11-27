@@ -704,6 +704,7 @@ export class MainController extends EventEmitter implements IMainController {
       dapps: this.dapps,
       erc7730: this.erc7730,
       contractInfo: this.contractInfo,
+      privacyPools: this.privacyPools,
       swapProvider: new SwapProviderParallelExecutor(
         [LiFiProvider, SocketProvider, UniswapProvider, CowSwapProvider],
         () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) })),
@@ -863,7 +864,8 @@ export class MainController extends EventEmitter implements IMainController {
         await this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
         this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
       },
-      onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
+      onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
+      privacyPools: this.privacyPools
     })
 
     this.initialLoadPromise = this.#load().finally(() => {

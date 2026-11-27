@@ -21,12 +21,23 @@ import {
   getAddressVisualization,
   getErc7730Visualization,
   getLabel,
+  getText,
   getToken
 } from '../../utils'
 
 /**
+ * Names the Privacy Pools account a deposit goes to, when the wallet knows it (see
+ * `IrCall.privacyPoolsAccountName`), so deposits into several accounts can be told apart.
+ */
+const getDepositRecipient = (accountName: string | undefined): HumanizerVisualization[] =>
+  accountName
+    ? [getLabel('to the Privacy Pools account'), { ...getText(accountName), isBold: true }]
+    : [getLabel('to a Privacy Pools account')]
+
+/**
  * Shows a Privacy Pools deposit as a send to a Privacy Pools account. The call ties it to the
- * account only by a precommitment, so no account is named.
+ * account only by a precommitment, so the account is named only when the wallet built the deposit
+ * and passed its name along.
  *
  * Also shows a ragequit, the public reclaim of a deposit still being verified, as getting it back
  * from Privacy Pools. Only for the pools we know, as the token comes from which pool it is.
@@ -65,7 +76,7 @@ export const privacyPoolsModule: HumanizerCallModule = (accountOp: AccountOp, ca
     fullVisualization: [
       getAction('Send'),
       getToken(tokenAddress, deposit.amount),
-      getLabel('to a Privacy Pools account')
+      ...getDepositRecipient(call.privacyPoolsAccountName)
     ]
   }
 }

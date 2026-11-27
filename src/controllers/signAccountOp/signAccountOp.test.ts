@@ -119,6 +119,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
+import { PrivacyPoolsController } from '../privacyPools/privacyPools'
 import { ProvidersController } from '../providers/providers'
 import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -657,6 +658,10 @@ const init = async (
     { apiForFunctionSelectors: !!options?.contractInfoFetch, ...options?.featureFlags },
     storageCtrl
   )
+  const tokenPrices = new TokenPricesController({
+    fetch,
+    isTokenPricesEnabled: () => featureFlagsCtrl.isFeatureEnabled('tokenPrices')
+  })
   const portfolio = new PortfolioController(
     storageCtrl,
     fetch,
@@ -669,11 +674,22 @@ const init = async (
     bannerCtrl,
     featureFlagsCtrl,
     ui,
-    new TokenPricesController({
-      fetch,
-      isTokenPricesEnabled: () => featureFlagsCtrl.isFeatureEnabled('tokenPrices')
-    })
+    tokenPrices
   )
+  const privacyPools = new PrivacyPoolsController({
+    keystore,
+    featureFlags: featureFlagsCtrl,
+    networks: networksCtrl,
+    providers: providersCtrl,
+    selectedAccount: selectedAccountCtrl,
+    storage: storageCtrl,
+    ui,
+    fetch,
+    circuitsBaseUrl: '',
+    onAccountsRemoved: () => Promise.resolve(),
+    getPendingAccountOps: () => [],
+    tokenPrices
+  })
   const continuouslyUpdatePhishingSpy = options?.dapps
     ? jest
         .spyOn(PhishingController.prototype, 'continuouslyUpdatePhishing')
@@ -867,6 +883,7 @@ const init = async (
     dapps,
     provider,
     phishing,
+    privacyPools,
     fromRequestId: 1,
     accountOp: op,
     shouldSimulate: false,

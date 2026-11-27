@@ -126,6 +126,12 @@ export interface IrCall extends Omit<Call, 'to'> {
    * Privacy Pools deposit of ETH), so the fallback humanizer does not add it again as a "Send".
    */
   showsCallValue?: boolean
+  /**
+   * The name of the Privacy Pools account a deposit goes to, when the wallet knows it. Set only on
+   * the humanized copy, never stored with the transaction, as a stored log would link the deposit
+   * to the account.
+   */
+  privacyPoolsAccountName?: string
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]

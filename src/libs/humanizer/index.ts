@@ -1,5 +1,6 @@
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
+import { Call } from '../accountOp/types'
 import { parse, stringify } from '../richJson/richJson'
 import { humanizeCallWithModules, humanizerCallModules } from './callModules'
 import {
@@ -51,6 +52,11 @@ const humanizeMessageWithModules = (message: Message): HumanizerMessageResult | 
 type HumanizeAccountOpOptions = {
   erc7730Descriptors?: Erc7730CallDescriptors
   nativeAssetSymbol?: string
+  /**
+   * The name of the Privacy Pools account a call deposits into, when the wallet knows it. Shown
+   * so deposits into several accounts in one batch can be told apart.
+   */
+  getPrivacyPoolsAccountName?: (call: Call) => string | undefined
 }
 
 type HumanizeMessageOptions = {
@@ -60,9 +66,14 @@ type HumanizeMessageOptions = {
 const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOptions): IrCall[] => {
   const accountOp = parse(stringify(_accountOp))
 
-  let currentCalls: IrCall[] = accountOp.calls.map((originalCall: IrCall) =>
-    humanizeCallWithModules(accountOp, originalCall)
-  )
+  let currentCalls: IrCall[] = accountOp.calls.map((originalCall: IrCall) => {
+    const privacyPoolsAccountName = options?.getPrivacyPoolsAccountName?.(originalCall)
+
+    return humanizeCallWithModules(
+      accountOp,
+      privacyPoolsAccountName ? { ...originalCall, privacyPoolsAccountName } : originalCall
+    )
+  })
 
   if (options?.erc7730Descriptors) {
     currentCalls = currentCalls.map((call, index) => {

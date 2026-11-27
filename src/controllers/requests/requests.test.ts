@@ -267,6 +267,7 @@ const prepareTest = async (
       provider: mainCtrl.providers.providers[network.chainId.toString()]!,
       phishing: mainCtrl.phishing,
       dapps: mainCtrl.dapps,
+      privacyPools: mainCtrl.privacyPools,
       fromRequestId: requestId,
       accountOp: {
         id: generateUuid(),

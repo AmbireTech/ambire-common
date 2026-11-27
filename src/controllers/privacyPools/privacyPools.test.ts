@@ -2450,6 +2450,35 @@ describe('PrivacyPoolsController', () => {
       expect(protocols.reduce((total, protocol) => total + protocol.syncCount, 0)).toBe(1)
     })
 
+    it('names the account a deposit it built goes to, and no other call', async () => {
+      const { controller } = await prepareTest()
+      await controller.updateAccountLabel('seed-b', 'Savings')
+
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+      const [depositCall] = await building
+
+      expect(controller.getDepositAccountName(1n, depositCall!)).toBe('Savings')
+      expect(controller.getDepositAccountName(OTHER_CHAIN_ID, depositCall!)).toBeUndefined()
+      // The same deposit with another amount was not built here
+      expect(
+        controller.getDepositAccountName(1n, { ...depositCall!, value: depositCall!.value + 1n })
+      ).toBeUndefined()
+      expect(
+        controller.getDepositAccountName(1n, { to: DEPOSITOR, value: 0n, data: '0x' })
+      ).toBeUndefined()
+    })
+
+    it('names no account when a deposit goes to one without a name', async () => {
+      const { controller } = await prepareTest()
+
+      const building = buildDeposit(controller, { seedId: 'seed-a' })
+      await releaseSync('seed-a')
+      const [depositCall] = await building
+
+      expect(controller.getDepositAccountName(1n, depositCall!)).toBeUndefined()
+    })
+
     it('refuses amounts Privacy Pools does not accept', async () => {
       const { controller } = await prepareTest()
 
