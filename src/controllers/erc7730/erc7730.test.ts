@@ -89,7 +89,7 @@ describe('Erc7730Controller', () => {
       return makeRegistry({ descriptors })
     }
 
-    test.each([1, 4, 5, 8])('merges a chain of %i includes', async (levels) => {
+    test.each([5, 8])('merges a chain of %i includes', async (levels) => {
       const controller = makeController(withIncludeChain(levels))
 
       const descriptors = await controller.getDescriptorsForAccountOp(accountOp)

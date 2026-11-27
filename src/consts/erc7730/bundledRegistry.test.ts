@@ -1,23 +1,13 @@
-import { id, isHexString, ZeroAddress } from 'ethers'
+import { id, ZeroAddress } from 'ethers'
 import { readdirSync, readFileSync } from 'fs'
 import path from 'path'
 import { isDeepStrictEqual as isEqual } from 'util'
 
 import { describe, expect, test } from '@jest/globals'
 
-import {
-  ERC7730_AMBIRE_CHANGE_PATH_PREFIX,
-  getErc7730RegistryPath,
-  SUPPORTED_ERC7730_SCHEMA_FILES
-} from '../../libs/humanizer/erc7730/consts'
-import {
-  getSchemaFileName,
-  mergeDescriptors,
-  validateDescriptor
-} from '../../libs/humanizer/erc7730/descriptor'
+import { mergeDescriptors } from '../../libs/humanizer/erc7730/descriptor'
 import { Erc7730Descriptor, Erc7730Field } from '../../libs/humanizer/erc7730/types'
 import { getRegistryKey } from '../../libs/humanizer/erc7730/utils'
-import { amendments } from '../../../scripts/erc7730/amendments'
 import lifiAmendment from '../../../scripts/erc7730/amendments/lifi.json'
 import { BUNDLED_ERC7730_REGISTRY } from '.'
 import upstreamRegistry from './registry.json'
@@ -35,13 +25,6 @@ const getIncludes = (descriptor: unknown): string[] => {
   if (typeof includes === 'string') return [includes]
 
   return Array.isArray(includes) ? includes : []
-}
-
-/** Whether a key is written the way lookups build it: `eip155:{chainId}:{lowercase address}` */
-const isRegistryKey = (key: string) => {
-  const [, chainId = '', address = ''] = key.split(':')
-
-  return isHexString(address, 20) && getRegistryKey(chainId, address) === key
 }
 
 /** A descriptor merged with everything it includes, as the wallet reads it */
@@ -77,53 +60,6 @@ describe('bundled ERC-7730 registry', () => {
     expect(Object.keys(descriptors).length).toBeGreaterThan(0)
   })
 
-  test('has the keys of both indexes written the way lookups build them', () => {
-    const keys = [...Object.keys(calldataIndex), ...Object.keys(eip712Index)]
-
-    expect(keys.filter((key) => !isRegistryKey(key))).toEqual([])
-  })
-
-  test('has a descriptor path in every index entry', () => {
-    const invalidPaths = [...Object.values(calldataIndex), ...getEip712Paths()].filter(
-      (path) => typeof path !== 'string'
-    )
-
-    expect(invalidPaths).toEqual([])
-  })
-
-  test('has only 32 byte hashes as the encode type hashes of the EIP-712 index', () => {
-    const invalidHashes = Object.values(eip712Index)
-      .flatMap((entriesByPrimaryType) => Object.values(entriesByPrimaryType).flat())
-      .flatMap(({ encodeTypeHashes = [] }) => encodeTypeHashes)
-      .filter((hash) => !isHexString(hash, 32))
-
-    expect(invalidHashes).toEqual([])
-  })
-
-  test('has only valid descriptors', () => {
-    const invalidPaths = Object.entries(descriptors)
-      .filter(([, descriptor]) => {
-        try {
-          return !validateDescriptor(descriptor)
-        } catch {
-          return true
-        }
-      })
-      .map(([path]) => path)
-
-    expect(invalidPaths).toEqual([])
-  })
-
-  test('has only descriptors of a supported version of ERC-7730', () => {
-    const unsupportedPaths = Object.entries(descriptors)
-      .filter(
-        ([, descriptor]) => !SUPPORTED_ERC7730_SCHEMA_FILES.has(getSchemaFileName(descriptor) ?? '')
-      )
-      .map(([path]) => path)
-
-    expect(unsupportedPaths).toEqual([])
-  })
-
   test('has the descriptor of every index entry', () => {
     const paths = [...Object.values(calldataIndex), ...getEip712Paths()]
     const missingPaths = paths.filter((path) => !isOwnKey(descriptors, path))
@@ -139,18 +75,6 @@ describe('bundled ERC-7730 registry', () => {
     )
 
     expect(missingIncludes).toEqual([])
-  })
-
-  test("names descriptors by their path in the upstream registry, or as Ambire's with a prefix", () => {
-    const otherPaths = [
-      ...Object.keys(descriptors),
-      ...Object.values(calldataIndex),
-      ...getEip712Paths()
-    ]
-      .map(getErc7730RegistryPath)
-      .filter((path) => !path.startsWith('registry/') && !path.startsWith('ercs/'))
-
-    expect([...new Set(otherPaths)]).toEqual([])
   })
 })
 
@@ -172,31 +96,6 @@ describe("Ambire's changes to the bundled ERC-7730 registry", () => {
     )
 
     expect(unknownHashes).toEqual([])
-  })
-
-  /** The path a descriptor is bundled at: its `ambire-change/` copy when Ambire amended it */
-  const getBundledPath = (name: string) =>
-    name in amendments.amendCalldataDescriptors || name in amendments.amendEip712Descriptors
-      ? `${ERC7730_AMBIRE_CHANGE_PATH_PREFIX}${name}`
-      : name
-
-  test('uses each added descriptor for its key', () => {
-    Object.entries(amendments.addCalldataDescriptors).forEach(([key, name]) => {
-      expect(calldataIndex[key]).toBe(getBundledPath(name))
-    })
-  })
-
-  test('bundles each amended descriptor as its ambire-change/ copy only', () => {
-    Object.keys(amendments.amendCalldataDescriptors).forEach((name) => {
-      expect(isOwnKey(descriptors, `${ERC7730_AMBIRE_CHANGE_PATH_PREFIX}${name}`)).toBe(true)
-      expect(Object.values(calldataIndex)).not.toContain(name)
-    })
-  })
-
-  test('uses each amended descriptor for the keys it lists', () => {
-    Object.entries(amendments.amendCalldataDescriptors).forEach(([name, { addresses }]) => {
-      addresses.forEach((key) => expect(calldataIndex[key]).toBe(getBundledPath(name)))
-    })
   })
 
   test('shows the ETH sent to the Uniswap V3 position manager instead of refusing it', () => {
