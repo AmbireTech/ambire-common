@@ -100,8 +100,8 @@ export class Erc7730Controller extends EventEmitter {
 
   /**
    * A descriptor by its path in the registry. Throws if it isn't there, is of a version of
-   * ERC-7730 the wallet doesn't support or isn't valid. The errors don't name the path: they are reported, and it would tell which contract the user was about
-   * to use
+   * ERC-7730 the wallet doesn't support or isn't valid. The errors don't name the path: they are
+   * reported, and it would tell which contract the user was about to use
    */
   #readDescriptor(registryPath: string): Erc7730Descriptor {
     const descriptor = getOwn(this.#registry.descriptors, registryPath)

@@ -131,7 +131,7 @@ describe('bundled ERC-7730 registry', () => {
     expect([...new Set(missingPaths)]).toEqual([])
   })
 
-  test('has every descriptor a descriptor includes, by its name', () => {
+  test('has every descriptor a descriptor includes, by its path', () => {
     const missingIncludes = Object.entries(descriptors).flatMap(([path, descriptor]) =>
       getIncludes(descriptor)
         .filter((includedPath) => !isOwnKey(descriptors, includedPath))
