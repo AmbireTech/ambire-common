@@ -493,11 +493,7 @@ describe('CowSwap', () => {
           args: [spender as Hex, amount]
         })
       })
-      const preSignCall = getPreSignCall(
-        getExpectedOrderUid(presignedOrder),
-        true,
-        presignedOrder
-      )
+      const preSignCall = getPreSignCall(getExpectedOrderUid(presignedOrder), true, presignedOrder)
       const humanizeApproval = (approveCall: ReturnType<typeof getApproveCall>, calls: any[]) =>
         CowSwapModule(
           { ...accountOp, calls: [approveCall, ...calls] },

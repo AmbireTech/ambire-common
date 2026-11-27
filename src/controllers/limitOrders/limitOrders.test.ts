@@ -1632,6 +1632,11 @@ describe('LimitOrdersController price', () => {
         balanceAffectingErrors: [],
         onUpdate: jest.fn()
       },
+      // The form picks a token to sell on the networks the account can use
+      accounts: {
+        accountStates: {},
+        getOrFetchAccountOnChainState: jest.fn(async () => ({ nonce: 0n }))
+      },
       networks: { networks: [{ chainId: 1n, name: 'Ethereum', nativeAssetSymbol: 'ETH' }] },
       providers: { providers: {} },
       featureFlags: { isFeatureEnabled: () => false },
