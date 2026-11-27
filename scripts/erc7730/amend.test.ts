@@ -392,6 +392,27 @@ describe('applyAmendments: adds', () => {
     }
   )
 
+  test('says the add is no longer needed once the registry uses the same descriptor', () => {
+    const registry = upstreamRegistry()
+    registry.calldataIndex[NEW_KEY] = 'pool/calldata-Pool.json'
+    registry.eip712Index[NEW_KEY] = { Permit: [{ path: 'permit/eip712-Permit.json' }] }
+
+    expect(
+      getProblems(
+        {
+          amendCalldataDescriptors: { 'pool/calldata-Pool.json': fixValue },
+          addCalldataDescriptors: { [NEW_KEY]: 'pool/calldata-Pool.json' },
+          addEip712Descriptors: { [NEW_KEY]: 'permit/eip712-Permit.json' }
+        },
+        {},
+        registry
+      )
+    ).toEqual([
+      `The add of pool/calldata-Pool.json for ${NEW_KEY}: the registry now uses the same descriptor (pool/calldata-Pool.json) for ${NEW_KEY}, so Ambire's change is no longer needed. Remove it`,
+      `The add of permit/eip712-Permit.json for ${NEW_KEY}: the registry now uses the same descriptor (permit/eip712-Permit.json) for Permit messages of ${NEW_KEY}, so Ambire's change is no longer needed. Remove it`
+    ])
+  })
+
   test('fails for a descriptor that is not bundled and for keys not written as expected', () => {
     expect(
       getProblems({
@@ -450,7 +471,7 @@ describe('applyAmendments: adds', () => {
 
   test('fails once the registry has the primary type for the contract', () => {
     const registry = upstreamRegistry()
-    registry.eip712Index[NEW_KEY] = { Permit: [{ path: 'permit/eip712-Permit.json' }] }
+    registry.eip712Index[NEW_KEY] = { Permit: [{ path: 'permit/eip712-Other.json' }] }
 
     expect(
       getProblems(
@@ -459,7 +480,7 @@ describe('applyAmendments: adds', () => {
         registry
       )
     ).toEqual([
-      `The add of permit/eip712-Permit.json for ${NEW_KEY}: the registry already has permit/eip712-Permit.json for Permit messages of ${NEW_KEY}. Remove ${NEW_KEY} from Ambire's changes, or amend permit/eip712-Permit.json instead`
+      `The add of permit/eip712-Permit.json for ${NEW_KEY}: the registry already has permit/eip712-Other.json for Permit messages of ${NEW_KEY}. Remove ${NEW_KEY} from Ambire's changes, or amend permit/eip712-Other.json instead`
     ])
   })
 })

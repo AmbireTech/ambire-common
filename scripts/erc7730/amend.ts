@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'util'
 import {
   ERC7730_AMBIRE_CHANGE_PATH_PREFIX,
   ERC7730_AMBIRE_NEW_PATH_PREFIX,
+  getErc7730RegistryPath,
   isAmbireErc7730Path
 } from '../../src/libs/humanizer/erc7730/consts'
 import {
@@ -336,12 +337,22 @@ export const applyAmendments = (
     }`
   }
 
+  /** Whether two bundled names are the same descriptor, e.g. one and its `ambire-change/` copy */
+  const isSameDescriptor = (one: string, other: string) =>
+    getErc7730RegistryPath(one) === getErc7730RegistryPath(other)
+  const getUpstreamHasItMessage = (what: string, path: string) =>
+    `the registry now uses the same descriptor (${getErc7730RegistryPath(path)}) for ${what}, so Ambire's change is no longer needed. Remove it`
+
   const addCalldataKey = (key: string, name: string, reference: string) => {
     if (!isRegistryKey(key)) {
       problems.push(`${reference}: ${key} is not written as \`eip155:{chainId}:{address}\``)
       return
     }
     const existing = calldataIndex[key]
+    if (existing !== undefined && isSameDescriptor(existing, name)) {
+      problems.push(`${reference}: ${getUpstreamHasItMessage(key, existing)}`)
+      return
+    }
     if (existing !== undefined) {
       problems.push(
         `${reference}: the registry already has ${existing} for ${key}. Remove ${key} from Ambire's changes, or amend ${existing} instead (${compareFormats(
@@ -384,6 +395,12 @@ export const applyAmendments = (
     const entries = { ...eip712Index[key] }
     Object.entries(hashesByPrimaryType).forEach(([primaryType, encodeTypeHashes]) => {
       const existing = entries[primaryType]
+      if (existing?.every(({ path }) => isSameDescriptor(path, name))) {
+        problems.push(
+          `${reference}: ${getUpstreamHasItMessage(`${primaryType} messages of ${key}`, name)}`
+        )
+        return
+      }
       if (existing) {
         const existingNames = existing.map(({ path }) => path).join(', ')
         problems.push(
