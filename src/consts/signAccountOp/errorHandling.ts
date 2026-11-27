@@ -10,7 +10,9 @@ const WARNINGS: Record<
   | 'feeTokenPriceUnavailable'
   | 'v1Acc'
   | 'safeDelegateCall'
-  | 'safeTxNotShownAsCalls',
+  | 'safeTxNotShownAsCalls'
+  | 'incomingTokenCannotBeSold'
+  | 'incomingTokenHighSellFee',
   Warning
 > = {
   significantBalanceDecrease: {
@@ -43,6 +45,17 @@ const WARNINGS: Record<
     title: "We can't show what this transaction does",
     text: "It can give another contract full control of your Safe, and we can't check what that contract will do. Some apps do this on purpose, but scammers do it too. Only sign it if you started it yourself in an app you trust.",
     promptBefore: ['sign']
+  },
+  // Shown on the simulation's "Assets in" card. See `IncomingTokenSaleRisk`
+  incomingTokenCannotBeSold: {
+    id: 'incomingTokenCannotBeSold',
+    title: "You may not be able to sell a token you're getting",
+    text: 'We tried selling it in a test run after this transaction, and the sale failed. Scam tokens often let anyone buy them, then block selling.'
+  },
+  incomingTokenHighSellFee: {
+    id: 'incomingTokenHighSellFee',
+    title: "A token you're getting takes a large fee when sold",
+    text: 'In a test sale after this transaction, the token kept a large part of the value. You would get much less back when you sell it.'
   }
 }
 

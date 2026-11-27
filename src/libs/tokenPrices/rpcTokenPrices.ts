@@ -94,7 +94,7 @@ const toError = (error: unknown, network: Network): Error =>
  * Whether the token is on one of the short lists of liquid tokens we keep for the chain: the Gas
  * Tank fee tokens, and the assets the Privacy Pools accept
  */
-const isCuratedToken = (address: string, chainId: bigint): boolean =>
+export const isCuratedToken = (address: string, chainId: bigint): boolean =>
   !!getFeeToken(address, chainId) ||
   !!getPrivacyPoolsChainConfig(chainId)?.assets.some((asset) => isSameAddr(asset.address, address))
 
