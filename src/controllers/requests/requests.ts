@@ -76,6 +76,7 @@ import {
   HeldDappRequest,
   OpenRequestWindowParams,
   PendingDappPromise,
+  PendingUserRequest,
   PlainTextMessageUserRequest,
   RequestExecutionType,
   RequestPosition,
@@ -153,6 +154,8 @@ const STATUS_WRAPPED_METHODS = {
 
 /** How long a resolved transitional request stays, so the app request it was blocking can arrive */
 const TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS = 300
+/** How long a new calls request waits for a fresh account state before it uses the saved one */
+const ACCOUNT_STATE_FETCH_FALLBACK_TIMEOUT_MS = 5000
 
 /** Dapp requests whose screen warns about the app, without a signing controller doing it */
 const DAPP_VERIFICATION_REQUEST_KINDS: UserRequest['kind'][] = [
@@ -320,6 +323,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * the request window in a quick succession.
    */
   #userRequestsBeingAdded = 0
+
+  /**
+   * Requests that can't be added yet, because building them needs async work first (an app's
+   * transaction waits for the account state). The request window shows a loader for them. If the
+   * user closes it meanwhile, the request is handled as closed once it is built.
+   */
+  #pendingUserRequests: PendingUserRequest[] = []
+
+  /** Whether the request window shows a loader, as an app's transaction is still being built */
+  get hasPendingUserRequest() {
+    return this.#pendingUserRequests.some((p) => !p.isClosed)
+  }
 
   /**
    * Set only while the wallet is closing a request window itself. Closing it fires
@@ -666,26 +681,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           continue
         }
 
-        const accountStateBefore =
-          this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
-
-        // Try to update the account state for 2 seconds. If that fails, use the previous account state if it exists,
-        // otherwise wait for the fetch to complete (no matter how long it takes).
-        // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
-        let fallbackTimeoutId: ReturnType<typeof setTimeout> | undefined
-        const accountState = await Promise.race([
-          this.#accounts
-            .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
-            .then(() => this.#accounts.accountStates[meta.accountAddr]?.[meta.chainId.toString()]),
-          // Fallback to the old account state if it exists and the fetch takes too long
-          accountStateBefore
-            ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
-              new Promise<AccountOnchainState | undefined>((res) => {
-                fallbackTimeoutId = setTimeout(() => res(accountStateBefore), 2000)
-              })
-            : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
-        ])
-        clearTimeout(fallbackTimeoutId)
+        const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+          meta.accountAddr,
+          meta.chainId
+        )
 
         if (!accountState) {
           const message =
@@ -1034,7 +1033,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     chainId: bigint
   ): Promise<boolean> {
     try {
-      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId], true)
+      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId], { force: true })
 
       const accountState = this.#accounts.accountStates[accountAddr]?.[chainId.toString()]
 
@@ -1059,6 +1058,63 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       })
       return false
     }
+  }
+
+  /**
+   * Tries to update the account state for ACCOUNT_STATE_FETCH_FALLBACK_TIMEOUT_MS. If that
+   * fails, uses the previous account state if it exists, otherwise waits for the fetch to
+   * complete (no matter how long it takes). This is done in an attempt to always have the latest
+   * nonce, but without blocking the UI for too long if the RPC is slow to respond.
+   */
+  async #getAccountStateWithFallback(
+    accountAddr: string,
+    chainId: bigint
+  ): Promise<AccountOnchainState | undefined> {
+    const accountStateBefore = this.#accounts.accountStates?.[accountAddr]?.[chainId.toString()]
+
+    let fallbackTimeoutId: ReturnType<typeof setTimeout> | undefined
+    const accountState = await Promise.race([
+      this.#accounts
+        .updateAccountState(accountAddr, 'pending', [chainId])
+        .then(() => this.#accounts.accountStates[accountAddr]?.[chainId.toString()]),
+      // Fallback to the old account state if it exists and the fetch takes too long
+      accountStateBefore
+        ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
+          new Promise<AccountOnchainState | undefined>((res) => {
+            fallbackTimeoutId = setTimeout(
+              () => res(accountStateBefore),
+              ACCOUNT_STATE_FETCH_FALLBACK_TIMEOUT_MS
+            )
+          })
+        : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
+    ])
+    clearTimeout(fallbackTimeoutId)
+
+    return accountState
+  }
+
+  /** Tells the user that the transactions waiting to be opened stay in the queue. */
+  async #notifyQueuedTransactions() {
+    // Signed Safe transactions were already waiting in the queue, so they don't count as new
+    const callsCount = this.#autoTriggerUserRequests.reduce((acc, request) => {
+      if (request.kind !== 'calls') return acc
+
+      return acc + (request.signAccountOp.accountOp.calls?.length || 0)
+    }, 0)
+
+    if (!callsCount) return
+
+    await this.#ui.notification.create({
+      title: callsCount > 1 ? `${callsCount} transactions queued` : 'Transaction queued',
+      message: 'Queued pending transactions are available on your Dashboard.'
+    })
+  }
+
+  /** Drops a request that is no longer pending. The loader window closes if nothing opened. */
+  async #removePendingUserRequest(pending: PendingUserRequest) {
+    this.#pendingUserRequests = this.#pendingUserRequests.filter((p) => p !== pending)
+    this.emitUpdate()
+    if (!this.currentUserRequest) await this.#setCurrentUserRequest(null)
   }
 
   async #setCurrentUserRequest(nextRequest: UserRequest | null, params?: OpenRequestWindowParams) {
@@ -1093,9 +1149,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    // Don't close the request window if there are still requests to open automatically or if a
-    // request is being added. Signed Safe transactions don't count, as they open only when picked.
-    if (this.#autoTriggerUserRequests.length || this.#userRequestsBeingAdded) return
+    // Don't close the request window if there are still requests to open automatically, if a
+    // request is being added or if it shows the loader of a pending request. Signed Safe
+    // transactions don't count, as they open only when picked.
+    if (
+      this.#autoTriggerUserRequests.length ||
+      this.#userRequestsBeingAdded ||
+      this.hasPendingUserRequest
+    )
+      return
 
     await this.closeRequestWindow()
   }
@@ -1311,21 +1373,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.requestWindow.windowProps = null
       this.requestWindow.loaded = false
       this.requestWindow.pendingMessage = null
-      await this.#setCurrentUserRequest(null)
-
-      // Signed Safe transactions were already waiting in the queue, so they don't count as new
-      const callsCount = this.#autoTriggerUserRequests.reduce((acc, request) => {
-        if (request.kind !== 'calls') return acc
-
-        return acc + (request.signAccountOp.accountOp.calls?.length || 0)
-      }, 0)
-
-      if (callsCount) {
-        await this.#ui.notification.create({
-          title: callsCount > 1 ? `${callsCount} transactions queued` : 'Transaction queued',
-          message: 'Queued pending transactions are available on your Dashboard.'
+      if (isUserInitiatedClose) {
+        this.#pendingUserRequests.forEach((p) => {
+          p.isClosed = true
         })
       }
+      await this.#setCurrentUserRequest(null)
+
+      await this.#notifyQueuedTransactions()
 
       for (const r of this.userRequests) {
         // A prompt holding app requests is rejected with the view instead, as are its requests
@@ -1983,7 +2038,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     force = false
   ): Promise<boolean> {
     try {
-      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId], force)
+      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId], { force })
     } catch (error) {
       this.emitError({
         level: 'silent',
@@ -2614,6 +2669,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       const last = built[built.length - 1]!
 
+      // The window opens with a loader only from here, so a payload that is turned away never
+      // flashes it
       await this.#addCallsUserRequest(
         {
           calls: built.flatMap(({ params }) => params.calls),
@@ -2623,7 +2680,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           dappPromises: built.map(({ params }) => params.dappPromise),
           dappSessionId: last.item.request.session.sessionId
         },
-        { allowAccountSwitch: true }
+        { allowAccountSwitch: true, baseWindowId: firstRequest.session.windowId }
       )
 
       built.forEach(({ item }) => item.settle())
@@ -3801,6 +3858,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }: {
       executionType?: RequestExecutionType
       allowAccountSwitch?: boolean
+      baseWindowId?: number
       position?: RequestPosition
       skipFocus?: boolean
     } = {}
@@ -3843,11 +3901,33 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (speedUpKey && this.#speedUpsBeingBuilt.has(speedUpKey)) return
     if (speedUpKey) this.#speedUpsBeingBuilt.add(speedUpKey)
 
+    // An app's transaction waits for the account state, so its window opens with a loader now
+    let pending: PendingUserRequest | undefined
+    if (params.dappPromises?.length) {
+      pending = { isClosed: false }
+      this.#pendingUserRequests.push(pending)
+      this.emitUpdate()
+      void this.openRequestWindow({
+        baseWindowId: addOptions.baseWindowId,
+        skipFocus: addOptions.skipFocus
+      })
+    }
+
     try {
       const userRequest = await this.#createOrUpdateCallsUserRequest(params, executionType)
-      if (userRequest) await this.addUserRequests([userRequest], { executionType, ...addOptions })
+      if (!userRequest) return
+
+      // Closing the loader keeps the request in the queue, as closing its window would
+      let addExecutionType = executionType
+      if (pending?.isClosed) {
+        userRequest.signAccountOp.pause()
+        addExecutionType = 'queue'
+      }
+      await this.addUserRequests([userRequest], { executionType: addExecutionType, ...addOptions })
+      if (pending?.isClosed) await this.#notifyQueuedTransactions()
     } finally {
       if (speedUpKey) this.#speedUpsBeingBuilt.delete(speedUpKey)
+      if (pending) await this.#removePendingUserRequest(pending)
     }
   }
 
@@ -4117,25 +4197,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
     } else {
       const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
-      const accountStateBefore =
-        this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
-      // Try to update the account state for 2 seconds. If that fails, use the previous account state if it exists,
-      // otherwise wait for the fetch to complete (no matter how long it takes).
-      // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
-      let fallbackTimeoutId: ReturnType<typeof setTimeout> | undefined
-      const accountState = await Promise.race([
-        this.#accounts
-          .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
-          .then(() => this.#accounts.accountStates[meta.accountAddr]?.[meta.chainId.toString()]),
-        // Fallback to the old account state if it exists and the fetch takes too long
-        accountStateBefore
-          ? new Promise<AccountOnchainState>((res) => {
-              fallbackTimeoutId = setTimeout(() => res(accountStateBefore), 2000)
-            })
-          : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
-      ])
-      clearTimeout(fallbackTimeoutId)
+      const accountState = await this.#getAccountStateWithFallback(meta.accountAddr, meta.chainId)
 
       if (!accountState) {
         this.emitError({
@@ -4512,6 +4575,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       banners: this.banners,
       visibleUserRequests: this.visibleUserRequests,
       currentUserRequest: this.currentUserRequest,
+      hasPendingUserRequest: this.hasPendingUserRequest,
       currentRequestDappVerificationBanners: this.currentRequestDappVerificationBanners,
       currentRequestRejectOptions: this.currentRequestRejectOptions
     }

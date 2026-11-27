@@ -32,6 +32,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { PIMLICO } from '../../consts/bundlers'
 import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import { ACCOUNT_DATA_REFRESH_AGE } from '../../consts/account'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import {
@@ -1186,7 +1187,7 @@ export class SignAccountOpController
         this.accountOp.accountAddr,
         'pending',
         [this.accountOp.chainId],
-        true
+        { force: true }
       )
       await this.#simulateAndEstimate()
     } catch (error) {
@@ -2565,6 +2566,14 @@ export class SignAccountOpController
     this.emitUpdate()
   }
 
+  #isNetworkPortfolioOutdated() {
+    const lastSuccessfulUpdate = this.#portfolio.getAccountPortfolioState(
+      this.accountOp.accountAddr
+    )?.[this.accountOp.chainId.toString()]?.lastSuccessfulUpdate
+
+    return !lastSuccessfulUpdate || Date.now() - lastSuccessfulUpdate > ACCOUNT_DATA_REFRESH_AGE
+  }
+
   /**
    * Updates the estimation and the portfolio simulation
    * for the current accountOp
@@ -2577,10 +2586,17 @@ export class SignAccountOpController
 
     if (shouldTraceCall) this.traceCall()
 
-    await Promise.all([
-      this.#portfolio.simulateAccountOp(this.accountOp),
-      this.estimation.estimate(this.accountOp).catch((e) => e)
-    ])
+    // The first estimate reads the fee tokens from the portfolio, so it waits for the simulation
+    // to refresh an outdated one. The fee options stay loading instead of changing later.
+    if (this.estimation.status === EstimationStatus.Initial && this.#isNetworkPortfolioOutdated()) {
+      await this.#portfolio.simulateAccountOp(this.accountOp)
+      await this.estimation.estimate(this.accountOp).catch((e) => e)
+    } else {
+      await Promise.all([
+        this.#portfolio.simulateAccountOp(this.accountOp),
+        this.estimation.estimate(this.accountOp).catch((e) => e)
+      ])
+    }
 
     // calculate the warnings after the portfolio is fetched
     this.calculateWarnings()
@@ -2617,7 +2633,7 @@ export class SignAccountOpController
         this.accountOp.accountAddr,
         'pending',
         [this.accountOp.chainId],
-        true
+        { force: true }
       )
       const pendingAccountState =
         this.#accounts.accountStates[this.accountOp.accountAddr]?.[
@@ -4556,12 +4572,9 @@ export class SignAccountOpController
       if (newEstimate instanceof Error) {
         if (counter === 0) {
           await this.#accounts
-            .updateAccountState(
-              this.accountOp.accountAddr,
-              'pending',
-              [this.accountOp.chainId],
-              true
-            )
+            .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], {
+              force: true
+            })
 
             .catch((e) => console.error(e))
           return this.#getInitialUserOp(true, eip7702Auth, 1)
@@ -4694,7 +4707,9 @@ export class SignAccountOpController
     if (errorResponse.message.indexOf('invalid account nonce') !== -1) {
       // continue on error as this is an attempt for an UX improvement
       await this.#accounts
-        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
+        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], {
+          force: true
+        })
 
         .catch((e) => console.error(e))
     }
@@ -5914,7 +5929,9 @@ export class SignAccountOpController
           ? 'Broadcast failed because of a pending transaction. Please try again'
           : 'Signer key not supported on this network'
         this.#accounts
-          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
+          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], {
+            force: true
+          })
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
       } else if (isUnderpriced(getBroadcastServiceErrorMessage(_err))) {
@@ -5943,7 +5960,9 @@ export class SignAccountOpController
       ) {
         message = 'Pending transaction detected. Please try again in a few seconds'
         this.#accounts
-          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
+          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], {
+            force: true
+          })
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
       }

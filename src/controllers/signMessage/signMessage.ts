@@ -2,6 +2,7 @@ import { toUtf8String } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
+import { ACCOUNT_DATA_REFRESH_AGE } from '../../consts/account'
 import { Account, IAccountsController } from '../../interfaces/account'
 import {
   DAPP_VERIFICATION_BANNER_IDS,
@@ -274,7 +275,8 @@ export class SignMessageController
 
       const accountState = await this.#accounts.getOrFetchAccountOnChainState(
         this.#account.addr,
-        this.network.chainId
+        this.network.chainId,
+        { maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE }
       )
       if (this.#signingGeneration !== initializationGeneration) return
 
@@ -599,7 +601,8 @@ export class SignMessageController
 
       const accountState = await this.#accounts.getOrFetchAccountOnChainState(
         this.#account.addr,
-        this.network.chainId
+        this.network.chainId,
+        { maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE }
       )
       if (!this.#isSigningOperationValidAfterAsyncOperation(signingGeneration)) return
       if (!accountState) {

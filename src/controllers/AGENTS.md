@@ -129,7 +129,7 @@ it covers the schema entry, the adapter pair, the coordinator and the startup-wi
 
 ## Other rules:
 - Never use raw `setInterval`. Always use `RecurringTimeout` from `src/classes/recurringTimeout/recurringTimeout.ts`.
-- Long-running background intervals must be declared in `ContinuousUpdatesController`, which orchestrates their lifecycle based on app state and controller events. If you need a new background loop, add it there and wire its start/stop/restart logic through the existing event subscriptions.
+- Long-running background intervals must be declared in `ContinuousUpdatesController`, which orchestrates their lifecycle based on app state and controller events. If you need a new background loop, add an entry to its `#timers` table: the `intervals` per wallet state (`locked`, `background`, `inUse`) and, if needed, the events in `restartOn`, `speedUpOn` or `checkOn`. Don't start, stop or restart a timer from an event listener of its own.
 - Never call `this.storage.set()` in parallel. Always await the previous call before making another one.
 - When adding or changing a storage migration in `StorageController`, make it safe to re-run (it can get skipped or interrupted and run later on data already in the current shape) - follow the rules in the comment above `#loadMigrations` in `src/controllers/storage/storage.ts`.
 - Always use `this.emitError` for error handling in controllers; all emitted errors are reported to Sentry and logged, and non-silent errors are also displayed as toasts in the UI. Public methods must never let errors propagate — use `EmittableError` (thrown inside a `withStatus` wrapper, which auto-emits it) or `try/catch` + `emitError({ level, message, error })` otherwise.

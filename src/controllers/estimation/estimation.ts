@@ -340,7 +340,7 @@ export class EstimationController extends EventEmitter {
     ) {
       // continue on error here as the flags are more like app helpers
       this.#accounts
-        .updateAccountState(op.accountAddr, 'pending', [op.chainId], true)
+        .updateAccountState(op.accountAddr, 'pending', [op.chainId], { force: true })
 
         .catch((e) => console.error(e))
     }

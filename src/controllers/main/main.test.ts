@@ -2,7 +2,7 @@ import { toBeHex, Wallet } from 'ethers'
 
 import EmittableError from '@/classes/EmittableError'
 import { Session } from '@/classes/session'
-import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
+import { ACCOUNT_DATA_REFRESH_AGE, DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   LEGACY_POPULAR_DERIVATION_TEMPLATE
@@ -472,7 +472,12 @@ describe('Main Controller ', () => {
 
       controller.ui.uiEvent.emit('viewFocus', { id: 'focus-mobile', type: 'mobile' } as any)
       await wait(0)
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(controller.selectedAccount.account!.addr)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(
+        controller.selectedAccount.account!.addr,
+        'latest',
+        [],
+        { maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE }
+      )
     } finally {
       jest.restoreAllMocks()
     }
@@ -1399,7 +1404,7 @@ describe('Main Controller ', () => {
       expect(mainCtrl.keystore.keys).toHaveLength(0)
       expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-1', ok: true, res: true })
       expect(updateAccountState).toHaveBeenCalledTimes(1)
-      expect(updateAccountState).toHaveBeenCalledWith(wallet.address, 'latest', [], true)
+      expect(updateAccountState).toHaveBeenCalledWith(wallet.address, 'latest', [], { force: true })
     })
 
     test('replies false and reloads nothing when the key does not exist', async () => {
@@ -1847,7 +1852,9 @@ describe('Main Controller ', () => {
       await mainCtrl.updateAccountsOpsStatuses()
       await flushAsyncUpdates()
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], {
+        force: true
+      })
       expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
       // A cache-busting update is scheduled for the updated chain.
       expect(scheduleUpdateSpy).toHaveBeenCalledTimes(1)
@@ -2037,8 +2044,12 @@ describe('Main Controller ', () => {
         await flushAsyncUpdates()
 
         expect(blockNumberReadsBeforeRefresh).toEqual([3, 3])
-        expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
-        expect(updateAccountStateSpy).toHaveBeenCalledWith(recipientAccount, 'latest', [1n], true)
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], {
+          force: true
+        })
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(recipientAccount, 'latest', [1n], {
+          force: true
+        })
         expect(discardSimulationSpy).toHaveBeenCalledWith([confirmedAccountOp])
         expect(updateSelectedAccountSpy).toHaveBeenCalledWith(
           recipientAccount,
@@ -2128,7 +2139,9 @@ describe('Main Controller ', () => {
       await flushAsyncUpdates()
 
       expect(mainCtrl.selectedAccount.account?.addr).toBe(selectedAccountAddr)
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], {
+        force: true
+      })
       expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
       // Scheduling targets the tx account, not the selected one.
       expect(scheduleUpdateSpy).toHaveBeenCalledWith({
@@ -2175,7 +2188,9 @@ describe('Main Controller ', () => {
       await mainCtrl.updateAccountsOpsStatuses()
       await flushAsyncUpdates()
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n, 10n], true)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n, 10n], {
+        force: true
+      })
       expect(scheduleUpdateSpy).toHaveBeenCalledTimes(2)
       expect(scheduleUpdateSpy).toHaveBeenCalledWith({
         accountId: senderAccount,

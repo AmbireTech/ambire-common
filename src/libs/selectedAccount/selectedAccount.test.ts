@@ -146,6 +146,7 @@ describe('Selected Account lib', () => {
 
       Object.keys(clonedPortfolioLatestState).forEach((chainId) => {
         clonedPortfolioLatestState[chainId]!.isLoading = true
+        clonedPortfolioLatestState[chainId]!.lastSuccessfulUpdate = Date.now()
       })
 
       // Not a manual update
@@ -170,25 +171,53 @@ describe('Selected Account lib', () => {
       // isAllReady should be false because it's a manual update
       expect(selectedAccountPortfolio2.isAllReady).toBe(false)
     })
-    it('Portfolio is ready, state is older than 60min and loading - isReloading should be true', () => {
-      const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
+    describe('a network with data older than 60min', () => {
+      const oneHourAndOneSecondAgo = () => Date.now() - 60 * 60 * 1000 - 1000
 
-      const sixtyMinutesAndOneSecondAgo = Date.now() - 60 * 60 * 1000 - 1000
+      const getOutdatedState = (isLoading: boolean) => {
+        const state = structuredClone(PORTFOLIO_STATE) as AccountState
+        state['1']!.isLoading = isLoading
+        state['1']!.lastSuccessfulUpdate = oneHourAndOneSecondAgo()
+        return state
+      }
 
-      Object.keys(clonedPortfolioLatestState).forEach((chainId) => {
-        clonedPortfolioLatestState[chainId]!.isLoading = true
-        clonedPortfolioLatestState[chainId]!.lastSuccessfulUpdate = sixtyMinutesAndOneSecondAgo
+      it('hides its assets while they load again', () => {
+        const portfolio = calculateSelectedAccountPortfolio(
+          getOutdatedState(true),
+          false,
+          false,
+          false
+        )
+
+        expect(portfolio.isReloading).toBe(true)
+        expect(portfolio.isAllReady).toBe(false)
+        expect(portfolio.tokens.some((t) => t.chainId === 1n)).toBe(false)
+        expect(portfolio.balancePerNetwork['1']).toBe(0)
       })
 
-      const selectedAccountPortfolio = calculateSelectedAccountPortfolio(
-        clonedPortfolioLatestState,
-        false,
-        false,
-        false
-      )
+      it('shows its assets again when the update ends without new data', () => {
+        const portfolio = calculateSelectedAccountPortfolio(
+          getOutdatedState(false),
+          false,
+          false,
+          false
+        )
 
-      expect(selectedAccountPortfolio.isReloading).toBe(true)
-      expect(selectedAccountPortfolio.isAllReady).toBe(true)
+        expect(portfolio.isReloading).toBe(false)
+        expect(portfolio.isAllReady).toBe(true)
+        expect(portfolio.tokens.some((t) => t.chainId === 1n)).toBe(true)
+      })
+
+      it('stays ready while it loads again if it has no assets to hide', () => {
+        const state = getOutdatedState(true)
+        const result = state['1']!.result as PortfolioNetworkResult
+        result.tokens = result.tokens.map((token) => ({ ...token, amount: 0n }))
+        if (result.defiPositions) result.defiPositions.positionsByProvider = []
+
+        const portfolio = calculateSelectedAccountPortfolio(state, false, false, false)
+
+        expect(portfolio.isAllReady).toBe(true)
+      })
     })
     it('Portfolio is ready, state is fresh and loading - isReloading should be false', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState

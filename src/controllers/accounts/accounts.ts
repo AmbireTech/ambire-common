@@ -234,18 +234,37 @@ export class AccountsController extends EventEmitter implements IAccountsControl
    * `getPendingBlockTagIfSupported`.
    * - Pass `force` when a transaction or a nonce error changed the
    * state, so a fetch that started before the call is not enough.
+   * - Pass `maxDataAgeMs` to skip the networks whose state is newer than it. The saved state
+   * doesn't keep its block tag, so don't use it when the result must count pending transactions.
    */
   async updateAccountState(
     accountAddr: Account['addr'],
     blockTag: AccountStateBlockTag = 'latest',
     networks: bigint[] = [],
-    force = false
+    { force = false, maxDataAgeMs }: { force?: boolean; maxDataAgeMs?: number } = {}
   ) {
     await this.initialLoadPromise
 
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
     if (!accountData) return
-    await this.updateAccountStates([accountData], blockTag, networks, force)
+
+    if (maxDataAgeMs === undefined) {
+      await this.updateAccountStates([accountData], blockTag, networks, force)
+      return
+    }
+
+    const now = Date.now()
+    const requestedChainIds = networks.length
+      ? networks
+      : this.#networks.networks.map(({ chainId }) => chainId)
+    const outdatedChainIds = requestedChainIds.filter((chainId) => {
+      const updatedAt = this.accountStates[accountAddr]?.[chainId.toString()]?.updatedAt
+      return !updatedAt || now - updatedAt > maxDataAgeMs
+    })
+    // An empty list would fetch every network
+    if (!outdatedChainIds.length) return
+
+    await this.updateAccountStates([accountData], blockTag, outdatedChainIds, force)
   }
 
   /**
@@ -626,16 +645,23 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     return this.accountStates[addr]
   }
 
-  // Get the account state or in the rare case of it being undefined,
-  // fetch it.
-  // This is a precaution method as we had bugs in the past where we assumed
-  // the account state to be fetched only for it to haven't been.
-  // This ensures production doesn't blow up and it 99.9% of cases it
-  // should not call the promise
+  /**
+   * Returns the saved account state of a network, fetching it in the rare case it is missing.
+   * A precaution, as code has assumed in the past that the state was fetched when it wasn't. With
+   * `maxDataAgeMs` it also fetches a saved state older than that, joining a fetch that is already
+   * running, and returns a younger one at once. A failed fetch returns the saved state, or
+   * undefined when there is none.
+   */
   async getOrFetchAccountOnChainState(
     addr: string,
-    chainId: bigint
+    chainId: bigint,
+    { maxDataAgeMs }: { maxDataAgeMs?: number } = {}
   ): Promise<AccountOnchainState | undefined> {
+    if (maxDataAgeMs !== undefined) {
+      await this.updateAccountState(addr, 'latest', [chainId], { maxDataAgeMs })
+      return this.accountStates[addr]?.[chainId.toString()]
+    }
+
     if (!this.accountStates[addr]?.[chainId.toString()]) {
       await this.updateAccountState(addr, 'latest', [chainId])
     }

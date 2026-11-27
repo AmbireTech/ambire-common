@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globa
 import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
-import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { ACCOUNT_DATA_REFRESH_AGE, DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import {
   Account,
@@ -97,6 +97,7 @@ describe('AccountsController', () => {
 })
 
 type AccountStateFetch = {
+  chainId: bigint
   addrs: string[]
   accounts: Account[]
   blockTag: string | number | undefined
@@ -152,9 +153,10 @@ const makeAccountsController = async ({
   const fetches: AccountStateFetch[] = []
   jest
     .spyOn(accountStateLib, 'getAccountState')
-    .mockImplementation((_provider, _network, accountsToFetch, _keys, blockTag) => {
+    .mockImplementation((_provider, network, accountsToFetch, _keys, blockTag) => {
       return new Promise((resolve, reject) => {
         fetches.push({
+          chainId: network.chainId,
           addrs: accountsToFetch.map(({ addr }) => addr),
           accounts: accountsToFetch,
           blockTag,
@@ -274,7 +276,7 @@ describe('AccountsController account state fetching', () => {
     const running = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId])
     await flushPromises()
     const forcedCalls = Array.from({ length: 5 }, () =>
-      track(accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId], true))
+      track(accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId], { force: true }))
     )
     await flushPromises()
     fetches[0]!.resolve([makeAccountState(ADDR_A, 10n)])
@@ -295,7 +297,9 @@ describe('AccountsController account state fetching', () => {
     const { accountsCtrl, fetches, errors } = ctrl
     const running = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId])
     await flushPromises()
-    const forced = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId], true)
+    const forced = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId], {
+      force: true
+    })
     await flushPromises()
     fetches[0]!.reject(new Error('RPC is down'))
     await running
@@ -315,7 +319,7 @@ describe('AccountsController account state fetching', () => {
     const running = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId])
     await flushPromises()
     const forcedCalls = Array.from({ length: 3 }, () =>
-      accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId], true)
+      accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId], { force: true })
     )
     await flushPromises()
     fetches[0]!.resolve([makeAccountState(ADDR_A, 10n)])
@@ -381,7 +385,9 @@ describe('AccountsController account state fetching', () => {
     }
     const running = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId])
     await flushPromises()
-    const forced = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId], true)
+    const forced = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId], {
+      force: true
+    })
     await flushPromises()
     await accountsCtrl.updateSafeCreation(ADDR_A, safeCreation)
     fetches[0]!.resolve([makeAccountState(ADDR_A, 10n)])
@@ -404,6 +410,73 @@ describe('AccountsController account state fetching', () => {
     fetches[0]!.resolve([makeAccountState(ADDR_A, 10n)])
     await update
     expect(loadingStates.at(-1)).toBe(false)
+  })
+
+  describe('updateAccountState with maxDataAgeMs', () => {
+    const setStateAge = (chainId: bigint, age: number) => {
+      const { accountsCtrl } = ctrl
+      accountsCtrl.accountStates[ADDR_A] = {
+        ...accountsCtrl.accountStates[ADDR_A],
+        [chainId.toString()]: { ...makeAccountState(ADDR_A, 10n), updatedAt: Date.now() - age }
+      }
+    }
+
+    test('fetches only the networks whose state is missing or outdated', async () => {
+      const { accountsCtrl, fetches } = ctrl
+      accountsCtrl.accountStates[ADDR_A] = {}
+      setStateAge(ETHEREUM.chainId, ACCOUNT_DATA_REFRESH_AGE - 1000)
+
+      const update = accountsCtrl.updateAccountState(ADDR_A, 'latest', [], {
+        maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE
+      })
+      await flushPromises()
+      expect(fetches.map(({ chainId }) => chainId)).toEqual([BASE.chainId])
+      fetches[0]!.resolve([makeAccountState(ADDR_A, 11n)])
+      await update
+
+      setStateAge(ETHEREUM.chainId, ACCOUNT_DATA_REFRESH_AGE + 1000)
+      const secondUpdate = accountsCtrl.updateAccountState(ADDR_A, 'latest', [], {
+        maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE
+      })
+      await flushPromises()
+      expect(fetches.slice(1).map(({ chainId }) => chainId)).toEqual([ETHEREUM.chainId])
+      fetches[1]!.resolve([makeAccountState(ADDR_A, 11n)])
+      await secondUpdate
+    })
+
+    test('fetches nothing when every requested state is fresh', async () => {
+      const { accountsCtrl, fetches } = ctrl
+      setStateAge(ETHEREUM.chainId, 0)
+      setStateAge(BASE.chainId, ACCOUNT_DATA_REFRESH_AGE + 1000)
+
+      // An empty list of networks would fetch every network, so the outdated Base must stay out
+      await accountsCtrl.updateAccountState(ADDR_A, 'latest', [ETHEREUM.chainId], {
+        maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE
+      })
+      expect(fetches).toHaveLength(0)
+    })
+  })
+
+  describe('getOrFetchAccountOnChainState with maxDataAgeMs', () => {
+    const setSavedState = (age: number) => {
+      ctrl.accountsCtrl.accountStates[ADDR_A] = {
+        [BASE.chainId.toString()]: { ...makeAccountState(ADDR_A, 10n), updatedAt: Date.now() - age }
+      }
+    }
+
+    test('refetches and returns a saved state that is older than maxDataAgeMs', async () => {
+      const { accountsCtrl, fetches } = ctrl
+      setSavedState(ACCOUNT_DATA_REFRESH_AGE + 1000)
+
+      const read = accountsCtrl.getOrFetchAccountOnChainState(ADDR_A, BASE.chainId, {
+        maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE
+      })
+      await flushPromises()
+      expect(fetches.map(({ chainId }) => chainId)).toEqual([BASE.chainId])
+      fetches[0]!.resolve([makeAccountState(ADDR_A, 11n)])
+
+      expect((await read)?.currentBlock).toBe(11n)
+    })
   })
 
   describe('getLatestAccountNonce', () => {

@@ -10,7 +10,7 @@ import {
 import { FeatureFlags } from '@/consts/featureFlags'
 import { HARDWARE_WALLET_DEVICE_NAMES } from '@/consts/hardwareWallets'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
-import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
+import { ACCOUNT_DATA_DISPLAY_MAX_AGE, ACCOUNT_DATA_REFRESH_AGE } from '@/consts/account'
 import { PRIVACY_POOLS_RAGEQUIT_DEPOSITOR_STATE_TIMEOUT_MS } from '@/consts/privacyPools'
 import {
   AccountPickerController,
@@ -939,7 +939,11 @@ export class MainController extends EventEmitter implements IMainController {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.#fetchAllSafesPending()
       }
-      if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
+      if (isExtensionOverlayView(view)) {
+        await this.onPopupOpen(view.id)
+        return
+      }
+      this.#refreshSelectedAccountOnOpen()
     })
 
     this.ui.uiEvent.on('viewFocus', (view: View) => {
@@ -966,15 +970,15 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Refreshes what the user sees first when the wallet opens: the selected account's account
-   * state, portfolio and defi positions, and the account names. Cheap to repeat, see onPopupOpen.
+   * Refreshes what the user sees first when the wallet opens or an account is selected: the
+   * selected account's account state, portfolio and defi positions, and the account names. Only
+   * data older than ACCOUNT_DATA_REFRESH_AGE is fetched, so it's cheap to repeat. Runs also while
+   * the wallet is locked, as the user opened it.
    */
   #refreshSelectedAccountOnOpen() {
     const selectedAccountAddr = this.selectedAccount.account?.addr
 
     if (selectedAccountAddr) {
-      const FIVE_MINUTES = 1000 * 60 * 5
-      const ONE_HOUR = 1000 * 60 * 60
       // Passively bulk-resolving ENS for all accounts links them together, so we
       // only do it when the user opts out of privacy. Otherwise accounts are
       // refreshed on interaction (see DomainsController).
@@ -991,15 +995,15 @@ export class MainController extends EventEmitter implements IMainController {
       }
       const THIRTY_MINUTES = 1000 * 60 * 30
 
-      if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
-        this.updateSelectedAccountPortfolio({
-          maxDataAgeMs: FIVE_MINUTES,
-          maxDataAgeMsUnused: ONE_HOUR,
-          defiMaxDataAgeMs: THIRTY_MINUTES
-        })
-      }
+      this.updateSelectedAccountPortfolio({
+        maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE,
+        maxDataAgeMsUnused: ACCOUNT_DATA_DISPLAY_MAX_AGE,
+        defiMaxDataAgeMs: THIRTY_MINUTES
+      })
 
-      this.accounts.updateAccountState(selectedAccountAddr)
+      this.accounts.updateAccountState(selectedAccountAddr, 'latest', [], {
+        maxDataAgeMs: ACCOUNT_DATA_REFRESH_AGE
+      })
     }
   }
 
@@ -1071,9 +1075,6 @@ export class MainController extends EventEmitter implements IMainController {
     void this.ui.syncViewRoutes()
     this.emailVault?.cleanMagicAndSessionKeys()
     this.selectedAccount.setDashboardNetworkFilter(null)
-    this.continuousUpdates?.updatePortfolioInterval.restart({
-      timeout: LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
-    })
   }
 
   async selectAccount(toAccountAddr: string) {
@@ -1094,27 +1095,16 @@ export class MainController extends EventEmitter implements IMainController {
     // approved - so it stays open and the user can pick the account to connect with.
     await this.#leaveSelectedAccount({ keepsDappConnectRequest: true })
     await this.selectedAccount.select({ account: accountToSelect })
-    // Update reverse lookup data and ENS expiry
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.domains.reverseLookup(toAccountAddr, true, {
-      privacyUpdateMode: 'whenStale',
-      updateExpiry: true
-    })
-    this.#continuousUpdates?.updatePortfolioInterval.restart()
-    this.#continuousUpdates?.accountStateLatestInterval.restart()
-    this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true })
+    this.#continuousUpdates?.onAccountSwitch()
     this.swapAndBridge.updateActiveRoutesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
     this.transfer.reset({ destroyAccountOp: true })
 
-    // Don't await this as it's not critical for the account selection
+    // Don't await these as they're not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reloadSelectedAccount({
-      maxDataAgeMs: 5 * 60 * 1000,
-      maxDataAgeMsUnused: 60 * 60 * 1000
-    })
+    this.#refreshSelectedAccountOnOpen()
+    this.fetchSafeTxns([], true).catch((e) => e) // we catch the error inside
 
     await this.#forceEmitSelectedAccountUpdates(toAccountAddr)
   }
@@ -2165,7 +2155,7 @@ export class MainController extends EventEmitter implements IMainController {
                 accountAddr,
                 'latest',
                 networks.map((net) => net.chainId),
-                true
+                { force: true }
               )
 
               // Schedule an update that will refetch new defi positions (if any)
@@ -2196,12 +2186,9 @@ export class MainController extends EventEmitter implements IMainController {
               ...otherAccountsToUpdate.map(async ([portfolioAccountAddr, chainIds]) => {
                 // A fee payer has a new nonce and a recipient a new balance, and the
                 // account state goes first for the same reason as above
-                await this.accounts.updateAccountState(
-                  portfolioAccountAddr,
-                  'latest',
-                  chainIds,
-                  true
-                )
+                await this.accounts.updateAccountState(portfolioAccountAddr, 'latest', chainIds, {
+                  force: true
+                })
                 await this.portfolio.updateSelectedAccount(
                   portfolioAccountAddr,
                   this.networks.networks.filter((n) => chainIds.includes(n.chainId))
@@ -2323,7 +2310,7 @@ export class MainController extends EventEmitter implements IMainController {
     await Promise.all(
       // Forced, as a fetch that started before the removal would still count the key
       accountsWithKey.map((account) =>
-        this.accounts.updateAccountState(account.addr, 'latest', [], true)
+        this.accounts.updateAccountState(account.addr, 'latest', [], { force: true })
       )
     )
 
