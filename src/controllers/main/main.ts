@@ -943,7 +943,7 @@ export class MainController extends EventEmitter implements IMainController {
         await this.onPopupOpen(view.id)
         return
       }
-      this.refreshSelectedAccountOnOpen()
+      this.#refreshSelectedAccountOnOpen()
     })
 
     this.ui.uiEvent.on('viewFocus', (view: View) => {
@@ -951,7 +951,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.#fetchAllSafesPending()
       // The mobile view is added once, so a return to the app refreshes here instead. The
       // extension refreshes when a popup is added, as its views get focus far more often
-      if (view.type === 'mobile') this.refreshSelectedAccountOnOpen()
+      if (view.type === 'mobile') this.#refreshSelectedAccountOnOpen()
     })
   }
 
@@ -964,7 +964,7 @@ export class MainController extends EventEmitter implements IMainController {
    * caching mechanisms to prevent unnecessary calls.
    */
   async onPopupOpen(viewId: string) {
-    this.refreshSelectedAccountOnOpen()
+    this.#refreshSelectedAccountOnOpen()
 
     this.ui.updateView(viewId, { isReady: true })
   }
@@ -975,7 +975,7 @@ export class MainController extends EventEmitter implements IMainController {
    * data older than ACCOUNT_DATA_REFRESH_AGE is fetched, so it's cheap to repeat. Runs also while
    * the wallet is locked, as the user opened it.
    */
-  refreshSelectedAccountOnOpen() {
+  #refreshSelectedAccountOnOpen() {
     const selectedAccountAddr = this.selectedAccount.account?.addr
 
     if (selectedAccountAddr) {
@@ -1103,7 +1103,7 @@ export class MainController extends EventEmitter implements IMainController {
     // Don't await these as they're not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
-    this.refreshSelectedAccountOnOpen()
+    this.#refreshSelectedAccountOnOpen()
     this.fetchSafeTxns([], true).catch((e) => e) // we catch the error inside
 
     await this.#forceEmitSelectedAccountUpdates(toAccountAddr)
